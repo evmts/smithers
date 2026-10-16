@@ -2898,6 +2898,32 @@ type GetAPIUserGithubAppInstallationsInstallationIDResponseReposItem struct {
 	InstallationID int64  `json:"installationId"`
 }
 
+// GetAPIUserGithubRepoRequestsIDResponse is generated from docs/api/openapi.yaml.
+type GetAPIUserGithubRepoRequestsIDResponse struct {
+	OperationID     string  `json:"operation_id"`
+	State           string  `json:"state"`
+	Stage           *string `json:"stage,omitempty"`
+	Code            *string `json:"code,omitempty"`
+	FullName        *string `json:"full_name,omitempty"`
+	RepositoryID    *int64  `json:"repository_id,omitempty"`
+	ExternalAttempt *int64  `json:"external_attempt,omitempty"`
+}
+
+// PostAPIUserGithubReposBody is generated from docs/api/openapi.yaml.
+type PostAPIUserGithubReposBody struct {
+	Name    string `json:"name"`
+	Private *bool  `json:"private,omitempty"`
+}
+
+// PostAPIUserGithubReposResponse is generated from docs/api/openapi.yaml.
+type PostAPIUserGithubReposResponse struct {
+	OperationID string    `json:"operationId"`
+	RequestID   string    `json:"requestId"`
+	Kind        string    `json:"kind"`
+	State       string    `json:"state"`
+	AcceptedAt  time.Time `json:"acceptedAt"`
+}
+
 // GetAPIUserGithubReposOwnerRepoPullsNumberResponse is generated from docs/api/openapi.yaml.
 type GetAPIUserGithubReposOwnerRepoPullsNumberResponse struct {
 	Number               int64                                                  `json:"number"`
@@ -6994,10 +7020,24 @@ func (c *Client) GetAPIUserGithubAppInstallationsInstallationID(ctx context.Cont
 	return out, err
 }
 
+// GetAPIUserGithubRepoRequestsID calls GET /api/user/github-repo-requests/{id}.
+func (c *Client) GetAPIUserGithubRepoRequestsID(ctx context.Context, id string) (GetAPIUserGithubRepoRequestsIDResponse, error) {
+	var out GetAPIUserGithubRepoRequestsIDResponse
+	err := c.do(ctx, "GET", "/api/user/github-repo-requests/"+url.PathEscape(id), nil, nil, &out)
+	return out, err
+}
+
 // GetAPIUserGithubRepos calls GET /api/user/github-repos.
 func (c *Client) GetAPIUserGithubRepos(ctx context.Context) (AnyJSON, error) {
 	var out AnyJSON
 	err := c.do(ctx, "GET", "/api/user/github-repos", nil, nil, &out)
+	return out, err
+}
+
+// PostAPIUserGithubRepos calls POST /api/user/github-repos.
+func (c *Client) PostAPIUserGithubRepos(ctx context.Context, body PostAPIUserGithubReposBody) (PostAPIUserGithubReposResponse, error) {
+	var out PostAPIUserGithubReposResponse
+	err := c.do(ctx, "POST", "/api/user/github-repos", nil, body, &out)
 	return out, err
 }
 

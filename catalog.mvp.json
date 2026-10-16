@@ -9019,7 +9019,7 @@
       "minimumRole": "member",
       "credentialScope": "write:repository",
       "agent": "never",
-      "summary": "Create a GitHub repository in Smithers Cloud",
+      "summary": "Create a repository on your GitHub account",
       "http": null,
       "payload": {
         "dialect": "draft-2020-12",

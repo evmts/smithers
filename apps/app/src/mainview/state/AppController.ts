@@ -148,6 +148,7 @@ import { createRepoImportSeam } from "./seams/RepoImportSeam"
 import { createRepoTreeSeam } from "./seams/RepoTreeSeam"
 import type { RepositoriesSeam } from "./seams/RepositoriesSeam"
 import { createRepositoriesSeam } from "./seams/RepositoriesSeam"
+import { createGitHubRepoCreateSeam, type GitHubRepoCreateSeam } from "./seams/GitHubRepoCreateSeam"
 import { createLauncherSeam, type LauncherSeam } from "./seams/LauncherSeam"
 import { createRepositoryFlowsSeam } from "./seams/RepositoryFlowsSeam"
 import { captureCloudOwner, refusalWords, type SeamContext } from "./seams/SeamContext"
@@ -681,6 +682,13 @@ export interface AppController extends IssueFlowsController {
   readonly signOutCloud: CloudSeam["signOut"]
   readonly loadRepositories: RepositoriesSeam["loadRepositories"]
   readonly createRepository: RepositoriesSeam["createRepository"]
+  /*
+   * The launcher's Create (M-45): a REAL repository on the person's own GitHub
+   * account, through the backend's durable GitHub create. The Cloud create
+   * above still exists and still creates a Smithers Cloud repository; it is
+   * the native act, not this one.
+   */
+  readonly createGitHubRepository: GitHubRepoCreateSeam["createGitHubRepository"]
   /** The launcher's two public reads at `/`: the explore shelf and Smithers update news (M-45). */
   readonly launcher: LauncherSeam | undefined
   /*
@@ -1556,6 +1564,8 @@ export const createAppController = (
   /* The services that sync with conversations, issues and the wiki (smithers-ui-DESIGN.md §3.6). */
   const landingsSeam = actors.pair(seamCtx, (context, select) => createLandingsSeam(context, request => select(renderFlowForm)(request)))
   const repositoriesSeam = actors.pair(seamCtx, (context) => createRepositoriesSeam(context))
+  /* The launcher's Create: the backend's durable create on the person's own GitHub account. */
+  const gitHubRepoCreateSeam = actors.pair(seamCtx, (context) => createGitHubRepoCreateSeam(context))
   /*
    * The launcher's reads (M-45). Both are public: the explore shelf is the
    * existing `GET /api/public/repos`, and the news is a credential-free read
@@ -2722,6 +2732,7 @@ export const createAppController = (
     signOutCloud: cloudSeam.signOut,
     loadRepositories: repositoriesSeam.loadRepositories,
     createRepository: repositoriesSeam.createRepository,
+    createGitHubRepository: gitHubRepoCreateSeam.createGitHubRepository,
     launcher: launcherSeam,
     listWorkspaces: workspaceSeam.listWorkspaces,
     openWorkspace: workspaceSeam.openWorkspace,

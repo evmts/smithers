@@ -102,8 +102,14 @@ export function RepositoryLauncher({
     </section>
 
     <section className="repository-launcher-section" data-section="create">
-      {/* Smithers Cloud's own create (POST /user/repos). It makes a Smithers repository, so the heading says so. */}
-      <h2>Create a repository in Smithers Cloud</h2>
+      {/*
+        * The backend's REAL GitHub create (`POST /api/user/github-repos` ->
+        * one POST /user/repos on github.com with this person's own
+        * credential). It makes a private repository on their GitHub account,
+        * so the heading says that, and the note says what it does NOT do:
+        * creating is not importing.
+        */}
+      <h2>Create a repository on GitHub</h2>
       {!signedIn
         ? <p className="repository-launcher-note">Sign in with GitHub to create one.</p>
         : <form className="repository-launcher-create" onSubmit={event => {
@@ -117,6 +123,9 @@ export function RepositoryLauncher({
           <Button type="submit" variant="outline" disabled={trimmed === ""}
             {...flowAction(onRunCommand, "repos.create", trimmed)} onClick={undefined}>Create</Button>
         </form>}
+      {!signedIn ? null : <p className="repository-launcher-note">
+        A new repository is private, and on GitHub only until you open it here to import it.
+      </p>}
     </section>
 
     <section className="repository-launcher-section" data-section="explore">

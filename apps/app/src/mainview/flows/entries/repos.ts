@@ -52,16 +52,25 @@ const REPOSITORY_NAME = /^[A-Za-z0-9_.-]{1,100}$/
 
 /**
  * `repos.create`, registered beside `repos.import`: the launcher's create
- * door (M-45). It runs the Cloud create that already exists
- * (RepositoriesSeam.createRepository, POST /user/repos), so nothing here
- * reports a repository that was not made — a refused create answers the
- * backend's own refusal, and the new row reaches the inventory through the
- * same collection the launcher lists.
+ * door (M-45). It runs the backend's REAL GitHub create — one
+ * `POST https://api.github.com/user/repos` made server-side with this
+ * person's own GitHub credential, admitted as a durable operation and
+ * reported only from the repository the server read back
+ * (state/seams/GitHubRepoCreateSeam.ts).
+ *
+ * So nothing here reports a repository that was not made: a refused create
+ * answers the backend's own refusal, an unconfirmed one says it is
+ * unconfirmed and is never repeated, and a created repository is NOT
+ * presented as imported into Smithers — opening `/owner/name` is that step.
+ *
+ * The Smithers Cloud create (`RepositoriesSeam.createRepository`,
+ * `POST /user/repos`) is unchanged and still creates a Smithers Cloud
+ * repository; it is the native act, and this door is not it.
  */
 export const reposCreateFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
   flow({
     name: "repos.create", hidden: true, discloseToAgent: false,
-    summary: "Create a GitHub repository in Smithers Cloud",
+    summary: "Create a repository on your GitHub account",
     runtime: ["cloud"],
     agent: "never",
     agentReason: "creating a repository on the person's GitHub account is the person's act",
@@ -76,8 +85,7 @@ export const reposCreateFlows = (actions: CommandActions): ReadonlyArray<FlowEnt
     form: { fields: { name: { label: "Repository name", kind: "text" } }, args: (payload) => String(payload.name ?? "") },
     handler: async ({ name }) => {
       if (!REPOSITORY_NAME.test(name.trim())) return "Enter a repository name"
-      const made = await actions.createRepository(name.trim())
-      return typeof made === "string" ? made : { value: `Created ${made.fullName}` }
+      return actions.createGitHubRepository(name.trim())
     }
   })
 ]

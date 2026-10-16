@@ -742,6 +742,54 @@ paths:
           $ref: '#/components/responses/InternalError'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
+  /api/user/github-repo-requests/{id}:
+    get:
+      x-composition: plue
+      summary: Read a GitHub repository creation request
+      description: What became of one of the caller's own GitHub repository creations. A completed request names the repository GitHub itself answered on the readback; an uncertain one names no repository, records the attempt and is never retried.
+      operationId: get_api_user_github_repo_requests_id
+      tags:
+        - User
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 128}
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: The request's durable state
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [operation_id, state]
+                properties:
+                  operation_id: {type: string}
+                  state: {type: string, enum: [accepted, dispatching, running, waiting, completed, failed, cancelled, uncertain]}
+                  stage: {type: string, enum: [resolve-actor, create, readback]}
+                  code:
+                    type: string
+                    enum: [repository_exists, reauthorize_github, github_permission, rate_limited, actor_changed, readback_mismatch, invalid_request, github_create_uncertain]
+                  full_name: {type: string}
+                  repository_id: {type: integer, format: int64}
+                  external_attempt: {type: integer}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          description: The repository creation store is not wired
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessError'}
   /api/user/github-repos:
     get:
       summary: GET /api/user/github-repos
@@ -775,6 +823,69 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '500':
           $ref: '#/components/responses/InternalError'
+    post:
+      x-composition: plue
+      summary: Create a repository on the caller's GitHub account
+      description: Admits one real GitHub repository create, made with the signed-in person's own GitHub credential, and answers without waiting on GitHub. The body names only the repository name; the owner is the account the server's own credential resolution names, and the idempotency key is derived from that actor and this intent, so a repeated request joins the one operation instead of creating a second repository. An ambiguous reply leaves the operation uncertain and is never blindly retried. Creating the repository neither imports it into Smithers nor installs the GitHub App.
+      operationId: post_api_user_github_repos
+      tags:
+        - User
+      parameters: []
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                  description: The repository name, without an owner.
+                private:
+                  type: boolean
+                  default: true
+                  description: Absent means private.
+      responses:
+        '202':
+          description: Durable admission; the repository exists only once the operation completes
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [operationId, requestId, kind, state, acceptedAt]
+                properties:
+                  operationId: {type: string}
+                  requestId: {type: string}
+                  kind: {type: string}
+                  state: {type: string, enum: [accepted, dispatching, running, waiting, completed, failed, cancelled, uncertain]}
+                  acceptedAt: {type: string, format: date-time}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: No GitHub credential is linked to this account
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessError'}
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: The idempotency key names a different repository, or this name has been refused too often
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessError'}
+        '503':
+          description: The repository creation store is not wired
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessError'}
   /api/user/github-repos/{owner}/{repo}:
     get:
       summary: GET /api/user/github-repos/{owner}/{repo}

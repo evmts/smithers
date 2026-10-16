@@ -18,6 +18,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/observability"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/jobs"
 )
 
 const (
@@ -91,6 +92,10 @@ type GitHubUserReposService struct {
 	// pushProofs remembers which users proved GitHub push access, gating
 	// every platform-token write made on a user's behalf (the git mirror).
 	pushProofs githubPushProofs
+	// createJobs is the durable store one real GitHub repository create runs
+	// on (github_user_repo_create.go). Nil keeps that door unavailable rather
+	// than writing GitHub inline from a request.
+	createJobs *jobs.Store
 }
 
 type GitHubUserReposOption func(*GitHubUserReposService)
@@ -526,24 +531,9 @@ func (s *GitHubUserReposService) resolveUserGitHubAccessToken(ctx context.Contex
 		return "", db.OauthAccount{}, pkgerrors.Internal("failed to load github oauth account").WithCause(err)
 	}
 
-	// Prefer a real provider="github" account. Fall back to "workos" ONLY
-	// because plue's WorkOS path is GitHub-backed (it stores a gho_* token
-	// under "workos"); a WorkOS account created before a later GitHub connect
-	// must never shadow the real GitHub credential.
-	var selected *db.OauthAccount
-	for i := range accounts {
-		switch strings.ToLower(strings.TrimSpace(accounts[i].Provider)) {
-		case "github":
-			selected = &accounts[i]
-		case "workos":
-			if selected == nil {
-				selected = &accounts[i]
-			}
-		}
-		if selected != nil && strings.EqualFold(strings.TrimSpace(selected.Provider), "github") {
-			break
-		}
-	}
+	// selectGitHubOAuthAccount owns the provider preference (a WorkOS row is
+	// GitHub-backed, and must never shadow a real GitHub credential).
+	selected := selectGitHubOAuthAccount(accounts)
 	if selected == nil {
 		return "", db.OauthAccount{}, pkgerrors.Unauthorized("github oauth account is not connected")
 	}

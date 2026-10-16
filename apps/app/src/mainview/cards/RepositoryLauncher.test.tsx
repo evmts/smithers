@@ -85,11 +85,17 @@ test("a large account reads eight rows and the rest behind a native disclosure",
   expect(all.querySelectorAll("a")).toHaveLength(5)
 })
 
-test("create runs the real Cloud create flow with the typed name, and nothing before a name is typed", async () => {
+test("create runs the real GitHub create flow with the typed name, and nothing before a name is typed", async () => {
   const { host, calls } = render()
   const create = section(host, "create")
-  // The door it runs makes a Smithers Cloud repository, and the heading says exactly that.
-  expect(create.querySelector("h2")!.textContent).toBe("Create a repository in Smithers Cloud")
+  /*
+   * The door it runs makes a repository on the person's own GitHub account
+   * (flows/entries/repos.ts -> GitHubRepoCreateSeam -> POST
+   * /api/user/github-repos), and the heading says exactly that. The note
+   * beside it says what creating does NOT do: importing is a separate act.
+   */
+  expect(create.querySelector("h2")!.textContent).toBe("Create a repository on GitHub")
+  expect(create.querySelector("p")!.textContent).toBe("A new repository is private, and on GitHub only until you open it here to import it.")
   const button = create.querySelector<HTMLButtonElement>('[data-flow="repos.create"]')!
   expect(button.disabled).toBe(true)
   button.click()

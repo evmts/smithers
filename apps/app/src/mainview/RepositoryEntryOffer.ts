@@ -8,14 +8,33 @@ import { INSTALL_VERIFY_PATH, trustedInstallUrl } from "./state/seams/GitHubSeam
  *
  * The URL is GitHub's path, so the reader expects GitHub's repository. When
  * the catalog and the signed-in inventory both miss, the only honest next step
- * depends on whether the Smithers GitHub App covers the repository for THIS
- * account — so this module reads the one door that can answer that
- * (`GET /api/user/github-app/installations`, the installations the caller's own
- * credential verifies, the same door the setup-URL return already verifies
- * through) and turns the answer into one sentence and at most one act:
+ * depends on whether the Smithers GitHub App covers THIS repository for THIS
+ * account, so this module reads the door that answers exactly that question
+ * and nothing wider: `GET /api/user/github-access/{owner}/{repo}`
+ * (services/github_access_diagnosis.go), ONE bounded repository-specific read
+ * whose verdict is a closed set — `ok`, `app-not-installed`,
+ * `permission-missing`, `no-org-grant`, `token-broken`, `not-configured`.
  *
- *  - covered: Import, through the existing `repos.import` flow.
- *  - not covered: the App's own installation page, linked.
+ * It replaces the full-account inventory walk (`GET
+ * /api/user/github-app/installations`) as the source of this one answer. That
+ * walk reads every repository the account has and refuses an incomplete walk
+ * with 503 — so on a large or partly unreadable account the entry for ONE
+ * repository was left unknown by something that had nothing to do with it.
+ * The walk stays as the fallback for an origin that serves no single-repository
+ * diagnosis, with its complete-parse guards intact.
+ *
+ * The verdict turns into one sentence and at most one act:
+ *
+ *  - `ok`: Import, through the existing `repos.import` flow.
+ *  - `app-not-installed`: the App's own installation page, linked, with
+ *    GitHub's 404 ambiguity preserved (it may not exist, or may not be
+ *    accessible to this account).
+ *  - `permission-missing` / `no-org-grant`: the App HAS an installation
+ *    covering the repository, so the repository exists; the sentence says the
+ *    App cannot read it for this account yet and links the page where that is
+ *    fixed. It never guesses absence about a repository GitHub just named.
+ *  - `token-broken`: nothing about the repository was learnt. Unknown.
+ *  - `not-configured`: this deployment has no App, so coverage is absent.
  *  - unreadable: that it could not be read. No act is invented for it.
  *
  * It never says the repository is absent from GitHub, and never says it is
@@ -24,12 +43,18 @@ import { INSTALL_VERIFY_PATH, trustedInstallUrl } from "./state/seams/GitHubSeam
  * picked one would be a guess, and the private-existence guess would leak.
  */
 
-/** What the installations door states about one repository, for this account. */
+/** What the coverage door states about one repository, for this account. */
 export interface AppCoverage {
-  /** True only when the verified installation list names this repository. */
+  /** True only when the App covers this repository FOR THIS ACCOUNT (verdict `ok`). */
   readonly covered: boolean
+  /**
+   * True when an installation covering the repository exists, even if it
+   * cannot be used by this account yet. It is also proof the repository
+   * EXISTS, so the offer stops naming absence as a possibility.
+   */
+  readonly appInstalled: boolean
   readonly installationId: number | null
-  /** The App's installation page as the server stated it; untrusted until rendered. */
+  /** The github.com page that fixes this verdict, as the server stated it; untrusted until rendered. */
   readonly installUrl: string | null
 }
 
@@ -84,8 +109,76 @@ export const readAppCoverage = async (http: FetchLike, repo: string): Promise<Ap
   }
   const match = rows.find((row) => row.fullName.toLowerCase() === repo.toLowerCase())
   return match === undefined
-    ? { covered: false, installationId: null, installUrl }
-    : { covered: true, installationId: match.installationId, installUrl }
+    ? { covered: false, appInstalled: false, installationId: null, installUrl }
+    : { covered: true, appInstalled: true, installationId: match.installationId, installUrl }
+}
+
+/** The bounded, repository-specific coverage door (M-46). */
+export const GITHUB_ACCESS_PATH = "/api/user/github-access"
+
+/** The closed verdict set `GET /api/user/github-access/{o}/{r}` answers with. */
+const VERDICTS = new Set([
+  "ok", "app-not-installed", "permission-missing", "no-org-grant", "token-broken", "not-configured"
+])
+
+const trustedUrlOf = (...values: ReadonlyArray<unknown>): string | null => {
+  for (const value of values) if (typeof value === "string" && value !== "") return value
+  return null
+}
+
+/**
+ * What the Smithers GitHub App covers for THIS account on THIS repository,
+ * from the one repository-specific diagnosis, or null when nothing was learnt.
+ *
+ * A verdict of `token-broken` is null on purpose: it says the ACCOUNT's GitHub
+ * credential is broken, which proves nothing about the repository, and
+ * reporting "not covered" from it would be a guess. An origin that serves no
+ * such door (404/501) falls back to the account inventory walk, whose own
+ * complete-parse rules decide that answer.
+ */
+export const readRepoAccess = async (http: FetchLike, repo: string): Promise<AppCoverage | null> => {
+  const [owner = "", name = ""] = repo.split("/")
+  if (owner === "" || name === "") return null
+  let response: Response
+  try {
+    response = await http(
+      `${GITHUB_ACCESS_PATH}/${encodeURIComponent(owner)}/${encodeURIComponent(name)}?surface=issues`,
+      { headers: { accept: "application/json" } }
+    )
+  } catch {
+    // A dropped request: its thrown text is never copy.
+    return null
+  }
+  // No such door on this origin: the account walk is the older answer.
+  if (response.status === 404 || response.status === 501) return readAppCoverage(http, repo)
+  if (!response.ok) return null
+  const body: unknown = await response.json().catch(() => null)
+  if (!isRecord(body) || typeof body.verdict !== "string" || !VERDICTS.has(body.verdict)) return null
+  const installationId = typeof body.installation_id === "number" && Number.isInteger(body.installation_id)
+    ? body.installation_id
+    : null
+  switch (body.verdict) {
+    case "ok":
+      return { covered: true, appInstalled: true, installationId, installUrl: trustedUrlOf(body.install_url) }
+    case "app-not-installed":
+      return { covered: false, appInstalled: false, installationId: null, installUrl: trustedUrlOf(body.install_url) }
+    case "permission-missing":
+    case "no-org-grant":
+      /*
+       * An installation covering the repository was found, so the repository
+       * exists; it just cannot be read for this account yet. The act is the
+       * page where the grant is approved.
+       */
+      return {
+        covered: false, appInstalled: true, installationId,
+        installUrl: trustedUrlOf(body.approve_url, body.grant_url, body.install_url)
+      }
+    case "not-configured":
+      return { covered: false, appInstalled: false, installationId: null, installUrl: null }
+    default:
+      // token-broken: nothing was learnt about the repository.
+      return null
+  }
 }
 
 /**
@@ -96,7 +189,9 @@ export const readAppCoverage = async (http: FetchLike, repo: string): Promise<Ap
  */
 export const appCoverageRow = (repo: string, coverage: AppCoverage): GitHubAppStatusInput => ({
   repo,
-  installed: coverage.covered,
+  /* `installed`: an installation covering the repository exists. */
+  installed: coverage.appInstalled,
+  /* `configured`: it is usable for THIS account — the only thing Import may rest on. */
   configured: coverage.covered,
   installationId: coverage.installationId,
   installUrl: coverage.installUrl,
@@ -147,6 +242,18 @@ export const missingRepositoryOffer = (
     }
   }
   const installUrl = status.installUrl === null ? null : trustedInstallUrl(status.installUrl)
+  /*
+   * An installation covering the repository EXISTS (`installed`) but it is not
+   * usable for this account (`configured` false): the App's own lookup just
+   * named the repository, so absence is no longer one of the readings and the
+   * sentence must not offer it. The act is the page where that is fixed.
+   */
+  if (status.installed) {
+    const blocked = `Smithers doesn't have ${repo} yet. The Smithers GitHub App is installed on it, but it can't read it for your account.`
+    return installUrl === null
+      ? { kind: "install", text: blocked, action: retry }
+      : { kind: "install", text: `${blocked}\n\n[Open the Smithers GitHub App installation](${installUrl})` }
+  }
   /*
    * Truthful and no wider: the App does not cover it FOR THIS ACCOUNT. Why
    * is not knowable from here — GitHub answers a repository it will not show

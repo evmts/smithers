@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { appCoverageRow, missingRepositoryOffer, readAppCoverage } from "./RepositoryEntryOffer"
+import { appCoverageRow, GITHUB_ACCESS_PATH, missingRepositoryOffer, readAppCoverage, readRepoAccess } from "./RepositoryEntryOffer"
 import { INSTALL_VERIFY_PATH } from "./state/seams/GitHubSeam"
 
 /*
@@ -24,18 +24,18 @@ describe("readAppCoverage", () => {
         { fullName: "Acme/Widgets", installationId: 42, pushedAt: "2026-10-01T00:00:00Z" }
       ] })
     }
-    expect(await readAppCoverage(http, "acme/widgets")).toEqual({ covered: true, installationId: 42, installUrl: INSTALL_URL })
+    expect(await readAppCoverage(http, "acme/widgets")).toEqual({ covered: true, appInstalled: true, installationId: 42, installUrl: INSTALL_URL })
     expect(asked).toEqual([INSTALL_VERIFY_PATH])
   })
 
   test("a repository the list does not name is not covered, and keeps the install page", async () => {
     const http = async () => jsonResponse({ install_url: INSTALL_URL, repos: [{ fullName: "acme/widgets", installationId: 42 }] })
-    expect(await readAppCoverage(http, "acme/missing")).toEqual({ covered: false, installationId: null, installUrl: INSTALL_URL })
+    expect(await readAppCoverage(http, "acme/missing")).toEqual({ covered: false, appInstalled: false, installationId: null, installUrl: INSTALL_URL })
   })
 
   test("an empty installation list is not covered", async () => {
     const http = async () => jsonResponse({ repos: [] })
-    expect(await readAppCoverage(http, "acme/widgets")).toEqual({ covered: false, installationId: null, installUrl: null })
+    expect(await readAppCoverage(http, "acme/widgets")).toEqual({ covered: false, appInstalled: false, installationId: null, installUrl: null })
   })
 
   test("a refusal, an unreadable body and a dropped request all answer nothing learnt", async () => {
@@ -62,17 +62,97 @@ describe("readAppCoverage", () => {
 
   test("a row without an installation id is still that repository, with no id invented", async () => {
     const http = async () => jsonResponse({ repos: [{ fullName: "acme/widgets", installationId: "42" }] })
-    expect(await readAppCoverage(http, "acme/widgets")).toEqual({ covered: true, installationId: null, installUrl: null })
+    expect(await readAppCoverage(http, "acme/widgets")).toEqual({ covered: true, appInstalled: true, installationId: null, installUrl: null })
+  })
+})
+
+describe("readRepoAccess, the one bounded repository diagnosis", () => {
+  const diagnosis = (body: Record<string, unknown>, status = 200) => {
+    const asked: Array<string> = []
+    const http = async (input: RequestInfo | URL) => {
+      asked.push(String(input))
+      return jsonResponse(body, status)
+    }
+    return { asked, http }
+  }
+
+  test("reads exactly one repository's door, never the account inventory", async () => {
+    const { asked, http } = diagnosis({ verdict: "ok", surface: "issues", installation_id: 42, install_url: INSTALL_URL })
+    expect(await readRepoAccess(http, "acme/widgets")).toEqual({
+      covered: true, appInstalled: true, installationId: 42, installUrl: INSTALL_URL
+    })
+    expect(asked).toEqual([`${GITHUB_ACCESS_PATH}/acme/widgets?surface=issues`])
+    expect(asked.some(url => url.includes(INSTALL_VERIFY_PATH))).toBe(false)
+  })
+
+  test("app-not-installed is not covered, and keeps the install page", async () => {
+    const { http } = diagnosis({ verdict: "app-not-installed", install_url: INSTALL_URL })
+    expect(await readRepoAccess(http, "acme/widgets")).toEqual({
+      covered: false, appInstalled: false, installationId: null, installUrl: INSTALL_URL
+    })
+  })
+
+  test.each(["permission-missing", "no-org-grant"] as const)(
+    "%s proves the repository exists and points at the installation page",
+    async (verdict) => {
+      const approve = "https://github.com/settings/installations/42"
+      const { http } = diagnosis({ verdict, installation_id: 42, approve_url: approve, grant_url: INSTALL_URL, install_url: INSTALL_URL })
+      expect(await readRepoAccess(http, "acme/widgets")).toEqual({
+        covered: false, appInstalled: true, installationId: 42, installUrl: approve
+      })
+    }
+  )
+
+  test("not-configured carries no act: installing can never help here", async () => {
+    const { http } = diagnosis({ verdict: "not-configured" })
+    expect(await readRepoAccess(http, "acme/widgets")).toEqual({
+      covered: false, appInstalled: false, installationId: null, installUrl: null
+    })
+  })
+
+  test("token-broken says nothing about the repository, so nothing is learnt", async () => {
+    const { http } = diagnosis({ verdict: "token-broken" })
+    expect(await readRepoAccess(http, "acme/widgets")).toBeNull()
+  })
+
+  test("a refusal, an unknown verdict, an unreadable body and a dropped request all learn nothing", async () => {
+    for (const status of [401, 403, 429, 500, 503]) {
+      expect(await readRepoAccess(async () => jsonResponse({ verdict: "ok" }, status), "acme/widgets")).toBeNull()
+    }
+    expect(await readRepoAccess(async () => jsonResponse({ verdict: "probably-fine" }), "acme/widgets")).toBeNull()
+    expect(await readRepoAccess(async () => jsonResponse({}), "acme/widgets")).toBeNull()
+    expect(await readRepoAccess(async () => new Response("<html>", { status: 200 }), "acme/widgets")).toBeNull()
+    expect(await readRepoAccess(async () => { throw new TypeError("ECONNRESET secret-socket-detail") }, "acme/widgets")).toBeNull()
+    expect(await readRepoAccess(async () => jsonResponse({ verdict: "ok" }), "widgets")).toBeNull()
+  })
+
+  /* An origin that serves no single-repository door keeps the older answer. */
+  test("an absent door falls back to the account inventory walk", async () => {
+    const asked: Array<string> = []
+    const http = async (input: RequestInfo | URL) => {
+      asked.push(String(input))
+      return String(input).startsWith(GITHUB_ACCESS_PATH)
+        ? jsonResponse({ code: "not_found" }, 404)
+        : jsonResponse({ install_url: INSTALL_URL, repos: [{ fullName: "acme/widgets", installationId: 42 }] })
+    }
+    expect(await readRepoAccess(http, "acme/widgets")).toEqual({
+      covered: true, appInstalled: true, installationId: 42, installUrl: INSTALL_URL
+    })
+    expect(asked).toEqual([`${GITHUB_ACCESS_PATH}/acme/widgets?surface=issues`, INSTALL_VERIFY_PATH])
   })
 })
 
 describe("the App-status row a coverage answer writes", () => {
   test("states the coverage the installations door verified, and where to install", () => {
-    expect(appCoverageRow("acme/widgets", { covered: true, installationId: 42, installUrl: INSTALL_URL })).toEqual({
+    expect(appCoverageRow("acme/widgets", { covered: true, appInstalled: true, installationId: 42, installUrl: INSTALL_URL })).toEqual({
       repo: "acme/widgets", installed: true, configured: true, installationId: 42, installUrl: INSTALL_URL, rateLimit: null
     })
-    expect(appCoverageRow("acme/widgets", { covered: false, installationId: null, installUrl: null })).toEqual({
+    expect(appCoverageRow("acme/widgets", { covered: false, appInstalled: false, installationId: null, installUrl: null })).toEqual({
       repo: "acme/widgets", installed: false, configured: false, installationId: null, installUrl: null, rateLimit: null
+    })
+    /* An installation that exists but cannot be used for this account: installed, not configured. */
+    expect(appCoverageRow("acme/widgets", { covered: false, appInstalled: true, installationId: 7, installUrl: INSTALL_URL })).toEqual({
+      repo: "acme/widgets", installed: true, configured: false, installationId: 7, installUrl: INSTALL_URL, rateLimit: null
     })
   })
 })
@@ -133,6 +213,21 @@ describe("missingRepositoryOffer", () => {
   })
 
   test("an installed App whose configuration is incomplete is not an import offer", () => {
-    expect(missingRepositoryOffer("acme/widgets", { installed: true, configured: false, installUrl: INSTALL_URL }).kind).toBe("install")
+    const blocked = missingRepositoryOffer("acme/widgets", { installed: true, configured: false, installUrl: INSTALL_URL })
+    expect(blocked.kind).toBe("install")
+    /*
+     * The App's own lookup named this repository, so it EXISTS: the sentence
+     * must not offer absence as a reading, and must not call it private.
+     */
+    expect(blocked.text).toBe(
+      "Smithers doesn't have acme/widgets yet. The Smithers GitHub App is installed on it, but it can't read it for your account."
+      + `\n\n[Open the Smithers GitHub App installation](${INSTALL_URL})`
+    )
+    for (const word of ["may not exist", "private", "no such repository", "does not exist"]) {
+      expect(blocked.text.toLowerCase()).not.toContain(word)
+    }
+    /* With no page to link, the honest act is to read the door again. */
+    expect(missingRepositoryOffer("acme/widgets", { installed: true, configured: false, installUrl: null }).action)
+      .toEqual({ flow: "github", args: JSON.stringify({ operation: "app-status", repo: "acme/widgets" }), label: "Retry" })
   })
 })

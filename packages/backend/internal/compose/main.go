@@ -1835,6 +1835,12 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 	gitHubRepoListHandler := &routes.GitHubRepoListHandler{Service: gitHubRepoListService}
 	gitHubUserReposHandler := &routes.GitHubUserReposHandler{Service: gitHubUserReposService}
+	// The hosted composition's real GitHub repository create runs as a durable
+	// operation on the shared store. An install serves no such door, so it
+	// wires no worker for it either.
+	if gitHubUserReposService != nil && !config.IsSingleOwner(cfg.Auth) {
+		gitHubUserReposService.SetGitHubRepoCreateJobs(commandJobs)
+	}
 	gitHubImportHandler := &routes.GitHubImportHandler{Service: gitHubImportService, Metrics: smithersMetrics}
 	// Ticket 0132: per-user active-connection cap on terminal WebSockets,
 	// with Prometheus hooks so operators can see current counts + rejects.
@@ -2601,6 +2607,13 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		launchWorker(func() {
 			if err := commandJobs.RunWorker(workerCtx, jobs.WorkerConfig{WorkerID: "learning-" + uuid.NewString(), Capacity: 1, Lease: time.Minute, RetryDelay: time.Second, Operations: []string{services.LearningAdmissionOperation}}, mythicalService.HandleLearningAdmission); err != nil && workerCtx.Err() == nil {
 				slog.Error("Learning admission worker stopped", "error", err)
+			}
+		})
+	}
+	if gitHubUserReposService != nil && !config.IsSingleOwner(cfg.Auth) && options.topology.workers() {
+		launchWorker(func() {
+			if err := commandJobs.RunWorker(workerCtx, jobs.WorkerConfig{WorkerID: "github-repo-create-" + uuid.NewString(), Capacity: 1, Lease: time.Minute, PollInterval: 250 * time.Millisecond, RetryDelay: time.Second, Operations: []string{services.GitHubUserRepoCreateOperation}}, gitHubUserReposService.HandleGitHubUserRepoCreate); err != nil && workerCtx.Err() == nil {
+				slog.Error("GitHub repository create worker stopped", "error", err)
 			}
 		})
 	}

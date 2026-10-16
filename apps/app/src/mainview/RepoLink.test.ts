@@ -600,6 +600,67 @@ describe("the App coverage a signed-in URL miss records", () => {
     return jsonResponse({ code: "not_found" }, 404)
   }
 
+  /*
+   * The bounded repository-specific diagnosis is the read this entry makes.
+   * The account-wide installations walk, which refuses an incomplete
+   * inventory with 503 and so left one repository's entry unknown for
+   * reasons about OTHER repositories, is only the fallback for an origin
+   * that serves no such door.
+   */
+  test("one repository's entry reads one repository's door, not the account inventory", async () => {
+    const { store, controller } = await signedIn()
+    const asked: Array<string> = []
+    try {
+      const diagnosed = async (input: RequestInfo | URL) => {
+        const path = String(input)
+        asked.push(path)
+        if (path === "/api/public/repos") return jsonResponse(catalog)
+        if (path === "/api/user/github-access/ada/widgets?surface=issues") {
+          return jsonResponse({ verdict: "ok", surface: "issues", installation_id: 42, install_url: INSTALL_URL })
+        }
+        return jsonResponse({ code: "not_found" }, 404)
+      }
+      await openRequestedRepo(controller, diagnosed, "ada/widgets")
+      expect(store.collections.githubAppStatuses.get("ada/widgets")).toMatchObject({
+        repo: "ada/widgets", installed: true, configured: true, installationId: 42, installUrl: INSTALL_URL
+      })
+      expect(asked).toEqual(["/api/public/repos", "/api/user/github-access/ada/widgets?surface=issues"])
+    } finally { await store.dispose?.() }
+  })
+
+  test("an installation that cannot read it for this account lands installed but unusable", async () => {
+    const { store, controller } = await signedIn()
+    try {
+      const approve = "https://github.com/settings/installations/42"
+      const diagnosed = async (input: RequestInfo | URL) => {
+        const path = String(input)
+        if (path === "/api/public/repos") return jsonResponse(catalog)
+        if (path.startsWith("/api/user/github-access/")) {
+          return jsonResponse({ verdict: "no-org-grant", installation_id: 42, approve_url: approve })
+        }
+        return jsonResponse({ code: "not_found" }, 404)
+      }
+      await openRequestedRepo(controller, diagnosed, "ada/widgets")
+      expect(store.collections.githubAppStatuses.get("ada/widgets")).toMatchObject({
+        repo: "ada/widgets", installed: true, configured: false, installationId: 42, installUrl: approve
+      })
+    } finally { await store.dispose?.() }
+  })
+
+  test("a broken account credential records nothing about the repository", async () => {
+    const { store, controller } = await signedIn()
+    try {
+      const diagnosed = async (input: RequestInfo | URL) => {
+        const path = String(input)
+        if (path === "/api/public/repos") return jsonResponse(catalog)
+        if (path.startsWith("/api/user/github-access/")) return jsonResponse({ verdict: "token-broken" })
+        return jsonResponse({ code: "not_found" }, 404)
+      }
+      await openRequestedRepo(controller, diagnosed, "ada/widgets")
+      expect(store.collections.githubAppStatuses.get("ada/widgets")).toBeUndefined()
+    } finally { await store.dispose?.() }
+  })
+
   test("a covered repository lands as installed, with the installation the door verified", async () => {
     const { store, controller } = await signedIn()
     try {

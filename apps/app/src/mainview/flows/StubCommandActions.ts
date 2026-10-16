@@ -244,6 +244,7 @@ export const stubCommandActions = (overrides: Partial<CommandActions> = {}): Com
   signOutCloud: unexpected,
   loadRepositories: unexpected,
   createRepository: unexpected,
+  createGitHubRepository: unexpected,
   launcher: undefined,
   listWorkspaces: unexpected,
   openWorkspace: unexpected,

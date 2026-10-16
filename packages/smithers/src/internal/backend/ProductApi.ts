@@ -6994,11 +6994,50 @@ export interface GetApiUserGithubAppInstallationsInstallationIdInput {
 export const getApiUserGithubAppInstallationsInstallationId = (transport: Transport, input: GetApiUserGithubAppInstallationsInstallationIdInput): Promise<GetApiUserGithubAppInstallationsInstallationIdResponse> =>
   transport.request("GET", `/api/user/github-app/installations/${segment(input.path.installationId)}`) as Promise<GetApiUserGithubAppInstallationsInstallationIdResponse>
 
+export type GetApiUserGithubRepoRequestsIdResponse = {
+  operation_id: string
+  state: "accepted" | "dispatching" | "running" | "waiting" | "completed" | "failed" | "cancelled" | "uncertain"
+  stage?: "resolve-actor" | "create" | "readback"
+  code?: "repository_exists" | "reauthorize_github" | "github_permission" | "rate_limited" | "actor_changed" | "readback_mismatch" | "invalid_request" | "github_create_uncertain"
+  full_name?: string
+  repository_id?: number
+  external_attempt?: number
+}
+
+export interface GetApiUserGithubRepoRequestsIdInput {
+  readonly path: { readonly id: string }
+}
+
+/** GET /api/user/github-repo-requests/{id}: Read a GitHub repository creation request */
+export const getApiUserGithubRepoRequestsId = (transport: Transport, input: GetApiUserGithubRepoRequestsIdInput): Promise<GetApiUserGithubRepoRequestsIdResponse> =>
+  transport.request("GET", `/api/user/github-repo-requests/${segment(input.path.id)}`) as Promise<GetApiUserGithubRepoRequestsIdResponse>
+
 export type GetApiUserGithubReposResponse = AnyJSON
 
 /** GET /api/user/github-repos */
 export const getApiUserGithubRepos = (transport: Transport): Promise<GetApiUserGithubReposResponse> =>
   transport.request("GET", `/api/user/github-repos`) as Promise<GetApiUserGithubReposResponse>
+
+export type PostApiUserGithubReposBody = {
+  name: string
+  private?: boolean
+}
+
+export type PostApiUserGithubReposResponse = {
+  operationId: string
+  requestId: string
+  kind: string
+  state: "accepted" | "dispatching" | "running" | "waiting" | "completed" | "failed" | "cancelled" | "uncertain"
+  acceptedAt: string
+}
+
+export interface PostApiUserGithubReposInput {
+  readonly body: PostApiUserGithubReposBody
+}
+
+/** POST /api/user/github-repos: Create a repository on the caller's GitHub account */
+export const postApiUserGithubRepos = (transport: Transport, input: PostApiUserGithubReposInput): Promise<PostApiUserGithubReposResponse> =>
+  transport.request("POST", `/api/user/github-repos`, input.body) as Promise<PostApiUserGithubReposResponse>
 
 export type GetApiUserGithubReposOwnerRepoResponse = AnyJSON
 

@@ -1963,6 +1963,22 @@ func buildRouter(
 				// The optional id filters; it never grants access.
 				r.With(githubUserRepoRead...).Get("/user/github-app/installations", gitHubUserReposHandler.ListGitHubAppInstallations)
 				r.With(githubUserRepoRead...).Get("/user/github-app/installations/{installationId}", gitHubUserReposHandler.ListGitHubAppInstallations)
+				if !config.IsSingleOwner(cfg.Auth) {
+					// One real repository on the caller's OWN GitHub account.
+					// It writes GitHub with that person's own credential, so it
+					// needs write:repository and the same repository-restricted
+					// token refusal the reads above apply. An install keeps its
+					// own Setup door and mounts neither.
+					githubUserRepoWrite := []func(http.Handler) http.Handler{
+						middleware.PrivateNoStore,
+						middleware.RequireAuth,
+						middleware.RejectRepositoryRestrictedToken,
+						middleware.RequireScope(middleware.ScopeWriteRepository),
+					}
+					r.With(githubUserRepoWrite...).Post("/user/github-repos", gitHubUserReposHandler.CreateGitHubUserRepo)
+					// Reading the receipt is a read of the caller's own request.
+					r.With(githubUserRepoRead...).Get("/user/github-repo-requests/{id}", gitHubUserReposHandler.GetGitHubUserRepoCreate)
+				}
 			}
 			if gitHubSyncedReposHandler != nil {
 				// Service-to-service feed: github-sync reads the sync registry here
