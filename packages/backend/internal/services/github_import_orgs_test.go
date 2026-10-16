@@ -27,6 +27,10 @@ type fakeImportOrgDB struct {
 	createOrgFn func(db.CreateOrgRepoParams) (db.Repository, error)
 }
 
+func (f *fakeImportOrgDB) GetVisibleOrgForViewer(ctx context.Context, arg db.GetVisibleOrgForViewerParams) (db.GetVisibleOrgForViewerRow, error) {
+	return visibleOrgFromLookups(ctx, f, arg)
+}
+
 func (f *fakeImportOrgDB) GetOrgByLowerName(_ context.Context, lowerName string) (db.Organization, error) {
 	if f.getOrgErr != nil {
 		return db.Organization{}, f.getOrgErr
@@ -229,4 +233,77 @@ func TestGitHubImport_ImportOwnerForSlug(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "alice", user.Name)
 	assert.False(t, user.OrgID.Valid)
+}
+
+// Namespace selection must not disclose a private organization through a
+// different error or choose that organization as a destination for outsiders.
+func TestGitHubImport_PrivateNamespaceIndistinguishableFromAbsentPostgres(t *testing.T) {
+	pool := newProductTestPool(t)
+	ctx := t.Context()
+	q := db.New(pool)
+	owner, err := q.CreateUser(ctx, db.CreateUserParams{Username: "import-owner", LowerUsername: "import-owner"})
+	require.NoError(t, err)
+	outsider, err := q.CreateUser(ctx, db.CreateUserParams{Username: "import-outsider", LowerUsername: "import-outsider"})
+	require.NoError(t, err)
+	org, err := NewOrgService(q).CreateOrg(ctx, &owner, CreateOrgRequest{Name: "hidden-import", Visibility: "private"})
+	require.NoError(t, err)
+	// Invalid bookmarks stop admission before transport/decryption or job launch;
+	// those unused collaborators need no network service in this database test.
+	svc := NewGitHubImportService(pool, q, q, &testGitHubImportRepoHost{}, testGitHubImportDecrypter{}, "http://unused.invalid", WithGitHubImportOrgs(q))
+	_, absentErr := svc.StartImport(ctx, ImportGitHubRepoInput{UserID: outsider.ID, Owner: "absent-import", Repo: "project", Branch: ".."})
+	_, hiddenErr := svc.StartImport(ctx, ImportGitHubRepoInput{UserID: outsider.ID, Owner: org.Name, Repo: "project", Branch: ".."})
+	require.Equal(t, orgPrivacyErrorPayload(t, absentErr, http.StatusBadRequest), orgPrivacyErrorPayload(t, hiddenErr, http.StatusBadRequest))
+	var jobs int
+	require.NoError(t, pool.QueryRow(ctx, "SELECT count(*) FROM import_jobs").Scan(&jobs))
+	require.Zero(t, jobs)
+	absent, err := svc.resolveImportOwner(ctx, outsider.ID, "absent-import", "project")
+	require.NoError(t, err)
+	require.Equal(t, importOwner{Name: outsider.Username}, absent)
+	hidden, err := svc.resolveImportOwner(ctx, outsider.ID, org.Name, "project")
+	require.NoError(t, err)
+	require.Equal(t, absent, hidden)
+	member, err := svc.resolveImportOwner(ctx, owner.ID, org.Name, "project")
+	require.NoError(t, err)
+	require.Equal(t, importOwner{Name: org.Name, OrgID: pgtype.Int8{Int64: org.ID, Valid: true}}, member)
+	_, err = q.AddOrgMember(ctx, db.AddOrgMemberParams{OrganizationID: org.ID, UserID: outsider.ID, Role: "member"})
+	require.NoError(t, err)
+	invited, err := svc.resolveImportOwner(ctx, outsider.ID, org.Name, "project")
+	require.NoError(t, err)
+	require.Equal(t, member, invited)
+	_, err = pool.Exec(ctx, "DELETE FROM org_members WHERE organization_id=$1 AND user_id=$2", org.ID, outsider.ID)
+	require.NoError(t, err)
+	revoked, err := svc.resolveImportOwner(ctx, outsider.ID, org.Name, "project")
+	require.NoError(t, err)
+	require.Equal(t, absent, revoked)
+}
+
+func TestGitHubImport_VisibleNonmemberNamespaceRequiresExplicitForkPostgres(t *testing.T) {
+	pool := newProductTestPool(t)
+	ctx := t.Context()
+	q := db.New(pool)
+	owner, err := q.CreateUser(ctx, db.CreateUserParams{Username: "visible-import-owner", LowerUsername: "visible-import-owner"})
+	require.NoError(t, err)
+	outsider, err := q.CreateUser(ctx, db.CreateUserParams{Username: "visible-import-outsider", LowerUsername: "visible-import-outsider"})
+	require.NoError(t, err)
+	svc := &GitHubImportService{db: pool, orgs: q}
+	for _, visibility := range []string{"public", "limited"} {
+		t.Run(visibility, func(t *testing.T) {
+			org, err := NewOrgService(q).CreateOrg(ctx, &owner, CreateOrgRequest{Name: "import-" + visibility, Visibility: visibility})
+			require.NoError(t, err)
+			destination, err := svc.resolveImportOwner(ctx, outsider.ID, org.Name, "project")
+			var apiErr *pkgerrors.APIError
+			require.ErrorAs(t, err, &apiErr)
+			require.Equal(t, pkgerrors.CodeOrgMembershipRequired, apiErr.Code)
+			require.Equal(t, http.StatusForbidden, apiErr.Status)
+			require.Equal(t, importOwner{}, destination)
+		})
+	}
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	destination, err := svc.resolveImportOwner(canceled, outsider.ID, "import-public", "project")
+	var apiErr *pkgerrors.APIError
+	require.ErrorAs(t, err, &apiErr)
+	require.Equal(t, http.StatusInternalServerError, apiErr.Status)
+	require.Equal(t, importOwner{}, destination)
+	require.ErrorIs(t, apiErr.Cause(), context.Canceled)
 }

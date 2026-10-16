@@ -232,11 +232,12 @@ type GitHubImportRepoDB interface {
 
 // GitHubImportOrgDB resolves organization namespaces for imports. Organizations
 // are not a feature flag: when the GitHub source owner names an organization
-// that exists on this deployment, the mirror belongs in that organization's
-// namespace and the importing user must be a member of it.
+// visible to the caller, the mirror belongs in that organization's namespace
+// and the importing user must be a member of it.
 type GitHubImportOrgDB interface {
-	GetOrgByLowerName(ctx context.Context, lowerName string) (db.Organization, error)
+	orgVisibilityQuerier
 	GetOrgMember(ctx context.Context, arg db.GetOrgMemberParams) (db.OrgMember, error)
+	GetOrgByLowerName(ctx context.Context, lowerName string) (db.Organization, error)
 	CreateOrgRepo(ctx context.Context, arg db.CreateOrgRepoParams) (db.Repository, error)
 }
 
@@ -1476,38 +1477,32 @@ type importOwner struct {
 	OrgID pgtype.Int8
 }
 
-// resolveImportOwner decides which namespace an import lands in. An org-owned
-// source (an organization that exists on this deployment under the same slug)
-// lands in that organization when the importing user is a member of it, and is
-// refused with org_membership_required when they are not. It never silently
-// falls back to the importing user's namespace: taking somebody else's
-// organization repository into your own account is a fork, and forks are an
-// explicit action, not the quiet outcome of an import.
+// resolveImportOwner selects a visible organization when the caller belongs to
+// it. Visible nonmember organizations require an explicit fork. Hidden and
+// absent organizations both leave the destination in the caller's namespace.
 func (s *GitHubImportService) resolveImportOwner(
 	ctx context.Context, userID int64, githubOwner, githubRepo string,
 ) (importOwner, error) {
-	// Template seeds are published from a first-party org but are meant to be
-	// copied into the caller's own namespace, so they skip org resolution.
-	if !isTemplateSeed(githubOwner, githubRepo) {
-		org, err := s.lookupImportOrg(ctx, githubOwner)
-		if err != nil {
-			return importOwner{}, err
-		}
-		if org != nil {
-			if _, err := s.orgs.GetOrgMember(ctx, db.GetOrgMemberParams{
-				OrganizationID: org.ID, UserID: userID,
-			}); err != nil {
-				if errors.Is(err, pgx.ErrNoRows) {
-					return importOwner{}, pkgerrors.New(
-						pkgerrors.CodeOrgMembershipRequired,
-						fmt.Sprintf(
-							"'%s' is an organization on this deployment; join it to import its repositories, or fork '%s/%s' into your own namespace",
-							org.Name, githubOwner, githubRepo),
-					)
-				}
-				return importOwner{}, pkgerrors.Internal("load organization membership: " + err.Error())
+	// Hidden organizations follow the same user-namespace path as absent ones.
+	// Only visible organizations can influence admission or the destination;
+	// source repository access is still authorized by the GitHub import worker.
+	if !isTemplateSeed(githubOwner, githubRepo) && s.orgs != nil {
+		org, membership, err := resolveOrgForViewer(ctx, s.orgs, &db.User{ID: userID}, githubOwner)
+		var apiErr *pkgerrors.APIError
+		switch {
+		case err == nil:
+			if !membership.Member {
+				return importOwner{}, pkgerrors.New(
+					pkgerrors.CodeOrgMembershipRequired,
+					fmt.Sprintf("'%s' is an organization on this deployment; join it to import its repositories, or fork '%s/%s' into your own namespace", org.Name, githubOwner, githubRepo),
+				)
 			}
 			return importOwner{Name: org.Name, OrgID: pgtype.Int8{Int64: org.ID, Valid: true}}, nil
+		case errors.As(err, &apiErr) && apiErr.Code == pkgerrors.CodeNotFound:
+			// Neither an absent nor a hidden organization reserves the caller's
+			// own namespace. Never use the hidden organization's name or id.
+		default:
+			return importOwner{}, err
 		}
 	}
 	username, err := s.resolveLocalOwner(ctx, userID)
