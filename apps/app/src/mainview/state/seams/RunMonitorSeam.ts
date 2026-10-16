@@ -1,6 +1,7 @@
 import { MonitorCardSchema, type MonitorCard } from "@smthrs/rpc/RunCard"
 import { monitorFromJournal, type JournalRecord } from "@smthrs/gateway/RunTrace"
 import { refusalOf } from "@smthrs/rpc/Refusal"
+import { REPO_TOKEN } from "@smthrs/ui/command-line"
 import { z } from "zod"
 import type { LiveChannel } from "../../runtime/LiveChannel"
 
@@ -62,7 +63,16 @@ export const RUN_READ_REFUSALS = {
   /** A server answered and refused, stating no reason this app can act on. */
   unavailable: "Runs unavailable",
   /** An answer arrived in a shape this build does not know — a gap, not an outage. */
-  unreadable: "This app could not read the runs answer."
+  unreadable: "This app could not read the runs answer.",
+  /**
+   * This host serves runs PER REPOSITORY and the reader has picked none.
+   *
+   * Not an empty account and not an outage: there is no question to ask yet.
+   * The hosted app used to ask the install's account-wide index instead, which
+   * resolves a single-owner install binding and therefore refuses every hosted
+   * reader ([#4032](https://github.com/smithersai/smithers/issues/4032)).
+   */
+  "no-repository": "Select a repository to read its runs."
 } as const
 
 /** One reason of {@link RUN_READ_REFUSALS}. */
@@ -119,9 +129,33 @@ export function createRunMonitorSeam(options: {
   readonly http: (path: string, init?: RequestInit) => Promise<Response>
   readonly live?: Pick<LiveChannel, "subscribe" | "getSnapshot"> & Partial<Pick<LiveChannel, "registerProjection">>
   readonly owner?: () => string | undefined
+  /**
+   * The `owner/name` whose runs these are, when this host serves runs PER
+   * REPOSITORY (the hosted Cloud app). Absent for an install, whose own index
+   * resolves its single bound repository server-side (#4032).
+   */
+  readonly repo?: () => string | undefined
   readonly view?: (id: string) => { readonly tab?: string; readonly at?: number } | undefined
 }) {
   const refused: RunMonitorSnapshot = { error: unavailable }
+  /**
+   * The route these runs are read from: ONE REPOSITORY'S index, or the
+   * install's own.
+   *
+   * The repository is the authority the hosted backend judges the actor
+   * against (`read` on it: owner, org owner, team, collaborator, or a public
+   * repository), and it is a fixed source — the selection, shape-checked
+   * against {@link REPO_TOKEN} — never caller text, so no read can be aimed at
+   * another origin or carry anything into the path
+   * ([#4032](https://github.com/smithersai/smithers/issues/4032)).
+   */
+  const index = (): { readonly path: string } | { readonly refused: RunReadRefusal } => {
+    if (options.repo === undefined) return { path: "/api/runs" }
+    const repo = options.repo()
+    if (repo === undefined || !REPO_TOKEN.test(repo)) return { refused: "no-repository" }
+    const [owner, name] = repo.split("/")
+    return { path: `/api/repos/${encodeURIComponent(owner!)}/${encodeURIComponent(name!)}/monitors` }
+  }
   const owners = new Map<string, string | undefined>()
   const rows = new Map<string, RunMonitorSnapshot>()
   const listeners = new Map<string, Set<() => void>>()
@@ -219,7 +253,10 @@ export function createRunMonitorSeam(options: {
     if (pending && pending.owner === owner && pending.at === at && pending.journal === journal && pending.revision === revisions.get(id)) return pending.promise
     const revision = (revisions.get(id) ?? 0) + 1
     revisions.set(id, revision)
-    const path = journal ? `/api/runs/${encodeURIComponent(id)}/trace${at === undefined ? "" : `?at=${at}`}` : `/api/runs/${encodeURIComponent(id)}`
+    const base = index()
+    /* No repository, no run: a card read of a host that scopes runs to one has nothing to ask. */
+    if ("refused" in base) return unavailable
+    const path = journal ? `${base.path}/${encodeURIComponent(id)}/trace${at === undefined ? "" : `?at=${at}`}` : `${base.path}/${encodeURIComponent(id)}`
     const promise = (async (): Promise<string | void> => {
       try {
         const response = await options.http(path, { method: "GET", credentials: "same-origin" })
@@ -235,9 +272,12 @@ export function createRunMonitorSeam(options: {
   /** The journal tab and the replay scrubber: the monitor with its journal. */
   const trace = (id: string, at?: number): Promise<string | void> => read(id, at, true)
   /**
-   * The account's own runs, from the server's canonical index. One GET: it
-   * never launches a flow, creates a workspace or wakes a machine to discover
-   * whether any run exists.
+   * The runs this reader may read, from the server's canonical index: ONE
+   * REPOSITORY'S ({@link index}) on a host that scopes runs to one, else the
+   * install's account-wide one. One GET: it never launches a flow, creates a
+   * workspace or wakes a machine to discover whether any run exists, and a run
+   * whose host cannot be reached still arrives as a row the server marks
+   * unavailable rather than being dropped from the answer.
    *
    * A live channel is not a precondition. It used to be, and the index is not
    * the topic's to grant: a composition without a channel could not list at
@@ -249,9 +289,11 @@ export function createRunMonitorSeam(options: {
     if (disposed) return { superseded: true }
     const owner = options.owner?.()
     const ours = () => !disposed && owner === options.owner?.()
+    const base = index()
+    if ("refused" in base) return base
     let response: Response
     try {
-      response = await options.http("/api/runs", { method: "GET", credentials: "same-origin" })
+      response = await options.http(base.path, { method: "GET", credentials: "same-origin" })
     } catch {
       return ours() ? { refused: "unreachable" } : { superseded: true }
     }

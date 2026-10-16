@@ -50,13 +50,31 @@ const pathOf = (input: unknown): string => new URL(String(input), "https://app.t
 
 type Fetching = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 
-const hostedController = async (fetchImpl: Fetching, live: typeof quietChannel | null = quietChannel) => {
+/*
+ * The repository the hosted reader has selected, and the index THAT
+ * repository answers. A hosted run belongs to one repository, so the backend
+ * takes the repository from the route and judges this actor's `read`
+ * permission on it; the account-wide `/api/runs` index resolves a single-owner
+ * INSTALL binding, which is why asking it on a multi-user deployment refused
+ * every hosted reader (#4032).
+ */
+const REPO = "owner/app"
+const INDEX = "/api/repos/owner/app/monitors"
+
+const selectRepository = async (store: Awaited<ReturnType<typeof createAppStore>>, repo = REPO) => {
+  const [org, name] = repo.split("/")
+  await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: repo, org: org!, name: name!, ownerKind: "user", head: null }] }).isPersisted.promise
+  await store.dispatch({ type: "repo.selected", actor: "user", id: repo }).isPersisted.promise
+}
+
+const hostedController = async (fetchImpl: Fetching, live: typeof quietChannel | null = quietChannel, repo: string | null = REPO) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const controller = controllerFor(store, silentAgent, {
     bootstrap: hosted, designFixture: false, toastDebounceMs: 0,
     ...(live ? { live } : {}), fetchImpl: fetchImpl as never
   })
   await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "member", admin: false, scopesPlain: null }).isPersisted.promise
+  if (repo !== null) await selectRepository(store, repo)
   return { store, controller }
 }
 
@@ -65,7 +83,7 @@ for (const name of ["monitor", "runs"] as const) test(`hosted /${name} reads the
   const { store, controller } = await hostedController(async (input, init) => {
     const path = pathOf(input)
     requests.push(`${init?.method ?? "GET"} ${path}`)
-    return path === "/api/runs" ? Response.json([runningRun, finishedRun]) : Response.json({}, { status: 404 })
+    return path === INDEX ? Response.json([runningRun, finishedRun]) : Response.json({}, { status: 404 })
   })
   // The door acknowledges before its read, exactly as the install's does.
   expect(await controller.commands.submit({ name, actor: "user", payload: {} })).toMatchObject({ status: "executed", value: "Requested" })
@@ -73,7 +91,7 @@ for (const name of ["monitor", "runs"] as const) test(`hosted /${name} reads the
   expect(store.collections.cards.get("run:box-1:run-7")?.title).toBe("Ship the monitor")
   expect(store.collections.cards.get("run:box-1:run-6")?.title).toBe("Earlier run")
   // One read of the server's own index. Listing never creates or wakes anything.
-  expect(requests.filter(line => line.endsWith(" /api/runs"))).toEqual(["GET /api/runs"])
+  expect(requests.filter(line => line.endsWith(` ${INDEX}`))).toEqual([`GET ${INDEX}`])
   expect(requests.filter(line => !line.startsWith("GET "))).toEqual([])
 })
 
@@ -84,18 +102,18 @@ test("hosted /monitor joins a list read already in flight instead of asking twic
   const { store, controller } = await hostedController(async input => {
     const path = pathOf(input)
     requests.push(path)
-    return path === "/api/runs" ? pending : Response.json({}, { status: 404 })
+    return path === INDEX ? pending : Response.json({}, { status: 404 })
   })
   expect(await controller.commands.submit({ name: "monitor", actor: "user", payload: {} })).toMatchObject({ value: "Requested" })
   expect(await controller.commands.submit({ name: "monitor", actor: "user", payload: {} })).toMatchObject({ value: "Requested" })
   resolveList(Response.json([runningRun]))
   await settle(() => store.collections.cards.has("run:box-1:run-7"))
-  expect(requests.filter(path => path === "/api/runs")).toEqual(["/api/runs"])
+  expect(requests.filter(path => path === INDEX)).toEqual([INDEX])
 })
 
 test("a hosted account with no runs gets a durable answer, not a silent palette", async () => {
   const { store, controller } = await hostedController(async input =>
-    pathOf(input) === "/api/runs" ? Response.json([]) : Response.json({}, { status: 404 }))
+    pathOf(input) === INDEX ? Response.json([]) : Response.json({}, { status: 404 }))
   await controller.commands.submit({ name: "monitor", actor: "user", payload: {} })
   await settle(() => [...store.collections.messages.values()].some(message => message.text === "No runs yet."))
   expect([...store.collections.messages.values()].map(message => message.text)).toContain("No runs yet.")
@@ -122,7 +140,7 @@ test("a hosted list the server refuses says so durably and never claims the acco
 
 test("a hosted list refused for want of a session asks for one in words a person can act on", async () => {
   const { store, controller } = await hostedController(async input =>
-    pathOf(input) === "/api/runs"
+    pathOf(input) === INDEX
       ? Response.json({ error: { message: "unauthorized" } }, { status: 401 })
       : Response.json({}, { status: 404 }))
   await controller.commands.submit({ name: "monitor", actor: "user", payload: {} })
@@ -142,7 +160,7 @@ test("a hosted list refused for want of a session asks for one in words a person
 test("the deployed index's permission refusal is read off its code, whatever status carries it", async () => {
   for (const status of [403, 503] as const) {
     const { store, controller } = await hostedController(async input =>
-      pathOf(input) === "/api/runs"
+      pathOf(input) === INDEX
         ? Response.json({ ok: false, code: "permission", error: { code: "permission", message: "install permission policy refused the operation" } }, { status })
         : Response.json({}, { status: 404 }))
     await controller.commands.submit({ name: "monitor", actor: "user", payload: {} })
@@ -164,7 +182,7 @@ test("the deployed index's permission refusal is read off its code, whatever sta
 test("a run read under one repository is refused under another, and returns when it is selected again", async () => {
   const monitor = { ...runningRun, attempts: [{ n: 1, run_id: "box-1:run-7", state: "running", graph: [], steps: [], phases: [] }] }
   const { store, controller } = await hostedController(async input =>
-    pathOf(input) === "/api/runs/box-1%3Arun-7" ? Response.json(monitor) : Response.json({}, { status: 404 }), null)
+    pathOf(input) === "/api/repos/owner/first/monitors/box-1%3Arun-7" ? Response.json(monitor) : Response.json({}, { status: 404 }), null)
   await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [
     { id: "owner/first", org: "owner", name: "first", ownerKind: "user", head: null },
     { id: "owner/second", org: "owner", name: "second", ownerKind: "user", head: null }
@@ -182,7 +200,7 @@ test("a run read under one repository is refused under another, and returns when
 
 test("a hosted list whose answer this build cannot read keeps the gap visible", async () => {
   const { store, controller } = await hostedController(async input =>
-    pathOf(input) === "/api/runs" ? Response.json({ runs: "later" }) : Response.json({}, { status: 404 }))
+    pathOf(input) === INDEX ? Response.json({ runs: "later" }) : Response.json({}, { status: 404 }))
   await controller.commands.submit({ name: "monitor", actor: "user", payload: {} })
   await settle(() => store.collections.toasts.get("toast-monitor.list")?.status === "failed")
   const texts = [...store.collections.messages.values()].map(message => message.text)
@@ -194,7 +212,7 @@ test("a hosted list the account changed under is dropped, never shown and never 
   let resolveList!: (response: Response) => void
   const pending = new Promise<Response>(resolve => { resolveList = resolve })
   const { store, controller } = await hostedController(async input =>
-    pathOf(input) === "/api/runs" ? pending : Response.json({}, { status: 404 }))
+    pathOf(input) === INDEX ? pending : Response.json({}, { status: 404 }))
   await controller.commands.submit({ name: "monitor", actor: "user", payload: {} })
   await settle(() => store.collections.toasts.get("toast-monitor.list")?.status === "running")
   await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "other", admin: false, scopesPlain: null }).isPersisted.promise
@@ -219,7 +237,7 @@ test("hosted inspect opens the run and reads its journal from the authoritative 
   let notify: (() => void) | undefined
   const { store, controller } = await hostedController(async input => {
     const path = `${pathOf(input)}${new URL(String(input), "https://app.test").search}`
-    if (path.startsWith("/api/runs/")) {
+    if (path.startsWith(`${INDEX}/`)) {
       reads.push(path)
       return Response.json({ ...monitor, journal: [{ seq: 1, at: "2026-10-16T00:00:00Z", type: "step_started", text: "started" }], replay: { at: 1, last: 1 } })
     }
@@ -237,7 +255,7 @@ test("hosted inspect opens the run and reads its journal from the authoritative 
   await controller.commands.submit({ name: "runs.trace.view", actor: "user",
     payload: { runId: "box-1:run-7", view: "timeline", state: { tab: "journal" } } })
   await settle(() => reads.length > 0)
-  expect(reads).toEqual(["/api/runs/box-1%3Arun-7/trace"])
+  expect(reads).toEqual([`${INDEX}/box-1%3Arun-7/trace`])
   await settle(() => controller.runMonitors!.get("box-1:run-7").model?.journal !== undefined)
   expect(controller.runMonitors!.get("box-1:run-7").model?.journal?.[0]?.text).toBe("started")
   stop()
@@ -270,7 +288,7 @@ test("with no live channel the authenticated read is the authority, and reopenin
   const reads: string[] = []
   const { controller } = await hostedController(async input => {
     const path = pathOf(input)
-    if (path === "/api/runs/box-1%3Arun-7") { reads.push(path); return Response.json(monitor) }
+    if (path === `${INDEX}/box-1%3Arun-7`) { reads.push(path); return Response.json(monitor) }
     return Response.json({}, { status: 404 })
   }, null)
   await controller.commands.submit({ name: "run", actor: "user", payload: { id: "box-1:run-7" } })
@@ -295,6 +313,89 @@ test("with no live channel a run the repository does not serve refuses in words"
   stop()
 })
 
+/*
+ * The actual fix for the deployed app. `/api/runs` authorizes `monitor` and
+ * then resolves an INSTALL repository binding (`ReadInstallRepositoryBinding`),
+ * which a multi-user deployment has none of — root's native authenticated read
+ * came back `code: "permission"` for that reason. The hosted app must ask the
+ * repository's own index instead, and must not ask the install's at all.
+ */
+test("the hosted index is the selected repository's own, never the install's account-wide one", async () => {
+  const requests: string[] = []
+  const { store, controller } = await hostedController(async input => {
+    const path = pathOf(input)
+    requests.push(path)
+    return path === INDEX ? Response.json([runningRun, finishedRun]) : Response.json({}, { status: 404 })
+  })
+  expect(await controller.commands.submit({ name: "monitor", actor: "user", payload: {} })).toMatchObject({ value: "Requested" })
+  await settle(() => store.collections.cards.has("run:box-1:run-6"))
+  expect(requests).toContain(INDEX)
+  expect(requests).not.toContain("/api/runs")
+})
+
+/*
+ * No repository, no question. This host serves runs per repository, so an
+ * unpicked selection is neither an empty account nor an outage — and it is
+ * certainly not a reason to ask the install index, which would refuse.
+ */
+test("a hosted reader who has selected no repository is asked to pick one, not told the account is empty", async () => {
+  const requests: string[] = []
+  const { store, controller } = await hostedController(async input => {
+    requests.push(pathOf(input))
+    return Response.json({}, { status: 404 })
+  }, quietChannel, null)
+  await controller.commands.submit({ name: "monitor", actor: "user", payload: {} })
+  await settle(() => store.collections.toasts.get("toast-monitor.list")?.status === "failed")
+  const texts = [...store.collections.messages.values()].map(message => message.text)
+  expect(texts).toContain("Select a repository to read its runs.")
+  expect(texts).not.toContain("No runs yet.")
+  expect(requests.filter(path => path.includes("runs") || path.includes("monitors"))).toEqual([])
+  expect([...store.collections.cards.values()].filter(card => card.kind === "run")).toEqual([])
+})
+
+/*
+ * The selection is part of the read. A second repository is a second question,
+ * not a join onto the first repository's answer, and the first repository's
+ * rows must never be presented as the second's.
+ */
+test("selecting another repository asks that repository's index, and joins no earlier read", async () => {
+  const requests: string[] = []
+  const { store, controller } = await hostedController(async input => {
+    const path = pathOf(input)
+    requests.push(path)
+    if (path === INDEX) return Response.json([runningRun])
+    if (path === "/api/repos/owner/other/monitors") return Response.json([finishedRun])
+    return Response.json({}, { status: 404 })
+  })
+  await controller.commands.submit({ name: "monitor", actor: "user", payload: {} })
+  await settle(() => store.collections.cards.has("run:box-1:run-7"))
+  await selectRepository(store, "owner/other")
+  await controller.commands.submit({ name: "monitor", actor: "user", payload: {} })
+  await settle(() => store.collections.cards.has("run:box-1:run-6"))
+  expect(requests.filter(path => path.includes("/monitors"))).toEqual([INDEX, "/api/repos/owner/other/monitors"])
+})
+
+/*
+ * A repository whose name this build cannot put in a path is no source. The
+ * read is built from the selection alone, shape-checked, so nothing a name
+ * carries can aim it anywhere else.
+ */
+test("a selection this build cannot address asks nothing and says which act is missing", async () => {
+  const requests: string[] = []
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = controllerFor(store, silentAgent, {
+    bootstrap: hosted, designFixture: false, toastDebounceMs: 0, live: quietChannel,
+    fetchImpl: (async (input: RequestInfo | URL) => { requests.push(pathOf(input)); return Response.json({}, { status: 404 }) }) as never
+  })
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "member", admin: false, scopesPlain: null }).isPersisted.promise
+  await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: "owner/a b", org: "owner", name: "a b", ownerKind: "user", head: null }] }).isPersisted.promise
+  await store.dispatch({ type: "repo.selected", actor: "user", id: "owner/a b" }).isPersisted.promise
+  await controller.commands.submit({ name: "monitor", actor: "user", payload: {} })
+  await settle(() => store.collections.toasts.get("toast-monitor.list")?.status === "failed")
+  expect([...store.collections.messages.values()].map(message => message.text)).toContain("Select a repository to read its runs.")
+  expect(requests.filter(path => path.includes("/monitors"))).toEqual([])
+})
+
 test("the explicit design fixture still answers from its own world and reads nothing", async () => {
   const requests: string[] = []
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
@@ -304,6 +405,6 @@ test("the explicit design fixture still answers from its own world and reads not
   })
   await controller.commands.submit({ name: "monitor", actor: "user", payload: {} })
   expect([...store.collections.cards.values()].filter(card => card.kind === "run").length).toBeGreaterThan(0)
-  expect(requests.filter(path => path === "/api/runs")).toEqual([])
+  expect(requests.filter(path => path === INDEX)).toEqual([])
   expect(controller.runMonitors).toBeUndefined()
 })

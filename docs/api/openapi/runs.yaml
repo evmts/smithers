@@ -102,6 +102,83 @@ paths:
         '403': {$ref: '#/components/responses/AuthorizationForbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /api/repos/{owner}/{repo}/monitors:
+    get:
+      summary: List a repository's flow run monitors
+      description: >-
+        The repository's own run index, read-only. The repository comes from the
+        route and the caller needs read permission on it, so this is the index a
+        multi-user deployment serves (the /api/runs index resolves a single-owner
+        install binding instead). Listing reads admitted checkpoints and retained
+        monitors: it never creates, resumes or wakes a machine. A run whose live
+        host cannot be read now keeps its row from its admission's last
+        observation, marked unavailable.
+      operationId: get_api_repos_owner_repo_monitors
+      tags:
+        - Runs
+      security: [{sessionCookie: []}, {bearerAuth: []}, {tokenAuth: []}]
+      parameters:
+        - {name: owner, in: path, required: true, schema: {type: string}}
+        - {name: repo, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The repository's native run monitor data, newest state per run
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/AnyJSON'}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /api/repos/{owner}/{repo}/monitors/{id}:
+    get:
+      summary: Read one of a repository's flow run monitors
+      description: Reads the run's retained monitor, or its live host's projection. A run of another repository is not found here.
+      operationId: get_api_repos_owner_repo_monitors_id
+      tags:
+        - Runs
+      security: [{sessionCookie: []}, {bearerAuth: []}, {tokenAuth: []}]
+      parameters:
+        - {name: owner, in: path, required: true, schema: {type: string}}
+        - {name: repo, in: path, required: true, schema: {type: string}}
+        - {name: id, in: path, required: true, description: Workspace-prefixed run ID, schema: {type: string}}
+        - {name: at, in: query, description: Journal replay position, schema: {type: integer, format: int64, minimum: 0}}
+      responses:
+        '200':
+          description: Native run monitor data
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AnyJSON'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /api/repos/{owner}/{repo}/monitors/{id}/trace:
+    get:
+      summary: Read one of a repository's flow run monitors with its journal
+      description: The monitor with its journal page, from the live host's run-events projection or a settled run's archive. Replaying an archived frame wakes nothing.
+      operationId: get_api_repos_owner_repo_monitors_id_trace
+      tags:
+        - Runs
+      security: [{sessionCookie: []}, {bearerAuth: []}, {tokenAuth: []}]
+      parameters:
+        - {name: owner, in: path, required: true, schema: {type: string}}
+        - {name: repo, in: path, required: true, schema: {type: string}}
+        - {name: id, in: path, required: true, description: Workspace-prefixed run ID, schema: {type: string}}
+        - {name: at, in: query, description: Journal replay position, schema: {type: integer, format: int64, minimum: 0}}
+      responses:
+        '200':
+          description: Native run monitor data with its journal
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AnyJSON'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
   /api/runs/{id}/background-status:
     get:
       x-composition: install

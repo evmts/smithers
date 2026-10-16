@@ -6498,6 +6498,38 @@ export interface GetApiRunsIdTraceInput {
 export const getApiRunsIdTrace = (transport: Transport, input: GetApiRunsIdTraceInput): Promise<GetApiRunsIdTraceResponse> =>
   transport.request("GET", `/api/runs/${segment(input.path.id)}/trace${search({ at: input.query?.at })}`) as Promise<GetApiRunsIdTraceResponse>
 
+export type GetApiReposOwnerRepoMonitorsResponse = Array<AnyJSON>
+
+export interface GetApiReposOwnerRepoMonitorsInput {
+  readonly path: { readonly owner: string; readonly repo: string }
+}
+
+/** GET /api/repos/{owner}/{repo}/monitors: List a repository's flow run monitors */
+export const getApiReposOwnerRepoMonitors = (transport: Transport, input: GetApiReposOwnerRepoMonitorsInput): Promise<GetApiReposOwnerRepoMonitorsResponse> =>
+  transport.request("GET", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/monitors`) as Promise<GetApiReposOwnerRepoMonitorsResponse>
+
+export type GetApiReposOwnerRepoMonitorsIdResponse = AnyJSON
+
+export interface GetApiReposOwnerRepoMonitorsIdInput {
+  readonly path: { readonly owner: string; readonly repo: string; readonly id: string }
+  readonly query?: { readonly at?: number }
+}
+
+/** GET /api/repos/{owner}/{repo}/monitors/{id}: Read one of a repository's flow run monitors */
+export const getApiReposOwnerRepoMonitorsId = (transport: Transport, input: GetApiReposOwnerRepoMonitorsIdInput): Promise<GetApiReposOwnerRepoMonitorsIdResponse> =>
+  transport.request("GET", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/monitors/${segment(input.path.id)}${search({ at: input.query?.at })}`) as Promise<GetApiReposOwnerRepoMonitorsIdResponse>
+
+export type GetApiReposOwnerRepoMonitorsIdTraceResponse = AnyJSON
+
+export interface GetApiReposOwnerRepoMonitorsIdTraceInput {
+  readonly path: { readonly owner: string; readonly repo: string; readonly id: string }
+  readonly query?: { readonly at?: number }
+}
+
+/** GET /api/repos/{owner}/{repo}/monitors/{id}/trace: Read one of a repository's flow run monitors with its journal */
+export const getApiReposOwnerRepoMonitorsIdTrace = (transport: Transport, input: GetApiReposOwnerRepoMonitorsIdTraceInput): Promise<GetApiReposOwnerRepoMonitorsIdTraceResponse> =>
+  transport.request("GET", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/monitors/${segment(input.path.id)}/trace${search({ at: input.query?.at })}`) as Promise<GetApiReposOwnerRepoMonitorsIdTraceResponse>
+
 export type GetApiRunsIdBackgroundStatusResponse = HomeBackgroundReceipt
 
 export interface GetApiRunsIdBackgroundStatusInput {

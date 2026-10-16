@@ -407,62 +407,119 @@ func mountRunMonitors(router chi.Router, cfg *config.Config, q *db.Queries, m *r
 			browserFlowTyped(w, 503, "run_unavailable", "Run unavailable")
 			return
 		}
-		id, decodeErr := url.PathUnescape(chi.URLParam(r, "id"))
-		if decodeErr != nil {
-			browserFlowTyped(w, 400, "invalid_request", "Invalid run")
-			return
-		}
-		var at *int64
-		if r.URL.Query().Has("at") {
-			n, e := strconv.ParseInt(r.URL.Query().Get("at"), 10, 64)
-			if e != nil || n < 0 {
-				browserFlowTyped(w, 400, "invalid_request", "Invalid replay position")
-				return
-			}
-			at = &n
-		}
-		if id == "" {
-			cps, e := m.checkpoints(r.Context(), repo, "")
-			if e != nil {
-				browserFlowTyped(w, 503, "run_unavailable", "Run unavailable")
-				return
-			}
-			// Every run is listed with its state and Inspect door. A run whose
-			// monitor cannot be read now keeps its row from the admission's
-			// last observation, never hiding it from the list.
-			rows := []json.RawMessage{}
-			for _, cp := range cps {
-				id := cp.Target.WorkspaceID + ":" + cp.RunID
-				v, e := m.read(r.Context(), repo, id, nil)
-				if e != nil {
-					status := ""
-					if cp.Run != nil {
-						status = cp.Run.Status
-					}
-					if v, e = json.Marshal(map[string]any{"id": id, "flow": cp.FlowID, "title": cp.FlowID, "state": monitorRunState(status), "unavailable": true}); e != nil {
-						browserFlowTyped(w, 503, "run_unavailable", "Run unavailable")
-						return
-					}
-				}
-				rows = append(rows, v)
-			}
-			browserFlowJSON(w, 200, rows)
-			return
-		}
-		raw, e := m.read(r.Context(), repo, id, at, strings.HasSuffix(r.URL.Path, "/trace"))
-		if errors.Is(e, pgx.ErrNoRows) {
-			browserFlowTyped(w, 404, "run_not_found", "Run unavailable")
-			return
-		}
-		if e != nil {
-			browserFlowTyped(w, 503, "run_unavailable", "Run unavailable")
-			return
-		}
-		browserFlowJSON(w, 200, json.RawMessage(raw))
+		m.serveReads(w, r, repo)
 	}
 	router.With(access...).Get("/api/runs", handler)
 	router.With(access...).Get("/api/runs/{id}", handler)
 	router.With(access...).Get("/api/runs/{id}/trace", handler)
+}
+
+// mountRepositoryRunMonitors serves ONE repository's runs to whoever may read
+// that repository.
+//
+// The install door above resolves its repository from the single-owner
+// install binding (`ReadInstallRepositoryBinding`), so on a multi-user Cloud
+// deployment there is no binding to resolve and `GET /api/runs` answers
+// `code: "permission"` to every reader — root measured exactly that on the
+// deployed backend ([#4032](https://github.com/smithersai/smithers/issues/4032)).
+// A hosted reader's runs belong to a REPOSITORY, so the repository is where
+// the route takes it from, and the actor is judged against that repository by
+// the same middleware every other repository read uses: a read scope, the
+// loaded repo context and `read` permission on it (owner, org owner, team,
+// collaborator, or a public repository). No install roster, no viewer role.
+//
+// `monitors`, not `runs`: `GET /api/repos/{owner}/{repo}/runs` is already the
+// workflow-run list (`ListAllWorkflowRuns`, numeric CI run IDs). This index is
+// the FLOW monitor — admission checkpoints and `workspace:run` ids — and the
+// same monitor model `/api/runs` serves, so it gets its own name rather than
+// quietly replacing another contract's route.
+//
+// These are reads. The index answers from the admission checkpoints and
+// Control's retained monitors through {@link runMonitors.serveReads} — the
+// same checkpoint authority, dispatcher and monitor model the install door
+// reads — so nothing here creates, resumes, wakes or probes a machine to
+// discover whether a run exists, and a run whose live host cannot be reached
+// keeps its row from its admission's last observation.
+func mountRepositoryRunMonitors(router chi.Router, cfg *config.Config, q *db.Queries, m *runMonitors) {
+	access := []func(http.Handler) http.Handler{
+		authLoader(q, cfg.Auth),
+		middleware.RequireAuth,
+		middleware.RequireScope(middleware.ScopeReadRepository),
+	}
+	if q != nil {
+		access = append(access, middleware.LoadRepoContext(q), middleware.RequireRepoPermission(middleware.PermissionRead))
+	}
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		repository := middleware.RepoFromContext(r.Context())
+		if repository == nil {
+			// No repository was resolved, so no actor was judged against one.
+			// An unauthorized read answers no runs — not an empty account.
+			browserFlowTyped(w, 503, "run_unavailable", "Run unavailable")
+			return
+		}
+		m.serveReads(w, r, repository.ID)
+	}
+	router.With(access...).Get("/api/repos/{owner}/{repo}/monitors", handler)
+	router.With(access...).Get("/api/repos/{owner}/{repo}/monitors/{id}", handler)
+	router.With(access...).Get("/api/repos/{owner}/{repo}/monitors/{id}/trace", handler)
+}
+
+// serveReads answers one monitor read of an ALREADY AUTHORIZED repository:
+// its index, one run, or one run's trace. Both doors come through here, so a
+// hosted card is the same card an install reads.
+func (m *runMonitors) serveReads(w http.ResponseWriter, r *http.Request, repo int64) {
+	id, decodeErr := url.PathUnescape(chi.URLParam(r, "id"))
+	if decodeErr != nil {
+		browserFlowTyped(w, 400, "invalid_request", "Invalid run")
+		return
+	}
+	var at *int64
+	if r.URL.Query().Has("at") {
+		n, e := strconv.ParseInt(r.URL.Query().Get("at"), 10, 64)
+		if e != nil || n < 0 {
+			browserFlowTyped(w, 400, "invalid_request", "Invalid replay position")
+			return
+		}
+		at = &n
+	}
+	if id == "" {
+		cps, e := m.checkpoints(r.Context(), repo, "")
+		if e != nil {
+			browserFlowTyped(w, 503, "run_unavailable", "Run unavailable")
+			return
+		}
+		// Every run is listed with its state and Inspect door. A run whose
+		// monitor cannot be read now keeps its row from the admission's
+		// last observation, never hiding it from the list.
+		rows := []json.RawMessage{}
+		for _, cp := range cps {
+			id := cp.Target.WorkspaceID + ":" + cp.RunID
+			v, e := m.read(r.Context(), repo, id, nil)
+			if e != nil {
+				status := ""
+				if cp.Run != nil {
+					status = cp.Run.Status
+				}
+				if v, e = json.Marshal(map[string]any{"id": id, "flow": cp.FlowID, "title": cp.FlowID, "state": monitorRunState(status), "unavailable": true}); e != nil {
+					browserFlowTyped(w, 503, "run_unavailable", "Run unavailable")
+					return
+				}
+			}
+			rows = append(rows, v)
+		}
+		browserFlowJSON(w, 200, rows)
+		return
+	}
+	raw, e := m.read(r.Context(), repo, id, at, strings.HasSuffix(r.URL.Path, "/trace"))
+	if errors.Is(e, pgx.ErrNoRows) {
+		browserFlowTyped(w, 404, "run_not_found", "Run unavailable")
+		return
+	}
+	if e != nil {
+		browserFlowTyped(w, 503, "run_unavailable", "Run unavailable")
+		return
+	}
+	browserFlowJSON(w, 200, json.RawMessage(raw))
 }
 
 // monitorRunState is a recorded run status in the monitor's words (the

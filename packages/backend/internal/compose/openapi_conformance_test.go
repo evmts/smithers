@@ -235,6 +235,10 @@ func servedCompositionRoutes(t *testing.T, modes ...string) map[string]servedRou
 			// Empty dependencies here enumerate routes only; boundary tests compose stores.
 			mountRunMonitors(router, cfg, nil, &runMonitors{})
 		}
+		// The repository-scoped run index serves BOTH compositions: it takes
+		// its repository from the route and the actor's read permission on it,
+		// so it needs no install binding (#4032).
+		mountRepositoryRunMonitors(router, cfg, nil, &runMonitors{})
 		walkServedRoutes(t, router, served)
 	}
 	// A pattern mounted for every method (chi also lists CONNECT for it) is

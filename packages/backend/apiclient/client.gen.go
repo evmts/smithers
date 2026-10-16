@@ -2800,6 +2800,16 @@ type GetAPIRunsIDTraceParams struct {
 	At *int64
 }
 
+// GetAPIReposOwnerRepoMonitorsIDParams is the query of GET /api/repos/{owner}/{repo}/monitors/{id}.
+type GetAPIReposOwnerRepoMonitorsIDParams struct {
+	At *int64
+}
+
+// GetAPIReposOwnerRepoMonitorsIDTraceParams is the query of GET /api/repos/{owner}/{repo}/monitors/{id}/trace.
+type GetAPIReposOwnerRepoMonitorsIDTraceParams struct {
+	At *int64
+}
+
 // DeleteAPISecretsBody is generated from docs/api/openapi.yaml.
 type DeleteAPISecretsBody struct {
 	Name string `json:"name"`
@@ -6703,6 +6713,35 @@ func (c *Client) GetAPIRunsIDTrace(ctx context.Context, id string, params GetAPI
 	}
 	var out AnyJSON
 	err := c.do(ctx, "GET", "/api/runs/"+url.PathEscape(id)+"/trace", query, nil, &out)
+	return out, err
+}
+
+// GetAPIReposOwnerRepoMonitors calls GET /api/repos/{owner}/{repo}/monitors.
+func (c *Client) GetAPIReposOwnerRepoMonitors(ctx context.Context, owner string, repo string) ([]AnyJSON, error) {
+	var out []AnyJSON
+	err := c.do(ctx, "GET", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/monitors", nil, nil, &out)
+	return out, err
+}
+
+// GetAPIReposOwnerRepoMonitorsID calls GET /api/repos/{owner}/{repo}/monitors/{id}.
+func (c *Client) GetAPIReposOwnerRepoMonitorsID(ctx context.Context, owner string, repo string, id string, params GetAPIReposOwnerRepoMonitorsIDParams) (AnyJSON, error) {
+	query := url.Values{}
+	if params.At != nil {
+		query.Set("at", strconv.FormatInt(*params.At, 10))
+	}
+	var out AnyJSON
+	err := c.do(ctx, "GET", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/monitors/"+url.PathEscape(id), query, nil, &out)
+	return out, err
+}
+
+// GetAPIReposOwnerRepoMonitorsIDTrace calls GET /api/repos/{owner}/{repo}/monitors/{id}/trace.
+func (c *Client) GetAPIReposOwnerRepoMonitorsIDTrace(ctx context.Context, owner string, repo string, id string, params GetAPIReposOwnerRepoMonitorsIDTraceParams) (AnyJSON, error) {
+	query := url.Values{}
+	if params.At != nil {
+		query.Set("at", strconv.FormatInt(*params.At, 10))
+	}
+	var out AnyJSON
+	err := c.do(ctx, "GET", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/monitors/"+url.PathEscape(id)+"/trace", query, nil, &out)
 	return out, err
 }
 

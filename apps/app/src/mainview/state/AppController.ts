@@ -1032,7 +1032,17 @@ export const createAppController = (
     if (card?.kind !== "run") return undefined
     const member = design.enabled ? design.viewer() : store.collections.identitySessions.get("identity")?.login
     return member ? card.payload.memberViews?.[member] ?? (card.payload.memberViews === undefined ? card.payload.view : undefined) : card.payload.view
-  }, http: (path, init) => seamCtx.http(`${baseUrl.replace(/\/$/, "")}${path}`, init), live: services.live })
+  },
+  /*
+   * A hosted host serves runs PER REPOSITORY: the backend's own repository
+   * index, authorized by this actor's `read` permission on the selection
+   * (#4032). The install keeps its account-wide index, which resolves its one
+   * bound repository server-side and needs no selection — and on a multi-user
+   * deployment has no binding to resolve, which is why asking it there refused
+   * every hosted reader.
+   */
+  ...(installHost ? {} : { repo: () => activeRepositoryId(store) ?? undefined }),
+  http: (path, init) => seamCtx.http(`${baseUrl.replace(/\/$/, "")}${path}`, init), live: services.live })
   ctx.onDispose(runMonitorSeam.dispose)
   const runMonitors = designEnabled ? undefined : runMonitorSeam.snapshots
   services.live?.registerProjection?.("home", projectHome)
