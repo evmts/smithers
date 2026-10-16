@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
 import { createHomeViewSeam } from "./HomeViewSeam"
 import { waitFor } from "../TestFixtures"
+import { LiveChannel, type LiveSocket } from "../../runtime/LiveChannel"
 
 test("reload disposal leaves a stable empty snapshot and ignores late view changes and reads", async () => {
   let resolve!: (response: Response) => void
@@ -291,4 +292,26 @@ test("Home remount replaces an invalidated initial read before the poll interval
     await waitFor(() => seam.get().filter === "in_review", 500)
     expect(reads).toBe(2)
   } finally { release(Response.json({})); stop(); seam.dispose() }
+})
+
+test("Home card handoff preserves the live cursor and releases the final reader", async () => {
+  const frames: unknown[] = []
+  const socket: LiveSocket = { readyState: 1, onopen: null, onclose: null, onmessage: null,
+    send: raw => frames.push(JSON.parse(String(raw))), close: () => {} }
+  const live = new LiveChannel({ socket: () => socket })
+  const seam = createHomeViewSeam({ live, owner: () => "Ben", subscribeOwner: () => () => {},
+    report: error => { throw error }, http: async () => Response.json({}) })
+  try {
+    const first = seam.subscribe(() => {})
+    socket.onopen?.()
+    socket.onmessage?.({ data: JSON.stringify({ t: "snap", id: 1, cursor: 7, data: {} }) })
+    first()
+    const second = seam.subscribe(() => {})
+    await Promise.resolve()
+    expect(frames).toEqual([{ t: "sub", id: 1, topic: "home" }])
+    expect(live.getSnapshot("home")?.cursor).toBe(7)
+    second()
+    await Promise.resolve()
+    expect(frames.at(-1)).toEqual({ t: "unsub", id: 1 })
+  } finally { seam.dispose(); live.dispose() }
 })

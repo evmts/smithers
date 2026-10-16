@@ -124,7 +124,10 @@ export function createHomeViewSeam(options: {
     return () => {
       listeners.delete(notify)
       if (!listeners.size) {
-        cancelLook(); stopHome?.(); stopHome = undefined
+        // A keyed card handoff releases then subscribes in the same commit.
+        // Keep its shared topic alive through that handoff, including its cursor.
+        cancelLook(); const releaseHome = stopHome; stopHome = undefined
+        queueMicrotask(() => releaseHome?.())
         ++generation; stopOwner?.(); stopOwner = undefined
         if (timer !== undefined) clearTimeout(timer)
         timer = undefined
