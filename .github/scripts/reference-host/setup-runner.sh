@@ -6,7 +6,7 @@
 #   sudo zsh setup-runner.sh register   # reads a single-use registration token from stdin
 #   sudo zsh setup-runner.sh receipt    # prints the receipt again, changes nothing
 #
-# job-started.sh must sit next to this file. Both come from scripts/reference-host/.
+# job-started.sh must sit next to this file. Both come from .github/scripts/reference-host/.
 #
 # Decision record: smithers-3f, #3471 issuecomment-6020436303. A persistent
 # runner as the non-admin user ghrunner, its workspace wiped before every job by

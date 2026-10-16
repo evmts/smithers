@@ -849,13 +849,11 @@ const tierContracts = Smithers.NodeTest({
     Smithers.file("//scripts/check-mutations.test.mjs"),
     Smithers.file("//scripts/check-soak-campaign.test.mjs"),
     Smithers.file("//scripts/benchmark-gate.test.mjs"),
-    Smithers.file("//scripts/run-jj-abi-campaign.test.mjs"),
-    Smithers.file("//scripts/reference-host/job-started.test.mjs")
+    Smithers.file("//scripts/run-jj-abi-campaign.test.mjs")
   ]),
   srcs: [
     ...sources,
     Smithers.file("//scripts/ci/coding-check.sh"),
-    Smithers.file("//scripts/reference-host/job-started.sh"),
     Smithers.file("//packages/smithers/build/build-cli/src/KnownRed.ts")
   ],
   deps: []

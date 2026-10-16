@@ -703,6 +703,7 @@ const ci = Smithers.GithubCiGen({
         { name: "Public export JSDoc", verb: Smithers.Verb.Lint, pattern: "//:jsdocTree" },
         { name: "Script lint", verb: Smithers.Verb.Lint, pattern: "//scripts:lint" },
         { name: "JSDoc rule harness", verb: Smithers.Verb.Test, pattern: "//:jsdocRules" },
+        { name: "Reference-host runner hooks", verb: Smithers.Verb.Test, pattern: "//:referenceHostHooks" },
         // Every `evals/*` directory is its own workspace member now, so each
         // one's targets carry the standard `check`/`test` names and run from
         // the directory that pins their toolchain.
@@ -1154,6 +1155,21 @@ const jsdocRules = Smithers.NodeTest({
 })
 
 /**
+ * The reference-host runner's job-started hook admits only main's
+ * reference-host workflow and wipes what a previous job left. The hooks run on
+ * the self-hosted runner before any checkout installs `smthrs`, so they live
+ * with the workflows under `.github/scripts/reference-host/` and the root owns their suite.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const referenceHostHooks = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//.github/scripts/reference-host/job-started.test.mjs")]),
+  srcs: [Smithers.file("//.github/scripts/reference-host/job-started.sh"), Smithers.file("//.github/scripts/reference-host/setup-runner.sh")],
+  deps: []
+})
+
+/**
  * The commit-level `CHANGELOG.md` section for the version the manifests carry.
  *
  * `Generate`'s kinds are `run` and `lint`, not `build` and `lint`, so writing
@@ -1210,7 +1226,7 @@ const securityReview = Smithers.SecurityReview({
     ".pnpmfile.mjs",
     "flake.nix",
     ".github/workflows/*.yml",
-    ".github/scripts/*.sh",
+    ".github/scripts/**/*.sh",
     ".smithers/*.ts",
     ".smithers/*.json",
     ...flowEntries.filter((input) => /\/flow\.(ts|mdx)$/.test(input.path)).map((input) => input.path),
@@ -1367,6 +1383,7 @@ export const Package = Smithers.Package({
     factoryProjection,
     reviewDocsAgainstCode,
     jsdocRules,
+    referenceHostHooks,
     jsdocTree,
     reviewJsdocAgainstCode,
     lockfile,
