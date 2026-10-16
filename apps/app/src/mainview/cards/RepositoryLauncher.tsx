@@ -16,9 +16,11 @@ import "./RepositoryLauncher.css"
  * owns selection, the default view and every refusal — the launcher reports
  * nothing about a repository it has not opened.
  *
- * Signed out nothing here signs anybody in. The public shelf is readable,
- * and the acts that need an account say so and offer the ONE sign-in door
- * the page already has, pressed by the person.
+ * Signed out nothing here signs anybody in. The public shelf and the update
+ * news are readable, and the acts that need an account say so and carry the
+ * ONE existing sign-in door, pressed by the person: at `/` the launcher is
+ * the opening (#4041), so the door a signed-out visitor needs is here rather
+ * than on a welcome screen in front of everything they can already read.
  */
 
 /** A repository the launcher can offer: the row as the collection holds it. */
@@ -91,9 +93,14 @@ export function RepositoryLauncher({
     <section className="repository-launcher-section" data-section="open">
       <h2>Your repositories</h2>
       {!signedIn
-        ? <p className="repository-launcher-note">
-            Sign in with GitHub to open your own repositories.
-          </p>
+        ? <>
+            <p className="repository-launcher-note">
+              Sign in with GitHub to open your own repositories.
+            </p>
+            {/* The existing sign-in flow, started by this press alone. Browsing above stays signed out. */}
+            <Button className="repository-launcher-sign-in" variant="outline"
+              {...flowAction(onRunCommand, "sign-in")}>Sign in with GitHub</Button>
+          </>
         : own.length === 0
         ? <p className="repository-launcher-note">
             Smithers has none of your repositories yet. Open <code>/owner/name</code> for one you have on GitHub to import it.

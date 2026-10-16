@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { shouldResumeApp } from "./appHistory"
+import { opensLauncher, shouldResumeApp } from "./appHistory"
 
 test("the landing keeps Get started for free on ordinary return visits, including finished profiles", () => {
   assert.equal(shouldResumeApp(""), false)
@@ -15,4 +15,9 @@ test("an explicit writer takeover enters the app without a tutorial or auth mark
   assert.equal(shouldResumeApp("", true), true)
   assert.equal(shouldResumeApp("?unrelated=1", true), true)
   assert.equal(shouldResumeApp("", false), false)
+})
+
+test("the default root opens the launcher without a press, and other pages stay pages", () => {
+  for (const pathname of ["/", "/index.html"]) assert.equal(opensLauncher(pathname), true)
+  for (const pathname of ["/docs/", "/smithersai/smithers/", "/demo", "//"]) assert.equal(opensLauncher(pathname), false)
 })

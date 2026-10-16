@@ -186,8 +186,13 @@ describe("auth is a conversation state — the chat is the only page", () => {
 
     const { host, markup } = mount(controller)
     expect(host.querySelector('[data-testid="transcript"]')?.hasAttribute("data-repository-missing")).toBe(false)
-    // The login screen (Will, 2026-10-03) is the opening: the GitHub door and the email door in the middle of the page, no opening message.
-    expect(host.querySelector('[data-testid="transcript"]')?.hasAttribute("data-login")).toBe(true)
+/*
+     * At `/` the launcher is the opening (#4041) and the login screen (Will,
+     * 2026-10-03) keeps both of its doors under it, so nothing centres the
+     * page on the welcome. There is still no opening message.
+     */
+    expect(host.querySelector('[data-testid="repository-launcher"]')).not.toBeNull()
+    expect(host.querySelector('[data-testid="transcript"]')?.hasAttribute("data-login")).toBe(false)
     expect(host.querySelector('[data-testid="login"] h1')?.textContent).toBe("Welcome to Smithers")
     expect(host.querySelector<HTMLButtonElement>('[data-testid="login-github"]')?.dataset.flow).toBe("sign-in")
     expect(host.querySelector<HTMLFormElement>('[data-testid="login"] form')?.dataset.flow).toBe("auth.email")

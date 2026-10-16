@@ -1,6 +1,6 @@
 import { describe,expect,test } from "bun:test"
 import type { FrameLocation } from "./FrameHistory"
-import { createBrowserFrameHistory,framePath,parseFramePath } from "./FrameHistory"
+import { createBrowserFrameHistory,framePath,parseFramePath,ROOT_APP_PATH } from "./FrameHistory"
 
 describe("frame URLs", () => {
   test("round-trip opaque workspace, branch, and frame ids", () => {
@@ -127,18 +127,36 @@ describe("browser frame history", () => {
     expect(host.location.pathname).toBe(framePath(card))
   })
 
-  for (const entry of ["/", "/?tutorial", "/?signed-in=github", "/?auth=failed", "/?auth=error"]) test(`mounted from ${entry}, frames retain the reloadable root app URL`, () => {
+  /*
+   * The kept root keeps its own address (#4041): `/` is the launcher and
+   * remounts the app, so a frame write no longer moves the visitor to
+   * `/?tutorial`, and an explicit entry keeps the address it arrived on.
+   */
+  for (const entry of ["/", "/?tutorial"]) test(`mounted from ${entry}, frames keep that root address`, () => {
     const { host, entries } = browser(entry)
     const history = createBrowserFrameHistory(host, { keepUrl: true })
     history.replace(root)
     history.push(card)
-    expect(entries()).toEqual(["/?tutorial", "/?tutorial"])
+    expect(entries()).toEqual([entry, entry])
     expect(history.current()).toEqual(card)
     history.back()
     expect(history.current()).toEqual(root)
     history.forward()
     expect(history.current()).toEqual(card)
   })
+
+  for (const entry of ["/?signed-in=github", "/?auth=failed", "/?auth=error"]) {
+    test(`mounted from ${entry}, frames write the address boot left, never the spent marker`, () => {
+      const { host, entries } = browser(entry)
+      const history = createBrowserFrameHistory(host, { keepUrl: true })
+      // What ControllerBoot does with a consumed authentication return.
+      host.history.replaceState(host.history.state, "", ROOT_APP_PATH)
+      history.replace(root)
+      history.push(card)
+      expect(entries()).toEqual([ROOT_APP_PATH, ROOT_APP_PATH])
+      expect(history.current()).toEqual(card)
+    })
+  }
 
   test("booted from /, push and replace write the frame path and read it back", () => {
     const { host, entries } = browser("/")

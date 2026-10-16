@@ -136,8 +136,18 @@ test("signed out the launcher still reads the public shelf and signs nobody in",
   const { host } = await openLauncher(async () => json(200, [RELEASE]), false)
   const launcher = host.querySelector<HTMLElement>("[data-testid=repository-launcher]")!
   expect(launcher).not.toBeNull()
-  // The page's own sign-in doors stay exactly where they were.
-  expect(host.querySelector("[data-login]")).not.toBeNull()
+  /*
+   * The page's own sign-in doors are still there, under the launcher rather
+   * than in front of it, and the page is no longer centred on them (#4041).
+   */
+  expect(host.querySelector("[data-login]")).toBeNull()
+  const welcome = host.querySelector('[data-testid="login"]')!
+  expect(welcome).not.toBeNull()
+  expect(launcher.compareDocumentPosition(welcome) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+  expect(welcome.querySelector('[data-testid="login-github"]')).not.toBeNull()
+  expect(welcome.querySelector('[data-testid="login-email"]')).not.toBeNull()
+  // The launcher's own door is the one the private act above it needs, and it opens nothing by itself.
+  expect(launcher.querySelector<HTMLElement>('[data-section="open"] [data-flow="sign-in"]')).not.toBeNull()
   expect(launcher.querySelector('[data-section="create"] form')).toBeNull()
   expect(launcher.querySelector<HTMLAnchorElement>('[data-section="explore"] a')!.getAttribute("href")).toBe("/smithersai/smithers/")
 })

@@ -1,16 +1,23 @@
 import { expect, test } from "@playwright/test"
 import { signedOutVisitor } from "../playwright/identity"
 
-test("opening Get started in a new tab opens the same app as an ordinary click", async ({ page, context }, testInfo) => {
+test("the published entry link opens the same app in a new tab as the default root opens in place", async ({ page, context }, testInfo) => {
   await signedOutVisitor(page)
+  /*
+   * The default root mounts the app by itself (#4041), so the document's own
+   * entry link is read while a failed import leaves the page on screen. The
+   * link is still the href a middle-click or a new tab follows.
+   */
+  await page.route(/\/_astro\/AppIsland\.[^/]+\.js$/, route => route.abort())
   await page.goto("/")
-  const start = page.getByRole("link", { name: "Get started for free", exact: true })
-  await expect(start).toBeVisible()
+  // Hidden, because the failed entry took it out of the page's own doors.
+  const start = page.locator("#start")
+  await expect(start).toContainText("Get started for free")
   await expect(start).toHaveAttribute("href", "/?tutorial")
   const entry = await start.getAttribute("href") ?? ""
 
-  // Exercise the link's browser navigation path independently of the click
-  // handler that mounts the app in the existing document.
+  // Exercise the link's browser navigation path independently of the document
+  // that mounts the app in place.
   const tab = await context.newPage()
   await signedOutVisitor(tab)
   let catalogs = 0
@@ -28,8 +35,16 @@ test("opening Get started in a new tab opens the same app as an ordinary click",
   await tab.screenshot({ path: testInfo.outputPath("new-tab-app.png"), fullPage: true })
   await tab.close()
 
-  await start.click()
-  await expect(page.getByTestId("composer-input")).toBeAttached()
-  // The same app, at the same addressable entry the new tab opened (#3861).
-  await expect(page).toHaveURL(entry)
+  /*
+   * The same app in place at the default root, with no press. The address is
+   * the root's own (#4041): it is the launcher, so it is not moved to the
+   * addressable `/?tutorial` entry to stay reloadable.
+   */
+  const direct = await context.newPage()
+  await signedOutVisitor(direct)
+  await direct.goto("/")
+  await expect(direct.getByTestId("composer-input")).toBeAttached()
+  await expect(direct.getByTestId("repository-launcher")).toBeVisible()
+  await expect(direct).toHaveURL("/")
+  await direct.close()
 })

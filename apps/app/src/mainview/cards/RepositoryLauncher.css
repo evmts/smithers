@@ -61,3 +61,8 @@
   color: var(--sui-color-text-muted, inherit);
   font-variant-numeric: tabular-nums;
 }
+
+/* The signed-out door sits with its note, at the width of its own label. */
+.repository-launcher-sign-in {
+  align-self: flex-start;
+}

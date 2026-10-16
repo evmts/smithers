@@ -386,6 +386,15 @@ function AppContent() {
   const launcherPath = useMemo(() => typeof window !== "undefined" && window.location.pathname === "/", [])
   const showLauncher = cloudWeb && launcherPath && conversationTabId === undefined && !earlier
   /*
+   * Signed out at the hosted root the launcher IS the opening (#4041). The
+   * public shelf and the update news need no account, and a welcome screen in
+   * front of them is a sign-in detour on content the visitor came to read. So
+   * the launcher goes first and keeps the one explicit sign-in door on the
+   * acts that actually need an account, while the welcome and its email door
+   * stay on the page, under it, exactly as they are everywhere else.
+   */
+  const launcherOpening = showLauncher && identity?.state === "signed-out" && githubIdentity
+  /*
    * The repository's own default view at `/owner/repo` (M-45): the file tree
    * unless the repository declares a homepage, which the existing
    * repository-flows row carries (state/seams/RepositoryFlowsSeam.ts reads
@@ -460,7 +469,7 @@ function AppContent() {
   const readVersion = readEntry === undefined || requestedRead === undefined ? undefined : `read:${requestedRead.revision}`
   const readTarget = readEntry ?? latestEntry
   const latestReadId = readTarget === undefined ? undefined : entryId(readTarget)
-  const initialReadId = loginScreen ? "login" : repositoryNotice ? authMessage?.id : repositoryEntryMessage !== undefined ? repositoryEntryMessage.id : home ? HOME_ENTRY_ID : undefined
+  const initialReadId = launcherOpening ? LAUNCHER_ENTRY_ID : loginScreen ? "login" : repositoryNotice ? authMessage?.id : repositoryEntryMessage !== undefined ? repositoryEntryMessage.id : home ? HOME_ENTRY_ID : undefined
 
   const renderEntry = (entry: TranscriptEntry) => <MessageScrollerItem key={entryId(entry)} messageId={entryId(entry)} style={{ contentVisibility: "visible" }}>
     {entry.kind === "card" ? <CardView
@@ -617,7 +626,7 @@ function AppContent() {
 
           <div className="sui-chat-transcript smithers-transcript" data-slot="chat-transcript"
             data-repository-missing={missingRepositoryScope || undefined}
-            data-login={loginScreen || undefined}
+            data-login={(loginScreen && !launcherOpening) || undefined}
             data-testid="transcript" data-keyboard-pane="Conversation" role="log" aria-label="Conversation" aria-busy={typing}>
             <div data-slot="message-scroller" className="sui-msg-scroller" data-streaming={typing ? "true" : "false"}>
             <MessageScrollerViewport fade onScrollCapture={event => {
@@ -628,12 +637,15 @@ function AppContent() {
               if (anchor && anchor !== sharedConversation.view.scroll_anchor) controller.sharedConversation.rememberScroll(anchor)
             }}>
             <MessageScrollerContent className="sui-chat-messages">
-            {loginScreen && <MessageScrollerItem messageId="login" style={{ contentVisibility: "visible" }}>
-              <LoginScreen onRunCommand={controller.runCommand} />
-            </MessageScrollerItem>}
-            {/* The login screen keeps its own doors; the launcher's public shelf and news sit under them. */}
+            {/*
+              At `/` the launcher is the opening and the welcome keeps its own
+              doors below it (#4041); anywhere else the welcome is the page.
+            */}
             {showLauncher && <MessageScrollerItem messageId={LAUNCHER_ENTRY_ID} style={{ contentVisibility: "visible" }}>
               <RepositoryLauncherCard repositories={repositoryRows} signedIn={identity?.state === "signed-in"} />
+            </MessageScrollerItem>}
+            {loginScreen && <MessageScrollerItem messageId="login" style={{ contentVisibility: "visible" }}>
+              <LoginScreen onRunCommand={controller.runCommand} />
             </MessageScrollerItem>}
             {repositoryHome !== undefined && !missingRepositoryScope && <MessageScrollerItem messageId={REPOSITORY_HOME_ENTRY_ID} style={{ contentVisibility: "visible" }}>
               <RepositoryHomeView repo={bootRepository!} home={repositoryHome} treeCopyId={homeTreeCopy}

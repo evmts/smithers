@@ -15,7 +15,11 @@ export interface FrameHistoryPort {
   readonly subscribe: (listener: (location: FrameLocation | undefined) => void) => () => void
 }
 
-/** Addressable root launcher entry; unlike `/`, this remounts after a reload. */
+/**
+ * The explicitly addressable root app entry. `/` remounts the app on its own
+ * since #4041, so this is what a spent entry marker is replaced WITH, not an
+ * address the app has to move the visitor to.
+ */
 export const ROOT_APP_PATH = "/?tutorial"
 
 const segment = (value: string): string => encodeURIComponent(value)
@@ -75,7 +79,7 @@ const stateLocation = (state: unknown): FrameLocation | undefined => {
  *   history entries and back/forward still fire popstate; the location
  *   travels in each entry's state instead of its URL.
  * - Mounted with `keepUrl` (AppMount.tsx, the smithers.sh home page): the
- *   root launcher uses `/?tutorial` so reloads remount it. Other entry paths stay pinned.
+ *   address the visitor is on is kept as it is. Other entry paths stay pinned.
  */
 export interface BrowserFrameHistoryOptions {
   readonly keepUrl?: boolean
@@ -85,12 +89,19 @@ export const createBrowserFrameHistory = (
   host: BrowserHistoryHost,
   options: BrowserFrameHistoryOptions = {}
 ): FrameHistoryPort => {
-  const pinned = options.keepUrl === true && host.location.pathname === "/"
-    ? ROOT_APP_PATH
-    : pathRepo(host.location.pathname) !== null || options.keepUrl === true ? host.location.pathname : undefined
+  const path = host.location.pathname
+  /*
+   * Where a frame write puts the address. At the kept root it is whatever the
+   * address is at that moment (#4041): `/` is the launcher and remounts the
+   * app by itself, so a frame no longer rewrites it to `/?tutorial`, and
+   * reading it at write time never restores an entry marker boot has spent.
+   */
+  const pinned: (() => string) | undefined = options.keepUrl === true && path === "/"
+    ? () => `${host.location.pathname}${host.location.search}`
+    : pathRepo(path) !== null || options.keepUrl === true ? () => path : undefined
   const current = (): FrameLocation | undefined =>
     pinned === undefined ? parseFramePath(host.location.pathname) : stateLocation(host.history.state)
-  const url = (location: FrameLocation): string => pinned === undefined ? framePath(location) : pinned
+  const url = (location: FrameLocation): string => pinned === undefined ? framePath(location) : pinned()
   return {
     current,
     push: (location) => host.history.pushState({ smithersFrame: true, location }, "", url(location)),

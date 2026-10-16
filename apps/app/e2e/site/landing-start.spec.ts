@@ -20,7 +20,6 @@ test("production hosted Chat keeps confirmed output when private view loading fa
     frames: [{ runId: "retained-run", type: "delta", kind: "text", text: "CONFIRMED RESPONSE" }, { runId: "retained-run", type: "done" }],
   }] } }))
   await page.goto("/")
-  await page.getByRole("link", { name: "Get started for free", exact: true }).click()
   await expect(page.locator('[data-shared-turn="retained-turn"]')).toContainText("CONFIRMED RESPONSE")
   await expect(page.locator('[data-failure="ConversationUnavailable"]')).toContainText("View unavailable")
   available = true
@@ -48,7 +47,6 @@ test("production hosted Chat edits and removes the server-owned prompt queue", a
     return route.fulfill({ json: { status: "ok" } })
   })
   await page.goto("/")
-  await page.getByRole("link", { name: "Get started for free", exact: true }).click()
   const input = page.getByTestId("composer-input"), chat = page.getByRole("button", { name: "Chat", exact: true })
   await fillComposer(page, "Queued prompt")
   await page.locator('[data-flow="chat.queue"]').click()
@@ -86,7 +84,6 @@ test("production hosted Chat receives a real conversation response without insta
     return route.fulfill({ status: 202, json: { turnId: "hosted-turn", terminal: false } })
   })
   await page.goto("/")
-  await page.getByRole("link", { name: "Get started for free", exact: true }).click()
   await fillComposer(page, "Reply exactly READY.")
   await page.getByTestId("composer-send").click()
   await expect(page.locator('[data-shared-turn="hosted-turn"]')).toHaveAttribute("data-state", "completed")
@@ -96,7 +93,7 @@ test("production hosted Chat receives a real conversation response without insta
   await expect(page.locator(".app-shell")).not.toContainText("Model credential missing")
 })
 
-test("production Start with an empty cloud account never displays demo activity, including after reload", async ({ page }) => {
+test("the default root with an empty cloud account never displays demo activity, including after reload", async ({ page }) => {
   await page.route("**/api/**", route => route.fulfill({ status: 404, json: { code: "not_found", message: "Unavailable route" } }))
   await page.route("**/api/bootstrap", route => route.fulfill({ json: {
     apiVersion: 1, host: "cloud", version: "test", buildSha: "test",
@@ -107,7 +104,6 @@ test("production Start with an empty cloud account never displays demo activity,
   for (const reload of [false, true]) {
     if (reload) await page.reload()
     else await page.goto("/")
-    if (!reload) await page.getByRole("link", { name: "Get started for free", exact: true }).click()
     await expect(page.locator(".app-shell")).toBeVisible()
     await expect(page.getByTestId("composer-input")).toBeAttached()
     await expect(page.locator(".home")).toHaveCount(0)
@@ -119,7 +115,7 @@ test("production Start with an empty cloud account never displays demo activity,
   }
 })
 
-test("Get started for free mounts the real island in place when it loads", async ({ page }) => {
+test("the default root mounts the real island in place, with no press and no address change", async ({ page }) => {
   const errors: string[] = []
   page.on("pageerror", error => errors.push(error.message))
   page.on("console", message => { if (message.type() === "error") errors.push(message.text()) })
@@ -133,17 +129,17 @@ test("Get started for free mounts the real island in place when it loads", async
   await page.route("**/api/public/repos", route => route.fulfill({ json: [] }))
   await page.route("https://api.github.com/repos/smithersai/smithers/releases*", route => route.fulfill({ json: [] }))
   await page.goto("/")
-  await page.getByRole("link", { name: "Get started for free", exact: true }).click()
   await expect(page.getByTestId("composer-input")).toBeAttached()
-  await expect(page).toHaveURL("/?tutorial")
+  // The launcher is what `/` is (#4041): it is not rewritten to `/?tutorial` to stay reloadable.
+  await expect(page).toHaveURL("/")
   await expect(page.locator("#start-error")).toHaveCount(0)
-  await expect(page.getByTestId("composer-input")).toBeAttached()
+  await expect(page.getByRole("link", { name: "Get started for free", exact: true })).toHaveCount(0)
   await page.reload()
   await expect(page.locator(".app-shell")).toBeVisible()
   expect(errors).toEqual([])
 })
 
-test("Get started for free swaps to the app before the boot answers", async ({ page }) => {
+test("the default root swaps to the app before the boot answers", async ({ page }) => {
   await page.route("**/api/bootstrap", async route => {
     await new Promise(resolve => setTimeout(resolve, 3000))
     await route.fulfill({ json: {
@@ -151,24 +147,20 @@ test("Get started for free swaps to the app before the boot answers", async ({ p
     } })
   })
   await page.goto("/")
-  await expect(page.locator("#start")).toBeVisible()
-  await page.keyboard.press("s")
-  await expect(page.locator(".session-shell")).toBeVisible({ timeout: 1000 })
-  await expect(page).toHaveURL("/?tutorial")
+  await expect(page.locator(".session-shell")).toBeVisible({ timeout: 10_000 })
+  await expect(page).toHaveURL("/")
   await expect(page.locator("#start")).toHaveCount(0)
   await expect(page.getByTestId("composer-input")).toBeAttached()
 })
 
 for (const failure of ["chunk", "page"] as const) {
-  test(`Get started for free reports an aborted app ${failure} and Reload reloads the document`, async ({ page }) => {
+  test(`the default root reports an aborted app ${failure} and Reload reloads the document`, async ({ page }) => {
     let aborted = 0
     const route = failure === "chunk" ? /\/_astro\/AppIsland\.[^/]+\.js$/ : /\/smithersai\/smithers\/$/
     await page.route(route, request => { aborted++; return request.abort() })
     await page.goto("/")
     const start = page.getByRole("link", { name: "Get started for free", exact: true })
-    await expect(start).toBeVisible()
-    if (failure === "chunk") await page.keyboard.press("s")
-    else await start.click()
+    // The entry needed no press, so its failure needs none either.
     await expect(page.getByRole("alert")).toHaveText("Smithers couldn't load. Reload to try again.")
     expect(aborted).toBeGreaterThan(0)
     await expect(start).toBeHidden()
@@ -176,15 +168,15 @@ for (const failure of ["chunk", "page"] as const) {
     await expect(page.locator(".app-shell")).toHaveCount(0)
     await expect(page).toHaveURL("/")
     const reload = page.getByRole("button", { name: "Reload", exact: true })
-    await expect(reload).toBeFocused()
+    await expect(reload).toBeVisible()
+    // Arriving never takes the visitor's focus; the alert says what happened.
+    expect(await page.evaluate(() => document.activeElement?.id ?? "")).toBe("")
     await page.screenshot({ path: test.info().outputPath("load-error.png") })
     await Promise.all([
       page.waitForEvent("request", request => request.isNavigationRequest() && request.frame() === page.mainFrame()),
-      page.keyboard.press("Enter"),
+      reload.press("Enter"),
     ])
     await page.waitForLoadState()
-    await expect(page.getByRole("alert")).toBeHidden()
-    await expect(start).toBeVisible()
     expect(await page.evaluate(() => (performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming).type)).toBe("reload")
   })
 }
@@ -200,11 +192,11 @@ test("a returning entry reveals the landing error if its preloaded island fails"
 
 test.describe("touch landing", () => {
   test.use({ hasTouch: true, isMobile: true, viewport: { width: 844, height: 390 } })
-  test("Get started for free hides the physical key chip on a coarse pointer", async ({ page }) => {
+  test("the root's failure door shows no physical key chip on a coarse pointer", async ({ page }) => {
     await page.route(/\/smithersai\/smithers\/$/, request => request.abort())
     await page.goto("/")
-    await expect(page.locator("#start")).toBeVisible()
     expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true)
+    await expect(page.getByRole("button", { name: "Reload", exact: true })).toBeVisible()
     await expect(page.locator("#start kbd")).toBeHidden()
   })
 })

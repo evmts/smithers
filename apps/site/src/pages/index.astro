@@ -8,12 +8,15 @@ import { WORDMARK } from "../../../app/src/mainview/Wordmark"
 const title = "Smithers"
 const description = project.tagline
 /*
- * Get started for free opens the app in this document: the script below mounts
- * apps/app (AppMount.tsx) directly and the wordmark becomes the
- * app's own. The href resumes the same signup for a middle-click or a new
- * tab. The prerendered app document supplies assets independently of any
- * repository's availability. GitHub is a plain secondary link beside
- * Get started for free.
+ * The default root is the app's launcher (mvp.md M-45, #4041): the script
+ * below mounts apps/app (AppMount.tsx) in this document as soon as the app
+ * chunk is ready, with no press, and the wordmark becomes the app's own. What
+ * this page paints meanwhile is the mark and the tagline, so the wait is
+ * legible; Get started for free is the door that stays for a browser running
+ * no script and for an import that failed, and its href resumes the same
+ * entry for a middle-click or a new tab. The prerendered app document
+ * supplies assets independently of any repository's availability. GitHub is a
+ * plain secondary link beside it.
  */
 const appHref = "/?tutorial"
 const githubHref = "https://github.com/smithersai/smithers"
@@ -43,18 +46,20 @@ const githubHref = "https://github.com/smithersai/smithers"
 <script>
   import { bindPressActions } from "../../../app/src/mainview/runtime/PressActions"
   import { writerTakeoverRequested } from "../../../app/src/mainview/state/WriterOwnership"
-  import { shouldResumeApp } from "../lib/appHistory"
+  import { opensLauncher, shouldResumeApp } from "../lib/appHistory"
   import { sameOriginUrl } from "../lib/sameOriginUrl"
   /*
-   * The app arrives in this document. After `load` and an idle moment the
-   * page reads the prerendered app document for the app's
-   * island chunk and stylesheets, imports the chunk, and Get started for free appears.
-   * AppMount stays out of this page's module graph: Astro would link
-   * every stylesheet the graph reaches into this page's head, render-blocking.
-   * Get started for free, or S, mounts the app directly inside a view
-   * transition: the hero wordmark glides onto the app's top-left mark, the
-   * page fades away, and Suspense paints the shell while boot fills in the
-   * app. The root app entry stays addressable as `/?tutorial`.
+   * The app arrives in this document. After `load` the page reads the
+   * prerendered app document for the app's island chunk and stylesheets and
+   * imports the chunk. AppMount stays out of this page's module graph: Astro
+   * would link every stylesheet the graph reaches into this page's head,
+   * render-blocking.
+   * The ready chunk mounts the app directly inside a view transition: the
+   * hero wordmark glides onto the app's top-left mark, the page fades away,
+   * and Suspense paints the shell while boot fills in the app. At the default
+   * root that happens on its own (`opensLauncher`); elsewhere, and after a
+   * failed import, Get started for free or S is what opens it. The root keeps
+   * its own address, and `/?tutorial` stays addressable.
    */
   type AppMount = Pick<typeof import("../../../app/src/mainview/AppMount"), "mountApp"> & Partial<Pick<typeof import("../../../app/src/mainview/AppMount"), "warmApp">>
   type Sheet = HTMLLinkElement | HTMLStyleElement
@@ -148,14 +153,24 @@ const githubHref = "https://github.com/smithersai/smithers"
       return app
     }
 
+    /*
+     * The default root opens the launcher by itself, so this document never
+     * reveals a control the visitor has to find and press to reach it. Every
+     * other entry keeps the press, and so does a failed import.
+     */
+    const launcherRoot = opensLauncher(location.pathname)
     let shown = false
     const show = (): void => {
       if (shown) return
       shown = true
       start.classList.add("ready")
     }
-    const fallback = setTimeout(show, 4000)
+    /* A slow import still offers the press — but never over a default entry already running. */
+    const fallback = launcherRoot ? undefined : setTimeout(show, 4000)
     const preload = (): void => {
+      // `enter` owns the import's own failure surface, so a default entry that
+      // cannot load says so here instead of revealing an idle-looking button.
+      if (launcherRoot) return void enter("default")
       load()
         .catch(() => {})
         .finally(() => {
@@ -164,6 +179,8 @@ const githubHref = "https://github.com/smithersai/smithers"
         })
     }
     const idle = (): void => {
+      // The launcher is this page's content: it is not deferred to an idle moment.
+      if (launcherRoot) return preload()
       const connection = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection
       if (connection?.saveData === true) return show()
       if ("requestIdleCallback" in window) requestIdleCallback(preload, { timeout: 2000 })
@@ -211,10 +228,16 @@ const githubHref = "https://github.com/smithersai/smithers"
       ).finished
     }
 
+    /*
+     * How the app arrived: the person pressed, the default root opened it, or
+     * an authentication return resumes it before this page paints at all.
+     */
+    type Entry = "press" | "default" | "resume"
     let entering = false
-    const enter = async (instant = false): Promise<void> => {
+    const enter = async (entry: Entry = "press"): Promise<void> => {
       if (entering) return
       entering = true
+      const instant = entry === "resume"
       // Finish the entrance before the complete mark flies into the app header.
       document.querySelector(".wordmark")?.classList.add("settled")
       start.classList.add("pending")
@@ -231,12 +254,16 @@ const githubHref = "https://github.com/smithersai/smithers"
         start.hidden = true
         failure.hidden = false
         document.documentElement.classList.remove("entering")
-        if (!instant) reload.focus({ preventScroll: true })
+        // Moving focus is the answer to a press, not to arriving.
+        if (entry === "press") reload.focus({ preventScroll: true })
         return
       }
-      // Make the app reloadable before boot starts. Authentication returns keep
-      // their query until boot consumes it.
-      if (!instant) history.replaceState(history.state, "", start.href)
+      /*
+       * The address stays what the visitor asked for. The root reloads into
+       * the app on its own now, so it no longer has to be rewritten to
+       * `/?tutorial` to stay reloadable, and a `?repo=owner/name` entry keeps
+       * the repository boot reads from it.
+       */
       // Mount first: Suspense paints the shell while boot runs alongside the
       // transition. The app owns boot failures through its boundary and watchdog.
       if (instant || reduced.matches || typeof document.startViewTransition !== "function") {
@@ -270,14 +297,14 @@ const githubHref = "https://github.com/smithersai/smithers"
       // A modified or middle click keeps the link's meaning: the app page, in a new tab.
       if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
       event.preventDefault()
-      void enter()
+      void enter("press")
     })
     const stopPress = bindPressActions({
       root: start,
       enabled: () => !entering,
       resolveShortcut: (event) => {
         if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.key.toLowerCase() !== "s") return
-        return { element: start, activate: () => { start.focus({ preventScroll: true }); void enter() } }
+        return { element: start, activate: () => { start.focus({ preventScroll: true }); void enter("press") } }
       },
     })
 
@@ -288,7 +315,7 @@ const githubHref = "https://github.com/smithersai/smithers"
      */
     if (shouldResumeApp(location.search, writerTakeoverRequested())) {
       document.documentElement.classList.add("entering")
-      void enter(true)
+      void enter("resume")
     } else if (document.readyState === "complete") idle()
     else addEventListener("load", idle, { once: true })
   }

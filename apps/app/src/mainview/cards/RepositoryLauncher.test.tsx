@@ -116,9 +116,17 @@ test("signed out nothing signs anybody in, and the public shelf still reads", ()
   expect(section(host, "open").querySelectorAll("a")).toHaveLength(0)
   expect(section(host, "create").querySelector("form")).toBeNull()
   expect(section(host, "explore").querySelectorAll("a")).toHaveLength(1)
-  // The page's own sign-in door is the only one; the launcher opens none.
-  expect(host.querySelector('[data-flow="sign-in"]')).toBeNull()
+  /*
+   * The private acts carry the existing sign-in door (#4041): one door, and
+   * nothing is signed in until the person presses it.
+   */
+  const door = host.querySelector<HTMLButtonElement>('[data-flow="sign-in"]')!
+  expect(door).not.toBeNull()
+  expect(host.querySelectorAll('[data-flow="sign-in"]')).toHaveLength(1)
+  expect(section(host, "open").contains(door)).toBe(true)
   expect(calls).toEqual([])
+  door.click()
+  expect(calls).toEqual([["sign-in", undefined]])
 })
 
 test("dated updates carry the source's date, title and page, and nothing the app wrote", () => {
