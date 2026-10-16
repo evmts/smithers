@@ -37,9 +37,12 @@ and [`.specs/product/mvp.md`](.specs/product/mvp.md). They replace
 cites (M-12). A feature the spec doesn't name is a candidate to delete or defer,
 decided one at a time.
 
-- The MVP is a self-hosted, multiplayer coding factory: one install on one Apple
-  Silicon Mac, for one team, wrapping one GitHub repository. Members reach it
-  at the address the owner sets in Settings (M-28). Smithers Cloud, billing and plans come after the MVP (M-09).
+- Smithers is a replacement for the GitHub web UI: a wrapper whose repository
+  interaction, actions and customization are durable workflows. It runs hosted
+  and as one install on one Apple Silicon Mac, for one team, wrapping one GitHub
+  repository; members reach a self-hosted install at the address the owner sets
+  in Settings (M-28). Hosted use is in this release (M-44); billing and plans
+  are not (M-09).
 - Everything is a flow. A button, slash command, agent action, CLI command and
   API call run the same typed flow, and the factory's process is a flow in the
   repository.
@@ -53,6 +56,36 @@ decided one at a time.
   outside contributors get their release one week after launch (§14); items in
   §16 are deferred with no promised release. Don't build either early.
 
+### Release scope override (Will, 2026-10-15 Pacific, [#4022](https://github.com/smithersai/smithers/issues/4022))
+
+This supersedes the 2026-10-02 reading above wherever they disagree. The spec
+decisions are mvp.md M-44 to M-48; read them before planning release work.
+
+- Hosted use is in this release's scope. "Self-hosted only" and "Cloud after the
+  MVP" no longer describe the release; billing and plans stay deferred (M-09).
+  Nothing is cut or deferred by this change.
+- `/` is the launcher: open, create and explore repositories, plus genuine
+  Smithers update news. `/owner/repo` is GitHub's path, so swapping the domain
+  opens the repository. A repository opens on its file tree, and a repository's
+  own flow or custom UI can replace that view (M-45).
+- A repository GitHub has and Smithers doesn't: a signed-in person with access
+  imports it when the Smithers GitHub App covers it, else follows the App's
+  installation path. Signed-out, absent, inaccessible and failed-import states
+  say what is true. Never report an import that did not happen, widen a
+  permission to make one possible, or sign a person in silently (M-46).
+- Secrets, authoring flows and their custom UI, run monitoring, notifications,
+  pull requests and issues ship through one workflow architecture, customizable
+  by repository flows — including notification policy and issue transitions such
+  as proposed to accepted (M-47). Every authorization, human-approval, trust and
+  secret-opacity boundary in this file is unchanged: people still merge, agents
+  never approve, system flows stay non-overridable, and a secret's value never
+  appears in a card, log, trace or diagnostic.
+- Confusing prose, noisy or unintuitive layout, broken CSS and weak keyboard
+  access are release bugs. Fix them with a regression test that fails on the old
+  build (M-48).
+- A specification is not an implementation. Don't mark any of the above built,
+  verified or release-ready without a receipt from the deployed app.
+
 ### Superseded 2026-10-01 rulings ([#3385](https://github.com/smithersai/smithers/issues/3385))
 
 - "Retain all five maintenance jobs" is replaced by TODOs and the customizable
@@ -61,7 +94,8 @@ decided one at a time.
   maintainer release, and enforce contributor trust rules from launch.
 - "Smithers developing itself on Smithers Cloud" is replaced by M-31: once
   stage 1 passes J1 and J2, Smithers' own development moves onto the stack of
-  the self-hosted install on Will's Mac mini. Cloud follows the MVP.
+  the self-hosted install on Will's Mac mini. Hosted use is in this release
+  (M-44), and our own dogfood install stays the Mac mini.
 - "Remove Pair multiplayer" no longer covers shared branch access and presence,
   which return under M-17. The rest of Pair stays removed.
 

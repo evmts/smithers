@@ -1,10 +1,12 @@
 # Smithers product overview
 
-Status: signed off by Will, 2026-10-02. High level only. The details are in [mvp.md](mvp.md), the design in [`.specs/design/`](../design/) and the engineering in [`.specs/engineering/`](../engineering/).
+Status: signed off by Will, 2026-10-02; release scope updated by Will's brief of 2026-10-15 Pacific ([#4022](https://github.com/smithersai/smithers/issues/4022)), which supersedes the self-hosted-only, Cloud-deferred reading of this product (mvp.md M-44 to M-48). High level only. The details are in [mvp.md](mvp.md), the design in [`.specs/design/`](../design/) and the engineering in [`.specs/engineering/`](../engineering/).
 
 ## In one sentence
 
-Smithers is a self-hosted, multiplayer coding factory. It wraps your GitHub repository, gives each branch its own machine, lets people and agents work on that branch together, and is built entirely from flows you can change.
+Smithers replaces the GitHub web UI. It wraps your GitHub repository, gives each branch its own machine, lets people and agents work on that branch together, and is built entirely from flows you can change.
+
+It is a wrapper, not a fork: GitHub keeps `main`, issues, pull requests, reviews and checks (M-22). Smithers adds the live layer, and every action and customization in it is a durable workflow (M-44).
 
 ## Why it is different: everything is a flow
 
@@ -28,9 +30,18 @@ A flow is a durable workflow. Every action in Smithers is a flow, from a button 
 
 ## What a user gets
 
-### A forge on your own machine
+### Where it runs
 
-Run Smithers on one machine you own, such as a Mac mini. It wraps an existing GitHub repository. Open the forge in a browser to reach the Smithers app.
+Hosted at `smithers.sh`, or on one machine you own, such as a Mac mini. Both wrap an existing GitHub repository and serve the same app from the same flows; hosted use is in this release's scope, and billing and plans are not (M-44). Open either in a browser to reach the Smithers app.
+
+### Entry routes
+
+| URL | What it opens |
+| --- | --- |
+| `/` | The launcher: open a repository Smithers already has, create one, explore others, and read what changed in Smithers itself. |
+| `/owner/repo` | That repository, at the path GitHub uses, so replacing `github.com` with `smithers.sh` in a repository URL opens it here. |
+
+A repository opens on its file tree, and its own flows and custom UIs can replace that default view. A repository that GitHub has and Smithers doesn't offers import to a signed-in person the Smithers GitHub App already covers, and the App's installation path to everyone else. Signed out, absent, inaccessible and failed-import all say what is true and nothing more (M-45, M-46).
 
 ### Branches
 
@@ -77,8 +88,11 @@ One source of truth for the factory's memory: a Markdown vault that Smithers kee
 1. **Branches:** create, fork, stack, and rebase (jj and the mythical stack).
 2. **A checkout:** work with the coding agent on a branch's machine, open a terminal, and watch runs.
 3. **The wiki:** read and edit the factory's memory.
+4. **The GitHub basics:** issues, pull requests, secrets, and notifications, each one a flow (M-47).
+5. **Their own workflows and UI:** write a flow and the screen it draws, and run it from a slash command, a button or the agent.
+6. **Runs:** watch, steer and resume every run the factory is doing.
 
-Issues and TODOs connect these: discussion becomes a TODO, and a TODO becomes work on a branch.
+Issues and TODOs connect these: discussion becomes a TODO, and a TODO becomes work on a branch. The same workflow architecture carries the rest: a repository's own flow can decide notification policy or move an issue from proposed to accepted (M-47).
 
 ## Scope rule
 
@@ -97,6 +111,9 @@ Every detail this overview left open is decided in [mvp.md](mvp.md):
 | Permissions and approvals | M-05 and §6.15: Owner, Maintainer, Member; people merge |
 | Machine sizing | M-06: derived from the detected host |
 | Benchmark claims | M-19: none without a sealed, paired run |
-| Smithers Cloud | M-09: after the MVP |
+| Hosted use | M-44: hosted use is in this release; M-09's billing and plans stay out |
+| Entry routes and the launcher | M-45 |
+| A repository GitHub has and Smithers doesn't | M-46 |
+| Confusing copy, noisy layout, broken CSS, weak keyboard access | M-48: release bugs, not polish |
 | Conversations | M-08: one per branch, shared |
 | The old product spec | M-12: `docs/mvp/PRODUCT.md` is now a pointer |

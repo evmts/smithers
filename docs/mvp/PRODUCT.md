@@ -3,7 +3,7 @@
 Will approved the replacement on 2026-10-02 (mvp.md M-12). The product contract is now:
 
 - [Product overview](../../.specs/product/overview.md): what Smithers is.
-- [MVP spec](../../.specs/product/mvp.md): the user, journeys, features, decisions M-01 to M-31, cuts and release.
+- [MVP spec](../../.specs/product/mvp.md): the user, journeys, features, decisions M-01 to M-48, cuts and release. M-44 to M-48 carry Will's 2026-10-15 release scope ([#4022](https://github.com/smithersai/smithers/issues/4022)): a GitHub UI replacement, hosted use in scope, the `/` launcher and `/owner/repo` routes, import and the GitHub App path, the basics as repository workflows, and product quality defects as release bugs.
 - [Design](../../.specs/design/README.md) and [engineering](../../.specs/engineering/README.md) specs built on it.
 
 The 2026-09-16 requirements (five maintenance jobs, setup, evals, trials and registration) are [kept in history](https://github.com/smithersai/smithers/blob/d4d2eaccab9382205f4a47e789ce560fb016b388/docs/mvp/PRODUCT.md). Don't build from them.
@@ -43,7 +43,7 @@ Code, tests and the MVP spec still cite these IDs. When a decision here and the 
 | D-08 | Cut: evals and trials (mvp.md §8). |
 | D-09 | Superseded by D-09a and D-09b. |
 | D-11a | Superseded by mvp.md §6.4: the home card is the stack. |
-| D-12 | Refined. No Electrobun desktop app; the Mac install is a launchd service (mvp.md §6.1). Cloud waits until after the MVP (M-09). |
+| D-12 | Refined. No Electrobun desktop app; the Mac install is a launchd service (mvp.md §6.1). Hosted use is in this release (M-44); billing and plans wait (M-09). |
 | D-13 | Replaced by the overview's scope rule: a feature the spec doesn't name is a candidate to delete or defer, decided one at a time. |
 | D-14 | Cut: AI checks (mvp.md §8). |
 | D-15 | Superseded by mvp.md §11 (build order) and §12 (release). |

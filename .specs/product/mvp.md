@@ -2,7 +2,9 @@
 
 Status: v2.5 by the product agent (smithers-98), 2026-10-02. Builds on the [overview](overview.md). Reviewed by Codex Astra (3 passes plus a consistency pass), full reviews by Astra, Opus and Fable, design feedback from smithers-06, engineering pushback from smithers-8a, and Will's rulings. Will reviews last. Decisions marked "(Fable for Will)" were made by a Fable subagent on Will's behalf, at his instruction.
 
-Smithers MVP is one install, on one machine a small team owns, that wraps their GitHub repository. In it, people and agents turn TODOs into merged pull requests on shared branches, and the process they follow is a flow the team edits.
+**Release scope, Will, 2026-10-15 Pacific ([#4022](https://github.com/smithersai/smithers/issues/4022)).** M-44 to M-48 are the current contract: Smithers is a replacement for the GitHub web UI, hosted use is in this release, and its entry routes, GitHub basics and product quality are release criteria. Where an older sentence in this spec reads self-hosted-only or Cloud-deferred, M-44 governs; nothing is cut or deferred by that change. A decision here is still a specification, never evidence that the behavior ships.
+
+Smithers wraps a team's GitHub repository, hosted or on one machine they own. In it, people and agents turn TODOs into merged pull requests on shared branches, and the process they follow is a flow the team edits.
 
 ## 1. The user
 
@@ -41,7 +43,7 @@ Smithers has to beat that setup on three counts:
 | Group | What they would need | MVP decision |
 | --- | --- | --- |
 | Maintainers with outside contributors | Triage of strangers' issues, replies to authors, review of outside PRs, contributor trust rules | Defer to the maintainer release, exactly one week after MVP launch (§14). One of our first markets. |
-| Teams that want hosted infrastructure | Smithers Cloud, billing, usage plans | Defer |
+| Teams that want hosted infrastructure | Billing, usage plans | Hosting is in this release (M-44); billing and plans are deferred (M-09 as amended) |
 | Enterprises | SSO, audit logs, many repositories, admin consoles | Cut |
 | Teams with several repositories in one place | Repository switching, work across repositories | Defer: one repository per install |
 | Non-GitHub teams | GitLab, Bitbucket, Linear sync | Cut |
@@ -51,7 +53,7 @@ Smithers has to beat that setup on three counts:
 ## 2. MVP rules
 
 1. **Everything is a flow.** Every button, slash command, agent action, CLI command and API call runs the same typed flow, and the factory's process is a flow in the repository. Any agent (Claude Code, Codex, or another) uses Smithers through the Smithers skill and the `smthrs` CLI. They expose the same command catalog the app agent uses, and the whole API is open source.
-2. **One team, one machine, one repository.**
+2. **One team, one repository per install.** The install is hosted or a machine the team owns (M-44); a hosted account may hold more than one repository, and each repository is its own install-equivalent scope.
 3. **Built is not shipped.** Much of this exists. MVP work is cutting what's out, integrating what's in, and polishing each surface to the §9 bar.
 4. **The app is chat plus cards.** Output appears as cards in the conversation, plus one shared home card for the team's work (§6.4). A person can maximize any card.
 5. **Honest state.** Requested, queued, working, waiting for you, paused, failed and done are always distinct, and chat never waits for background work.
@@ -448,6 +450,32 @@ These are the GitHub-style basics without which most teams can't do useful work.
 | Secrets | A Secrets card. Maintainers add, replace and delete secrets. Values are write-only: everyone sees names, nobody reads values back. Reading the Members card and secret names is a person's read only, with no agent, run or machine path. Each secret is available to every branch's machine as an environment variable or as a file at a declared path (M-42), or is main-only (D-24): reaching only trusted runs on `main` and never agent or outsider runs. Provider keys for models stay on the host (§6.9). | Built (CRUD, main-only scope, egress binding); Partial (card polish) |
 | SSH into a branch | The Branch card's **SSH** button copies one line, `ssh -p 2222 retry-webhooks@<install host>` (macOS Remote Login owns port 22), using the install's public host name, or `smthrs ssh retry-webhooks`. The person lands as themselves, in the branch's working copy on its machine; connecting wakes it under the admission rules. Keys come from the member's GitHub SSH keys automatically, or from keys added with `smthrs ssh-key`. VS Code, Cursor and Zed remote editing work. Port forwarding (`-L 3000:localhost:3000`) previews a running app. Saves arrive in the live document as attributed edits, and presence shows "Maya via SSH" with the file being edited. Nobody on a machine has `sudo` (M-29). | Partial (the SSH server with workspace sessions is in the open backend and serves Cloud; the self-host binary doesn't start it, and it isn't documented) |
 
+### 6.16 Entry routes, the launcher and import (M-45, M-46)
+
+Status in this section reflects a source audit of `main` on 2026-10-15, not production acceptance: **source** means the code path exists and its own tests pass, **native-verified** means a saved root receipt shows it working on the deployed app, and a specification here is never evidence of either.
+
+| Feature | Behavior | Status |
+| --- | --- | --- |
+| Launcher at `/` | Open a repository Smithers already has, create one, explore others. Signed out it says so and offers GitHub sign-in; it never shows an initialization diagnostic as the first thing a person reads. | Partial: the chooser card and its create action exist (`apps/app/src/mainview/cards/RepositoryChoiceCard.tsx`), but `repo.choose` and `repo.create` both present the install Setup card (`apps/app/src/mainview/flows/entries/repo.ts`), and the first entry on a bare `/` is the derived host diagnostic (`apps/app/src/mainview/HostOpening.ts`). |
+| Smithers update news | What changed in this build of Smithers, dated, from a real source. Absent when there is no source for it; never invented, never marketing copy. The repository update card is a different thing: that repository's issues, PRs and notifications. | Missing: no surface reads Smithers' own releases. |
+| `/owner/repo` | The GitHub path opens the repository; a trailing slash is the same repository; a reload reselects it. The older `/?repo=owner/name` link keeps working at `/` only. | Source (`apps/app/src/mainview/RepoLink.ts` `pathRepo`, `requestedRepo`, `openRequestedRepo`); native-verified for the repository header and a file read (root receipts, 2026-10-15). |
+| File tree by default | A repository's shared read-only copy opens its root tree on the first wide-screen paint, through the same `files` flow a person runs. | Source (`openRequestedRepo` runs `files {operation:"tree"}`); native-verified for reading a file at the hosted app (root receipt, 2026-10-15). |
+| A repository flow or custom UI replaces the default view | A repository-owned flow can draw the repository's landing view instead of the tree, and the tree stays reachable. | Missing: flows draw declared forms and cards (`apps/app/src/mainview/cards/FlowFormCards.tsx`), and no seam lets a repository flow own a route's default view. |
+| Import a repository GitHub has | A signed-in person imports it when the App covers it: `repos.import` with job tracking, retry, reconnect and an account-ownership check. | Partial: the seam and backend route exist (`apps/app/src/mainview/state/seams/RepoImportSeam.ts`, `POST /github/import`) and a root receipt shows one import reaching READY on the hosted backend; the signed-in `/owner/repo` miss answers "not in the public repository catalog" and offers neither import nor the App path. |
+| GitHub App installation path | When the App doesn't cover the repository, the person follows GitHub's installation flow, and choosing an installation is an owner's act. | Source: `/github` carries `app-open`, `app-choose`, `app-status` with the owner preflight (`apps/app/src/mainview/flows/entries/home.ts`); not reached from a repository URL miss. |
+| Truthful entry states | Signed out, no such repository on GitHub, no access with this identity, and a failed import each say what is true. No fake import, no permission escalation, no silent sign-in. | Partial: signed-out and catalog-miss copy is honest (`apps/app/src/mainview/App.tsx`), and the import seam refuses when signed out; "absent on GitHub" and "inaccessible to this identity" are not distinguished from "not in the catalog". |
+
+### 6.17 The GitHub basics as repository workflows (M-47)
+
+What §6.3, §6.12, §6.14 and §6.15 already specify stays as written: issues and pull requests on GitHub, the monitor, writing flows, and secrets. This section adds only what M-47 makes customizable, with the same 2026-10-15 source-audit statuses as §6.16.
+
+| Feature | Behavior | Status |
+| --- | --- | --- |
+| Notification policy as a flow | A repository flow decides who is told about what, replacing the built-in defaults of §6.4 (the TODO's owner, the people on its branch, the home card). Delivery stays the toast, the timeline and the repository update card; the policy is the part the repository owns. Nobody can be given a notification about work they cannot read. | Missing: notifications project from repository activity and read receipts (`apps/app/src/mainview/state/RepositoryNotifications.ts`), the browser permission is a flow (`flows/entries/toast.ts` `notifications.allow`), and no flow decides who is told. Depends on repository flow scheduling, which §16 defers. |
+| Issue transitions as a flow | A repository flow can move an issue through the repository's own states, such as proposed to accepted, in addition to GitHub's open and closed. A transition a flow makes is attributed to the flow and the person who ran it, and it never merges or approves anything (M-05, M-39). | Missing: `issues.create`, `.view`, `.close`, `.reopen` and `.comment` exist (`apps/app/src/mainview/flows/entries/issues.ts`) and carry only GitHub's two states. |
+| A flow's own screen | A flow declares the screen it draws, and that screen appears wherever the flow runs: a card, a repository's default view (M-45), or the monitor's custom view (§6.14). | Partial: declared input forms render as cards (`apps/app/src/mainview/cards/FlowFormCards.tsx`, `FlowCard.tsx`); a flow-declared view of its own is specified for the monitor and not built, and no route's default view can be replaced. |
+| One action, three doors | Every basic above is one flow with slash, button and agent parity as Appendix B defines it, and the parity is tested, not asserted. A flow an agent must not run alone keeps its confirmation, bound to the revision a person reviewed. | Source: the registry declares actors and confirmations per flow (`apps/app/src/mainview/flows/entries/`), and parity tests cover the catalog (`apps/app/src/mainview/flows/agent-parity.test.ts`, `AppendixB.test.ts`). |
+
 ## 7. Decisions
 
 | ID | Decision | Why |
@@ -460,7 +488,7 @@ These are the GitHub-style basics without which most teams can't do useful work.
 | M-06 (Will) | Capacity is derived from the detected host (memory, cores, disk; summed over computers under M-40), reserving memory for macOS and the install first. It is never tied to a Mac model. Everything beyond capacity queues visibly. | A fixed 3 × 8 GiB fills a 24 GB host before macOS and the backend, and hosts differ. |
 | M-07 | One stack per repository. TODOs are placed by Append, Before or Amend, and each TODO is one change and one PR. | This is Will's Mythical rule (AGENTS.md), and it's built. |
 | M-08 (Will; shared reading ratified by Fable for Will) | Each branch is one shared conversation, and `main`'s is the team's home. There is no person-to-person chat in the app. Prompts carry their author's authority, and UI-only flows affect only the prompter's own screen. | Will: "each branch is one conversation… you can navigate around the tree structure" and "no chat in the app for now; users can just chat on Google Meet or whatever". |
-| M-09 | Smithers Cloud, billing and plans are out of the MVP. | Our user self-hosts and brings their own model access. |
+| M-09 (amended 2026-10-15 by M-44) | Billing and plans are out of this release. The original decision also put hosting out of it; that half is superseded by M-44, and the sentence is kept because code and tests cite M-09. | Our user brings their own model access. Will's 2026-10-15 brief put hosted use in scope. |
 | M-10 | Apple Silicon macOS is the only supported host. | It matches the user's machine and the microVM path. |
 | M-11 | Default flows are built in. The repository holds `flows/<name>/flow.ts` only after the team customizes it. | Installing must not require a pull request into the user's repository. |
 | M-12 | This spec replaces `docs/mvp/PRODUCT.md` once Will signs off. Inbound references and AGENTS.md rules are updated in the same change. | One product spec. |
@@ -494,6 +522,11 @@ These are the GitHub-style basics without which most teams can't do useful work.
 | M-40 (Will, 2026-10-04, #3706; revised 2026-10-06 by product with a6) | A branch's machine runs on this Mac (the default) or, **after launch**, on another **computer** the owner adds. One install setting, `remoteSandboxes`, off by default and with no UI, gates every computer other than this Mac, Smithers Cloud included. Only the machine moves: the engine, journal, provider keys and merge stay on the install. Capacity is the sum over reachable computers. A TODO's **Runs on** is `auto` (most free slots, ties to this Mac) or a named computer. **The install always connects out** to each computer through the Cloud fleet's controller and worker (hosting design, `.specs/engineering/design/hosting.md`, arriving with the frontrun integration). A Mac behind NAT or on loopback (M-28) needs no reachable address. Computers may be Linux with KVM; the install host stays Apple Silicon macOS (M-10). Remote computers are the first item after launch; Cloud billing and plans stay out (M-09). This supersedes M-37's last sentence and amends M-06. Falsifier: in the first post-launch release, an install on loopback wakes a TODO on `beaver` from the app. If it can't, this did not ship. | Will wants a small always-on coordinator to fan heavy agent work out to his other machines; on 2026-10-04 his 64 GB Mac mini ran 28 agents at load 34 to 55 with no free memory. Will's ruling asks the spec to support it behind a flag, not to put it in stage 1. Stage 1 has slipped to Oct 19, so it carries no new scope. Connecting out keeps the loopback default (M-28) and works behind NAT; the 10-04 version, where workers connected in, required a reachable bind address. |
 | M-42 (Will, 2026-10-06 ~16:25 PT, relayed by 07) | Log in once, use it on every machine. A secret reaches every branch's machine as an environment variable **or as a file at a path the maintainer declares** (like GitHub Actions secrets, and like a mounted credential file). Coding tools on a machine get their login from install secrets, so nobody signs in again per machine. Model logins on machines use **provider API keys stored as secrets**. A personal subscription sign-in (ChatGPT, Claude) is never copied to a machine or shared across machines, because provider terms forbid pooling or moving its tokens. It stays in its owner's own terminal (§6.9). Falsifier: a maintainer adds one API-key secret, and a fresh branch machine's coding agent runs a TODO with no sign-in step. | Will: "users will want to log in once and have that login used by every machine… like on github actions you can do repository secrets… or we should be able to have something mounted to file system". The subscription limit is plue-2a's reading of the providers' sign-in terms, which Will saw; the Lawyer seat confirms it before launch copy promises anything about subscriptions. |
 | M-43 (product, 2026-10-06; a6 confirmed no Will ruling exists) | Live co-editing shows other people's carets and selections inside files in their colour, alongside the gutter name flags. This reverses the earlier cut. It ships in T-UI-19's stage (S3) and adds nothing to stage 1. Falsifier: in dogfood with two people on one file, cursor traffic keeps keystroke p95 within the C-SPK-07 budget (1 s). If it doesn't, or Will says no when he sees it, the flag goes off. | Will, 2026-10-02 12:44: live co-editing is "a holy shit feature that really makes the value prop clear". Seeing someone else's cursor move is what makes co-editing visibly live. It's one flag in the editor binding the app already ships, and T-COL-01 measured keystroke p95 at 109–161 ms, which leaves room. |
+| M-44 (Will, 2026-10-15 Pacific, [#4022](https://github.com/smithersai/smithers/issues/4022)) | Smithers is a replacement for the GitHub web UI: a wrapper whose repository interaction, actions and customization are durable workflows, not a chat agent beside GitHub. Hosted use is in this release's scope beside the self-hosted install; billing and plans stay out (M-09). GitHub keeps `main`, issues, pull requests, reviews and checks (M-22), and every authorization, human-approval, trust and secret boundary in this spec is unchanged by this decision. Falsifier: a person signs in at the hosted app, opens their repository, and does a day's issue, PR, run and secret work without leaving for github.com. | Will: the app is a GitHub UI alternative whose backend wraps GitHub with what people wish it had. Hosting is how the first users reach it, so a spec that defers hosting describes a product we do not ship. |
+| M-45 (Will, 2026-10-15) | Two entry routes. `/` is the launcher: open a repository Smithers already has, create one, explore others, and read genuine Smithers update news — what actually changed in this build, never invented or marketing copy, and absent rather than faked when there is no source for it. `/owner/repo` is the same path GitHub uses, so swapping the domain opens the repository here. A repository opens on its file tree; a repository's own flow or custom UI can replace that default view, and the tree stays reachable. Falsifier: replacing `github.com` with the Smithers host in a repository URL opens that repository's file tree, and `/` offers open, create and explore plus dated update news. | The launcher is where a first-time person decides what to do; a diagnostic initialization message is not that. Path compatibility is what makes a replacement usable the first day. |
+| M-46 (Will, 2026-10-15) | A repository GitHub has and Smithers doesn't: a signed-in person with GitHub access to it can import it when the Smithers GitHub App already covers it, and otherwise follows the App's installation path for that owner. Every other case says what is true — signed out, no such repository on GitHub, no access with this identity, import failed and why it can be retried — and nothing more. No import is reported before it happened, no permission is escalated to make one possible, and no sign-in happens silently on a person's behalf. Falsifier: three URLs (a repository the App covers, one it does not, and one that does not exist) produce import, the installation path, and "no such repository", with no path reporting another's outcome. | A wrapper is judged on the repository it does not have yet. Guessing, or widening access to avoid a refusal, is worse than saying no. |
+| M-47 (Will, 2026-10-15) | The GitHub basics ship through one architecture: secrets management usable by an ordinary maintainer, authoring one's own flows and the custom UI they draw, monitoring runs, notifications, pull requests and issues. Each is a flow, reachable as a slash command, a button and an agent call with the parity Appendix B defines, and each is customizable by repository flows. A repository flow may own notification policy (who is told, about what) and issue transitions such as proposed to accepted. The boundaries hold: a person still approves and merges (rule 6, M-05, M-39), system flows stay non-overridable (M-30), and a secret is referenced by name only — never its value, in any diagnostic, log, run trace or error. Falsifier: a maintainer adds a secret, writes a flow with a screen, runs it from a button and from the agent, and a repository flow changes who gets notified, with no value of that secret appearing anywhere in the app. | "Everything is a flow" is only a claim until the ordinary GitHub work goes through flows too. Customization that cannot reach notifications and issue states leaves the parts people most want to change hard-coded. |
+| M-48 (Will, 2026-10-15) | Product quality defects are release bugs, filed and fixed like any other: confusing or long-winded prose, a noisy or unintuitive layout, broken or inconsistent CSS, and keyboard access that fails a journey. Each fix carries a meaningful regression test — the rendered surface or the keyboard path, not a snapshot of itself — and §9's Keyboard and Copy targets are release criteria, not polish. Falsifier: a reported quality defect is closed only with a test that fails on the old build. | Will's 2026-10-15 brief names these as bugs. A product someone cannot read or navigate is not shippable, and "polish later" is how these survive to launch. |
 
 ## 8. What we cut
 
@@ -508,10 +541,10 @@ These are the GitHub-style basics without which most teams can't do useful work.
 | CI setup, AI-check setup as a separate job, CI matrix | Cut | GitHub checks are the checks. Teams add checks by editing the TODO flow. The check flows that the TODO flow's verify and review steps run (`checks/*`, `coding/*Check`) are kept. |
 | Dispatcher screen, chores, triggers | Cut as a screen; triggers deferred (§16) | Triggers return later as an advanced primitive on the Flow card. Event admission and dispatch stay running for GitHub events and §14. |
 | Repository registration and admin review | Cut | The owner adds their own repository at install. |
-| Smithers Cloud hosting, billing, balance, plans, checkout | Defer | Our user self-hosts. |
+| Billing, balance, plans, checkout | Defer | Hosting itself is in this release (M-44); money is not. |
 | Admin console (access queue, allowlist, balance grants, service health) | Cut | Owner settings replace it. |
 | Signup poll, first-run checklist, five job tiles, practice repository | Cut | J1 replaces them. |
-| Repository switching and multi-repository management | Defer | One repository per install. |
+| Multi-repository management (one console across repositories) | Defer | One repository at a time. The launcher at `/` opens, creates and explores repositories (M-45); it manages none of them. |
 | Issue-sweep / burndown | Cut from the product | Our own operations tool; the home card is the product version. |
 | Cloud agent sessions outside TODOs | Cut | Coding agents live on branches. |
 | Subagent grid | Cut | The home and Branch cards replace it. |
@@ -521,7 +554,7 @@ These are the GitHub-style basics without which most teams can't do useful work.
 | Splitting and squashing across TODOs | Cut | They break TODO identity. |
 | Lanes, bootstrap and backfill controls | Hide | Plumbing. The parallel-work count is one owner setting. |
 | Sync-ops and raw devtools (seams, network) | Hide | Developer tools. The member-facing debug view is the monitor (§6.14). |
-| Notifications center | Cut | Toasts and the timeline replace it. |
+| Notifications center (as a separate screen) | Cut | Toasts, the timeline and the repository update card carry notifications; a repository flow owns the policy behind them (M-47). |
 | TUI | Defer from launch (Fable for Will) | The browser app is the MVP surface. The Terminal card, the CLI and the skill are the terminal doors, and users bring Claude Code or Codex into the Terminal card. |
 | CLI and Smithers skill | Keep | This is how any agent uses Smithers. incur generates both from the same commands. Command groups outside the MVP flows stay published but are left out of MVP docs and acceptance. |
 | Webpage reader card; code intelligence in file cards | Keep | Built, and useful as evidence and in review. |
@@ -538,8 +571,10 @@ Targets are p95 on the reference host: the team's 64 GB Apple Silicon Mac mini (
 | GitHub freshness | PR, checks and `main` within 1 minute of the change on GitHub (§6.3). |
 | Durability | Killing the install mid-run re-runs no completed step. Interrupted external actions reconcile their outcome before retrying, and every run resumes or shows as interrupted. |
 | Honesty | No state is shown before it's true. A failure names the failing step and can be retried. |
-| Keyboard | Every P0 journey completes with the keyboard alone. |
-| Copy | Product words only. No explanatory paragraphs on cards. |
+| Keyboard | Every P0 journey completes with the keyboard alone. A journey that cannot is a release bug (M-48). |
+| Copy | Product words only. No explanatory paragraphs on cards. Prose a reader has to decode is a release bug (M-48). |
+| Layout and CSS | Each surface reads as one product: no broken or inconsistent styling, no noise competing with the one next action. Defects are release bugs (M-48), and each fix keeps a regression test. |
+| Secret opacity | A secret appears by name only. No value reaches a card, log, run trace, diagnostic or error, anywhere (M-47). |
 | Isolation | Each awake branch is its own microVM, on by default. Provider keys stay on the host. Agents can't merge. Nobody has `sudo` on a machine. (Today self-host runs flows as trusted processes, and the launcher drops the isolation setting.) |
 
 ## 10. Success and kill criteria
@@ -602,7 +637,8 @@ The MVP ships when:
 3. Every §8 cut is gone from the product surface.
 4. The docs are one quickstart for this user, plus the reference for flows.
 5. The macOS install is public and needs no Smithers account for the coding model; the fast model defaults to a Smithers sign-in, and a team may bring its own key.
-6. Upgrade in place is rehearsed: a launch candidate upgrades to a later candidate with `smthrs host upgrade`, keeping its data, and a backup restores cleanly (M-26, #3444). The real receipt, an install made on launch day upgrading to the maintainer release, gates the maintainer release (§14).
+6. The 2026-10-15 contract passes on the build that ships: the launcher at `/` and `/owner/repo` (M-45), import and the App path with truthful states (M-46), secrets, flow and custom-UI authoring, run monitoring, notifications, PRs and issues through one workflow architecture (M-47), and no open M-48 quality bug on a journey surface. Each is judged on the deployed app with a saved receipt, never on this spec.
+7. Upgrade in place is rehearsed: a launch candidate upgrades to a later candidate with `smthrs host upgrade`, keeping its data, and a backup restores cleanly (M-26, #3444). The real receipt, an install made on launch day upgrading to the maintainer release, gates the maintainer release (§14).
 
 ## 13. Unresolved, with owners
 
@@ -664,7 +700,7 @@ These are deferred from the MVP after the Codex Astra and Opus full reviews, and
 | Secret usage by run | §6.15 |
 | Exact per-write attribution of terminal and SSH changes when several people's sessions are active | §6.8 |
 | The TUI (#3468) | §8 |
-| Smithers Cloud, billing and plans (#3467) | M-09 |
+| Billing and plans (#3467); hosting itself is in this release | M-09, M-44 |
 | Remote computers and Cloud machines (#3706), first item after launch | M-40 |
 | Agent-pinnable rail icons (#3334) | §6.4: the MVP shell has no rail |
 | Logging in to a tool once per install: a per-member credential store synced to every machine (competing token refreshes) | §6.8 |
@@ -870,7 +906,7 @@ Coding agents and external agents can't call these (they have no screen). The ap
 | `triggers.list`, `.register`, `.approve`, `.pause`, `.resume`, `.run` | Triggers | – | Defer (§16) | – |
 | `egress.allow`, `egress.session`, `box.egress`, `box.services`, `box.images` | Machine details | – | Defer (§16) | – |
 | `box.terminal`, `box.sessions` | Terminals on a branch | P, A (opens the prompter's own terminal; the agent never types in it) | Rename → `/terminal` | Terminal |
-| `billing.*`, `cloud.*` | Cloud billing and sign-in | – | Defer (§8, M-09): hidden, code kept for Smithers Cloud | – |
+| `billing.*`, `cloud.*` | Cloud billing and sign-in | – | `billing.*` deferred (§8, M-09): hidden. Hosted sign-in is in scope (M-44) | – |
 | `admin.grant*`, `admin.health`, `repository.register`, `signup.*`, `setup.*`, `issues.setup`, `review.setup`, `ci.setup`, `feature.setup`, `chores.setup`, `feature.prototype`, `system.recommend` | Admin, registration, signup, five-job setup | – | Cut | – |
 
 ### B.3 The coding agent's actions (Machine; one per awake branch)
