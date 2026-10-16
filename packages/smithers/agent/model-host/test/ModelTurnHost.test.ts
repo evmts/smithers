@@ -69,6 +69,24 @@ describe("ModelTurnHost", () => {
     expect(frames.some((frame) => frame.type === "delta" && frame.text.includes("safe"))).toBe(true)
   })
 
+  test("refuses a tool call whose provider id carries the credential", async () => {
+    const events: ReadonlyArray<ModelEvent.ModelEvent> = [
+      { type: "tool-call-start", id: "call-sk-secret", name: "write" },
+      { type: "tool-call-end", id: "call-sk-secret", arguments: "{}" },
+      { type: "settle", stopReason: "tool-calls" }
+    ]
+    const frames: Array<AgentTurnFrame> = []
+    const exit = await Effect.runPromise(Effect.result(
+      runModelTurn(Model.make({ stream: () => Stream.fromIterable(events) }), turn, {
+        modelId: "m",
+        credential: "sk-secret"
+      }, (frame) => Effect.sync(() => frames.push(frame)))
+    ))
+    expect(Result.isFailure(exit) && exit.failure).toMatchObject({ code: "invalid_provider_output" })
+    expect(JSON.stringify(exit)).not.toContain("sk-secret")
+    expect(JSON.stringify(frames)).not.toContain("sk-secret")
+  })
+
   test("fiber interruption emits no invented completion", async () => {
     const frames: Array<AgentTurnFrame> = []
     const model = Model.make({ stream: () => Stream.never })

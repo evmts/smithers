@@ -273,6 +273,14 @@ export const runModelTurn = <E>(
       case "thinking-delta":
         return emitDelta("reasoning", reasoning.push(event.text))
       case "tool-call-start":
+        // The id goes back to the provider with the tool result, so it cannot
+        // be cut like text: a provider that names a call with the credential
+        // is refused before the id reaches a frame or the journal.
+        if (cutModelCredential(event.id, options.credential ?? "") !== event.id) {
+          return Effect.fail(
+            new ModelError({ code: "invalid_provider_output", message: "tool call id contains the credential" })
+          )
+        }
         tools.set(event.id, { name: event.name, arguments: "" })
         return Effect.void
       case "tool-call-delta": {
