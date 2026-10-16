@@ -17,6 +17,7 @@
 import { Capability, Permission } from "@smthrs/capability"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { Node } from "@smthrs/plan"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import { ChildProcess } from "effect/process"
@@ -85,7 +86,10 @@ export const KillResume = Flow.make("e2e/kill-resume", {
   payload: { label: Schema.String },
   success: Schema.String,
   error: Action.IrreversibleRetryRequiresIdempotencyKey,
-  body: (payload) => Settle.call(payload)
+  body: Node.capture(
+    { action: Settle.name, implementationVersion: "kill-resume/v1" },
+    (payload) => Settle.call(payload)
+  )
 })
 
 /**

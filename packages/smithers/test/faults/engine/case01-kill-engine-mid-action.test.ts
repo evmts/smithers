@@ -42,7 +42,7 @@ describe("case01 kill the engine mid-action", () => {
     expect(fixture.marker(markers.secondDone)).toBeUndefined()
 
     const resumed = spawnEngineChild({ ...fixture, mode: "execute", secondSleepMs: 10 })
-    expect(await resumed.exited).toBe(0)
+    expect(await resumed.exited, `${resumed.stderr()}\n${resumed.stdout()}`).toBe(0)
     expect(resumed.stdout()).toContain("RESULT_STATUS=succeeded kill-resume:first-value:second-value")
 
     // Exactly-once settlement: the committed action was replayed rather than

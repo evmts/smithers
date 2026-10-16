@@ -61,7 +61,7 @@ describe("case31 real engine kill and resume", () => {
       // The next incarnation of the same host reads the ledger, kills the group,
       // and journals the decision.
       const resumed = spawnEngineChild({ ...fixture, mode: "execute", secondSleepMs: 10 })
-      expect(await resumed.exited).toBe(0)
+      expect(await resumed.exited, `${resumed.stderr()}\n${resumed.stdout()}`).toBe(0)
       expect(resumed.stdout()).toContain("RESULT_STATUS=succeeded")
 
       await waitFor(() => !isGroupAlive(orphan), "the orphaned process group to be reaped", 30_000)
