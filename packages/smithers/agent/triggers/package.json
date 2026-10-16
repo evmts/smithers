@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/triggers",
   "type": "module",
-  "version": "1.0.0-rc.9",
+  "version": "1.0.0-rc.10",
   "license": "MIT",
   "smthrs": {
     "group": "agent"
@@ -237,8 +237,8 @@
     "test:matrix": "node ../../flows/database/scripts/test-matrix.mjs"
   },
   "dependencies": {
-    "@smthrs/control": "1.0.0-rc.9",
-    "@smthrs/database": "1.0.0-rc.9"
+    "@smthrs/control": "1.0.0-rc.10",
+    "@smthrs/database": "1.0.0-rc.10"
   },
   "peerDependencies": {
     "effect": "^4.0.4"

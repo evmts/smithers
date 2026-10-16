@@ -7,13 +7,13 @@ Arguments:
 
 Options:
   --repo <string>
-  --root <string>
-  --remote <string>
-  --mcp-config <string>
-  --quiet
-  --timing
-  --verbose
-  --cloud
+  --root <string>        Project directory; defaults to the nearest Smithers project
+  --remote <string>      Remote control plane URL; defaults to SMITHERS_REMOTE
+  --mcp-config <string>  Path to the configured MCP servers
+  --quiet                Suppress progress messages
+  --timing               Report where the run's time and tokens went
+  --verbose              Show redacted diagnostic details
+  --cloud                Use repository flows and runs on the backend
 
 Custom Global Options:
   --audience <auto|human|agent>  Presentation audience; auto detects agent harnesses, CI, and terminals (default: auto)

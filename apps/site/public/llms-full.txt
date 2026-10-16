@@ -11116,9 +11116,9 @@ The gateway bind rule and its banner.
 | `isRepository`, `ensureIgnored` | `(root, ...) => ...`                                 | Whether the directory is a repository, and the ignore write.                                                                                                                                                              |
 | `nameProblem`, `isValidName`    | `(name) => ...`                                      | Why a flow name is rejected, and whether it is.                                                                                                                                                                           |
 | `defaultName`                   | `(root) => string`                                   | The slug of the project directory, or `flow`.                                                                                                                                                                             |
-| `Seat`, `defaultSeat`           | `{ seat, variable, resolved }`                       | The seat the scaffold declares, chosen from the same provider keys `doctor` reports. A directory with no key still gets a `model:` line, so the launch refuses by naming the key instead of leaving a run nothing drives. |
-| `template`                      | `(name, seat) => string`                             | The scaffolded `flow.mdx`: markdown, so it needs no build step in the directory `init` just created.                                                                                                                      |
-| `Scaffolded`, `scaffold`        | `(root, name, environment) => Scaffolded`            | Writes `flows/<name>/flow.mdx` and creates `.flows/`. An existing flow file is left exactly as it is.                                                                                                                     |
+| `Seat`, `defaultSeat`           | `{ seat, variable, resolved }`                       | The seat the scaffold declares, chosen from the same provider keys `doctor` reports. A directory with no key still declares a seat, so the launch refuses by naming the key instead of leaving a run nothing drives. |
+| `template`                      | `(name, seat) => string`                             | The tagged `flow.ts`, with an ordinary AgentAction and exported implementation layer.                                                                                                                      |
+| `Scaffolded`, `scaffold`        | `(root, name, environment) => Scaffolded`            | Writes `flows/<name>/flow.ts` and creates `.flows/`. Retains any single flow.ts, flow.mdx or SKILL.md entry, refuses duplicate entries and unsafe scaffold paths, and never overwrites an authored entry.                                                                                                                     |
 
 ## Suggest
 
@@ -13558,7 +13558,7 @@ const ignoredNotice: (name: string) => string
 The one line an ignored name gets:
 
 ```text
-ignored: SMITHERS_TEST_PG_URL has no effect in 1.0.0-rc.9 (use SMITHERS_POSTGRES_URL to select PostgreSQL)
+ignored: SMITHERS_TEST_PG_URL has no effect in 1.0.0-rc.10 (use SMITHERS_POSTGRES_URL to select PostgreSQL)
 ```
 
 It is a notice, not a refusal: it changes no exit code and no result.
@@ -13640,13 +13640,13 @@ class UnsupportedDatabase extends Schema.TaggedError<UnsupportedDatabase>()(
 ) {}
 ```
 
-A refusal to open a durable database in 1.0.0-rc.9, raised as a defect rather
+A refusal to open a durable database in 1.0.0-rc.10, raised as a defect rather
 than a typed failure because neither refusal is recoverable at run time.
 
 | Code                        | Refused when                                                       | Message                                                                                                        |
 | --------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
 | `unsupported_runtime`       | `process.versions.bun` is set                                      | `Use @smthrs/database/bun/BunDatabase under Bun; NodeDatabase requires Node.js >=26.4.0`                       |
-| `unsupported_database_file` | the file has at least one table and no `flows_migrations` table    | `<path> is not a Smithers 1.0 database (1.0.0-rc.9 does not load a 0.x smithers.db)`                           |
+| `unsupported_database_file` | the file has at least one table and no `flows_migrations` table    | `<path> is not a Smithers 1.0 database (1.0.0-rc.10 does not load a 0.x smithers.db)`                           |
 | `database_locked`           | a peer held the file for the whole open ladder                     | `<path> could not be inspected because another process holds it`                                               |
 | `postgres_url_missing`      | `SMITHERS_BACKEND=postgres` with no PostgreSQL URL set             | `PostgreSQL requires SMITHERS_POSTGRES_URL or DATABASE_URL`                                                    |
 | `postgres_url_invalid`      | the selected URL is not a parseable `postgres://` URL              | `PostgreSQL configuration requires a postgres:// or postgresql:// URL`, or `Invalid PostgreSQL connection URL` |
@@ -14323,6 +14323,14 @@ and a settled bundle is applied without it, a known limitation of this release,
 and the transaction's `FileSystem` surface is deliberately partial.
 
 Full model: [Workspace transactions](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/docs/concepts/workspace-transactions.md).
+
+Cache-eligible actions hold a durable `engine-cache:<digest>` consensus permit
+through execution and cache recording. Another engine or process waits, then
+reads the recorded result. Unkeyed or ineligible actions retain their existing
+admission rules. A stale permit is recovered only after the configured liveness
+policy reports its owner dead; the default uses lease expiry. This applies to
+both engine dispatch and plan scheduling. `PlanScheduler.Options.isAlive` accepts
+the same `Ownership.LivenessCheck` as `EngineStore.Options.isAlive`.
 
 ## PlanScheduler
 
@@ -21335,6 +21343,15 @@ Heartbeats and lease state never enter the journal.
 `layerLocal` keeps its leases per layer build and outside any database
 transaction: provide one instance to every service that must agree, and
 prefer `SqlConsensus` wherever a database is present.
+
+`Service.withPermit(key, owner, isAlive, effect)` holds a named resource through
+claim, activation, supervised execution and release. SQL strategies share the
+permit across processes; local strategies share it within their instance.
+Waiters retry admission and then execute their effect. Heartbeats renew once
+per second; lost ownership interrupts work with `ConsensusError` (`fence_lost`).
+Failure and interruption release the permit. Stale claims and owners require a
+negative `isAlive` observation before recovery. Resource keys share the lease
+namespace with run IDs; callers must reserve their prefix.
 
 ## SqlConsensus
 
@@ -33863,6 +33880,13 @@ owner fence. Returns false when the run is missing, not running, has no intent,
 or belongs to another owner. Repeated acknowledgements preserve the original
 owner and timestamp. This does not make the run terminal or prove cleanup ended.
 Engine snapshots expose the record separately from request and finish.
+
+#### withPermit
+
+`withPermit(key, owner, isAlive, effect)` delegates named resource exclusion to
+the store's existing consensus strategy. It shares its durable lease lifecycle
+without creating a run or journal event. Its error channel includes
+`ConsensusError`; cleanup releases ownership on success, failure or interruption.
 
 #### claim
 

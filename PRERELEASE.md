@@ -1,5 +1,45 @@
 # Prerelease status
 
+## 1.0.0-rc.10 — 2026-10-16
+
+Cut from current main plus the release preflight table formatting.
+Publication is requested under npm `next`; this source document does not
+claim publication or a completed npm smoke. `latest` must stay unchanged
+(`@smthrs/flows`: 1.0.0-rc.9; legacy `smthrs`: 0.35.0).
+The Release run and npm verification receipts are tracked in #4042.
+No announcement or GitHub Release is part of this cut.
+
+- **Unverified — CI (#4040):** today's app browser/unit, TUI CI/E2E and
+  targeted workspace repairs have clean Mac mini receipts on the revisions
+  named in the issue. They do not establish full CI green on this cut.
+  Backend Docker/PostgreSQL jobs (#3775), platform suites and Windows remain
+  unverified. Drift still refuses trusted setup pending T-SEC-01 receipts
+  and security campaign acceptance; that boundary has not been bypassed.
+- **Unverified — release gates:** #3765 script/API gates and #3967 target
+  index remain open. The Release workflow reports non-build/install/start
+  failures; it must not treat them as publication blockers.
+- **Broken or missing — hosted sweep:** #4023 launcher news, #4024 repository
+  import/App path, #4025 repository default custom UI, #4026 notification
+  policy and #4027 issue transitions remain open. #4028 branches, #4029
+  Secrets authority, #4030 GitHub issue writes, #4031 answer shortcut copy,
+  #4032 monitor, #4033 retained history, #4034 hidden notifications, #4035 PR
+  tab retry, #4037 secret scope, #4038 PR identity, #4039 GitHub-shaped links
+  and #4041 launcher entry remain open. Some have source fixes; none is
+  claimed deployed and verified by this cut. #4022 tracks the release scope.
+- **Unverified — other open sweep findings:** #3830 repository admission,
+  #3831 hosted prototype workflows and #3812 long replies remain open.
+  Flows/runtime findings #3898, #3899, #3906, #3999, #4004, #4008, #4010
+  and #4020 remain open, as does npm workspace Effect duplication #4002.
+  Their issue receipts, rather than source presence, determine completion.
+- **Off:** file-card code intelligence and live code co-editing remain off
+  for this prerelease. Learning remains on and unverified on this cut.
+- **Unverified — end to end:** J1–J11 and a real installed TODO through a
+  merged PR have not been repeated on rc.10. Historical results below are
+  evidence only for their named revisions. Hosted use is in release scope
+  (M-44–M-48); historical self-hosted-only statements are superseded.
+
+## Historical evidence (not rc.10 verification)
+
 ```
 Updated       2026-10-14 09:30 PDT
 main          1f59760eb6 (the rc.6 cut) and later

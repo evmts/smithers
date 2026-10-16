@@ -7,12 +7,12 @@ Arguments:
   input  Input fields as key=value
 
 Options:
-  --root <string>
-  --remote <string>
-  --mcp-config <string>
-  --quiet
-  --data <string>
-  --verbose
+  --root <string>        Project directory; defaults to the nearest Smithers project
+  --remote <string>      Remote control plane URL; defaults to SMITHERS_REMOTE
+  --mcp-config <string>  Path to the configured MCP servers
+  --quiet                Suppress progress messages
+  --data <string>        JSON input object
+  --verbose              Show redacted diagnostic details
   --repo <value>
   --source-card <value>
   --against <value>

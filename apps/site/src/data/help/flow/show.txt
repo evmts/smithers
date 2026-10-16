@@ -6,11 +6,11 @@ Arguments:
   flow  Discovered flow name
 
 Options:
-  --root <string>
-  --remote <string>
-  --mcp-config <string>
-  --quiet
-  --verbose
+  --root <string>        Project directory; defaults to the nearest Smithers project
+  --remote <string>      Remote control plane URL; defaults to SMITHERS_REMOTE
+  --mcp-config <string>  Path to the configured MCP servers
+  --quiet                Suppress progress messages
+  --verbose              Show redacted diagnostic details
 
 Custom Global Options:
   --audience <auto|human|agent>  Presentation audience; auto detects agent harnesses, CI, and terminals (default: auto)

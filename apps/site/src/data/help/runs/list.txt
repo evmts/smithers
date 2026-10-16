@@ -4,21 +4,21 @@ Usage: smthrs runs list [options]
 
 Options:
   --repo <string>
-  --root <string>
-  --remote <string>
-  --mcp-config <string>
-  --quiet
+  --root <string>                                                                 Project directory; defaults to the nearest Smithers project
+  --remote <string>                                                               Remote control plane URL; defaults to SMITHERS_REMOTE
+  --mcp-config <string>                                                           Path to the configured MCP servers
+  --quiet                                                                         Suppress progress messages
   --flow <string>
   --status <accepted|running|parked|waiting-approval|cancelled|completed|failed>
-  --since <string>
-  --until <string>
-  --sort <newest|oldest>
-  --parent <string>
-  --trigger <string>
-  --limit <number>
-  --cursor <string>
-  --verbose
-  --cloud
+  --since <string>                                                                Only runs created at or after this time (epoch ms or ISO 8601)
+  --until <string>                                                                Only runs created before this time (epoch ms or ISO 8601)
+  --sort <newest|oldest>                                                          Order by creation time
+  --parent <string>                                                               Only runs branched from this run
+  --trigger <string>                                                              Only runs this trigger started
+  --limit <number>                                                                Runs per page (default 100)
+  --cursor <string>                                                               Continue from the nextCursor a previous page printed
+  --verbose                                                                       Show redacted diagnostic details
+  --cloud                                                                         Use repository flows and runs on the backend
 
 Custom Global Options:
   --audience <auto|human|agent>  Presentation audience; auto detects agent harnesses, CI, and terminals (default: auto)

@@ -769,8 +769,8 @@
               "type": "string"
             },
             "quiet": {
-              "default": false,
               "description": "Suppress progress messages",
+              "default": false,
               "type": "boolean"
             },
             "data": {
@@ -778,8 +778,8 @@
               "type": "string"
             },
             "verbose": {
-              "default": false,
               "description": "Show redacted diagnostic details",
+              "default": false,
               "type": "boolean"
             },
             "repo": {
@@ -913,13 +913,13 @@
               "type": "string"
             },
             "quiet": {
-              "default": false,
               "description": "Suppress progress messages",
+              "default": false,
               "type": "boolean"
             },
             "verbose": {
-              "default": false,
               "description": "Show redacted diagnostic details",
+              "default": false,
               "type": "boolean"
             }
           },
@@ -1525,8 +1525,8 @@
           "type": "object",
           "properties": {
             "workspace": {
-              "default": "<cwd>",
               "description": "Directory inside a workspace containing WORKSPACE.ts",
+              "default": "<cwd>",
               "type": "string"
             },
             "cacheDir": {
@@ -1534,22 +1534,22 @@
               "type": "string"
             },
             "policyRevision": {
-              "type": "string",
-              "description": "Full approved commit SHA containing the trusted review index"
+              "description": "Full approved commit SHA containing the trusted review index",
+              "type": "string"
             },
             "revision": {
-              "default": "HEAD",
               "description": "Committed source revision: HEAD or a full commit SHA",
+              "default": "HEAD",
               "type": "string"
             },
             "plan": {
-              "default": false,
               "description": "Show pinned policy and source selection without inference",
+              "default": false,
               "type": "boolean"
             },
             "required": {
-              "default": false,
               "description": "Fail every selected review that selects no files or cannot run instead of passing it",
+              "default": false,
               "type": "boolean"
             },
             "findingsStore": {
@@ -1561,8 +1561,8 @@
               "type": "string"
             },
             "verbose": {
-              "default": false,
               "description": "Show redacted diagnostic details",
+              "default": false,
               "type": "boolean"
             },
             "repo": {
@@ -1640,8 +1640,8 @@
               "type": "string"
             },
             "quiet": {
-              "default": false,
               "description": "Suppress progress messages",
+              "default": false,
               "type": "boolean"
             },
             "flow": {
@@ -1694,13 +1694,13 @@
               "type": "string"
             },
             "verbose": {
-              "default": false,
               "description": "Show redacted diagnostic details",
+              "default": false,
               "type": "boolean"
             },
             "cloud": {
-              "default": false,
               "description": "Use repository flows and runs on the backend",
+              "default": false,
               "type": "boolean"
             }
           },
@@ -1746,23 +1746,23 @@
               "type": "string"
             },
             "quiet": {
-              "default": false,
               "description": "Suppress progress messages",
+              "default": false,
               "type": "boolean"
             },
             "timing": {
-              "default": false,
               "description": "Report where the run's time and tokens went",
+              "default": false,
               "type": "boolean"
             },
             "verbose": {
-              "default": false,
               "description": "Show redacted diagnostic details",
+              "default": false,
               "type": "boolean"
             },
             "cloud": {
-              "default": false,
               "description": "Use repository flows and runs on the backend",
+              "default": false,
               "type": "boolean"
             }
           },

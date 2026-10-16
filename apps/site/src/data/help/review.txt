@@ -6,15 +6,15 @@ Arguments:
   patterns  Bazel labels or recursive patterns; the verb runs their union
 
 Options:
-  --workspace <string>             (default: <cwd>)
-  --cache-dir <string>
-  --policy-revision <string>
-  --revision <string>              (default: HEAD)
-  --plan
-  --required
-  --findings-store <string>
-  --credential-receiver <string>
-  --verbose
+  --workspace <string>            Directory inside a workspace containing WORKSPACE.ts (default: <cwd>)
+  --cache-dir <string>            Workspace-relative cache directory; overrides the WORKSPACE.ts declaration
+  --policy-revision <string>      Full approved commit SHA containing the trusted review index
+  --revision <string>             Committed source revision: HEAD or a full commit SHA (default: HEAD)
+  --plan                          Show pinned policy and source selection without inference
+  --required                      Fail every selected review that selects no files or cannot run instead of passing it
+  --findings-store <string>       Absolute private directory for review runs and findings (default: the Git directory)
+  --credential-receiver <string>  Absolute executable that receives credential names and locations as JSON on stdin; a nonzero exit fails the review
+  --verbose                       Show redacted diagnostic details
   --repo <value>
 
 Custom Global Options:
