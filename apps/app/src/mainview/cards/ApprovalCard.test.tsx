@@ -148,3 +148,21 @@ test("Review & merge requires the viewer role and the server's readiness, includ
     expect(props.actions[1]?.tag).toBe("approval.deny")
   }
 })
+
+test("one-click shows the subject and the revision it is bound to (#3498)", () => {
+  const text = render({ ...fixtures.one_click.model, subject: { kind: "branch", ref: "todo-12", revision: "9f8e7d6" } })
+  expect(text).toContain("todo-12")
+  expect(text).toContain("rev 9f8e7d6")
+})
+
+test("Review & merge marks each GitHub check required or optional (#3498)", () => {
+  const model = fixtures.review_merge.model
+  const host = document.createElement("div"), root = createRoot(host)
+  try {
+    flushSync(() => root.render(renderConfirmCard(confirmCardProps({ ...model, review: { ...model.review!, evidence: { ...model.review!.evidence, items: [
+      { kind: "github_check", name: "required-ci", required: true, state: "passed", url: "https://github.com/acme/api/actions/runs/1" },
+      { kind: "github_check", name: "optional-ci", required: false, state: "failed", url: "https://github.com/acme/api/actions/runs/2" }
+    ] } } }))))
+    expect([...host.querySelectorAll(".confirm-check")].map(check => check.textContent)).toEqual(["required-ci · requiredpassed", "optional-ci · optionalfailed"])
+  } finally { flushSync(() => root.unmount()) }
+})

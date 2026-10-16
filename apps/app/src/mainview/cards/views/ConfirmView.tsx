@@ -25,14 +25,17 @@ export function ConfirmView({ model, actions, onAction }: ConfirmViewProps) {
     <header className="smithers-card-header"><h2 className="smithers-card-title">{title}</h2></header>
     <div className="smithers-card-body">
       <>
-        {model.kind === "one_click" ? <p className="confirm-asker"><ActorChip actor={model.asked_by} size="s" /><span>{actorName(model.asked_by)}</span></p> : null}
+        {model.kind === "one_click" ? <>
+          <p className="confirm-asker"><ActorChip actor={model.asked_by} size="s" /><span>{actorName(model.asked_by)}</span></p>
+          <div className="confirm-facts"><span>{model.subject.ref}</span>{revision ? <span className="confirm-mono">rev {revision}</span> : null}</div>
+        </> : null}
         {model.kind === "review_merge" && review && evidence ? <>
           <div className="confirm-meta"><b>{review.title}</b><span>#{review.place} in stack</span></div>
           <div className="confirm-facts">
             <a href={review.pr.url} target="_blank" rel="noreferrer">#{review.pr.number} ↗</a>
             <span className="confirm-mono">rev {revision}</span>
             {evidence.items.map((item, i) => item.kind === "check" || item.kind === "github_check" ? <span key={i} className="confirm-check" data-state={item.state}>
-              {item.state === "passed" ? <Check size={13} aria-hidden="true" /> : item.state === "failed" ? <X size={13} aria-hidden="true" /> : <Loader size={13} aria-hidden="true" />}{item.name}<span className="confirm-check-state">{item.state}</span>
+              {item.state === "passed" ? <Check size={13} aria-hidden="true" /> : item.state === "failed" ? <X size={13} aria-hidden="true" /> : <Loader size={13} aria-hidden="true" />}{item.name}{item.kind === "github_check" ? ` · ${item.required ? "required" : "optional"}` : null}<span className="confirm-check-state">{item.state}</span>
             </span> : item.kind === "review" && !evidence.reviewing && !evidence.previous ? <span key={i}>{item.summary}</span> : null)}
             {evidence.reviewing ? <span>Review running on <span className="confirm-mono">{evidence.revision}</span></span> : evidence.previous ? <span className="confirm-previous">Reviewed <span className="confirm-mono">{evidence.previous.revision}</span> · same change</span> : null}
           </div>
