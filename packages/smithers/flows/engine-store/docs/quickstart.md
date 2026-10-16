@@ -32,7 +32,8 @@ export const Measure = Action.make("quickstart/Measure", {
   payload: {},
   success: Schema.String,
   tier: "sealed",
-  idempotencyKey: "quickstart/measure/v1"
+  idempotencyKey: "quickstart/measure/v1",
+  implementationVersion: "measure/v1"
 })
 
 export const Analyse = Flow.make("quickstart/Analyse", {
@@ -163,8 +164,7 @@ export const main = (filename: string, root: string): Effect.Effect<{
       Effect.sync(() => {
         executions += 1
         return "42"
-      })
-    )
+      }), { implementationVersion: "measure/v1" })
 
     const flow = Layer.mergeAll(implementation, Interpreter.layer(Analyse)).pipe(
       Layer.provideMerge(Action.layerImplementations)
