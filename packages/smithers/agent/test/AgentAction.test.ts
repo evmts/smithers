@@ -579,6 +579,13 @@ describe("AgentAction.make", () => {
     const failure = exit._tag === "Failure" ? exit.cause : undefined
     const rendered = JSON.stringify(failure)
     expect(rendered).toContain("StructuredOutputFailure")
+    const encoded = JSON.parse(JSON.stringify(exit))
+    const error = encoded.cause.failures[0].error
+    expect(error.action).toBe("agent/test/Reviewer")
+    expect(error.nodeId).toEqual(expect.any(String))
+    expect(error.nodeId.length).toBeGreaterThan(0)
+    expect(error.message).toContain("agent/test/Reviewer")
+    expect(error.message).toContain(error.nodeId)
     // One first attempt plus one same-session correction, and no third call.
     expect(requests).toHaveLength(2)
     expect(requests[1]).toContain("did not validate")

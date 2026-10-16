@@ -1149,6 +1149,16 @@ export const implement = <
       })
 
       return yield* solved.pipe(
+        Effect.mapError((failure) =>
+          failure._tag === "/harness/StructuredOutputFailure"
+            ? new StructuredOutput.StructuredOutputFailure({
+              ...failure,
+              action: tag,
+              ...(stepId === undefined ? {} : { nodeId: stepId }),
+              message: `${tag}${stepId === undefined ? "" : ` (${stepId})`}: ${failure.message}`
+            })
+            : failure
+        ),
         Effect.mapError(budgetFailure),
         Effect.mapError(encodableFailure)
       )

@@ -497,3 +497,30 @@ describe("StructuredOutput.decode", () => {
     expect(failure?.message).toContain("after 2 of 2 corrections")
   })
 })
+
+// Persisted failures from before step attribution must remain readable.
+describe("StructuredOutputFailure persistence", () => {
+  const old = {
+    _tag: "/harness/StructuredOutputFailure" as const,
+    code: "schema_mismatch" as const,
+    schema: "sha256:schema",
+    candidate: "sha256:candidate",
+    corrections: 1,
+    limit: 1,
+    issues: [],
+    message: "did not validate"
+  }
+
+  it("decodes a recorded failure without step identity", () => {
+    const failure = Schema.decodeUnknownSync(StructuredOutput.StructuredOutputFailure)(old)
+    expect(failure.action).toBeUndefined()
+    expect(failure.nodeId).toBeUndefined()
+    expect(Schema.encodeSync(StructuredOutput.StructuredOutputFailure)(failure)).toEqual(old)
+  })
+
+  it("retains step identity through the persisted codec", () => {
+    const recorded = { ...old, action: "review", nodeId: "sha256:dispatch" }
+    const failure = Schema.decodeUnknownSync(StructuredOutput.StructuredOutputFailure)(recorded)
+    expect(Schema.encodeSync(StructuredOutput.StructuredOutputFailure)(failure)).toEqual(recorded)
+  })
+})

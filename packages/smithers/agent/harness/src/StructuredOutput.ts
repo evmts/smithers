@@ -148,6 +148,10 @@ export class StructuredOutputFailure extends Schema.TaggedError<StructuredOutput
   {
     /** The stable reason this boundary failed. */
     code: StructuredOutputFailureCode,
+    /** The action whose final answer failed, when raised by an agent step. */
+    action: Schema.optionalKey(Schema.String),
+    /** The durable dispatch identity of that step, when the engine supplies it. */
+    nodeId: Schema.optionalKey(Schema.String),
     /** The declared output schema's canonical digest. */
     schema: Schema.String,
     /** SHA-256 of the text the decoder was last offered. */
