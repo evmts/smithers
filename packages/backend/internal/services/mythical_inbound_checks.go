@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
@@ -10,7 +11,8 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
-// A fetched check snapshot is a wakeup, never approval or proof of readiness.
+// A fetched check snapshot refreshes owned attempt evidence and wakes the worker;
+// it is never approval or proof of readiness.
 // The existing merge worker rechecks current authority, head and protection.
 // The request and delivery receipt commit together; stale heads wake nothing.
 func (s *MythicalService) consumeGitHubCheckTodos(ctx context.Context, tx pgx.Tx, fetched gitHubFetchedObject) (json.RawMessage, error) {
@@ -59,7 +61,34 @@ func (s *MythicalService) consumeGitHubCheckTodos(ctx context.Context, tx pgx.Tx
 		if err != nil {
 			return nil, err
 		}
+		owners := 0
 		for _, item := range items {
+			for _, publication := range mythicalChecksOf(item).Publications {
+				if publication.Pull == fetched.Number && publication.Head == snapshot.Head {
+					owners++
+				}
+			}
+		}
+		for _, item := range items {
+			if owners == 1 && mythicalTodo(item) {
+				if publication, ok := todoCheckPublication(item, fetched.Number, snapshot.Head); ok {
+					gh, err := s.stackGitHub(ctx, repository)
+					if err != nil {
+						return nil, err
+					}
+					facts, err := s.github.HeadCheckFacts(ctx, gh, snapshot.Head)
+					if err != nil {
+						return nil, err
+					}
+					next := retainTodoGitHubChecks(item, publication, todoGitHubCheckEvidence(facts, fmt.Sprintf("https://github.com/%s/%s/pull/%d/checks", owner, repo, fetched.Number)))
+					if !sameMythicalChecks(next, item) {
+						item, err = q.SaveMythicalItem(ctx, next)
+						if err != nil {
+							return nil, err
+						}
+					}
+				}
+			}
 			if !mythicalTodo(item) || !item.PRNumber.Valid || item.PRNumber.Int64 != fetched.Number || item.PRHead != snapshot.Head || mythicalSettledStates[item.State] {
 				continue
 			}

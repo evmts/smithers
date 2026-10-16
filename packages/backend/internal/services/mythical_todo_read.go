@@ -552,6 +552,14 @@ var wikiCitationDigest = regexp.MustCompile(`^[0-9a-f]{64}$`)
 func todoEvidenceWithPrevious(current, stored todoAttemptEvidence) todoAttemptEvidence {
 	current.Previous = stored.Previous
 	current.Failures = mergeLearningFailures(stored.Failures, current.Failures)
+	if current.Outcome == "" && current.Attempt == stored.Attempt && current.Generation == stored.Generation && current.RunID == stored.RunID && current.Revision == stored.Revision {
+		for _, entry := range stored.Items {
+			if entry["kind"] == "github_check" {
+				current.Items = append(current.Items, entry)
+			}
+		}
+	}
+
 	if stored.Revision != "" && current.Revision != stored.Revision && len(stored.Items) > 0 {
 		current.Previous = &todoRevisionEvidence{Revision: stored.Revision, Items: stored.Items}
 	}
@@ -847,4 +855,77 @@ func (s *MythicalService) repairTodoRevisionActors(ctx context.Context, item db.
 	}
 	_, err = s.store.Exec(ctx, `UPDATE mythical_items SET revisions=$2 WHERE id=$1 AND revisions=$3::jsonb`, item.ID, repaired, item.Revisions)
 	return repaired, err
+}
+
+// Publication ownership is recorded with the confirmed push/PR binding. A
+// callback naming only a reused head is ambiguous and may update no attempt.
+type todoPublicationEvidence struct {
+	Attempt    int32  `json:"attempt"`
+	Generation int64  `json:"generation"`
+	RunID      string `json:"run_id"`
+	Revision   string `json:"revision"`
+	Head       string `json:"head"`
+	Pull       int64  `json:"pull"`
+}
+
+func retainTodoPublication(item db.MythicalItem) db.MythicalItem {
+	if !mythicalTodo(item) || item.Attempt <= 0 || !item.CandidateVerified || item.RequestRunID == "" || item.CandidateHead == "" || item.PRHead == "" || !item.PRNumber.Valid {
+		return item
+	}
+	checks := mythicalChecksOf(item)
+	publication := todoPublicationEvidence{Attempt: item.Attempt, Generation: item.Generation, RunID: item.RequestRunID, Revision: item.CandidateHead, Head: item.PRHead, Pull: item.PRNumber.Int64}
+	for _, held := range checks.Publications {
+		if held == publication {
+			return item
+		}
+	}
+	checks.Publications = append(checks.Publications, publication)
+	item.Checks = checks.encode()
+	return retainTodoAttemptEvidence(item)
+}
+
+func todoCheckPublication(item db.MythicalItem, pull int64, head string) (todoPublicationEvidence, bool) {
+	var owner todoPublicationEvidence
+	count := 0
+	for _, publication := range mythicalChecksOf(item).Publications {
+		if publication.Pull == pull && publication.Head == head {
+			owner = publication
+			count++
+		}
+	}
+	return owner, count == 1
+}
+
+func todoGitHubCheckEvidence(facts []mythicalHeadCheck, url string) []map[string]any {
+	entries := []map[string]any{}
+	for _, fact := range facts {
+		state := "pending"
+		if fact.State == mythicalCIGreen {
+			state = "passed"
+		} else if fact.State == mythicalCIRed {
+			state = "failed"
+		}
+		entries = append(entries, map[string]any{"kind": "github_check", "name": fact.Name, "required": fact.Required, "state": state, "url": url})
+	}
+	return entries
+}
+
+func retainTodoGitHubChecks(item db.MythicalItem, owner todoPublicationEvidence, entries []map[string]any) db.MythicalItem {
+	item = retainTodoAttemptEvidence(item)
+	checks := mythicalChecksOf(item)
+	for i, attempt := range checks.Attempts {
+		if attempt.Attempt != owner.Attempt || attempt.Generation != owner.Generation || attempt.RunID != owner.RunID || attempt.Revision != owner.Revision {
+			continue
+		}
+		kept := []map[string]any{}
+		for _, entry := range attempt.Items {
+			if entry["kind"] != "github_check" {
+				kept = append(kept, entry)
+			}
+		}
+		checks.Attempts[i].Items = append(kept, entries...)
+		item.Checks = checks.encode()
+		break
+	}
+	return item
 }

@@ -134,15 +134,7 @@ func (s *MythicalService) prepareMergeConfirmation(ctx context.Context, tx pgx.T
 		return p, confirmationUnavailable()
 	}
 	evidence := currentTodoEvidence(item)
-	for _, fact := range facts {
-		state := "pending"
-		if fact.State == mythicalCIGreen {
-			state = "passed"
-		} else if fact.State == mythicalCIRed {
-			state = "failed"
-		}
-		evidence.Items = append(evidence.Items, map[string]any{"kind": "github_check", "name": fact.Name, "required": fact.Required, "state": state, "url": fmt.Sprintf("https://github.com/%s/%s/pull/%d/checks", gh.Owner, gh.Name, item.PRNumber.Int64)})
-	}
+	evidence.Items = append(evidence.Items, todoGitHubCheckEvidence(facts, fmt.Sprintf("https://github.com/%s/%s/pull/%d/checks", gh.Owner, gh.Name, item.PRNumber.Int64))...)
 	if err := mythicalMergeCheckFacts(facts); err != nil {
 		var refusal *TodoControlError
 		if !errors.As(err, &refusal) {

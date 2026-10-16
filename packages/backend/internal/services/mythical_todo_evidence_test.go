@@ -425,3 +425,48 @@ func TestTodoDiffEvidencePostgres(t *testing.T) {
 	card = o.todoCard(saved.Number.Int64)
 	require.Len(t, card["evidence"].([]any), 2)
 }
+
+func TestTodoEvidenceRetainsGitHubChecksOnlyForSameProducer(t *testing.T) {
+	stored := todoAttemptEvidence{Attempt: 1, Generation: 2, RunID: "run", Revision: "candidate", Items: []map[string]any{{"kind": "github_check", "name": "ci", "state": "passed", "required": true, "url": "https://github.com/o/r/pull/1/checks"}}}
+	current := todoAttemptEvidence{Attempt: 1, Generation: 2, RunID: "run", Revision: "candidate", Items: []map[string]any{{"kind": "review", "summary": "approve"}}}
+	require.Len(t, todoEvidenceWithPrevious(current, stored).Items, 2)
+	for _, field := range []string{"generation", "run", "revision", "attempt"} {
+		moved := current
+		switch field {
+		case "generation":
+			moved.Generation++
+		case "run":
+			moved.RunID = "other"
+		case "revision":
+			moved.Revision = "other"
+		case "attempt":
+			moved.Attempt++
+		}
+		require.Len(t, todoEvidenceWithPrevious(moved, stored).Items, 1, field)
+	}
+}
+
+func TestTodoGitHubEvidenceUsesPersistedPublicationOwnership(t *testing.T) {
+	item := db.MythicalItem{Source: "todo", Attempt: 1, Generation: 2, RequestRunID: "root", CandidateHead: "candidate", CandidateVerified: true, PRHead: "published", PRNumber: pgtype.Int8{Int64: 1, Valid: true}}
+	item = retainTodoPublication(item)
+	require.Equal(t, item, retainTodoPublication(item), "publication settlement replays exactly")
+	owner, ok := todoCheckPublication(item, 1, "published")
+	require.True(t, ok)
+	_, ok = todoCheckPublication(item, 2, "published")
+	require.False(t, ok)
+	_, ok = todoCheckPublication(item, 1, "other")
+	require.False(t, ok)
+	item = settleTodoAttemptEvidence(item, "merged")
+	item.Attempt = 2
+	item.Generation = 3
+	item.RequestRunID = "later-root"
+	item.CandidateHead = "later-candidate"
+	checks := todoGitHubCheckEvidence([]mythicalHeadCheck{{Name: "ci", State: mythicalCIGreen, Required: true}}, "https://github.com/o/r/pull/1/checks")
+	item = retainTodoGitHubChecks(item, owner, checks)
+	held := mythicalChecksOf(item)
+	require.Equal(t, checks, held.Attempts[0].Items, "late GitHub checks belong to the first attempt")
+	require.Empty(t, held.Attempts[1].Items)
+	item = retainTodoPublication(item)
+	_, ok = todoCheckPublication(item, 1, "published")
+	require.False(t, ok, "a head reused by another producer has no unambiguous callback owner")
+}

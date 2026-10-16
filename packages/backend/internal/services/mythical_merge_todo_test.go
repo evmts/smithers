@@ -2484,3 +2484,80 @@ func TestMythicalMergeTodoWaitsForNativeProposal(t *testing.T) {
 	require.NoError(t, h.press(h.ctx, n, head))
 	require.NotNil(t, h.land(n))
 }
+
+func TestTodoGitHubCheckEvidenceDeliveryPostgres(t *testing.T) {
+	h := newMergeHarness(t)
+	candidate := h.todo("Check evidence", "Check evidence", h.main, "check-evidence.md", "candidate\n")
+	candidate.RequestRunID = "check-evidence-root"
+	_, err := h.q.SaveMythicalItem(h.ctx, candidate)
+	require.NoError(t, err)
+	h.wake()
+	published := h.item(candidate.Number.Int64)
+	require.Equal(t, "proposed", published.State, published.Reason)
+	n, head, pr := published.Number.Int64, published.PRHead, published.PRNumber.Int64
+	h.fake.RequireCheck("unit")
+	h.fake.SetCheck("rehearsal-owner/app", head, "unit", "completed", "success")
+	_, err = h.q.SetGithubAppInstallation(h.ctx, h.installation)
+	require.NoError(t, err)
+	synced := NewGitHubSyncedRepoService(h.q)
+	require.NoError(t, synced.ConfigureInstallSync(h.pool.(*pgxpool.Pool)))
+	synced.BindInstallAuthority(h.credentials, true)
+	row, err := h.q.EnrollGitHubSyncedRepo(h.ctx, db.EnrollGitHubSyncedRepoParams{OwnerLogin: "rehearsal-owner", RepoName: "app", InstallationID: pgtype.Int8{Int64: h.installation, Valid: true}, GithubRepositoryID: pgtype.Int8{Int64: 100, Valid: true}, SyncMetadata: true, EnrolledVia: GitHubSyncedRepoEnrolledViaInstallation})
+	require.NoError(t, err)
+	h.service.UseInstallGitHubPolling(synced)
+	before := h.item(n)
+	publication, ok := todoCheckPublication(before, pr, head)
+	require.True(t, ok, "the real publication path persists the producer")
+	deliver := func() {
+		raw, _ := json.Marshal(map[string]string{"head": head})
+		require.NoError(t, pgx.BeginFunc(h.ctx, h.pool.(*pgxpool.Pool), func(tx pgx.Tx) error {
+			_, err := h.service.consumeGitHubCheckTodos(h.ctx, tx, gitHubFetchedObject{Repo: row.ID, GitHubRepository: 100, Installation: h.installation, Number: pr, Resource: "checks", Object: raw})
+			return err
+		}))
+	}
+	deliver()
+	after := h.item(n)
+	evidence := todoEvidence(after)
+	require.Len(t, evidence, 1)
+	found := false
+	for _, entry := range evidence[0].Items {
+		if entry["kind"] == "github_check" {
+			require.Equal(t, "unit", entry["name"])
+			require.Equal(t, "passed", entry["state"])
+			require.Equal(t, true, entry["required"])
+			found = true
+		}
+	}
+	require.True(t, found)
+	require.Equal(t, before.State, after.State)
+	require.Empty(t, h.merges())
+	// A later attempt does not acquire the old publication's check results.
+	after.Attempt++
+	after.Generation++
+	after.RequestRunID = "later-root"
+	after.CandidateHead = strings.Repeat("f", 40)
+	after = retainTodoAttemptEvidence(after)
+	after, err = h.q.SaveMythicalItem(h.ctx, after)
+	require.NoError(t, err)
+	h.fake.SetCheck("rehearsal-owner/app", head, "unit", "completed", "failure")
+	deliver()
+	retained := mythicalChecksOf(h.item(n)).Attempts
+	lateFound := false
+	for _, attempt := range retained {
+		for _, entry := range attempt.Items {
+			if entry["kind"] == "github_check" {
+				lateFound = true
+				require.Equal(t, publication.Attempt, attempt.Attempt)
+				require.Equal(t, "failed", entry["state"])
+			}
+		}
+	}
+
+	require.True(t, lateFound)
+	ambiguous := retainTodoPublication(h.item(n))
+	ambiguous, err = h.q.SaveMythicalItem(h.ctx, ambiguous)
+	require.NoError(t, err)
+	h.fake.SetCheck("rehearsal-owner/app", head, "unit", "completed", "success")
+	deliver()
+	require.Equal(t, ambiguous.Checks, h.item(n).Checks, "reusing a head across generations leaves an ambiguous callback unapplied")
+}

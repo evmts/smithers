@@ -298,6 +298,9 @@ func (st *mythicalItemStep) settleOutbound(ctx context.Context, item db.Mythical
 			return nil, errors.New("GitHub settlement changed dropped item state")
 		}
 	}
+	if op.Kind == "push" || op.Kind == "open" {
+		next = retainTodoPublication(next)
+	}
 	next.PendingOp = nil
 	if op.Kind != "close" {
 		next = mythicalDropObligation(next)

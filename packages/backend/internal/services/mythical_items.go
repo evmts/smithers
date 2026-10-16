@@ -6338,6 +6338,7 @@ func appliedByMaintainer(applied gitHubLabelApplication, label string) bool {
 // made its issue a TODO and asked for automerge, and the review of its pull
 // request's head.
 type mythicalChecks struct {
+	Publications          []todoPublicationEvidence          `json:"publications,omitempty"`
 	Diff                  *todoDiffEvidence                  `json:"diff,omitempty"`
 	FailureStep           *todoFailureStep                   `json:"failureStep,omitempty"`
 	InitialPrefix         string                             `json:"initialPrefix,omitempty"`
