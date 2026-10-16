@@ -82,7 +82,13 @@ for (const [name, layer] of [["local", Consensus.layerLocal], ["SQL", sql]] as c
         yield* TestClock.adjust("31 seconds")
         const recovered = yield* service.withPermit("claimed", other, dead, Effect.succeed("claim recovered"))
           .pipe(Effect.forkChild)
-        yield* TestClock.adjust("100 millis")
+        // SQL may finish after a clock jump and only then schedule the
+        // permit's retry. Keep advancing until that retry really completes.
+        for (let turn = 0; turn < 1000 && recovered.pollUnsafe() === undefined; turn++) {
+          yield* TestClock.adjust("50 millis")
+          yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 5)))
+        }
+        expect(recovered.pollUnsafe()).toBeDefined()
         expect(yield* Fiber.join(recovered)).toBe("claim recovered")
         const stamp = yield* Clock.currentTimeMillis
         const held = yield* service.claim("owned", owner, stamp)
