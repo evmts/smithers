@@ -10,7 +10,7 @@ it("remote causes stay safe on terminal cards, with Enter details and retry inta
   const root = mkdtempSync(join(tmpdir(), "tui-remote-failure-pty-"))
   const project = join(root, "project")
   mkdirSync(project)
-  cpSync(join(app, "test/fixtures/remote-failure-project/flows"), join(project, "flows"), { recursive: true })
+  cpSync(join(app, "test/fixtures/remote-failure-project/.smithers/flows"), join(project, ".smithers", "flows"), { recursive: true })
   symlinkSync(join(app, "node_modules"), join(project, "node_modules"), "dir")
   let tui: Tui | undefined
   const evidence: Record<string, string> = {}

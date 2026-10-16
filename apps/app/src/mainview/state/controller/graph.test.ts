@@ -383,7 +383,7 @@ describe("the plan card's node drawer", () => {
   test("a slow Code read uses a storage-safe toast identity and acknowledges before the read", async () => {
     const gate = Promise.withResolvers<void>()
     const { store, controller } = await planned({
-      sites: [{ id: "gate", declaredAt: { path: "flows/a b/flow.ts", line: 1 } }],
+      sites: [{ id: "gate", declaredAt: { path: ".smithers/flows/a b/flow.ts", line: 1 } }],
       source: "const gate = 1", readGate: gate.promise
     })
     try {
@@ -398,7 +398,7 @@ describe("the plan card's node drawer", () => {
   })
 
   test("opening the Code tab reads the declared file in the background", async () => {
-    const site = { path: "flows/review/flow.ts", line: 12 }
+    const site = { path: ".smithers/flows/review/flow.ts", line: 12 }
     const { store, controller, reads } = await planned({
       sites: [{ id: "gate", declaredAt: site }],
       source: "const gate = 1\n"
@@ -433,7 +433,7 @@ describe("the plan card's node drawer", () => {
    * parity), and it spends no second request for bytes already in hand.
    */
   test("the Code tab of a second node in the same file moves the held card's anchor", async () => {
-    const path = "flows/review/flow.ts"
+    const path = ".smithers/flows/review/flow.ts"
     const { store, controller, reads } = await planned({
       sites: [{ id: "gate", declaredAt: { path, line: 12 } }, { id: "steady", declaredAt: { path, line: 40 } }],
       source: "const gate = 1\n"
@@ -470,7 +470,7 @@ describe("the plan card's node drawer", () => {
    * over the failure.
    */
   test("a refused read is stated and stays retryable", async () => {
-    const site = { path: "flows/review/flow.ts", line: 12 }
+    const site = { path: ".smithers/flows/review/flow.ts", line: 12 }
     const { store, controller, reads } = await planned({ sites: [{ id: "gate", declaredAt: site }] })
     await controller.commands.run("flow.plan.select", `${PLAN_CARD} gate`)
     await controller.commands.run("flow.plan.tab", `${PLAN_CARD} code`)
@@ -503,7 +503,7 @@ describe("the plan card's node drawer", () => {
    * changed does not change what this plan's reader is shown.
    */
   test("reads the declared file at the revision the plan recorded, not the working tree", async () => {
-    const site = { path: "flows/review/flow.ts", line: 12 }
+    const site = { path: ".smithers/flows/review/flow.ts", line: 12 }
     const { store, controller, reads } = await planned({
       sites: [{ id: "gate", declaredAt: site }],
       source: "const gate = 2\n",
@@ -532,7 +532,7 @@ describe("the plan card's node drawer", () => {
    * tab does not read again for a file it already holds at it.
    */
   test("an edited working tree does not change what an old plan's Code tab shows", async () => {
-    const site = { path: "flows/review/flow.ts", line: 12 }
+    const site = { path: ".smithers/flows/review/flow.ts", line: 12 }
     const served = { working: "const gate = 1\n" }
     const store = await webStore()
     const base = relay({ sites: [{ id: "gate", declaredAt: site }], revisionSource: "const gate = 1\n" })
@@ -581,7 +581,7 @@ describe("the plan card's node drawer", () => {
    * this plan was built from: nothing is read, and the drawer draws no tab.
    */
   test("a plan that names no revision reads nothing and holds no file", async () => {
-    const site = { path: "flows/review/flow.ts", line: 12 }
+    const site = { path: ".smithers/flows/review/flow.ts", line: 12 }
     const { store, controller, reads } = await planned({
       sites: [{ id: "gate", declaredAt: site }],
       source: "const gate = 1\n",
@@ -663,7 +663,7 @@ describe("the plan card's node drawer", () => {
 })
 
 test("a thrown declaration read stays visible even inside the toast debounce", async () => {
-  const { store } = await planned({ sites: [{ id: "gate", declaredAt: { path: "flows/review/flow.ts", line: 1 } }] })
+  const { store } = await planned({ sites: [{ id: "gate", declaredAt: { path: ".smithers/flows/review/flow.ts", line: 1 } }] })
   const context = createControllerContext(store, silentAgent, { toastDebounceMs: 300 })
   Object.assign(context, createFailureController(context))
   const graph = createGraphController(context, async () => { throw new Error("read interrupted") })
@@ -687,8 +687,8 @@ for (const kind of ["plan", "run"] as const) {
     }
   }
   const sites = [
-    { id: "gate", declaredAt: { path: "flows/first/flow.ts", line: 1 } },
-    { id: "steady", declaredAt: { path: "flows/second/flow.ts", line: 2 } },
+    { id: "gate", declaredAt: { path: ".smithers/flows/first/flow.ts", line: 1 } },
+    { id: "steady", declaredAt: { path: ".smithers/flows/second/flow.ts", line: 2 } },
   ]
 
   test(`${kind}: selecting another node while Code is open reads its declaration and clears the previous refusal`, async () => {
@@ -836,7 +836,7 @@ describe("run graph commands retain the recorded gateway scope", () => {
       plan: { planId: "plan-1", digest: "d".repeat(64), nodes: [
         { id: "gate", kind: "step", key: "key1_" + "0".repeat(64), dependsOn: [], tier: "sealed", status: "run" },
         { id: "steady", kind: "step", key: "key1_" + "1".repeat(64), dependsOn: ["gate"], tier: "sealed", status: "run" },
-      ], graph: { edges: [], sourceRevision: REVISION, nodes: [{ id: "gate", declaredAt: { path: "flows/review/flow.ts", line: 1 } }] } }
+      ], graph: { edges: [], sourceRevision: REVISION, nodes: [{ id: "gate", declaredAt: { path: ".smithers/flows/review/flow.ts", line: 1 } }] } }
     }
   })
   const ready = async (cards: Card[]) => {
@@ -901,7 +901,7 @@ describe("run graph commands retain the recorded gateway scope", () => {
 
 for (const kind of ["plan", "run"] as const) {
   const ready = async (readGate?: Promise<void>) => {
-    const options = { sites: [{ id: "gate", declaredAt: { path: "flows/review/flow.ts", line: 1 } }], source: "export const gate = true", readGate }
+    const options = { sites: [{ id: "gate", declaredAt: { path: ".smithers/flows/review/flow.ts", line: 1 } }], source: "export const gate = true", readGate }
     const seed = await (kind === "plan" ? planned(options) : launched(options))
     const original = kind === "plan" ? planCard(seed.store)! : runCard(seed.store)!
     const view = { node: "gate", tab: "declaration" as const }

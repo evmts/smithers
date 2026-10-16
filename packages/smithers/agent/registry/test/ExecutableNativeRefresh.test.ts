@@ -43,13 +43,13 @@ const refreshAfterEditing = async (files: Record<string, string>, edited: string
   const root = await mkdtemp(join(modulesRoot, ".native-refresh-"))
   try {
     for (const [name, text] of Object.entries(files)) {
-      await mkdir(join(root, "flows/entry", name, ".."), { recursive: true })
-      await writeFile(join(root, "flows/entry", name), text)
+      await mkdir(join(root, ".smithers/flows/entry", name, ".."), { recursive: true })
+      await writeFile(join(root, ".smithers/flows/entry", name), text)
     }
     const stdout = await new Promise<string>((resolve, reject) =>
       execFile(
         process.execPath,
-        [driver, root, join(root, "flows/entry", edited)],
+        [driver, root, join(root, ".smithers/flows/entry", edited)],
         { timeout: 60_000 },
         (error, out, stderr) => error === null ? resolve(out) : reject(new Error(`${error.message}\n${stderr}`))
       )

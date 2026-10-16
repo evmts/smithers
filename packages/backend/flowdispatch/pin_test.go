@@ -53,7 +53,7 @@ func TestTodoFlowIsAdmittedOnlyAsAPinnedStackLaunch(t *testing.T) {
 	pin := todoPin
 	reviewPin := todoPin
 	reviewPin.Flow = "review/change"
-	for _, flowID := range []string{"todo", "flows/todo/flow.ts", " todo ", "todo/"} {
+	for _, flowID := range []string{"todo", ".smithers/flows/todo/flow.ts", "./.smithers/flows/todo/flow.ts", " todo ", "todo/"} {
 		for name, request := range map[string]LaunchRequest{
 			"repository job":         {Scope: stackScope, RequestID: "job", FlowID: flowID, Target: flowruntime.Target{WorkspaceID: "w", BindingKind: "repository-job-dispatch", BindingID: "d"}, Pin: &pin},
 			"invoked run":            {Scope: stackScope, RequestID: "invoke", FlowID: flowID, Target: flowruntime.Target{WorkspaceID: "w", BindingKind: "workflow-run", BindingID: "r"}},
@@ -314,7 +314,7 @@ func TestPinAdmits(t *testing.T) {
 func TestLearningLaunchRequiresItsPinnedBackgroundBinding(t *testing.T) {
 	pin := flowruntime.Pin{Flow: "learning", SourceCommit: strings.Repeat("a", 40), ExecutionDigest: strings.Repeat("1", 64)}
 	target := flowruntime.Target{WorkspaceID: "learning-machine", BindingKind: "learning", BindingID: "merged-item"}
-	for _, name := range []string{"learning", "flows/learning/flow.ts", "./flows/learning/flow.ts"} {
+	for _, name := range []string{"learning", ".smithers/flows/learning/flow.ts", "./.smithers/flows/learning/flow.ts"} {
 		for _, kind := range []string{"learning", StackBindingKind, "browser-flow"} {
 			for _, pinned := range []bool{false, true} {
 				t.Run(name+"/"+kind+"/"+fmt.Sprint(pinned), func(t *testing.T) {
@@ -333,4 +333,14 @@ func TestLearningLaunchRequiresItsPinnedBackgroundBinding(t *testing.T) {
 			}
 		}
 	}
+}
+
+// A repository's flows live under .smithers/flows/ (mvp.md M-49); a root
+// flows/ path names no repository flow.
+func TestRepositoryFlowPathIsUnderSmithersFlows(t *testing.T) {
+	require.Equal(t, ".smithers/flows/todo/flow.ts", RepositoryFlowPath("todo"))
+	require.Equal(t, ".smithers/flows/review/change/flow.ts", RepositoryFlowPath("review/change"))
+	require.True(t, IsTodoFlow(".smithers/flows/todo/flow.ts"))
+	require.False(t, IsTodoFlow("flows/todo/flow.ts"))
+	require.False(t, IsLearningFlow("flows/learning/flow.ts"))
 }

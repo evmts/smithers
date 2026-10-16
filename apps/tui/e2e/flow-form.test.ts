@@ -10,11 +10,11 @@ for (const [cols, rows, burst] of [[60, 20, false], [40, 12, false], [40, 12, tr
   it(`keeps twelve form fields reachable at ${cols} by ${rows} (${burst ? "burst" : "paced"})`, async () => {
     const root = mkdtempSync(join(tmpdir(), "tui-form-"))
     const project = join(root, "project")
-    mkdirSync(join(project, "flows/many"), { recursive: true })
+    mkdirSync(join(project, ".smithers/flows/many"), { recursive: true })
     symlinkSync(join(app, "node_modules"), join(project, "node_modules"), "dir")
     const fields = Array.from({ length: 12 }, (_, index) => `field${index + 1}: Schema.String`).join(", ")
     writeFileSync(
-      join(project, "flows/many/flow.ts"),
+      join(project, ".smithers/flows/many/flow.ts"),
       `
     import { Flow } from "@smthrs/flow"
     import { Node } from "@smthrs/plan"
@@ -83,10 +83,10 @@ for (const [cols, rows, burst] of [[60, 20, false], [40, 12, false], [40, 12, tr
 it("lists a flow waiting for its form under Needs you; enter opens it and a answers it", async () => {
   const root = mkdtempSync(join(tmpdir(), "tui-form-"))
   const project = join(root, "project")
-  mkdirSync(join(project, "flows/greet"), { recursive: true })
+  mkdirSync(join(project, ".smithers/flows/greet"), { recursive: true })
   symlinkSync(join(app, "node_modules"), join(project, "node_modules"), "dir")
   writeFileSync(
-    join(project, "flows/greet/flow.ts"),
+    join(project, ".smithers/flows/greet/flow.ts"),
     `
     import { Flow } from "@smthrs/flow"
     import { Node } from "@smthrs/plan"

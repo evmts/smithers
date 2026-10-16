@@ -136,7 +136,7 @@ beforeEach(async () => {
       kind: "module",
       flows: [],
       capabilities: [],
-      path: join(cwd, "flows/review/flow.ts")
+      path: join(cwd, ".smithers/flows/review/flow.ts")
     }],
     input: async () => Schema.Struct({}),
     body: async () => {

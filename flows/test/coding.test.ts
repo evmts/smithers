@@ -374,7 +374,7 @@ test(
       body: (input) => DelegateAction.call(input)
     })
     for (const name of ["implement/database", "implement/server", "backpressure/build", "review"]) {
-      const path = join(repo.root, "flows", name)
+      const path = join(repo.root, ".smithers", "flows", name)
       await mkdir(path, { recursive: true })
       await writeFile(
         join(path, "flow.mdx"),
@@ -385,7 +385,7 @@ test(
     const executables = await Effect.runPromise(
       Effect.gen(function*() {
         const discovery = yield* Discovery.Discovery
-        const found = yield* discovery.scan({ source: "project", root: join(repo.root, "flows"), naming: "path" })
+        const found = yield* discovery.scan({ source: "project", root: join(repo.root, ".smithers", "flows"), naming: "path" })
         assert.equal(found.entries.length, 4)
         return yield* Effect.forEach(
           found.entries,

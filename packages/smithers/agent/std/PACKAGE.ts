@@ -17,7 +17,11 @@ import { Smithers } from "@smthrs/targets"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
-  cwd: "packages/smithers/agent/std"
+  cwd: "packages/smithers/agent/std",
+  // examples/ is type-checked and formatted with the tests, and run by
+  // test/examples/; each example is documentation users copy, so it is not
+  // held to the library lint rules.
+  testSources: Smithers.glob("{test,examples}/**/*.ts")
 })
 
 /**

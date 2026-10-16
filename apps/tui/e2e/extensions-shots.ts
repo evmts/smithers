@@ -38,8 +38,8 @@ const reviewFlow = [
   ""
 ].join("\n")
 const cwd = mkdtempSync(join(tmpdir(), "tui-extensions-shots-"))
-mkdirSync(join(cwd, "flows", "review"), { recursive: true })
-const mdx = join(cwd, "flows", "review", "flow.mdx")
+mkdirSync(join(cwd, ".smithers", "flows", "review"), { recursive: true })
+const mdx = join(cwd, ".smithers", "flows", "review", "flow.mdx")
 writeFileSync(mdx, reviewFlow)
 const tui = await Tui.start({
   cwd,

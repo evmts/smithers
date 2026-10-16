@@ -11,6 +11,22 @@ export default defineConfig({
     include: ["test/**/*.test.ts"],
     exclude: [...configDefaults.exclude, "test/faults/**"],
     environment: "node",
+    // A developer's credentials must not turn the ordinary suite into a paid
+    // network run. The live examples under `test/examples` stay available
+    // through explicit opt-in, so every provider key an example reads is
+    // masked, not only today's live one.
+    env: process.env.SMITHERS_LIVE_EXAMPLES === "1"
+      ? {}
+      : {
+        OPENAI_API_KEY: "",
+        GEMINI_API_KEY: "",
+        SMITHERS_EXAMPLE_API_KEY: "",
+        KIMI_API_KEY: "",
+        X_API_KEY: "",
+        X_API_SECRET: "",
+        X_ACCESS_TOKEN: "",
+        X_ACCESS_SECRET: ""
+      },
     // House convention (see packages/smithers/flows/journal/vitest.config.ts): a finite 30 s
     // wall-clock budget so correct suites survive coverage-instrumented load
     // while a genuine hang still fails the run.
@@ -35,6 +51,7 @@ export default defineConfig({
         "model/**",
         "plugin/**",
         "registry/**",
+        "regression/**",
         "scorers/**",
         "std/**",
         "triggers/**"

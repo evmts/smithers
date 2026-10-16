@@ -93,8 +93,8 @@ func TestReviewSourceRestoresHeadBesidePinnedSource(t *testing.T) {
 	work, bare := t.TempDir(), t.TempDir()
 	reviewGit(t, bare, "init", "--quiet", "--bare")
 	reviewGit(t, work, "init", "--quiet", "-b", "main")
-	require.NoError(t, os.MkdirAll(filepath.Join(work, "flows/review"), 0o700))
-	require.NoError(t, os.WriteFile(filepath.Join(work, "flows/review/flow.ts"), []byte("// pinned review flow\n"), 0o600))
+	require.NoError(t, os.MkdirAll(filepath.Join(work, ".smithers/flows/review"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(work, ".smithers/flows/review/flow.ts"), []byte("// pinned review flow\n"), 0o600))
 	reviewGit(t, work, "add", ".")
 	reviewGit(t, work, "commit", "--quiet", "-m", "Pinned review flow")
 	pinned := reviewGit(t, work, "rev-parse", "HEAD")
@@ -105,12 +105,12 @@ func TestReviewSourceRestoresHeadBesidePinnedSource(t *testing.T) {
 	reviewGit(t, work, "push", "--quiet", bare, "HEAD:refs/heads/main")
 	require.NoError(t, os.WriteFile(filepath.Join(work, "cache.ts"), []byte("export const capacity = 2 + 1\n"), 0o600))
 	// The PR also edits the review flow. The machine must still hold the pinned bytes.
-	require.NoError(t, os.WriteFile(filepath.Join(work, "flows/review/flow.ts"), []byte("// PR-controlled review flow\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(work, ".smithers/flows/review/flow.ts"), []byte("// PR-controlled review flow\n"), 0o600))
 	reviewGit(t, work, "commit", "--quiet", "-am", "Keep one more entry")
 	head := reviewGit(t, work, "rev-parse", "HEAD")
 	reviewGit(t, work, "push", "--quiet", bare, head+":refs/pull/50/head")
 	digest := strings.Repeat("c", 64)
-	_, err = q.InsertFlowVersion(ctx, repo.ID, "review", "flows/review/flow.ts", pinned, digest, "loaded", "", []byte(`{}`))
+	_, err = q.InsertFlowVersion(ctx, repo.ID, "review", ".smithers/flows/review/flow.ts", pinned, digest, "loaded", "", []byte(`{}`))
 	require.NoError(t, err)
 
 	root, err := filepath.EvalSymlinks(t.TempDir())
@@ -146,7 +146,7 @@ func TestReviewSourceRestoresHeadBesidePinnedSource(t *testing.T) {
 			})
 		}
 		require.Empty(t, host.calls, "no refusal retains source")
-		_, err := q.InsertFlowVersion(ctx, repo.ID, "review", "flows/review/flow.ts", base, strings.Repeat("e", 64), "failed", "load failed", []byte(`{}`))
+		_, err := q.InsertFlowVersion(ctx, repo.ID, "review", ".smithers/flows/review/flow.ts", base, strings.Repeat("e", 64), "failed", "load failed", []byte(`{}`))
 		require.NoError(t, err)
 		failed := admission
 		failed.Pin = reviewPin(base, strings.Repeat("e", 64))
@@ -210,7 +210,7 @@ func TestReviewSourceRestoresHeadBesidePinnedSource(t *testing.T) {
 		require.Zero(t, result.ExitCode, result.Stderr)
 		return result.Stdout
 	}
-	require.Equal(t, "// pinned review flow\n", show(pinned+":flows/review/flow.ts"), "the pinned commit is beside the PR head")
+	require.Equal(t, "// pinned review flow\n", show(pinned+":.smithers/flows/review/flow.ts"), "the pinned commit is beside the PR head")
 	require.Equal(t, "export const capacity = 2\n", show(base+":cache.ts"))
 	remotes, err := runtime.ExecuteCommand(ctx, workspaceID, workspaceapi.Command{Args: []string{"git", "remote"}})
 	require.NoError(t, err)

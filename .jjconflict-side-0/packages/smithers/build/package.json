@@ -1,0 +1,155 @@
+{
+  "name": "@smthrs/build",
+  "type": "module",
+  "version": "1.0.0-rc.12",
+  "license": "MIT",
+  "smthrs": {
+    "group": "tooling"
+  },
+  "description": "Bazel-style TypeScript workflow orchestration with explicit pnpm installation",
+  "homepage": "https://github.com/smithersai/smithers",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/smithers/build"
+  },
+  "bugs": {
+    "url": "https://github.com/smithersai/smithers/issues"
+  },
+  "tags": [
+    "typescript",
+    "effect",
+    "flows",
+    "package-manager"
+  ],
+  "keywords": [
+    "typescript",
+    "effect",
+    "flows",
+    "package-manager"
+  ],
+  "engines": {
+    "node": ">=26.4.0"
+  },
+  "sideEffects": [],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./Install": "./src/Install.ts",
+    "./PackageManager": "./src/PackageManager.ts",
+    "./Runtime": "./src/Runtime.ts",
+    "./internal/*": null,
+    "./*/index": null,
+    "./index": "./src/index.ts"
+  },
+  "files": [
+    "src/**/*.ts",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/package.json",
+    "README.md",
+    "DESIGN.md",
+    "WIRING.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "docs/"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next",
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./Install": {
+        "import": {
+          "types": "./dist/esm/Install.d.ts",
+          "default": "./dist/esm/Install.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Install.d.ts",
+          "default": "./dist/cjs/Install.js"
+        }
+      },
+      "./PackageManager": {
+        "import": {
+          "types": "./dist/esm/PackageManager.d.ts",
+          "default": "./dist/esm/PackageManager.js"
+        },
+        "require": {
+          "types": "./dist/cjs/PackageManager.d.ts",
+          "default": "./dist/cjs/PackageManager.js"
+        }
+      },
+      "./Runtime": {
+        "import": {
+          "types": "./dist/esm/Runtime.d.ts",
+          "default": "./dist/esm/Runtime.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Runtime.d.ts",
+          "default": "./dist/cjs/Runtime.js"
+        }
+      },
+      "./internal/*": null,
+      "./*/index": null,
+      "./index": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint src test examples infra terraform/modules/cache/service --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "circular": "node scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "vitest --coverage"
+  },
+  "dependencies": {
+    "@smthrs/crypto": "1.0.0-rc.12",
+    "@smthrs/flow": "1.0.0-rc.12",
+    "@smthrs/plan": "1.0.0-rc.12"
+  },
+  "peerDependencies": {
+    "effect": "^4.0.4"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@effect/platform-node": "4.0.4",
+    "@eslint/js": "9.39.5",
+    "@types/node": "26.4.1",
+    "@vitest/coverage-v8": "5.0.0",
+    "dprint": "0.57.1",
+    "effect": "4.0.4",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "madge": "8.0.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0"
+  }
+}

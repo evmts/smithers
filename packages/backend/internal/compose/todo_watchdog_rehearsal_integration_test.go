@@ -136,7 +136,7 @@ export default Flow.make("todo", {
 
 func activateWatchdogOverride(t *testing.T, r *rehearsal, source string) (string, string) {
 	t.Helper()
-	commit, err := r.pushGitHubMain("Install watchdog TODO override", map[string]string{"flows/todo/flow.ts": source})
+	commit, err := r.pushGitHubMain("Install watchdog TODO override", map[string]string{".smithers/flows/todo/flow.ts": source})
 	require.NoError(t, err)
 	var digest string
 	require.EventuallyWithT(t, func(c *assert.CollectT) {

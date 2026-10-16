@@ -8,7 +8,7 @@ import { acceptedRunId, waitForTerminalRun } from "./flow-execution/production"
 // C-J11-02. All changes use the rendered install doors and Ben's own guest
 // terminal. LiveCodeDocuments stays disabled: this pass uses the S2 editor.
 // E-19 places notify after delivery; verification/review remain engine launches.
-const edit = 'codex exec "In flows/todo/flow.ts add a recorded action named notify after delivery, implemented as a no-op with implementationVersion notify/v1. Keep the tagged Flow.make composition and every existing step. Do not merge, push, open a PR or change any other file."'
+const edit = 'codex exec "In .smithers/flows/todo/flow.ts add a recorded action named notify after delivery, implemented as a no-op with implementationVersion notify/v1. Keep the tagged Flow.make composition and every existing step. Do not merge, push, open a PR or change any other file."'
 const prompt = "Add the line 'draft' to NOTES.md"
 
 test("C-J11-02 Source, Plan and draft Run use the scratch machine", scenario("journey.flow-source-run", {
@@ -31,7 +31,7 @@ test("C-J11-02 Source, Plan and draft Run use the scratch machine", scenario("jo
   await expect(draft.getByRole("textbox", { name: "Prompt", exact: true })).toHaveValue(/Change flows\/todo\/flow.ts: Edit the source/)
   await journeyActivate(draft.getByRole("button", { name: "Commit", exact: true }))
   const file = page.locator('.smithers-card[data-kind="file"]').last()
-  await expect(file).toContainText("flows/todo/flow.ts", { timeout: 660_000 })
+  await expect(file).toContainText(".smithers/flows/todo/flow.ts", { timeout: 660_000 })
   const proposed = (await f.read("Ben", "/api/flows")).find((flow: any) => flow.name === "todo").versions.find((version: any) => version.state === "proposed")
   expect(proposed?.todo).toEqual(expect.any(Number))
   const sourceTodo = await f.read("Ben", `/api/todos/${proposed.todo}`)
@@ -62,7 +62,7 @@ test("C-J11-02 Source, Plan and draft Run use the scratch machine", scenario("jo
   await journeyTerminalInput(page.locator(".terminal-view").last())
   await page.keyboard.type(edit)
   await page.keyboard.press("Enter")
-  await expect.poll(async () => (await f.read("Ben", `/api/branches/${encodeURIComponent(sourceTodo.branch.name)}/files/flows/todo/flow.ts`)).content.text, { timeout: 300_000 }).toContain('"notify"')
+  await expect.poll(async () => (await f.read("Ben", `/api/branches/${encodeURIComponent(sourceTodo.branch.name)}/files/.smithers/flows/todo/flow.ts`)).content.text, { timeout: 300_000 }).toContain('"notify"')
   await runSlash(page, `/branch ${sourceTodo.branch.name}`)
   const forked = page.waitForResponse(response => response.request().method() === "POST" && new URL(response.url()).pathname === "/api/branches")
   await journeyActivate(branch.getByRole("button", { name: "Fork", exact: true }))

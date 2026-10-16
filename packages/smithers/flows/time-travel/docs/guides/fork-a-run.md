@@ -125,7 +125,7 @@ const driven = Effect.gen(function*() {
 ```
 
 A runnable version of this walkthrough is
-[`05-time-travel-fork.ts`](https://github.com/smithersai/smithers/blob/main/examples/src/05-time-travel-fork.ts)
+[`05-time-travel-fork.ts`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/examples/05-time-travel-fork.ts)
 in the Smithers examples on GitHub.
 
 ## Edit a step result

@@ -25,9 +25,9 @@ export default Flow.make("review", {
 
 const fixture = (existing = true, initialSource?: string, prepare?: (cwd: string) => void) => {
   const cwd = mkdtempSync(join(tmpdir(), "tui-watch-"))
-  const directory = join(cwd, "flows")
+  const directory = join(cwd, ".smithers", "flows")
   const source = join(directory, "review", "flow.ts")
-  if (existing) mkdirSync(directory)
+  if (existing) mkdirSync(directory, { recursive: true })
   if (initialSource !== undefined) {
     mkdirSync(join(directory, "review"))
     writeFileSync(source, initialSource)
@@ -81,7 +81,7 @@ const fixture = (existing = true, initialSource?: string, prepare?: (cwd: string
 const discover = (cwd: string) =>
   Effect.runPromise(
     Effect.flatMap(Discovery.Discovery, (discovery) =>
-      discovery.scan({ source: "project", root: join(cwd, "flows"), naming: "path", optionalRoot: true })).pipe(
+      discovery.scan({ source: "project", root: join(cwd, ".smithers", "flows"), naming: "path", optionalRoot: true })).pipe(
         Effect.provide(Discovery.layer.pipe(Layer.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer))))
       )
   )
@@ -104,7 +104,7 @@ it("receives an immediate existing-file edit even when its size and mtime are pr
 }, 10000)
 
 for (const existing of [true, false]) {
-  it(`receives immediate subtree creation with flows/ ${existing ? "already present" : "created later"}`, async () => {
+  it(`receives immediate subtree creation with .smithers/flows/ ${existing ? "already present" : "created later"}`, async () => {
     const test = fixture(existing)
     try {
       const created = test.next()
@@ -144,6 +144,19 @@ it("does not refresh an unchanged tree or edits inside ignored directories", asy
   }
 }, 10000)
 
+it("does not refresh for a retired root flows/ directory", async () => {
+  const test = fixture()
+  try {
+    const quiet = test.quiet()
+    mkdirSync(join(test.cwd, "flows", "review"), { recursive: true })
+    writeFileSync(join(test.cwd, "flows", "review", "flow.ts"), flow())
+    await quiet
+    expect(test.count()).toBe(0)
+  } finally {
+    test.close()
+  }
+}, 10000)
+
 for (const linked of ["root", "directory", "file"] as const) {
   it(`refreshes a discovered linked ${linked}, follows target edits, and observes replacement`, async () => {
     const outside = mkdtempSync(join(tmpdir(), "tui-watch-linked-"))
@@ -156,7 +169,8 @@ for (const linked of ["root", "directory", "file"] as const) {
     if (linked !== "file") symlinkSync(outside, join(outside, "review", "back"))
     let link!: string
     const test = fixture(linked !== "root", undefined, (cwd) => {
-      link = linked === "root" ? join(cwd, "flows") : join(cwd, "flows", "review")
+      mkdirSync(join(cwd, ".smithers"), { recursive: true })
+      link = linked === "root" ? join(cwd, ".smithers", "flows") : join(cwd, ".smithers", "flows", "review")
       if (linked === "file") {
         mkdirSync(link)
         link = join(link, "flow.ts")
@@ -197,7 +211,7 @@ it("matches canonical discovery's depth boundary instead of scanning unreachable
   let excluded!: string
   const test = fixture(true, undefined, (cwd) => {
     const segments = Array.from({ length: 32 }, (_, index) => `level${index}`)
-    const directory = join(cwd, "flows", ...segments)
+    const directory = join(cwd, ".smithers", "flows", ...segments)
     mkdirSync(join(directory, "deeper"), { recursive: true })
     included = join(directory, "flow.ts")
     excluded = join(directory, "deeper", "flow.ts")
@@ -229,9 +243,9 @@ it("keeps discovered siblings fresh beside unresolved link cycles and recovers r
   const notices: Array<string> = []
   const unsubscribe = Log.subscribe((message) => notices.push(message))
   const test = fixture(true, flow(), (cwd) => {
-    symlinkSync("loop", join(cwd, "flows", "loop"))
-    mkdirSync(join(cwd, "flows", "broken"))
-    symlinkSync("flow.ts", join(cwd, "flows", "broken", "flow.ts"))
+    symlinkSync("loop", join(cwd, ".smithers", "flows", "loop"))
+    mkdirSync(join(cwd, ".smithers", "flows", "broken"))
+    symlinkSync("flow.ts", join(cwd, ".smithers", "flows", "broken", "flow.ts"))
   })
   try {
     const catalog = await discover(test.cwd)
@@ -281,15 +295,15 @@ it.skipIf(process.getuid?.() === 0)(
     const notices: Array<string> = []
     const unsubscribe = Log.subscribe((message) => notices.push(message))
     const test = fixture(true, flow(), (cwd) => {
-      mkdirSync(join(cwd, "flows", "blocked"))
-      symlinkSync(join(locked, "flow.ts"), join(cwd, "flows", "blocked", "flow.ts"))
-      mkdirSync(join(cwd, "flows", "denied"))
+      mkdirSync(join(cwd, ".smithers", "flows", "blocked"))
+      symlinkSync(join(locked, "flow.ts"), join(cwd, ".smithers", "flows", "blocked", "flow.ts"))
+      mkdirSync(join(cwd, ".smithers", "flows", "denied"))
       writeFileSync(
-        join(cwd, "flows", "denied", "flow.ts"),
+        join(cwd, ".smithers", "flows", "denied", "flow.ts"),
         flow("Denied").replace("Flow.make(\"review\"", "Flow.make(\"denied\"")
       )
       chmodSync(locked, 0)
-      chmodSync(join(cwd, "flows", "denied"), 0)
+      chmodSync(join(cwd, ".smithers", "flows", "denied"), 0)
     })
     try {
       const catalog = await discover(test.cwd)
@@ -467,7 +481,10 @@ it("leaves a root unreadable from the start to the listing's own notice, and rec
   const unsubscribe = Log.subscribe((message) => notices.push(message))
   // A symlink to itself: the first scan cannot read the root. Each conversation
   // makes a new watcher, so a startup notice here would bury its acknowledgment.
-  const test = fixture(false, undefined, (cwd) => symlinkSync("flows", join(cwd, "flows")))
+  const test = fixture(false, undefined, (cwd) => {
+    mkdirSync(join(cwd, ".smithers"))
+    symlinkSync("flows", join(cwd, ".smithers", "flows"))
+  })
   try {
     await test.quiet()
     expect(notices).toEqual([])

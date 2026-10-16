@@ -1,0 +1,439 @@
+{
+  "name": "@smthrs/patterns",
+  "type": "module",
+  "version": "1.0.0-rc.12",
+  "license": "MIT",
+  "smthrs": {
+    "group": "agent"
+  },
+  "description": "Higher-order flow patterns and decorators for flows. It composes @smthrs/flow and the one effect model in @smthrs/plan/Effects, and imports no Node built-ins.",
+  "homepage": "https://github.com/smithersai/smithers",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/smithers/flows/patterns"
+  },
+  "bugs": {
+    "url": "https://github.com/smithersai/smithers/issues"
+  },
+  "tags": [
+    "typescript",
+    "effect",
+    "flow",
+    "patterns"
+  ],
+  "keywords": [
+    "typescript",
+    "effect",
+    "flow",
+    "patterns"
+  ],
+  "engines": {
+    "node": ">=26.4.0"
+  },
+  "sideEffects": [],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null,
+    "./*/index": null,
+    "./Bounded": "./src/Bounded.ts",
+    "./Burndown": "./src/Burndown.ts",
+    "./CheckSuite": "./src/CheckSuite.ts",
+    "./Debate": "./src/Debate.ts",
+    "./DelegationChain": "./src/DelegationChain.ts",
+    "./DriftDetector": "./src/DriftDetector.ts",
+    "./Escalation": "./src/Escalation.ts",
+    "./Intervene": "./src/Intervene.ts",
+    "./Kanban": "./src/Kanban.ts",
+    "./Loop": "./src/Loop.ts",
+    "./MapReduce": "./src/MapReduce.ts",
+    "./MergeQueue": "./src/MergeQueue.ts",
+    "./Optimizer": "./src/Optimizer.ts",
+    "./Panel": "./src/Panel.ts",
+    "./Pattern": "./src/Pattern.ts",
+    "./PatternError": "./src/PatternError.ts",
+    "./Quarantine": "./src/Quarantine.ts",
+    "./Recursion": "./src/Recursion.ts",
+    "./ReviewLoop": "./src/ReviewLoop.ts",
+    "./Runbook": "./src/Runbook.ts",
+    "./Saga": "./src/Saga.ts",
+    "./ScanFixVerify": "./src/ScanFixVerify.ts",
+    "./Sidecar": "./src/Sidecar.ts",
+    "./Supervisor": "./src/Supervisor.ts",
+    "./Trellis": "./src/Trellis.ts",
+    "./TryCatchFinally": "./src/TryCatchFinally.ts",
+    "./WithApproval": "./src/WithApproval.ts",
+    "./WithCache": "./src/WithCache.ts",
+    "./WithRetry": "./src/WithRetry.ts",
+    "./index": "./src/index.ts"
+  },
+  "files": [
+    "src/**/*.ts",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/package.json",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next",
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./internal/*": null,
+      "./*/index": null,
+      "./Bounded": {
+        "import": {
+          "types": "./dist/esm/Bounded.d.ts",
+          "default": "./dist/esm/Bounded.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Bounded.d.ts",
+          "default": "./dist/cjs/Bounded.js"
+        }
+      },
+      "./Burndown": {
+        "import": {
+          "types": "./dist/esm/Burndown.d.ts",
+          "default": "./dist/esm/Burndown.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Burndown.d.ts",
+          "default": "./dist/cjs/Burndown.js"
+        }
+      },
+      "./CheckSuite": {
+        "import": {
+          "types": "./dist/esm/CheckSuite.d.ts",
+          "default": "./dist/esm/CheckSuite.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CheckSuite.d.ts",
+          "default": "./dist/cjs/CheckSuite.js"
+        }
+      },
+      "./Debate": {
+        "import": {
+          "types": "./dist/esm/Debate.d.ts",
+          "default": "./dist/esm/Debate.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Debate.d.ts",
+          "default": "./dist/cjs/Debate.js"
+        }
+      },
+      "./DelegationChain": {
+        "import": {
+          "types": "./dist/esm/DelegationChain.d.ts",
+          "default": "./dist/esm/DelegationChain.js"
+        },
+        "require": {
+          "types": "./dist/cjs/DelegationChain.d.ts",
+          "default": "./dist/cjs/DelegationChain.js"
+        }
+      },
+      "./DriftDetector": {
+        "import": {
+          "types": "./dist/esm/DriftDetector.d.ts",
+          "default": "./dist/esm/DriftDetector.js"
+        },
+        "require": {
+          "types": "./dist/cjs/DriftDetector.d.ts",
+          "default": "./dist/cjs/DriftDetector.js"
+        }
+      },
+      "./Escalation": {
+        "import": {
+          "types": "./dist/esm/Escalation.d.ts",
+          "default": "./dist/esm/Escalation.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Escalation.d.ts",
+          "default": "./dist/cjs/Escalation.js"
+        }
+      },
+      "./Intervene": {
+        "import": {
+          "types": "./dist/esm/Intervene.d.ts",
+          "default": "./dist/esm/Intervene.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Intervene.d.ts",
+          "default": "./dist/cjs/Intervene.js"
+        }
+      },
+      "./Kanban": {
+        "import": {
+          "types": "./dist/esm/Kanban.d.ts",
+          "default": "./dist/esm/Kanban.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Kanban.d.ts",
+          "default": "./dist/cjs/Kanban.js"
+        }
+      },
+      "./Loop": {
+        "import": {
+          "types": "./dist/esm/Loop.d.ts",
+          "default": "./dist/esm/Loop.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Loop.d.ts",
+          "default": "./dist/cjs/Loop.js"
+        }
+      },
+      "./MapReduce": {
+        "import": {
+          "types": "./dist/esm/MapReduce.d.ts",
+          "default": "./dist/esm/MapReduce.js"
+        },
+        "require": {
+          "types": "./dist/cjs/MapReduce.d.ts",
+          "default": "./dist/cjs/MapReduce.js"
+        }
+      },
+      "./MergeQueue": {
+        "import": {
+          "types": "./dist/esm/MergeQueue.d.ts",
+          "default": "./dist/esm/MergeQueue.js"
+        },
+        "require": {
+          "types": "./dist/cjs/MergeQueue.d.ts",
+          "default": "./dist/cjs/MergeQueue.js"
+        }
+      },
+      "./Optimizer": {
+        "import": {
+          "types": "./dist/esm/Optimizer.d.ts",
+          "default": "./dist/esm/Optimizer.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Optimizer.d.ts",
+          "default": "./dist/cjs/Optimizer.js"
+        }
+      },
+      "./Panel": {
+        "import": {
+          "types": "./dist/esm/Panel.d.ts",
+          "default": "./dist/esm/Panel.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Panel.d.ts",
+          "default": "./dist/cjs/Panel.js"
+        }
+      },
+      "./Pattern": {
+        "import": {
+          "types": "./dist/esm/Pattern.d.ts",
+          "default": "./dist/esm/Pattern.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Pattern.d.ts",
+          "default": "./dist/cjs/Pattern.js"
+        }
+      },
+      "./PatternError": {
+        "import": {
+          "types": "./dist/esm/PatternError.d.ts",
+          "default": "./dist/esm/PatternError.js"
+        },
+        "require": {
+          "types": "./dist/cjs/PatternError.d.ts",
+          "default": "./dist/cjs/PatternError.js"
+        }
+      },
+      "./Quarantine": {
+        "import": {
+          "types": "./dist/esm/Quarantine.d.ts",
+          "default": "./dist/esm/Quarantine.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Quarantine.d.ts",
+          "default": "./dist/cjs/Quarantine.js"
+        }
+      },
+      "./Recursion": {
+        "import": {
+          "types": "./dist/esm/Recursion.d.ts",
+          "default": "./dist/esm/Recursion.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Recursion.d.ts",
+          "default": "./dist/cjs/Recursion.js"
+        }
+      },
+      "./ReviewLoop": {
+        "import": {
+          "types": "./dist/esm/ReviewLoop.d.ts",
+          "default": "./dist/esm/ReviewLoop.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ReviewLoop.d.ts",
+          "default": "./dist/cjs/ReviewLoop.js"
+        }
+      },
+      "./Runbook": {
+        "import": {
+          "types": "./dist/esm/Runbook.d.ts",
+          "default": "./dist/esm/Runbook.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Runbook.d.ts",
+          "default": "./dist/cjs/Runbook.js"
+        }
+      },
+      "./Saga": {
+        "import": {
+          "types": "./dist/esm/Saga.d.ts",
+          "default": "./dist/esm/Saga.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Saga.d.ts",
+          "default": "./dist/cjs/Saga.js"
+        }
+      },
+      "./ScanFixVerify": {
+        "import": {
+          "types": "./dist/esm/ScanFixVerify.d.ts",
+          "default": "./dist/esm/ScanFixVerify.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ScanFixVerify.d.ts",
+          "default": "./dist/cjs/ScanFixVerify.js"
+        }
+      },
+      "./Sidecar": {
+        "import": {
+          "types": "./dist/esm/Sidecar.d.ts",
+          "default": "./dist/esm/Sidecar.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Sidecar.d.ts",
+          "default": "./dist/cjs/Sidecar.js"
+        }
+      },
+      "./Supervisor": {
+        "import": {
+          "types": "./dist/esm/Supervisor.d.ts",
+          "default": "./dist/esm/Supervisor.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Supervisor.d.ts",
+          "default": "./dist/cjs/Supervisor.js"
+        }
+      },
+      "./Trellis": {
+        "import": {
+          "types": "./dist/esm/Trellis.d.ts",
+          "default": "./dist/esm/Trellis.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Trellis.d.ts",
+          "default": "./dist/cjs/Trellis.js"
+        }
+      },
+      "./TryCatchFinally": {
+        "import": {
+          "types": "./dist/esm/TryCatchFinally.d.ts",
+          "default": "./dist/esm/TryCatchFinally.js"
+        },
+        "require": {
+          "types": "./dist/cjs/TryCatchFinally.d.ts",
+          "default": "./dist/cjs/TryCatchFinally.js"
+        }
+      },
+      "./WithApproval": {
+        "import": {
+          "types": "./dist/esm/WithApproval.d.ts",
+          "default": "./dist/esm/WithApproval.js"
+        },
+        "require": {
+          "types": "./dist/cjs/WithApproval.d.ts",
+          "default": "./dist/cjs/WithApproval.js"
+        }
+      },
+      "./WithCache": {
+        "import": {
+          "types": "./dist/esm/WithCache.d.ts",
+          "default": "./dist/esm/WithCache.js"
+        },
+        "require": {
+          "types": "./dist/cjs/WithCache.d.ts",
+          "default": "./dist/cjs/WithCache.js"
+        }
+      },
+      "./WithRetry": {
+        "import": {
+          "types": "./dist/esm/WithRetry.d.ts",
+          "default": "./dist/esm/WithRetry.js"
+        },
+        "require": {
+          "types": "./dist/cjs/WithRetry.d.ts",
+          "default": "./dist/cjs/WithRetry.js"
+        }
+      },
+      "./index": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint src examples --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "circular": "node scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "vitest --coverage"
+  },
+  "dependencies": {
+    "@smthrs/flow": "1.0.0-rc.12",
+    "@smthrs/plan": "1.0.0-rc.12"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@effect/vitest": "4.0.4",
+    "@eslint/js": "9.39.5",
+    "@smthrs/core": "1.0.0-rc.12",
+    "@types/node": "26.4.1",
+    "@vitest/coverage-v8": "5.0.0",
+    "dprint": "0.57.1",
+    "effect": "4.0.4",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "madge": "8.0.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0"
+  },
+  "peerDependencies": {
+    "effect": "^4.0.4"
+  }
+}

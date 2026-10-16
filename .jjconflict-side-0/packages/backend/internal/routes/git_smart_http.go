@@ -1,0 +1,333 @@
+package routes
+
+import (
+	"bytes"
+	"context"
+	stdErrors "errors"
+	"fmt"
+	"io"
+	"net/http"
+	"strconv"
+	"strings"
+	"sync/atomic"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/repohost"
+)
+
+type GitSmartRouteService interface {
+	ProxyInfoRefs(ctx context.Context, owner, repo, service, token string, stdout io.Writer) (string, error)
+	ProxyUploadPack(ctx context.Context, owner, repo, token string, stdin io.Reader, stdout io.Writer) error
+	ProxyReceivePack(ctx context.Context, owner, repo, token string, stdin io.Reader, stdout io.Writer) error
+}
+
+type GitSmartHandler struct {
+	Service GitSmartRouteService
+	Metrics *SmithersMetrics
+}
+
+// bodyTrackingWriter wraps an http.ResponseWriter and records whether any body
+// bytes have been written (i.e. whether WriteHeader has been called explicitly
+// or implicitly via Write). Once body bytes are in flight the HTTP status code
+// is committed and we must not attempt to write an error response.
+type bodyTrackingWriter struct {
+	http.ResponseWriter
+	written atomic.Bool
+}
+
+func (b *bodyTrackingWriter) WriteHeader(status int) {
+	b.written.Store(true)
+	b.ResponseWriter.WriteHeader(status)
+}
+
+func (b *bodyTrackingWriter) Write(p []byte) (int, error) {
+	b.written.Store(true)
+	return b.ResponseWriter.Write(p)
+}
+
+// headersCommitted reports whether any response body bytes have been sent.
+func (b *bodyTrackingWriter) headersCommitted() bool {
+	return b.written.Load()
+}
+
+func (h *GitSmartHandler) InfoRefs(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	result := "success"
+	defer func() {
+		h.Metrics.ObserveHTTPGitOperation("info-refs", result, time.Since(start).Seconds())
+	}()
+
+	owner := strings.TrimSpace(chi.URLParam(r, "owner"))
+	if owner == "" {
+		result = "error"
+		writeGitHTTPError(w, r, errors.BadRequest("owner is required"))
+		return
+	}
+
+	repo, err := parseGitRepoParam(chi.URLParam(r, "repo"))
+	if err != nil {
+		result = "error"
+		writeGitHTTPError(w, r, err)
+		return
+	}
+
+	service := strings.TrimSpace(r.URL.Query().Get("service"))
+	if service != "git-upload-pack" && service != "git-receive-pack" {
+		result = "error"
+		writeGitHTTPError(w, r, errors.BadRequest("unsupported git service"))
+		return
+	}
+
+	token := extractGitToken(r)
+	if h.Service == nil {
+		result = "error"
+		writeGitHTTPError(w, r, errors.Internal("git smart HTTP service is not configured"))
+		return
+	}
+
+	// InfoRefs output is normally small (just the ref advertisement), so we
+	// buffer it before writing response headers, preserving the ability to send
+	// an HTTP error if the upstream call fails. The buffer is capped:
+	// a repository with a pathological number of refs must not be able to
+	// exhaust API memory through clone/fetch discovery (repo-host enforces the
+	// same ceiling; this is defense in depth).
+	out := &cappedBuffer{max: maxRefAdvertisementSize}
+	contentType, err := h.Service.ProxyInfoRefs(r.Context(), owner, repo, service, token, out)
+	if err != nil {
+		result = "error"
+		writeGitHTTPError(w, r, err)
+		return
+	}
+
+	if strings.TrimSpace(contentType) == "" {
+		contentType = fmt.Sprintf("application/x-%s-advertisement", service)
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.Copy(w, &out.buf)
+}
+
+// maxRefAdvertisementSize caps the git info/refs advertisement buffered from
+// repo-host: repo-host's own 64 MiB ceiling plus slack for the pkt-line
+// service header. Variable so tests can lower it.
+var maxRefAdvertisementSize int64 = 64*1024*1024 + 512
+
+// cappedBuffer is a bytes.Buffer that fails writes past a byte ceiling
+// instead of growing without bound.
+type cappedBuffer struct {
+	buf bytes.Buffer
+	max int64
+}
+
+func (c *cappedBuffer) Write(p []byte) (int, error) {
+	if int64(c.buf.Len())+int64(len(p)) > c.max {
+		return 0, stdErrors.New("git ref advertisement exceeds maximum size")
+	}
+	return c.buf.Write(p)
+}
+
+// Variable so route tests can exercise the wire limit.
+var maxGitRequestBodySize int64 = repohost.MaxGitRequestBodySize
+
+func (h *GitSmartHandler) UploadPack(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	result := "success"
+	defer func() {
+		h.Metrics.ObserveHTTPGitOperation("upload-pack", result, time.Since(start).Seconds())
+	}()
+
+	owner := strings.TrimSpace(chi.URLParam(r, "owner"))
+	if owner == "" {
+		result = "error"
+		writeGitHTTPError(w, r, errors.BadRequest("owner is required"))
+		return
+	}
+
+	repo, err := parseGitRepoParam(chi.URLParam(r, "repo"))
+	if err != nil {
+		result = "error"
+		writeGitHTTPError(w, r, err)
+		return
+	}
+
+	token := extractGitToken(r)
+	if h.Service == nil {
+		result = "error"
+		writeGitHTTPError(w, r, errors.Internal("git smart HTTP service is not configured"))
+		return
+	}
+
+	requestBody, limiter, err := repohost.GitRequestBody(r, maxGitRequestBodySize)
+	if err != nil {
+		result = "error"
+		writeGitHTTPError(w, r, err)
+		return
+	}
+
+	// Wrap the writer so we can detect whether body bytes have been sent.
+	tracked := &bodyTrackingWriter{ResponseWriter: w}
+	w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
+	if err := h.Service.ProxyUploadPack(r.Context(), owner, repo, token, requestBody, tracked); err != nil {
+		result = "error"
+		if tracked.headersCommitted() {
+			// Headers are already committed; writing an error response would
+			// corrupt the git protocol stream. Log server-side instead.
+			middleware.LoggerFromContext(r.Context()).Error(
+				"upload-pack failed after response headers committed",
+				"owner", owner, "repo", repo, "error", err,
+			)
+			return
+		}
+		if limiter.Exceeded() {
+			writeGitHTTPError(w, r, errors.RequestEntityTooLarge("git request body exceeds maximum allowed size"))
+			return
+		}
+		writeGitHTTPError(w, r, err)
+	}
+}
+
+// pushResultWriteSlack is how long past its duration limit a started push
+// may take to write its result.
+const pushResultWriteSlack = 5 * time.Minute
+
+func (h *GitSmartHandler) ReceivePack(w http.ResponseWriter, r *http.Request) {
+	// A large push is read for as long as repo-host may take one, not the
+	// server's ReadTimeout, which stays for every other route: the limit
+	// covers the wait for the repository, and again the push from its start.
+	limit := repohost.ReceivePackMaxDuration()
+	rc := http.NewResponseController(w)
+	if err := rc.SetReadDeadline(time.Now().Add(limit)); err != nil {
+		middleware.LoggerFromContext(r.Context()).Warn("receive-pack keeps the server read timeout", "error", err)
+	}
+	ctx := repohost.WithPushStarted(r.Context(), func() {
+		_ = rc.SetReadDeadline(time.Now().Add(limit + repohost.PushStartedSlack))
+		// The result follows the push's jj import and hooks.
+		_ = rc.SetWriteDeadline(time.Now().Add(limit + pushResultWriteSlack))
+	})
+	start := time.Now()
+	result := "success"
+	defer func() {
+		h.Metrics.ObserveHTTPGitOperation("receive-pack", result, time.Since(start).Seconds())
+	}()
+
+	owner := strings.TrimSpace(chi.URLParam(r, "owner"))
+	if owner == "" {
+		result = "error"
+		writeGitHTTPError(w, r, errors.BadRequest("owner is required"))
+		return
+	}
+
+	repo, err := parseGitRepoParam(chi.URLParam(r, "repo"))
+	if err != nil {
+		result = "error"
+		writeGitHTTPError(w, r, err)
+		return
+	}
+
+	token := extractGitToken(r)
+	if h.Service == nil {
+		result = "error"
+		writeGitHTTPError(w, r, errors.Internal("git smart HTTP service is not configured"))
+		return
+	}
+
+	requestBody, limiter, err := repohost.GitRequestBody(r, maxGitRequestBodySize)
+	if err != nil {
+		result = "error"
+		writeGitHTTPError(w, r, err)
+		return
+	}
+
+	// Wrap the writer so we can detect whether body bytes have been sent.
+	tracked := &bodyTrackingWriter{ResponseWriter: w}
+	w.Header().Set("Content-Type", "application/x-git-receive-pack-result")
+	if err := h.Service.ProxyReceivePack(ctx, owner, repo, token, requestBody, tracked); err != nil {
+		result = "error"
+		if tracked.headersCommitted() {
+			// Headers are already committed; writing an error response would
+			// corrupt the git protocol stream. Log server-side instead.
+			middleware.LoggerFromContext(r.Context()).Error(
+				"receive-pack failed after response headers committed",
+				"owner", owner, "repo", repo, "error", err,
+			)
+			return
+		}
+		if limiter.Exceeded() {
+			writeGitHTTPError(w, r, errors.RequestEntityTooLarge("git request body exceeds maximum allowed size"))
+			return
+		}
+		writeGitHTTPError(w, r, err)
+	}
+}
+
+func parseGitRepoParam(repoParam string) (string, error) {
+	repoParam = strings.TrimSpace(repoParam)
+	if repoParam == "" {
+		return "", errors.BadRequest("repository name is required")
+	}
+	if !strings.HasSuffix(repoParam, ".git") {
+		return "", errors.BadRequest("repository path must end with .git")
+	}
+
+	repo := strings.TrimSuffix(repoParam, ".git")
+	if repo == "" || strings.Contains(repo, "/") || strings.Contains(repo, "..") {
+		return "", errors.BadRequest("invalid repository path")
+	}
+	return repo, nil
+}
+
+// writeGitHTTPError answers a smart-HTTP request with a plain-text error git
+// can show the user. A 5xx is logged with the request path (owner, repo and
+// operation) and the original error, because git only prints the sanitized
+// message.
+func writeGitHTTPError(w http.ResponseWriter, r *http.Request, err error) {
+	status := http.StatusInternalServerError
+	message := "internal server error"
+
+	var apiErr *errors.APIError
+	if stdErrors.As(err, &apiErr) {
+		status = apiErr.Status
+		message = apiErr.Message
+	}
+	if status >= http.StatusInternalServerError {
+		middleware.LoggerFromContext(r.Context()).Error("git smart HTTP request failed",
+			"method", r.Method, "path", r.URL.Path, "status", status, "error", err)
+	}
+
+	if status == http.StatusUnauthorized {
+		w.Header().Set("WWW-Authenticate", `Basic realm="Smithers Git"`)
+	}
+	if apiErr != nil && apiErr.RetryAfter > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(apiErr.RetryAfter))
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(status)
+	_, _ = io.WriteString(w, message+"\n")
+}
+
+func extractGitToken(r *http.Request) string {
+	if _, password, ok := r.BasicAuth(); ok {
+		return strings.TrimSpace(password)
+	}
+
+	auth := strings.TrimSpace(r.Header.Get("Authorization"))
+	if auth != "" {
+		parts := strings.Fields(auth)
+		if len(parts) == 2 {
+			switch strings.ToLower(parts[0]) {
+			case "token", "bearer":
+				return strings.TrimSpace(parts[1])
+			}
+		}
+	}
+
+	// Tokens are deliberately NOT accepted via URL query parameters: query
+	// strings are recorded by proxy/CDN access logs and browser/shell history.
+	// Git clients must authenticate with Basic auth or an Authorization header.
+	return ""
+}

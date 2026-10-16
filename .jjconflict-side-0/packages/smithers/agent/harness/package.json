@@ -1,0 +1,507 @@
+{
+  "name": "@smthrs/harness",
+  "type": "module",
+  "version": "1.0.0-rc.12",
+  "license": "MIT",
+  "smthrs": {
+    "group": "agent"
+  },
+  "description": "The Smithers built-in agent loop: a cell-first controller whose model turns produce JavaScript cells that run in a persistent realm and reach the world only through durable flow calls",
+  "homepage": "https://github.com/smithersai/smithers",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/smithers/agent/harness"
+  },
+  "bugs": {
+    "url": "https://github.com/smithersai/smithers/issues"
+  },
+  "tags": [
+    "typescript",
+    "effect",
+    "flow",
+    "agent"
+  ],
+  "keywords": [
+    "typescript",
+    "effect",
+    "flow",
+    "agent"
+  ],
+  "engines": {
+    "node": ">=26.4.0"
+  },
+  "sideEffects": [],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null,
+    "./*/index": null,
+    "./AgentEvent": "./src/AgentEvent.ts",
+    "./CallLedger": "./src/CallLedger.ts",
+    "./Cell": "./src/Cell.ts",
+    "./CellCalls": "./src/CellCalls.ts",
+    "./CellHistory": "./src/CellHistory.ts",
+    "./CellTurn": "./src/CellTurn.ts",
+    "./CellValidation": "./src/CellValidation.ts",
+    "./Compaction": "./src/Compaction.ts",
+    "./CompletionClaim": "./src/CompletionClaim.ts",
+    "./ContextWindow": "./src/ContextWindow.ts",
+    "./EngineLike": "./src/EngineLike.ts",
+    "./ExternalTranscript": "./src/ExternalTranscript.ts",
+    "./FlowBinding": "./src/FlowBinding.ts",
+    "./HarnessError": "./src/HarnessError.ts",
+    "./Judgement": "./src/Judgement.ts",
+    "./Monitor": "./src/Monitor.ts",
+    "./NarrowedCheck": "./src/NarrowedCheck.ts",
+    "./Notifications": "./src/Notifications.ts",
+    "./Plan": "./src/Plan.ts",
+    "./QuickJSSandbox": "./src/QuickJSSandbox.ts",
+    "./Relevance": "./src/Relevance.ts",
+    "./Sandbox": "./src/Sandbox.ts",
+    "./Steering": "./src/Steering.ts",
+    "./StructuredOutput": "./src/StructuredOutput.ts",
+    "./Sufficiency": "./src/Sufficiency.ts",
+    "./Supervisor": "./src/Supervisor.ts",
+    "./Tokens": "./src/Tokens.ts",
+    "./Transcript": "./src/Transcript.ts",
+    "./TruncatedOutput": "./src/TruncatedOutput.ts",
+    "./UnmovedTree": "./src/UnmovedTree.ts",
+    "./UnresolvedFailure": "./src/UnresolvedFailure.ts",
+    "./FailedCall": "./src/FailedCall.ts",
+    "./VacuousVerification": "./src/VacuousVerification.ts",
+    "./VariablesPanel": "./src/VariablesPanel.ts",
+    "./index": "./src/index.ts"
+  },
+  "files": [
+    "src/**/*.ts",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/package.json",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next",
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./internal/*": null,
+      "./*/index": null,
+      "./AgentEvent": {
+        "import": {
+          "types": "./dist/esm/AgentEvent.d.ts",
+          "default": "./dist/esm/AgentEvent.js"
+        },
+        "require": {
+          "types": "./dist/cjs/AgentEvent.d.ts",
+          "default": "./dist/cjs/AgentEvent.js"
+        }
+      },
+      "./CallLedger": {
+        "import": {
+          "types": "./dist/esm/CallLedger.d.ts",
+          "default": "./dist/esm/CallLedger.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CallLedger.d.ts",
+          "default": "./dist/cjs/CallLedger.js"
+        }
+      },
+      "./Cell": {
+        "import": {
+          "types": "./dist/esm/Cell.d.ts",
+          "default": "./dist/esm/Cell.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Cell.d.ts",
+          "default": "./dist/cjs/Cell.js"
+        }
+      },
+      "./CellCalls": {
+        "import": {
+          "types": "./dist/esm/CellCalls.d.ts",
+          "default": "./dist/esm/CellCalls.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CellCalls.d.ts",
+          "default": "./dist/cjs/CellCalls.js"
+        }
+      },
+      "./CellHistory": {
+        "import": {
+          "types": "./dist/esm/CellHistory.d.ts",
+          "default": "./dist/esm/CellHistory.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CellHistory.d.ts",
+          "default": "./dist/cjs/CellHistory.js"
+        }
+      },
+      "./CellTurn": {
+        "import": {
+          "types": "./dist/esm/CellTurn.d.ts",
+          "default": "./dist/esm/CellTurn.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CellTurn.d.ts",
+          "default": "./dist/cjs/CellTurn.js"
+        }
+      },
+      "./CellValidation": {
+        "import": {
+          "types": "./dist/esm/CellValidation.d.ts",
+          "default": "./dist/esm/CellValidation.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CellValidation.d.ts",
+          "default": "./dist/cjs/CellValidation.js"
+        }
+      },
+      "./Compaction": {
+        "import": {
+          "types": "./dist/esm/Compaction.d.ts",
+          "default": "./dist/esm/Compaction.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Compaction.d.ts",
+          "default": "./dist/cjs/Compaction.js"
+        }
+      },
+      "./CompletionClaim": {
+        "import": {
+          "types": "./dist/esm/CompletionClaim.d.ts",
+          "default": "./dist/esm/CompletionClaim.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CompletionClaim.d.ts",
+          "default": "./dist/cjs/CompletionClaim.js"
+        }
+      },
+      "./ContextWindow": {
+        "import": {
+          "types": "./dist/esm/ContextWindow.d.ts",
+          "default": "./dist/esm/ContextWindow.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ContextWindow.d.ts",
+          "default": "./dist/cjs/ContextWindow.js"
+        }
+      },
+      "./EngineLike": {
+        "import": {
+          "types": "./dist/esm/EngineLike.d.ts",
+          "default": "./dist/esm/EngineLike.js"
+        },
+        "require": {
+          "types": "./dist/cjs/EngineLike.d.ts",
+          "default": "./dist/cjs/EngineLike.js"
+        }
+      },
+      "./ExternalTranscript": {
+        "import": {
+          "types": "./dist/esm/ExternalTranscript.d.ts",
+          "default": "./dist/esm/ExternalTranscript.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ExternalTranscript.d.ts",
+          "default": "./dist/cjs/ExternalTranscript.js"
+        }
+      },
+      "./FlowBinding": {
+        "import": {
+          "types": "./dist/esm/FlowBinding.d.ts",
+          "default": "./dist/esm/FlowBinding.js"
+        },
+        "require": {
+          "types": "./dist/cjs/FlowBinding.d.ts",
+          "default": "./dist/cjs/FlowBinding.js"
+        }
+      },
+      "./HarnessError": {
+        "import": {
+          "types": "./dist/esm/HarnessError.d.ts",
+          "default": "./dist/esm/HarnessError.js"
+        },
+        "require": {
+          "types": "./dist/cjs/HarnessError.d.ts",
+          "default": "./dist/cjs/HarnessError.js"
+        }
+      },
+      "./Judgement": {
+        "import": {
+          "types": "./dist/esm/Judgement.d.ts",
+          "default": "./dist/esm/Judgement.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Judgement.d.ts",
+          "default": "./dist/cjs/Judgement.js"
+        }
+      },
+      "./Monitor": {
+        "import": {
+          "types": "./dist/esm/Monitor.d.ts",
+          "default": "./dist/esm/Monitor.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Monitor.d.ts",
+          "default": "./dist/cjs/Monitor.js"
+        }
+      },
+      "./NarrowedCheck": {
+        "import": {
+          "types": "./dist/esm/NarrowedCheck.d.ts",
+          "default": "./dist/esm/NarrowedCheck.js"
+        },
+        "require": {
+          "types": "./dist/cjs/NarrowedCheck.d.ts",
+          "default": "./dist/cjs/NarrowedCheck.js"
+        }
+      },
+      "./Notifications": {
+        "import": {
+          "types": "./dist/esm/Notifications.d.ts",
+          "default": "./dist/esm/Notifications.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Notifications.d.ts",
+          "default": "./dist/cjs/Notifications.js"
+        }
+      },
+      "./Plan": {
+        "import": {
+          "types": "./dist/esm/Plan.d.ts",
+          "default": "./dist/esm/Plan.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Plan.d.ts",
+          "default": "./dist/cjs/Plan.js"
+        }
+      },
+      "./QuickJSSandbox": {
+        "import": {
+          "types": "./dist/esm/QuickJSSandbox.d.ts",
+          "default": "./dist/esm/QuickJSSandbox.js"
+        },
+        "require": {
+          "types": "./dist/cjs/QuickJSSandbox.d.ts",
+          "default": "./dist/cjs/QuickJSSandbox.js"
+        }
+      },
+      "./Relevance": {
+        "import": {
+          "types": "./dist/esm/Relevance.d.ts",
+          "default": "./dist/esm/Relevance.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Relevance.d.ts",
+          "default": "./dist/cjs/Relevance.js"
+        }
+      },
+      "./Sandbox": {
+        "import": {
+          "types": "./dist/esm/Sandbox.d.ts",
+          "default": "./dist/esm/Sandbox.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Sandbox.d.ts",
+          "default": "./dist/cjs/Sandbox.js"
+        }
+      },
+      "./Steering": {
+        "import": {
+          "types": "./dist/esm/Steering.d.ts",
+          "default": "./dist/esm/Steering.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Steering.d.ts",
+          "default": "./dist/cjs/Steering.js"
+        }
+      },
+      "./StructuredOutput": {
+        "import": {
+          "types": "./dist/esm/StructuredOutput.d.ts",
+          "default": "./dist/esm/StructuredOutput.js"
+        },
+        "require": {
+          "types": "./dist/cjs/StructuredOutput.d.ts",
+          "default": "./dist/cjs/StructuredOutput.js"
+        }
+      },
+      "./Sufficiency": {
+        "import": {
+          "types": "./dist/esm/Sufficiency.d.ts",
+          "default": "./dist/esm/Sufficiency.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Sufficiency.d.ts",
+          "default": "./dist/cjs/Sufficiency.js"
+        }
+      },
+      "./Supervisor": {
+        "import": {
+          "types": "./dist/esm/Supervisor.d.ts",
+          "default": "./dist/esm/Supervisor.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Supervisor.d.ts",
+          "default": "./dist/cjs/Supervisor.js"
+        }
+      },
+      "./Tokens": {
+        "import": {
+          "types": "./dist/esm/Tokens.d.ts",
+          "default": "./dist/esm/Tokens.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Tokens.d.ts",
+          "default": "./dist/cjs/Tokens.js"
+        }
+      },
+      "./Transcript": {
+        "import": {
+          "types": "./dist/esm/Transcript.d.ts",
+          "default": "./dist/esm/Transcript.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Transcript.d.ts",
+          "default": "./dist/cjs/Transcript.js"
+        }
+      },
+      "./TruncatedOutput": {
+        "import": {
+          "types": "./dist/esm/TruncatedOutput.d.ts",
+          "default": "./dist/esm/TruncatedOutput.js"
+        },
+        "require": {
+          "types": "./dist/cjs/TruncatedOutput.d.ts",
+          "default": "./dist/cjs/TruncatedOutput.js"
+        }
+      },
+      "./UnmovedTree": {
+        "import": {
+          "types": "./dist/esm/UnmovedTree.d.ts",
+          "default": "./dist/esm/UnmovedTree.js"
+        },
+        "require": {
+          "types": "./dist/cjs/UnmovedTree.d.ts",
+          "default": "./dist/cjs/UnmovedTree.js"
+        }
+      },
+      "./UnresolvedFailure": {
+        "import": {
+          "types": "./dist/esm/UnresolvedFailure.d.ts",
+          "default": "./dist/esm/UnresolvedFailure.js"
+        },
+        "require": {
+          "types": "./dist/cjs/UnresolvedFailure.d.ts",
+          "default": "./dist/cjs/UnresolvedFailure.js"
+        }
+      },
+      "./FailedCall": {
+        "import": {
+          "types": "./dist/esm/FailedCall.d.ts",
+          "default": "./dist/esm/FailedCall.js"
+        },
+        "require": {
+          "types": "./dist/cjs/FailedCall.d.ts",
+          "default": "./dist/cjs/FailedCall.js"
+        }
+      },
+      "./VacuousVerification": {
+        "import": {
+          "types": "./dist/esm/VacuousVerification.d.ts",
+          "default": "./dist/esm/VacuousVerification.js"
+        },
+        "require": {
+          "types": "./dist/cjs/VacuousVerification.d.ts",
+          "default": "./dist/cjs/VacuousVerification.js"
+        }
+      },
+      "./VariablesPanel": {
+        "import": {
+          "types": "./dist/esm/VariablesPanel.d.ts",
+          "default": "./dist/esm/VariablesPanel.js"
+        },
+        "require": {
+          "types": "./dist/cjs/VariablesPanel.d.ts",
+          "default": "./dist/cjs/VariablesPanel.js"
+        }
+      },
+      "./index": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint src examples --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "circular": "node scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "vitest --coverage"
+  },
+  "dependencies": {
+    "@babel/parser": "8.0.4",
+    "@babel/types": "8.0.4",
+    "@jitl/quickjs-singlefile-browser-release-sync": "0.32.0",
+    "@smthrs/capability": "1.0.0-rc.12",
+    "@smthrs/core": "1.0.0-rc.12",
+    "@smthrs/flow": "1.0.0-rc.12",
+    "@smthrs/journal": "1.0.0-rc.12",
+    "@smthrs/kernel": "1.0.0-rc.12",
+    "@smthrs/model": "1.0.0-rc.12",
+    "@smthrs/notifications": "1.0.0-rc.12",
+    "@smthrs/registry": "1.0.0-rc.12",
+    "quickjs-emscripten-core": "0.32.0",
+    "sucrase": "3.35.1",
+    "@smthrs/canonical": "1.0.0-rc.12"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@effect/platform-node": "4.0.4",
+    "@effect/vitest": "4.0.4",
+    "@eslint/js": "9.39.5",
+    "@jitl/quickjs-wasmfile-release-sync": "0.32.0",
+    "@types/node": "26.4.1",
+    "@vitest/coverage-v8": "5.0.0",
+    "dprint": "0.57.1",
+    "effect": "4.0.4",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "madge": "8.0.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0"
+  },
+  "peerDependencies": {
+    "effect": "^4.0.4"
+  }
+}

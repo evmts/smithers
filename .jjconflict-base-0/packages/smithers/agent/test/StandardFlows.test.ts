@@ -1,0 +1,1014 @@
+/**
+ * What each standard helper actually binds.
+ *
+ * A host composes `StandardFlows.filesystem(services)`, not the seven bindings
+ * inside it, so the catalog a helper produces is this package's contract with
+ * the model and with `docs/guides/capabilities.md`. Losing one line from a
+ * binding array is invisible until a run reaches for the capability and finds
+ * nothing there, which is the failure the filesystem list was written to end:
+ * with only `read` and `write` bound, the built-in harness emitted
+ * `apply_patch` heredocs into `bash`, watched the shell report
+ * `apply_patch: command not found`, and finished runs claiming fixes it never
+ * applied. These tests read the catalog each source produces and compare it
+ * with the documented set, and run the two search bindings to prove they are
+ * handed the `Search` the host supplied rather than the bare filesystem
+ * context.
+ */
+import * as NodePath from "@effect/platform-node/NodePath"
+import * as Digest from "@smthrs/core/Digest"
+import type { FlowRuntime } from "@smthrs/flow"
+import * as AgentEvent from "@smthrs/harness/AgentEvent"
+import type * as Cell from "@smthrs/harness/Cell"
+import * as FlowBinding from "@smthrs/harness/FlowBinding"
+import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
+import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
+import * as GrantStore from "@smthrs/kernel/GrantStore"
+import * as Workspace from "@smthrs/kernel/Workspace"
+import * as MemoryStore from "@smthrs/memory/MemoryStore"
+import * as Recall from "@smthrs/memory/Recall"
+import * as Evaluator from "@smthrs/model/Evaluator"
+import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
+import * as Descriptor from "@smthrs/registry/Descriptor"
+import * as Search from "@smthrs/std/Search"
+import * as TestRunner from "@smthrs/std/TestRunner"
+import { Context, Effect, Fiber, FileSystem, Layer, Option, Path, Redacted } from "effect"
+import type * as Crypto from "effect/Crypto"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
+import { existsSync, readFileSync } from "node:fs"
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import type { TestContext } from "vitest"
+import { describe, expect, it } from "vitest"
+import * as ChildFlows from "../src/ChildFlows.ts"
+import * as StandardFlows from "../src/StandardFlows.ts"
+
+/** The native path service, materialized once so bindings can be given a context. */
+const pathServices: Context.Context<Path.Path> = Effect.runSync(
+  Effect.provide(Effect.context<Path.Path>(), NodePath.layer)
+)
+
+const nativeHelperAvailable = [
+  process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY,
+  join(import.meta.dirname, "../../../../target/release/smithers-jj-export"),
+  join(import.meta.dirname, "../../../../target/debug/smithers-jj-export"),
+  "/usr/local/bin/smithers-jj-export"
+].some((path) => path !== undefined && existsSync(path))
+const guardedDisk = process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY || nativeHelperAvailable ? it : it.skip
+const guardedDiskReason = process.platform === "win32" && guardedDisk === it.skip
+  ? "skipped on Windows: native smithers-jj-export was not built"
+  : "requires native smithers-jj-export"
+
+/**
+ * The host slices each helper takes. A catalog is the binding list a source
+ * declares, so the services behind it never run here and a refusing stub is
+ * the honest stand-in for every one of them.
+ */
+const filesystemServices = Context.merge(
+  Context.make(FileSystem.FileSystem, FileSystem.makeNoop({})),
+  pathServices
+)
+
+const shellServices = Context.merge(
+  Context.make(ChildProcessSpawner.ChildProcessSpawner, ChildProcessSpawner.makeNoop()),
+  pathServices
+)
+
+const evaluatorServices = (layer: Layer.Layer<Evaluator.Evaluator>): Context.Context<Evaluator.Evaluator> =>
+  Effect.runSync(Effect.provide(Effect.context<Evaluator.Evaluator>(), layer))
+
+const testServices = Context.make(
+  ChildProcessSpawner.ChildProcessSpawner,
+  ChildProcessSpawner.makeNoop()
+).pipe(
+  Context.add(TestRunner.TestRunner, TestRunner.makeNoop()),
+  // The `test` flow attributes a non-zero exit with Jev. A host without a key
+  // binds this, and the flow fails rather than reporting an unjudged run.
+  Context.merge(evaluatorServices(Evaluator.layerUnavailable()))
+)
+
+const memoryServices = Context.make(MemoryStore.MemoryStore, MemoryStore.makeNoop()).pipe(
+  Context.add(Recall.Recall, Recall.makeNoop())
+)
+
+const clockServices = Context.empty() as Context.Context<
+  Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+>
+
+/** The catalog `docs/guides/capabilities.md` promises, helper by helper. */
+const promised: ReadonlyArray<{
+  readonly source: FlowBinding.Source
+  readonly flows: ReadonlyArray<string>
+}> = [
+  {
+    source: StandardFlows.filesystem(filesystemServices),
+    flows: ["read", "write", "edit", "apply_patch", "ls", "glob", "grep"]
+  },
+  { source: StandardFlows.shell(shellServices), flows: ["bash"] },
+  { source: StandardFlows.tests(testServices), flows: ["test"] },
+  {
+    source: StandardFlows.memory(
+      memoryServices,
+      evaluatorServices(Evaluator.layerUnavailable()),
+      StandardFlows.hostWide
+    ),
+    flows: ["remember", "recall"]
+  },
+  { source: StandardFlows.jev(evaluatorServices(Evaluator.layerUnavailable())), flows: ["jev"] },
+  { source: StandardFlows.clock(clockServices), flows: ["wait"] },
+  { source: StandardFlows.approval(StandardFlows.askerNoop()), flows: ["ask"] }
+]
+
+/** One synthetic call, so a binding runs without the controller around it. */
+const callOf = (flowName: string, input: unknown): Cell.Call =>
+  ({
+    flowName,
+    input,
+    capabilities: [],
+    effects: {
+      reads: [],
+      writes: [],
+      mode: "expected",
+      onConflict: "serialize",
+      tier: "sealed"
+    },
+    placement: Option.none(),
+    identity: {
+      session: "session-1",
+      frame: 0,
+      cell: "cell-digest",
+      ordinal: 0,
+      declaration: `${flowName}-declaration`,
+      layers: []
+    }
+  }) as unknown as Cell.Call
+
+describe("the dark coding terminal binding", () => {
+  it.each(["T-FLW-01", "T-COL-03", "T-TRM-07", "T-TRM-01", "T-APP-09", "T-APP-10", "T-APP-12", "acceptance"])(
+    "reports the missing %s provider at the bound Bash boundary without executing",
+    async (missing) => {
+      const terminalProviders = Object.fromEntries(
+        ["T-FLW-01", "T-COL-03", "T-TRM-07", "T-TRM-01", "T-APP-09", "T-APP-10", "T-APP-12"]
+          .filter((ticket) => ticket !== missing).map((ticket) => [ticket, true as const])
+      )
+      let spawns = 0
+      const services = Context.merge(
+        pathServices,
+        Context.make(
+          ChildProcessSpawner.ChildProcessSpawner,
+          ChildProcessSpawner.makeNoop({
+            spawn: () => {
+              spawns++
+              return Effect.die("host execution")
+            }
+          })
+        )
+      )
+      const source = StandardFlows.shell(services, {
+        exec: () => {
+          spawns++
+          return Effect.die("container execution")
+        }
+      }, { terminal: "agent", terminalProviders })
+      const [binding] = await Effect.runPromise(source.bindings())
+      const result = await Effect.runPromise(
+        binding!.run(callOf("bash", { command: "printf fixture", mode: "unhermetic" }))
+      )
+      expect(result).toMatchObject({ outcome: "failure", code: "flow_failed", value: null })
+      expect(result.message).toContain(missing === "acceptance" ? "C-J3-10 and C-COL-04" : `missing ${missing};`)
+      expect(spawns).toBe(0)
+    }
+  )
+
+  it.each([
+    { command: "printf terminal-fixture", mode: "unhermetic" },
+    { command: "printf terminal-fixture", mode: "hermetic", reads: ["**"], writes: ["**"] },
+    { script: "print('terminal-fixture')", interpreter: "python3", mode: "unhermetic" },
+    { command: "printf terminal-fixture", container: "branch", mode: "unhermetic" }
+  ])("refuses before any host or container effect: %j", async (input) => {
+    let spawns = 0
+    let routes = 0
+    const services = Context.merge(
+      pathServices,
+      Context.make(
+        ChildProcessSpawner.ChildProcessSpawner,
+        ChildProcessSpawner.makeNoop({
+          spawn: () => {
+            spawns++
+            return Effect.die("host execution")
+          }
+        })
+      )
+    )
+    const source = StandardFlows.shell(services, {
+      exec: () => {
+        routes++
+        return Effect.die("container execution")
+      }
+    }, { terminal: "agent", sealedTo: "branch" })
+    const [binding] = await Effect.runPromise(source.bindings())
+    expect(binding!.descriptor.name).toBe("bash")
+    const result = await Effect.runPromise(binding!.run(callOf("bash", input)))
+    expect(result).toMatchObject({ outcome: "failure", code: "flow_failed", value: null })
+    expect(result.message).toContain("Agent terminal unavailable")
+    expect(result.message).toContain("C-J3-10 and C-COL-04")
+    expect(spawns).toBe(0)
+    expect(routes).toBe(0)
+  })
+})
+
+describe("the coding agent's terminal binding (T-TRM-05)", () => {
+  const noSpawn = (counter: { spawns: number }) =>
+    Context.merge(
+      pathServices,
+      Context.make(
+        ChildProcessSpawner.ChildProcessSpawner,
+        ChildProcessSpawner.makeNoop({
+          spawn: () => {
+            counter.spawns++
+            return Effect.die("host execution")
+          }
+        })
+      )
+    )
+  const encode = (text: string) => new TextEncoder().encode(text)
+  const portOf = (
+    script: (input: unknown, signal: AbortSignal) => AsyncIterable<StandardFlows.TerminalFrame>,
+    seen: Array<unknown>
+  ): StandardFlows.TerminalPort => ({
+    execute: (input, signal) => {
+      seen.push(input)
+      return script(input, signal)
+    },
+    killRun: async () => {}
+  })
+
+  it("runs bash through the agent terminal and maps its output and status, never a host spawn", async () => {
+    const counter = { spawns: 0 }
+    const seen: Array<unknown> = []
+    const port = portOf(async function*() {
+      yield { kind: "output", bytes: encode("\x1b[32mAGENT_TERMINAL_FIRST\x1b[0m\r\n") }
+      yield { kind: "exit", code: 7 }
+    }, seen)
+    const source = StandardFlows.shell(noSpawn(counter), {
+      exec: () => Effect.die("container execution")
+    }, { terminal: "agent", terminalPort: port })
+    const [binding] = await Effect.runPromise(source.bindings())
+    const input = { command: "pnpm test", mode: "unhermetic" }
+    const result = await Effect.runPromise(binding!.run(callOf("bash", input)))
+    expect(result).toMatchObject({
+      outcome: "success",
+      value: { exitCode: 7, stdout: "AGENT_TERMINAL_FIRST\n", stderr: "", stdoutTruncated: false }
+    })
+    expect(seen).toEqual([input])
+    expect(counter.spawns).toBe(0)
+  })
+
+  it.each([
+    { command: "printf x", container: "branch", mode: "unhermetic" },
+    { command: "cat /etc/passwd", mode: "hermetic", reads: ["src/**"], writes: [] },
+    { command: "a", script: "b", mode: "unhermetic" }
+  ])("refuses %j before the terminal runs anything", async (input) => {
+    const counter = { spawns: 0 }
+    const seen: Array<unknown> = []
+    const port = portOf(async function*() {
+      yield { kind: "exit", code: 0 }
+    }, seen)
+    const source = StandardFlows.shell(noSpawn(counter), undefined, { terminal: "agent", terminalPort: port })
+    const [binding] = await Effect.runPromise(source.bindings())
+    const result = await Effect.runPromise(binding!.run(callOf("bash", input)))
+    expect(result).toMatchObject({ outcome: "failure", value: null })
+    expect(seen).toEqual([])
+    expect(counter.spawns).toBe(0)
+  })
+
+  it("answers a transport failure of the port's own as a failed command, with no host spawn", async () => {
+    const counter = { spawns: 0 }
+    const seen: Array<unknown> = []
+    // Not a StdError: whatever the session transport throws, none of its text reaches the cell.
+    // eslint-disable-next-line require-yield
+    const port = portOf(async function*() {
+      throw new Error("socket hang up: 10.0.0.7:4022")
+    }, seen)
+    const source = StandardFlows.shell(noSpawn(counter), undefined, { terminal: "agent", terminalPort: port })
+    const [binding] = await Effect.runPromise(source.bindings())
+    const input = { command: "pnpm test", mode: "unhermetic" }
+    const result = await Effect.runPromise(binding!.run(callOf("bash", input)))
+    expect(result).toMatchObject({ outcome: "failure", code: "flow_failed", value: null })
+    expect(result.message).not.toContain("socket hang up")
+    expect(result.message).not.toContain("10.0.0.7")
+    expect(seen).toEqual([input])
+    expect(counter.spawns).toBe(0)
+  })
+
+  it("serializes two calls on one run and cancels the running one when interrupted", async () => {
+    const counter = { spawns: 0 }
+    const seen: Array<unknown> = []
+    let active = 0
+    let overlap = false
+    let aborted = false
+    const port = portOf(async function*(input, signal) {
+      active++
+      overlap ||= active > 1
+      try {
+        if ((input as { command: string }).command === "sleep") {
+          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
+          aborted = signal.aborted
+          return
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20))
+        yield { kind: "output", bytes: encode((input as { command: string }).command) }
+        yield { kind: "exit", code: 0 }
+      } finally {
+        active--
+      }
+    }, seen)
+    const source = StandardFlows.shell(noSpawn(counter), undefined, { terminal: "agent", terminalPort: port })
+    const [binding] = await Effect.runPromise(source.bindings())
+    const [first, second] = await Promise.all([
+      Effect.runPromise(binding!.run(callOf("bash", { command: "first", mode: "unhermetic" }))),
+      Effect.runPromise(binding!.run(callOf("bash", { command: "second", mode: "unhermetic" })))
+    ])
+    expect(first).toMatchObject({ outcome: "success", value: { stdout: "first" } })
+    expect(second).toMatchObject({ outcome: "success", value: { stdout: "second" } })
+    expect(overlap).toBe(false)
+    const fiber = Effect.runFork(binding!.run(callOf("bash", { command: "sleep", mode: "unhermetic" })))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await Effect.runPromise(Fiber.interrupt(fiber))
+    expect(aborted).toBe(true)
+    expect(counter.spawns).toBe(0)
+  })
+})
+
+describe("the standard capability catalog", () => {
+  for (
+    const fixture of [
+      {
+        flow: "glob",
+        input: { pattern: "**/add.mjs", limit: 10 },
+        value: { paths: ["add.mjs", "nested/add.mjs"], total: 2, truncated: false }
+      },
+      {
+        flow: "grep",
+        input: { pattern: "a + b", fixedStrings: true, limit: 10 },
+        value: {
+          matches: [
+            expect.objectContaining({ file: "add.mjs", line: 1 }),
+            expect.objectContaining({ file: "nested/add.mjs", line: 1 })
+          ],
+          filesSearched: 2,
+          truncated: false
+        }
+      },
+      {
+        flow: "ls",
+        input: { path: "." },
+        value: {
+          entries: [{ name: "nested/", kind: "directory" }, { name: "add.mjs", kind: "file" }],
+          total: 2,
+          truncated: false
+        }
+      }
+    ]
+  ) {
+    guardedDisk(
+      `searches the guarded disk workspace through ${fixture.flow} without an absolute root (${guardedDiskReason})`,
+      async () => {
+        const root = await realpath(await mkdtemp(join(tmpdir(), "smithers-standard-search-")))
+        try {
+          await mkdir(join(root, "nested"))
+          await writeFile(join(root, "add.mjs"), "export const add = (a, b) => a + b\n")
+          await writeFile(join(root, "nested/add.mjs"), "export const sum = (a, b) => a + b\n")
+          const guarded = KernelFileSystem.layer.pipe(
+            Layer.provide(AtomicFileSystem.layer),
+            Layer.provideMerge(NodePath.layer),
+            Layer.provide(Workspace.layer(root)),
+            Layer.provide(GrantStore.layerNoop)
+          )
+          const result = await Effect.runPromise(
+            Effect.gen(function*() {
+              const services = yield* Effect.context<FileSystem.FileSystem | Path.Path>()
+              const bindings = yield* StandardFlows.filesystem(services).bindings()
+              return yield* bindings.find((binding) => binding.descriptor.name === fixture.flow)!
+                .run(callOf(fixture.flow, fixture.input))
+            }).pipe(Effect.provide(guarded), Effect.scoped)
+          )
+
+          expect(result, JSON.stringify(result)).toMatchObject({ outcome: "success", value: fixture.value })
+        } finally {
+          await rm(root, { recursive: true, force: true })
+        }
+      }
+    )
+  }
+
+  for (const entry of promised) {
+    it(`binds exactly the flows ${entry.source.name} promises`, async () => {
+      const bindings = await Effect.runPromise(entry.source.bindings())
+      expect(bindings.map((binding) => binding.descriptor.name)).toEqual(entry.flows)
+    })
+  }
+
+  /**
+   * What each standard flow says a call to it does, on the descriptor a run
+   * journals and a card reads.
+   *
+   * These are the words the compatibility table in `apps/app` `RunTrace.ts`
+   * guesses for a journal recorded before a declaration could say anything, so
+   * a record with metadata and one without must read identically. `bash`
+   * declares no activity on purpose and is the one row that says so.
+   */
+  it("declares what a call to each standard flow does and how it reads", async () => {
+    const bound = await Effect.runPromise(
+      Effect.forEach(
+        [
+          StandardFlows.filesystem(filesystemServices),
+          StandardFlows.shell(shellServices),
+          StandardFlows.tests(
+            testServices
+          ),
+          StandardFlows.jev(evaluatorServices(Evaluator.layerUnavailable()))
+        ],
+        (source) => source.bindings()
+      )
+    )
+    const declared = new Map(
+      bound.flat().map((binding) => [
+        binding.descriptor.name,
+        [binding.descriptor.activity, binding.descriptor.presentation] as const
+      ])
+    )
+    expect(
+      [...declared].map((
+        [name, [activity, presentation]]
+      ) => [name, activity, presentation?.verb.success, presentation?.subject, presentation?.result])
+    ).toEqual([
+      ["read", "reads", "read", "path", "read"],
+      ["write", "writes", "wrote", "path", "write"],
+      ["edit", "writes", "edited", "path", "edit"],
+      ["apply_patch", "writes", "patched", "patch", "patch"],
+      ["ls", "reads", "listed", "path", "entries"],
+      ["glob", "reads", "listed", "pattern", "paths"],
+      ["grep", "reads", "searched", "pattern", "matches"],
+      ["bash", undefined, "ran", "command", "command"],
+      ["test", "tests", "ran", "selection", "tests"],
+      ["jev", "checks", "asked Jev", "none", "none"]
+    ])
+    // Display fields grant nothing: the identity a plan approves and a call
+    // replays against is the same number with and without them.
+    const read = bound.flat().find((binding) => binding.descriptor.name === "read")!.descriptor
+    const { activity: _activity, presentation: _presentation, ...bare } = read
+    expect(Descriptor.declarationDigest(new Descriptor.FlowDescriptor(bare))).toBe(
+      Descriptor.declarationDigest(read)
+    )
+  })
+
+  it("names its sources so a composed catalog says where each flow came from", () => {
+    expect(promised.map((entry) => entry.source.name)).toEqual([
+      "std/filesystem",
+      "std/shell",
+      "std/tests",
+      "memory",
+      "model/jev",
+      "engine/clock",
+      "host/approval"
+    ])
+  })
+
+  it("pins every standard and child source", () => {
+    const children = ChildFlows.source(ChildFlows.makeNoop())
+    expect([...promised.map((entry) => entry.source.name), children.name]).toEqual(StandardFlows.coreSources)
+  })
+
+  it("hands glob and grep the search the host supplied, not the bare filesystem context", async () => {
+    const asked: Array<string> = []
+    const search = Search.make({
+      glob: (input) =>
+        Effect.sync(() => {
+          asked.push(`glob ${input.pattern} in ${input.root}`)
+          return { paths: ["/repo/alpha.md"], total: 1, truncated: false }
+        }),
+      grep: (input) =>
+        Effect.sync(() => {
+          asked.push(`grep ${input.pattern} in ${input.root}`)
+          return { matches: [], files: [], filesSearched: 1, skippedBinary: 0, truncated: false }
+        })
+    })
+    const bindings = await Effect.runPromise(
+      StandardFlows.filesystem(filesystemServices, search).bindings()
+    )
+    const byName = new Map(bindings.map((binding) => [binding.descriptor.name, binding]))
+
+    const globbed = await Effect.runPromise(
+      byName.get("glob")!.run(callOf("glob", { pattern: "*.md", root: "/repo" }))
+    )
+    const grepped = await Effect.runPromise(
+      byName.get("grep")!.run(callOf("grep", { pattern: "second", root: "/repo" }))
+    )
+
+    // The filesystem context alone cannot answer either call: both handlers
+    // require `Search`, and only the search context carries it.
+    expect(globbed).toMatchObject({
+      outcome: "success",
+      value: { paths: ["/repo/alpha.md"], total: 1, truncated: false }
+    })
+    expect(grepped).toMatchObject({ outcome: "success", value: { filesSearched: 1 } })
+    expect(asked).toEqual(["glob *.md in /repo", "grep second in /repo"])
+  })
+
+  it("binds a tree the host does not hold as irreversible, and changes nothing else", async () => {
+    const tiers = async (options?: { readonly remote?: boolean }) =>
+      Object.fromEntries(
+        (await Effect.runPromise(StandardFlows.filesystem(filesystemServices, undefined, options).bindings())).map(
+          (binding) => [binding.descriptor.name, binding.descriptor]
+        )
+      )
+    const host = await tiers()
+    const remote = await tiers({ remote: true })
+    // On the host, reads are sealed and writes compensable under a host snapshot.
+    expect(Object.fromEntries(Object.entries(host).map(([name, descriptor]) => [name, descriptor.effects.tier])))
+      .toEqual({
+        read: "sealed",
+        write: "compensable",
+        edit: "compensable",
+        apply_patch: "compensable",
+        ls: "sealed",
+        glob: "sealed",
+        grep: "sealed"
+      })
+    // A machine's tree can be neither snapshotted nor measured here, so no call
+    // is replayed from another's record or run inside a snapshot.
+    for (const [name, descriptor] of Object.entries(remote)) {
+      expect(descriptor.effects.tier, name).toBe("irreversible")
+      expect({ ...descriptor.effects, tier: undefined }, name).toEqual({ ...host[name]!.effects, tier: undefined })
+      expect([descriptor.description, descriptor.input, descriptor.output, descriptor.capabilities], name)
+        .toEqual([host[name]!.description, host[name]!.input, host[name]!.output, host[name]!.capabilities])
+    }
+    expect(Object.keys(remote)).toEqual(Object.keys(host))
+  })
+})
+
+describe("the jev flow", () => {
+  /** A scripted judge that records every request it is asked. */
+  const recording = (
+    answer: Evaluator.Script
+  ): { readonly services: Context.Context<Evaluator.Evaluator>; readonly asked: Array<Evaluator.Request> } => {
+    const asked: Array<Evaluator.Request> = []
+    const services = evaluatorServices(
+      Evaluator.layerScripted((request) => {
+        asked.push(request)
+        return answer(request)
+      })
+    )
+    return { services, asked }
+  }
+
+  const bindingOf = async (source: FlowBinding.Source): Promise<FlowBinding.Binding> => {
+    const bindings = await Effect.runPromise(source.bindings())
+    return bindings.find((binding) => binding.descriptor.name === "jev")!
+  }
+
+  const questions = {
+    auth: { type: "boolean", instructions: "Does this file implement authentication?" },
+    area: { type: "choice", instructions: "Which area owns it?", criteria: { auth: "login", billing: "invoices" } },
+    risk: { type: "score", instructions: "How risky is changing it?", criteria: ["low", "high"] }
+  }
+
+  it("asks the bound evaluator the questions the cell wrote and answers with decoded, typed answers", async () => {
+    const judge = recording(() => ({
+      auth: { probability: 0.9 },
+      area: { choice: "auth", probabilities: { auth: 0.8, billing: 0.2 } },
+      risk: { score: 1 }
+    }))
+    const binding = await bindingOf(StandardFlows.jev(judge.services))
+    const result = await Effect.runPromise(binding.run(callOf("jev", { state: { path: "auth.py" }, questions })))
+
+    // The judge was CONTACTED, once, with the state as the cell wrote it and
+    // each question as the cell wrote it behind its own id.
+    expect(judge.asked).toHaveLength(1)
+    expect(judge.asked[0]!.state).toEqual({ path: "auth.py" })
+    expect(Evaluator.encodeQuestions(judge.asked[0]!.questions)).toEqual({
+      auth: { ...questions.auth, instructions: "auth: Does this file implement authentication?" },
+      area: { ...questions.area, instructions: "area: Which area owns it?" },
+      risk: { ...questions.risk, instructions: "risk: How risky is changing it?" }
+    })
+    expect(result).toMatchObject({
+      outcome: "success",
+      value: {
+        answers: {
+          auth: { value: true, probability: 0.9 },
+          area: { value: "auth", probabilities: { auth: 0.8, billing: 0.2 }, confidence: 0.8 },
+          risk: { value: 1, label: "high", probabilities: { low: 0, high: 1 }, confidence: 1 }
+        },
+        latencyMs: 0
+      }
+    })
+  })
+
+  it("tells items apart that share one instruction, for a judge that never reads question ids", async () => {
+    // Jev answers from a question's instructions and the state; the id only
+    // keys the answer. On 2026-10-14 all 42 file picks that keyed one
+    // instruction by path came back flat (#3992). This judge reads what Jev
+    // reads: the hit lines of the file its instructions name, and nothing
+    // when they name none.
+    const hits: Readonly<Record<string, ReadonlyArray<string>>> = {
+      "src/http/client.ts": ["const timeout = 30000 // ignores opts.timeout"],
+      "src/ui/button.tsx": ["<button className=\"btn\">"]
+    }
+    const judge = recording((request) =>
+      Object.fromEntries(
+        Object.entries(request.questions).map(([id, question]) => {
+          const named = Object.keys(hits).find((file) => question.instructions.includes(file))
+          const probability = named === undefined
+            ? 0.5
+            : hits[named]!.some((line) => line.includes("timeout"))
+            ? 0.9
+            : 0.1
+          return [id, { probability }]
+        })
+      )
+    )
+    const binding = await bindingOf(StandardFlows.jev(judge.services))
+    const result = await Effect.runPromise(binding.run(callOf("jev", {
+      state: { task: "The client ignores its configured timeout.", hits },
+      questions: Object.fromEntries(
+        Object.keys(hits).map((file) => [file, { type: "boolean", instructions: "Must this file change?" }])
+      )
+    })))
+
+    expect(Object.values(judge.asked[0]!.questions).map((question) => question.instructions)).toEqual([
+      "src/http/client.ts: Must this file change?",
+      "src/ui/button.tsx: Must this file change?"
+    ])
+    expect(result).toMatchObject({
+      outcome: "success",
+      value: {
+        answers: {
+          "src/http/client.ts": { value: true, probability: 0.9 },
+          "src/ui/button.tsx": { value: false, probability: 0.1 }
+        }
+      }
+    })
+  })
+
+  it("passes the transport's usage and confidence through, so the call's cost is in its recorded result", async () => {
+    const services = Context.make(
+      Evaluator.Evaluator,
+      Evaluator.Evaluator.of({
+        evaluate: () =>
+          Effect.succeed({
+            answers: { auth: { type: "boolean" as const, probability: 0.2 } },
+            confidence: { auth: 0.6 },
+            usage: { inputTokens: 120, outputTokens: 4 },
+            latencyMs: 287
+          })
+      })
+    )
+    const binding = await bindingOf(StandardFlows.jev(services))
+    const result = await Effect.runPromise(
+      binding.run(callOf("jev", { state: "def login(): pass", questions: { auth: questions.auth } }))
+    )
+    expect(result).toMatchObject({
+      outcome: "success",
+      value: {
+        answers: { auth: { value: false, probability: 0.2 } },
+        confidence: { auth: 0.6 },
+        usage: { inputTokens: 120, outputTokens: 4 },
+        latencyMs: 287
+      }
+    })
+  })
+
+  it("refuses a malformed question before any transport is asked, with a message the cell can correct from", async () => {
+    const judge = recording(() => ({}))
+    const binding = await bindingOf(StandardFlows.jev(judge.services))
+    const result = await Effect.runPromise(
+      binding.run(
+        callOf("jev", {
+          state: { path: "auth.py" },
+          questions: { area: { type: "choice", instructions: "Which area?", criteria: { only: "one option" } } }
+        })
+      )
+    )
+    expect(result).toMatchObject({ outcome: "failure", code: "invalid_input" })
+    expect(result.message).toContain("A choice question offers between 2 and 255 options, not 1")
+    expect(judge.asked).toHaveLength(0)
+  })
+
+  it("refuses an empty question map and an oversized state without asking the judge", async () => {
+    const judge = recording(() => ({}))
+    const binding = await bindingOf(StandardFlows.jev(judge.services, { maxStateBytes: 32 }))
+    const none = await Effect.runPromise(binding.run(callOf("jev", { state: {}, questions: {} })))
+    const huge = await Effect.runPromise(
+      binding.run(callOf("jev", { state: { excerpt: "x".repeat(64) }, questions: { auth: questions.auth } }))
+    )
+    expect(none).toMatchObject({ outcome: "failure", code: "flow_failed" })
+    expect(none.message).toContain("at least one question")
+    expect(huge).toMatchObject({ outcome: "failure", code: "flow_failed" })
+    expect(huge.message).toContain("this host's ceiling is 32 bytes")
+    expect(judge.asked).toHaveLength(0)
+  })
+
+  it("only lowers the state ceiling: a larger or non-finite value keeps the default", async () => {
+    // The public contract is the description's 256 KiB; a host cannot raise it
+    // by passing a bigger number, and cannot remove it by passing NaN. A state
+    // one byte over the default is refused under every such request, and the
+    // refusal names the default ceiling rather than the one the host asked for.
+    const judge = recording(() => ({}))
+    const state = "x".repeat(StandardFlows.defaultMaxJevStateBytes - 1)
+    expect(new TextEncoder().encode(JSON.stringify(state)).byteLength).toBe(StandardFlows.defaultMaxJevStateBytes + 1)
+    for (const requested of [Number.POSITIVE_INFINITY, Number.NaN, StandardFlows.defaultMaxJevStateBytes * 4]) {
+      const binding = await bindingOf(StandardFlows.jev(judge.services, { maxStateBytes: requested }))
+      const result = await Effect.runPromise(binding.run(callOf("jev", { state, questions: { auth: questions.auth } })))
+      expect(result).toMatchObject({ outcome: "failure", code: "flow_failed" })
+      expect(result.message).toContain(`this host's ceiling is ${StandardFlows.defaultMaxJevStateBytes} bytes`)
+    }
+    expect(judge.asked).toHaveLength(0)
+  })
+
+  it.each([
+    {
+      label: "a refusing gateway",
+      layer: Evaluator.layerScripted(() =>
+        Effect.fail(new Evaluator.EvaluatorError({ code: "refused", status: 503, message: "The gateway answered 503" }))
+      ),
+      expected: "refused: The gateway answered 503"
+    },
+    {
+      label: "a timed-out gateway",
+      layer: Evaluator.layerScripted(() =>
+        Effect.fail(
+          new Evaluator.EvaluatorError({ code: "timeout", message: "The gateway did not answer within 1500 ms" })
+        )
+      ),
+      expected: "timeout: The gateway did not answer within 1500 ms"
+    },
+    {
+      label: "no transport at all",
+      layer: Evaluator.layerUnavailable(),
+      expected: `unreachable: ${Evaluator.unreachableMessage}`
+    },
+    {
+      label: "an answer of the wrong shape",
+      layer: Evaluator.layerScripted(() => ({ auth: { choice: "yes" } })),
+      expected: "invalid_answer:"
+    }
+  ])("fails the call with the evaluator's code and no default answer for $label", async ({ expected, layer }) => {
+    const binding = await bindingOf(StandardFlows.jev(evaluatorServices(layer)))
+    const result = await Effect.runPromise(
+      binding.run(callOf("jev", { state: { path: "auth.py" }, questions: { auth: questions.auth } }))
+    )
+    expect(result).toMatchObject({ outcome: "failure", code: "flow_failed", value: null })
+    expect(result.message).toContain(`Flow jev failed: ${expected}`)
+    expect(JSON.stringify(result)).not.toContain("answers")
+  })
+
+  it("separates recorded file picks that came back flat, over the live gateway", async (ctx: TestContext) => {
+    // The offline replay of #3992, opt-in like the model package's live suite.
+    // Six picks from 2026-10-14 that keyed one instruction by path over a
+    // state of paths. Asked again as recorded, they come back as flat as they
+    // did then; asked through this flow, the same calls spread.
+    const apiKey = process.env["AI_GATEWAY_API_KEY"]
+    if (process.env["SMITHERS_LIVE_MODEL_TESTS"] !== "1") {
+      ctx.skip("live provider tests require SMITHERS_LIVE_MODEL_TESTS=1")
+    }
+    if (apiKey === undefined || apiKey === "") ctx.skip("AI_GATEWAY_API_KEY is unset")
+    const fixture = JSON.parse(
+      readFileSync(new URL("./fixtures/jev-flat-file-picks.json", import.meta.url), "utf8")
+    ) as {
+      readonly calls: ReadonlyArray<{
+        readonly state: unknown
+        readonly questions: Record<string, Evaluator.Question>
+        readonly gold: ReadonlyArray<string>
+      }>
+    }
+    const services = evaluatorServices(
+      Evaluator.layerVercelGateway({ apiKey: Redacted.make(apiKey ?? ""), timeoutMs: 20_000 }).pipe(
+        Layer.provide(FetchHttpClient.layer)
+      )
+    )
+    const binding = await bindingOf(StandardFlows.jev(services))
+    const spread = (p: Record<string, number>) => Math.max(...Object.values(p)) - Math.min(...Object.values(p))
+    const pairs = (p: Record<string, number>, gold: ReadonlyArray<string>): Array<number> =>
+      gold.flatMap((g) =>
+        Object.keys(p).filter((id) => !gold.includes(id)).map((other) =>
+          p[g]! > p[other]! ? 1 : p[g] === p[other] ? 0.5 : 0
+        )
+      )
+    const asRecorded: Array<Record<string, number>> = []
+    const throughFlow: Array<Record<string, number>> = []
+    for (const call of fixture.calls) {
+      const recorded = await Effect.runPromise(
+        Effect.provide(
+          Effect.flatMap(
+            Evaluator.Evaluator,
+            (judge) => judge.evaluate({ state: call.state, questions: call.questions })
+          ),
+          services
+        )
+      )
+      asRecorded.push(
+        Object.fromEntries(
+          Object.entries(recorded.answers).map(([id, answer]) => [id, (answer as { probability: number }).probability])
+        )
+      )
+      const result = await Effect.runPromise(
+        binding.run(callOf("jev", { state: call.state, questions: call.questions }))
+      )
+      expect(result.outcome).toBe("success")
+      const answers = (result.value as { answers: Record<string, { probability: number }> }).answers
+      throughFlow.push(Object.fromEntries(Object.entries(answers).map(([id, answer]) => [id, answer.probability])))
+    }
+
+    // As recorded, every call is flat: one instruction, one answer.
+    for (const probabilities of asRecorded) expect(spread(probabilities)).toBeLessThanOrEqual(0.1)
+    // Through the flow, the same calls separate, and a gold-patch file
+    // outranks another file in most pairs (0.79 when this was written).
+    const spreads = throughFlow.map(spread).sort((a, b) => a - b)
+    expect(spreads[Math.floor(spreads.length / 2)]).toBeGreaterThanOrEqual(0.3)
+    expect(spreads.filter((value) => value <= 0.1).length).toBeLessThanOrEqual(2)
+    const ranked = fixture.calls.flatMap((call, index) => pairs(throughFlow[index]!, call.gold))
+    expect(ranked.reduce((sum, value) => sum + value, 0) / ranked.length).toBeGreaterThanOrEqual(0.6)
+  }, 120_000)
+
+  it("is absent from any catalog whose host bound no evaluator", async () => {
+    // Absence is structural: `jev` takes `Context<Evaluator>` and nothing
+    // else, so a composition without a judge has no way to construct it. The
+    // catalog a judgeless host composes is exactly the other helpers' flows.
+    const catalog = await Effect.runPromise(
+      FlowBinding.catalog([
+        StandardFlows.filesystem(filesystemServices),
+        StandardFlows.shell(shellServices)
+      ])
+    )
+    expect(catalog.descriptors.map((entry) => entry.name)).not.toContain("jev")
+    const judge = evaluatorServices(Evaluator.layerUnavailable())
+    const withJudge = await Effect.runPromise(
+      FlowBinding.catalog([
+        StandardFlows.memory(memoryServices, judge, StandardFlows.hostWide),
+        StandardFlows.jev(judge)
+      ])
+    )
+    expect(withJudge.descriptors.map((entry) => entry.name)).toEqual(["remember", "recall", "jev"])
+    const jev = withJudge.descriptors.find((entry) => entry.name === "jev")!
+    expect(jev.modelInvocable).toBe(true)
+    expect(jev.capabilities).toEqual(["model:call:typesafe-ai/jev"])
+    expect(jev.effects.tier).toBe("sealed")
+    expect(jev.description).toContain("pack the items into one call")
+  })
+})
+
+describe("the recall flow", () => {
+  const rows = [
+    { bank: "notes", key: "deploy", text: "Deploys go through the release train.", score: 0.8 },
+    { bank: "notes", key: "auth", text: "Login tokens rotate hourly.", score: 0.6 }
+  ]
+  const recalling = Context.make(MemoryStore.MemoryStore, MemoryStore.makeNoop()).pipe(
+    Context.add(Recall.Recall, Recall.Recall.of({ recall: () => Effect.succeed(rows) }))
+  )
+
+  const recall = async (
+    judge: Layer.Layer<Evaluator.Evaluator>,
+    services: Context.Context<MemoryStore.MemoryStore | Recall.Recall> = recalling
+  ) => {
+    const journaled: Array<AgentEvent.AgentEvent> = []
+    const bindings = await Effect.runPromise(
+      StandardFlows.memory(services, evaluatorServices(judge), StandardFlows.hostWide).bindings()
+    )
+    const result = await Effect.runPromise(
+      bindings.find((binding) => binding.descriptor.name === "recall")!
+        .run(callOf("recall", { banks: ["notes"], query: "why does login fail?" }))
+        .pipe(Effect.provideService(AgentEvent.Journal, (event) => Effect.sync(() => void journaled.push(event))))
+    )
+    return { ...result, journaled }
+  }
+
+  it("withholds only the rows Jev is confident the query does not need, lists them, and journals the reading", async () => {
+    const asked: Array<Evaluator.Request> = []
+    const result = await recall(Evaluator.layerScripted((request) => {
+      asked.push(request)
+      return { unnecessary_0: { probability: 0.95 }, unnecessary_1: { probability: 0.1 } }
+    }))
+    expect(asked).toHaveLength(1)
+    expect(asked[0]!.state).toMatchObject({ context: { task: "why does login fail?" } })
+    expect(result).toMatchObject({ outcome: "success" })
+    expect(result.value).toEqual({
+      rows: [rows[1]],
+      withheld: [{ key: "deploy", digest: Digest.digest(rows[0]!.text), p: 0.95 }]
+    })
+    expect(result.journaled.map((event) => event._tag)).toEqual(["decision-settled", "relevance-settled"])
+    expect(result.journaled[0]).toMatchObject({
+      scope: "session-1",
+      frame: 0,
+      classifier: "relevance/unnecessary",
+      acted: true
+    })
+    expect(result.journaled[1]).toMatchObject({
+      source: "recall",
+      withheld: [{ kind: "memory", id: "deploy", p: 0.95 }],
+      kept: [{ kind: "memory", id: "auth", p: 0.1 }]
+    })
+  })
+
+  it("asks nothing and journals nothing when nothing is recalled", async () => {
+    const asked: Array<Evaluator.Request> = []
+    const result = await recall(
+      Evaluator.layerScripted((request) => {
+        asked.push(request)
+        return {}
+      }),
+      Context.make(MemoryStore.MemoryStore, MemoryStore.makeNoop()).pipe(
+        Context.add(Recall.Recall, Recall.Recall.of({ recall: () => Effect.succeed([]) }))
+      )
+    )
+    expect(result.value).toEqual({ rows: [], withheld: [] })
+    expect(asked).toEqual([])
+    expect(result.journaled).toEqual([])
+  })
+
+  it.each([
+    {
+      label: "a refusing gateway",
+      layer: Evaluator.layerScripted(() =>
+        Effect.fail(new Evaluator.EvaluatorError({ code: "refused", status: 503, message: "The gateway answered 503" }))
+      ),
+      unjudged: { reason: "refused", detail: "The gateway answered 503" }
+    },
+    {
+      label: "a timed-out gateway",
+      layer: Evaluator.layerScripted(() =>
+        Effect.fail(
+          new Evaluator.EvaluatorError({ code: "timeout", message: "The gateway did not answer within 1500 ms" })
+        )
+      ),
+      unjudged: { reason: "timeout", detail: "The gateway did not answer within 1500 ms" }
+    },
+    {
+      label: "no transport at all",
+      layer: Evaluator.layerUnavailable(),
+      unjudged: { reason: "unreachable", detail: Evaluator.unreachableMessage }
+    }
+  ])("keeps every row, says why, and journals decision-unjudged for $label", async ({ layer, unjudged }) => {
+    const result = await recall(layer)
+    expect(result).toMatchObject({ outcome: "success" })
+    expect(result.value).toEqual({ rows, withheld: [], unjudged })
+    expect(result.journaled).toEqual([
+      expect.objectContaining({
+        _tag: "decision-unjudged",
+        scope: "session-1",
+        frame: 0,
+        classifier: "relevance/unnecessary",
+        reason: unjudged.reason,
+        items: 2
+      })
+    ])
+  })
+
+  it("judges a scoped recall over the policy's own bank, and refuses a foreign one before any I/O", async () => {
+    const reached: Array<ReadonlyArray<string>> = []
+    const scoped = Context.make(MemoryStore.MemoryStore, MemoryStore.makeNoop()).pipe(
+      Context.add(
+        Recall.Recall,
+        Recall.Recall.of({ recall: (input) => Effect.sync(() => (reached.push(input.banks), rows)) })
+      )
+    )
+    const judge = evaluatorServices(
+      Evaluator.layerScripted(() => ({ unnecessary_0: { probability: 0.95 }, unnecessary_1: { probability: 0.1 } }))
+    )
+    const bindings = await Effect.runPromise(
+      StandardFlows.memory(scoped, judge, {
+        policy: { banks: ["agent-builder"], maxTokens: 2048 }
+      }).bindings()
+    )
+    const binding = bindings.find((entry) => entry.descriptor.name === "recall")!
+    expect(binding.descriptor.description).toContain("withheld and listed")
+    const journaled: Array<AgentEvent.AgentEvent> = []
+    const run = (banks: ReadonlyArray<string>) =>
+      Effect.runPromise(
+        binding.run(callOf("recall", { banks, query: "why does login fail?" })).pipe(
+          Effect.provideService(AgentEvent.Journal, (event) => Effect.sync(() => void journaled.push(event)))
+        )
+      )
+    const kept = await run([])
+    expect(reached).toEqual([["agent-builder"]])
+    expect(kept.value).toEqual({
+      rows: [rows[1]],
+      withheld: [{ key: "deploy", digest: Digest.digest(rows[0]!.text), p: 0.95 }]
+    })
+    expect(journaled.map((event) => event._tag)).toEqual(["decision-settled", "relevance-settled"])
+    const foreign = await run(["agent-checker"])
+    expect(foreign).toMatchObject({ outcome: "failure" })
+    expect(foreign.message).toContain("invalid_namespace")
+    expect(reached).toHaveLength(1)
+  })
+
+  it("declares recall's input and effects with the judged output", async () => {
+    const bindings = await Effect.runPromise(
+      StandardFlows.memory(recalling, evaluatorServices(Evaluator.layerUnavailable()), StandardFlows.hostWide)
+        .bindings()
+    )
+    const recall = bindings.find((binding) => binding.descriptor.name === "recall")!.descriptor
+    expect(recall.description).toContain("withheld and listed")
+    expect(recall.effects.tier).toBe("sealed")
+  })
+})

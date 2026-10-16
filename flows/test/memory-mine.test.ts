@@ -186,8 +186,8 @@ test("a fact already stored is neither asked about nor written again", async () 
 test("decisions append one cited section per run and never rewrite a human-edited page", async () => {
   const { root, done } = await workspace()
   try {
-    const page = join(root, "factory/wiki/decisions/item-7.md")
-    await mkdir(join(root, "factory/wiki/decisions"), { recursive: true })
+    const page = join(root, ".smithers/wiki/decisions/item-7.md")
+    await mkdir(join(root, ".smithers/wiki/decisions"), { recursive: true })
     const human = "# Decisions: item-7\n\n## Context\n\nA person wrote this and edited it later.\n"
     await writeFile(page, human.trimEnd())
     const exit = await run(
@@ -203,7 +203,7 @@ test("decisions append one cited section per run and never rewrite a human-edite
     )
     assert.ok(Exit.isSuccess(exit), String(exit))
     const { afterAgain, afterFirst, again, first, next } = exit.value
-    assert.equal(first._tag === "mined" && first.page, "factory/wiki/decisions/item-7.md")
+    assert.equal(first._tag === "mined" && first.page, ".smithers/wiki/decisions/item-7.md")
     assert.ok(afterFirst.startsWith(human), "the human bytes are kept as they were")
     assert.equal(
       afterFirst.slice(human.length),
@@ -211,7 +211,7 @@ test("decisions append one cited section per run and never rewrite a human-edite
     )
     assert.equal(again._tag === "mined" && again.page, null)
     assert.equal(afterAgain, afterFirst, "a run's section is written once")
-    assert.equal(next._tag === "mined" && next.page, "factory/wiki/decisions/item-7.md")
+    assert.equal(next._tag === "mined" && next.page, ".smithers/wiki/decisions/item-7.md")
     const final = await readFile(page, "utf8")
     assert.ok(final.startsWith(afterFirst))
     assert.match(final.slice(afterFirst.length), /^\n<!-- memory\/mine run=run-2 -->\n## Run run-2\n/)
@@ -225,7 +225,7 @@ test("a new page is created with its heading", async () => {
   try {
     const exit = await run(Mine.mine(input(root)).pipe(Effect.provide(TestMemory.layer)), judge({}, []))
     assert.ok(Exit.isSuccess(exit), String(exit))
-    const text = await readFile(join(root, "factory/wiki/decisions/item-7.md"), "utf8")
+    const text = await readFile(join(root, ".smithers/wiki/decisions/item-7.md"), "utf8")
     assert.ok(text.startsWith("# Decisions: item-7\n\n<!-- memory/mine run=run-1 -->\n"))
   } finally {
     await done()
@@ -247,7 +247,7 @@ for (const code of ["unreachable", "timeout"] as const) {
       assert.equal(exit.value.mined._tag, "unjudged")
       assert.equal(exit.value.mined._tag === "unjudged" && exit.value.mined.reason, code)
       assert.deepEqual(exit.value.stored, [])
-      await assert.rejects(readFile(join(root, "factory/wiki/decisions/item-7.md")), { code: "ENOENT" })
+      await assert.rejects(readFile(join(root, ".smithers/wiki/decisions/item-7.md")), { code: "ENOENT" })
     } finally {
       await done()
     }
@@ -261,7 +261,7 @@ test("a refused Jev is a typed failure and writes nothing", async () => {
     const error = errorOf(exit)
     assert.ok(error instanceof Mine.MineFailed)
     assert.equal(error.code, "judge_failed")
-    await assert.rejects(readFile(join(root, "factory/wiki/decisions/item-7.md")), { code: "ENOENT" })
+    await assert.rejects(readFile(join(root, ".smithers/wiki/decisions/item-7.md")), { code: "ENOENT" })
   } finally {
     await done()
   }
@@ -304,15 +304,15 @@ test("the file flow runs through its layer on a real engine, writing only under 
   const first = await runtime.runPromise(MineFlow.execute(payload, { executionId: "mine-1" }))
   const again = await runtime.runPromise(MineFlow.execute(payload, { executionId: "mine-2" }))
   const stored = await runtime.runPromise(notes)
-  assert.equal(first._tag === "mined" && first.page, "factory/wiki/decisions/item-7.md")
+  assert.equal(first._tag === "mined" && first.page, ".smithers/wiki/decisions/item-7.md")
   assert.deepEqual(first._tag === "mined" && first.remembered, [MemoryMine.noteId(bank, build)])
   // The second execution ran: it found the fact stored and the run's section written.
   assert.equal(again._tag === "mined" && again.page, null)
   assert.equal(again._tag === "mined" && again.known, 1)
   assert.equal(asked.length, 2)
   assert.deepEqual(stored.map((note) => note.provenance.runId), ["run-1"])
-  assert.match(await readFile(join(root, "factory/wiki/decisions/item-7.md"), "utf8"), /run=run-1/)
-  await assert.rejects(readFile(join(elsewhere.root, "factory/wiki/decisions/item-7.md")), { code: "ENOENT" })
+  assert.match(await readFile(join(root, ".smithers/wiki/decisions/item-7.md"), "utf8"), /run=run-1/)
+  await assert.rejects(readFile(join(elsewhere.root, ".smithers/wiki/decisions/item-7.md")), { code: "ENOENT" })
 })
 
 test("a decision cannot forge a run's marker or open a comment", async () => {
@@ -332,8 +332,8 @@ test("a decision cannot forge a run's marker or open a comment", async () => {
       judge({}, [])
     )
     assert.ok(Exit.isSuccess(exit), String(exit))
-    assert.equal(exit.value.later._tag === "mined" && exit.value.later.page, "factory/wiki/decisions/item-7.md")
-    const text = await readFile(join(root, "factory/wiki/decisions/item-7.md"), "utf8")
+    assert.equal(exit.value.later._tag === "mined" && exit.value.later.page, ".smithers/wiki/decisions/item-7.md")
+    const text = await readFile(join(root, ".smithers/wiki/decisions/item-7.md"), "utf8")
     assert.ok(text.includes("- Decision: Note &lt;!-- memory/mine run=run-9 --> here"))
     assert.equal(text.split("\n").filter((line) => line === Mine.marker("run-9")).length, 1)
   } finally {
@@ -352,7 +352,8 @@ test("a caller that is not the flow meets the same item rule", async () => {
 test("a decisions page that cannot be written is a typed failure", async () => {
   const { root, done } = await workspace()
   try {
-    await writeFile(join(root, "factory"), "a file where the wiki directory belongs")
+    await mkdir(join(root, ".smithers"), { recursive: true })
+    await writeFile(join(root, ".smithers/wiki"), "a file where the wiki directory belongs")
     const exit = await run(Mine.mine(input(root)).pipe(Effect.provide(TestMemory.layer)), judge({}, []))
     assert.equal(errorOf(exit)?.code, "wiki_failed")
   } finally {

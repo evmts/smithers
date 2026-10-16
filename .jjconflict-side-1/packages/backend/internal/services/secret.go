@@ -1,0 +1,742 @@
+package services
+
+import (
+	"context"
+	stdErrors "errors"
+	"log/slog"
+	"strings"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/webhook"
+)
+
+const (
+	// maxSecretsPerRepo and maxSecretsPerOrg are the secret caps. The service
+	// checks them first for a friendly refusal; the
+	// trg_repository_secrets_repo_cap and trg_organization_secrets_org_cap
+	// triggers enforce them atomically against concurrent writers.
+	maxSecretsPerRepo   = 100
+	maxSecretsPerOrg    = 100
+	maxSecretValueBytes = 64 * 1024
+)
+
+type SecretQuerier interface {
+	GetRepoByOwnerAndLowerName(ctx context.Context, arg db.GetRepoByOwnerAndLowerNameParams) (db.Repository, error)
+	GetOrgByLowerName(ctx context.Context, lowerName string) (db.Organization, error)
+	GetVisibleOrgForViewer(ctx context.Context, arg db.GetVisibleOrgForViewerParams) (db.GetVisibleOrgForViewerRow, error)
+	GetOrgMember(ctx context.Context, arg db.GetOrgMemberParams) (db.OrgMember, error)
+	IsOrgOwnerForRepoUser(ctx context.Context, arg db.IsOrgOwnerForRepoUserParams) (bool, error)
+	GetHighestTeamPermissionForRepoUser(ctx context.Context, arg db.GetHighestTeamPermissionForRepoUserParams) (string, error)
+	GetCollaboratorPermissionForRepoUser(ctx context.Context, arg db.GetCollaboratorPermissionForRepoUserParams) (string, error)
+
+	CreateOrUpdateSecret(ctx context.Context, arg db.CreateOrUpdateSecretParams) (db.RepositorySecret, error)
+	UpdateSecretSettings(ctx context.Context, arg db.UpdateSecretSettingsParams) (db.RepositorySecret, error)
+	ListSecrets(ctx context.Context, repositoryID int64) ([]db.ListSecretsRow, error)
+	ListSecretValuesForRepo(ctx context.Context, repositoryID int64) ([]db.ListSecretValuesForRepoRow, error)
+	DeleteSecret(ctx context.Context, arg db.DeleteSecretParams) error
+	CreateOrUpdateOrgSecret(ctx context.Context, arg db.CreateOrUpdateOrgSecretParams) (db.OrganizationSecret, error)
+	ListOrgSecrets(ctx context.Context, organizationID int64) ([]db.ListOrgSecretsRow, error)
+	ListOrgSecretValues(ctx context.Context, organizationID int64) ([]db.ListOrgSecretValuesRow, error)
+	DeleteOrgSecret(ctx context.Context, arg db.DeleteOrgSecretParams) error
+}
+
+type SecretService struct {
+	queries        SecretQuerier
+	secretCodec    webhook.SecretCodec
+	ownershipGuard RepoOwnershipGuard
+	// subscriptionTokens mirrors feature_flags.subscription_connections.
+	subscriptionTokens   bool
+	installAuthorization bool
+	installPool          *pgxpool.Pool
+	validateFilePath     func(context.Context, int64, string) error
+}
+
+type SecretServiceOption func(*SecretService)
+
+// WithSecretInstallAuthorization selects the install command policy instead
+// of the multitenant repository ACL for repository secret writes.
+func WithSecretInstallAuthorization(enabled bool, pool *pgxpool.Pool) SecretServiceOption {
+	return func(s *SecretService) { s.installAuthorization, s.installPool = enabled, pool }
+}
+
+// WithSecretFilePathValidator binds declaration-time inspection to the machine broker.
+func WithSecretFilePathValidator(validate func(context.Context, int64, string) error) SecretServiceOption {
+	return func(s *SecretService) { s.validateFilePath = validate }
+}
+
+// WithSecretSubscriptionTokens lets a self-hosted deployment store Claude or
+// ChatGPT subscription tokens as secrets. Off by default (hosted).
+func WithSecretSubscriptionTokens(allowed bool) SecretServiceOption {
+	return func(s *SecretService) { s.subscriptionTokens = allowed }
+}
+
+// WithSecretOwnershipGuard fences repo-scoped secret writes against concurrent
+// repository transfers, so a request authorized against the old owner cannot
+// mutate the new owner's secrets.
+func WithSecretOwnershipGuard(g RepoOwnershipGuard) SecretServiceOption {
+	return func(s *SecretService) {
+		s.ownershipGuard = g
+	}
+}
+
+func NewSecretService(q SecretQuerier, codec webhook.SecretCodec, opts ...SecretServiceOption) *SecretService {
+	secretCodec := webhook.SecretCodec(webhook.NoopSecretCodec{})
+	if codec != nil {
+		secretCodec = codec
+	}
+	s := &SecretService{
+		queries:     q,
+		secretCodec: secretCodec,
+	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(s)
+		}
+	}
+	return s
+}
+
+// SecretResponse is the service-layer response for a secret.
+// It never includes the value — only metadata.
+type SecretResponse struct {
+	Name      string `json:"name"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+	// ReconnectRequired reports a secret found holding a Claude or ChatGPT
+	// subscription token this deployment refuses to use. Replacing or
+	// deleting it clears the flag.
+	ReconnectRequired bool `json:"reconnect_required,omitempty"`
+	// MainOnly reports a repository secret that reaches only trusted runs on
+	// the default bookmark (SecretInjector.RepositoryEnvironmentAndSecrets).
+	MainOnly bool `json:"main_only"`
+	// Hosts and MatchHeaders are the secret's egress binding
+	// (validateSecretBinding): a NixOS CI guest receives a bound secret only
+	// as a placeholder its egress proxy swaps for the value on requests to
+	// those hosts, in those headers. An unbound secret has neither.
+	Hosts        []string `json:"hosts"`
+	MatchHeaders []string `json:"match_headers"`
+	// Path is where every branch machine also gets the secret as a file
+	// (NormalizeSecretPath); empty means none. A host-bound secret's file
+	// holds its placeholder, never its value.
+	Path string `json:"path,omitempty"`
+}
+
+// SecretBinding is a secret's egress binding: the hosts and request headers
+// it may be sent to. Both or neither; empty on both sides unbinds it.
+type SecretBinding struct {
+	Hosts        []string `json:"hosts"`
+	MatchHeaders []string `json:"match_headers"`
+}
+
+// normalize validates the binding and returns it in stored form.
+func (b SecretBinding) normalize() (SecretBinding, error) {
+	// A blank entry would normalise away and could turn a binding into an
+	// unbind; only two explicitly empty lists unbind.
+	for _, entry := range append(append([]string(nil), b.Hosts...), b.MatchHeaders...) {
+		if strings.TrimSpace(entry) == "" {
+			return SecretBinding{}, pkgerrors.BadRequest("secret binding entries must not be blank")
+		}
+	}
+	hosts, matchHeaders, err := validateSecretBinding(b.Hosts, b.MatchHeaders)
+	if err != nil {
+		return SecretBinding{}, err
+	}
+	return SecretBinding{Hosts: hosts, MatchHeaders: matchHeaders}, nil
+}
+
+// SetSecret stores a repository secret. mainOnly nil keeps a replaced
+// secret's scope (a new one reaches every run); binding nil keeps a replaced
+// secret's egress binding (a new one is unbound); path nil keeps a replaced
+// secret's file path and "" removes it (a new one has none).
+func (s *SecretService) SetSecret(ctx context.Context, actor *db.User, owner, repo, name, value string, mainOnly *bool, binding *SecretBinding, path *string) (SecretResponse, error) {
+	if actor == nil {
+		return SecretResponse{}, pkgerrors.Unauthorized("authentication required")
+	}
+
+	trimmedName := strings.TrimSpace(name)
+	if trimmedName == "" {
+		return SecretResponse{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "Secret", Field: "name", Code: "missing_field"})
+	}
+	if len(trimmedName) > 255 {
+		return SecretResponse{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "Secret", Field: "name", Code: "invalid"})
+	}
+	if !IsInjectedSecretName(trimmedName) {
+		return SecretResponse{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "Secret", Field: "name", Code: "invalid"})
+	}
+	if value == "" {
+		return SecretResponse{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "Secret", Field: "value", Code: "missing_field"})
+	}
+	if len(value) > maxSecretValueBytes {
+		return SecretResponse{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "Secret", Field: "value", Code: "too_long"})
+	}
+	if err := refuseSubscriptionToken(s.subscriptionTokens, trimmedName, value); err != nil {
+		return SecretResponse{}, err
+	}
+	var stored *SecretBinding
+	if binding != nil {
+		normalized, err := binding.normalize()
+		if err != nil {
+			return SecretResponse{}, err
+		}
+		stored = &normalized
+	}
+	var storedPath *string
+	if path != nil {
+		normalized, err := NormalizeSecretPath(*path)
+		if err != nil {
+			return SecretResponse{}, err
+		}
+		storedPath = &normalized
+	}
+
+	repository, err := s.resolveRepoByOwnerAndName(ctx, owner, repo)
+	if err != nil {
+		return SecretResponse{}, err
+	}
+	if err := s.requireAdminAccess(ctx, repository, actor, "secrets.set"); err != nil {
+		return SecretResponse{}, err
+	}
+
+	if err := s.enforceSecretQuota(ctx, repository.ID, trimmedName, storedPath); err != nil {
+		return SecretResponse{}, err
+	}
+
+	if s.validateFilePath != nil {
+		// A value-only replacement retains its declaration and must inspect it too.
+		declared := ""
+		if storedPath != nil {
+			declared = *storedPath
+		} else {
+			rows, err := s.queries.ListSecrets(ctx, repository.ID)
+			if err != nil {
+				return SecretResponse{}, err
+			}
+			for _, row := range rows {
+				if row.Name == trimmedName {
+					declared = row.Path
+					break
+				}
+			}
+		}
+		if declared != "" {
+			if err := s.validateFilePath(ctx, repository.ID, declared); err != nil {
+				return SecretResponse{}, err
+			}
+		}
+	}
+
+	// Encrypt the secret value before storing.
+	encrypted, err := s.secretCodec.EncryptString(value)
+	if err != nil {
+		return SecretResponse{}, pkgerrors.Internal("failed to encrypt secret").WithCause(err)
+	}
+
+	var created db.RepositorySecret
+	if err := s.guardedSecretWrite(ctx, repository, actor.ID, func(queries SecretQuerier) error {
+		var werr error
+		params := db.CreateOrUpdateSecretParams{
+			RepositoryID:   repository.ID,
+			Name:           trimmedName,
+			ValueEncrypted: []byte(encrypted),
+		}
+		if mainOnly != nil {
+			params.MainOnly = pgtype.Bool{Bool: *mainOnly, Valid: true}
+		}
+		if stored != nil {
+			params.Hosts, params.MatchHeaders = stored.Hosts, stored.MatchHeaders
+		}
+		if storedPath != nil {
+			params.Path = pgtype.Text{String: *storedPath, Valid: true}
+		}
+		created, werr = queries.CreateOrUpdateSecret(ctx, params)
+		if isSecretCapViolation(werr, "repository_secrets_repo_cap") {
+			return repoSecretQuotaExceeded()
+		}
+		if isSecretPathTaken(werr) {
+			return secretPathTaken()
+		}
+		if werr != nil {
+			return pkgerrors.Internal("failed to set secret").WithCause(werr)
+		}
+		return nil
+	}); err != nil {
+		return SecretResponse{}, err
+	}
+
+	return repositorySecretResponse(created), nil
+}
+
+func repositorySecretResponse(secret db.RepositorySecret) SecretResponse {
+	return SecretResponse{
+		Name:      secret.Name,
+		CreatedAt: secret.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		UpdatedAt: secret.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+		MainOnly:  secret.MainOnly,
+		Hosts:     nonNilStrings(secret.Hosts), MatchHeaders: nonNilStrings(secret.MatchHeaders),
+		Path: secret.Path,
+	}
+}
+
+// SetSecretBinding sets or clears a repository secret's egress binding
+// without its value (UpdateSecret).
+func (s *SecretService) SetSecretBinding(ctx context.Context, actor *db.User, owner, repo, name string, binding SecretBinding) (SecretResponse, error) {
+	return s.UpdateSecret(ctx, actor, owner, repo, name, nil, &binding)
+}
+
+// UpdateSecret changes a repository secret's main-only mark and egress
+// binding without its value, in one write; nil keeps a setting. Only an
+// administrator (a person: a run credential is never one) changes them.
+func (s *SecretService) UpdateSecret(ctx context.Context, actor *db.User, owner, repo, name string, mainOnly *bool, binding *SecretBinding) (SecretResponse, error) {
+	if actor == nil {
+		return SecretResponse{}, pkgerrors.Unauthorized("authentication required")
+	}
+	trimmedName := strings.TrimSpace(name)
+	if !IsInjectedSecretName(trimmedName) {
+		return SecretResponse{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "Secret", Field: "name", Code: "invalid"})
+	}
+	if mainOnly == nil && binding == nil {
+		return SecretResponse{}, pkgerrors.BadRequest("main_only or a binding is required")
+	}
+	params := db.UpdateSecretSettingsParams{Name: trimmedName}
+	if mainOnly != nil {
+		params.MainOnly = pgtype.Bool{Bool: *mainOnly, Valid: true}
+	}
+	if binding != nil {
+		normalized, err := binding.normalize()
+		if err != nil {
+			return SecretResponse{}, err
+		}
+		params.Hosts, params.MatchHeaders = normalized.Hosts, normalized.MatchHeaders
+	}
+	repository, err := s.resolveRepoByOwnerAndName(ctx, owner, repo)
+	if err != nil {
+		return SecretResponse{}, err
+	}
+	if err := s.requireAdminAccess(ctx, repository, actor, "secrets.scope"); err != nil {
+		return SecretResponse{}, err
+	}
+	params.RepositoryID = repository.ID
+	var updated db.RepositorySecret
+	if err := s.guardedSecretWrite(ctx, repository, actor.ID, func(queries SecretQuerier) error {
+		var werr error
+		updated, werr = queries.UpdateSecretSettings(ctx, params)
+		if stdErrors.Is(werr, pgx.ErrNoRows) {
+			return pkgerrors.NotFound("secret not found")
+		}
+		if werr != nil {
+			return pkgerrors.Internal("failed to update secret").WithCause(werr)
+		}
+		return nil
+	}); err != nil {
+		return SecretResponse{}, err
+	}
+	return repositorySecretResponse(updated), nil
+}
+
+func (s *SecretService) ListSecrets(ctx context.Context, actor *db.User, owner, repo string) ([]SecretResponse, error) {
+	if actor == nil {
+		return nil, pkgerrors.Unauthorized("authentication required")
+	}
+
+	repository, err := s.resolveRepoByOwnerAndName(ctx, owner, repo)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireWriteAccess(ctx, repository, actor); err != nil {
+		return nil, err
+	}
+
+	rows, err := s.queries.ListSecrets(ctx, repository.ID)
+	if err != nil {
+		return nil, pkgerrors.Internal("failed to list secrets").WithCause(err)
+	}
+
+	result := make([]SecretResponse, len(rows))
+	for i, row := range rows {
+		result[i] = SecretResponse{
+			Name:              row.Name,
+			CreatedAt:         row.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			UpdatedAt:         row.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+			ReconnectRequired: row.SubscriptionTokenFlaggedAt.Valid && !s.subscriptionTokens,
+			MainOnly:          row.MainOnly,
+			Hosts:             nonNilStrings(row.Hosts),
+			MatchHeaders:      nonNilStrings(row.MatchHeaders),
+			Path:              row.Path,
+		}
+	}
+	return result, nil
+}
+
+// ListDecryptedSecretsForRepo is an agent run's secrets: never a main-only one.
+func (s *SecretService) ListDecryptedSecretsForRepo(ctx context.Context, repositoryID int64) (map[string]string, error) {
+	if s == nil || s.queries == nil {
+		return nil, pkgerrors.Internal("secret store unavailable")
+	}
+
+	rows, err := s.queries.ListSecretValuesForRepo(ctx, repositoryID)
+	if err != nil {
+		return nil, pkgerrors.Internal("failed to list secret values").WithCause(err)
+	}
+
+	secrets := make(map[string]string, len(rows))
+	for _, row := range rows {
+		name := strings.TrimSpace(row.Name)
+		if name == "" {
+			continue
+		}
+
+		value, err := s.secretCodec.DecryptString(string(row.ValueEncrypted))
+		if err != nil {
+			return nil, pkgerrors.Internal("failed to decrypt secret").WithCause(err)
+		}
+		if err := refuseStoredSubscriptionToken(s.subscriptionTokens, "repository secret", name, value); err != nil {
+			return nil, err
+		}
+		secrets[name] = value
+	}
+
+	return secrets, nil
+}
+
+func (s *SecretService) DeleteSecret(ctx context.Context, actor *db.User, owner, repo, name string) error {
+	if actor == nil {
+		return pkgerrors.Unauthorized("authentication required")
+	}
+
+	trimmedName := strings.TrimSpace(name)
+	if trimmedName == "" {
+		return pkgerrors.BadRequest("secret name is required")
+	}
+
+	repository, err := s.resolveRepoByOwnerAndName(ctx, owner, repo)
+	if err != nil {
+		return err
+	}
+	if err := s.requireAdminAccess(ctx, repository, actor, "secrets.delete"); err != nil {
+		return err
+	}
+
+	return s.guardedSecretWrite(ctx, repository, actor.ID, func(queries SecretQuerier) error {
+		if err := queries.DeleteSecret(ctx, db.DeleteSecretParams{
+			RepositoryID: repository.ID,
+			Name:         trimmedName,
+		}); err != nil {
+			return pkgerrors.Internal("failed to delete secret").WithCause(err)
+		}
+		return nil
+	})
+}
+
+// SetOrgSecret stores an organization secret. binding nil keeps a replaced
+// secret's egress binding (a new one is unbound).
+func (s *SecretService) SetOrgSecret(ctx context.Context, actor *db.User, orgName, name, value string, binding *SecretBinding) (SecretResponse, error) {
+	org, err := s.requireOrgOwner(ctx, actor, orgName)
+	if err != nil {
+		return SecretResponse{}, err
+	}
+	trimmedName := strings.TrimSpace(name)
+	if trimmedName == "" {
+		return SecretResponse{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "Secret", Field: "name", Code: "missing_field"})
+	}
+	if len(trimmedName) > 255 {
+		return SecretResponse{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "Secret", Field: "name", Code: "invalid"})
+	}
+	if !IsInjectedSecretName(trimmedName) {
+		return SecretResponse{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "Secret", Field: "name", Code: "invalid"})
+	}
+	if value == "" {
+		return SecretResponse{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "Secret", Field: "value", Code: "missing_field"})
+	}
+	if len(value) > maxSecretValueBytes {
+		return SecretResponse{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "Secret", Field: "value", Code: "too_long"})
+	}
+	if err := refuseSubscriptionToken(s.subscriptionTokens, trimmedName, value); err != nil {
+		return SecretResponse{}, err
+	}
+	var stored *SecretBinding
+	if binding != nil {
+		normalized, err := binding.normalize()
+		if err != nil {
+			return SecretResponse{}, err
+		}
+		stored = &normalized
+	}
+
+	if err := s.enforceOrgSecretQuota(ctx, org.ID, trimmedName); err != nil {
+		return SecretResponse{}, err
+	}
+
+	encrypted, err := s.secretCodec.EncryptString(value)
+	if err != nil {
+		return SecretResponse{}, pkgerrors.Internal("failed to encrypt secret").WithCause(err)
+	}
+	params := db.CreateOrUpdateOrgSecretParams{
+		OrganizationID: org.ID,
+		Name:           trimmedName,
+		ValueEncrypted: []byte(encrypted),
+	}
+	if stored != nil {
+		params.Hosts, params.MatchHeaders = stored.Hosts, stored.MatchHeaders
+	}
+	created, err := s.queries.CreateOrUpdateOrgSecret(ctx, params)
+	if isSecretCapViolation(err, "organization_secrets_org_cap") {
+		return SecretResponse{}, orgSecretQuotaExceeded()
+	}
+	if err != nil {
+		return SecretResponse{}, pkgerrors.Internal("failed to set organization secret").WithCause(err)
+	}
+	return SecretResponse{
+		Name:         created.Name,
+		CreatedAt:    created.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		UpdatedAt:    created.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+		Hosts:        nonNilStrings(created.Hosts),
+		MatchHeaders: nonNilStrings(created.MatchHeaders),
+	}, nil
+}
+
+func (s *SecretService) ListOrgSecrets(ctx context.Context, actor *db.User, orgName string) ([]SecretResponse, error) {
+	org, err := s.requireOrgOwner(ctx, actor, orgName)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.queries.ListOrgSecrets(ctx, org.ID)
+	if err != nil {
+		return nil, pkgerrors.Internal("failed to list organization secrets").WithCause(err)
+	}
+	result := make([]SecretResponse, len(rows))
+	for i, row := range rows {
+		result[i] = SecretResponse{
+			Name:              row.Name,
+			CreatedAt:         row.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			UpdatedAt:         row.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+			ReconnectRequired: row.SubscriptionTokenFlaggedAt.Valid && !s.subscriptionTokens,
+			Hosts:             nonNilStrings(row.Hosts),
+			MatchHeaders:      nonNilStrings(row.MatchHeaders),
+		}
+	}
+	return result, nil
+}
+
+func (s *SecretService) DeleteOrgSecret(ctx context.Context, actor *db.User, orgName, name string) error {
+	org, err := s.requireOrgOwner(ctx, actor, orgName)
+	if err != nil {
+		return err
+	}
+	trimmedName := strings.TrimSpace(name)
+	if trimmedName == "" {
+		return pkgerrors.BadRequest("secret name is required")
+	}
+	if err := s.queries.DeleteOrgSecret(ctx, db.DeleteOrgSecretParams{
+		OrganizationID: org.ID,
+		Name:           trimmedName,
+	}); err != nil {
+		return pkgerrors.Internal("failed to delete organization secret").WithCause(err)
+	}
+	return nil
+}
+
+// enforceSecretQuota rejects a write that would create a new secret beyond
+// maxSecretsPerRepo, or declare a file path another secret holds. Updates to
+// an already-existing name are always within the cap. It is the friendly
+// pre-check; the cap trigger and the path index catch writers that race it.
+func (s *SecretService) enforceSecretQuota(ctx context.Context, repositoryID int64, name string, path *string) error {
+	rows, err := s.queries.ListSecrets(ctx, repositoryID)
+	if err != nil {
+		return pkgerrors.Internal("failed to set secret").WithCause(err)
+	}
+	exists := false
+	for _, row := range rows {
+		if row.Name == name {
+			exists = true
+		} else if path != nil && *path != "" && row.Path == *path {
+			return secretPathTaken()
+		}
+	}
+	if !exists && len(rows) >= maxSecretsPerRepo {
+		return repoSecretQuotaExceeded()
+	}
+	return nil
+}
+
+// enforceOrgSecretQuota is the organization-scoped counterpart of
+// enforceSecretQuota.
+func (s *SecretService) enforceOrgSecretQuota(ctx context.Context, organizationID int64, name string) error {
+	rows, err := s.queries.ListOrgSecrets(ctx, organizationID)
+	if err != nil {
+		return pkgerrors.Internal("failed to set organization secret").WithCause(err)
+	}
+	for _, row := range rows {
+		if row.Name == name {
+			return nil
+		}
+	}
+	if len(rows) >= maxSecretsPerOrg {
+		return orgSecretQuotaExceeded()
+	}
+	return nil
+}
+
+func repoSecretQuotaExceeded() *pkgerrors.APIError {
+	return pkgerrors.QuotaExceeded("repository secret limit reached (100)")
+}
+
+func orgSecretQuotaExceeded() *pkgerrors.APIError {
+	return pkgerrors.QuotaExceeded("organization secret limit reached (100)")
+}
+
+// isSecretCapViolation reports whether err is the named secret cap trigger
+// rejecting a write that raced past the pre-check.
+func isSecretCapViolation(err error, constraint string) bool {
+	var pgErr *pgconn.PgError
+	return stdErrors.As(err, &pgErr) && pgErr.ConstraintName == constraint
+}
+
+// --- permission helpers (same pattern as webhook service) ---
+
+func (s *SecretService) resolveRepoByOwnerAndName(ctx context.Context, owner, repo string) (db.Repository, error) {
+	lowerOwner := strings.ToLower(strings.TrimSpace(owner))
+	lowerRepo := strings.ToLower(strings.TrimSpace(repo))
+	if lowerOwner == "" {
+		return db.Repository{}, pkgerrors.BadRequest("owner is required")
+	}
+	if lowerRepo == "" {
+		return db.Repository{}, pkgerrors.BadRequest("repository name is required")
+	}
+
+	repository, err := s.queries.GetRepoByOwnerAndLowerName(ctx, db.GetRepoByOwnerAndLowerNameParams{
+		Owner:     lowerOwner,
+		LowerName: lowerRepo,
+	})
+	if err != nil {
+		if stdErrors.Is(err, pgx.ErrNoRows) {
+			return db.Repository{}, pkgerrors.NotFound("repository not found")
+		}
+		slog.Error("load repository failed", "owner", lowerOwner, "repo", lowerRepo, "error", err)
+		return db.Repository{}, pkgerrors.Internal("failed to load repository").WithCause(err)
+	}
+	return repository, nil
+}
+
+// requireOrgOwner resolves orgName for actor and admits site administrators
+// and organization owners. Visibility is decided first, so a private
+// organization answers everyone else like a missing one.
+func (s *SecretService) requireOrgOwner(ctx context.Context, actor *db.User, orgName string) (db.Organization, error) {
+	if actor == nil {
+		return db.Organization{}, pkgerrors.Unauthorized("authentication required")
+	}
+	if actor.IsAdmin {
+		return lookupOrgByName(ctx, s.queries, orgName)
+	}
+	org, membership, err := resolveOrgForViewer(ctx, s.queries, actor, orgName)
+	if err != nil {
+		return db.Organization{}, err
+	}
+	if !membership.hasRole("owner") {
+		return db.Organization{}, pkgerrors.Forbidden("permission denied")
+	}
+	return org, nil
+}
+
+// guardedSecretWrite orders install writes with roster transitions and
+// session revocation. It checks liveness, not the minimum role again: an
+// ordinary downgrade does not replace the request's bound decision.
+func (s *SecretService) guardedSecretWrite(ctx context.Context, repository db.Repository, actorID int64, write func(SecretQuerier) error) error {
+	return guardedRepoWrite(ctx, s.ownershipGuard, repository, func() error {
+		if !s.installAuthorization {
+			return write(s.queries)
+		}
+		if s.installPool == nil {
+			return &AccessError{Status: 503, Class: "infra", Code: "unavailable", Message: "Members unavailable"}
+		}
+		tx, err := s.installPool.Begin(ctx)
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback(ctx)
+		// Members.lockRoster takes FOR UPDATE on this same row.
+		if _, err = tx.Exec(ctx, `SELECT user_id FROM self_host_owners FOR SHARE`); err != nil {
+			return err
+		}
+		if _, err = db.New(tx).LockInstallRepositoryBinding(ctx); err != nil {
+			return err
+		}
+		if err := lockInstallSessionWrite(ctx, tx, actorID); err != nil {
+			return err
+		}
+		queries := db.New(tx)
+		current, err := InstallRepositoryID(ctx, queries)
+		if err != nil {
+			return err
+		}
+		if current != repository.ID {
+			return &AccessError{Status: 403, Class: "permission", Code: "permission", Message: "Not available"}
+		}
+		if err = write(queries); err != nil {
+			return err
+		}
+		return tx.Commit(ctx)
+	})
+}
+
+func (s *SecretService) requireAdminAccess(ctx context.Context, repository db.Repository, actor *db.User, command string) error {
+	if actor == nil {
+		return pkgerrors.Unauthorized("authentication required")
+	}
+	if s.installAuthorization {
+		queries, _ := s.queries.(*db.Queries)
+		decision, err := Authorize(ctx, queries, command)
+		if err != nil {
+			return err
+		}
+		if decision.UserID != actor.ID {
+			return &AccessError{Status: 403, Class: "permission", Code: "permission", Message: "Not available"}
+		}
+		if queries == nil {
+			return &AccessError{Status: 503, Class: "infra", Code: "unavailable", Message: "Repository unavailable"}
+		}
+		repositoryID, err := InstallRepositoryID(ctx, queries)
+		if err != nil {
+			return err
+		}
+		if repositoryID != repository.ID {
+			return &AccessError{Status: 403, Class: "permission", Code: "permission", Message: "Not available"}
+		}
+		return nil
+	}
+	isAdmin, err := s.isRepoAdmin(ctx, repository, actor.ID)
+	if err != nil {
+		return err
+	}
+	if !isAdmin {
+		return pkgerrors.Forbidden("permission denied")
+	}
+	return nil
+}
+
+func (s *SecretService) requireWriteAccess(ctx context.Context, repository db.Repository, actor *db.User) error {
+	if actor == nil {
+		return pkgerrors.Unauthorized("authentication required")
+	}
+	canWrite, err := s.canWriteRepo(ctx, repository, actor.ID)
+	if err != nil {
+		return err
+	}
+	if !canWrite {
+		return pkgerrors.Forbidden("permission denied")
+	}
+	return nil
+}
+
+func (s *SecretService) isRepoAdmin(ctx context.Context, repository db.Repository, userID int64) (bool, error) {
+	return canAdminRepo(ctx, s.queries, repository, userID)
+}
+
+func (s *SecretService) canWriteRepo(ctx context.Context, repository db.Repository, userID int64) (bool, error) {
+	return canWriteRepo(ctx, s.queries, repository, userID)
+}

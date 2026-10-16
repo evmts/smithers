@@ -1,0 +1,35 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "lib": [
+      "ES2024"
+    ],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "paths": {
+      "*": [
+        "./*"
+      ]
+    }
+  },
+  "include": [
+    "PACKAGE.ts",
+    "apps/*/PACKAGE.ts",
+    "crates/*/PACKAGE.ts",
+    "evals/*/PACKAGE.ts",
+    "packages/smithers/agent/harness/benchmarks/*/PACKAGE.ts",
+    "flows/review/seeded-bugs/PACKAGE.ts",
+    "scripts/PACKAGE.ts",
+    "scripts/*/PACKAGE.ts",
+    "flows/PACKAGE.ts",
+    "examples/PACKAGE.ts",
+    "packages/*/PACKAGE.ts",
+    "packages/*/*/PACKAGE.ts",
+    "packages/*/*/*/PACKAGE.ts"
+  ],
+  "exclude": [
+    "**/dist/**",
+    "packages/coding-agent/examples/extensions/gondolin/**"
+  ]
+}

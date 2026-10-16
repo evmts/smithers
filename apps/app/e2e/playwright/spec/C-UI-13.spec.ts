@@ -67,7 +67,7 @@ test("C-UI-13: /help mounts live Commands inline, maximized and after reload", a
   test.setTimeout(120_000)
   await owner(page)
   await page.route("**/contents/.smithers/factory.json", route => route.fulfill({ json: { content: JSON.stringify({ on: [], flows: [
-    { id: "release-notes", description: "Write release notes", summary: "Live repository summary", featured: false, kind: "ts", path: "flows/release-notes/flow.ts", capabilities: [], model: null, modelInvocable: true }
+    { id: "release-notes", description: "Write release notes", summary: "Live repository summary", featured: false, kind: "ts", path: ".smithers/flows/release-notes/flow.ts", capabilities: [], model: null, modelInvocable: true }
   ] }) } }))
   await page.goto("/")
   await say(page, "/repo.select smithersai/smithers")

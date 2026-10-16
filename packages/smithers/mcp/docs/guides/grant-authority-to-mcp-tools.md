@@ -98,7 +98,7 @@ Narrowing the declaration is better than widening the envelope. An envelope of
 `*:*` grants the whole run everything; this grants exactly the tools of exactly
 this server. A runnable version of this composition is in the Smithers
 repository, at
-[`examples/src/22-mcp-tools.ts`](https://github.com/smithersai/smithers/blob/main/examples/src/22-mcp-tools.ts).
+[`packages/smithers/mcp/examples/22-mcp-tools.ts`](https://github.com/smithersai/smithers/blob/main/packages/smithers/mcp/examples/22-mcp-tools.ts).
 
 ## What a refusal looks like
 

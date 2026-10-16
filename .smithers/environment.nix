@@ -314,6 +314,13 @@ in
       pkgs.ffmpeg-headless
     ];
 
+  # Prebuilt glibc executables from npm (dprint's `@dprint/linux-x64-glibc`,
+  # Playwright's Chromium) name /lib64/ld-linux-x86-64.so.2 as their ELF
+  # interpreter. nix-ld serves that path once boot has run systemd-tmpfiles, so
+  # a check runs only in a guest booted with init, after activation; before it,
+  # every such exec fails with ENOENT (#3007, #4093). The base enables nix-ld
+  # too; this machine declares the loader it depends on.
+  programs.nix-ld.enable = true;
   programs.nix-ld.libraries = playwrightLibraries;
 
   # `Docker.Service` targets (the PostgreSQL databases behind the backend,

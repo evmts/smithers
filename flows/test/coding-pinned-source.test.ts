@@ -221,9 +221,9 @@ test("a failed pinned dependency install refuses before repository loading", asy
 test("the repository host admits only its pinned TODO descriptor before loading a body", async (t) => {
   const temporary = await realpath(await mkdtemp(join(tmpdir(), "coding-pinned-registry-")))
   t.after(() => rm(temporary, { recursive: true, force: true }))
-  await mkdir(join(temporary, "flows", "todo"), { recursive: true })
+  await mkdir(join(temporary, ".smithers", "flows", "todo"), { recursive: true })
   await writeFile(
-    join(temporary, "flows", "todo", "flow.mdx"),
+    join(temporary, ".smithers", "flows", "todo", "flow.mdx"),
     "---\ndescription: Pinned TODO\n---\nApproved TODO body"
   )
   const { platform } = await import("../../packages/smithers/src/internal/NodeControlHost.ts")
@@ -234,7 +234,7 @@ test("the repository host admits only its pinned TODO descriptor before loading 
   await Effect.runPromise(
     Effect.gen(function*() {
       const source = yield* Registry.make({
-        sources: [{ root: join(temporary, "flows"), source: "project", naming: "path" }]
+        sources: [{ root: join(temporary, ".smithers", "flows"), source: "project", naming: "path" }]
       }).pipe(Effect.provide(Discovery.layer))
       // Metadata is the input supplied by Active-version admission; expectations
       // below are literal source bytes and loader calls, not digest computation.

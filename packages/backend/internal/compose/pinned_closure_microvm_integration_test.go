@@ -82,7 +82,7 @@ func TestPinnedClosureAdmissionMicroVMLive(t *testing.T) {
 		return fmt.Sprintf(`import { Flow, Sleep } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Schema } from "effect"
-import { value } from "../../lib/pinned-value.ts"
+import { value } from "../../../lib/pinned-value.ts"
 export default Flow.make("todo", {
  description: %q, capabilities: [], modelInvocable: false,
  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
@@ -107,10 +107,10 @@ export default Flow.make("todo", {
 	require.NoError(t, err)
 	edited, err := r.workspaceRuntime.ExecuteCommand(r.ctx, workspace, workspaceapi.Command{Args: []string{"node", "-e", `const fs = require("node:fs");
  fs.mkdirSync("/workspace/lib", {recursive:true});
- fs.mkdirSync("/workspace/flows/todo", {recursive:true});
+ fs.mkdirSync("/workspace/.smithers/flows/todo", {recursive:true});
  const poison = 'import { writeFileSync } from "node:fs"; writeFileSync("/workspace/branch-imported", "bad"); throw new Error("editable branch imported");';
  fs.writeFileSync("/workspace/lib/pinned-value.ts", poison);
- fs.writeFileSync("/workspace/flows/todo/flow.ts", poison);
+ fs.writeFileSync("/workspace/.smithers/flows/todo/flow.ts", poison);
  fs.writeFileSync("/workspace/pnpm-lock.yaml", "edited branch lockfile");`}})
 	require.NoError(t, err)
 	require.Zero(t, edited.ExitCode, edited.Stderr)

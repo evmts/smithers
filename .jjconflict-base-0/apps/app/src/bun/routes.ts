@@ -1,0 +1,195 @@
+import { NATIVE_FAILURES, nativeWireCode } from "@smthrs/rpc/NativeFailureCodes"
+import type { NativeRouteCode } from "@smthrs/rpc/NativeFailureCodes"
+import { WORKER_FAILURES } from "@smthrs/rpc/WorkerFailureCodes"
+import type { WorkerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
+/*
+ * A tiny HTTP router for the local server: exact paths only, registered by
+ * startLocalServer itself. Errors follow LOCAL-APP.md:
+ * `{ error: { code, message } }` with a 4xx/5xx status.
+ */
+
+export type HttpMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH"
+
+export interface RouteContext {
+  readonly request: Request
+  readonly url: URL
+}
+
+export type RouteHandler = (context: RouteContext) => Response | Promise<Response>
+
+interface Route {
+  readonly method: HttpMethod
+  readonly pattern: string
+  readonly segments: ReadonlyArray<string>
+  readonly handler: RouteHandler
+}
+
+export const json = (body: unknown, status = 200, headers: Record<string, string> = {}): Response =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json", "cache-control": "no-store", ...headers }
+  })
+
+/**
+ * A refusal on a route only THIS host serves, in this host's own vocabulary
+ * (@smthrs/rpc/NativeFailureCodes).
+ *
+ * The body carries the refusal twice on purpose. `error: { code, message }` is
+ * the envelope LOCAL-APP.md documents and this host's clients already read —
+ * `LspClient` matches `language_server_missing` there, and the route names
+ * stay the route names. Beside it sits the SAME refusal in the one shape the
+ * app classifies (`status`, `code`, `message`, `origin`), with the code in
+ * this host's namespace: eight of these route names are spelled by plue and
+ * one by the Worker, and until they were namespaced every private-route
+ * refusal reached the app with `code: null` and its fault read off the status
+ * — `503 node_missing` ("there is no Node on this box") guessed `infra`, whose
+ * copy tells the reader Smithers ran out of infra and to ask for more.
+ *
+ * The status comes from the registry rather than from the call site, the way
+ * the Worker's `refuse` reads WORKER_FAILURES, so a route and its code cannot
+ * drift apart. `jsonErrorWithStatus` is the one exception, for a status that
+ * is evidence from somewhere else (the code-intel routes, where the language
+ * server's own failure says which).
+ */
+export const jsonError = (code: NativeRouteCode, message: string, extra?: Record<string, unknown>): Response =>
+  jsonErrorWithStatus(NATIVE_FAILURES[code].status, code, message, extra)
+
+/** The same refusal at a status the route did not choose, mirroring the Worker's `refuseWithStatus`. */
+export const jsonErrorWithStatus = (
+  status: number,
+  code: NativeRouteCode,
+  message: string,
+  extra?: Record<string, unknown>
+): Response =>
+  json({
+    error: { code, message, ...extra },
+    status: "error",
+    code: nativeWireCode(code),
+    message,
+    origin: "local"
+  }, status)
+
+/**
+ * A refusal in the CLOUDFLARE WORKER'S envelope, for the routes this host and
+ * the Worker both answer.
+ *
+ * The two hosts serve the same `/api/cloud/*` path from the same product code,
+ * and the app classifies whatever comes back with one classifier
+ * (@smthrs/rpc/Refusal) that reads `code` at the TOP level. This host's own
+ * shape nests it under `error`, so a refusal it wrote arrived at the app with
+ * no code at all and its fault guessed from the status: "the cloud seam is
+ * disabled in this build" read as `fault: bug`, which is a claim about
+ * Smithers being broken rather than about this build not having the seam.
+ *
+ * `origin: "local"` is the other half. The code and the status are identical
+ * whichever host answered, so only the answer itself can say which one did —
+ * and a desktop build has no Worker running at all, while the copy for a
+ * `worker` refusal says "this deployment", which is the wrong noun for a
+ * program on the reader's own laptop.
+ *
+ * `jsonError` below is the envelope for the routes only this host has. Those
+ * are a THIRD vocabulary — typed in this host's own namespace
+ * (@smthrs/rpc/NativeFailureCodes), because eight of their code strings are
+ * spelled by plue (`not_found`, `invalid_path`, `invalid_json`,
+ * `invalid_request`, `unsupported_media_type`, `language_server_missing`,
+ * `not_implemented`, `internal`) and one by the Worker (`method_not_allowed`),
+ * and they do not all mean the same thing.
+ */
+export const refuse = (code: WorkerFailureCode, message: string): Response =>
+  json({ status: "error", code, message, origin: "local" }, WORKER_FAILURES[code].status)
+
+/** A path whose percent-encoding is not valid UTF-8 is the client's error, never a 500. */
+export const invalidPath = (): Response =>
+  jsonError("invalid_path", "Request path is not valid percent-encoded UTF-8.")
+
+/** The decoded path or segment, or undefined when its percent-encoding is malformed. */
+export const decodePath = (value: string): string | undefined => {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return undefined
+  }
+}
+
+/*
+ * The body text under `maxBytes`, or undefined once the cap is passed. The
+ * stream is read chunk by chunk and dropped at the cap, so a chunked body —
+ * which carries no Content-Length to refuse up front — is never buffered
+ * whole.
+ */
+const readTextBounded = async (request: Request, maxBytes: number): Promise<string | undefined> => {
+  const body = request.body
+  if (body === null) return ""
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  let text = ""
+  let received = 0
+  try {
+    for (;;) {
+      const chunk = await reader.read()
+      if (chunk.done) break
+      received += chunk.value.byteLength
+      if (received > maxBytes) return undefined
+      text += decoder.decode(chunk.value, { stream: true })
+    }
+  } finally {
+    await reader.cancel().catch(() => {})
+  }
+  return text + decoder.decode()
+}
+
+/**
+ * Body as JSON, or a typed content/parse error the caller returns as-is.
+ * `maxBytes` bounds what is read: a body past the cap answers 413 whether it
+ * declares its length or arrives chunked.
+ */
+export const readJson = async (
+  request: Request,
+  maxBytes = Number.POSITIVE_INFINITY
+): Promise<{ readonly body: unknown } | { readonly error: Response }> => {
+  const bodyTooLarge = (): { readonly error: Response } => ({
+    error: jsonError("body_too_large", "Request body is too large.")
+  })
+  const declared = Number(request.headers.get("content-length") ?? "0")
+  if (declared > maxBytes) return bodyTooLarge()
+  const mediaType = request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase()
+  if (mediaType !== "application/json") {
+    return { error: jsonError("unsupported_media_type", "Request body must use application/json.") }
+  }
+  const text = await readTextBounded(request, maxBytes)
+  if (text === undefined) return bodyTooLarge()
+  if (text.trim() === "") return { body: undefined }
+  try {
+    return { body: JSON.parse(text) as unknown }
+  } catch {
+    return { error: jsonError("invalid_json", "Request body must be valid JSON.") }
+  }
+}
+
+const split = (path: string): ReadonlyArray<string> => path.split("/").filter((segment) => segment !== "")
+
+export class Router {
+  private readonly routes: Array<Route> = []
+
+  add(method: HttpMethod, pattern: string, handler: RouteHandler): this {
+    this.routes.push({ method, pattern, segments: split(pattern), handler })
+    return this
+  }
+
+  match(method: string, pathname: string): RouteHandler | undefined {
+    const parts = split(pathname)
+    return this.routes.find((route) =>
+      route.method === method &&
+      route.segments.length === parts.length &&
+      route.segments.every((segment, index) => segment === parts[index])
+    )?.handler
+  }
+
+  /** True when some route, of any method, claims the path. */
+  knows(pathname: string): boolean {
+    const parts = split(pathname)
+    return this.routes.some((route) =>
+      route.segments.length === parts.length && route.segments.every((segment, index) => segment === parts[index])
+    )
+  }
+}

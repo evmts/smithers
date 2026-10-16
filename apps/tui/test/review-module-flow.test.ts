@@ -8,15 +8,15 @@ it("discovers, plans, starts and observes ordinary review with shared host servi
   const root = realpathSync(mkdtempSync(join(tmpdir(), "tui-review-flow-")))
   const workspace = resolve(import.meta.dir, "../../..")
   try {
-    cpSync(join(workspace, "flows/review"), join(root, "flows/review"), { recursive: true })
+    cpSync(join(workspace, "flows/review"), join(root, ".smithers/flows/review"), { recursive: true })
     symlinkSync(join(workspace, "flows/node_modules"), join(root, "node_modules"), "dir")
     const git = (args: string[]) => execFileSync("git", args, { cwd: root, stdio: "pipe" })
     git(["init"])
     git(["config", "user.email", "review@example.com"])
     git(["config", "user.name", "Review"])
-    writeFileSync(join(root, ".gitignore"), "node_modules\n.flows/\nconfig/\nsessions/\n.smithers/\n")
+    writeFileSync(join(root, ".gitignore"), "node_modules\n.flows/\nconfig/\nsessions/\n.smithers/*\n!.smithers/flows/\n")
     writeFileSync(join(root, "file.ts"), "export const n = 1;\n")
-    git(["add", "file.ts", ".gitignore", "flows"])
+    git(["add", "file.ts", ".gitignore", ".smithers/flows"])
     git(["-c", "commit.gpgsign=false", "commit", "-m", "base"])
     writeFileSync(join(root, "file.ts"), "export const n = 2;\n")
     const script = `

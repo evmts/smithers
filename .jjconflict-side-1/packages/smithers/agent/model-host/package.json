@@ -1,0 +1,77 @@
+{
+  "name": "@smthrs/model-host",
+  "type": "module",
+  "version": "1.0.0-rc.0",
+  "license": "MIT",
+  "private": true,
+  "smthrs": {
+    "group": "agent"
+  },
+  "description": "Shared provider-neutral model turn host and durable chat producer",
+  "sideEffects": false,
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts",
+    "./internal/*": null,
+    "./*/index": null
+  },
+  "files": [
+    "src/**/*.ts",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "test": "vitest",
+    "lint": "TSESTREE_SINGLE_RUN=true eslint src --max-warnings=0 && dprint check",
+    "coverage": "vitest --coverage"
+  },
+  "dependencies": {
+    "@smthrs/kernel": "workspace:*",
+    "@smthrs/memory": "workspace:*",
+    "@smthrs/model": "workspace:*",
+    "@smthrs/rpc": "workspace:*",
+    "effect": "4.0.4",
+    "zod": "4.5.4",
+    "@smthrs/cli": "workspace:*"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@eslint/js": "9.39.5",
+    "@types/bun": "latest",
+    "@types/node": "26.4.1",
+    "dprint": "0.57.1",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0",
+    "@vitest/coverage-v8": "5.0.0"
+  },
+  "publishConfig": {
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "types": "./dist/esm/index.d.ts",
+        "import": "./dist/esm/index.js",
+        "require": "./dist/cjs/index.js"
+      },
+      "./*": {
+        "types": "./dist/esm/*.d.ts",
+        "import": "./dist/esm/*.js",
+        "require": "./dist/cjs/*.js"
+      },
+      "./internal/*": null,
+      "./*/index": null
+    }
+  }
+}

@@ -21,7 +21,7 @@ A catalog of a thousand flows therefore costs a thousand reads and hashes, a
 thousand frontmatter parses, and no imports.
 
 That rule is what makes a catalog cheap enough to build at startup, and it is
-also what makes it safe. A `flows/` directory is a directory a person edits and
+also what makes it safe. A `.smithers/flows/` directory is a directory a person edits and
 a pack installs into. Evaluating every module in it to find out what is there
 would run third-party code before anyone decided to.
 

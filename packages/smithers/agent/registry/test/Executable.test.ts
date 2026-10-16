@@ -37,9 +37,9 @@ import * as Descriptor from "../src/Descriptor.ts"
 import * as Discovery from "../src/Discovery.ts"
 import * as Executable from "../src/Executable.ts"
 import * as Registry from "../src/Registry.ts"
-import greetModule from "./fixtures/executable/flows/greet/flow.ts"
+import greetModule from "./fixtures/executable/.smithers/flows/greet/flow.ts"
 
-const flowsRoot = fileURLToPath(new URL("./fixtures/executable/flows", import.meta.url))
+const flowsRoot = fileURLToPath(new URL("./fixtures/executable/.smithers/flows", import.meta.url))
 const projectRoot = fileURLToPath(new URL("./fixtures/executable", import.meta.url))
 const modulesRoot = fileURLToPath(new URL("./fixtures/executable/modules", import.meta.url))
 const fixturesRoot = fileURLToPath(new URL("./fixtures", import.meta.url))
@@ -648,9 +648,9 @@ export default ({
     Effect.gen(function*() {
       const fs = yield* FileSystem.FileSystem
       const root = yield* fs.makeTempDirectoryScoped({ directory: modulesRoot, prefix: ".g4-" })
-      yield* fs.makeDirectory(`${root}/flows/revision`, { recursive: true })
-      const path = `${root}/flows/revision/flow.ts`
-      yield* fs.writeFileString(`${root}/flows/revision/helper.ts`, "export const identity = (n: number) => n")
+      yield* fs.makeDirectory(`${root}/.smithers/flows/revision`, { recursive: true })
+      const path = `${root}/.smithers/flows/revision/flow.ts`
+      yield* fs.writeFileString(`${root}/.smithers/flows/revision/helper.ts`, "export const identity = (n: number) => n")
       yield* fs.writeFileString(path, source(7))
       yield* Effect.gen(function*() {
         const registry = yield* Registry.Registry
@@ -663,7 +663,7 @@ export default ({
         expect(second.lowered.priority).toBe(9)
         expect(second.lowered.cache).toEqual({ ttlMs: 9000, scope: "shared" })
         expect(second.invocation(null).placement).toBe("sandbox")
-        expect(yield* fs.readDirectory(`${root}/flows/revision`)).toEqual(["flow.ts", "helper.ts"])
+        expect(yield* fs.readDirectory(`${root}/.smithers/flows/revision`)).toEqual(["flow.ts", "helper.ts"])
       }).pipe(Effect.provide(Registry.layerProject({ root })))
     }).pipe(Effect.scoped, Effect.provide(platform)))
 
@@ -958,7 +958,7 @@ export default ({
       const fs = yield* FileSystem.FileSystem
       const root = yield* fs.makeTempDirectoryScoped({ directory: modulesRoot, prefix: ".g4-" })
       for (const name of ["aaa-hung", "healthy"]) {
-        const directory = `${root}/flows/${name}`
+        const directory = `${root}/.smithers/flows/${name}`
         yield* fs.makeDirectory(directory, { recursive: true })
         yield* fs.writeFileString(`${directory}/helper.ts`, "export const identity = (n: number) => n")
         yield* fs.writeFileString(
@@ -979,13 +979,13 @@ export default ({
       expect(built.refused[0]).toMatchObject({
         code: "load_timeout",
         flow: "aaa-hung",
-        path: join(root, "flows", "aaa-hung", "flow.ts")
+        path: join(root, ".smithers", "flows", "aaa-hung", "flow.ts")
       })
       expect(built.refused[0]!.message).toContain("500")
       expect(built.refused[0]!.message).toContain(join("aaa-hung", "flow.ts"))
       expect(logs).toHaveLength(1)
       expect(logs[0]).toContain("aaa-hung")
-      expect(yield* fs.readDirectory(`${root}/flows/aaa-hung`)).toEqual(["flow.ts", "helper.ts"])
+      expect(yield* fs.readDirectory(`${root}/.smithers/flows/aaa-hung`)).toEqual(["flow.ts", "helper.ts"])
     }).pipe(Effect.scoped, Effect.provide(platform)))
 })
 
@@ -1036,7 +1036,7 @@ describe("the modules a flow's entry imports", () => {
       const fs = yield* FileSystem.FileSystem
       const files = {
         "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
-        "flows/pinned/flow.ts": `import { Flow } from "@smthrs/flow"
+        ".smithers/flows/pinned/flow.ts": `import { Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Schema } from "effect"
 export default Flow.make("pinned", { description:"Retained", payload:{}, success:Schema.String, body:()=>Node.succeed("retained") })`
@@ -1060,12 +1060,12 @@ export default Flow.make("pinned", { description:"Retained", payload:{}, success
     Effect.gen(function*() {
       const fs = yield* FileSystem.FileSystem
       const files = {
-        "flows/pinned/flow.ts": `import { Flow } from "@smthrs/flow"
+        ".smithers/flows/pinned/flow.ts": `import { Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Schema } from "effect"
 import { payload, value } from "./helper.ts"
 export default Flow.make("pinned", { description:"Retained", payload, success:Schema.String, body:()=>Node.succeed(value) })`,
-        "flows/pinned/helper.ts":
+        ".smithers/flows/pinned/helper.ts":
           `import { Schema } from "effect";export const payload={name:Schema.String};export const value="retained"`
       }
       const identity = yield* project(files)
@@ -1074,8 +1074,8 @@ export default Flow.make("pinned", { description:"Retained", payload, success:Sc
       const digest = Descriptor.executionDigest(descriptor)
       // Importing either original file now throws. Both code and the actual
       // payload decoder must instead come from verified retained bytes.
-      yield* fs.writeFileString(`${identity}/flows/pinned/flow.ts`, `throw new Error("original entry loaded")`)
-      yield* fs.writeFileString(`${identity}/flows/pinned/helper.ts`, `throw new Error("original schema loaded")`)
+      yield* fs.writeFileString(`${identity}/.smithers/flows/pinned/flow.ts`, `throw new Error("original entry loaded")`)
+      yield* fs.writeFileString(`${identity}/.smithers/flows/pinned/helper.ts`, `throw new Error("original schema loaded")`)
       for (const fileUrl of [false, true]) {
         const approved = fileUrl ?
           new Descriptor.FlowDescriptor({
@@ -1092,7 +1092,7 @@ export default Flow.make("pinned", { description:"Retained", payload, success:Sc
         expect(Schema.is(executable.input!)({ name: 1 })).toBe(false)
       }
       yield* fs.writeFileString(
-        `${workspace}/flows/pinned/helper.ts`,
+        `${workspace}/.smithers/flows/pinned/helper.ts`,
         `export const payload={};export const value="changed"`
       )
       const changed = yield* Effect.flip(
@@ -1107,14 +1107,14 @@ export default Flow.make("pinned", { description:"Retained", payload, success:Sc
       const fs = yield* FileSystem.FileSystem
       const measured = yield* descriptorNamed("changelog")
       const text = yield* fs.readFileString(measured.body.path)
-      const files = { "flows/changelog/SKILL.md": text }
+      const files = { ".smithers/flows/changelog/SKILL.md": text }
       const identity = yield* project(files)
       const workspace = yield* project(files)
       const descriptor = yield* descriptorIn(identity, "changelog")
-      yield* fs.writeFileString(`${identity}/flows/changelog/SKILL.md`, "CURRENT CHECKOUT")
+      yield* fs.writeFileString(`${identity}/.smithers/flows/changelog/SKILL.md`, "CURRENT CHECKOUT")
       const executable = yield* Executable.fromDescriptor(descriptor, options({ sourceRoot: { identity, workspace } }))
       expect(executable.invocation({ args: "retained" }).prompt).toContain("Summarize")
-      expect(executable.invocation({ args: "retained" }).prompt).toContain(`${workspace}/flows/changelog`)
+      expect(executable.invocation({ args: "retained" }).prompt).toContain(`${workspace}/.smithers/flows/changelog`)
       expect(executable.invocation({ args: "retained" }).prompt).not.toContain("CURRENT CHECKOUT")
       expect(executable.descriptor).toBe(descriptor)
     }).pipe(Effect.scoped, Effect.provide(platform)))
@@ -1122,8 +1122,8 @@ export default Flow.make("pinned", { description:"Retained", payload, success:Sc
   it.effect("refuses retained entry, closure-path and outside-root locator mismatches", () =>
     Effect.gen(function*() {
       const files = {
-        "flows/pinned/flow.ts": selfFlow(`Node.succeed(value0)`, ["./helper.ts"]),
-        "flows/pinned/helper.ts": `export const value0="retained"`
+        ".smithers/flows/pinned/flow.ts": selfFlow(`Node.succeed(value0)`, ["./helper.ts"]),
+        ".smithers/flows/pinned/helper.ts": `export const value0="retained"`
       }
       const identity = yield* project(files)
       const workspace = yield* project(files)
@@ -1147,7 +1147,7 @@ export default Flow.make("pinned", { description:"Retained", payload, success:Sc
         )).code
       )
         .toBe("body_unavailable")
-      yield* fs.writeFileString(`${workspace}/flows/pinned/flow.ts`, `throw new Error("changed entry")`)
+      yield* fs.writeFileString(`${workspace}/.smithers/flows/pinned/flow.ts`, `throw new Error("changed entry")`)
       expect((yield* Effect.flip(Executable.fromDescriptor(descriptor, options({ sourceRoot })))).code).toBe(
         "body_unavailable"
       )
@@ -1157,8 +1157,8 @@ export default Flow.make("pinned", { description:"Retained", payload, success:Sc
     Effect.gen(function*() {
       const fs = yield* FileSystem.FileSystem
       const root = yield* project({
-        "flows/pinned/flow.ts": selfFlow(`Node.succeed(value0)`, ["../shared/helper.ts"]),
-        "flows/shared/helper.ts": `export const value0 = "first"`
+        ".smithers/flows/pinned/flow.ts": selfFlow(`Node.succeed(value0)`, ["../shared/helper.ts"]),
+        ".smithers/flows/shared/helper.ts": `export const value0 = "first"`
       })
       const before = yield* descriptorIn(root, "pinned")
       expect(before.body._tag).toBe("Module")
@@ -1167,7 +1167,7 @@ export default Flow.make("pinned", { description:"Retained", payload, success:Sc
       const identity = Descriptor.executionDigest(before)
 
       // The entry file is untouched; only the module it imports changed.
-      yield* fs.writeFileString(`${root}/flows/shared/helper.ts`, `export const value0 = "second"`)
+      yield* fs.writeFileString(`${root}/.smithers/flows/shared/helper.ts`, `export const value0 = "second"`)
       const after = yield* descriptorIn(root, "pinned")
 
       expect(after.body.contentDigest).toBe(before.body.contentDigest)
@@ -1180,10 +1180,10 @@ export default Flow.make("pinned", { description:"Retained", payload, success:Sc
     Effect.gen(function*() {
       const fs = yield* FileSystem.FileSystem
       const root = yield* project({
-        "flows/pinned/flow.ts": selfFlow(`Node.succeed(value0)`, ["./a.ts"]),
-        "flows/pinned/a.ts": `export { value0 } from "./b.ts"`,
+        ".smithers/flows/pinned/flow.ts": selfFlow(`Node.succeed(value0)`, ["./a.ts"]),
+        ".smithers/flows/pinned/a.ts": `export { value0 } from "./b.ts"`,
         // b imports a back: the walk has to end, and each module is named once.
-        "flows/pinned/b.ts": `import "./a.ts"\nexport const value0 = "deep"`
+        ".smithers/flows/pinned/b.ts": `import "./a.ts"\nexport const value0 = "deep"`
       })
       const before = yield* descriptorIn(root, "pinned")
       expect((before.body as Descriptor.BodyRefModule).imports?.map((entry) => entry.path))
@@ -1191,7 +1191,7 @@ export default Flow.make("pinned", { description:"Retained", payload, success:Sc
       const identity = Descriptor.executionDigest(before)
 
       // Two hops from the entry, and still part of what the flow runs.
-      yield* fs.writeFileString(`${root}/flows/pinned/b.ts`, `import "./a.ts"\nexport const value0 = "edited"`)
+      yield* fs.writeFileString(`${root}/.smithers/flows/pinned/b.ts`, `import "./a.ts"\nexport const value0 = "edited"`)
       expect(Descriptor.executionDigest(yield* descriptorIn(root, "pinned"))).not.toBe(identity)
     }).pipe(Effect.scoped, Effect.provide(platform)))
 
@@ -1223,12 +1223,12 @@ export default Flow.make("pinned", { description:"Retained", payload, success:Sc
     Effect.gen(function*() {
       const fs = yield* FileSystem.FileSystem
       const root = yield* project({
-        "flows/pinned/flow.ts": selfFlow(`Node.succeed(value0)`, ["./helper.ts"]),
-        "flows/pinned/helper.ts": `export const value0 = "first"`
+        ".smithers/flows/pinned/flow.ts": selfFlow(`Node.succeed(value0)`, ["./helper.ts"]),
+        ".smithers/flows/pinned/helper.ts": `export const value0 = "first"`
       })
       const descriptor = yield* descriptorIn(root, "pinned")
 
-      yield* fs.writeFileString(`${root}/flows/pinned/helper.ts`, `export const value0 = "swapped"`)
+      yield* fs.writeFileString(`${root}/.smithers/flows/pinned/helper.ts`, `export const value0 = "swapped"`)
       let loaded = false
       const failure = yield* Effect.flip(Executable.fromDescriptor(
         descriptor,
@@ -1252,7 +1252,7 @@ export default Flow.make("pinned", { description:"Retained", payload, success:Sc
     Effect.gen(function*() {
       const fs = yield* FileSystem.FileSystem
       const root = yield* project({
-        "flows/pinned/flow.ts": [
+        ".smithers/flows/pinned/flow.ts": [
           `import { Annotations } from "@smthrs/core"`,
           `import { Flow } from "@smthrs/flow"`,
           `import { Schema } from "effect"`,
@@ -1267,12 +1267,12 @@ export default Flow.make("pinned", { description:"Retained", payload, success:Sc
           `  body: () => undefined as never`,
           `}).annotate(Annotations.Priority, value + deep)`
         ].join("\n"),
-        "flows/pinned/a.ts": `export const value = 3`,
-        "flows/shared/deep.ts": `export const deep = 4`
+        ".smithers/flows/pinned/a.ts": `export const value = 3`,
+        ".smithers/flows/shared/deep.ts": `export const deep = 4`
       })
       const executable = yield* Executable.fromDescriptor(yield* descriptorIn(root, "pinned"), options())
       expect(executable.lowered.priority).toBe(7)
-      for (const directory of ["flows/pinned", "flows/shared"]) {
+      for (const directory of [".smithers/flows/pinned", ".smithers/flows/shared"]) {
         expect((yield* fs.readDirectory(`${root}/${directory}`)).filter((name) => name.startsWith(".smithers-")))
           .toEqual([])
       }
@@ -1282,8 +1282,8 @@ export default Flow.make("pinned", { description:"Retained", payload, success:Sc
     Effect.gen(function*() {
       const fs = yield* FileSystem.FileSystem
       const greet = yield* fs.readFileString(`${flowsRoot}/greet/flow.ts`)
-      const root = yield* project({ "flows/greet/flow.ts": greet })
-      const directory = `${root}/flows/greet`
+      const root = yield* project({ ".smithers/flows/greet/flow.ts": greet })
+      const directory = `${root}/.smithers/flows/greet`
       const stale = `.smithers-deadbeef-1-${(Date.now() - 60 * 60 * 1000).toString(36)}.ts`
       const fresh = `.smithers-deadbeef-2-${Date.now().toString(36)}.ts`
       yield* fs.writeFileString(`${directory}/${stale}`, "")
@@ -1319,8 +1319,8 @@ export default Flow.make("pinned", { description:"Retained", payload, success:Sc
   it.effect("pins a NodeNext './x.js' import of x.ts and loads the module", () =>
     Effect.gen(function*() {
       const root = yield* project({
-        "flows/pinned/flow.ts": selfFlow(`Node.succeed(value0)`, ["./helper.js"]),
-        "flows/pinned/helper.ts": `export const value0 = "pinned"`
+        ".smithers/flows/pinned/flow.ts": selfFlow(`Node.succeed(value0)`, ["./helper.js"]),
+        ".smithers/flows/pinned/helper.ts": `export const value0 = "pinned"`
       })
       const descriptor = yield* descriptorIn(root, "pinned")
       let loaded = false
@@ -1339,7 +1339,7 @@ export default Flow.make("pinned", { description:"Retained", payload, success:Sc
   it.effect("refuses a module reaching a specifier that resolves to no file", () =>
     Effect.gen(function*() {
       const root = yield* project({
-        "flows/pinned/flow.ts": selfFlow(`Node.succeed("x")`, ["./gone.ts"])
+        ".smithers/flows/pinned/flow.ts": selfFlow(`Node.succeed("x")`, ["./gone.ts"])
       })
       const descriptor = yield* descriptorIn(root, "pinned")
       const failure = yield* Effect.flip(
@@ -1354,7 +1354,7 @@ export default Flow.make("pinned", { description:"Retained", payload, success:Sc
     Effect.gen(function*() {
       const root = yield* project({
         // The target is decided at run time, so no static walk can measure it.
-        "flows/pinned/flow.ts": `${selfFlow(`Node.succeed("x")`)}\nexport const late = (name) => import(name)`
+        ".smithers/flows/pinned/flow.ts": `${selfFlow(`Node.succeed("x")`)}\nexport const late = (name) => import(name)`
       })
       const descriptor = yield* descriptorIn(root, "pinned")
       const failure = yield* Effect.flip(
@@ -1368,8 +1368,8 @@ export default Flow.make("pinned", { description:"Retained", payload, success:Sc
   it.effect("measures literal dynamic imports but refuses unsupported admission before invoking a loader", () =>
     Effect.gen(function*() {
       const root = yield* project({
-        "flows/pinned/flow.ts": `${selfFlow(`Node.succeed("x")`)}\nexport const late = () => import("./late.ts")`,
-        "flows/pinned/late.ts": `export const late = 1`
+        ".smithers/flows/pinned/flow.ts": `${selfFlow(`Node.succeed("x")`)}\nexport const late = () => import("./late.ts")`,
+        ".smithers/flows/pinned/late.ts": `export const late = 1`
       })
       const descriptor = yield* descriptorIn(root, "pinned")
       expect((descriptor.body as Descriptor.BodyRefModule).imports?.map((entry) => entry.path))
@@ -1574,7 +1574,7 @@ describe("annotation lowering", () => {
 
   /**
    * Hosts pass `Invocation` itself as an `Action.make` payload schema
-   * (`examples/src/16-fan-out-fan-in.ts`, `examples/src/24-control-plane-and-gateway.ts`),
+   * (`packages/smithers/flows/examples/16-fan-out-fan-in.ts`, `packages/smithers/flows/examples/24-control-plane-and-gateway.ts`),
    * so an envelope is decoded again from the journal on replay. A row written
    * before `placementOptions` existed carries no such key, and a required key
    * would fail that replay. The decoding default is what keeps it readable.
@@ -1974,7 +1974,7 @@ describe("the project registry", () => {
       // unreadable root as an empty project would hide every flow behind a
       // permissions mistake.
       expect(failure.code).toBe("read_failed")
-      expect(failure.path).toBe(join(projectRoot, "flows"))
+      expect(failure.path).toBe(join(projectRoot, ".smithers", "flows"))
     }))
 
   it.effect("keeps a pack's flows when the project has no flows directory of its own", () =>

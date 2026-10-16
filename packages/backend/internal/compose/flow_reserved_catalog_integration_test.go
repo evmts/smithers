@@ -49,7 +49,7 @@ func TestInstallFlowCatalogShowsReservedDeclarationRefusal(t *testing.T) {
 	load, err := q.EnsureFlowLoad(ctx, repo)
 	require.NoError(t, err)
 	load.CommitID, load.LoadedCommit = strings.Repeat("a", 40), strings.Repeat("a", 40)
-	load.Versions = json.RawMessage(`[{"name":"merge","path":"flows/merge/flow.ts","digest":"` + strings.Repeat("b", 64) + `","status":"failed","error":"flows/merge/flow.ts: reserved_name"},{"name":"custom","path":"flows/custom/flow.ts","digest":"` + strings.Repeat("c", 64) + `","status":"failed","error":"invalid type"},{"name":"checks/canary","path":"flows/checks/canary/flow.ts","digest":"` + strings.Repeat("d", 64) + `","status":"failed","error":"invalid type"}]`)
+	load.Versions = json.RawMessage(`[{"name":"merge","path":".smithers/flows/merge/flow.ts","digest":"` + strings.Repeat("b", 64) + `","status":"failed","error":".smithers/flows/merge/flow.ts: reserved_name"},{"name":"custom","path":".smithers/flows/custom/flow.ts","digest":"` + strings.Repeat("c", 64) + `","status":"failed","error":"invalid type"},{"name":"checks/canary","path":".smithers/flows/checks/canary/flow.ts","digest":"` + strings.Repeat("d", 64) + `","status":"failed","error":"invalid type"}]`)
 	load, err = q.SaveFlowLoad(ctx, load)
 	require.NoError(t, err)
 	cfg := testConfigAllFlagsOn()
@@ -146,7 +146,7 @@ func TestInstallFlowCatalogShowsReservedDeclarationRefusal(t *testing.T) {
 		case "merge":
 			refused = true
 			require.True(t, card.System)
-			require.Equal(t, "flows/merge/flow.ts", card.Source.Path)
+			require.Equal(t, ".smithers/flows/merge/flow.ts", card.Source.Path)
 			require.Len(t, card.Versions, 1)
 			require.Equal(t, "merged-failed", card.Versions[0].State)
 			require.Equal(t, "reserved_name", card.Versions[0].Error)
@@ -205,7 +205,7 @@ func TestInstallFlowCatalogShowsReservedDeclarationRefusal(t *testing.T) {
 			{"reserved", strings.Replace(body, "canary", "merge", 1), "run", true, 403, "reserved_name"},
 			{"todo", strings.Replace(body, "canary", "todo", 1), "run", true, 403, "todo_requires_stack_admission"},
 			{"learning", strings.Replace(body, "canary", "learning", 1), "run", true, 403, "learning_requires_merged_todo"},
-			{"learning alias", strings.Replace(body, "canary", "flows/learning/flow.ts", 1), "run", true, 403, "learning_requires_merged_todo"},
+			{"learning alias", strings.Replace(body, "canary", ".smithers/flows/learning/flow.ts", 1), "run", true, 403, "learning_requires_merged_todo"},
 			{"review", strings.Replace(body, "canary", "review", 1), "run", true, 403, "review_requires_pr"},
 			{"another branch", strings.Replace(body, machine, "22222222-2222-4222-8222-222222222222", 1), "run", true, 404, "branch_not_found"},
 		} {

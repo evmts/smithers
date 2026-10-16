@@ -38,7 +38,15 @@ var (
 	ErrRelayPlanUnknown = errors.New("flow dispatch: the relay saved no such plan for this box; plan again")
 )
 
-// TodoFlow is the todo composition (flows/todo/flow.ts). StackBindingKind is
+// RepositoryFlowsDir is where a repository keeps its flows (mvp.md M-49): a
+// flow named <name> has its entry at .smithers/flows/<name>/flow.ts. Smithers
+// never reads a root flows/ as flows.
+const RepositoryFlowsDir = ".smithers/flows/"
+
+// RepositoryFlowPath is the TypeScript entry of the repository flow name.
+func RepositoryFlowPath(name string) string { return RepositoryFlowsDir + name + "/flow.ts" }
+
+// TodoFlow is the todo composition (.smithers/flows/todo/flow.ts). StackBindingKind is
 // the binding kind of the stack's item launches: the only launches that may
 // run it, and only with the attempt's pin.
 const (
@@ -52,7 +60,7 @@ const (
 const pinMismatch = "pin_mismatch"
 
 // IsTodoFlow reports whether flowID names the todo composition, by name or by
-// its flows/todo/flow.ts path.
+// its .smithers/flows/todo/flow.ts path.
 func IsTodoFlow(flowID string) bool {
 	return flowName(flowID) == TodoFlow
 }
@@ -64,7 +72,7 @@ func IsLearningFlow(flowID string) bool {
 
 func flowName(flowID string) string {
 	name := path.Clean(strings.TrimSpace(flowID))
-	if inner, ok := strings.CutPrefix(name, "flows/"); ok {
+	if inner, ok := strings.CutPrefix(name, RepositoryFlowsDir); ok {
 		name = strings.TrimSuffix(inner, "/flow.ts")
 	}
 	return name

@@ -1,7 +1,7 @@
 import * as NodePath from "@effect/platform-node/NodePath"
 import { Effect, FileSystem, Layer, Path, PlatformError, Result } from "effect"
 import { describe, expect, it } from "vitest"
-import type { Source } from "../src/Descriptor.ts"
+import { DiscoveryWarning, type Source } from "../src/Descriptor.ts"
 import * as Discovery from "../src/Discovery.ts"
 import * as Registry from "../src/Registry.ts"
 
@@ -753,5 +753,98 @@ describe("Discovery concurrency", () => {
     expect(concurrent.entries).toEqual(plain.entries)
     expect(concurrent.warnings).toEqual(plain.warnings)
     expect(concurrent.warnings.map((item) => item.path)).toEqual([`${root}/opaque`, `${root}/sealed`])
+  })
+})
+
+describe("Discovery retired root", () => {
+  const retired = "/retired"
+  const retiredMessage = "Flows in flows/ are not loaded; move them to .smithers/flows/."
+
+  it("warns once about entries in the retired root and loads none of them", async () => {
+    const result = await scan(
+      tree({
+        [root]: { kind: "directory", entries: ["current"] },
+        [`${root}/current`]: { kind: "directory", entries: ["SKILL.md"] },
+        [`${root}/current/SKILL.md`]: skill("A current flow."),
+        [retired]: { kind: "directory", entries: ["review", "deep"] },
+        [`${retired}/review`]: { kind: "directory", entries: ["flow.ts"] },
+        [`${retired}/review/flow.ts`]: flowModule("description: \"Old review.\""),
+        [`${retired}/deep`]: { kind: "directory", entries: ["nested"] },
+        [`${retired}/deep/nested`]: { kind: "directory", entries: ["flow.mdx"] },
+        [`${retired}/deep/nested/flow.mdx`]: skill("Old nested.")
+      }),
+      { retiredRoot: retired }
+    )
+
+    expect(result.entries.map((entry) => entry.name)).toEqual(["current"])
+    expect(result.warnings).toEqual([
+      new DiscoveryWarning({ code: "retired_root", path: retired, message: retiredMessage })
+    ])
+  })
+
+  it("warns when only the retired root exists", async () => {
+    const result = await scan(
+      tree({
+        [retired]: { kind: "directory", entries: ["review"] },
+        [`${retired}/review`]: { kind: "directory", entries: ["SKILL.md"] },
+        [`${retired}/review/SKILL.md`]: skill("Old review.")
+      }),
+      { retiredRoot: retired, optionalRoot: true }
+    )
+
+    expect(result.entries).toEqual([])
+    expect(result.warnings.map((item) => [item.code, item.path, item.message])).toEqual([
+      ["retired_root", retired, retiredMessage]
+    ])
+  })
+
+  it.each([
+    ["is absent", tree({ [root]: { kind: "directory", entries: [] } })],
+    [
+      "holds no entry file",
+      tree({
+        [root]: { kind: "directory", entries: [] },
+        [retired]: { kind: "directory", entries: ["package", "README.md"] },
+        [`${retired}/README.md`]: { kind: "file", contents: "# not a flow" },
+        [`${retired}/package`]: { kind: "directory", entries: ["index.ts"] },
+        [`${retired}/package/index.ts`]: { kind: "file", contents: "export {}" }
+      })
+    ],
+    [
+      "hides its entries under node_modules or a dot directory",
+      tree({
+        [root]: { kind: "directory", entries: [] },
+        [retired]: { kind: "directory", entries: ["node_modules", ".cache"] },
+        [`${retired}/node_modules`]: { kind: "directory", entries: ["SKILL.md"] },
+        [`${retired}/node_modules/SKILL.md`]: skill("Vendored."),
+        [`${retired}/.cache`]: { kind: "directory", entries: ["flow.mdx"] },
+        [`${retired}/.cache/flow.mdx`]: skill("Cached.")
+      })
+    ],
+    ["is a file", tree({ [root]: { kind: "directory", entries: [] }, [retired]: { kind: "file", contents: "" } })],
+    [
+      "cannot be read",
+      tree({ [root]: { kind: "directory", entries: [] }, [retired]: { kind: "unreadable-directory" } })
+    ]
+  ])("says nothing when the retired root %s", async (_label, nodes) => {
+    const result = await scan(nodes, { retiredRoot: retired })
+
+    expect(result.entries).toEqual([])
+    expect(result.warnings).toEqual([])
+  })
+
+  it("stops probing below the maximum discovery depth", async () => {
+    const nodes = new Map<string, Node>([[root, { kind: "directory", entries: [] }]])
+    let directory = retired
+    for (let depth = 0; depth <= Discovery.maximumTraversalDepth; depth++) {
+      nodes.set(directory, { kind: "directory", entries: ["d"] })
+      directory = `${directory}/d`
+    }
+    nodes.set(directory, { kind: "directory", entries: ["SKILL.md"] })
+    nodes.set(`${directory}/SKILL.md`, skill("Too deep."))
+
+    const result = await scan(nodes, { retiredRoot: retired })
+
+    expect(result.warnings).toEqual([])
   })
 })

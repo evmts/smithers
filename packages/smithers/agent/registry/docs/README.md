@@ -61,7 +61,7 @@ const platform = Layer.merge(NodeFileSystem.layer, NodePath.layer)
 const discovery = Discovery.layer.pipe(Layer.provide(platform))
 
 const registry = Registry.layer({
-  sources: [{ source: "project", root: join(process.cwd(), "flows"), naming: "path" }]
+  sources: [{ source: "project", root: join(process.cwd(), ".smithers", "flows"), naming: "path" }]
 }).pipe(Layer.provide([discovery, platform]))
 
 const main = Effect.gen(function*() {
@@ -81,12 +81,12 @@ await Effect.runPromise(main.pipe(Effect.provide(registry), Effect.orDie))
 
 ```text
 review: Reviews a proposed change and reports concrete correctness and maintainability risks.
-skipped /repo/flows/draft/flow.mdx: Markdown flows require a non-empty frontmatter description
+skipped /repo/.smithers/flows/draft/flow.mdx: Markdown flows require a non-empty frontmatter description
 ```
 
 `list()` and `warnings()` both answer from one complete snapshot and touch no
 files. A malformed entry becomes a warning rather than a failure, because a
-`flows/` directory is a directory a person edits and one file in it is
+`.smithers/flows/` directory is a directory a person edits and one file in it is
 routinely mid-edit.
 
 ## How this fits with @smthrs/agent
@@ -102,7 +102,7 @@ everything that decides what is callable at all.
 
 Both sit under the `smthrs` command line,
 [`@smthrs/cli`](/api/cli), which builds this registry over your project's
-`flows/` directory at startup. Every verb that names a flow, including
+`.smithers/flows/` directory at startup. Every verb that names a flow, including
 [`smthrs flow`](/cli/flow) and [`smthrs doctor`](/cli/doctor), answers from that
 one catalog.
 

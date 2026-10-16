@@ -32,8 +32,8 @@ test("the packaged host settles a repository file flow with the flow's own schem
   const temporary = await mkdtemp(join(tmpdir(), "coding-host-modules-"))
   t.after(() => rm(temporary, { recursive: true, force: true }))
   const repository = join(temporary, "repository")
-  await mkdir(join(repository, "flows", "echo"), { recursive: true })
-  await writeFile(join(repository, "flows", "echo", "flow.ts"), echo)
+  await mkdir(join(repository, ".smithers", "flows", "echo"), { recursive: true })
+  await writeFile(join(repository, ".smithers", "flows", "echo", "flow.ts"), echo)
   // The repository installs its own copies, which the host must not load.
   await symlink(fileURLToPath(new URL("../node_modules", import.meta.url)), join(repository, "node_modules"))
   const output = join(temporary, "host.mjs")
@@ -46,7 +46,7 @@ test("the packaged host settles a repository file flow with the flow's own schem
         stdio: ["ignore", "pipe", "pipe"]
       })
     )
-  assert.deepEqual(settle(join(repository, "flows", "echo", "flow.ts"), "success", "echoed"), {
+  assert.deepEqual(settle(join(repository, ".smithers", "flows", "echo", "flow.ts"), "success", "echoed"), {
     flow: "echo",
     encoded: { _tag: "Complete", exit: { _tag: "Success", value: "echoed" } },
     settled: "echoed"

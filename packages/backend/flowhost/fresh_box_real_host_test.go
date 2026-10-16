@@ -86,15 +86,15 @@ func TestFreshBoxRealManagedCodingHost(t *testing.T) {
 	workspace, err = workspaces.StartWorkspace(ctx, workspace.ID)
 	require.NoError(t, err)
 	require.NoError(t, os.MkdirAll(filepath.Join(workspace.Root, ".smithers"), 0o755))
-	require.NoError(t, os.MkdirAll(filepath.Join(workspace.Root, "flows", "echo"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(workspace.Root, ".smithers", "flows", "echo"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(workspace.Root, ".smithers", "coding-project.json"), []byte(`{"wiki":false,"implementation":"coding/implementation","checks":[]}`), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(workspace.Root, "flows", "echo", "flow.ts"), []byte(freshBoxEcho), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(workspace.Root, ".smithers", "flows", "echo", "flow.ts"), []byte(freshBoxEcho), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(workspace.Root, "README.md"), []byte("# Fresh box\n"), 0o644))
 	// The file flow uses the same public packages as the bundle. JJ must not
 	// snapshot the shared dependency tree in this otherwise fresh workspace.
 	require.NoError(t, os.Symlink(filepath.Join(repositoryRoot, "node_modules"), filepath.Join(workspace.Root, "node_modules")))
 	require.NoError(t, os.WriteFile(filepath.Join(workspace.Root, ".gitignore"), []byte("node_modules\n"), 0o644))
-	for _, args := range [][]string{{jj, "git", "init", "--colocate"}, {jj, "--config", "user.name=Fresh Box", "--config", "user.email=box@example.invalid", "commit", "-m", "fresh box fixture", "README.md", ".smithers/coding-project.json", "flows/echo/flow.ts"}} {
+	for _, args := range [][]string{{jj, "git", "init", "--colocate"}, {jj, "--config", "user.name=Fresh Box", "--config", "user.email=box@example.invalid", "commit", "-m", "fresh box fixture", "README.md", ".smithers/coding-project.json", ".smithers/flows/echo/flow.ts"}} {
 		result, commandErr := workspaces.ExecuteCommand(ctx, workspace.ID, workspaceapi.Command{Args: args})
 		require.NoError(t, commandErr)
 		require.Zero(t, result.ExitCode, "%v: %s", args, result.Stderr)

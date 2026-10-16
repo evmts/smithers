@@ -1,5 +1,5 @@
 /**
- * Custom agents: a repository's markdown flows (`flows/<name>/flow.mdx` or
+ * Custom agents: a repository's markdown flows (`.smithers/flows/<name>/flow.mdx` or
  * `SKILL.md`) run as interactive worker tabs.
  *
  * The descriptor is the agent definition: its body is the system prompt,

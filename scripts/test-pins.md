@@ -514,7 +514,7 @@ lives. The items an alpha operator hits first:
   liveness probe, and `SIGINT`/`SIGTERM` shutdown bounded by
   `shutdownTimeoutMs`. A program that composes `layer` still owes `Crypto`,
   `FileSystem`, and `Jj`, and installs its own signal handlers.
-  `examples/src/durable-layer.ts` is the worked composition, and
+  `packages/smithers/flows/src/test/TestNodeRuntime.ts` is the worked composition, and
   [the barrel's API page](../packages/smithers/flows/docs/api.md) lists both
   entry points.
 - **Detached child flows need a composed child port.** A host that composes

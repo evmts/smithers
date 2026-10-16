@@ -7,6 +7,8 @@ import (
 	"maps"
 	"regexp"
 	"slices"
+
+	"github.com/smithersai/smithers/packages/backend/flowdispatch"
 )
 
 // SystemFlows is the install-owned catalog (engineering spec §11.1). The
@@ -54,9 +56,9 @@ func Overridable(name string) bool { return !slices.Contains(SystemFlows, name) 
 // (stage 3). These are path declarations required by T-FLW-01, not executable
 // entries. Only defaults with a shipped digest are exposed or runnable.
 var BuiltinFlowDefaults = map[string]string{
-	"todo":     "flows/todo/flow.ts",
-	"learning": "flows/learning/flow.ts",
-	"review":   "flows/review/flow.ts",
+	"todo":     flowdispatch.RepositoryFlowPath("todo"),
+	"learning": flowdispatch.RepositoryFlowPath("learning"),
+	"review":   flowdispatch.RepositoryFlowPath("review"),
 }
 
 // FlowCard is one flow as GET /api/flows serves it: the Flow card's model
@@ -155,7 +157,7 @@ func builtinFlowDigests() (map[string]string, error) {
 		return nil, fmt.Errorf("built-in flow digests: %w", err)
 	}
 	for name, path := range BuiltinFlowDefaults {
-		if !Overridable(name) || path != "flows/"+name+"/flow.ts" {
+		if !Overridable(name) || path != flowdispatch.RepositoryFlowPath(name) {
 			return nil, fmt.Errorf("built-in flow %q has an invalid default path", name)
 		}
 	}

@@ -26,7 +26,7 @@ func TestTodoCommandGuardPairAccountingComposedInstall(t *testing.T) {
 		s.SetTodoFlow(func(context.Context, int64, string) (string, error) { return rehearsalBuiltinTodoDigest(t), nil })
 	})
 	digest := rehearsalBuiltinTodoDigest(t)
-	_, err := h.pool.Exec(t.Context(), `INSERT INTO workflow_definitions(repository_id,name,path,config,is_active,source_commit,digest,status) VALUES($1,'todo','flows/todo/flow.ts','{}',true,$2,$3,'loaded')`, h.item.RepositoryID, source, digest)
+	_, err := h.pool.Exec(t.Context(), `INSERT INTO workflow_definitions(repository_id,name,path,config,is_active,source_commit,digest,status) VALUES($1,'todo','.smithers/flows/todo/flow.ts','{}',true,$2,$3,'loaded')`, h.item.RepositoryID, source, digest)
 	require.NoError(t, err)
 	triggers := []string{"drop", "stop", "resume", "retry", "retry-current-flow", "steer"}
 	sources := []struct {

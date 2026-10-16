@@ -59,7 +59,6 @@ import { parse } from "yaml"
  * @type {readonly ReleaseGate[]}
  */
 export const releaseGates = [
-  { name: "Examples", verb: "ci", target: "//examples/..." },
   { name: "Workspace targets", verb: "ci", target: "//packages/...", jobs: 2 },
   // Every NodeTest under scripts/, the release rehearsal and cut suites included.
   {
@@ -88,13 +87,13 @@ export const releaseGates = [
   { name: "Script lint", verb: "lint", target: "//scripts:lint" },
   { name: "JSDoc rule harness", verb: "test", target: "//:jsdocRules" },
   { name: "Factory harness", verb: "test", target: "//:factoryHarness" },
-  { name: "Agent eval suite (offline, baseline-gated)", verb: "test", target: "//evals/agent:test" },
-  { name: "Agent eval typecheck", verb: "build", target: "//evals/agent:check" },
+  { name: "Agent eval suite (offline, baseline-gated)", verb: "test", target: "//packages/smithers/agent/regression:test" },
+  { name: "Agent eval typecheck", verb: "build", target: "//packages/smithers/agent/regression:check" },
   { name: "Authoring eval dataset (offline)", verb: "test", target: "//evals/authoring:test" },
   { name: "Authoring eval typecheck", verb: "build", target: "//evals/authoring:check" },
-  { name: "SWE-bench offline fixtures", verb: "test", target: "//evals/swebench:offline", jobs: 1 },
-  { name: "SWE-bench rig typecheck", verb: "build", target: "//evals/swebench:check" },
-  { name: "SWE-bench rig lint", verb: "lint", target: "//evals/swebench/..." },
+  { name: "SWE-bench offline fixtures", verb: "test", target: "//packages/smithers/agent/harness/benchmarks/swebench:offline", jobs: 1 },
+  { name: "SWE-bench rig typecheck", verb: "build", target: "//packages/smithers/agent/harness/benchmarks/swebench:check" },
+  { name: "SWE-bench rig lint", verb: "lint", target: "//packages/smithers/agent/harness/benchmarks/swebench/..." },
   { name: "UI typecheck", verb: "build", target: "//apps/app:check" },
   { name: "UI unit tests", verb: "test", target: "//apps/app:unitTests" },
   { name: "UI conformance lint", verb: "test", target: "//apps/app:conformance" },
@@ -106,10 +105,10 @@ export const releaseGates = [
   { name: "Bug worker", verb: "ci", target: "//apps/bug-worker/..." },
   { name: "Project copy drift", verb: "lint", target: "//:projectCopy" },
   { name: "Site", verb: "ci", target: "//apps/site/..." },
-  { name: "Review eval suite (offline, baseline-gated)", verb: "test", target: "//evals/review-seeded-bugs/..." },
-  { name: "Review eval typecheck", verb: "build", target: "//evals/review-seeded-bugs:check" },
-  { name: "Recommend eval suite (offline, baseline-gated)", verb: "test", target: "//evals/recommend/..." },
-  { name: "Recommend eval typecheck", verb: "build", target: "//evals/recommend:check" },
+  { name: "Review eval suite (offline, baseline-gated)", verb: "test", target: "//flows/review/seeded-bugs/..." },
+  { name: "Review eval typecheck", verb: "build", target: "//flows/review/seeded-bugs:check" },
+  { name: "Recommend eval suite (offline, baseline-gated)", verb: "test", target: "//packages/backend/modelhost/recommend-eval/..." },
+  { name: "Recommend eval typecheck", verb: "build", target: "//packages/backend/modelhost/recommend-eval:check" },
   { name: "Generated workflow drift", verb: "lint", target: "//:ci" },
   { name: "Factory projection drift", verb: "lint", target: "//:factoryProjection" },
   { name: "Target index drift", verb: "lint", target: "//:targetIndex" },

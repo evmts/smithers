@@ -1253,7 +1253,7 @@ test("Edit toast waits for the exact admitted revision, then settles from the re
 test("Source refuses a missing File continuation before drafting", async () => {
   const h = await harness(async () => { throw new Error("No HTTP expected") })
   try {
-    expect(await h.seam.newFlowSourceTodo({ title: "Change the TODO flow", text: "Edit the source" }, "flows/todo/flow.ts")).toBe("Branch files are unavailable.")
+    expect(await h.seam.newFlowSourceTodo({ title: "Change the TODO flow", text: "Edit the source" }, ".smithers/flows/todo/flow.ts")).toBe("Branch files are unavailable.")
     expect(h.draft()).toBeUndefined()
   } finally { h.close() }
 })
@@ -1269,7 +1269,7 @@ test("Source keeps polling after a live publication until the derived file is re
     return json(fixtures.in_review.model, 200)
   }, memoryStorage(), undefined, true, async () => { opens++; return ready })
   try {
-    await h.seam.newFlowSourceTodo({ title: "Change the TODO flow", text: "Edit the source" }, "flows/todo/flow.ts")
+    await h.seam.newFlowSourceTodo({ title: "Change the TODO flow", text: "Edit the source" }, ".smithers/flows/todo/flow.ts")
     expect(opens).toBe(0)
     const id = h.draft().id
     await h.seam.newTodo({ cardId: id })
@@ -1294,7 +1294,7 @@ test("a server snapshot recovers Source after the TODO receipt cleared before it
   let posts = 0
   const h = await harness(async () => { posts++; return json({ state: "accepted", n: 12 }) }, memoryStorage(), undefined, true, async () => true)
   try {
-    await h.seam.newFlowSourceTodo({ title: "Recover a confirmed edit", text: "Edit the source" }, "flows/todo/flow.ts")
+    await h.seam.newFlowSourceTodo({ title: "Recover a confirmed edit", text: "Edit the source" }, ".smithers/flows/todo/flow.ts")
     await h.seam.newTodo({ cardId: h.draft().id })
     await waitFor(() => h.observed.has("todo:12"))
     const card = h.todo()

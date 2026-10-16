@@ -1,0 +1,722 @@
+/*
+ * The pure half of the flow registry ("flows are the app"), cut to this app's
+ * surface: the UI-catalog metadata, the recommended (gold) rule, slash
+ * filtering, alias resolution, and composer submit parsing. Nothing here
+ * touches the DOM, the store, the agent bridge, or Effect, so the whole module
+ * is unit-testable in plain bun; the executable half — a flow declaration
+ * paired with its handler through `FlowBinding` — lives in Commands.ts.
+ *
+ * The split is deliberate. Flow IDENTITY (name, description, capabilities,
+ * effect tier, whether a model may invoke it) belongs to the declaration and
+ * its projected descriptor. Everything below is UI-catalog copy about a flow
+ * that already exists, which is why it can stay a plain structural record.
+ *
+ * The namespace rows, the requirement rows and the recommendation rows are
+ * data each namespace module under ./entries exports beside its flows; this
+ * module aggregates them in display order. Those are the only value imports,
+ * so a lane that adds a namespace, a requirement or a recommendation edits
+ * its own module plus one line here.
+ */
+import type * as FlowBinding from "@smthrs/harness/FlowBinding"
+import type { AppBootstrap, RuntimeCapability } from "@smthrs/rpc/AppBootstrap"
+import type { Schema } from "effect"
+import { doorFamilyAbsent, type DoorFamily } from "./DoorAvailability"
+import type { Grammar } from "./SlashPayload"
+import * as account from "./entries/account"
+import * as admin from "./entries/admin"
+import * as agent from "./entries/agent"
+import * as app from "./entries/app"
+import * as approval from "./entries/approval"
+import * as auth from "./entries/auth"
+import * as billing from "./entries/billing"
+import * as branches from "./entries/branches"
+import * as browser from "./entries/browser"
+import * as card from "./entries/card"
+import * as change from "./entries/change"
+import * as chat from "./entries/chat"
+import * as cloud from "./entries/cloud"
+import * as debug from "./entries/debug"
+import * as egress from "./entries/egress"
+import * as files from "./entries/files"
+import * as findings from "./entries/findings"
+import * as flow from "./entries/flow"
+import * as frame from "./entries/frame"
+import * as github from "./entries/github"
+import * as history from "./entries/history"
+import * as todo from "./entries/todo"
+import * as issue from "./entries/issue"
+import * as issues from "./entries/issues"
+import * as palette from "./entries/palette"
+import * as prs from "./entries/prs"
+import * as repo from "./entries/repo"
+import * as repos from "./entries/repos"
+import * as review from "./entries/review"
+import * as runs from "./entries/runs"
+import * as search from "./entries/search"
+import * as secrets from "./entries/secrets"
+import * as sync from "./entries/sync"
+import * as toast from "./entries/toast"
+import * as wiki from "./entries/wiki"
+import * as box from "./entries/box"
+import type { OperationMetadata } from "@smthrs/ui/app-operations"
+
+/**
+ * The UI-catalog concerns wrapped around one registered flow: the shared
+ * operation rules (`@smthrs/ui/app-operations`) in this app's host
+ * vocabulary.
+ *
+ * This is the `metadata` half of a registry entry. It carries no flow-identity
+ * decision: capabilities and effect tiers live on the declaration, and the
+ * user-only axis is the descriptor's `modelInvocable` flag. Requirement ids
+ * come from `flowRequirements`; flows/agent-parity.test.ts enumerates every
+ * `agentReason`; `workflow` names the flow a run card belongs to.
+ */
+export interface FlowMetadata extends OperationMetadata<RuntimeCapability, AppBootstrap["host"]> {
+  /**
+   * The route family this flow IS, when the family is one a host either mounts
+   * or does not (`flows/DoorAvailability.ts`). Declaring it is what makes
+   * `available`, `absentDoor` and the answer doors read one rule: the host's
+   * own statement about the family, never the flow's hopes for it.
+   */
+  readonly door?: DoorFamily
+  /** Authoritative catalog fields supplied by the operation provider (T-CAT-01). */
+  readonly visibility?: "core" | "advanced" | "in-card" | "hidden"
+  readonly group?: string
+  readonly actors?: ReadonlyArray<"person" | "app_agent" | "external_agent">
+  readonly minimumRole?: "member" | "maintainer" | "owner"
+  readonly agent?: "run" | "confirm" | "never"
+  /** Require a person to press the confirmation too. */
+  readonly confirmPerson?: boolean
+  /**
+   * The slash grammar of a flow declared at RUNTIME (a repository's flow
+   * leaf, entries/flow.ts `repositoryFlowLeaves`). SlashPayload's table names
+   * the app's own flows and cannot name one that arrives with a projection,
+   * so such a flow carries its parser; the composer boundary consults the
+   * table first and this second. Absent for every declared flow.
+   */
+  readonly grammar?: Grammar
+  /**
+   * The one sentence this flow's own miss gets, in place of the door class's
+   * shared line (`Commands.absentReason`). Declared only where the door the
+   * person reached for has a REAL neighbour on this origin, so the refusal
+   * names what does work here instead of the generic "not on this origin
+   * yet"; it is still a refusal, and it never claims the flow ran.
+   */
+  readonly absentHere?: string
+  /**
+   * Other slash names that run this flow (`/new` and `/clear` run `/archive`).
+   * An alias is never listed for a bare `/`: its row appears once the person
+   * starts typing the alias, and names this flow in parentheses. A flow
+   * registered under the same name wins over an alias.
+   */
+  readonly aliases?: ReadonlyArray<string>
+}
+
+/** The flow an alias runs: only when no flow is registered under that name. */
+export const aliasOwner = <C extends { readonly name: string; readonly aliases?: ReadonlyArray<string> }>(
+  commands: ReadonlyArray<C>,
+  name: string
+): C | undefined =>
+  commands.some((command) => command.name === name) ? undefined : commands.find((command) => command.aliases?.includes(name) === true)
+
+/** The confirmation label an agent invocation of this flow needs, or undefined when it needs none. */
+export const confirmLabel = (metadata: FlowMetadata, payload: Record<string, unknown>): string | undefined =>
+  metadata.agent === "never" ? undefined :
+  // A command may keep a run door while stronger, payload-specific controls require confirmation.
+  typeof metadata.confirm === "function" ? metadata.confirm(payload) :
+  metadata.agent === "run" ? undefined :
+  metadata.confirm ?? (metadata.agent === "confirm" ? metadata.summary : undefined)
+
+/**
+ * One registered flow as the catalog sees it: its name beside its UI metadata.
+ *
+ * Structural on purpose. The runtime projects `{ binding, metadata }` entries
+ * into this shape with {@link itemOf}, and the pure rules below never need the
+ * executable half.
+ */
+export interface CatalogItem extends FlowMetadata {
+  readonly name: string
+  /** Input capability derived from the declaration; display hints do not decide syntax. */
+  readonly acceptsArgs?: boolean
+}
+
+/**
+ * One registered capability: the executable flow and the UI copy around it.
+ *
+ * `binding` is the whole capability — a flow declaration (name, description,
+ * capabilities, effect tier, typed payload and success schemas) paired with the
+ * handler that runs it, projected as a `FlowDescriptor`. `metadata` is only
+ * what the catalog needs in order to render and rank it.
+ */
+export interface FlowEntry<R = never> {
+  /** Permission refusal before a delegated confirmation is published. */
+  readonly preflight?: (payload: Record<string, unknown>, invoker?: "user" | "agent" | "system") => string | undefined | Promise<string | undefined>
+  /**
+   * This origin's refusal of the door ITSELF, which no payload can change.
+   *
+   * Read before the flow's form is rendered (`Commands.ts` `settle`), so a
+   * door that cannot run here never asks a person to fill one in and never
+   * reaches a write. `preflight` stays the refusal that reads the decoded
+   * payload — an actor, a field, a target — and so cannot answer until the
+   * form has collected one.
+   */
+  readonly unavailable?: (invoker?: "user" | "agent" | "system") => string | undefined | Promise<string | undefined>
+  /** Data preparation only; never executes the flow or publishes a view. */
+  readonly prepare?: (payload: Record<string, unknown>) => Promise<void>
+  /** Copied from the same declaration; avoids projecting schemas for a name lookup. */
+  readonly declaredName?: string
+  readonly binding: FlowBinding.Binding<R>
+  /** Controller promises observe FlowCancellation and must settle before the binding returns. */
+  readonly cooperativeCancellation?: boolean
+  readonly metadata: FlowMetadata
+  /** The flow's input schema, kept beside the binding so the form derives from it (the descriptor does not carry it). */
+  readonly input: Schema.Top
+}
+
+/** The declared name; external bindings can still supply it through their descriptor. */
+export const nameOf = (entry: FlowEntry): string => entry.declaredName ?? entry.binding.descriptor.name
+
+/** An entry projected into the plain record the pure catalog rules read. */
+export const itemOf = (entry: FlowEntry): CatalogItem => ({
+  name: nameOf(entry),
+  ...entry.metadata,
+  acceptsArgs: entry.input.ast._tag !== "Objects" ||
+    entry.input.ast.propertySignatures.length > 0 || entry.input.ast.indexSignatures.some(signature => signature.type._tag !== "Never")
+})
+
+/** A door a flow may name in `runtimeAny`: a host capability from the bootstrap. */
+export type FlowCapability = RuntimeCapability
+
+/** Whether this bootstrap holds a flow door. */
+export const flowCapabilityHeld = (bootstrap: Pick<AppBootstrap, "capabilities">, capability: FlowCapability): boolean =>
+  bootstrap.capabilities.includes(capability)
+
+/**
+ * A door requiring the local host-held Smithers Cloud PAT session.
+ *
+ * The local services (`local.*`) were retired with the local backend
+ * (apps/app/docs/LOCAL-BACKEND-RETIREMENT.md): no host emits one and
+ * `RuntimeCapabilitySchema` no longer accepts one.
+ */
+const nativeDoor = (capability: FlowCapability): boolean => capability === "cloud.pat"
+
+/**
+ * Whether a flow can exist only in the local host — the classification behind
+ * the web app's honest refusal (docs/web-mode/PLAN.md §1).
+ *
+ * A `runtime` entry that is a native door settles it. An either/or flow
+ * (`runtimeAny`) is host-only only when EVERY alternative is a native door.
+ * A flow that names its `hosts` without the cloud is native-only by
+ * declaration.
+ */
+export const nativeOnly = (metadata: FlowMetadata): boolean =>
+  (metadata.runtime ?? []).some(nativeDoor) ||
+  (metadata.runtimeAny !== undefined && metadata.runtimeAny.length > 0 && metadata.runtimeAny.every(nativeDoor)) ||
+  (metadata.hosts !== undefined && !metadata.hosts.includes("cloud"))
+
+/**
+ * The door a host lacks for a declared flow: the host-held PAT session
+ * (`cloud.pat`, the native app's Smithers Cloud session), or a door this
+ * origin could grow (`origin`: the terminal relay, the Smithers Cloud
+ * upstream, keys).
+ */
+export type MissingDoor = "cloud.pat" | "origin"
+
+/**
+ * Why a declared flow is absent from THIS bootstrap, by door — the
+ * classification behind every honest refusal (docs/web-mode/PLAN.md §1).
+ * Undefined when nothing is missing, and for a host-scoped flow on the other
+ * host: that flow is about the other host, not a door this one lacks. The
+ * native door is named only on the cloud host; on the native host a
+ * missing door is always one the launch could grow.
+ */
+export const absentDoor = (
+  metadata: FlowMetadata,
+  bootstrap: AppBootstrap,
+  /** The proofs this origin's own answers left; see `flows/DoorAvailability.ts`. */
+  refused?: (family: DoorFamily) => boolean,
+  /** Whether the seeded design world answers this page's doors (admits only). */
+  seeded?: boolean
+): MissingDoor | undefined => {
+  const { hosts, runtime = [], runtimeAny } = metadata
+  if (hosts !== undefined && !hosts.includes(bootstrap.host)) return undefined
+  /*
+   * A door family this host does not serve is a door this origin could grow,
+   * never the native app's: both families are server routes, and the desktop
+   * shell reaches the same origin's API.
+   */
+  if (doorFamilyAbsent(metadata.door, { bootstrap, refused, seeded })) return "origin"
+  const has = (capability: FlowCapability): boolean => flowCapabilityHeld(bootstrap, capability)
+  const missing = runtime.filter((capability) => !has(capability))
+  const alternatives = runtimeAny !== undefined && runtimeAny.length > 0 && !runtimeAny.some(has) ? runtimeAny : []
+  if (missing.length === 0 && alternatives.length === 0) return undefined
+  if (bootstrap.host !== "cloud") return "origin"
+  if (missing.includes("cloud.pat") || (alternatives.length > 0 && alternatives.every(nativeDoor))) return "cloud.pat"
+  return "origin"
+}
+
+/**
+ * Whether a model may invoke this flow.
+ *
+ * The trigger axis is the descriptor's own `modelInvocable` flag: user-only
+ * browser mechanics (sign-in/out, reset, theme, stop, send, maximize)
+ * declare `modelInvocable: false`, so they never reach the agent's catalog and
+ * the model can neither invoke them nor promise them.
+ */
+export const modelInvocable = (entry: FlowEntry): boolean =>
+  entry.metadata.agent === undefined ? entry.binding.descriptor.modelInvocable : entry.metadata.agent !== "never" && entry.metadata.visibility !== "hidden" &&
+    (entry.metadata.actors === undefined || entry.metadata.actors.includes("app_agent"))
+
+/**
+ * A prerequisite a flow can declare via `requires`. The registry resolves
+ * unmet requirements in declaration order: the FIRST unmet one wins, its
+ * `fulfill` flow runs now, and the original flow re-enters `run` after the
+ * predicate flips — so a flow with several requirements steps through them one
+ * at a time (sign in → execute), each step re-checked against
+ * live state, never a stale plan.
+ */
+export interface FlowRequirement {
+  /** The id flows reference in `requires`. */
+  readonly id: string
+  /** True when the requirement is already met for this state. */
+  readonly satisfied: (state: CommandState) => boolean
+  /**
+   * The registered flow that fulfills the requirement when unmet. A
+   * requirement that is a pure wait — the app is already settling it — names
+   * no flow: the command parks and resumes itself.
+   */
+  readonly fulfill?: string
+  /** Honest one-line reason, shown when the requirement defers or fails a flow. */
+  readonly reason: string
+}
+
+/*
+ * The requirement table. Every entry's `satisfied` reads only CommandState, so
+ * the table stays unit-testable; every entry's `fulfill` names a registered
+ * flow, gated by parity.test.ts. A seam that can SATISFY a requirement
+ * (identity load) calls resumeDeferredCommand — adding
+ * a requirement here means wiring its satisfying seam there. The rows live in
+ * the namespace module whose flow fulfills them (auth.ts today).
+ */
+export const flowRequirements: ReadonlyArray<FlowRequirement> = [
+  ...auth.requirements,
+  ...repo.requirements
+]
+
+/** Resolve prerequisites once the operation's grammar has supplied its payload. */
+export const requirementIds = (metadata: FlowMetadata, payload: Readonly<Record<string, unknown>> = {}): ReadonlyArray<string> =>
+  [...new Set([...(metadata.requires ?? []), ...(metadata.payloadRequires?.(payload) ?? [])])]
+
+/** The flow's unmet requirements for a state, in declaration order. */
+export const unmetRequirements = (
+  metadata: FlowMetadata,
+  state: CommandState,
+  table: ReadonlyArray<FlowRequirement> = flowRequirements,
+  payload: Readonly<Record<string, unknown>> = {}
+): Array<FlowRequirement> =>
+  requirementIds(metadata, payload).flatMap((id) => {
+    const requirement = table.find((candidate) => candidate.id === id)
+    return requirement === undefined || requirement.satisfied(state) ? [] : [requirement]
+  })
+
+/** The app state the recommendation rule reads, sampled from the store. */
+export interface CommandState {
+  readonly viewerRole?: "member" | "maintainer" | "owner"
+  readonly surface: "chat" | "world" | "connectors" | "flows" | "plugins" | "subagents"
+  readonly typing: boolean
+  readonly hasConnectors: boolean
+  /** The plugins installed on this workspace (the session's shelf); optional so state fixtures stay minimal. */
+  /** The validated session carries admin:true; the admin plugin registers only then. */
+  readonly admin: boolean
+  /** No validated session: the one next step is sign-in. */
+  readonly signedOut: boolean
+  /**
+   * This host spends the DEPLOYMENT's own key behind its own session (the
+   * cloud Worker with an identity seam). The local app spends the operator's
+   * key on their own machine and asks nobody, so a spend there needs no
+   * account. Optional so state fixtures stay minimal.
+   */
+  readonly hostSpendsOwnKey?: boolean
+  /** The selected repository came from the public catalog: readable signed out. */
+  readonly publicRepo?: boolean
+  /** A repository source has been selected; authorization still uses the payload target. */
+  readonly repositorySelected?: boolean
+  /** First run has not finished choosing the starting repository: a bare repository command waits, it does not ask. */
+  readonly firstRunTargetPending?: boolean
+  /** A named repository still needs a catalog answer before authorization. */
+  readonly repositoryReadiness?: { readonly repo: string; readonly phase: "pending" | "unavailable" | "unrequested"; readonly error?: string; readonly scope?: "command" }
+  /**
+   * The user's recently run commands, most recent first (session
+   * recentCommands). Optional so state fixtures stay minimal; missing = [].
+   */
+  readonly recent?: ReadonlyArray<string>
+  /** The active card frame, when a prior command left the transcript maximized. */
+  readonly maximizedCardId?: string | null
+  /**
+   * The identity answer, human-readable ("signed-in as will", "signed-out",
+   * "unavailable", "unknown") — the model's truthful "am I logged in?"
+   * source. Optional so state fixtures stay minimal.
+   */
+  readonly identity?: string
+}
+
+/** One row of the recommendation table a namespace module exports. */
+export interface Recommendation {
+  /** The flow to offer. */
+  readonly name: string
+  /** True when the state calls for the flow. */
+  readonly when: (state: CommandState) => boolean
+  /**
+   * An exclusive recommendation is the whole answer when it applies; the
+   * first applicable one in table order wins (typing beats signed-out).
+   */
+  readonly exclusive?: true
+  /** The position among the applicable non-exclusive rows; lower leads. */
+  readonly rank: (state: CommandState) => number
+}
+
+/*
+ * The recommendation table, in precedence order: the exclusive rows resolve
+ * in this order, and the rest sort by rank. Each row lives in the namespace
+ * module that owns the flow it offers.
+ */
+export const recommendations: ReadonlyArray<Recommendation> = [
+  ...chat.recommendations,
+  ...auth.recommendations,
+  ...wiki.recommendations,
+]
+
+/**
+ * The ordered recommendations for an app state — the next-action output the
+ * slash menu reads. The first entry is gold: signed-out, sign-in is the only
+ * step; away from the chat, returning to it leads.
+ */
+export const recommendedNames = (state: CommandState): ReadonlyArray<string> => {
+  const exclusive = recommendations.find((row) => row.exclusive === true && row.when(state))
+  if (exclusive !== undefined) return [exclusive.name]
+  return recommendations
+    .filter((row) => row.exclusive !== true && row.when(state))
+    .sort((left, right) => left.rank(state) - right.rank(state))
+    .map((row) => row.name)
+}
+
+
+
+
+export interface Namespace {
+  readonly id: string
+  readonly label: string
+  readonly summary: string
+}
+
+/** The namespaces in display order; one the table lacks lists last, by id. */
+export const NAMESPACES: ReadonlyArray<Namespace> = [
+  todo.namespace,
+  chat.namespace,
+  repo.namespace,
+  repos.namespace,
+  wiki.namespace,
+  flow.namespace,
+  runs.namespace,
+  issues.namespace,
+  issue.namespace,
+  prs.namespace,
+  github.namespace,
+  change.namespace,
+  review.namespace,
+  findings.namespace,
+  box.namespace,
+  egress.namespace,
+  agent.namespace,
+  files.namespace,
+  search.namespace,
+  palette.namespace,
+  sync.namespace,
+  branches.namespace,
+  secrets.namespace,
+  history.namespace,
+  browser.namespace,
+  auth.namespace,
+  account.namespace,
+  cloud.namespace,
+  billing.namespace,
+  card.namespace,
+  frame.namespace,
+  approval.namespace,
+  debug.namespace,
+  app.namespace,
+  admin.namespace,
+  toast.namespace
+]
+
+/** The namespace a flow name belongs to; a bare name has none. */
+export const namespaceOf = (name: string): string | undefined => {
+  const dot = name.indexOf(".")
+  return dot === -1 ? undefined : name.slice(0, dot)
+}
+
+const namespaceRank = (id: string): number => {
+  const index = NAMESPACES.findIndex((namespace) => namespace.id === id)
+  return index === -1 ? NAMESPACES.length : index
+}
+
+/** The namespace record for an id, synthesized for one the table lacks. */
+export const namespace = (id: string): Namespace =>
+  NAMESPACES.find((candidate) => candidate.id === id) ?? { id, label: id, summary: "" }
+
+/**
+ * The namespaces that have at least one visible flow, in display order —
+ * an empty namespace never shows, and neither does a hidden flow's.
+ */
+export const namespacesOf = <C extends CatalogItem>(
+  commands: ReadonlyArray<C>
+): Array<Namespace & { readonly count: number }> => {
+  const counts = new Map<string, number>()
+  for (const command of visible(commands)) {
+    const id = namespaceOf(command.name)
+    if (id !== undefined) counts.set(id, (counts.get(id) ?? 0) + 1)
+  }
+  return [...counts.entries()]
+    .sort(([left], [right]) => namespaceRank(left) - namespaceRank(right) || left.localeCompare(right))
+    .map(([id, count]) => ({ ...namespace(id), count }))
+}
+
+/** One row of the slash menu: a flow to run, a namespace to open, or a one-line note the listing needs. */
+export type SlashRow<C extends CatalogItem> =
+  /** `alias` is the typed name this row answers; the row still runs `flow`. */
+  | { readonly kind: "flow"; readonly flow: C; readonly recommended: boolean; readonly alias?: string }
+  | { readonly kind: "namespace"; readonly namespace: Namespace; readonly count: number }
+  | { readonly kind: "note"; readonly text: string }
+
+/**
+ * The collision rule (owner decision, six-area plan): a repository may
+ * declare a flow whose id is one of the app's namespaces (`review`). A bare
+ * `/review` runs the repository's flow; `/review.` (the trailing dot) opens
+ * the namespace; the listing for the bare name says so in one row.
+ */
+export const collisionNote = <C extends CatalogItem>(id: string): SlashRow<C> => ({
+  kind: "note",
+  text: `Enter runs /${id}, this repository's flow. Type /${id}. to open the ${id} flows instead.`
+})
+
+/**
+ * The slash menu as a tree.
+ *
+ *  - a bare "/" lists the top level: the recommendations (gold) and the
+ *    surface switches as leaves, then every non-empty namespace as a row the
+ *    user opens (Enter / ArrowRight → the draft becomes `/ns.`);
+ *  - `/ns.` (a namespace head with the dot, nothing more) lists that
+ *    namespace's visible flows, uncapped — the branch IS the listing;
+ *  - anything else is the flat fuzzy filter `slashItems` already does, so a
+ *    user who knows a name loses nothing, plus the namespaces whose id the
+ *    query starts (`/wi` offers `wiki ›` above fuzzy leaves). An exact
+ *    flow name always precedes prefix namespaces so Enter runs what was typed.
+ */
+export const slashTree = <C extends CatalogItem>(
+  state: CommandState,
+  needle: string,
+  commands: ReadonlyArray<C>
+): Array<SlashRow<C>> => {
+  const query = needle.trim().toLowerCase()
+  const namespaces = namespacesOf(commands)
+  const asNamespace = (row: Namespace & { readonly count: number }): SlashRow<C> => ({
+    kind: "namespace",
+    namespace: { id: row.id, label: row.label, summary: row.summary },
+    count: row.count
+  })
+  const asFlow = (item: SlashItem<C>): SlashRow<C> => ({ kind: "flow", flow: item.flow, recommended: item.recommended })
+  if (query === "") {
+    /*
+     * The top level is the recommendations, then EVERY bare leaf in registry
+     * order: the surface switches, then the repository's own flows (its
+     * projection's rows, featured first). Uncapped on purpose: the cap
+     * answers a fuzzy filter, where a wall hides the answer; the top level
+     * is the map, and the namespace rows follow it anyway.
+     */
+    const recommended = slashItems(state, "", commands).filter((item) => item.recommended)
+    const named = new Set(recommended.map((item) => item.flow.name))
+    const bare = visible(offerable(state, commands))
+      .filter((command) => namespaceOf(command.name) === undefined && !named.has(command.name))
+      .map((flow, index): { flow: C; index: number } => ({ flow, index }))
+      .map(({ flow }): SlashItem<C> => ({ flow, recommended: false }))
+    return [...recommended.map(asFlow), ...bare.map(asFlow), ...namespaces.map(asNamespace)]
+  }
+  const branch = query.endsWith(".") ? query.slice(0, -1) : undefined
+  if (branch !== undefined && namespaces.some((row) => row.id === branch)) {
+    const names = recommendedNames(state)
+    return visible(commands)
+      .filter((command) => namespaceOf(command.name) === branch)
+      .map((flow) => ({ kind: "flow", flow, recommended: names.includes(flow.name) }))
+  }
+  const heads = query.includes(".")
+    ? []
+    : namespaces.filter((row) => row.id.startsWith(query) && row.id !== query).map(asNamespace)
+  const collides = !query.includes(".") &&
+    namespaces.some((row) => row.id === query) &&
+    visible(commands).some((command) => command.name === query)
+  const matches = slashItems(state, needle, commands)
+  const exact = matches.filter(item => item.flow.name.toLowerCase() === query)
+  const fuzzy = matches.filter(item => item.flow.name.toLowerCase() !== query)
+  // An alias answers only its own spelling: the typed text must begin it. The whole alias sorts first, so Enter runs what was typed.
+  const aliases = visible(offerable(state, commands, query))
+    .flatMap((flow) => (flow.aliases ?? []).map((alias) => ({ flow, alias })))
+    .filter(({ alias }) => alias.startsWith(query) && aliasOwner(commands, alias) !== undefined)
+    .sort((left, right) => Number(right.alias === query) - Number(left.alias === query))
+    .map(({ flow, alias }): SlashRow<C> => ({ kind: "flow", flow, recommended: false, alias }))
+  return [...(collides ? [collisionNote<C>(query)] : []), ...exact.map(asFlow), ...aliases, ...heads, ...fuzzy.map(asFlow)]
+}
+
+/**
+ * §1.2: signed out, sign-in is the one step, so a listing offers only what
+ * works signed out. The whole registry used to be listed: `/sign-out`,
+ * `/billing.upgrade`, `/issues.create`, every one of which needs a session.
+ * Nothing is un-invokable: typing a name still defers through sign-in
+ * (§6.2), which is why a flow the user named OUTRIGHT (the whole name) is
+ * offered anyway. Enter on it is the deferral, never a different flow.
+ * What changes is what the app PRESENTS as available.
+ */
+const offerable = <C extends CatalogItem>(state: CommandState, commands: ReadonlyArray<C>, query = ""): Array<C> =>
+  state.signedOut
+    ? commands.filter((command) => command.name.toLowerCase() === query || unmetRequirements(command, state).length === 0)
+    : [...commands]
+
+/** The flows listed to the user: hidden id-scoped actions never show. */
+export const visible = <C extends CatalogItem>(
+  commands: ReadonlyArray<C>
+): Array<C> => commands.filter((command) => command.visibility === undefined ? command.hidden !== true : command.visibility === "core" || command.visibility === "advanced")
+
+/** The shared human listing admission; absent authority never becomes a row. */
+export const viewerAdmitted = (state: CommandState, commands: ReadonlyArray<CatalogItem>): Array<CatalogItem> => {
+  const roles = { member: 0, maintainer: 1, owner: 2 }
+  const role = state.viewerRole
+  if (role === undefined) return []
+  return commands.filter(command =>
+    (command.visibility === "core" || command.visibility === "advanced") &&
+    command.actors?.includes("person") === true &&
+    command.minimumRole !== undefined && roles[command.minimumRole] !== undefined &&
+    roles[role] >= roles[command.minimumRole] &&
+    (command.agent === "run" || command.agent === "confirm" || command.agent === "never") &&
+    typeof command.group === "string" && command.group.length > 0 &&
+    unmetRequirements(command, state).length === 0)
+}
+
+/** Model discovery is explicit for internal controls; invocation authority is unchanged. */
+export const disclosedToAgent = (metadata: FlowMetadata): boolean =>
+  metadata.discloseToAgent !== false && metadata.agent !== "never" && (metadata.actors === undefined || metadata.actors.includes("app_agent")) &&
+  (metadata.visibility === undefined ? metadata.hidden !== true || metadata.discloseToAgent === true : metadata.visibility !== "hidden")
+
+/** A needle matches a flow by name or summary, case-insensitively. */
+export const matches = (command: CatalogItem, needle: string): boolean => {
+  const query = needle.trim().toLowerCase()
+  if (query === "") return true
+  return command.name.toLowerCase().includes(query) || command.summary.toLowerCase().includes(query)
+}
+
+/**
+ * How directly a flow answers a needle, best first: its own name exactly, then
+ * a name that starts with it, then a name that contains it, then a match that
+ * only the summary carried.
+ *
+ * Matching on the summary is what makes the menu searchable ("/repo" finds the
+ * flows that talk about repositories), but it must never outrank a name. Before
+ * this rank existed, `/flows` listed `flow.list` first — its summary reads
+ * "List the flows on your workspace" and it is declared 450 lines earlier
+ * in the registry — so Enter ran a different flow than the one the user typed.
+ */
+const nameRank = (command: CatalogItem, query: string): number => {
+  if (query === "") return 0
+  const name = command.name.toLowerCase()
+  if (name === query) return 0
+  if (name.startsWith(query)) return 1
+  if (name.includes(query)) return 2
+  return 3
+}
+
+/**
+ * The matching flows, closest match first. Registry order still decides inside
+ * a rank: the sort is stable, so this only ever moves a better answer forward.
+ */
+export const filtered = <C extends CatalogItem>(needle: string, commands: ReadonlyArray<C>): Array<C> => {
+  const query = needle.trim().toLowerCase()
+  const shown = commands.filter((command) => matches(command, needle))
+  return shown.sort((left, right) => nameRank(left, query) - nameRank(right, query))
+}
+
+export interface SlashItem<C extends CatalogItem> {
+  readonly flow: C
+  readonly recommended: boolean
+}
+
+/**
+ * A listing longer than this is a wall, not a menu: past the cap, the
+ * recommendations plus the user's most recent commands (still matching the
+ * filter) are the listing, and the rest stays reachable by typing more.
+ */
+export const SLASH_MENU_CAP = 8
+
+/**
+ * The slash menu's listing, best answer first — because the composer's Enter
+ * runs whatever leads it.
+ *
+ * Match quality orders the listing (`nameRank`); a recommendation leads only
+ * among equally good matches. For a bare "/" every flow ranks the same, so the
+ * recommendations lead in recommendation order and the first is gold, exactly
+ * as the doctrine says. Type a flow's whole name and that flow leads instead:
+ * the user was more specific than the app's suggestion.
+ *
+ * Commands never appear twice. At or under the cap the remainder keeps registry
+ * order; over it, recency ranks the remainder and the listing cuts at the cap —
+ * but a recommendation, and anything the user named outright, always survives.
+ */
+export const slashItems = <C extends CatalogItem>(
+  state: CommandState,
+  needle: string,
+  commands: ReadonlyArray<C>
+): Array<SlashItem<C>> => {
+  const query = needle.trim().toLowerCase()
+  const shown = filtered(needle, visible(offerable(state, commands, query)))
+  const names = recommendedNames(state)
+  const recommendedSet = new Set(names)
+  // Within one rank, the recommendations lead in recommendation order.
+  const ordered = [0, 1, 2, 3].flatMap((rank) => {
+    const tier = shown.filter((command) => nameRank(command, query) === rank)
+    return [
+      ...names.flatMap((name) => {
+        const command = tier.find((candidate) => candidate.name === name)
+        return command === undefined ? [] : [{ flow: command, recommended: true }]
+      }),
+      ...tier
+        .filter((command) => !recommendedSet.has(command.name))
+        .map((command) => ({ flow: command, recommended: false }))
+    ]
+  })
+  if (ordered.length <= SLASH_MENU_CAP) return ordered
+  // Over the cap. What the user named outright (an exact or prefix name match)
+  // is never cut, and neither is a recommendation; recency decides who else
+  // gets in. Recency chooses the survivors, never their order — the listing
+  // above is the only ordering rule.
+  /*
+   * "Named outright" means the user typed the flow's WHOLE name. An empty
+   * query names nothing and a prefix names a set, so neither earns the
+   * exemption — treating them as exact matches made every one of the 65
+   * visible flows a survivor on a bare "/", leaving `room` at zero and the
+   * cap a no-op in exactly the case its doc comment calls "a wall".
+   */
+  const kept = (item: SlashItem<C>): boolean => item.recommended || (query !== "" && nameRank(item.flow, query) === 0)
+  const survivors = ordered.filter(kept)
+  const recency = new Map((state.recent ?? []).map((name, index) => [name, index]))
+  // Stable sort: recent commands by recency, everything else keeps its order behind them.
+  const ranked = ordered
+    .filter((item) => !kept(item))
+    .sort(
+      (a, b) =>
+        (recency.get(a.flow.name) ?? Number.POSITIVE_INFINITY) -
+        (recency.get(b.flow.name) ?? Number.POSITIVE_INFINITY)
+    )
+  const room = Math.max(SLASH_MENU_CAP, survivors.length) - survivors.length
+  const admitted = new Set([...survivors, ...ranked.slice(0, room)].map((item) => item.flow.name))
+  return ordered.filter((item) => admitted.has(item.flow.name))
+}
+
+export { parseSubmit } from "@smthrs/ui/command-line"
+export type { Submit } from "@smthrs/ui/command-line"

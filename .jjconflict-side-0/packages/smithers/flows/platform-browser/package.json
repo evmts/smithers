@@ -1,0 +1,169 @@
+{
+  "name": "@smthrs/platform-browser",
+  "type": "module",
+  "version": "1.0.0-rc.12",
+  "license": "MIT",
+  "smthrs": {
+    "group": "engine"
+  },
+  "description": "Browser implementations of Effect platform services backed by ZenFS and just-bash",
+  "homepage": "https://github.com/smithersai/smithers",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/smithers/flows/platform-browser"
+  },
+  "bugs": {
+    "url": "https://github.com/smithersai/smithers/issues"
+  },
+  "tags": [
+    "typescript",
+    "effect",
+    "browser",
+    "platform"
+  ],
+  "keywords": [
+    "typescript",
+    "effect",
+    "browser",
+    "platform"
+  ],
+  "engines": {
+    "node": ">=26.4.0"
+  },
+  "sideEffects": [],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./BrowserChildProcessSpawner": "./src/BrowserChildProcessSpawner/index.ts",
+    "./BrowserChildProcessSpawner/*": null,
+    "./BrowserFileSystem": "./src/BrowserFileSystem/index.ts",
+    "./BrowserFileSystem/*": null,
+    "./internal/*": null,
+    "./*/index": null,
+    "./BrowserHost": "./src/BrowserHost.ts",
+    "./BrowserServices": "./src/BrowserServices.ts",
+    "./index": "./src/index.ts"
+  },
+  "files": [
+    "src/**/*.ts",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/package.json",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next",
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./BrowserChildProcessSpawner": {
+        "import": {
+          "types": "./dist/esm/BrowserChildProcessSpawner/index.d.ts",
+          "default": "./dist/esm/BrowserChildProcessSpawner/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BrowserChildProcessSpawner/index.d.ts",
+          "default": "./dist/cjs/BrowserChildProcessSpawner/index.js"
+        }
+      },
+      "./BrowserChildProcessSpawner/*": null,
+      "./BrowserFileSystem": {
+        "import": {
+          "types": "./dist/esm/BrowserFileSystem/index.d.ts",
+          "default": "./dist/esm/BrowserFileSystem/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BrowserFileSystem/index.d.ts",
+          "default": "./dist/cjs/BrowserFileSystem/index.js"
+        }
+      },
+      "./BrowserFileSystem/*": null,
+      "./internal/*": null,
+      "./*/index": null,
+      "./BrowserHost": {
+        "import": {
+          "types": "./dist/esm/BrowserHost.d.ts",
+          "default": "./dist/esm/BrowserHost.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BrowserHost.d.ts",
+          "default": "./dist/cjs/BrowserHost.js"
+        }
+      },
+      "./BrowserServices": {
+        "import": {
+          "types": "./dist/esm/BrowserServices.d.ts",
+          "default": "./dist/esm/BrowserServices.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BrowserServices.d.ts",
+          "default": "./dist/cjs/BrowserServices.js"
+        }
+      },
+      "./index": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint src --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "circular": "node scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "vitest --coverage"
+  },
+  "dependencies": {
+    "@smthrs/jj": "1.0.0-rc.12",
+    "@smthrs/kernel": "1.0.0-rc.12"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@effect/vitest": "4.0.4",
+    "@eslint/js": "9.39.5",
+    "@types/node": "26.4.1",
+    "@vitest/coverage-v8": "5.0.0",
+    "dprint": "0.57.1",
+    "effect": "4.0.4",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "madge": "8.0.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0",
+    "@effect/platform-node": "4.0.4",
+    "@smthrs/artifacts": "1.0.0-rc.12"
+  },
+  "peerDependencies": {
+    "effect": "^4.0.4"
+  }
+}

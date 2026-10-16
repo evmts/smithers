@@ -1,0 +1,330 @@
+package compose
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/coder/websocket"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/live"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	"github.com/smithersai/smithers/packages/backend/internal/revocation"
+	"github.com/smithersai/smithers/packages/backend/internal/routes"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
+	"github.com/smithersai/smithers/packages/backend/microsandbox"
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
+	"github.com/stretchr/testify/require"
+)
+
+func TestInstallStatusOwnerHTTPModelPostgres(t *testing.T) {
+	pool, _ := postgresfixture.NewProductDatabase(t)
+	q := db.New(pool)
+	ctx := t.Context()
+	setupSessions := &services.InstallSetupSessions{Pool: pool}
+	setupDigest := sha256.Sum256([]byte("host-status-setup-token"))
+	setupValue, err := json.Marshal(hex.EncodeToString(setupDigest[:]))
+	require.NoError(t, err)
+	err = q.UpsertInstallSetting(ctx, db.UpsertInstallSettingParams{Key: "setup.token", Value: setupValue})
+	require.NoError(t, err)
+	setupCookie, err := setupSessions.Exchange(ctx, "host-status-setup-token")
+	require.NoError(t, err)
+	require.NoError(t, setupSessions.Validate(ctx, setupCookie))
+	bus := revocation.NewBus(pool, q)
+	busContext, stopBus := context.WithCancel(ctx)
+	defer stopBus()
+	require.NoError(t, bus.Start(busContext))
+	routes.SetRevocationSource(bus)
+	defer routes.SetRevocationSource(nil)
+	owner, err := q.CreateUser(ctx, db.CreateUserParams{Username: "hostowner", LowerUsername: "hostowner"})
+	require.NoError(t, err)
+	member, err := q.CreateUser(ctx, db.CreateUserParams{Username: "hostmember", LowerUsername: "hostmember"})
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `INSERT INTO self_host_owners(user_id) VALUES($1)`, owner.ID)
+	require.NoError(t, err)
+	var repository int64
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO repositories(user_id,name,lower_name) VALUES($1,'fixture','fixture') RETURNING id`, owner.ID).Scan(&repository))
+	_, err = pool.Exec(ctx, `INSERT INTO collaborators(repository_id,user_id,permission) VALUES($1,$2,'admin')`, repository, owner.ID)
+	require.NoError(t, err)
+	// The member boundary (#3443) admits only a verified owner outside setup scope, so the retired /api/host reaches the router's 404.
+	verified := fmt.Sprintf(`{"owner_login":"hostowner","repository_name":"fixture","repository_id":%d,"last_access_check_at":%q}`, repository, time.Now().UTC().Format(time.RFC3339Nano))
+	require.NoError(t, q.UpsertInstallSetting(ctx, db.UpsertInstallSettingParams{Key: "github.repository", Value: []byte(fmt.Sprintf(`{"owner_login":"hostowner","repository_name":"fixture","repository_id":%d}`, repository))}))
+	require.NoError(t, q.UpsertInstallSetting(ctx, db.UpsertInstallSettingParams{Key: "owner.access", Value: []byte(verified)}))
+	session := func(user db.User, value string) string {
+		hash := sha256.Sum256([]byte(value))
+		_, err := q.CreateAuthSession(ctx, db.CreateAuthSessionParams{SessionKey: hex.EncodeToString(hash[:]), UserID: user.ID, Username: user.Username, ExpiresAt: time.Now().Add(time.Hour)})
+		require.NoError(t, err)
+		return value
+	}
+	good := session(owner, "owner-capacity-session")
+	other := session(member, "member-capacity-session")
+	maintainer, err := q.CreateUser(ctx, db.CreateUserParams{Username: "hostmaintainer", LowerUsername: "hostmaintainer"})
+	require.NoError(t, err)
+	require.NoError(t, q.SetUserAdmin(ctx, db.SetUserAdminParams{UserID: maintainer.ID, IsAdmin: true}))
+	admin := session(maintainer, "maintainer-capacity-session")
+	capacity := &services.InstallCapacityService{Queries: q, Profile: microsandbox.HostProfile{MemoryBytes: 32 << 30, PerfCores: 10, PhysicalCores: 14, DiskFreeBytes: 400 << 30, MacOSVersion: "15.6", Hypervisor: true}}
+	require.NoError(t, capacity.Set(ctx, owner.ID, 2))
+	cfg := testConfigAllFlagsOn()
+	cfg.Auth.Mode = "selfhost"
+	cfg.Server.PublicURL = "http://localhost:4000"
+	cfg.Server.AllowedOrigins = []string{"http://localhost:4000"}
+	handler := &routes.GitHubAppSetupHandler{Sessions: setupSessions, Owners: q, Origins: middleware.FixedOrigins("http://localhost:4000"), Setup: &services.InstallSetupService{Pool: pool, Capacity: capacity}}
+	cfg.FeatureFlags.SubscriptionConnections = false
+	connections := &routes.ProviderConnectionHandler{Service: routerProviderConnectionStub{}, Pool: &routes.ProviderPoolHandler{}}
+	router := githubAppSetupComposeRouter(cfg, pool, handler, connections)
+	request := func(method, path, credential, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, "http://localhost:4000"+path, strings.NewReader(body))
+		r.RemoteAddr = "127.0.0.1:1234"
+		r.Header.Set("Content-Type", "application/json")
+		if strings.HasPrefix(credential, "setup:") {
+			r.AddCookie(&http.Cookie{Name: "smithers_setup_session", Value: strings.TrimPrefix(credential, "setup:")})
+		} else if strings.HasPrefix(credential, "smithers_") {
+			r.Header.Set("Authorization", "Bearer "+credential)
+		} else if credential != "" {
+			r.AddCookie(&http.Cookie{Name: "smithers_session", Value: credential})
+		}
+		if method != "GET" {
+			r.Header.Set("Origin", "http://localhost:4000")
+			r.Header.Set("X-CSRF-Token", "csrf")
+			r.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+		}
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, r)
+		return w
+	}
+	require.Equal(t, 404, request("GET", "/api/host", good, "").Code)
+	require.Equal(t, 404, request("PATCH", "/api/host", good, `{"capacity":1}`).Code)
+	require.Equal(t, 403, request("GET", "/api/install", other, "").Code)
+	response := request("GET", "/api/install", good, "")
+	require.Equal(t, 200, response.Code, response.Body.String())
+	var status struct {
+		Capacity int `json:"capacity"`
+		Mac      struct {
+			Memory    float64 `json:"memory_gb"`
+			PerfCores int     `json:"perf_cores"`
+			Capacity  int     `json:"capacity"`
+			Limit     *struct {
+				Term string `json:"term"`
+				Fix  string `json:"fix"`
+			} `json:"limit"`
+		} `json:"this_mac"`
+		Steps []struct {
+			ID string `json:"id"`
+		} `json:"steps"`
+	}
+	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &status))
+	require.Equal(t, 32.0, status.Mac.Memory)
+	require.Equal(t, 2, status.Capacity)
+	require.Equal(t, 3, status.Mac.Capacity)
+	require.Equal(t, 10, status.Mac.PerfCores)
+	require.Nil(t, status.Mac.Limit, "a host that fits a machine names no limiting term")
+	require.Len(t, status.Steps, 7)
+	require.Equal(t, "app_manifest", status.Steps[1].ID)
+	require.Contains(t, response.Body.String(), `"chatgpt":false`)
+	poolURL := codingHostAccountPoolURL(cfg, "http://localhost:4000")
+	require.Equal(t, "http://localhost:4000/provider-pool", poolURL)
+	require.Equal(t, 403, request("GET", "/api/user/provider-connections", good, "").Code)
+	// Pool authentication precedes the feature gate (#3492). A browser
+	// session cannot spend an account, even while the pool is disabled.
+	assertPoolAuthentication := func(cookie string) {
+		t.Helper()
+		response := request("POST", "/provider-pool/chatgpt/codex/responses", cookie, `{}`)
+		require.Equal(t, http.StatusUnauthorized, response.Code, response.Body.String())
+		require.Contains(t, response.Body.String(), `"type":"authentication_error"`)
+	}
+	assertPoolAuthentication(good)
+	assertPoolAuthentication("")
+
+	// A failed ChatGPT write must roll capacity back, including its attribution.
+	_, err = pool.Exec(ctx, `CREATE FUNCTION reject_chatgpt() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.key='models.chatgpt' THEN RAISE EXCEPTION 'chatgpt refused'; END IF; RETURN NEW; END $$; CREATE TRIGGER reject_chatgpt BEFORE INSERT OR UPDATE ON install_settings FOR EACH ROW EXECUTE FUNCTION reject_chatgpt()`)
+	require.NoError(t, err)
+	failed := request("PUT", "/api/install", good, `{"capacity":1,"chatgpt":true}`)
+	require.Equal(t, 503, failed.Code, failed.Body.String())
+	current, err := capacity.Read(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 2, current.Machines.Capacity, "capacity must roll back with chatgpt")
+	_, err = pool.Exec(ctx, `DROP TRIGGER reject_chatgpt ON install_settings; DROP FUNCTION reject_chatgpt()`)
+	require.NoError(t, err)
+	for _, body := range []string{`{"chatgpt":true}`, `{"chatgpt":false}`} {
+		denied := request("PUT", "/api/install", other, body)
+		require.Equal(t, 403, denied.Code)
+		updated := request("PUT", "/api/install", good, body)
+		require.Equal(t, 200, updated.Code, updated.Body.String())
+		require.Contains(t, updated.Body.String(), body[1:len(body)-1])
+
+		var actor int64
+		require.NoError(t, pool.QueryRow(ctx, `SELECT actor_id FROM audit_log WHERE target_name='models.chatgpt' ORDER BY id DESC LIMIT 1`).Scan(&actor))
+		require.Equal(t, owner.ID, actor)
+		// Toggle through Settings without rebuilding the router or host catalog.
+		connectionResponse := request("GET", "/api/user/provider-connections", good, "")
+		assertPoolAuthentication(good)
+		assertPoolAuthentication("")
+		if strings.Contains(body, "true") {
+			require.Equal(t, 200, connectionResponse.Code, connectionResponse.Body.String())
+		} else {
+			require.Equal(t, 403, connectionResponse.Code)
+		}
+		require.Equal(t, poolURL, codingHostAccountPoolURL(cfg, "http://localhost:4000"))
+		restarted := &services.InstallSetupService{Pool: pool, Capacity: capacity}
+		projection, err := restarted.Status(ctx)
+		require.NoError(t, err)
+		require.Equal(t, strings.Contains(body, "true"), projection["chatgpt"])
+	}
+
+	// An audit failure also rolls both settings back; the owner cannot make an
+	// unaudited change even when the settings table itself accepted the values.
+	_, err = pool.Exec(ctx, `CREATE FUNCTION reject_model_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.target_name='models.chatgpt' THEN RAISE EXCEPTION 'audit refused'; END IF; RETURN NEW; END $$; CREATE TRIGGER reject_model_audit BEFORE INSERT ON audit_log FOR EACH ROW EXECUTE FUNCTION reject_model_audit()`)
+	require.NoError(t, err)
+	require.Equal(t, 503, request("PUT", "/api/install", good, `{"capacity":1,"chatgpt":true}`).Code)
+	current, err = capacity.Read(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 2, current.Machines.Capacity)
+	persisted, err := q.GetInstallSetting(ctx, "models.chatgpt")
+	require.NoError(t, err)
+	require.JSONEq(t, `false`, string(persisted.Value))
+	require.True(t, persisted.UpdatedBy.Valid)
+	require.Equal(t, owner.ID, persisted.UpdatedBy.Int64)
+	_, err = pool.Exec(ctx, `DROP TRIGGER reject_model_audit ON audit_log; DROP FUNCTION reject_model_audit()`)
+	require.NoError(t, err)
+
+	for _, body := range []string{`{"chatgpt":"true"}`, `{"chatgpt":null}`, `{"chatgpt":true,"unknown":1}`, `{"chatgpt":null,"capacity":2}`, `{"chatgpt":true,"capacity":null}`} {
+		require.Equal(t, 400, request("PUT", "/api/install", good, body).Code)
+	}
+
+	for _, credential := range []struct {
+		name, scopes string
+		issued       bool
+	}{
+		{"pat", "all", false}, {"run", "write:repository", true}, {"delegated", "write:repository,via:cli", true},
+	} {
+		seed := sha256.Sum256([]byte(credential.name))
+		raw := "smithers_" + hex.EncodeToString(seed[:])[:40]
+		digest := sha256.Sum256([]byte(raw))
+		_, err := q.CreateAccessToken(ctx, db.CreateAccessTokenParams{UserID: owner.ID, Name: credential.name, TokenHash: hex.EncodeToString(digest[:]), TokenLastEight: hex.EncodeToString(digest[:])[56:], Scopes: credential.scopes, SystemIssued: credential.issued, ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true}})
+		require.NoError(t, err)
+		denied := request("PUT", "/api/install", raw, `{"capacity":1,"chatgpt":true}`)
+		require.Equal(t, 403, denied.Code, denied.Body.String())
+	}
+	setupDenied := request("PUT", "/api/install", "setup:"+setupCookie, `{"capacity":1,"chatgpt":true}`)
+	require.Equal(t, http.StatusUnauthorized, setupDenied.Code, setupDenied.Body.String())
+	unchanged, err := capacity.Read(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 2, unchanged.Machines.Capacity)
+	savedChatGPT, err := q.GetInstallSetting(ctx, "models.chatgpt")
+	require.NoError(t, err)
+	require.JSONEq(t, `false`, string(savedChatGPT.Value))
+	// A real authenticated Home socket shares the production capacity reader
+	// with Settings. Keep it open across owner writes to prove refresh, rather
+	// than checking only a separately seeded Home model.
+	openHome := func() (func(int), func()) {
+		server := httptest.NewUnstartedServer(nil)
+		origin := "http://" + server.Listener.Addr().String()
+		cfg.Server.AllowedOrigins = append(cfg.Server.AllowedOrigins, origin)
+		hubCtx, cancelHub := context.WithCancel(ctx)
+		topics := &liveTopics{queries: q, todos: services.NewMythicalService(pool, nil), capacity: capacity, install: handler.Setup}
+		liveHandler := &routes.LiveHandler{Queries: q, Hub: live.NewHub(hubCtx, nil), Origins: middleware.FixedOrigins(origin), Topics: topics.resolver}
+		server.Config.Handler = githubAppSetupComposeRouter(cfg, pool, handler, routerExtras{Live: liveHandler})
+		server.Start()
+		t.Cleanup(server.Close)
+		readCtx, cancelRead := context.WithTimeout(ctx, 15*time.Second)
+		conn, _, err := websocket.Dial(readCtx, "ws"+strings.TrimPrefix(origin, "http")+"/api/live", &websocket.DialOptions{
+			Subprotocols: []string{"smithers.live.v1"}, HTTPHeader: http.Header{"Origin": {origin}, "Cookie": {"smithers_session=" + good}},
+		})
+		require.NoError(t, err)
+		require.NoError(t, conn.Write(readCtx, websocket.MessageText, []byte(`{"t":"sub","id":1,"topic":"home"}`)))
+		awaitHomeCapacity := func(want int) {
+			t.Helper()
+			for {
+				_, raw, err := conn.Read(readCtx)
+				require.NoError(t, err)
+				var frame liveFrame
+				require.NoError(t, json.Unmarshal(raw, &frame))
+				require.NotEqual(t, "err", frame.T, string(raw))
+				if frame.T != "snap" {
+					continue
+				}
+				var home struct {
+					Machines struct {
+						Capacity *int `json:"capacity"`
+					} `json:"machines"`
+				}
+				require.NoError(t, json.Unmarshal(frame.Data, &home))
+				require.NotNil(t, home.Machines.Capacity, string(raw))
+				if *home.Machines.Capacity == want {
+					return
+				}
+			}
+		}
+		stop := func() {
+			conn.CloseNow()
+			cancelRead()
+			cancelHub()
+			server.Close()
+		}
+		t.Cleanup(stop)
+		return awaitHomeCapacity, stop
+	}
+	awaitHomeCapacity, stopHome := openHome()
+	awaitHomeCapacity(2)
+	for _, test := range []struct {
+		credential, body string
+		want             int
+	}{{admin, `{"capacity":1}`, 403}, {other, `{"capacity":1}`, 403}, {good, `{"capacity":1,"extra":true}`, 400}, {good, `{"capacity":1} {}`, 400}, {good, `{}`, 400}, {good, `{"capacity":4}`, 422}, {good, `{"capacity":0}`, 422}, {good, `{"capacity":-1}`, 422}, {good, `{"capacity":1}`, 200}} {
+		response = request("PUT", "/api/install", test.credential, test.body)
+		require.Equal(t, test.want, response.Code, response.Body.String())
+		if test.want == 422 {
+			require.Contains(t, response.Body.String(), `"class":"user"`)
+			if test.body == `{"capacity":4}` {
+				require.Contains(t, response.Body.String(), "capacity cannot exceed 3")
+			}
+		}
+		// Refused writes must never mutate the saved owner limit.
+		read := request("GET", "/api/install", good, "")
+		require.Equal(t, 200, read.Code, read.Body.String())
+		require.NoError(t, json.Unmarshal(read.Body.Bytes(), &status))
+		if test.want == 200 {
+			require.Equal(t, 1, status.Capacity)
+		} else {
+			require.Equal(t, 2, status.Capacity)
+		}
+	}
+	awaitHomeCapacity(1)
+	// Stop the subscription before replacing the detected startup profile.
+	stopHome()
+	// A restarted composition on a smaller host preserves the owner's saved 1.
+	capacity = &services.InstallCapacityService{Queries: q, Profile: microsandbox.HostProfile{MemoryBytes: 24 << 30, PerfCores: 8, PhysicalCores: 10, DiskFreeBytes: 200 << 30, MacOSVersion: "15.6", Hypervisor: true}}
+	handler.Setup.Capacity = capacity
+	router = githubAppSetupComposeRouter(cfg, pool, handler)
+	response = request("GET", "/api/install", good, "")
+	require.Equal(t, 200, response.Code, response.Body.String())
+	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &status))
+	require.Equal(t, 24.0, status.Mac.Memory)
+	require.Equal(t, 8, status.Mac.PerfCores)
+	require.Equal(t, 2, status.Mac.Capacity)
+	require.Equal(t, 1, status.Capacity)
+	awaitHomeCapacity, stopHome = openHome()
+	awaitHomeCapacity(1)
+	stopHome()
+	// One machine needs its 32 GiB plus the 12 GiB floor b74a68604e set.
+	capacity.Profile.DiskFreeBytes = 40 << 30
+	response = request("GET", "/api/install", good, "")
+	require.Equal(t, 200, response.Code)
+	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &status))
+	require.Zero(t, status.Capacity)
+	require.Zero(t, status.Mac.Capacity)
+	// §8.2.1a: at capacity 0 Settings shows the limiting term and its fix, from the one Go host profile.
+	require.NotNil(t, status.Mac.Limit, response.Body.String())
+	require.Equal(t, "disk", status.Mac.Limit.Term)
+	require.Equal(t, "free 4 GiB on the state volume", status.Mac.Limit.Fix)
+	awaitHomeCapacity, stopHome = openHome()
+	awaitHomeCapacity(0)
+	stopHome()
+}

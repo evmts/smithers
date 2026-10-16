@@ -12,7 +12,7 @@ const input = { args: JSON.stringify({ pullRequest: { number: 17 }, patch: "+ret
 const found = await Effect.runPromise(Effect.gen(function*() {
   const builtins = yield* provisionBuiltins(join(root, "state"), "a".repeat(64))
   const project = yield* Registry.make({
-    sources: [{ root: join(root, "repository", "flows"), source: "project", naming: "path" }]
+    sources: [{ root: join(root, "repository", ".smithers", "flows"), source: "project", naming: "path" }]
   }).pipe(Effect.provide(Discovery.layer))
   const registry = bindRepositoryRegistry(project, builtins.registry, "a".repeat(64), systemFlows)
   const descriptor = yield* registry.get("pr-triage")

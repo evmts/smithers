@@ -10,7 +10,7 @@ it("warms, starts and watches an exported action layer using real filesystem and
   const source = resolve(import.meta.dir, "../src")
   const fixture = resolve(import.meta.dir, "../../../packages/smithers/test/fixtures/module-layer/flows")
   try {
-    cpSync(fixture, join(root, "flows"), { recursive: true })
+    cpSync(fixture, join(root, ".smithers", "flows"), { recursive: true })
     symlinkSync(resolve(import.meta.dir, "../node_modules"), join(root, "node_modules"), "dir")
     const output = join(root, "result.txt")
     // Isolate the only mock from other Bun suites. This explicit offline judge

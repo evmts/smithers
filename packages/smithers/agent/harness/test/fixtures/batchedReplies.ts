@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs"
  *
  * Each file is the verbatim `control.agent.model-settled` text of one recorded
  * settlement, lifted from that instance's journal at
- * `evals/swebench/work/<instance>/.flows/engine.db`, and named for the journal
+ * `packages/smithers/agent/harness/benchmarks/swebench/work/<instance>/.flows/engine.db`, and named for the journal
  * sequence of the event that carried it. They are the whole population of
  * multi-block replies in that wave — 2 of 91 — and they are the two shapes the
  * concatenating extraction has to get right:

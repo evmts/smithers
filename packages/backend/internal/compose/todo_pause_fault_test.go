@@ -140,7 +140,7 @@ func TestTodoStartCrashThroughRoute(t *testing.T) {
 	t.Setenv("SMITHERS_TEST_DATABASE_NAMESPACE", fmt.Sprintf("relstart%d", os.Getpid()))
 	f := newMergeFaultFixture(t)
 	ctx := t.Context()
-	_, err := f.pool.Exec(ctx, `INSERT INTO workflow_definitions(repository_id,name,path,config,is_active,source_commit,digest,status) VALUES($1,'todo','flows/todo/flow.ts','{}',true,'4f098b2e90ef23159043fd5dfecbc305e0017549',$2,'loaded')`, f.repo, startFaultDigest)
+	_, err := f.pool.Exec(ctx, `INSERT INTO workflow_definitions(repository_id,name,path,config,is_active,source_commit,digest,status) VALUES($1,'todo','.smithers/flows/todo/flow.ts','{}',true,'4f098b2e90ef23159043fd5dfecbc305e0017549',$2,'loaded')`, f.repo, startFaultDigest)
 	require.NoError(t, err)
 	child := faultprocess.Start(t, "TestTodoStartCrashChild", "todo-start", "start", f.pool.Config().ConnString(), f.host)
 	child.Await(t, faultprocess.Marker+"start")
@@ -225,7 +225,7 @@ func TestTodoStartFactRollsBackAdmissionComposed(t *testing.T) {
 	t.Setenv("SMITHERS_TEST_DATABASE_NAMESPACE", fmt.Sprintf("relatom%d", os.Getpid()))
 	f := newMergeFaultFixture(t)
 	ctx := t.Context()
-	_, err := f.pool.Exec(ctx, `INSERT INTO workflow_definitions(repository_id,name,path,config,is_active,source_commit,digest,status) VALUES($1,'todo','flows/todo/flow.ts','{}',true,'4f098b2e90ef23159043fd5dfecbc305e0017549',$2,'loaded')`, f.repo, startFaultDigest)
+	_, err := f.pool.Exec(ctx, `INSERT INTO workflow_definitions(repository_id,name,path,config,is_active,source_commit,digest,status) VALUES($1,'todo','.smithers/flows/todo/flow.ts','{}',true,'4f098b2e90ef23159043fd5dfecbc305e0017549',$2,'loaded')`, f.repo, startFaultDigest)
 	require.NoError(t, err)
 	_, err = f.pool.Exec(ctx, `CREATE SEQUENCE fault_start_attempts;
  CREATE FUNCTION fault_refuse_start_fact() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.event_type='todo.started' THEN PERFORM nextval('fault_start_attempts'); RAISE EXCEPTION 'fault start fact refused'; END IF; RETURN NEW; END $$;

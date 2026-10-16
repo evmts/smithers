@@ -10,7 +10,7 @@ touches a database or the network, and the result arrives as a typed value
 decoded by the schema you declared.
 
 A runnable copy of this program is published in the Smithers examples,
-[`01-define-and-run.ts`](https://github.com/smithersai/smithers/blob/main/examples/src/01-define-and-run.ts).
+[`01-define-and-run.ts`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/examples/01-define-and-run.ts).
 
 ## Prerequisites
 

@@ -185,7 +185,8 @@ export const createFlowCli = (runtime: Bridge.Runtime = {}) =>
               ? Bridge.query(Effect.andThen(checks(c.options, runtime), RunControl.listFlows), c.options, runtime)
               : Bridge.local(
                 Effect.gen(function*() {
-                  return FlowCatalog.listing((yield* discovered(c.options, runtime)).items, yield* Project.ProjectRoot)
+                  const { items, warnings } = yield* discovered(c.options, runtime)
+                  return FlowCatalog.listing(items, yield* Project.ProjectRoot, warnings)
                 }),
                 c.options,
                 runtime
@@ -197,7 +198,9 @@ export const createFlowCli = (runtime: Bridge.Runtime = {}) =>
           {
             render: (page) =>
               FeaturedFlows.isFlowPage(page)
-                ? { human: FeaturedFlows.human(page.items, FeaturedFlows.appsOf(page)) }
+                ? {
+                  human: FeaturedFlows.human(page.items, FeaturedFlows.appsOf(page), FeaturedFlows.warningsOf(page))
+                }
                 : {},
             next: (page) => {
               const first = Array.isArray(page["items"])

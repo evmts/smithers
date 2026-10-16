@@ -155,7 +155,7 @@ step). This narrows D-004 — "monitor before builder" is nearly already true.
 `packages/smithers/flows/plan/src/Node.ts:6-9`: "A plan is always a DAG, so there
 is no loop node here and never will be: repetition lives one level up, in what a
 flow settles with." Repetition is either bounded unrolling inside the body (see
-`examples/src/17-review-loop.ts`, which literally plans `maxRounds` review nodes)
+`packages/smithers/flows/examples/17-review-loop.ts`, which literally plans `maxRounds` review nodes)
 or a `Flow.to()` handoff that ends the round and names the next — a new
 `flows_runs` row with `lineage_id` + `round_ordinal`.
 *Consequence:* an n8n-style "Loop" widget cannot exist on our canvas. Any looping

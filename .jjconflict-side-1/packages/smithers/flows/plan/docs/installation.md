@@ -1,0 +1,75 @@
+---
+title: "Installation"
+description: "Install @smthrs/plan and satisfy its peer requirements."
+sidebar:
+  order: 1
+---
+
+## Requirements
+
+- Node.js 26.4.0 or later.
+- `effect` `^4.0.4`. The package's schemas, layers, and error classes are
+  Effect values, so it uses the one `effect` your application installs.
+
+## Install
+
+```bash
+npm install @smthrs/plan@next effect
+```
+
+The `next` tag carries the 1.0 release candidates.
+
+That is enough to build node graphs, compile plans, and diff them. Compiling
+asks for Effect's `Crypto` service, which a platform package supplies:
+
+```bash
+pnpm add @effect/platform-node @effect/platform-node-shared
+```
+
+`@smthrs/crypto`, `@smthrs/canonical` and [`@smthrs/keys`](/api/keys) arrive as
+dependencies of this package; you do not install them yourself unless you use
+them directly.
+
+## What persistence adds
+
+This package performs no I/O. Recording a compiled plan is
+[`@smthrs/plan-store`](/api/plan-store), which owns the SQL and brings
+[`@smthrs/database`](/api/database) with it.
+
+## Import forms
+
+The root entry point re-exports every module as a namespace:
+
+```ts
+import { FileSet, Node, Plan, PlanDiff } from "@smthrs/plan"
+```
+
+Each module is also its own entry point. Prefer this form: it keeps a bundle to
+the modules you actually reach for.
+
+```ts
+import * as Node from "@smthrs/plan/Node"
+import * as Plan from "@smthrs/plan/Plan"
+```
+
+Both forms resolve to the same values.
+
+## What you cannot import
+
+`@smthrs/plan/internal/*` is blocked by the export map, and so is
+`@smthrs/plan/<Module>/index`. Node reports `ERR_PACKAGE_PATH_NOT_EXPORTED` for
+either.
+
+`@smthrs/plan/test/PlanFixtures` is the exception that is meant for test code:
+it builds drafts and compiles them, and
+[`@smthrs/plan-store`](/api/plan-store) drives the same fixtures against the
+persisted form.
+
+## Browser support
+
+The package is browser-safe: it resolves no `node:` built-in and binds no
+database. Compiling, diffing, and building node graphs all work in a browser.
+
+## Next
+
+[Quickstart](./quickstart.md) compiles a plan, appends to it, and diffs it.

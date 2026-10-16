@@ -1,0 +1,377 @@
+{
+  "name": "@smthrs/model",
+  "type": "module",
+  "version": "1.0.0-rc.12",
+  "license": "MIT",
+  "smthrs": {
+    "group": "agent"
+  },
+  "description": "Schema-first Effect model protocols, routes, and streaming events for flows",
+  "homepage": "https://github.com/smithersai/smithers",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/smithers/agent/model"
+  },
+  "bugs": {
+    "url": "https://github.com/smithersai/smithers/issues"
+  },
+  "tags": [
+    "typescript",
+    "effect",
+    "llm",
+    "streaming"
+  ],
+  "keywords": [
+    "typescript",
+    "effect",
+    "llm",
+    "streaming"
+  ],
+  "engines": {
+    "node": ">=26.4.0"
+  },
+  "sideEffects": [],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null,
+    "./*/index": null,
+    "./AnthropicMessages": "./src/AnthropicMessages.ts",
+    "./Auth": "./src/Auth.ts",
+    "./CanonicalJson": "./src/CanonicalJson.ts",
+    "./Classifier": "./src/Classifier.ts",
+    "./DeferredTools": "./src/DeferredTools.ts",
+    "./Endpoint": "./src/Endpoint.ts",
+    "./Evaluator": "./src/Evaluator.ts",
+    "./EvaluatorBackup": "./src/EvaluatorBackup.ts",
+    "./Framing": "./src/Framing.ts",
+    "./FailureCopy": "./src/FailureCopy.ts",
+    "./Model": "./src/Model.ts",
+    "./ModelCatalog": "./src/ModelCatalog.ts",
+    "./ModelError": "./src/ModelError.ts",
+    "./ModelEvent": "./src/ModelEvent.ts",
+    "./ModelRequest": "./src/ModelRequest.ts",
+    "./OpenAIChatCompletions": "./src/OpenAIChatCompletions.ts",
+    "./OpenAIChatGPT": "./src/OpenAIChatGPT.ts",
+    "./OpenAIResponses": "./src/OpenAIResponses.ts",
+    "./Pricing": "./src/Pricing.ts",
+    "./Protocol": "./src/Protocol.ts",
+    "./RequestExecutor": "./src/RequestExecutor.ts",
+    "./Route": "./src/Route.ts",
+    "./ToolStream": "./src/ToolStream.ts",
+    "./index": "./src/index.ts"
+  },
+  "files": [
+    "src/**/*.ts",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/package.json",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next",
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./internal/*": null,
+      "./*/index": null,
+      "./AnthropicMessages": {
+        "import": {
+          "types": "./dist/esm/AnthropicMessages.d.ts",
+          "default": "./dist/esm/AnthropicMessages.js"
+        },
+        "require": {
+          "types": "./dist/cjs/AnthropicMessages.d.ts",
+          "default": "./dist/cjs/AnthropicMessages.js"
+        }
+      },
+      "./Auth": {
+        "import": {
+          "types": "./dist/esm/Auth.d.ts",
+          "default": "./dist/esm/Auth.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Auth.d.ts",
+          "default": "./dist/cjs/Auth.js"
+        }
+      },
+      "./CanonicalJson": {
+        "import": {
+          "types": "./dist/esm/CanonicalJson.d.ts",
+          "default": "./dist/esm/CanonicalJson.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CanonicalJson.d.ts",
+          "default": "./dist/cjs/CanonicalJson.js"
+        }
+      },
+      "./Classifier": {
+        "import": {
+          "types": "./dist/esm/Classifier.d.ts",
+          "default": "./dist/esm/Classifier.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Classifier.d.ts",
+          "default": "./dist/cjs/Classifier.js"
+        }
+      },
+      "./DeferredTools": {
+        "import": {
+          "types": "./dist/esm/DeferredTools.d.ts",
+          "default": "./dist/esm/DeferredTools.js"
+        },
+        "require": {
+          "types": "./dist/cjs/DeferredTools.d.ts",
+          "default": "./dist/cjs/DeferredTools.js"
+        }
+      },
+      "./Endpoint": {
+        "import": {
+          "types": "./dist/esm/Endpoint.d.ts",
+          "default": "./dist/esm/Endpoint.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Endpoint.d.ts",
+          "default": "./dist/cjs/Endpoint.js"
+        }
+      },
+      "./Evaluator": {
+        "import": {
+          "types": "./dist/esm/Evaluator.d.ts",
+          "default": "./dist/esm/Evaluator.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Evaluator.d.ts",
+          "default": "./dist/cjs/Evaluator.js"
+        }
+      },
+      "./EvaluatorBackup": {
+        "import": {
+          "types": "./dist/esm/EvaluatorBackup.d.ts",
+          "default": "./dist/esm/EvaluatorBackup.js"
+        },
+        "require": {
+          "types": "./dist/cjs/EvaluatorBackup.d.ts",
+          "default": "./dist/cjs/EvaluatorBackup.js"
+        }
+      },
+      "./Framing": {
+        "import": {
+          "types": "./dist/esm/Framing.d.ts",
+          "default": "./dist/esm/Framing.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Framing.d.ts",
+          "default": "./dist/cjs/Framing.js"
+        }
+      },
+      "./FailureCopy": {
+        "import": {
+          "types": "./dist/esm/FailureCopy.d.ts",
+          "default": "./dist/esm/FailureCopy.js"
+        },
+        "require": {
+          "types": "./dist/cjs/FailureCopy.d.ts",
+          "default": "./dist/cjs/FailureCopy.js"
+        }
+      },
+      "./Model": {
+        "import": {
+          "types": "./dist/esm/Model.d.ts",
+          "default": "./dist/esm/Model.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Model.d.ts",
+          "default": "./dist/cjs/Model.js"
+        }
+      },
+      "./ModelError": {
+        "import": {
+          "types": "./dist/esm/ModelError.d.ts",
+          "default": "./dist/esm/ModelError.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ModelError.d.ts",
+          "default": "./dist/cjs/ModelError.js"
+        }
+      },
+      "./ModelEvent": {
+        "import": {
+          "types": "./dist/esm/ModelEvent.d.ts",
+          "default": "./dist/esm/ModelEvent.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ModelEvent.d.ts",
+          "default": "./dist/cjs/ModelEvent.js"
+        }
+      },
+      "./ModelRequest": {
+        "import": {
+          "types": "./dist/esm/ModelRequest.d.ts",
+          "default": "./dist/esm/ModelRequest.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ModelRequest.d.ts",
+          "default": "./dist/cjs/ModelRequest.js"
+        }
+      },
+      "./OpenAIChatCompletions": {
+        "import": {
+          "types": "./dist/esm/OpenAIChatCompletions.d.ts",
+          "default": "./dist/esm/OpenAIChatCompletions.js"
+        },
+        "require": {
+          "types": "./dist/cjs/OpenAIChatCompletions.d.ts",
+          "default": "./dist/cjs/OpenAIChatCompletions.js"
+        }
+      },
+      "./OpenAIChatGPT": {
+        "import": {
+          "types": "./dist/esm/OpenAIChatGPT.d.ts",
+          "default": "./dist/esm/OpenAIChatGPT.js"
+        },
+        "require": {
+          "types": "./dist/cjs/OpenAIChatGPT.d.ts",
+          "default": "./dist/cjs/OpenAIChatGPT.js"
+        }
+      },
+      "./OpenAIResponses": {
+        "import": {
+          "types": "./dist/esm/OpenAIResponses.d.ts",
+          "default": "./dist/esm/OpenAIResponses.js"
+        },
+        "require": {
+          "types": "./dist/cjs/OpenAIResponses.d.ts",
+          "default": "./dist/cjs/OpenAIResponses.js"
+        }
+      },
+      "./Pricing": {
+        "import": {
+          "types": "./dist/esm/Pricing.d.ts",
+          "default": "./dist/esm/Pricing.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Pricing.d.ts",
+          "default": "./dist/cjs/Pricing.js"
+        }
+      },
+      "./Protocol": {
+        "import": {
+          "types": "./dist/esm/Protocol.d.ts",
+          "default": "./dist/esm/Protocol.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Protocol.d.ts",
+          "default": "./dist/cjs/Protocol.js"
+        }
+      },
+      "./RequestExecutor": {
+        "import": {
+          "types": "./dist/esm/RequestExecutor.d.ts",
+          "default": "./dist/esm/RequestExecutor.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RequestExecutor.d.ts",
+          "default": "./dist/cjs/RequestExecutor.js"
+        }
+      },
+      "./Route": {
+        "import": {
+          "types": "./dist/esm/Route.d.ts",
+          "default": "./dist/esm/Route.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Route.d.ts",
+          "default": "./dist/cjs/Route.js"
+        }
+      },
+      "./ToolStream": {
+        "import": {
+          "types": "./dist/esm/ToolStream.d.ts",
+          "default": "./dist/esm/ToolStream.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ToolStream.d.ts",
+          "default": "./dist/cjs/ToolStream.js"
+        }
+      },
+      "./index": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./ModelCatalog": {
+        "import": {
+          "types": "./dist/esm/ModelCatalog.d.ts",
+          "default": "./dist/esm/ModelCatalog.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ModelCatalog.d.ts",
+          "default": "./dist/cjs/ModelCatalog.js"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint src examples --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "circular": "node scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "vitest --coverage"
+  },
+  "dependencies": {
+    "@smthrs/capability": "1.0.0-rc.12",
+    "@smthrs/flow": "1.0.0-rc.12",
+    "@smthrs/journal": "1.0.0-rc.12",
+    "@smthrs/kernel": "1.0.0-rc.12",
+    "@smthrs/canonical": "1.0.0-rc.12",
+    "@smthrs/core": "1.0.0-rc.12"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@effect/vitest": "4.0.4",
+    "@eslint/js": "9.39.5",
+    "@smthrs/platform-node": "1.0.0-rc.12",
+    "@types/node": "26.4.1",
+    "@vitest/coverage-v8": "5.0.0",
+    "dprint": "0.57.1",
+    "effect": "4.0.4",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "madge": "8.0.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0"
+  },
+  "peerDependencies": {
+    "effect": "^4.0.4"
+  }
+}

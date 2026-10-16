@@ -64,7 +64,7 @@ The policies leave a trail a test can read:
 - `Budget.usageOf(runId)` reads one run's `{ tokens, calls, largestCall }` from
   its live accumulator or its durable records.
 
-[`examples/src/39-agent-policies.ts`](https://github.com/smithersai/smithers/blob/main/examples/src/39-agent-policies.ts)
+[`packages/smithers/agent/examples/39-agent-policies.ts`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/examples/39-agent-policies.ts)
 pins exactly these counters across an engine restart: three provider calls in
 all, one park decision, one structured-output rejection.
 

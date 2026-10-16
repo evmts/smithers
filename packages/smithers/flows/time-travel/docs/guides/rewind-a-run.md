@@ -365,7 +365,7 @@ pointer, the compensation receipts, the warnings, and the children it cancelled
 or still owes a cancellation.
 
 A runnable version of this walkthrough is
-[`06-time-travel-rewind.ts`](https://github.com/smithersai/smithers/blob/main/examples/src/06-time-travel-rewind.ts)
+[`06-time-travel-rewind.ts`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/examples/06-time-travel-rewind.ts)
 in the Smithers examples on GitHub.
 
 ## Failures

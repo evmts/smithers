@@ -179,8 +179,8 @@ const containment = async (recovery) => {
     assert.equal(spawnSync("git", ["init", "--quiet"], { cwd: root }).status, 0)
     writeFileSync(join(root, ".gitignore"), ".flows/\nrecording/\n")
     for (const name of ["busy", "done"]) {
-      mkdirSync(join(root, "flows", name), { recursive: true })
-      writeFileSync(join(root, "flows", name, "flow.mdx"), [
+      mkdirSync(join(root, ".smithers", "flows", name), { recursive: true })
+      writeFileSync(join(root, ".smithers", "flows", name, "flow.mdx"), [
         "---", `name: ${name}`, "description: Installed containment exercise.",
         "model: openai:gpt-4o-mini",
         name === "busy" ? 'capabilities: ["proc:spawn:*"]' : "capabilities: []",

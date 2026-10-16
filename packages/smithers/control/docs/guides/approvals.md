@@ -215,7 +215,7 @@ unfinished executions. The action and flow error schema changes also require
 newly planned/approved work; they do not retrofit old cached action results.
 
 The complete example, with the two drives around the decision, is
-[`examples/src/18-approval-and-signal.ts`](https://github.com/smithersai/smithers/blob/main/examples/src/18-approval-and-signal.ts).
+[`packages/smithers/flows/examples/18-approval-and-signal.ts`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/examples/18-approval-and-signal.ts).
 
 ### Decide it from outside the run
 

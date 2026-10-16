@@ -11,7 +11,7 @@ const agent = (name: string, tui: unknown): Extension.Descriptor => ({
   kind: "markdown",
   flows: [],
   capabilities: [],
-  path: `flows/${name}/flow.mdx`,
+  path: `.smithers/flows/${name}/flow.mdx`,
   tui
 })
 const status = (id: string, text = id): Extension.Contribution => ({ kind: "status", status: { id, text } })

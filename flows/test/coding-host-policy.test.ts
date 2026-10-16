@@ -116,7 +116,7 @@ test("deployment embeds its compiled identity and the review policy it was built
 test("the packaged host exposes PR triage in a repository with no project flows", { timeout: 120_000 }, async (t) => {
   const temporary = await mkdtemp(join(tmpdir(), "coding-pr-triage-bundle-"))
   t.after(() => rm(temporary, { recursive: true, force: true }))
-  await mkdir(join(temporary, "repository", "flows"), { recursive: true })
+  await mkdir(join(temporary, "repository", ".smithers", "flows"), { recursive: true })
   const output = join(temporary, "host.mjs")
   await bundle(fileURLToPath(new URL("./fixtures/coding-pr-triage-bundle-entry.ts", import.meta.url)), output)
   const found = JSON.parse(execFileSync(process.execPath, [output, temporary], {

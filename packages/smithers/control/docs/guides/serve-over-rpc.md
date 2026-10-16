@@ -213,7 +213,7 @@ failing.
 
 ## Where to go next
 
-- [The complete loopback example](https://github.com/smithersai/smithers/blob/main/examples/src/24-control-plane-and-gateway.ts):
+- [The complete loopback example](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/examples/24-control-plane-and-gateway.ts):
   a discovered flow planned, approved, launched, and watched over the wire.
 - [Watch a run's events](./watch-a-run.md): the operation the WebSocket exists
   for.

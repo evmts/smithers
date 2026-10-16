@@ -20,10 +20,10 @@ export const Run = Action.make("memory/mine/run", {
 export default Flow.make("memory/mine", {
   description:
     "Mine a finished run's journal: durable facts to memory, human decisions to the item's wiki page, factory issues back to the caller.",
-  capabilities: ["fs:read:**", "fs:write:factory/wiki/decisions/**", "memory:write:**", "model:call:typesafe-ai/jev"],
+  capabilities: ["fs:read:**", "fs:write:.smithers/wiki/decisions/**", "memory:write:**", "model:call:typesafe-ai/jev"],
   effects: {
     reads: ["**", "memory/**"],
-    writes: ["factory/wiki/decisions/**", "memory/**"],
+    writes: [".smithers/wiki/decisions/**", "memory/**"],
     mode: "expected",
     onConflict: "serialize",
     tier: "irreversible"
