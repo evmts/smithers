@@ -30,7 +30,7 @@ func (s HostObjects) visit(ctx context.Context, branch string, call func(func(co
 
 func (s HostObjects) Import(ctx context.Context, branch string, file *os.File) error {
 	return s.visit(ctx, branch, func(resolve func(context.Context, string) (string, error)) error {
-		return GitBundleImporter(resolve)(ctx, branch, file)
+		return GitBundleImporter(resolve)(ctx, branch, file, func(commit func() error) error { return commit() })
 	})
 }
 func (s HostObjects) VerifyCapture(ctx context.Context, branch string, capture wire.Captured) (missing []string, err error) {

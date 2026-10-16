@@ -47,7 +47,7 @@ func TestGitBundleImporterRetainsDataWithoutGuestRefs(t *testing.T) {
 		return repo, nil
 	})
 	for range 2 {
-		require.NoError(t, importer(t.Context(), branch, file))
+		require.NoError(t, importer(t.Context(), branch, file, func(commit func() error) error { return commit() }))
 	}
 	git := func(args ...string) string {
 		out, err := hostexec.Git(t.Context(), append([]string{"-C", repo}, args...)...).CombinedOutput()
@@ -59,12 +59,12 @@ func TestGitBundleImporterRetainsDataWithoutGuestRefs(t *testing.T) {
 	// Incoming pins keep the acknowledged content through immediate GC.
 	git("gc", "--prune=now")
 	require.Equal(t, "acknowledged bytes", git("show", head+":README.md"))
-	require.ErrorIs(t, importer(t.Context(), "foreign", file), ErrUnauthorized)
+	require.ErrorIs(t, importer(t.Context(), "foreign", file, func(commit func() error) error { return commit() }), ErrUnauthorized)
 	bad := filepath.Join(t.TempDir(), "bad.bundle")
 	require.NoError(t, os.WriteFile(bad, []byte("branch-controlled invalid bytes"), 0600))
 	invalid, err := os.Open(bad)
 	require.NoError(t, err)
 	defer invalid.Close()
-	require.ErrorContains(t, importer(t.Context(), branch, invalid), "invalid or incomplete")
+	require.ErrorContains(t, importer(t.Context(), branch, invalid, func(commit func() error) error { return commit() }), "invalid or incomplete")
 	require.Equal(t, base, git("rev-parse", "refs/heads/main"))
 }

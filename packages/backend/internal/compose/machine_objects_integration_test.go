@@ -153,7 +153,7 @@ func TestMachineObjectsProductionBinding(t *testing.T) {
 	defer file.Close()
 	importer := machineObjectImporter(t.Context(), b.pool, client)
 	for _, id := range []string{"not-a-uuid", strings.ToUpper(branch), "11111111-1111-4111-8111-111111111111"} {
-		require.ErrorIs(t, importer(t.Context(), id, file), machined.ErrUnauthorized)
+		require.ErrorIs(t, importer(t.Context(), id, file, func(commit func() error) error { return commit() }), machined.ErrUnauthorized)
 	}
 	for _, change := range []struct {
 		sql     string
@@ -163,16 +163,16 @@ func TestMachineObjectsProductionBinding(t *testing.T) {
 		{`UPDATE workspaces SET status='failed' WHERE id=$1`, `UPDATE workspaces SET status='running' WHERE id=$1`},
 	} {
 		b.exec(change.sql, branch)
-		require.ErrorIs(t, importer(t.Context(), branch, file), machined.ErrUnauthorized)
+		require.ErrorIs(t, importer(t.Context(), branch, file, func(commit func() error) error { return commit() }), machined.ErrUnauthorized)
 		snapshot, err := exporter(t.Context(), branch, base, 0x80000005)
 		require.ErrorIs(t, err, machined.ErrUnauthorized)
 		require.Nil(t, snapshot)
 		b.exec(change.restore, branch)
 	}
-	require.Error(t, machineObjectImporter(t.Context(), b.pool, &repohost.Client{})(t.Context(), branch, file), "an unbound repository port cannot certify an import")
+	require.Error(t, machineObjectImporter(t.Context(), b.pool, &repohost.Client{})(t.Context(), branch, file, func(commit func() error) error { return commit() }), "an unbound repository port cannot certify an import")
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	require.ErrorIs(t, importer(ctx, branch, file), context.Canceled)
+	require.ErrorIs(t, importer(ctx, branch, file, func(commit func() error) error { return commit() }), context.Canceled)
 	// A new process may reconnect the same branch before ready. Stopping this
 	// composition also disables the importer retained by an existing link.
 	_, peer2 := presenceTestLink(t, registry, branch)

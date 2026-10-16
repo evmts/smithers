@@ -16,7 +16,7 @@ import (
 // records and keep the engine's maintenance lock for the complete import. No
 // guest path or bundle ref name selects a host path or moves a product ref.
 func machineObjectImporter(lifetime context.Context, pool *pgxpool.Pool, host *repohost.Client) machined.ObjectImporter {
-	return func(ctx context.Context, branch string, file *os.File) error {
+	return func(ctx context.Context, branch string, file *os.File, commit func(func() error) error) error {
 		if pool == nil || host == nil || file == nil {
 			return machined.ErrNotReady
 		}
@@ -29,7 +29,7 @@ func machineObjectImporter(lifetime context.Context, pool *pgxpool.Pool, host *r
 		}
 		return machineObjects(pool, host).Visit(ctx, branch, func(path string) error {
 			importer := machined.GitBundleImporter(func(context.Context, string) (string, error) { return path, nil })
-			return importer(ctx, branch, file)
+			return importer(ctx, branch, file, commit)
 		})
 	}
 }

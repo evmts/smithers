@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -18,7 +20,7 @@ func TestHostObjectStreamCommitBeforeClose(t *testing.T) {
 	input := bytes.Repeat([]byte("bundle"), 70000)
 	entered, release := make(chan struct{}), make(chan struct{})
 	var temporary string
-	r.BindObjectImporter(func(ctx context.Context, branch string, file *os.File) error {
+	r.BindObjectImporter(func(ctx context.Context, branch string, file *os.File, commit func(func() error) error) error {
 		if branch != "branch-a" {
 			return ErrUnauthorized
 		}
@@ -40,7 +42,7 @@ func TestHostObjectStreamCommitBeforeClose(t *testing.T) {
 		close(entered)
 		select {
 		case <-release:
-			return nil
+			return commit(func() error { return nil })
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -94,7 +96,7 @@ func TestHostObjectStreamRefusals(t *testing.T) {
 			r := new(Registry)
 			entered := make(chan struct{})
 			if name != "missing importer" {
-				r.BindObjectImporter(func(ctx context.Context, _ string, _ *os.File) error {
+				r.BindObjectImporter(func(ctx context.Context, _ string, _ *os.File, commit func(func() error) error) error {
 					close(entered)
 					if name == "verification failed" {
 						return errors.New("invalid bundle")
@@ -146,6 +148,59 @@ func TestHostObjectStreamRefusals(t *testing.T) {
 			}
 			_, err = wire.Read(peer)
 			require.Error(t, err, "refusal must not certify imported objects")
+		})
+	}
+}
+
+// Repository admission can wait behind an event that needs the registry fence.
+// Waiting for that admission must leave the registry available.
+func TestObjectImportAdmissionDoesNotHoldRegistry(t *testing.T) {
+	for _, replace := range []bool{false, true} {
+		t.Run(fmt.Sprint("replace=", replace), func(t *testing.T) {
+			r := new(Registry)
+			entered, release := make(chan struct{}), make(chan struct{})
+			var committed atomic.Bool
+			r.BindObjectImporter(func(ctx context.Context, _ string, _ *os.File, commit func(func() error) error) error {
+				close(entered)
+				select {
+				case <-release:
+					return commit(func() error { committed.Store(true); return nil })
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			})
+			authority, err := r.MintBoot("a", "vm")
+			require.NoError(t, err)
+			_, peer := connectTest(t, r, "a", authority)
+			require.NoError(t, peer.SetDeadline(time.Now().Add(3*time.Second)))
+			require.NoError(t, wire.Write(peer, wire.Frame{Kind: wire.Objects, Stream: 1, Payload: []byte{1, 0, 42}}))
+			_, err = wire.Read(peer)
+			require.NoError(t, err)
+			require.NoError(t, wire.Write(peer, wire.Frame{Kind: wire.Objects, Stream: 1, Payload: []byte{2, 0}}))
+			<-entered
+			admitted := make(chan error, 1)
+			branch := "other"
+			if replace {
+				branch = "a"
+			}
+			go func() { _, err := r.MintBoot(branch, "other-vm"); admitted <- err }()
+			var admissionErr error
+			select {
+			case admissionErr = <-admitted:
+			case <-time.After(time.Second):
+				admissionErr = errors.New("repository wait held registry fence")
+			}
+			close(release)
+			require.NoError(t, admissionErr)
+			frame, err := wire.Read(peer)
+			if replace {
+				require.Error(t, err, "a replaced boot must not certify an import")
+				require.False(t, committed.Load())
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, []byte{7}, frame.Payload)
+				require.True(t, committed.Load())
+			}
 		})
 	}
 }

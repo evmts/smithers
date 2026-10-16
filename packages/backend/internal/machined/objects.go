@@ -11,10 +11,11 @@ import (
 
 // ObjectImporter verifies and durably imports a git bundle into the host store
 // selected by branch. It must ignore bundle ref names and must not execute hooks
-// or call the registry. Returning nil certifies that every imported object is
-// durable; only then may the daemon release its bundle. The file is host-owned,
+// or call the registry. After acquiring repository authority, it must run durable
+// writes through commit, which fences boot replacement. Returning nil certifies
+// that every imported object is durable; only then may the daemon release its bundle. The file is host-owned,
 // rewound and valid only for this call. No branch path reaches the host filesystem.
-type ObjectImporter func(context.Context, string, *os.File) error
+type ObjectImporter func(context.Context, string, *os.File, func(func() error) error) error
 
 // BindObjectImporter affects new handshakes. An absent importer refuses object
 // streams rather than acknowledging bytes that have no durable host store.
@@ -144,15 +145,17 @@ func (l *Link) importObjects() {
 			if _, err := file.Seek(0, io.SeekStart); err != nil {
 				return
 			}
-			// Fence replacement across durable import just as event commit does.
-			// The bounded deadline prevents a broken importer holding admission.
+			// Acquire repository authority before the registry fence, matching event
+			// ingestion. The importer invokes commit only after those locks are held.
 			call, stop := context.WithTimeout(ctx, 30*time.Second)
-			l.registry.mu.Lock()
-			err := ErrUnauthorized
-			if l.current() {
-				err = l.objectImporter(call, l.boot.branch, file)
-			}
-			l.registry.mu.Unlock()
+			err := l.objectImporter(call, l.boot.branch, file, func(commit func() error) error {
+				l.registry.mu.Lock()
+				defer l.registry.mu.Unlock()
+				if !l.current() {
+					return ErrUnauthorized
+				}
+				return commit()
+			})
 			stop()
 			cleanup()
 			if err != nil {

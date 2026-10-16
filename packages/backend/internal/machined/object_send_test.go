@@ -80,10 +80,12 @@ func TestWakeBundleWaitsForImportAndKeepsBothDirectionsLive(t *testing.T) {
 		return io.NopCloser(bytes.NewReader(data)), nil
 	})
 	reverse := make(chan []byte, 1)
-	r.BindObjectImporter(func(_ context.Context, _ string, file *os.File) error {
+	r.BindObjectImporter(func(_ context.Context, _ string, file *os.File, commit func(func() error) error) error {
 		b, err := io.ReadAll(file)
-		reverse <- b
-		return err
+		return commit(func() error {
+			reverse <- b
+			return err
+		})
 	})
 	authority, err := r.MintBoot("a", "vm")
 	require.NoError(t, err)
