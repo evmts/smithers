@@ -28,10 +28,14 @@ ORDER BY gir.updated_at DESC, gir.created_at DESC
 LIMIT 1;
 `
 
+// userConnectedRepositoryIDsSQL reads the caller's connected repository ids
+// that installation $2 covers.
 const userConnectedRepositoryIDsSQL = `
-SELECT COALESCE(array_agg(github_repository_id), '{}'::bigint[])
-FROM repo_connections
-WHERE user_id = $1 AND github_repository_id IS NOT NULL;
+SELECT COALESCE(array_agg(rc.github_repository_id), '{}'::bigint[])
+FROM repo_connections rc
+JOIN github_app_installation_repositories gir
+  ON gir.github_repository_id = rc.github_repository_id
+WHERE rc.user_id = $1 AND gir.installation_id = $2;
 `
 
 type GitHubRepoListDB interface {
@@ -116,7 +120,14 @@ func (s *GitHubRepoListService) ListInstallationRepositories(ctx context.Context
 		return GitHubRepoListResult{}, pkgerrors.Internal("failed to resolve github installation").WithCause(err)
 	}
 
-	token, err := s.tokenIssuer.CreateGitHubInstallationToken(ctx, installationID, GitHubTokenScope{AllRepositories: true, Permissions: gitHubListingPermissions})
+	// GitHub lists and paginates every repository the token can see, so the
+	// token sees only the caller's connected repositories: neither the listing
+	// nor its Link header reveals other (private) repos sharing the installation.
+	var connectedIDs []int64
+	if err := s.db.QueryRow(ctx, userConnectedRepositoryIDsSQL, userID, installationID).Scan(&connectedIDs); err != nil {
+		return GitHubRepoListResult{}, pkgerrors.Internal("failed to load repo connections").WithCause(err)
+	}
+	token, err := s.tokenIssuer.CreateGitHubInstallationToken(ctx, installationID, GitHubTokenScope{RepositoryIDs: connectedIDs, Permissions: gitHubListingPermissions})
 	if err != nil {
 		return GitHubRepoListResult{}, err
 	}
@@ -168,15 +179,6 @@ func (s *GitHubRepoListService) ListInstallationRepositories(ctx context.Context
 		return GitHubRepoListResult{}, GitHubRequestFailure(ctx, "GitHub returned an unreadable repository listing")
 	}
 
-	// The installation token grants visibility over EVERY repository in the
-	// GitHub App installation, but the caller is only authorized for the repos
-	// they explicitly connected: intersect the upstream listing with the
-	// caller's repo_connections so one connection cannot enumerate other
-	// (private) repos sharing the installation.
-	var connectedIDs []int64
-	if err := s.db.QueryRow(ctx, userConnectedRepositoryIDsSQL, userID).Scan(&connectedIDs); err != nil {
-		return GitHubRepoListResult{}, pkgerrors.Internal("failed to load repo connections").WithCause(err)
-	}
 	repos := make([]GitHubRepoListItem, 0, len(payload.Repositories))
 	for _, item := range payload.Repositories {
 		if id, ok := item.ID.(float64); ok && slices.Contains(connectedIDs, int64(id)) {

@@ -146,6 +146,11 @@ var errGitHubImportedSourceProvenanceNotFound = stdErrors.New("github imported s
 // with the importer's own GitHub credential.
 var errGitHubImportedSourceAppNotInstalled = stdErrors.New("github app is not installed for this imported source")
 
+// errGitHubAppNotInstalled is the cause of the minter's refusal when no App
+// installation covers the repository: the one failure a caller may answer with
+// another credential.
+var errGitHubAppNotInstalled = stdErrors.New("github app is not installed")
+
 // GitHubRepositoryInstallationResolver resolves the GitHub App installation
 // for a Smithers repository's owner/repo on background (no-actor) paths,
 // scoped to the repository owner's repo_connections binding. Implemented by
@@ -494,7 +499,7 @@ func (s *RepoConnectionService) CreateGitHubInstallationToken(
 	scope GitHubTokenScope,
 ) (GitHubInstallationToken, error) {
 	if installationID <= 0 {
-		return GitHubInstallationToken{}, pkgerrors.BadRequest("github app is not installed for this repository")
+		return GitHubInstallationToken{}, pkgerrors.BadRequest("github app is not installed for this repository").WithCause(errGitHubAppNotInstalled)
 	}
 	if !scope.valid() {
 		return GitHubInstallationToken{}, ErrGitHubTokenScopeRequired

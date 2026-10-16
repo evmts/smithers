@@ -609,3 +609,29 @@ func (h *githubImportHRepoHost) GetBookmark(ctx context.Context, owner, repo, na
 	}
 	return repohost.Bookmark{}, &repohost.StatusError{StatusCode: 404, Code: "bookmark_not_found"}
 }
+
+// #3694: the user's OAuth token stands in only when no App installation covers
+// the repository. Any other installation-token failure is the import's error.
+func TestGitHubImport_H_OAuthFallbackOnlyWhenAppNotInstalled(t *testing.T) {
+	ctx := context.Background()
+	api := githubImportHAPI(t, http.StatusOK, map[string]any{"private": true, "default_branch": "main"})
+	tokenDB := githubImportHTokenDB{accounts: []db.OauthAccount{{Provider: "github", AccessTokenEncrypted: []byte("x")}}}
+	importer := func(lookup error) *GitHubImportService {
+		minter := newTestRepoConnectionService(t, &mockRepoConnectionDB{
+			queryRowFn: func(context.Context, string, ...any) pgx.Row {
+				return mockRepoConnectionRow{scanFn: func(...any) error { return lookup }}
+			},
+		})
+		return NewGitHubImportService(nil, nil, tokenDB, &githubImportHRepoHost{}, githubImportHDecrypter{token: "gho_user"}, "https://plue.test",
+			WithGitHubImportHTTPClient(api.Client()),
+			WithGitHubImportInstallationTokens(minter),
+		)
+	}
+
+	token, _, _, err := importer(pgx.ErrNoRows).githubCloneInfoForRepo(ctx, 7, "octo", "demo")
+	require.NoError(t, err)
+	assert.Equal(t, "gho_user", token, "no installation covers the repo, so the user's own token reads it")
+
+	_, _, _, err = importer(assert.AnError).githubCloneInfoForRepo(ctx, 7, "octo", "demo")
+	require.ErrorContains(t, err, "failed to load github app installation")
+}

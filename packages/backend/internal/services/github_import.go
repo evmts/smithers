@@ -2532,8 +2532,9 @@ func (s *GitHubImportService) githubCloneInfoForRepoWithPermissions(ctx context.
 }
 
 // githubImportSourceToken prefers a short-lived GitHub App installation token.
-// A linked OAuth token remains the fallback for imports made before a
-// repo_connection exists. Absence of either credential is not itself an error:
+// A linked OAuth token is the fallback only when no installation covers the
+// repository; every other minting failure is the import's error. Absence of
+// either credential is not itself an error:
 // the anonymous metadata probe below keeps public imports working and produces
 // a terminal, user-visible error if GitHub hides a private repository with 404.
 // The bool reports an installation token, which proves nothing about the
@@ -2541,8 +2542,12 @@ func (s *GitHubImportService) githubCloneInfoForRepoWithPermissions(ctx context.
 func (s *GitHubImportService) githubImportSourceToken(ctx context.Context, userID int64, owner, repo string, permissions map[string]string) (string, db.OauthAccount, bool, error) {
 	if s.appTokens != nil {
 		installation, err := s.appTokens.CreateGitHubInstallationTokenForUserRepo(ctx, userID, owner, repo, permissions)
-		if err == nil && strings.TrimSpace(installation.Token) != "" {
+		if err == nil {
 			return strings.TrimSpace(installation.Token), db.OauthAccount{}, true, nil
+		}
+		var apiErr *pkgerrors.APIError
+		if !errors.As(err, &apiErr) || apiErr.Cause() != errGitHubAppNotInstalled {
+			return "", db.OauthAccount{}, false, err
 		}
 	}
 	token, account, err := s.loadGitHubOAuthToken(ctx, userID)

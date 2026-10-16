@@ -135,3 +135,27 @@ func TestGitHubRepoListService_PreservesCachedTokenOnGeneric403(t *testing.T) {
 	_, ok := getCachedInstallationToken(testTokenKey(instID))
 	assert.True(t, ok, "the cached installation token must be preserved on generic 403")
 }
+
+type scopeRecordingTokenIssuer struct{ scope *GitHubTokenScope }
+
+func (f scopeRecordingTokenIssuer) CreateGitHubInstallationToken(_ context.Context, installationID int64, scope GitHubTokenScope) (GitHubInstallationToken, error) {
+	*f.scope = scope
+	return GitHubInstallationToken{InstallationID: installationID, Token: "install-token"}, nil
+}
+
+// #3694: GitHub paginates whatever the token can see, so the listing token sees
+// only the caller's connected repositories and its Link header counts nothing else.
+func TestGitHubRepoListService_TokenSeesOnlyConnectedRepos(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"repositories":[{"id":1,"full_name":"acme/demo","name":"demo","owner":{"login":"acme"}}]}`))
+	}))
+	defer upstream.Close()
+	t.Setenv(envGitHubAppAPIBaseURL, upstream.URL)
+
+	var scope GitHubTokenScope
+	svc := NewGitHubRepoListService(fakeRepoListDB{connections: []int64{1, 4}}, scopeRecordingTokenIssuer{scope: &scope})
+	_, err := svc.ListInstallationRepositories(context.Background(), 42, url.Values{})
+	require.NoError(t, err)
+	assert.False(t, scope.AllRepositories)
+	assert.Equal(t, []int64{1, 4}, scope.RepositoryIDs)
+}
