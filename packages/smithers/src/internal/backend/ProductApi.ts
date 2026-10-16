@@ -4396,23 +4396,23 @@ export type GetApiReposOwnerRepoContentsResponse = AnyJSON
 
 export interface GetApiReposOwnerRepoContentsInput {
   readonly path: { readonly owner: string; readonly repo: string }
-  readonly query?: { readonly ref?: string }
+  readonly query?: { readonly ref?: string; readonly limit?: number; readonly after?: string }
 }
 
 /** GET /api/repos/{owner}/{repo}/contents */
 export const getApiReposOwnerRepoContents = (transport: Transport, input: GetApiReposOwnerRepoContentsInput): Promise<GetApiReposOwnerRepoContentsResponse> =>
-  transport.request("GET", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/contents${search({ ref: input.query?.ref })}`) as Promise<GetApiReposOwnerRepoContentsResponse>
+  transport.request("GET", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/contents${search({ ref: input.query?.ref, limit: input.query?.limit, after: input.query?.after })}`) as Promise<GetApiReposOwnerRepoContentsResponse>
 
 export type GetApiReposOwnerRepoContentsPathResponse = AnyJSON
 
 export interface GetApiReposOwnerRepoContentsPathInput {
   readonly path: { readonly owner: string; readonly repo: string; readonly path: string }
-  readonly query?: { readonly ref?: string }
+  readonly query?: { readonly ref?: string; readonly limit?: number; readonly after?: string }
 }
 
 /** GET /api/repos/{owner}/{repo}/contents/{path} */
 export const getApiReposOwnerRepoContentsPath = (transport: Transport, input: GetApiReposOwnerRepoContentsPathInput): Promise<GetApiReposOwnerRepoContentsPathResponse> =>
-  transport.request("GET", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/contents/${segment(input.path.path)}${search({ ref: input.query?.ref })}`) as Promise<GetApiReposOwnerRepoContentsPathResponse>
+  transport.request("GET", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/contents/${segment(input.path.path)}${search({ ref: input.query?.ref, limit: input.query?.limit, after: input.query?.after })}`) as Promise<GetApiReposOwnerRepoContentsPathResponse>
 
 export type GetApiReposOwnerRepoDevtoolsSnapshotsResponse = AnyJSON
 

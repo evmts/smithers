@@ -2574,12 +2574,16 @@ type GetAPIReposOwnerRepoChangesChangeIDOperationsParams struct {
 
 // GetAPIReposOwnerRepoContentsParams is the query of GET /api/repos/{owner}/{repo}/contents.
 type GetAPIReposOwnerRepoContentsParams struct {
-	Ref *string
+	Ref   *string
+	Limit *int64
+	After *string
 }
 
 // GetAPIReposOwnerRepoContentsPathParams is the query of GET /api/repos/{owner}/{repo}/contents/{path}.
 type GetAPIReposOwnerRepoContentsPathParams struct {
-	Ref *string
+	Ref   *string
+	Limit *int64
+	After *string
 }
 
 // GetAPIReposOwnerRepoIssuesParams is the query of GET /api/repos/{owner}/{repo}/issues.
@@ -5414,6 +5418,12 @@ func (c *Client) GetAPIReposOwnerRepoContents(ctx context.Context, owner string,
 	if params.Ref != nil {
 		query.Set("ref", *params.Ref)
 	}
+	if params.Limit != nil {
+		query.Set("limit", strconv.FormatInt(*params.Limit, 10))
+	}
+	if params.After != nil {
+		query.Set("after", *params.After)
+	}
 	var out AnyJSON
 	err := c.do(ctx, "GET", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/contents", query, nil, &out)
 	return out, err
@@ -5424,6 +5434,12 @@ func (c *Client) GetAPIReposOwnerRepoContentsPath(ctx context.Context, owner str
 	query := url.Values{}
 	if params.Ref != nil {
 		query.Set("ref", *params.Ref)
+	}
+	if params.Limit != nil {
+		query.Set("limit", strconv.FormatInt(*params.Limit, 10))
+	}
+	if params.After != nil {
+		query.Set("after", *params.After)
 	}
 	var out AnyJSON
 	err := c.do(ctx, "GET", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/contents/"+url.PathEscape(pathParam), query, nil, &out)

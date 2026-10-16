@@ -3850,6 +3850,27 @@ paths:
           example: 3bad5fe63720eb8e3f7ae33a10de9e7aefb2dc74
           schema:
             type: string
+        - name: limit
+          in: query
+          required: false
+          description: >-
+            The most entries this directory listing returns in one page. A
+            value outside 1 to 1000 is refused.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 1000
+        - name: after
+          in: query
+          required: false
+          description: >-
+            The page cursor: the `path` of the last entry of the previous page,
+            which is that page's `X-Next-Cursor` percent-decoded. It must name
+            an immediate child of the root, else the request is refused.
+          example: apps
+          schema:
+            type: string
       x-smithers-client-contract: multi-v1
       security:
         - tokenAuth: []
@@ -3858,6 +3879,24 @@ paths:
       responses:
         '200':
           description: Successful response
+          headers:
+            X-Next-Cursor:
+              description: >-
+                Set while entries remain after this page: the percent-encoded
+                `path` of this page's last entry, to send back percent-decoded
+                as `after`. Percent-encoded because a name may begin or end
+                with whitespace, which a header value loses. Absent on the
+                last page.
+              schema:
+                type: string
+            X-Contents-Commit:
+              description: >-
+                The commit this listing was read at, resolved from `ref` or
+                from the repository's default bookmark. Send it back as `ref`
+                so the pages after this one come from one revision even while
+                the bookmark moves.
+              schema:
+                type: string
           content:
             application/json:
               schema:
@@ -3908,6 +3947,28 @@ paths:
           example: 3bad5fe63720eb8e3f7ae33a10de9e7aefb2dc74
           schema:
             type: string
+        - name: limit
+          in: query
+          required: false
+          description: >-
+            The most entries a directory listing returns in one page. A value
+            outside 1 to 1000 is refused. A file read ignores it.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 1000
+        - name: after
+          in: query
+          required: false
+          description: >-
+            The page cursor for a directory listing: the `path` of the last
+            entry of the previous page, which is that page's `X-Next-Cursor`
+            percent-decoded. It must name an immediate child of this
+            directory, else the request is refused. A file read ignores it.
+          example: apps/app
+          schema:
+            type: string
       x-smithers-client-contract: multi-v1
       security:
         - tokenAuth: []
@@ -3916,6 +3977,24 @@ paths:
       responses:
         '200':
           description: Successful response
+          headers:
+            X-Next-Cursor:
+              description: >-
+                Set on a directory listing while entries remain after this
+                page: the percent-encoded `path` of this page's last entry, to
+                send back percent-decoded as `after`. Percent-encoded because
+                a name may begin or end with whitespace, which a header value
+                loses. Absent on the last page and when the path names a file.
+              schema:
+                type: string
+            X-Contents-Commit:
+              description: >-
+                The commit a directory listing was read at, resolved from `ref`
+                or from the repository's default bookmark. Send it back as `ref`
+                so the pages after this one come from one revision even while
+                the bookmark moves. Absent when the path names a file.
+              schema:
+                type: string
           content:
             application/json:
               schema:
