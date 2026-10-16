@@ -46,13 +46,28 @@ type publicationFixture struct {
 	installation int64
 }
 
-// publicationInstallations gives each fixture its own App installation id:
-// installation tokens are cached process-wide by installation.
+// publicationInstallations separates publication fixtures. Other fixture
+// families have independent sequences, so their cached tokens are cleared below.
 var publicationInstallations atomic.Int64
+
+func TestPublicationFixtureDoesNotReuseHostedInstallationToken(t *testing.T) {
+	hosted := newHostedIssueFixture(t)
+	var installation int64
+	require.NoError(t, hosted.pool.QueryRow(t.Context(), `SELECT installation_id FROM github_app_installations`).Scan(&installation))
+	// Reach the overlap between the two fixture sequences without constructing
+	// hundreds of unrelated repositories. Never move the sequence backwards.
+	if next := installation - 9101; publicationInstallations.Load() < next {
+		publicationInstallations.Store(next)
+	}
+	f := newPublicationFixture(t, false)
+	require.NotEmpty(t, f.main)
+}
 
 func newPublicationFixture(t *testing.T, private bool, issues ...int64) *publicationFixture {
 	t.Helper()
 	installation := 9100 + publicationInstallations.Add(1)
+	invalidateCachedInstallationToken(installation)
+	t.Cleanup(func() { invalidateCachedInstallationToken(installation) })
 	f := newMythicalServiceFixture(t)
 	ctx := context.Background()
 	f.commit("✨ feat: journey", "JOURNEY.md", "Add a greeting to JOURNEY.md\n")
