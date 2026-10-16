@@ -4,10 +4,12 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os/exec"
 	"sync"
 	"testing"
 
@@ -97,7 +99,7 @@ func TestJourneyTodoLabelFrozenSnapshot(t *testing.T) {
 	// FileTodo's revision shape (text, acceptance, by, at) plus the issue door's
 	// reason and issue_digest: one revision model, never a second prompt/actor one.
 	require.Equal(t, "from-issue", revisions[0]["reason"])
-	require.Equal(t, map[string]any{"kind": "person", "login": "Ben"}, revisions[0]["by"])
+	require.Equal(t, map[string]any{"kind": "person", "login": "Ben", "name": "", "avatar_url": todoAvatar(db.User{}), "color_index": float64(0)}, revisions[0]["by"])
 	require.Equal(t, first.IssueDigest, revisions[0]["issue_digest"])
 	require.Equal(t, "Retry webhooks\n\nB1", revisions[0]["text"])
 	require.Equal(t, []any{}, revisions[0]["acceptance"])
@@ -203,4 +205,68 @@ func TestTodoLabelDoorAdmitsOnlyAuthorizedLabels(t *testing.T) {
 	kept, err := q.GetMythicalItem(ctx, first.ID)
 	require.NoError(t, err)
 	require.Equal(t, "cancelled", kept.State)
+}
+
+func TestLabelTodoOwesKeyedCommittedNotice(t *testing.T) {
+	pool := newProductTestPool(t)
+	ctx := context.Background()
+	var person, repo int64
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO users(username,lower_username,display_name,avatar_url) VALUES('ben','ben','Ben Member','https://example.test/ben.png') RETURNING id`).Scan(&person))
+	_, err := pool.Exec(ctx, `INSERT INTO self_host_owners(user_id) VALUES($1)`, person)
+	require.NoError(t, err)
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO repositories(user_id,name,lower_name) VALUES($1,'app','app') RETURNING id`, person).Scan(&repo))
+	_, err = db.New(pool).RequestMythicalBootstrap(ctx, repo, person, 1, false)
+	require.NoError(t, err)
+	s := NewMythicalService(pool, nil)
+	require.NoError(t, s.ObserveIssue(ctx, repo, mythicalIssue{Number: 7, Title: "Title", Body: "Body", State: "open", TextByMaintainer: true}, gitHubLabelApplication{Label: "todo", By: "ben", ByMember: true, EventID: 1}))
+	item, err := db.New(pool).GetMythicalItemByIssue(ctx, repo, 7)
+	require.NoError(t, err)
+	notice := mythicalChecksOf(item).Notice
+	require.NotNil(t, notice)
+	require.Equal(t, mythicalCommittedNotice(item.Number.Int64, ""), *notice)
+	var revisions []struct{ By map[string]any }
+	require.NoError(t, json.Unmarshal(item.Revisions, &revisions))
+	require.Equal(t, "Ben Member", revisions[0].By["name"])
+	require.Equal(t, "https://example.test/ben.png", revisions[0].By["avatar_url"])
+}
+
+func TestLabelTodoRepairsLegacyActorBeforeBrowserDecoding(t *testing.T) {
+	f := newPublicationFixture(t, false)
+	ctx := context.Background()
+	const repo = "rehearsal-owner/app"
+	f.fake.SetCollaborator(8, "ben", "write")
+	_, err := f.pool.Exec(ctx, `INSERT INTO collaborators(repository_id,github_login,github_id,permission) VALUES($1,'ben',8,'write')`, f.repoID)
+	require.NoError(t, err)
+	bindIssueEventMembers(t, f.pool, f.repoID)
+	_, err = f.pool.Exec(ctx, `UPDATE users SET display_name='Ben Member',avatar_url='https://example.test/ben.png' WHERE lower_username='ben'`)
+	require.NoError(t, err)
+	require.NoError(t, f.service.ReadIssueEvents(ctx, f.repoID))
+	n := f.fake.OpenIssue(repo, "ben", "Label actor", "Frozen prompt")
+	f.fake.LabelIssue(repo, n, "ben", "todo")
+	require.NoError(t, f.service.ReadIssueEvents(ctx, f.repoID))
+	item, err := db.New(f.pool).GetMythicalItemByIssue(ctx, f.repoID, n)
+	require.NoError(t, err)
+	// Simulate a persisted revision from the broken label door.
+	_, err = f.pool.Exec(ctx, `UPDATE mythical_items SET revisions=jsonb_set(revisions,'{0,by}','{"kind":"person","login":"ben"}') WHERE id=$1`, item.ID)
+	require.NoError(t, err)
+	card, err := f.service.Todo(ctx, f.repoID, item.Number.Int64)
+	require.NoError(t, err)
+	stored, err := db.New(f.pool).GetMythicalItemByIssue(ctx, f.repoID, n)
+	require.NoError(t, err)
+	var revisions []struct{ By map[string]any }
+	require.NoError(t, json.Unmarshal(stored.Revisions, &revisions))
+	require.Equal(t, "Ben Member", revisions[0].By["name"])
+	require.Equal(t, "https://example.test/ben.png", revisions[0].By["avatar_url"])
+	normalized, err := json.Marshal(card)
+	require.NoError(t, err)
+	var browser map[string]any
+	require.NoError(t, json.Unmarshal(normalized, &browser))
+	raw, err := json.Marshal(map[string]any{"todo": browser, "home": HomeModel(repo, []map[string]any{browser}, nil)})
+	require.NoError(t, err)
+	// Run the actual browser contracts on the server's persisted projection.
+	command := exec.Command("bun", "-e", `import {TodoCardSchema} from './packages/rpc/src/TodoCard.ts'; import {HomeCardSchema} from './packages/rpc/src/HomeCard.ts'; const x=await Bun.stdin.json(); TodoCardSchema.parse(x.todo); HomeCardSchema.parse(x.home);`)
+	command.Dir = "../../../.."
+	command.Stdin = bytes.NewReader(raw)
+	output, err := command.CombinedOutput()
+	require.NoError(t, err, string(output))
 }

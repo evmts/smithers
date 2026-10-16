@@ -38,7 +38,7 @@ export async function issueTodoInstall(page: Page, label = false) {
       JSON.stringify({ runId: "draft", type: "done", reason: "stop" })
     ].join("\n") })
   })
-  const make = (n: number, text: string): TodoCard => ({ ...fixtures.queued.model, n, title: n === 1 && label ? "Retry webhooks" : `Fixture ${n}`, place: n, issue: undefined, prompt_revisions: [{ ...fixtures.queued.model.prompt_revisions[0]!, text, acceptance: [] }] })
+  const make = (n: number, text: string): TodoCard => ({ ...fixtures.queued.model, n, title: n === 1 && label ? "Retry webhooks" : `Fixture ${n}`, place: n, issue: label ? { number: 5, url: `https://github.com/${ISSUE_REPO}/issues/5`, fixes: true } : undefined, prompt_revisions: [{ ...fixtures.queued.model.prompt_revisions[0]!, text, acceptance: [], ...(label ? { by: { kind: "person" as const, login: "ben", name: "Ben Member", avatar_url: "https://example.test/ben.png", color_index: 0 } } : {}) }] })
   let todos = label ? [make(1, "Retry webhooks\n\nB1")] : [make(1, "First"), make(2, "Second")]
   const commits: unknown[] = []
   const committedKeys = new Set<string>()

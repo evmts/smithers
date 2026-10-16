@@ -638,6 +638,7 @@ export const createTodoSeam = (ctx: SeamContext, options: TodoSeamOptions = {}) 
       const response = await ctx.http(`${ctx.baseUrl}${TODOS_PATH}`, { credentials: "include" })
       const body: unknown = response.ok ? await response.json() : undefined
       const parsed = Array.isArray(body) ? TodoCardSchema.array().safeParse(body.map(value => todoActors(value, options.actors?.()))) : undefined
+      if (response.ok && parsed && !parsed.success) ctx.report?.("todo.list", new Error(`Invalid TODO fields: ${parsed.error.issues.map(issue => issue.path.join(".")).join(", ")}`))
       next = response.status === 401 || response.status === 403 ? { error: "forbidden" }
         : response.status === 404 ? { error: "absent" }
         : !response.ok ? { ...shared.list.snapshot, error: "internal" }

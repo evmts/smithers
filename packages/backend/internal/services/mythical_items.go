@@ -213,8 +213,12 @@ func (s *MythicalService) observeIssueInTx(ctx context.Context, admission pgx.Tx
 	if len(body) > mythicalPromptBytes {
 		body = body[:mythicalPromptBytes]
 	}
+	actor, err := s.todoRevisionActor(ctx, repositoryID, applied.By)
+	if err != nil {
+		return err
+	}
 	revision, _ := json.Marshal([]map[string]any{{"text": issue.Title + "\n\n" + body, "acceptance": []string{},
-		"by": map[string]any{"kind": "person", "login": applied.By}, "at": s.now().UTC().Format(time.RFC3339Nano),
+		"by": actor, "at": s.now().UTC().Format(time.RFC3339Nano),
 		"reason": "from-issue", "issue_digest": digest}})
 	return s.withTodoLabelTransaction(ctx, admission, func(tx pgx.Tx) error {
 		q := db.New(tx)
@@ -254,6 +258,17 @@ func (s *MythicalService) observeIssueInTx(ctx context.Context, admission pgx.Tx
 			return nil
 		}
 		if item, err = reserveTodoBranch(ctx, q, item); err != nil {
+			return err
+		}
+		link := ""
+		if repository, owner, err := s.repository(ctx, repositoryID); err == nil && s.origin() != "" {
+			link = s.origin() + "/" + owner + "/" + repository.Name
+		}
+		committed := mythicalChecksOf(item)
+		notice := mythicalCommittedNotice(item.Number.Int64, link)
+		committed.Notice = &notice
+		item.Checks = committed.encode()
+		if item, err = q.SaveMythicalItem(ctx, item); err != nil {
 			return err
 		}
 		fact, _ := json.Marshal(map[string]any{"item": uuidString(item.ID), "n": item.Number.Int64, "attempt": item.Attempt,

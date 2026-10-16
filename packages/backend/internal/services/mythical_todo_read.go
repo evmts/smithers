@@ -154,9 +154,9 @@ func (s *MythicalService) todoCardAtQueuePosition(ctx context.Context, item db.M
 	if err != nil {
 		return nil, err
 	}
-	revisions := item.Revisions
-	if len(revisions) == 0 {
-		revisions = []byte(`[]`)
+	revisions, err := s.repairTodoRevisionActors(ctx, item)
+	if err != nil {
+		return nil, err
 	}
 	waits := []map[string]any{}
 	checks := mythicalChecksOf(item)
@@ -755,4 +755,65 @@ func todoPRReviews(inputs []todoGitHubInput) []map[string]any {
 		reviews = append(reviews, map[string]any{"id": strings.TrimPrefix(input.Key, "review:"), "state": input.ReviewState, "by": input.Actor, "at": input.UpdatedAt.UTC().Format(time.RFC3339Nano)})
 	}
 	return reviews
+}
+
+// todoRevisionActor uses the labeler's member profile without using display
+// fields as authorization. The recorded GitHub login remains the attribution.
+func (s *MythicalService) todoRevisionActor(ctx context.Context, repository int64, login string) (map[string]any, error) {
+	var id int64
+	err := s.store.QueryRow(ctx, `SELECT id FROM (
+ SELECT c.user_id AS id,0 AS priority FROM collaborators c WHERE c.repository_id=$1 AND lower(c.github_login)=lower($2) AND c.user_id IS NOT NULL
+ UNION ALL SELECT user_id,1 FROM oauth_accounts WHERE provider IN ('github','workos') AND lower(profile_data->>'login')=lower($2)
+ UNION ALL SELECT id,2 FROM users WHERE lower_username=lower($2)
+ ) profiles ORDER BY priority LIMIT 1`, repository, login).Scan(&id)
+	var person db.User
+	if err == nil {
+		person, err = s.queries().GetUserByID(ctx, id)
+	}
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
+	}
+	return map[string]any{"kind": "person", "login": login, "name": person.DisplayName, "avatar_url": todoAvatar(person), "color_index": 0}, nil
+}
+
+// Repair the old label door's incomplete actors as they are read. The CAS
+// preserves concurrent amendments; existing attribution fields never change.
+func (s *MythicalService) repairTodoRevisionActors(ctx context.Context, item db.MythicalItem) (json.RawMessage, error) {
+	if len(item.Revisions) == 0 {
+		return json.RawMessage(`[]`), nil
+	}
+	var revisions []map[string]any
+	if err := json.Unmarshal(item.Revisions, &revisions); err != nil {
+		return nil, err
+	}
+	changed := false
+	for _, revision := range revisions {
+		by, ok := revision["by"].(map[string]any)
+		if !ok || by["kind"] != "person" {
+			continue
+		}
+		if by["name"] != nil && by["avatar_url"] != nil && by["color_index"] != nil {
+			continue
+		}
+		login, _ := by["login"].(string)
+		actor, err := s.todoRevisionActor(ctx, item.RepositoryID, login)
+		if err != nil {
+			return nil, err
+		}
+		for _, key := range []string{"name", "avatar_url", "color_index"} {
+			if by[key] == nil {
+				by[key] = actor[key]
+				changed = true
+			}
+		}
+	}
+	if !changed {
+		return item.Revisions, nil
+	}
+	repaired, err := json.Marshal(revisions)
+	if err != nil {
+		return nil, err
+	}
+	_, err = s.store.Exec(ctx, `UPDATE mythical_items SET revisions=$2 WHERE id=$1 AND revisions=$3::jsonb`, item.ID, repaired, item.Revisions)
+	return repaired, err
 }

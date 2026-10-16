@@ -996,15 +996,32 @@ describe("TodoSeam — the TODO list Home reads where no `home` topic is served 
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     if (login !== null) await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login, admin: false, scopesPlain: null }).isPersisted.promise
     const calls: string[] = []
+    const reports: { scope: string; error: unknown }[] = []
     let disposed = false
     const finalizers: (() => void)[] = []
     const context: SeamContext = {
+      report: (scope, error) => reports.push({ scope, error }),
       http: async (url, init) => { calls.push(`${init?.method ?? "GET"} ${url}`); return answers.shift()?.() ?? new Promise<Response>(() => {}) },
       store, dispatch: store.dispatch, baseUrl: "https://install.test", actor: () => "user", nextOrdinal: store.nextOrdinal, isDisposed: () => disposed
     }
     const seam = createTodoSeam(context, { debounceMs: 1, listPollMs: 5, onDispose: fn => finalizers.push(fn) })
-    return { seam, calls, close: () => { disposed = true; finalizers.forEach(fn => fn()) } }
+    return { seam, calls, reports, close: () => { disposed = true; finalizers.forEach(fn => fn()) } }
   }
+
+  test("a broken label actor reports only the rejected field paths", async () => {
+    const model = fixtures.queued.model
+    const broken = { ...model, prompt_revisions: [{ ...model.prompt_revisions[0]!, text: "PRIVATE PROMPT", by: { kind: "person", login: "ben" } }] }
+    const h = await listHarness([() => json([broken], 200)])
+    const leave = h.seam.list.subscribe(() => {})
+    try {
+      await waitFor(() => h.seam.list.get().error === "invalid")
+      expect(h.reports).toHaveLength(1)
+      expect(h.reports[0]!.scope).toBe("todo.list")
+      const message = String(h.reports[0]!.error)
+      for (const field of ["name", "avatar_url", "color_index"]) expect(message).toContain(`0.prompt_revisions.0.by.${field}`)
+      expect(message).not.toContain("PRIVATE PROMPT")
+    } finally { leave(); h.close() }
+  })
 
   test("a host that serves no TODOs answers absent and drops the list it held", async () => {
     const last = deferred<Response>()

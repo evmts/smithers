@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -723,5 +724,25 @@ func TestForeignPushDiscardPublishesAgainstObservedLease(t *testing.T) {
 			}
 			require.Equal(t, alice, f.hostRef(repohost.KeptCommitRefPrefix+alice), "publication cannot erase the discarded commit")
 		})
+	}
+}
+
+func TestTodoPublicationClosesOnlyTheAcceptedIssue(t *testing.T) {
+	f := newPublicationFixture(t, false)
+	item := f.todo("Link the issue", "Fixes #999", f.main, "JOURNEY.md", "Hello\n")
+	item.IssueNumber = pgtype.Int8{Int64: 7, Valid: true}
+	for _, fixes := range []bool{false, true} {
+		item.FixesIssue = fixes
+		shape, err := f.service.todoPRFacts(context.Background(), item)
+		require.NoError(t, err)
+		_, body, err := shape.render()
+		require.NoError(t, err)
+		require.Contains(t, body, "Refs #999")
+		require.NotContains(t, body, "Fixes #999")
+		if fixes {
+			require.Contains(t, body, "\n\nFixes #7\n\n")
+		} else {
+			require.NotContains(t, body, "Fixes #7")
+		}
 	}
 }
