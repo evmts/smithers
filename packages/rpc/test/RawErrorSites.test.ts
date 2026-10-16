@@ -47,7 +47,11 @@ describe("raw failure sites under src", () => {
 
   it("scans the sources it guards", () => {
     expect(sources(sourceRoot).map((path) => relative(packageRoot, path))).toEqual(
-      expect.arrayContaining(["src/ApplicationTarget.ts", "src/AgentTurnJournal.ts", "src/AgentRoles.ts"])
+      expect.arrayContaining([
+        join("src", "ApplicationTarget.ts"),
+        join("src", "AgentTurnJournal.ts"),
+        join("src", "AgentRoles.ts")
+      ])
     )
   })
 

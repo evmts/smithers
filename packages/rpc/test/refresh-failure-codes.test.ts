@@ -9,7 +9,7 @@ import { digestOf, validationErrors } from "../scripts/refresh-failure-codes.mjs
 const sourceScript = fileURLToPath(new URL("../scripts/refresh-failure-codes.mjs", import.meta.url))
 
 const fixture = () => {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "smithers-rpc-failure-codes-")))
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "smithers rpc failure codes-")))
   const script = join(root, "packages", "rpc", "scripts", "refresh-failure-codes.mjs")
   const canonical = join(root, "docs", "api", "failure-codes.json")
   const vendored = join(root, "packages", "rpc", "src", "plue-failure-codes.json")

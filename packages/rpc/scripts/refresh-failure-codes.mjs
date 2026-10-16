@@ -19,7 +19,7 @@
 import { readFileSync, writeFileSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { dirname, join, resolve } from "node:path"
-import { fileURLToPath } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const canonicalPath = join(here, "..", "..", "..", "docs", "api", "failure-codes.json")
@@ -258,4 +258,4 @@ const main = async () => {
   console.log(`refresh-failure-codes: wrote ${document.codes.length} codes from ${source} (${document.digest})`)
 }
 
-if (process.argv[1] !== undefined && import.meta.url === `file://${resolve(process.argv[1])}`) await main()
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) await main()
