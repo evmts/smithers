@@ -141,6 +141,7 @@ export const PrepareWorkspace = Action.make("issue-sweep/prepare-workspace", {
   payload: Payload,
   success: Workspace,
   error: WorkspaceFailed,
+  implementationVersion: "prepare-workspace/v1",
   idempotencyKey: { workspace: "issue-sweep/v2" }
 })
 
@@ -196,6 +197,7 @@ export const Adopt = Action.make("issue-sweep/adopt", {
   }),
   success: Report,
   error: Schema.Union([AgentFailed, NoChange, WorkspaceFailed, AdoptConflicted]),
+  implementationVersion: "adopt/v1",
   idempotencyKey: (payload) => ({ adopt: "issue-sweep/v2", attempt: payload.attempt ?? 1 })
 })
 
@@ -442,7 +444,7 @@ const prepareWorkspace = PrepareWorkspace.toLayer((input) => {
       cause instanceof WorkspaceFailed ? cause : new WorkspaceFailed({ message: cause.message })
     )
   )
-})
+}, { implementationVersion: "prepare-workspace/v1" })
 
 // The longest one agent may work on one issue before the flow stops it.
 const agentBudget = Duration.hours(2)
@@ -959,7 +961,7 @@ export const adoptWork = (input: typeof Adopt.payloadSchema.Type, place: Place) 
 
 /** Adopt, landing each issue's work in the workspace `placeAt` names. */
 export const adoptAt = (placeAt: (issue: number) => Place) =>
-  Adopt.toLayer((input) => adoptWork(input, placeAt(input.issue)))
+  Adopt.toLayer((input) => adoptWork(input, placeAt(input.issue)), { implementationVersion: "adopt/v1" })
 
 /**
  * Whether `main` in `repository` moved past `onto` within `within`, fetching

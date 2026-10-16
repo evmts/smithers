@@ -26,6 +26,7 @@ import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
  * restarted one; only the implementation is attached per composition.
  */
 const ForkOnce = Action.make("fork-once", {
+  implementationVersion: "fork-once/v1",
   payload: {},
   success: Schema.String,
   tier: "sealed",
@@ -39,12 +40,14 @@ const ForkFlow = Flow.make("TimeTravel/ExecutableFork", {
 })
 
 const PrefixSealed = Action.make("fork-prefix-sealed", {
+  implementationVersion: "fork-prefix-sealed/v1",
   payload: {},
   success: Schema.String,
   tier: "sealed",
   idempotencyKey: "fork-prefix-sealed-v1"
 })
 const ForkSuffix = Action.make("fork-suffix", {
+  implementationVersion: "fork-suffix/v1",
   payload: {},
   success: Schema.String,
   tier: "sealed",
@@ -106,8 +109,7 @@ describe("SQL fork execution", () => {
             Effect.sync(() => {
               dispatches++
               return "action-result"
-            })
-          ),
+            }), { implementationVersion: "fork-once/v1" }),
           Interpreter.layer(ForkFlow)
         ).pipe(
           Layer.provideMerge(Action.layerImplementations),
@@ -247,8 +249,7 @@ describe("SQL fork execution", () => {
                 success: Schema.String,
                 metadata: { readSet: [], writeSet: [], boundaryMode: "hard" },
                 execute: Effect.sync(() => `sealed-${++dispatches.sealed}`)
-              })
-            ),
+              }), { implementationVersion: "fork-prefix-sealed/v1" }),
             middle.toLayer(() => Effect.sync(() => `middle-${++dispatches.middle}`)),
             ForkSuffix.toLayer(() =>
               Action.make({
@@ -258,8 +259,7 @@ describe("SQL fork execution", () => {
                 success: Schema.String,
                 metadata: { readSet: [], writeSet: [], boundaryMode: "hard" },
                 execute: Effect.sync(() => `suffix-${++dispatches.suffix}`)
-              })
-            ),
+              }), { implementationVersion: "fork-suffix/v1" }),
             Interpreter.layer(flow)
           ).pipe(
             Layer.provideMerge(Action.layerImplementations),

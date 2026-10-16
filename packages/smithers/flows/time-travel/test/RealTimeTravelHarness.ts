@@ -139,6 +139,7 @@ export const runRealEngine = <A, E>(
 ) => Effect.scoped(effect.pipe(Effect.provide(realEngineLayer(filename, hostId))))
 
 const SealedStep = Action.make("time-travel/e2e/sealed-step", {
+  implementationVersion: "time-travel/e2e/sealed-step/v1",
   payload: {},
   success: Schema.String,
   tier: "sealed",
@@ -196,7 +197,7 @@ export const parkSealedFlow = (
       execute
     })
     const implementation = Layer.merge(
-      SealedStep.toLayer(() => boundary),
+      SealedStep.toLayer(() => boundary, { implementationVersion: "time-travel/e2e/sealed-step/v1" }),
       Interpreter.layer(SealedParked)
     )
     return yield* SealedParked.execute({}, { executionId, discard: true }).pipe(

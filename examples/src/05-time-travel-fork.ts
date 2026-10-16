@@ -31,7 +31,8 @@ export const Measure = Action.make("examples/Measure", {
   payload: {},
   success: Schema.String,
   tier: "sealed",
-  idempotencyKey: "examples/measure/v1"
+  idempotencyKey: "examples/measure/v1",
+  implementationVersion: "measure/v1"
 })
 
 export const Analyse = Flow.make("examples/Analyse", {
@@ -85,7 +86,8 @@ export const main = (filename: string): Effect.Effect<Summary> =>
       Effect.sync(() => {
         dispatches += 1
         return "42"
-      })
+      }),
+      { implementationVersion: "measure/v1" }
     )
 
     /** The implementation and the body that names it, over one table. */

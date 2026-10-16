@@ -167,6 +167,7 @@ describe("Action.make declared overload", () => {
     Effect.gen(function*() {
       const NumberPayload = Schema.Struct({ value: Schema.NumberFromString })
       const declared = Action.make("Declared/execution", {
+        implementationVersion: "Declared/execution/v1",
         payload: NumberPayload,
         success: Schema.Number,
         tier: "sealed",
@@ -185,8 +186,7 @@ describe("Action.make declared overload", () => {
         Effect.sync(() => {
           seen.push(value)
           return value * 2
-        })
-      ).pipe(Layer.provideMerge(layerMemory))
+        }), { implementationVersion: "Declared/execution/v1" }).pipe(Layer.provideMerge(layerMemory))
 
       expect(Graph.nodes(Graph.build(invocation, { value: 21 }))[0]).toMatchObject({
         kind: "ActionCall",
