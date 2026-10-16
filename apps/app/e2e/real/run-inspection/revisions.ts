@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process"
+import { spawnSync as nativeSpawnSync } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import type { Page, TestInfo } from "@playwright/test"
@@ -35,6 +35,70 @@ export type DeployedSourceFact =
   | { _tag: "DeployedSourceMatchesWorkingCopy"; frontendRevision: string; files: readonly string[] }
   | { _tag: "DeployedSourcePredatesWorkingCopy"; frontendRevision: string; message: string; files: readonly string[] }
 
+/**
+ * How long one VCS or cluster read may take before it is killed and named.
+ * A repository read is milliseconds of work; this budget is for a wedged
+ * child, and raising it has never been the answer to one.
+ */
+export const CHILD_BUDGET_MS = 30_000
+
+/**
+ * The child executor this runtime can actually wait on, resolved once.
+ *
+ * Under Bun, `node:child_process`'s synchronous spawn can miss the exit of a
+ * child that already finished: on GitHub's runners `git show` answered in
+ * milliseconds and the call still raised `spawnSync git ETIMEDOUT` after the
+ * whole budget, so a git-only clone read as a machine with no git and the
+ * jj-then-git fallback failed with a refusal nobody had actually made
+ * (#3763; AppsDeploy 38957448693, unit shard). `scripts/test-child` is the
+ * repair for that family: a Node supervisor waits for the exit, publishes
+ * the answer by rename, and kills the child's own process group at the
+ * budget.
+ *
+ * Node keeps the native synchronous pipe. It never had the fault, and the
+ * boundary is an ES module whose `import.meta` is a syntax error in the
+ * CommonJS Playwright transpiles this tier's specs to — a static import
+ * takes `run-inspection.spec.ts` out of the suite entirely. `require` is
+ * lazy, so a Playwright run never loads it.
+ */
+let executor: typeof nativeSpawnSync | undefined
+const childExecutor = (): typeof nativeSpawnSync => executor ??= typeof Bun === "undefined"
+  ? nativeSpawnSync
+  : (require("../../../scripts/test-child") as { readonly spawnSync: typeof nativeSpawnSync }).spawnSync
+
+/**
+ * One bounded child read: its stdout, or a throw naming the refusal.
+ *
+ * A non-zero exit throws and carries the child's own stderr, exactly as
+ * `execFileSync` raised it, because that refusal is what {@link versioned}
+ * falls through on: jj saying "There is no jj repo" is how a git-only clone
+ * is recognised, so it must stay a refusal and must not be reported as a
+ * timeout.
+ *
+ * The environment is passed rather than inherited. `execFileSync` read this
+ * process's own `process.env` at the call, and the supervised path cannot:
+ * the supervisor is started once and carries the environment it was spawned
+ * with, so a `PATH` a caller set after that — the planted `kubectl` and the
+ * git-only `PATH` these cases run on — would never reach the child and a
+ * real binary would answer in the fixture's place.
+ */
+export const childRead = (
+  command: string,
+  args: readonly string[],
+  options: { readonly cwd?: string } = {}
+): string => {
+  const result = childExecutor()(command, [...args], {
+    encoding: "utf8", timeout: CHILD_BUDGET_MS, killSignal: "SIGKILL",
+    stdio: ["ignore", "pipe", "pipe"], env: { ...process.env },
+    ...(options.cwd === undefined ? {} : { cwd: options.cwd })
+  })
+  if (result.error) throw result.error
+  if (result.status !== 0) {
+    throw new Error(`Command failed: ${command} ${args.join(" ")}\n${String(result.stderr ?? "").trim()}`)
+  }
+  return String(result.stdout)
+}
+
 /** One VCS command and how its output answers the question. */
 type VersionedRead<T> = readonly [argv: readonly string[], answer: (stdout: string) => T]
 
@@ -46,7 +110,7 @@ const versioned = <T>(root: string, jj: VersionedRead<T>, git: VersionedRead<T>)
   const refusals: string[] = []
   for (const [[command, ...args], answer] of [jj, git]) {
     try {
-      return answer(execFileSync(command!, args, { encoding: "utf8", cwd: root, timeout: 30000, stdio: ["ignore", "pipe", "pipe"] }))
+      return answer(childRead(command!, args, { cwd: root }))
     } catch (error) { refusals.push(`${command}: ${error instanceof Error ? error.message : String(error)}`) }
   }
   throw new Error(`Neither jj nor git in ${root} could answer: ${refusals.join("; ")}`)
@@ -91,10 +155,10 @@ export type ProducerFact =
 export const readHostPin = (context: string | undefined): HostPin => {
   if (context === undefined || context === "") return { _tag: "HostPinUnread",
     message: `${HOST_PIN_CONTEXT_ENV} is unset, so the coding host pin and every claim that depends on it are unexercised` }
-  const manifest = JSON.parse(execFileSync("kubectl", [
+  const manifest = JSON.parse(childRead("kubectl", [
     "--context", context, "exec", "-n", "smithers", "deploy/smithers-api", "-c", "api", "--",
     "cat", "/usr/local/lib/smithers/coding-host.json"
-  ], { encoding: "utf8", timeout: 30000 })) as { sourceCommit: string; sha256: string; object: string }
+  ])) as { sourceCommit: string; sha256: string; object: string }
   return { _tag: "HostPinRead", sourceCommit: manifest.sourceCommit, sha256: manifest.sha256, object: manifest.object }
 }
 

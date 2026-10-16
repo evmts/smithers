@@ -119,9 +119,67 @@ describe("browser frame history", () => {
     expect(seen).toEqual([root])
   })
 
-  /* An unsupported path is NOT pinned as a repository: it is not one. */
-  test("a blob path is not a repository path, so it keeps the frame-pointer mode", () => {
-    const { host } = browser("/roninjin10/e2e-verify/blob/main/src/index.ts")
+  /*
+   * A file or folder path is a repository path too, so it is pinned like any
+   * other subject: the whole target survives frame navigation, back, forward
+   * and a reload, which is what makes a pasted `blob` link reopen the same
+   * file instead of becoming a frame pointer.
+   *
+   * The refs below are the ones that are not a single plain segment, because
+   * those are where a pinning rule that tried to divide the location would go
+   * wrong: a ref holding slashes (`release/1.2`), a whole 40-character commit
+   * object name (the permalink GitHub writes), and a path holding more
+   * segments than the ref. Nothing here divides the location — the grammar
+   * keeps it whole (RepositorySubjectPath.ts) — and this is the regression
+   * that says the address bar keeps it whole as well.
+   */
+  for (const entry of [
+    "/roninjin10/e2e-verify/blob/main/src/index.ts",
+    "/roninjin10/e2e-verify/tree/main/src",
+    "/roninjin10/e2e-verify/blob/release/1.2/src/index.ts",
+    "/roninjin10/e2e-verify/tree/release/1.2",
+    `/roninjin10/e2e-verify/blob/${"a".repeat(40)}/src/index.ts`
+  ]) test(`booted from ${entry}, the file target stays in the address bar across frames, history and a reload`, () => {
+    const { host, entries } = browser(entry)
+    const history = createBrowserFrameHistory(host)
+    const seen: Array<FrameLocation | undefined> = []
+    history.subscribe((location) => seen.push(location))
+    history.replace(root)
+    history.push(card)
+    expect(host.location.pathname).toBe(entry)
+    expect(entries()).toEqual([entry, entry])
+    expect(history.current()).toEqual(card)
+    history.back()
+    expect(host.location.pathname).toBe(entry)
+    expect(history.current()).toEqual(root)
+    expect(seen).toEqual([root])
+    history.forward()
+    expect(host.location.pathname).toBe(entry)
+    expect(seen).toEqual([root, card])
+    // A reload re-enters the same file: the entry's state carries the frame
+    // and the pathname is still the whole target the reader arrived on.
+    const reloaded = createBrowserFrameHistory(host)
+    expect(reloaded.current()).toEqual(card)
+    expect(host.location.pathname).toBe(entry)
+  })
+
+  /*
+   * A path the grammar refuses is NOT pinned as a repository, because it is
+   * not one: the edge serves it as the marketing 404, so the app must not
+   * keep an address it could never reopen. These are refusals and not
+   * oversights — `blob` and `tree` with no location at all, a pull request
+   * tab this app has no view for, and a site segment that names no subject.
+   * (A traversal is not among them: the browser resolves `..` out of the
+   * address before the app reads it, so the grammar's own refusal of one is
+   * RepositorySubjectPath's to prove, not this adapter's.)
+   */
+  for (const entry of [
+    "/roninjin10/e2e-verify/blob",
+    "/roninjin10/e2e-verify/tree",
+    "/roninjin10/e2e-verify/pull/2/diff",
+    "/roninjin10/e2e-verify/wiki"
+  ]) test(`${entry} is not a repository path, so it keeps the frame-pointer mode`, () => {
+    const { host } = browser(entry)
     const history = createBrowserFrameHistory(host)
     history.push(card)
     expect(host.location.pathname).toBe(framePath(card))

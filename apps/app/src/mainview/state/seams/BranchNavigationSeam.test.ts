@@ -16,7 +16,7 @@ import { scopedControllers } from "../ControllerTestScope"
 import { headerSelection } from "../HeaderSelection"
 import { memoryStorage, silentAgent, waitFor } from "../TestFixtures"
 import { presentAppFailure } from "../controller/AppFailure"
-import { BranchNavigationFailure, branchNavigationDiagnostic, hostedBranchNodes, hostedBranchTree } from "./BranchNavigationSeam"
+import { BranchNavigationFailure, branchNavigationDiagnostic, hostedBranchNodes, hostedBranchTree, sessionBranchIndex } from "./BranchNavigationSeam"
 
 const createAppController = scopedControllers()
 const cloud = { apiVersion: 1 as const, host: "cloud" as const, version: "test", buildSha: "test", capabilities: ["identity" as const, "agent" as const, "github" as const, "cloud" as const], authFlow: "redirect" as const, sandbox: null }
@@ -28,12 +28,13 @@ const repository = (id: string, defaultBranch: string) => {
 }
 
 type Answer = (url: URL) => Response | undefined | Promise<Response | undefined>
-const harness = async (answer: Answer, bootstrap: typeof cloud | typeof install = cloud) => {
+const harness = async (answer: Answer, bootstrap: typeof cloud | typeof install = cloud, designFixture = false) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   /** Every path the page asked for, so a read that resumed nothing can be proved. */
   const reads: string[] = []
   const controller = createAppController(store, silentAgent, {
     bootstrap,
+    ...(designFixture ? { designFixture: true } : {}),
     fetchImpl: async (input, init) => {
       const url = new URL(String(input), "https://cloud.test")
       reads.push(`${init?.method ?? "GET"} ${url.pathname}${url.search}`)
@@ -52,8 +53,20 @@ const harness = async (answer: Answer, bootstrap: typeof cloud | typeof install 
     repo => controller.repositoryBranches.rows.get(repo)?.names,
     repo => store.collections.repositories.get(repo)?.head?.bookmark ?? null
   ).map(node => ({ id: node.id, kind: node.kind, children: node.children.length }))
+  /*
+   * What BranchNavigation.tsx actually paints, by its own rule: the session's
+   * index where the seam writes one, the repository's rows otherwise. The two
+   * sources are read through the SAME predicate the seam chose its read with,
+   * which is the whole point of `sessionBranchIndex`.
+   */
+  const painted = () => sessionBranchIndex({
+    install: bootstrap.capabilities.includes("install" as never),
+    designEnabled: controller.design.enabled
+  })
+    ? (store.session().branchNavigation?.nodes ?? []).map(node => ({ id: node.id, kind: node.kind, children: node.children.length }))
+    : nodes()
   const toast = () => store.collections.toasts.get("toast-branch-tree")
-  return { store, controller, reads, nodes, toast, selection: () => headerSelection(controller) }
+  return { store, controller, reads, nodes, painted, toast, selection: () => headerSelection(controller) }
 }
 const branchesOf = (names: Readonly<Record<string, ReadonlyArray<string>>>): Answer => url => {
   const match = /^\/api\/repos\/([^/]+)\/([^/]+)\/bookmarks$/.exec(url.pathname)
@@ -289,6 +302,52 @@ describe("a host that serves no branch list says so", () => {
     expect(new Set(sentences).size).toBe(sentences.length)
     const failure = new BranchNavigationFailure({ sentence: "Branches unavailable", stage: "repository-read", reason: "host-refused" })
     expect(branchNavigationDiagnostic(failure, 0)).toBe("branches.list stage=repository-read reason=host-refused rows=0")
+  })
+})
+
+/*
+ * The seam decides WHERE a tree is written and the view decides WHICH of the
+ * two it paints, so one predicate has to answer both (`sessionBranchIndex`).
+ * The seeded design world on a hosted account was where they disagreed: with
+ * no hosted source the seam wrote the design tree to the session, the view
+ * read the repository's rows, no hosted read had ever been made, and the page
+ * painted nothing but `Earlier` (showcase repo-home and workspace, AppsDeploy
+ * 38957448693 shard 3).
+ */
+describe("the index the seam writes is the index the page paints", () => {
+  test("the seeded design world paints its own tree instead of an empty repository", async () => {
+    const h = await harness(branchesOf({ "acme/api": ["trunk"] }), cloud, true)
+    expect(h.controller.design.enabled).toBe(true)
+    await h.controller.commands.run("repo.select", "acme/api")
+    await h.controller.commands.run("branches")
+    await waitFor(() => h.painted().length > 0)
+    const [main] = h.painted()
+    expect(main?.id).toBe("main")
+    expect(main?.kind).toBe("main")
+    // The design seed's own branches hang off it; an empty tree is the bug.
+    expect(main!.children).toBeGreaterThan(0)
+    // Nothing invented for the repository either: no hosted bookmarks read was
+    // made, because this world is not reading the repository's branches.
+    expect(h.reads.some(read => read.includes("/bookmarks"))).toBe(false)
+  })
+
+  test("off the design fixture a hosted page still paints the repository's own branches, and nothing from the session", async () => {
+    const h = await harness(branchesOf({ "acme/api": ["trunk", "docs"] }))
+    expect(h.controller.design.enabled).toBe(false)
+    expect(sessionBranchIndex({ install: false, designEnabled: false })).toBe(false)
+    await h.controller.commands.run("repo.select", "acme/api")
+    await h.controller.commands.run("branches")
+    await waitFor(() => h.painted().length === 2)
+    expect(h.painted().map(node => node.id)).toEqual(["trunk", "docs"])
+    // The hosted read is what filled it, and the session carries no tree.
+    expect(h.reads.some(read => read.includes("/bookmarks"))).toBe(true)
+    expect(h.store.session().branchNavigation?.nodes).toEqual([])
+  })
+
+  test("an install keeps its own session-held index", () => {
+    expect(sessionBranchIndex({ install: true, designEnabled: false })).toBe(true)
+    expect(sessionBranchIndex({ install: true, designEnabled: true })).toBe(true)
+    expect(sessionBranchIndex({ install: false, designEnabled: true })).toBe(true)
   })
 })
 

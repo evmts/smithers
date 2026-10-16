@@ -123,7 +123,7 @@ import { createBillingSeam, showHostedBalance } from "./seams/HostedBilling"
 import { createDocsController } from "./controller/docs"
 import type { Docs } from "../../docs/Docs"
 import { bundledDocs } from "../../docs/bundled"
-import { createBranchNavigationSeam } from "./seams/BranchNavigationSeam"
+import { createBranchNavigationSeam, sessionBranchIndex } from "./seams/BranchNavigationSeam"
 import { createRepositoryBranchesSeam, type RepositoryBranchPicks, type RepositoryBranchRows } from "./seams/RepositoryBranchesSeam"
 import type { ChangeSeam } from "./seams/ChangeSeam"
 import { createChangeSeam } from "./seams/ChangeSeam"
@@ -1638,7 +1638,7 @@ export const createAppController = (
    * answered 404 and told the person the app had broken (#4028). The seeded
    * design fixture keeps its own door, exactly as `openBranch` does.
    */
-  const installBranchIndex = installHost || design.enabled
+  const installBranchIndex = sessionBranchIndex({ install: installHost, designEnabled: design.enabled })
   const bookmarksSeam = actors.pair(seamCtx, (context, select) => createBranchNavigationSeam(context, design, { live: services.live, onDispose: ctx.onDispose,
     ...(installBranchIndex ? {} : { hosted: {
       repository: () => activeRepositoryId(store),

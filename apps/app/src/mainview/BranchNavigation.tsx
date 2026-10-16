@@ -9,7 +9,7 @@ import { EarlierArchive } from "./EarlierArchive"
 import { accountOwnerOf } from "./state/AccountOwner"
 import { headerSelectionOf } from "./state/HeaderSelection"
 import { pickKey } from "./state/seams/RepositoryBranchesSeam"
-import { hostedBranchNodes } from "./state/seams/BranchNavigationSeam"
+import { hostedBranchNodes, sessionBranchIndex } from "./state/seams/BranchNavigationSeam"
 
 /** The shell's projections read saved state; an archive has no command callbacks. */
 export function BranchNavigation({ saving, onView }: {
@@ -39,13 +39,15 @@ export function BranchNavigation({ saving, onView }: {
   const picked = install || view.selected_branch === "earlier" ? null : selection.branch
   const current = picked ?? view.selected_branch
   /*
-   * Off an install the rows ARE the selected repository's branches, so they
-   * are read from the repository's own row in the canonical read model rather
-   * than from the session. `branchNavigation.nodes` names no repository: a
-   * tree retained there paints under whatever header comes next, including
-   * after a reload that restored a different repository (#4028 follow-up).
+   * Off a session-held index the rows ARE the selected repository's branches,
+   * so they are read from the repository's own row in the canonical read model
+   * rather than from the session. `branchNavigation.nodes` names no
+   * repository: a tree retained there paints under whatever header comes next,
+   * including after a reload that restored a different repository (#4028
+   * follow-up). Which of the two it is, is the seam's own rule
+   * (`sessionBranchIndex`), because the seam decides where it writes.
    */
-  const nodes = install ? view.nodes : hostedBranchNodes(
+  const nodes = sessionBranchIndex({ install, designEnabled: controller.design.enabled }) ? view.nodes : hostedBranchNodes(
     selection.repository,
     repo => branchRows.find(row => row.id === repo)?.names,
     repo => repositories.find(row => row.id === repo)?.head?.bookmark ?? null

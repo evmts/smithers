@@ -120,6 +120,31 @@ export const hostedBranchNodes = (
 ): BranchTreeNodeCard[] =>
   repository === null ? [] : hostedBranchTree(names(repository) ?? [], defaultBranch(repository))
 
+/**
+ * Whether the branch tree is the SESSION-held index rather than the connected
+ * repository's bookmarks.
+ *
+ * Two readers act on this, and they have to act on the same answer: the seam,
+ * which decides which read to run and where to put its answer, and
+ * `BranchNavigation`, which decides which of the two to paint. The install's
+ * own `/api/branches` projection is session-held, and so is the seeded design
+ * world's stand-in for it, which is what the seam falls back to when that
+ * route is unavailable.
+ *
+ * They disagreed, and the seeded design world on a hosted account was the
+ * gap: the seam had no hosted source there, so it wrote the design tree to
+ * the session, while the view read the repository's rows — which no hosted
+ * read had filled, because none was made. The tree came out empty and only
+ * `Earlier` was left (#4028 follow-up). Off the design fixture this is the
+ * install capability and nothing else, exactly as before.
+ */
+export const sessionBranchIndex = (input: {
+  /** The host serves its own branch index (`install` in the bootstrap's capabilities). */
+  readonly install: boolean
+  /** The seeded design world is standing in for that index (DesignWorld.enabled). */
+  readonly designEnabled: boolean
+}): boolean => input.install || input.designEnabled
+
 export function createBranchNavigationSeam(ctx: SeamContext, design: DesignWorld, options?: { live?: LiveTopics; onDispose?: (dispose: () => void) => void; hosted?: HostedBranchSource }) {
   /*
    * The read question: WHICH account generation asked, and WHICH repository
