@@ -202,7 +202,7 @@ describe("GitHub proxy rate limit", () => {
   it("spaces the writes of two concurrent client processes as one queue", async () => {
     const upstream = await github((_request, response) => json(response, 201, {}))
     const origin = await proxy(upstream, { limits: { ...DEFAULT_LIMITS, writeSpacingMs: 250 } })
-    const source = fileURLToPath(new URL("../src/github/GitHubClient.ts", import.meta.url))
+    const source = new URL("../src/github/GitHubClient.ts", import.meta.url).href
     const writer = `
       import { Effect } from "effect"
       import { make } from ${JSON.stringify(source)}
