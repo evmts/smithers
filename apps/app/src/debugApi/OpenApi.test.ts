@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { parse } from "yaml"
 import { CREDENTIAL_OPERATIONS, createDebugApiSeam, installOperations } from "../mainview/state/seams/DebugApiSeam"
-import type { OpenApiDocument } from "../mainview/state/seams/DebugApiSeam"
+import type { ApiOperation, OpenApiDocument } from "../mainview/state/seams/DebugApiSeam"
 import expected from "./install-operations.fixture.json"
 
 const document = parse(readFileSync(new URL("../../../../docs/api/openapi.yaml", import.meta.url), "utf8")) as OpenApiDocument
@@ -190,4 +190,44 @@ test("branch file grant credentials and confirmation drafts are withheld", async
     expect(JSON.stringify(seam.get())).not.toContain(canary)
     expect(seam.get().model.exchange?.response?.body).toBe("[withheld]")
   } finally { seam.dispose() }
+})
+
+/*
+ * The issue transition and the durable GitHub review are public release
+ * contracts (#4027, #4038), reached through the install's own playground, so
+ * the literal inventory above is not the whole guard: a later change could
+ * keep the row and still widen the door. Pin each one's declared
+ * authorization and the request it accepts, so dropping a scope, admitting a
+ * personal access token, or giving the transition a body of its own fails
+ * here instead of in the release run.
+ */
+const CONTRACT_GUARDS = [
+  { id: "get_api_repos_owner_repo_issue_transitions", method: "get", path: "/api/repos/{owner}/{repo}/issue-transitions",
+    security: ["tokenAuth", "bearerAuth", "sessionCookie"], scope: undefined, body: undefined, headers: [] },
+  // No body: the declaration decides the labels, so a request names neither a label nor an actor.
+  { id: "post_api_repos_owner_repo_github_issues_number_transitions_id", method: "post", path: "/api/repos/{owner}/{repo}/github/issues/{number}/transitions/{id}",
+    security: ["sessionCookie", "bearerAuth"], scope: undefined, body: undefined, headers: ["Idempotency-Key"] },
+  { id: "get_api_user_github_pull_review_requests_id", method: "get", path: "/api/user/github-pull-review-requests/{id}",
+    security: ["tokenAuth", "bearerAuth", "sessionCookie"], scope: "read:repository", body: undefined, headers: [] },
+  { id: "create_api_user_github_repos_owner_repo_pulls_number_reviews", method: "post", path: "/api/user/github-repos/{owner}/{repo}/pulls/{number}/reviews",
+    security: ["tokenAuth", "bearerAuth", "sessionCookie"], scope: "write:repository", body: { required: ["event", "commit_id"], properties: ["event", "body", "commit_id"] }, headers: [] }
+] as const
+test.each(CONTRACT_GUARDS)("release $id declares its own authorization and request contract", guard => {
+  const found = installOperations(document).find(candidate => candidate.id === guard.id)
+  expect(found, `${guard.id} left the release install inventory`).toBeDefined()
+  const operation = found!
+  expect([operation.method, operation.path]).toEqual([guard.method.toUpperCase(), guard.path])
+  const spec = operation.spec as ApiOperation & { security?: Record<string, string[]>[]; "x-required-token-scope"?: string }
+  expect(spec.security?.map(scheme => Object.keys(scheme)[0])).toEqual([...guard.security])
+  expect(spec["x-required-token-scope"]).toBe(guard.scope)
+  const headers = operation.parameters.filter(parameter => parameter.in === "header")
+  expect(headers.map(parameter => parameter.name)).toEqual([...guard.headers])
+  expect(headers.every(parameter => parameter.required === true)).toBe(true)
+  const schema = spec.requestBody?.content?.["application/json"]?.schema
+  if (!guard.body) expect(spec.requestBody).toBeUndefined()
+  else {
+    expect(spec.requestBody?.required).toBe(true)
+    expect(schema?.required).toEqual([...guard.body.required])
+    expect(Object.keys(schema?.properties ?? {})).toEqual([...guard.body.properties])
+  }
 })
