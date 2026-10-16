@@ -79,12 +79,9 @@ const takeover = (runs: RunStore.Service, runId: string, claimant: Ownership.Own
     const row = yield* runs.get(runId)
     const snapshot = { status: row.status, owner: row.owner, heartbeatAtMs: row.heartbeatAtMs }
     const stealing = row.status === "running" && row.owner !== null
-    // Move the injected clock past the stale window so the store observes the
-    // same time as the takeover evidence.
-    if (stealing) {
-      yield* TestClock.adjust(Duration.millis(Duration.toMillis(Ownership.heartbeatStaleAfter) + 1))
-    }
-    const now = yield* Clock.currentTimeMillis
+    // Skew only the takeover transaction, not unrelated resource heartbeats.
+    const now = (yield* Clock.currentTimeMillis) +
+      (stealing ? Duration.toMillis(Ownership.heartbeatStaleAfter) + 1 : 0)
     const evidence: Ownership.LivenessEvidence | undefined = stealing
       ? {
         expectedOwner: row.owner!,
@@ -748,11 +745,16 @@ describe("FaultMatrix", () => {
           // action under its own fence.
           yield* takeover(runs, "claim-takeover", ownerB)
           const winner = makeExecutor({ runId: "claim-takeover", owner: ownerB, key, result: "b-result" })
-          const value = yield* winner.execute(2)
+          const winning = yield* winner.execute(2).pipe(Effect.forkChild)
+          yield* Effect.yieldNow
+          expect(winner.dispatches()).toBe(0)
 
-          // A resumes: every subsequent durable write is fenced out.
+          // The cache permit excludes B until A resumes and releases it;
+          // A's subsequent durable writes are fenced out.
           yield* gate.open
           const exit = yield* Fiber.await(fiber)
+          yield* TestClock.adjust("100 millis")
+          const value = yield* Fiber.join(winning)
 
           const digest = sha256(key)
           const rowOne = yield* attempts.get({ runId: "claim-takeover", stepKeyDigest: digest, attempt: 1 })
