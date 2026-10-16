@@ -3,7 +3,7 @@ import { say } from "./j1-fixtures"
 import { issueTodoInstall, openIssueTodoInstall, snapshotDigest } from "./issue-todo-fixture"
 
 // Mounted install seams; remote snapshots, authorization and writes have
-// separate composed-router/PostgreSQL receipts in todo_label_install_integration_test.go.
+// separate PostgreSQL/App receipts in todo_from_issue_members_integration_test.go.
 test("C-J2-01: Issue discussion drafts an editable, placed TODO", async ({ page }) => {
   test.setTimeout(120_000)
   const commits = await issueTodoInstall(page)

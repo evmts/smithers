@@ -70,6 +70,7 @@ type mythicalPull struct {
 // (resolved as landing pull requests resolve them), the open issues, and the
 // item pull requests.
 type mythicalGitHub interface {
+	IssueText(ctx context.Context, gh mythicalGitHubRepo, number int64) (gitHubIssueText, error)
 	Resolve(ctx context.Context, repository db.Repository, owner string, actorUserID int64) (mythicalGitHubRepo, error)
 	OpenIssues(ctx context.Context, gh mythicalGitHubRepo) ([]mythicalIssue, error)
 	// Issue reads one issue as GitHub answers it now (Make TODO's read).
@@ -1023,4 +1024,8 @@ func (g *mythicalGitHubAPI) HeadChecks(ctx context.Context, gh mythicalGitHubRep
 		}
 	}
 	return mythicalCIPending, nil
+}
+
+func (g *mythicalGitHubAPI) IssueText(ctx context.Context, gh mythicalGitHubRepo, number int64) (gitHubIssueText, error) {
+	return g.text.IssueText(ctx, gh.Token, gh.Owner, gh.Name, number)
 }

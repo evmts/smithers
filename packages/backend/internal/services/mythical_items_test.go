@@ -2227,3 +2227,11 @@ func TestReviewCandidateFilesAreImmutableData(t *testing.T) {
 	_, err = step.reviewCandidateFiles(ctx, db.MythicalItem{CandidateBase: base, PRHead: strings.Repeat("f", 40)})
 	require.Error(t, err)
 }
+
+func (g *fakeMythicalGitHub) IssueText(ctx context.Context, gh mythicalGitHubRepo, number int64) (gitHubIssueText, error) {
+	issue, err := g.Issue(ctx, gh, number)
+	if err != nil {
+		return gitHubIssueText{}, err
+	}
+	return gitHubIssueText{Title: issue.Title, Body: issue.Body, Author: &issue.Author, TitleWriter: &issue.Author, BodyWriter: &issue.Author}, nil
+}

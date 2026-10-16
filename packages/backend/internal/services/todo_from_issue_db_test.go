@@ -6,6 +6,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
@@ -41,6 +42,8 @@ func TestTodoFromIssueCommitsTheDraftAsTheIssueTodo(t *testing.T) {
 	s.github = &snapshotIssueGitHub{gh}
 	ctx = middleware.ContextWithAuthInfo(ctx, &middleware.AuthInfo{User: &db.User{ID: userID}, SessionHash: "will-session"})
 	ctx = registerTestInstallCredential(t, pool, ctx, repoID)
+	_, err = pool.Exec(ctx, `INSERT INTO oauth_accounts(user_id,provider,provider_user_id) VALUES($1,'github','1')`, userID)
+	require.NoError(t, err)
 	refused := func(t *testing.T, input MythicalTodoInput, status int, code string) {
 		t.Helper()
 		_, err := s.FileTodo(ctx, repoID, userID, input)
@@ -226,10 +229,86 @@ func (g *snapshotIssueGitHub) IssueThread(ctx context.Context, gh mythicalGitHub
 	return InstallIssueThread{Issue: InstallIssue{Number: n, Title: issue.Title, Body: issue.Body, State: issue.State, HTMLURL: issue.URL, User: &InstallIssuePerson{Login: issue.Author.Login}}, Comments: []InstallIssueComment{}}, true, nil
 }
 
-func (g *snapshotIssueGitHub) IssueTextByMaintainer(ctx context.Context, gh mythicalGitHubRepo, issue mythicalIssue) (bool, error) {
-	stored, err := g.Issue(ctx, gh, issue.Number)
+func (g *snapshotIssueGitHub) IssueText(ctx context.Context, gh mythicalGitHubRepo, n int64) (gitHubIssueText, error) {
+	issue, err := g.Issue(ctx, gh, n)
 	if err != nil {
-		return false, err
+		return gitHubIssueText{}, err
 	}
-	return g.fakeMythicalGitHub.IssueTextByMaintainer(ctx, gh, stored)
+	actor := &gitHubActor{ID: 1, Type: "User", Login: "will"}
+	if !issue.TextByMaintainer {
+		actor = &gitHubActor{ID: 2, Type: "User", Login: "outsider"}
+	}
+	return gitHubIssueText{Title: issue.Title, Body: issue.Body, Author: actor, TitleWriter: actor, BodyWriter: actor}, nil
+}
+
+func TestTodoIssueReceiptRejectsIncompleteOrForgedSnapshot(t *testing.T) {
+	pool := newProductTestPool(t)
+	ctx := middleware.ContextWithAuthInfo(context.Background(), &middleware.AuthInfo{User: &db.User{ID: 42}})
+	s := NewMythicalService(pool, nil)
+	s.github = &fakeMythicalGitHub{}
+	thread := InstallIssueThread{Issue: InstallIssue{Number: 7, Title: "T", Body: "B", State: "open"}, Comments: []InstallIssueComment{}}
+	digest := todoIssueSnapshotDigest(thread)
+	for _, tc := range []struct{ name, change, state string }{
+		{"missing outsider", `data - 'outsider'`, "completed"},
+		{"null outsider", `jsonb_set(data,'{outsider}','null')`, "completed"},
+		{"wrong issue", `jsonb_set(data,'{thread,issue,number}','8')`, "completed"},
+		{"changed body", `jsonb_set(data,'{thread,issue,body}','"forged"')`, "completed"},
+		{"wrong state", `data`, "failed"},
+		{"expired", `jsonb_set(data,'{read_at}','"2000-01-01T00:00:00Z"')`, "completed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := pool.Exec(ctx, `DELETE FROM product_job_events WHERE event_type='issue.read'`)
+			require.NoError(t, err)
+			payload, err := json.Marshal(map[string]any{"issue": 7, "digest": digest, "thread": thread, "outsider": false, "read_at": s.now().UTC()})
+			require.NoError(t, err)
+			tx, err := pool.Begin(ctx)
+			require.NoError(t, err)
+			_, err = jobs.RecordFactInTx(ctx, tx, jobs.Scope{TenantID: "1", PrincipalID: "issue-read:42"}, uuid.NewString(), "issue.read", tc.state, payload)
+			require.NoError(t, err)
+			require.NoError(t, tx.Commit(ctx))
+			_, err = pool.Exec(ctx, `UPDATE product_job_events SET data=`+tc.change+` WHERE event_type='issue.read'`)
+			require.NoError(t, err)
+			_, err = s.readTodoIssue(ctx, 1, InstallMember, 7, digest)
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestTodoIssueReadReceiptsDeduplicateAndExpire(t *testing.T) {
+	pool := newProductTestPool(t)
+	ctx := context.Background()
+	var person, repo int64
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO users(username,lower_username) VALUES('will','will') RETURNING id`).Scan(&person))
+	_, err := pool.Exec(ctx, `INSERT INTO self_host_owners(user_id) VALUES($1)`, person)
+	require.NoError(t, err)
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO repositories(user_id,name,lower_name) VALUES($1,'app','app') RETURNING id`, person).Scan(&repo))
+	_, err = db.New(pool).RequestMythicalBootstrap(ctx, repo, person, 1, false)
+	require.NoError(t, err)
+	s := NewMythicalService(pool, nil)
+	s.github = &snapshotIssueGitHub{&fakeMythicalGitHub{issues: []mythicalIssue{{Number: 7, Title: "T", Body: "B", State: "open", TextByMaintainer: true}}}}
+	ctx = middleware.ContextWithAuthInfo(ctx, &middleware.AuthInfo{User: &db.User{ID: person}, SessionHash: "will"})
+	ctx = registerTestInstallCredential(t, pool, ctx, repo)
+	_, err = pool.Exec(ctx, `INSERT INTO oauth_accounts(user_id,provider,provider_user_id) VALUES($1,'github','1')`, person)
+	require.NoError(t, err)
+	var first InstallIssueThread
+	for i := 0; i < 3; i++ {
+		first, err = s.InstallIssue(ctx, repo, 7)
+		require.NoError(t, err)
+	}
+	var count int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM product_job_events WHERE event_type='issue.read'`).Scan(&count))
+	require.Equal(t, 1, count, "repeated views must retain one snapshot")
+	var duplicated bool
+	require.NoError(t, pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM product_job_requests WHERE operation='issue.read' AND (payload ? 'thread' OR request_receipt ? 'thread' OR terminal_receipt ? 'thread'))`).Scan(&duplicated))
+	require.False(t, duplicated, "the full thread belongs only in the snapshot event")
+	_, err = pool.Exec(ctx, `UPDATE product_job_events SET recorded_at=now()-interval '2 days',data=jsonb_set(data,'{read_at}','"2000-01-01T00:00:00Z"') WHERE event_type='issue.read'`)
+	require.NoError(t, err)
+	_, err = s.readTodoIssue(ctx, repo, InstallOwner, 7, first.IssueDigest)
+	require.Error(t, err, "expired snapshots cannot authorize admission")
+	_, err = s.InstallIssue(ctx, repo, 7)
+	require.NoError(t, err)
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM product_job_events WHERE event_type='issue.read'`).Scan(&count))
+	require.Equal(t, 1, count, "fresh reads replace expired snapshots")
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM product_job_requests WHERE operation='issue.read'`).Scan(&count))
+	require.Equal(t, 1, count, "expired request copies are deleted too")
 }

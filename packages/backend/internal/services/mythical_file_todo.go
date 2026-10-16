@@ -143,6 +143,15 @@ func (s *MythicalService) fileTodoCommand(ctx context.Context, repositoryID, use
 		if err := guardInstallTodoWrite(ctx, tx, repositoryID, userID); err != nil {
 			return err
 		}
+		// The credential fence holds the roster mutation lock. A captured
+		// command grant cannot preserve maintainer-only issue admission after demotion.
+		role, err := InstallRoleOf(ctx, q, userID)
+		if err != nil {
+			return err
+		}
+		if issue != nil && issue.Outsider && role.rank() < InstallMaintainer.rank() {
+			return &AccessError{Status: http.StatusForbidden, Class: "permission", Code: "permission", Message: "Only a maintainer can make a TODO from this issue"}
+		}
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, repositoryID); err != nil {
 			return err
 		}
@@ -320,7 +329,7 @@ func (s *MythicalService) readTodoIssue(ctx context.Context, repositoryID int64,
 	}
 	var raw []byte
 	err := s.store.QueryRow(ctx, `SELECT data FROM product_job_events WHERE tenant_id=$1 AND principal_id=$2 AND event_type='issue.read'
- AND data->>'digest'=$3 AND (data->>'issue')::bigint=$4 ORDER BY sequence DESC LIMIT 1`, strconv.FormatInt(repositoryID, 10), fmt.Sprintf("issue-read:%d", info.User.ID), digest, number).Scan(&raw)
+ AND data->>'digest'=$3 AND data->>'issue'=$4 AND state='completed' AND recorded_at>$5 ORDER BY sequence DESC LIMIT 1`, strconv.FormatInt(repositoryID, 10), fmt.Sprintf("issue-read:%d", info.User.ID), digest, strconv.FormatInt(number, 10), s.now().Add(-todoIssueReceiptTTL)).Scan(&raw)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, &TodoControlError{409, "issue_snapshot_unknown", "conflict", "Open the issue before making a TODO"}
 	}
@@ -332,19 +341,20 @@ func (s *MythicalService) readTodoIssue(ctx context.Context, repositoryID int64,
 	}
 	var read struct {
 		Thread   InstallIssueThread `json:"thread"`
-		Outsider bool               `json:"outsider"`
+		Outsider *bool              `json:"outsider"`
+		ReadAt   time.Time          `json:"read_at"`
 	}
-	if json.Unmarshal(raw, &read) != nil {
+	if json.Unmarshal(raw, &read) != nil || read.Outsider == nil || read.Thread.Issue.Number != number || todoIssueSnapshotDigest(read.Thread) != digest || read.ReadAt.IsZero() || !read.ReadAt.After(s.now().Add(-todoIssueReceiptTTL)) || read.ReadAt.After(s.now().Add(time.Minute)) {
 		return nil, unavailable
 	}
 	issue := read.Thread.Issue
 	if !strings.EqualFold(issue.State, "open") {
 		return nil, &TodoControlError{409, "issue_closed", "conflict", fmt.Sprintf("Issue #%d is closed", number)}
 	}
-	if read.Outsider && role.rank() < InstallMaintainer.rank() {
+	if *read.Outsider && role.rank() < InstallMaintainer.rank() {
 		return nil, &AccessError{Status: http.StatusForbidden, Class: "permission", Code: "permission", Message: "Only a maintainer can make a TODO from this issue"}
 	}
-	byMaintainer := !read.Outsider
+	byMaintainer := !*read.Outsider
 
 	body := issue.Body
 	if len(body) > mythicalPromptBytes {

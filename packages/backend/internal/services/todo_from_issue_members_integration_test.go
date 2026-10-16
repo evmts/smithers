@@ -83,4 +83,81 @@ func TestMembersMakeTodosFromIssuesThroughTheApp(t *testing.T) {
 	require.NoError(t, err)
 	require.EqualValues(t, outsider, item.IssueNumber.Int64)
 	require.True(t, item.Outsider, "a maintainer's TODO from an outsider's text is marked outsider")
+
+	// A role change while FileTodo waits for the stack must fence the admission.
+	raced := f.fake.OpenIssue(repo, "carol", "Race", "Outsider text")
+	snapshot, err := f.service.InstallIssue(ben, f.repoID, raced)
+	require.NoError(t, err)
+	tx, err := f.pool.Begin(ctx)
+	require.NoError(t, err)
+	defer tx.Rollback(ctx)
+	_, err = tx.Exec(ctx, `SELECT 1 FROM mythical_stacks WHERE repository_id=$1 FOR UPDATE`, f.repoID)
+	require.NoError(t, err)
+	errs := make(chan error, 1)
+	go func() {
+		_, err := f.service.FileTodo(ben, f.repoID, middleware.UserFromContext(ben).ID, MythicalTodoInput{Title: "Race", Prompt: "Outsider text", Issue: &raced, IssueDigest: snapshot.IssueDigest, Request: "demotion-race"})
+		errs <- err
+	}()
+	require.Eventually(t, func() bool {
+		var waiting bool
+		err := f.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query='SELECT 1 FROM mythical_stacks WHERE repository_id=$1 FOR UPDATE')`).Scan(&waiting)
+		return err == nil && waiting
+	}, 5*time.Second, 10*time.Millisecond)
+	_, err = tx.Exec(ctx, `UPDATE collaborators SET permission='write' WHERE repository_id=$1 AND user_id=$2`, f.repoID, middleware.UserFromContext(ben).ID)
+	require.NoError(t, err)
+	require.NoError(t, tx.Commit(ctx))
+	require.ErrorAs(t, <-errs, &refused)
+	require.Equal(t, http.StatusForbidden, refused.Status)
+	_, err = q.GetActiveMythicalItemByIssue(ctx, f.repoID, raced)
+	require.Error(t, err)
+}
+
+func TestIssueTextRequiresActiveRosterAndCurrentPush(t *testing.T) {
+	f := newPublicationFixture(t, false)
+	ctx := context.Background()
+	const repo = "rehearsal-owner/app"
+	f.fake.SetCollaborator(8, "ben", "write")
+	f.fake.SetCollaborator(9, "eve", "write")
+	_, err := f.pool.Exec(ctx, `INSERT INTO collaborators(repository_id,github_login,github_id,permission) VALUES($1,'ben',8,'write')`, f.repoID)
+	require.NoError(t, err)
+	bindIssueEventMembers(t, f.pool, f.repoID)
+	repository, owner, err := f.service.repository(ctx, f.repoID)
+	require.NoError(t, err)
+	gh, err := f.service.github.Resolve(ctx, repository, owner, f.userID)
+	require.NoError(t, err)
+	// GitHub push alone does not make the author a member.
+	unlisted := f.fake.OpenIssue(repo, "eve", "Push without roster", "Body")
+	raw, err := f.service.github.Issue(ctx, gh, unlisted)
+	require.NoError(t, err)
+	trusted, err := f.service.todoIssueTeamText(ctx, f.repoID, gh, raw)
+	require.NoError(t, err)
+	require.False(t, trusted)
+	// The install App's own Bot author uses GitHub's GraphQL login shape.
+	own, err := f.service.github.CreateIssue(ctx, gh, "App issue", "Body")
+	require.NoError(t, err)
+	raw, err = f.service.github.Issue(ctx, gh, own.Number)
+	require.NoError(t, err)
+	trusted, err = f.service.todoIssueTeamText(ctx, f.repoID, gh, raw)
+	require.NoError(t, err)
+	require.True(t, trusted)
+	number := f.fake.OpenIssue(repo, "ben", "Title", "Body")
+	check := func(want bool) {
+		t.Helper()
+		issue, err := f.service.github.Issue(ctx, gh, number)
+		require.NoError(t, err)
+		team, err := f.service.todoIssueTeamText(ctx, f.repoID, gh, issue)
+		require.NoError(t, err)
+		require.Equal(t, want, team)
+	}
+	check(true)
+	_, err = f.pool.Exec(ctx, `UPDATE collaborators SET suspended_at=now() WHERE repository_id=$1 AND github_id=8`, f.repoID)
+	require.NoError(t, err)
+	check(false)
+	_, err = f.pool.Exec(ctx, `UPDATE collaborators SET suspended_at=NULL WHERE repository_id=$1 AND github_id=8`, f.repoID)
+	require.NoError(t, err)
+	f.fake.SetCollaborator(8, "ben", "read")
+	check(false)
+	f.fake.SetCollaborator(8, "ben", "write")
+	f.fake.EditIssue(repo, number, "eve", "Title", "Changed by push holder outside roster")
+	check(false)
 }

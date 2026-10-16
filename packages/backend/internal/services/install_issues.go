@@ -24,6 +24,9 @@ import (
 // install membership and use the GitHub App, without a personal GitHub token.
 // Hosted compositions retain their existing reader adapter.
 
+// Issue snapshots authorize Draft admission for one day.
+const todoIssueReceiptTTL = 24 * time.Hour
+
 const (
 	// installIssuesPerPage keeps one page of issue bodies (at most 64 KiB
 	// each) under the 4 MiB GitHub response bound.
@@ -244,9 +247,30 @@ func (s *MythicalService) InstallIssue(ctx context.Context, repositoryID, number
 		allowed := team || decision.Role.rank() >= InstallMaintainer.rank()
 		thread.MakeTodoAllowed = &allowed
 		{
-			payload, _ := json.Marshal(map[string]any{"issue": number, "digest": thread.IssueDigest, "thread": thread, "outsider": !team, "read_at": s.now().UTC()})
+			now := s.now().UTC()
+			metadata, _ := json.Marshal(map[string]any{"issue": number, "digest": thread.IssueDigest, "outsider": !team, "read_at": now})
+			payload, _ := json.Marshal(map[string]any{"issue": number, "digest": thread.IssueDigest, "thread": thread, "outsider": !team, "read_at": now})
+			scope := jobs.Scope{TenantID: strconv.FormatInt(repositoryID, 10), PrincipalID: fmt.Sprintf("issue-read:%d", info.User.ID)}
 			err = pgx.BeginFunc(ctx, s.store, func(tx pgx.Tx) error {
-				_, err := jobs.RecordFactInTx(ctx, tx, jobs.Scope{TenantID: strconv.FormatInt(repositoryID, 10), PrincipalID: fmt.Sprintf("issue-read:%d", info.User.ID)}, uuid.NewString(), "issue.read", "completed", payload)
+				// Serialize repeated views of the same person's snapshot.
+				if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, scope.TenantID+":"+scope.PrincipalID); err != nil {
+					return err
+				}
+				// Receipts are ephemeral authorization inputs, not TODO facts.
+				// Remove the request copies with the expired snapshots too.
+				if _, err := tx.Exec(ctx, `WITH expired AS (
+                  DELETE FROM product_job_events WHERE event_type='issue.read' AND recorded_at <= $1 RETURNING operation_id
+                ) DELETE FROM product_job_requests WHERE operation='issue.read' AND id IN (SELECT operation_id FROM expired)`, now.Add(-todoIssueReceiptTTL)); err != nil {
+					return err
+				}
+				var exists bool
+				if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM product_job_events WHERE tenant_id=$1 AND principal_id=$2 AND event_type='issue.read' AND state='completed' AND data->>'digest'=$3 AND data->>'outsider'=$4)`, scope.TenantID, scope.PrincipalID, thread.IssueDigest, strconv.FormatBool(!team)).Scan(&exists); err != nil {
+					return err
+				}
+				if exists {
+					return nil
+				}
+				_, err := jobs.RecordProjectedFactInTx(ctx, tx, scope, uuid.NewString(), "issue.read", "completed", metadata, payload)
 				return err
 			})
 			if err != nil {
@@ -338,11 +362,7 @@ func (s *MythicalService) todoIssueTeamText(ctx context.Context, repositoryID in
 			return false, nil
 		}
 	}
-	api, ok := s.github.(*mythicalGitHubAPI)
-	if !ok {
-		return s.github.IssueTextByMaintainer(ctx, gh, issue)
-	}
-	text, err := api.text.IssueText(ctx, gh.Token, gh.Owner, gh.Name, issue.Number)
+	text, err := s.github.IssueText(ctx, gh, issue.Number)
 	if err != nil {
 		return false, err
 	}
