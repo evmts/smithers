@@ -39,8 +39,14 @@ export function SecretsView({ model, actions, onAction }: SecretsViewProps) {
       ? <details key={index}><summary>{action.label}</summary>{form}</details>
       : <div key={index}>{form}</div>
   }
+  /*
+   * #4056: no heading of its own. The card frame already draws this
+   * section's name with its repository ("Secrets · owner/repository", from
+   * SecretsSeam), and an `<h2>Secrets</h2>` under it named the card twice.
+   * `aria-label` keeps the section's accessible name, which is the name the
+   * product's own suites and a screen reader find it by.
+   */
   return <section className="secrets-view" data-kind="secrets" data-keyboard-pane="Secrets" aria-label="Secrets">
-    <h2>Secrets</h2>
     <ul className="secrets-list">
       {model.secrets.map(secret => <li key={secret.name}>
         <div className="secret-row"><KeyRound size={14} aria-hidden="true" /><code>{secret.name}</code><span className="secret-scope">{scopeWords[secret.scope]}</span>{secret.hosts?.length ? <span>{secret.hosts.join(", ")}</span> : null}{secret.path ? <code className="secret-path">{secret.path}</code> : null}</div>

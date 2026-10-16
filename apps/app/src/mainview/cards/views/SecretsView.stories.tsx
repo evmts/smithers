@@ -2,8 +2,14 @@ import { fixtures } from "@smthrs/rpc/fixtures/Secrets"
 import { SecretsView } from "./SecretsView"
 import type { ViewStory } from "./stories"
 
+/*
+ * #4056: the view draws no title of its own — the card frame draws
+ * "Secrets · owner/repository" — so no story expects that word in its text.
+ * The section's accessible name is asserted in Views.test.tsx instead.
+ */
+
 export const stories: ViewStory[] = Object.entries(fixtures).map(([name, fixture]) => ({
-  name, expect: ["Secrets", ...fixture.expect],
+  name, expect: [...fixture.expect],
   actions: [...fixture.model.secrets.flatMap(secret => secret.actions), ...fixture.actions],
   render: (callbacks, removed) => {
     let skip = removed !== undefined
@@ -14,12 +20,12 @@ export const stories: ViewStory[] = Object.entries(fixtures).map(([name, fixture
 
 // Optional Hosts and unavailable form actions are distinct from the populated examples.
 stories.push({
-  name: "no_hosts_field", expect: ["Secrets", "Add"],
+  name: "no_hosts_field", expect: ["Add"],
   render: callbacks => <SecretsView {...fixtures.empty} actions={fixtures.empty.actions.map(action => ({ ...action, input: action.input?.filter(field => field.name !== "hosts") }))} onView={callbacks.onView} onAction={(tag, args) => callbacks.onAction(tag, args && "value" in args ? { ...args, value: "[redacted]" } : args)} />
 }, {
-  name: "disabled_form", expect: ["Secrets", "Change pending"],
+  name: "disabled_form", expect: ["Change pending"],
   render: callbacks => <SecretsView {...fixtures.empty} actions={fixtures.empty.actions.map(action => ({ ...action, disabled: { reason: "Change pending" } }))} {...callbacks} />
 }, {
-  name: "hostile", expect: ["Secrets", '<img src=x onerror="alert(1)">', "main only"],
+  name: "hostile", expect: ['<img src=x onerror="alert(1)">', "main only"],
   render: callbacks => <SecretsView {...fixtures.empty} model={{ secrets: [{ name: '<img src=x onerror="alert(1)">', scope: "main_only", hosts: ["<script>evil</script>"], actions: [] }] }} actions={[]} {...callbacks} />
 })

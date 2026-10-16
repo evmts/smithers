@@ -1552,7 +1552,12 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       if ("error" in target) return target.error
       const { repo } = target
       if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(transition)) {
-        return `${transition} is not a transition id. Run /issues.transitions ${repo} to see what ${repo} declares.`
+        /*
+         * #4068: this pointed at `/issues.transitions <repo>`, which no
+         * registry declares. The transitions are the repository's own
+         * declaration, so the refusal names that source instead of a door.
+         */
+        return `${transition} is not a transition id. ${repo} declares its transitions in .smithers/FACTORY.ts.`
       }
       /*
        * The declared states are GitHub labels, so a transition is a GitHub

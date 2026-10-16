@@ -271,6 +271,32 @@ describe("a declared issue transition", () => {
     expect(writes(calls)).toEqual([])
   })
 
+  test("a malformed transition id is refused with guidance a person can actually follow", async () => {
+    /*
+     * #4068: the refusal told the person to "Run /issues.transitions <repo>",
+     * a command `FlowName.ts` has never declared, so following it answered
+     * with an unknown command. A refusal names only doors this registry
+     * really carries, and otherwise names the repository's own declaration.
+     */
+    const { controller, calls } = await controllerFor({}, "github")
+    // The registry is the authority on which doors exist, not a sentence.
+    expect(controller.commands.find("issues.transition")).toBeDefined()
+    expect(controller.commands.find("issues.transitions")).toBeUndefined()
+    const outcome = await controller.commands.run("issues.transition", "6 Accept will/flows")
+    expect(outcome.status).toBe("failed")
+    const refusal = outcome.status === "failed" ? outcome.error : ""
+    // Every slash door the sentence offers is one the registry declares.
+    for (const door of [...refusal.matchAll(/\/([a-z][a-z0-9]*(?:\.[a-z0-9-]+)*)/g)].map((match) => match[1]!)) {
+      expect(controller.commands.find(door), door).toBeDefined()
+    }
+    // The truthful next step: the TYPED repository's own declaration source.
+    expect(refusal).toContain("will/flows")
+    expect(refusal).toContain(".smithers/FACTORY.ts")
+    // Refused before anything left: no act, and no read of another repository.
+    expect(writes(calls)).toEqual([])
+    expect(calls.filter((call) => call.includes("/transitions/"))).toEqual([])
+  })
+
   test("a recorded private conversation is never moved on GitHub", async () => {
     const { store, controller, calls } = await controllerFor({
       "POST /api/repos/will/flows/issues": async (request) => {

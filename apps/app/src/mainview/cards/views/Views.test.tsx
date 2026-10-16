@@ -2597,7 +2597,17 @@ describe("SecretsView write-only controls", () => {
   test("empty list and member with no actions render no controls", async () => {
     for (const secrets of [[], [{ name: "NPM_TOKEN", scope: "all_branches" as const, actions: [] }]]) {
       const m = await mount({ secrets })
-      try { expect(m.host.querySelectorAll("button,input,select,summary")).toHaveLength(0); expect(m.host.textContent).toContain("Secrets") }
+      /*
+       * #4056: the section names itself for assistive technology, and the
+       * card frame draws the one visible title, so the view itself must not
+       * draw a second "Secrets" of its own.
+       */
+      try {
+        expect(m.host.querySelectorAll("button,input,select,summary")).toHaveLength(0)
+        expect(m.host.querySelector('[data-kind="secrets"]')?.getAttribute("aria-label")).toBe("Secrets")
+        expect(m.host.querySelector("h2")).toBeNull()
+        expect(m.host.textContent).not.toContain("Secrets")
+      }
       finally { await m.close() }
     }
   })
@@ -2670,6 +2680,9 @@ test("Secrets stories keep minimal product copy and redact submitted values", as
     try {
       const forbidden = /\b(workflows?|threads?|tasks?|lanes?|boxes?|workspaces?|mythical|sandboxes?|VMs?|seats?|profiles?|Jev|forges?)\b/i
       expect(m.host.textContent).not.toMatch(forbidden)
+      // #4056: the name lives on the section, not in a heading of its own.
+      expect(m.host.querySelector('[data-kind="secrets"]')?.getAttribute("aria-label")).toBe("Secrets")
+      expect(m.host.querySelector("h2")).toBeNull()
       for (const block of m.host.querySelectorAll("p,li,h2,label,button,td")) {
         expect(block.textContent!.trim().split(/\s+/).length).toBeLessThanOrEqual(12)
       }
