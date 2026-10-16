@@ -3,8 +3,17 @@
 ## 1.0.0-rc.10 — 2026-10-16
 
 Cut from current main plus the release preflight table formatting.
-Publication is requested under npm `next`; this source document does not
-claim publication or a completed npm smoke. `latest` must stay unchanged
+Release commit: `aeff7cd6627294ac839b40ed9de3cbf97c43f2fc`.
+[Release run 38913993371](https://github.com/smithersai/smithers/actions/runs/38913993371)
+failed before publication: clean builds and native helpers passed, but the
+installed MCP consumer resolved `effect@4.0.5` instead of the required 4.0.4
+and the smoke refused it (#4002). All 49 rc.10 versions are absent from npm;
+all 49 `next` tags remain rc.9 and every `latest` tag is unchanged.
+No candidate archive exists to resume. The tag is preserved; a changed
+candidate requires a new version per scripts/release-resume.md.
+The requested rc.10 npm install/start verification therefore could not run.
+Examples and shared backend tests also reported failures; the remaining
+reporting lanes and server bundle were still running when this was recorded. `latest` must stay unchanged
 (`@smthrs/flows`: 1.0.0-rc.9; legacy `smthrs`: 0.35.0).
 The Release run and npm verification receipts are tracked in #4042.
 No announcement or GitHub Release is part of this cut.
