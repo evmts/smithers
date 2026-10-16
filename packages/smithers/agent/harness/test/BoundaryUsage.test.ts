@@ -43,6 +43,17 @@ describe("paidUsage", () => {
       { usage: { inputTokens: 5, outputTokens: 1 }, modelId: "judge-b" }
     ])
   })
+  it("sums the charges a seat reported, and drops the sum when one reading reported none (#3824)", () => {
+    expect(paidUsage([
+      { inputTokens: 90, outputTokens: 10, modelId: "haiku", costUsd: 0.01 },
+      { inputTokens: 10, outputTokens: 0, modelId: "haiku", costUsd: 0.02 },
+      { inputTokens: 5, outputTokens: 1, modelId: "judge-b", costUsd: 0.5 },
+      { inputTokens: 5, outputTokens: 1, modelId: "judge-b" }
+    ])).toEqual([
+      { usage: { inputTokens: 100, outputTokens: 10, costUsd: 0.03 }, modelId: "haiku" },
+      { usage: { inputTokens: 10, outputTokens: 2 }, modelId: "judge-b" }
+    ])
+  })
 })
 
 /** A judge that answers every claim with `invented` and reports usage on each reading. */

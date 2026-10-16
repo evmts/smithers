@@ -59,8 +59,8 @@ const prepared: Route.PreparedRequest = {
 
 const answer = { summary: "Durable workflows journal every step.", keyPoints: ["steps are journaled"] }
 
-/** Each primary call answers in one cell and reports five tokens. */
-const primary = (calls: { primary: number }): Model.Model =>
+/** Each primary call answers in one cell and reports five tokens, and `costUsd` when given. */
+const primary = (calls: { primary: number }, costUsd?: number): Model.Model =>
   Model.make({
     stream: () => {
       calls.primary++
@@ -72,7 +72,7 @@ const primary = (calls: { primary: number }): Model.Model =>
           text: "```cell\nctx.done(" + JSON.stringify(answer) + ")\n```"
         }),
         ModelEvent.ModelEvent.TextEnd({ type: "text-end", id: "cell" }),
-        ModelEvent.ModelEvent.Usage({ inputTokens: 3, outputTokens: 2, totalTokens: 5 }),
+        ModelEvent.ModelEvent.Usage({ inputTokens: 3, outputTokens: 2, totalTokens: 5, costUsd }),
         ModelEvent.ModelEvent.Settle({ type: "settle", stopReason: "stop" })
       ])
     }
@@ -82,7 +82,7 @@ const primary = (calls: { primary: number }): Model.Model =>
  * The judge reads every claim as done, and reports `tokens` of usage; a
  * `garbled` judge is metered the same and then answers nothing it can decode.
  */
-const judge = (calls: { judge: number }, tokens: number, garbled = false): Model.Model =>
+const judge = (calls: { judge: number }, tokens: number, garbled = false, costUsd?: number): Model.Model =>
   Model.make({
     stream: () => {
       calls.judge++
@@ -103,22 +103,33 @@ const judge = (calls: { judge: number }, tokens: number, garbled = false): Model
         ModelEvent.ModelEvent.Usage({
           inputTokens: tokens * 0.9,
           outputTokens: tokens * 0.1,
-          totalTokens: tokens
+          totalTokens: tokens,
+          costUsd
         }),
         ModelEvent.ModelEvent.Settle({ type: "settle", stopReason: "stop" })
       ])
     }
   })
 
-const drive = async (judgeTokens: number, maxTokens: number, garbled = false) => {
+/**
+ * With `usd`, a USD ceiling replaces the token one, and both seats are Claude
+ * Code aliases the rate card does not price, each reporting `costUsd` per call
+ * as Claude Code does (#3824).
+ */
+const drive = async (
+  judgeTokens: number,
+  maxTokens: number,
+  garbled = false,
+  usd?: { readonly max: number; readonly costUsd: number }
+) => {
   const calls = { primary: 0, judge: 0 }
   const seats = SeatResolver.layer({
     resolve: (id) =>
       Effect.succeed(
         Seat.make({
           id,
-          modelId: "test-model",
-          model: primary(calls),
+          modelId: usd === undefined ? "test-model" : "sonnet",
+          model: primary(calls, usd?.costUsd),
           route: { prepare: () => Effect.succeed(prepared) },
           contextWindowTokens: 200_000
         })
@@ -138,7 +149,12 @@ const drive = async (judgeTokens: number, maxTokens: number, garbled = false) =>
   })
   const layer = Layer.mergeAll(Research.layer, Interpreter.layer(Twice)).pipe(
     Layer.provideMerge(Layer.mergeAll(host, seats, Agent.layer)),
-    Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layer({ tokens: { max: maxTokens } }))),
+    Layer.provideMerge(
+      Layer.mergeAll(
+        QuotaPolicy.layerDefault(),
+        Budget.layer(usd === undefined ? { tokens: { max: maxTokens } } : { usd: { max: usd.max } })
+      )
+    ),
     Layer.provideMerge(Agent.layerDefaults),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
@@ -152,7 +168,12 @@ const drive = async (judgeTokens: number, maxTokens: number, garbled = false) =>
       return { exit, ledger, calls: { ...calls } }
     }).pipe(
       Effect.provide(layer),
-      Effect.provide(Evaluator.layerFromSeat({ modelId: "judge-model", model: judge(calls, judgeTokens, garbled) })),
+      Effect.provide(
+        Evaluator.layerFromSeat({
+          modelId: usd === undefined ? "judge-model" : "haiku",
+          model: judge(calls, judgeTokens, garbled, usd?.costUsd)
+        })
+      ),
       Effect.orDie
     )
   )
@@ -202,6 +223,12 @@ describe("a seat-backed completion judge under a run budget", () => {
     expect(Exit.isSuccess(exit)).toBe(true)
     expect(calls).toEqual({ primary: 2, judge: 2 })
     expect(ledger.tokens).toBe(210)
+  })
+
+  it("prices an unpriced Claude Code judge by the cost it reported, so a USD ceiling admits the run (#3824)", async () => {
+    const { calls, exit } = await drive(100, 0, false, { max: 1, costUsd: 0.01 })
+    expect(Exit.isSuccess(exit)).toBe(true)
+    expect(calls).toEqual({ primary: 2, judge: 2 })
   })
 })
 

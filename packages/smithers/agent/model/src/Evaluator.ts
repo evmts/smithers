@@ -86,7 +86,8 @@ export class EvaluatorError extends Schema.TaggedError<EvaluatorError>()("flows/
   usage: Schema.optional(Schema.Struct({
     inputTokens: Schema.Number,
     outputTokens: Schema.Number,
-    modelId: Schema.optional(Schema.String)
+    modelId: Schema.optional(Schema.String),
+    costUsd: Schema.optional(Schema.Number)
   }))
 }) {}
 
@@ -425,6 +426,8 @@ export interface Usage {
   readonly outputTokens: number
   /** The model that took the reading, when the transport knows it: what prices it. */
   readonly modelId?: string | undefined
+  /** The USD charge the seat reported for the reading, when it reported one: it prices ahead of the rate card. */
+  readonly costUsd?: number | undefined
 }
 
 /**
@@ -654,7 +657,12 @@ const seatInstructions =
 const streamedUsage = (usage: ModelEvent.Usage, modelId: string): Usage | undefined =>
   usage.inputTokens === undefined || usage.outputTokens === undefined
     ? undefined
-    : { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, modelId }
+    : {
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      modelId,
+      ...(usage.costUsd === undefined ? {} : { costUsd: usage.costUsd })
+    }
 
 /**
  * The status codes the gateway answers to a question it could not accept.

@@ -115,7 +115,8 @@ export const UnjudgedReason = Schema.Literals(["interrupted", ...Evaluator.Evalu
 const Usage = Schema.Struct({
   inputTokens: Schema.Number,
   outputTokens: Schema.Number,
-  modelId: Schema.optional(Schema.String)
+  modelId: Schema.optional(Schema.String),
+  costUsd: Schema.optional(Schema.Number)
 })
 
 /**

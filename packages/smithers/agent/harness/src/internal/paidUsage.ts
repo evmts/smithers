@@ -17,9 +17,11 @@ import type * as EngineLike from "../EngineLike.ts"
  * @since 1.0.0-rc.1
  * @private
  */
-export type Metered =
-  | { readonly inputTokens: number; readonly outputTokens: number; readonly modelId?: string | undefined }
-  | undefined
+export type Metered = Evaluator.Usage | undefined
+
+/** Two reported charges together; unknown when either reading reported none. */
+const sumCost = (first: number | undefined, second: number | undefined): number | undefined =>
+  first === undefined || second === undefined ? undefined : first + second
 
 /**
  * Sums the readings that were metered, one share per model in the order each
@@ -30,13 +32,15 @@ export type Metered =
  * @private
  */
 export const paidUsage = (readings: ReadonlyArray<Metered>): ReadonlyArray<EngineLike.Paid> | undefined => {
-  const shares = new Map<string | undefined, { inputTokens: number; outputTokens: number }>()
+  const shares = new Map<string | undefined, { inputTokens: number; outputTokens: number; costUsd?: number }>()
   for (const reading of readings) {
     if (reading === undefined) continue
     const share = shares.get(reading.modelId)
+    const costUsd = share === undefined ? reading.costUsd : sumCost(share.costUsd, reading.costUsd)
     shares.set(reading.modelId, {
       inputTokens: (share?.inputTokens ?? 0) + reading.inputTokens,
-      outputTokens: (share?.outputTokens ?? 0) + reading.outputTokens
+      outputTokens: (share?.outputTokens ?? 0) + reading.outputTokens,
+      ...(costUsd === undefined ? {} : { costUsd })
     })
   }
   if (shares.size === 0) return undefined
@@ -54,7 +58,7 @@ export const paidUsage = (readings: ReadonlyArray<Metered>): ReadonlyArray<Engin
 export const readingCost = (reading: Metered, at: number): Pricing.Cost | undefined =>
   reading === undefined
     ? undefined
-    : Pricing.cost({ inputTokens: reading.inputTokens, outputTokens: reading.outputTokens }, reading.modelId, { at })
+    : Pricing.cost(reading, reading.modelId, { at })
 
 /**
  * What two readings of one completion paid together. Either may come back
@@ -72,10 +76,12 @@ export const paidTogether = (
   if (first === undefined) return second
   if (second === undefined) return first
   const modelId = first.modelId === second.modelId ? first.modelId : undefined
+  const costUsd = sumCost(first.costUsd, second.costUsd)
   return {
     inputTokens: first.inputTokens + second.inputTokens,
     outputTokens: first.outputTokens + second.outputTokens,
-    ...(modelId === undefined ? {} : { modelId })
+    ...(modelId === undefined ? {} : { modelId }),
+    ...(costUsd === undefined ? {} : { costUsd })
   }
 }
 
