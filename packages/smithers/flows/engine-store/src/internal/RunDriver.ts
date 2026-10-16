@@ -2944,10 +2944,10 @@ export const make = (
      * so a row admitted after this read is never woken on this request; a
      * caller whose authority does not cover the row is refused.
      */
-    const authorizeControl = (flow: Flow.Any, executionId: string): Effect.Effect<boolean> =>
+    const authorizeControl = (flow: Flow.Any, executionId: string): Effect.Effect<boolean, RunStore.RunStoreError> =>
       Effect.gen(function*() {
         const row = yield* store.get(executionId).pipe(
-          Effect.catch((error) => error.code === "not_found_row" ? Effect.succeed(undefined) : Effect.die(error))
+          Effect.catch((error) => error.code === "not_found_row" ? Effect.succeed(undefined) : Effect.fail(error))
         )
         if (row === undefined) return false
         const state = yield* decodeState(row.stateJson)
@@ -3248,7 +3248,7 @@ export const make = (
       resume: Effect.fn("FlowEngine.resume")((flow, executionId, options) =>
         Effect.gen(function*() {
           yield* Effect.annotateCurrentSpan({ executionId, flow: flow._tag })
-          if (!(yield* authorizeControl(flow, executionId))) return
+          if (!(yield* authorizeControl(flow, executionId).pipe(Effect.orDie))) return
           if (options?.poll === true) {
             const row = yield* store.get(executionId).pipe(Effect.orDie)
             if (row.status === "suspended" && row.cancelRequestedAtMs === null) {
