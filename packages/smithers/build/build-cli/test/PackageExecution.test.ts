@@ -1,8 +1,10 @@
 import * as NodeChildProcess from "node:child_process"
+import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as NodeHttp from "node:http"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
+import { DatabaseSync } from "node:sqlite"
 import { afterAll, describe, expect, it, vi } from "vitest"
 import { PACKAGE_EXECUTION_FORMAT, takesExclusiveTreePermit } from "../src/PackageExec.ts"
 import { repositoryPnpmVersion } from "./helpers/RepositoryPnpm.ts"
@@ -2219,4 +2221,86 @@ export const Package = S.Package({ targets: { dist } })
     expect(await runs(root)).toBe(2)
     await expect(Fs.stat(NodePath.join(root, "elsewhere"))).rejects.toThrow()
   })
+})
+
+describe("generators beside a live runtime", () => {
+  it.each(["success", "failure", "cancel", "credential", "source"])(
+    "preserves concurrent WAL and logs on %s",
+    async (mode) => {
+      const root = await temporaryWorkspace()
+      await write(root, "WORKSPACE.ts", workspaceModule())
+      await write(root, "package.json", "{\"name\":\"fixture\",\"private\":true}")
+      await write(root, "yarn.lock", "")
+      await write(root, "out.txt", "before")
+      await write(root, ".gitignore", "smithers.db*\n.smithers/executions/\n.smithers/logs/\n.env\n.flows/\n")
+      await write(root, ".env", "secret")
+      await write(root, ".smithers/workflows/ci.tsx", "source")
+      const extra = mode === "credential"
+        ? "; printf leaked > .env"
+        : mode === "source"
+        ? "; printf leaked > .smithers/workflows/ci.tsx"
+        : ""
+      await write(
+        root,
+        "PACKAGE.ts",
+        `import { Smithers as S } from "@smthrs/targets"
+export const Package = S.Package({ targets: {
+  generated: S.Shell.Diff({ shell: "printf entered > entered.txt; sleep 0.3; printf after > out.txt${
+          mode === "failure" ? "; exit 1" : extra
+        }", changes: ["out.txt", "entered.txt"], sandbox: "none" })
+} })`
+      )
+      NodeChildProcess.execFileSync("jj", ["git", "init", "--colocate", root], { stdio: "ignore" })
+      NodeChildProcess.execFileSync("jj", ["describe", "-m", "fixture"], { cwd: root, stdio: "ignore" })
+      NodeChildProcess.execFileSync("jj", ["new"], { cwd: root, stdio: "ignore" })
+      await write(root, ".smithers/executions/run/logs/stream.ndjson", "initial\n")
+      await write(root, ".smithers/logs/run.log", "initial\n")
+      const db = new DatabaseSync(NodePath.join(root, "smithers.db"))
+      db.exec(
+        "PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0; PRAGMA cache_size=5; CREATE TABLE entries (value TEXT)"
+      )
+      const insert = db.prepare("INSERT INTO entries VALUES (?)")
+      let count = 0
+      let duringBody = 0
+      const abort = new AbortController()
+      const writer = setInterval(() => {
+        insert.run("x".repeat(8000))
+        count++
+        if (NodeFs.existsSync(NodePath.join(root, "entered.txt"))) {
+          duringBody++
+          if (mode === "cancel") abort.abort()
+        }
+        NodeFs.appendFileSync(NodePath.join(root, ".smithers/executions/run/logs/stream.ndjson"), "live\n")
+        NodeFs.appendFileSync(NodePath.join(root, ".smithers/logs/run.log"), "live\n")
+      }, 20)
+      try {
+        const result = await serve(root, ["//:generated", "--write"], { signal: abort.signal })
+        clearInterval(writer)
+        expect(duringBody, result.output + result.logs).toBeGreaterThan(0)
+        if (mode === "success") expect(result.exitCode, result.output + result.logs).toBe(0)
+        else expect(result.exitCode, result.output + result.logs).not.toBe(0)
+        db.exec("PRAGMA shrink_memory")
+        expect(db.prepare("SELECT count(*) AS n FROM entries").get()?.n).toBe(count)
+        expect(await Fs.readFile(NodePath.join(root, ".smithers/executions/run/logs/stream.ndjson"), "utf8")).toBe(
+          "initial\n" + "live\n".repeat(count)
+        )
+        expect(await Fs.readFile(NodePath.join(root, ".smithers/logs/run.log"), "utf8")).toBe(
+          "initial\n" + "live\n".repeat(count)
+        )
+        expect(await Fs.readFile(NodePath.join(root, "out.txt"), "utf8")).toBe(
+          mode === "failure" || mode === "cancel" ? "before" : "after"
+        )
+        expect(await Fs.readFile(NodePath.join(root, ".env"), "utf8")).toBe("secret")
+        expect(await Fs.readFile(NodePath.join(root, ".smithers/workflows/ci.tsx"), "utf8")).toBe("source")
+        if (mode === "credential" || mode === "source") {
+          expect(result.logs).toContain(
+            "wrote outside its declared write-set"
+          )
+        }
+      } finally {
+        clearInterval(writer)
+        db.close()
+      }
+    }
+  )
 })

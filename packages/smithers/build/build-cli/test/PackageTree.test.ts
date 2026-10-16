@@ -9,6 +9,7 @@ import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
+import { DatabaseSync } from "node:sqlite"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import * as PackageTree from "../src/PackageTree.ts"
 
@@ -1958,4 +1959,88 @@ describe("judgedChanges", () => {
     expect(PackageTree.judgedChanges(root, changed, [""])).toEqual(changed)
     expect(PackageTree.judgedChanges(root, changed, [])).toEqual([])
   })
+})
+
+describe("live runtime ownership", () => {
+  const file = async (path: string, bytes: string): Promise<void> => {
+    await Fs.mkdir(NodePath.dirname(NodePath.join(root, path)), { recursive: true })
+    await Fs.writeFile(NodePath.join(root, path), bytes)
+  }
+
+  it("never snapshots or rolls back root runtime files alongside protected source and credentials", async () => {
+    const live = [
+      "smithers.db",
+      "smithers.db-wal",
+      "smithers.db-shm",
+      ".smithers/executions/run/logs/stream.ndjson",
+      ".smithers/logs/run.log",
+      ".smithers/runs/run/state"
+    ]
+    const protectedPaths = [
+      ".env",
+      ".smithers/credentials/token",
+      ".smithers/WORKSPACE.ts",
+      ".smithers/workflows/ci.tsx",
+      "fixtures/.smithers/executions/run/log",
+      "fixtures/smithers.db",
+      "smithers.db-backup",
+      ".smithers/logs-source/file"
+    ]
+    for (const path of [...live, ...protectedPaths]) await file(path, "before")
+    const snapshot = await PackageTree.snapshotIgnored(root, ".flows")
+    try {
+      for (const path of live) expect(snapshot.entries.has(path), path).toBe(false)
+      for (const path of protectedPaths) expect(snapshot.entries.has(path), path).toBe(true)
+      for (const path of [...live, ...protectedPaths]) await file(path, "after")
+      const changed = await PackageTree.changedIgnored(snapshot, ".flows")
+      expect(changed).toEqual([...protectedPaths].sort())
+      for (const path of changed) await PackageTree.revertIgnored(snapshot, path)
+      for (const path of live) expect(await Fs.readFile(NodePath.join(root, path), "utf8")).toBe("after")
+      for (const path of protectedPaths) expect(await Fs.readFile(NodePath.join(root, path), "utf8")).toBe("before")
+    } finally {
+      await PackageTree.releaseIgnored(snapshot)
+    }
+  })
+
+  it("measures symlinks posing as runtime paths", async () => {
+    await Fs.mkdir(NodePath.join(root, ".smithers"))
+    await Fs.writeFile(NodePath.join(outside, "wal"), "before")
+    await Fs.mkdir(NodePath.join(outside, "logs"))
+    await Fs.symlink(NodePath.join(outside, "wal"), NodePath.join(root, "smithers.db-wal"))
+    await Fs.symlink(NodePath.join(outside, "logs"), NodePath.join(root, ".smithers/logs"))
+    const snapshot = await PackageTree.snapshotIgnored(root, ".flows")
+    try {
+      expect(snapshot.entries.get("smithers.db-wal")?.kind).toBe("link")
+      expect(snapshot.entries.get(".smithers/logs")?.kind).toBe("link")
+      const portals = await PackageTree.snapshotPortals(root, ".flows", snapshot)
+      try {
+        expect(portals.portals.map((portal) => portal.link)).toEqual([".smithers/logs", "smithers.db-wal"])
+      } finally {
+        await PackageTree.releasePortals(portals)
+      }
+    } finally {
+      await PackageTree.releaseIgnored(snapshot)
+    }
+  })
+})
+
+it("restoring an older live WAL reproduces SQLITE_IOERR_SHORT_READ in an isolated database", async () => {
+  const path = NodePath.join(root, "smithers.db")
+  const db = new DatabaseSync(path)
+  try {
+    db.exec(
+      "PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0; PRAGMA cache_size=5; CREATE TABLE entries (value TEXT)"
+    )
+    const oldWal = await Fs.readFile(`${path}-wal`)
+    const insert = db.prepare("INSERT INTO entries VALUES (?)")
+    for (let index = 0; index < 100; index++) insert.run("x".repeat(8000))
+    expect(db.prepare("SELECT count(*) AS n FROM entries").get()?.n).toBe(100)
+    await Fs.writeFile(`${path}-wal`, oldWal)
+    db.exec("PRAGMA shrink_memory")
+    expect(() => db.prepare("SELECT sum(length(value)) FROM entries").get()).toThrow(
+      expect.objectContaining({ errcode: 522 })
+    )
+  } finally {
+    db.close()
+  }
 })

@@ -950,6 +950,15 @@ const recordIgnored = (
   if (entries.size > limits.entries) throw new IgnoredCensusError("entries", path, limits)
 }
 
+// Only the installation root owns these live runtime paths. Nested migration
+// fixtures are source; similarly named backups and credentials remain guarded.
+// Links at these names remain portals rather than gaining a host-state waiver.
+const runtimeDirectory = (path: string): boolean =>
+  path === ".smithers/executions" || path === ".smithers/logs" || path === ".smithers/runs"
+
+const runtimeFile = (path: string): boolean =>
+  path === "smithers.db" || path === "smithers.db-wal" || path === "smithers.db-shm"
+
 /**
  * Records every gitignored path under one directory git reported as ignored.
  *
@@ -985,11 +994,14 @@ const walkIgnored = async (
     const path = directory === "" ? dirent.name : `${directory}/${dirent.name}`
     if (skipStatusPath(cacheDirectory, path, hostTrees)) continue
     if (dirent.isDirectory()) {
+      if (runtimeDirectory(path)) continue
       await walkIgnored(root, cacheDirectory, path, entries, limits, hostTrees)
       continue
     }
     const entry = await identityOf(NodePath.join(root, path))
-    if (entry !== undefined) recordIgnored(entries, path, entry, limits)
+    if (entry !== undefined && !(entry.kind === "file" && runtimeFile(path))) {
+      recordIgnored(entries, path, entry, limits)
+    }
   }
 }
 
@@ -1028,11 +1040,14 @@ const listIgnored = async (
     const path = directory ? status.path.slice(0, -1) : status.path
     if (path === "" || skipStatusPath(cacheDirectory, path, hostTrees)) continue
     if (directory) {
+      if (runtimeDirectory(path)) continue
       await walkIgnored(root, cacheDirectory, path, entries, limits, hostTrees)
       continue
     }
     const entry = await identityOf(NodePath.join(root, path))
-    if (entry !== undefined) recordIgnored(entries, path, entry, limits)
+    if (entry !== undefined && !(entry.kind === "file" && runtimeFile(path))) {
+      recordIgnored(entries, path, entry, limits)
+    }
   }
   return entries
 }
