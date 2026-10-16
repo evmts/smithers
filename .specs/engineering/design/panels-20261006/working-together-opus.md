@@ -69,7 +69,7 @@ Yjs on the wire: `yjs` 13.6.32 and `y-codemirror.next` 0.3.6 in browsers (alread
 
 ### 3.3 Messages
 
-Host to daemon on the ADR 0004 control stream. `open_doc` and `close_doc` exist (`crates/smithers-machined/src/rpc.rs:30`) and change payloads; `save_doc` is new; `file_written` gains a field.
+Host to daemon on the ADR 0004 control stream. `open_doc` and `close_doc` exist (`packages/smithers-machined/src/rpc.rs:30`) and change payloads; `save_doc` is new; `file_written` gains a field.
 
 ```
 open_doc{path} → {disk: {digest, bytes} | absent | too_large | binary,
@@ -86,7 +86,7 @@ Browser frames stay as fixed in `packages/backend/internal/compose/testdata/coco
 ### 3.4 Lifecycle
 
 - **Open.** The first authorized subscriber makes the hub call `open_doc`. No record: seed from the bytes, new epoch. Record digest equals disk: load. Record `prev_digest` equals disk: a save stopped before its swap; load and save again. Otherwise load, then merge the disk bytes as an outside write against the record's text. Each subscriber gets a client id in `Y.Map("authors")`; the hub refuses updates carrying structs for any other client id, so colours cannot be forged.
-- **Save.** The daemon reuses `crates/smithers-machined/src/doc/disk/linux.rs`: record via temp, `fsync`, `rename`; text via temp, `fsync`, `renameat2(RENAME_EXCHANGE)`; directory `fsync`. If the disk digest differs from `base` before writing, it writes nothing and answers `moved` with the current bytes. A displaced file whose digest is `base` keeps its temp name for 2 s before deletion, so an in-place writer that opened the file before the swap is still caught. A displaced file with any other digest returns as `displaced`. The host merges `moved` or `displaced` bytes as an outside write and saves again.
+- **Save.** The daemon reuses `packages/smithers-machined/src/doc/disk/linux.rs`: record via temp, `fsync`, `rename`; text via temp, `fsync`, `renameat2(RENAME_EXCHANGE)`; directory `fsync`. If the disk digest differs from `base` before writing, it writes nothing and answers `moved` with the current bytes. A displaced file whose digest is `base` keeps its temp name for 2 s before deletion, so an in-place writer that opened the file before the swap is still caught. A displaced file with any other digest returns as `displaced`. The host merges `moved` or `displaced` bytes as an outside write and saves again.
 - **Outside write on an open path.** After `IN_CLOSE_WRITE` or `IN_MOVED_TO`, `file_written` carries the bytes. The hub merges three ways (base = last saved text, ours = document, theirs = bytes) with `doc/merge.rs` moved to the host. No overlap: one transaction under the burst actor's client id. Overlap: the document wins on disk, non-overlapping hunks apply, and the file shows "Changed outside Smithers · Compare" against the burst's `after` version. Merges are idempotent by digest.
 - **Writes through Smithers.** One route, the existing `PUT .../workspaces/{id}/files/content`, which already requires `base_digest` and takes a `changes` batch (`packages/backend/internal/routes/workspace.go:469`). The write service compares every base first: open paths against the document text under the branch's hub lock, closed paths in the daemon's `write_file` compare phase. Any mismatch returns `409 stale{path, current_digest, current_text}` and writes nothing; the agent's edit tool re-applies its edit to the current text. Then open paths apply as document transactions under the writer's client id and save at once, and closed paths swap. The reply waits for the disk, so the agent's next `pnpm test` reads its own write.
 - **Delete, rename, close.** `gone{deleted}` with Restore and `gone{renamed, to}` with Follow, as spec §9.2.6. A document closes 60 s after its last subscriber, after a final save; its record stays on disk, so authors survive reopening.
@@ -137,7 +137,7 @@ The spike's 1,738 ms is keystrokes at 30 Hz through the VM; here no keystroke ta
 | Agent `bash` | Burst; agent's own terminal session | Coding agent | Heuristic |
 | Terminal, SSH shell, SSH editor, formatter, hand-run `jj`/`git` | Burst | "Maya via SSH" or "Ben's terminal" | Heuristic |
 
-Bursts follow spec §9.3.4: one open outside burst per branch, closed 1.5 s after its last write, 10 s after it opened, or before another key touches one of its files. Its actor is the only candidate whose cgroups gained CPU time in the window (`crates/smithers-machined/src/attrib.rs`), else `{outside: true}`. Two changes:
+Bursts follow spec §9.3.4: one open outside burst per branch, closed 1.5 s after its last write, 10 s after it opened, or before another key touches one of its files. Its actor is the only candidate whose cgroups gained CPU time in the window (`packages/smithers-machined/src/attrib.rs`), else `{outside: true}`. Two changes:
 
 1. **Candidates are people and the agent, not sessions.** Maya's shell and her Cursor server are both Maya, so her always-ticking editor server cannot turn her own format run into "outside".
 2. **The coding host cannot write.** The broker starts the coding host with `/workspace` read-only in its own mount namespace, so its writes take the exact write route. The agent is a candidate only while its terminal runs a command.
@@ -158,7 +158,7 @@ Each renders as one line ("Maya via SSH changed 12 files", "Alice edited `retry.
 
 - **Users and homes.** Spec §5.5 stands: member uids from 20000, `agent` 19999, `machined` 19998, group `team`, working copy `root:team` with setgid directories, `umask 002` and `safe.directory=/workspace`. No `sudo`, setuid or file capabilities. Homes are `/home/<login>` on each machine's own disk, mode 0700; tool logins never leave the machine (spike T-MCH-02).
 - **Roster sync.** After `Welcome` and before `ready`, the host sends `set_roster{[{login, uid}]}`. The broker spawns only for listed uids and deletes the homes of unlisted ones, so a removed member's tool tokens leave awake machines at once and sleeping ones at their next wake.
-- **Sessions.** Every process a person or the agent runs is a broker session in its own cgroup (`pty`, `exec`, `sftp`, `tcp`) with spec §9.6.2 frames and 256 KiB credit (`crates/smithers-machined/src/credit.rs`).
+- **Sessions.** Every process a person or the agent runs is a broker session in its own cgroup (`pty`, `exec`, `sftp`, `tcp`) with spec §9.6.2 frames and 256 KiB credit (`packages/smithers-machined/src/credit.rs`).
 - **Terminals.** A daemon `pty` as the owner. The host terminal manager (`internal/routes/terminal_session_manager.go`) attaches over the link and keeps its WebSocket. It already fans out to many viewers, drops and counts non-owner input (`ownsInput`) and replays a 512 KiB ring: that is watch-only sharing. The agent's terminal is a `pty` owned by `agent`, registered to the run; its `bash` tool types into it, and members watch it like anyone's.
 - **SSH.** Compose the existing gateway (`internal/ssh/server.go`, not mounted in `apps/backend/main.go` today) on port 2222. Username = branch; keys from GitHub plus `smthrs ssh-key`; connecting files a person wake. Shell and exec map to `pty`/`exec`, `sftp` to `sftp-server` as the member, `direct-tcpip` to `tcp_connect`. Agent forwarding and `tcpip-forward` are refused. VS Code's server must outlive its exec channel in Maya's cgroup (T-TRM-06).
 - **Revocation in 5 s.** One transaction suspends the member, revokes credentials and writes the event (spec §5.6.2). The watcher (at most 1 s behind) then, in parallel, closes their live sockets and document subscriptions, terminal sockets and SSH connections; cancels queued turns and stops the running one; and on each awake machine calls `kill_sessions(uid)`, which returns at `populated 0`, then deletes `/run/smithers/<uid>/`. The clock stops at the last of these.
@@ -212,7 +212,7 @@ Never lost: an acknowledged save; the end state of every burst; displaced bytes;
 
 ## 9. Reuse map
 
-Paths under `B/` are in `packages/backend/internal/`, under `M/` in `crates/smithers-machined/src/`, under `A/` in `apps/app/src/mainview/`.
+Paths under `B/` are in `packages/backend/internal/`, under `M/` in `packages/smithers-machined/src/`, under `A/` in `apps/app/src/mainview/`.
 
 | Decision | What | Paths |
 | --- | --- | --- |
@@ -223,7 +223,7 @@ Paths under `B/` are in `packages/backend/internal/`, under `M/` in `crates/smit
 | Keep | Terminal manager, SSH server (compose it), presence | `B/routes/terminal_session_manager.go`, `B/ssh/server.go`, `flows/sync/src/BranchPresence.ts`, `gateway/src/HostBranchPresence.ts` |
 | Keep | Conversation storage, shared reads, revocation | `B/chat/{store,dispatcher,shared,author,queue,view_state}.go` |
 | Reshape | Daemon binary: compose broker, daemon and client | `M/main.rs` (exits 78 today) |
-| Reshape | Document engine moves to the host library; the wiki merge becomes its adapter | `M/doc/{host,authors,merge,reconcile,state,gone}.rs` and `crates/smithers-ffi/src/wiki_document.rs` → `crates/smithers-ffi/src/live_document/` beside `document_core.rs` |
+| Reshape | Document engine moves to the host library; the wiki merge becomes its adapter | `M/doc/{host,authors,merge,reconcile,state,gone}.rs` and `packages/smithers-ffi/src/wiki_document.rs` → `packages/smithers-ffi/src/live_document/` beside `document_core.rs` |
 | Reshape | Daemon keeps only disk saves; drop `yrs` | `M/doc/disk.rs`, `M/doc/disk/linux.rs` |
 | Reshape | Document relay becomes the doc hub; delete the topology switch | `B/live/docrelay.go` → `B/live/doc/` |
 | Reshape | Write service: open paths to the hub, closed to the daemon | `B/routes/workspace.go:469`, `B/services/workspace_facets.go` |

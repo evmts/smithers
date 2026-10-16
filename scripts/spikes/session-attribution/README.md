@@ -3,7 +3,7 @@
 Pending real-machine proof. This is a read-only spike, not a product attribution
 implementation or an activation flag. It implements working-together.md §4/§10:
 aggregate sessions by participant before counting ambiguous windows. The existing
-`crates/smithers-machined/src/attrib.rs` also aggregates by participant;
+`packages/smithers-machined/src/attrib.rs` also aggregates by participant;
 its production implementation is owned by the attribution lane.
 
 Run the observer unprivileged in the Linux guest on the Mac mini. Use the

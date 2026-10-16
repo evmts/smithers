@@ -24,7 +24,7 @@ Inspection baseline: checkout `f28cbf01cf8c`; local `origin/frontrun` resolves t
 
 ## 3. Co-editing model
 
-Keep Yjs 13.6.32 in browsers and Yrs 0.27.4 in native adapters, reusing `crates/smithers-ffi/src/document_core.rs`. Use UTF-16 offsets, `Y.Text("content")` for code, `Y.Text("markdown")` for wiki, and authority-owned `Y.Map("authors")`. CodeMirror’s Yjs binding handles text and relative-position cursors. Render author colour and gutter names with accessible labels; add the brief’s cursor capability to the existing binding rather than another editor.
+Keep Yjs 13.6.32 in browsers and Yrs 0.27.4 in native adapters, reusing `packages/smithers-ffi/src/document_core.rs`. Use UTF-16 offsets, `Y.Text("content")` for code, `Y.Text("markdown")` for wiki, and authority-owned `Y.Map("authors")`. CodeMirror’s Yjs binding handles text and relative-position cursors. Render author colour and gutter names with accessible labels; add the brief’s cursor capability to the existing binding rather than another editor.
 
 **Choose the host mirror.** Browser → host → browser fan-out avoids putting the guest relay in every remote keystroke’s critical path. The contended-laptop spike measured relay p95 197 ms against 20 ms and bridge keystroke p95 1,738 ms against 1 s. These are failures on a nonreference host, not evidence of a reference-host pass. ADR 0003 currently says topology is undecided; this is a recommendation for T-COL-11, not a claim that its required rerun happened. Once selected, implement one production topology and delete the alternative document adapter; preserve the underlying transport seam needed elsewhere.
 
@@ -126,7 +126,7 @@ Never lose an acknowledged document transaction, accepted prompt, completed flow
 | Piece | Keep / reshape / delete / new |
 | --- | --- |
 | Branches/admission | Reshape `internal/services/workspace_branch_machine*.go`, `workspace_machine_queue.go`, `workspace_access.go`, existing `workspace_shares` and active-workspace key. Audit every provisioner; reject competing copies without deleting disks. Keep runtime capacity reconciliation. |
-| Daemon | Compose `crates/smithers-machined/src/main.rs`, `broker/`, `rpc.rs`, `hooks.rs`, `lock.rs`, `credit.rs`, `outbox_store.rs`, `versions.rs`, `watch.rs` and `doc/`. New production lifecycle/link/capture wiring where absent. No fixture/no-op hooks in admitted production paths. |
+| Daemon | Compose `packages/smithers-machined/src/main.rs`, `broker/`, `rpc.rs`, `hooks.rs`, `lock.rs`, `credit.rs`, `outbox_store.rs`, `versions.rs`, `watch.rs` and `doc/`. New production lifecycle/link/capture wiring where absent. No fixture/no-op hooks in admitted production paths. |
 | Session/SSH | Implement existing `internal/machined/sessions.go` RPC and broker supervisor; reshape `internal/routes/terminal_session_manager.go` and `internal/ssh/server.go`. Delete direct terminal/SSH process-launch bypasses at cutover. |
 | Documents | Keep `smithers-ffi/src/document_core.rs`, `wiki_document.rs`, daemon `doc/` and `internal/machined/wire/`. Reshape `internal/live/docrelay.go`; new `codedoc.go` resident mirror adapter and shared-native handle API. Delete selected-out relay-only document behavior. |
 | Browser | Keep `runtime/LiveChannel.ts`, `LiveDocProvider.ts`, `cards/liveDoc.ts`, `CodeEditorSurface.tsx`, `views/CodeEditorView.tsx`. Fix receipt, recovery and cursor semantics; bind the production channel. Delete duplicate text-reload/editing surfaces. |

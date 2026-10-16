@@ -29,6 +29,7 @@
     "engine-store",
     "flow",
     "jj",
+    "jj-wasm",
     "journal",
     "kernel",
     "keys",

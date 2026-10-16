@@ -4,8 +4,8 @@ import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
 import { ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
 import * as Input from "@smthrs/targets/Input"
-import { Package as flowsJjPackage } from "./crates/flows-jj/PACKAGE.ts"
-import { Package as machinedPackage } from "./crates/smithers-machined/PACKAGE.ts"
+import { Package as flowsJjPackage } from "./packages/smithers/flows/jj-wasm/PACKAGE.ts"
+import { Package as machinedPackage } from "./packages/smithers-machined/PACKAGE.ts"
 import { Package as backendPackage } from "./packages/backend/PACKAGE.ts"
 import { Package as appPackage } from "./apps/app/PACKAGE.ts"
 import { Package as modelHostAppPackage } from "./apps/model-host/PACKAGE.ts"
@@ -67,7 +67,6 @@ const tsconfig = Smithers.Tsconfig({
   include: [
     Smithers.file("PACKAGE.ts"),
     Smithers.glob("apps/*/PACKAGE.ts"),
-    Smithers.glob("crates/*/PACKAGE.ts"),
     Smithers.glob("evals/*/PACKAGE.ts"),
     Smithers.file("scripts/PACKAGE.ts"),
     Smithers.glob("scripts/*/PACKAGE.ts"),
@@ -377,7 +376,7 @@ const machinedWire = Smithers.Shell.Test({
   shell: "go test -count=1 -p 4 -v ./packages/backend/internal/compose -run '^(TestMachinedWire.*|TestWireContentLimit|TestMachinedSkeletonDisabled)$' && cargo test --locked -p smithers-machined --test golden --test fake_host --test local",
   data: [backendPackage.buildInputs, flowsJjPackage.nativeSources,
     machinedPackage.buildInputs,
-    Smithers.file("//crates/flows-jj/Cargo.toml"),
+    Smithers.file("//packages/smithers/flows/jj-wasm/Cargo.toml"),
     Smithers.file("//Cargo.toml"), Smithers.file("//Cargo.lock"),
     Smithers.file("//rust-toolchain.toml"), Smithers.file("//go.mod"), Smithers.file("//go.sum")],
   env: { GOMAXPROCS: "8", GOFLAGS: "-buildvcs=false -mod=readonly", CARGO_BUILD_JOBS: "2" },
@@ -942,10 +941,10 @@ const ci = Smithers.GithubCiGen({
         rust: Smithers.CiToolchain.Rust({})
       }),
       steps: [
-        { name: "Cargo lint gates", verb: Smithers.Verb.Lint, pattern: "//crates/flows-jj/..." },
+        { name: "Cargo lint gates", verb: Smithers.Verb.Lint, pattern: "//packages/smithers/flows/jj-wasm/..." },
         { name: "Third-party notices", verb: Smithers.Verb.Test, pattern: "//scripts:thirdPartyNotices" },
-        { name: "Cargo test suite", verb: Smithers.Verb.Test, pattern: "//crates/flows-jj:cargoTest" },
-        { name: "Daemon document component tests", verb: Smithers.Verb.Test, pattern: "//crates/smithers-machined:documentComponents" }
+        { name: "Cargo test suite", verb: Smithers.Verb.Test, pattern: "//packages/smithers/flows/jj-wasm:cargoTest" },
+        { name: "Daemon document component tests", verb: Smithers.Verb.Test, pattern: "//packages/smithers-machined:documentComponents" }
       ]
     },
     {
@@ -972,11 +971,11 @@ const ci = Smithers.GithubCiGen({
         rust: Smithers.CiToolchain.Rust({ cache: false })
       }),
       steps: [
-        { name: "Build-script unit tests", verb: Smithers.Verb.Test, pattern: "//crates/flows-jj:buildScript" },
+        { name: "Build-script unit tests", verb: Smithers.Verb.Test, pattern: "//packages/smithers/flows/jj-wasm:buildScript" },
         {
           name: "Rebuild and byte-compare flows_jj.wasm",
           verb: Smithers.Verb.Test,
-          pattern: "//crates/flows-jj:wasmReproducibility"
+          pattern: "//packages/smithers/flows/jj-wasm:wasmReproducibility"
         }
       ]
     },
@@ -1200,7 +1199,7 @@ export const packageDefaults = Smithers.PackageDefaults({
 // Security review of the files the root owns and no nested PACKAGE.ts does:
 // the GitHub workflows, the self-host distribution image, the native FFI
 // crate, install-time hooks and patches, and the public
-// `.smithers` projections. `crates/flows-jj`, `scripts`, `flows`, `examples`,
+// `.smithers` projections. `packages/smithers/flows/jj-wasm`, `scripts`, `flows`, `examples`,
 // `apps`, `evals`, and `packages` have their own reviewers.
 const securityReview = Smithers.SecurityReview({
   cwd: ".",
@@ -1217,8 +1216,8 @@ const securityReview = Smithers.SecurityReview({
     ".smithers/*.json",
     ...flowEntries.filter((input) => /\/flow\.(ts|mdx)$/.test(input.path)).map((input) => input.path),
     "distribution/*",
-    "crates/smithers-ffi/Cargo.toml",
-    "crates/smithers-ffi/src/*.rs"
+    "packages/smithers-ffi/Cargo.toml",
+    "packages/smithers-ffi/src/*.rs"
   ],
   checks: [
     {
@@ -1283,13 +1282,13 @@ const securityReview = Smithers.SecurityReview({
         "A caller-supplied relative path joined to a root without rejecting absolute paths, `..`, NUL, or Windows drive and UNC prefixes."
       ],
       paths: [
-        "crates/smithers-ffi/src/atomic_fs.rs",
-        "crates/smithers-ffi/src/atomic_windows_fs.rs",
-        "crates/smithers-ffi/src/atomic_windows_handle.rs",
-        "crates/smithers-ffi/src/file_eligibility.rs",
-        "crates/smithers-ffi/src/tree_export.rs",
-        "crates/smithers-ffi/src/workspace_files.rs",
-        "crates/smithers-ffi/src/workspace_local.rs"
+        "packages/smithers-ffi/src/atomic_fs.rs",
+        "packages/smithers-ffi/src/atomic_windows_fs.rs",
+        "packages/smithers-ffi/src/atomic_windows_handle.rs",
+        "packages/smithers-ffi/src/file_eligibility.rs",
+        "packages/smithers-ffi/src/tree_export.rs",
+        "packages/smithers-ffi/src/workspace_files.rs",
+        "packages/smithers-ffi/src/workspace_local.rs"
       ]
     },
     {
@@ -1303,12 +1302,12 @@ const securityReview = Smithers.SecurityReview({
         "api_base_url or git_url accepted over plain http to a non-loopback host, or http.followRedirects enabled while the credential helper is set."
       ],
       paths: [
-        "crates/smithers-ffi/src/source_import.rs",
-        "crates/smithers-ffi/src/source_publish.rs",
-        "crates/smithers-ffi/src/source_create.rs",
-        "crates/smithers-ffi/src/smithers_jj_export.rs",
-        "crates/smithers-ffi/src/workspace_engine.rs",
-        "crates/smithers-ffi/src/workspace_source.rs"
+        "packages/smithers-ffi/src/source_import.rs",
+        "packages/smithers-ffi/src/source_publish.rs",
+        "packages/smithers-ffi/src/source_create.rs",
+        "packages/smithers-ffi/src/smithers_jj_export.rs",
+        "packages/smithers-ffi/src/workspace_engine.rs",
+        "packages/smithers-ffi/src/workspace_source.rs"
       ]
     },
     {
@@ -1321,7 +1320,7 @@ const securityReview = Smithers.SecurityReview({
         "An `extern \"C\"` function whose body is not routed through the catch_unwind `execute` wrapper, or code outside that wrapper that can panic on caller input.",
         "A returned buffer freed by a different allocator or free function than the one that allocated it, or freed twice."
       ],
-      paths: ["crates/smithers-ffi/src/lib.rs"]
+      paths: ["packages/smithers-ffi/src/lib.rs"]
     },
     {
       id: "install-hook-supply-chain",

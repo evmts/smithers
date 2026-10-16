@@ -13,11 +13,11 @@ Order of preference: use as is, enable, restore, reshape, new (delta.md §0).
 | Guest byte transports | Reuse | `packages/backend/microsandbox/transport.go:67` (`DialWorkspacePort`, `msb exec` + helper `relay`), `:126` (`startBridges`, helper `bridge`) | The stream under ADR 0004 for `relay` and `bridge`. Unchanged. |
 | Content limit | Reuse | `MaxWorkspaceFileBytes = 1 << 20`, `packages/backend/internal/services/workspace_facets.go:27` | `write_file` and `read_file` bound; the Rust constant `MAX_FILE_BYTES` equals it, asserted by a golden frame (`err_too_large.limit`). |
 | `cgroup_kill`, `drop_to` | Reshape (port) | `microsandbox/guest/smithers-guest.py:78`, `:124` | Ported to Rust in `broker.rs`; supplementary groups `[team]` instead of `[]`, and uid 19999 for `agent` instead of the helper's 1500 (T-MCH-11). Reference only, never invoked. The helper's `fs_read`/`fs_write` confine by `realpath` and so race; `confine.rs` replaces them with `openat2`. |
-| Yrs pin | Reuse | `crates/smithers-ffi/Cargo.toml` `yrs = "=0.27.4"` | Pinned in the new crate and `MANIFEST.json`; not compiled until T-COL-08a. |
-| Workspace `Cargo.toml`, `PACKAGE.ts` pattern | Reuse | `Cargo.toml` members, `crates/flows-jj/PACKAGE.ts` | Same `Smithers.Cargo.*` targets; the root `PACKAGE.ts` already globs `crates/*/PACKAGE.ts`. |
+| Yrs pin | Reuse | `packages/smithers-ffi/Cargo.toml` `yrs = "=0.27.4"` | Pinned in the new crate and `MANIFEST.json`; not compiled until T-COL-08a. |
+| Workspace `Cargo.toml`, `PACKAGE.ts` pattern | Reuse | `Cargo.toml` members, `packages/smithers/flows/jj-wasm/PACKAGE.ts` | Same `Smithers.Cargo.*` targets; the root `PACKAGE.ts` already globs `packages/*/PACKAGE.ts`. |
 | jj and git | Reuse | the guest rootfs `jj` and `git` (spec §16.1.1) | The daemon shells out to both. `jj-lib` in-process is rejected: the workspace pins a jj fork (`Cargo.toml` `jj-lib` rev `47589ad`) that need not match the rootfs `jj` members run, and a store-format skew between the daemon and a member's `jj` would corrupt `.jj/`. |
 | Head reporter | Reshape (absorb) | `packages/backend/internal/services/workspace_head.go:30-171` (bash loop: snapshot on tick, push head ref, report `{change_id, commit_id, ahead, behind}`), `ReportWorkspaceHead` `:697` | Its duty moves to `capture` and the `captured` event; the host keeps computing `ahead`/`behind` from the head. T-COL-03 deletes the loop. |
-| One-shot Rust codec | Rejected | `crates/smithers-ffi/src/atomic_protocol.rs` (text length header + JSON body, one request per process) | Its bounds-before-read discipline and `{code, message}` error shape carry over; the format cannot multiplex streams. |
+| One-shot Rust codec | Rejected | `packages/smithers-ffi/src/atomic_protocol.rs` (text length header + JSON body, one request per process) | Its bounds-before-read discipline and `{code, message}` error shape carry over; the format cannot multiplex streams. |
 | Expected test paths | Reuse | `scripts/check-commands.json:170-212` names `tests/barrier.rs` (C-COL-03), `tests/confinement.rs` (C-COL-04), `tests/versions.rs`, `tests/overflow.rs`, `internal/machined/fault_test.go` | Lanes use these names. |
 | Terminal WebSocket frames | Rejected | `internal/routes/terminal_session_manager.go` | No correlation, ack or actor (ADR 0004 context). |
 | Pair session and presence code | Rejected | deleted in `2753d2e3` | Host-side SQL and HTTP routes for share sessions; no daemon, frame codec or guest code. T-COL-06 restores only its lease SQL shape. |
@@ -286,7 +286,7 @@ pub trait Clock: Send + Sync { fn now(&self) -> SystemTime; fn mono(&self) -> In
 ## 9. Crate layout and ownership
 
 ```
-crates/smithers-machined/
+packages/smithers-machined/
   Cargo.toml          features: testing (fake host, fixtures), killpoints (C-DUR-04 hooks)
   PACKAGE.ts          cargoFmt, cargoClippy, cargoTest, muslBuild (aarch64-unknown-linux-musl via cargo-zigbuild)
   src/main.rs         subcommands: broker | daemon | client
@@ -365,7 +365,7 @@ It checks objects with `git cat-file -e` before acknowledging and inserts the re
 | `node gen.mjs --check` | `packages/backend/internal/compose/testdata/cocontracts/` | fixtures equal the independent generator; `MANIFEST.json` hashes match |
 | Go golden | `internal/machined/wire/golden_test.go` | decode = `.json`, encode = `.bin`, each refusal's exact code |
 | Go stdlib-only | `internal/machined/wire/deps_test.go` | `go list -deps` lists only stdlib |
-| Rust golden | `crates/smithers-machined/tests/golden.rs` | same three assertions |
+| Rust golden | `packages/smithers-machined/tests/golden.rs` | same three assertions |
 | Fake host sequences | `tests/fake_host.rs` | every ADR 0004 sequence replays byte for byte against the real `rpc.rs` with default hooks: stubs answer `unsupported`, `seq_reserved_doc_s2` answers `doc_refused_unsupported`, handshake refusals |
 | Fixture hooks compile | `tests/fake_host.rs` | a `Daemon` built from every fixture answers `status` |
 | Contract rows | `internal/compose/cocontracts_test.go` | row 1: `write_file` without `base` is `missing_field`, `err_stale` round-trips; row 5: kind `0x04` decodes and is refused `unsupported`, `res_capture` carries `flushed_documents` |
@@ -410,7 +410,7 @@ A5            ██████████████                    free
 | --- | --- | --- | --- | --- |
 | L1 fixtures | `packages/backend/internal/compose/testdata/cocontracts/**` (`gen.mjs`, `*.bin`, `*.json`, `MANIFEST.json`), `packages/backend/internal/compose/cocontracts_test.go` | everything: ADR 0004 tables are the only input | — | test data only |
 | L2 Go wire | `packages/backend/internal/machined/wire/**` | codec and unit tests from ADR 0004; golden test skips with a named reason until L1 lands, then must pass | L1 for golden | no caller until T-COL-03 |
-| L3 Rust skeleton | everything under `crates/smithers-machined/` marked 03r in §9, root `Cargo.toml` `members`, `Cargo.lock` | codec, hooks, defaults, lock thread, stubs that answer `unsupported`, fake host, golden tests (skip until L1) | L1 for golden | binary not planted until T-COL-03; every stub answers `unsupported` |
+| L3 Rust skeleton | everything under `packages/smithers-machined/` marked 03r in §9, root `Cargo.toml` `members`, `Cargo.lock` | codec, hooks, defaults, lock thread, stubs that answer `unsupported`, fake host, golden tests (skip until L1) | L1 for golden | binary not planted until T-COL-03; every stub answers `unsupported` |
 | A1 broker | `src/broker.rs`, `src/brokerproto.rs`, `tests/broker.rs` | all of it; `Spawn` answers `unsupported` | L3 | exits 78 without kernel features; refuses any message but the table's |
 | A2 files | `src/confine.rs`, `src/files.rs`, `src/local.rs`, `src/client.rs`, `tests/{confinement,write_file,local}.rs` | `write_file` with `NoWatcher`; local socket with a fixture `Sessions` mapping a cgroup to a run | L3; A1 for C-COL-04 step 5 (`ps` uids, root broker) | local socket refuses every caller while `Sessions` is `NoSessions` (no run map) |
 | A3 durability | `src/outbox.rs`, `src/objects.rs`, `src/capture.rs`, `tests/{outbox,capture}.rs` | against the fake host and real git/jj | L3 | not planted until T-COL-03; the outbox refuses to start unless `/var/lib/smithers-machined` is owned by `machined` with mode 0700, and the daemon then stays `booting` |

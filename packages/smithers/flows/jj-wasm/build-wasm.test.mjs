@@ -157,7 +157,7 @@ test("foreignHostError refuses a host whose bytes CI cannot reproduce", () => {
   assert.match(error, new RegExp(canonicalHost))
   // The refusal is only actionable if it carries the canonical rebuild.
   assert.match(error, /docker run/)
-  assert.match(error, /node crates\/flows-jj\/build-wasm\.mjs/)
+  assert.match(error, /node packages\/smithers\/flows\/jj-wasm\/build-wasm\.mjs/)
 })
 
 test("remapFlags replaces every machine-specific prefix with a fixed token", () => {
@@ -258,7 +258,7 @@ test("buildEnvironment preserves remap flags through Cargo when paths contain sp
     writeFileSync(join(directory, "included.rs"), 'fn main() { println!("{}", file!()); }\n')
     const args = ["run", "--offline", "--jobs", "2", "--manifest-path", join(directory, "Cargo.toml")]
     const control = spawnSync("cargo", args, {
-      cwd: fileURLToPath(new URL("../../", import.meta.url)),
+      cwd: fileURLToPath(new URL("../../../../", import.meta.url)),
       env: buildEnvironment({ ...process.env, CARGO_TARGET_DIR: join(directory, "target") }, []),
       encoding: "utf8",
       timeout: 60000
@@ -269,7 +269,7 @@ test("buildEnvironment preserves remap flags through Cargo when paths contain sp
     // Use real Cargo and rustc: inspecting the environment alone cannot prove
     // that Cargo delivers each argument intact to the compiler.
     const result = spawnSync("cargo", args, {
-      cwd: fileURLToPath(new URL("../../", import.meta.url)),
+      cwd: fileURLToPath(new URL("../../../../", import.meta.url)),
       env: buildEnvironment({ ...process.env, CARGO_TARGET_DIR: join(directory, "target") }, [
         `--remap-path-prefix=${directory}=/flows`,
         "--cfg=flows_remap_fixture"
@@ -296,7 +296,7 @@ test("buildEnvironment lets the repository pin select the Rustup toolchain", () 
   // installation; the repository's already-installed pinned compiler is used.
   for (const tool of ["rustc", "cargo"]) {
     const result = spawnSync(tool, ["--version"], {
-      cwd: fileURLToPath(new URL("../../", import.meta.url)),
+      cwd: fileURLToPath(new URL("../../../../", import.meta.url)),
       env: environment,
       encoding: "utf8",
       timeout: 60000

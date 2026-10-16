@@ -238,7 +238,7 @@ renders `node --test`; `RustToolchain.install()` renders
 implementation asks it for the argv.
 
 Every CI gate is therefore a target, in the package that owns it:
-`scripts/PACKAGE.ts` for the operator and release scripts, `crates/*/PACKAGE.ts` for
+`scripts/PACKAGE.ts` for the operator and release scripts, a crate's own `PACKAGE.ts` for
 the cargo gates, `apps/*/PACKAGE.ts` for an app's end-to-end suites, and
 a package's own `PACKAGE.ts` for everything it claims about itself, including its
 Bun re-run. No file declares another package's targets.
@@ -367,7 +367,7 @@ bootstrap or repair operations.
 
 ## Working with the pinned jj fork
 
-The Rust crates under `crates/` build against `jj-lib` from the pinned jj fork, which `crates/flows-jj/Cargo.toml` declares as a git dependency; cargo fetches it, so a plain `git clone` needs no extra step.
+The Rust crates build against `jj-lib` from the jj fork vendored in `third_party/jj`, which the root `Cargo.toml` declares as a path dependency, so a plain `git clone` needs no extra step.
 
 ## Cutting a release
 

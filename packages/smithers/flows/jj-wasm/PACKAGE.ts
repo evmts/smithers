@@ -2,21 +2,21 @@
  * Targets for the `flows-jj` crate and the WebAssembly artifact it produces.
  *
  * The Rust gates and the wasm reproducibility gate are declared here, beside the
- * crate that owns them, so `smithers-build lint '//crates/flows-jj:cargoClippy'` is the
+ * crate that owns them, so `smithers-build lint '//packages/smithers/flows/jj-wasm:cargoClippy'` is the
  * same command a pipeline runs. The cargo flags that make a check a gate live in
  * the target implementations, not here.
  *
  * The two lanes are addressed by exact label rather than by a recursive pattern
  * on purpose. The cargo gates need only a Rust toolchain; the wasm rebuild needs
  * an uncached one and takes minutes, so it is a separate CI job and a bare
- * `//crates/flows-jj` under the test verb would pull it into both.
+ * `//packages/smithers/flows/jj-wasm` under the test verb would pull it into both.
  */
 import { Smithers } from "@smthrs/targets"
-import { Package as jjRuntimePackage } from "../../third_party/jj/PACKAGE.ts"
+import { Package as jjRuntimePackage } from "../../../../third_party/jj/PACKAGE.ts"
 
 /** Package-owned Rust sources consumed by the root native FFI gate. */
 const nativeSources = Smithers.Filegroup({
-  cwd: "crates/flows-jj",
+  cwd: "packages/smithers/flows/jj-wasm",
   srcs: [Smithers.glob("src/**/*.rs"), jjRuntimePackage.sources]
 })
 
@@ -27,7 +27,7 @@ const nativeSources = Smithers.Filegroup({
  * Its source and manifests participate in every native and WASM input identity.
  */
 const sources = [
-  Smithers.glob("//crates/flows-jj/**/*.rs"),
+  Smithers.glob("//packages/smithers/flows/jj-wasm/**/*.rs"),
   Smithers.file("//Cargo.toml"),
   Smithers.file("//Cargo.lock"),
   Smithers.file("//rust-toolchain.toml")
@@ -57,7 +57,7 @@ const destinations = [
 const cargoFmt = Smithers.Cargo.Fmt({
   workspace: true,
   data: [...sources, nativeSources],
-  changes: ["crates/flows-jj/**/*.rs"]
+  changes: ["packages/smithers/flows/jj-wasm/**/*.rs"]
 })
 
 /**
@@ -96,8 +96,8 @@ const cargoTest = Smithers.Cargo.Test({
  * @category test
  */
 const buildScript = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//crates/flows-jj/build-wasm.test.mjs")]),
-  srcs: [Smithers.file("//crates/flows-jj/build-wasm.mjs")],
+  runner: Smithers.testRunner([Smithers.file("//packages/smithers/flows/jj-wasm/build-wasm.test.mjs")]),
+  srcs: [Smithers.file("//packages/smithers/flows/jj-wasm/build-wasm.mjs")],
   deps: []
 })
 
@@ -118,7 +118,7 @@ const buildScript = Smithers.NodeTest({
  * @category test
  */
 const wasmReproducibility = Smithers.NodeTest({
-  runner: Smithers.entrypoint(Smithers.file("//crates/flows-jj/build-wasm.mjs"), ["--verify"]),
+  runner: Smithers.entrypoint(Smithers.file("//packages/smithers/flows/jj-wasm/build-wasm.mjs"), ["--verify"]),
   srcs: [...sources, Smithers.file("//packages/smithers/flows/jj/wasm/flows_jj.wasm")],
   deps: [nativeSources],
   env: { CARGO_TARGET_DIR: "target/wasm-reproducibility" },
@@ -133,7 +133,7 @@ const wasmReproducibility = Smithers.NodeTest({
  * @category security
  */
 const securityReview = Smithers.SecurityReview({
-  cwd: "crates/flows-jj",
+  cwd: "packages/smithers/flows/jj-wasm",
   include: ["src/**", "build-wasm.mjs", "Cargo.toml", "//Cargo.toml"],
   checks: [
     {

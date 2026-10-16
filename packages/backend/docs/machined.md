@@ -367,7 +367,7 @@ independent kernel census and byte-equal echo prove isolation. Each reconnect
 synchronizes the literal installed Ben/Alice roster through `set_roster` before
 requiring the daemon's observed ready Status.
 
-`crates/smithers-machined/tests/session_installed_inputs.rs` adds the installed
+`packages/smithers-machined/tests/session_installed_inputs.rs` adds the installed
 input-validation and restart/drain driver. Install its reviewed, main-built test
 executable under `/opt/smithers/bundle/tests` in an exclusively reserved Linux
 guest. The executable and all its ancestors must be root-owned and protected;

@@ -1,16 +1,16 @@
 import { Smithers } from "@smthrs/targets"
-import { Package as flowsJjPackage } from "../crates/flows-jj/PACKAGE.ts"
-import { Package as machinedPackage } from "../crates/smithers-machined/PACKAGE.ts"
+import { Package as flowsJjPackage } from "../packages/smithers/flows/jj-wasm/PACKAGE.ts"
+import { Package as machinedPackage } from "../packages/smithers-machined/PACKAGE.ts"
 import { Package as backendPackage } from "../packages/backend/PACKAGE.ts"
 
 export const nativeFfiInputs = [
   Smithers.file("//Cargo.toml"),
   Smithers.file("//Cargo.lock"),
   Smithers.file("//rust-toolchain.toml"),
-  Smithers.file("//crates/flows-jj/Cargo.toml"),
+  Smithers.file("//packages/smithers/flows/jj-wasm/Cargo.toml"),
   flowsJjPackage.nativeSources,
-  Smithers.glob("//crates/smithers-ffi/**/*.rs"),
-  Smithers.file("//crates/smithers-ffi/Cargo.toml")
+  Smithers.glob("//packages/smithers-ffi/**/*.rs"),
+  Smithers.file("//packages/smithers-ffi/Cargo.toml")
 ]
 // Native FFI builds with the toolchain rust-toolchain.toml pins, installed
 // into a private rustup home so the declared output carries it. backendGo

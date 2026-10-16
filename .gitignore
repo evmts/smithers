@@ -10,7 +10,7 @@ packages/*/dist-firefox/
 *.tsbuildinfo
 *.tgz
 
-# Cargo build output (crates/flows-jj and friends)
+# Cargo build output (every Cargo workspace member)
 /target
 
 # Electrobun build output

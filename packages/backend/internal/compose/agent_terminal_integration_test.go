@@ -81,7 +81,7 @@ func answerGuest(t *testing.T, guest net.Conn, request wire.Frame, method wire.M
 
 // T-TRM-05 through the composed presence consumer, the shared terminal
 // manager and the Branch card's live socket. The guest end of the daemon link
-// is scripted; the broker's pause/attach contract is crates/smithers-machined
+// is scripted; the broker's pause/attach contract is packages/smithers-machined
 // tests/session_dispatch.rs.
 func TestAgentCommandsReachTheBranchTerminalCardThroughPresence(t *testing.T) {
 	f := presenceInstall(t)

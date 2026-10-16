@@ -406,11 +406,11 @@
     },
     "C-COL-03": {
       "status": "pending-owner",
-      "reason": "Automation present: crates/smithers-machined/tests/barrier.rs; authenticated owner approval of argv/host and qualification receipts pending",
+      "reason": "Automation present: packages/smithers-machined/tests/barrier.rs; authenticated owner approval of argv/host and qualification receipts pending",
       "ticket": "T-COL-03",
       "pendingBinding": {
         "files": [
-          "crates/smithers-machined/tests/barrier.rs"
+          "packages/smithers-machined/tests/barrier.rs"
         ],
         "commands": [
           {
@@ -418,12 +418,12 @@
               "cargo",
               "test",
               "--manifest-path",
-              "crates/smithers-machined/Cargo.toml",
+              "packages/smithers-machined/Cargo.toml",
               "--test",
               "barrier"
             ],
             "files": [
-              "crates/smithers-machined/tests/barrier.rs"
+              "packages/smithers-machined/tests/barrier.rs"
             ],
             "reporter": "cargo",
             "prerequisites": [
@@ -436,11 +436,11 @@
     },
     "C-COL-04": {
       "status": "pending-owner",
-      "reason": "Automation present: crates/smithers-machined/tests/confinement.rs, packages/backend/internal/machined/confinement_integration_test.go; authenticated owner approval of argv/host and qualification receipts pending",
+      "reason": "Automation present: packages/smithers-machined/tests/confinement.rs, packages/backend/internal/machined/confinement_integration_test.go; authenticated owner approval of argv/host and qualification receipts pending",
       "ticket": "T-COL-03",
       "pendingBinding": {
         "files": [
-          "crates/smithers-machined/tests/confinement.rs",
+          "packages/smithers-machined/tests/confinement.rs",
           "packages/backend/internal/machined/confinement_integration_test.go"
         ],
         "commands": [
@@ -449,12 +449,12 @@
               "cargo",
               "test",
               "--manifest-path",
-              "crates/smithers-machined/Cargo.toml",
+              "packages/smithers-machined/Cargo.toml",
               "--test",
               "confinement"
             ],
             "files": [
-              "crates/smithers-machined/tests/confinement.rs"
+              "packages/smithers-machined/tests/confinement.rs"
             ],
             "reporter": "cargo",
             "prerequisites": [
@@ -488,12 +488,12 @@
     },
     "C-COL-05": {
       "status": "pending-owner",
-      "reason": "Automation present: crates/smithers-machined/tests/versions.rs, crates/smithers-machined/tests/overflow.rs, packages/backend/internal/machined/events_integration_test.go; authenticated owner approval of argv/host and qualification receipts pending",
+      "reason": "Automation present: packages/smithers-machined/tests/versions.rs, packages/smithers-machined/tests/overflow.rs, packages/backend/internal/machined/events_integration_test.go; authenticated owner approval of argv/host and qualification receipts pending",
       "ticket": "T-COL-04",
       "pendingBinding": {
         "files": [
-          "crates/smithers-machined/tests/versions.rs",
-          "crates/smithers-machined/tests/overflow.rs",
+          "packages/smithers-machined/tests/versions.rs",
+          "packages/smithers-machined/tests/overflow.rs",
           "packages/backend/internal/machined/events_integration_test.go"
         ],
         "commands": [
@@ -502,12 +502,12 @@
               "cargo",
               "test",
               "--manifest-path",
-              "crates/smithers-machined/Cargo.toml",
+              "packages/smithers-machined/Cargo.toml",
               "--test",
               "versions"
             ],
             "files": [
-              "crates/smithers-machined/tests/versions.rs"
+              "packages/smithers-machined/tests/versions.rs"
             ],
             "reporter": "cargo",
             "prerequisites": [
@@ -519,12 +519,12 @@
               "cargo",
               "test",
               "--manifest-path",
-              "crates/smithers-machined/Cargo.toml",
+              "packages/smithers-machined/Cargo.toml",
               "--test",
               "overflow"
             ],
             "files": [
-              "crates/smithers-machined/tests/overflow.rs"
+              "packages/smithers-machined/tests/overflow.rs"
             ],
             "reporter": "cargo",
             "prerequisites": [

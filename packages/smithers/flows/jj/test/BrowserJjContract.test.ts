@@ -8,7 +8,7 @@
  *
  * The artifact is committed at `packages/smithers/flows/jj/wasm/flows_jj.wasm` and built by
  * `pnpm --filter @smthrs/jj run build:wasm` (delegating to
- * `crates/flows-jj/build-wasm.mjs`). When it is absent the suite skips —
+ * `packages/smithers/flows/jj-wasm/build-wasm.mjs`). When it is absent the suite skips —
  * loudly, so a missing artifact is never mistaken for passing coverage.
  */
 import { afterAll, beforeAll, describe, expect, it } from "@effect/vitest"
@@ -31,7 +31,7 @@ if (wasmBytes === undefined) {
   console.warn(
     "[BrowserJjContract] packages/smithers/flows/jj/wasm/flows_jj.wasm is not built — the real-artifact "
       + "contract suite is SKIPPED. Build it with `pnpm --filter @smthrs/jj run build:wasm` "
-      + "(requires the rust wasm32-wasip1 toolchain and crates/flows-jj)."
+      + "(requires the rust wasm32-wasip1 toolchain and packages/smithers/flows/jj-wasm)."
   )
 }
 

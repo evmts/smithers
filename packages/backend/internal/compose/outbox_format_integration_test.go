@@ -20,7 +20,7 @@ func TestOutboxFormatRefusalKeepsComposedDocumentDoorUnsaved(t *testing.T) {
 	registry := new(machined.Registry)
 	const branch = "11111111-1111-4111-8111-111111111111"
 	link, peer := presenceTestLink(t, registry, branch)
-	result, err := os.ReadFile("../../../../crates/smithers-machined/tests/data/outbox/refusal.result")
+	result, err := os.ReadFile("../../../../packages/smithers-machined/tests/data/outbox/refusal.result")
 	require.NoError(t, err)
 	done := make(chan error, 1)
 	go func() {

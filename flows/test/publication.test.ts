@@ -133,7 +133,7 @@ test("verification reads the gate receipt into the approval prompt and refuses a
 
 test("a declared exception reaches the approval prompt by name and reason", async (test) => {
   // Inject a foreign-host partition so the prompt's reporting is independent of this test host.
-  const skipped = releaseGates.find((gate) => gate.target === "//crates/flows-jj:wasmReproducibility")!
+  const skipped = releaseGates.find((gate) => gate.target === "//packages/smithers/flows/jj-wasm:wasmReproducibility")!
   const exception = {
     name: skipped.name,
     command: releaseGateCommand(skipped),

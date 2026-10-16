@@ -120,9 +120,9 @@ export const releaseGates = [
   { name: "Disaster-recovery script test", verb: "test", target: "//packages/smithers/flows/engine-store:disasterRecovery" },
   // Release-only by name, so a rehearsal can run it alone; `//scripts/...` runs it too.
   { name: "Release version coherence", verb: "test", target: "//scripts:releaseVersion" },
-  { name: "Build-script unit tests", verb: "test", target: "//crates/flows-jj:buildScript" },
+  { name: "Build-script unit tests", verb: "test", target: "//packages/smithers/flows/jj-wasm:buildScript" },
   // The committed flows_jj.wasm is rebuilt and byte-compared before packing.
-  { name: "Rebuild and byte-compare flows_jj.wasm", verb: "test", target: "//crates/flows-jj:wasmReproducibility" },
+  { name: "Rebuild and byte-compare flows_jj.wasm", verb: "test", target: "//packages/smithers/flows/jj-wasm:wasmReproducibility" },
   { name: "Build and test shared backend", verb: "test", target: "//:backendGo" },
   { name: "Backend access-control tests", verb: "test", target: "//:backendGoAccess" }
 ]
@@ -143,7 +143,7 @@ export const releaseGates = [
  */
 export const releaseGateExceptions = [{
   name: "Rebuild and byte-compare flows_jj.wasm",
-  command: "pnpm exec smthrs test '//crates/flows-jj:wasmReproducibility' --verbose",
+  command: "pnpm exec smthrs test '//packages/smithers/flows/jj-wasm:wasmReproducibility' --verbose",
   reason: "Byte equality requires the pinned x86_64-unknown-linux-gnu Rust host. build-wasm.mjs refuses foreign hosts because Cargo metadata changes the WASM bytes; the canonical release runner must prove this gate.",
   requiredHost: { platform: "linux", arch: "x64" }
 }]
@@ -196,9 +196,9 @@ export const releaseGateExclusions = [
   {
     job: "rust",
     commands: [
-      "pnpm exec smthrs lint '//crates/flows-jj/...' --verbose",
-      "pnpm exec smthrs test '//crates/flows-jj:cargoTest' --verbose",
-      "pnpm exec smthrs test '//crates/smithers-machined:documentComponents' --verbose"
+      "pnpm exec smthrs lint '//packages/smithers/flows/jj-wasm/...' --verbose",
+      "pnpm exec smthrs test '//packages/smithers/flows/jj-wasm:cargoTest' --verbose",
+      "pnpm exec smthrs test '//packages/smithers-machined:documentComponents' --verbose"
     ],
     reason: "Native Rust lint and tests validate the native crates, which are not published release artifacts. The release verifies the shipped WASM with the pinned Rust toolchain instead. The daemon's document components and their Yjs interop exercise smithers-machined and smithers-ffi, which ship in the install bundle the distribution workflow builds. Third-party notices run under //scripts/...."
   },

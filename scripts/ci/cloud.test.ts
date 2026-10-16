@@ -57,7 +57,7 @@ describe("Local CI gate runner", () => {
   test("covers all non-publishing Linux commands except canonical-host wasm rebuild", () => {
     const excluded = new Set([
       "pnpm exec smthrs review '//...' --known-red '.github/ci-known-red.json' --verbose",
-      "pnpm exec smthrs test '//crates/flows-jj:wasmReproducibility' --known-red '.github/ci-known-red.json' --verbose"
+      "pnpm exec smthrs test '//packages/smithers/flows/jj-wasm:wasmReproducibility' --known-red '.github/ci-known-red.json' --verbose"
     ])
     const commands = [...runs(github), ...runs(drift)]
     for (const command of new Set(commands)) {

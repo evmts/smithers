@@ -22,7 +22,7 @@ The October 6 brief takes precedence over the earlier cursor exclusion: launch i
 
 ## 3. Co-editing model
 
-Choose pinned Yjs `13.6.32`, Yrs `0.27.4`, CodeMirror, and `y-codemirror.next`. Reuse `crates/smithers-ffi/src/document_core.rs`, already shared with `smithers-machined/src/doc/mod.rs`. Code uses `Y.Text("content")`; wiki uses `Y.Text("markdown")`. Both use one provider and protocol, parameterized by persistence authority.
+Choose pinned Yjs `13.6.32`, Yrs `0.27.4`, CodeMirror, and `y-codemirror.next`. Reuse `packages/smithers-ffi/src/document_core.rs`, already shared with `smithers-machined/src/doc/mod.rs`. Code uses `Y.Text("content")`; wiki uses `Y.Text("markdown")`. Both use one provider and protocol, parameterized by persistence authority.
 
 Recommend the host mirror topology, subject to the existing T-COL-11 reference-host decision and ADR acceptance. This is a design recommendation, not a claim that the required rerun happened. The mirror integrates authenticated browser updates and immediately fans them out, then pipelines them to the daemon. It uses the shared Rust core through the existing binding, not a Go CRDT implementation. The daemon integrates the same item identities and alone emits code-save receipts. The host mirror has no independent authority to save code or create an epoch; after restart it loads the machine's state before serving subscriptions.
 
@@ -130,7 +130,7 @@ Inspection used checkout `f28cbf01cf8c` and local `origin/frontrun` `c6cd368f7b1
 | Area | Keep / reshape / delete / net new |
 | --- | --- |
 | Machines | Keep `internal/services/workspace_branch_machine*.go`, `workspace_machine_queue.go`, `internal/compose/branch_machines.go`, `workspace_shares`, and runtime admission. Finish member access and canonical provisioning; remove remaining owner-only assumptions. Existing member integration tests mean this is not wholly new work. |
-| Daemon | Keep `crates/smithers-machined/src/{broker,session,stream,credit,watch,burst,versions,doc}` and `internal/machined/{registry,sessions,wire}`. `main.rs` still exits 78; net new work is startup, authenticated dispatch, capture/outbox composition, and supervision. `SessionRPC` still requires a real provider. |
+| Daemon | Keep `packages/smithers-machined/src/{broker,session,stream,credit,watch,burst,versions,doc}` and `internal/machined/{registry,sessions,wire}`. `main.rs` still exits 78; net new work is startup, authenticated dispatch, capture/outbox composition, and supervision. `SessionRPC` still requires a real provider. |
 | Files | `internal/services/workspace_facets.go` already requires digest-based batches; qualify and compose its provider rather than adding another write API. Keep the agent read ledger and ADR 0003 race fixtures. Replace the interim guest mutation path at daemon cutover. |
 | Live | Keep `internal/live/{conn,hub,docrelay}.go`, `internal/compose/live.go`, and `runtime/LiveChannel.ts`. Members, branch, and conversation source code now exists; verify actual composition. Net new host mirror uses the existing shared Yrs binding. |
 | Editor/wiki | `runtime/{LiveDocProvider,FileDocuments}.ts`, `cards/liveDoc.ts`, and `views/CodeEditorView.tsx` already exist behind prerequisites. Extend receipts, recovery persistence, carets, and production wiring. Replace `wiki/CloudWiki.ts` POST/SSE transport with this provider and delete the replaced routes/queue at cutover. |

@@ -215,7 +215,7 @@ test("required CI resolves package, app, script and evaluation suites to real ru
   for (const row of packageTests) assert.ok(selected(row.label, "test").length, `${row.label} must also be selected by ci //packages/...`)
   assert.deepEqual(inventory.rows.filter((row) => row.job === "e2e-faults"), [],
     "ordinary CI must not run the nightly fault matrix")
-  const native = selected("//crates/flows-jj:cargoTest", "rust")
+  const native = selected("//packages/smithers/flows/jj-wasm:cargoTest", "rust")
   assert.equal(native.length, 1)
   assert.equal(basename(native[0].runner[0]), "cargo")
   assert.deepEqual(native[0].runner.slice(1), ["test", "-p", "flows-jj", "--locked"])

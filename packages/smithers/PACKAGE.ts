@@ -2,8 +2,8 @@ import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgain
 import { nativeFfiLib, rehearsalNative } from "../../scripts/native-targets.ts"
 /** Standard package targets plus package-owned documentation generation. */
 import { Smithers } from "@smthrs/targets"
-import { Package as flowsJjPackage } from "../../crates/flows-jj/PACKAGE.ts"
-import { Package as machinedPackage } from "../../crates/smithers-machined/PACKAGE.ts"
+import { Package as flowsJjPackage } from "../../packages/smithers/flows/jj-wasm/PACKAGE.ts"
+import { Package as machinedPackage } from "../../packages/smithers-machined/PACKAGE.ts"
 import { Package as scriptPackage } from "../../scripts/PACKAGE.ts"
 import { Package as backendPackage } from "../backend/PACKAGE.ts"
 
@@ -267,7 +267,7 @@ const faultNative = Smithers.Shell.Build({
     Smithers.file("//Cargo.toml"),
     Smithers.file("//Cargo.lock"),
     Smithers.file("//rust-toolchain.toml"),
-    Smithers.file("//crates/flows-jj/Cargo.toml"),
+    Smithers.file("//packages/smithers/flows/jj-wasm/Cargo.toml"),
     flowsJjPackage.nativeSources,
     machinedPackage.ffiInputs,
     machinedPackage.buildInputs,

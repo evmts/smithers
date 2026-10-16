@@ -81,7 +81,7 @@ if (!fsModule.existsSync(wasmPath)) {
   throw new Error(
     "[BrowserHost.contract] packages/smithers/flows/jj/wasm/flows_jj.wasm is required for the real BrowserHost "
       + "contract. Build it with `pnpm --filter @smthrs/jj run build:wasm` "
-      + "(requires the rust wasm32-wasip1 toolchain and crates/flows-jj)."
+      + "(requires the rust wasm32-wasip1 toolchain and packages/smithers/flows/jj-wasm)."
   )
 }
 const wasmBytes = new Uint8Array(fsModule.readFileSync(wasmPath))

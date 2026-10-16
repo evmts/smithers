@@ -276,7 +276,6 @@ describe("the checked-in root files match the declarations", () => {
       include: [
         "PACKAGE.ts",
         "apps/*/PACKAGE.ts",
-        "crates/*/PACKAGE.ts",
         "evals/*/PACKAGE.ts",
         "scripts/PACKAGE.ts",
         "scripts/*/PACKAGE.ts",

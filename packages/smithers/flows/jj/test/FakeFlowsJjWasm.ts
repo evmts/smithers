@@ -119,7 +119,7 @@ export interface FakeFlowsJjWasmOptions {
   /**
    * What `flows_jj_alloc` answers, defaulting to the fixed allocation at 4096.
    * `0` is what the real module returns when the guest is out of memory
-   * (`crates/flows-jj/src/abi.rs`), which the host must refuse to write at.
+   * (`packages/smithers/flows/jj-wasm/src/abi.rs`), which the host must refuse to write at.
    */
   readonly allocResult?: number
 }

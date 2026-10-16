@@ -195,7 +195,7 @@ describe("NodeBinary", () => {
   it("passes a declared environment to the run", () => {
     const attrs = attrsOf<NodeBinary.Attrs>(NodeBinary.NodeBinary({
       runtime,
-      entry: Input.file("//crates/flows-jj/build-wasm.mjs"),
+      entry: Input.file("//packages/smithers/flows/jj-wasm/build-wasm.mjs"),
       args: [],
       srcs: [],
       deps: [],

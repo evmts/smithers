@@ -167,7 +167,7 @@ func TestMachinedCancelledStartupDoesNotMintBoot(t *testing.T) {
 }
 
 // The root helper admits the boot file EnsureMachined writes, byte for byte:
-// the daemon's parser (crates/smithers-machined/src/boot.rs) accepts the same
+// the daemon's parser (packages/smithers-machined/src/boot.rs) accepts the same
 // item fields. A refusal here means no daemon starts in any real machine.
 func TestGuestMachinedBootAdmitsHostItemBindings(t *testing.T) {
 	python, err := exec.LookPath("python3")

@@ -20,11 +20,11 @@ yrs = { version = "=0.27.4", features = ["small-client", "sync"] }
 serde_json = "1"
 MANIFEST
 cat > "$proof/src/lib.rs" <<RUST
-#[path = "$repo/crates/smithers-ffi/src/document_core.rs"]
+#[path = "$repo/packages/smithers-ffi/src/document_core.rs"]
 mod document_core;
-#[path = "$repo/crates/smithers-ffi/src/live_document_decode.rs"]
+#[path = "$repo/packages/smithers-ffi/src/live_document_decode.rs"]
 mod live_document_decode;
-#[path = "$repo/crates/smithers-ffi/src/live_document.rs"]
+#[path = "$repo/packages/smithers-ffi/src/live_document.rs"]
 mod live_document;
 RUST
 RUSTC_BOOTSTRAP=1 RUSTFLAGS='-Zsanitizer=address' cargo test \

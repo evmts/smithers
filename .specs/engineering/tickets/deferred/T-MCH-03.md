@@ -25,7 +25,7 @@ Out:
 
 - `scripts/spikes/mch-03-fanotify/` (new): `probe.c` (static linux-arm64, musl), `run.sh` that boots one VM with `SMITHERS_MICROSANDBOX_BIN`, copies the probe in, runs the write matrix, and writes `events.jsonl` plus `summary.json`.
 - `scripts/spikes/mch-03-fanotify/libkrunfw/` (new, fallback only): kernel config fragment and build script.
-- Both directories are disposable (CLAUDE.md prototype rule). The decision and its numbers go to the issue and the C-SPK-01 evidence. The directory is deleted when T-COL-04 lands its own fanotify integration test under `crates/smithers-machined/tests` (new).
+- Both directories are disposable (CLAUDE.md prototype rule). The decision and its numbers go to the issue and the C-SPK-01 evidence. The directory is deleted when T-COL-04 lands its own fanotify integration test under `packages/smithers-machined/tests` (new).
 
 ## Tests
 

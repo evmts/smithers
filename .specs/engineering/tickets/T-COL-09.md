@@ -15,7 +15,7 @@ In:
 - The text is `Y.Text("markdown")`, unchanged (§7.6.1 (wiki text)), so existing page state in PostgreSQL loads as is.
 - Persistence (§7.4.2): the merged state plus the rendered Markdown are written to `wiki_pages`/`wiki_page_revisions` in one transaction after 2 s without an update, or 10 s after the oldest unpersisted update under continuous typing, not once per update. Writes keep today's revision check and conflict retry. The revision is attributed to the actors who edited in that period, from `Y.Map("authors")` (§7.4.4).
 - Acknowledgment (§7.4.6): only after that commit does the host send `saved{sv}`. The page loads from its stored state after a host restart, never reseeded from Markdown, so reconnecting clients merge without duplication.
-- Limits stay: 1 MiB Markdown, 1 MiB update, 8 MiB state (`crates/smithers-ffi/src/wiki_document.rs:11-13`).
+- Limits stay: 1 MiB Markdown, 1 MiB update, 8 MiB state (`packages/smithers-ffi/src/wiki_document.rs:11-13`).
 - Authorization reuses the wiki read/write gates and revocation watch. A revoked member's subscription ends in ≤ 5 s (§5.6).
 - Every update that no `saved` covers stays in the client's `worldDocuments` collection and is resent in sync step 2 on reconnect, so no edit is lost on reload or host crash (today's offline guarantee, extended to unacknowledged updates).
 - Old revisions and history stay readable (AGENTS.md: recorded events remain readable).
@@ -31,7 +31,7 @@ Out:
 
 ## Changes
 
-- Reshape `crates/smithers-ffi/src/wiki_document.rs`: reuse the existing Yrs core extracted for T-COL-08, with T-COL-08b's shared document protocol, rather than another Yrs implementation. Keep seed/apply/replace and UTF-16 indexing. Extend the root validation to admit `Y.Map("authors")` alongside `Y.Text("markdown")`, while rejecting unrelated roots and client changes to authenticated authorship. Reuse `packages/backend/internal/repohostserver/wiki_document.go:15-27` for the FFI binding.
+- Reshape `packages/smithers-ffi/src/wiki_document.rs`: reuse the existing Yrs core extracted for T-COL-08, with T-COL-08b's shared document protocol, rather than another Yrs implementation. Keep seed/apply/replace and UTF-16 indexing. Extend the root validation to admit `Y.Map("authors")` alongside `Y.Text("markdown")`, while rejecting unrelated roots and client changes to authenticated authorship. Reuse `packages/backend/internal/repohostserver/wiki_document.go:15-27` for the FFI binding.
 - Add only `packages/backend/internal/live/wikidoc.go`'s wiki-specific open/close, persist timer and attribution adapter to the shared live transport. The existing stateless merge and revision writer are reused; they lack an open-page lifecycle and the 2 s/10 s flush, which this adapter supplies.
 - `packages/backend/internal/services/wiki_collaboration.go`: keep the revision-checked state write. Delete the one-revision-per-update path behind `ApplyWikiUpdate`, and delete `ListWikiUpdates`.
 - Delete (with their OpenAPI rows in `docs/api/openapi/repositories.yaml`):
@@ -57,7 +57,7 @@ Out:
 - Replace, not delete, the protocol tests:
   - `packages/backend/internal/routes/wiki_collaboration_test.go` and `wiki_collaboration_startup_revocation_test.go` become live-channel tests (subscribe, revoke in ≤ 5 s);
   - `services/wiki_collaboration_integration_test.go` (real PostgreSQL and FFI) asserts one revision per 2 s idle period under 100 updates per second, and a revision attributed to both editors.
-- interop: `crates/smithers-ffi/tests/wiki-yjs-interop.ts` gains sync step 1/2 against `yjs 13.6.32`.
+- interop: `packages/smithers-ffi/tests/wiki-yjs-interop.ts` gains sync step 1/2 against `yjs 13.6.32`.
 - fault: C-DUR-04 K8. Kill the host 1 s after the last keystroke with two clients typing; after restart both reconnect and the page holds every keystroke once. Variant: both tabs close after the last `saved`, the host is killed, and a reopened page holds every acknowledged keystroke.
 - unit: `wiki/CloudWiki.test.ts` and `state/controller/cloud-wiki*.test.ts`:
   - an offline edit survives reload and syncs once;

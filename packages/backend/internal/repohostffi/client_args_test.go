@@ -126,7 +126,7 @@ func clientCovAssertArgumentOrder(t *testing.T, client *Client) {
 }
 
 // TestRequiredSymbolsMatchRustExports pins the Go symbol table to the
-// symbols crates/smithers-ffi exports, so Load never rejects the real library
+// symbols packages/smithers-ffi exports, so Load never rejects the real library
 // and never skips a symbol the client calls.
 func TestRequiredSymbolsMatchRustExports(t *testing.T) {
 	goSource, err := os.ReadFile("client.go")
@@ -135,7 +135,7 @@ func TestRequiredSymbolsMatchRustExports(t *testing.T) {
 	require.NotNil(t, table)
 	goSymbols := regexp.MustCompile(`"(smithers_[a-z_]+)"`).FindAllSubmatch(table[1], -1)
 
-	rustFiles, err := filepath.Glob(filepath.Join("..", "..", "..", "..", "crates", "smithers-ffi", "src", "*.rs"))
+	rustFiles, err := filepath.Glob(filepath.Join("..", "..", "..", "smithers-ffi", "src", "*.rs"))
 	require.NoError(t, err)
 	require.NotEmpty(t, rustFiles)
 	exported := map[string]bool{}

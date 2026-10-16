@@ -387,8 +387,8 @@ test("the checks gate runs the whole shared release inventory and returns a rece
       "lint //:targetIndex --verbose",
       "test //packages/...:faults --jobs 1 --verbose",
       "test //packages/smithers/flows/engine-store:disasterRecovery --verbose",
-      "test //crates/flows-jj:buildScript --verbose",
-      "test //crates/flows-jj:wasmReproducibility --verbose"
+      "test //packages/smithers/flows/jj-wasm:buildScript --verbose",
+      "test //packages/smithers/flows/jj-wasm:wasmReproducibility --verbose"
     ]
   ) assert.ok(gates.includes(command), `${command} ran`)
   assert.ok(
@@ -397,7 +397,7 @@ test("the checks gate runs the whole shared release inventory and returns a rece
   )
   assert.ok(
     gates.indexOf("test //packages/...:faults --jobs 1 --verbose") <
-      gates.indexOf("test //crates/flows-jj:wasmReproducibility --verbose")
+      gates.indexOf("test //packages/smithers/flows/jj-wasm:wasmReproducibility --verbose")
   )
 })
 
@@ -439,7 +439,7 @@ test("a declared exception is never run and is reported in the receipt instead o
 for (
   const target of [
     "//packages/...:faults",
-    "//crates/flows-jj:wasmReproducibility",
+    "//packages/smithers/flows/jj-wasm:wasmReproducibility",
     "//apps/app:unitTests",
     "//packages/smithers/flows/engine-store:disasterRecovery"
   ]

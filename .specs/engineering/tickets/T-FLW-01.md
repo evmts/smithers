@@ -10,7 +10,7 @@ Every run of `todo`, `learning`, `review` or a repository flow executes inside a
 
 ## Scope
 In:
-- One catalog with two disjoint sets (§11.1). System flows: stack operations (including `stack.propose`), merge, members, settings, secrets, sync, admission, setup, `flow-load` and the summarizer. Overridable flows: `todo`, `learning`, `review`, and any `flows/<name>/flow.ts` whose name isn't a system name.
+- One catalog with two disjoint sets (§11.1). System flows: stack operations (including `stack.propose`), merge, members, settings, secrets, sync, admission, setup, `flow-load` and the summarizer. Overridable flows: `todo`, `learning`, `review`, and any `.smithers/flows/<name>/flow.ts` whose name isn't a system name.
 - A repository flow named after a system flow is never registered and is reported as refused with code `reserved_name`.
 - Overridable-flow runs resolve only to a coding host on the workspace (microVM) runtime: the TODO's branch machine, or an ephemeral background machine. A `trusted_process` runtime refuses them with a typed error.
 - The built-in default for each overridable name is named in the catalog. The built-in `todo` is T-FLW-11's composition file (§10.4.1a).
@@ -47,4 +47,4 @@ Out:
 ## Risks and notes
 - C-SEC-01 (T-MCH-12) also exercises this ticket: the coding host in the machine runs without provider keys.
 - Risk: the local model host requires a `trusted_process` runtime (`packages/backend/modelhost/local.go:53`). If a refactor routes it through the workspace runtime, the app agent stops. Confirmed by `apps/backend/main_test.go` failing to start the model host.
-- Risk: `SMITHERS_CODING_LOCAL_OWNER` also selects `local-only` source publication (`flows/coding/serve.ts:114`) and the FFI's local source owner (`crates/smithers-ffi/src/workspace_local.rs:604-613`). Without a provisioned binding, source creation fails with `source_creation_unavailable`. Confirmed by the first TODO run on a fresh install; the guest binding must be provisioned before the variable goes.
+- Risk: `SMITHERS_CODING_LOCAL_OWNER` also selects `local-only` source publication (`flows/coding/serve.ts:114`) and the FFI's local source owner (`packages/smithers-ffi/src/workspace_local.rs:604-613`). Without a provisioned binding, source creation fails with `source_creation_unavailable`. Confirmed by the first TODO run on a fresh install; the guest binding must be provisioned before the variable goes.

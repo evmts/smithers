@@ -6,9 +6,9 @@ distributed under. They are in addition to, and do not replace, this
 package's own `LICENSE` (MIT).
 
 `wasm/flows_jj.wasm` is a `wasm32-wasip1` reactor module built from
-`crates/flows-jj` (`cargo build --release --target wasm32-wasip1 --package
+`packages/smithers/flows/jj-wasm` (`cargo build --release --target wasm32-wasip1 --package
 flows-jj`). That crate statically links `jj-lib` — taken from a fork of
-Jujutsu that `crates/flows-jj/Cargo.toml` pins as a git dependency at one
+Jujutsu that `packages/smithers/flows/jj-wasm/Cargo.toml` pins as a git dependency at one
 rev — and every crate in `jj-lib`'s and `flows-jj`'s Rust closure. This
 file enumerates that closure, resolved from the repo's `Cargo.lock` with
 `cargo metadata` / `cargo tree -e normal,build --target wasm32-wasip1
@@ -26,7 +26,7 @@ as part of, the artifact.
 - Upstream repository: <https://github.com/jj-vcs/jj>
 - Fork: <https://github.com/smithersai/jj>, branch `flows-wasm`, pinned as a
   cargo git dependency at rev `47589ada70c12b3e829b5c98ab32503abad49eac`
-  (see `crates/flows-jj/Cargo.toml` and `Cargo.lock`)
+  (see `packages/smithers/flows/jj-wasm/Cargo.toml` and `Cargo.lock`)
 - Crates: `jj-lib` and `jj-lib-proc-macros`, both under `lib/` in that fork
 - Version statically linked into `wasm/flows_jj.wasm`: 0.44.0
 - Copyright 2020–2026 The Jujutsu Authors (per-file copyright headers

@@ -29,8 +29,8 @@ Out:
 
 - `packages/backend/db/product/migrations/<next>_member_credentials.sql` (new), its queries and sqlc output.
 - `packages/backend/internal/services/member_credentials.go` (new): seal and unseal with the install key, newest-wins merge, fan-out to awake machines, revocation.
-- `crates/smithers-machined/src/credentials.rs` (new), in the root broker: every read and write runs in a child dropped to the member's uid and gids, opening with `RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS` from the home's descriptor, regular files up to 1 MiB only (§9.5.1–§9.5.2, C-COL-04 step 3); write as the member (0600), merge `~/.claude.json` account fields with `serde_json` preserving every other field, watch the five paths, debounce 500 ms, send `credential_changed` through the outbox (§9.1.4, C-COL-05).
-- `crates/smithers-machined/src/rpc.rs`: `seed_credentials`; `wake_reconcile` applies pending deletions before sessions start.
+- `packages/smithers-machined/src/credentials.rs` (new), in the root broker: every read and write runs in a child dropped to the member's uid and gids, opening with `RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS` from the home's descriptor, regular files up to 1 MiB only (§9.5.1–§9.5.2, C-COL-04 step 3); write as the member (0600), merge `~/.claude.json` account fields with `serde_json` preserving every other field, watch the five paths, debounce 500 ms, send `credential_changed` through the outbox (§9.1.4, C-COL-05).
+- `packages/smithers-machined/src/rpc.rs`: `seed_credentials`; `wake_reconcile` applies pending deletions before sessions start.
 - `packages/backend/internal/services/members.go`: removal and suspension call the revocation path.
 - `packages/backend/docs/machined.md` and `packages/backend/docs/members.md`: the store, the five files and the merge rule; docs gates.
 

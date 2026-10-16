@@ -13,7 +13,7 @@ In: a format version in the outbox file header; reading or migrating release N's
 Out: wire protocol changes (ADR 0004, exactly one version); downgrades; host-side journal migrations (T-INS-07).
 
 ## Changes
-- Reshape `crates/smithers-machined` outbox storage (T-COL-03a's `outbox_store`) to write a versioned header; no second store.
+- Reshape `packages/smithers-machined` outbox storage (T-COL-03a's `outbox_store`) to write a versioned header; no second store.
 - Keep a fixture outbox written by the current format under the crate's test data for the next release's migration test.
 
 ## Decisions and pre-review

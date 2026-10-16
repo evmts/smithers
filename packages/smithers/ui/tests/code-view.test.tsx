@@ -86,7 +86,7 @@ const FIXTURES = {
     ].join("\n"),
   },
   rs: {
-    name: "crates/flows-jj/src/lib.rs",
+    name: "packages/smithers/flows/jj-wasm/src/lib.rs",
     contents: [
       "use std::collections::HashMap;",
       "",

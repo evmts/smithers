@@ -53,14 +53,14 @@ above applies to those dependencies as well as to the vendored engine source.
 ## jj (`jj-vcs/jj`)
 
 `@smthrs/jj` ships `wasm/flows_jj.wasm`, a `wasm32-wasip1` build of
-`crates/flows-jj` that statically links `jj-lib` — taken from a fork of
-Jujutsu that `crates/flows-jj/Cargo.toml` pins as a git dependency at one
+`packages/smithers/flows/jj-wasm` that statically links `jj-lib` — taken from a fork of
+Jujutsu that `packages/smithers/flows/jj-wasm/Cargo.toml` pins as a git dependency at one
 rev — and jj-lib's transitive Rust dependency closure.
 
 - Upstream repository: `jj-vcs/jj` (<https://github.com/jj-vcs/jj>)
 - Fork: <https://github.com/smithersai/jj>, branch `flows-wasm`, pinned as a
   cargo git dependency at rev `47589ada70c12b3e829b5c98ab32503abad49eac`
-  (`crates/flows-jj/Cargo.toml`, `Cargo.lock`)
+  (`packages/smithers/flows/jj-wasm/Cargo.toml`, `Cargo.lock`)
 - Crates statically linked: `jj-lib` and `jj-lib-proc-macros`, version
   0.44.0, both Apache-2.0
 - Copyright 2020–2026 The Jujutsu Authors
@@ -69,7 +69,7 @@ jj-lib is distributed under the Apache License, Version 2.0, which requires
 that redistributions carry a copy of the license text. The full Apache-2.0
 text, the jj-lib attribution, and the license/copyright of every crate
 statically linked into `wasm/flows_jj.wasm` — enumerated from `cargo
-metadata`/`cargo tree` against `crates/flows-jj` and grouped by license —
+metadata`/`cargo tree` against `packages/smithers/flows/jj-wasm` and grouped by license —
 are reproduced in `packages/smithers/flows/jj/THIRD_PARTY_NOTICES.md`, which ships inside
 that package's published npm tarball.
 

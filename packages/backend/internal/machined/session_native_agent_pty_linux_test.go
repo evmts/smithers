@@ -228,5 +228,5 @@ func TestAgentPtyHostWatcherSeesTheCommandFromItsFirstByte(t *testing.T) {
 }
 
 // agentGateWait bounds how long a test waits for a paused command to appear: the
-// broker's own deadline (crates/smithers-machined supervisor GATE_DEADLINE).
+// broker's own deadline (packages/smithers-machined supervisor GATE_DEADLINE).
 const agentGateWait = 3 * time.Second

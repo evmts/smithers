@@ -2,7 +2,7 @@
  * Browser `Jj` layer.
  *
  * jj is a native binary, but jj-lib compiles to wasm32-wasip1: the
- * `flows_jj.wasm` reactor (built by `crates/flows-jj`, shipped in this
+ * `flows_jj.wasm` reactor (built by `packages/smithers/flows/jj-wasm`, shipped in this
  * package's `wasm/` directory) exposes the six `Jj` contract operations over a
  * tiny JSON ABI, and runs against the {@link WasiPreview1} host shim over the
  * same virtual-filesystem slice `BrowserFileSystem` mounts on. {@link layer}
@@ -137,7 +137,7 @@ const exchange = (abi: AbiExports, request: Record<string, unknown>): string => 
   const req = encoder.encode(JSON.stringify(request))
   const reqPtr = abi.flows_jj_alloc(req.length)
   // `flows_jj_alloc` answers 0 when the guest cannot allocate
-  // (`crates/flows-jj/src/abi.rs`). Writing the request there would overwrite
+  // (`packages/smithers/flows/jj-wasm/src/abi.rs`). Writing the request there would overwrite
   // the module's own low linear memory and then call with a bogus pointer, so
   // the exchange refuses before touching memory — and frees nothing, because
   // nothing was allocated.

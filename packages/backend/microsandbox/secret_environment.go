@@ -16,7 +16,7 @@ import (
 
 const (
 	// secretEnvironmentLimit bounds the team environment file the session
-	// loaders read (crates/smithers-machined session_environment.rs).
+	// loaders read (packages/smithers-machined session_environment.rs).
 	secretEnvironmentLimit = 256 * 1024
 	// secretDeliveryLimit bounds one put-env request (SECRET_ENV_LIMIT in the
 	// guest helper).

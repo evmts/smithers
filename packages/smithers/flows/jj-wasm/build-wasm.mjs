@@ -2,7 +2,7 @@
  * Builds `flows_jj.wasm` — the wasm32-wasip1 reactor module behind
  * `BrowserJj` — and copies it to `packages/smithers/flows/jj/wasm/flows_jj.wasm`.
  *
- * The Rust side lives in this crate (`crates/flows-jj`), which depends on the
+ * The Rust side lives in this crate (`packages/smithers/flows/jj-wasm`), which depends on the
  * single vendored jj fork pinned to one upstream revision. The build runs through
  * the repo-root Cargo workspace so native tests and the wasm artifact share one
  * lockfile, and it builds `--locked` so the artifact always reflects the
@@ -39,7 +39,7 @@
  * gate was three shell steps — copy the committed bytes aside, rebuild over
  * them, `cmp` — that only a workflow file could sequence.
  *
- * Run it from anywhere: `node crates/flows-jj/build-wasm.mjs`.
+ * Run it from anywhere: `node packages/smithers/flows/jj-wasm/build-wasm.mjs`.
  * Prerequisite: rustup — `rust-toolchain.toml` supplies the toolchain,
  * the `wasm32-wasip1` target, and the components. Off the canonical host,
  * run it in a container; `foreignHostError` prints the command.
@@ -50,7 +50,7 @@ import { homedir } from "node:os"
 import { join, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
-const repoRoot = resolve(fileURLToPath(import.meta.url), "..", "..", "..")
+const repoRoot = resolve(fileURLToPath(import.meta.url), "..", "..", "..", "..", "..")
 
 /**
  * The cargo target directory: `CARGO_TARGET_DIR` when set, the workspace
@@ -105,7 +105,7 @@ export const foreignHostError = (host) =>
     "    -e CARGO_TARGET_DIR=/tmp/wasm-target node:22-bookworm sh -c \\",
     "    'curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal >/dev/null \\",
     "      && . \"$HOME/.cargo/env\" && rustup toolchain install \\",
-    "      && node crates/flows-jj/build-wasm.mjs'",
+    "      && node packages/smithers/flows/jj-wasm/build-wasm.mjs'",
     "",
     "For a scratch module to run locally, build the crate directly and read it out of the",
     "target directory instead of committing it:",
@@ -168,7 +168,7 @@ export const reproductionFailure = (committed, rebuilt) =>
     "error: packages/smithers/flows/jj/wasm/flows_jj.wasm does not reproduce from source.",
     `  committed ${committed.length} bytes, rebuilt ${rebuilt.length} bytes`,
     `  Rebuild it with the pinned toolchain on ${canonicalHost} and commit the result:`,
-    "    node crates/flows-jj/build-wasm.mjs",
+    "    node packages/smithers/flows/jj-wasm/build-wasm.mjs",
     "  On any other host the same script prints the container command."
   ].join("\n")
 

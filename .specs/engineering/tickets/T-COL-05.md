@@ -38,7 +38,7 @@ Reshape existing code first:
 - Store the moved-off branch fact on the existing `workspaces` row identified by T-MCH-04. There is no `branches` table in current §3. Add `moved_off jsonb` only if absent; no new table. smithers-3f approves the column encoding and smithers-8a accepts any ownership reservation required by T-PRC-02. Assign an unlanded migration number at landing, preserving landed history.
 
 New modules within those contracts, only if extraction keeps their existing owners:
-- `crates/smithers-machined/src/moved_off.rs` (planned): detection and `return_to_item()` using existing watcher, capture and freeze hooks.
+- `packages/smithers-machined/src/moved_off.rs` (planned): detection and `return_to_item()` using existing watcher, capture and freeze hooks.
 - `packages/backend/internal/machined/moved_off.go` (planned): existing event-ingest and wait-service integration, Return and Keep handlers.
 - Reuse rejected: `packages/backend/internal/services/workspace_head.go:55` is a polling head reporter without metadata-event recovery or first-answer handling; the guest helper is one-shot. delta.md §4 permits the daemon feature, not another daemon or polling loop. The legacy undo service reverts operations rather than restoring the pre-move commit.
 
@@ -53,9 +53,9 @@ New modules within those contracts, only if extraction keeps their existing owne
   - `git checkout main`, `git switch -c x main`, `jj edit main` and `jj new main` → moved off;
   - `jj abandon <item>` → change missing;
   - `git commit` on the item, `jj new` on top, and a rebase that keeps the change id → not moved off.
-- integration, real jj, inotify and cgroups (`crates/smithers-machined/tests/moved_off.rs`, new): a second uid runs `git checkout main` and gets one `moved_off` naming that member. Return to Tn puts `@` and the file bytes back on the pre-move commit, and a file written after the move stays in its own commit. Git `HEAD` follows (colocated repository).
+- integration, real jj, inotify and cgroups (`packages/smithers-machined/tests/moved_off.rs`, new): a second uid runs `git checkout main` and gets one `moved_off` naming that member. Return to Tn puts `@` and the file bytes back on the pre-move commit, and a file written after the move stays in its own commit. Git `HEAD` follows (colocated repository).
 - integration, real PostgreSQL (`packages/backend/internal/machined/moved_off_integration_test.go`, planned): ingest through the production authenticated machine event connection, then invoke `todo.return-to-item` and `todo.keep-moved` through the served catalog command dispatcher and shared authorizer. Two Return presses race; one succeeds and the other gets literal `409 {answered_by}`. Keep leaves the wait open until the metadata watcher observes return. Redelivery opens one wait. Wrong branch, stale wait, unbound credential and delegated Keep refuse without effects. Settling moved-off leaves any other open wait intact. No direct handler/service invocation substitutes for these assertions.
-- integration (`crates/smithers-machined/tests/moved_off.rs`): C-COL-05's metadata cases. `jj edit` to a change off the item with an identical tree raises `moved_off` within 1 s though no tracked file changed; `git checkout -b x` on the same commit raises nothing; a move made during a forced overflow is raised after the resync.
+- integration (`packages/smithers-machined/tests/moved_off.rs`): C-COL-05's metadata cases. `jj edit` to a change off the item with an identical tree raises `moved_off` within 1 s though no tracked file changed; `git checkout -b x` on the same commit raises nothing; a move made during a forced overflow is raised after the resync.
 - e2e: C-J3-09.
 
 ## Acceptance

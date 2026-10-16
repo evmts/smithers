@@ -30,7 +30,7 @@ New (no daemon wire exists to reuse; the terminal WebSocket in `packages/backend
 - Create `docs/architecture/0004-machined-wire.md` (ADR 0004); smithers-22 commit `471cdd152` lands it. Keep ADRs under `docs/architecture/`, not `.specs/adr/`. Check: C-COL-01.
 - `packages/backend/internal/machined/wire/` and `*_test.go` reading `../../compose/testdata/cocontracts`; a `go list -deps` test keeps it stdlib-only.
 - `packages/backend/internal/compose/cocontracts_test.go`: `TestMachinedWireGoldenFrames`, `TestMachinedWireRefusals`, `TestWireContentLimit` and `TestMachinedSkeletonDisabled`. Assert §7.6.1 write preconditions and §7.6.2 wire, presence and digest sentences. Exercise the exported Go codec and the compiled Rust crate; reserve real host integration for T-COL-03.
-- `crates/smithers-machined/Cargo.toml`, `PACKAGE.ts`, `src/main.rs`, `src/lib.rs`, `src/conn.rs`, `src/rpc.rs`, `src/hooks.rs`, `src/lock.rs` (FIFO executor and `LockCx`), `tests/fake_host.rs`. Pin `yrs = "=0.27.4"` and record it in `MANIFEST.json`.
+- `packages/smithers-machined/Cargo.toml`, `PACKAGE.ts`, `src/main.rs`, `src/lib.rs`, `src/conn.rs`, `src/rpc.rs`, `src/hooks.rs`, `src/lock.rs` (FIFO executor and `LockCx`), `tests/fake_host.rs`. Pin `yrs = "=0.27.4"` and record it in `MANIFEST.json`.
 
 ## Tests
 - C-COL-03 component gate: enqueue fixture jobs in fixed arrival order and observe the same execution order. Compile watcher/document fixture hooks against `LockCx` without production core handlers.

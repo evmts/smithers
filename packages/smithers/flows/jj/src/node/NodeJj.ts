@@ -111,7 +111,7 @@ const commandOf = (args: ReadonlyArray<string>): string => {
  * `Path doesn't exist` and `Revision "x" doesn't exist` are both jj sentences;
  * only the second is `invalid_ref`, which `Jj.ts` defines as "the change id or
  * revision does not resolve". The wasm layer's own wording is
- * `revision "x" doesn't exist` (`crates/flows-jj/src/ops.rs`), and the codes are
+ * `revision "x" doesn't exist` (`packages/smithers/flows/jj-wasm/src/ops.rs`), and the codes are
  * durable identity in journals, so the two layers must agree.
  */
 const REVISION_VOCABULARY = [
@@ -188,7 +188,7 @@ const REVISION_SHAPE = /^(?:@-?|[0-9a-f]+|[k-z]+)$/
  * would import ({@link unmigratedConfig}), so only config already in jj's
  * trusted store, which the operator controls, can do that. `exactly(…, 1)` keeps an ambiguous prefix or a
  * divergent change from widening to several revisions, as the wasm layer's
- * `resolve_revision` (`crates/flows-jj`) refuses both.
+ * `resolve_revision` (`packages/smithers/flows/jj-wasm`) refuses both.
  */
 const revsetOf = (revision: string): string =>
   revision.startsWith("@")
@@ -196,7 +196,7 @@ const revsetOf = (revision: string): string =>
     : `exactly(${/^[0-9a-f]+$/.test(revision) ? "commit_id" : "change_id"}(${revision}), 1)`
 
 /**
- * Mirrors the wasm layer's guard in `resolve_revision` (`crates/flows-jj`):
+ * Mirrors the wasm layer's guard in `resolve_revision` (`packages/smithers/flows/jj-wasm`):
  * an empty revision string is `invalid_ref` before anything is spawned —
  * `jj`'s own answer would be a clap usage error that classifies `unknown`,
  * and the two layers must agree on durable error identity. A string that is

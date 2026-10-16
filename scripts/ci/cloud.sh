@@ -624,13 +624,13 @@ run_gate() {
       pnpm exec smthrs test '//apps/tui:e2eTests' --known-red '.github/ci-known-red.json' --verbose
       ;;
     rust-lint)
-      pnpm exec smthrs lint '//crates/flows-jj/...' --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs lint '//packages/smithers/flows/jj-wasm/...' --known-red '.github/ci-known-red.json' --verbose
       ;;
     third-party-notices)
       pnpm exec smthrs test '//scripts:thirdPartyNotices' --known-red '.github/ci-known-red.json' --verbose
       ;;
     rust-test)
-      pnpm exec smthrs test '//crates/flows-jj:cargoTest' --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs test '//packages/smithers/flows/jj-wasm:cargoTest' --known-red '.github/ci-known-red.json' --verbose
       ;;
     native-ffi)
       pnpm exec smthrs build '//:nativeFfi' --known-red '.github/ci-known-red.json' --verbose
@@ -639,7 +639,7 @@ run_gate() {
       pnpm exec smthrs test '//:backendGo' --known-red '.github/ci-known-red.json' --verbose
       ;;
     wasm-build-script)
-      pnpm exec smthrs test '//crates/flows-jj:buildScript' --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs test '//packages/smithers/flows/jj-wasm:buildScript' --known-red '.github/ci-known-red.json' --verbose
       ;;
     faults)
       pnpm exec smthrs test '//packages/...:faults' --jobs 1 --known-red '.github/ci-known-red.json' --verbose

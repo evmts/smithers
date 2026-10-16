@@ -242,7 +242,7 @@ const goldenAttrs = {
       runsOn: "ubuntu-latest",
       continueOnError: false,
       toolchain: CiToolchain.Needs({ submodules: true, runtimes: [bareNode], rust }),
-      steps: [{ name: "Cargo gates", verb: Verb.Lint, pattern: "//crates/flows-jj" }]
+      steps: [{ name: "Cargo gates", verb: Verb.Lint, pattern: "//packages/smithers/flows/jj-wasm" }]
     }
   ],
   output: ".github/workflows/generated.yml",
@@ -327,7 +327,7 @@ jobs:
         uses: "${actions.rustCache}"
       - name: "Cargo gates"
         if: \${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs lint '//crates/flows-jj' --verbose"
+        run: "pnpm exec smthrs lint '//packages/smithers/flows/jj-wasm' --verbose"
 `
 
 const attrsOf = (input: unknown): never => GithubCiGen(input as typeof goldenAttrs)[Target.TargetTypeId].attrs as never

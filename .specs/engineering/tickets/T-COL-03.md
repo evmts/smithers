@@ -97,7 +97,7 @@ Fail when:
 
 ## Risks and notes
 
-- Cross-building a static musl `aarch64-unknown-linux-musl` binary on macOS needs a linker (`cargo-zigbuild` or `cross`). Confirmed if `smthrs build //crates/smithers-machined` fails on a clean Mac. Bundle work belongs to T-INS-01, so coordinate.
+- Cross-building a static musl `aarch64-unknown-linux-musl` binary on macOS needs a linker (`cargo-zigbuild` or `cross`). Confirmed if `smthrs build //packages/smithers-machined` fails on a clean Mac. Bundle work belongs to T-INS-01, so coordinate.
 - `jj` must never leave files in `.jj/` that members can't write. The daemon runs jj as `machined` with `umask 002` (§9.5.1), never as root. Confirmed broken if a member's `jj st` fails after a capture.
 - The head reporter also serves hosted workspaces (`workspace_runtime_head_hosted_integration_test.go`), and Plue composes the same backend. If a hosted path still needs it, deleting it breaks Smithers Cloud. Confirmed if `rg installWorkspaceHeadReporter` reaches a hosted-only caller. Then the daemon must replace it there too, or the tech lead decides the order. Two head publishers must not coexist.
 - smithers-3f accepts the Go/runtime/credential/capture seams and root-input validation; smithers-b8 signs off deletion of the public head route and OpenAPI compatibility. smithers-8a accepts ADR 0004 wire changes with smithers-3f’s review (T-COL-03r); ADR 0003 topology remains T-COL-11’s decision. This ticket consumes those contracts and does not decide topology.

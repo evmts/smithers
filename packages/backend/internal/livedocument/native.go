@@ -6,7 +6,7 @@ package livedocument
 #cgo linux LDFLAGS: -ldl
 #include <dlfcn.h>
 #include <stdlib.h>
-#include "../../../../crates/smithers-ffi/live_document.h"
+#include "../../../../packages/smithers-ffi/live_document.h"
 typedef struct { void *lib; void *fn[11]; } ld_library;
 static ld_library *ld_load(const char *path) {
  const char *names[] = {"ld_open", "ld_apply", "ld_sync1", "ld_sync2", "ld_awareness", "ld_set_author", "ld_state", "ld_text", "ld_close", "ld_free", "ld_peer"};

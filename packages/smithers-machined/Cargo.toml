@@ -11,7 +11,7 @@ killpoints = []
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-flows-jj = { path = "../flows-jj" }
+flows-jj = { path = "../smithers/flows/jj-wasm" }
 gix = { version = "0.85", default-features = false }
 jj-lib = { workspace = true, features = ["git"] }
 pollster = "1"

@@ -154,8 +154,8 @@ if (
 ) {
   throw new Error("SMITHERS_POSTGRES_BUNDLE_DIR must contain PostgreSQL 18.")
 }
-if (!existsSync(join(root, "crates", "smithers-ffi", "Cargo.toml"))) {
-  throw new Error("crates/smithers-ffi is required for the native distribution.")
+if (!existsSync(join(root, "packages", "smithers-ffi", "Cargo.toml"))) {
+  throw new Error("packages/smithers-ffi is required for the native distribution.")
 }
 
 // The guest helper is cross-built below from the commit being bundled, so a

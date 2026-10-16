@@ -293,8 +293,8 @@ test("the inventory names the exclusive fault matrix, serial, and the WASM byte-
   assert.deepEqual(releaseGates.filter((gate) => gate.target === "//packages/...:faults").map(releaseGateArgs), [
     ["test", "//packages/...:faults", "--jobs", "1", "--verbose"]
   ])
-  assert.deepEqual(releaseGates.filter((gate) => gate.target === "//crates/flows-jj:wasmReproducibility").map(releaseGateArgs), [
-    ["test", "//crates/flows-jj:wasmReproducibility", "--verbose"]
+  assert.deepEqual(releaseGates.filter((gate) => gate.target === "//packages/smithers/flows/jj-wasm:wasmReproducibility").map(releaseGateArgs), [
+    ["test", "//packages/smithers/flows/jj-wasm:wasmReproducibility", "--verbose"]
   ])
   const names = releaseGates.map((gate) => gate.name)
   assert.deepEqual(names, [...new Set(names)], "gate names are unique")
@@ -326,13 +326,13 @@ test("the inventory is release.yml's publish job: same gates, same names, same o
     "//:projectCopy", "//evals/agent:test", "//evals/agent:check", "//evals/authoring:test",
     "//evals/authoring:check", "//evals/swebench:offline", "//evals/swebench:check", "//evals/review-seeded-bugs/...",
     "//evals/review-seeded-bugs:check", "//evals/recommend/...", "//evals/recommend:check", "//:ci", "//:factoryProjection",
-    "//:targetIndex", "//packages/smithers/flows/engine-store:disasterRecovery", "//crates/flows-jj:buildScript",
-    "//crates/flows-jj:wasmReproducibility", "//scripts/..."
+    "//:targetIndex", "//packages/smithers/flows/engine-store:disasterRecovery", "//packages/smithers/flows/jj-wasm:buildScript",
+    "//packages/smithers/flows/jj-wasm:wasmReproducibility", "//scripts/..."
   ]) assert.ok(mirrored.some((gate) => gate.target === target), `${target} is an inventory gate`)
   // Ordering: the fault matrix and the byte-compare both precede the build.
   const build = release.indexOf("scripts/build-release.mjs")
   assert.ok(build > 0)
-  for (const target of ["//packages/...:faults", "//crates/flows-jj:wasmReproducibility"]) {
+  for (const target of ["//packages/...:faults", "//packages/smithers/flows/jj-wasm:wasmReproducibility"]) {
     const at = release.indexOf(`'${target}'`)
     assert.ok(at >= 0 && at < build, `${target} runs before the build in release.yml`)
   }
@@ -460,9 +460,9 @@ test("the release proves every CI gate the exclusions do not name, and every exc
   // Partial exclusions name only what the release omits: the rest of the job is mirrored.
   for (const shard of [1, 2, 3]) assert.deepEqual(releaseGateExclusions.find(exclusion => exclusion.job === `apps-browser-${shard}`).commands, [`pnpm exec smthrs test '//apps/app:browserE2eShard${shard}' --verbose`])
   assert.deepEqual(releaseGateExclusions.find((exclusion) => exclusion.job === "rust").commands, [
-    "pnpm exec smthrs lint '//crates/flows-jj/...' --verbose",
-    "pnpm exec smthrs test '//crates/flows-jj:cargoTest' --verbose",
-    "pnpm exec smthrs test '//crates/smithers-machined:documentComponents' --verbose"
+    "pnpm exec smthrs lint '//packages/smithers/flows/jj-wasm/...' --verbose",
+    "pnpm exec smthrs test '//packages/smithers/flows/jj-wasm:cargoTest' --verbose",
+    "pnpm exec smthrs test '//packages/smithers-machined:documentComponents' --verbose"
   ])
   for (const job of ["test", "repository", "scripts", "docs", "wasm-repro"]) {
     for (const step of workflowGateSteps(ci, job)) {
@@ -482,8 +482,8 @@ test("a CI gate added outside the exclusions is reported, and an exclusion that 
       [...releaseGateExclusions, { job: "repository", commands: [command], reason: "declared" }]), [])
   }
   // Dropping an inventory gate a mirrored CI job carries is a CI gap too.
-  const mutated = releaseGates.filter((gate) => gate.target !== "//crates/flows-jj:buildScript")
-  assert.deepEqual(ciGatesMissingFromInventory(mutated, ci, releaseGateExclusions).map((step) => step.command), ["pnpm exec smthrs test '//crates/flows-jj:buildScript' --verbose"])
+  const mutated = releaseGates.filter((gate) => gate.target !== "//packages/smithers/flows/jj-wasm:buildScript")
+  assert.deepEqual(ciGatesMissingFromInventory(mutated, ci, releaseGateExclusions).map((step) => step.command), ["pnpm exec smthrs test '//packages/smithers/flows/jj-wasm:buildScript' --verbose"])
   assert.deepEqual(staleExclusions(releaseGates, ci, [{ job: "test", commands: ["pnpm exec smthrs ci '//packages/...' --jobs 2 --verbose"], reason: "stale" }]), [
     "test excludes pnpm exec smthrs ci '//packages/...' --jobs 2 --verbose, which the inventory runs"
   ])

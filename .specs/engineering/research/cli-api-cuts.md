@@ -64,7 +64,7 @@ Verdicts follow §8 plus AGENTS.md ("libraries stay published; cut = product sur
 | adapters, agentic, approvals, chat, artifacts (each 1-2 .tsx) | Shared UI components for custom flow UIs (MarkdownEditor, ActivityTimeline, Checkpoint, ...) | Keep (smithers skill names these as shared components) |
 | claims, dispatch/claims | Issue-claim lockfiles (`dispatch/claims/smithers-2768.txt`) | Hide/ignore: working clutter; `claims/` empty |
 | engine-durable, engine-jj, agent-harness, sec-agent, sec-secrets, release-pipeline, cli-docs | Names from the task list; at repo root they are empty or single dirs under those names with no tracked source found (`ls` shows each dir contains only itself) | Unknown (inferred: stale local dirs); verify tracked state with `jj file list` |
-| crates/flows-jj, smithers-ffi | Rust jj + FFI | Keep (jj, native helper) |
+| packages/smithers/flows/jj-wasm, smithers-ffi | Rust jj + FFI | Keep (jj, native helper) |
 | evals/* | Agent evals, swebench, harbor, review-seeded-bugs | Keep (benchmarks); not MVP surface |
 | examples/ | Examples workspace incl. `burndown` | Cut `burndown` example with issue-sweep; rest Keep |
 | distribution/, release-pipeline/, scripts/ | Install, Docker, release tooling | Keep; install flow is §6.1 work |

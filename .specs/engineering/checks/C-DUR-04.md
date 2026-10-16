@@ -1,7 +1,7 @@
 # C-DUR-04 Daemon, VM or host killed during a burst, capture or document save
 
 Proves: mvp.md §9 Durability, §6.8 Save and recovery guarantees, M-27 ("every change is recoverable from snapshots") · spec.md §7.4.2, §7.4.6, §8.4.3, §9.1.1–9.1.4, §9.2.2, §9.2.5, §9.3.4, §19.1 · Layer: fault · Stage: S2, S3 · Tickets: T-COL-03, T-COL-08, T-COL-09, T-REL-04, T-COL-03a, T-COL-04a, T-COL-04, T-COL-08a, T-COL-08b
-Automation: `packages/backend/internal/machined/fault_test.go` and `packages/backend/internal/compose/rebase_fault_test.go` driving `crates/smithers-machined` kill hooks (`SMITHERS_MACHINED_KILL_AT=<point>`, test builds only) · Runs in: CI on a Linux runner with real inotify, cgroups and jj (daemon kills), and the reference host (VM kills)
+Automation: `packages/backend/internal/machined/fault_test.go` and `packages/backend/internal/compose/rebase_fault_test.go` driving `packages/smithers-machined` kill hooks (`SMITHERS_MACHINED_KILL_AT=<point>`, test builds only) · Runs in: CI on a Linux runner with real inotify, cgroups and jj (daemon kills), and the reference host (VM kills)
 
 ## Setup
 - Component owners: T-COL-04a K1/K2; T-COL-03a K3/K3b/K4/K4b/K5a–c; T-COL-03 reference-host K6. T-COL-04 runs the complete S2 matrix with real watcher, host store, PostgreSQL and VM. Fakes never substitute for a full-check pass.

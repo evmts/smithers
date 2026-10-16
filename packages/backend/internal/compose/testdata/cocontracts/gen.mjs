@@ -9,7 +9,7 @@ const protocol=16;
 // commit. This reads the other three as text (it imports no codec) and fails
 // both --check and generation when any differs.
 const repo=dir+'../../../../../../';
-for(const [file,re] of [['docs/architecture/0004-machined-wire.md',/^`protocol` is `(\d+)`/m],['packages/backend/internal/machined/wire/frame.go',/^const Protocol = (\d+)$/m],['crates/smithers-machined/src/conn.rs',/^pub const PROTOCOL: u16 = (\d+);$/m]]){const m=readFileSync(repo+file,'utf8').match(re);if(!m||Number(m[1])!==protocol)throw Error(`protocol drift: ${file} says ${m?.[1]}, gen.mjs ${protocol}`)}
+for(const [file,re] of [['docs/architecture/0004-machined-wire.md',/^`protocol` is `(\d+)`/m],['packages/backend/internal/machined/wire/frame.go',/^const Protocol = (\d+)$/m],['packages/smithers-machined/src/conn.rs',/^pub const PROTOCOL: u16 = (\d+);$/m]]){const m=readFileSync(repo+file,'utf8').match(re);if(!m||Number(m[1])!==protocol)throw Error(`protocol drift: ${file} says ${m?.[1]}, gen.mjs ${protocol}`)}
 // Every builder also records a structured literal (ADR 0004 golden frames:
 // the .json `literal`), so a reviewer reads field values without decoding.
 // Field tags are numbers: names would need a schema, i.e. a third codec.

@@ -94,7 +94,7 @@ delta.md claims checked against `main` (paths under `/Users/williamcory/smithers
 | 27 | Toolchain logic at `Checklist.ts:174-226` | true (packages/smithers/src/suggest/Checklist.ts:170–230) |
 | 28 | `smithers-guest.py setup USER UID` exists; guest uid 1500 at `runtime.go:50-51` | true (guest/smithers-guest.py:16, :369–373, :491; runtime.go:51) |
 | 29 | Proxy-bound secrets only (`workspace_provisioning.go:389-480`) | true in substance (LoadProxyBoundSecrets :475–480) |
-| 30 | Wiki path is POST + SSE refetch (`wiki_collaboration.go`); Yrs 0.27.4 | true (routes/wiki_collaboration.go:155–224; crates/smithers-ffi/Cargo.toml:35) |
+| 30 | Wiki path is POST + SSE refetch (`wiki_collaboration.go`); Yrs 0.27.4 | true (routes/wiki_collaboration.go:155–224; packages/smithers-ffi/Cargo.toml:35) |
 | 31 | Client POST queue at `CloudWiki.ts:148-196` | off (:148–196 are Y.Doc merge helpers; the `/updates` POST is at :288) |
 | 32 | Any viewer's input reaches stdin (`workspace_terminal.go:659`) | true (packages/backend/internal/routes/workspace_terminal.go:657–661) |
 | 33 | Guest SSH user is `developer` or `root` (`workspace_ssh.go:29`) | true (:25–35) |

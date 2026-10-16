@@ -72,13 +72,13 @@ restart, after a member is removed, and after numeric session IDs are reused.
   the transport entry; reconnect constructs a new link. Saving this same mapping
   to SQL after the reply would still lose attribution if the host crashed between
   process launch and that save.
-- [The broker supervisor](../../../crates/smithers-machined/src/broker/supervisor.rs)
+- [The broker supervisor](../../../packages/smithers-machined/src/broker/supervisor.rs)
   allocates IDs from `next = 1`. Its counter survives a daemon-child restart while
   the broker lives, but resets when the broker is reconstructed. Retained outbox
   entries outlive that counter. `(branch, session number)` is therefore not a
   durable identity. The daemon instance in the handshake does not accompany each
   retained event and cannot identify an older event after restart.
-- [Installed observed-write attribution](../../../crates/smithers-machined/src/installed.rs)
+- [Installed observed-write attribution](../../../packages/smithers-machined/src/installed.rs)
   now emits the committed principal reference from broker entries. Legacy
   `Actor::Session(id)` recordings use retained receipts only in production;
   current presence is never an authority for their earlier authors.

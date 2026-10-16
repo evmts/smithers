@@ -40,6 +40,6 @@ test("skill repository paths exist", () => {
 test("path matching includes stale files and directories and excludes nonliteral references", () => {
   expect(referencedPaths(
     "`apps/app/src/bun/Harnesses.ts` `docs/learn/` `packages/rpc/src/LocalApp.ts` " +
-      "`@smthrs/flow` `flows/<name>/flow.ts` `node crates/flows-jj/build-wasm.mjs --verify` `--help`"
+      "`@smthrs/flow` `flows/<name>/flow.ts` `node packages/smithers/flows/jj-wasm/build-wasm.mjs --verify` `--help`"
   )).toEqual(["apps/app/src/bun/Harnesses.ts", "docs/learn/", "packages/rpc/src/LocalApp.ts"])
 })

@@ -77,8 +77,8 @@ const integrationSources = Smithers.Filegroup({ cwd: "packages/smithers/agent/in
 const gatewaySources = Smithers.Filegroup({ cwd: "packages/smithers/gateway", srcs: [Smithers.glob("src/**/*.ts"), Smithers.glob("test/**/*.ts")] })
 const apiSchemas = Smithers.Filegroup({ cwd: "docs/api/openapi", srcs: [Smithers.glob("*.yaml")] })
 const workflowSources = Smithers.Filegroup({ cwd: ".github", srcs: [Smithers.glob("workflows/*.yml")] })
-const machineSources = Smithers.Filegroup({ cwd: "crates/smithers-machined", srcs: [Smithers.glob("**/*")] })
-const ffiSources = Smithers.Filegroup({ cwd: "crates/smithers-ffi", srcs: [Smithers.glob("src/**")] })
+const machineSources = Smithers.Filegroup({ cwd: "packages/smithers-machined", srcs: [Smithers.glob("**/*")] })
+const ffiSources = Smithers.Filegroup({ cwd: "packages/smithers-ffi", srcs: [Smithers.glob("src/**")] })
 
 const packDirectory = "dist/release-packs"
 
@@ -773,7 +773,7 @@ const thirdPartyNotices = Smithers.NodeTest({
     Smithers.file("//scripts/third-party-notices.template.md"),
     Smithers.file("//Cargo.toml"),
     Smithers.file("//Cargo.lock"),
-    Smithers.file("//crates/flows-jj/Cargo.toml"),
+    Smithers.file("//packages/smithers/flows/jj-wasm/Cargo.toml"),
     Smithers.file("//rust-toolchain.toml"),
     Smithers.file("//packages/smithers/flows/jj/THIRD_PARTY_NOTICES.md")
   ],

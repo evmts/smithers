@@ -28,7 +28,7 @@ vitest | bun test | node --test | go test | cargo test | playwright
 
 ### 1.2 MVP packages: targets, runners, thresholds, commands
 
-Delta.md keeps/modifies: Go backend (`packages/backend`, `apps/backend`), `apps/app`, `packages/rpc` (new catalog), the CLI `packages/smithers` (`@smthrs/cli`), `flows/` (todo/coding/learning flows), `@smthrs/flow` + engine/journal/engine-store (carried over), `packages/smithers/agent/registry` (`Executable.ts` refresh fix), `packages/smithers/ui` (CodeSurface), `crates/smithers-ffi` (Yrs). Adds `crates/smithers-machined` and `packages/backend/internal/live` (neither exists).
+Delta.md keeps/modifies: Go backend (`packages/backend`, `apps/backend`), `apps/app`, `packages/rpc` (new catalog), the CLI `packages/smithers` (`@smthrs/cli`), `flows/` (todo/coding/learning flows), `@smthrs/flow` + engine/journal/engine-store (carried over), `packages/smithers/agent/registry` (`Executable.ts` refresh fix), `packages/smithers/ui` (CodeSurface), `packages/smithers-ffi` (Yrs). Adds `packages/smithers-machined` and `packages/backend/internal/live` (neither exists).
 
 | Package | Label(s) | Runner | Coverage floor | Fast loop (exact) | Full gate |
 | --- | --- | --- | --- | --- | --- |
@@ -41,7 +41,7 @@ Delta.md keeps/modifies: Go backend (`packages/backend`, `apps/backend`), `apps/
 | `flows/` (`@smithers/release-workflows`) | `//flows:coding`, `:suite`, `:repository`, `:fixtures`, `:wiki`, `:memory`, `:pack`, `:egress`, `:testCoverage`, `:codingBundle*`, `:codingNative*` (23 test targets, 182 test files) | `node --experimental-strip-types --test` | `:testCoverage` target-coverage test | `cd flows && node --experimental-strip-types --test test/<file>.test.ts` | `pnpm exec smthrs test '//flows/...'` |
 | `@smthrs/registry` | `//packages/smithers/agent/registry:test` | vitest | 100 | `cd packages/smithers/agent/registry && pnpm exec vitest run test/ExecutableRefresh.test.ts --coverage.enabled=false` | `pnpm exec smthrs test '//packages/smithers/agent/registry:test'` |
 | `@smthrs/ui` | `//packages/smithers/ui:unitTests` | `bun test tests` (126 files) | none | `cd packages/smithers/ui && bun test tests` | same |
-| `crates/smithers-ffi` | inside `//:nativeFfi` (build target: clippy + `cargo test -p smithers-ffi` + build) | cargo | none | `cargo test -p smithers-ffi --locked` (183 `#[test]`) | `pnpm exec smthrs build '//:nativeFfi'` |
+| `packages/smithers-ffi` | inside `//:nativeFfi` (build target: clippy + `cargo test -p smithers-ffi` + build) | cargo | none | `cargo test -p smithers-ffi --locked` (183 `#[test]`) | `pnpm exec smthrs build '//:nativeFfi'` |
 | TUI (deferred) | `//apps/tui/...`, `:e2eTests` | bun | — | not MVP | — |
 
 Local toolchain on this Mac: Go 1.26.8, Bun 1.4.1, PostgreSQL 18 at `/opt/homebrew/opt/postgresql@18/bin`, Docker, cargo, `msb 0.6.16`, `target/{debug,release}/smithers-jj-export` present. `jj` resolves to an agent-guard wrapper.
@@ -142,7 +142,7 @@ No Puppeteer and no agent-browser usage. The `multi-test-github-account` skill h
 
 - TS: 4 exclusive `:faults` targets (`packages/smithers` 27 files under `test/faults/{engine,sandbox,time-travel,harness,budgets,…}`; `agent`, `flows/database`, `flows/jj`), serial, 180 s per case, coverage off. CI job "fault-injection matrix".
 - Go: `internal/services/durable_crash_restart_test.go` runs the jobs and stack workers in a child process and SIGKILLs at `pre-commit | post-commit | pre-launch | post-launch | stale-owner` (`SMITHERS_CRASH_POINT`), then requires one completion and one external effect. Also `git_mirror_restart_test.go` (`SMITHERS_MIRROR_RESTART_*`), `flowhost/workspace_crash_recovery_test.go`, PostgreSQL crash helper (`SMITHERS_POSTGRES_CRASH_*`). This is the seam C-GH-09, C-DUR-03 and T-STK-04's merge kill points should reuse.
-- Missing: host-kill of a TODO run (C-DUR-01), machine kill (C-DUR-02), daemon/VM kill during burst (C-DUR-04; `crates/smithers-machined` does not exist), GitHub-outbound kill with a write log.
+- Missing: host-kill of a TODO run (C-DUR-01), machine kill (C-DUR-02), daemon/VM kill during burst (C-DUR-04; `packages/smithers-machined` does not exist), GitHub-outbound kill with a write log.
 
 ### 3.6 Fuzz and property tests
 
@@ -236,11 +236,11 @@ scripts/perf/*                                                7   reference host
 scripts/spikes/*                                              7   reference host
 packages/smithers/test/** (CLI, faults)                       5
 scripts/journeys/*                                            4   reference host, recorded
-crates/smithers-machined, scripts/{checks,release},
+packages/smithers-machined, scripts/{checks,release},
   scripts/mvp-docs, apps/site mvp-docs                        5
 ```
 
-Directories that do not exist yet: `scripts/{perf,journeys,spikes,checks,release}`, `packages/backend/internal/{githubfake,live,machined}`, `crates/smithers-machined`, `apps/app/e2e/real/github-j10`, `packages/rpc/src/catalog`. Spike scripts live in unlanded sibling checkouts (`~/smithers-mvp-spike`, `~/smithers-mvp-col`).
+Directories that do not exist yet: `scripts/{perf,journeys,spikes,checks,release}`, `packages/backend/internal/{githubfake,live,machined}`, `packages/smithers-machined`, `apps/app/e2e/real/github-j10`, `packages/rpc/src/catalog`. Spike scripts live in unlanded sibling checkouts (`~/smithers-mvp-spike`, `~/smithers-mvp-col`).
 
 **Evidence directory** `.artifacts/checks/` exists (gitignored at `.gitignore:20`), all written 2026-10-02, for 11 checks: C-CAT-01, C-CUT-01, C-GH-01 (blocked by GitHub sudo verification), C-J1-06 ("partial component evidence"), C-REL-01, C-SEC-02, C-SPK-02 (answer **NO**: shared virtiofs homes lose writes across two VMs), C-SPK-03 and C-SPK-07 (only `env.json`, in progress), C-SPK-06, C-UI-02.
 

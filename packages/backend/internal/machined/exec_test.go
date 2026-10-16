@@ -99,7 +99,7 @@ func TestExecCleanExitAndSignal(t *testing.T) {
 }
 
 // The broker sends an exec's exit after both output EOFs and then nothing: it
-// never closes an owner's stream (crates/smithers-machined/tests/
+// never closes an owner's stream (packages/smithers-machined/tests/
 // session_dispatch.rs exit_follows_both_outputs_and_marks_registry_once). Wait
 // must return at that exit, with the session still open for Kill (#3761).
 func TestExecWaitReturnsAtTheBrokersExitWithoutAClose(t *testing.T) {

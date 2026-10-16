@@ -9,8 +9,8 @@
  */
 import { Smithers } from "@smthrs/targets"
 import { Package as backendPackage } from "../../packages/backend/PACKAGE.ts"
-import { Package as flowsJjPackage } from "../../crates/flows-jj/PACKAGE.ts"
-import { Package as machinedPackage } from "../../crates/smithers-machined/PACKAGE.ts"
+import { Package as flowsJjPackage } from "../../packages/smithers/flows/jj-wasm/PACKAGE.ts"
+import { Package as machinedPackage } from "../../packages/smithers-machined/PACKAGE.ts"
 import { Package as rpcPackage } from "../../packages/rpc/PACKAGE.ts"
 import { Package as harnessDetectPackage } from "../../packages/smithers/agent/harness-detect/PACKAGE.ts"
 import { Package as gatewayPackage } from "../../packages/smithers/gateway/PACKAGE.ts"
@@ -20,8 +20,8 @@ const cwd = "apps/app"
 
 const distributionInputs = Smithers.Filegroup({ cwd: "distribution", srcs: [Smithers.glob("**/*")] })
 const crateInputs = Smithers.Filegroup({
-  cwd: "crates",
-  srcs: [Smithers.glob("**/*"), flowsJjPackage.nativeSources, machinedPackage.buildInputs]
+  cwd: "packages/smithers/flows/jj-wasm",
+  srcs: [Smithers.glob("**/*"), flowsJjPackage.nativeSources, machinedPackage.buildInputs, machinedPackage.ffiInputs]
 })
 const proofProductInputs = Smithers.Filegroup({ cwd: ".specs/product", srcs: [Smithers.glob("**/*")] })
 const proofMockInputs = Smithers.Filegroup({ cwd: ".specs/design/mock", srcs: [Smithers.glob("src/**/*")] })

@@ -170,7 +170,7 @@ scheduled workload is 5,000 cases and 32 sequences. A local 2,000-case /
 16-sequence run is bounded local evidence. The normal Rust and package suites
 use 256 cases and four sequences.
 
-`crates/flows-jj/ABI_CAMPAIGN.md` documents the reports, independent result
+`packages/smithers/flows/jj-wasm/ABI_CAMPAIGN.md` documents the reports, independent result
 checks and separate scheduled AddressSanitizer tier. Native parser tests run
 on stable Rust without changing the runtime dependencies. Instrumentation needs
 its declared nightly toolchain; an uninstrumented pass does not certify it.

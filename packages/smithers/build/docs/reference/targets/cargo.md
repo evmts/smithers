@@ -14,7 +14,7 @@ import { Smithers } from "@smthrs/targets"
 export const rustToolchain = Smithers.Rust.Pinned({})
 
 const srcs = [
-  Smithers.glob("//crates/flows-jj/**/*.rs"),
+  Smithers.glob("//packages/smithers/flows/jj-wasm/**/*.rs"),
   Smithers.file("//Cargo.toml"),
   Smithers.file("//Cargo.lock")
 ]

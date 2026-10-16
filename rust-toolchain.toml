@@ -1,8 +1,8 @@
-# Pins the toolchain that builds the crates/ workspace and the committed
+# Pins the toolchain that builds the Cargo workspace and the committed
 # `packages/smithers/flows/jj/wasm/flows_jj.wasm` artifact. CI rebuilds the wasm with this
 # exact toolchain and fails on byte drift (see ci.yml's wasm-repro job), so
 # bumping the channel means rebuilding and recommitting the artifact with
-# `node crates/flows-jj/build-wasm.mjs` in the same change, on the host the
+# `node packages/smithers/flows/jj-wasm/build-wasm.mjs` in the same change, on the host the
 # artifact is built for — `x86_64-unknown-linux-gnu`. The script refuses to
 # build it on any other host and prints the container command; its header
 # explains why the bytes are host-specific.
