@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/std",
   "type": "module",
-  "version": "1.0.0-rc.10",
+  "version": "1.0.0-rc.11",
   "license": "MIT",
   "smthrs": {
     "group": "agent"
@@ -461,11 +461,11 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@smthrs/capability": "1.0.0-rc.10",
-    "@smthrs/control": "1.0.0-rc.10",
-    "@smthrs/core": "1.0.0-rc.10",
-    "@smthrs/kernel": "1.0.0-rc.10",
-    "@smthrs/model": "1.0.0-rc.10"
+    "@smthrs/capability": "1.0.0-rc.11",
+    "@smthrs/control": "1.0.0-rc.11",
+    "@smthrs/core": "1.0.0-rc.11",
+    "@smthrs/kernel": "1.0.0-rc.11",
+    "@smthrs/model": "1.0.0-rc.11"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",

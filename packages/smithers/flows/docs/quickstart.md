@@ -35,7 +35,7 @@ any `effect` in `^4.0.4`, so the line names no version and a project that
 already has one in that range keeps it.
 
 With pnpm 11, replace the `npm install` line with
-`pnpm add @smthrs/flows@1.0.0-rc.10 effect`, then run
+`pnpm add @smthrs/flows@1.0.0-rc.11 effect`, then run
 `pnpm approve-builds esbuild`. pnpm 11 installs only versions at least 24 hours
 old, so `@next` can resolve to a candidate more than one release behind; an
 exact version is installed the day it is published. pnpm 11 also ends the install with

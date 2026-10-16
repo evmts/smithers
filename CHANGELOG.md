@@ -5,6 +5,36 @@ release (what changed and why it matters, with screenshots and examples), see
 the release notes at
 [smithers.sh/changelogs/1.0.0-rc.0](https://smithers.sh/changelogs/1.0.0-rc.0).
 
+## 1.0.0-rc.11 (2026-10-16)
+
+<!-- commits:1.0.0-rc.11 -->
+
+13 commits since [v1.0.0-rc.10](https://github.com/smithersai/smithers/commit/9346ce20b6).
+
+### ✨ Features
+
+- **app,backend:** review the actual GitHub pull request, not the native landing of the same number ([d85aedb07f](https://github.com/smithersai/smithers/commit/d85aedb07f631feef1c57ec6e5de47aebd170bf3))
+- **app:** let a repository flow own notification policy (#4026) ([2ac058bac3](https://github.com/smithersai/smithers/commit/2ac058bac3a7ca07f8fde773fadfd6cbba35901d))
+
+### 🐛 Bug fixes
+
+- **release:** pin executable Effect peers to their tested runtime (#4002) ([d40b1e7318](https://github.com/smithersai/smithers/commit/d40b1e7318df59a3087b20e24de156b2a537cb7b))
+- **backend,app:** one GitHub mutation per human intent, at the head the person read, under the operation's own policy (#4027, #4038) ([316b77b1d5](https://github.com/smithersai/smithers/commit/316b77b1d53960502a2690120dcf2f96368d59d2))
+- **app:** a repository flow moves its own issues on GitHub, and the repository says which tracker a number means (#4027, #4030) ([d5a27f011c](https://github.com/smithersai/smithers/commit/d5a27f011cc3714669ddb041a88d294bafde3e6c))
+- **server:** launch the release-gate probe subprocesses by absolute interpreter path ([62ffe8a65f](https://github.com/smithersai/smithers/commit/62ffe8a65fd0ddee6a1c4b8d6f86ba9c5bdcbcfa))
+- **flows:** make the notification policy example compile in the repository that copies it (#4026) ([59fd9d20c9](https://github.com/smithersai/smithers/commit/59fd9d20c95887ffa34d4a299f0a27890c3a3236))
+- **app:** bound the notification policy's declaration read and fence its refusals (#4026) ([0c522de145](https://github.com/smithersai/smithers/commit/0c522de145771ef08af9b90d6775c403f4998afc))
+- **app:** fence, bound and honour a repository notification policy (#4026) ([dfae23b97e](https://github.com/smithersai/smithers/commit/dfae23b97ed686eccf1608ce1fe53b4ffd44e89d))
+
+### 📝 Documentation
+
+- **release:** refresh GitHub account worker setup evidence (#4042) ([4e79ac9be3](https://github.com/smithersai/smithers/commit/4e79ac9be3f22016a059e1a8ef76e4dcd127011a))
+- **release:** prepare rc.11 recovery evidence (#4042) ([7dd8d8c07e](https://github.com/smithersai/smithers/commit/7dd8d8c07e2194d530a91cbe83e4572d0d279a11))
+- **release:** record rc.10 installed-consumer blocker (#4042) ([182f256329](https://github.com/smithersai/smithers/commit/182f256329c98dae1c4f96ab2ba1f9543c970a93))
+- **api:** record the reviewed #3906, #3935 and ProductApi declarations (#3765) ([9c84de09bc](https://github.com/smithersai/smithers/commit/9c84de09bc982a17011d711ef38d434c6039c5ea))
+
+<!-- /commits:1.0.0-rc.11 -->
+
 ## 1.0.0-rc.10 (2026-10-16)
 
 <!-- commits:1.0.0-rc.10 -->

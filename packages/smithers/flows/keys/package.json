@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/keys",
   "type": "module",
-  "version": "1.0.0-rc.10",
+  "version": "1.0.0-rc.11",
   "license": "MIT",
   "smthrs": {
     "group": "engine"
@@ -103,8 +103,8 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@smthrs/canonical": "1.0.0-rc.10",
-    "@smthrs/crypto": "1.0.0-rc.10"
+    "@smthrs/canonical": "1.0.0-rc.11",
+    "@smthrs/crypto": "1.0.0-rc.11"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",

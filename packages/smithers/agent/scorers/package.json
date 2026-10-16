@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/scorers",
   "type": "module",
-  "version": "1.0.0-rc.10",
+  "version": "1.0.0-rc.11",
   "license": "MIT",
   "smthrs": {
     "group": "agent"
@@ -226,10 +226,10 @@
     "test:matrix": "node ../../flows/database/scripts/test-matrix.mjs"
   },
   "dependencies": {
-    "@smthrs/core": "1.0.0-rc.10",
-    "@smthrs/database": "1.0.0-rc.10",
-    "@smthrs/journal": "1.0.0-rc.10",
-    "@smthrs/sandbox": "1.0.0-rc.10"
+    "@smthrs/core": "1.0.0-rc.11",
+    "@smthrs/database": "1.0.0-rc.11",
+    "@smthrs/journal": "1.0.0-rc.11",
+    "@smthrs/sandbox": "1.0.0-rc.11"
   },
   "peerDependencies": {
     "effect": "^4.0.4"
@@ -253,7 +253,7 @@
     "typescript-eslint": "8.69.0",
     "vitest": "5.0.0",
     "@effect/platform-node": "4.0.4",
-    "@smthrs/kernel": "1.0.0-rc.10",
-    "@smthrs/platform-node": "1.0.0-rc.10"
+    "@smthrs/kernel": "1.0.0-rc.11",
+    "@smthrs/platform-node": "1.0.0-rc.11"
   }
 }
