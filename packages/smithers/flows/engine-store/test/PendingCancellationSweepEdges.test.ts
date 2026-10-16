@@ -201,8 +201,13 @@ describe("pending cancellation sweep races", () => {
           claim: null,
           cancelRequestedAtMs: 0
         })
-        yield* tick
-        yield* TestDatabase.until(Effect.sync(() => pages.length >= 2))
+        // The receipt precedes the sweep's next sleep. Keep driving virtual
+        // time while awaiting the next page, including real PostgreSQL I/O.
+        yield* TestDatabase.until(Effect.gen(function*() {
+          if (pages.length >= 2) return true
+          yield* tick
+          return pages.length >= 2
+        }))
         expect(pages[1]).toEqual(["requested-63"])
         yield* journal.flush
         const events = yield* journal.entries({ runId: "requested-63" as never, limit: 100 })
