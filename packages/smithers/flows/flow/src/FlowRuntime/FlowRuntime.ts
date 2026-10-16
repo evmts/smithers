@@ -170,6 +170,11 @@ export class FlowRuntime extends Context.Service<
      * cleanup, compensation, and child-flow handling. This is not a pause, and
      * a later `resume` does not undo the cancellation request.
      *
+     * Unknown ids and ids belonging to another flow are ignored. The caller's
+     * authority, intersected with the host and flow ceilings, must cover the
+     * authority recorded at admission; otherwise cancellation is refused with
+     * an execution identity conflict defect, before changing the run.
+     *
      * A durable runtime records the request before it interrupts anything, and
      * reports {@link CancelRequestFailed} when that record could not be
      * written: the execution is then still running and still cancellable, so

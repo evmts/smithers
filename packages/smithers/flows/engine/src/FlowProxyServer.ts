@@ -232,6 +232,7 @@ const handleInterrupt = (
     Effect.flatMap((executionId) =>
       Effect.flatMap(FlowRuntime.FlowRuntime, (runtime) => runtime.interrupt(flow, executionId))
     ),
+    CapabilitySet.attenuateGroups(request.capabilityCeilings ?? []),
     guardDefects(flow._tag),
     Effect.annotateLogs({ module: "FlowProxyServer", method })
   )

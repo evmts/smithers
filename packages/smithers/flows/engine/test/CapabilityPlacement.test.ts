@@ -150,7 +150,7 @@ describe("remote placement capability ceiling", () => {
       }).pipe(Effect.scoped)
     ))
 
-  it.effect("forwards the ceiling on remote resume and none on interrupt", () =>
+  it.effect("forwards the ceiling on remote resume and interrupt", () =>
     withCrypto(
       Effect.gen(function*() {
         const sent: Array<Sent> = []
@@ -164,8 +164,8 @@ describe("remote placement capability ceiling", () => {
         expect(sent.map(({ operation }) => operation)).toEqual(["resume", "interrupt"])
         expect(ceilingsOf(sent[0]!)).toEqual([["fs:read:src/**"]])
         expect(sent[0]!.request).toMatchObject({ executionId: "remote-run", poll: true })
-        // Cancellation needs no authority: it can only stop work.
-        expect(sent[1]!.request).toEqual({ executionId: "remote-run" })
+        expect(ceilingsOf(sent[1]!)).toEqual([["fs:read:src/**"]])
+        expect(sent[1]!.request).toMatchObject({ executionId: "remote-run" })
       }).pipe(Effect.scoped)
     ))
 

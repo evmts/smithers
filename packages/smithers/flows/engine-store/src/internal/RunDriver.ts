@@ -2944,7 +2944,7 @@ export const make = (
      * so a row admitted after this read is never woken on this request; a
      * caller whose authority does not cover the row is refused.
      */
-    const authorizeResume = (flow: Flow.Any, executionId: string): Effect.Effect<boolean> =>
+    const authorizeControl = (flow: Flow.Any, executionId: string): Effect.Effect<boolean> =>
       Effect.gen(function*() {
         const row = yield* store.get(executionId).pipe(
           Effect.catch((error) => error.code === "not_found_row" ? Effect.succeed(undefined) : Effect.die(error))
@@ -3052,7 +3052,7 @@ export const make = (
     )
 
     const interrupt = Effect.fn("FlowEngine.interrupt")((
-      _flow: Flow.Any,
+      flow: Flow.Any,
       executionId: string
     ): Effect.Effect<void, FlowRuntime.CancelRequestFailed> =>
       Effect.gen(function*() {
@@ -3077,6 +3077,7 @@ export const make = (
         // other way.
         const requested = yield* transactState(
           Effect.gen(function*() {
+            if (!(yield* authorizeControl(flow, executionId))) return []
             yield* requestCancellation(executionId, nowMs)
             return [executionId, ...yield* requestCancelDescendants(executionId, nowMs)]
           }),
@@ -3247,7 +3248,7 @@ export const make = (
       resume: Effect.fn("FlowEngine.resume")((flow, executionId, options) =>
         Effect.gen(function*() {
           yield* Effect.annotateCurrentSpan({ executionId, flow: flow._tag })
-          if (!(yield* authorizeResume(flow, executionId))) return
+          if (!(yield* authorizeControl(flow, executionId))) return
           if (options?.poll === true) {
             const row = yield* store.get(executionId).pipe(Effect.orDie)
             if (row.status === "suspended" && row.cancelRequestedAtMs === null) {

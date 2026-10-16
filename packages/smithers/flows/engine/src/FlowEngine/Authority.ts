@@ -1,6 +1,6 @@
 /**
  * The authority a flow request carries, and the rule that decides whether a
- * request may join, poll, or resume an execution admitted under other
+ * request may join, poll, resume, or interrupt an execution admitted under other
  * authority. Both engines and remote placement share them (#2852).
  *
  * @since 1.0.0
@@ -27,7 +27,7 @@ export const requestedAuthority = (flow: Flow.Any): Effect.Effect<CapabilitySet.
 
 /**
  * Whether a request under `requested` authority (see
- * {@link requestedAuthority}) may join, poll, or resume an execution admitted
+ * {@link requestedAuthority}) may join, poll, resume, or interrupt an execution admitted
  * under `admitted`. Each of those answers or advances what the admitted
  * authority produces, so that authority must be provably within what the
  * caller could have run itself. A wider caller may join a narrower run; a
@@ -47,7 +47,7 @@ export const joinable = (
 
 /**
  * Binds `service` to `host`, the capability ceiling its engine was constructed
- * under: every `execute`, `poll`, and `resume` runs under that ceiling
+ * under: every `execute`, `poll`, `resume`, and cancellation runs under that ceiling
  * intersected with the caller's. Admission therefore records, and a join,
  * poll, or resume therefore compares, the host ceiling as well as the
  * caller's and the flow's, so a caller in a wider context never stores or
@@ -67,5 +67,9 @@ export const bindHostCeiling = <Service extends FlowRuntime.FlowRuntime["Service
   const poll: FlowRuntime.FlowRuntime["Service"]["poll"] = (flow, executionId) => bound(service.poll(flow, executionId))
   const resume: FlowRuntime.FlowRuntime["Service"]["resume"] = (flow, executionId, options) =>
     bound(service.resume(flow, executionId, options))
-  return { ...service, execute, poll, resume }
+  const interrupt: FlowRuntime.FlowRuntime["Service"]["interrupt"] = (flow, executionId) =>
+    bound(service.interrupt(flow, executionId))
+  const interruptUnsafe: FlowRuntime.FlowRuntime["Service"]["interruptUnsafe"] = (flow, executionId) =>
+    bound(service.interruptUnsafe(flow, executionId))
+  return { ...service, execute, poll, resume, interrupt, interruptUnsafe }
 }

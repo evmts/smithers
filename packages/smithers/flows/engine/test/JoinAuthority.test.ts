@@ -10,7 +10,7 @@ import { Capability, CapabilityPattern } from "@smthrs/capability/Capability"
 import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { Cause, Effect, Exit, Layer, Option, Schema } from "effect"
+import { Cause, Deferred, Effect, Exit, Layer, Option, Schema } from "effect"
 import { FlowEngine } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
 
@@ -165,6 +165,49 @@ describe("joining an execution under a capability ceiling", () => {
           expect(runs()).toBe(1)
         }).pipe(Effect.provide(layer))
       }).pipe(Effect.scoped)
+    ))
+
+  it.effect("authorizes cancellation before touching a run", () =>
+    withCrypto(Effect.gen(function*() {
+      const { flow, layer } = setup()
+      yield* Effect.gen(function*() {
+        yield* flow.execute({ id: "a" }, { executionId: "cancel-wide" })
+        const runtime = yield* FlowRuntime.FlowRuntime
+        for (const cancel of [runtime.interrupt, runtime.interruptUnsafe]) {
+          const refused = yield* Effect.exit(under(readSource)(cancel(flow, "cancel-wide")))
+          expect(conflictOf(refused)).toMatchObject({ field: "capabilities", executionId: "cancel-wide" })
+          yield* cancel(flow, "unknown")
+        }
+        expect(Option.isSome(yield* flow.poll("cancel-wide"))).toBe(true)
+      }).pipe(Effect.provide(layer))
+    })))
+
+  it.effect("ignores foreign flow ids and allows a covering caller to cancel", () =>
+    withCrypto(
+      Effect.gen(function*() {
+        const { flow: Other } = setup()
+        const flow = Flow.make("cancel-authority/running", {
+          payload: {},
+          success: Schema.Void,
+          body: () => Node.succeed(undefined)
+        })
+        const started = Deferred.makeUnsafe<void>()
+        const stopped = Deferred.makeUnsafe<void>()
+        const runtime = yield* FlowRuntime.FlowRuntime
+        yield* runtime.register(flow, () =>
+          Deferred.succeed(started, undefined).pipe(
+            Effect.andThen(Effect.never),
+            Effect.onInterrupt(() => Deferred.succeed(stopped, undefined))
+          ))
+        yield* runtime.execute(flow, { executionId: "running", payload: {}, discard: true })
+        yield* Deferred.await(started)
+        for (const cancel of [runtime.interrupt, runtime.interruptUnsafe]) {
+          yield* cancel(Other, "running")
+          expect(yield* Deferred.isDone(stopped)).toBe(false)
+        }
+        yield* runtime.interrupt(flow, "running")
+        yield* Deferred.await(stopped)
+      }).pipe(Effect.provide(FlowEngine.layerMemory), Effect.scoped)
     ))
 
   it("joinable compares the admitted authority as recorded", () => {

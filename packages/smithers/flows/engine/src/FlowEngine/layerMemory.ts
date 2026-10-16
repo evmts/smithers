@@ -604,9 +604,18 @@ export const layerMemory: Layer.Layer<FlowRuntime.FlowRuntime> = Layer.effect(Fl
         return (yield* settlement(flow, options.executionId, yield* Fiber.join(admitted.fiber!))) as any
       }),
       // Untraced because interruption is coordinated from recursive execution.
-      interrupt: (_flow, executionId) => interruptExecution(executionId),
+      interrupt: (flow, executionId) =>
+        Effect.suspend(() => {
+          const state = executions.get(executionId)
+          return state === undefined || state.instance.flow._tag !== flow._tag
+            ? Effect.void
+            : Effect.andThen(authorize(flow, state, executionId), interruptExecution(executionId))
+        }),
       // Untraced because interruption is coordinated from recursive execution.
-      interruptUnsafe: Effect.fnUntraced(function*(_flow, executionId) {
+      interruptUnsafe: Effect.fnUntraced(function*(flow, executionId) {
+        const admitted = executions.get(executionId)
+        if (admitted === undefined || admitted.instance.flow._tag !== flow._tag) return
+        yield* authorize(flow, admitted, executionId)
         const targets = requestCancellation(executionId)
         // `execute` installs the state and synchronously starts `resume`
         // before it can return its execution id. `resume` assigns this fiber

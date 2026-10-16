@@ -693,6 +693,12 @@ describe("FlowProxyServer.layerHttpApi", () => {
       const api = yield* client
       yield* api.flows["Proxy/EchoDiscard"]({ payload: { payload: { value: 7 }, executionId: "http-interrupt" } })
       yield* Deferred.await(started)
+      const refused = yield* Effect.exit(api.flows["Proxy/EchoInterrupt"]({
+        payload: { executionId: "http-interrupt", capabilityCeilings: [[]] }
+      }))
+      expect(Exit.isFailure(refused)).toBe(true)
+      yield* api.flows["Proxy/SuspendsInterrupt"]({ payload: { executionId: "http-interrupt" } })
+      expect(interrupted).toBe(false)
       yield* api.flows["Proxy/EchoInterrupt"]({ payload: { executionId: "http-interrupt" } })
       expect(observed).toContainEqual({ operation: "interrupt", clientValue: "http-interrupt" })
       yield* Effect.promise(async () => {

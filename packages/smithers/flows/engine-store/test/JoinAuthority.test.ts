@@ -181,6 +181,21 @@ describe("durable joins under a capability ceiling", () => {
       yield* engine.register(Parked, () => Effect.suspend(() => (drives++, DurableDeferred.await(gate))))
       yield* engine.register(Other, () => Effect.succeed("other"))
       yield* executeUntilParked(engine, Parked, { executionId: "parked", payload: {}, discard: true })
+      for (const cancel of [engine.interrupt]) {
+        const refused = yield* Effect.exit(CapabilitySet.attenuate(readSource)(cancel(Parked, "parked")))
+        expect(conflictOf(refused)).toMatchObject({ field: "capabilities", executionId: "parked" })
+        yield* cancel(Other, "parked")
+        yield* cancel(Parked, "never-admitted")
+        const row = yield* RunStore.RunStore.pipe(Effect.flatMap((store) => store.get("parked")))
+        expect(row.status).toBe("suspended")
+      }
+      const restrictedHost = yield* CapabilitySet.attenuate(readSource)(EngineStore.make({
+        owner: { hostId: "replacement-narrow-host" },
+        journalSource: "replacement-narrow-host",
+        isAlive: () => Effect.succeed(false)
+      }))
+      const hostRefusal = yield* Effect.exit(restrictedHost.interrupt(Parked, "parked"))
+      expect(conflictOf(hostRefusal)).toMatchObject({ field: "capabilities", executionId: "parked" })
       const parkedDrives = drives
       expect(parkedDrives).toBeGreaterThan(0)
       // A restricted caller naming another flow's declaration drives nothing.
@@ -193,6 +208,9 @@ describe("durable joins under a capability ceiling", () => {
       expect(drives).toBe(parkedDrives)
       yield* engine.resume(Parked, "parked")
       expect(drives).toBeGreaterThan(parkedDrives)
+      yield* engine.interrupt(Parked, "parked")
+      const cancelled = yield* RunStore.RunStore.pipe(Effect.flatMap((store) => store.get("parked")))
+      expect(cancelled.cancelRequestedAtMs).not.toBeNull()
     }).pipe(
       Effect.scoped,
       Effect.provide(jj),

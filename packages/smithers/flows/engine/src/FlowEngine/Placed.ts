@@ -185,4 +185,8 @@ export const placeInterrupt = (
   Effect.flatMap(bindingOf(flow), (binding) =>
     binding._tag === "Here"
       ? inner(flow, executionId)
-      : remote(binding, flow, (client, operation) => retryTransport(client[operation.interrupt]!({ executionId }))))
+      : remote(binding, flow, (client, operation) =>
+        Effect.flatMap(
+          requestedAuthority(flow),
+          (capabilityCeilings) => retryTransport(client[operation.interrupt]!({ executionId, capabilityCeilings }))
+        )))
