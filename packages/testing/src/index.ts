@@ -50,6 +50,12 @@ export * as RecordingModel from "./RecordingModel.ts"
 /** @since 0.0.0 @category models */
 export * as CachedModel from "./CachedModel.ts"
 
+/** @since 1.0.0 @category models */
+export * as CachedEvaluator from "./CachedEvaluator.ts"
+
+/** @since 1.0.0 @category models */
+export * as TurnGate from "./TurnGate.ts"
+
 /** @since 0.0.0 @category fixtures */
 export * as Fixture from "./Fixture.ts"
 

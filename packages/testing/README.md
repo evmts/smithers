@@ -44,8 +44,9 @@ required.
   for any engine, `HostSuite.hostSuite` for any Host bundle.
 - **Doubles**: `MemoryEngine` and `RestartableEngine` as reference engines,
   `FlowEngineLike` as the adapter that runs the same pins against the real
-  engine, and `RecordedModel`, `RecordingModel`, and `CachedModel` as the
-  record-and-replay model loop.
+  engine, `RecordedModel`, `RecordingModel`, `CachedModel` and
+  `CachedEvaluator` as the record-and-replay model loop, `TurnGate` to hold a
+  turn, and `ModelServer` to serve all of it over HTTP.
 
 `@smthrs/testing/TestHost` supplies the deterministic host services a run
 needs, while `@smthrs/journal` supplies `TestJournal`. This package also
@@ -108,8 +109,8 @@ const modelLayer = Layer.unwrap(
 )
 ```
 
-The package reads no environment variable, so how a suite decides to record
-stays the suite's business. Two rules the recorder follows, because a fixture is
+The library modules read no environment variable, so how a suite decides to
+record stays the suite's business. Two rules the recorder follows, because a fixture is
 executable state: an interrupted or dead call is not recorded, because a
 truncated stream would replay as an aborted turn; and a call the `@smthrs/kernel`
 permission kernel refused is not recorded either, because the provider never saw
@@ -119,10 +120,29 @@ it.
 matches by request shape with `modelId` erased, and dies on a request the
 fixture does not describe.
 
-## Four modules stay off the root barrel
+## Serve a recorded model over HTTP
+
+An install under test calls its model from another process, so a layer cannot
+replace it. `smthrs-model-server` serves a fixture as a local OpenAI-compatible
+endpoint: Chat Completions turns and AI Gateway judgments, recorded once
+against a real provider and replayed with no network after.
+
+```bash
+# Record. The key is read from the named variable and never written.
+AI_GATEWAY_API_KEY=... npx smthrs-model-server --fixture test/fixtures/install.json \
+  --record --upstream https://ai-gateway.vercel.sh --key-env AI_GATEWAY_API_KEY
+# Replay. A request the fixture does not hold is a 501.
+npx smthrs-model-server --fixture test/fixtures/install.json
+```
+
+It prints `{"url":"http://127.0.0.1:<port>"}`; point the install's provider at
+it. `--hold <regex>` holds a matching turn until `POST /__testing/release/<key>`.
+See the [guide](./docs/guides/serve-a-recorded-model.md).
+
+## Six modules stay off the root barrel
 
 The root entry point exports one namespace per module, and each is also
-importable from `@smthrs/testing/<Module>`. Four are reachable only by
+importable from `@smthrs/testing/<Module>`. Six are reachable only by
 subpath.
 
 `TestHost` is the deterministic host bundle: an in-memory filesystem, scripted
@@ -153,6 +173,11 @@ finite timeout, and coverage off.
 `ProcessTable` spawns `ps` through `node:child_process`, which browser test
 hosts cannot load, so it stays at `@smthrs/testing/ProcessTable`. See
 [Inspect real processes](#inspect-real-processes).
+
+`ModelServer` listens through `node:http` and `ModelServerCli` reads fixture
+files through `node:fs`, so they stay at `@smthrs/testing/ModelServer` and
+`@smthrs/testing/ModelServerCli`. See
+[Serve a recorded model over HTTP](#serve-a-recorded-model-over-http).
 
 `@smthrs/testing/package.json` is also exported. `internal/*` and nested
 `*/index` subpaths are not public.

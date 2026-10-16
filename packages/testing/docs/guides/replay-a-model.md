@@ -60,8 +60,10 @@ The package exposes the layers and nothing else. It reads no environment
 variable and has no opinion about how a suite decides to record. Three shapes
 are common:
 
-- An environment flag such as `SMTHRS_RECORD=1` that swaps `live` for a model
-  with no credentials, so a run that forgot to record fails loudly.
+- An environment flag such as `SMTHRS_RECORD=1` that passes `live` only when
+  set. Without `live`, `CachedModel` replays only: a miss dies with
+  `UnscriptedModelError` and never reaches the network, so a run that forgot to
+  record fails loudly.
 - A separate `test:record` script.
 - Deleting the fixture file and re-running.
 
@@ -154,6 +156,9 @@ Two calls never reach a fixture, and both refusals protect the replay:
   is no exchange to record. The failure still reaches the caller unchanged.
 
 ## Related
+
+- [Serve a recorded model over HTTP](./serve-a-recorded-model.md) records and
+  replays a model an install calls from another process.
 
 - [Fixtures and replay identity](../concepts/fixtures.md) explains the
   canonical digest, the memoized index, and why the doubles die rather than

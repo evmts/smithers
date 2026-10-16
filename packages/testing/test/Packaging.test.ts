@@ -131,14 +131,14 @@ describe("the subpath-only modules", () => {
     return text.slice(start, next === -1 ? undefined : next)
   }
 
-  it("are Faults, ProcessTable, TestHost and Vitest", () => {
-    expect(subpathOnly).toEqual(["Faults", "ProcessTable", "TestHost", "Vitest"])
+  it("are Faults, ModelServer, ModelServerCli, ProcessTable, TestHost and Vitest", () => {
+    expect(subpathOnly).toEqual(["Faults", "ModelServer", "ModelServerCli", "ProcessTable", "TestHost", "Vitest"])
   })
 
   it.each([
-    ["docs/api.md", "Four modules are reachable only by subpath."],
-    ["docs/installation.md", "## Four modules stay off the root barrel"],
-    ["README.md", "## Four modules stay off the root barrel"]
+    ["docs/api.md", "Six modules are reachable only by subpath."],
+    ["docs/installation.md", "## Six modules stay off the root barrel"],
+    ["README.md", "## Six modules stay off the root barrel"]
   ])("are each named where %s lists them", (path, heading) => {
     const listed = section(page(path), heading)
     for (const name of subpathOnly) expect(listed, `${path}: ${name}`).toContain(`\`${name}\``)

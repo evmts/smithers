@@ -3,7 +3,7 @@ import * as Model from "@smthrs/model/Model"
 import { ModelError } from "@smthrs/model/ModelError"
 import type * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
-import { Effect, Option, Ref, Stream } from "effect"
+import { Cause, Effect, Exit, Option, Ref, Stream } from "effect"
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -11,6 +11,7 @@ import * as CachedModel from "../src/CachedModel.ts"
 import { decode, type Fixture, type RecordedCall, recordedRequest } from "../src/Fixture.ts"
 import * as FixtureStore from "../src/FixtureStore.ts"
 import type { ModelErrorLike } from "../src/ModelLike.ts"
+import { UnscriptedModelError } from "../src/TestingError.ts"
 
 type Complete<T> = { readonly [K in keyof T]-?: Exclude<T[K], undefined> }
 
@@ -120,6 +121,39 @@ describe("CachedModel", () => {
       expect([...seen]).toEqual(events)
       expect(yield* live.count()).toBe(1)
       expect(Option.getOrThrow(yield* fixture.load()).calls).toHaveLength(1)
+    }))
+
+  it.effect("without a live model, replays a hit and dies on a miss without recording it", () =>
+    Effect.gen(function*() {
+      const recording = yield* FixtureStore.makeMemory()
+      const live = yield* countingLive
+      yield* Stream.runDrain(
+        CachedModel.make({ live: live.live, fixture: recording }).stream(request("Summarize PR 4821."))
+      )
+      const fixture = yield* FixtureStore.makeMemory(Option.getOrThrow(yield* recording.load()))
+      const replay = CachedModel.make({ fixture })
+      expect(replay.providerName).toBeUndefined()
+      expect([...yield* Stream.runCollect(replay.stream(request("Summarize PR 4821.")))]).toEqual(events)
+      const miss = yield* Stream.runCollect(replay.stream(request("Summarize PR 9999."))).pipe(Effect.exit)
+      expect(miss._tag).toBe("Failure")
+      expect(String(miss)).toContain("UnscriptedModelError")
+      expect(Option.getOrThrow(yield* fixture.load()).calls).toHaveLength(1)
+      const empty = yield* FixtureStore.makeMemory()
+      const withTool = ModelRequest.ModelRequest.make({
+        ...request("x"),
+        tools: [{ name: "search", description: "Search the repository.", parameters: { type: "object" } }]
+      })
+      const absent = yield* Stream.runCollect(CachedModel.make({ fixture: empty }).stream(withTool)).pipe(Effect.exit)
+      // The defect names the request, never its text.
+      const defect = Exit.isFailure(absent) ? Cause.squash(absent.cause) : undefined
+      expect(defect).toBeInstanceOf(UnscriptedModelError)
+      expect({ ...(defect as UnscriptedModelError) }).toEqual({
+        _tag: "UnscriptedModelError",
+        code: "unscripted_model",
+        modelId: "openai:gpt-5-mini",
+        messageCount: 1,
+        toolNames: ["search"]
+      })
     }))
 
   it.effect("treats a different request as a miss and records it beside the first", () =>

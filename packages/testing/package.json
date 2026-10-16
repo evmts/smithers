@@ -41,6 +41,7 @@
     },
     "./internal/*": null,
     "./*/index": null,
+    "./CachedEvaluator": "./src/CachedEvaluator.ts",
     "./CachedModel": "./src/CachedModel.ts",
     "./Conformance": "./src/Conformance.ts",
     "./Divergence": "./src/Divergence.ts",
@@ -53,6 +54,8 @@
     "./JournalAssertions": "./src/JournalAssertions.ts",
     "./MemoryEngine": "./src/MemoryEngine.ts",
     "./ModelLike": "./src/ModelLike.ts",
+    "./ModelServer": "./src/ModelServer.ts",
+    "./ModelServerCli": "./src/ModelServerCli.ts",
     "./Plan": "./src/Plan.ts",
     "./PlanAssertions": "./src/PlanAssertions.ts",
     "./PlanLike": "./src/PlanLike.ts",
@@ -63,6 +66,7 @@
     "./TestHost": "./src/TestHost.ts",
     "./TestLayers": "./src/TestLayers.ts",
     "./TestingError": "./src/TestingError.ts",
+    "./TurnGate": "./src/TurnGate.ts",
     "./index": "./src/index.ts",
     "./pins/Identity": "./src/pins/Identity.ts",
     "./pins/Interrupt": "./src/pins/Interrupt.ts",
@@ -70,7 +74,11 @@
     "./pins/Replay": "./src/pins/Replay.ts",
     "./ProcessTable": "./src/ProcessTable.ts"
   },
+  "bin": {
+    "smthrs-model-server": "./bin/smthrs-model-server.mjs"
+  },
   "files": [
+    "bin/smthrs-model-server.mjs",
     "src/**/*.ts",
     "dist/**/*.js",
     "dist/**/*.js.map",
@@ -104,6 +112,16 @@
       },
       "./internal/*": null,
       "./*/index": null,
+      "./CachedEvaluator": {
+        "import": {
+          "types": "./dist/esm/CachedEvaluator.d.ts",
+          "default": "./dist/esm/CachedEvaluator.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CachedEvaluator.d.ts",
+          "default": "./dist/cjs/CachedEvaluator.js"
+        }
+      },
       "./CachedModel": {
         "import": {
           "types": "./dist/esm/CachedModel.d.ts",
@@ -224,6 +242,26 @@
           "default": "./dist/cjs/ModelLike.js"
         }
       },
+      "./ModelServer": {
+        "import": {
+          "types": "./dist/esm/ModelServer.d.ts",
+          "default": "./dist/esm/ModelServer.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ModelServer.d.ts",
+          "default": "./dist/cjs/ModelServer.js"
+        }
+      },
+      "./ModelServerCli": {
+        "import": {
+          "types": "./dist/esm/ModelServerCli.d.ts",
+          "default": "./dist/esm/ModelServerCli.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ModelServerCli.d.ts",
+          "default": "./dist/cjs/ModelServerCli.js"
+        }
+      },
       "./Plan": {
         "import": {
           "types": "./dist/esm/Plan.d.ts",
@@ -322,6 +360,16 @@
         "require": {
           "types": "./dist/cjs/TestingError.d.ts",
           "default": "./dist/cjs/TestingError.js"
+        }
+      },
+      "./TurnGate": {
+        "import": {
+          "types": "./dist/esm/TurnGate.d.ts",
+          "default": "./dist/esm/TurnGate.js"
+        },
+        "require": {
+          "types": "./dist/cjs/TurnGate.d.ts",
+          "default": "./dist/cjs/TurnGate.js"
         }
       },
       "./index": {
@@ -425,6 +473,7 @@
     "@effect/language-service": "0.87.2",
     "@effect/vitest": "4.0.4",
     "@eslint/js": "9.39.5",
+    "@smthrs/platform-node": "1.0.0-rc.12",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",

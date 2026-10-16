@@ -6,6 +6,10 @@
  * not runs against the live model and is appended. The first run records, every
  * run after it replays, and neither the test nor the flow changes shape.
  *
+ * Without a live model it only replays: a miss dies with
+ * `UnscriptedModelError` and never reaches the network, which is the mode a
+ * CI run uses.
+ *
  * @since 0.0.0
  */
 
@@ -17,6 +21,7 @@ import { canonicalRequestDigest, type Fixture, index, type RecordedCall } from "
 import type { FixtureStore } from "./FixtureStore.ts"
 import type { ModelErrorLike, ModelRequestLike } from "./ModelLike.ts"
 import * as RecordingModel from "./RecordingModel.ts"
+import { UnscriptedModelError } from "./TestingError.ts"
 
 /**
  * What a cached model is built from.
@@ -25,8 +30,12 @@ import * as RecordingModel from "./RecordingModel.ts"
  * @since 0.0.0
  */
 export interface Options {
-  /** The model a cache miss runs against. */
-  readonly live: Model.Model
+  /**
+   * The model a cache miss runs against. Omit it to replay only: a miss then
+   * dies with `UnscriptedModelError`, records nothing, and never reaches the
+   * network.
+   */
+  readonly live?: Model.Model | undefined
   /** The fixture the cache reads and records into. */
   readonly fixture: FixtureStore
 }
@@ -64,6 +73,17 @@ const replay = (call: RecordedCall): Stream.Stream<ModelEvent.ModelEvent, Model.
     : Stream.concat(Stream.fail(asModelError(call.failure)))(events)
 }
 
+// The error names the request rather than carrying it, as RecordedModel's does:
+// a defect is printed in full and a request can hold a whole transcript.
+const unscripted = (request: ModelRequestLike): Stream.Stream<never> =>
+  Stream.die(
+    new UnscriptedModelError({
+      modelId: request.modelId,
+      messageCount: request.messages.length,
+      toolNames: request.tools.map((tool) => tool.name)
+    })
+  )
+
 /**
  * Builds a model that replays a fixture hit and records a miss.
  *
@@ -76,15 +96,17 @@ const replay = (call: RecordedCall): Stream.Stream<ModelEvent.ModelEvent, Model.
  * @since 0.0.0
  */
 export const make = (options: Options): Model.Model => {
-  const recording = RecordingModel.make(options.live, options.fixture.append)
+  const miss = options.live === undefined
+    ? unscripted
+    : RecordingModel.make(options.live, options.fixture.append).stream
   return Model.make({
-    ...(options.live.providerName === undefined ? {} : { providerName: options.live.providerName }),
+    ...(options.live?.providerName === undefined ? {} : { providerName: options.live.providerName }),
     stream: (request) =>
       Stream.unwrap(
         options.fixture.load().pipe(
           Effect.map((loaded) =>
             Option.match(Option.flatMap(loaded, (fixture) => hit(fixture, request)), {
-              onNone: () => recording.stream(request),
+              onNone: () => miss(request),
               onSome: replay
             })
           )
