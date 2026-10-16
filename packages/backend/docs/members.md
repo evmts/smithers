@@ -65,8 +65,8 @@ credential, pinned to the head commit they reviewed and read back from
 GitHub before it is reported. The request names no actor, so an agent's
 review analysis can return findings but can never arrive here as somebody's
 verdict. A moved head, another number or a pull request that is no longer
-open is refused, not retargeted, and a lost acknowledgement is reconciled
-by reading GitHub, never by resending.
+open is refused, not retargeted, and a lost acknowledgement is reported as
+unknown, never resent.
 
 It is a DURABLE operation, like the account's own repository create: the door
 answers `202` and one operation, the review is submitted ONCE on the shared
@@ -79,18 +79,24 @@ caller's own request on the account's read command. An operation whose send
 cannot be settled stays terminal `uncertain` and is never retried; only a
 refusal GitHub gave before it could record anything reopens the key.
 
-The readback is bound to the intent in TEXT and in TIME. A **pre-write
-witness** — the highest review id the pull request already carries — is read
-before anything is sent, and only a review whose id is above it can belong to
-this operation, because GitHub issues review ids in creation order. That is
-what tells this review apart from an IDENTICAL earlier one by the same person
-at the same head with the same words; a witness the bounded read could not
-establish settles nothing. GitHub's own answer must then carry this
-operation's body, head and verdict under the credential's own GitHub user id
-(`GET /user`). And a `201` is not the readback: the review GitHub says it
-created is read back BY ID (`GET …/pulls/{n}/reviews/{id}`) and must still
-carry the same intent, so a create whose own answer cannot be read again is
-unverified rather than a success.
+The readback starts from ATTRIBUTION. The only thing that says a review
+belongs to this attempt is a review id THIS operation's own POST receipted;
+GitHub hands that id back in its answer to this request and nowhere else. The
+receipted id is then read back BY ID (`GET …/pulls/{n}/reviews/{id}`), and the
+STORED review must carry this operation's id, body, head and verdict under the
+credential's own GitHub user id (`GET /user`). A create whose own answer
+cannot be read again, or reads back as something else, is unverified rather
+than a success.
+
+When no id was receipted there is NO attribution evidence, and the operation
+settles `uncertain`. The pull request's history cannot supply it and is never
+read: a different client signed in as the SAME person can record a
+byte-identical review — same body, same head, same verdict — between any read
+this operation makes and its own send, so neither matching fields nor an id
+above some earlier maximum names the attempt a review came from. GitHub's
+chronological review list is an ORDERING, not an attribution guarantee, and
+GitHub offers reviews no idempotency key. Unknown therefore stays unknown, and
+is never resent.
 
 A person-only command checks the role first, then the credential, and it
 applies to the owner too. Only the person's own browser session acts. A

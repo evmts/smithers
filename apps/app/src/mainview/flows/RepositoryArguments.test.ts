@@ -83,6 +83,12 @@ test.each([
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
     const path = new URL(url, "https://fixture.invalid").pathname, method = init?.method ?? "GET"
     requests.push({ method, path, ...(typeof init?.body === "string" ? { body: JSON.parse(init.body) } : {}) })
+    // Which pull request a verdict is about is the source the TYPED
+    // repository reads pull requests from, resolved before anything is
+    // posted (#4036/#4038). This case is about the target never becoming the
+    // ambient repository, so that source is authoritatively NATIVE: the
+    // typed repository answers its own name and names no GitHub source.
+    if (path === `/api/repos/${target}`) return Response.json({ full_name: target })
     if (path === `/api/repos/${target}/landings/42`) return Response.json({ number: 42, title: "Review target", body: "", state: "open",
       author: { id: 1, login: "owner" }, change_ids: ["tip"], target_bookmark: "main", conflict_status: "clean", stack_size: 1,
       created_at: "2026-09-26T00:00:00Z", updated_at: "2026-09-26T00:00:00Z" })
@@ -113,4 +119,30 @@ test.each([
   expect(requests.filter(request => request.method === "POST")).toEqual(door === "agent" ? [] : name === "prs.review"
     ? [{ method: "POST", path: `/api/repos/${target}/landings/42/reviews`, body: { type: "approve", body: "", commit_id: "reviewed-tip" } }]
     : [{ method: "POST", path: `/api/repos/${target}/workspaces`, body: { kind: "container" } }])
+})
+
+/*
+ * And the source guard stays FAIL-CLOSED on the same typed target: a
+ * repository whose source cannot be read posts no review at all, and still
+ * never falls back to the ambient repository to find one it can read.
+ */
+test("a typed target whose source cannot be read posts no review and never substitutes the ambient one", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const requests: Array<{ method: string; path: string }> = []
+  const controller = createAppController(store, unavailableAgent, { fetchImpl: async (input, init) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+    const path = new URL(url, "https://fixture.invalid").pathname
+    requests.push({ method: init?.method ?? "GET", path })
+    return Response.json({ message: "Fixture refuses this request" }, { status: 503 })
+  } })
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "owner", admin: false, scopesPlain: null })
+  await store.dispatch({ type: "cloud.session.loaded", actor: "system", state: "signed-in", username: "owner", expiresAt: null, scopes: null })
+  await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: ambient, org: "owner", ownerKind: "user", name: "ambient", head: null }] })
+  await store.dispatch({ type: "repo.selected", actor: "user", id: ambient })
+  const outcome = await controller.commands.run("prs.review", flowArgs("prs.review", { number: 42, verdict: "approve", repo: target }))
+  expect(outcome.status).toBe("failed")
+  expect(requests.filter(request => request.method === "POST")).toEqual([])
+  expect(requests.filter(request => request.path.includes(`/repos/${ambient}/`) && /\/(landings|workspaces)(\/|$)/.test(request.path))).toEqual([])
+  expect(requests.some(request => request.path === `/api/repos/${target}`)).toBe(true)
+  expect(requests.some(request => /\/landings(\/|$)/.test(request.path))).toBe(false)
 })
