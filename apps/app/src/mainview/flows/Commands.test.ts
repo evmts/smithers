@@ -464,7 +464,8 @@ describe("Commands catalog through the production dispatcher (T-UI-14)", () => {
     } finally { await fixture.controller.dispose() }
   })
   test("the real repository projection supplies live inert /help rows without invoking a flow", async () => {
-    const fixture = await freshController(WEB, { fetchImpl: async () => new Response("", { status: 404 }) })
+    const fixture = await freshController(WEB, { fetchImpl: async input => new URL(String(input), "https://app.test").pathname === "/api/repos/o/r"
+      ? Response.json({ permission: "write" }) : new Response("", { status: 404 }) })
     try {
       await fixture.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "will", admin: false, scopesPlain: null }).isPersisted.promise
       await fixture.store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: "o/r", org: "o", name: "r", ownerKind: "user", head: null }] }).isPersisted.promise

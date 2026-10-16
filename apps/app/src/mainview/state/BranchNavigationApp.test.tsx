@@ -92,6 +92,30 @@ test("/branches mounts the install tree before an unresolved read, then shows re
   await waitFor(() => host.querySelector('[aria-label="Earlier"]') === null)
 })
 
+test("Earlier keeps navigation busy across its transcript remount until the write settles", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = controllerFor(store, silentAgent, {
+    bootstrap: { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "redirect", sandbox: null },
+    fetchImpl: async () => Response.json([])
+  })
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ben", admin: false, scopesPlain: null }).isPersisted.promise
+  await controller.submitCommand({ name: "branches", payload: {}, actor: "user" })
+  let finish!: () => void
+  const writing = new Promise<void>(resolve => { finish = resolve })
+  const host = mount({ ...controller, setBranchNavigationView: async patch => {
+    await controller.setBranchNavigationView(patch)
+    await writing
+  } })
+  try {
+    await waitFor(() => host.querySelector('[data-node="earlier"]') !== null)
+    flushSync(() => host.querySelector<HTMLButtonElement>('[data-node="earlier"]')!.click())
+    await waitFor(() => host.querySelector('[aria-label="Earlier"]') !== null)
+    expect(host.querySelector("[data-branch-navigation]")?.getAttribute("aria-busy")).toBe("true")
+    finish()
+    await waitFor(() => host.querySelector("[data-branch-navigation]")?.getAttribute("aria-busy") === "false")
+  } finally { finish() }
+})
+
 test("tree refuses cycles and repeated branch identities", () => {
   expect(() => branchTree([row("a", "b"), row("b", "a")])).toThrow("Cyclic")
   expect(() => branchTree([row("a"), row("a")])).toThrow("Repeated")

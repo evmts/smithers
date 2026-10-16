@@ -82,6 +82,7 @@ const hosted = async (options: { readonly bootstrap?: AppBootstrap | undefined; 
     { id: REPO, org: "roninjin10", ownerKind: "user", name: "e2e-verify", head: { bookmark: "main", changeId: "c", commitId: "k" } }
   ] }).isPersisted.promise
   await store.dispatch({ type: "repo.selected", actor: "user", id: REPO }).isPersisted.promise
+  await controller.secretAuthority?.read(REPO)
   calls.length = 0
   diagnostics.length = 0
   return { store, controller, calls, diagnostics }

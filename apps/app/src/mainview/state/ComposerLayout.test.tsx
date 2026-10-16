@@ -150,12 +150,12 @@ describe("the summoned composer overlays the content", () => {
     const view = mount(controller)
     await view.act(() => keyDown(view.host, "k", { ctrlKey: true }))
     const input = view.host.querySelector<HTMLTextAreaElement>('[data-testid="composer-input"]')!
-    await view.act(() => controller.changeDraft("/help"))
+    await view.act(() => controller.changeDraft("/theme dark"))
     expect(document.activeElement).toBe(input)
     await view.act(() => input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })))
     expect(controller.store.session().paletteOpen).toBe(false)
     expect(overlay(view.host)?.hidden).toBe(true)
-    expect(view.host.querySelector('.smithers-card[data-kind="commands"]')).not.toBeNull()
+    expect(controller.store.session().theme).toBe("dark")
     expect(document.activeElement).toBe(view.host.querySelector('.app-chat-controls [data-flow="chat.open"]'))
   })
 

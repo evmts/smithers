@@ -78,13 +78,15 @@ const mount = async (
 ): Promise<View> => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const controller = createAppController(store, silentAgent, {
-    fetchImpl: async () => json(404, { status: "error", message: "no stub" }),
+    fetchImpl: async input => new URL(String(input), "https://app.test").pathname === "/api/repos/will/flows"
+      ? json(200, { permission: "write" }) : json(404, { status: "error", message: "no stub" }),
     bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: [...capabilities], authFlow: "redirect", sandbox: null },
     ...services
   })
   store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "will", admin: false, scopesPlain: null })
   store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: "will/flows", org: "will", ownerKind: "user", name: "flows", head: null }] })
   store.dispatch({ type: "repo.selected", actor: "user", id: "will/flows" })
+  await controller.secretAuthority?.read("will/flows")
   const host = document.createElement("div")
   document.body.append(host)
   const root = createRoot(host)
