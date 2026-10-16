@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test"
 import { createHash } from "node:crypto"
 import { chromium } from "@playwright/test"
-import { cardCaptureInventory } from "./card-capture"
-import { registerKeyboardJourney, registerJourneyCapture, journeyActivate, journeyEnter } from "./keyboard-journey-input"
+import { cardCaptureInventory } from "../real/support/card-capture"
+import { registerKeyboardJourney, registerJourneyCapture, journeyActivate, journeyEnter } from "../real/support/keyboard-journey-input"
 
 // HTTP-served browser capture proof only; never reference-install qualification.
 for (const theme of ["light", "dark"] as const) for (const mode of ["keyboard", "pointer"] as const) test(`${theme} inventory retains transient, edited and replaced cards through ${mode} doors`, async () => {

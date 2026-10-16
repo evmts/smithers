@@ -47,7 +47,7 @@ import { cpSync, existsSync, lstatSync, mkdirSync, writeFileSync } from "node:fs
 import { constants } from "node:os"
 import { join } from "node:path"
 
-const install = ["exec", "playwright", "install", "--with-deps", "chromium"]
+const install = ["exec", "playwright", "install", "--with-deps", "chromium", "webkit"]
 const shard = process.argv[2]
 if (shard && !/^[123]$/.test(shard)) throw new Error("Browser shard must be 1, 2 or 3")
 // Each step's name is this file's own word for it, never a command line: the

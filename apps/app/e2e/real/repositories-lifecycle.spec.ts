@@ -7,7 +7,8 @@ import {
   attachProductionJson,
   repositoryApiPath
 } from "./repositories-github/production"
-import { expect, realApi } from "./support/test"
+import { command, expect, realApi } from "./support/test"
+import { journeyActivate } from "./support/keyboard-journey-input"
 
 authenticatedTest.setTimeout(12 * 60_000)
 authenticatedTest.use({ actionTimeout: 30_000 })
@@ -63,3 +64,55 @@ authenticatedTest(
     }
   }
 )
+
+authenticatedTest("launcher reads published updates and public repositories through their flows", scenario("repositories.launcher-reads", {
+  capabilities: [],
+  coverage: ["action:app.updates", "action:repos.explore", "host:production", "path:success", "door:slash",
+    "evidence:source-responses-and-rendered-links"]
+}), async ({ page }, testInfo) => {
+  await page.goto("/?tutorial")
+  const launcher = page.getByTestId("repository-launcher")
+  await expect(launcher).toBeVisible()
+  await expect(launcher.getByText("Reading the Smithers releases…", { exact: true })).toHaveCount(0)
+  await expect(launcher.getByText("Reading the public repositories…", { exact: true })).toHaveCount(0)
+
+  const newsRead = page.waitForResponse(response => new URL(response.url()).hostname === "api.github.com" &&
+    new URL(response.url()).pathname === "/repos/smithersai/smithers/releases")
+  await command(page, "/app.updates")
+  const news = await newsRead
+  expect(news.status()).toBe(200)
+  const releases = await news.json() as Array<{ draft: boolean; published_at: string; html_url: string; name: string; tag_name: string }>
+  const published = releases.filter(row => !row.draft && row.published_at)
+    .sort((left, right) => right.published_at.localeCompare(left.published_at)).slice(0, 5)
+  const updates = launcher.getByRole("list", { name: "Smithers updates", exact: true })
+  await expect(updates.getByRole("link")).toHaveText(published.map(row => row.name || row.tag_name))
+  for (const row of published) await expect(updates.locator(`a[href="${row.html_url}"]`)).toHaveText(row.name || row.tag_name)
+
+  const catalogRead = page.waitForResponse(response => new URL(response.url()).pathname === "/api/public/repos")
+  await command(page, "/repos.explore")
+  const catalog = await catalogRead
+  expect(catalog.status()).toBe(200)
+  const { repos } = await catalog.json() as { repos: Array<{ name: string }> }
+  for (const summary of await launcher.locator("summary").all()) await journeyActivate(summary)
+  for (const repo of repos) await expect(launcher.locator(`a[href="/${repo.name.toLowerCase()}/"]`)).toBeVisible()
+  if (repos.length === 0) await expect(launcher.getByText("No repositories are public yet.", { exact: true })).toBeVisible()
+  await attachProductionJson(testInfo, "launcher-reads", { updates: published.map(row => row.html_url), repositories: repos.map(row => row.name) })
+})
+
+authenticatedTest("a bare repository create asks for its name without creating anything", scenario("repositories.launcher-create-form", {
+  capabilities: ["identity", "cloud"],
+  coverage: ["action:repos.create", "host:production", "path:success", "door:slash",
+    "evidence:unsubmitted-form-and-empty-create-requests"]
+}), async ({ page }) => {
+  await page.goto("/?tutorial")
+  await expect(page.getByTestId("repository-launcher").getByLabel("New repository name")).toBeVisible()
+  const creates: string[] = []
+  page.on("request", request => {
+    if (request.method() === "POST" && new URL(request.url()).pathname === "/api/user/github-repos") creates.push(request.method())
+  })
+  await command(page, "/repos.create")
+  const form = page.locator('.flow-form[data-flow-name="repos.create"]')
+  await expect(form.getByLabel("Repository name")).toHaveValue("")
+  await expect(form.getByRole("button", { name: "Submit", exact: true })).toBeDisabled()
+  expect(creates).toEqual([])
+})

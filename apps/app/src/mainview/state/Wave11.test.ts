@@ -554,13 +554,15 @@ describe("wave 11 — the loaded repositories are the universe", () => {
     await waitFor(() => seen() === 2 && draft()?.description !== undefined)
     expect(draft()).toEqual({ description: "triage nightly failures", repo: "acme/other" })
 
-    /* A flow that is neither UI-only nor asked for with its form never reaches the registry from this door. */
+    /* flow.run asks with its form too; form.submit cannot submit either form from this door. */
     instructions = [...instructions,
       { id: "turn-3:2:0", command: "flow.run", payload: { name: "create-flow", repo: REPO } },
       { id: "turn-3:2:1", command: "form.submit", payload: { cardId: "form-flow.new" } }]
     await controller.sharedConversation!.read()
-    await settle(4)
-    expect(seen()).toBe(2)
+    await waitFor(() => seen() === 3 && [...store.collections.cards.values()].some(card =>
+      card.kind === "flow-form" && card.payload.flow === "flow.run"))
+    const runForm = [...store.collections.cards.values()].find(card => card.kind === "flow-form" && card.payload.flow === "flow.run")
+    expect(runForm?.kind === "flow-form" ? runForm.payload.draft : undefined).toEqual({ name: "create-flow", repo: REPO })
     expect([...store.collections.messages.values()].filter(message => message.action !== undefined)).toEqual([])
     expect(double.state.launched).toEqual([])
     expect(double.calls.some(call => call.path.startsWith("/api/workflow/"))).toBe(false)

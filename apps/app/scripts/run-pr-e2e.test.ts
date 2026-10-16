@@ -24,7 +24,7 @@ for (const shard of [undefined, '1', '2', '3']) test(`browser runner preserves t
     expect(result.status).toBe(0)
     const commands = readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line))
     expect(commands.slice(0, 4).map(command => command.args)).toEqual([
-      ['exec', 'playwright', 'install', '--with-deps', 'chromium'], ['run', 'test:e2e:auth'],
+      ['exec', 'playwright', 'install', '--with-deps', 'chromium', 'webkit'], ['run', 'test:e2e:auth'],
       ['run', 'test:e2e:probes'], ['run', 'test:e2e:graph-lifecycle']
     ])
     expect(commands[4].args).toEqual(['exec', 'playwright', 'test', ...(shard ? [`--shard=${shard}/3`] : [])])

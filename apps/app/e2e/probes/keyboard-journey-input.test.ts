@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test"
 import { chromium } from "@playwright/test"
-import { journeyDoubleActivate, keyboardJourneyInput, registerKeyboardJourney, journeyActivate, journeyReach, journeyEnter, journeyChecked, journeySelect } from "./keyboard-journey-input"
-import { installReleasedHost } from "./release-install"
+import { journeyDoubleActivate, keyboardJourneyInput, registerKeyboardJourney, journeyActivate, journeyReach, journeyEnter, journeyChecked, journeySelect } from "../real/support/keyboard-journey-input"
+import { installReleasedHost } from "../real/support/release-install"
 
 test("keyboard journey traversal refuses a page outside the declared install", async () => {
   const browser = await chromium.launch()
@@ -201,8 +201,8 @@ test("locator key shortcuts refuse before moving focus to an unreachable control
 test("terminal journey reaches the input rather than its region and refuses watching or frozen slots", async () => {
   const { renderToStaticMarkup } = await import("react-dom/server")
   const { createElement } = await import("react")
-  const { TerminalView } = await import("../../../src/mainview/cards/views/TerminalView")
-  const { journeyTerminalInput } = await import("./keyboard-journey-input")
+  const { TerminalView } = await import("../../src/mainview/cards/views/TerminalView")
+  const { journeyTerminalInput } = await import("../real/support/keyboard-journey-input")
   const markup = (owned: boolean, frozen: boolean) => renderToStaticMarkup(createElement(TerminalView, {
     model: { id: "reference-terminal", title: "Ben's terminal", branch: "smithers/retry-webhooks",
       owner: { kind: "person", login: "ben", name: "Ben", avatar_url: "", color_index: 0 }, agents: [], watchers: [],

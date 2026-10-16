@@ -37,7 +37,7 @@ mock.module("./RepoLink", () => ({
   openRequestedRepo: async () => { calls.push("repository.open") },
   withoutRepoParam: () => "/roninjin10/smithers"
 }))
-mock.module("./runtime/FrameHistory", () => ({ createBrowserFrameHistory: () => ({}) }))
+mock.module("./runtime/FrameHistory", () => ({ ROOT_APP_PATH: "/?tutorial", createBrowserFrameHistory: () => ({}) }))
 mock.module("./runtime/TurnErasure", () => ({ createTurnEraser: () => async () => {} }))
 const { runControllerBoot } = await import("./ControllerBoot.client")
 const controller = await runControllerBoot()

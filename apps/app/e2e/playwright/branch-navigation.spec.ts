@@ -1,9 +1,10 @@
 import historyFixture from "../../src/mainview/state/testdata/earlier-history.json"
 import { expect, test } from "./browserTest"
 import { owner, say } from "./spec/j1-fixtures"
+import { installCloudFixture } from "./cloudFixture"
 
 test("/branches mounts the served tree inline and preserves its view on reload", async ({ page }) => {
-  await owner(page)
+  await installCloudFixture(page, { capabilities: ["identity", "install"] })
   await page.route("**/api/branches?*", route => route.fulfill({ json: [
     { name: "retry", kind: "scratch", state: "awake", machine: { id: "b1" }, forked_from: { ref: "main" } },
     { name: "nested", kind: "scratch", state: "asleep", machine: { id: "b2" }, forked_from: { ref: "retry" } }
