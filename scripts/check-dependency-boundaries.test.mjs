@@ -112,6 +112,9 @@ test("a relative specifier that stays inside its own package or outside every sr
   const dirs = ["packages/smithers", "packages/smithers/flows/plan", "packages/smithers/flows/flow"]
   // Same package: the caller compares the owner with the importing package.
   assert.equal(packageSourceReachedBy("packages/smithers/flows/plan/src/Plan.ts", "./KeyMaterial.ts", dirs), "packages/smithers/flows/plan")
+  // A root-owned declaration may load the package it sits in, not its parent.
+  assert.equal(packageSourceReachedBy("packages/smithers/flows/plan/PACKAGE.ts", "./src/index.ts", dirs), null)
+  assert.equal(packageSourceReachedBy("packages/smithers/flows/plan/PACKAGE.ts", "../../src/Serve.ts", dirs), "packages/smithers")
   // Build-graph declarations are root-owned and sit outside src/.
   assert.equal(packageSourceReachedBy("packages/smithers/flows/flow/PACKAGE.ts", "../plan/PACKAGE.ts", dirs), null)
   // A sibling's test helper outside src/ is not an export-map bypass.
@@ -152,6 +155,19 @@ test("runtime imports allow validated private adapters without admitting unrelat
     () => dependencySets({ manifest: { ...library, peerDependencies: { effect: "4.0.4" } } }),
     /Effect peer that starts at their build release/
   )
+})
+
+// An optional adapter peer is declared in `peerDependenciesMeta` alone (#3839),
+// and a shipped driver module may import it.
+test("an optional peer named only in peerDependenciesMeta is a runtime dependency", () => {
+  const manifest = {
+    peerDependencies: { effect: "^4.0.4" },
+    peerDependenciesMeta: { "@effect/sql-pg": { optional: true }, typescript: { optional: false } },
+    devDependencies: { "@effect/sql-pg": "4.0.4", effect: "4.0.4" },
+  }
+  const { runtime } = dependencySets({ manifest })
+  assert.ok(runtime.has("@effect/sql-pg"))
+  assert.equal(runtime.has("typescript"), false)
 })
 
 // A colon never appears in an npm package name, so a scheme-prefixed specifier

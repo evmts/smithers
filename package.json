@@ -76,6 +76,7 @@
     "@smthrs/kernel": "workspace:*",
     "@smthrs/plan": "workspace:*",
     "@smthrs/repo-targets": "workspace:*",
+    "@smthrs/rpc": "workspace:*",
     "@smthrs/run-store": "workspace:*",
     "@smthrs/targets": "workspace:*",
     "@smthrs/ui": "workspace:*",

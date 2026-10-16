@@ -5,6 +5,7 @@
   "description": "Smithers browser app",
   "exports": {
     "./mainview/flows/FlowName": "./src/mainview/flows/FlowName.ts",
+    "./mainview/flows/DoorAvailability": "./src/mainview/flows/DoorAvailability.ts",
     "./mainview/flows/Flows": "./src/mainview/flows/Flows.ts",
     "./mainview/flows/registry": "./src/mainview/flows/registry.ts",
     "./mainview/flows/fixtures/AppendixBPolicy.json": "./src/mainview/flows/fixtures/AppendixBPolicy.json",

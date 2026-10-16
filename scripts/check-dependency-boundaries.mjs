@@ -243,8 +243,10 @@ export function packageNameForSpecifier(specifier) {
  * `../../packages/smithers/flows/plan/src/Plan.ts` from `scripts/bench/corpus.mjs`
  * names `packages/smithers/flows/plan`; `../plan/PACKAGE.ts` from a sibling
  * build-graph declaration names nothing, because declarations are root-owned
- * and sit outside `src/`. The caller decides whether the importing package is
- * the same one; only a different owner is a reach-through.
+ * and sit outside `src/`; `./src/index.ts` from `packages/repo-targets/PACKAGE.ts`
+ * names nothing, because a declaration may load the package it sits in. The
+ * caller decides whether the importing package is the same one; only a
+ * different owner is a reach-through.
  *
  * @param {string} file Repo-relative path of the importing file.
  * @param {string} specifier
@@ -259,7 +261,7 @@ export function packageSourceReachedBy(file, specifier, packageDirs) {
   for (const dir of packageDirs) {
     if (target.startsWith(`${dir}${sep}src${sep}`) && (owner === null || dir.length > owner.length)) owner = dir
   }
-  return owner
+  return owner === dirname(file) && basename(file) === "PACKAGE.ts" ? null : owner
 }
 
 /** @param {string} path */
@@ -403,6 +405,8 @@ function isDevOnlyFile(file) {
  * split carries no meaning and every declared section counts as runtime.
  * Private Effect adapters are pinned build inputs whose emitted imports are
  * relocated into the tarball, so their validated declarations count too.
+ * An optional adapter peer is named in `peerDependenciesMeta` alone (#3839),
+ * so an optional entry there is a declared peer of any version.
  *
  * @param {WorkspacePackage} pkg
  */
@@ -411,6 +415,7 @@ export function dependencySets(pkg) {
     ...dependencyNames(pkg.manifest, "dependencies"),
     ...dependencyNames(pkg.manifest, "peerDependencies"),
     ...dependencyNames(pkg.manifest, "optionalDependencies"),
+    ...Object.entries(pkg.manifest.peerDependenciesMeta ?? {}).filter(([, meta]) => meta?.optional === true).map(([name]) => name),
     ...privateEffectAdapters(pkg.manifest),
   ])
   const dev = new Set([...declared, ...dependencyNames(pkg.manifest, "devDependencies")])

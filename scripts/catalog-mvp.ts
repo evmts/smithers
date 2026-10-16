@@ -1,5 +1,5 @@
 /** Generate shipped metadata without invoking a command or importing repository flow bodies. */
-import type { AppBootstrap } from "../packages/rpc/src/AppBootstrap"
+import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import { execFileSync } from "node:child_process"
 import { readFileSync, writeFileSync, renameSync } from "node:fs"
 import { resolve } from "node:path"
@@ -7,9 +7,9 @@ import * as Node from "@smthrs/plan/Node"
 import { baseFlows, adminFlows, type CommandActions } from "smithers-app/mainview/flows/Flows"
 import { httpProjections } from "@smthrs/ui/app-operations/http"
 import { nameOf } from "smithers-app/mainview/flows/registry"
-import { doorFamilyAbsent } from "../apps/app/src/mainview/flows/DoorAvailability"
+import { doorFamilyAbsent } from "smithers-app/mainview/flows/DoorAvailability"
 import { formFieldsFor } from "@smthrs/ui/flow-form"
-import { UI_INSTRUCTION_FIELDS } from "../packages/rpc/src/UiInstruction"
+import { UI_INSTRUCTION_FIELDS } from "@smthrs/rpc/UiInstruction"
 import { generateHostReference } from "./catalog-host"
 
 const root = resolve(import.meta.dir, "..")
