@@ -6,7 +6,7 @@
  * isolates model transport from the agent's cell loop and structured completion
  * protocol.
  *
- * Usage: `node examples/src/15-model-layer-smoke.ts [modelId] [baseUrl]`.
+ * Usage: `node examples/15-model-layer-smoke.ts [modelId] [baseUrl]`.
  * Running the file directly contacts the selected endpoint. The defaults are
  * `qwen2.5-coder:1.5b` and `http://localhost:11434`.
  *
@@ -18,6 +18,7 @@
  *
  * @since 0.1.0
  */
+/* eslint-disable no-console -- a command-line example reports on stdout and stderr */
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
 import { Message, ModelRequest } from "@smthrs/model/ModelRequest"
@@ -50,7 +51,9 @@ export const executorLayer = RequestExecutor.layer.pipe(
  */
 export const ask = (question: string, modelId: string, baseUrl: string, apiKey: Redacted.Redacted<string>) =>
   Effect.gen(function*() {
-    const routeConfig = yield* Effect.fromResult(Route.openaiChatCompatible({ id: "smoke", providerName: "openai", baseUrl, apiKey }))
+    const routeConfig = yield* Effect.fromResult(
+      Route.openaiChatCompatible({ id: "smoke", providerName: "openai", baseUrl, apiKey })
+    )
     const model = yield* Route.toModel(routeConfig)
     const request = ModelRequest.make({
       modelId,
@@ -72,8 +75,10 @@ export const ask = (question: string, modelId: string, baseUrl: string, apiKey: 
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   if (process.argv.length > 4) {
-    console.error("API keys must not be passed as positional arguments. Set SMITHERS_EXAMPLE_API_KEY in the environment.")
-    console.error("Usage: node examples/src/15-model-layer-smoke.ts [modelId] [baseUrl]")
+    console.error(
+      "API keys must not be passed as positional arguments. Set SMITHERS_EXAMPLE_API_KEY in the environment."
+    )
+    console.error("Usage: node examples/15-model-layer-smoke.ts [modelId] [baseUrl]")
     process.exitCode = 1
   } else {
     const [, , modelId = "qwen2.5-coder:1.5b", baseUrl = "http://localhost:11434"] = process.argv

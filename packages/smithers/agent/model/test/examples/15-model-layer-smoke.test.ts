@@ -14,7 +14,9 @@ const server = createServer(async (request, response) => {
   for await (const chunk of request) body += chunk
   requests.push({ authorization: request.headers.authorization, body })
   response.writeHead(200, { "content-type": "text/event-stream" })
-  response.end('data: {"choices":[{"index":0,"delta":{"content":"Paris"},"finish_reason":null}]}\n\ndata: [DONE]\n\n')
+  response.end(
+    "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Paris\"},\"finish_reason\":null}]}\n\ndata: [DONE]\n\n"
+  )
 })
 let baseUrl: string
 
@@ -35,14 +37,19 @@ const runCli = (key: string | undefined, extraArgs: Array<string> = []) => {
   delete env.SMITHERS_EXAMPLE_API_KEY
   if (key !== undefined) env.SMITHERS_EXAMPLE_API_KEY = key
   return new Promise<{ code: number | string; stdout: string; stderr: string }>((resolve) => {
-    execFile(process.execPath, [
-      fileURLToPath(new URL("../src/15-model-layer-smoke.ts", import.meta.url)),
-      "fixture-model",
-      baseUrl,
-      ...extraArgs
-    ], { env, timeout: 30_000 }, (error, stdout, stderr) => {
-      resolve({ code: error?.code ?? 0, stdout, stderr })
-    })
+    execFile(
+      process.execPath,
+      [
+        fileURLToPath(new URL("../../examples/15-model-layer-smoke.ts", import.meta.url)),
+        "fixture-model",
+        baseUrl,
+        ...extraArgs
+      ],
+      { env, timeout: 30_000 },
+      (error, stdout, stderr) => {
+        resolve({ code: error?.code ?? 0, stdout, stderr })
+      }
+    )
   })
 }
 
