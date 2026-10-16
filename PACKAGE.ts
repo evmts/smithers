@@ -337,7 +337,7 @@ const postgres = Smithers.CiToolchain.Postgres({ release: "18" })
 // own database on it. This target runs only in the required Linux backend job,
 // not in the cross-platform package matrix.
 const backendPostgres = Smithers.Docker.Service({
-  image: "postgres@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94",
+  image: "postgres@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336",
   env: { POSTGRES_USER: "smithers", POSTGRES_PASSWORD: "smithers-backend-test" },
   ports: { "5432": 55435 },
   readiness: {
