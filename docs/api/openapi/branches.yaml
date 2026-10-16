@@ -39,7 +39,11 @@ paths:
     get:
       x-composition: install
       summary: List the install repository's branches
-      description: Each branch is a projection of its workspace (spec §6.3, §8.1.2); there is no branches table.
+      description: >-
+        Each branch is a projection of its workspace (spec §6.3, §8.1.2); there is no
+        branches table. Install composition only: a hosted composition serves no
+        install-global branch list, and a hosted page reads one repository's branches
+        at GET /api/repos/{owner}/{repo}/bookmarks instead.
       operationId: get_api_branches
       tags:
         - Branches

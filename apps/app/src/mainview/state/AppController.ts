@@ -1617,7 +1617,20 @@ export const createAppController = (
     withToast
   }))
   const repoImportSeam = actors.pair(seamCtx, (context) => createRepoImportSeam(context))
-  const bookmarksSeam = actors.pair(seamCtx, (context) => createBranchNavigationSeam(context, design, { live: services.live, onDispose: ctx.onDispose }))
+  /*
+   * `/branches` off an install reads the connected Cloud repository through
+   * the same resolver the header dropdown, `/branch` and the agent use. The
+   * hosted backend serves no install-global /api/branches — asking for it
+   * answered 404 and told the person the app had broken (#4028). The seeded
+   * design fixture keeps its own door, exactly as `openBranch` does.
+   */
+  const installBranchIndex = installHost || design.enabled
+  const bookmarksSeam = actors.pair(seamCtx, (context, select) => createBranchNavigationSeam(context, design, { live: services.live, onDispose: ctx.onDispose,
+    ...(installBranchIndex ? {} : { hosted: {
+      repository: () => activeRepositoryId(store),
+      load: (repo: string) => select(repositoryBranches).load(repo),
+      defaultBranch: (repo: string) => store.collections.repositories.get(repo)?.head?.bookmark ?? null
+    } }) }))
   const fileBranchSubscriptions = new Map<string, () => void>()
   ctx.onDispose(() => { for (const dispose of fileBranchSubscriptions.values()) dispose(); fileBranchSubscriptions.clear() })
   const branchFileOptions = services.branchOptions ?? (installHost ? {

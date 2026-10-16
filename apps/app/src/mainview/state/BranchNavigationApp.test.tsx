@@ -260,3 +260,68 @@ test("Earlier verifies seven historical cut cards before decoding, persists titl
   await waitFor(() => host.querySelector('[aria-label="Earlier"]') !== null)
   expect(host.querySelectorAll("[data-archive]")).toHaveLength(0)
 })
+
+/*
+ * The hosted page, mounted: `/branches` paints the connected repository's own
+ * branches and the toast says what is true. Production asked the hosted
+ * backend for the install's global /api/branches, which it does not serve:
+ * 404, and the person read "Branches didn't finish — the app hit an
+ * unexpected error" (#4028).
+ */
+const hostedBookmark = (name: string) => ({ name, target_change_id: `change-${name}`, target_commit_id: `commit-${name}`, is_tracking_remote: true })
+const hostedController = async (branches: ReadonlyArray<string> | null) => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const paths: string[] = []
+  const controller = controllerFor(store, silentAgent, {
+    bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["identity", "agent", "cloud"], authFlow: "redirect", sandbox: null },
+    fetchImpl: async input => {
+      const url = new URL(String(input), "https://cloud.test")
+      paths.push(url.pathname)
+      if (url.pathname !== "/api/repos/acme/api/bookmarks") return new Response("{}", { status: 404 })
+      // The hosted backend serves no branch list of its own; this is the one it serves.
+      return branches === null ? new Response("404 page not found", { status: 404 })
+        : Response.json({ items: branches.map(hostedBookmark), next_cursor: "" })
+    }
+  })
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "maya", admin: false, scopesPlain: null }).isPersisted.promise
+  await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [
+    { id: "acme/api", org: "acme", ownerKind: "org", name: "api", head: { bookmark: "trunk", changeId: "c", commitId: "k" } }
+  ] }).isPersisted.promise
+  await controller.commands.run("repo.select", "acme/api")
+  return { store, controller, paths }
+}
+
+test("hosted /branches paints the connected repository's branches, marks its default, and selects through the shared door", async () => {
+  const { store, controller, paths } = await hostedController(["trunk", "docs", "retry-webhooks"])
+  const host = mount(controller)
+  expect((await controller.submitCommand({ name: "branches", payload: {}, actor: "user" })).status).toBe("executed")
+  await waitFor(() => host.querySelector('[data-node="retry-webhooks"]') !== null)
+  expect([...host.querySelectorAll("[data-node]")].map(node => node.getAttribute("data-node")))
+    .toEqual(["trunk", "docs", "retry-webhooks", "earlier"])
+  // The repository's own current bookmark is the trunk and reads as current — no hardcoded main.
+  expect(host.querySelector('[data-node="trunk"]')?.closest("li")?.getAttribute("data-kind")).toBe("main")
+  expect(host.querySelector('[data-node="trunk"]')?.getAttribute("aria-current")).toBe("page")
+  expect(host.querySelector('[data-node="main"]')).toBeNull()
+  expect([...store.collections.toasts.values()].some(toast => toast.status === "failed")).toBe(false)
+  expect(paths.includes("/api/branches")).toBe(false)
+
+  flushSync(() => host.querySelector<HTMLButtonElement>('[data-node="docs"]')!.click())
+  await waitFor(() => host.querySelector('[data-node="docs"]')?.getAttribute("aria-current") === "page")
+  expect(controller.repositoryBranches.pickOf("acme/api")).toBe("docs")
+  expect(host.querySelector('[data-node="trunk"]')?.getAttribute("aria-current")).toBeNull()
+  // The hosted account still has its one conversation.
+  expect(store.session().branchNavigation?.selected_branch).toBe("main")
+})
+
+test("hosted /branches whose host refuses the read says branches were not listed, never that the app broke", async () => {
+  const { store, controller } = await hostedController(null)
+  const host = mount(controller)
+  await controller.submitCommand({ name: "branches", payload: {}, actor: "user" })
+  await waitFor(() => [...store.collections.toasts.values()].some(toast => toast.status === "failed"))
+  const failed = [...store.collections.toasts.values()].find(toast => toast.status === "failed")!
+  expect(failed.detail).toContain("Branches for acme/api couldn't be listed")
+  expect(failed.detail).not.toContain("unexpected error")
+  expect(failed.detail).not.toContain("/api/")
+  expect(failed.detail).not.toContain("404")
+  expect(host.querySelectorAll('[data-node]:not([data-node="earlier"])')).toHaveLength(0)
+})

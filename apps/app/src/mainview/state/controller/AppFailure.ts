@@ -9,6 +9,7 @@ import {
   type UserFailureRegistry
 } from "@smthrs/rpc/UserFailure"
 import type { ApplicationClientError } from "../../runtime/ApplicationClient"
+import type { BranchNavigationFailure, BranchNavigationReason } from "../seams/BranchNavigationSeam"
 import type { RepositorySignInRequired } from "../seams/SeamContext"
 import type { SharedConversationFailure } from "../seams/SharedConversationSeam"
 import type { PromptRefusal } from "./sharedPrompts"
@@ -25,8 +26,25 @@ export type AppTaggedFailure =
   | SweepRequestTooLargeError
   | SharedConversationFailure
   | PromptRefusal
+  | BranchNavigationFailure
 
 const REFUSAL_ACTIONS: ReadonlySet<string> = new Set<UserFailureAction>(["retry", "sign-in"])
+
+/*
+ * Listing branches has its own words per reason, because it had none: a host
+ * that serves no branch list answered 404, the seam threw its typed
+ * BranchNavigationFailure, nothing here claimed the tag, and the person was
+ * told "Branches didn't finish — the app hit an unexpected error" for a route
+ * that was never there (#4028). A missing route is not a bug of the app's
+ * own, and a repository nobody chose is the reader's own next step.
+ */
+const BRANCH_NAVIGATION_COPY: Record<BranchNavigationReason, UserFailureCopy> = {
+  "repeated-branch": { fault: "infra", sentence: "Branches couldn't be listed: this host named one branch twice.", actions: ["retry"] },
+  "cyclic-tree": { fault: "infra", sentence: "Branches couldn't be listed: this host's fork lineage loops back on itself.", actions: ["retry"] },
+  "route-absent": { fault: "infra", sentence: "This host doesn't serve a branch list.", actions: [] },
+  "host-refused": { fault: "infra", sentence: "Branches couldn't be listed — the host refused the read.", actions: ["retry"] },
+  "no-repository": { fault: "user", sentence: "Choose a repository to see its branches.", actions: [] }
+}
 
 /*
  * An API refusal already has written copy per fault and code (RefusalCopy).
@@ -50,6 +68,7 @@ export const APP_FAILURE_COPY: UserFailureRegistry<AppTaggedFailure> = {
   RepositorySignInRequired: { fault: "user", sentence: "Sign in to continue.", actions: ["sign-in"] },
   SharedConversationFailure: failure => ({ fault: "infra", sentence: failure.sentence, actions: ["retry"] }),
   PromptRefusal: { fault: "infra", sentence: "Prompt unavailable", actions: ["retry"] },
+  BranchNavigationFailure: failure => BRANCH_NAVIGATION_COPY[failure.reason],
   SweepRequestTooLargeError: {
     fault: "user",
     sentence: "This conversation is too large to summarize. Nothing was cleared.",

@@ -8,9 +8,31 @@ import type { SeamContext } from "./SeamContext"
 import { designBranchTree } from "./DesignWorld/shell"
 import type { DesignWorld } from "./DesignWorld"
 
-export class BranchNavigationFailure extends Data.TaggedError("BranchNavigationFailure")<{ readonly sentence: "Repeated branch" | "Cyclic branch tree" | "Branches unavailable" }> {
+/**
+ * Which read ended, and why. The pair is the whole diagnostic: it names the
+ * door without carrying a URL, a header, a credential or the host's own error
+ * prose, so the operational ring can tell "this host serves no branch list"
+ * apart from "the host refused this account's read" without logging either.
+ */
+export type BranchNavigationStage = "tree" | "install-read" | "repository-read"
+export type BranchNavigationReason =
+  | "repeated-branch"
+  | "cyclic-tree"
+  | "route-absent"
+  | "host-refused"
+  | "no-repository"
+
+export class BranchNavigationFailure extends Data.TaggedError("BranchNavigationFailure")<{
+  readonly sentence: "Repeated branch" | "Cyclic branch tree" | "Branches unavailable" | "No repository chosen"
+  readonly stage: BranchNavigationStage
+  readonly reason: BranchNavigationReason
+}> {
   override get message() { return this.sentence }
 }
+
+/** The one diagnostic line both reads file, with no URL, header, credential or host prose in it. */
+export const branchNavigationDiagnostic = (failure: BranchNavigationFailure, rows: number): string =>
+  `branches.list stage=${failure.stage} reason=${failure.reason} rows=${rows}`
 
 const Rows = z.array(z.object({ name: z.string().min(1), kind: z.string(), state: z.string(),
   forked_from: z.object({ ref: z.string() }).nullish(), machine: z.object({ id: z.string() }) }))
@@ -22,7 +44,7 @@ export function branchTree(value: unknown): BranchTreeNodeCard[] {
   nodes.set("main", { id: "main", name: "main", kind: "main", present: [], children: [], action: { tag: "branch", label: "Open", args: { name: "main" } } })
   for (const row of rows) {
     if (row.name === "main") continue
-    if (nodes.has(row.name)) throw new BranchNavigationFailure({ sentence: "Repeated branch" })
+    if (nodes.has(row.name)) throw new BranchNavigationFailure({ sentence: "Repeated branch", stage: "tree", reason: "repeated-branch" })
     nodes.set(row.name, { id: row.name, name: row.name, kind: row.kind === "item" ? "item" : "scratch", present: [], children: [], action: { tag: "branch", label: "Open", args: { name: row.name } } })
   }
   for (const row of rows) {
@@ -30,7 +52,7 @@ export function branchTree(value: unknown): BranchTreeNodeCard[] {
     const seen = new Set([row.name])
     let parent = row.forked_from?.ref
     while (parent && parent !== "main") {
-      if (seen.has(parent)) throw new BranchNavigationFailure({ sentence: "Cyclic branch tree" })
+      if (seen.has(parent)) throw new BranchNavigationFailure({ sentence: "Cyclic branch tree", stage: "tree", reason: "cyclic-tree" })
       seen.add(parent)
       parent = rows.find(candidate => candidate.name === parent)?.forked_from?.ref
     }
@@ -40,7 +62,43 @@ export function branchTree(value: unknown): BranchTreeNodeCard[] {
   return [nodes.get("main")!]
 }
 
-export function createBranchNavigationSeam(ctx: SeamContext, design: DesignWorld, options?: { live?: LiveTopics; onDispose?: (dispose: () => void) => void }) {
+/**
+ * A hosted account's branch source: the connected repository the header
+ * names, its branch names through the one canonical resolver the header
+ * dropdown, `/branch` and the agent already share (RepositoryBranchesSeam
+ * over GET /api/repos/{owner}/{repo}/bookmarks), and that repository's own
+ * current bookmark. Reading it enumerates nothing else: no workspace is
+ * created or resumed to list or to select, and a repository the account
+ * cannot read has no rows at all because the backend scopes the read.
+ */
+export interface HostedBranchSource {
+  /** The connected repository as `owner/name`, or null when none is chosen. */
+  readonly repository: () => string | null
+  /** The repository's branch names, or the honest sentence the read earned. */
+  readonly load: (repo: string) => Promise<{ readonly names: ReadonlyArray<string> } | { readonly error: string }>
+  /** That repository's current bookmark as the inventory last read it; null when unknown. */
+  readonly defaultBranch: (repo: string) => string | null
+}
+
+/**
+ * One hosted repository's branches as tree nodes. A hosted bookmark carries
+ * no fork lineage, so the rows stay siblings rather than inventing a parent,
+ * and the trunk is the repository's OWN current bookmark — never a hardcoded
+ * `main`. A repository whose default is unknown gets no trunk node, not a
+ * guessed one.
+ */
+export function hostedBranchTree(names: ReadonlyArray<string>, defaultBranch: string | null): BranchTreeNodeCard[] {
+  const unique = [...new Set(names.filter(name => name !== ""))]
+  const trunk = defaultBranch !== null && defaultBranch !== "" && unique.includes(defaultBranch) ? defaultBranch : null
+  return unique
+    .sort((left, right) => Number(right === trunk) - Number(left === trunk) || left.localeCompare(right))
+    .map(name => ({
+      id: name, name, kind: name === trunk ? "main" : "scratch", present: [], children: [],
+      action: { tag: "branch", label: "Open", args: { name } }
+    }))
+}
+
+export function createBranchNavigationSeam(ctx: SeamContext, design: DesignWorld, options?: { live?: LiveTopics; onDispose?: (dispose: () => void) => void; hosted?: HostedBranchSource }) {
   let pending: Promise<void> | undefined
   const watches = new Map<string, () => void>()
   const stop = () => { for (const unsubscribe of watches.values()) unsubscribe(); watches.clear() }
@@ -77,7 +135,38 @@ export function createBranchNavigationSeam(ctx: SeamContext, design: DesignWorld
       } }).isPersisted.promise
       if (pending) return
       const current = () => !ctx.isDisposed?.() && (accountOwnerOf(ctx.store.collections.identitySessions.get("identity")) ?? null) === owner
-      const read = async () => {
+      const show = async (nodes: BranchTreeNodeCard[]) => {
+        const view = ctx.store.session().branchNavigation
+        if (view?.owner !== owner) return false
+        await ctx.dispatch({ type: "branch.navigation.changed", actor: "system", navigation: { ...view, nodes } }).isPersisted.promise
+        return true
+      }
+      /*
+       * A hosted account reads the connected repository's branches, because
+       * the hosted backend serves no install-global /api/branches and never
+       * did: that route is the install's workspace projection. Nothing is
+       * invented for a refusal here — the sentence the canonical resolver
+       * earned is what the person reads, and the stage and reason go to the
+       * operational ring.
+       */
+      const readHosted = async (hosted: HostedBranchSource): Promise<void | string> => {
+        const repo = hosted.repository()
+        if (repo === null) {
+          const refusal = new BranchNavigationFailure({ sentence: "No repository chosen", stage: "repository-read", reason: "no-repository" })
+          ctx.report?.(branchNavigationDiagnostic(refusal, 0), refusal)
+          throw refusal
+        }
+        const loaded = await hosted.load(repo)
+        if (!current()) return
+        if ("error" in loaded) {
+          const refusal = new BranchNavigationFailure({ sentence: "Branches unavailable", stage: "repository-read", reason: "host-refused" })
+          ctx.report?.(branchNavigationDiagnostic(refusal, 0), refusal)
+          return loaded.error
+        }
+        await show(hostedBranchTree(loaded.names, hosted.defaultBranch(repo)))
+      }
+      const read = async (): Promise<void | string> => {
+        if (options?.hosted !== undefined) return readHosted(options.hosted)
         const rows: unknown[] = []
         let real = true
         let nodes: BranchTreeNodeCard[] | undefined
@@ -85,21 +174,21 @@ export function createBranchNavigationSeam(ctx: SeamContext, design: DesignWorld
           // The branch API uses offset cursors; never follow an arbitrary Link URL.
           for (let offset = 0; offset < 10000; offset += 100) {
             const response = await ctx.http(`${ctx.baseUrl}/api/branches?limit=100&cursor=${offset}`, { credentials: "same-origin" })
-            if (!response.ok) throw new BranchNavigationFailure({ sentence: "Branches unavailable" })
+            if (!response.ok) throw new BranchNavigationFailure({ sentence: "Branches unavailable", stage: "install-read",
+              reason: response.status === 404 ? "route-absent" : "host-refused" })
             const page = Rows.parse(await response.json())
             rows.push(...page)
             if (page.length < 100) { nodes = branchTree(rows); break }
           }
-          if (!nodes) throw new BranchNavigationFailure({ sentence: "Branches unavailable" })
+          if (!nodes) throw new BranchNavigationFailure({ sentence: "Branches unavailable", stage: "install-read", reason: "host-refused" })
         } catch (error) {
+          if (error instanceof BranchNavigationFailure) ctx.report?.(branchNavigationDiagnostic(error, rows.length), error)
           if (design.enabled === false) throw error
           real = false
           nodes = designBranchTree(design.world(), "main")
         }
         if (!current()) return
-        const view = ctx.store.session().branchNavigation
-        if (view?.owner !== owner) return
-        await ctx.dispatch({ type: "branch.navigation.changed", actor: "system", navigation: { ...view, nodes } }).isPersisted.promise
+        if (!await show(nodes)) return
         if (real) observe(rows, owner)
       }
       pending = (ctx.withToast ? ctx.withToast("branch-tree", "Branches", "Branches", read, true, current) : read())

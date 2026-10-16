@@ -7,6 +7,8 @@ import { useController } from "./ControllerContext"
 import { BranchTree } from "./BranchTree"
 import { EarlierArchive } from "./EarlierArchive"
 import { accountOwnerOf } from "./state/AccountOwner"
+import { headerSelectionOf } from "./state/HeaderSelection"
+import { pickKey } from "./state/seams/RepositoryBranchesSeam"
 
 /** The shell's projections read saved state; an archive has no command callbacks. */
 export function BranchNavigation() {
@@ -15,10 +17,24 @@ export function BranchNavigation() {
   const pending = useRef(0)
   const { data: sessions } = useLiveQuery(controller.store.collections.sessions)
   const { data: identities } = useLiveQuery(controller.store.collections.identitySessions)
+  const { data: repositories } = useLiveQuery(controller.store.collections.repositories)
+  const { data: picks } = useLiveQuery(controller.repositoryBranches.picks)
   const { data: branches } = useLiveQuery<Branch, string, Record<string, never>>(controller.store.collections.branches as unknown as Collection<Branch, string, Record<string, never>> & NonSingleResult)
   const view = sessions[0]?.branchNavigation
   const owner = accountOwnerOf(identities[0]) ?? null
   if (!view?.open || view.owner !== owner) return null
+  /*
+   * Which row reads as current. An install has one conversation per branch, so
+   * that IS the conversation's branch. A hosted account has one conversation
+   * and the rows are a repository's branches, so the current row is the branch
+   * picked in that repository — the same rule the header reads
+   * (HeaderSelection.ts), never a write onto the conversation's branch.
+   */
+  const install = controller.bootstrap?.capabilities.includes("install") === true
+  const picked = install || view.selected_branch === "earlier" ? null
+    : headerSelectionOf({ session: sessions[0], repositories, owner,
+      pickOf: repo => picks.find(row => row.id === pickKey(owner, repo))?.branch }).branch
+  const current = picked ?? view.selected_branch
   const available = branches.filter(branch => (!branch.archiveOwner || branch.archiveOwner === owner) && branch.snapshot && branch.snapshot.messages.length + branch.snapshot.cards.length > 0)
   const journalIds = new Set(available.filter(branch => branch.archiveOwner === owner && branch.id.startsWith("earlier:journal:")).map(branch => branch.id.slice("earlier:journal:".length)))
   const archives = available.filter(branch => !journalIds.has(branch.id))
@@ -35,7 +51,7 @@ export function BranchNavigation() {
       .finally(() => { if (request === pending.current) setSaving(false) })
   }
   return <div data-branch-navigation aria-busy={saving}>
-    <BranchTree nodes={[...view.nodes, earlier]} view={view}
+    <BranchTree nodes={[...view.nodes, earlier]} view={{ ...view, selected_branch: current }}
       onAction={(tag, args) => { void controller.commands.submit({ name: tag, payload: args ?? {}, actor: "user" }) }}
       onView={patch => update({ ...patch, ...(patch.selected_branch === "earlier" ? { previous_branch: view.selected_branch } : {}) })} />
     {view.selected_branch === "earlier" ? <EarlierArchive model={{ node: earlier, archives, read_only: true }} view={view} onView={update} /> : null}
