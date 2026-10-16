@@ -690,6 +690,7 @@ export const createCloudWikiController = (ctx: ControllerContext, nextOrdinal: (
     const name = title.trim()
     if (name === "") return "A page needs a title."
     const space = shared.space()
+    const selection = ctx.commandActor === "user" ? ++shared.paneRead : undefined
     const outcome = await ctx.withToast(`wiki.new.${repo}.${space}`, `Creating ${name}…`, `${name} created`, async () => {
       const answer = await shared.run(Effect.gen(function*() {
         const api = yield* CloudWikiTransport
@@ -698,7 +699,8 @@ export const createCloudWikiController = (ctx: ControllerContext, nextOrdinal: (
       if (typeof answer === "string") return answer
       if (shared.disposed()) return "The app closed while the page was being created."
       void loadWikiIndex(repo, space)
-      const opened = await openOutcome(repo, answer.slug, answer.id, space)
+      const opened = await openOutcome(repo, answer.slug, answer.id, space,
+        selection === undefined ? undefined : () => selection === shared.paneRead)
       return "refusal" in opened ? opened.refusal : answer
     })
     if (typeof outcome === "string") return outcome

@@ -29,7 +29,8 @@ const document = (id: number, slug: string, space: WikiSpace) => {
 const harness = async () => {
   const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>()
   const createdEntered = Promise.withResolvers<void>(), createdRelease = Promise.withResolvers<void>()
-  let holdHome = false, holdCreated = false, denyCreated = false, creates = 0
+  const postEntered = Promise.withResolvers<void>(), postRelease = Promise.withResolvers<void>()
+  let holdPost = false, holdHome = false, holdCreated = false, denyCreated = false, creates = 0
   const requests: string[] = []
   const pages = { public: [document(1, "home", "public"), document(2, "start", "public")], private: [document(9, "home", "private")] }
   const server = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request) {
@@ -39,6 +40,7 @@ const harness = async () => {
     if (space !== "public" && space !== "private") return Response.json({ message: "Missing space" }, { status: 400 })
     if (request.method === "POST" && !url.pathname.endsWith("/document")) {
       creates += 1
+      if (holdPost) { postEntered.resolve(); await postRelease.promise }
       const created = document(5, "notes", space)
       pages[space].push(created)
       return Response.json(created.page)
@@ -73,13 +75,14 @@ const harness = async () => {
   const world = createWorldController(ctx, { nextOrdinal: store.nextOrdinal, cloudWiki: wiki })
   await wiki.openCloudWiki(repo, "home", 1)
   await wiki.openCloudWiki(repo, "start", 2)
-  return { store, ctx, wiki, world, entered, release, requests, createdEntered, createdRelease,
+  return { store, ctx, wiki, world, entered, release, requests, createdEntered, createdRelease, postEntered, postRelease,
     begin() { holdHome = true; return wiki.readWikiForPane() },
     beginExplicit() { holdHome = true; return wiki.openCloudWiki(repo, "home", 1) },
+    beginCreatePost() { holdPost = true; return wiki.createCloudWikiPage("Notes", repo) },
     beginCreate(title: string) { holdCreated = true; return wiki.createCloudWikiPage(title, repo) },
     denyCreated() { denyCreated = true },
     creates: () => creates,
-    async close() { release.resolve(); createdRelease.resolve(); await ctx.dispose(); await server.stop(true) }
+    async close() { postRelease.resolve(); release.resolve(); createdRelease.resolve(); await ctx.dispose(); await server.stop(true) }
   }
 }
 
@@ -479,5 +482,32 @@ test("a refused opening read after a creation is still stated as the refusal", a
     expect(typeof outcome).toBe("string")
     expect(outcome).not.toContain("Created")
     expect(t.creates()).toBe(1)
+  } finally { await t.close() }
+})
+
+for (const selection of ["manual", "explicit-open"] as const) {
+  test(`a newer ${selection} selection during the creation POST keeps the pane and creation acknowledgment`, async () => {
+    const t = await harness(), pending = t.beginCreatePost()
+    try {
+      await t.postEntered.promise
+      if (selection === "manual") t.world.selectWorldDocument(startId)
+      else await t.wiki.openCloudWiki(repo, "start", 2)
+      t.postRelease.resolve()
+      expect(await pending).toEqual({ value: `Created Notes.md in the public Wiki of ${repo}.` })
+      expect(t.store.session().selectedWorldDocumentId).toBe(startId)
+      expect(t.creates()).toBe(1)
+      expect(t.store.collections.cards.get(`wiki-open-${notesId}`)).toBeUndefined()
+      expect(t.store.collections.toasts.get(`toast-wiki.new.${repo}.public`)?.status).not.toBe("failed")
+    } finally { t.postRelease.resolve(); await pending; await t.close() }
+  })
+}
+
+test("an explicit agent creation embeds the created page without changing the pane", async () => {
+  const t = await harness()
+  try {
+    t.ctx.commandActor = "smithers"
+    expect(await t.wiki.createCloudWikiPage("Notes", repo)).toEqual({ value: `Created Notes.md in the public Wiki of ${repo}.` })
+    expect(t.store.session().selectedWorldDocumentId).toBe(startId)
+    expect(t.store.collections.cards.get(`wiki-open-${notesId}`)?.kind).toBe("world")
   } finally { await t.close() }
 })
