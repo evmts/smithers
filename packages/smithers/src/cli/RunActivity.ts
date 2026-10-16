@@ -13,6 +13,7 @@
 
 import type { ControlSchema, Health } from "@smthrs/control"
 import { type ReleaseCause, releaseCauseOf } from "@smthrs/engine-store/RunState"
+import { clip, type Digest, firstLine, resolvedOutput } from "@smthrs/gateway/Diagnosis"
 import { statusRollup } from "@smthrs/gateway/GatewayProjection"
 import * as Forensics from "../Forensics.ts"
 
@@ -455,7 +456,15 @@ export const show = (
   snapshots?: ReadonlyArray<ControlSchema.ExecutionBatch>
 ): Shown => {
   const activity = fold(events, run, snapshots)
-  const diagnosis = Forensics.digest(events, run.runId)
+  // The digest keeps the committed native result so a bounded window can
+  // resolve the run's output; the command reports the line the card clips and
+  // leaves the full result to `runs output`.
+  const { nativeResolution, ...digest }: Forensics.Digest & Pick<Digest, "nativeResolution"> = Forensics.digest(
+    events,
+    run.runId
+  )
+  const output = resolvedOutput({ finalOutput: digest.finalOutput, nativeResolution })
+  const diagnosis = { ...digest, finalOutput: output === undefined ? undefined : clip(firstLine(output), 120) }
   const rollup = statusRollup(run, events, now)
   const warnings = warningsOf(events)
   const { codeDrift, runId, flowId, status, waitingReason, ...recorded } = run

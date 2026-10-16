@@ -438,6 +438,53 @@ describe("RunActivity.show", () => {
     expect(shown).not.toHaveProperty("codeDrift")
     expect(RunActivity.show(run("running"), []).updatedAt).toBe(2)
   })
+
+  it("reports the card's clipped native output and leaves the full result to runs output (#3850)", () => {
+    const result = `${"x".repeat(300_000)}\nsecond line`
+    const committed = {
+      sequence: 2,
+      kind: "control.engine.event",
+      runId,
+      occurredAt: 3,
+      payload: {
+        version: 1,
+        executionId: "exec-root",
+        generation: 0,
+        sequence: 0,
+        eventType: "flows.engine.run-decision",
+        payload: {
+          decision: "transitioned",
+          status: "completed",
+          executionFact: {
+            version: 1,
+            baseline: "created",
+            observation: { executionId: "exec-root", status: "completed", flowName: "agent/run" }
+          },
+          state: {
+            version: 1,
+            flowName: "agent/run",
+            payload: { runId, planId: "plan-1" },
+            result: { _tag: "Complete", exit: { _tag: "Success", value: result } }
+          }
+        }
+      }
+    } as ControlSchema.ControlEvent
+    const shown = RunActivity.show(run("completed"), [
+      control("control.run.running", 1),
+      {
+        sequence: 1,
+        kind: "control.engine.bound",
+        runId,
+        occurredAt: 2,
+        payload: { version: 1, controlRunId: runId, executionId: "exec-root" }
+      } as ControlSchema.ControlEvent,
+      committed,
+      control("control.run.completed", 4)
+    ])
+    expect(shown.diagnosis).not.toHaveProperty("nativeResolution")
+    expect(shown.diagnosis.finalOutput).toBe(`${"x".repeat(119)}…`)
+    expect(JSON.stringify(shown).length).toBeLessThan(5_000)
+  })
 })
 
 describe("RunProgress over engine records", () => {
