@@ -184,6 +184,29 @@ describe("ClaudeCode.make", () => {
     })
   })
 
+  it("withholds the host's API credentials and injected Node settings from Claude Code", async () => {
+    const claude = scripted(() => ({ text: "ok" }))
+    await run(
+      ClaudeCode.make({
+        model: "claude-opus-5-5",
+        executable: "/opt/bin/claude",
+        environment: {
+          HOME: "/home/op",
+          AI_GATEWAY_API_KEY: "judge-key",
+          OPENAI_API_KEY: "sk-host",
+          NODE_OPTIONS: "--require /tmp/hook.js"
+        },
+        start: claude.start
+      }),
+      request([user("do the task")])
+    )
+    expect(claude.started[0]!.options.env).toEqual({
+      HOME: "/home/op",
+      CLAUDE_AGENT_SDK_CLIENT_APP: "smithers",
+      ENABLE_CLAUDEAI_MCP_SERVERS: "false"
+    })
+  })
+
   it("keeps the transcript for `claude --resume <sessionId>` only when the seat is hijackable", async () => {
     for (const hijackable of [undefined, false, true]) {
       const claude = scripted(() => ({ text: "ok" }))

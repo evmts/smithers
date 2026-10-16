@@ -44,6 +44,7 @@ import type { ModelEvent, Usage } from "@smthrs/model/ModelEvent"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import { Effect, Schema, Stream } from "effect"
 import { tmpdir } from "node:os"
+import { codexEnvironment } from "../Agents.ts"
 import * as Failure from "./Failure.ts"
 import * as Telemetry from "./Telemetry.ts"
 
@@ -78,7 +79,7 @@ export interface Options {
   readonly model: string
   /** The installed `claude` binary. */
   readonly executable: string
-  /** Claude Code's environment. */
+  /** The host environment. Claude Code gets it with API credentials and injected Node settings withheld. */
   readonly environment: Readonly<Record<string, string | undefined>>
   /** Claude Code's working directory, the system temporary directory by default: it never works in a repository. */
   readonly cwd?: string | undefined
@@ -302,7 +303,11 @@ export const make = (options: Options): Model.Model & { readonly close: () => vo
     model: options.model,
     pathToClaudeCodeExecutable: options.executable,
     cwd: options.cwd ?? tmpdir(),
-    env: { ...options.environment, CLAUDE_AGENT_SDK_CLIENT_APP: "smithers", ENABLE_CLAUDEAI_MCP_SERVERS: "false" },
+    env: {
+      ...codexEnvironment(options.environment),
+      CLAUDE_AGENT_SDK_CLIENT_APP: "smithers",
+      ENABLE_CLAUDEAI_MCP_SERVERS: "false"
+    },
     systemPrompt: { type: "custom", prompt: request.system.map((part) => part.text) },
     tools: [],
     mcpServers: {},
