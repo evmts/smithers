@@ -194,7 +194,18 @@ describe("event-driven wake", () => {
       const result = yield* withEngine(WakeBus.layer, (makeEngine) =>
         Effect.gen(function*() {
           const bus = yield* WakeBus.WakeBus
-          const engine = (yield* makeEngine) as FlowRuntime.FlowRuntime["Service"]
+          const state = yield* DurableEngineState.DurableEngineState
+          let pollChecks = 0
+          const observed = DurableEngineState.DurableEngineState.of({
+            ...state,
+            hasDueWake: (runId, nowMs) =>
+              state.hasDueWake(runId, nowMs).pipe(
+                Effect.tap(() => Effect.sync(() => ++pollChecks))
+              )
+          })
+          const engine = (yield* makeEngine.pipe(
+            Effect.provideService(DurableEngineState.DurableEngineState, observed)
+          )) as FlowRuntime.FlowRuntime["Service"]
           yield* engine.register(FollowedFlow, handler)
           const follow = engine.execute(FollowedFlow, {
             executionId: "wake-followed",
@@ -214,16 +225,13 @@ describe("event-driven wake", () => {
           // another wake, and the two callers would re-drive the run back to
           // back for as long as the scheduler kept turning.
           //
-          // The tick is settled once it has driven the run and both callers
-          // are parked on the bus again. Each caller parks only after the
-          // drive its own `execute` joined has finished, and each drive waits
-          // on real database I/O, so no count of scheduler turns can stand in
-          // for this: on a loaded runner the woken caller's drive can land
-          // after any fixed number of turns.
+          // Observe the real due-wake check, then both callers parked again.
+          // A poll must not re-drive an event whose deferred is still pending.
           const beforeTick = drives
+          const beforePoll = pollChecks
           yield* TestClock.adjust("3 seconds")
           yield* TestDatabase.until(
-            Effect.map(bus.waiters("wake-followed"), (waiters) => drives > beforeTick && waiters === 2)
+            Effect.map(bus.waiters("wake-followed"), (waiters) => pollChecks > beforePoll && waiters === 2)
           )
           const settled = drives
           // With the clock stopped, nothing but a wake loop can drive the run
@@ -241,9 +249,10 @@ describe("event-driven wake", () => {
             deferredName: gate.name,
             exit: Exit.succeed("open")
           })
-          return { settled, later, values: [yield* Fiber.join(first), yield* Fiber.join(second)] }
+          return { beforeTick, settled, later, values: [yield* Fiber.join(first), yield* Fiber.join(second)] }
         }))
 
+      expect(result.settled).toBe(result.beforeTick)
       expect(result.later).toBe(result.settled)
       expect(result.values).toEqual(["followed:open", "followed:open"])
     }))
