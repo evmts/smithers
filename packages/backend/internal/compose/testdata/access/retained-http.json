@@ -170,6 +170,10 @@
       "door": "app"
     },
     {
+      "command": "app.updates",
+      "door": "app"
+    },
+    {
       "command": "approval.approve",
       "door": "app"
     },
@@ -702,6 +706,19 @@
       "body": {}
     },
     {
+      "command": "github.account-review",
+      "method": "POST",
+      "path": "/api/user/github-repos/{owner}/{repo}/pulls/{number}/reviews",
+      "body": {
+        "event": "COMMENT",
+        "body": "Campaign review body",
+        "commit_id": "1f0c2a9d3b4e5f60718293a4b5c6d7e8f9012345"
+      },
+      "delegated": "never",
+      "maintainerDelegated": "permission",
+      "memberDelegated": "permission"
+    },
+    {
       "command": "github.import-read",
       "method": "GET",
       "path": "/api/github/import/{id}",
@@ -1078,6 +1095,14 @@
     },
     {
       "command": "repo.update",
+      "door": "app"
+    },
+    {
+      "command": "repos.create",
+      "door": "app"
+    },
+    {
+      "command": "repos.explore",
       "door": "app"
     },
     {
