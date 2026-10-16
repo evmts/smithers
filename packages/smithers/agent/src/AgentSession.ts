@@ -415,7 +415,7 @@ const lateFields: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   // `descriptor` joined `callId` for the same reason: it enriches a record
   // that already exists in journals, and a resumed pre-enrichment run must
   // deduplicate its recorded prefix rather than publish all of it again.
-  ["control.agent.cell-call-started", new Set(["callId", "descriptor"])],
+  ["control.agent.cell-call-started", new Set(["callId", "descriptor", "declared"])],
   // `code` names why a failed call failed, on a record that already said it had.
   // and `reason` what kind of failure its handler met.
   ["control.agent.cell-call-settled", new Set(["callId", "code", "reason"])],
@@ -1137,6 +1137,7 @@ export const trace = (
           callId: callId(event.call.identity),
           flowName: event.call.flowName,
           input: tracedInput(event.call.input),
+          ...(event.declared === undefined ? {} : { declared: event.declared }),
           ...(descriptor === undefined ? {} : { descriptor })
         }
       }

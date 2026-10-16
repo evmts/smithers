@@ -143,6 +143,7 @@ const distil = (path) => {
         frame.calls.push({
           flow: payload.flowName,
           input: opened.input,
+          ...(opened.declared === undefined ? {} : { declared: opened.declared }),
           ok: payload.outcome === "success",
           mutates: editing.has(payload.flowName),
           ...(payload.outcome === "success" ? reading(payload.value) : {}),

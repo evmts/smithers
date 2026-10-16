@@ -128,6 +128,25 @@ describe("capacity event trace", () => {
 })
 
 describe("durable call identity", () => {
+  it("preserves declared verification without inventing it for legacy calls", () => {
+    for (const declared of [undefined, false, true]) {
+      const event = new AgentEvent.CellCallStarted({
+        eventType: "flows.harness.cell-call-started.v1",
+        call,
+        ...(declared === undefined ? {} : { declared })
+      })
+      expect((AgentSession.trace(event)?.payload as Record<string, unknown>).declared).toBe(declared)
+      const legacy = AgentSession.trace(
+        new AgentEvent.CellCallStarted({
+          eventType: "flows.harness.cell-call-started.v1",
+          call
+        })
+      )!
+      expect(AgentSession.traceIdentity(4, 2, cell.digest, legacy.eventType, AgentSession.trace(event)!.payload))
+        .toBe(AgentSession.traceIdentity(4, 2, cell.digest, legacy.eventType, legacy.payload))
+    }
+  })
+
   it("joins starts and both settlement outcomes by dispatch coordinates, independent of emission order", () => {
     const first = new Cell.Call({ ...call, identity })
     const second = new Cell.Call({ ...call, identity: new Cell.CallIdentity({ ...identity, ordinal: 2 }) })

@@ -123,7 +123,11 @@ const build = (journal) => {
       }
     ])
     for (const call of frame.calls) {
-      events.push(["control.agent.cell-call-started", { flowName: call.flow, input: call.input }])
+      events.push(["control.agent.cell-call-started", {
+        flowName: call.flow,
+        input: call.input,
+        ...(call.declared === undefined ? {} : { declared: call.declared })
+      }])
       events.push([
         "control.agent.cell-call-settled",
         call.ok

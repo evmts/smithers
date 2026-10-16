@@ -32,6 +32,8 @@
  *   `CellTurn` reads it: a result carrying an object there is a flow saying the
  *   failure was about the command and not about the tree, and is neither failing
  *   nor passing.
+ * - **Declared verification** is read only from the call's opening record.
+ *   Older journals omit it; absence never makes an ordinary read a check.
  *
  * @since 0.1.0
  */
@@ -173,6 +175,7 @@ export const read = (databasePath) => {
           seq: row.seq,
           flow: payload.flowName,
           input: opened?.input ?? null,
+          declared: opened?.declared === true,
           signature: canonical([payload.flowName, opened?.input ?? null]),
           ok,
           mutates: editing.has(payload.flowName),
@@ -267,6 +270,7 @@ export const read = (databasePath) => {
         digest: workspaceDigest,
         failing: call.failing,
         passing: call.passing,
+        declared: call.declared,
         stable: !unattributedMutation && index > lastStandingWrite
       })
       return recorded === undefined ? [] : [{ check: recorded, seq: call.seq }]

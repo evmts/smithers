@@ -2293,7 +2293,7 @@
         "internal/backend/Local.d.ts": "466a6c1ee01c23c5df8802c09c888e0f6bb73b40a0f413287b66da8f5e17368c",
         "internal/backend/Misc.d.ts": "72b954dcf7b5e17b1c405425f53b04bc77e4e861201b579750f52117656428f5",
         "internal/backend/Process.d.ts": "f9422d950352834537da0ca64b82d4149785ff168898376fa64f222d1f7e06f6",
-        "internal/backend/ProductApi.d.ts": "b1b81eaef896163a30cb33afe3ae0b439bdbffa0119defea7fc4b80c3af69e74",
+        "internal/backend/ProductApi.d.ts": "3362fc21ae1bf8abdf89710f57f813936476f9514c16aa1f47a8296521ca4a0b",
         "internal/backend/Repositories.d.ts": "3efdf81bae853908ed7424800228ba96a168918344abc72d44a82a1ed6520030",
         "internal/backend/Resources.d.ts": "490fed5c9ac4033c76448737891fb261b1a70419e49a90348e76ca84b3e83981",
         "internal/backend/Runs.d.ts": "52fd8b97597a457939706ba7aeffa0093ec044835db9d7534eeb2607743eface",
@@ -5057,7 +5057,7 @@
         }
       },
       "declarations": {
-        "AgentEvent.d.ts": "b6a8d8042bea256efd493233c8ec8e2e08e07304c2fbe4bffc1a0a8037b5dcb7",
+        "AgentEvent.d.ts": "7dc4eb1d41d70ac04480333d098b803ac8e2405f0163c7f7ffb7aa34d4eb7c93",
         "CallLedger.d.ts": "f30d3c944bc13658a0637aba81e37630741baf0e1ce24455c0a8243d274220eb",
         "Cell.d.ts": "9516d6c67aa3e1f81b73b9a0e6b28869ce0d3d64781bb593da48c2dbe3ff941a",
         "CellCalls.d.ts": "07f58160539baf6a0b6f87d716e2a54935f82bed0d3064c97ba17e19afe69468",
@@ -11180,7 +11180,7 @@
         "EsLint.d.ts": "ee2f28c5ee740d06b6954d7f356c3502675f67af3b8d066cc4599e91eebb3378",
         "Exec.d.ts": "0e03d256ec2d9e73aed8481d48d70eaa9a3479900db6383df649237b83e2bfb4",
         "ExecSandbox.d.ts": "d25472c36a4abe919390f3a77f8f66a76c891f0ec811fec3bae4ad853e598357",
-        "Factory.d.ts": "ab7954fad96d2b9ab6fcd49ffc2d9c4831c0e6a8c0245639be1b56451b2667d2",
+        "Factory.d.ts": "592aa81533f14f4853cb3cfdf73a3afb537ef4e1a6cef4c28206aa395a9badf7",
         "FaultSuite.d.ts": "89f7967661a7a304e7569c8d68ea57343c446e21611f8eff774f546f9bdefc28",
         "Fetch.d.ts": "661ff3d4dd6d1948c20a35541530c66fa1177472307579cf3c095af1301891d5",
         "Filegroup.d.ts": "d454992a09cafc694f098826605051c0cd636541fac55f509af493641f693006",

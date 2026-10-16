@@ -649,7 +649,9 @@ export class CellCallStarted extends Schema.TaggedClass<CellCallStarted>(
   "flows/harness/AgentEvent/CellCallStarted"
 )("cell-call-started", {
   eventType: Schema.Literal("flows.harness.cell-call-started.v1"),
-  call: Cell.Call
+  call: Cell.Call,
+  /** Whether this invocation was the run's declared verification; absent in older journals. */
+  declared: Schema.optional(Schema.Boolean)
 }) {}
 
 /**
