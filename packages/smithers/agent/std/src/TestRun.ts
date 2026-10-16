@@ -380,7 +380,7 @@ export const run = Effect.fn("TestRun.run")(function*(
       : error
   ))
   const baseline = yield* GitWorktree.withDetachedWorktree(
-    root,
+    yield* GitWorktree.open(root),
     `${scratchDirectory}/run`,
     base.commit,
     (scratch) =>

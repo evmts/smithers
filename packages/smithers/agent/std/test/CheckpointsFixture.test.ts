@@ -670,6 +670,39 @@ describe("Checkpoints over a real repository", () => {
     expect(readFileSync(join(root, "mod.py"), "utf8")).toBe("value = 'fixed'\n")
   }, 60_000)
 
+  it("pins only into the repository the host opened, never one the agent's .git points at later", async () => {
+    const root = repository()
+    const other = repository("flows-checkpoint-other-")
+    const before = readFileSync(join(other, ".git", "config"), "utf8")
+    const exit = await Effect.runPromise(Effect.exit(Effect.gen(function*() {
+      const checkpoints = yield* store(root)
+      // After the host opened the store, the agent repoints the workspace's
+      // git metadata at another repository on the host.
+      rmSync(join(root, ".git"), { recursive: true, force: true })
+      writeFileSync(join(root, ".git"), `gitdir: ${join(other, ".git")}\n`)
+      yield* checkpoints.capture("cp-0-1")
+    })))
+
+    expect(exit._tag).toBe("Failure")
+    expect(JSON.stringify(exit)).toContain("permission_denied")
+    expect(readFileSync(join(other, ".git", "config"), "utf8")).toBe(before)
+  }, 60_000)
+
+  it("leaves a root that was not a repository when the host opened it without checkpoints", async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "flows-checkpoint-plain-")))
+    const other = repository("flows-checkpoint-other-")
+    const before = readFileSync(join(other, ".git", "config"), "utf8")
+    const exit = await Effect.runPromise(Effect.exit(Effect.gen(function*() {
+      const checkpoints = yield* store(root)
+      writeFileSync(join(root, ".git"), `gitdir: ${join(other, ".git")}\n`)
+      yield* checkpoints.capture("cp-0-1")
+    })))
+
+    expect(exit._tag).toBe("Failure")
+    expect(JSON.stringify(exit)).toContain("is not a git work tree")
+    expect(readFileSync(join(other, ".git", "config"), "utf8")).toBe(before)
+  }, 60_000)
+
   it("refuses a checkpoint nothing ever pinned", async () => {
     const root = repository()
     const exit = await Effect.runPromise(Effect.exit(Effect.gen(function*() {

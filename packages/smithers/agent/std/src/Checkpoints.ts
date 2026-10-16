@@ -71,10 +71,10 @@
  */
 
 import { ChildProcessSpawner } from "@smthrs/kernel/ChildProcessSpawner"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Context, Effect, type Exit, Layer, Schema } from "effect"
 import * as Container from "./Container.ts"
 import * as Exec from "./internal/Exec.ts"
-import { GitWorktree } from "./internal/GitWorktree.ts"
+import { GitWorktree, type Repository } from "./internal/GitWorktree.ts"
 import { withoutTrailingSlash } from "./internal/Paths.ts"
 import * as Prune from "./internal/Prune.ts"
 import * as StdError from "./StdError.ts"
@@ -256,7 +256,13 @@ export const layerNoop: Layer.Layer<Checkpoints> = Layer.succeed(Checkpoints, ma
  * @since 1.0.0
  */
 export interface GitOptions {
-  /** The host path of the git repository whose trees are pinned. */
+  /**
+   * The host path of the git repository whose trees are pinned.
+   *
+   * It is opened when the store is built. A root that was not a repository
+   * then pins nothing, and one whose `.git` later names another repository is
+   * refused with `permission_denied`.
+   */
   readonly root: string
   /**
    * Where a container sees {@link GitOptions.root}, when one does.
@@ -301,7 +307,12 @@ export const makeGit = (
 ): Effect.Effect<Checkpoints, never, ChildProcessSpawner> =>
   Effect.gen(function*() {
     const spawner = yield* ChildProcessSpawner
-    return gitStore(options, spawner)
+    // The host opens the repository before any agent runs. Its `.git` is the
+    // agent's to write, so what it names later can never choose another store.
+    const opened = yield* Effect.exit(
+      GitWorktree.open(withoutTrailingSlash(options.root)).pipe(Effect.provideService(ChildProcessSpawner, spawner))
+    )
+    return gitStore(options, spawner, opened)
   })
 
 /**
@@ -312,10 +323,29 @@ export const makeGit = (
  * {@link layerNoop} against the identical interface — the same shape
  * `TestRunner` and `Container` take.
  */
-const gitStore = (options: GitOptions, spawner: ChildProcessSpawner["Service"]): Checkpoints => {
+const gitStore = (
+  options: GitOptions,
+  spawner: ChildProcessSpawner["Service"],
+  opened: Exit.Exit<Repository, StdError.StdError>
+): Checkpoints => {
   const spawn = <A, E>(effect: Effect.Effect<A, E, ChildProcessSpawner>): Effect.Effect<A, E> =>
     Effect.provideService(effect, ChildProcessSpawner, spawner)
   const root = withoutTrailingSlash(options.root)
+
+  /** The repository the host opened, refused once the workspace names another. */
+  const repositoryOf = Effect.gen(function*() {
+    const bound = yield* opened
+    const current = yield* GitWorktree.open(root)
+    if (
+      current.toplevel !== bound.toplevel || current.common !== bound.common || current.index !== bound.index ||
+      current.objectFormat !== bound.objectFormat
+    ) {
+      return yield* Effect.fail(
+        failed(`${root} now names another git repository than the one this run opened.`, "permission_denied")
+      )
+    }
+    return current
+  })
   const guestRoot = options.cwd === undefined ? root : withoutTrailingSlash(options.cwd)
   const keyOf = (id: string) => `${configSection}.${id}`
   const baseRefs = options.baseRef === undefined ? [TestRunner.captureBase, "HEAD"] : [options.baseRef]
@@ -328,10 +358,9 @@ const gitStore = (options: GitOptions, spawner: ChildProcessSpawner["Service"]):
    * into this repository's config file, which is where a checkpoint is named
    * *without* becoming history. See {@link configSection}.
    */
-  const commitOf = (id: string) =>
+  const commitOf = (repository: Repository, id: string) =>
     Effect.gen(function*() {
       if (id === baseId) return (yield* GitWorktree.resolveCommit(root, baseRefs)).commit
-      const repository = yield* GitWorktree.open(root)
       const found = yield* GitWorktree.config(repository, ["--get", keyOf(id)])
       const commit = found.stdout.trim()
       if (found.exitCode !== 0 || commit === "") {
@@ -352,7 +381,7 @@ const gitStore = (options: GitOptions, spawner: ChildProcessSpawner["Service"]):
           failed(`A checkpoint id must match ${namable.source}; ${id} does not.`, "invalid_input")
         )
       }
-      const repository = yield* GitWorktree.open(root)
+      const repository = yield* repositoryOf
       const commit = yield* GitWorktree.withShadow(repository, (shadow) =>
         Effect.gen(function*() {
           const head = (yield* GitWorktree.resolveCommit(root, ["HEAD"])).commit
@@ -387,10 +416,11 @@ const gitStore = (options: GitOptions, spawner: ChildProcessSpawner["Service"]):
           failed(`A checkpoint id must match ${namable.source}; ${id} does not.`, "invalid_input")
         )
       }
-      const commit = yield* spawn(commitOf(id))
+      const repository = yield* spawn(repositoryOf)
+      const commit = yield* spawn(commitOf(repository, id))
       const context = yield* Effect.context<R>()
       return yield* GitWorktree.withDetachedWorktree(
-        root,
+        repository,
         `${scratchDirectory}/${id}`,
         commit,
         (host) =>

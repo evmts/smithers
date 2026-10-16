@@ -453,7 +453,7 @@ const checkout = (shadow: Shadow, host: string, commit: string) =>
   })
 
 const withDetachedWorktree = <A, E, R>(
-  root: string,
+  repository: Repository,
   prefix: string,
   commit: string,
   use: (host: string) => Effect.Effect<A, E, R>
@@ -461,12 +461,12 @@ const withDetachedWorktree = <A, E, R>(
   Effect.gen(function*() {
     // Allocate on execution, including when the same Effect is run twice.
     // Never remove an existing checkout: another call may still be using it.
-    const host = `${root.replace(/\/+$/, "")}/${prefix}-${globalThis.crypto.randomUUID()}`
+    const host = `${repository.root}/${prefix}-${globalThis.crypto.randomUUID()}`
     return yield* Effect.acquireUseRelease(
       Effect.succeed(host),
       () =>
         Effect.gen(function*() {
-          yield* withShadow(root, (shadow) => checkout(shadow, host, commit))
+          yield* withShadow(repository, (shadow) => checkout(shadow, host, commit))
           return yield* use(host)
         }),
       // A checkout left behind is a stale copy of the repository inside the

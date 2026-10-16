@@ -110,12 +110,17 @@ const opened = [
   `${configFile} --get-regexp ^core\\.(autocrlf|eol|safecrlf|filemode|symlinks|ignorecase|precomposeunicode)$`
 ]
 
+/**
+ * The host opens the workspace when it builds the store, before any agent runs;
+ * each operation opens it again and refuses a repository other than that one.
+ */
+const bound = [...opened, ...opened]
+
 const init = "git init --quiet --bare --template= --object-format=sha1 <shadow>"
 
 const checkout = (path: string, commit: string) => {
   const name = path.slice(path.lastIndexOf("/") + 1)
   return [
-    ...opened,
     init,
     `sh -c ${measureScript} sh /work/repo/.flows-checkpoints <shadow> /work ${cacheRoot}`,
     `sh -c set -eC; mkdir -- "$2" "$2/.git" "$2/.git/objects" "$2/.git/objects/info" "$2/.git/refs"; printf '%s\\n' "$3" > "$2/.git/HEAD"; printf '%s\\n' "$4" > "$2/.git/objects/info/alternates"; printf '%s' "$5" > "$2/.git/config" sh <shadow> <shadow>/${name} ${commit} ../../../../.git/objects [core]\n\trepositoryformatversion = 0\n\tbare = false\n`,
@@ -187,7 +192,7 @@ describe("Checkpoints.makeGit capture", () => {
     // And the commit is named in config, never with a ref: a ref is history,
     // and a checkpoint holds the agent's own edit.
     expect(lines(spawns)).toEqual([
-      ...opened,
+      ...bound,
       init,
       `${workspace} rev-parse --verify --quiet HEAD^{commit}`,
       // The copy takes the index's modification time before its bytes (#3431).
@@ -250,7 +255,7 @@ describe("Checkpoints.makeGit capture", () => {
     })))
 
     expect(failureOf(exit)?.code).toBe("invalid_input")
-    expect(spawns).toEqual([])
+    expect(lines(spawns)).toEqual(opened)
   })
 
   it("says so when git could not record the tree, and still removes the shadow", async () => {
@@ -352,7 +357,7 @@ describe("Checkpoints.makeGit materialize", () => {
       guestRoot: "/work/repo"
     })
     expect(lines(spawns)).toEqual([
-      ...opened,
+      ...bound,
       `${configFile} --get flows-checkpoint.cp-0-1`,
       ...checkout(checkoutPath(spawns), "abc123"),
       `rm -rf -- ${checkoutPath(spawns)}`
@@ -437,7 +442,7 @@ describe("Checkpoints.makeGit materialize", () => {
       return yield* checkpoints.materialize(Checkpoints.baseId, () => Effect.void)
     }))
 
-    expect(spawns[0]?.join(" ")).toContain("refs/flows/capture-base^{commit}")
+    expect(lines(spawns)[bound.length]).toContain("refs/flows/capture-base^{commit}")
   })
 
   it("falls back to HEAD when no capture base was recorded", async () => {
@@ -451,6 +456,7 @@ describe("Checkpoints.makeGit materialize", () => {
     }))
 
     expect(lines(spawns)).toEqual([
+      ...bound,
       `${workspace} rev-parse --verify --quiet refs/flows/capture-base^{commit}`,
       `${workspace} rev-parse --verify --quiet HEAD^{commit}`,
       ...checkout(checkoutPath(spawns), "head999"),
@@ -473,6 +479,7 @@ describe("Checkpoints.makeGit materialize", () => {
     // worse than not answering it.
     expect(failureOf(exit)?.code).toBe("not_found")
     expect(lines(spawns)).toEqual([
+      ...bound,
       `${workspace} rev-parse --verify --quiet refs/flows/absent^{commit}`
     ])
   })
@@ -485,7 +492,7 @@ describe("Checkpoints.makeGit materialize", () => {
     })))
 
     expect(failureOf(exit)?.code).toBe("invalid_input")
-    expect(spawns).toEqual([])
+    expect(lines(spawns)).toEqual(opened)
   })
 
   it("refuses a checkpoint the workspace config does not name", async () => {

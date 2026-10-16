@@ -83,7 +83,7 @@ describe("Checkpoints in a container with a filesystem of its own", () => {
         .pipe(Effect.provide(NodeServices.layer))
     )
     expect(exit._tag).toBe("Failure")
-    expect(JSON.stringify(exit)).toContain("No commit resolves from refs/flows/capture-base or HEAD")
+    expect(JSON.stringify(exit)).toContain(`${host} is not a git work tree`)
   }, 60_000)
 
   it("runs a container-bound bash call at the opening tree after an edit, inside the container", async () => {
