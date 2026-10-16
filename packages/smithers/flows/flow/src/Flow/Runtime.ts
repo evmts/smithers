@@ -39,9 +39,31 @@ export const intoResult = <A, E, R>(
     const captureDefects = Context.get(instance.flow.annotations, CaptureDefects)
     const suspendOnFailure = Context.get(instance.flow.annotations, SuspendOnFailure)
     return effect.pipe(
-      // so we can use external interruption to suspend the flow
-      Effect.forkChild({ startImmediately: true }),
-      Effect.flatMap((fiber) => Effect.onInterrupt(Fiber.join(fiber), () => Fiber.interrupt(fiber))),
+      // Acquire the child and install cleanup atomically. A body can signal
+      // readiness before forkChild returns; interruption there must still
+      // collect its cleanup failure instead of leaving it to supervision.
+      (body) =>
+        Effect.acquireUseRelease(
+          Effect.forkChild(Effect.interruptible(body), { startImmediately: true }),
+          (fiber) => Effect.interruptible(Fiber.join(fiber)),
+          (fiber, joined) => {
+            if (Exit.isSuccess(joined) || !Cause.hasInterruptsOnly(joined.cause)) return Effect.void
+            return Effect.gen(function*() {
+              yield* Fiber.interrupt(fiber)
+              const exit = yield* Fiber.await(fiber)
+              if (Exit.isFailure(exit)) {
+                const cleanup = exit.cause.reasons.filter((reason) => !Cause.isInterruptReason(reason))
+                if (cleanup.length > 0) {
+                  return yield* Effect.failCause(
+                    Cause.fromReasons<never>(
+                      cleanup.map((reason) => Cause.isFailReason(reason) ? Cause.makeDieReason(reason.error) : reason)
+                    )
+                  )
+                }
+              }
+            })
+          }
+        ),
       Effect.interruptible,
       suspendOnFailure
         ? Effect.catchCause((cause) => {
@@ -67,6 +89,14 @@ export const intoResult = <A, E, R>(
             Filter.fromPredicate(Cause.isInterruptReason)
           )
           const hasInterruptsOnly = interrupts.length === cause.reasons.length
+          // A captured failure is a successful Result. Returning it while the
+          // caller is stopping discards that value at interrupt restoration.
+          // Keep failed cleanup on the cause channel until it reaches the caller.
+          if (interrupts.length > 0 && !hasInterruptsOnly) {
+            return Effect.failCause(Cause.fromReasons<never>(cause.reasons.map((reason) =>
+              Cause.isFailReason(reason) ? Cause.makeDieReason(reason.error) : reason
+            )))
+          }
           const filtered = reasons.length === 0 ? cause : Cause.fromReasons(reasons)
           return instance.suspended && hasInterruptsOnly
             ? Effect.succeed(new Suspended({ cause: instance.cause }))

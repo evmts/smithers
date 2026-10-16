@@ -7,8 +7,10 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Action, Flow, FlowRuntime, RetryPolicy, StepIdentity } from "@smthrs/flow"
+import { Journal } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
 import { AttemptStore, RunStore } from "@smthrs/run-store"
+import * as Cause from "effect/Cause"
 import type * as Crypto from "effect/Crypto"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
@@ -162,3 +164,61 @@ describe("attemptTimeoutMs on the durable engine (issue #1804)", () => {
       expect(bodyRuns).toBe(2)
     }))
 })
+
+for (const kind of ["failure", "defect"] as const) {
+  it.effect(`journals stopped cleanup ${kind} and replays it without re-execution`, () =>
+    withRestart((makeEngine, _runs, attempts) =>
+      Effect.gen(function*() {
+        const journal = yield* Journal.Journal
+        const started = yield* Deferred.make<void>()
+        let executions = 0
+        const cleanup = "stopped-journal-cleanup-failed"
+        const action = Action.make({
+          name: `StoppedJournal/${kind}`,
+          error: Schema.String,
+          execute: Effect.sync(() => {
+            executions++
+          }).pipe(
+            Effect.andThen(Deferred.succeed(started, undefined)),
+            Effect.andThen(Effect.never),
+            Effect.onExit(() => kind === "failure" ? Effect.fail(cleanup) : Effect.die(new Error(cleanup)))
+          )
+        })
+        const flow = Flow.make(`StoppedJournalFlow/${kind}`, {
+          payload: {},
+          success: Schema.String,
+          body: opaqueHandlerBody
+        })
+        const handler = () =>
+          Effect.gen(function*() {
+            const fiber = yield* Effect.forkChild(action)
+            yield* Deferred.await(started)
+            yield* Fiber.interrupt(fiber)
+            const exit = yield* Fiber.await(fiber)
+            expect(Exit.isFailure(exit)).toBe(true)
+            if (Exit.isSuccess(exit)) return "unexpected success"
+            expect(Cause.hasInterrupts(exit.cause)).toBe(true)
+            expect(String(exit.cause)).toContain(cleanup)
+            return String(exit.cause)
+          })
+        const engine = yield* makeEngine
+        yield* engine.register(flow, handler)
+        const options = { executionId: `stopped-journal-${kind}`, payload: {} }
+        const result = yield* engine.execute(flow, options)
+        expect(result).toContain(cleanup)
+        yield* journal.flush
+        const entries = yield* journal.entries({ runId: options.executionId as never, limit: 100 })
+        const finished = entries.entries.filter((entry) => entry.eventType === "flows.engine.attempt-finished")
+        expect(finished).toHaveLength(1)
+        const attempt = finished[0]!.payload as { runId: string; stepKeyDigest: string; attempt: number; state: string }
+        expect(attempt.state).toBe("failed")
+        const recorded = Option.getOrThrow(yield* attempts.get(attempt))
+        expect(JSON.stringify(recorded.error)).toContain(cleanup)
+        expect(JSON.stringify(recorded.error)).toContain("Interrupt")
+        const restarted = yield* makeEngine
+        yield* restarted.register(flow, handler)
+        expect(yield* restarted.execute(flow, options)).toEqual(result)
+        expect(executions).toBe(1)
+      })
+    ))
+}

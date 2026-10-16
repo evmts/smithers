@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Action, Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { Cause, Clock, Effect, Exit, Fiber, Schema } from "effect"
+import { Cause, Clock, Deferred, Effect, Exit, Fiber, Schema } from "effect"
 import type * as Crypto from "effect/Crypto"
 import type * as Scope from "effect/Scope"
 import { TestClock } from "effect/testing"
@@ -333,4 +333,34 @@ describe("heartbeatTimeoutMs", () => {
     }))
 
   it.effect("is a no-op outside a heartbeat-bounded attempt", () => Action.heartbeat)
+})
+
+describe("stopped action cleanup", () => {
+  for (const kind of ["failure", "defect"] as const) {
+    for (const afterYield of [false, true]) {
+      effect(`preserves interruption and a finalizer ${kind} (yield: ${afterYield})`, () =>
+        Effect.gen(function*() {
+          const started = yield* Deferred.make<void>()
+          const cleanup = new Error("stopped-cleanup-failed")
+          const action = Action.make({
+            name: `StoppedCleanup/${kind}`,
+            error: Schema.String,
+            execute: Deferred.succeed(started, undefined).pipe(
+              Effect.andThen(Effect.never),
+              Effect.onExit(() => kind === "failure" ? Effect.fail("stopped-cleanup-failed") : Effect.die(cleanup))
+            )
+          })
+          const fiber = yield* Effect.forkChild(action)
+          yield* Deferred.await(started)
+          if (afterYield) yield* Effect.yieldNow
+          yield* Fiber.interrupt(fiber)
+          const exit = yield* Fiber.await(fiber)
+          expect(Exit.isFailure(exit)).toBe(true)
+          if (Exit.isFailure(exit)) {
+            expect(Cause.hasInterrupts(exit.cause)).toBe(true)
+            expect(String(exit.cause)).toContain("stopped-cleanup-failed")
+          }
+        }))
+    }
+  }
 })

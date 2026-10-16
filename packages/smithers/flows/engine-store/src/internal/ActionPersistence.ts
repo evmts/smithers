@@ -621,20 +621,20 @@ const inertJson = (value: unknown, budget: InertJsonBudget): unknown => {
           }
 
           const output: Record<string, InertJsonValue> = {}
-          // This engine-owned error's native Error.message is non-enumerable,
-          // but is part of the durable schema used to classify a landing
-          // conflict. Preserve that one data field, never getters, stacks, or
-          // arbitrary hidden properties. It spends the same bounded budget.
+          // Native Error.message is non-enumerable but identifies failed
+          // cleanup. Keep that own data field (also used by landing conflicts),
+          // never getters, stacks or other hidden properties, under the same budget.
           const tag = Object.getOwnPropertyDescriptor(current, "_tag")
-          const conflictMessage = tag !== undefined && "value" in tag &&
-            tag.value === WorkspaceSandbox.MaterializationConflict.identifier
+          const preserveMessage = HostReflection.host.isNativeError(current) ||
+            (tag !== undefined && "value" in tag &&
+              tag.value === WorkspaceSandbox.MaterializationConflict.identifier)
           for (const key of Reflect.ownKeys(current)) {
             if (!spendEnumeratedKey(budget, key)) return inertJsonRejected
             if (typeof key !== "string") continue
             const descriptor = Object.getOwnPropertyDescriptor(current, key)
             /* v8 ignore next -- A key returned by Reflect.ownKeys exists on a non-proxy object. */
             if (descriptor === undefined) continue
-            if ((!descriptor.enumerable && !(key === "message" && conflictMessage)) || !("value" in descriptor)) {
+            if ((!descriptor.enumerable && !(key === "message" && preserveMessage)) || !("value" in descriptor)) {
               continue
             }
             // `message` and `stack` are observability text, never a field replay
@@ -2367,354 +2367,361 @@ export const make = (deps: Dependencies) => {
             : opened !== undefined
             ? opened.value
             : Option.getOrUndefined(yield* Effect.serviceOption(WorkspaceSandbox.WorkspaceSandbox))
-          const isolated = sandbox === undefined || input.metadata === undefined
-            ? undefined
-            : yield* SandboxedExecution.execute({
-              sandbox,
-              descriptor: input.metadata,
-              workflow: execute(input, stepKeyDigest)
-            }).pipe(Effect.exit)
-          // The settlement is the isolated execution's whole story; the
-          // attempt's outcome is only its `result`, so the ordinary failure
-          // handling below is unchanged by which path produced it.
-          const settlement = isolated !== undefined && Exit.isSuccess(isolated) ? isolated.value : undefined
-          /**
-           * THE EFFECT BOUNDARY. An irreversible dispatch can change the world
-           * outside this journal, and a compensable one mutates the workspace
-           * a rewind must restore — both are wrapped: `intended` commits
-           * before the body starts, and the terminal record commits after it
-           * settles — `succeeded` with the recorded result, `unknown` for a
-           * failure, defect, or interruption whose external outcome nobody can
-           * testify to.
-           *
-           * The compensable record is what makes the tier-2 restore REAL: a
-           * rewind classifies the doomed suffix by its boundary rows, so a
-           * compensable action that recorded only its pre-image snapshot left
-           * nothing for the rewind to restore against — the suffix archived
-           * "completed" while the tree kept the discarded future's bytes. The
-           * record names the attempt's anchored `changeId` so the evidence and
-           * the pointer travel together.
-           *
-           * The settlement is uninterruptible: cancellation must not strand an
-           * effect that has already crossed without at least attempting to say
-           * so. Sealed work is deliberately outside this — a sealed result is
-           * cache evidence, and replay answers it from the recorded cache
-           * entry rather than an operator decision.
-           */
-          const effect = input.tier === "irreversible" || input.tier === "compensable"
-            ? {
-              id: `${deps.runId}:${stepKeyDigest}:${input.attempt}`,
-              kind: actionKind(input.action),
-              tier: input.tier,
-              runId: deps.runId,
-              lineageId,
-              sourceId: deps.sourceId,
-              attempt: input.attempt,
-              ...(deps.idempotencyKey === undefined ? {} : { idempotencyKey: deps.idempotencyKey }),
-              ...(snapshotId === undefined ? {} : { changeId: snapshotId })
-            } satisfies EffectRecords.Descriptor
-            : undefined
-          /**
-           * Whether a failing exit ends this dispatch in a durable PARK rather
-           * than a settlement (N-08). A body that reaches a wait point marks
-           * its instance suspended and interrupts, so an interrupt-only exit
-           * under a suspended instance is a run that parked. Quarantine from
-           * a nested action also parks its wrapper: resume must re-enter it
-           * to consume the inner action's preserved outcome. Both the effect
-           * boundary and the attempt row read it: a park closes neither.
-           */
-          const parked = (cause: Cause.Cause<unknown>) =>
-            Effect.map(
-              Effect.serviceOption(FlowRuntime.FlowInstance),
-              (instance) =>
-                evidenceQuarantined(cause) !== undefined ||
-                (Option.getOrUndefined(instance)?.suspended === true && Cause.hasInterruptsOnly(cause))
-            )
-          /**
-           * The row's meta as this dispatch last wrote it. The crossing writes
-           * below patch `meta` wholesale, so everything the attempt already
-           * carries — the adopted incarnation's fields, the tier declaration,
-           * the compensable pre-image — has to be carried across with it.
-           */
-          const dispatchMeta = {
-            ...runningMeta,
-            ...declarationMeta,
-            admittedBy: deps.owner,
-            ...snapshotMeta
-          } satisfies AttemptMeta
-          /**
-           * Commits a crossing into the attempt row, with the boundary record
-           * that describes it when there is one, as ONE transaction.
-           *
-           * The row is what recovery reads (see `AttemptMeta.effectCrossing`),
-           * so a crash must never leave the two disagreeing: a record without
-           * the row would re-dispatch a crossed effect, and a row without the
-           * record would settle a run from evidence the audit cannot show. A
-           * refused patch is a lost fence, surfaced as self-interruption like
-           * every other fence outcome here, and reported from OUTSIDE the
-           * transaction so the transaction's own failures stay storage
-           * failures.
-           */
-          const recordCrossing = (
-            crossing: NonNullable<AttemptMeta["effectCrossing"]>,
-            patch: AttemptStore.AttemptPatch,
-            record?: JournalEvent.Input
-          ) =>
-            Effect.flatMap(
-              atomically(Effect.gen(function*() {
-                if (record !== undefined) {
-                  yield* emitLifecycle(record)
-                }
-                const patched = yield* attempts.patch(
-                  attemptId,
-                  {
-                    ...patch,
-                    meta: attemptPayload({ ...dispatchMeta, effectCrossing: crossing } satisfies AttemptMeta)
-                  },
-                  deps.owner
-                )
-                return patched._tag === "Patched"
-              })),
-              (recorded) => recorded ? Effect.void : Effect.interrupt
-            )
-          const dispatch = effect === undefined
-            ? execute(input, stepKeyDigest)
-            : Effect.uninterruptibleMask((restore) =>
-              Effect.gen(function*() {
-                yield* recordCrossing("intended", {}, EffectRecords.boundary(effect, "intended"))
-                const exit = yield* Effect.exit(restore(execute(input, stepKeyDigest)))
-                yield* Exit.isSuccess(exit)
-                  ? recordCrossing(
-                    "succeeded",
-                    { outcome: attemptPayload(exit.value) },
-                    EffectRecords.boundary(effect, "succeeded", exit.value)
-                  )
-                  // A park leaves the boundary OPEN. The terminal record says
-                  // the effect finished and nobody can testify to how; a parked
-                  // dispatch has not finished, and the next drive re-enters the
-                  // SAME attempt. Writing it here made a routine park and
-                  // resume read `intended, unknown, intended, succeeded` in the
-                  // journal a rewind classifies a doomed suffix from.
-                  //
-                  // The park is still recorded in the ROW, with no record to
-                  // pair it with: a park and a SIGKILL mid-body leave the same
-                  // `running` row and the same open boundary, and only this
-                  // says which one happened. Without it the resumed wait looked
-                  // like an unresolved crossing and the refusal above made every
-                  // keyless irreversible wait unresumable.
-                  : Effect.flatMap(
-                    parked(exit.cause),
-                    (isPark) =>
-                      isPark
-                        ? recordCrossing("parked", {})
-                        : emitLifecycle(EffectRecords.boundary(effect, "unknown")).pipe(
-                          Effect.catchCause((cause) =>
-                            Effect.logWarning("engine-store: failed to persist unknown effect boundary", cause).pipe(
-                              Effect.annotateLogs({ runId: deps.runId, step: input.key })
-                            )
-                          )
-                        )
-                  )
-                return yield* exit
-              })
-            )
-          const outcome = isolated === undefined
-            ? yield* dispatch.pipe(Effect.exit)
-            : Exit.map(isolated, (settled) => settled.result)
-          if (Exit.isFailure(outcome)) {
-            /**
-             * A DURABLE PARK IS NOT A SETTLEMENT (N-08). A body that reaches a
-             * wait point ends its fiber by self-interruption — `Flow.suspend`
-             * marks the instance and interrupts — so an interrupt-only exit
-             * from a dispatch whose instance is suspended describes a run that
-             * parked, not an attempt that failed. Settling it below wrote a
-             * `failed` row carrying the interrupt cause, and the replay branch
-             * above then rethrew that cause on every later drive: the run died
-             * with "All fibers interrupted without error" instead of resuming.
-             * The memory engine kept no attempt row and so never saw it, which
-             * is why `HumanTask.timeoutMs`, `Action.raceAll`, and every durable
-             * wait raced against a timer worked in memory and not on SQLite.
-             *
-             * The row therefore stays `running`, which is exactly the shape the
-             * adoption path above re-enters: the next drive re-executes the
-             * body under the SAME attempt number, so the park costs nothing
-             * against the retry budget and the raced deferreds re-register
-             * against their persisted completions. `running` is also the only
-             * in-progress state the attempt store admits, so a later settlement
-             * of this attempt is an ordinary fenced `finish`.
-             */
-            if (yield* parked(outcome.cause)) {
-              return yield* Effect.failCause(outcome.cause)
-            }
-            const finishedAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
-            // A boundary violation raised while the body ran is classified
-            // like one raised at settle time (issue #109): the row records it
-            // so a post-crash replay can re-emit the violation record, which
-            // the persisted cause alone cannot distinguish.
-            const violation = declarationViolated(outcome.cause)
-            const finished = yield* settleAttempt({
-              ...attemptId,
-              state: "failed",
-              finishedAtMs,
-              error: attemptPayload(persistCause(outcome.cause)),
-              meta: attemptPayload(
-                {
-                  ...declarationMeta,
-                  ...(violation ? { hardViolation: true as const } : {}),
-                  ...snapshotMeta
-                } satisfies AttemptMeta
-              )
-            }, [
-              ...(violation
-                ? [
-                  JournalRecords.hardViolation(attemptSource("hard-violation"), {
-                    ...attemptId,
-                    error: outcome.cause
-                  })
-                ]
-                : []),
-              JournalRecords.attemptFinished(attemptSource("finished"), { ...attemptId, state: "failed" })
-            ])
-            if (!finished) {
-              return yield* Effect.interrupt
-            }
-            return yield* Effect.failCause(outcome.cause)
-          }
-          if (settlement !== undefined) {
-            // Forensics requires both halves as journal facts, never inferred
-            // from an absence: what the
-            // transaction proposed, and that it reached the host.
-            yield* emitConverging(
-              JournalRecords.diffBundleCaptured(attemptSource("diff-bundle"), {
-                ...attemptId,
-                bundleIdentity: settlement.bundleIdentity,
-                changedPaths: settlement.files.map((change) => change.path),
-                deviations: settlement.deviations
-              })
-            )
-            // THE DISPATCH STAGE. Queued effects fire here — after copy-back
-            // settled, outside the transaction, deduplicated by idempotency
-            // key so a body that queued the same key twice, and a bundle that
-            // rebased before it landed, both send exactly once.
-            const dispatcher = Option.getOrUndefined(
-              yield* Effect.serviceOption(WorkspaceSandbox.EffectDispatcher)
-            )
-            const deduped = new Set<string>()
-            for (const queued of settlement.effects) {
-              if (deduped.has(queued.idempotencyKey)) continue
-              deduped.add(queued.idempotencyKey)
-              if (dispatcher !== undefined) yield* dispatcher.dispatch(queued)
-            }
-            yield* emitConverging(
-              JournalRecords.copyBackSettled(attemptSource("copy-back"), {
-                ...attemptId,
-                bundleIdentity: settlement.bundleIdentity,
-                rebases: settlement.rebases,
-                queued: [...deduped],
-                dispatched: dispatcher === undefined ? [] : [...deduped]
-              })
-            )
-          }
-
-          const settled = prepared === undefined || boundary === undefined
-            ? undefined
-            : yield* boundary.settle(prepared).pipe(Effect.exit)
-          yield* settled === undefined ? Effect.void : Metric.update(
-            EngineStoreMetrics.boundarySettlement[
-              Exit.isSuccess(settled)
-                ? settled.value.deviation === undefined ? "Clean" : "Deviation"
-                : settlementViolated(settled.cause)
-                ? "Violation"
-                : "Refused"
-            ],
-            1
-          )
-          if (settled !== undefined && Exit.isFailure(settled)) {
-            return yield* failBoundaryAttempt(settled.cause)
-          }
-          const settledEvidence = settled === undefined ? undefined : settled.value
-          /**
-           * THE RETIRED LIMITATION. `StepBoundary`'s filesystem layer omits
-           * `wholeTreeWritesVerified` because it can only re-measure paths it
-           * was told about, and only `layerTest` ever set it — so under the
-           * production composition nothing could enter the shared cache.
-           *
-           * An isolated execution answers the question the boundary could not:
-           * the transaction *is* the tree, so a write outside the declared set
-           * is a map comparison rather than an inference. The claim is made
-           * here, by the code that knows the body ran in isolation, and only
-           * when the whole-tree diff found no deviation — the same whole-tree
-           * view also supplies a deviation the boundary's declared-read scan
-           * would have missed entirely.
-           */
-          const evidence = settledEvidence === undefined || settlement === undefined
-            ? settledEvidence
-            : {
-              ...settledEvidence,
-              ...(settlement.deviations.length === 0
+          // Observe interruption before restoring it to the caller, and settle
+          // the attempt while masked so failed cleanup survives in the journal.
+          return yield* Effect.uninterruptibleMask((restore) =>
+            Effect.gen(function*() {
+              const isolated = sandbox === undefined || input.metadata === undefined
+                ? undefined
+                : yield* restore(SandboxedExecution.execute({
+                  sandbox,
+                  descriptor: input.metadata,
+                  workflow: execute(input, stepKeyDigest)
+                })).pipe(Effect.exit)
+              // The settlement is the isolated execution's whole story; the
+              // attempt's outcome is only its `result`, so the ordinary failure
+              // handling below is unchanged by which path produced it.
+              const settlement = isolated !== undefined && Exit.isSuccess(isolated) ? isolated.value : undefined
+              /**
+               * THE EFFECT BOUNDARY. An irreversible dispatch can change the world
+               * outside this journal, and a compensable one mutates the workspace
+               * a rewind must restore — both are wrapped: `intended` commits
+               * before the body starts, and the terminal record commits after it
+               * settles — `succeeded` with the recorded result, `unknown` for a
+               * failure, defect, or interruption whose external outcome nobody can
+               * testify to.
+               *
+               * The compensable record is what makes the tier-2 restore REAL: a
+               * rewind classifies the doomed suffix by its boundary rows, so a
+               * compensable action that recorded only its pre-image snapshot left
+               * nothing for the rewind to restore against — the suffix archived
+               * "completed" while the tree kept the discarded future's bytes. The
+               * record names the attempt's anchored `changeId` so the evidence and
+               * the pointer travel together.
+               *
+               * The settlement is uninterruptible: cancellation must not strand an
+               * effect that has already crossed without at least attempting to say
+               * so. Sealed work is deliberately outside this — a sealed result is
+               * cache evidence, and replay answers it from the recorded cache
+               * entry rather than an operator decision.
+               */
+              const effect = input.tier === "irreversible" || input.tier === "compensable"
                 ? {
-                  wholeTreeWritesVerified: true as const,
-                  // `StepSandbox` is the injectable façade; the
-                  // `WorkspaceSandbox` service is the same isolated
-                  // transaction backend and proves the same read property.
-                  hermeticReadsVerified: true as const
+                  id: `${deps.runId}:${stepKeyDigest}:${input.attempt}`,
+                  kind: actionKind(input.action),
+                  tier: input.tier,
+                  runId: deps.runId,
+                  lineageId,
+                  sourceId: deps.sourceId,
+                  attempt: input.attempt,
+                  ...(deps.idempotencyKey === undefined ? {} : { idempotencyKey: deps.idempotencyKey }),
+                  ...(snapshotId === undefined ? {} : { changeId: snapshotId })
+                } satisfies EffectRecords.Descriptor
+                : undefined
+              /**
+               * Whether a failing exit ends this dispatch in a durable PARK rather
+               * than a settlement (N-08). A body that reaches a wait point marks
+               * its instance suspended and interrupts, so an interrupt-only exit
+               * under a suspended instance is a run that parked. Quarantine from
+               * a nested action also parks its wrapper: resume must re-enter it
+               * to consume the inner action's preserved outcome. Both the effect
+               * boundary and the attempt row read it: a park closes neither.
+               */
+              const parked = (cause: Cause.Cause<unknown>) =>
+                Effect.map(
+                  Effect.serviceOption(FlowRuntime.FlowInstance),
+                  (instance) =>
+                    evidenceQuarantined(cause) !== undefined ||
+                    (Option.getOrUndefined(instance)?.suspended === true && Cause.hasInterruptsOnly(cause))
+                )
+              /**
+               * The row's meta as this dispatch last wrote it. The crossing writes
+               * below patch `meta` wholesale, so everything the attempt already
+               * carries — the adopted incarnation's fields, the tier declaration,
+               * the compensable pre-image — has to be carried across with it.
+               */
+              const dispatchMeta = {
+                ...runningMeta,
+                ...declarationMeta,
+                admittedBy: deps.owner,
+                ...snapshotMeta
+              } satisfies AttemptMeta
+              /**
+               * Commits a crossing into the attempt row, with the boundary record
+               * that describes it when there is one, as ONE transaction.
+               *
+               * The row is what recovery reads (see `AttemptMeta.effectCrossing`),
+               * so a crash must never leave the two disagreeing: a record without
+               * the row would re-dispatch a crossed effect, and a row without the
+               * record would settle a run from evidence the audit cannot show. A
+               * refused patch is a lost fence, surfaced as self-interruption like
+               * every other fence outcome here, and reported from OUTSIDE the
+               * transaction so the transaction's own failures stay storage
+               * failures.
+               */
+              const recordCrossing = (
+                crossing: NonNullable<AttemptMeta["effectCrossing"]>,
+                patch: AttemptStore.AttemptPatch,
+                record?: JournalEvent.Input
+              ) =>
+                Effect.flatMap(
+                  atomically(Effect.gen(function*() {
+                    if (record !== undefined) {
+                      yield* emitLifecycle(record)
+                    }
+                    const patched = yield* attempts.patch(
+                      attemptId,
+                      {
+                        ...patch,
+                        meta: attemptPayload({ ...dispatchMeta, effectCrossing: crossing } satisfies AttemptMeta)
+                      },
+                      deps.owner
+                    )
+                    return patched._tag === "Patched"
+                  })),
+                  (recorded) => recorded ? Effect.void : Effect.interrupt
+                )
+              const dispatch = effect === undefined
+                ? execute(input, stepKeyDigest)
+                : Effect.uninterruptibleMask((restore) =>
+                  Effect.gen(function*() {
+                    yield* recordCrossing("intended", {}, EffectRecords.boundary(effect, "intended"))
+                    const exit = yield* Effect.exit(restore(execute(input, stepKeyDigest)))
+                    yield* Exit.isSuccess(exit)
+                      ? recordCrossing(
+                        "succeeded",
+                        { outcome: attemptPayload(exit.value) },
+                        EffectRecords.boundary(effect, "succeeded", exit.value)
+                      )
+                      // A park leaves the boundary OPEN. The terminal record says
+                      // the effect finished and nobody can testify to how; a parked
+                      // dispatch has not finished, and the next drive re-enters the
+                      // SAME attempt. Writing it here made a routine park and
+                      // resume read `intended, unknown, intended, succeeded` in the
+                      // journal a rewind classifies a doomed suffix from.
+                      //
+                      // The park is still recorded in the ROW, with no record to
+                      // pair it with: a park and a SIGKILL mid-body leave the same
+                      // `running` row and the same open boundary, and only this
+                      // says which one happened. Without it the resumed wait looked
+                      // like an unresolved crossing and the refusal above made every
+                      // keyless irreversible wait unresumable.
+                      : Effect.flatMap(
+                        parked(exit.cause),
+                        (isPark) =>
+                          isPark
+                            ? recordCrossing("parked", {})
+                            : emitLifecycle(EffectRecords.boundary(effect, "unknown")).pipe(
+                              Effect.catchCause((cause) =>
+                                Effect.logWarning("engine-store: failed to persist unknown effect boundary", cause)
+                                  .pipe(
+                                    Effect.annotateLogs({ runId: deps.runId, step: input.key })
+                                  )
+                              )
+                            )
+                      )
+                    return yield* exit
+                  })
+                )
+              const outcome = isolated === undefined
+                ? yield* restore(dispatch).pipe(Effect.exit)
+                : Exit.map(isolated, (settled) => settled.result)
+              if (Exit.isFailure(outcome)) {
+                /**
+                 * A DURABLE PARK IS NOT A SETTLEMENT (N-08). A body that reaches a
+                 * wait point ends its fiber by self-interruption — `Flow.suspend`
+                 * marks the instance and interrupts — so an interrupt-only exit
+                 * from a dispatch whose instance is suspended describes a run that
+                 * parked, not an attempt that failed. Settling it below wrote a
+                 * `failed` row carrying the interrupt cause, and the replay branch
+                 * above then rethrew that cause on every later drive: the run died
+                 * with "All fibers interrupted without error" instead of resuming.
+                 * The memory engine kept no attempt row and so never saw it, which
+                 * is why `HumanTask.timeoutMs`, `Action.raceAll`, and every durable
+                 * wait raced against a timer worked in memory and not on SQLite.
+                 *
+                 * The row therefore stays `running`, which is exactly the shape the
+                 * adoption path above re-enters: the next drive re-executes the
+                 * body under the SAME attempt number, so the park costs nothing
+                 * against the retry budget and the raced deferreds re-register
+                 * against their persisted completions. `running` is also the only
+                 * in-progress state the attempt store admits, so a later settlement
+                 * of this attempt is an ordinary fenced `finish`.
+                 */
+                if (yield* parked(outcome.cause)) {
+                  return yield* Effect.failCause(outcome.cause)
                 }
-                : {
-                  deviation: {
-                    _tag: "ExpectedSetDeviation" as const,
-                    paths: settlement.deviations,
-                    diffIdentity: settlement.bundleIdentity
-                  }
-                })
-            }
-          const finishedAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
-          // The declared read set is the key input; the prepare-time
-          // measurement is the evidence it described reality when the body
-          // ran (issue #106). A mismatch means the result was computed from
-          // different inputs than the key claims — the attempt itself is
-          // fine, but the completion must never enter the shared cache.
-          const readSetVerified = prepared !== undefined && StepBoundary.readSetMatches(prepared)
-          const meta: AttemptMeta = {
-            ...declarationMeta,
-            ...snapshotMeta,
-            ...(evidence === undefined ? {} : { boundary: evidence }),
-            ...(readSetVerified ? { readSetVerified: true as const } : {})
-          }
-          const finished = yield* settleAttempt(
-            {
-              ...attemptId,
-              state: "succeeded",
-              finishedAtMs,
-              outcome: attemptPayload(outcome.value),
-              meta: attemptPayload(meta)
-            },
-            [
-              ...(evidence?.deviation === undefined ? [] : [
-                JournalRecords.expectedSetDeviation(attemptSource("deviation"), {
+                const finishedAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
+                // A boundary violation raised while the body ran is classified
+                // like one raised at settle time (issue #109): the row records it
+                // so a post-crash replay can re-emit the violation record, which
+                // the persisted cause alone cannot distinguish.
+                const violation = declarationViolated(outcome.cause)
+                const finished = yield* settleAttempt({
                   ...attemptId,
-                  ...evidence.deviation
-                })
-              ]),
-              JournalRecords.attemptFinished(attemptSource("finished"), { ...attemptId, state: "succeeded" })
-            ]
-          )
-          if (!finished) return yield* Effect.interrupt
+                  state: "failed",
+                  finishedAtMs,
+                  error: attemptPayload(persistCause(outcome.cause)),
+                  meta: attemptPayload(
+                    {
+                      ...declarationMeta,
+                      ...(violation ? { hardViolation: true as const } : {}),
+                      ...snapshotMeta
+                    } satisfies AttemptMeta
+                  )
+                }, [
+                  ...(violation
+                    ? [
+                      JournalRecords.hardViolation(attemptSource("hard-violation"), {
+                        ...attemptId,
+                        error: outcome.cause
+                      })
+                    ]
+                    : []),
+                  JournalRecords.attemptFinished(attemptSource("finished"), { ...attemptId, state: "failed" })
+                ])
+                if (!finished) {
+                  return yield* Effect.interrupt
+                }
+                return yield* Effect.failCause(outcome.cause)
+              }
+              if (settlement !== undefined) {
+                // Forensics requires both halves as journal facts, never inferred
+                // from an absence: what the
+                // transaction proposed, and that it reached the host.
+                yield* emitConverging(
+                  JournalRecords.diffBundleCaptured(attemptSource("diff-bundle"), {
+                    ...attemptId,
+                    bundleIdentity: settlement.bundleIdentity,
+                    changedPaths: settlement.files.map((change) => change.path),
+                    deviations: settlement.deviations
+                  })
+                )
+                // THE DISPATCH STAGE. Queued effects fire here — after copy-back
+                // settled, outside the transaction, deduplicated by idempotency
+                // key so a body that queued the same key twice, and a bundle that
+                // rebased before it landed, both send exactly once.
+                const dispatcher = Option.getOrUndefined(
+                  yield* Effect.serviceOption(WorkspaceSandbox.EffectDispatcher)
+                )
+                const deduped = new Set<string>()
+                for (const queued of settlement.effects) {
+                  if (deduped.has(queued.idempotencyKey)) continue
+                  deduped.add(queued.idempotencyKey)
+                  if (dispatcher !== undefined) yield* dispatcher.dispatch(queued)
+                }
+                yield* emitConverging(
+                  JournalRecords.copyBackSettled(attemptSource("copy-back"), {
+                    ...attemptId,
+                    bundleIdentity: settlement.bundleIdentity,
+                    rebases: settlement.rebases,
+                    queued: [...deduped],
+                    dispatched: dispatcher === undefined ? [] : [...deduped]
+                  })
+                )
+              }
 
-          const admission = CacheAdmission.completion(cacheDeclaration, meta, false)
-          if (admission._tag === "PublishCompletion") {
-            yield* recordCache({ result: outcome.value, admission, createdAtMs: finishedAtMs })
-          } else if (admission.reason === "unverified-recorded-reads") {
-            // Visible, not silent (issue #106): the run continues on its
-            // own result, but the stale declaration is journalled so the
-            // missing cache entry is explainable.
-            yield* emitConverging(
-              JournalRecords.cacheProvenance(cacheSource("unverified_read_set"), {
-                keyDigest,
-                action: "unverified_read_set"
-              })
-            )
-          }
-          return outcome.value
+              const settled = prepared === undefined || boundary === undefined
+                ? undefined
+                : yield* boundary.settle(prepared).pipe(Effect.exit)
+              yield* settled === undefined ? Effect.void : Metric.update(
+                EngineStoreMetrics.boundarySettlement[
+                  Exit.isSuccess(settled)
+                    ? settled.value.deviation === undefined ? "Clean" : "Deviation"
+                    : settlementViolated(settled.cause)
+                    ? "Violation"
+                    : "Refused"
+                ],
+                1
+              )
+              if (settled !== undefined && Exit.isFailure(settled)) {
+                return yield* failBoundaryAttempt(settled.cause)
+              }
+              const settledEvidence = settled === undefined ? undefined : settled.value
+              /**
+               * THE RETIRED LIMITATION. `StepBoundary`'s filesystem layer omits
+               * `wholeTreeWritesVerified` because it can only re-measure paths it
+               * was told about, and only `layerTest` ever set it — so under the
+               * production composition nothing could enter the shared cache.
+               *
+               * An isolated execution answers the question the boundary could not:
+               * the transaction *is* the tree, so a write outside the declared set
+               * is a map comparison rather than an inference. The claim is made
+               * here, by the code that knows the body ran in isolation, and only
+               * when the whole-tree diff found no deviation — the same whole-tree
+               * view also supplies a deviation the boundary's declared-read scan
+               * would have missed entirely.
+               */
+              const evidence = settledEvidence === undefined || settlement === undefined
+                ? settledEvidence
+                : {
+                  ...settledEvidence,
+                  ...(settlement.deviations.length === 0
+                    ? {
+                      wholeTreeWritesVerified: true as const,
+                      // `StepSandbox` is the injectable façade; the
+                      // `WorkspaceSandbox` service is the same isolated
+                      // transaction backend and proves the same read property.
+                      hermeticReadsVerified: true as const
+                    }
+                    : {
+                      deviation: {
+                        _tag: "ExpectedSetDeviation" as const,
+                        paths: settlement.deviations,
+                        diffIdentity: settlement.bundleIdentity
+                      }
+                    })
+                }
+              const finishedAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
+              // The declared read set is the key input; the prepare-time
+              // measurement is the evidence it described reality when the body
+              // ran (issue #106). A mismatch means the result was computed from
+              // different inputs than the key claims — the attempt itself is
+              // fine, but the completion must never enter the shared cache.
+              const readSetVerified = prepared !== undefined && StepBoundary.readSetMatches(prepared)
+              const meta: AttemptMeta = {
+                ...declarationMeta,
+                ...snapshotMeta,
+                ...(evidence === undefined ? {} : { boundary: evidence }),
+                ...(readSetVerified ? { readSetVerified: true as const } : {})
+              }
+              const finished = yield* settleAttempt(
+                {
+                  ...attemptId,
+                  state: "succeeded",
+                  finishedAtMs,
+                  outcome: attemptPayload(outcome.value),
+                  meta: attemptPayload(meta)
+                },
+                [
+                  ...(evidence?.deviation === undefined ? [] : [
+                    JournalRecords.expectedSetDeviation(attemptSource("deviation"), {
+                      ...attemptId,
+                      ...evidence.deviation
+                    })
+                  ]),
+                  JournalRecords.attemptFinished(attemptSource("finished"), { ...attemptId, state: "succeeded" })
+                ]
+              )
+              if (!finished) return yield* Effect.interrupt
+
+              const admission = CacheAdmission.completion(cacheDeclaration, meta, false)
+              if (admission._tag === "PublishCompletion") {
+                yield* recordCache({ result: outcome.value, admission, createdAtMs: finishedAtMs })
+              } else if (admission.reason === "unverified-recorded-reads") {
+                // Visible, not silent (issue #106): the run continues on its
+                // own result, but the stale declaration is journalled so the
+                // missing cache entry is explainable.
+                yield* emitConverging(
+                  JournalRecords.cacheProvenance(cacheSource("unverified_read_set"), {
+                    keyDigest,
+                    action: "unverified_read_set"
+                  })
+                )
+              }
+              return outcome.value
+            })
+          )
         })
       )
     }).pipe(

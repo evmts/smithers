@@ -226,10 +226,24 @@ const makeInline = <
       })
     },
     execute: executeWithInfraRetry,
-    executeEncoded: Effect.matchEffect(executeWithInfraRetry, {
-      onFailure: (error) => Effect.flatMap(Effect.orDie(Schema.encodeEffect(errorSchemaJson)(error)), Effect.fail),
-      onSuccess: (value) => Effect.orDie(Schema.encodeEffect(successSchemaJson)(value))
-    })
+    executeEncoded: Effect.matchEffect(
+      // Recovery handlers in Effect discard typed reasons during interruption.
+      // Preserve failed cleanup as defects before entering the encoder.
+      Effect.onExit(
+        executeWithInfraRetry,
+        (exit) => {
+          if (Exit.isSuccess(exit) || !Cause.hasInterrupts(exit.cause)) return Effect.void
+          const failures = exit.cause.reasons.filter(Cause.isFailReason)
+          return failures.length === 0 ? Effect.void : Effect.failCause(
+            Cause.fromReasons(failures.map((reason) => Cause.makeDieReason(reason.error)))
+          )
+        }
+      ),
+      {
+        onFailure: (error) => Effect.flatMap(Effect.orDie(Schema.encodeEffect(errorSchemaJson)(error)), Effect.fail),
+        onSuccess: (value) => Effect.orDie(Schema.encodeEffect(successSchemaJson)(value))
+      }
+    )
   } as any
   execute = makeExecute(self)
   return self
