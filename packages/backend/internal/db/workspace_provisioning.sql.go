@@ -47,6 +47,18 @@ JOIN repositories r ON r.id = w.repository_id
 LEFT JOIN users u ON u.id = r.user_id
 LEFT JOIN organizations o ON o.id = r.org_id
 WHERE w.deleted_at IS NULL AND (w.status IN ('pending','starting','releasing') OR (w.status='failed' AND w.provisioning_stage='start_cleanup_pending')
+ -- A release this API's predecessor could not confirm published a terminal
+ -- 'failed' with no cleanup stage, which was in no backlog, while deliberately
+ -- retaining vm_id for the disk and the unfinished capture -- so its guest kept
+ -- running and kept its compute reservation with nothing left to look at it.
+ -- This disjunct lists exactly that writer's rows, identified by the sentence
+ -- it records, so reconcileInterruptedReleaseStop can finish the stop the
+ -- release intended. It is NOT a failed-workspace sweep: any other failure
+ -- reason, any recorded cleanup stage and any unbound placement are excluded,
+ -- and the row leaves this backlog for good once the stop is confirmed.
+ OR (w.status='failed' AND w.provisioning_stage='' AND w.vm_id<>''
+     AND w.failure_code='conflict'
+     AND w.failure_message='workspace release interrupted by host restart')
  OR (w.status='running' AND EXISTS (SELECT 1 FROM workspace_sessions s WHERE s.workspace_id=w.id AND s.status IN ('pending','starting'))))
 AND (w.status IN ('running','releasing','failed') OR w.updated_at < now()-interval '10 minutes')
 AND NOT EXISTS (SELECT 1 FROM workspace_children c WHERE c.workspace_id=w.id)
