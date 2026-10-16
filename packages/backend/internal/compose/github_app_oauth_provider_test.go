@@ -167,3 +167,17 @@ func TestGitHubSetupBudgetSharesAdmissionAndPreservesRedirectPolicy(t *testing.T
 		})
 	}
 }
+
+func TestGitHubAppCredentialCompositionRejectsHostedEnvironmentMismatch(t *testing.T) {
+	for _, key := range []string{"SMITHERS_GITHUB_APP_ID", "SMITHERS_GITHUB_APP_PRIVATE_KEY"} {
+		t.Run(key, func(t *testing.T) {
+			t.Setenv(key, "configured")
+			source, err := selectGitHubAppCredentials(false, false, services.NewGitHubAppCredentialStore(nil, nil))
+			require.ErrorContains(t, err, "environment GitHub App credentials require")
+			require.Nil(t, source)
+			source, err = selectGitHubAppCredentials(true, false, services.NewGitHubAppCredentialStore(nil, nil))
+			require.NoError(t, err, "self-hosted installs ignore legacy environment credentials")
+			require.NotNil(t, source)
+		})
+	}
+}

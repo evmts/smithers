@@ -3006,6 +3006,9 @@ func selectGitHubAppCredentials(singleOwner, useEnv bool, store *services.GitHub
 		}
 		return &services.EnvGitHubAppCredentials{}, nil
 	}
+	if !singleOwner && (strings.TrimSpace(os.Getenv("SMITHERS_GITHUB_APP_ID")) != "" || strings.TrimSpace(os.Getenv("SMITHERS_GITHUB_APP_PRIVATE_KEY")) != "") {
+		return nil, errors.New("environment GitHub App credentials require EnvGitHubAppCredentials")
+	}
 	return store, nil
 }
 
