@@ -526,10 +526,12 @@ The 2026-09-22 smoke (oracle, this adapter, and the stock Codex CLI on
   `waiting-*` status raises `RunParked`, which `outcome.py` counts as infra.
   Before this, luna-A-smoke2 `mp-checkpoint` asked at frame 46 and waited at
   `waiting-approval` until its hour ran out.
-- **Jev is mandatory.** The CLI refuses to run without `AI_GATEWAY_API_KEY`,
-  and a gateway 503 on the final completion fails the run as
-  `completion_unjudged` after the work is done. Export the key before a run;
-  a subscription seat does not cover it.
+- **Jev is mandatory.** Without `AI_GATEWAY_API_KEY` the CLI judges on a
+  subscription seat (Claude Haiku or GPT-6 Luna), which is not comparable, so
+  `SmithersAgent.setup()` refuses the trial before any model call. A run that
+  still ends `unconfigured`, or `completion_unjudged` after a gateway 503 on
+  the final completion, is infrastructure and never a score. Export the key
+  before a run.
 
 ## What the agent never sees
 

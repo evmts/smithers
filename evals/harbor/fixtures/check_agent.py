@@ -675,6 +675,33 @@ def gone(pid: int) -> bool:
     return False
 
 
+def check_judge_preflight() -> None:
+    """A trial without `AI_GATEWAY_API_KEY` is refused in `setup()`, before
+    any model call: g1b-smithers-abs (2026-10-11) ran 1,718 s unjudged and
+    was scored."""
+    import asyncio
+
+    saved = os.environ.pop("AI_GATEWAY_API_KEY", None)
+    try:
+        with tempfile.TemporaryDirectory() as directory:
+            smithers = agent.SmithersAgent(logs_dir=Path(directory), model_name="openai/gpt-6-sol")
+            try:
+                asyncio.run(smithers.setup(None))
+            except RuntimeError as error:
+                assert "AI_GATEWAY_API_KEY" in str(error), error
+            else:
+                raise AssertionError("a trial without a judge key is refused")
+            os.environ["AI_GATEWAY_API_KEY"] = "key"
+            try:
+                asyncio.run(smithers.setup(None))
+            except RuntimeError as error:
+                assert "AI_GATEWAY_API_KEY" not in str(error), error
+    finally:
+        os.environ.pop("AI_GATEWAY_API_KEY", None)
+        if saved is not None:
+            os.environ["AI_GATEWAY_API_KEY"] = saved
+
+
 def check_drive() -> None:
     """plan, approve, run against a real child: the exit status, the phase it
     ended in and what `smithers-run.log` keeps of the CLI's output."""
@@ -812,7 +839,7 @@ def check_accounts() -> None:
     assert accounts.classify_cause("rate_limited: The usage limit has been reached\n/harness/HarnessError: x") == "seat"
     assert accounts.classify_cause("quota_exceeded: insufficient_quota") == "seat"
     assert accounts.classify_cause("rate_limited: 429 after 6 attempts") == "infra"
-    for code in ("authentication", "no_route", "provider_internal", "transport", "completion_unjudged"):
+    for code in ("authentication", "no_route", "provider_internal", "transport", "completion_unjudged", "unconfigured"):
         assert accounts.classify_cause(f"{code}: gateway 503") == "infra", code
     # The harness's own per-call budget (modelCallMs, 300 s by default) firing
     # is the arm's outcome, scored (coordinator ruling 2026-09-23 21:16 PDT).
@@ -1032,10 +1059,11 @@ if __name__ == "__main__":
     image_user = check_codex_runs_as_image_user()
     install = check_codex_installs_only_what_is_missing()
     check_container_survival()
+    check_judge_preflight()
     check_drive()
     check_drive_cancelled()
     check_accounts()
     revision = check_harness_revision()
     print(f"check_agent.py: prompt, environment, journal fold, helper lookup, names, plue shim, plue environment, "
-          f"the CLI's three verbs and their cancellation, and account pool hold; "
+          f"the judge preflight, the CLI's three verbs and their cancellation, and account pool hold; "
           f"stock arm's image user {image_user}; its install {install}; harness revision {revision}; trajectory {validation}.")

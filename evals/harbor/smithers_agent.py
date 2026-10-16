@@ -892,6 +892,10 @@ class SmithersAgent(BaseAgent):
         return NetworkAllowlist()
 
     async def setup(self, environment: BaseEnvironment) -> None:
+        # Without the key the CLI judges on a subscription seat instead of
+        # Jev, and that trial is not comparable; refuse it before any model call.
+        if not os.environ.get("AI_GATEWAY_API_KEY"):
+            raise RuntimeError("AI_GATEWAY_API_KEY is not set: the Smithers arm is judged by Jev; export it before a trial")
         built = self.root / BUILT_RELATIVE
         if not built.is_file():
             raise RuntimeError(
