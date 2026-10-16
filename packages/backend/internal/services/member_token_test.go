@@ -65,6 +65,12 @@ func memberGitHub(t *testing.T, role string) *[]string {
 		calls = append(calls, r.Method+" "+r.URL.Path+" "+r.Header.Get("Authorization"))
 		w.Header().Set("Content-Type", "application/json")
 		switch {
+		case r.URL.Path == "/users/owner/keys":
+			_, _ = w.Write([]byte(`[]`))
+		case r.URL.Path == "/repos/acme/app":
+			_, _ = w.Write([]byte(`{"id":500,"full_name":"acme/app"}`))
+		case r.URL.Path == "/installation/repositories":
+			_, _ = w.Write([]byte(`{"total_count":1,"repositories":[{"id":500}]}`))
 		case r.URL.Path == "/repos/acme/app/installation":
 			_, _ = w.Write([]byte(`{"id":91}`))
 		case strings.HasPrefix(r.URL.Path, "/repos/acme/app/collaborators/"):
@@ -152,9 +158,11 @@ func TestOwnerCheckTokenComesFromTheOneMinterAtMetadataReadPostgres(t *testing.T
 	minter := &recordingMinter{}
 	m := &Members{Pool: pool, Credentials: memberCredentials{}, Minter: minter}
 	require.NoError(t, m.BindRepository(ctx, user, "acme", "app", repo.ID))
-	require.Equal(t, []int64{91}, minter.installations)
-	require.Equal(t, []GitHubTokenScope{wantMemberScope}, minter.scopes)
+	require.Equal(t, []int64{91, 91}, minter.installations)
+	require.Equal(t, []GitHubTokenScope{wantMemberScope, wantMemberScope}, minter.scopes)
 	require.Contains(t, *calls, "GET /repos/acme/app/collaborators/owner/permission Bearer minted-token")
+	require.Contains(t, *calls, "GET /repos/acme/app Bearer minted-token")
+	require.Contains(t, *calls, "GET /installation/repositories Bearer minted-token")
 }
 
 func TestMemberScopeFitsTheManifestGrant(t *testing.T) {

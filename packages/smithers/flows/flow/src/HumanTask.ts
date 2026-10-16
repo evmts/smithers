@@ -1004,4 +1004,18 @@ export const answer = (options: {
 export const decode =
   <S extends Schema.ConstraintDecoder<unknown>>(schema: S) =>
   <E, R>(self: Node.Node<typeof Schema.Json.Type, E, R>): Node.Node<S["Type"], E, R> =>
-    Node.map(self, Schema.decodeUnknownSync(schema))
+    Node.map(self, answerDecoder(schema))
+
+// Schema decoders are opaque callbacks. Reuse one per immutable schema so a
+// same-process rebuild preserves its identity without claiming portable
+// identity for arbitrary schema transformations or checks.
+const answerDecoders = new WeakMap<object, (input: unknown) => unknown>()
+
+const answerDecoder = <S extends Schema.ConstraintDecoder<unknown>>(schema: S): (input: unknown) => S["Type"] => {
+  let decoder = answerDecoders.get(schema)
+  if (decoder === undefined) {
+    decoder = Schema.decodeUnknownSync(schema)
+    answerDecoders.set(schema, decoder)
+  }
+  return decoder
+}
