@@ -61,7 +61,7 @@ const Gated = Flow.make("engine-waits/gated", {
   error: WaitFor.WaitForRequestInvalid,
   body: ({ name }) =>
     Mark.call({ label: "before" }).pipe(
-      Node.bindPlanned(() => WaitFor.action.call({ name }))
+      Node.bindPlanned(Node.capture({ name }, () => WaitFor.action.call({ name })))
     )
 })
 
@@ -80,7 +80,7 @@ const Twice = Flow.make("engine-waits/twice", {
   error: WaitFor.WaitForRequestInvalid,
   body: () =>
     WaitFor.action.call({ name: "first" }).pipe(
-      Node.bindPlanned(() => WaitFor.action.call({ name: "second" }))
+      Node.bindPlanned(Node.capture({}, () => WaitFor.action.call({ name: "second" })))
     )
 })
 
