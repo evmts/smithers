@@ -544,6 +544,13 @@ const redactValues = (text: string, names: RegExp, scope: Scope): string => {
     if (!scope.header && plainKeyName(name)) continue
     track(stack, text, scanned, keys.lastIndex)
     scanned = keys.lastIndex
+    // A call's `key=` naming a function (`sorted(xs, key=lambda m: m[0])`)
+    // is code: a literal credential there would be quoted.
+    if (
+      !scope.diagnostic && name === "key" && text[keys.lastIndex - 1] === "=" &&
+      stack.at(-1)?.close === ")" && stack.at(-1)?.depth === undefined &&
+      /^[A-Za-z_][\w.]*(?=[\s(),])/.test(text.slice(keys.lastIndex, keys.lastIndex + 256))
+    ) continue
     let start = keys.lastIndex
     let depth = 0
     while (text[start + depth] === "\\") depth++
@@ -796,7 +803,9 @@ export const defaultRules: ReadonlyArray<Rule> = [
   },
   {
     id: "basic-authorization",
-    pattern: /\bBasic\s+[A-Za-z0-9+/]{4,}={0,2}/gi,
+    // Only the scheme's own spellings: a lowercase `basic` is a word or a
+    // module (`module_utils.basic import`).
+    pattern: /\b(?:Basic|BASIC)\s+[A-Za-z0-9+/]{4,}={0,2}/g,
     replace: "Basic [REDACTED_TOKEN]"
   },
   {

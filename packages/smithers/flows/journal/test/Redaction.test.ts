@@ -216,7 +216,11 @@ describe("Redaction", () => {
   it.each([
     ["ordinary prose", "A password manager protects ordinary prose."],
     ["eyJ inside a word", "prefixeyJabcdefghijk.payload.signature"],
-    ["non-credential URL query", "https://example.test/search?q=a=b&page=2"]
+    ["non-credential URL query", "https://example.test/search?q=a=b&page=2"],
+    // #3963: a SWE-bench trace's Python import and sort key.
+    ["Python import of a basic module", "from ansible.module_utils.basic import AnsibleModule"],
+    ["Python sort key lambda", "return sorted(matches, key=lambda m: m.start())"],
+    ["Python sort key function", "rows.sort(key=operator.itemgetter(1), reverse=True)"]
   ])("preserves a %s negative control", (_name, source) => {
     expect(Redaction.redact(source)).toBe(source)
   })
@@ -240,7 +244,10 @@ describe("Redaction", () => {
     ["double-quoted assignment", `PASSWORD="dummy secret"`, `PASSWORD="${Redaction.placeholder}"`],
     ["single-quoted assignment", `TOKEN='dummy secret'`, `TOKEN='${Redaction.placeholder}'`],
     ["Bearer token with plus and padding", "Bearer abcdefgh+SENSITIVE==", "Bearer [REDACTED_TOKEN]"],
-    ["Bearer token with the full b64token alphabet", "Bearer ab/cd+ef~gh=", "Bearer [REDACTED_TOKEN]"]
+    ["Bearer token with the full b64token alphabet", "Bearer ab/cd+ef~gh=", "Bearer [REDACTED_TOKEN]"],
+    ["Basic credential in capitals", "BASIC dXNlcjpwYXNz", "Basic [REDACTED_TOKEN]"],
+    ["quoted key argument", `client(key="dummy secret")`, `client(key="${Redaction.placeholder}")`],
+    ["key assignment outside a call", "curl -d key=abc123 host", `curl -d key=${Redaction.placeholder} host`]
   ])("redacts a %s", (_name, source, expected) => {
     expect(Redaction.redact(source)).toBe(expected)
   })
