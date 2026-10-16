@@ -34,9 +34,13 @@ export const CommandsContainer = ({ catalog, dispatch, view, onView }: CommandsC
   return <CommandsView model={model} actions={bindings.actions} gestures={bindings.gestures} onAction={bindings.onAction} view={view} onView={onView} />
 }
 
+const NO_AUTHORITY = { subscribe: (_notify: () => void) => () => {}, version: () => 0 }
+
 const CommandsBody = ({ presentation }: { readonly presentation: CardActions["presentation"] }) => {
   const controller = useController()
   const roster = controller.membersRoster
+  const authority = controller.secretAuthority ?? NO_AUTHORITY
+  useSyncExternalStore(authority.subscribe, authority.version, authority.version)
   useSyncExternalStore(roster.subscribe, roster.get, roster.get)
   // The registry derives its catalog and admission from these collections.
   // Keep an already-open card current when identity, target or flows change.

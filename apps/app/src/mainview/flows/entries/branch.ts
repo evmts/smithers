@@ -95,7 +95,7 @@ export const branchFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
         if (operation === "command") return actions.writeTerminal({ id, command })
 
         if (actions.openBranchTerminal) return actions.openBranchTerminal(branch)
-        if (actions.bootstrap?.capabilities.includes("install") || (!actions.bootstrap && actions.live)) return "Terminal unavailable"
+        if (!design.enabled || (!actions.bootstrap && actions.live)) return "Terminal unavailable"
         const target = branchOf(branch)
         if (target === undefined) return `No branch ${branch}`
         const result = design.newTerminal(target.id, design.viewer())
@@ -109,7 +109,7 @@ export const branchFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
           await actions.presentBranchCard("terminal", id, "Terminal")
           return
         }
-        if (actions.bootstrap?.capabilities.includes("install") || (!actions.bootstrap && actions.live)) return "Terminal unavailable"
+        if (!design.enabled || (!actions.bootstrap && actions.live)) return "Terminal unavailable"
         const terminal = design.world().terminals.find(each => each.id === id)
         if (terminal !== undefined && terminal.owner !== design.viewer()) design.watchTerminal(id, design.viewer())
         return openTerminal(id)

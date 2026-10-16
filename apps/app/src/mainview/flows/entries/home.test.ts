@@ -421,8 +421,10 @@ test("the owner reset flow persists and acknowledges before HTTP, with one bound
     await waitFor(() => posts.length === 1)
     expect(JSON.parse(String(posts[0]!.body))).toEqual({ old: binding.old, new: binding.new })
     expect(new Headers(posts[0]!.headers).get("Idempotency-Key")).toBe(h.store.session().githubSyncRequest!.id)
-    // The unrelated read remains usable while the network request is unresolved.
-    expect((await slash(h, "github")).status).toBe("executed")
+    // The unrelated read returns its real unavailable answer while reset is unresolved.
+    const github = await slash(h, "github")
+    expect(github.status).toBe("failed")
+    expect(JSON.stringify(github)).not.toContain("Opened the stack")
     expect(h.store.session().githubSyncRequest?.phase).toBe("requested")
     release(Response.json({ state: "settled" }))
     await waitFor(() => h.store.session().githubSyncRequest === undefined)

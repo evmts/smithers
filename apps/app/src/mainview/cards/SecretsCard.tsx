@@ -152,7 +152,7 @@ const SecretsBody = ({ card }: { card: StoredSecrets }) => {
     ? "ready" as const : scoped.phase === "loading" ? "loading" as const : "unreadable" as const
   const role = install ? providers?.authority?.() ?? "member"
     : authority !== undefined ? (scoped.phase === "ready" ? scoped.role : "member")
-    : controller.membersRole()
+    : controller.membersRole() ?? "member"
   return <SecretsCardBody card={projected} View={install ? providers?.View : SecretsView} role={unavailable ? "member" : role}
     access={access} listed={!unread} metadata={current} dispatch={(name, input) => {
     /* Re-listing the card also asks for an authority nobody could read; a settled one stands. */

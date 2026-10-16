@@ -61,7 +61,7 @@ const MembersBody = ({ presentation }: { readonly presentation: CardActions["pre
   const controller = useController()
   const roster = controller.membersRoster
   useSyncExternalStore(roster.subscribe, roster.get, roster.get)
-  return <MembersCard roster={roster} role={controller.membersRole()} view={{ maximized: presentation === "maximized" }} onView={() => {}}
+  return <MembersCard roster={roster} role={controller.membersRole() ?? "member"} view={{ maximized: presentation === "maximized" }} onView={() => {}}
     dispatch={(tag, input) => controller.commands.submit({ name: tag, payload: (input ?? {}) as Record<string, unknown>, actor: "user" })} />
 }
 export const membersCardFamily: CardFamily<"members"> = { members: { render: (_card, { presentation }) => <MembersBody presentation={presentation} />, pill: () => "" } }

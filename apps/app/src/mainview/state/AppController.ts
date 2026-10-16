@@ -554,8 +554,8 @@ export interface AppController extends IssueFlowsController {
   readonly installSnapshots: InstallSeam["snapshots"]
   /** The roster the Members card reads: GET /api/members on an install; elsewhere the seeded roster (MOCK SEAM, DesignWorld/settings.ts). */
   readonly membersRoster: MembersSnapshots
-  /** The signed-in person's role on that roster; "member" until the roster names them. */
-  readonly membersRole: () => "owner" | "maintainer" | "member"
+  /** The signed-in person's authoritative role; absent while hosted access is unknown. */
+  readonly membersRole: (repo?: string) => "owner" | "maintainer" | "member" | undefined
   /**
    * The viewer's secret-management authority on ONE hosted repository, read
    * from the platform's own resolver (RepositoryAuthority.ts). Undefined off
@@ -1055,7 +1055,7 @@ export const createAppController = (
   const gitHubSyncSeam = createGitHubSyncSeam({ ready: () => !installHost || installSignedIn(), http: installHost ? (path, init) => seamCtx.http(`${baseUrl.replace(/\/$/, "")}${path}`, init) : undefined })
   const gitHubSyncRetry = createGitHubSyncRetry(ctx, gitHubSyncSeam)
   ctx.onDispose(gitHubSyncSeam.dispose)
-  const homeView = installHost ? createHomeViewSeam({
+  const homeView = !design.enabled ? createHomeViewSeam({
     live: services.live,
     serializeView: sharedConversation?.serializeView,
     http: (path, init) => seamCtx.http(`${baseUrl.replace(/\/$/, "")}${path}`, init),
@@ -1095,14 +1095,9 @@ export const createAppController = (
     })
     ctx.onDispose(() => membershipIdentity.unsubscribe())
   }
-  const membersRoster = installHost ? membersSeam.snapshots : designMembersRoster(design)
-  /*
-   * Hosted secrets (M-47): the seeded roster above knows nothing about a
-   * hosted repository and answers "member" for its owner, so the Secrets card
-   * and the secrets flow ask the platform about the repository in front of
-   * them instead. Deliberately narrow — the other seeded settings writes keep
-   * the seeded role until their own seams answer.
-   */
+  const membersRoster = design.enabled ? designMembersRoster(design) : membersSeam.snapshots
+  // Hosted commands and secrets share the repository's authoritative permission.
+  // Unknown authority grants no role, and the fixture answers only when enabled.
   const secretAuthority = !installHost && !design.enabled
     ? createRepositoryAuthoritySeam(seamCtx, { ready: true })
     : undefined
@@ -1111,14 +1106,20 @@ export const createAppController = (
     const authorityIdentity = store.collections.identitySessions.subscribeChanges(secretAuthority.identityChanged)
     ctx.onDispose(() => authorityIdentity.unsubscribe())
   }
-  const membersRole = (): "owner" | "maintainer" | "member" => {
-    if (!installHost) return designViewerRole(design)
+  const membersRole = (requestedRepo?: string): "owner" | "maintainer" | "member" | undefined => {
+    if (design.enabled) return designViewerRole(design)
+    if (!installHost) {
+      const repo = requestedRepo ?? activeRepositoryId(store) ?? undefined
+      const authority = secretAuthority?.state(repo)
+      secretAuthority?.ensure(repo)
+      return authority?.phase === "ready" ? authority.role : undefined
+    }
     const login = store.collections.identitySessions.get("identity")?.login?.toLowerCase()
     return membersSeam.snapshots.get().model?.members.find(member => member.login.toLowerCase() === login)?.role ?? "member"
   }
   let memberViewReadAt = 0
   const showMembers = () => {
-    if (!installHost || !installSignedIn()) return
+    if (design.enabled || !installSignedIn()) return
     membersSeam.start()
     const now = Date.now()
     if (now - memberViewReadAt >= 2000) { memberViewReadAt = now; void membersSeam.read() }
@@ -1253,10 +1254,10 @@ export const createAppController = (
     } catch {return "Branch unavailable"}
   })
   const archiveBranch: AppController["archiveBranch"] = installHost ? branchArchive.request : undefined
-  const flowCards: AppController["flowCards"] = async (name) => installHost ? flowsSeam.read(name)
+  const flowCards: AppController["flowCards"] = async (name) => !design.enabled ? flowsSeam.read(name)
     : flowNames(design.world()).flatMap(name => flowCardOf(design.world(), name) ?? [])
   const changeMembers: AppController["changeMembers"] = async (tag, { login, role }) => {
-    if (!installHost) {
+    if (design.enabled) {
       if (designViewerRole(design) === "member") return "A maintainer manages members"
       const seeded = designMembers(design)
       return tag === "members.add" ? seeded.add(login, role) : tag === "members.role" ? seeded.role(login, role ?? "member") : seeded.remove(login)
@@ -1266,6 +1267,7 @@ export const createAppController = (
   }
   const presentCard = async (kind: "setup" | "settings" | "members" | "commands" | "branch" | "terminal", title: string, subject?: string): Promise<string> => {
     if (kind === "commands" && installHost) { membersSeam.start(); await membersSeam.read() }
+    if (kind === "commands" && secretAuthority) await secretAuthority.read(activeRepositoryId(store) ?? undefined)
     if (kind === "commands" && commands.viewerCatalog() === undefined) return "Commands unavailable"
     const id = subject === undefined ? kind : `${kind}:${subject}`
     const existing = store.collections.cards.get(id)
@@ -1605,7 +1607,7 @@ export const createAppController = (
   }
   const secretsProviders = installHost ? services.secretsProviders?.(defaultSecretsProviders) ?? defaultSecretsProviders : undefined
   const secretsSeam = actors.pair(seamCtx, (context) => createSecretsSeam(context, withToast, { install: installHost, providers: secretsProviders, onDispose: ctx.onDispose,
-    fallback: !installHost && services.bootstrap !== undefined ? {
+    fallback: design.enabled && services.bootstrap !== undefined ? {
       rows: () => designSecrets(design).rows().map(secret => ({ name: secret.name, mainOnly: secret.scope === "main only", hosts: [], matchHeaders: [], updatedAt: null, reconnect: false })),
       set: (name, scope) => designSecrets(design).set(name, scope === "main_only" ? "main only" : "all branches"), remove: name => designSecrets(design).remove(name)
     } : undefined }))
@@ -2474,13 +2476,13 @@ export const createAppController = (
     },
     showSettings: installSeam.showSettings, setupStep: installSeam.setupStep,
     /* MOCK SEAM (DesignWorld/settings.ts designInstall): the Settings card shows the live install once it has a model, so the write goes there; the seed takes it only until then. */
-    setInstallAddress: address => !installHost && installSeam.snapshots.get().model === undefined ? designSettings(design).address(address) : installSeam.setInstallAddress(address),
+    setInstallAddress: address => design.enabled && installSeam.snapshots.get().model === undefined ? designSettings(design).address(address) : installSeam.setInstallAddress(address),
     /* MOCK SEAM (DesignWorld/settings.ts designInstall): the Settings card shows the live install once it has a model, so the write goes there; the seed takes it only until then. */
-    setInstallCapacity: capacity => !installHost && installSeam.snapshots.get().model === undefined ? designSettings(design).capacity(capacity) : installSeam.setInstallCapacity(capacity),
+    setInstallCapacity: capacity => design.enabled && installSeam.snapshots.get().model === undefined ? designSettings(design).capacity(capacity) : installSeam.setInstallCapacity(capacity),
     setInstallObsidian: installSeam.setInstallObsidian,
     setInstallPreapproveDefault: value => installSeam.setInstallPreapproveDefault(value),
     setInstallDailyAdmissions: value => installSeam.setInstallDailyAdmissions(value),
-    setInstallParallel: parallel => !installHost && installSeam.snapshots.get().model === undefined ? designSettings(design).parallel(parallel) : installSeam.setInstallParallel(parallel),
+    setInstallParallel: parallel => design.enabled && installSeam.snapshots.get().model === undefined ? designSettings(design).parallel(parallel) : installSeam.setInstallParallel(parallel),
     saveInstallModelKey: installSeam.saveInstallModelKey,
  fastModelAccess: installSeam.fastModelAccess,
     showMembers,
@@ -2819,7 +2821,7 @@ export const createAppController = (
       const viewer = roster.model?.members.find(member => member.login.toLowerCase() === identity?.login?.toLowerCase())
       return {
         repositoryReadiness,
-        viewerRole: installHost ? identity?.state === "signed-in" && roster.error === undefined && viewer?.suspended === false && viewer.needs_access === false ? viewer.role : undefined : membersRole(),
+        viewerRole: installHost ? identity?.state === "signed-in" && roster.error === undefined && viewer?.suspended === false && viewer.needs_access === false ? viewer.role : undefined : membersRole(requestedRepo ?? repo),
         surface: store.session().surface,
         typing: store.session().phase === "responding",
         // Sign-in IS the GitHub connector (§2a′): a valid session means
