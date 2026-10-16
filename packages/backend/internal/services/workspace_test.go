@@ -97,11 +97,32 @@ type mockWorkspaceQuerier struct {
 	deleteExpiredSandboxAccessTokensFn     func(ctx context.Context) error
 }
 
+// testRepositoryOwnerID owns every repository this package's default fixture
+// hands back, and it is the same person sampleDBWorkspace's rows belong to.
+//
+// It is not decoration. `repositories_check CHECK (num_nonnulls(user_id,
+// org_id) = 1)` means the product has no ownerless repository, and
+// billingstore.RepositorySandboxOwner refuses one with an Internal error. A
+// fixture that returned a repository with neither owner therefore modelled a
+// row that cannot exist, and every path that resolves a billing owner —
+// workspaceEgressProxy, stopRuntimeWorkspaceLocked, the wake/resume
+// admission checks — failed on it with "repository billing owner
+// unavailable" long before it reached the behaviour under test.
+const testRepositoryOwnerID = 1
+
+func testRepository(id int64) db.Repository {
+	return db.Repository{
+		ID:              id,
+		UserID:          pgtype.Int8{Int64: testRepositoryOwnerID, Valid: true},
+		DefaultBookmark: "main",
+	}
+}
+
 func (m *mockWorkspaceQuerier) GetRepoByID(ctx context.Context, id int64) (db.Repository, error) {
 	if m.getRepoByIDFn != nil {
 		return m.getRepoByIDFn(ctx, id)
 	}
-	return db.Repository{ID: id, DefaultBookmark: "main"}, nil
+	return testRepository(id), nil
 }
 
 func (m *mockWorkspaceQuerier) CreateWorkspace(ctx context.Context, arg db.CreateWorkspaceParams) (db.Workspace, error) {

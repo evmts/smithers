@@ -2,6 +2,8 @@ package services
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -151,8 +153,10 @@ func (s *WorkspaceService) ReconcileWorkspaceProvisioning(ctx context.Context) e
 			continue
 		}
 		if interruptedReleaseStopPending(ws) {
-			if err := s.reconcileInterruptedReleaseStop(ctx, ws); err != nil {
-				slog.Warn("interrupted release stop retry failed", "workspace_id", ws.ID, "error", err)
+			// The diagnostic is the outcome's finite fields, never the error:
+			// see interruptedReleaseStopOutcome.
+			if outcome, err := s.reconcileInterruptedReleaseStop(ctx, ws); err != nil {
+				slog.Warn("interrupted release stop retry failed", outcome.logArgs(ws.ID)...)
 			}
 			continue
 		}
@@ -418,22 +422,43 @@ func interruptedReleaseStopPending(row db.Workspace) bool {
 // including the 404/410 conflation ErrWorkspaceNotFound carries — leaves the
 // row exactly as it is, and the next reconciler tick retries it. That is the
 // retry budget: one stop attempt per row per
-// WorkspaceProvisioningReconcileInterval, each bounded by
-// workspaceReleaseConfirmTimeout, and no attempt at all once a receipt landed.
+// WorkspaceProvisioningReconcileInterval, and no attempt at all once a
+// receipt landed.
+//
+// Each attempt is bounded by TWO SEPARATE deadlines, not one. The reconciler
+// tick itself carries no deadline — runWorkspaceProvisioningReconciler passes
+// the process-lifetime context straight through — so the attempt is only as
+// finite as the calls it makes:
+//
+//   - the stop is bounded here, by workspaceReleaseStopTimeout.
+//     stopRuntimeWorkspaceLocked supplies NO bound of its own: it hands the
+//     caller's context to the runtime port unchanged, so an adapter that
+//     never answers would hold this tick, and with it every other row in the
+//     listing, for as long as the process lives.
+//   - the confirming read is bounded separately, inside
+//     confirmRecoveredReleaseStop, by workspaceReleaseConfirmTimeout.
+//
+// So the worst case is the sum of the two, each a written constant; no single
+// constant bounds the whole attempt, and the earlier comment that said
+// workspaceReleaseConfirmTimeout did was wrong about the stop.
 //
 // Every write is fenced on the row this attempt read. A newer owner,
 // placement, status or transition — a resume, a replacement VM, another
 // reconciler — matches nothing, and then this function reports no error and
 // changes nothing: that transition owns the row.
-func (s *WorkspaceService) reconcileInterruptedReleaseStop(ctx context.Context, workspace db.Workspace) error {
+//
+// The returned outcome is the attempt's diagnostic; see
+// interruptedReleaseStopOutcome for why the error itself is never logged.
+func (s *WorkspaceService) reconcileInterruptedReleaseStop(ctx context.Context, workspace db.Workspace) (interruptedReleaseStopOutcome, error) {
+	outcome := interruptedReleaseStopOutcome{stage: interruptedReleaseStageClaim}
 	if s.runtime == nil {
-		return errors.New("workspace release runtime unavailable")
+		return outcome.failed(errors.New("workspace release runtime unavailable"))
 	}
 	conditional, ok := s.q.(workspaceUnchangedFailureQuerier)
 	if !ok {
 		// Without the fenced write there is no way to record the receipt, and
 		// an unrecorded stop would be re-driven on every tick.
-		return nil
+		return outcome, nil
 	}
 	_, err := s.withWorkspaceProvisionLock(ctx, workspace, func(current db.Workspace) (db.Workspace, error) {
 		unlock := s.lockRuntimeWorkspace(current.ID)
@@ -449,12 +474,18 @@ func (s *WorkspaceService) reconcileInterruptedReleaseStop(ctx context.Context, 
 		if current.VmID != workspace.VmID {
 			return current, nil
 		}
-		if err := s.stopRuntimeWorkspaceLocked(ctx, current, current.UserID, "recover-release"); err != nil {
+		outcome.stage = interruptedReleaseStageStop
+		stop, cancelStop := context.WithTimeout(ctx, workspaceReleaseStopTimeout)
+		err = s.stopRuntimeWorkspaceLocked(stop, current, current.UserID, "recover-release")
+		cancelStop()
+		if err != nil {
 			return current, err
 		}
-		if _, err := s.confirmRecoveredReleaseStop(ctx, current); err != nil {
+		outcome.stage = interruptedReleaseStageConfirm
+		if outcome.evidence, err = s.confirmRecoveredReleaseStop(ctx, current); err != nil {
 			return current, err
 		}
+		outcome.stage = interruptedReleaseStageRecord
 		// The recorded code is reused, never re-derived: this attempt confirms
 		// a stop, it does not re-decide why the release failed.
 		updated, err := conditional.FailWorkspaceIfUnchanged(ctx, db.FailWorkspaceIfUnchangedParams{
@@ -469,12 +500,142 @@ func (s *WorkspaceService) reconcileInterruptedReleaseStop(ctx context.Context, 
 			return current, nil
 		}
 		if err != nil {
-			return current, pkgerrors.Internal("record interrupted release stop: " + err.Error())
+			// WithCause, not string concatenation: the store's own sentence
+			// can carry a DSN, a host or a constraint's recorded values, and
+			// this verdict's Message is published.
+			return current, pkgerrors.Internal("record interrupted release stop").WithCause(err)
 		}
 		s.observeWorkspaceLifecycle("recover-release-stop", nil)
 		return updated, nil
 	})
-	return err
+	if err != nil {
+		return outcome.failed(err)
+	}
+	return outcome, nil
+}
+
+// workspaceReleaseStopTimeout bounds the stop an interrupted-release recovery
+// drives. stopRuntimeWorkspaceLocked applies no deadline of its own and the
+// reconciler tick has none either, so without this the whole listing waits on
+// one unanswering adapter. 30s is the bound this package already gives its
+// other detached runtime cleanup calls (reclaimDeletedStart's delete and
+// ensureRuntimeWorkspaceRunningLocked's failure cleanup), so a recovery stop
+// is not given a different budget than the cleanups beside it.
+//
+// It is derived from the caller's context rather than detached, unlike those:
+// this one runs on a reconciler tick that re-drives the row every
+// WorkspaceProvisioningReconcileInterval, so abandoning a blocked stop on
+// shutdown loses nothing — the row stays in the cohort and the next process
+// picks it up.
+const workspaceReleaseStopTimeout = 30 * time.Second
+
+// interruptedReleaseStopStage names the step an attempt did not get past. It
+// is a written, finite vocabulary: nothing an adapter, a store or a request
+// returns can add a value to it.
+type interruptedReleaseStopStage string
+
+const (
+	// claim_owner_row: the advisory lock, the re-read inside it, or the
+	// placement fence. Nothing was asked of the runtime yet.
+	interruptedReleaseStageClaim interruptedReleaseStopStage = "claim_owner_row"
+	// stop_guest: the runtime's stop call itself.
+	interruptedReleaseStageStop interruptedReleaseStopStage = "stop_guest"
+	// confirm_stop: the confirming read. This is the stage that carries an
+	// evidence label, and the ten values stay distinguishable.
+	interruptedReleaseStageConfirm interruptedReleaseStopStage = "confirm_stop"
+	// record_receipt: the fenced write of the stop receipt.
+	interruptedReleaseStageRecord interruptedReleaseStopStage = "record_receipt"
+)
+
+// interruptedReleaseStopReason is the finite reason an attempt stopped at its
+// stage. A REGISTERED pkgerrors code is used verbatim, because that registry
+// IS a closed vocabulary with a fixed status and fault per code; anything
+// else — an unregistered code, a cancelled or expired deadline, a bare store
+// error — maps onto one of the written labels below.
+//
+// No adapter sentence reaches it. The recovery talks to a hosted runtime over
+// HTTP, so an arbitrary error's string can carry a URL, a bearer token, a
+// request id, a host name or a customer's own prose, and this reconciler logs
+// unconditionally on every tick.
+type interruptedReleaseStopReason string
+
+const (
+	interruptedReleaseReasonCanceled     interruptedReleaseStopReason = "canceled"
+	interruptedReleaseReasonDeadline     interruptedReleaseStopReason = "deadline_exceeded"
+	interruptedReleaseReasonRowAbsent    interruptedReleaseStopReason = "owner_row_absent"
+	interruptedReleaseReasonUnregistered interruptedReleaseStopReason = "unregistered_code"
+	interruptedReleaseReasonUnclassified interruptedReleaseStopReason = "unclassified"
+)
+
+func interruptedReleaseStopReasonFor(err error) interruptedReleaseStopReason {
+	switch {
+	case err == nil:
+		return ""
+	case errors.Is(err, context.Canceled):
+		return interruptedReleaseReasonCanceled
+	case errors.Is(err, context.DeadlineExceeded):
+		return interruptedReleaseReasonDeadline
+	case errors.Is(err, pgx.ErrNoRows):
+		return interruptedReleaseReasonRowAbsent
+	}
+	var api *pkgerrors.APIError
+	if errors.As(err, &api) {
+		if _, ok := pkgerrors.Lookup(api.Code); ok {
+			return interruptedReleaseStopReason(api.Code)
+		}
+		return interruptedReleaseReasonUnregistered
+	}
+	return interruptedReleaseReasonUnclassified
+}
+
+// interruptedReleaseStopOutcome is everything this recovery is allowed to say
+// about an attempt that did not finish: the stage it reached, the finite
+// reason it stopped there, the closed stop-evidence label when a confirming
+// read produced one, and a correlation token for the owner row.
+//
+// It exists because the error is not loggable. The attempt's failures come
+// from a hosted runtime over HTTP and from the product's own store, so the
+// error string is arbitrary runtime text — and this site logs on every
+// reconcile tick, for every row in the cohort, with no request to scrub it.
+// The ten releaseStopEvidence values are carried through rather than
+// collapsed, because "the guest is still running" and "the host did not
+// answer" are different operator actions.
+type interruptedReleaseStopOutcome struct {
+	stage    interruptedReleaseStopStage
+	reason   interruptedReleaseStopReason
+	evidence releaseStopEvidence
+}
+
+func (o interruptedReleaseStopOutcome) failed(err error) (interruptedReleaseStopOutcome, error) {
+	o.reason = interruptedReleaseStopReasonFor(err)
+	return o, err
+}
+
+// logArgs renders the outcome for slog. The owner row is identified by
+// workspaceCorrelationToken, never by its id: the attempt's diagnostic value
+// is "which row, across ticks", and that does not need an identifier anyone
+// can resolve, address or quote back.
+func (o interruptedReleaseStopOutcome) logArgs(workspaceID string) []any {
+	args := []any{
+		"workspace", workspaceCorrelationToken(workspaceID),
+		"stage", string(o.stage),
+		"reason", string(o.reason),
+	}
+	if o.evidence != "" {
+		args = append(args, "stop_evidence", string(o.evidence))
+	}
+	return args
+}
+
+// workspaceCorrelationToken is a stable, non-resolvable correlation for one
+// workspace row: the first 12 hex digits of the SHA-256 of its id. The same
+// row reads the same across ticks and across log lines, which is what
+// correlating a repeated refusal needs, and the token is not the identifier,
+// so it cannot be pasted into an API call, a support thread or a ticket as
+// one.
+func workspaceCorrelationToken(workspaceID string) string {
+	sum := sha256.Sum256([]byte(workspaceID))
+	return hex.EncodeToString(sum[:])[:12]
 }
 
 // releaseStopEvidence is the closed vocabulary a recovered release's

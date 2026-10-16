@@ -358,7 +358,8 @@ func TestInterruptedReleaseTakesNoActionOnANewerOwner(t *testing.T) {
 			svc, q := interruptedReleaseService(t, row, runtime)
 			tc.shift(q.live)
 
-			require.NoError(t, svc.reconcileInterruptedReleaseStop(context.Background(), row))
+			_, err := svc.reconcileInterruptedReleaseStop(context.Background(), row)
+			require.NoError(t, err)
 			require.Equal(t, int32(0), runtime.stops.Load(), "the newer transition owns the row")
 			require.Equal(t, int32(0), runtime.deletes.Load())
 			require.Empty(t, q.fence)
@@ -381,7 +382,8 @@ func TestInterruptedReleaseRecordIsFencedOnTheRowItRead(t *testing.T) {
 		q.live.UpdatedAt = time.Now()
 	}}
 
-	require.NoError(t, svc.reconcileInterruptedReleaseStop(context.Background(), row))
+	_, err := svc.reconcileInterruptedReleaseStop(context.Background(), row)
+	require.NoError(t, err)
 	require.Len(t, q.fence, 1, "exactly one fenced write is attempted")
 	require.Equal(t, "failed", q.fence[0].ExpectedStatus)
 	require.Equal(t, "vm-interrupted-6", q.fence[0].ExpectedVmID)
@@ -462,7 +464,8 @@ func TestInterruptedReleasePredicateExcludesEveryOtherFailedOwner(t *testing.T) 
 			guest := &interruptedReleaseGuest{state: workspaceapi.WorkspaceRunning, disk: "retained"}
 			runtime := &interruptedReleaseRuntime{guest: guest}
 			svc, q := interruptedReleaseService(t, row, runtime)
-			require.NoError(t, svc.reconcileInterruptedReleaseStop(context.Background(), row))
+			_, err := svc.reconcileInterruptedReleaseStop(context.Background(), row)
+			require.NoError(t, err)
 			require.Equal(t, int32(0), runtime.stops.Load())
 			require.Equal(t, int32(0), runtime.deletes.Load())
 			require.Empty(t, q.fence)

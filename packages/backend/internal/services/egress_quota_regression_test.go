@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -86,10 +87,18 @@ func TestBillingEgressGrantSurvivesStripePriceRotation(t *testing.T) {
 	}
 }
 
+// The quota follows the billing owner of the repository the WORKSPACE ROW
+// records, not the workspace id the caller passed and not the creator. The
+// fixture therefore gives repository 9 an owner (user 42) that is deliberately
+// different from testRepositoryOwnerID, so an implementation that billed the
+// default fixture's owner, or the requesting principal, fails here.
 func TestWorkspaceEgressQuotaUsesWorkspaceOwner(t *testing.T) {
 	q := &mockWorkspaceQuerier{getWorkspaceFn: func(_ context.Context, id string) (db.Workspace, error) {
 		assert.Equal(t, "workspace-1", id)
 		return db.Workspace{ID: id, UserID: 42, RepositoryID: 9}, nil
+	}, getRepoByIDFn: func(_ context.Context, id int64) (db.Repository, error) {
+		assert.Equal(t, int64(9), id)
+		return db.Repository{ID: id, UserID: pgtype.Int8{Int64: 42, Valid: true}, DefaultBookmark: "main"}, nil
 	}}
 	svc := newWorkspaceServiceForTests(q, WithWorkspaceBillingPolicy(sandboxPolicyStub{
 		entitlement: SandboxEntitlement{EgressBytesPerDay: 10 << 30},
@@ -98,6 +107,25 @@ func TestWorkspaceEgressQuotaUsesWorkspaceOwner(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, req.EgressProxy)
 	assert.Equal(t, &sandbox.EgressQuota{BillingUserID: 42, DailyBytes: 10 << 30}, req.EgressProxy.Quota)
+}
+
+// TestWorkspaceEgressQuotaBillsAnOrgOwnedRepositoryToTheOrg pins the other
+// half of repositories_check: an org-owned repository meters to the org, and
+// the owner type travels with the quota.
+func TestWorkspaceEgressQuotaBillsAnOrgOwnedRepositoryToTheOrg(t *testing.T) {
+	q := &mockWorkspaceQuerier{getWorkspaceFn: func(_ context.Context, id string) (db.Workspace, error) {
+		return db.Workspace{ID: id, UserID: 42, RepositoryID: 9}, nil
+	}, getRepoByIDFn: func(_ context.Context, id int64) (db.Repository, error) {
+		return db.Repository{ID: id, OrgID: pgtype.Int8{Int64: 77, Valid: true}, DefaultBookmark: "main"}, nil
+	}}
+	svc := newWorkspaceServiceForTests(q, WithWorkspaceBillingPolicy(sandboxPolicyStub{
+		entitlement: SandboxEntitlement{EgressBytesPerDay: 100 << 30},
+	}))
+	req, err := svc.buildWorkspaceVMRequest(t.Context(), "", nil, 9, "workspace-1", "container")
+	require.NoError(t, err)
+	require.NotNil(t, req.EgressProxy)
+	assert.Equal(t, &sandbox.EgressQuota{BillingUserID: 77, BillingOwnerType: "org", DailyBytes: 100 << 30},
+		req.EgressProxy.Quota)
 }
 
 func TestWorkspaceEgressQuotaFailsClosedOnOwnerOrPlanError(t *testing.T) {
@@ -110,8 +138,15 @@ func TestWorkspaceEgressQuotaFailsClosedOnOwnerOrPlanError(t *testing.T) {
 		{name: "workspace owner", q: &mockWorkspaceQuerier{getWorkspaceFn: func(context.Context, string) (db.Workspace, error) {
 			return db.Workspace{}, failure
 		}}},
+		{name: "repository owner", q: &mockWorkspaceQuerier{getWorkspaceFn: func(context.Context, string) (db.Workspace, error) {
+			return db.Workspace{UserID: 42, RepositoryID: 9}, nil
+		}, getRepoByIDFn: func(context.Context, int64) (db.Repository, error) {
+			return db.Repository{}, failure
+		}}},
 		{name: "plan", q: &mockWorkspaceQuerier{getWorkspaceFn: func(context.Context, string) (db.Workspace, error) {
 			return db.Workspace{UserID: 42, RepositoryID: 9}, nil
+		}, getRepoByIDFn: func(_ context.Context, id int64) (db.Repository, error) {
+			return db.Repository{ID: id, UserID: pgtype.Int8{Int64: 42, Valid: true}}, nil
 		}}, bill: sandboxPolicyStub{err: failure}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
