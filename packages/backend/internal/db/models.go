@@ -839,6 +839,12 @@ type GithubAppManifestState struct {
 	UsedAt             pgtype.Timestamptz `json:"used_at"`
 }
 
+type GithubMainCommit struct {
+	RepositoryID int64     `json:"repository_id"`
+	CommitID     string    `json:"commit_id"`
+	SyncedAt     time.Time `json:"synced_at"`
+}
+
 type GithubMainPull struct {
 	RepositoryID        int64              `json:"repository_id"`
 	RequestedGeneration int64              `json:"requested_generation"`
@@ -865,6 +871,7 @@ type GithubMainPull struct {
 	HealthCause         string             `json:"health_cause"`
 	RetryAt             pgtype.Timestamptz `json:"retry_at"`
 	ResetIntent         []byte             `json:"reset_intent"`
+	CommitsRecordedFrom pgtype.Timestamptz `json:"commits_recorded_from"`
 }
 
 type GithubMirrorRefresh struct {

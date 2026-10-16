@@ -279,6 +279,58 @@ func (q *Queries) ScorecardLearnings(ctx context.Context) ([]ScorecardLearningsR
 	return items, nil
 }
 
+const scorecardMainCommitCoverage = `-- name: ScorecardMainCommitCoverage :one
+SELECT (count(*) > 0 AND bool_and(COALESCE(commits_recorded_from <= $1::timestamptz, false)))::boolean AS covered
+FROM github_main_pulls WHERE policy = 'pull'
+`
+
+// T-GH-02's synced main-commit inventory covers a window only when every
+// followed repository recorded commits from before the window began.
+func (q *Queries) ScorecardMainCommitCoverage(ctx context.Context, windowFrom time.Time) (bool, error) {
+	row := q.db.QueryRow(ctx, scorecardMainCommitCoverage, windowFrom)
+	var covered bool
+	err := row.Scan(&covered)
+	return covered, err
+}
+
+const scorecardMainCommits = `-- name: ScorecardMainCommits :many
+SELECT c.commit_id, EXISTS(SELECT 1 FROM mythical_items i WHERE i.repository_id = c.repository_id
+  AND i.pr_merge_commit = c.commit_id AND (i.source = 'todo' OR i.checks->>'todo' = 'true'))::boolean AS smithers
+FROM github_main_commits c
+WHERE c.synced_at >= $1::timestamptz AND c.synced_at < $2::timestamptz
+`
+
+type ScorecardMainCommitsParams struct {
+	WindowFrom time.Time `json:"window_from"`
+	WindowTo   time.Time `json:"window_to"`
+}
+
+type ScorecardMainCommitsRow struct {
+	CommitID string `json:"commit_id"`
+	Smithers bool   `json:"smithers"`
+}
+
+// A change to main is Smithers work when a TODO's PR merge commit is it.
+func (q *Queries) ScorecardMainCommits(ctx context.Context, arg ScorecardMainCommitsParams) ([]ScorecardMainCommitsRow, error) {
+	rows, err := q.db.Query(ctx, scorecardMainCommits, arg.WindowFrom, arg.WindowTo)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ScorecardMainCommitsRow{}
+	for rows.Next() {
+		var i ScorecardMainCommitsRow
+		if err := rows.Scan(&i.CommitID, &i.Smithers); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const scorecardMergeCoverage = `-- name: ScorecardMergeCoverage :one
 SELECT (count(*) > 0 AND bool_and(COALESCE(
   receipt.event_type = 'todo.github_merged' AND receipt.data->>'source' = 'github', false)))::boolean AS covered
@@ -414,7 +466,8 @@ SELECT source.name::text AS name,
               AND table_name = 'workflow_definitions' AND column_name = 'digest')))::boolean AS present
 FROM unnest(ARRAY['install_settings', 'mythical_items', 'product_job_events',
                  'chat_turns', 'chat_turn_batches', 'burst_files', 'audit_log',
-                 'workflow_definitions', 'flow_loads', 'memory_notes', 'approvals']) AS source(name)
+                 'workflow_definitions', 'flow_loads', 'memory_notes', 'approvals',
+                 'github_main_commits']) AS source(name)
 `
 
 type ScorecardSourceRelationsRow struct {

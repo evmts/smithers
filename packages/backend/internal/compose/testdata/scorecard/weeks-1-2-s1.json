@@ -102,21 +102,21 @@
    ]
   },
   "dogfood": {
-   "value": null,
+   "value": {
+    "merged": 52,
+    "outside_percent": 8.8
+   },
    "target": "50 merged TODOs in 14 days",
    "kill_signal": "fewer than 20 merged TODOs or outside work exceeds 50%",
-   "verdict": "source_missing",
+   "verdict": "pass",
    "window": {
     "from": "2026-10-04T06:30:00Z",
     "to": "2026-10-18T06:30:00Z"
    },
    "source_tables": [
-    "github_synced_repos",
+    "github_main_commits",
     "mythical_items",
     "product_job_events"
-   ],
-   "missing_tickets": [
-    "T-GH-02"
    ]
   },
   "activation": {
@@ -221,20 +221,21 @@
    ]
   },
   "outside_work": {
-   "value": null,
+   "value": {
+    "commits": 5,
+    "percent": 8.8,
+    "total": 57
+   },
    "target": "diagnostic",
    "kill_signal": "over 50% of changes to main",
-   "verdict": "source_missing",
+   "verdict": "between",
    "window": {
     "from": "2026-10-04T06:30:00Z",
     "to": "2026-10-18T06:30:00Z"
    },
    "source_tables": [
-    "github_synced_repos",
+    "github_main_commits",
     "mythical_items"
-   ],
-   "missing_tickets": [
-    "T-GH-02"
    ]
   },
   "multiplayer": {

@@ -144,9 +144,13 @@ type FinishGithubMainPullParams struct {
 	BackoffSeconds   float64
 	// ResetPolicy clears the source/policy tuple instead of keeping it.
 	ResetPolicy bool
+	// Commits are the first-parent commits a synced pull moved main
+	// through, recorded with the claim's finish (github_main_commits).
+	Commits []string
 }
 
 const finishGithubMainPull = `
+WITH finished AS (
 UPDATE github_main_pulls
 SET synced_generation = CASE WHEN $3 = 'failed' THEN synced_generation ELSE GREATEST(synced_generation, claimed_generation) END,
     state = CASE
@@ -177,20 +181,31 @@ SET synced_generation = CASE WHEN $3 = 'failed' THEN synced_generation ELSE GREA
         ELSE factory_error END,
     last_checked_at = NOW(),
     last_synced_at = CASE WHEN $3 = 'synced' THEN NOW() ELSE last_synced_at END,
+    commits_recorded_from = CASE WHEN $3 = 'synced' THEN COALESCE(commits_recorded_from, NOW()) ELSE commits_recorded_from END,
     updated_at = NOW()
 WHERE repository_id = $1
   AND claim = $2
   AND state = 'running'
+RETURNING repository_id
+), recorded AS (
+INSERT INTO github_main_commits (repository_id, commit_id)
+SELECT finished.repository_id, commit_id FROM finished, unnest($17::text[]) AS commit_id
+WHERE $3 = 'synced'
+ON CONFLICT DO NOTHING
+)
+SELECT count(*) FROM finished
 `
 
 // FinishGithubMainPull returns 0 when the claim was lost to a newer claimant.
 func (q *Queries) FinishGithubMainPull(ctx context.Context, arg FinishGithubMainPullParams) (int64, error) {
-	tag, err := q.db.Exec(ctx, finishGithubMainPull, arg.RepositoryID, arg.Claim, arg.State, arg.GithubRepository, arg.Branch,
-		arg.Policy, arg.PolicyCommit, arg.GithubHead, arg.SmithersHead, strings.TrimSpace(arg.Error), arg.BackoffSeconds, arg.ResetPolicy, arg.FactoryState, strings.TrimSpace(arg.FactoryError), arg.HealthCause, arg.RetryAt)
-	if err != nil {
-		return 0, err
+	commits := arg.Commits
+	if commits == nil {
+		commits = []string{}
 	}
-	return tag.RowsAffected(), nil
+	var written int64
+	err := q.db.QueryRow(ctx, finishGithubMainPull, arg.RepositoryID, arg.Claim, arg.State, arg.GithubRepository, arg.Branch,
+		arg.Policy, arg.PolicyCommit, arg.GithubHead, arg.SmithersHead, strings.TrimSpace(arg.Error), arg.BackoffSeconds, arg.ResetPolicy, arg.FactoryState, strings.TrimSpace(arg.FactoryError), arg.HealthCause, arg.RetryAt, commits).Scan(&written)
+	return written, err
 }
 
 // The poll re-checks pull repositories not checked within $1 seconds and

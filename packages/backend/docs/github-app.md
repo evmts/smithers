@@ -99,6 +99,14 @@ not a second current-state cache. The registered refs consumer's effects and
 acknowledgement share one transaction. Full stream qualification remains
 outstanding.
 
+Each fast-forward records the first-parent commits it brought into main in
+`github_main_commits`, in the claim-fenced finish that records the sync. The
+first synced read starts the inventory (`github_main_pulls.commits_recorded_from`);
+history a created bookmark receives is not recorded. The install scorecard
+counts a recorded commit as outside work unless a TODO's PR merge commit equals
+it, and reports outside work as `source_missing` for windows that begin before
+the inventory started.
+
 ## Fetched-state delivery
 
 On installs, issue, pull-request and comment webhooks wake the existing metadata

@@ -176,6 +176,8 @@ type gitHubMainPullGit interface {
 	// of it, and returns both commits.
 	Fetch(ctx context.Context, dir, smithersURL, githubURL, ref string) (base, tip string, err error)
 	IsAncestor(ctx context.Context, dir, ancestor, descendant string) (bool, error)
+	// FirstParents lists the first-parent commits after base up to tip.
+	FirstParents(ctx context.Context, dir, base, tip string) ([]string, error)
 	Push(ctx context.Context, dir, smithersURL, commit, ref string) error
 }
 
@@ -399,6 +401,8 @@ type gitHubMainPullOutcome struct {
 	// never reused for a source it was not read from.
 	factoryState, factoryError string
 	resetPolicy                bool
+	// commits are the changes to main a fast-forward brought in.
+	commits []string
 }
 
 func (s *GitHubMainPullService) runClaimed(parent context.Context, row db.GithubMainPull) {
@@ -439,6 +443,7 @@ func (s *GitHubMainPullService) runClaimed(parent context.Context, row db.Github
 		GithubRepository: outcome.githubRepository,
 		Branch:           outcome.branch, Policy: outcome.policy, PolicyCommit: outcome.policyCommit, GithubHead: outcome.githubHead,
 		SmithersHead: outcome.smithersHead, Error: outcome.err, FactoryState: outcome.factoryState, FactoryError: outcome.factoryError, BackoffSeconds: backoff.Seconds(), ResetPolicy: outcome.resetPolicy,
+		Commits: outcome.commits,
 	})
 	switch {
 	case err != nil:
@@ -754,6 +759,12 @@ func (s *GitHubMainPullService) pullSerialized(ctx context.Context, row db.Githu
 		return fail("Smithers " + branch + " (" + smithersHead + ") is not an ancestor of GitHub " + branch + " (" + tip +
 			"); it diverged and is never overwritten. Merge Smithers " + branch + " into GitHub's " + branch + ", then retry")
 	}
+	// A created bookmark's history predates the install's changes to main.
+	if !creating {
+		if out.commits, err = s.git.FirstParents(ctx, dir, smithersHead, tip); err != nil {
+			return fail("list main commits: " + sanitize(err))
+		}
+	}
 	bridge.allow(tip)
 	if err := s.git.Push(ctx, dir, bridgeURL, tip, ref); err != nil {
 		return fail("push to Smithers: " + sanitize(err))
@@ -920,6 +931,14 @@ func (g cliGitHubMainPullGit) Fetch(ctx context.Context, dir, smithersURL, githu
 
 func (g cliGitHubMainPullGit) IsAncestor(ctx context.Context, dir, ancestor, descendant string) (bool, error) {
 	return gitutil.IsAncestor(ctx, dir, ancestor, descendant, gitHubMainPullCommand)
+}
+
+func (g cliGitHubMainPullGit) FirstParents(ctx context.Context, dir, base, tip string) ([]string, error) {
+	out, err := g.run(ctx, dir, "rev-list", "--first-parent", base+".."+tip)
+	if err != nil {
+		return nil, err
+	}
+	return strings.Fields(string(out)), nil
 }
 
 // Push is not forced; the bridge also accepts only ref: base -> commit.

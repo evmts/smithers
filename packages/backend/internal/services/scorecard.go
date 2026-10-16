@@ -182,6 +182,22 @@ func (s *ScorecardService) Summary(ctx context.Context, from, to time.Time) (Sco
 		for _, name := range []string{"merged", "first_merge", "activation", "no_hand_written_code"} {
 			facts.Coverage[name+":T-GH-02"] = mergedCoverage
 		}
+		inventory := false
+		if present["github_main_commits"] {
+			if inventory, err = queries.ScorecardMainCommitCoverage(ctx, window.From); err != nil {
+				return Scorecard{}, err
+			}
+			commits, err := queries.ScorecardMainCommits(ctx, db.ScorecardMainCommitsParams{WindowFrom: window.From, WindowTo: window.To})
+			if err != nil {
+				return Scorecard{}, err
+			}
+			facts.MainCommits = make(map[string]bool, len(commits))
+			for _, commit := range commits {
+				facts.MainCommits[commit.CommitID] = commit.Smithers
+			}
+		}
+		facts.Coverage["outside_work:T-GH-02"] = inventory
+		facts.Coverage["dogfood:T-GH-02"] = inventory && mergedCoverage
 	}
 	if present["chat_turns"] && present["chat_turn_batches"] {
 		answer, err := queries.ScorecardFirstAnswer(ctx)
@@ -366,14 +382,14 @@ func unavailableScorecard(window ScorecardWindow) Scorecard {
 		}
 		add(name, "diagnostic", "none", todoTables, tickets)
 	}
-	add("dogfood", "50 merged TODOs in 14 days", "fewer than 20 merged TODOs or outside work exceeds 50%", append([]string{"github_synced_repos"}, todoTables...), merges)
+	add("dogfood", "50 merged TODOs in 14 days", "fewer than 20 merged TODOs or outside work exceeds 50%", append([]string{"github_main_commits"}, todoTables...), merges)
 	add("activation", "first merge within 60 minutes", "two of three teams need help (manual)", append([]string{"install_settings"}, todoTables...), append([]string{"T-INS-06"}, merges...))
 	add("core_value", "at least 10 accepted TODOs per week; sampled median under 15 person-minutes (manual)", "fewer than 3 accepted in week 2 or rising sampled median (manual)", todoTables, []string{"T-STK-01"})
 	add("terminal_edits", "diagnostic", "none", []string{"product_job_events", "burst_files"}, []string{"T-COL-04"})
 	add("second_member_actions", "diagnostic", "none", append([]string{"approvals"}, todoTables...), []string{"T-STK-01", "T-COL-04", "T-APP-04"})
 	add("no_hand_written_code", "diagnostic", "none", []string{"mythical_items", "product_job_events", "burst_files"}, append([]string{"T-COL-04"}, merges...))
 	add("flow_revisions", "diagnostic", "none", []string{"workflow_definitions", "flow_loads"}, []string{"T-FLW-03"})
-	add("outside_work", "diagnostic", "over 50% of changes to main", []string{"github_synced_repos", "mythical_items"}, []string{"T-GH-02", "T-STK-01"})
+	add("outside_work", "diagnostic", "over 50% of changes to main", []string{"github_main_commits", "mythical_items"}, []string{"T-GH-02", "T-STK-01"})
 	add("multiplayer", "at least 3 sessions per week with two members on one branch", "zero sessions in week 2", []string{"audit_log"}, []string{"T-COL-06"})
 	add("retention", "at least 10 accepted TODOs in week 3", "fewer than 3 accepted TODOs in week 3", todoTables, []string{"T-STK-01"})
 	add("self_improvement", "at least one merged learning proposal reduces its signature rate over the next 5 TODOs versus the previous 5", "no accepted proposal in two weeks", []string{"mythical_items", "memory_notes"}, []string{"T-FLW-06", "T-STK-01", "T-STK-04"})

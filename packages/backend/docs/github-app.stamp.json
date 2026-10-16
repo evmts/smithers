@@ -3,9 +3,9 @@
   "producer": null,
   "output": {
     "path": "packages/backend/docs/github-app.md",
-    "digest": "2c04d5216611ce86bede8e9ef6918f87bd95c36067aa317b9fea2bcee0800fc3"
+    "digest": "ba9f02f491d5405f5e7574147bc30b5bc0328d898a37c96eade6c4b031a758f2"
   },
-  "closure": "84d45ed289d77b47ae4bbb6cff8748c24be03a9e4eca377052fa4647640ef607",
+  "closure": "3eb8165452521c85df82d42b3608c55f92d34063b1def799d8834fed24d4fb8c",
   "inputs": [
     {
       "path": "docs/api/openapi/install.yaml",
@@ -117,7 +117,7 @@
     },
     {
       "path": "packages/backend/internal/services/github_import.go",
-      "digest": "5bf8bfb532b5ccdc06d307fdf39cac9feb02bb74fd6bf6e06d765c1f216eebf3"
+      "digest": "d24670703f829115e49b1adc751058a2272fce01e7b3fbf591e2b9c82375ff18"
     },
     {
       "path": "packages/backend/internal/services/github_issue_comments.go",
@@ -129,7 +129,7 @@
     },
     {
       "path": "packages/backend/internal/services/github_main_pull.go",
-      "digest": "4c4ad479c4b51d42afa9a5c1f32a2515b84bc380caabadf8dc46d0888e06702f"
+      "digest": "536780c049b9b6f48ce7f83621e99765cb6e17e01276b00a3b585d4a2a08b4b3"
     },
     {
       "path": "packages/backend/internal/services/github_pull_diff.go",
@@ -137,11 +137,11 @@
     },
     {
       "path": "packages/backend/internal/services/github_repo_list.go",
-      "digest": "7afbd58f5c43c5244f1f233072d2a08f052865714a68132a51a9e6912438d9d4"
+      "digest": "0962388f403f1822509ad4ab092cd45f1f8b02ba2d62ced68fa86dde1766c7e1"
     },
     {
       "path": "packages/backend/internal/services/github_repo_metadata.go",
-      "digest": "189db90ac7ddcf872f0395293e6f20aa88c5b9116da5f0ab5c94a983e3634b3d"
+      "digest": "11e6adab437918f52b1c400bde709c0331642899e1e435c5d64a55cb5f73f377"
     },
     {
       "path": "packages/backend/internal/services/github_repo_push_access.go",
@@ -273,7 +273,7 @@
     },
     {
       "path": "packages/backend/internal/services/repo_connection_github_app.go",
-      "digest": "732b1348120458dbb119e7fcc2bda7ce3ff33555cf412401ffe9bb774760b5ed"
+      "digest": "08d08e097d65dd0c0234efe33dc857f12491eebda5aad3e34ef95a1e018853ce"
     }
   ]
 }

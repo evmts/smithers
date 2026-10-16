@@ -362,6 +362,10 @@ func (g *fakeMainPullGit) IsAncestor(context.Context, string, string, string) (b
 	return g.ancestor, nil
 }
 
+func (g *fakeMainPullGit) FirstParents(context.Context, string, string, string) ([]string, error) {
+	return nil, nil
+}
+
 func (g *fakeMainPullGit) Push(ctx context.Context, _, bridgeURL, commit, ref string) error {
 	g.pushes++
 	if g.skipPush {

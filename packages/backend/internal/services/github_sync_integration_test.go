@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -92,4 +93,56 @@ func TestInstallMainFollowsAMergeInSmithers(t *testing.T) {
 	}
 	require.False(t, due(29), "read 29 s ago")
 	require.True(t, due(31), "read 31 s ago")
+}
+
+// The sync records each change to main it brings in, so the scorecard can
+// tell a Smithers merge from a laptop commit (T-GH-02, T-REL-03). The
+// enrolling read that finds both mains equal records nothing.
+func TestInstallMainSyncRecordsChangesToMain(t *testing.T) {
+	h := newMergeHarness(t)
+	ctx := context.Background()
+	q := db.New(h.pool)
+	sync := NewGitHubMainPullService(q, h.host, h.connections, h.connections)
+	qualifyMainPullFixture(sync)
+	sync.SetMainMoved(h.service.MainMoved)
+	h.service.SetMainFollower(func(ctx context.Context, repositoryID int64) {
+		_, err := sync.Request(ctx, repositoryID)
+		require.NoError(t, err)
+	})
+	inventory := func() map[string]bool {
+		t.Helper()
+		rows, err := q.ScorecardMainCommits(ctx, db.ScorecardMainCommitsParams{WindowFrom: time.Unix(0, 0), WindowTo: time.Now().Add(time.Hour)})
+		require.NoError(t, err)
+		out := map[string]bool{}
+		for _, row := range rows {
+			out[row.CommitID] = row.Smithers
+		}
+		return out
+	}
+	sync.Sweep(ctx)
+	require.NoError(t, sync.PollOnce(ctx))
+	require.Empty(t, inventory(), "history from before the install is not a change to main")
+	covered, err := q.ScorecardMainCommitCoverage(ctx, time.Now().Add(time.Minute))
+	require.NoError(t, err)
+	require.True(t, covered, "the first synced read starts the inventory")
+	covered, err = q.ScorecardMainCommitCoverage(ctx, time.Now().Add(-time.Hour))
+	require.NoError(t, err)
+	require.False(t, covered, "a window that began before the inventory is not covered")
+
+	n, head, _ := h.first("Add a greeting")
+	require.NoError(t, h.press(h.ctx, n, head))
+	h.pass()
+	squash := h.githubRef("main")
+	require.NoError(t, sync.PollOnce(ctx))
+
+	// Alice pushes a commit to GitHub's main from her laptop.
+	h.git(h.work, "fetch", "-q", h.github, "refs/heads/main")
+	h.git(h.work, "checkout", "-q", "FETCH_HEAD")
+	laptop := h.commit("Alice's laptop commit", "LAPTOP.md", "from a laptop\n")
+	h.git(h.work, "push", "-q", h.github, laptop+":refs/heads/main")
+	_, err = sync.Request(ctx, h.repoID)
+	require.NoError(t, err)
+	require.NoError(t, sync.PollOnce(ctx))
+	require.Equal(t, laptop, h.hostRef("refs/heads/main"))
+	require.Equal(t, map[string]bool{squash: true, laptop: false}, inventory())
 }

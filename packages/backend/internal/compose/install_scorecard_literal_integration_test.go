@@ -45,8 +45,9 @@ import (
 //     in week 3, one of them with Carol too.
 //   - The learning proposal TODO 20 merges; its signature failed in 3 of the
 //     5 TODOs before and 0 of the 5 after: 1 that measurably helps.
-//   - No synced main-commit inventory exists, so the laptop commit has no
-//     row: outside work and dogfood name T-GH-02, never 0 or pass.
+//   - Until the GitHub sync starts its main-commit inventory, outside work
+//     and dogfood name T-GH-02, never 0 or pass. Then main holds the 52
+//     merge commits and 5 laptop commits: 5 of 57 outside, 8.8 %.
 func TestInstallScorecardLiteralAlphaFixture(t *testing.T) {
 	pool, _ := postgresfixture.NewProductDatabase(t)
 	ctx := t.Context()
@@ -250,8 +251,29 @@ func TestInstallScorecardLiteralAlphaFixture(t *testing.T) {
 	require.Equal(t, "source_missing", measure(unloaded, "flow_revisions").Verdict)
 	require.Equal(t, []string{"T-FLW-03"}, measure(unloaded, "flow_revisions").MissingTickets)
 	require.Equal(t, float64(60), measure(unloaded, "accepted").Value)
+	for _, name := range []string{"outside_work", "dogfood"} {
+		require.Equal(t, "source_missing", measure(unloaded, name).Verdict, name)
+		require.Equal(t, []string{"T-GH-02"}, measure(unloaded, name).MissingTickets, name)
+	}
 	_, err = pool.Exec(ctx, `UPDATE flow_loads SET commit_id=$2,loaded_commit=$2 WHERE repository_id=$1`, repo, strings.Repeat("d", 40))
 	require.NoError(t, err)
+
+	// T-GH-02: the sync's main-commit inventory, started before t0.
+	_, err = pool.Exec(ctx, `INSERT INTO github_main_pulls(repository_id,state,policy,commits_recorded_from) VALUES($1,'synced','pull',$2)`, repo, t0.Add(-time.Hour))
+	require.NoError(t, err)
+	mainCommit := func(commit string, when time.Time) {
+		_, err := pool.Exec(ctx, `INSERT INTO github_main_commits(repository_id,commit_id,synced_at) VALUES($1,$2,$3)`, repo, commit, when)
+		require.NoError(t, err)
+	}
+	for i := 0; i < 52; i++ {
+		commit := fmt.Sprintf("%040x", 0xa000+i)
+		_, err = pool.Exec(ctx, `UPDATE mythical_items SET pr_merge_commit=$2 WHERE id=$1::uuid`, todos[i].id, commit)
+		require.NoError(t, err)
+		mainCommit(commit, todos[i].accepted.Add(50*time.Minute))
+	}
+	for i := 0; i < 5; i++ {
+		mainCommit(fmt.Sprintf("%040x", 0xb000+i), t0.Add(time.Duration(2+i)*24*time.Hour))
+	}
 
 	// Step 2: only the S1 source contract. Without burst_files and without
 	// presence or learning producer evidence those measures name their

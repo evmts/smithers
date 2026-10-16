@@ -17,7 +17,8 @@ SELECT source.name::text AS name,
               AND table_name = 'workflow_definitions' AND column_name = 'digest')))::boolean AS present
 FROM unnest(ARRAY['install_settings', 'mythical_items', 'product_job_events',
                  'chat_turns', 'chat_turn_batches', 'burst_files', 'audit_log',
-                 'workflow_definitions', 'flow_loads', 'memory_notes', 'approvals']) AS source(name);
+                 'workflow_definitions', 'flow_loads', 'memory_notes', 'approvals',
+                 'github_main_commits']) AS source(name);
 
 -- Creation receipts, not row creation times, establish stack acceptance.
 -- Deduplicate repeated deliveries by the TODO identity.
@@ -148,3 +149,16 @@ WHERE digest IS NOT NULL AND status = 'loaded'
 -- name: ScorecardFlowLoadCoverage :one
 SELECT (count(*) > 0 AND bool_and(loaded_commit <> ''))::boolean AS covered
 FROM flow_loads;
+
+-- T-GH-02's synced main-commit inventory covers a window only when every
+-- followed repository recorded commits from before the window began.
+-- name: ScorecardMainCommitCoverage :one
+SELECT (count(*) > 0 AND bool_and(COALESCE(commits_recorded_from <= @window_from::timestamptz, false)))::boolean AS covered
+FROM github_main_pulls WHERE policy = 'pull';
+
+-- A change to main is Smithers work when a TODO's PR merge commit is it.
+-- name: ScorecardMainCommits :many
+SELECT c.commit_id, EXISTS(SELECT 1 FROM mythical_items i WHERE i.repository_id = c.repository_id
+  AND i.pr_merge_commit = c.commit_id AND (i.source = 'todo' OR i.checks->>'todo' = 'true'))::boolean AS smithers
+FROM github_main_commits c
+WHERE c.synced_at >= @window_from::timestamptz AND c.synced_at < @window_to::timestamptz;
