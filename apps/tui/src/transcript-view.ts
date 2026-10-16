@@ -139,7 +139,8 @@ export const useTranscriptView = (options: {
   const lane = (id: string): string => laneColor(Math.max(0, tabs.findIndex((tab) => tab.id === id)))
   const chatRows = useMemo(() => Timeline.cached(), [])
   const drawsProgram = options.expanded || Timeline.program(filter)
-  const projectedChat = RunCard.chat(transcript, drawsProgram)
+  // A fresh projection on every render would miss the row cache, which keys on identity.
+  const projectedChat = useMemo(() => RunCard.chat(transcript, drawsProgram), [transcript, drawsProgram])
   const rows = chatRows(projectedChat, filter, drawsProgram)
   const lines = Subagents.lines(rows, Subagents.batches(transcript, tabs, undefined, options.runs), earlierOpen())
   const workerTab = surface.startsWith("tab:") ? tabs.find((tab) => `tab:${tab.id}` === surface) : undefined

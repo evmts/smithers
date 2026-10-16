@@ -134,6 +134,25 @@ const done = (at: number) => {
   )
 }
 
+test("an unchanged rerender reuses the chat rows; transcript, filter and Ctrl+O refresh them", async () => {
+  const transcript = done(100)
+  await mount({ transcript })
+  const before = current().rows
+  await change({})
+  expect(current().rows).toBe(before)
+  await change({ expanded: true })
+  expect(current().rows).not.toBe(before)
+  const expanded = current().rows
+  await change({ expanded: true, filter: Timeline.all })
+  expect(current().rows).not.toBe(expanded)
+  await change({ expanded: false, filter: Timeline.initial })
+  expect(current().rows).toEqual(before)
+  const reset = current().rows
+  await change({ transcript: Transcript.note(transcript, "Later", 104) })
+  expect(current().rows).not.toBe(reset)
+  expect(current().rows.map((row) => Timeline.text(row.item))).toContain("Later")
+})
+
 test("empty projection has no focus or activity and accepts harmless navigation", async () => {
   await mount()
   expect(current().cardKeys).toEqual([])
