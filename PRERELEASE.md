@@ -2,24 +2,35 @@
 
 ## 1.0.0-rc.11 — 2026-10-16
 
-Recovery of rc.10, whose MCP consumer selected Effect 4.0.5 against the
-executable adapters built on 4.0.4. Its immutable tag is preserved; the
-[failed candidate](https://github.com/smithersai/smithers/actions/runs/38913993371)
-published zero packages. rc.11 pins the executable Effect peers (#4002).
-Release commit: `aeff7cd6627294ac839b40ed9de3cbf97c43f2fc`.
-[Release run 38913993371](https://github.com/smithersai/smithers/actions/runs/38913993371)
-failed before publication: clean builds and native helpers passed, but the
-installed MCP consumer resolved `effect@4.0.5` instead of the required 4.0.4
-and the smoke refused it (#4002). All 49 rc.10 versions are absent from npm;
-all 49 `next` tags remain rc.9 and every `latest` tag is unchanged.
-No candidate archive exists to resume. The tag is preserved; a changed
-candidate requires a new version per scripts/release-resume.md.
-The requested rc.10 npm install/start verification therefore could not run.
-Examples and shared backend tests also reported failures; the remaining
-reporting lanes and server bundle were still running when this was recorded. `latest` must stay unchanged
-(`@smthrs/flows`: 1.0.0-rc.9; legacy `smthrs`: 0.35.0).
-The Release run and npm verification receipts are tracked in #4042.
-No announcement or GitHub Release is part of this cut.
+Recovery of rc.10 (cut `aeff7cd66272`), whose MCP consumer selected Effect
+4.0.5 against executable adapters built on 4.0.4. Its immutable tag is
+preserved and its [candidate](https://github.com/smithersai/smithers/actions/runs/38913993371)
+published zero packages.
+
+rc.11 was cut on the clean Mac mini checkout at
+`b20e90aed82eb50f7b7cc8919b22c2534030920a`, with executable Effect peers
+pinned to 4.0.4 in `d40b1e7318df`. Its
+[Release candidate](https://github.com/smithersai/smithers/actions/runs/38918852041)
+failed during the migration package build: the private-adapter builder
+required a caret peer and rejected the exact peer. Native helpers passed.
+No candidate archive was produced and no rc.11 package was published.
+The builder correction `364ed0f819a9` has passing real-manifest/private-adapter tests and
+a local migration-package build; it requires a new version to publish.
+
+A local reproduction of the broad release smoke also fails: its wildcard
+optional peers select `@effect/sql-pg`, `@effect/sql-sqlite-node`,
+`@effect/sql-sqlite-bun` and `@effect/vitest` 4.0.5, which require Effect
+`^4.0.5` while the executable peer selects 4.0.4. The smoke has not been
+changed or bypassed. Publication remains blocked pending resolution of that
+adapter contract (#4002, #4042).
+
+Registry verification on 2026-10-16: all 49 rc.11 versions are absent;
+all 49 `next` tags remain rc.9 and every `latest` matches the pre-rc.10
+snapshot (`@smthrs/flows`: rc.9; legacy `smthrs`: 0.35.0).
+The new candidate's npm version/help/start smoke cannot run before it is
+published; no rc.11 installed-runtime success is claimed. Evidence and
+remaining reporting-lane results are tracked in #4042.
+No announcement, GitHub Release or `latest` move is part of this recovery.
 
 - **Unverified — CI (#4040):** today's app browser/unit, TUI CI/E2E and
   targeted workspace repairs have clean Mac mini receipts on the revisions
