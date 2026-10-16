@@ -217,7 +217,11 @@ const DELEGATED_HANDLERS: Readonly<Record<string, readonly string[]>> = {
   "../cards/FlowCard.tsx": ["sendRunCommand("],
   "../cards/RunTraceCard.tsx": ["sendRunCommand("], // the original onRunCommand prop, before the frame wrapper
   "../cards/FlowFormCards.tsx": ["cancel.onClick()"], // card.dismiss after the keyboard focus handoff; the full submit handler is inspected
-  "../cards/RunsCards.tsx": ["onAnswer(", "onClick={send}"] // retained run questions carry values through the inbox controller
+  "../cards/RunsCards.tsx": ["onAnswer(", "onClick={send}"], // retained run questions carry values through the inbox controller
+  // The launcher's Open box GOES to `/owner/name` — the same browser
+  // navigation its rows' links already are. The route there owns admission,
+  // sign-in, import and every refusal, so there is no command to run here.
+  "../cards/RepositoryLauncher.tsx": ["onOpenRepository(repositoryHref("]
 }
 
 const routesThroughRegistry = (context: string): boolean =>
@@ -1349,7 +1353,7 @@ describe("launch-law parity: every affordance is a command", () => {
       "../cards/CodingVibeCard.tsx": 1,
       "../cards/RepositoryChoiceCard.tsx": 2,
       "../cards/RepositoryHomeView.tsx": 4,
-      "../cards/RepositoryLauncher.tsx": 5,
+      "../cards/RepositoryLauncher.tsx": 7,
       "../cards/RepositoryUpdateCard.tsx": 2,
       /*
        * The Library (the `plugins` surface and the guided introduction share

@@ -1,9 +1,11 @@
-import type { RepositorySubject } from "@smthrs/rpc/RepositorySubjectPath"
+import type { RefLocation, RepositorySubject } from "@smthrs/rpc/RepositorySubjectPath"
+import { resolveRefLocation } from "@smthrs/rpc/RepositorySubjectPath"
 import { flowArgs } from "./flows/FlowArgs"
 import type { AppController } from "./state/AppController"
 import { accountOwnerOf } from "./state/AccountOwner"
 import { parseRepoSelection } from "./state/AppState"
 import type { AppStore } from "./state/AppStore"
+import type { Message } from "./state/AppState"
 
 /*
  * The subject a GitHub-shaped repository URL asks for, opened through the
@@ -23,6 +25,14 @@ import type { AppStore } from "./state/AppStore"
  */
 
 /**
+ * The subjects a URL names outright: a pull request, its tabs, the two lists
+ * and one issue. A `tree` or `blob` location names a subject too, but only
+ * after it has been divided against the repository's own refs, so it is read
+ * by {@link openRequestedFile} and never by {@link subjectCommand}.
+ */
+export type RepositorySubjectView = Exclude<RepositorySubject, { readonly kind: "tree" | "blob" }>
+
+/**
  * The registered read flow a subject opens, with its target bound explicitly.
  *
  * `repo` always rides the payload, so the read is of the repository the URL
@@ -32,7 +42,7 @@ import type { AppStore } from "./state/AppStore"
  * own under the same number, and that is a different subject
  * (IssuesSeam `issueView` gives it a different card entirely).
  */
-export const subjectCommand = (repo: string, subject: RepositorySubject): { readonly name: string; readonly args: string } =>
+export const subjectCommand = (repo: string, subject: RepositorySubjectView): { readonly name: string; readonly args: string } =>
   subject.kind === "pull" ? { name: "pr", args: flowArgs("pr", { number: subject.number, repo }) }
     : subject.kind === "pulls" ? { name: "pr", args: flowArgs("pr", { operation: "list", repo }) }
       : subject.kind === "issue"
@@ -109,13 +119,153 @@ const selectTabWhenOpened = (
 }
 
 /**
+ * The registered read flow a divided file location opens.
+ *
+ * A file is `/file` with the revision the URL named, the same `?ref=`
+ * parameter the Files card reads a pinned revision with. A folder is
+ * `/files` at that revision. Both bind `repo` explicitly, as every other
+ * subject does, so the read is of the repository the URL named.
+ * @see FilesSeam.listFiles
+ */
+export const fileSubjectCommand = (
+  repo: string,
+  kind: "tree" | "blob",
+  located: RefLocation
+): { readonly name: string; readonly args: string } =>
+  kind === "blob"
+    ? { name: "file", args: flowArgs("file", { path: located.path, repo, ref: located.ref }) }
+    : { name: "files", args: flowArgs("files", { operation: "repository", path: located.path, repo, ref: located.ref }) }
+
+/** The repository id the admitted selection holds, in the inventory's own spelling. */
+const selectedRepoId = (store: AppStore, repo: string): string => {
+  const key = store.session().activeRepoKey
+  const selected = key == null ? null : parseRepoSelection(key)
+  return selected?.repoId ?? repo
+}
+
+/** The refs a reader could confirm for this repository, and whether that list is the whole one. */
+interface RefInventory {
+  /** Ref names, exactly as their source spells them. Empty when nothing could be read. */
+  readonly refs: ReadonlyArray<string>
+  /** True when the bookmark list itself could not be read, so only the default bookmark is known. */
+  readonly partial: boolean
+  /** The branch read's own refusal, when it refused. */
+  readonly error?: string
+}
+
+/**
+ * The refs this page can authoritatively name for a repository.
+ *
+ * Two declared reads, in the order of what each proves: the repository
+ * document's default bookmark, which the mirror answers to a signed-out
+ * reader and which `openRequestedRepo` already put on the row, and the
+ * repository's bookmarks (`GET /api/repos/{o}/{r}/bookmarks`, the branch
+ * selector's own read). Nothing is invented and nothing is inferred from the
+ * URL: a list that could not be read leaves `partial` true, and the caller
+ * says so rather than dividing a location against a guess.
+ */
+const authoritativeRefs = async (
+  controller: Pick<AppController, "store" | "repositoryBranches">,
+  repo: string
+): Promise<RefInventory> => {
+  const bookmark = controller.store.collections.repositories.get(repo)?.head?.bookmark
+  const known = typeof bookmark === "string" && bookmark !== "" ? [bookmark] : []
+  await controller.repositoryBranches.load(repo)
+  const row = controller.repositoryBranches.rows.get(repo)
+  if (row?.state === "ready") return { refs: [...new Set([...known, ...row.names])], partial: false }
+  return { refs: known, partial: true, ...(row?.error === undefined ? {} : { error: row.error }) }
+}
+
+/**
+ * What a reader is told when a file URL cannot be divided, and the one step
+ * that exists for them.
+ *
+ * Never a guess and never a claim the read did not make: a bookmark list
+ * that WAS read says no branch of this repository begins the location, and
+ * says that tags and commit ids were not in that list; a list that refused
+ * says only that, names the default bookmark it does know, and offers the
+ * read again. Signed out the one step is the page's own sign-in door, since
+ * the bookmark list is an account's read.
+ */
+const unresolvedNotice = (
+  store: AppStore,
+  repo: string,
+  subject: Extract<RepositorySubject, { readonly kind: "tree" | "blob" }>,
+  inventory: RefInventory
+): { readonly text: string; readonly action: Message["action"] } => {
+  const signedIn = store.collections.identitySessions.get("identity")?.state === "signed-in"
+  const subjectWord = subject.kind === "blob" ? "file" : "folder"
+  const retry: Message["action"] = signedIn
+    ? { flow: "branches", label: "List branches" }
+    : { flow: "sign-in", label: "Sign in with GitHub" }
+  const opening = `This URL names a ${subjectWord} in ${repo}, and Smithers cannot tell which part of ${subject.location} is the branch.`
+  if (!inventory.partial) {
+    return {
+      text: `${opening} No branch of ${repo} begins it. Tags and commit ids are not in that list.`,
+      action: retry
+    }
+  }
+  const only = inventory.refs[0]
+  const read = inventory.error === undefined ? "" : ` ${inventory.error}`
+  return {
+    text: only === undefined
+      ? `${opening} Its branches could not be read.${read}`
+      : `${opening} Only its default branch ${only} is known here, and the URL does not begin with it.${read}`,
+    action: retry
+  }
+}
+
+/**
+ * Open the folder or file a `tree`/`blob` URL named, once the repository has
+ * been admitted.
+ *
+ * The division is the only new decision, and it is made against refs
+ * somebody read, never against the URL's own shape: which slash in
+ * `release/1.2/src/index.ts` divides the ref from the path is a fact about
+ * this repository. The refs are re-read for THIS entry, and the admission is
+ * checked again after that read, so an older outstanding read or a
+ * repository switch cannot land one URL's file under another URL's
+ * repository.
+ */
+const openRequestedFile = async (
+  controller: Pick<AppController, "store" | "runCommandForResult" | "repositoryBranches">,
+  repo: string,
+  subject: Extract<RepositorySubject, { readonly kind: "tree" | "blob" }>,
+  owner: string | null | undefined,
+  options: SubjectEntryOptions
+): Promise<string | void> => {
+  const target = selectedRepoId(controller.store, repo)
+  const inventory = await authoritativeRefs(controller, target)
+  if (!admitted(controller.store, repo, options.requestId, owner)) return
+  const located = resolveRefLocation(subject.location, inventory.refs)
+  const say = async (text: string, action: Message["action"]): Promise<void> => {
+    await controller.store.dispatch({ type: "message.appended", actor: "system", text, spoken: true, ...(action === undefined ? {} : { action }) }).isPersisted.promise
+  }
+  if (located === undefined) {
+    const notice = unresolvedNotice(controller.store, target, subject, inventory)
+    await say(notice.text, notice.action)
+    return
+  }
+  if (subject.kind === "blob" && located.path === "") {
+    // `/blob/<ref>` with nothing below it names a revision and no file at all.
+    await say(`This URL names the branch ${located.ref} of ${target} and no file in it.`, {
+      flow: "files", label: `Browse ${located.ref}`, args: flowArgs("files", { operation: "repository", path: "", repo: target, ref: located.ref })
+    })
+    return
+  }
+  const { name, args } = fileSubjectCommand(target, subject.kind, located)
+  const outcome = await controller.runCommandForResult(name, args)
+  return outcome.status === "failed" ? outcome.error : outcome.status === "unavailable" ? outcome.reason : undefined
+}
+
+/**
  * Open the subject a repository URL asked for, once that repository has been
  * admitted. Returns the read's own refusal when it failed, so the caller can
  * report it the way every other command failure is reported; returns nothing
  * when the URL named no subject or when the admission is not this request's.
  */
 export const openRequestedSubject = async (
-  controller: Pick<AppController, "store" | "runCommandForResult">,
+  controller: Pick<AppController, "store" | "runCommandForResult" | "repositoryBranches">,
   repo: string,
   subject: RepositorySubject | undefined,
   options: SubjectEntryOptions
@@ -123,6 +273,7 @@ export const openRequestedSubject = async (
   if (subject === undefined) return
   const owner = accountOwnerOf(controller.store.collections.identitySessions.get("identity"))
   if (!admitted(controller.store, repo, options.requestId, owner)) return
+  if (subject.kind === "tree" || subject.kind === "blob") return openRequestedFile(controller, repo, subject, owner, options)
   const { name, args } = subjectCommand(repo, subject)
   // The read runs to completion first: its own card is what the tab is chosen
   // on, and one command at a time is the lifecycle's own rule.

@@ -1782,6 +1782,14 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       truncated: z.boolean().optional(),
       /** The global path (`/org/repo/path`); absent on cards written before lane piper. */
       address: z.string().optional(),
+      /**
+       * The revision this directory was listed AT, when the listing asked for
+       * one (a `/owner/repo/tree/<ref>/<path>` URL does). A listing with no
+       * ref answers the repository head, which moves; one with a ref answers
+       * that ref, and `readAt` — which states the head — is then absent,
+       * because the head is exactly what this listing did NOT ask for.
+       */
+      ref: z.string().optional(),
       readAt: ReadAtSchema.optional()
     })
   }),

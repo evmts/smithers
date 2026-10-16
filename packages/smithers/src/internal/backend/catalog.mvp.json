@@ -4862,6 +4862,16 @@
                 }
               ]
             },
+            "ref": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "workspaceId": {
               "anyOf": [
                 {

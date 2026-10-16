@@ -333,3 +333,175 @@ test("signed out, the subject parks on sign-in and the whole target is the retur
   // And the sign-in comes back to the pull request, not to the repository root.
   expect(signInReturnTo(window.location)).toBe(`/${REPO}/pull/2/files`)
 })
+
+/*
+ * The OTHER half of a domain swap (#4039's folder and file paths).
+ * `github.com/o/r/blob/main/x.ts` and
+ * `/tree/main/dir` are the links a reader actually has, and before this they
+ * were not routes at all. What these hold to:
+ *
+ * - the file and the folder open through the registered `file`/`files` reads,
+ *   at the revision the URL named, with `repo` bound to the URL's repository;
+ * - which slash divides the ref from the path is decided against refs that
+ *   were READ, so a slash-bearing branch opens the right file and an
+ *   unconfirmable one opens nothing at all;
+ * - the ref and the path keep their case, and an encoded segment is decoded
+ *   exactly once;
+ * - an account change or a superseded request opens no file.
+ */
+const bookmarks = (...names: ReadonlyArray<string>) =>
+  json(200, { items: names.map((name, index) => ({ name, target_change_id: `chg-${index}` })), next_cursor: "" })
+
+const fileContents = (content: string) => json(200, { path: "x", content, type: "file", encoding: "utf-8" })
+
+const fileListCardOf = (store: Awaited<ReturnType<typeof createAppStore>>) =>
+  [...store.collections.cards.values()].find(card => card.kind === "file-list")
+
+const fileCardOf = (store: Awaited<ReturnType<typeof createAppStore>>) =>
+  [...store.collections.cards.values()].find(card => card.kind === "file")
+
+const notices = (store: Awaited<ReturnType<typeof createAppStore>>) =>
+  [...store.collections.messages.values()].filter(message => message.role === "smithers")
+
+const noticeTexts = (store: Awaited<ReturnType<typeof createAppStore>>) => notices(store).map(message => message.text)
+
+test("a blob URL opens that file at the branch it names, through the registered file read", async () => {
+  const backend = ownedRepository({
+    [`${ROOT}/bookmarks`]: bookmarks("main", "release/1.2"),
+    [`${ROOT}/contents/apps/server/src/edge.ts`]: fileContents("export const edge = 1\n")
+  })
+  const { store, refusal } = await enter(`/${REPO}/blob/main/apps/server/src/edge.ts`, backend)
+  expect(refusal).toBeUndefined()
+  const card = fileCardOf(store)
+  expect(card?.kind === "file" ? card.payload : undefined).toMatchObject({
+    repo: REPO, path: "apps/server/src/edge.ts", content: "export const edge = 1\n", ref: "main"
+  })
+  // The read asked the contents route for that revision, on the URL's repository.
+  expect(backend.seen).toContain(`${ROOT}/contents/apps/server/src/edge.ts?ref=main`)
+})
+
+test("a slash-bearing branch divides where the repository's own refs say, not at the first slash", async () => {
+  const backend = ownedRepository({
+    [`${ROOT}/bookmarks`]: bookmarks("main", "release/1.2"),
+    [`${ROOT}/contents/apps`]: json(200, [
+      { name: "server", path: "apps/server", type: "dir" },
+      { name: "app", path: "apps/app", type: "dir" }
+    ])
+  })
+  const { store, refusal } = await enter(`/${REPO}/tree/release/1.2/apps`, backend)
+  expect(refusal).toBeUndefined()
+  const card = fileListCardOf(store)
+  expect(card?.kind === "file-list" ? card.payload : undefined).toMatchObject({
+    repo: REPO, path: "apps", ref: "release/1.2"
+  })
+  expect(card?.kind === "file-list" ? card.payload.entries.map(entry => entry.name) : []).toEqual(["app", "server"])
+  expect(backend.seen).toContain(`${ROOT}/contents/apps?ref=release%2F1.2`)
+  // A listing AT a revision is not addressed at the head it did not ask for.
+  expect(card?.kind === "file-list" ? card.payload.readAt : "unset").toBeUndefined()
+})
+
+test("the ref and the path keep their case, and an encoded segment is decoded exactly once", async () => {
+  const backend = ownedRepository({
+    [`${ROOT}/bookmarks`]: bookmarks("main", "Release/2.0"),
+    [`${ROOT}/contents/docs/My%20Notes.md`]: fileContents("# My Notes\n")
+  })
+  const { store, refusal } = await enter(`/${REPO}/blob/Release/2.0/docs/My%20Notes.md`, backend)
+  expect(refusal).toBeUndefined()
+  const card = fileCardOf(store)
+  expect(card?.kind === "file" ? card.payload : undefined).toMatchObject({ path: "docs/My Notes.md", ref: "Release/2.0" })
+  expect(backend.seen).toContain(`${ROOT}/contents/docs/My%20Notes.md?ref=Release%2F2.0`)
+})
+
+test("a branch no read can confirm opens nothing and says which part it could not divide", async () => {
+  const backend = ownedRepository({ [`${ROOT}/bookmarks`]: bookmarks("main", "release/1.2") })
+  const { store, refusal } = await enter(`/${REPO}/blob/feature/login/src/index.ts`, backend)
+  expect(refusal).toBeUndefined()
+  expect(fileCardOf(store)).toBeUndefined()
+  // No read of that path was attempted: a division nobody confirmed is not a
+  // path. (The repository's own root tree and homepage are other reads.)
+  expect(backend.seen.filter(path => path.includes("src/index.ts"))).toEqual([])
+  const notice = noticeTexts(store).find(text => text.includes("feature/login/src/index.ts"))
+  expect(notice).toContain(`names a file in ${REPO}`)
+  expect(notice).toContain(`No branch of ${REPO} begins it`)
+  const action = notices(store).find(message => message.text === notice)?.action
+  expect(action).toMatchObject({ flow: "branches" })
+})
+
+/*
+ * Signed out the bookmark list is not this reader's to read. The repository
+ * document's default bookmark still is, so the common link keeps working and
+ * every other one says what is missing instead of guessing a slash.
+ */
+test("signed out, the default branch still divides its own links and any other says so", async () => {
+  const signedOut = (extra: Record<string, Response | ((request: Request) => Response)>) => recordingBackend({
+    "/api/user": json(401, { status: "error", code: "unauthorized" }),
+    "/api/public/repos": json(200, { repos: [{ name: REPO, title: "e2e-verify", url: `https://github.com/${REPO}`, stats: null }] }),
+    [ROOT]: json(200, { full_name: REPO, default_bookmark: "main" }),
+    [`${ROOT}/bookmarks`]: json(401, { status: "error", code: "unauthorized" }),
+    ...extra
+  })
+  const opened = await enter(`/${REPO}/tree/main/apps`, signedOut({
+    [`${ROOT}/contents/apps`]: json(200, [{ name: "server", path: "apps/server", type: "dir" }])
+  }))
+  const card = fileListCardOf(opened.store)
+  expect(card?.kind === "file-list" ? card.payload : undefined).toMatchObject({ path: "apps", ref: "main" })
+
+  const refused = await enter(`/${REPO}/tree/feature/login/apps`, signedOut({}))
+  expect(fileListCardOf(refused.store)).toBeUndefined()
+  const notice = noticeTexts(refused.store).find(text => text.includes("feature/login/apps"))
+  expect(notice).toContain("Only its default branch main is known here")
+  expect(notices(refused.store).find(message => message.text === notice)?.action)
+    .toMatchObject({ flow: "sign-in" })
+  // The whole deep link is what a sign-in returns to.
+  expect(signInReturnTo(window.location)).toBe(`/${REPO}/tree/feature/login/apps`)
+})
+
+test("an account change while the refs are being read opens no file", async () => {
+  const backend = ownedRepository({
+    [`${ROOT}/bookmarks`]: bookmarks("main"),
+    [`${ROOT}/contents/apps/server/src/edge.ts`]: fileContents("export const edge = 1\n")
+  })
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  window.history.replaceState(null, "", `/${REPO}/blob/main/apps/server/src/edge.ts`)
+  const target = requestedTarget(window.location)!
+  const controller = createAppController(store, silentAgent, { bootstrap: WEB, repositoryApp: target.repo, ...backend.services })
+  await controller.loadSession()
+  const requestId = beginRepositoryEntry(store, target.repo)
+  await openRequestedRepo(controller, backend.fetchImpl, target.repo, requestId)
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "someone-else", admin: false, scopesPlain: null }).isPersisted.promise
+  await settled()
+  const before = backend.seen.length
+  expect(await openRequestedSubject(controller, target.repo, target.subject, { requestId })).toBeUndefined()
+  await settled()
+  expect(fileCardOf(store)).toBeUndefined()
+  expect(backend.seen.slice(before).filter(path => path.includes("/contents/"))).toEqual([])
+})
+
+test("a superseded admission request opens no file", async () => {
+  const backend = ownedRepository({
+    [`${ROOT}/bookmarks`]: bookmarks("main"),
+    [`${ROOT}/contents/apps/server/src/edge.ts`]: fileContents("export const edge = 1\n")
+  })
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  window.history.replaceState(null, "", `/${REPO}/blob/main/apps/server/src/edge.ts`)
+  const target = requestedTarget(window.location)!
+  const controller = createAppController(store, silentAgent, { bootstrap: WEB, repositoryApp: target.repo, ...backend.services })
+  await controller.loadSession()
+  const stale = beginRepositoryEntry(store, target.repo)
+  await openRequestedRepo(controller, backend.fetchImpl, target.repo, beginRepositoryEntry(store, target.repo))
+  const before = backend.seen.length
+  expect(await openRequestedSubject(controller, target.repo, target.subject, { requestId: stale })).toBeUndefined()
+  await settled()
+  expect(fileCardOf(store)).toBeUndefined()
+  expect(backend.seen.slice(before).filter(path => path.includes("/contents/"))).toEqual([])
+})
+
+test("a file read the platform refuses is reported as that read's own refusal", async () => {
+  const backend = ownedRepository({
+    [`${ROOT}/bookmarks`]: bookmarks("main"),
+    [`${ROOT}/contents/apps/missing.ts`]: json(404, { status: "error", code: "not_found" })
+  })
+  const { store, refusal } = await enter(`/${REPO}/blob/main/apps/missing.ts`, backend)
+  expect(refusal ?? noticeTexts(store).join(" ")).toContain("apps/missing.ts")
+  expect(fileCardOf(store)).toBeUndefined()
+})

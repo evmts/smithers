@@ -200,13 +200,14 @@ export const subjectFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> 
         return payload.operation === "workspace" ? ["signed-in"] : repositoryFile(payload) ? ["first-run-target", "repo-source"] : []
       },
       preflight: (payload, actor) => payload.operation === "tree" && actor !== "user" ? "Only a person can change the file tree" : undefined,
-      input: Schema.Struct({ path: Schema.optional(Schema.String), branch: Schema.optional(Schema.String), repo: Schema.optional(Schema.String), workspaceId: Schema.optional(Schema.String), copy: Schema.optional(Schema.String), operation: Schema.optional(Schema.Literals(["repository", "workspace", "tree"])) }),
-      form: { requires: payload => payload.operation === "tree" ? ["copy"] : undefined, fields: { branch: { hidden: true }, operation: { hidden: true }, copy: { label: "Working copy", kind: "text", hidden: true }, path: { kind: "text" }, repo: { optionsFrom: "cloud-repos", kind: "text" }, workspaceId: { optionsFrom: "workspaces", hidden: true } }, args: payload => JSON.stringify(payload) },
-      prepare: ({ path, repo, branch, operation }) => operation !== "workspace" && operation !== "tree" && branch === undefined ? actions.listFiles.preload?.(path ?? "", repo) : undefined,
-      handler: ({ path, branch, repo, operation, workspaceId, copy }) => {
+      input: Schema.Struct({ path: Schema.optional(Schema.String), branch: Schema.optional(Schema.String), repo: Schema.optional(Schema.String), ref: Schema.optional(Schema.String), workspaceId: Schema.optional(Schema.String), copy: Schema.optional(Schema.String), operation: Schema.optional(Schema.Literals(["repository", "workspace", "tree"])) }),
+      form: { requires: payload => payload.operation === "tree" ? ["copy"] : undefined, fields: { branch: { hidden: true }, ref: { hidden: true }, operation: { hidden: true }, copy: { label: "Working copy", kind: "text", hidden: true }, path: { kind: "text" }, repo: { optionsFrom: "cloud-repos", kind: "text" }, workspaceId: { optionsFrom: "workspaces", hidden: true } }, args: payload => JSON.stringify(payload) },
+      prepare: ({ path, repo, branch, ref, operation }) => operation !== "workspace" && operation !== "tree" && branch === undefined ? actions.listFiles.preload?.(path ?? "", repo, ref) : undefined,
+      handler: ({ path, branch, repo, ref, operation, workspaceId, copy }) => {
         if (operation === "tree") return copy ? actions.toggleRepoTree(copy, path) : "Choose a working copy"
         if (operation === "workspace") return install() || actions.live ? "Branch unavailable" : actions.listWorkspaceFiles(path, workspaceId)
-        if (repositoryFile({ path, branch, repo, operation })) return actions.listFiles(path ?? "", repo)
+        /* The revision the URL named rides the same route parameter `/file` reads one file with. */
+        if (repositoryFile({ path, branch, repo, operation })) return actions.listFiles(path ?? "", repo, ref)
         return install() ? actions.listFiles(path ?? "", branch) : realFiles() ? actions.branchFiles.list(branch) : open(fileListCard(designRepo(), findBranch(design.world(), branch ?? path ?? "")?.id ?? "main"))
       } }),
     flow({ name: "diff",   slash: "/diff", cli: ["diff"], journey: ["J2","J3"], group: "Files and code", visibility: "core", actors: ["person","app_agent","external_agent"], minimumRole: "member", http: { method: "GET", path: "/api/branches/{branch}/diff", defaults: { branch: "main" }, query: { entry: "entry" } }, summary: "Show a branch's changes", args: "[branch|path]", discloseToAgent: true,

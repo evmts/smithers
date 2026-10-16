@@ -66,6 +66,11 @@ describe("repository subject paths", () => {
       ["/roninjin10/e2e-verify/pulls", "/roninjin10/e2e-verify"],
       ["/roninjin10/e2e-verify/issues", "/roninjin10/e2e-verify"],
       ["/roninjin10/e2e-verify/issues/6", "/roninjin10/e2e-verify"],
+      ["/roninjin10/e2e-verify/tree/main", "/roninjin10/e2e-verify"],
+      ["/roninjin10/e2e-verify/tree/main/apps/server/src", "/roninjin10/e2e-verify"],
+      ["/roninjin10/e2e-verify/tree/release/1.2/apps", "/roninjin10/e2e-verify"],
+      ["/roninjin10/e2e-verify/blob/main/apps/server/src/edge.ts", "/roninjin10/e2e-verify"],
+      ["/roninjin10/e2e-verify/blob/main/docs/My%20Notes.md", "/roninjin10/e2e-verify"],
       ["/Some-Owner/repo_name.git/pull/7/files", "/Some-Owner/repo_name.git"]
     ] as const) {
       expect(repositorySubjectRoot(path)).toBe(root)
@@ -92,9 +97,14 @@ describe("repository subject paths", () => {
       "/owner/repo/pull/2x", "/owner/repo/pull/2.0", "/owner/repo/pull/99999999999", "/owner/repo/pull/2147483648",
       "/owner/repo/pull/%32", "/owner/repo/pu%6Cl/2", "/owner/repo/pull", "/owner/repo/pull/",
       "/owner/repo/pull/2/rebase", "/owner/repo/pull/2/files/src/index.ts", "/owner/repo/pulls/2",
-      "/owner/repo/issues/2/comments", "/owner/repo/issues//", "/owner/repo/tree/main/src",
-      "/owner/repo/blob/main/src/index.ts", "/owner/repo/commit/abc123", "/owner/repo//pull/2",
-      "/owner/../pull/2", "/owner/./issues", "owner/repo/pull/2"
+      "/owner/repo/issues/2/comments", "/owner/repo/issues//", "/owner/repo/tree", "/owner/repo/blob",
+      "/owner/repo/commit/abc123", "/owner/repo//pull/2",
+      "/owner/../pull/2", "/owner/./issues", "owner/repo/pull/2",
+      // A file location is never divided by this host, so every shape whose
+      // division could be widened by a decode stops at the grammar.
+      "/owner/repo/tree/main/..", "/owner/repo/blob/main/../../etc/passwd",
+      "/owner/repo/blob/main/src%2Findex.ts", "/owner/repo/blob/main/src%255C.ts",
+      "/owner/repo/blob/https://evil.example/x", "/owner/repo/tree/main//src"
     ]) {
       expect({ path, root: repositorySubjectRoot(path) }).toEqual({ path, root: undefined })
     }

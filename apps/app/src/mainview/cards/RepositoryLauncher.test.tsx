@@ -23,6 +23,7 @@ const UPDATE: SmithersUpdate = {
 
 const render = (over: Partial<RepositoryLauncherProps> = {}) => {
   const calls: Array<[string, string | undefined]> = []
+  const opened: Array<string> = []
   const host = document.createElement("div")
   document.body.append(host)
   const root = createRoot(host)
@@ -32,9 +33,10 @@ const render = (over: Partial<RepositoryLauncherProps> = {}) => {
     catalogRead={over.catalogRead}
     signedIn={over.signedIn ?? true}
     onRunCommand={over.onRunCommand ?? ((name, args) => { calls.push([name, args]) })}
+    onOpenRepository={over.onOpenRepository ?? (href => { opened.push(href) })}
   />))
   mounted.push(() => { act(() => root.unmount()); host.remove() })
-  return { host, calls }
+  return { host, calls, opened }
 }
 
 /* React tracks a controlled input's value, so a direct assignment is invisible to it: go through the DOM's own setter. */
@@ -173,4 +175,78 @@ test("every act is reachable from the keyboard: native links, buttons, a form an
     expect(element.getAttribute("tabindex")).not.toBe("-1")
     expect(["A", "BUTTON", "INPUT", "SUMMARY"]).toContain(element.tagName)
   }
+})
+
+/*
+ * The shelf told people to "open /owner/name" and gave them nothing
+ * to type it into. The Open box is that door: present for an account
+ * Smithers knows nothing about and for a signed-out reader alike, and it
+ * navigates onto the repository's own address so RepoLink's route — not the
+ * launcher — owns sign-in, import, installation and every refusal.
+ */
+const openBox = (host: HTMLElement) => {
+  const form = section(host, "open-existing").querySelector("form")!
+  return {
+    form,
+    input: form.querySelector<HTMLInputElement>("input")!,
+    submit: form.querySelector<HTMLButtonElement>('button[type="submit"]')!,
+    error: () => host.querySelector<HTMLElement>('[data-testid="repository-launcher-open-error"]')
+  }
+}
+
+const submit = async (form: HTMLFormElement): Promise<void> => {
+  await act(async () => { form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })) })
+}
+
+test("the Open box is there with no account, no repositories and signed out", () => {
+  for (const signedIn of [true, false]) {
+    const { host } = render({ signedIn })
+    const box = openBox(host)
+    expect(box.input.getAttribute("aria-label")).toBe("Open an existing repository")
+    expect(box.submit.textContent).toContain("Open")
+    expect(section(host, "open").textContent, String(signedIn)).not.toContain("Open <code>/owner/name</code>")
+  }
+})
+
+test("a typed owner/name goes to that repository's own address, and so does its GitHub URL", async () => {
+  const { host, opened } = render()
+  const box = openBox(host)
+  await type(box.input, "SmithersAI/Smithers")
+  await submit(box.form)
+  await type(box.input, "https://github.com/ada/widgets/tree/main/src")
+  await submit(box.form)
+  expect(opened).toEqual(["/smithersai/smithers/", "/ada/widgets/"])
+  expect(box.error()).toBeNull()
+})
+
+test("Enter in the field opens it, with no button press", async () => {
+  const { host, opened } = render()
+  const box = openBox(host)
+  await type(box.input, "ada/widgets")
+  // A native form: Enter in a single text field submits it.
+  await submit(box.form)
+  expect(opened).toEqual(["/ada/widgets/"])
+})
+
+test("an empty or unsafe entry navigates nowhere and says what to enter, without quoting it back", async () => {
+  const { host, opened } = render()
+  const box = openBox(host)
+  await submit(box.form)
+  expect(opened).toEqual([])
+  expect(box.error()?.textContent).toContain("Enter a repository as owner/name")
+  expect(box.input.getAttribute("aria-invalid")).toBe("true")
+  expect(box.input.getAttribute("aria-describedby")).toBe(box.error()!.id)
+
+  await type(box.input, "https://evil.example/ada/widgets")
+  // Typing clears the previous refusal rather than leaving a stale one.
+  expect(box.error()).toBeNull()
+  await submit(box.form)
+  expect(opened).toEqual([])
+  expect(box.error()?.getAttribute("role")).toBe("alert")
+  expect(box.error()?.textContent).not.toContain("evil.example")
+})
+
+test("the empty shelf no longer tells people to type a path somewhere else", () => {
+  const { host } = render({ repositories: [], signedIn: true })
+  expect(section(host, "open").textContent).toContain("Open one you have on GitHub, above, to import it.")
 })

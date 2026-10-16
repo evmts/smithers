@@ -106,14 +106,16 @@ test("the default root opens the repository launcher for a fresh signed-out visi
    * launcher's own sections. Its reads land after it paints, so a transcript
    * that followed that growth would scroll the opening off the top.
    */
-  for (const section of ["open", "create", "explore", "updates"]) {
+  for (const section of ["open-existing", "open", "create", "explore", "updates"]) {
     await expect(launcher.locator(`[data-section="${section}"]`)).toBeInViewport({ ratio: 1 })
   }
   expect(await launcher.evaluate(node => node.getBoundingClientRect().top >= 0)).toBe(true)
   // The default root keeps its own address.
   await expect(page).toHaveURL(/\/$/)
 
-  // Open, create, explore and the real update news.
+  // Open by name, your repositories, create, explore and the real update news.
+  await expect(launcher.locator('[data-section="open-existing"] h2')).toHaveText("Open a repository")
+  await expect(launcher.getByRole("textbox", { name: "Open an existing repository" })).toBeVisible()
   await expect(launcher.locator('[data-section="open"] h2')).toHaveText("Your repositories")
   await expect(launcher.locator('[data-section="create"] h2')).toHaveText("Create a repository on GitHub")
   const explore = launcher.getByRole("list", { name: "Public repositories" })
@@ -143,7 +145,7 @@ test("a private launcher act offers the existing explicit sign-in and signs nobo
   await expect(launcher).toBeVisible()
 
   // Signed out, the private acts say what they need instead of attempting it.
-  await expect(launcher.locator('[data-section="open"]')).toContainText("Sign in with GitHub to open your own repositories")
+  await expect(launcher.locator('[data-section="open"]')).toContainText("Sign in with GitHub to list your own repositories")
   await expect(launcher.locator('[data-section="create"]')).toContainText("Sign in with GitHub to create one")
   await expect(launcher.getByRole("button", { name: "Create", exact: true })).toHaveCount(0)
   await expect(launcher.getByRole("textbox", { name: "New repository name" })).toHaveCount(0)
@@ -162,6 +164,34 @@ test("a private launcher act offers the existing explicit sign-in and signs nobo
   const started = new URL(reads.auth[0]!)
   expect(started.pathname).toBe("/api/auth/github")
   expect(started.searchParams.get("return_to")).toBe("/?signed-in=github")
+})
+
+/*
+ * The Open box on the real served document: a signed-out visitor types a
+ * repository and presses Enter, and the browser GOES to that repository's own
+ * address — the route there owns admission and every refusal. A host this app
+ * does not know navigates nowhere and says what to enter, without repeating
+ * the typed text.
+ */
+test("a signed-out visitor opens a repository by name from the launcher, and an unsafe entry goes nowhere", async ({ page }) => {
+  const reads = await freshVisitor(page)
+  await page.goto("/")
+  const launcher = launcherOf(page)
+  const field = launcher.getByRole("textbox", { name: "Open an existing repository" })
+  await expect(field).toBeVisible()
+
+  await field.fill("https://evil.example/smithersai/smithers")
+  await field.press("Enter")
+  await expect(launcher.getByTestId("repository-launcher-open-error")).toContainText("Enter owner/name")
+  await expect(launcher.getByTestId("repository-launcher-open-error")).not.toContainText("evil.example")
+  await expect(page).toHaveURL(/\/$/)
+  expect(reads.auth).toEqual([])
+
+  // Enter alone, with no button press, is the whole gesture.
+  await field.fill("SmithersAI/Smithers")
+  await field.press("Enter")
+  await page.waitForURL(/\/smithersai\/smithers\/?$/)
+  expect(reads.auth).toEqual([])
 })
 
 test("the launcher is the root through reload, Back and Forward", async ({ page }) => {
@@ -224,14 +254,18 @@ test.describe("narrow dark keyboard entry", () => {
     await page.goto("/")
     const launcher = launcherOf(page)
     await expect(launcher).toBeVisible()
-    for (const section of ["open", "create", "explore", "updates"]) {
+    for (const section of ["open-existing", "open", "create", "explore", "updates"]) {
       await expect(launcher.locator(`[data-section="${section}"]`)).toBeVisible()
     }
     const box = await launcher.boundingBox()
     expect(box!.width).toBeLessThanOrEqual(380)
     // Narrow, the launcher still opens at its own first heading, not mid-page.
-    await expect(launcher.locator('[data-section="open"]')).toBeInViewport({ ratio: 1 })
+    await expect(launcher.locator('[data-section="open-existing"]')).toBeInViewport({ ratio: 1 })
     expect(box!.y).toBeGreaterThanOrEqual(0)
+    // Narrow, the Open box and its own copy stay inside the viewport whole.
+    await expect(launcher.getByRole("textbox", { name: "Open an existing repository" })).toBeInViewport({ ratio: 1 })
+    await expect(launcher.locator('[data-section="open-existing"]'))
+      .toContainText("the same path GitHub uses")
     // Tab from the document reaches the launcher's own doors and rows.
     const reached: Array<string> = []
     for (let press = 0; press < 20 && !reached.includes("row"); press++) {

@@ -1767,6 +1767,7 @@ const FIXTURES: Record<
       entries: [{ name: "src", kind: "dir" }, { name: "PACKAGE.ts", kind: "file" }],
       truncated: true,
       address: "/smithersai/smithers/packages/rpc",
+      ref: "release/1.2",
       readAt: { changeId: "qupxosqw", commitId: "a03f5f1e", source: "working-copy" }
     }
   },

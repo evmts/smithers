@@ -147,7 +147,13 @@ test("the reported pull request URL and its tabs reach the app document, from th
     "/roninjin10/e2e-verify/issues",
     "/roninjin10/e2e-verify/issues/6",
     "/smithersai/smithers/pull/2/files",
-    "/smithersai/smithers/issues/4039"
+    "/smithersai/smithers/issues/4039",
+    // The folder and file links a reader gets by swapping the domain.
+    "/roninjin10/e2e-verify/tree/main",
+    "/roninjin10/e2e-verify/tree/main/apps/server/src",
+    "/roninjin10/e2e-verify/tree/release/1.2/apps",
+    "/roninjin10/e2e-verify/blob/main/apps/server/src/edge.ts",
+    "/smithersai/smithers/blob/main/README.md"
   ]) {
     const { ASSETS, seen } = appDocumentProbe()
     const response = await edge.fetch(new Request(`https://smithers.sh${pathname}`), { ASSETS })
@@ -175,6 +181,31 @@ test("a mixed-case subject path redirects to the canonical page and KEEPS the su
   expect(new URL(response.headers.get("location")!).pathname).toBe("/smithersai/smithers/pull/2/files")
 })
 
+/*
+ * A ref and a file path are case-sensitive on every checkout this serves.
+ * The repository root is still normalized to GitHub's canonical lowercase
+ * page; everything below it is the reader's own spelling, and a path that is
+ * already canonical below the root is served, never redirected.
+ */
+test("a file deep link keeps the case of its ref and its path while the root is canonicalized", async () => {
+  const { ASSETS } = appDocumentProbe()
+  const redirected = await edge.fetch(
+    new Request("https://smithers.sh/SmithersAI/Smithers/blob/Release/1.2/docs/README.md"),
+    { ASSETS }
+  )
+  expect(redirected.status).toBe(301)
+  expect(new URL(redirected.headers.get("location")!).pathname)
+    .toBe("/smithersai/smithers/blob/Release/1.2/docs/README.md")
+
+  const served = appDocumentProbe()
+  const direct = await edge.fetch(
+    new Request("https://smithers.sh/smithersai/smithers/blob/main/docs/README.md"),
+    { ASSETS: served.ASSETS }
+  )
+  expect(direct.status).toBe(200)
+  expect(served.seen).toEqual(["/smithersai/smithers/"])
+})
+
 test("the frame path this change did not touch is still the app", async () => {
   const { ASSETS, seen } = appDocumentProbe()
   const response = await edge.fetch(new Request("https://smithers.sh/w/ws-1/b/main/f/frame-1"), { ASSETS })
@@ -200,8 +231,12 @@ test("site, API, coming-soon and unsupported subject paths never become the app"
     "/owner/repo/pull/2/rebase",
     "/owner/repo/pulls/2",
     "/owner/repo/issues/2/comments",
-    "/owner/repo/tree/main/src",
-    "/owner/repo/blob/main/src/index.ts",
+    "/owner/repo/tree",
+    "/owner/repo/blob",
+    "/owner/repo/tree/main/..",
+    "/owner/repo/blob/main/../../etc/passwd",
+    "/owner/repo/blob/main/src%2Findex.ts",
+    "/owner/repo/blob/https://evil.example/x",
     "/owner/repo/commit/abc123"
   ]) {
     const { ASSETS, seen } = appDocumentProbe()

@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest"
 import {
   parseRepositorySubject,
+  REPOSITORY_LOCATION_MAX_SEGMENTS,
   REPOSITORY_SUBJECT_NUMBER_MAX,
+  repositoryLocation,
+  resolveRefLocation,
   splitRepositoryPath
 } from "../src/RepositorySubjectPath.ts"
 
@@ -21,6 +24,19 @@ describe("splitRepositoryPath", () => {
       owner: "roninjin10",
       name: "e2e-verify",
       subject: { kind: "pull", number: 2, tab: "files" }
+    })
+  })
+
+  it("reads a folder and a file path as one undivided location", () => {
+    expect(splitRepositoryPath("/roninjin10/e2e-verify/tree/main/src")).toEqual({
+      owner: "roninjin10",
+      name: "e2e-verify",
+      subject: { kind: "tree", location: "main/src" }
+    })
+    expect(splitRepositoryPath("/roninjin10/e2e-verify/blob/release/1.2/src/index.ts")).toEqual({
+      owner: "roninjin10",
+      name: "e2e-verify",
+      subject: { kind: "blob", location: "release/1.2/src/index.ts" }
     })
   })
 
@@ -44,8 +60,8 @@ describe("splitRepositoryPath", () => {
         "/owner/repo//",
         "owner/repo",
         "/w/ws-1/b/main/f/frame-1",
-        "/owner/repo/tree/main/src",
-        "/owner/repo/blob/main/src/index.ts",
+        "/owner/repo/tree",
+        "/owner/repo/blob",
         "/owner/repo/commit/abc123",
         "/owner/repo/pull/2/files/src/index.ts"
       ]
@@ -102,5 +118,90 @@ describe("parseRepositorySubject", () => {
     ) {
       expect(parseRepositorySubject(segments), segments.join("/")).toBeUndefined()
     }
+  })
+})
+
+/*
+ * A GitHub ref may hold slashes and so may the path below it. The grammar
+ * carries the whole remainder; this is the half that divides it, and it
+ * divides it against refs somebody read, never against a guess.
+ */
+describe("repositoryLocation", () => {
+  it("carries the remainder exactly as written, in its own case and undecoded", () => {
+    expect(repositoryLocation(["Main", "src", "App.tsx"])).toBe("Main/src/App.tsx")
+    expect(repositoryLocation(["main", "a%20b", "c"])).toBe("main/a%20b/c")
+  })
+
+  it("refuses a traversal, an encoded separator, a double-encoded percent and a scheme", () => {
+    for (
+      const segments of [
+        [],
+        [""],
+        ["main", ""],
+        ["main", "."],
+        ["main", ".."],
+        ["..", "etc", "passwd"],
+        ["main", "a%2Fb"],
+        ["main", "a%2fb"],
+        ["main", "a%5Cb"],
+        ["main", "a%255Cb"],
+        ["main", "a%25"],
+        ["main", "a%2"],
+        ["main", "a%zz"],
+        ["main", "a\\b"],
+        ["https:", "evil.example", "x"],
+        ["http://evil.example", "x"]
+      ]
+    ) {
+      expect(repositoryLocation(segments), JSON.stringify(segments)).toBeUndefined()
+    }
+  })
+
+  it("bounds the location so a pathological URL is refused, not walked", () => {
+    const deep = Array.from({ length: REPOSITORY_LOCATION_MAX_SEGMENTS }, () => "a")
+    expect(repositoryLocation(deep)).toBe(deep.join("/"))
+    expect(repositoryLocation([...deep, "a"])).toBeUndefined()
+    expect(repositoryLocation(["main", "b".repeat(1024)])).toBeUndefined()
+  })
+})
+
+describe("resolveRefLocation", () => {
+  const refs = ["main", "release/1.2", "release/1.2/hotfix", "Main"]
+
+  it("divides at the longest ref the authoritative list holds", () => {
+    expect(resolveRefLocation("main/src/index.ts", refs)).toEqual({ ref: "main", path: "src/index.ts" })
+    expect(resolveRefLocation("release/1.2/src/index.ts", refs)).toEqual({ ref: "release/1.2", path: "src/index.ts" })
+    expect(resolveRefLocation("release/1.2/hotfix/src", refs)).toEqual({ ref: "release/1.2/hotfix", path: "src" })
+  })
+
+  it("names the ref's own root when the location is only the ref", () => {
+    expect(resolveRefLocation("main", refs)).toEqual({ ref: "main", path: "" })
+    expect(resolveRefLocation("release/1.2", refs)).toEqual({ ref: "release/1.2", path: "" })
+  })
+
+  it("is case-sensitive and whole-segment, so no ref is matched by resemblance", () => {
+    expect(resolveRefLocation("Main/src", refs)).toEqual({ ref: "Main", path: "src" })
+    expect(resolveRefLocation("MAIN/src", refs)).toBeUndefined()
+    expect(resolveRefLocation("mainline/src", refs)).toBeUndefined()
+    expect(resolveRefLocation("releases/1.2/src", refs)).toBeUndefined()
+  })
+
+  it("decodes each segment exactly once, and keeps the path's own case", () => {
+    expect(resolveRefLocation("release%2F1.2/src", refs)).toBeUndefined()
+    expect(resolveRefLocation("main/src/My%20File.md", refs)).toEqual({ ref: "main", path: "src/My File.md" })
+    expect(resolveRefLocation("fix%2Fthing/src", ["fix/thing"])).toBeUndefined()
+    expect(resolveRefLocation("fix/thing/src", ["fix/thing"])).toEqual({ ref: "fix/thing", path: "src" })
+  })
+
+  it("is nothing when no listed ref matches, rather than guessing a slash", () => {
+    expect(resolveRefLocation("feature/login/src/index.ts", refs)).toBeUndefined()
+    expect(resolveRefLocation("main/src", [])).toBeUndefined()
+    expect(resolveRefLocation("main/src", [""])).toBeUndefined()
+  })
+
+  it("refuses a location whose decode would reintroduce a traversal", () => {
+    expect(resolveRefLocation("main/%2E%2E/etc", refs)).toBeUndefined()
+    expect(resolveRefLocation("main/%2E", refs)).toBeUndefined()
+    expect(resolveRefLocation("main/%E0%A4%A", refs)).toBeUndefined()
   })
 })

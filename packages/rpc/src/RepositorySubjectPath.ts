@@ -3,7 +3,8 @@
  *
  * Someone who swaps `github.com` for `smithers.sh` keeps the whole path, not
  * only `/owner/repo`: a pull request, one of its tabs, the pull request list,
- * the issue list, one issue. Two readers decide what such a path means — the
+ * the issue list, one issue, a folder, a file. Two readers decide what such a
+ * path means — the
  * Worker edge, which picks the document a path is served from
  * (apps/server/src/appDocument.ts), and the app, which opens the subject after
  * its repository admission (apps/app/src/mainview/RepoLink.ts) — and they must
@@ -24,9 +25,14 @@
  *
  * `pull` carries the tab the URL asks for; GitHub's own conversation URL is
  * the bare `/pull/N`, and the three view suffixes are its other tabs, which
- * are exactly the app's four (`prs.tab`). A branch or blob path is NOT here:
- * dividing a slash-bearing ref from a file path needs an authoritative ref
- * resolver, so those paths stay unsupported rather than guessed.
+ * are exactly the app's four (`prs.tab`).
+ *
+ * `tree` and `blob` carry their whole remainder as ONE opaque `location`,
+ * because a GitHub ref may hold slashes (`release/1.2`) and so may the path
+ * below it: which slash divides them is a fact about the repository's refs,
+ * not about the URL. Nothing here guesses it. {@link resolveRefLocation}
+ * divides the location against a list of refs somebody authoritative read,
+ * and a location no ref matches is refused rather than split.
  * @since 1.0.0
  * @category models
  */
@@ -35,6 +41,8 @@ export type RepositorySubject =
   | { readonly kind: "pulls" }
   | { readonly kind: "issue"; readonly number: number }
   | { readonly kind: "issues" }
+  | { readonly kind: "tree"; readonly location: string }
+  | { readonly kind: "blob"; readonly location: string }
 
 /**
  * The largest subject number a path may name. GitHub numbers issues and pull
@@ -54,15 +62,149 @@ const subjectNumber = (segment: string): number | undefined => {
 }
 
 /**
+ * The most segments and the most characters a file location may carry.
+ *
+ * A repository path is not an unbounded input: GitHub's own ref and path
+ * rules are far below these, and a bound means a pathological URL is refused
+ * by the grammar instead of walking a ref list segment by segment.
+ * @since 1.0.0
+ * @category constants
+ */
+export const REPOSITORY_LOCATION_MAX_SEGMENTS = 64
+
+/**
+ * The most characters a file location may carry, counted on the joined
+ * location as it was written.
+ * @since 1.0.0
+ * @category constants
+ */
+export const REPOSITORY_LOCATION_MAX_LENGTH = 1024
+
+/**
+ * The percent escapes a location segment may carry: a well formed `%XX`
+ * which is NOT a separator, a control character or another percent.
+ *
+ * `%2F` and `%5C` are refused because a separator that arrives encoded would
+ * become one on the single decode {@link resolveRefLocation} does, widening
+ * a two-segment URL into three after both hosts agreed on its shape. `%25`
+ * is refused for the same reason one step further out: an encoded percent is
+ * the first half of an escape that only exists after a SECOND decode, which
+ * nothing here performs and nothing downstream may be relied on to skip.
+ */
+const safeEscapes = (segment: string): boolean => {
+  for (const escape of segment.match(/%.{0,2}/g) ?? []) {
+    if (!/^%[0-9a-fA-F]{2}$/.test(escape)) return false
+    const code = Number.parseInt(escape.slice(1), 16)
+    if (code === 0x2f || code === 0x5c || code === 0x25 || code < 0x20 || code === 0x7f) return false
+  }
+  return true
+}
+
+/**
+ * The `tree`/`blob` remainder as one location, or undefined when the
+ * segments are not a location at all.
+ *
+ * The location is returned exactly as it was written — undecoded, in its own
+ * case — because the ref and the path inside it are both case-sensitive and
+ * neither is this grammar's to normalize. Refused: no segments at all, an
+ * empty, `.` or `..` segment (a traversal, before anything joins it to a
+ * repository root), a backslash or control character, an escape
+ * {@link safeEscapes} rejects, a first segment carrying `:` (a ref may not,
+ * and `blob/https://host` is then never a location), and anything past the
+ * bounds above.
+ * @since 1.0.0
+ * @category parsers
+ */
+export const repositoryLocation = (segments: ReadonlyArray<string>): string | undefined => {
+  if (segments.length === 0 || segments.length > REPOSITORY_LOCATION_MAX_SEGMENTS) return undefined
+  const location = segments.join("/")
+  if (location.length > REPOSITORY_LOCATION_MAX_LENGTH) return undefined
+  for (const segment of segments) {
+    if (segment === "" || segment === "." || segment === "..") return undefined
+    if (/[\\\u0000-\u001f\u007f]/.test(segment)) return undefined
+    if (!safeEscapes(segment)) return undefined
+  }
+  return segments[0]!.includes(":") ? undefined : location
+}
+
+/**
+ * A location divided into the ref it names and the path below that ref.
+ * @since 1.0.0
+ * @category models
+ */
+export interface RefLocation {
+  /** The ref, exactly as the authoritative list spells it. */
+  readonly ref: string
+  /** The path below the ref, decoded once; `""` is the ref's own root. */
+  readonly path: string
+}
+
+/**
+ * Divide a `tree`/`blob` location into its ref and its path, against the
+ * refs somebody authoritative listed for that repository.
+ *
+ * The longest matching ref wins. Git forbids a ref being a directory of
+ * another ref, so at most one of `release` and `release/1.2` can exist and
+ * the rule is never a tie-break in practice; it is the rule anyway, so an
+ * inventory that somehow holds both divides at the one the URL spells out.
+ * Matching is case-sensitive and whole-segment: `Main` is not `main`, and
+ * `mainline/x` does not match the ref `main`.
+ *
+ * Each segment is decoded exactly ONCE here — the grammar refused every
+ * escape that a decode could turn into a separator or another escape, so one
+ * decode cannot widen the location. A malformed escape the grammar let
+ * through (a lone `%` is not one) makes the whole location undefined rather
+ * than a path with a mangled segment.
+ *
+ * Undefined is the honest answer when no listed ref matches: a URL names a
+ * ref this reader cannot confirm, and dividing it anyway would open some
+ * other repository path under some other ref's name.
+ * @since 1.0.0
+ * @category parsers
+ */
+export const resolveRefLocation = (
+  location: string,
+  refs: Iterable<string>
+): RefLocation | undefined => {
+  const decoded: Array<string> = []
+  for (const segment of location.split("/")) {
+    let value: string
+    try {
+      value = decodeURIComponent(segment)
+    } catch {
+      return undefined
+    }
+    if (value === "" || value === "." || value === ".." || value.includes("/") || value.includes("\\")) return undefined
+    decoded.push(value)
+  }
+  let best: RefLocation | undefined
+  let bestSegments = 0
+  for (const ref of refs) {
+    const parts = ref.split("/")
+    if (ref === "" || parts.length > decoded.length || parts.length <= bestSegments) continue
+    if (parts.some((part, index) => part !== decoded[index])) continue
+    best = { ref, path: decoded.slice(parts.length).join("/") }
+    bestSegments = parts.length
+  }
+  return best
+}
+
+/**
  * The subject the segments BELOW `/owner/repo` name, or undefined when they
  * name none: an unknown head, a malformed number, a tab this app has no view
- * for, or any extra segment. Undefined is the honest answer, and both hosts
- * leave such a path exactly as it was.
+ * for, a location {@link repositoryLocation} refuses, or any extra segment.
+ * Undefined is the honest answer, and both hosts leave such a path exactly as
+ * it was.
  * @since 1.0.0
  * @category parsers
  */
 export const parseRepositorySubject = (segments: ReadonlyArray<string>): RepositorySubject | undefined => {
-  const [head, second, third, ...rest] = segments
+  const [head, ...below] = segments
+  if (head === "tree" || head === "blob") {
+    const location = repositoryLocation(below)
+    return location === undefined ? undefined : { kind: head, location }
+  }
+  const [second, third, ...rest] = below
   if (rest.length > 0) return undefined
   if (head === "pulls") return second === undefined ? { kind: "pulls" } : undefined
   if (head === "issues") {

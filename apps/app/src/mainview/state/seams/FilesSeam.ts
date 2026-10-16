@@ -33,7 +33,13 @@ import { refusalWords,readErrorMessage,readResult,unreachableSentence } from "./
 export interface FilesSeam {
   /** Dark S2 operations; production supplies no activation receipts yet. */
   readonly branchFiles: BranchFileOperations
-  readonly listFiles: ViewAction<[path: string, repo?: string]>
+  /**
+   * `ref` is the revision to list AT, the same route parameter
+   * {@link FilesSeam.readFile} reads one file with. Without one the answer is
+   * the repository head, which moves. Only the contents route serves a
+   * revision; an install lists a branch instead and ignores it.
+   */
+  readonly listFiles: ViewAction<[path: string, repo?: string, ref?: string]>
   /**
    * `ref` is the revision to read AT.
    *
@@ -201,8 +207,8 @@ export const createFilesSeam = (ctx: SeamContext, branchOptions?: BranchFileOpti
     return refusal.code === "not_found" ? fallback : refusalLine(refusal, fallback)
   }
 
-  const readers: { listFiles: (path: string, repo?: string) => Promise<ViewResult>; readFile: (path: string, repo?: string, anchor?: FileAnchor, ref?: string) => Promise<ViewResult> } = {
-    listFiles: async (pathArg, explicitRepoArg) => {
+  const readers: { listFiles: (path: string, repo?: string, ref?: string) => Promise<ViewResult>; readFile: (path: string, repo?: string, anchor?: FileAnchor, ref?: string) => Promise<ViewResult> } = {
+    listFiles: async (pathArg, explicitRepoArg, ref) => {
       const target = install
         ? unsafePath(pathArg) ? { error: "File paths must stay inside the repository." }
           : { repo: explicitRepoArg ?? branchOptions?.scope()?.branch ?? "main", path: normalizePath(pathArg) }
@@ -219,7 +225,7 @@ export const createFilesSeam = (ctx: SeamContext, branchOptions?: BranchFileOpti
         try {
           const answer = await readContentsPages(ctx.http, install
             ? `${ctx.baseUrl}/api/branches/${encodeURIComponent(branch)}/files${normalized ? `?path=${encodeURIComponent(normalized)}` : ""}`
-            : contentsUrl(repo, normalized))
+            : contentsUrl(repo, normalized, ref))
           if (answer.kind === "error") return answer.error
           response = answer.response
           body = answer.body
@@ -227,7 +233,9 @@ export const createFilesSeam = (ctx: SeamContext, branchOptions?: BranchFileOpti
           return unreachableSentence(`the backend to list ${label} in ${repo}`, error)
         }
         if (response.status === 404) {
-          return explain404(response, `Path not found: ${label} in ${repo}`)
+          return ref === undefined
+            ? explain404(response, `Path not found: ${label} in ${repo}`)
+            : `Path not found: ${label} in ${repo} at ${ref}`
         }
         if (!response.ok) {
           return readErrorMessage(response, `Listing ${label} in ${repo} failed (${response.status})`)
@@ -244,9 +252,17 @@ export const createFilesSeam = (ctx: SeamContext, branchOptions?: BranchFileOpti
         const parsed = parseEntry(entry)
         return parsed === null ? [] : [parsed]
       })
+      /*
+       * A revision listing is not addressed at the head: `cloudAddressing`
+       * states the head this session last saw, which is exactly what a
+       * `?ref=` listing did NOT ask for, so the revision rides instead.
+       */
       const { readAt } = cloudAddressing(ctx.store, repo, normalized)
       const result = fileListCard(
-        { repo: install ? branch : repo, path: normalized, entries, ...(install || readAt === undefined ? {} : { readAt }) },
+        { repo: install ? branch : repo, path: normalized,
+          entries,
+          ...(install || ref === undefined ? {} : { ref }),
+          ...(install || ref !== undefined || readAt === undefined ? {} : { readAt }) },
         ctx.nextOrdinal(),
         Date.now()
       )
@@ -372,12 +388,12 @@ export const createFilesSeam = (ctx: SeamContext, branchOptions?: BranchFileOpti
     const id = install && kind === "files" ? `files-branch-${repo ?? branchOptions?.scope()?.branch ?? "main"}-${target.path || "/"}`
       : `${kind}-${repoId}-${target.path || "/"}${ref === undefined ? "" : `@${ref}`}`
     return { id, title: `${kind === "file" ? "File" : "Files"} · ${label} · ${target.path || "/"}`, key: JSON.stringify([id, anchor]), target: pane,
-      read: () => kind === "file" ? readers.readFile(path, repo, anchor, ref) : readers.listFiles(path, repo),
+      read: () => kind === "file" ? readers.readFile(path, repo, anchor, ref) : readers.listFiles(path, repo, ref),
     }
   }
   return {
     branchFiles: branchFileOperations(ctx, branchOptions),
-    listFiles: preparedView(ctx, (path: string, repo?: string) => plan("files", path, repo)),
+    listFiles: preparedView(ctx, (path: string, repo?: string, ref?: string) => plan("files", path, repo, undefined, ref)),
     readFile: preparedView(ctx, (path: string, repo?: string, anchor?: FileAnchor, ref?: string) => plan("file", path, repo, anchor, ref)),
   }
 }

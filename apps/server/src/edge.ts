@@ -93,10 +93,20 @@ export const handleEdgeRequest = (request: Request, configuredOrigin: string | u
     const comingSoon = comingSoonDocumentPath(url.pathname)
     const catalog = catalogDocumentPath(subjectRoot ?? url.pathname)
     if (comingSoon !== undefined || catalog !== undefined) {
-      if (url.pathname !== url.pathname.toLowerCase()) {
-        // GitHub's names are case-insensitive, and the canonical page is the
-        // lowercase one — but the subject the reader asked for is kept.
-        url.pathname = subjectRoot === undefined ? (comingSoon ?? catalog)! : url.pathname.toLowerCase()
+      /*
+       * GitHub's OWNER and REPOSITORY names are case-insensitive, and the
+       * canonical page is the lowercase one. Nothing below them is: a ref and
+       * a file path are both case-sensitive, so only the repository root is
+       * normalized and the subject the reader asked for is kept byte for
+       * byte. Lower-casing the whole path answered
+       * `/owner/repo/blob/main/README.md` with a redirect to `readme.md`,
+       * which is a different file on every case-sensitive checkout.
+       */
+      const normalized = subjectRoot ?? url.pathname
+      if (normalized !== normalized.toLowerCase()) {
+        url.pathname = subjectRoot === undefined
+          ? (comingSoon ?? catalog)!
+          : `${subjectRoot.toLowerCase()}${url.pathname.slice(subjectRoot.length)}`
         return Response.redirect(url.toString(), 301)
       }
       const response = yield* asset(new Request(new URL((comingSoon ?? catalog)!, url), request))

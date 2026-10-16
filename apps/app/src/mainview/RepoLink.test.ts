@@ -11,7 +11,10 @@ pathTarget,
 requestedRepo,
 requestedTarget,
 signInReturnTo,
-withoutRepoParam
+withoutRepoParam,
+  repositoryInputTarget,
+  REPOSITORY_INPUT_EMPTY,
+  REPOSITORY_INPUT_INVALID
 } from "./RepoLink"
 import { createAppStore } from "./state/AppStore"
 import { resolveTargetRepo } from "./state/RepoContext"
@@ -159,10 +162,12 @@ describe("pathRepo", () => {
     expect(pathRepo("/smithersai/smithers//")).toBeNull()
     expect(pathRepo("/w/ws-1/b/main/f/frame-1")).toBeNull()
     expect(pathRepo("/a%20b/c")).toBeNull()
-    // A branch or blob path is NOT guessed at: dividing a slash-bearing ref
-    // from a file path needs an authoritative ref resolver (#4039).
-    expect(pathRepo("/smithersai/smithers/tree/main/src")).toBeNull()
-    expect(pathRepo("/smithersai/smithers/blob/main/src/index.ts")).toBeNull()
+    // A folder and a file path name their repository too (#4039's other
+    // half); only a head with no location at all names none.
+    expect(pathRepo("/smithersai/smithers/tree/main/src")).toBe("smithersai/smithers")
+    expect(pathRepo("/smithersai/smithers/tree")).toBeNull()
+    expect(pathRepo("/smithersai/smithers/blob/main/../../etc/passwd")).toBeNull()
+    expect(pathRepo("/smithersai/smithers/blob/main/src/index.ts")).toBe("smithersai/smithers")
   })
 
   /*
@@ -312,7 +317,10 @@ describe("signInReturnTo", () => {
       .toBe("/roninjin10/e2e-verify/issues/6")
     expect(signInReturnTo({ pathname: "/roninjin10/e2e-verify/pull/2/files", search: `?q=${"x".repeat(600)}` }))
       .toBe("/roninjin10/e2e-verify/pull/2/files")
-    expect(signInReturnTo({ pathname: "/roninjin10/e2e-verify/tree/main/src", search: "" })).toBeNull()
+    // A file deep link survives the sign-in hop whole, path and case intact.
+    expect(signInReturnTo({ pathname: "/roninjin10/e2e-verify/blob/main/docs/README.md", search: "?signed-in=github" }))
+      .toBe("/roninjin10/e2e-verify/blob/main/docs/README.md")
+    expect(signInReturnTo({ pathname: "/roninjin10/e2e-verify/tree", search: "" })).toBeNull()
   })
 
   test("a query the server would drop is left behind rather than losing the page", () => {
@@ -860,5 +868,55 @@ describe("the public catalog the launcher explores", () => {
       expect(await loadPublicCatalog(controller, async () => { throw new TypeError("ECONNRESET socket-detail") })).toBe(false)
       expect(store.collections.repositories.size).toBe(0)
     } finally { await store.dispose?.() }
+  })
+})
+
+/*
+ * The launcher's Open box. It navigates, so what it accepts is the
+ * same rule a repository path is read with, and what it refuses it refuses
+ * without quoting back what was typed.
+ */
+describe("repositoryInputTarget", () => {
+  test("accepts the three spellings a reader actually has", () => {
+    expect(repositoryInputTarget("smithersai/smithers")).toEqual({ repo: "smithersai/smithers" })
+    expect(repositoryInputTarget("  Ada/Widgets  ")).toEqual({ repo: "Ada/Widgets" })
+    expect(repositoryInputTarget("https://github.com/smithersai/smithers")).toEqual({ repo: "smithersai/smithers" })
+    expect(repositoryInputTarget("http://www.github.com/smithersai/smithers/")).toEqual({ repo: "smithersai/smithers" })
+    expect(repositoryInputTarget("github.com/smithersai/smithers.git")).toEqual({ repo: "smithersai/smithers" })
+    expect(repositoryInputTarget("https://github.com/smithersai/smithers/tree/main/apps?tab=readme#x"))
+      .toEqual({ repo: "smithersai/smithers" })
+    expect(repositoryInputTarget("/smithersai/smithers/")).toEqual({ repo: "smithersai/smithers" })
+  })
+
+  test("refuses another host, another scheme and a URL carrying credentials", () => {
+    for (
+      const value of [
+        "https://evil.example/smithersai/smithers",
+        "https://github.com.evil.example/a/b",
+        "javascript:alert(1)",
+        "data:text/html,<p>x",
+        "file:///etc/passwd",
+        "https://token@github.com/a/b",
+        "https://user:secret@github.com/a/b",
+        "//evil.example/a/b"
+      ]
+    ) {
+      expect(repositoryInputTarget(value), value).toEqual({ error: REPOSITORY_INPUT_INVALID })
+    }
+  })
+
+  test("refuses a traversal, a single segment and anything that is not a repository name", () => {
+    expect(repositoryInputTarget("")).toEqual({ error: REPOSITORY_INPUT_EMPTY })
+    expect(repositoryInputTarget("   ")).toEqual({ error: REPOSITORY_INPUT_EMPTY })
+    for (const value of ["smithers", "a/b/c/d e", "../../etc", "owner/..", "./x", "owner/na me", "a//b"]) {
+      expect(repositoryInputTarget(value), value).toEqual({ error: REPOSITORY_INPUT_INVALID })
+    }
+  })
+
+  test("never repeats what was typed, so a pasted secret is not reflected onto the page", () => {
+    const secret = "https://ghp_000000000000000000000000000000000000@github.com"
+    const answer = repositoryInputTarget(secret)
+    expect(answer).toEqual({ error: REPOSITORY_INPUT_INVALID })
+    expect("error" in answer ? answer.error : "").not.toContain("ghp_")
   })
 })

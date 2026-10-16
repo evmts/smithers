@@ -108,6 +108,8 @@ export interface FileList {
   readonly path: string
   readonly entries: ReadonlyArray<FileListEntry>
   readonly truncated?: boolean
+  /** The revision asked for, when one was: one directory at two revisions is two listings. */
+  readonly ref?: string
   readonly readAt?: FileListCard["payload"]["readAt"]
 }
 
@@ -126,9 +128,9 @@ export const fileListCard = (
   const value = listingValue(list.repo, list.path, entries)
   return {
     card: {
-      id: `files-${list.repo}-${label}`,
+      id: `files-${list.repo}-${label}${list.ref === undefined ? "" : `@${list.ref}`}`,
       kind: "file-list",
-      title: `Files · ${list.repo} · ${label}`,
+      title: `Files · ${list.repo} · ${label}${list.ref === undefined ? "" : ` · ${list.ref}`}`,
       status: "active",
       createdAt,
       ordinal,
@@ -138,6 +140,7 @@ export const fileListCard = (
         entries,
         ...(list.truncated === true ? { truncated: true } : {}),
         address: `/${list.repo}/${list.path}`,
+        ...(list.ref === undefined ? {} : { ref: list.ref }),
         ...(list.readAt === undefined ? {} : { readAt: list.readAt })
       }
     },
