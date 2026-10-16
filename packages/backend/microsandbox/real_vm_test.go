@@ -94,7 +94,7 @@ func bindMachineHost(t *testing.T, runtime *Runtime) {
 		t.Cleanup(func() { machineHosts.Delete(runtime.root) })
 	}
 	objects := machined.HostObjects{Visit: func(_ context.Context, _ string, visit func(string) error) error { return visit(host.path) }}
-	runtime.machined.BindObjectImporter(objects.Import)
+	runtime.machined.BindObjectImporter(machineHostObjectImporter(objects))
 	runtime.machined.BindObjectExporter(machined.GitBundleExporter(func(context.Context, string) (string, error) { return host.path, nil }))
 	runtime.BindMachinedItem(func(context.Context, string) (machined.ItemBinding, error) { return machined.ItemBinding{}, nil })
 	runtime.BindMachinedHost(func(ctx context.Context, branch string) (string, error) { return objects.Head(ctx, branch, host.seed) })
