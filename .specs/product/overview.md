@@ -10,7 +10,7 @@ It is a wrapper, not a fork: GitHub keeps `main`, issues, pull requests, reviews
 
 ## Why it is different: everything is a flow
 
-A flow is a durable workflow. Every action in Smithers is a flow, from a button or a slash command to an agent step or the whole factory. Flows live in the repository. This has four consequences:
+A flow is a durable workflow. Every action in Smithers is a flow, from a button or a slash command to an agent step or the whole factory. Flows live in the repository, under `.smithers/flows/` (M-49). This has four consequences:
 
 - **Customizable.** Users, and the agent on their behalf, reshape the factory by editing its flows. The few system flows that keep "people merge" and stack order safe can't be overridden (mvp.md M-30).
 - **Self-improving.** The factory learns from its own runs and gets better over time.
@@ -116,4 +116,5 @@ Every detail this overview left open is decided in [mvp.md](mvp.md):
 | A repository GitHub has and Smithers doesn't | M-46 |
 | Confusing copy, noisy layout, broken CSS, weak keyboard access | M-48: release bugs, not polish |
 | Conversations | M-08: one per branch, shared |
+| Where a repository's flows live | M-49: `.smithers/flows/<name>/`, never a root `flows/` |
 | The old product spec | M-12: `docs/mvp/PRODUCT.md` is now a pointer |

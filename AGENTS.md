@@ -276,7 +276,7 @@ App-specific rules: `apps/app/AGENTS.md`.
 
 `@smthrs/flow` is the fundamental library; every other flow API is a thin wrapper over it. Never add a second node or graph model.
 
-One shape, everywhere: a file flow lives at `flows/<name>/flow.ts` and its `export default` is `Flow.make("<tag>", { description, capabilities, effects, modelInvocable?, payload, success, error?, body })` from `@smthrs/flow`. The tag is the first argument and is required, so a flow is never anonymous; a file flow declares the name its path derives.
+One shape, everywhere: a file flow lives at `.smithers/flows/<name>/flow.ts` (mvp.md M-49; never a root `flows/`) and its `export default` is `Flow.make("<tag>", { description, capabilities, effects, modelInvocable?, payload, success, error?, body })` from `@smthrs/flow`. The tag is the first argument and is required, so a flow is never anonymous; a file flow declares the name its path derives.
 
 ## ⚖️ MINIMAL TEXT (Will, 2026-09-15, permanent)
 
