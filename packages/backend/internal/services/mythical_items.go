@@ -1151,6 +1151,65 @@ const mythicalStopped = "stopped: "
 
 const mythicalInterrupted = "stopped: interrupted: interrupted"
 
+// mythicalFailedStage reads the closed-set site a registered failure named
+// first in its own message, as the source refusal projection already reads one
+// (`/source_refused` below): a lower-case identifier followed by ": ". The
+// site is a closed set the raising flow declares (coding's are
+// `flows/coding/planning-memory.ts` planningSites and
+// `flows/coding/source-refusal.ts`); anything else is "unnamed", which is the
+// honest answer that nothing in the chain said where it stopped.
+//
+// The runtime reports a registered failure's message under its own code
+// ("stale_revision: ..."), and that code is already the tag's last segment, so
+// a leading segment equal to it is skipped rather than reported as the stage.
+//
+// Only the identifier is read. No part of the message's text, no stack frame,
+// no path, no id, no payload and no credential can reach the record through
+// it, and the item's own request_outcome is unchanged.
+func mythicalFailedStage(tag, message string) string {
+	rest := strings.TrimSpace(message)
+	code := tag
+	if index := strings.LastIndex(code, "/"); index >= 0 {
+		code = code[index+1:]
+	}
+	for round := 0; round < 2; round++ {
+		name, tail, found := strings.Cut(rest, ": ")
+		if !found || name == "" || len(name) > 48 {
+			return "unnamed"
+		}
+		for _, c := range name {
+			if c != '_' && (c < 'a' || c > 'z') {
+				return "unnamed"
+			}
+		}
+		if code == "" || name != code {
+			return name
+		}
+		rest = tail
+	}
+	return "unnamed"
+}
+
+// mythicalRecordFailedStage says where a failed run stopped, in the install's
+// own log, with the fault class and typed tag the failure registry gave it and
+// the closed-set stage its message named. flowruntime.Run carries
+// FailureMessage beside FailureTag and every recorder of a failed TODO reads
+// only the tag, so a reproduced failure used to leave nothing anywhere that
+// named its site: the backend access rehearsal spent two rounds on one host
+// fault whose own sentence the runtime had been reporting all along.
+func mythicalRecordFailedStage(flow string, run *flowruntime.Run) {
+	if run == nil {
+		return
+	}
+	fault := strings.TrimSpace(run.FailureFault)
+	tag := strings.TrimSpace(run.FailureTag)
+	if fault == "" && tag == "" {
+		return
+	}
+	slog.Warn("mythical.run_failed", "flow", flow, "fault", fault, "tag", tag,
+		"stage", mythicalFailedStage(tag, run.FailureMessage))
+}
+
 // mythicalFailedOutcome reads a failed run by the fault its typed error was
 // registered with (flowruntime.Run.FailureFault) and never by its prose: a
 // decline is the planner's close; a factory fault is the plan's failure and
@@ -1187,6 +1246,7 @@ func mythicalFailedOutcome(update flowdispatch.ProjectionUpdate) string {
 		return mythicalOutage + "infra: the run reported no result"
 	}
 	tag := strings.TrimSpace(run.FailureTag)
+	mythicalRecordFailedStage(update.Checkpoint.FlowID, run)
 	if tag == "coding/Error/declined" {
 		var declined struct {
 			Message string `json:"message"`

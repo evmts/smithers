@@ -169,7 +169,7 @@ const Delegate = Flow.make("planning-test/delegate", {
   success: Schema.Json,
   body: (input) => DelegateStep.call(input)
 })
-const gathering = async (root: string) => {
+const gathering = async (root: string, snapshotFailure?: Jj.JjError) => {
   const write = (path: string, text: string) => writeFile(join(root, path), text)
   await write("RUNTIME.md", "# Runtime\n\nThe runtime starts once.\n")
   await write("runtime.ts", "export const start = () => 1\n")
@@ -237,7 +237,12 @@ const gathering = async (root: string) => {
       apply: () => Effect.die("planning memory never edits"),
       publishOriginalSource: () => Effect.die("planning memory never publishes")
     }),
-    Jj.layerNoop({ snapshot: () => Effect.succeed({ commitId: revision.commitId, changeId: revision.changeId }) }),
+    Jj.layerNoop({
+      snapshot: () =>
+        snapshotFailure === undefined
+          ? Effect.succeed({ commitId: revision.commitId, changeId: revision.changeId })
+          : Effect.fail(snapshotFailure)
+    }),
     Layer.succeed(Executable.Catalog, { executables, refused: [] }),
     NodeServices.layer
   )
@@ -330,6 +335,46 @@ test("gather fails unavailable when Jev cannot judge, never planning with the wi
 const keepNothing = Evaluator.layerScripted((request) =>
   Object.fromEntries(Object.keys(request.questions).map((id) => [id, { probability: 0.05 }]))
 ) as Layer.Layer<never>
+
+/** The snapshot precedes every judgement, so this suite's refusals never reach it. */
+const inertJudge = Evaluator.layerScripted(() => Effect.die("a refused snapshot never judges")) as Layer.Layer<never>
+
+/*
+ * A native snapshot the planner cannot take is the host's failure, not a moved
+ * source. On a real composed Linux install the confined coding host had no
+ * writable temporary directory, so the supervised snapshot helper answered
+ * ENOENT; `gather` called that `stale_revision`, a factory fault, and the TODO
+ * spent all three attempts and was recorded "Every plan failed" with nothing
+ * naming the site. Only a conflict is a replan, and only a denied capability is
+ * the person's refusal.
+ */
+test("a snapshot the host cannot take is its own fault, and names the site", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "planning-gather-snapshot-"))
+  t.after(() => rm(root, { force: true, recursive: true }))
+  const cases = [
+    ["unknown", "execution", "native_snapshot_unavailable"],
+    ["not_installed", "execution", "native_snapshot_unavailable"],
+    ["unsupported_version", "execution", "native_snapshot_unavailable"],
+    // Negative: a real source conflict is still the plan's to redo.
+    ["conflict", "stale_revision", "native_snapshot_conflict"],
+    // Negative: a refused capability stays the person's refusal, never relaxed
+    // into a host fault that a replan would quietly retry.
+    ["snapshot_refused", "source_refused", "native_snapshot_refused"],
+    ["invalid_ref", "source_refused", "native_snapshot_refused"]
+  ] as const
+  for (const [code, expected, site] of cases) {
+    const attempt = await gathering(
+      root,
+      new Jj.JjError({ code, message: "ENOENT: no such file or directory, mkdtemp" })
+    )
+    const gathered = await attempt(inertJudge)
+    assert.equal(gathered._tag, "Failure", code)
+    const error = gathered._tag === "Failure" ? gathered.failure : undefined
+    assert.ok(error instanceof CodingError, code)
+    assert.equal(error.code, expected, code)
+    assert.ok(error.message.startsWith(`${site}: `), error.message)
+  }
+})
 
 test("gather plans with accepted coding learnings only, and they change the memory revision", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "planning-gather-learnings-"))

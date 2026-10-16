@@ -39,7 +39,69 @@ export interface MemoryOptions {
   readonly historyLimit?: number
   readonly maxMemoryBytes?: number
 }
-const failure = (message: string) => new CodingError({ code: "stale_revision", message })
+/**
+ * The closed set of planning-context refusal sites.
+ *
+ * A refused gather or freshness check names exactly one of these, first in its
+ * message, as a source refusal names its own site (`source-refusal.ts`). The
+ * site is the diagnosis: `stale_revision` alone cannot say whether the source
+ * really moved or the host could not read it, and a run card that says only
+ * "Every plan failed" after three spent attempts is how both the 2026-10-05
+ * walk and the backend access rehearsal lost a host fault for good.
+ *
+ * @category models
+ */
+export const planningSites = [
+  "memory_budget_invalid",
+  "native_snapshot_conflict",
+  "native_snapshot_refused",
+  "native_snapshot_unavailable",
+  "native_history_unresolved",
+  "native_history_conflicted",
+  "memory_selection_unavailable",
+  "planning_executable_unverified",
+  "wiki_check_without_wiki",
+  "native_history_moved",
+  "context_over_budget",
+  "planning_memory_unavailable",
+  "head_moved",
+  "attached_sources_moved",
+  "wiki_pages_moved",
+  "planning_freshness_unavailable"
+] as const
+/**
+ * The value form of {@link planningSites}.
+ *
+ * @category models
+ */
+export type PlanningSite = typeof planningSites[number]
+
+const refuse = (site: PlanningSite, code: CodingError["code"], message: string) =>
+  new CodingError({ code, message: `${site}: ${message}` })
+/** The gathered source really moved: the plan is the thing to redo. */
+const failure = (site: PlanningSite, message: string) => refuse(site, "stale_revision", message)
+/**
+ * The host could not gather or verify a context. No replan fixes it, so it
+ * must not spend the factory's correction budget: `execution` is an infra
+ * fault in the registry, exactly as {@link contractFailure} already is.
+ */
+const hostFault = (site: PlanningSite, message: string) => refuse(site, "execution", message)
+/**
+ * A native snapshot refusal, mapped by what the adapter answered, as request
+ * admission already maps the same call (`source-admission.ts`): only a source
+ * conflict is a replan, a denied capability is the person's refusal, and
+ * anything else is the host's.
+ */
+const snapshotRefusal = (error: Jj.JjFailure) =>
+  error.code === "conflict"
+    ? failure("native_snapshot_conflict", `Native source conflicts under this plan (${error.code})`)
+    : error.code === "invalid_ref" || error.code === "snapshot_refused" ||
+        error.code === "permission_denied" || error.code === "permission_required"
+    ? refuse("native_snapshot_refused", "source_refused", `Native snapshot was refused (${error.code})`)
+    : hostFault(
+      "native_snapshot_unavailable",
+      `Native snapshot could not run (${error.code}): ${"reason" in error ? error.reason : error.message || error._tag}`
+    )
 /**
  * The refusal of a gathered context that breaks its own schema, with the
  * schema's reason. Coded `execution`, a host fault no replan fixes, not
@@ -200,7 +262,7 @@ export const gather = (
       !Number.isSafeInteger(limit) || limit < 1 || limit > 100 || !Number.isSafeInteger(maximum) || maximum < 1024 ||
       maximum > 90 * 1024
     ) {
-      return yield* failure("Planning memory requires historyLimit 1..100 and maxMemoryBytes 1024..92160")
+      return yield* failure("memory_budget_invalid", "Planning memory requires historyLimit 1..100 and maxMemoryBytes 1024..92160")
     }
     const wiki = options.wikiCitations === true
       ? yield* wikiMemory(options, input, hostFilesystem)
@@ -208,13 +270,16 @@ export const gather = (
     const native = yield* NativeCoding, jj = yield* Jj.Jj
     // The configured Jj captures current bytes in the SAME native atom. It never
     // opens a new change merely because memory needs an immutable code identity.
-    yield* jj.snapshot("coding planning memory")
+    yield* jj.snapshot("coding planning memory").pipe(
+      Effect.catch((error) => Effect.fail(snapshotRefusal(error)))
+    )
     const before = yield* native.read([], limit)
     if (
       !before.history?.length || before.history.some((row) => row.kind !== "resolved") ||
       before.head.kind !== "resolved"
     ) {
       return yield* failure(
+        "native_history_unresolved",
         "Planning requires bounded resolved native history; inspect conflicts or update the installed adapter"
       )
     }
@@ -229,7 +294,7 @@ export const gather = (
         root: options.repositoryPath,
         pages: []
       }
-    ).pipe(Effect.mapError((error) => failure(`Planning memory could not be selected: ${error.message}`)))
+    ).pipe(Effect.mapError((error) => failure("memory_selection_unavailable", `Planning memory could not be selected: ${error.message}`)))
     // Unjudged, `memory` keeps only the request's own paths and drops every
     // wiki page and walked file. Planning on that would be a silent exclusion
     // neither the planner nor the reviewer can see.
@@ -287,6 +352,7 @@ export const gather = (
     })
     if (options.checks.some((check) => check.required && !checks.includes(check))) {
       return yield* failure(
+        "wiki_check_without_wiki",
         "A required generated-Wiki check is configured while Wiki is disabled; explicitly update the operator policy or enable Wiki"
       )
     }
@@ -296,14 +362,14 @@ export const gather = (
         implementationDigest: identity(options.implementation),
         checks: checks.map((check) => ({ ...check, flowDigest: identity(check.flow) }))
       }),
-      catch: (error) => error instanceof CodingError ? error : failure(String(error))
+      catch: (error) => error instanceof CodingError ? error : failure("planning_executable_unverified", String(error))
     })
     const after = yield* native.read([], limit)
     if (before.operationId !== after.operationId || JSON.stringify(before.history) !== JSON.stringify(after.history)) {
-      return yield* failure("Native history changed while gathering memory; gather a new coherent view")
+      return yield* failure("native_history_moved", "Native history changed while gathering memory; gather a new coherent view")
     }
     const history = before.history.map((row) => {
-      if (row.kind !== "resolved") throw failure("Conflicted native history cannot be used to plan")
+      if (row.kind !== "resolved") throw failure("native_history_conflicted", "Conflicted native history cannot be used to plan")
       return {
         changeId: row.changeId,
         commitId: row.commitId,
@@ -343,7 +409,7 @@ export const gather = (
     // Attached file text carries its own per-file and total caps, so the budget
     // here still bounds the native history, the wiki notes and the definitions.
     if (bytes({ ...context, sources: [] }) > 128 * 1024) {
-      return yield* failure("Planning context exceeds 128 KiB; narrow the native history or wiki budget")
+      return yield* failure("context_over_budget", "Planning context exceeds 128 KiB; narrow the native history or wiki budget")
     }
     // A context this host gathered that its own contract refuses is a host
     // fault, not a source that moved: name the field that broke the contract.
@@ -351,8 +417,9 @@ export const gather = (
       Effect.mapError((error) => contractFailure(error.message))
     )
   }).pipe(Effect.mapError((error) =>
-    error instanceof CodingError ? error : failure(
-      "Planning memory is unavailable or source-stale: " + (error instanceof Error ? error.message : String(error))
+    error instanceof CodingError ? error : hostFault(
+      "planning_memory_unavailable",
+      "Planning memory could not be gathered: " + (error instanceof Error ? error.message : String(error))
     )
   ))
 
@@ -365,7 +432,9 @@ export const memoryLayer = (options: MemoryOptions, hostFilesystem?: FileSystem.
     VerifyContext.toLayer(({ context }) =>
       Effect.gen(function*() {
         const jj = yield* Jj.Jj, native = yield* NativeCoding
-        yield* jj.snapshot("coding planning freshness")
+        yield* jj.snapshot("coding planning freshness").pipe(
+          Effect.catch((error) => Effect.fail(snapshotRefusal(error)))
+        )
         const current = yield* native.read(context.history.map((row) => row.changeId))
         const headDrift = driftOf(context.head, current.head)
         const drift = [
@@ -387,7 +456,7 @@ export const memoryLayer = (options: MemoryOptions, hostFilesystem?: FileSystem.
               Effect.catch(() => Effect.succeed([] as ReadonlyArray<string>))
             )
             : []
-          return yield* failure(staleRevisionMessage(drift, paths))
+          return yield* failure("head_moved", staleRevisionMessage(drift, paths))
         }
         // A plan may not be finalized against file text the planner no longer sees.
         const stale = yield* staleSources(yield* sourceReader(options.repositoryPath, hostFilesystem), {
@@ -396,6 +465,7 @@ export const memoryLayer = (options: MemoryOptions, hostFilesystem?: FileSystem.
         })
         if (stale.length > 0) {
           return yield* failure(
+            "attached_sources_moved",
             `Attached source files changed during planning or clarification; gather and plan again: ${stale.join(", ")}`
           )
         }
@@ -403,6 +473,7 @@ export const memoryLayer = (options: MemoryOptions, hostFilesystem?: FileSystem.
         const stalePages = yield* staleWikiNotes(options, context.memory, hostFilesystem)
         if (stalePages.length > 0) {
           return yield* failure(
+            "wiki_pages_moved",
             `Wiki pages changed source during planning or clarification; gather and plan again: ${
               stalePages.join(", ")
             }`
@@ -410,8 +481,9 @@ export const memoryLayer = (options: MemoryOptions, hostFilesystem?: FileSystem.
         }
         return context
       }).pipe(Effect.mapError((error) =>
-        error instanceof CodingError ? error : failure(
-          "Planning context no longer matches current source: " +
+        error instanceof CodingError ? error : hostFault(
+          "planning_freshness_unavailable",
+          "Planning context could not be verified: " +
             (error instanceof Error ? error.message : String(error))
         )
       ))

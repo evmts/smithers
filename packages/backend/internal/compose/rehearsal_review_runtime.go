@@ -46,7 +46,16 @@ func (r *rehearsalReviewRuntime) confined(current workspaceapi.Workspace, comman
 	// Each PID namespace has its own process table. Reusing the host name
 	// makes a restarted host's PID 2 look like the prior live owner to the
 	// production liveness probe. Give each namespace its own machine identity.
-	args := []string{r.bubblewrap, "--tmpfs", "/", "--ro-bind", "/usr", "/usr", "--ro-bind", "/lib", "/lib", "--ro-bind", "/lib64", "/lib64", "--symlink", "usr/bin", "/bin", "--ro-bind", "/etc", "/etc", "--proc", "/proc", "--dev", "/dev", "--unshare-user", "--uid", "19998", "--gid", "19998", "--unshare-pid", "--unshare-uts", "--hostname", fmt.Sprintf("rehearsal-%d", time.Now().UnixNano()), "--die-with-parent"}
+	//
+	// `--tmpfs /tmp` is the confinement's own temporary directory, exactly as
+	// the shipped bubblewrap and container confinements give one
+	// (ProcessSandbox.ts). The supervised-process channel creates its control
+	// socket directory under /tmp, because a unix socket path is bounded far
+	// below what a nested temporary directory spends; with an empty tmpfs root
+	// and no /tmp the host cannot supervise any native process at all, and the
+	// planner's own native snapshot fails before a coding turn is reached. The
+	// mount is a private empty tmpfs, never a bind of this host's /tmp.
+	args := []string{r.bubblewrap, "--tmpfs", "/", "--ro-bind", "/usr", "/usr", "--ro-bind", "/lib", "/lib", "--ro-bind", "/lib64", "/lib64", "--symlink", "usr/bin", "/bin", "--ro-bind", "/etc", "/etc", "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp", "--unshare-user", "--uid", "19998", "--gid", "19998", "--unshare-pid", "--unshare-uts", "--hostname", fmt.Sprintf("rehearsal-%d", time.Now().UnixNano()), "--die-with-parent"}
 	// Bind only approved executables, never the host home or lane checkout.
 	for _, path := range []string{r.node, r.helper, r.host, r.tools} {
 		if path != "" {
