@@ -138,6 +138,13 @@ type mythicalGitHub interface {
 	Account(ctx context.Context, gh mythicalGitHubRepo, id int64) (gitHubActor, error)
 	// CreateIssue opens an issue with this title and body.
 	CreateIssue(ctx context.Context, gh mythicalGitHubRepo, title, body string) (mythicalIssue, error)
+	// ResolveIssueWrite binds the repository's GitHub destination for ONE
+	// person's issue write, as the hosted composition needs it: the person's
+	// own GitHub credential must prove write access to that repository right
+	// now (GitHub's own rules, so a read-only collaborator is refused), and
+	// the destination carries no git push authority. It acquires none of the
+	// stack's publication authority and reads no install setting.
+	ResolveIssueWrite(ctx context.Context, repository db.Repository, owner string, actorUserID int64) (mythicalGitHubRepo, error)
 }
 
 // MythicalGitHubStore is what resolving a destination reads.
@@ -167,6 +174,77 @@ func (g *mythicalGitHubAPI) ResolvePullRead(ctx context.Context, repository db.R
 		return mythicalGitHubRepo{}, errors.New("GitHub read authority is unavailable")
 	}
 	return mythicalGitHubRepo{Owner: ghOwner, Name: ghRepo, Token: token.Token, userID: repository.UserID.Int64, orgID: repository.OrgID.Int64}, nil
+}
+
+// mythicalGitHubIssueWritePermissions is the whole authority one issue act
+// needs: no contents, no pull requests, no workflows.
+var mythicalGitHubIssueWritePermissions = map[string]string{"issues": "write"}
+
+// GitHubIssueWriteUnavailable says, as a CLOSED reason, why this actor cannot
+// write this repository's GitHub issues. The reason is the whole diagnostic:
+// the caller records it and never the provider's sentence. A failure that is
+// NOT one of these is transient and is returned unwrapped, so a caller
+// retries instead of burning the request.
+type GitHubIssueWriteUnavailable struct {
+	// Reason is one of: app_not_connected, sign_in_required, write_required,
+	// unavailable.
+	Reason string
+	cause  error
+}
+
+func (e *GitHubIssueWriteUnavailable) Error() string { return e.cause.Error() }
+func (e *GitHubIssueWriteUnavailable) Unwrap() error { return e.cause }
+
+func issueWriteUnavailable(reason string, cause error) error {
+	return &GitHubIssueWriteUnavailable{Reason: reason, cause: cause}
+}
+
+// ResolveIssueWrite is the hosted composition's issue-write destination. It
+// is Resolve's credential policy MINUS the git push: the person's own GitHub
+// credential proves their write access, and the installation token minted for
+// the send carries issues:write alone. Each write below mints its own narrow
+// token again; this one serves the keyed comment's marker read.
+func (g *mythicalGitHubAPI) ResolveIssueWrite(ctx context.Context, repository db.Repository, owner string, actorUserID int64) (mythicalGitHubRepo, error) {
+	if g == nil || g.store == nil || g.tokens == nil {
+		return mythicalGitHubRepo{}, pkgerrors.Internal("GitHub issue writes are not configured")
+	}
+	ghOwner, ghRepo, err := resolveGitHubDestination(ctx, g.store, g.connections, actorUserID, repository.ID, owner, repository.Name)
+	if err != nil {
+		// No recorded GitHub destination is the App connection flow; any
+		// other failure here is the store's, and transient.
+		var destination *pkgerrors.APIError
+		if errors.As(err, &destination) && destination.Code == pkgerrors.CodeConflict {
+			return mythicalGitHubRepo{}, issueWriteUnavailable("app_not_connected", err)
+		}
+		return mythicalGitHubRepo{}, err
+	}
+	if g.prover == nil {
+		return mythicalGitHubRepo{}, issueWriteUnavailable("unavailable", pkgerrors.Forbidden("GitHub write access cannot be proven"))
+	}
+	if err := g.prover.GitHubRepoPushAuthorized(ctx, actorUserID, ghOwner, ghRepo); err != nil {
+		refusal := githubPushProofRefusal(err, "Your GitHub account", ghOwner, ghRepo)
+		var proof *GitHubPushProofError
+		reason := "unavailable"
+		if errors.As(err, &proof) {
+			switch proof.Reason {
+			case GitHubPushProofNoCredential:
+				reason = "sign_in_required"
+			case GitHubPushProofDenied:
+				reason = "write_required"
+			}
+		}
+		return mythicalGitHubRepo{}, issueWriteUnavailable(reason, refusal)
+	}
+	api, err := g.tokens.CreateGitHubInstallationTokenForRepositoryOwner(ctx, repository.UserID.Int64, repository.OrgID.Int64, ghOwner, ghRepo, mythicalGitHubIssueWritePermissions)
+	if err != nil {
+		return mythicalGitHubRepo{}, err
+	}
+	token := strings.TrimSpace(api.Token)
+	if token == "" {
+		return mythicalGitHubRepo{}, issueWriteUnavailable("app_not_connected",
+			pkgerrors.BadRequest("github app is not installed for this repository"))
+	}
+	return mythicalGitHubRepo{Owner: ghOwner, Name: ghRepo, Token: token, userID: repository.UserID.Int64, orgID: repository.OrgID.Int64}, nil
 }
 
 type mythicalGitHubAPI struct {

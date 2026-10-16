@@ -281,6 +281,12 @@ func (g *fakeMythicalGitHub) Resolve(context.Context, db.Repository, string, int
 	return mythicalGitHubRepo{Owner: "smithersai", Name: "smithers", Token: "t", GitURL: g.dir}, nil
 }
 
+// ResolveIssueWrite is the hosted destination: the same repository, with no
+// git push URL, as the hosted issue writer resolves it.
+func (g *fakeMythicalGitHub) ResolveIssueWrite(context.Context, db.Repository, string, int64) (mythicalGitHubRepo, error) {
+	return mythicalGitHubRepo{Owner: "smithersai", Name: "smithers", Token: "t"}, nil
+}
+
 func (g *fakeMythicalGitHub) OpenIssues(context.Context, mythicalGitHubRepo) ([]mythicalIssue, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()

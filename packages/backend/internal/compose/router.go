@@ -1531,6 +1531,26 @@ func buildRouter(
 					r.With(writeRepo...).Post("/github/main-pull", mirrorSyncHandler.MainPull.RequestMainPull)
 					r.With(readRepo...).Get("/github/main-pull", mirrorSyncHandler.MainPull.GetMainPull)
 				}
+				// The repository's OWN GitHub issue tracker, written through
+				// the shared durable issue writer. `/issues` beside it stays
+				// Smithers Cloud's own tracker: the two number independently,
+				// so each door names which one it means and no act crosses.
+				// Each write needs the ordinary repository WRITE permission
+				// here AND, on the worker, the actor's own GitHub write
+				// authority over that repository.
+				githubIssueWriter, writesGitHubIssues := routes.HostedGitHubIssueWriter(nil), false
+				if extras.Mythical != nil {
+					githubIssueWriter, writesGitHubIssues = extras.Mythical.Service.(routes.HostedGitHubIssueWriter)
+				}
+				if writesGitHubIssues {
+					hostedIssues := &routes.HostedGitHubIssuesHandler{Service: githubIssueWriter}
+					r.With(writeRepo...).Post("/github/issues", hostedIssues.Create)
+					r.With(writeRepo...).Post("/github/issues/{number}/comments", hostedIssues.Comment)
+					r.With(writeRepo...).Post("/github/issues/{number}/close", hostedIssues.Close)
+					r.With(writeRepo...).Post("/github/issues/{number}/reopen", hostedIssues.Reopen)
+					r.With(writeRepo...).Patch("/github/issues/comments/{id}", hostedIssues.EditComment)
+					r.With(readRepo...).Get("/github/issues/requests/{id}", hostedIssues.Request)
+				}
 				// The mythical stack: its snapshot, and the admin's bootstrap
 				// request. The event stream is mounted outside the JSON timeout.
 				if extras.Mythical != nil {

@@ -121,9 +121,13 @@ func (s *MythicalService) admitIssueWrite(ctx context.Context, tx pgx.Tx, reposi
 	return receipt, err
 }
 
-// HandleInstallIssueWrite delivers issue creation and comments on the shared worker.
-// Unsafe delivery records uncertainty after a lost reply and never blindly
-// repeats a write whose acceptance GitHub may have hidden.
+// HandleInstallIssueWrite delivers every ordinary GitHub issue act on the one
+// shared worker — the install's and the hosted composition's. Unsafe delivery
+// records uncertainty after a lost reply and never blindly repeats a write
+// whose acceptance GitHub may have hidden.
+//
+// The command comes from the operation the lease CLAIMED, so a payload can
+// neither name the act nor move it between the two authorities.
 func (s *MythicalService) HandleInstallIssueWrite(ctx context.Context, lease *jobs.Lease) error {
 	claim := lease.Claim()
 	var job installIssueWriteJob
@@ -132,6 +136,11 @@ func (s *MythicalService) HandleInstallIssueWrite(ctx context.Context, lease *jo
 		return lease.Fail(ctx, json.RawMessage(`{"code":"invalid_issue_comment"}`))
 	}
 
+	// A hosted act's authority is the actor's live repository permission and
+	// their own GitHub write access, so it never reads an install role.
+	if _, hosted := hostedIssueOperationCommands[claim.Operation]; hosted {
+		return s.handleHostedIssueWrite(ctx, lease, job, credential)
+	}
 	command, known := installIssueOperationCommands[claim.Operation]
 	if !known {
 		return lease.Fail(ctx, json.RawMessage(`{"code":"invalid_issue_operation"}`))
@@ -180,27 +189,38 @@ func (s *MythicalService) HandleInstallIssueWrite(ctx context.Context, lease *jo
 		}
 		return tx.Commit(current)
 	}))
+	return s.sendIssueWriteAct(ctx, bound, lease, gh, job, claim.Operation)
+}
+
+// sendIssueWriteAct performs the one external request the claimed operation
+// names and records its terminal receipt. Both authorities share it, so the
+// GitHub-side behaviour of each act — a close recording `state_reason:
+// completed`, a reopen carrying none, a text edit naming no state and so
+// unable to reopen a closed issue, a keyed comment said once — is literally
+// the same code in the install and in the hosted composition.
+func (s *MythicalService) sendIssueWriteAct(ctx context.Context, bound context.Context, lease *jobs.Lease, gh mythicalGitHubRepo, job installIssueWriteJob, operation string) error {
 	body := job.Body + "\n\nRequested by @" + job.Login
-	switch claim.Operation {
-	case InstallIssueCreateOperation:
+	var err error
+	switch issueWriteActs[operation] {
+	case "create":
 		var created mythicalIssue
 		created, err = s.github.CreateIssue(bound, gh, job.Title, body)
 		if err == nil {
 			receipt, _ := json.Marshal(map[string]any{"state": "completed", "number": created.Number})
 			return lease.Complete(ctx, receipt)
 		}
-	case InstallIssueCloseOperation:
+	case "close":
 		err = s.github.UpdateIssue(bound, gh, job.Number, mythicalIssueEdit{State: "closed"})
-	case InstallIssueReopenOperation:
+	case "reopen":
 		err = s.github.UpdateIssue(bound, gh, job.Number, mythicalIssueEdit{State: "open"})
-	case InstallIssueCommentEditOperation:
+	case "comment.edit":
 		// The edit keeps the attribution line the original comment carried,
 		// so rewriting the text never drops who asked for it.
 		err = s.github.UpdateIssueComment(bound, gh, job.Comment, body)
 	default:
 		// The keyed comment is said once per operation: a retry after a post
 		// whose reply was lost edits that comment instead of repeating it.
-		err = s.github.Comment(bound, gh, job.Number, claim.OperationID, body)
+		err = s.github.Comment(bound, gh, job.Number, lease.Claim().OperationID, body)
 	}
 	if err != nil {
 		return err

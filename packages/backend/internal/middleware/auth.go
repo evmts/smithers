@@ -724,6 +724,15 @@ var installMemberRoutes = []struct {
 	{http.MethodPost, "flow.run", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/agent/sessions$`)},
 	{http.MethodPost, "denied", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/changes/[^/]+/revert$`)},
 	{http.MethodPatch, "issue.comment", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/issues/comments/[^/]+$`)},
+	// The repository's own GitHub issue tracker. Each act is the catalog's
+	// own issue act — never a repository or account read — and each door
+	// carries exactly one act, so a close cannot arrive as a reopen.
+	{http.MethodPost, "issue.new", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/github/issues$`)},
+	{http.MethodPost, "issue.comment", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/github/issues/[0-9]+/comments$`)},
+	{http.MethodPost, "issues.close", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/github/issues/[0-9]+/close$`)},
+	{http.MethodPost, "issues.reopen", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/github/issues/[0-9]+/reopen$`)},
+	{http.MethodPatch, "issue.comment", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/github/issues/comments/[0-9]+$`)},
+	{http.MethodGet, "issue.read", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/github/issues/requests/[^/]+$`)},
 	{http.MethodPost, "self", regexp.MustCompile(`^/api/model/anthropic/.+$`)},
 	{http.MethodHead, "self", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/build-cache/cas/[^/]+$`)},
 	{http.MethodDelete, "denied", regexp.MustCompile(`^/api/orgs/[^/]+/members/[^/]+$`)},

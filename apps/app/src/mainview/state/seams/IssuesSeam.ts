@@ -558,14 +558,16 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
   }
 
   /**
-   * A GitHub-source write this origin has no writer for, as the whole answer.
+   * A GitHub-source write with no writer behind it, as the whole answer.
    *
-   * The install writes its repository's GitHub issues through the canonical
-   * durable writer below. A Smithers Cloud origin reads GitHub's issues but
-   * writes only its own tracker, so a GitHub-source write there sends
-   * NOTHING: addressing the same-numbered Smithers Cloud row instead would
-   * change a different issue and report its number as GitHub's. One short,
-   * actionable sentence — no route, origin or internal prose.
+   * Both origins now have one: an install writes its one bound repository's
+   * GitHub issues, and a Smithers Cloud origin writes the repository's own
+   * GitHub tracker through the repository-scoped doors below. This answer is
+   * what is left — a repository whose name could not be split into
+   * `owner/name`, so no repository-scoped door exists to address. Addressing
+   * the same-numbered Smithers Cloud row instead would change a different
+   * issue and report its number as GitHub's. One short, actionable sentence —
+   * no route, origin or internal prose.
    */
   const githubWriteUnsendable = (act: IssueWriteAct, subject: string, repo: string): string => {
     reportIssueWriteUnsendable(ctx, act)
@@ -573,28 +575,52 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
   }
 
   /**
-   * One GitHub issue act through the install's canonical durable writer
-   * (`services/install_issue_comment.go`): credential reload and actor
-   * re-authorization on the worker, the send fence around the one actual
-   * request, and a receipt. The server acknowledges the ADMISSION, before the
-   * act reaches GitHub, so the answer says it was requested — never that
-   * GitHub did it.
+   * Where one GitHub issue act is addressed.
+   *
+   * An install has ONE bound repository and writes it through `/api/issues`.
+   * Every other origin addresses the repository itself, under the existing
+   * repo-scoped GitHub family: `/api/repos/{owner}/{repo}/github/issues…`,
+   * which is a DIFFERENT tracker from `/api/repos/{owner}/{repo}/issues`
+   * beside it. Both doors reach the same durable writer and the same shared
+   * worker; only the authority differs (an install's bound credential, or the
+   * actor's own repository write permission plus their own GitHub authority).
+   *
+   * Undefined when the repository is not an `owner/name` pair, so no
+   * repository-scoped door exists for it.
+   */
+  const githubIssueActUrl = (repo: string, path: string): string | undefined => {
+    if (install) return `${ctx.baseUrl}/api/issues${path}`
+    const [owner = "", name = ""] = repo.split("/")
+    if (owner === "" || name === "") return undefined
+    return `${ctx.baseUrl}/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/github/issues${path}`
+  }
+
+  /**
+   * One GitHub issue act through the canonical durable writer
+   * (`services/install_issue_comment.go` and its hosted admissions):
+   * credential reload and actor re-authorization on the worker, the send
+   * fence around the one actual request, and a receipt. The server
+   * acknowledges the ADMISSION, before the act reaches GitHub, so the answer
+   * says it was requested — never that GitHub did it.
    *
    * `act` is the whole act, payload included, and names the idempotency key:
    * repeating the same act replays the one admitted operation instead of
    * sending a second write, and a reply this client never saw leaves the key
    * in place rather than POSTing again.
    */
-  const sendInstallIssueAct = async (
+  const sendGitHubIssueAct = async (
+    writeAct: IssueWriteAct, subject: string, repo: string,
     act: string, path: string, method: "POST" | "PATCH", requested: string, failure: string, body?: unknown
   ): Promise<string | { readonly value: string }> => {
+    const url = githubIssueActUrl(repo, path)
+    if (url === undefined) return githubWriteUnsendable(writeAct, subject, repo)
     let keys = installIssueActKeys.get(ctx.store)
     if (!keys) installIssueActKeys.set(ctx.store, keys = new Map())
     let key = keys.get(act)
     if (key === undefined) keys.set(act, key = randomUuid())
     let response: Response
     try {
-      response = await ctx.http(`${ctx.baseUrl}/api/issues${path}`, {
+      response = await ctx.http(url, {
         method,
         headers: { "content-type": "application/json", "Idempotency-Key": key },
         ...(body === undefined ? {} : { body: JSON.stringify(body) })
@@ -1050,8 +1076,8 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
         card.payload.repo === repo && card.payload.number === number && card.payload.comments.some(row => row.id === commentId))
       if (!edited) return "Open the message before changing it."
       if (method === "DELETE") return `GitHub keeps its comments. Edit the message on #${number} in ${repo} instead.`
-      if (!install) return githubWriteUnsendable("comment", `Issue #${number}`, repo)
-      return sendInstallIssueAct(
+      return sendGitHubIssueAct(
+        "comment", `Issue #${number}`, repo,
         `comment.edit:${repo}#${number}:${commentId}:${body?.body ?? ""}`, `/comments/${commentId}`, "PATCH",
         `Edit of the message on issue #${number} in ${repo}`,
         `Changing the message on issue #${number} in ${repo} failed`,
@@ -1350,8 +1376,18 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
        * GitHub actually numbered.
        */
       if (kind !== "chat" && (source === "github" || source === undefined && install)) {
-        if (options.requestGitHubIssue === undefined) return githubWriteUnsendable("create", `"${title}"`, repo)
-        return options.requestGitHubIssue(title, "")
+        // An install's create goes through IssueCreateSeam, the door
+        // `/issue.new` already uses. Every other origin addresses the
+        // repository's own GitHub tracker, which answers the same durable
+        // receipt; neither opens a Smithers Cloud row and reports its number.
+        if (options.requestGitHubIssue !== undefined) return options.requestGitHubIssue(title, "")
+        return sendGitHubIssueAct(
+          "create", `"${title}"`, repo,
+          `create:${repo}:${title}`, "", "POST",
+          `Opening "${title}" in ${repo}'s GitHub tracker`,
+          `Creating the issue in ${repo}'s GitHub tracker failed`,
+          { title, body: "" }
+        )
       }
       let response: Response
       try {
@@ -1398,9 +1434,9 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
         if (state === "fixed" || state === "verified") {
           return `GitHub issues are open or closed; ${state} is a Smithers Cloud stage. Close #${number} in ${repo}, or add --source smithers-cloud.`
         }
-        if (!install) return githubWriteUnsendable("state", `Issue #${number}`, repo)
         const verb = state === "closed" ? "Closing" : "Reopening"
-        return sendInstallIssueAct(
+        return sendGitHubIssueAct(
+          "state", `Issue #${number}`, repo,
           `${state === "closed" ? "close" : "reopen"}:${repo}#${number}`,
           `/${number}/${state === "closed" ? "close" : "reopen"}`, "POST",
           `${verb} issue #${number} in ${repo}`,
@@ -1452,8 +1488,8 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       const tracker = issueWriteTarget(repo, number, source)
       if ("refusal" in tracker) return tracker.refusal
       if (tracker.source === "github") {
-        if (!install) return githubWriteUnsendable("comment", `Issue #${number}`, repo)
-        return sendInstallIssueAct(
+        return sendGitHubIssueAct(
+          "comment", `Issue #${number}`, repo,
           `comment:${repo}#${number}:${text}`, `/${number}/comments`, "POST",
           `Comment on issue #${number} in ${repo}`,
           `Commenting on issue #${number} in ${repo} failed`,

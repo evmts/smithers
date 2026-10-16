@@ -124,40 +124,55 @@ const writes = (calls: ReadonlyArray<string>): ReadonlyArray<string> =>
   calls.filter((call) => !call.startsWith("GET "))
 
 describe("issue writes resolve their tracker", () => {
-  test("a GitHub-source card's close never reaches the Smithers Cloud row of the same number", async () => {
+  test("a GitHub-source card's close reaches the repository's GitHub tracker, never the Smithers Cloud row of the same number", async () => {
     const patched: Array<unknown> = []
+    const closed: Array<string> = []
     const { store, controller, calls } = await controllerFor({
       ...githubSixRoutes(),
       ...cloudSixRoutes(),
-      "PATCH /api/repos/will/flows/issues/6": async (request) => { patched.push(await request.json()); return json(200, wireCloudIssue(6, { state: "closed" })) }
+      "PATCH /api/repos/will/flows/issues/6": async (request) => { patched.push(await request.json()); return json(200, wireCloudIssue(6, { state: "closed" })) },
+      "POST /api/repos/will/flows/github/issues/6/close": async (request) => {
+        closed.push(request.headers.get("Idempotency-Key") ?? "")
+        return json(202, { operationId: "op-close-6", requestId: "k", kind: "requested", state: "accepted", acceptedAt: "2026-10-16T13:00:00Z" })
+      }
     })
     expect((await controller.commands.run("issues.view", "6 will/flows --source github")).status).toBe("executed")
     expect(issueCard(store, "issue-github-will/flows-6").payload.source).toBe("github")
 
     const outcome = await controller.commands.run("issues.close", "6")
-    expect(outcome.status).toBe("failed")
-    expect(refusal(outcome)).toContain("GitHub issue in will/flows")
-    expect(refusal(outcome)).toContain("Act on it on GitHub")
+    expect(outcome.status).toBe("executed")
+    // The acknowledgment is the ADMISSION: nothing claims GitHub closed it yet.
+    expect(answer(outcome)).toContain("requested")
     // The Cloud row is a DIFFERENT issue: no write may reach it.
     expect(patched).toEqual([])
-    expect(writes(calls)).toEqual([])
-    // And the GitHub card still reads open: nothing was refreshed from the wrong source.
-    expect(issueCard(store, "issue-github-will/flows-6").payload.state).toBe("open")
+    expect(writes(calls)).toEqual(["POST /api/repos/will/flows/github/issues/6/close"])
+    expect(closed[0]).not.toBe("")
+
+    // Repeating the act replays the one admitted operation under its own key.
+    expect((await controller.commands.run("issues.close", "6")).status).toBe("executed")
+    expect(closed.length).toBe(2)
+    expect(closed[1]).toBe(closed[0])
+    expect(patched).toEqual([])
   })
 
-  test("a GitHub-source card's comment never posts to the Smithers Cloud row of the same number", async () => {
+  test("a GitHub-source card's comment posts to the GitHub tracker, never to the Smithers Cloud row of the same number", async () => {
     const posted: Array<unknown> = []
+    const sent: Array<unknown> = []
     const { controller, calls } = await controllerFor({
       ...githubSixRoutes(),
-      "POST /api/repos/will/flows/issues/6/comments": async (request) => { posted.push(await request.json()); return json(201, { id: 31 }) }
+      "POST /api/repos/will/flows/issues/6/comments": async (request) => { posted.push(await request.json()); return json(201, { id: 31 }) },
+      "POST /api/repos/will/flows/github/issues/6/comments": async (request) => {
+        sent.push(await request.json())
+        return json(202, { operationId: "op-comment-6", requestId: "k", kind: "requested", state: "accepted", acceptedAt: "2026-10-16T13:00:00Z" })
+      }
     })
     expect((await controller.commands.run("issues.view", "6 will/flows --source github")).status).toBe("executed")
 
     const outcome = await controller.commands.run("issues.comment", "6 please look")
-    expect(outcome.status).toBe("failed")
-    expect(refusal(outcome)).toContain("GitHub issue in will/flows")
+    expect(outcome.status).toBe("executed")
+    expect(sent).toEqual([{ body: "please look" }])
     expect(posted).toEqual([])
-    expect(writes(calls)).toEqual([])
+    expect(writes(calls)).toEqual(["POST /api/repos/will/flows/github/issues/6/comments"])
   })
 
   test("--source smithers-cloud still writes the Cloud row while a GitHub card of the same number is open", async () => {
@@ -219,16 +234,25 @@ describe("issue writes resolve their tracker", () => {
     expect(writes(calls)).toEqual([])
   })
 
-  test("issues.create --source github sends nothing and never invents a Cloud issue in its place", async () => {
+  test("issues.create --source github opens a GitHub issue and never invents a Cloud issue in its place", async () => {
     const posted: Array<unknown> = []
+    const opened: Array<unknown> = []
     const { controller, calls } = await controllerFor({
-      "POST /api/repos/will/flows/issues": async (request) => { posted.push(await request.json()); return json(201, { number: 6 }) }
+      "POST /api/repos/will/flows/issues": async (request) => { posted.push(await request.json()); return json(201, { number: 6 }) },
+      "POST /api/repos/will/flows/github/issues": async (request) => {
+        opened.push(await request.json())
+        return json(202, { operationId: "op-create", requestId: "k", kind: "requested", state: "accepted", acceptedAt: "2026-10-16T13:00:00Z" })
+      }
     })
     const outcome = await controller.commands.run("issues.create", "Upstream regression will/flows --source github")
-    expect(outcome.status).toBe("failed")
-    expect(refusal(outcome)).toContain("would be a GitHub issue in will/flows")
+    expect(outcome.status).toBe("executed")
+    // GitHub numbers the issue, so the answer names no number at all.
+    expect(answer(outcome)).toContain("requested")
+    expect(answer(outcome)).not.toContain("#6")
+    expect(opened).toEqual([{ title: "Upstream regression", body: "" }])
+    // The Cloud tracker is untouched: no row was opened to stand in for it.
     expect(posted).toEqual([])
-    expect(writes(calls)).toEqual([])
+    expect(writes(calls)).toEqual(["POST /api/repos/will/flows/github/issues"])
   })
 
   test("a Cloud write names the tracker its number belongs to", async () => {

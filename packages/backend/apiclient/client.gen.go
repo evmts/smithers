@@ -2419,6 +2419,74 @@ type PatchAPIIssuesCommentsIDBody struct {
 	Body string `json:"body"`
 }
 
+// PostAPIReposOwnerRepoGithubIssuesBody is generated from docs/api/openapi.yaml.
+type PostAPIReposOwnerRepoGithubIssuesBody struct {
+	Title string `json:"title"`
+	Body  string `json:"body"`
+}
+
+// PostAPIReposOwnerRepoGithubIssuesResponse is generated from docs/api/openapi.yaml.
+type PostAPIReposOwnerRepoGithubIssuesResponse struct {
+	OperationID string    `json:"operationId"`
+	RequestID   string    `json:"requestId"`
+	Kind        string    `json:"kind"`
+	State       string    `json:"state"`
+	AcceptedAt  time.Time `json:"acceptedAt"`
+}
+
+// PostAPIReposOwnerRepoGithubIssuesNumberCommentsBody is generated from docs/api/openapi.yaml.
+type PostAPIReposOwnerRepoGithubIssuesNumberCommentsBody struct {
+	Body string `json:"body"`
+}
+
+// PostAPIReposOwnerRepoGithubIssuesNumberCommentsResponse is generated from docs/api/openapi.yaml.
+type PostAPIReposOwnerRepoGithubIssuesNumberCommentsResponse struct {
+	OperationID string    `json:"operationId"`
+	RequestID   string    `json:"requestId"`
+	Kind        string    `json:"kind"`
+	State       string    `json:"state"`
+	AcceptedAt  time.Time `json:"acceptedAt"`
+}
+
+// PostAPIReposOwnerRepoGithubIssuesNumberCloseResponse is generated from docs/api/openapi.yaml.
+type PostAPIReposOwnerRepoGithubIssuesNumberCloseResponse struct {
+	OperationID string    `json:"operationId"`
+	RequestID   string    `json:"requestId"`
+	Kind        string    `json:"kind"`
+	State       string    `json:"state"`
+	AcceptedAt  time.Time `json:"acceptedAt"`
+}
+
+// PostAPIReposOwnerRepoGithubIssuesNumberReopenResponse is generated from docs/api/openapi.yaml.
+type PostAPIReposOwnerRepoGithubIssuesNumberReopenResponse struct {
+	OperationID string    `json:"operationId"`
+	RequestID   string    `json:"requestId"`
+	Kind        string    `json:"kind"`
+	State       string    `json:"state"`
+	AcceptedAt  time.Time `json:"acceptedAt"`
+}
+
+// PatchAPIReposOwnerRepoGithubIssuesCommentsIDBody is generated from docs/api/openapi.yaml.
+type PatchAPIReposOwnerRepoGithubIssuesCommentsIDBody struct {
+	Body string `json:"body"`
+}
+
+// PatchAPIReposOwnerRepoGithubIssuesCommentsIDResponse is generated from docs/api/openapi.yaml.
+type PatchAPIReposOwnerRepoGithubIssuesCommentsIDResponse struct {
+	OperationID string    `json:"operationId"`
+	RequestID   string    `json:"requestId"`
+	Kind        string    `json:"kind"`
+	State       string    `json:"state"`
+	AcceptedAt  time.Time `json:"acceptedAt"`
+}
+
+// GetAPIReposOwnerRepoGithubIssuesRequestsIDResponse is generated from docs/api/openapi.yaml.
+type GetAPIReposOwnerRepoGithubIssuesRequestsIDResponse struct {
+	State  string  `json:"state"`
+	Number *int64  `json:"number,omitempty"`
+	Code   *string `json:"code,omitempty"`
+}
+
 // PostAPIMembersBody is generated from docs/api/openapi.yaml.
 type PostAPIMembersBody struct {
 	Login string `json:"login"`
@@ -4147,6 +4215,48 @@ func (c *Client) PostAPIIssuesNumberClose(ctx context.Context, number int64, ide
 func (c *Client) PostAPIIssuesNumberReopen(ctx context.Context, number int64, idempotencyKey string) (json.RawMessage, error) {
 	var out json.RawMessage
 	err := c.withHeader("Idempotency-Key", idempotencyKey).do(ctx, "POST", "/api/issues/"+url.PathEscape(strconv.FormatInt(number, 10))+"/reopen", nil, nil, &out)
+	return out, err
+}
+
+// PostAPIReposOwnerRepoGithubIssues calls POST /api/repos/{owner}/{repo}/github/issues.
+func (c *Client) PostAPIReposOwnerRepoGithubIssues(ctx context.Context, owner string, repo string, idempotencyKey string, body PostAPIReposOwnerRepoGithubIssuesBody) (PostAPIReposOwnerRepoGithubIssuesResponse, error) {
+	var out PostAPIReposOwnerRepoGithubIssuesResponse
+	err := c.withHeader("Idempotency-Key", idempotencyKey).do(ctx, "POST", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/github/issues", nil, body, &out)
+	return out, err
+}
+
+// PostAPIReposOwnerRepoGithubIssuesNumberComments calls POST /api/repos/{owner}/{repo}/github/issues/{number}/comments.
+func (c *Client) PostAPIReposOwnerRepoGithubIssuesNumberComments(ctx context.Context, owner string, repo string, number int64, idempotencyKey string, body PostAPIReposOwnerRepoGithubIssuesNumberCommentsBody) (PostAPIReposOwnerRepoGithubIssuesNumberCommentsResponse, error) {
+	var out PostAPIReposOwnerRepoGithubIssuesNumberCommentsResponse
+	err := c.withHeader("Idempotency-Key", idempotencyKey).do(ctx, "POST", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/github/issues/"+url.PathEscape(strconv.FormatInt(number, 10))+"/comments", nil, body, &out)
+	return out, err
+}
+
+// PostAPIReposOwnerRepoGithubIssuesNumberClose calls POST /api/repos/{owner}/{repo}/github/issues/{number}/close.
+func (c *Client) PostAPIReposOwnerRepoGithubIssuesNumberClose(ctx context.Context, owner string, repo string, number int64, idempotencyKey string) (PostAPIReposOwnerRepoGithubIssuesNumberCloseResponse, error) {
+	var out PostAPIReposOwnerRepoGithubIssuesNumberCloseResponse
+	err := c.withHeader("Idempotency-Key", idempotencyKey).do(ctx, "POST", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/github/issues/"+url.PathEscape(strconv.FormatInt(number, 10))+"/close", nil, nil, &out)
+	return out, err
+}
+
+// PostAPIReposOwnerRepoGithubIssuesNumberReopen calls POST /api/repos/{owner}/{repo}/github/issues/{number}/reopen.
+func (c *Client) PostAPIReposOwnerRepoGithubIssuesNumberReopen(ctx context.Context, owner string, repo string, number int64, idempotencyKey string) (PostAPIReposOwnerRepoGithubIssuesNumberReopenResponse, error) {
+	var out PostAPIReposOwnerRepoGithubIssuesNumberReopenResponse
+	err := c.withHeader("Idempotency-Key", idempotencyKey).do(ctx, "POST", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/github/issues/"+url.PathEscape(strconv.FormatInt(number, 10))+"/reopen", nil, nil, &out)
+	return out, err
+}
+
+// PatchAPIReposOwnerRepoGithubIssuesCommentsID calls PATCH /api/repos/{owner}/{repo}/github/issues/comments/{id}.
+func (c *Client) PatchAPIReposOwnerRepoGithubIssuesCommentsID(ctx context.Context, owner string, repo string, id int64, idempotencyKey string, body PatchAPIReposOwnerRepoGithubIssuesCommentsIDBody) (PatchAPIReposOwnerRepoGithubIssuesCommentsIDResponse, error) {
+	var out PatchAPIReposOwnerRepoGithubIssuesCommentsIDResponse
+	err := c.withHeader("Idempotency-Key", idempotencyKey).do(ctx, "PATCH", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/github/issues/comments/"+url.PathEscape(strconv.FormatInt(id, 10)), nil, body, &out)
+	return out, err
+}
+
+// GetAPIReposOwnerRepoGithubIssuesRequestsID calls GET /api/repos/{owner}/{repo}/github/issues/requests/{id}.
+func (c *Client) GetAPIReposOwnerRepoGithubIssuesRequestsID(ctx context.Context, owner string, repo string, id string) (GetAPIReposOwnerRepoGithubIssuesRequestsIDResponse, error) {
+	var out GetAPIReposOwnerRepoGithubIssuesRequestsIDResponse
+	err := c.do(ctx, "GET", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/github/issues/requests/"+url.PathEscape(id), nil, nil, &out)
 	return out, err
 }
 

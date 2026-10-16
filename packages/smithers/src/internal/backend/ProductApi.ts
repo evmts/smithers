@@ -2824,6 +2824,121 @@ export interface PostApiIssuesNumberReopenInput {
 export const postApiIssuesNumberReopen = (transport: Transport, input: PostApiIssuesNumberReopenInput): Promise<PostApiIssuesNumberReopenResponse> =>
   transport.request("POST", `/api/issues/${segment(input.path.number)}/reopen`, undefined, { headers: { "Idempotency-Key": input.headers["Idempotency-Key"] } }) as Promise<PostApiIssuesNumberReopenResponse>
 
+export type PostApiReposOwnerRepoGithubIssuesBody = {
+  title: string
+  body: string
+}
+
+export type PostApiReposOwnerRepoGithubIssuesResponse = {
+  operationId: string
+  requestId: string
+  kind: string
+  state: "accepted" | "dispatching" | "running" | "waiting" | "completed" | "failed" | "cancelled" | "uncertain"
+  acceptedAt: string
+}
+
+export interface PostApiReposOwnerRepoGithubIssuesInput {
+  readonly path: { readonly owner: string; readonly repo: string }
+  readonly headers: { readonly "Idempotency-Key": string }
+  readonly body: PostApiReposOwnerRepoGithubIssuesBody
+}
+
+/** POST /api/repos/{owner}/{repo}/github/issues: Request a GitHub issue in this repository */
+export const postApiReposOwnerRepoGithubIssues = (transport: Transport, input: PostApiReposOwnerRepoGithubIssuesInput): Promise<PostApiReposOwnerRepoGithubIssuesResponse> =>
+  transport.request("POST", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/github/issues`, input.body, { headers: { "Idempotency-Key": input.headers["Idempotency-Key"] } }) as Promise<PostApiReposOwnerRepoGithubIssuesResponse>
+
+export type PostApiReposOwnerRepoGithubIssuesNumberCommentsBody = {
+  body: string
+}
+
+export type PostApiReposOwnerRepoGithubIssuesNumberCommentsResponse = {
+  operationId: string
+  requestId: string
+  kind: string
+  state: "accepted" | "dispatching" | "running" | "waiting" | "completed" | "failed" | "cancelled" | "uncertain"
+  acceptedAt: string
+}
+
+export interface PostApiReposOwnerRepoGithubIssuesNumberCommentsInput {
+  readonly path: { readonly owner: string; readonly repo: string; readonly number: number }
+  readonly headers: { readonly "Idempotency-Key": string }
+  readonly body: PostApiReposOwnerRepoGithubIssuesNumberCommentsBody
+}
+
+/** POST /api/repos/{owner}/{repo}/github/issues/{number}/comments: Comment on this repository's GitHub issue */
+export const postApiReposOwnerRepoGithubIssuesNumberComments = (transport: Transport, input: PostApiReposOwnerRepoGithubIssuesNumberCommentsInput): Promise<PostApiReposOwnerRepoGithubIssuesNumberCommentsResponse> =>
+  transport.request("POST", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/github/issues/${segment(input.path.number)}/comments`, input.body, { headers: { "Idempotency-Key": input.headers["Idempotency-Key"] } }) as Promise<PostApiReposOwnerRepoGithubIssuesNumberCommentsResponse>
+
+export type PostApiReposOwnerRepoGithubIssuesNumberCloseResponse = {
+  operationId: string
+  requestId: string
+  kind: string
+  state: "accepted" | "dispatching" | "running" | "waiting" | "completed" | "failed" | "cancelled" | "uncertain"
+  acceptedAt: string
+}
+
+export interface PostApiReposOwnerRepoGithubIssuesNumberCloseInput {
+  readonly path: { readonly owner: string; readonly repo: string; readonly number: number }
+  readonly headers: { readonly "Idempotency-Key": string }
+}
+
+/** POST /api/repos/{owner}/{repo}/github/issues/{number}/close: Close this repository's GitHub issue */
+export const postApiReposOwnerRepoGithubIssuesNumberClose = (transport: Transport, input: PostApiReposOwnerRepoGithubIssuesNumberCloseInput): Promise<PostApiReposOwnerRepoGithubIssuesNumberCloseResponse> =>
+  transport.request("POST", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/github/issues/${segment(input.path.number)}/close`, undefined, { headers: { "Idempotency-Key": input.headers["Idempotency-Key"] } }) as Promise<PostApiReposOwnerRepoGithubIssuesNumberCloseResponse>
+
+export type PostApiReposOwnerRepoGithubIssuesNumberReopenResponse = {
+  operationId: string
+  requestId: string
+  kind: string
+  state: "accepted" | "dispatching" | "running" | "waiting" | "completed" | "failed" | "cancelled" | "uncertain"
+  acceptedAt: string
+}
+
+export interface PostApiReposOwnerRepoGithubIssuesNumberReopenInput {
+  readonly path: { readonly owner: string; readonly repo: string; readonly number: number }
+  readonly headers: { readonly "Idempotency-Key": string }
+}
+
+/** POST /api/repos/{owner}/{repo}/github/issues/{number}/reopen: Reopen this repository's GitHub issue */
+export const postApiReposOwnerRepoGithubIssuesNumberReopen = (transport: Transport, input: PostApiReposOwnerRepoGithubIssuesNumberReopenInput): Promise<PostApiReposOwnerRepoGithubIssuesNumberReopenResponse> =>
+  transport.request("POST", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/github/issues/${segment(input.path.number)}/reopen`, undefined, { headers: { "Idempotency-Key": input.headers["Idempotency-Key"] } }) as Promise<PostApiReposOwnerRepoGithubIssuesNumberReopenResponse>
+
+export type PatchApiReposOwnerRepoGithubIssuesCommentsIdBody = {
+  body: string
+}
+
+export type PatchApiReposOwnerRepoGithubIssuesCommentsIdResponse = {
+  operationId: string
+  requestId: string
+  kind: string
+  state: "accepted" | "dispatching" | "running" | "waiting" | "completed" | "failed" | "cancelled" | "uncertain"
+  acceptedAt: string
+}
+
+export interface PatchApiReposOwnerRepoGithubIssuesCommentsIdInput {
+  readonly path: { readonly owner: string; readonly repo: string; readonly id: number }
+  readonly headers: { readonly "Idempotency-Key": string }
+  readonly body: PatchApiReposOwnerRepoGithubIssuesCommentsIdBody
+}
+
+/** PATCH /api/repos/{owner}/{repo}/github/issues/comments/{id}: Replace the body of a comment the App wrote */
+export const patchApiReposOwnerRepoGithubIssuesCommentsId = (transport: Transport, input: PatchApiReposOwnerRepoGithubIssuesCommentsIdInput): Promise<PatchApiReposOwnerRepoGithubIssuesCommentsIdResponse> =>
+  transport.request("PATCH", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/github/issues/comments/${segment(input.path.id)}`, input.body, { headers: { "Idempotency-Key": input.headers["Idempotency-Key"] } }) as Promise<PatchApiReposOwnerRepoGithubIssuesCommentsIdResponse>
+
+export type GetApiReposOwnerRepoGithubIssuesRequestsIdResponse = {
+  state: "accepted" | "dispatching" | "running" | "waiting" | "completed" | "failed" | "cancelled" | "uncertain"
+  number?: number
+  code?: "github_app_not_connected" | "github_sign_in_required" | "github_unavailable" | "github_write_required"
+}
+
+export interface GetApiReposOwnerRepoGithubIssuesRequestsIdInput {
+  readonly path: { readonly owner: string; readonly repo: string; readonly id: string }
+}
+
+/** GET /api/repos/{owner}/{repo}/github/issues/requests/{id}: Read one admitted GitHub issue act */
+export const getApiReposOwnerRepoGithubIssuesRequestsId = (transport: Transport, input: GetApiReposOwnerRepoGithubIssuesRequestsIdInput): Promise<GetApiReposOwnerRepoGithubIssuesRequestsIdResponse> =>
+  transport.request("GET", `/api/repos/${segment(input.path.owner)}/${segment(input.path.repo)}/github/issues/requests/${segment(input.path.id)}`) as Promise<GetApiReposOwnerRepoGithubIssuesRequestsIdResponse>
+
 /** GET /api/live: Follow the install's shared topics over one WebSocket */
 export const getApiLive = (transport: Transport): Promise<void> =>
   transport.request("GET", `/api/live`).then(() => undefined)

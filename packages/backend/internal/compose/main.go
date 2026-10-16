@@ -2584,12 +2584,20 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	launchWorker := func(run func()) {
 		joinedWorkers = append(joinedWorkers, startJoinedBackgroundWorker(run))
 	}
-	if config.IsSingleOwner(cfg.Auth) && options.topology.workers() {
+	// The ordinary GitHub issue acts are durable product jobs, so the ONE
+	// issue-write worker runs in every composition that owns product
+	// background jobs — the install's and the hosted backend's. It claims the
+	// install's operations and the repository-scoped ones with the same
+	// handler; a composition that admits only one family simply never sees
+	// the other's. No per-write machine, engine or daemon exists.
+	if options.topology.workers() {
 		launchWorker(func() {
-			if err := commandJobs.RunWorker(workerCtx, jobs.WorkerConfig{WorkerID: "issue-write-" + uuid.NewString(), Capacity: 1, Lease: time.Minute, PollInterval: 250 * time.Millisecond, Operations: []string{services.InstallIssueCommentOperation, services.InstallIssueCreateOperation, services.InstallIssueCloseOperation, services.InstallIssueReopenOperation, services.InstallIssueCommentEditOperation}}, mythicalService.HandleInstallIssueWrite); err != nil && workerCtx.Err() == nil {
+			if err := commandJobs.RunWorker(workerCtx, jobs.WorkerConfig{WorkerID: "issue-write-" + uuid.NewString(), Capacity: 1, Lease: time.Minute, PollInterval: 250 * time.Millisecond, Operations: services.IssueWriteOperations()}, mythicalService.HandleInstallIssueWrite); err != nil && workerCtx.Err() == nil {
 				slog.Error("Issue comment worker stopped", "error", err)
 			}
 		})
+	}
+	if config.IsSingleOwner(cfg.Auth) && options.topology.workers() {
 		launchWorker(func() {
 			if err := commandJobs.RunWorker(workerCtx, jobs.WorkerConfig{WorkerID: "learning-" + uuid.NewString(), Capacity: 1, Lease: time.Minute, RetryDelay: time.Second, Operations: []string{services.LearningAdmissionOperation}}, mythicalService.HandleLearningAdmission); err != nil && workerCtx.Err() == nil {
 				slog.Error("Learning admission worker stopped", "error", err)

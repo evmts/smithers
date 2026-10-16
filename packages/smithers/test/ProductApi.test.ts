@@ -144,7 +144,13 @@ describe("the generated product API client", () => {
     // Includes the debug API command door (2c7484d8bd, #3434), confirmed install issue
     // creation and its request read (7ba4c5a53f, #3492), and the terminal command
     // route (87bf2cf115, #3492).
-    expect(expected).toHaveLength(572)
+    // Includes the repository's own GitHub issue acts and their request read,
+    // /api/repos/{owner}/{repo}/github/issues… (#4030): six doors on the
+    // existing repo-scoped GitHub family, beside Smithers Cloud's own tracker.
+    // The literal stood at 572 while the spec already served 580: the eight
+    // doors added between are counted here too, so the inventory matches the
+    // spec again rather than trailing it.
+    expect(expected).toHaveLength(586)
     expect(spec.paths["/api/install/ack-delay"]).toHaveProperty("get.operationId", "get_api_install_ack_delay")
     expect(spec.paths["/api/install/ack-delay"]).toHaveProperty("post.operationId", "post_api_install_ack_delay")
     expect(spec.paths["/api/secrets"]).toHaveProperty("post.operationId", "post_api_secrets")

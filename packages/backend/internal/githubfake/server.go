@@ -831,6 +831,21 @@ func (s *Server) respond(r *http.Request, body []byte) (int, any) {
 		case r.URL.Path == "/user/emails":
 			return 200, []any{map[string]any{"email": strings.ToLower(login) + "@example.test", "primary": true, "verified": true}}
 		}
+		// A collaborator reads a repository they can see, with their OWN
+		// permissions on it. A login with no recorded access sees none of
+		// them, exactly as GitHub hides a repository from a stranger.
+		if len(path) == 3 && path[0] == "repos" && r.Method == http.MethodGet {
+			if _, visible := s.permission(login); visible {
+				for _, installation := range s.config.Installations {
+					for _, repo := range installation.Repositories {
+						if repo.FullName == path[1]+"/"+path[2] {
+							return 200, s.repositoryAs(repo, login)
+						}
+					}
+				}
+			}
+			return failure(404, "Not Found")
+		}
 		return failure(404, "endpoint not found")
 	}
 	if r.Header.Get("Authorization") == "Bearer ghu_githubfake_owner" && s.oauthUsed {
@@ -1581,12 +1596,28 @@ func (s *Server) pullMutation(installationID int64, body []byte) (int, any) {
 
 // Repository metadata is shared by OAuth selection and installation verification.
 func (s *Server) repository(repo Repository) map[string]any {
+	return s.repositoryAs(repo, s.config.OwnerLogin)
+}
+
+// repositoryAs is repository metadata as login reads it. GitHub answers each
+// caller their OWN permissions on the repository, which is how a read-only
+// collaborator is told apart from a writer: a platform write made on a
+// person's behalf asks here first. The owner reads admin unless
+// SetCollaborator demoted them.
+func (s *Server) repositoryAs(repo Repository, login string) map[string]any {
 	owner, name, _ := strings.Cut(repo.FullName, "/")
 	defaultBranch := repo.DefaultBranch
 	if defaultBranch == "" {
 		defaultBranch = "main"
 	}
-	return map[string]any{"id": repo.ID, "name": name, "full_name": repo.FullName, "private": repo.Private, "default_branch": defaultBranch, "allow_squash_merge": true, "owner": map[string]string{"login": owner}, "permissions": map[string]bool{"admin": true, "push": true, "pull": true}, "clone_url": s.URL + "/" + repo.FullName + ".git", "html_url": "https://github.com/" + repo.FullName}
+	permission, _ := s.permission(login)
+	return map[string]any{"id": repo.ID, "name": name, "full_name": repo.FullName, "private": repo.Private, "default_branch": defaultBranch, "allow_squash_merge": true, "owner": map[string]string{"login": owner},
+		"permissions": map[string]bool{
+			"admin": permission == "admin",
+			"push":  permission == "admin" || permission == "maintain" || permission == "write",
+			"pull":  permission != "" && permission != "none",
+		},
+		"clone_url": s.URL + "/" + repo.FullName + ".git", "html_url": "https://github.com/" + repo.FullName}
 }
 
 // serveGit uses OS Git's real smart HTTP transport; the JSON fake cannot
