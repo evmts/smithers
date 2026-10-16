@@ -1,6 +1,6 @@
 import { expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
-import { audit, main, repair, settle, shadow, tune, wordy } from "../src/31-bounded-loops.ts"
+import { audit, main, repair, settle, shadow, tune, wordy } from "../../examples/31-bounded-loops.ts"
 
 it.effect("repairs every violation and stops when the next scan is clean", () =>
   Effect.gen(function*() {

@@ -1,6 +1,6 @@
 import { expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
-import { declaredCalls, main } from "../src/30-failure-control.ts"
+import { declaredCalls, main } from "../../examples/30-failure-control.ts"
 
 it("declares the deploy's compensations in reverse order", () => {
   expect(declaredCalls).toEqual([

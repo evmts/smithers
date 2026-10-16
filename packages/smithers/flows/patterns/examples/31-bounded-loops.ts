@@ -31,8 +31,7 @@ const limits: Readonly<Record<string, number>> = { retries: 3, timeoutMs: 30_000
 /**
  * A config the repair loop edits in place, the way a real fixer edits files.
  */
-const config = (): Map<string, number> =>
-  new Map([["retries", 9], ["timeoutMs", 90_000], ["concurrency", 4]])
+const config = (): Map<string, number> => new Map([["retries", 9], ["timeoutMs", 90_000], ["concurrency", 4]])
 
 const violations = (current: ReadonlyMap<string, number>): ReadonlyArray<Violation> =>
   [...current].flatMap(([key, value]) => {
@@ -93,8 +92,9 @@ export const audit = (
 ): Effect.Effect<{ readonly drifted: boolean; readonly paged: ReadonlyArray<string> }> =>
   Effect.gen(function*() {
     const paged: Array<string> = []
+    const approved: Record<string, number> = { retries: 9, timeoutMs: 90_000, concurrency: 4 }
     const result = yield* DriftDetector.run(settled, {
-      baseline: { retries: 9, timeoutMs: 90_000, concurrency: 4 } as Record<string, number>,
+      baseline: approved,
       capture: ({ input }) => Effect.succeed(Object.fromEntries(input.map((s) => [s.key, s.value]))),
       // Walk the union of both key sets: a setting the operator never approved
       // is drift just as much as an approved one that moved or went missing.

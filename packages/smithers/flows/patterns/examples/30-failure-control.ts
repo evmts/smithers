@@ -11,9 +11,8 @@
  * finalizer always releases.
  */
 import { Node } from "@smthrs/core"
-import { Flow } from "@smthrs/flow"
-import { Graph } from "@smthrs/flow"
-import { Bounded, Escalation, PatternError, Quarantine, Saga, TryCatchFinally } from "@smthrs/patterns"
+import { Flow, Graph } from "@smthrs/flow"
+import { Bounded, Escalation, type PatternError, Quarantine, Saga, TryCatchFinally } from "@smthrs/patterns"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 
