@@ -156,13 +156,14 @@ export const template = (name: string, seat: Seat): string => {
 import { Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Schema } from "effect"
+import Instructions from "./prompt.mdx"
 
 const Work = AgentAction.make(${JSON.stringify(`${name}/work`)}, {
   payload: { args: Schema.optional(Schema.String) },
   output: Schema.Struct({ summary: Schema.String }),
   // Change the seat to use another model. Credentials stay in the environment.
   seat: ${JSON.stringify(seat.seat)},
-  prompt: ({ args }) => args ?? "Summarize this project and suggest one small improvement."
+  prompt: Instructions
 })
 
 export const layer = Work.layer
@@ -246,6 +247,23 @@ export const scaffold = (
   }
   if (!exists) {
     mkdirSync(directory, { recursive: true })
+    const content = {
+      "prompt.mdx": "{props.args ?? \"Summarize this project and suggest one small improvement.\"}\n",
+      "prompt.d.mdx.ts":
+        "import type { Component } from \"@smthrs/registry/Prompt\"\n\ndeclare const Instructions: Component<{ readonly args?: string }>\nexport default Instructions\n"
+    }
+    for (const [entry, text] of Object.entries(content)) {
+      const path = join(directory, entry)
+      const stat = statIfPresent(path)
+      if (stat !== undefined && (!stat.isFile() || stat.isSymbolicLink())) {
+        throw new CliError.Refused({
+          fault: "user",
+          code: "unsafe_scaffold_path",
+          message: `Refusing scaffold path ${path}`
+        })
+      }
+      if (stat === undefined) writeFileSync(path, text, { encoding: "utf8", flag: "wx" })
+    }
     writeFileSync(flowFile, template(name, seat), { encoding: "utf8", flag: "wx" })
   }
   // The empty state directory is the project's anchor. `Project.root` treats
