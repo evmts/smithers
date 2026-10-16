@@ -10,7 +10,7 @@ import { join } from "node:path"
 import * as CachedModel from "../src/CachedModel.ts"
 import { decode, type Fixture, type RecordedCall, recordedRequest } from "../src/Fixture.ts"
 import * as FixtureStore from "../src/FixtureStore.ts"
-import type { ModelErrorLike } from "../src/ModelLike.ts"
+import type { ModelErrorLike, RecordedRequestLike } from "../src/ModelLike.ts"
 import { UnscriptedModelError } from "../src/TestingError.ts"
 
 type Complete<T> = { readonly [K in keyof T]-?: Exclude<T[K], undefined> }
@@ -153,6 +153,43 @@ describe("CachedModel", () => {
         modelId: "openai:gpt-5-mini",
         messageCount: 1,
         toolNames: ["search"]
+      })
+    }))
+
+  it.effect("keys and records the normalized request, and calls the live model with the original", () =>
+    Effect.gen(function*() {
+      const fixture = yield* FixtureStore.makeMemory()
+      const seen: Array<string> = []
+      const live = Model.make({
+        stream: (sent) =>
+          Stream.suspend(() => {
+            const first = sent.messages[0]!
+            seen.push(first.role === "user" ? first.content[0]!.text : "")
+            return Stream.fromIterable(events)
+          })
+      })
+      const normalize = (recorded: RecordedRequestLike): RecordedRequestLike => ({
+        ...recorded,
+        messages: recorded.messages.map((message) =>
+          message.role === "user"
+            ? {
+              ...message,
+              content: message.content.map((part) => ({ ...part, text: part.text.replace(/\/tmp\/run-\d+/g, "<dir>") }))
+            }
+            : message
+        )
+      })
+      const model = CachedModel.make({ live, fixture, normalize })
+      yield* Stream.runDrain(model.stream(request("Read /tmp/run-1/README.md")))
+      const replayed = yield* Stream.runCollect(
+        CachedModel.make({ fixture, normalize }).stream(request("Read /tmp/run-2/README.md"))
+      )
+      expect([...replayed]).toEqual(events)
+      expect(seen).toEqual(["Read /tmp/run-1/README.md"])
+      const [call] = Option.getOrThrow(yield* fixture.load()).calls
+      expect(call!.request.messages[0]).toEqual({
+        role: "user",
+        content: [{ type: "text", text: "Read <dir>/README.md" }]
       })
     }))
 

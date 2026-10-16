@@ -93,6 +93,8 @@ describe("ModelServerCli.parse", () => {
       "KEY",
       "--hold",
       "\\[HOLD (\\w+)\\]",
+      "--normalize",
+      "/tmp/run-\\d+",
       "--host",
       "localhost",
       "--port",
@@ -101,6 +103,7 @@ describe("ModelServerCli.parse", () => {
       fixture: "f.json",
       record: { upstream: "https://gateway.example", model: "openai/gpt-5-mini" },
       hold: [/\[HOLD (\w+)\]/],
+      normalize: [/\/tmp\/run-\d+/g],
       hostname: "localhost",
       port: 4123
     })
@@ -116,6 +119,7 @@ describe("ModelServerCli.parse", () => {
     [["--fixture", "f", "--upstream", "https://x"], "--upstream needs --record"],
     [["--fixture", "f", "--hold", "("], "--hold is not a regular expression"],
     [["--fixture", "f", "--hold", "HOLD"], "--hold needs one capture group"],
+    [["--fixture", "f", "--normalize", "["], "--normalize is not a regular expression"],
     [["--fixture", "f", "--port", "x"], "--port must be an integer"]
   ])("refuses %j", (argv, message) => {
     expect(() => ModelServerCli.parse(argv, {})).toThrow(message)
@@ -138,11 +142,15 @@ describe("ModelServerCli.run", () => {
           "--upstream-model",
           "openai/upstream",
           "--key-env",
-          "UPSTREAM_KEY"
+          "UPSTREAM_KEY",
+          "--normalize",
+          "/tmp/run-\\d+"
         ], { UPSTREAM_KEY: key })
-        const chat = yield* post(recording.url, ModelServer.paths.chat, chatBody("Hello"))
+        const chat = yield* post(recording.url, ModelServer.paths.chat, chatBody("Hello from /tmp/run-1"))
         expect(chat.body).toContain("recorded answer")
         expect(seen.map((request) => request.modelId)).toEqual(["openai/upstream"])
+        // The upstream is asked the original; the fixture keeps the normalized request.
+        expect(JSON.stringify(seen[0]!.messages)).toContain("/tmp/run-1")
         const judged = yield* post(recording.url, ModelServer.paths.evaluation, evaluationBody)
         expect(JSON.parse(judged.body)).toEqual({ answers: { done: { type: "boolean", probability: 0.75 } } })
         yield* recording.stop
@@ -151,9 +159,11 @@ describe("ModelServerCli.run", () => {
         // The fixture keys the request as the install sent it.
         expect(written).toContain("openai/requested")
         expect(written).not.toContain("openai/upstream")
+        expect(written).not.toContain("/tmp/run-1")
 
-        const replay = yield* start(["--fixture", fixture])
-        expect((yield* post(replay.url, ModelServer.paths.chat, chatBody("Hello"))).body).toContain("recorded answer")
+        const replay = yield* start(["--fixture", fixture, "--normalize", "/tmp/run-\\d+"])
+        expect((yield* post(replay.url, ModelServer.paths.chat, chatBody("Hello from /tmp/run-2"))).body)
+          .toContain("recorded answer")
         expect(JSON.parse((yield* post(replay.url, ModelServer.paths.evaluation, evaluationBody)).body))
           .toEqual({ answers: { done: { type: "boolean", probability: 0.75 } } })
         expect((yield* post(replay.url, ModelServer.paths.chat, chatBody("Unrecorded"))).status).toBe(501)

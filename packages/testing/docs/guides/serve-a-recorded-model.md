@@ -65,9 +65,17 @@ exist.
 Replay keys a turn on its canonical request: the model id, the system prompt,
 every message, the tools, and the parameters. A prompt that carries a value that
 changes on every run, such as a timestamp, a temporary path, a port or a random
-identifier, misses on replay. Pin those values in the test: fix the clock, use a
-fixed directory, and seed the identifiers. Run the replay twice before you
-commit a fixture.
+identifier, misses on replay. Pin what the test controls: fix the clock and
+seed the identifiers. Normalize the rest with `--normalize <regex>`, on the
+recording run and every replay alike: each match becomes `<normalized>` before
+the request is keyed and recorded, while the upstream still receives the
+original. A test that runs in a temporary directory passes that directory:
+
+```bash
+npx smthrs-model-server --fixture test/fixtures/install.json --normalize '/var/folders/[^"]*/TestInstall[0-9]+'
+```
+
+Run the replay twice before you commit a fixture.
 
 ## Hold a turn until the test releases it
 

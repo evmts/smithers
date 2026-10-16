@@ -17,9 +17,9 @@ import * as Model from "@smthrs/model/Model"
 import { ModelError } from "@smthrs/model/ModelError"
 import type * as ModelEvent from "@smthrs/model/ModelEvent"
 import { Effect, type Layer, Option, Stream } from "effect"
-import { canonicalRequestDigest, type Fixture, index, type RecordedCall } from "./Fixture.ts"
+import { canonicalRequestDigest, type Fixture, index, type RecordedCall, recordedRequest } from "./Fixture.ts"
 import type { FixtureStore } from "./FixtureStore.ts"
-import type { ModelErrorLike, ModelRequestLike } from "./ModelLike.ts"
+import type { ModelErrorLike, ModelRequestLike, RecordedRequestLike } from "./ModelLike.ts"
 import * as RecordingModel from "./RecordingModel.ts"
 import { UnscriptedModelError } from "./TestingError.ts"
 
@@ -38,6 +38,13 @@ export interface Options {
   readonly live?: Model.Model | undefined
   /** The fixture the cache reads and records into. */
   readonly fixture: FixtureStore
+  /**
+   * Rewrites what changes from run to run (a temporary path, a port, a run
+   * id) out of a request before it is keyed and recorded, so the next run's
+   * request finds the same recording. The live model still receives the
+   * original request. Leave `modelId` alone.
+   */
+  readonly normalize?: ((request: RecordedRequestLike) => RecordedRequestLike) | undefined
 }
 
 /**
@@ -49,7 +56,7 @@ export interface Options {
  * `modelId` to match by request shape and dies when the fixture was recorded
  * against a different model.
  */
-const hit = (fixture: Fixture, request: ModelRequestLike): Option.Option<RecordedCall> =>
+const hit = (fixture: Fixture, request: RecordedRequestLike): Option.Option<RecordedCall> =>
   Option.fromUndefinedOr(index(fixture).get(canonicalRequestDigest(request)))
 
 const asModelError = (failure: ModelErrorLike): ModelError =>
@@ -96,16 +103,18 @@ const unscripted = (request: ModelRequestLike): Stream.Stream<never> =>
  * @since 0.0.0
  */
 export const make = (options: Options): Model.Model => {
+  const normalize = options.normalize ?? ((request: RecordedRequestLike) => request)
   const miss = options.live === undefined
     ? unscripted
-    : RecordingModel.make(options.live, options.fixture.append).stream
+    : RecordingModel.make(options.live, (call) => options.fixture.append({ ...call, request: normalize(call.request) }))
+      .stream
   return Model.make({
     ...(options.live?.providerName === undefined ? {} : { providerName: options.live.providerName }),
     stream: (request) =>
       Stream.unwrap(
         options.fixture.load().pipe(
           Effect.map((loaded) =>
-            Option.match(Option.flatMap(loaded, (fixture) => hit(fixture, request)), {
+            Option.match(Option.flatMap(loaded, (fixture) => hit(fixture, normalize(recordedRequest(request)))), {
               onNone: () => miss(request),
               onSome: replay
             })

@@ -24,6 +24,7 @@
  * | `--upstream-model <id>` | The model the upstream is asked for; the fixture keeps the request's.   |
  * | `--key-env <NAME>`      | The environment variable holding the upstream's bearer key.             |
  * | `--hold <regex>`        | Hold a turn whose text matches until its key (group 1) is released.     |
+ * | `--normalize <regex>`   | Replace every match in a request with `<normalized>` before keying it.  |
  * | `--host`, `--port`      | Where to listen: `127.0.0.1` and any free port by default.              |
  *
  * @since 1.0.0
@@ -41,6 +42,7 @@ import * as CachedEvaluator from "./CachedEvaluator.ts"
 import * as CachedModel from "./CachedModel.ts"
 import { decode } from "./Fixture.ts"
 import * as FixtureStore from "./FixtureStore.ts"
+import type { RecordedRequestLike } from "./ModelLike.ts"
 import * as ModelServer from "./ModelServer.ts"
 import * as TurnGate from "./TurnGate.ts"
 
@@ -58,24 +60,29 @@ export interface Config {
     readonly apiKey: Redacted.Redacted<string>
   } | undefined
   readonly hold: ReadonlyArray<RegExp>
+  /** Run-varying text to replace with `<normalized>` before a request is keyed and recorded. */
+  readonly normalize: ReadonlyArray<RegExp>
   readonly hostname?: string | undefined
   readonly port?: number | undefined
 }
 
 const usage = "Usage: smthrs-model-server --fixture <path> [--record --upstream <origin> --key-env <NAME> " +
-  "[--upstream-model <id>]] [--hold <regex>] [--host <host>] [--port <port>]"
+  "[--upstream-model <id>]] [--hold <regex>] [--normalize <regex>] [--host <host>] [--port <port>]"
 
 const refuse = (message: string): never => {
   throw new Error(`${message}\n${usage}`)
 }
 
-const pattern = (source: string): RegExp => {
-  let compiled: RegExp
+const compile = (flag: string, source: string, flags?: string): RegExp => {
   try {
-    compiled = new RegExp(source)
+    return new RegExp(source, flags)
   } catch {
-    return refuse(`--hold is not a regular expression: ${source}`)
+    return refuse(`${flag} is not a regular expression: ${source}`)
   }
+}
+
+const pattern = (source: string): RegExp => {
+  const compiled = compile("--hold", source)
   return new RegExp(`${source}|`).exec("")!.length === 2 ? compiled : refuse("--hold needs one capture group")
 }
 
@@ -88,6 +95,7 @@ const pattern = (source: string): RegExp => {
 export const parse = (argv: ReadonlyArray<string>, env: Readonly<Record<string, string | undefined>>): Config => {
   const values = new Map<string, string>()
   const hold: Array<RegExp> = []
+  const normalize: Array<RegExp> = []
   let record = false
   for (let index = 0; index < argv.length; index++) {
     const flag = argv[index]!
@@ -95,11 +103,22 @@ export const parse = (argv: ReadonlyArray<string>, env: Readonly<Record<string, 
       record = true
       continue
     }
-    if (!["--fixture", "--upstream", "--upstream-model", "--key-env", "--hold", "--host", "--port"].includes(flag)) {
+    const flags = [
+      "--fixture",
+      "--upstream",
+      "--upstream-model",
+      "--key-env",
+      "--hold",
+      "--normalize",
+      "--host",
+      "--port"
+    ]
+    if (!flags.includes(flag)) {
       refuse(`Unknown argument ${flag}`)
     }
     const value = argv[++index] ?? refuse(`${flag} needs a value`)
     if (flag === "--hold") hold.push(pattern(value))
+    else if (flag === "--normalize") normalize.push(compile(flag, value, "g"))
     else values.set(flag, value)
   }
   const fixture = values.get("--fixture") ?? refuse("--fixture is required")
@@ -121,6 +140,7 @@ export const parse = (argv: ReadonlyArray<string>, env: Readonly<Record<string, 
     fixture,
     record: record ? recording() : undefined,
     hold,
+    normalize,
     hostname: values.get("--host"),
     port: port === undefined ? undefined : Number(port)
   }
@@ -164,6 +184,17 @@ const live = (record: NonNullable<Config["record"]>) =>
     Effect.provide(Layer.provideMerge(RequestExecutor.layer, FetchHttpClient.layer))
   )
 
+/** Replaces every match of `patterns` in every string a request carries, except its model id. */
+const normalizer = (patterns: ReadonlyArray<RegExp>): CachedModel.Options["normalize"] =>
+  patterns.length === 0 ? undefined : (request) =>
+    JSON.parse(
+      JSON.stringify(request),
+      (key, value: unknown) =>
+        typeof value === "string" && key !== "modelId"
+          ? patterns.reduce((text, pattern) => text.replace(pattern, "<normalized>"), value)
+          : value
+    ) as RecordedRequestLike
+
 /** A replay reads the file once and never writes it, so any number of runs can share it. */
 const replayStore = (path: string) =>
   Effect.gen(function*() {
@@ -186,14 +217,15 @@ export const serve = (config: Config): Effect.Effect<ModelServer.ModelServer, ne
       : yield* Effect.acquireRelease(FixtureStore.makeFile(config.fixture), (store) => store.flush())
     const upstream = record === undefined ? undefined : yield* live(record)
     const gate = yield* TurnGate.make()
-    const cached = CachedModel.make({ fixture, live: upstream?.model })
+    const normalize = normalizer(config.normalize)
+    const cached = CachedModel.make({ fixture, live: upstream?.model, normalize })
     const key = (request: ModelRequest) => {
       const text = textOf(request)
       return config.hold.map((hold) => hold.exec(text)?.[1]).find((match) => match !== undefined)
     }
     return yield* ModelServer.make({
       model: config.hold.length === 0 ? cached : TurnGate.model(cached, { gate, key }),
-      evaluator: CachedEvaluator.make({ fixture, live: upstream?.evaluator }),
+      evaluator: CachedEvaluator.make({ fixture, live: upstream?.evaluator, normalize }),
       gate,
       hostname: config.hostname,
       port: config.port

@@ -374,6 +374,34 @@ describe("ModelServer routes", () => {
       expect(refused).toBeDefined()
     }))
 
+  it.live("interrupts a turn still in flight when its scope closes, so nothing records after", () =>
+    Effect.gen(function*() {
+      const started = yield* Deferred.make<void>()
+      const interrupted = yield* Deferred.make<void>()
+      const endless = Model.make({
+        stream: () =>
+          Stream.unwrap(
+            Deferred.succeed(started, undefined).pipe(
+              Effect.andThen(Effect.never),
+              Effect.onInterrupt(() => Deferred.succeed(interrupted, undefined))
+            )
+          )
+      })
+      yield* Effect.scoped(Effect.gen(function*() {
+        const server = yield* ModelServer.make({ model: endless })
+        yield* Effect.forkDetach(
+          Effect.promise(() =>
+            fetch(`${server.url}${ModelServer.paths.chat}`, {
+              method: "POST",
+              body: JSON.stringify({ model: "m", messages: [], stream: true })
+            }).catch(() => undefined)
+          )
+        )
+        yield* Deferred.await(started)
+      }))
+      yield* Deferred.await(interrupted).pipe(Effect.timeout("2 seconds"))
+    }))
+
   it.effect("listens on the host and port it is given", () =>
     Effect.gen(function*() {
       const server = yield* ModelServer.make({ model: scripted([]), hostname: "localhost", port: 0 })

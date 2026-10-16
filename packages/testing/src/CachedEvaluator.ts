@@ -39,6 +39,8 @@ export interface Options {
   readonly fixture: FixtureStore
   /** The evaluation model a recording is keyed under; `Evaluator.defaultModel` by default. */
   readonly modelId?: string | undefined
+  /** Rewrites run-varying text out of the recorded request, as `CachedModel`'s does. */
+  readonly normalize?: CachedModel.Options["normalize"]
 }
 
 /** What a recording stores of a response: the answer, never its timing. */
@@ -134,6 +136,7 @@ const asEvaluatorError = (failure: Model.ModelFailure): Evaluator.EvaluatorError
 export const make = (options: Options): Evaluator.Evaluator => {
   const model = CachedModel.make({
     fixture: options.fixture,
+    normalize: options.normalize,
     ...(options.live === undefined ? {} : { live: asModel(options.live) })
   })
   const modelId = options.modelId ?? Evaluator.defaultModel

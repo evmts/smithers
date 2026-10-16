@@ -1333,6 +1333,7 @@ A model that replays a fixture hit and records a miss.
 interface Options {
   readonly live?: Model.Model | undefined
   readonly fixture: FixtureStore
+  readonly normalize?: ((request: RecordedRequestLike) => RecordedRequestLike) | undefined
 }
 
 const make: (options: Options) => Model.Model
@@ -1341,6 +1342,11 @@ const layer: (options: Options) => Layer.Layer<Model.Model>
 
 Without `live` the model only replays: a miss dies with `UnscriptedModelError`,
 records nothing, and never reaches the network. A CI run uses this mode.
+
+`normalize` rewrites run-varying text, such as a temporary path, a port or a
+run id, out of a request before it is keyed and recorded, so the next run's
+request finds the same recording. The live model still receives the original
+request. Leave `modelId` alone.
 
 The fixture is consulted per call rather than once, so a miss recorded by one
 call is a hit for the next identical one inside the same run. Nothing is
@@ -1361,6 +1367,7 @@ interface Options {
   readonly live?: Evaluator.Evaluator | undefined
   readonly fixture: FixtureStore
   readonly modelId?: string | undefined
+  readonly normalize?: CachedModel.Options["normalize"]
 }
 
 const make: (options: Options) => Evaluator.Evaluator
@@ -1897,6 +1904,7 @@ interface Config {
     readonly apiKey: Redacted.Redacted<string>
   } | undefined
   readonly hold: ReadonlyArray<RegExp>
+  readonly normalize: ReadonlyArray<RegExp>
   readonly hostname?: string | undefined
   readonly port?: number | undefined
 }
@@ -1911,15 +1919,16 @@ const serve: (config: Config) => Effect.Effect<ModelServer.ModelServer, never, S
 const run: (argv: ReadonlyArray<string>, env: Readonly<Record<string, string | undefined>>, io: Io) => Promise<void>
 ```
 
-| Flag                    | Meaning                                                                                        |
-| ----------------------- | ---------------------------------------------------------------------------------------------- |
-| `--fixture <path>`      | The fixture file. Required. Replay refuses a path that does not exist.                         |
-| `--record`              | Record misses. Needs `--upstream` and `--key-env`.                                             |
-| `--upstream <origin>`   | The Chat Completions origin a miss is sent to; its judge is `<origin>/v4/ai/evaluation-model`. |
-| `--upstream-model <id>` | The model the upstream is asked for. The fixture keeps the requested id.                       |
-| `--key-env <NAME>`      | The environment variable holding the upstream's bearer key.                                    |
-| `--hold <regex>`        | Hold a turn whose text matches until its key, capture group 1, is released. Repeatable.        |
-| `--host`, `--port`      | Where to listen: `127.0.0.1` and any free port by default.                                     |
+| Flag                    | Meaning                                                                                                                       |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `--fixture <path>`      | The fixture file. Required. Replay refuses a path that does not exist.                                                        |
+| `--record`              | Record misses. Needs `--upstream` and `--key-env`.                                                                            |
+| `--upstream <origin>`   | The Chat Completions origin a miss is sent to; its judge is `<origin>/v4/ai/evaluation-model`.                                |
+| `--upstream-model <id>` | The model the upstream is asked for. The fixture keeps the requested id.                                                      |
+| `--key-env <NAME>`      | The environment variable holding the upstream's bearer key.                                                                   |
+| `--hold <regex>`        | Hold a turn whose text matches until its key, capture group 1, is released. Repeatable.                                       |
+| `--normalize <regex>`   | Replace every match in a request's strings, except its model id, with `<normalized>` before keying and recording. Repeatable. |
+| `--host`, `--port`      | Where to listen: `127.0.0.1` and any free port by default.                                                                    |
 
 `parse` throws an `Error` naming the first problem and the usage line. Replay
 reads the fixture once into memory and never writes it, so parallel runs can

@@ -24,7 +24,7 @@ import type { ModelError } from "@smthrs/model/ModelError"
 import type * as ModelEvent from "@smthrs/model/ModelEvent"
 import { type Message, ModelRequest } from "@smthrs/model/ModelRequest"
 import * as OpenAIChatCompletions from "@smthrs/model/OpenAIChatCompletions"
-import { Cause, Effect, Exit, Schema, type Scope, Stream } from "effect"
+import { Cause, Effect, Exit, FiberSet, Schema, type Scope, Stream } from "effect"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import type { AddressInfo } from "node:net"
 import type * as TurnGate from "./TurnGate.ts"
@@ -361,9 +361,22 @@ const route = (options: Options, request: IncomingMessage, response: ServerRespo
  * @since 1.0.0
  */
 export const make = (options: Options): Effect.Effect<ModelServer, never, Scope.Scope> =>
+  Effect.gen(function*() {
+    // Every request runs in this set, which the scope interrupts after the
+    // server stops listening: a turn still in flight when the server stops
+    // is abandoned, never recorded into a fixture already published.
+    const requests = yield* FiberSet.make()
+    const fork = yield* FiberSet.runtime(requests)()
+    return yield* serve(options, (handler) => void fork(handler))
+  })
+
+const serve = (
+  options: Options,
+  fork: (handler: Effect.Effect<void>) => void
+): Effect.Effect<ModelServer, never, Scope.Scope> =>
   Effect.acquireRelease(
     Effect.callback<ReturnType<typeof createServer>>((resume) => {
-      const server = createServer((request, response) => void Effect.runFork(route(options, request, response)))
+      const server = createServer((request, response) => fork(route(options, request, response)))
       const hostname = options.hostname ?? "127.0.0.1"
       server.once("error", (error) => resume(Effect.die(error)))
       server.listen(options.port ?? 0, hostname, () => resume(Effect.succeed(server)))

@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, Option, Ref } from "effect"
 import * as CachedEvaluator from "../src/CachedEvaluator.ts"
+import type * as CachedModel from "../src/CachedModel.ts"
 import * as FixtureStore from "../src/FixtureStore.ts"
 
 const questions = {
@@ -68,6 +69,33 @@ describe("CachedEvaluator", () => {
       expect(yield* live.count()).toBe(3)
       const bare = yield* CachedEvaluator.make({ fixture }).evaluate(request)
       expect(bare).toEqual({ answers: answered.answers, latencyMs: 0 })
+    }))
+
+  it.effect("keys a judgment on its normalized state, and asks the live evaluator the original", () =>
+    Effect.gen(function*() {
+      const fixture = yield* FixtureStore.makeMemory()
+      const states: Array<unknown> = []
+      const live: Evaluator.Evaluator = {
+        evaluate: (asked) => Effect.sync(() => states.push(asked.state)).pipe(Effect.as({ ...answered, latencyMs: 1 }))
+      }
+      const normalize: CachedModel.Options["normalize"] = (recorded) => ({
+        ...recorded,
+        messages: recorded.messages.map((message) =>
+          message.role === "user"
+            ? {
+              ...message,
+              content: message.content.map((part) => ({ ...part, text: part.text.replace(/run-\d+/g, "run") }))
+            }
+            : message
+        )
+      })
+      yield* CachedEvaluator.make({ live, fixture, normalize }).evaluate({ state: { dir: "/tmp/run-1" }, questions })
+      const replayed = yield* CachedEvaluator.make({ fixture, normalize }).evaluate({
+        state: { dir: "/tmp/run-2" },
+        questions
+      })
+      expect(replayed.answers).toEqual(answered.answers)
+      expect(states).toEqual([{ dir: "/tmp/run-1" }])
     }))
 
   it.effect("records a failure and replays it as the same evaluator error", () =>
