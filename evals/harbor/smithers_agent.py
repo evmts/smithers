@@ -545,8 +545,8 @@ def trajectory(events: list[dict[str, Any]], *, agent_name: str, agent_version: 
         elif kind == "control.agent.cell-rejected-in-frame":
             turn["rejected"] = {"code": payload.get("code"), "message": payload.get("message")}
         elif kind == "control.agent.cell-produced":
-            cell = payload.get("cell") or {}
-            turn["cell"] = cell.get("text") if isinstance(cell, dict) else _text(cell)
+            # The journal writes the cell flat: `{language, digest, text}`.
+            turn["cell"] = _text(payload.get("text"))
         elif kind == "control.agent.cell-call-started":
             started.append(payload)
         elif kind == "control.agent.cell-call-settled":

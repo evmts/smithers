@@ -68,7 +68,7 @@ def synthetic_journal(path: Path) -> None:
         ("control.agent.model-settled", {"text": "```js\nawait bash({...})\n```",
                                          "usage": {"inputTokens": 1000, "cachedInputTokens": 200, "outputTokens": 50,
                                                    "reasoningTokens": 10}, "durationMillis": 1234}),
-        ("control.agent.cell-produced", {"cell": {"language": "js", "text": "await bash({command: 'ls /app'})", "digest": "d1"}}),
+        ("control.agent.cell-produced", {"language": "js", "text": "await bash({command: 'ls /app'})", "digest": "d1"}),
         ("control.agent.cell-call-started", {"flowName": "bash", "input": {"mode": "unhermetic", "container": "c1", "command": "ls /app"}}),
         ("control.agent.cell-call-settled", {"flowName": "bash", "outcome": "success", "value": {"stdout": "app.py\n", "exitCode": 0}}),
         ("control.agent.cell-call-started", {"flowName": "bash", "input": {"mode": "unhermetic", "container": "c1", "command": "false"}}),
