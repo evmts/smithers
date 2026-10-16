@@ -1,3 +1,4 @@
+import * as Consensus from "@smthrs/journal/Consensus"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import * as RuntimeGraph from "../src/internal/RuntimeGraph.ts"
 import { compile, draft, drive } from "./SchedulerDifferentialHarness.ts"
@@ -30,7 +31,10 @@ describe("indexed scheduler composed operation counts", () => {
         graphs.push(graph)
         return graph
       })
-      const observed = await drive({ plan }, false)
+      // Graph operation counts do not measure SQL lease throughput. Keep the
+      // real in-process consensus strategy shared by journal and run store;
+      // all 128 steps and their exact graph-work assertions remain unbounded.
+      const observed = await drive({ plan }, false, Consensus.layerLocal)
       expect(observed.reports[0]!.settlements.every((node) => node.outcome === "built")).toBe(true)
       expect(graphs).toHaveLength(1)
       const graph = graphs[0]!

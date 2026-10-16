@@ -1,4 +1,5 @@
 import { Journal } from "@smthrs/journal"
+import * as Consensus from "@smthrs/journal/Consensus"
 import { Jj } from "@smthrs/kernel"
 import { KeyMaterial, Plan } from "@smthrs/plan"
 import { PlanStore } from "@smthrs/plan-store"
@@ -105,7 +106,11 @@ const boundary = (deviate: boolean) =>
     })
   )
 
-export const drive = (scenario: Scenario, reference: boolean) => {
+export const drive = (
+  scenario: Scenario,
+  reference: boolean,
+  consensus?: Layer.Layer<Consensus.Consensus>
+) => {
   const implementation = reference ? Reference : PlanScheduler
   const executed: Array<{ nodeId: string; attempt: number; boundary: unknown; inputs: unknown }> = []
   const selections: Array<Selection.Input> = []
@@ -211,7 +216,7 @@ export const drive = (scenario: Scenario, reference: boolean) => {
       Effect.provide(reconciliation),
       Effect.provide(boundary(scenario.deviation !== undefined)),
       Effect.provide(runtime(executor)),
-      Effect.provide(TestStores.layerAt(":memory:")),
+      Effect.provide(TestStores.layerAt(":memory:").pipe(Layer.provideMerge(consensus ?? Layer.empty))),
       Effect.scoped
     )
   )
