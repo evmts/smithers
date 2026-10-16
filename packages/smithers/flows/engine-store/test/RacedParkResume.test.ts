@@ -323,10 +323,11 @@ describe("an irreversible dispatch that parks", () => {
       const row = yield* attempts.get({ runId, stepKeyDigest: sha256(`${runId}-key`), attempt: 1 })
       expect(Option.isSome(row) && row.value.state).toBe("running")
       let repeated = false
-      const retried = yield* dispatchIrreversible(runId, () => Effect.sync(() => {
-        repeated = true
-        return "charged again"
-      })).pipe(Effect.provideService(FlowRuntime.FlowInstance, instance))
+      const retried = yield* dispatchIrreversible(runId, () =>
+        Effect.sync(() => {
+          repeated = true
+          return "charged again"
+        })).pipe(Effect.provideService(FlowRuntime.FlowInstance, instance))
       expect(Exit.isFailure(retried)).toBe(true)
       expect(repeated).toBe(false)
       expect(yield* boundaryStatuses(runId)).toEqual(["intended", "unknown"])
