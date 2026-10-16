@@ -25,8 +25,8 @@
  * `@smthrs/platform-browser`'s `BrowserHost` and `@smthrs/platform-bun`'s
  * `BunHost`.
  */
-import * as TestHost from "@smthrs/testing/TestHost"
 import * as NodeHost from "@smthrs/platform-node/NodeHost"
+import * as TestHost from "@smthrs/testing/TestHost"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as ChildProcess from "effect/process/ChildProcess"
