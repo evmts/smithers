@@ -81,7 +81,7 @@ const sshInfo = async (c: Client, path: string, user: unknown): Promise<Endpoint
  * @since 1.0.0
  */
 export const workspaceBody = (o: Values) => {
-  const body: Values = { name: str(o.name), ...pick(o, ["image", "kind"]) }
+  const body: Values = { name: str(o.name), ...pick(o, ["kind"]) }
   if (o.snapshot) body.snapshot_id = o.snapshot
   if (o.ref) {
     if (o.snapshot) throw new UsageError({ message: "--ref cannot be combined with --snapshot" })
@@ -92,34 +92,6 @@ export const workspaceBody = (o: Values) => {
     if (o[key!] !== undefined) resources[field!] = positive(o[key!], key)
   }
   if (Object.keys(resources).length) body.resources = resources
-  const allow = list(o.allow).flatMap((value) => str(value).split(",")).map((value) => value.trim()).filter(Boolean)
-  const mode = str(o.network || (allow.length ? "allowlist" : "")).toLowerCase()
-  if (mode) {
-    if (!["proxy", "allowlist", "none"].includes(mode) || (allow.length && mode !== "allowlist")) {
-      throw new UsageError({ message: "Invalid workspace network options" })
-    }
-    body.network = { mode, ...(allow.length ? { allow } : {}) }
-  }
-  if (o.idleTimeout !== undefined) {
-    if (!Number.isInteger(o.idleTimeout) || Number(o.idleTimeout) < 0) {
-      throw new UsageError({ message: "Idle timeout must be >= 0" })
-    }
-    body.idle_timeout_seconds = o.idleTimeout
-  }
-  const seen = new Set<string>()
-  if (list(o.service).length) {
-    body.services = list(o.service).map((value) => {
-      const raw = str(value),
-        index = raw.indexOf("="),
-        name = raw.slice(0, index).trim(),
-        command = raw.slice(index + 1).trim()
-      if (index < 1 || !name || !command || /[ /\\]/.test(name) || seen.has(name)) {
-        throw new UsageError({ message: "Services must have unique NAME=COMMAND values" })
-      }
-      seen.add(name)
-      return { name, mode: "service", exec: ["/bin/sh", "-lc", command] }
-    })
-  }
   return body
 }
 /**

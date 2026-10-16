@@ -161,24 +161,19 @@ describe("workspace resource payload", () => {
         name: "dev",
         cpus: 4,
         memory: 4096,
-        disk: 50,
-        allow: ["github.com,nodejs.org"],
-        idleTimeout: 0,
-        service: ["web=npm start"]
+        disk: 50
       })
     ).toEqual({
       name: "dev",
-      resources: { vcpu: 4, memory_mib: 4096, disk_gib: 50 },
-      network: { mode: "allowlist", allow: ["github.com", "nodejs.org"] },
-      idle_timeout_seconds: 0,
-      services: [{ name: "web", mode: "service", exec: ["/bin/sh", "-lc", "npm start"] }]
+      resources: { vcpu: 4, memory_mib: 4096, disk_gib: 50 }
     })
   })
   it("checks out a pushed ref and refuses it with a snapshot", () => {
     expect(workspaceBody({ name: "spike", ref: "spike" })).toEqual({ name: "spike", source_ref: "spike" })
     expect(() => workspaceBody({ ref: "spike", snapshot: "snap" })).toThrow("--ref cannot be combined with --snapshot")
   })
-  it.each([{ cpus: -1 }, { network: "none", allow: ["example.com"] }, { service: ["web=a", "web=b"] }, {
-    idleTimeout: -1
-  }])("refuses invalid resource selection %j", (options) => expect(() => workspaceBody(options)).toThrow())
+  it.each([{ cpus: -1 }, { memory: 0 }, { disk: 1.5 }])(
+    "refuses invalid resource selection %j",
+    (options) => expect(() => workspaceBody(options)).toThrow()
+  )
 })

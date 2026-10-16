@@ -1050,19 +1050,32 @@ describe("workspace create over local HTTP (#2939)", () => {
     }
   })
   it.each([
-    [["--image", "docker.io/library/python:3.13-slim"], "image"],
-    [["--allow", "github.com"], "network"],
-    [["--idle-timeout", "1800"], "idle_timeout_seconds"],
-    [["--service", "web=npm start"], "services"]
-  ])("passes %j through and exits non-zero with the backend refusal", async (flags, field) => {
+    ["--image", "docker.io/library/python:3.13-slim"],
+    ["--allow", "github.com"],
+    ["--network", "none"],
+    ["--idle-timeout", "1800"],
+    ["--service", "web=npm start"]
+  ])("refuses unsupported %s before provisioning", async (flag, value) => {
     const fixture = await createServer()
     try {
-      const result = await fixture.run(["workspace", "create", "--repo", "owner/repo", ...flags])
-      expect(fixture.bodies).toHaveLength(1)
-      expect(fixture.bodies[0]).toHaveProperty(field)
+      const result = await fixture.run(["workspace", "create", "--repo", "owner/repo", flag, value])
       expect(result.code).not.toBe(0)
-      expect(result.output + result.error).toContain("code: request_refused")
-      expect(result.output + result.error).toContain(`unknown field \\"${field}\\"`)
+      expect(fixture.bodies).toEqual([])
+      expect(result.output + result.error).toContain(flag)
+    } finally {
+      await fixture.close()
+    }
+  })
+  it("omits unsupported options from explicit command help", async () => {
+    const fixture = await createServer()
+    try {
+      const result = await fixture.run(["workspace", "create", "--help"])
+      expect(result.code).toBe(0)
+      for (const flag of ["--image", "--allow", "--network", "--idle-timeout", "--service"]) {
+        expect(result.output).not.toContain(flag)
+      }
+      expect(result.output).toContain("--cpus")
+      expect(fixture.bodies).toEqual([])
     } finally {
       await fixture.close()
     }

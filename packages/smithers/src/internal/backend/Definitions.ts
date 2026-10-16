@@ -1313,27 +1313,16 @@ export const definitions = {
     description: "Create a workspace",
     args: z.object({}),
     options: z.object({
-      "allow": z.array(z.string()).describe(
-        "Hostname the workspace may reach (repeatable or comma-separated; implies --network allowlist)"
-      ).default([]),
       "cpus": z.coerce.number().describe("vCPUs for the workspace").optional(),
       "disk": z.coerce.number().describe("Writable disk in GiB").optional(),
-      "idleTimeout": z.coerce.number().describe("Seconds of inactivity before the workspace suspends (0 = never)")
-        .optional(),
-      "image": z.string().describe(
-        "OCI image to boot instead of the default workspace image (e.g. docker.io/library/python:3.13-slim)"
-      ).optional(),
       "kind": z.enum(["container", "vm", "desktop"]).describe(
         "Workspace kind: container (default), vm (the repository's Nix environment) or desktop"
       ).optional(),
       "memory": z.coerce.number().describe("Memory in MiB").optional(),
       "name": z.string().describe("Workspace name").default(""),
-      "network": z.string().describe("Egress mode: proxy (default), allowlist, none").optional(),
       "ref": z.string().describe("Check out one of your pushed refs (smthrs repo push --name) instead of the bookmark")
         .optional(),
       "repo": z.string().describe("Repository (OWNER/REPO)").optional(),
-      "service": z.array(z.string()).describe("Network service NAME=COMMAND started inside the workspace (repeatable)")
-        .default([]),
       "snapshot": z.string().describe("Snapshot ID to restore from").optional(),
       "wait": z.boolean().describe(
         "Wait until the workspace is running; exit non-zero with the failure code if provisioning fails"
