@@ -12,7 +12,7 @@ in for a WebSocket. By the end you will have one subscription that delivers two
 entries of history and then a third entry that commits while you are watching.
 
 A runnable copy lives in the Smithers repository, as
-[`examples/src/07-sync-follower.ts`](https://github.com/smithersai/smithers/blob/main/examples/src/07-sync-follower.ts).
+[`packages/smithers/flows/sync/examples/07-sync-follower.ts`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sync/examples/07-sync-follower.ts).
 
 ## Prerequisites
 
