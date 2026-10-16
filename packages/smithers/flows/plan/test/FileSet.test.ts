@@ -160,9 +160,11 @@ describe("FileSet", () => {
       .toBe(true)
     expect(FileSet.overlaps("src/A.ts", { _tag: "Glob", include: ["src/*.ts"] })).toBe(true)
     expect(FileSet.overlaps("SRC/Deep/A.TS", glob)).toBe(true)
-    // An exclusion folds too, so a case variant of an excluded path stays out.
-    expect(FileSet.overlaps("src/deep/SKIP.ts", glob)).toBe(false)
-    expect(FileSet.overlaps(glob, "Src/deep/skip.TS")).toBe(false)
+    // Exclusions cannot prove disjointness across case-sensitive and insensitive hosts.
+    expect(FileSet.overlaps("src/deep/SKIP.ts", glob)).toBe(true)
+    expect(FileSet.overlaps(glob, "Src/deep/skip.TS")).toBe(true)
+    expect(FileSet.overlaps("src/deep/skip.ts", glob)).toBe(true)
+    expect(FileSet.matchesGlob(glob, "src/deep/SKIP.ts")).toBe(true)
     expect(FileSet.overlaps("\u03a3.txt", "\u03c2.txt")).toBe(true)
     expect(FileSet.overlaps("src/a.ts", "src/b.ts")).toBe(false)
     expect(FileSet.overlaps("src/a.ts", "lib/a.ts")).toBe(false)
@@ -245,5 +247,20 @@ describe("FileSet.workspaceRelative", () => {
       expect(Schema.decodeUnknownResult(FileSet.Pattern)(path)._tag).toBe("Failure")
     }
     expect(Schema.decodeUnknownResult(FileSet.Entry)("src/ok.ts")._tag).toBe("Success")
+  })
+})
+
+describe("FileSet.contains", () => {
+  it("uses canonical case-sensitive authority for literals, globs and trees", () => {
+    expect(FileSet.contains("dist\\a", "dist/a")).toBe(true)
+    expect(FileSet.contains("dist/a", "DIST/a")).toBe(false)
+    expect(FileSet.contains("dist/*", "dist/a")).toBe(false)
+    expect(FileSet.contains(glob, "src/deep/SKIP.ts")).toBe(true)
+    expect(FileSet.contains(glob, "src/deep/skip.ts")).toBe(false)
+    expect(FileSet.contains(glob, "SRC/deep/a.ts")).toBe(false)
+    expect(FileSet.contains(tree, "dist")).toBe(true)
+    expect(FileSet.contains(tree, "dist/a")).toBe(true)
+    expect(FileSet.contains(tree, "DIST/a")).toBe(false)
+    expect(FileSet.contains(tree, "distance/a")).toBe(false)
   })
 })

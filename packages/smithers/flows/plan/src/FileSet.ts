@@ -436,12 +436,24 @@ const beneath = (tree: string, path: string): boolean => {
   return inside === root || inside.startsWith(`${root}/`)
 }
 
-/** {@link matchesGlob} over {@link folded} spellings of the glob and the path. */
-const matchesGlobFolded = (glob: Glob, path: string): boolean => {
-  const inside = folded(path)
-  return glob.include.some((pattern) => matchesPattern(folded(pattern), inside)) &&
-    !(glob.exclude ?? []).some((pattern) => matchesPattern(folded(pattern), inside))
+/**
+ * Whether a canonical path is inside a declaration, case-sensitively.
+ * Unlike {@link overlaps}, this predicate establishes replay authority.
+ *
+ * @category predicates
+ * @since 1.0.0-rc.0
+ */
+export const contains = (entry: Entry, path: string): boolean => {
+  const inside = canonical(path)
+  if (typeof entry === "string") return canonical(entry) === inside
+  if (isGlob(entry)) return matchesGlob(entry, inside)
+  const root = canonical(entry.path)
+  return inside === root || inside.startsWith(`${root}/`)
 }
+
+/** Includes fold conservatively; exclusions cannot rule out all case aliases. */
+const mayMatchGlob = (glob: Glob, path: string): boolean =>
+  glob.include.some((pattern) => matchesPattern(folded(pattern), folded(path)))
 
 /**
  * Conservative static overlap. `true` may over-serialize; `false` proves that
@@ -454,8 +466,8 @@ const matchesGlobFolded = (glob: Glob, path: string): boolean => {
  * Exact paths and tree roots compare in their
  * {@link folded} form, so separator aliases, canonically equivalent Unicode
  * spellings, and spellings that differ only in letter case overlap. A Glob
- * against an exact path matches both its `include` and `exclude` patterns in
- * folded form. {@link matchesGlob} itself stays case-sensitive and tests the path bytes it
+ * against an exact path folds its includes and ignores exclusions: an excluded
+ * spelling may alias an included spelling on another filesystem. {@link matchesGlob} itself stays case-sensitive and tests the path bytes it
  * is handed; its property suite pins a backslash inside a path segment as
  * literal text, so canonicalizing a measured path before matching is its
  * caller's decision, not this module's.
@@ -465,8 +477,8 @@ const matchesGlobFolded = (glob: Glob, path: string): boolean => {
  */
 export const overlaps = (left: Entry, right: Entry): boolean => {
   if (typeof left === "string" && typeof right === "string") return folded(left) === folded(right)
-  if (typeof left === "string" && isGlob(right)) return matchesGlobFolded(right, left)
-  if (isGlob(left) && typeof right === "string") return matchesGlobFolded(left, right)
+  if (typeof left === "string" && isGlob(right)) return mayMatchGlob(right, left)
+  if (isGlob(left) && typeof right === "string") return mayMatchGlob(left, right)
   if (isGlob(left) && isGlob(right)) return true
   if (isTreeArtifact(left) && typeof right === "string") return beneath(left.path, right)
   if (typeof left === "string" && isTreeArtifact(right)) return beneath(right.path, left)

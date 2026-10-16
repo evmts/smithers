@@ -96,7 +96,7 @@ describe("compiler file-effect candidates", () => {
     expect(candidates([path])).toEqual([0, 1])
   })
 
-  it("keeps glob exclusions authoritative when conservative candidates reach the compiler", async () => {
+  it("serializes excluded spellings that can alias included paths", async () => {
     const patternWriter = {
       ...draft("pattern"),
       effects: {
@@ -112,10 +112,18 @@ describe("compiler file-effect candidates", () => {
       draft("reader", { reads: ["other.txt", "src/excluded.ts", "unwritten.txt"] })
     ])))
     expect(plan.nodes.map((node) => ({ id: node.id, edges: node.dependsOn, conflicts: node.conflicts }))).toEqual([
-      { id: "pattern", edges: [], conflicts: [] },
+      {
+        id: "pattern",
+        edges: [],
+        conflicts: [{ with: "excluded", paths: ["src/**/*.ts"], runtime: "delay-rebase", strategy: "serialize" }]
+      },
       { id: "other", edges: [], conflicts: [] },
-      { id: "excluded", edges: [], conflicts: [] },
-      { id: "reader", edges: ["other", "excluded"], conflicts: [] }
+      {
+        id: "excluded",
+        edges: ["pattern"],
+        conflicts: [{ with: "pattern", paths: ["src/**/*.ts"], runtime: "delay-rebase", strategy: "serialize" }]
+      },
+      { id: "reader", edges: ["pattern", "other", "excluded"], conflicts: [] }
     ])
   })
 

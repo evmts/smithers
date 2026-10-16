@@ -95,6 +95,13 @@ describe("all-path replay preflight", () => {
       expected: { _tag: "Refused", reason: "unsupported-output-evidence" }
     },
     ...[
+      ["case-sensitive glob include", { writeSet: [{ _tag: "Glob", include: ["dist/**"] }] }, {
+        outputs: [out("DIST/a")]
+      }],
+      ["case-sensitive tree child", { writeSet: [treeDeclaration("dist")] }, {
+        outputs: [out("DIST/a")],
+        trees: [tree("dist")]
+      }],
       ["unexpected later write", { writeSet: ["a"] }, { outputs: [out("a"), out("b")] }],
       ["missing output", { writeSet: ["a"] }, { outputs: [] }],
       ["undeclared deletion", { writeSet: ["a"] }, { outputs: [out("a", true)] }],

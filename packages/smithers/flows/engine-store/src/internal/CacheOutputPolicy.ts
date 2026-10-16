@@ -62,7 +62,7 @@ export const replay = (
       if (!removes.includes(output.path)) return mismatch
     } else if (
       removes.includes(output.path) ||
-      !descriptor.writeSet.some((entry) => FileSet.overlaps(entry, output.path))
+      !descriptor.writeSet.some((entry) => FileSet.contains(entry, output.path))
     ) return mismatch
   }
   // A tree root authorizes pruning its entire subtree. A glob or a narrower
