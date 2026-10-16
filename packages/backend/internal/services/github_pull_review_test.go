@@ -790,3 +790,78 @@ func TestGitHubPullReview_AWitnessThatCannotBeEstablishedSettlesNothing(t *testi
 		"the witness read is bounded, and an unestablished witness reconciles nothing")
 	assert.Equal(t, 1, github.writes())
 }
+
+/*
+ * The by-id readback, field by field. Everything below is AFTER a create
+ * GitHub answered, so no outcome may be a settled failure: each one settles
+ * `uncertain` or `readback_mismatch` and none of them resends.
+ *
+ * GitHub's own reference for this door: REST "Pulls / Reviews"
+ * (api-version 2022-11-28) — `GET /repos/{o}/{r}/pulls/{n}/reviews/{review_id}`
+ * reads one stored review, the list is chronological, and `Create a review`
+ * answers 200 on the current API version as well as 201.
+ */
+func TestGitHubPullReview_TheStoredReviewMustStillBeThisIntent(t *testing.T) {
+	input := reviewInput("REQUEST_CHANGES")
+	for name, answer := range map[string]func(id int64) (int, string){
+		"the stored review is gone": func(int64) (int, string) {
+			return 404, `{"message":"Not Found"}`
+		},
+		"the stored review is unreadable": func(int64) (int, string) {
+			return 200, `{"id":`
+		},
+		"the stored review names another id": func(int64) (int, string) {
+			return 200, reviewRow(999, "CHANGES_REQUESTED", reviewHead, input.Body, 4242)
+		},
+		"the stored review sits at another head": func(id int64) (int, string) {
+			return 200, reviewRow(id, "CHANGES_REQUESTED", reviewMovedHead, input.Body, 4242)
+		},
+		"the stored review belongs to another account": func(id int64) (int, string) {
+			return 200, reviewRow(id, "CHANGES_REQUESTED", reviewHead, input.Body, 9999)
+		},
+		"the stored review carries another verdict": func(id int64) (int, string) {
+			return 200, reviewRow(id, "APPROVED", reviewHead, input.Body, 4242)
+		},
+		"the stored review carries other text": func(id int64) (int, string) {
+			return 200, reviewRow(id, "CHANGES_REQUESTED", reviewHead, "not what was submitted", 4242)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			github := &reviewGitHub{
+				submit: func(int) (int, string) {
+					return 201, reviewRow(55, "CHANGES_REQUESTED", reviewHead, input.Body, 4242)
+				},
+				review: answer,
+				// The reconcile that follows finds nothing above the witness.
+				list: func(int) (int, string) { return 200, `[]` },
+			}
+			status, _ := submitReview(t, github, input)
+			assert.NotEqual(t, string(jobs.StateCompleted), status.State, "an unproved review is never a success")
+			assert.NotEqual(t, string(jobs.StateFailed), status.State, "and never a settled failure a client may repeat")
+			assert.False(t, status.Verified)
+			assert.Zero(t, status.ReviewID)
+			assert.Equal(t, 1, github.writes(), "exactly one POST, whatever the readback said")
+			// The stored review WAS read: a 2xx create is not the readback.
+			assert.Contains(t, strings.Join(github.seen(), ","), "GET /repos/octo/widget/pulls/7/reviews/55")
+		})
+	}
+}
+
+// GitHub's current API version answers `Create a review` with 200; the older
+// documented answer was 201. Both are the same act, and both are read back.
+func TestGitHubPullReview_ACreateAnsweredTwoHundredIsTheSameAct(t *testing.T) {
+	for _, created := range []int{200, 201} {
+		t.Run(fmt.Sprint(created), func(t *testing.T) {
+			input := reviewInput("COMMENT")
+			github := &reviewGitHub{submit: func(int) (int, string) {
+				return created, reviewRow(61, "COMMENTED", reviewHead, input.Body, 4242)
+			}}
+			status, _ := submitReview(t, github, input)
+			assert.Equal(t, string(jobs.StateCompleted), status.State)
+			assert.True(t, status.Verified)
+			assert.Equal(t, int64(61), status.ReviewID)
+			assert.Equal(t, 1, github.writes())
+			assert.Equal(t, 1, github.read, "the stored review is read back exactly once")
+		})
+	}
+}
