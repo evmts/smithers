@@ -33,21 +33,50 @@ func ResolveTodoWorkspaceExecution(ctx context.Context, q interface {
 	if err != nil {
 		return nil, err
 	}
-	if lane.RepositoryID != repositoryID || lane.WorkspaceID != workspaceID || lane.RetiredAt.Valid {
-		return nil, mythicalFlowFailure{code: "runtime_target_forbidden"}
+	if fence := mythicalLaneFence(lane, repositoryID, workspaceID); fence != "" {
+		return nil, mythicalFlowFailure{code: "runtime_target_forbidden", fence: fence}
 	}
 	item, err := q.GetMythicalItem(ctx, lane.ItemID)
 	if err != nil {
 		return nil, err
 	}
-	if item.ID != lane.ItemID || item.RepositoryID != repositoryID || !todoExecutionWorkspace(item, workspaceID) || item.Attempt < 1 {
-		return nil, mythicalFlowFailure{code: "runtime_target_forbidden"}
+	if fence := mythicalLaneItemFence(item, lane, repositoryID, workspaceID); fence != "" {
+		return nil, mythicalFlowFailure{code: "runtime_target_forbidden", fence: fence}
 	}
 	pin, ok := mythicalPinOf(item)
 	if !ok {
 		return nil, mythicalFlowFailure{code: "runtime_pin_invalid"}
 	}
 	return &TodoWorkspaceExecution{ItemID: uuid.UUID(item.ID.Bytes).String(), Attempt: item.Attempt, Pin: pin}, nil
+}
+
+// mythicalLaneFence answers which declared fence refuses this lane record, or
+// "" when none does. Same clauses, same outcome; only the attribution is new.
+func mythicalLaneFence(lane db.MythicalLane, repositoryID int64, workspaceID string) mythicalFence {
+	switch {
+	case lane.RepositoryID != repositoryID:
+		return fenceRepository
+	case lane.WorkspaceID != workspaceID:
+		return fenceLaneMachine
+	case lane.RetiredAt.Valid:
+		return fenceLaneRetired
+	}
+	return ""
+}
+
+// mythicalLaneItemFence answers which declared fence refuses the lane's item.
+func mythicalLaneItemFence(item db.MythicalItem, lane db.MythicalLane, repositoryID int64, workspaceID string) mythicalFence {
+	switch {
+	case item.ID != lane.ItemID:
+		return fenceLaneItem
+	case item.RepositoryID != repositoryID:
+		return fenceRepository
+	case !todoExecutionWorkspace(item, workspaceID):
+		return fenceExecutionMachine
+	case item.Attempt < 1:
+		return fenceAttempt
+	}
+	return ""
 }
 
 // The engine's current isolated review shares the attempt's immutable pin,

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/smithersai/smithers/packages/backend/flowhost"
@@ -120,7 +121,7 @@ func (s *WorkspaceService) PrepareBoxHost(ctx context.Context, hostID, workspace
 		}
 		return environment, nil
 	}
-	workspace, err := s.loadOwnedWorkspace(ctx, workspaceID, repositoryID, userID)
+	workspace, err := s.loadFlowHostBox(ctx, hostID, workspaceID, repositoryID, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -384,6 +385,74 @@ const boxToolsProbe = `for tool do command -v "$tool" >/dev/null 2>&1 || printf 
 
 // verifyBoxTools runs no host on a box that lacks a tool its placement
 // declares: the start fails with a typed refusal the run cannot retry past.
+// loadFlowHostBox opens the box a flow host start prepares.
+//
+// A person's box keeps the person's write door, unchanged. A background
+// machine has no person door at all: refuseBackgroundWorkspaceAccess answers
+// "background machine belongs to its run", and its own comment says run
+// lifecycle code uses serviceMachineAuthority. Taking the person door anyway
+// is why every background wiki host start was refused
+// `runtime_start_failed: background machine belongs to its run` and spent all
+// three of its MaxStartFailures without the wiki ever starting.
+//
+// So a background machine's box is opened under the authority that owns it,
+// the same one FlowHostMachineInitialized already uses for the same machines.
+// No fence is given up and none is widened:
+//
+//   - the machine must belong to the run's repository and must not be deleted
+//     (loadServiceMachineAuthority);
+//   - it must be owned by the run actor, unless its own DURABLE binding row is
+//     the service-owned wiki machine a repository's runs share — the same
+//     carve-out FlowHostMachineInitialized documents, read from the persisted
+//     row rather than from a caller-supplied kind;
+//   - ordinary ownership and shares still grant nothing: this door is reached
+//     only from a host start the resolver already revalidated against the
+//     binding's own owner fence, source revision and credential.
+func (s *WorkspaceService) loadFlowHostBox(ctx context.Context, hostID, workspaceID string, repositoryID, userID int64) (db.Workspace, error) {
+	background, err := s.isServiceBackgroundMachine(ctx, workspaceID)
+	if err != nil {
+		return db.Workspace{}, err
+	}
+	if !background {
+		return s.loadOwnedWorkspace(ctx, workspaceID, repositoryID, userID)
+	}
+	authority, err := s.loadServiceMachineAuthority(ctx, serviceMachineRequest{workspaceID: workspaceID, repositoryID: repositoryID})
+	if err != nil {
+		return db.Workspace{}, err
+	}
+	if authority.row.UserID == userID {
+		return authority.row, nil
+	}
+	shared, err := s.isSharedServiceMachineHostBinding(ctx, hostID, workspaceID)
+	if err != nil {
+		return db.Workspace{}, err
+	}
+	if !shared {
+		return db.Workspace{}, pkgerrors.Forbidden("background machine belongs to another run")
+	}
+	return authority.row, nil
+}
+
+func (s *WorkspaceService) isSharedServiceMachineHostBinding(ctx context.Context, hostID, workspaceID string) (bool, error) {
+	// A durable binding's id is a UUID (flow_admission passes
+	// Binding.ID). Anything else cannot name a persisted binding, so it
+	// cannot prove the shared machine: answer no and let the owner fence
+	// refuse, rather than asking PostgreSQL to cast it and turning a denial
+	// into an infrastructure error.
+	if _, err := uuid.Parse(hostID); err != nil {
+		return false, nil
+	}
+	store, ok := s.q.(interface {
+		IsSharedServiceMachineHostBinding(context.Context, string, string) (bool, error)
+	})
+	if !ok {
+		// Legacy unit stores cannot represent host bindings, so they cannot
+		// prove the shared machine either: the owner fence stands.
+		return false, nil
+	}
+	return store.IsSharedServiceMachineHostBinding(ctx, hostID, workspaceID)
+}
+
 func (s *WorkspaceService) verifyBoxTools(ctx context.Context, hostID, workspaceID string, repositoryID, userID int64) error {
 	if s.boxTools == nil {
 		return nil
@@ -395,7 +464,7 @@ func (s *WorkspaceService) verifyBoxTools(ctx context.Context, hostID, workspace
 	if !s.hasWorkspaceRuntime() || !s.runtime.Capabilities().Execution {
 		return boxToolsMissing{tools: tools}
 	}
-	row, err := s.loadOwnedWorkspace(ctx, workspaceID, repositoryID, userID)
+	row, err := s.loadFlowHostBox(ctx, hostID, workspaceID, repositoryID, userID)
 	if err != nil {
 		return err
 	}

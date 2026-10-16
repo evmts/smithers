@@ -8,6 +8,28 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
+// mythicalWakeFence answers which declared fence refuses this wake, or "" when
+// none does. These are EXACTLY the five clauses the one compound condition
+// tested, in the order they were written, with the same outcome: nothing is
+// added, nothing is dropped, only the attribution is new. The TODO execution
+// resolver's clauses differ (it also requires a counted attempt and the lane's
+// own machine), so it keeps its own helpers rather than sharing these.
+func mythicalWakeFence(item db.MythicalItem, lane db.MythicalLane, repositoryID int64, workspaceID string) mythicalFence {
+	switch {
+	case item.RepositoryID != repositoryID:
+		return fenceRepository
+	case !todoExecutionWorkspace(item, workspaceID):
+		return fenceExecutionMachine
+	case lane.ItemID != item.ID:
+		return fenceLaneItem
+	case lane.RepositoryID != repositoryID:
+		return fenceLaneMachine
+	case lane.RetiredAt.Valid:
+		return fenceLaneRetired
+	}
+	return ""
+}
+
 // WakeTodoWorkspace runs only behind the resolver's host start. Re-read the
 // item and lane inside the same lifecycle lock used by suspend and retirement;
 // a stale delivery must not revive settled or paused work.
@@ -35,7 +57,7 @@ func (s *WorkspaceService) WakeTodoWorkspace(ctx context.Context, itemID, worksp
 			return err
 		}
 		if current.DeletedAt.Valid {
-			return mythicalFlowFailure{code: "runtime_target_forbidden"}
+			return mythicalFlowFailure{code: "runtime_target_forbidden", fence: fenceMachineDeleted}
 		}
 		item, err := store.GetMythicalItem(ctx, pgtype.UUID{Bytes: id, Valid: true})
 		if err != nil {
@@ -45,8 +67,8 @@ func (s *WorkspaceService) WakeTodoWorkspace(ctx context.Context, itemID, worksp
 		if err != nil {
 			return mythicalFlowFailure{code: "runtime_binding_unavailable", retryable: true}
 		}
-		if item.RepositoryID != repositoryID || !todoExecutionWorkspace(item, workspaceID) || lane.ItemID != item.ID || lane.RepositoryID != repositoryID || lane.RetiredAt.Valid {
-			return mythicalFlowFailure{code: "runtime_target_forbidden"}
+		if fence := mythicalWakeFence(item, lane, repositoryID, workspaceID); fence != "" {
+			return mythicalFlowFailure{code: "runtime_target_forbidden", fence: fence}
 		}
 		if item.PausedAt.Valid {
 			return mythicalFlowFailure{code: "runtime_todo_paused", retryable: true}

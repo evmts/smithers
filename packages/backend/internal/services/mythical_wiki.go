@@ -879,9 +879,8 @@ func (resolver *MythicalFlowHostTargetResolver) resolveWikiTarget(ctx context.Co
 	if err != nil {
 		return flowhost.Authority{}, mythicalFlowFailure{code: "runtime_binding_unavailable", retryable: !errors.Is(err, pgx.ErrNoRows)}
 	}
-	if !stack.ActorUserID.Valid || stack.ActorUserID.Int64 != userID || row.WorkspaceID == "" ||
-		(target.WorkspaceID != "" && target.WorkspaceID != row.WorkspaceID) {
-		return flowhost.Authority{}, mythicalFlowFailure{code: "runtime_target_forbidden"}
+	if fence := mythicalStackMachineFence(stack, target, userID, row.WorkspaceID); fence != "" {
+		return flowhost.Authority{}, mythicalFlowFailure{code: "runtime_target_forbidden", fence: fence}
 	}
 	return flowhost.Authority{Target: target, RepositoryID: repositoryID, UserID: userID, WorkspaceID: row.WorkspaceID,
 		CatalogKey: flowhost.CatalogCoding}, nil

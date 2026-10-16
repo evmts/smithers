@@ -23,3 +23,16 @@ func (q *Queries) IsManualMainFlowWorkspace(ctx context.Context, id string) (boo
 	err := q.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM workflow_run_flow_invocations WHERE background_workspace_id=$1::uuid)`, id).Scan(&manual)
 	return manual, err
 }
+
+// IsSharedServiceMachineHostBinding reports whether this exact host binding is
+// the service-owned machine a repository's runs share: the wiki's. It is read
+// from the durable binding row rather than from a caller's claim, so a start
+// cannot name a kind its persisted binding does not have. Every other
+// background kind keeps its own machine, so its box must still belong to the
+// run actor.
+func (q *Queries) IsSharedServiceMachineHostBinding(ctx context.Context, hostID, workspaceID string) (bool, error) {
+	var shared bool
+	err := q.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM flow_runtime_host_bindings
+ WHERE id=$1::uuid AND workspace_id=$2::uuid AND binding_kind='mythical-wiki')`, hostID, workspaceID).Scan(&shared)
+	return shared, err
+}

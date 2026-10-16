@@ -5818,9 +5818,8 @@ func (resolver *MythicalFlowHostTargetResolver) ResolveFlowHostTarget(ctx contex
 	if review := mythicalChecksOf(item).Review; review != nil && review.Lane != "" && target.WorkspaceID == review.Lane && todoExecutionWorkspace(item, target.WorkspaceID) {
 		workspaceID = review.Lane
 	}
-	if item.RepositoryID != repositoryID || mythicalExecutionSponsor(item, stack) != userID || workspaceID == "" ||
-		(target.WorkspaceID != "" && target.WorkspaceID != workspaceID) {
-		return flowhost.Authority{}, mythicalFlowFailure{code: "runtime_target_forbidden"}
+	if fence := mythicalItemTargetFence(item, stack, target, repositoryID, userID, workspaceID); fence != "" {
+		return flowhost.Authority{}, mythicalFlowFailure{code: "runtime_target_forbidden", fence: fence}
 	}
 	// The lane is provisioned in the background after its launch is admitted:
 	// a host bound before its checkout exists would pin a source revision the
@@ -5840,6 +5839,39 @@ func (resolver *MythicalFlowHostTargetResolver) ResolveFlowHostTarget(ctx contex
 	return authority, nil
 }
 
+// mythicalItemTargetFence answers which declared fence refuses this launch, in
+// the order the clauses were written, or "" when none does. The clauses and
+// their outcome are exactly what the single compound condition tested before;
+// only the attribution is new.
+func mythicalItemTargetFence(item db.MythicalItem, stack db.MythicalStack, target flowruntime.Target, repositoryID, userID int64, workspaceID string) mythicalFence {
+	switch {
+	case item.RepositoryID != repositoryID:
+		return fenceRepository
+	case mythicalExecutionSponsor(item, stack) != userID:
+		return fenceSponsor
+	case workspaceID == "":
+		return fenceMachineUnassigned
+	case target.WorkspaceID != "" && target.WorkspaceID != workspaceID:
+		return fenceMachineMismatch
+	}
+	return ""
+}
+
+// mythicalStackMachineFence answers which declared fence refuses a launch
+// whose actor must be the stack's own, or "" when none does. Shared by the
+// wiki and flow-load targets, whose clauses were identical.
+func mythicalStackMachineFence(stack db.MythicalStack, target flowruntime.Target, userID int64, workspaceID string) mythicalFence {
+	switch {
+	case !stack.ActorUserID.Valid || stack.ActorUserID.Int64 != userID:
+		return fenceStackActor
+	case workspaceID == "":
+		return fenceMachineUnassigned
+	case target.WorkspaceID != "" && target.WorkspaceID != workspaceID:
+		return fenceMachineMismatch
+	}
+	return ""
+}
+
 // mythicalLaneNotRunning is why a lane cannot host a launch: a lane whose
 // provisioning failed never will, so the launch fails for good
 // (mythicalLaneFailedCode) and its TODO fails at provisioning; a lane still
@@ -5852,14 +5884,79 @@ func mythicalLaneNotRunning(lane db.Workspace, err error) error {
 	return mythicalFlowFailure{code: "runtime_workspace_pending", retryable: err == nil || !errors.Is(err, pgx.ErrNoRows)}
 }
 
+// mythicalFence names WHICH authority clause a mythical target resolution
+// refused on. It is a CLOSED SET this file declares, listed in
+// mythicalFences, and nothing else: it is never derived from a row, an id, a
+// name, a path, a person's input or any adapter's text, so a record carrying
+// one carries no payload.
+//
+// It exists because a compound refusal that answers only
+// `runtime_target_forbidden` identifies nothing. A repaired rehearsal run
+// produced 35 `flow host: runtime_target_forbidden` records whose catalog and
+// binding kind were both EMPTY — target resolution refuses before a binding
+// exists, so there is no binding to attribute them to — and whose error text
+// was the code restated. Four or five OR'd clauses each answered the same
+// unattributable code, so nothing anywhere said which fence had closed.
+type mythicalFence string
+
+const (
+	// The target names a repository the row does not belong to.
+	fenceRepository mythicalFence = "repository"
+	// The run actor is not the item's execution sponsor.
+	fenceSponsor mythicalFence = "sponsor"
+	// The run actor is not the stack's actor.
+	fenceStackActor mythicalFence = "stack_actor"
+	// The row has no machine assigned yet.
+	fenceMachineUnassigned mythicalFence = "machine_unassigned"
+	// The target asks for a machine that is not the row's.
+	fenceMachineMismatch mythicalFence = "machine_mismatch"
+	// The lane record does not match the machine it was looked up by.
+	fenceLaneMachine mythicalFence = "lane_machine"
+	// The lane has been retired.
+	fenceLaneRetired mythicalFence = "lane_retired"
+	// The lane's item is not the item the lane names.
+	fenceLaneItem mythicalFence = "lane_item"
+	// The machine is not the item's execution machine.
+	fenceExecutionMachine mythicalFence = "execution_machine"
+	// The item has no counted attempt.
+	fenceAttempt mythicalFence = "attempt"
+	// The machine has been deleted.
+	fenceMachineDeleted mythicalFence = "machine_deleted"
+)
+
+// mythicalFences is the whole set, in one written place, so a reader and a
+// test can both enumerate what a record's fence can ever say.
+var mythicalFences = []mythicalFence{
+	fenceRepository, fenceSponsor, fenceStackActor, fenceMachineUnassigned,
+	fenceMachineMismatch, fenceLaneMachine, fenceLaneRetired, fenceLaneItem,
+	fenceExecutionMachine, fenceAttempt, fenceMachineDeleted,
+}
+
 type mythicalFlowFailure struct {
 	code      string
+	fence     mythicalFence
 	retryable bool
 }
 
-func (failure mythicalFlowFailure) Error() string              { return "mythical Flow runtime: " + failure.code }
+func (failure mythicalFlowFailure) Error() string {
+	if failure.fence == "" {
+		return "mythical Flow runtime: " + failure.code
+	}
+	return "mythical Flow runtime: " + failure.code + " at fence " + string(failure.fence)
+}
 func (failure mythicalFlowFailure) FlowRuntimeCode() string    { return failure.code }
 func (failure mythicalFlowFailure) FlowRuntimeRetryable() bool { return failure.retryable }
+
+// MythicalTargetFence reports the declared fence a mythical runtime refusal
+// closed on, or "" when the refusal named none. Observability reads it; no
+// authority decision is made from it.
+func MythicalTargetFence(err error) string {
+	var failure mythicalFlowFailure
+	if errors.As(err, &failure) {
+		return string(failure.fence)
+	}
+	return ""
+}
 
 // workspaceMythicalLanes provisions each lane its own branch machine from the
 // stack's bookmark, named for its item and attempt, so two TODOs never share
