@@ -35,6 +35,7 @@ import type { InitMessage } from "./HostOpening"
 import { cloudWebHost, initMessage } from "./HostOpening"
 import { SHORTCUT_KEYS,ShortcutButton } from "./ShortcutButton"
 import { pathRepo } from "./RepoLink"
+import { missingRepositoryOffer } from "./RepositoryEntryOffer"
 import type { Card,Message } from "./state/AppState"
 import { conversationTabIdOf,diagnosticVisible,inConversation,readScopeOf } from "./state/AppState"
 import { catalogRepositoryOf } from "./state/RepoContext"
@@ -113,6 +114,8 @@ function AppContent() {
   const { data: identityRows } = useLiveQuery(collections.identitySessions)
   const { data: connectorRows } = useLiveQuery(collections.connectors)
   const { data: repositoryRows } = useLiveQuery(collections.repositories)
+  /* The GitHub App's coverage of the URL's repository, when the entry read it. */
+  const { data: appStatusRows } = useLiveQuery(collections.githubAppStatuses)
   /* The composer wrap: Cmd+K focuses the textarea inside it (the palette opens on the composer). */
   const composerWrapRef = useRef<HTMLDivElement>(null)
   const chatTriggerRef = useRef<HTMLButtonElement>(null)
@@ -240,6 +243,33 @@ function AppContent() {
     ? catalogRepositoryOf(session.activeRepoKey, repositoryRows)
     : null
   const repositoryNotice = missingBootRepository !== null && identity?.state === "signed-out" && githubIdentity
+  /*
+   * Signed in at `/owner/repo` for a repository Smithers does not have
+   * (mvp.md M-46). The route owes that reader the truth and the one step that
+   * exists: Import where the Smithers GitHub App covers the repository for
+   * this account, else the App's own installation page, and neither when the
+   * coverage door could not be read (RepositoryEntryOffer.ts). Derived from
+   * the App-status row the entry wrote, never stored as a message.
+   *
+   * It marks the transcript the way the signed-out notice does, so the
+   * retained cards of the LAST repository are not presented as this URL's
+   * (production 2026-10-15: the header cleared to "Repository" while the
+   * previous repository's cards stayed on screen). The cards stay stored.
+   */
+  const entryOffer = missingBootRepository !== null && identity?.state === "signed-in"
+    ? missingRepositoryOffer(missingBootRepository, appStatusRows.find(row => row.repo.toLowerCase() === missingBootRepository.toLowerCase()))
+    : undefined
+  const repositoryEntryMessage: Message | undefined = entryOffer === undefined ? undefined : {
+    id: "repository-entry",
+    role: "smithers",
+    text: entryOffer.text,
+    status: "complete",
+    ...(entryOffer.action === undefined ? {} : { action: entryOffer.action }),
+    createdAt: 0,
+    ordinal: 0
+  }
+  /** Either missing-repository notice owns the transcript's repository scope. */
+  const missingRepositoryScope = repositoryNotice || repositoryEntryMessage !== undefined
   const publicRepositoryLinks = (bootEntry?.publicRepositories ?? [])
     .filter(repo => repo.toLowerCase() !== missingBootRepository?.toLowerCase())
     .map(repo => `- [${repo}](/${repo.toLowerCase()}/)`)
@@ -345,10 +375,11 @@ function AppContent() {
   const entries: ReadonlyArray<TranscriptEntry> = [
     ...(openingMessage === undefined ? [] : [{ kind: "init", message: openingMessage } as const]),
     ...(authMessage === undefined || loginScreen ? [] : [{ kind: "message", message: authMessage } as const]),
+    ...(repositoryEntryMessage === undefined ? [] : [{ kind: "message", message: repositoryEntryMessage } as const]),
     ...messages.map((message): TranscriptEntry => ({ kind: "message", message })),
     // A missing URL owns this arrival; retained cards from the last repository
     // stay stored, but cannot become the requested repository's projection.
-    ...(repositoryNotice ? conversationCards.filter(card => !("repo" in card.payload) || card.payload.repo === missingBootRepository) : conversationCards)
+    ...(missingRepositoryScope ? conversationCards.filter(card => !("repo" in card.payload) || card.payload.repo === missingBootRepository) : conversationCards)
       .map((card): TranscriptEntry => ({ kind: "card", card }))
   ].sort(transcriptOrder)
   // Batches before the newest ten fold into one row; opening it is transient chrome for this conversation only.
@@ -356,7 +387,7 @@ function AppContent() {
     ? `${identity?.login ?? ""}:${session.branchNavigation?.selected_branch ?? "main"}`
     : `${conversationTabId ?? "main"}:${session.activeRepoKey ?? ""}`
 
-  const visibleEntries = entries.filter(entry => !controller.sharedConversation || entry.kind !== "message" || entry.message.id === authMessage?.id || entry.message.origin === "external" || entry.message.action !== undefined || diagnosticVisible(entry.message, identityRows[0]?.login, session.branchNavigation?.selected_branch ?? "main"))
+  const visibleEntries = entries.filter(entry => !controller.sharedConversation || entry.kind !== "message" || entry.message.id === authMessage?.id || entry.message.id === repositoryEntryMessage?.id || entry.message.origin === "external" || entry.message.action !== undefined || diagnosticVisible(entry.message, identityRows[0]?.login, session.branchNavigation?.selected_branch ?? "main"))
   // A requested local read can target a retained card earlier in the transcript.
   const latestEntry = visibleEntries.at(-1)
   /*
@@ -391,7 +422,7 @@ function AppContent() {
   const readVersion = readEntry === undefined || requestedRead === undefined ? undefined : `read:${requestedRead.revision}`
   const readTarget = readEntry ?? latestEntry
   const latestReadId = readTarget === undefined ? undefined : entryId(readTarget)
-  const initialReadId = loginScreen ? "login" : repositoryNotice ? authMessage?.id : home ? HOME_ENTRY_ID : undefined
+  const initialReadId = loginScreen ? "login" : repositoryNotice ? authMessage?.id : repositoryEntryMessage !== undefined ? repositoryEntryMessage.id : home ? HOME_ENTRY_ID : undefined
 
   const renderEntry = (entry: TranscriptEntry) => <MessageScrollerItem key={entryId(entry)} messageId={entryId(entry)} style={{ contentVisibility: "visible" }}>
     {entry.kind === "card" ? <CardView
@@ -547,7 +578,7 @@ function AppContent() {
             null}
 
           <div className="sui-chat-transcript smithers-transcript" data-slot="chat-transcript"
-            data-repository-missing={repositoryNotice || undefined}
+            data-repository-missing={missingRepositoryScope || undefined}
             data-login={loginScreen || undefined}
             data-testid="transcript" data-keyboard-pane="Conversation" role="log" aria-label="Conversation" aria-busy={typing}>
             <div data-slot="message-scroller" className="sui-msg-scroller" data-streaming={typing ? "true" : "false"}>

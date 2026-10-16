@@ -1,5 +1,6 @@
 import { AUTH_SIGNED_IN_PARAM } from "@smthrs/rpc/AgentApiRoutes"
 import type { FetchLike } from "@smthrs/rpc/NativeAgent"
+import { appCoverageRow, readAppCoverage } from "./RepositoryEntryOffer"
 import type { AppController } from "./state/AppController"
 import type { AppStore } from "./state/AppStore"
 import { parseRepoSelection,repoTreeRowId,sharedCopyIdOf } from "./state/AppState"
@@ -208,6 +209,22 @@ export const openRequestedRepo = async (
         if (options.activate === false || options.scope === "command") return finish()
         const refusal = await controller.selectRepo(selectionForRepo(controller, own.id))
         return finish(refusal === undefined ? undefined : refusal)
+      }
+      /*
+       * Neither the catalog nor this account's inventory has it, so the route
+       * owes the person the next step (M-46): Import when the Smithers GitHub
+       * App covers the repository for this account, else the App's own
+       * installation page. The coverage door answers before the refusal is
+       * recorded, so the notice paints its offer once instead of correcting
+       * itself; an unreadable answer writes no row and says so
+       * (RepositoryEntryOffer.ts). A superseded request writes nothing.
+       */
+      if (options.scope !== "command") {
+        const coverage = await readAppCoverage(http, requested)
+        if (!current()) return
+        if (coverage !== null) {
+          controller.store.dispatch({ type: "github.app-status.loaded", actor: "system", status: appCoverageRow(requested, coverage) })
+        }
       }
     }
     // App's route welcome names this path and owns its sign-in door.

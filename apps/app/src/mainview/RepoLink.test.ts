@@ -566,3 +566,101 @@ test("mobile repository entry selects the requested repo without opening an obst
     expect(ran).toEqual([])
   } finally { await store.dispose?.() }
 })
+
+/*
+ * Signed in at `/owner/repo` for a repository Smithers does not have (M-46):
+ * the entry reads the one door that knows whether the Smithers GitHub App
+ * covers it for THIS account, and records that answer where the rest of the
+ * app already reads App coverage. The refusal sentence is unchanged; what the
+ * route can offer is derived from the row (RepositoryEntryOffer.ts).
+ */
+describe("the App coverage a signed-in URL miss records", () => {
+  const INSTALL_URL = "https://github.com/apps/smithers/installations/new"
+  const signedIn = async () => {
+    const made = await fixture()
+    made.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ada", admin: false, scopesPlain: null })
+    return made
+  }
+  const route = (installations: Response, asked: Array<string> = []) => async (input: RequestInfo | URL) => {
+    const path = String(input)
+    asked.push(path)
+    if (path === "/api/public/repos") return jsonResponse(catalog)
+    if (path === "/api/user/github-app/installations") return installations.clone()
+    return jsonResponse({ code: "not_found" }, 404)
+  }
+
+  test("a covered repository lands as installed, with the installation the door verified", async () => {
+    const { store, controller } = await signedIn()
+    try {
+      const refusal = await openRequestedRepo(controller, route(jsonResponse({ install_url: INSTALL_URL,
+        repos: [{ fullName: "Ada/Widgets", installationId: 42 }] })), "ada/widgets")
+      expect(refusal).toBe("ada/widgets is not in the public repository catalog.")
+      expect(store.collections.githubAppStatuses.get("ada/widgets")).toMatchObject({
+        repo: "ada/widgets", installed: true, configured: true, installationId: 42, installUrl: INSTALL_URL
+      })
+      expect(store.session().activeRepoKey ?? null).toBeNull()
+    } finally { await store.dispose?.() }
+  })
+
+  test("a repository the App does not cover lands uncovered, keeping the page it can offer", async () => {
+    const { store, controller } = await signedIn()
+    try {
+      await openRequestedRepo(controller, route(jsonResponse({ install_url: INSTALL_URL, repos: [] })), "ada/widgets")
+      expect(store.collections.githubAppStatuses.get("ada/widgets")).toMatchObject({
+        repo: "ada/widgets", installed: false, configured: false, installationId: null, installUrl: INSTALL_URL
+      })
+    } finally { await store.dispose?.() }
+  })
+
+  test("a refused coverage door records nothing, so the route cannot claim either answer", async () => {
+    const { store, controller } = await signedIn()
+    try {
+      await openRequestedRepo(controller, route(jsonResponse({ code: "forbidden" }, 403)), "ada/widgets")
+      expect(store.collections.githubAppStatuses.get("ada/widgets")).toBeUndefined()
+      expect(store.session().repositoryEntry).toMatchObject({ repo: "ada/widgets", phase: "failed", failureKind: "not-public" })
+    } finally { await store.dispose?.() }
+  })
+
+  test("a signed-out miss asks no identity-scoped door", async () => {
+    const { store, controller } = await fixture()
+    const asked: Array<string> = []
+    try {
+      await openRequestedRepo(controller, route(jsonResponse({ repos: [] }), asked), "ada/widgets")
+      expect(asked).toEqual(["/api/public/repos"])
+      expect(store.collections.githubAppStatuses.size).toBe(0)
+    } finally { await store.dispose?.() }
+  })
+
+  test("a superseded request's coverage answer records nothing", async () => {
+    const { store, controller } = await signedIn()
+    const installations = Promise.withResolvers<Response>()
+    const started = Promise.withResolvers<void>()
+    const earlier = openRequestedRepo(controller, async (input) => {
+      if (String(input) === "/api/public/repos") return jsonResponse(catalog)
+      started.resolve()
+      return installations.promise
+    }, "ada/widgets")
+    try {
+      await started.promise
+      await openRequestedRepo(controller, route(jsonResponse({ repos: [] })), "ada/other")
+      installations.resolve(jsonResponse({ install_url: INSTALL_URL, repos: [{ fullName: "ada/widgets", installationId: 42 }] }))
+      await earlier
+      expect(store.collections.githubAppStatuses.get("ada/widgets")).toBeUndefined()
+      expect(store.session().repositoryEntry).toMatchObject({ repo: "ada/other", phase: "failed" })
+    } finally {
+      installations.resolve(jsonResponse({ repos: [] }))
+      await earlier
+      await store.dispose?.()
+    }
+  })
+
+  test("a cold command target reads no coverage: the notice belongs to the URL", async () => {
+    const { store, controller } = await signedIn()
+    const asked: Array<string> = []
+    try {
+      await openRequestedRepo(controller, route(jsonResponse({ repos: [] }), asked), "ada/widgets", undefined, 1200, { scope: "command" })
+      expect(asked).toEqual(["/api/public/repos"])
+      expect(store.collections.githubAppStatuses.size).toBe(0)
+    } finally { await store.dispose?.() }
+  })
+})
