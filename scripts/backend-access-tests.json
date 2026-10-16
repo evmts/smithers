@@ -913,6 +913,13 @@
   },
   {
     "package": "packages/backend/internal/services",
+    "file": "member_add_stage_test.go",
+    "tests": [
+      "TestMemberAddSlowStageNamesItself"
+    ]
+  },
+  {
+    "package": "packages/backend/internal/services",
     "file": "member_permission_integration_test.go",
     "tests": [
       "TestMemberPermissionFailuresPreserveCommittedAccessPostgres",

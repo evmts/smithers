@@ -5,14 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
@@ -339,21 +342,149 @@ func (m *Members) LinkGitHub(ctx context.Context, id, userID int64, login string
 	return err
 }
 
+// The closed set of stages a roster add passes through, in order.
+const (
+	memberAddStageAuthorize   = "authorize"
+	memberAddStageRepository  = "repository"
+	memberAddStageInstall     = "installation_access"
+	memberAddStageGitHubUser  = "github_user"
+	memberAddStagePermission  = "github_permission"
+	memberAddStageMutation    = "roster_mutation"
+	memberAddStageRosterWrite = "roster_write"
+	memberAddStageCommit      = "commit"
+)
+
+// The closed set of phases a stage reports itself in. A stage that has not
+// returned reports in_flight exactly once, because a stage that never returns
+// would otherwise never be recorded at all — which is how a 30 s roster add
+// came back with nothing but the caller's own deadline.
+const (
+	memberAddPhaseInFlight = "in_flight"
+	memberAddPhaseReturned = "returned"
+)
+
+// The closed set of caller states a stage can be reported in. "live" separates
+// a stage the upstream itself held from one the caller had already given up on,
+// which is the difference between a product stall and a caller deadline.
+const (
+	memberAddCallerLive     = "live"
+	memberAddCallerCanceled = "canceled"
+	memberAddCallerExpired  = "deadline_exceeded"
+)
+
+// memberAddSlowStage is the point past which one stage of a roster add is
+// long enough to be why the request missed its caller's deadline. Each GitHub
+// call the add makes carries a 15 s client timeout of its own, so a single
+// stage at or over 5 s already owns a sixth of the composed install's 30 s
+// caller budget and is worth a line.
+const memberAddSlowStage = 5 * time.Second
+
+// memberAddClock reports the stage of a roster add that alone ran long.
+//
+// A composed install's first POST /api/members has waited past its caller's
+// 30 s deadline with the host idle, no PostgreSQL backend waiting on anything,
+// and nothing anywhere in the product's own record to say which stage held it;
+// a goroutine dump armed on a fixed sleep caught none of it. Every stage now
+// reports itself both while it is still in flight and when it returns, so a
+// stage that is genuinely stuck is recorded rather than silent. The record
+// carries the stage and phase names from the closed sets above, the stage's
+// own whole elapsed seconds, whether it returned a refusal, the request's own
+// state and the pool's own counters — never a login, token, id, URL, upstream
+// status or error text. Nothing here changes a deadline, a budget or a fence.
+type memberAddClock struct {
+	ctx  context.Context
+	pool *pgxpool.Pool
+	// budget is memberAddSlowStage in production; a test shortens it so the
+	// in-flight report can be observed without waiting on the real budget.
+	budget time.Duration
+}
+
+func (m *Members) addClock(ctx context.Context) *memberAddClock {
+	return &memberAddClock{ctx: ctx, pool: m.Pool, budget: memberAddSlowStage}
+}
+
+// memberAddStageWatch is one stage's own clock.
+type memberAddStageWatch struct {
+	clock *memberAddClock
+	stage string
+	start time.Time
+	timer *time.Timer
+	done  atomic.Bool
+}
+
+// at names the stage now beginning and arms its single in-flight report.
+func (c *memberAddClock) at(stage string) *memberAddStageWatch {
+	return c.since(stage, time.Now())
+}
+
+// since is at with an explicit start, so a test can age a stage without
+// writing to a watch another goroutine is already holding.
+func (c *memberAddClock) since(stage string, start time.Time) *memberAddStageWatch {
+	watch := &memberAddStageWatch{clock: c, stage: stage, start: start}
+	watch.timer = time.AfterFunc(c.budget, func() {
+		if watch.done.Load() {
+			return
+		}
+		c.record(stage, memberAddPhaseInFlight, time.Since(watch.start), false)
+	})
+	return watch
+}
+
+// passed closes the stage, whatever it returned, and stops its in-flight
+// report. Every exit from a stage goes through it, including early refusals.
+func (w *memberAddStageWatch) passed(err error) {
+	w.done.Store(true)
+	w.timer.Stop()
+	if elapsed := time.Since(w.start); elapsed >= w.clock.budget {
+		w.clock.record(w.stage, memberAddPhaseReturned, elapsed, err != nil)
+	}
+}
+
+// caller names the request's own state, never an error's text.
+func memberAddCaller(ctx context.Context) string {
+	switch {
+	case errors.Is(ctx.Err(), context.DeadlineExceeded):
+		return memberAddCallerExpired
+	case ctx.Err() != nil:
+		return memberAddCallerCanceled
+	}
+	return memberAddCallerLive
+}
+
+func (c *memberAddClock) record(stage, phase string, elapsed time.Duration, refused bool) {
+	record := []any{"stage", stage, "phase", phase, "seconds", int64(elapsed / time.Second),
+		"refused", refused, "caller", memberAddCaller(c.ctx)}
+	if c.pool != nil {
+		stat := c.pool.Stat()
+		record = append(record,
+			"pool_acquired", stat.AcquiredConns(), "pool_idle", stat.IdleConns(), "pool_max", stat.MaxConns(),
+			"pool_empty_acquires", stat.EmptyAcquireCount(), "pool_canceled_acquires", stat.CanceledAcquireCount())
+	}
+	slog.WarnContext(c.ctx, "members.add_stage_slow", record...)
+}
+
 // Add puts a GitHub user on the roster. Their role seeds from their GitHub
 // permission; a person without write access there is refused with no row.
 func (m *Members) Add(ctx context.Context, login string) error {
+	clock := m.addClock(ctx)
+	stage := clock.at(memberAddStageAuthorize)
 	decision, err := Authorize(ctx, db.New(m.Pool), "members.add")
+	stage.passed(err)
 	if err != nil {
 		return err
 	}
 	if !ValidMemberLogin(login) {
 		return memberError(http.StatusBadRequest, "user", "invalid_login", "Enter a GitHub username")
 	}
+	stage = clock.at(memberAddStageRepository)
 	repo, err := m.repository(ctx)
+	stage.passed(err)
 	if err != nil {
 		return err
 	}
+	stage = clock.at(memberAddStageInstall)
 	token, err := m.installationAccess(ctx, repo)
+	stage.passed(err)
 	if err != nil {
 		return err
 	}
@@ -361,14 +492,18 @@ func (m *Members) Add(ctx context.Context, login string) error {
 		ID    int64  `json:"id"`
 		Login string `json:"login"`
 	}
+	stage = clock.at(memberAddStageGitHubUser)
 	status, err := m.api(15*time.Second).request(ctx, token, http.MethodGet, "/users/"+login, nil, &user)
+	stage.passed(err)
 	if err != nil || (status != http.StatusOK && status != http.StatusNotFound) {
 		return memberError(http.StatusServiceUnavailable, "infra", "github_unavailable", "GitHub unavailable")
 	}
 	if status == http.StatusNotFound || user.ID <= 0 || !ValidMemberLogin(user.Login) {
 		return memberError(http.StatusNotFound, "user", "unknown_github_user", "Unknown GitHub user")
 	}
+	stage = clock.at(memberAddStagePermission)
 	role, err := m.permission(ctx, token, repo, user.Login, user.ID)
+	stage.passed(err)
 	if err != nil {
 		return err
 	}
@@ -377,17 +512,37 @@ func (m *Members) Add(ctx context.Context, login string) error {
 		// the repository's access settings (T-APP-06, class user).
 		return &AccessError{Status: http.StatusForbidden, Class: "user", Code: "needs_github_access", Message: "Needs access on GitHub", Fix: repo.accessURL()}
 	}
+	stage = clock.at(memberAddStageMutation)
 	tx, _, err := m.memberMutation(ctx, decision.UserID, repo.ID)
+	stage.passed(err)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
-	githubID := strconv.FormatInt(user.ID, 10)
-	// A person already on the roster, by GitHub id or by account, keeps their
-	// row and role: adding again changes nothing.
+	// The roster write is its own stage: the mutation stage above closes when
+	// the transaction is open and its repository lock is held, so without this
+	// one every statement of the actual write — and every refusal that returns
+	// before the commit — would run outside any stage at all.
+	stage = clock.at(memberAddStageRosterWrite)
+	err = m.writeRosterRow(ctx, tx, repo, user.ID, user.Login, role)
+	stage.passed(err)
+	if err != nil {
+		return err
+	}
+	stage = clock.at(memberAddStageCommit)
+	err = tx.Commit(ctx)
+	stage.passed(err)
+	return err
+}
+
+// writeRosterRow is the roster add's own write, inside the caller's open
+// transaction. A person already on the roster, by GitHub id or by account,
+// keeps their row and role: adding again changes nothing.
+func (m *Members) writeRosterRow(ctx context.Context, tx pgx.Tx, repo memberRepository, id int64, login, role string) error {
+	githubID := strconv.FormatInt(id, 10)
 	tag, err := tx.Exec(ctx, `INSERT INTO collaborators(repository_id,github_id,github_login,user_id,permission)
  VALUES($1,$2,$3,(SELECT user_id FROM oauth_accounts WHERE provider='workos' AND provider_user_id=$4),$5)
- ON CONFLICT DO NOTHING`, repo.ID, user.ID, user.Login, githubID, role)
+ ON CONFLICT DO NOTHING`, repo.ID, id, login, githubID, role)
 	if err != nil {
 		return err
 	}
@@ -400,7 +555,7 @@ func (m *Members) Add(ctx context.Context, login string) error {
 			return err
 		}
 	}
-	return tx.Commit(ctx)
+	return nil
 }
 
 // MemberProjection is one Members card row (packages/rpc MembersCard).
