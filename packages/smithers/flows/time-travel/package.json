@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/time-travel",
   "type": "module",
-  "version": "1.0.0-rc.11",
+  "version": "1.0.0-rc.12",
   "license": "MIT",
   "smthrs": {
     "group": "engine"
@@ -191,24 +191,24 @@
     "test:matrix": "node ../database/scripts/test-matrix.mjs"
   },
   "dependencies": {
-    "@smthrs/database": "1.0.0-rc.11",
-    "@smthrs/engine-store": "1.0.0-rc.11",
-    "@smthrs/jj": "1.0.0-rc.11",
-    "@smthrs/journal": "1.0.0-rc.11",
-    "@smthrs/run-store": "1.0.0-rc.11",
-    "@smthrs/step-cache": "1.0.0-rc.11"
+    "@smthrs/database": "1.0.0-rc.12",
+    "@smthrs/engine-store": "1.0.0-rc.12",
+    "@smthrs/jj": "1.0.0-rc.12",
+    "@smthrs/journal": "1.0.0-rc.12",
+    "@smthrs/run-store": "1.0.0-rc.12",
+    "@smthrs/step-cache": "1.0.0-rc.12"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
     "@effect/platform-node": "4.0.4",
     "@effect/vitest": "4.0.4",
     "@eslint/js": "9.39.5",
-    "@smthrs/artifacts": "1.0.0-rc.11",
-    "@smthrs/engine": "1.0.0-rc.11",
-    "@smthrs/flow": "1.0.0-rc.11",
-    "@smthrs/kernel": "1.0.0-rc.11",
-    "@smthrs/plan": "1.0.0-rc.11",
-    "@smthrs/plan-store": "1.0.0-rc.11",
+    "@smthrs/artifacts": "1.0.0-rc.12",
+    "@smthrs/engine": "1.0.0-rc.12",
+    "@smthrs/flow": "1.0.0-rc.12",
+    "@smthrs/kernel": "1.0.0-rc.12",
+    "@smthrs/plan": "1.0.0-rc.12",
+    "@smthrs/plan-store": "1.0.0-rc.12",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",

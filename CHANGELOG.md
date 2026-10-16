@@ -5,6 +5,30 @@ release (what changed and why it matters, with screenshots and examples), see
 the release notes at
 [smithers.sh/changelogs/1.0.0-rc.0](https://smithers.sh/changelogs/1.0.0-rc.0).
 
+## 1.0.0-rc.12 (2026-10-16)
+
+<!-- commits:1.0.0-rc.12 -->
+
+7 commits since [v1.0.0-rc.11](https://github.com/smithersai/smithers/commit/b5ff279e1a).
+
+### 🐛 Bug fixes
+
+- **release:** constrain selected adapters to the tested Effect runtime (#4002) ([aba067ea9c](https://github.com/smithersai/smithers/commit/aba067ea9c3b3b728654760462f10fbb8b57181e))
+- **build:** accept pinned executable Effect peers for private adapters (#4002) ([364ed0f819](https://github.com/smithersai/smithers/commit/364ed0f819a976700caaff749acae80bbd6f3f1c))
+- **backend:** a review is read back by its own id, and dated against a pre-write witness (#4038) ([c05e18cb23](https://github.com/smithersai/smithers/commit/c05e18cb23ae5ff8034791309242dd876b3fdcba))
+
+### 📝 Documentation
+
+- **release:** prepare rc.12 with validated adapter contracts (#4042) ([e432cfdb4d](https://github.com/smithersai/smithers/commit/e432cfdb4de0ce5283a0bd4499ac8063ba532f21))
+- **release:** record rc.11 build failure and adapter blocker (#4042) ([6763f53e5b](https://github.com/smithersai/smithers/commit/6763f53e5b5a981621e7e2d5159ea9df45478116))
+
+### 📦 Other changes
+
+- **style(docs):** format the pinned Bun adapter requirements (#4002) ([79242bf621](https://github.com/smithersai/smithers/commit/79242bf621be200437d43fdd9610b3c0bcdb2ca9))
+- **test(backend):** the recorded review is proved field by field, and a create answered 200 is the same act (#4038) ([61fee138c7](https://github.com/smithersai/smithers/commit/61fee138c71c838677b50a68344a78624586b9af))
+
+<!-- /commits:1.0.0-rc.12 -->
+
 ## 1.0.0-rc.11 (2026-10-16)
 
 <!-- commits:1.0.0-rc.11 -->

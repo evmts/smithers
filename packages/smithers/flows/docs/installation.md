@@ -19,7 +19,7 @@ The `next` tag carries the 1.0 release candidates. With pnpm 11, name the
 version instead of the tag, then approve `esbuild`'s install script:
 
 ```bash
-pnpm add @smthrs/flows@1.0.0-rc.11 effect
+pnpm add @smthrs/flows@1.0.0-rc.12 effect
 pnpm approve-builds esbuild
 ```
 

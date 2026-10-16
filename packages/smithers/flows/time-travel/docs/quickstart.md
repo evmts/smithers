@@ -29,7 +29,7 @@ Create a project and install the engine, `effect`, and this package:
 mkdir time-travel-quickstart && cd time-travel-quickstart
 npm init -y && npm pkg set type=module
 npm install @smthrs/flows@next effect
-npm install @smthrs/time-travel@1.0.0-rc.11
+npm install @smthrs/time-travel@1.0.0-rc.12
 ```
 
 `@smthrs/flows` carries the durable engine and re-exports the `TimeTravel`
