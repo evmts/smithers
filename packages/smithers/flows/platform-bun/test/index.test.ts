@@ -68,12 +68,12 @@ describe("@smthrs/platform-bun barrel", () => {
     const live = await Effect.runPromise(
       Effect.gen(function*() {
         const spawner = yield* ChildProcessSpawner
-        yield* spawner.spawn(ChildProcess.make("sleep", ["30"]))
+        yield* spawner.spawn(ChildProcess.make(process.execPath, ["-e", "setTimeout(() => {}, 30_000)"]))
         return yield* ledger.live
       }).pipe(Effect.provide(host), Effect.scoped)
     )
 
-    expect(live).toEqual([expect.objectContaining({ commandDigest: "sleep" })])
+    expect(live).toEqual([expect.objectContaining({ commandDigest: process.execPath })])
     // The scope closed, so the record is retired with the process.
     expect(await Effect.runPromise(ledger.live)).toEqual([])
   })
@@ -93,15 +93,18 @@ describe("@smthrs/platform-bun barrel", () => {
     const live = await Effect.runPromise(
       Effect.gen(function*() {
         const spawner = yield* ChildProcessSpawner
-        // `sh -c LINE NAME ARGUMENT...` sets `$0` and the positional
-        // parameters, so the credential really is in argv while `sleep 30`
-        // holds the recorded group open.
-        yield* spawner.spawn(ChildProcess.make("sh", ["-c", "sleep 30", "deploy", `--token=${secret}`]))
+        // The credential stays in argv while the actual runtime holds the child open.
+        yield* spawner.spawn(ChildProcess.make(process.execPath, [
+          "-e",
+          "setTimeout(() => {}, 30_000)",
+          "--",
+          `--token=${secret}`
+        ]))
         return yield* ledger.live
       }).pipe(Effect.provide(host), Effect.scoped)
     )
 
-    expect(live).toEqual([expect.objectContaining({ commandDigest: "sh" })])
+    expect(live).toEqual([expect.objectContaining({ commandDigest: process.execPath })])
     expect(JSON.stringify(live)).not.toContain(secret)
   })
 
