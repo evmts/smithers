@@ -984,7 +984,7 @@ test.each(["d", "u"] as const)("%s on a flow or custom panel keeps its own meani
 
 test.each(
   [
-    ["d", true, true, ["leave", "diff"], true],
+    ["d", true, true, ["diff"], true],
     ["u", true, true, ["leave", "undo"], true],
     // Not offered: the letter leaves the card for the composer.
     ["d", false, false, ["leave"], false],

@@ -218,7 +218,8 @@ export const cardKey = (key: KeyEvent, act: {
   const run = key.name === "d" ? act.diff : key.name === "u" ? act.undo : key.name === "a" ? act.answer : undefined
   if (run !== undefined) {
     key.preventDefault()
-    act.leave()
+    // The diff borrows the card's keys; closing it returns to that card.
+    if (key.name !== "d") act.leave()
     run()
     return true
   }

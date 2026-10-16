@@ -166,6 +166,10 @@ export const useTranscriptView = (options: {
     ? [workerEarlier.key]
     : []
   const focusedCard = cardFocus !== undefined && cardKeys.includes(cardFocus) ? cardFocus : undefined
+  useLayoutEffect(() => {
+    // A borrowed card focus cannot survive leaving its lane or removing its row.
+    if (cardFocus !== undefined && !cardKeys.includes(cardFocus)) setCardFocus(undefined)
+  }, [cardFocus, cardKeys])
   /** The worker whose card has focus. */
   const focusedWorker = focusedCard === undefined
     ? undefined

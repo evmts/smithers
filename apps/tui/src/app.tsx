@@ -666,11 +666,11 @@ export function App(props: AppProps) {
     if (surface.startsWith("flow:")) void runs.hydrate(surface.slice(5))
   }, [surface, runs])
   const workerTab = surface.startsWith("tab:") ? snapshot.tabs.find((tab) => `tab:${tab.id}` === surface) : undefined
-  /** The run whose diff shows; leaving the surface it was opened on closes it. */
+  /** The run whose diff shows; leaving its surface or losing its row closes it. */
   const reviewTab = review?.surface === surface ? snapshot.tabs.find((tab) => tab.id === review.tab) : undefined
   useEffect(() => {
-    if (review !== undefined && review.surface !== surface) setReview(undefined)
-  }, [surface, review])
+    if (review !== undefined && reviewTab === undefined) setReview(undefined)
+  }, [reviewTab, review])
   /** The follow-ups the shown composer queued: the chat's, or this agent's. */
   const shownQueue = PromptQueue.inScope(followUps, queueScope(workerTab))
   const continued = workerTab !== undefined &&
@@ -2078,6 +2078,15 @@ export function App(props: AppProps) {
       key.preventDefault()
       return setWhichKeyOpen(true)
     }
+    // The diff borrows the keys of whatever opened it, the focused card included,
+    // so it answers before them, exactly where `keyContext` ranks `review`.
+    if (reviewTab !== undefined && open === undefined && !key.ctrl && !key.meta && !key.option) {
+      return Dispatch.reviewKey(key, {
+        undo: canUndo(reviewTab) ? () => undoWorker(reviewTab) : undefined,
+        close: () => flushSync(() => setReview(undefined)),
+        scroll: (by, page) => reviewScroll.current?.(by, page)
+      })
+    }
     if (
       inspectionInterrupted && open === undefined &&
       (key.name === "escape" || (key.ctrl && key.name === "t" && !showActivity))
@@ -2376,13 +2385,6 @@ export function App(props: AppProps) {
     ) {
       key.preventDefault()
       return perform(contributed.action)
-    }
-    if (reviewTab !== undefined && open === undefined && !key.ctrl && !key.meta && !key.option) {
-      return Dispatch.reviewKey(key, {
-        undo: canUndo(reviewTab) ? () => undoWorker(reviewTab) : undefined,
-        close: () => flushSync(() => setReview(undefined)),
-        scroll: (by, page) => reviewScroll.current?.(by, page)
-      })
     }
     if (
       key.name === "a" && !key.ctrl && !key.meta && !key.option && !key.shift && text === "" && open === undefined &&
