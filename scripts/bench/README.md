@@ -47,6 +47,15 @@ before each fenced append, and added the lease heartbeat: +120 statements on
 `admitted` entry with each inserting `CacheStore.put`, so step-cache heads can
 be rebuilt from the journal: +40. Journal fixtures and outputs did not change.
 
+The 2026-10-16 baseline raised them again, to 93.5 statements and 54 prepares
+per node on `scheduler-chain-8`. `4e691d0ace` moved to Effect 4.0.4, whose
+SQL client closes each nested transaction with `RELEASE SAVEPOINT` instead of
+leaving it to the outer `COMMIT`: +120. `f929bd719d` holds a durable
+`engine-cache:<key>` consensus lease across each cache-eligible step so other
+processes cannot run the same key at once (#3999). Claim, activate and release
+are three more transactions per node: +88. Journal fixtures and outputs did not
+change.
+
 ## Scheduled observations
 
 The `benchmark-observations` job runs
