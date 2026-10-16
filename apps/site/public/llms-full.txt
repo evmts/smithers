@@ -2062,6 +2062,7 @@ The members and the value each one carries across the seam:
 | `resumeSignal`          | yes      | None.                                                                                                                                      |
 | `actionExecute`         | no       | Encoded. `makeUnsafe` decodes it through the action's `exitSchemaPartial`.                                                                 |
 | `actionReplayKey`       | yes      | None.                                                                                                                                      |
+| `encodeEngineError`     | yes      | None.                                                                                                                                      |
 | `actionRetryOrigin`     | yes      | None.                                                                                                                                      |
 | `actionLatestAttempt`   | yes      | None.                                                                                                                                      |
 | `actionSnapshot`        | yes      | None.                                                                                                                                      |
@@ -3716,8 +3717,8 @@ directly. Both packages are on npm under the `next` tag.
 ```json
 {
   "devDependencies": {
-    "@smthrs/build-cli": "1.0.0-rc.11",
-    "@smthrs/targets": "1.0.0-rc.11",
+    "@smthrs/build-cli": "1.0.0-rc.12",
+    "@smthrs/targets": "1.0.0-rc.12",
     "effect": "4.0.4"
   }
 }
