@@ -92,15 +92,17 @@ describe("Node", () => {
       code: "graph_too_deep",
       message: expect.stringContaining("plan-time bound")
     }))
-    const bounded = (round: number): Node.Node<number> =>
-      round === 3 ?
+    const bounded = (round: number, limit = 3): Node.Node<number> =>
+      round === limit ?
         Node.succeed(round) :
         Node.branch(Node.succeed(round), {
           if: Node.capture({}, (value: number) => value < 3),
-          then: () => bounded(round + 1),
+          then: () => bounded(round + 1, limit),
           else: () => Node.succeed(round)
         })
     expect(() => bounded(0)).not.toThrow()
+    expectTypeOf<typeof Node.maximumArmDepth>().toEqualTypeOf<512>()
+    expect(() => bounded(0, Node.maximumArmDepth)).not.toThrow()
     expect(loop).toThrowError(GraphBuildError)
     expect(() => bounded(0)).not.toThrow()
   })

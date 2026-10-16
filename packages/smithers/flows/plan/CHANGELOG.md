@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- `Node.maximumArmDepth` exposes the existing eager branch construction limit so bounded patterns can reject unsupported declarations before planning. The limit and refusal behavior are unchanged. ([#4103](https://github.com/smithersai/smithers/issues/4103)).
+
 ### Fixed
 
 - `Node.representationIdentity` writes the representation a sealed action's step key hashes as `effect@4.0.0-rc.115` wrote it, with the six built-in check ids `effect@4.0.4` renamed written back. A schema with `Schema.brand` re-keys once, because the brand is no longer part of the AST. ([#3839](https://github.com/smithersai/smithers/issues/3839)).
