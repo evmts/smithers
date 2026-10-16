@@ -201,7 +201,7 @@ ${entries}
 }
 
 const load = async (from) => {
-  if (/^[a-z][a-z0-9+.-]*:/iu.test(from) && !from.startsWith("https://")) {
+  if (/^[a-z][a-z0-9+.-]*:/iu.test(from) && !/^[a-z]:[\\/]/iu.test(from) && !from.startsWith("https://")) {
     throw new Error(`--from ${from}: only https:// URLs or local files are read`)
   }
   if (from.startsWith("https://")) {

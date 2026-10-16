@@ -26,6 +26,21 @@ const fixture = () => {
 }
 
 describe("failure-code refresh CLI", () => {
+  test.each(["C:\\missing\\failure-codes.json", "C:/missing/failure-codes.json"])(
+    "treats the absolute drive path %s as a file rather than a URL scheme",
+    (path) => {
+      const files = fixture()
+      try {
+        const result = files.run("--from", path)
+        expect(result.status).toBe(1)
+        expect(result.stderr).toContain("ENOENT")
+        expect(result.stderr).not.toContain("only https:// URLs or local files are read")
+      } finally {
+        rmSync(files.root, { recursive: true, force: true })
+      }
+    }
+  )
+
   test("writes a faithful vendored document and checks both generated artifacts without modifying them", () => {
     const files = fixture()
     try {
