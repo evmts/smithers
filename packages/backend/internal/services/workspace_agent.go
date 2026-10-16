@@ -196,6 +196,10 @@ func (s *WorkspaceService) resolveWorkspaceBookmark(ctx context.Context, reposit
 	if !ok {
 		return "", "", pkgerrors.Internal("repository default bookmark resolver unavailable")
 	}
+	return resolveWorkspaceBookmark(ctx, resolver, repositoryID, requested)
+}
+
+func resolveWorkspaceBookmark(ctx context.Context, resolver repositoryDefaultBookmarkResolver, repositoryID int64, requested string) (string, string, error) {
 	repo, err := resolver.GetRepoByID(ctx, repositoryID)
 	if err != nil {
 		return "", "", pkgerrors.Internal("load repository default bookmark: " + err.Error())

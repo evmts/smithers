@@ -486,7 +486,7 @@ func (s *WorkspaceService) validateBranchMachineSession(ctx context.Context, inp
 		if err != nil {
 			return err
 		}
-		bookmark, _, err := s.resolveWorkspaceBookmark(ctx, input.RepositoryID, input.SourceBookmark)
+		bookmark, _, err := resolveWorkspaceBookmark(ctx, db.New(tx), input.RepositoryID, input.SourceBookmark)
 		if err != nil {
 			return err
 		}
