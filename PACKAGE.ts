@@ -943,7 +943,7 @@ const ci = Smithers.GithubCiGen({
       }),
       steps: [
         { name: "Cargo lint gates", verb: Smithers.Verb.Lint, pattern: "//packages/smithers/flows/jj-wasm/..." },
-        { name: "Third-party notices", verb: Smithers.Verb.Test, pattern: "//scripts:thirdPartyNotices" },
+        { name: "Third-party notices", verb: Smithers.Verb.Test, pattern: "//packages/smithers/flows/jj:thirdPartyNotices" },
         { name: "Cargo test suite", verb: Smithers.Verb.Test, pattern: "//packages/smithers/flows/jj-wasm:cargoTest" },
         { name: "Daemon document component tests", verb: Smithers.Verb.Test, pattern: "//packages/smithers-machined:documentComponents" }
       ]

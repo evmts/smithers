@@ -4,16 +4,16 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, wri
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
-import { repoRoot } from "./workspace-packages.mjs"
+import { repoRoot } from "../../../../../scripts/workspace-packages.mjs"
 
 test("notices follow Cargo's wasm normal/build closure and --check detects drift without writing", () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "notices-")))
   try {
     mkdirSync(join(root, "scripts"))
-    mkdirSync(join(root, "packages/smithers/flows/jj"), { recursive: true })
-    cpSync(join(repoRoot, "scripts/generate-third-party-notices.mjs"), join(root, "scripts/generate-third-party-notices.mjs"))
+    mkdirSync(join(root, "packages/smithers/flows/jj/scripts"), { recursive: true })
+    cpSync(join(repoRoot, "packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs"), join(root, "packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs"))
     cpSync(join(repoRoot, "scripts/workspace-packages.mjs"), join(root, "scripts/workspace-packages.mjs"))
-    cpSync(join(repoRoot, "scripts/third-party-notices.template.md"), join(root, "scripts/third-party-notices.template.md"))
+    cpSync(join(repoRoot, "packages/smithers/flows/jj/scripts/third-party-notices.template.md"), join(root, "packages/smithers/flows/jj/scripts/third-party-notices.template.md"))
     const crates = ["flows-jj", "normal", "build", "dev", "native"]
     writeFileSync(join(root, "Cargo.toml"), `[workspace]\nresolver = "3"\nmembers = ${JSON.stringify(crates)}\n`)
     for (const name of crates) {
@@ -32,7 +32,7 @@ test("notices follow Cargo's wasm normal/build closure and --check detects drift
     }
     const lock = spawnSync("cargo", ["generate-lockfile", "--offline"], { cwd: root, encoding: "utf8", timeout: 30_000 })
     assert.equal(lock.status, 0, lock.stderr)
-    const run = (...args) => spawnSync(process.execPath, [join(root, "scripts/generate-third-party-notices.mjs"), ...args], {
+    const run = (...args) => spawnSync(process.execPath, [join(root, "packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs"), ...args], {
       cwd: root, encoding: "utf8", timeout: 30_000
     })
     const generated = run()
@@ -61,8 +61,8 @@ test("notices follow Cargo's wasm normal/build closure and --check detects drift
 })
 
 test("the Rust CI job checks the shipped notices", async () => {
-  const { parseWorkflow } = await import("./release-rehearsal.mjs")
+  const { parseWorkflow } = await import("../../../../../scripts/release-rehearsal.mjs")
   const ci = parseWorkflow(readFileSync(join(repoRoot, ".github/workflows/ci.yml"), "utf8"))
   assert.ok(ci.jobs.rust.steps.some((step) =>
-    typeof step.run === "string" && /^pnpm exec smthrs test '\/\/scripts:thirdPartyNotices'(?: --known-red '\.github\/ci-known-red\.json')?(?: --results-file "\$RUNNER_TEMP\/smthrs-results\/\$GITHUB_ACTION\.json")?(?: --verbose)?$/.test(step.run)))
+    typeof step.run === "string" && /^pnpm exec smthrs test '\/\/packages\/smithers\/flows\/jj:thirdPartyNotices'(?: --known-red '\.github\/ci-known-red\.json')?(?: --results-file "\$RUNNER_TEMP\/smthrs-results\/\$GITHUB_ACTION\.json")?(?: --verbose)?$/.test(step.run)))
 })

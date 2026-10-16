@@ -64,10 +64,9 @@ export const releaseGates = [
   // Every NodeTest under scripts/, the release rehearsal and cut suites included.
   {
     name: "Script gates", verb: "test", target: "//scripts/...",
-    // Pin today's two recursive CI coverage claims. Merely living under
+    // Pin today's recursive CI coverage claim. Merely living under
     // scripts/ must not silently give a future workflow command an owner.
     ciCommands: [
-      "pnpm exec smthrs test '//scripts:thirdPartyNotices' --verbose",
       "pnpm exec smthrs test '//scripts:webBundleContract' --verbose"
     ]
   },
@@ -199,9 +198,10 @@ export const releaseGateExclusions = [
     commands: [
       "pnpm exec smthrs lint '//packages/smithers/flows/jj-wasm/...' --verbose",
       "pnpm exec smthrs test '//packages/smithers/flows/jj-wasm:cargoTest' --verbose",
-      "pnpm exec smthrs test '//packages/smithers-machined:documentComponents' --verbose"
+      "pnpm exec smthrs test '//packages/smithers-machined:documentComponents' --verbose",
+      "pnpm exec smthrs test '//packages/smithers/flows/jj:thirdPartyNotices' --verbose"
     ],
-    reason: "Native Rust lint and tests validate the native crates, which are not published release artifacts. The release verifies the shipped WASM with the pinned Rust toolchain instead. The daemon's document components and their Yjs interop exercise smithers-machined and smithers-ffi, which ship in the install bundle the distribution workflow builds. Third-party notices run under //scripts/...."
+    reason: "Native Rust lint and tests validate the native crates, which are not published release artifacts. The release verifies the shipped WASM with the pinned Rust toolchain instead. The daemon's document components and their Yjs interop exercise smithers-machined and smithers-ffi, which ship in the install bundle the distribution workflow builds. Third-party notices run under ci '//packages/...'."
   },
   {
     job: "packages",

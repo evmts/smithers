@@ -2,7 +2,7 @@
 import { execFileSync } from "node:child_process"
 import { readFileSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
-import { repoRoot as root } from "./workspace-packages.mjs"
+import { repoRoot as root } from "../../../../../scripts/workspace-packages.mjs"
 
 const output = join(root, "packages/smithers/flows/jj/THIRD_PARTY_NOTICES.md")
 const groups = new Map([
@@ -59,7 +59,7 @@ const generate = () => {
       pkg.repository ? `<${pkg.repository}>` : "(not specified)"
     ].map(cell))
   }
-  const template = readFileSync(join(root, "scripts/third-party-notices.template.md"), "utf8")
+  const template = readFileSync(join(root, "packages/smithers/flows/jj/scripts/third-party-notices.template.md"), "utf8")
   const rendered = template.replaceAll(/\{\{crates:([^}]+)\}\}/g, (_, group) => {
     const rows = inventory.get(group)
     if (rows === undefined) throw new Error(`Unknown template group: ${group}`)
@@ -72,7 +72,7 @@ const generate = () => {
   })
   if (inventory.size > 0) throw new Error(`Template omits license groups: ${[...inventory.keys()].join(", ")}`)
   if (process.argv.includes("--check")) {
-    if (readFileSync(output, "utf8") !== rendered) throw new Error("THIRD_PARTY_NOTICES.md is out of date; run node scripts/generate-third-party-notices.mjs")
+    if (readFileSync(output, "utf8") !== rendered) throw new Error("THIRD_PARTY_NOTICES.md is out of date; run node packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs")
     console.log(`Third-party notices are current (${visited.size} crates).`)
   } else {
     writeFileSync(output, rendered)

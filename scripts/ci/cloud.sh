@@ -627,7 +627,7 @@ run_gate() {
       pnpm exec smthrs lint '//packages/smithers/flows/jj-wasm/...' --known-red '.github/ci-known-red.json' --verbose
       ;;
     third-party-notices)
-      pnpm exec smthrs test '//scripts:thirdPartyNotices' --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs test '//packages/smithers/flows/jj:thirdPartyNotices' --known-red '.github/ci-known-red.json' --verbose
       ;;
     rust-test)
       pnpm exec smthrs test '//packages/smithers/flows/jj-wasm:cargoTest' --known-red '.github/ci-known-red.json' --verbose

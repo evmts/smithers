@@ -697,42 +697,6 @@ const issueClaim = Smithers.NodeTest({
   deps: [engineeringChecks, integrationSources]
 })
 
-/**
- * Keeps the attribution inventory in the published wasm package current.
- *
- * @since 1.0.0
- * @category test
- */
-const thirdPartyNotices = Smithers.NodeTest({
-  runner: Smithers.entrypoint(Smithers.file("//scripts/generate-third-party-notices.mjs"), ["--check"]),
-  srcs: [
-    Smithers.file("//scripts/generate-third-party-notices.mjs"),
-    Smithers.file("//scripts/third-party-notices.template.md"),
-    Smithers.file("//Cargo.toml"),
-    Smithers.file("//Cargo.lock"),
-    Smithers.file("//packages/smithers/flows/jj-wasm/Cargo.toml"),
-    Smithers.file("//rust-toolchain.toml"),
-    Smithers.file("//packages/smithers/flows/jj/THIRD_PARTY_NOTICES.md")
-  ],
-  deps: []
-})
-
-/**
- * Exercises generation and drift detection against a real Cargo workspace.
- *
- * @since 1.0.0
- * @category test
- */
-const thirdPartyNoticesUnit = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//scripts/generate-third-party-notices.test.mjs")]),
-  srcs: [
-    ...sources,
-    Smithers.file("//scripts/third-party-notices.template.md"),
-    Smithers.file("//.github/workflows/ci.yml")
-  ],
-  deps: []
-})
-
 /** Verifies immutable-artifact publication and partial-retry refusal using a fake registry. */
 const releaseIntegrity = Smithers.NodeTest({
   runner: Smithers.testRunner([
@@ -1157,8 +1121,6 @@ export const Package = Smithers.Package({
     signalCampaign,
     testPinRegister,
     toolchainPins,
-    thirdPartyNotices,
-    thirdPartyNoticesUnit,
     ...securityReview
   }
 })

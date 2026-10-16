@@ -462,7 +462,8 @@ test("the release proves every CI gate the exclusions do not name, and every exc
   assert.deepEqual(releaseGateExclusions.find((exclusion) => exclusion.job === "rust").commands, [
     "pnpm exec smthrs lint '//packages/smithers/flows/jj-wasm/...' --verbose",
     "pnpm exec smthrs test '//packages/smithers/flows/jj-wasm:cargoTest' --verbose",
-    "pnpm exec smthrs test '//packages/smithers-machined:documentComponents' --verbose"
+    "pnpm exec smthrs test '//packages/smithers-machined:documentComponents' --verbose",
+    "pnpm exec smthrs test '//packages/smithers/flows/jj:thirdPartyNotices' --verbose"
   ])
   for (const job of ["test", "repository", "scripts", "docs", "wasm-repro"]) {
     for (const step of workflowGateSteps(ci, job)) {
@@ -487,8 +488,8 @@ test("a CI gate added outside the exclusions is reported, and an exclusion that 
   assert.deepEqual(staleExclusions(releaseGates, ci, [{ job: "test", commands: ["pnpm exec smthrs ci '//packages/...' --jobs 2 --verbose"], reason: "stale" }]), [
     "test excludes pnpm exec smthrs ci '//packages/...' --jobs 2 --verbose, which the inventory runs"
   ])
-  assert.deepEqual(staleExclusions(releaseGates, ci, [{ job: "rust", reason: "whole job" }]), [
-    "rust excludes pnpm exec smthrs test '//scripts:thirdPartyNotices' --verbose, which the inventory runs"
+  assert.deepEqual(staleExclusions(releaseGates, ci, [{ job: "browser", reason: "whole job" }]), [
+    "browser excludes pnpm exec smthrs test '//scripts:webBundleContract' --verbose, which the inventory runs"
   ])
   assert.deepEqual(staleExclusions(releaseGates, ci, [{ job: "gone", reason: "stale" }]), ["gone is not a ci.yml job"])
   assert.deepEqual(staleExclusions(releaseGates, ci, [{ job: "rust", commands: [command], reason: "stale" }]), [`rust does not run ${command}`])
