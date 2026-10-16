@@ -5,7 +5,8 @@ import { selectFirstRunRepository } from "./state/BootRepositoryTarget"
 import { Effect } from "effect"
 import { hasCapability } from "@smthrs/rpc/AppBootstrap"
 import { loadRuntimeApplicationClient } from "./runtime/ApplicationTransport"
-import { beginRepositoryEntry, openRequestedRepo, requestedRepo, withoutRepoParam } from "./RepoLink"
+import { beginRepositoryEntry, openRequestedRepo, requestedTarget, withoutRepoParam } from "./RepoLink"
+import { openRequestedSubject } from "./RepositorySubjectEntry"
 import { createBrowserFrameHistory, ROOT_APP_PATH } from "./runtime/FrameHistory"
 import { BootstrapFailure, createRuntime, warmBootstrap, unavailableAgent } from "./runtime/Runtime"
 import { createAppController } from "./state/AppController"
@@ -45,7 +46,10 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
     // Read the entry URL before the controller exists: creating it installs the
     // frame history, which writes the first history entry within the first
     // frame, long before identity has loaded.
-    const requested = yield* Effect.sync(() => requestedRepo(window.location))
+    // The whole target, not only its repository: `/owner/repo/pull/2/files` is
+    // a pull request's Files tab, opened after that repository is admitted.
+    const target = yield* Effect.sync(() => requestedTarget(window.location))
+    const requested = target?.repo ?? null
     // The entry URL's query, read before frame history rewrites the address bar: the OAuth and
     // GitHub App setup-URL returns ride on it, and by the end of boot it is gone.
     const entrySearch = yield* Effect.sync(() => window.location.search)
@@ -182,7 +186,11 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
     // `/owner/name` (or the landing page's `/?repo=owner/name`) preselects a public-catalog repository.
     // The path stays in the address bar; the parameter leaves it.
     if (requested !== null) {
-      yield* Effect.sync(() => void openRequestedRepo(controller, runtime.http, requested, repositoryEntryId))
+      yield* Effect.sync(() => void openRequestedRepo(controller, runtime.http, requested, repositoryEntryId)
+        // The subject waits on the admission: a URL grants no access, and an
+        // ambient or retained repository is not this URL's authority.
+        .then(() => openRequestedSubject(controller, requested, target?.subject, { requestId: repositoryEntryId, signal: pageLifetime.signal }))
+        .catch(() => {}))
       if (window.location.search !== "") {
         window.history.replaceState(window.history.state, "", withoutRepoParam(window.location))
       }

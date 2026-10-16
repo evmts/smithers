@@ -4,7 +4,7 @@ import * as Layer from "effect/Layer"
 import { runRequest } from "./Boundary"
 import { DEFAULT_UPSTREAM_TIMEOUT_MS, discardBody, fetchWithDeadline, TransportLive, transportFrom } from "./Http"
 import type { Transport, TransportShape } from "./Http"
-import { catalogDocumentPath, comingSoonDocumentPath, DEFAULT_APP_DOCUMENT_PATH, isFramePath, isRepositoryPath } from "./appDocument"
+import { catalogDocumentPath, comingSoonDocumentPath, DEFAULT_APP_DOCUMENT_PATH, isFramePath, isRepositoryPath, repositorySubjectRoot } from "./appDocument"
 import { withIsolationHeaders } from "./Responses"
 
 // Storage identities survive the authority change. These classes have no product
@@ -81,11 +81,22 @@ export const handleEdgeRequest = (request: Request, configuredOrigin: string | u
       const origin = backendOrigin(configuredOrigin, url)
       return origin === undefined ? refusal(503, "backend_not_configured") : yield* proxy(request, url, origin)
     }
+    /*
+     * A GitHub-shaped subject below a repository root is that repository's
+     * page: the same prerendered document, reached by the path the reader
+     * followed. A COMING-SOON repository has no app at all, so nothing below
+     * it can open and its subject paths keep the site's own answer rather than
+     * painting an app that could only say the repository is not available.
+     */
+    const subject = repositorySubjectRoot(url.pathname)
+    const subjectRoot = subject !== undefined && comingSoonDocumentPath(subject) === undefined ? subject : undefined
     const comingSoon = comingSoonDocumentPath(url.pathname)
-    const catalog = catalogDocumentPath(url.pathname)
+    const catalog = catalogDocumentPath(subjectRoot ?? url.pathname)
     if (comingSoon !== undefined || catalog !== undefined) {
       if (url.pathname !== url.pathname.toLowerCase()) {
-        url.pathname = (comingSoon ?? catalog)!
+        // GitHub's names are case-insensitive, and the canonical page is the
+        // lowercase one — but the subject the reader asked for is kept.
+        url.pathname = subjectRoot === undefined ? (comingSoon ?? catalog)! : url.pathname.toLowerCase()
         return Response.redirect(url.toString(), 301)
       }
       const response = yield* asset(new Request(new URL((comingSoon ?? catalog)!, url), request))
@@ -97,7 +108,8 @@ export const handleEdgeRequest = (request: Request, configuredOrigin: string | u
     const icon = url.pathname === "/favicon.ico" ? "/favicon.png" : url.pathname === "/apple-touch-icon.png" ? "/icon.png" : undefined
     if (icon !== undefined) return yield* asset(new Request(new URL(icon, url), request))
     const response = yield* asset(request)
-    if (response.status === 404 && isRepositoryPath(url.pathname) && (request.method === "GET" || request.method === "HEAD")) {
+    if (response.status === 404 && (isRepositoryPath(url.pathname) || subjectRoot !== undefined) &&
+      (request.method === "GET" || request.method === "HEAD")) {
       yield* discardBody(response)
       return documentHeaders(url, withIsolationHeaders(yield* asset(new Request(new URL(DEFAULT_APP_DOCUMENT_PATH, url), request))))
     }

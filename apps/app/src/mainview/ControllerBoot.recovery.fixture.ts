@@ -39,10 +39,16 @@ mock.module("./state/AppController", () => ({ createAppController: () => fakeCon
 const repoLink = await import("./RepoLink")
 mock.module("./RepoLink", () => ({
   ...repoLink,
-  requestedRepo: () => "roninjin10/smithers",
+  requestedTarget: () => ({ repo: "roninjin10/smithers", subject: { kind: "pull", number: 2, tab: "files" } }),
   beginRepositoryEntry: () => { calls.push("repository.entry"); return "entry" },
   openRequestedRepo: async () => { calls.push("repository.open") },
   withoutRepoParam: () => "/roninjin10/smithers"
+}))
+/* A subject in the URL is URL-triggered work too: a temporary empty store opens none of it. */
+const subjectEntry = await import("./RepositorySubjectEntry")
+mock.module("./RepositorySubjectEntry", () => ({
+  ...subjectEntry,
+  openRequestedSubject: async () => { calls.push("repository.subject") }
 }))
 const frameHistory = await import("./runtime/FrameHistory")
 mock.module("./runtime/FrameHistory", () => ({ ...frameHistory, createBrowserFrameHistory: () => ({}) }))

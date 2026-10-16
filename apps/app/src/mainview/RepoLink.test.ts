@@ -7,7 +7,9 @@ loadPublicCatalog,
 openRequestedRepo,
 paramRepo,
 pathRepo,
+pathTarget,
 requestedRepo,
+requestedTarget,
 signInReturnTo,
 withoutRepoParam
 } from "./RepoLink"
@@ -148,16 +150,57 @@ describe("pathRepo", () => {
     expect(requestedRepo({ pathname: "/smithersai/smithers/", search: "" })).toBe("smithersai/smithers")
   })
 
-  test("answers null for the root, one segment, an empty segment, or deeper paths", () => {
+  test("answers null for the root, one segment, an empty segment, or an unsupported deeper path", () => {
     expect(pathRepo("/")).toBeNull()
     expect(pathRepo("")).toBeNull()
     expect(pathRepo("/smithersai")).toBeNull()
     expect(pathRepo("/smithersai/")).toBeNull()
     expect(pathRepo("/smithersai//")).toBeNull()
     expect(pathRepo("/smithersai/smithers//")).toBeNull()
-    expect(pathRepo("/smithersai/smithers/issues")).toBeNull()
     expect(pathRepo("/w/ws-1/b/main/f/frame-1")).toBeNull()
     expect(pathRepo("/a%20b/c")).toBeNull()
+    // A branch or blob path is NOT guessed at: dividing a slash-bearing ref
+    // from a file path needs an authoritative ref resolver (#4039).
+    expect(pathRepo("/smithersai/smithers/tree/main/src")).toBeNull()
+    expect(pathRepo("/smithersai/smithers/blob/main/src/index.ts")).toBeNull()
+  })
+
+  /*
+   * #4039: a GitHub-shaped subject below the repository names that repository
+   * too, so the same URL admits it and then opens the subject. The grammar is
+   * the one the Worker edge routes with (@smthrs/rpc RepositorySubjectPath).
+   */
+  test("a subject path names its repository, and the subject beside it", () => {
+    expect(pathTarget("/roninjin10/e2e-verify/pull/2/files")).toEqual({
+      repo: "roninjin10/e2e-verify",
+      subject: { kind: "pull", number: 2, tab: "files" }
+    })
+    expect(pathRepo("/roninjin10/e2e-verify/pull/2/files")).toBe("roninjin10/e2e-verify")
+    expect(pathTarget("/smithersai/smithers/pull/2")).toEqual({
+      repo: "smithersai/smithers",
+      subject: { kind: "pull", number: 2, tab: "conversation" }
+    })
+    expect(pathTarget("/smithersai/smithers/pulls")).toEqual({ repo: "smithersai/smithers", subject: { kind: "pulls" } })
+    expect(pathTarget("/smithersai/smithers/issues")).toEqual({ repo: "smithersai/smithers", subject: { kind: "issues" } })
+    expect(pathTarget("/smithersai/smithers/issues/4039")).toEqual({
+      repo: "smithersai/smithers",
+      subject: { kind: "issue", number: 4039 }
+    })
+    expect(pathTarget("/smithersai/smithers")).toEqual({ repo: "smithersai/smithers" })
+  })
+
+  test("a malformed number or an unsupported view names nothing at all, not the repository alone", () => {
+    for (const path of [
+      "/smithersai/smithers/pull/0",
+      "/smithersai/smithers/pull/2x",
+      "/smithersai/smithers/pull/%32",
+      "/smithersai/smithers/pull/99999999999",
+      "/smithersai/smithers/pull/2/rebase",
+      "/smithersai/smithers/pull/2/files/src/index.ts",
+      "/smithersai/smithers/issues/2/comments"
+    ]) {
+      expect({ path, target: pathTarget(path) }).toEqual({ path, target: null })
+    }
   })
 })
 
@@ -179,6 +222,15 @@ describe("requestedRepo", () => {
   test("nothing is requested at the root without the parameter", () => {
     expect(requestedRepo({ pathname: "/", search: "" })).toBeNull()
     expect(requestedRepo({ pathname: "/", search: "?auth=failed" })).toBeNull()
+  })
+
+  test("the whole target carries the subject; the repo parameter never names one", () => {
+    expect(requestedTarget({ pathname: "/roninjin10/e2e-verify/pull/2/files", search: "" })).toEqual({
+      repo: "roninjin10/e2e-verify",
+      subject: { kind: "pull", number: 2, tab: "files" }
+    })
+    expect(requestedTarget({ pathname: "/", search: "?repo=smithersai/smithers" })).toEqual({ repo: "smithersai/smithers" })
+    expect(requestedTarget({ pathname: "/", search: "" })).toBeNull()
   })
 })
 
@@ -245,6 +297,22 @@ describe("signInReturnTo", () => {
     expect(signInReturnTo({ pathname: "/", search: "?repo=smithersai/smithers" })).toBeNull()
     expect(signInReturnTo({ pathname: "/smithersai", search: "" })).toBeNull()
     expect(signInReturnTo({ pathname: "/a/b/c", search: "" })).toBeNull()
+  })
+
+  /*
+   * #4039: the reader who signed in from a pull request comes back to that
+   * pull request, not to the repository root. The backend accepts any local
+   * path (routes/auth_return.go validBrowserReturn), and the spent auth
+   * markers are still stripped from the subject path.
+   */
+  test("a subject page returns to the whole subject, markers stripped", () => {
+    expect(signInReturnTo({ pathname: "/roninjin10/e2e-verify/pull/2/files", search: "" }))
+      .toBe("/roninjin10/e2e-verify/pull/2/files")
+    expect(signInReturnTo({ pathname: "/roninjin10/e2e-verify/issues/6", search: "?signed-in=github&auth=failed" }))
+      .toBe("/roninjin10/e2e-verify/issues/6")
+    expect(signInReturnTo({ pathname: "/roninjin10/e2e-verify/pull/2/files", search: `?q=${"x".repeat(600)}` }))
+      .toBe("/roninjin10/e2e-verify/pull/2/files")
+    expect(signInReturnTo({ pathname: "/roninjin10/e2e-verify/tree/main/src", search: "" })).toBeNull()
   })
 
   test("a query the server would drop is left behind rather than losing the page", () => {

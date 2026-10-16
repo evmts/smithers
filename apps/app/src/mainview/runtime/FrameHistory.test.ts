@@ -93,6 +93,40 @@ describe("browser frame history", () => {
     expect(seen).toEqual([root, card])
   })
 
+  /*
+   * #4039: a GitHub-shaped subject path is a repository path too, so the
+   * address bar keeps the WHOLE target for the life of the page. A reload
+   * re-enters the same pull request and tab, and frame navigation inside the
+   * app neither rewrites nor loses it.
+   */
+  for (const entry of [
+    "/roninjin10/e2e-verify/pull/2/files",
+    "/roninjin10/e2e-verify/pull/2",
+    "/roninjin10/e2e-verify/pulls",
+    "/roninjin10/e2e-verify/issues/6"
+  ]) test(`booted from ${entry}, the subject stays in the address bar across frames and history`, () => {
+    const { host, entries } = browser(entry)
+    const history = createBrowserFrameHistory(host)
+    const seen: Array<FrameLocation | undefined> = []
+    history.subscribe((location) => seen.push(location))
+    history.replace(root)
+    history.push(card)
+    expect(host.location.pathname).toBe(entry)
+    expect(entries()).toEqual([entry, entry])
+    expect(history.current()).toEqual(card)
+    history.back()
+    expect(host.location.pathname).toBe(entry)
+    expect(seen).toEqual([root])
+  })
+
+  /* An unsupported path is NOT pinned as a repository: it is not one. */
+  test("a blob path is not a repository path, so it keeps the frame-pointer mode", () => {
+    const { host } = browser("/roninjin10/e2e-verify/blob/main/src/index.ts")
+    const history = createBrowserFrameHistory(host)
+    history.push(card)
+    expect(host.location.pathname).toBe(framePath(card))
+  })
+
   for (const entry of ["/", "/?tutorial", "/?signed-in=github", "/?auth=failed", "/?auth=error"]) test(`mounted from ${entry}, frames retain the reloadable root app URL`, () => {
     const { host, entries } = browser(entry)
     const history = createBrowserFrameHistory(host, { keepUrl: true })

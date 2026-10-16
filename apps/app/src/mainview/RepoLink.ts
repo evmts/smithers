@@ -1,5 +1,7 @@
 import { AUTH_SIGNED_IN_PARAM } from "@smthrs/rpc/AgentApiRoutes"
 import type { FetchLike } from "@smthrs/rpc/NativeAgent"
+import { splitRepositoryPath } from "@smthrs/rpc/RepositorySubjectPath"
+import type { RepositorySubject } from "@smthrs/rpc/RepositorySubjectPath"
 import { appCoverageRow, readRepoAccess } from "./RepositoryEntryOffer"
 import type { AppController } from "./state/AppController"
 import type { AppStore } from "./state/AppStore"
@@ -7,7 +9,9 @@ import { parseRepoSelection,repoTreeRowId,sharedCopyIdOf } from "./state/AppStat
 import { randomUuid } from "./runtime/RandomUuid"
 
 /*
- * A repository's app lives at `/owner/name` (https://smithers.sh/smithersai/smithers).
+ * A repository's app lives at `/owner/name` (https://smithers.sh/smithersai/smithers),
+ * and the GitHub-shaped paths below it name one of its subjects
+ * (RepositorySubjectEntry.ts opens them after admission).
  * The landing page's older "Open in Smithers" link lands on `/?repo=owner/name`.
  * The path wins; the parameter is read only at `/`. The name is honoured only
  * when the signed-in inventory or public catalog (GET /api/public/repos)
@@ -23,17 +27,36 @@ export const PUBLIC_REPOS_PATH = "/api/public/repos"
 const REPO_NAME = /^[\w.-]+\/[\w.-]+$/
 
 /**
- * The `owner/name` a `/owner/name` path names (exactly two segments), or null
- * for any other path. A trailing slash is the same repository: a prerendered
+ * The repository a URL names, and the GitHub-shaped subject below it when the
+ * path carries one.
+ */
+export interface RequestedTarget {
+  /** `owner/name`, in the URL's own spelling. */
+  readonly repo: string
+  /** The pull request, pull request list, issue or issue list the path asks for. */
+  readonly subject?: RepositorySubject
+}
+
+/**
+ * The repository and subject a path names, or null for any other path.
+ *
+ * `/owner/name` is the repository itself; the GitHub-shaped paths below it are
+ * its subjects (@smthrs/rpc RepositorySubjectPath), parsed by the same grammar
+ * the Worker edge routes with, so the client opens exactly the paths the edge
+ * serves the app for. A trailing slash is the same path: a prerendered
  * `/owner/name/index.html` is served at `/owner/name/` by hosts that do not
  * strip it.
  */
-export const pathRepo = (pathname: string): string | null => {
-  const match = /^\/([^/]+)\/([^/]+)\/?$/.exec(pathname)
-  if (match === null) return null
-  const value = `${match[1]}/${match[2]}`
-  return REPO_NAME.test(value) ? value : null
+export const pathTarget = (pathname: string): RequestedTarget | null => {
+  const split = splitRepositoryPath(pathname)
+  if (split === undefined) return null
+  const repo = `${split.owner}/${split.name}`
+  if (!REPO_NAME.test(repo)) return null
+  return split.subject === undefined ? { repo } : { repo, subject: split.subject }
 }
+
+/** The `owner/name` a repository path or one of its subject paths names, or null. */
+export const pathRepo = (pathname: string): string | null => pathTarget(pathname)?.repo ?? null
 
 /** The `owner/name` the `repo` parameter names, or null when absent or not a repository name. */
 export const paramRepo = (search: string): string | null => {
@@ -41,9 +64,20 @@ export const paramRepo = (search: string): string | null => {
   return REPO_NAME.test(value) ? value : null
 }
 
+/**
+ * What the URL asks for: the repository path and its subject first, else the
+ * `repo` parameter at `/`, which names a repository and never a subject.
+ */
+export const requestedTarget = (location: Pick<Location, "pathname" | "search">): RequestedTarget | null => {
+  const path = pathTarget(location.pathname)
+  if (path !== null) return path
+  const param = location.pathname === "/" ? paramRepo(location.search) : null
+  return param === null ? null : { repo: param }
+}
+
 /** The `owner/name` the URL asks for: the `/owner/name` path first, else the `repo` parameter at `/`. */
 export const requestedRepo = (location: Pick<Location, "pathname" | "search">): string | null =>
-  pathRepo(location.pathname) ?? (location.pathname === "/" ? paramRepo(location.search) : null)
+  requestedTarget(location)?.repo ?? null
 
 export interface CatalogRepository {
   /** `owner/name`, in the catalog's spelling. */
@@ -93,8 +127,11 @@ const queryString = (params: URLSearchParams): string => params.toString()
 /**
  * The page a sign-in started from a repository path returns to: the path and
  * its query, minus the auth markers a previous return spent (`signed-in`,
- * `auth`), so they are never replayed. Null anywhere but `/owner/name`: the
- * landing page is where the callback lands on its own.
+ * `auth`), so they are never replayed. The whole path returns, so a reader who
+ * signed in from a pull request comes back to that pull request. Null anywhere
+ * but a repository path: the landing page is where the callback lands on its
+ * own. The backend accepts any local path of its own (routes/auth_return.go
+ * `validBrowserReturn`), so a subject path needs nothing new there.
  */
 export const signInReturnTo = (location: Pick<Location, "pathname" | "search">): string | null => {
   if (pathRepo(location.pathname) === null) return null

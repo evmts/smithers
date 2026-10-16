@@ -1,3 +1,4 @@
+import { splitRepositoryPath } from "@smthrs/rpc/RepositorySubjectPath"
 import { AVAILABLE_REPOS, COMING_SOON_REPOS } from "./publicRepoCatalog"
 
 /*
@@ -71,4 +72,25 @@ export const RESERVED_SITE_SEGMENTS: ReadonlyArray<string> = [
 export const isRepositoryPath = (pathname: string): boolean => {
   const match = /^\/([a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38})\/([a-z\d_.-]{1,100})\/?$/i.exec(pathname)
   return match !== null && !RESERVED_SITE_SEGMENTS.includes(match[1]!.toLowerCase()) && match[2] !== "." && match[2] !== ".."
+}
+
+/**
+ * The `/owner/repo` root a GitHub-shaped subject path hangs below — a pull
+ * request and its tabs, the pull request list, the issue list, one issue
+ * (@smthrs/rpc RepositorySubjectPath) — or undefined for a bare repository
+ * path, a frame path and every other path, including a subject shape whose
+ * repository segments are the site's own or not GitHub slugs.
+ *
+ * The app serves these from the SAME document as the repository root, because
+ * the document is one shell either way, and the app reads the path it was
+ * entered at. Without this the Worker had no file for `/owner/repo/pull/2` and
+ * no reason to answer it with the app, so the assets layer's marketing "Page
+ * not found" was the whole answer — production, 2026-10-16, on the owned QA
+ * repository's own pull request ([#4039](https://github.com/smithersai/smithers/issues/4039)).
+ */
+export const repositorySubjectRoot = (pathname: string): string | undefined => {
+  const target = splitRepositoryPath(pathname)
+  if (target?.subject === undefined) return undefined
+  const root = `/${target.owner}/${target.name}`
+  return isRepositoryPath(root) ? root : undefined
 }

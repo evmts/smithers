@@ -114,3 +114,110 @@ test("repository reloads serve the app document with isolation and canary noinde
   expect(response.headers.get("x-robots-tag")).toBe("noindex")
   expect(seen).toEqual(["/example/repository", "/smithersai/smithers/"])
 })
+
+/*
+ * #4039, reproduced in production on 2026-10-16: the owned QA repository's own
+ * pull request at `https://smithers.sh/roninjin10/e2e-verify/pull/2/files`
+ * answered with the marketing site's "Page not found", because the Worker
+ * recognized exactly two repository segments and nothing below them. These pin
+ * the request boundary: the reported URL reaches the application document, the
+ * reader's tab survives the hop, and no site, API, frame or unsupported path
+ * becomes the app by being shaped a little like one.
+ */
+const appDocumentProbe = () => {
+  const seen: string[] = []
+  const ASSETS = { fetch: async (request: Request) => {
+    const path = new URL(request.url).pathname
+    seen.push(path)
+    return path.endsWith("/") && (path === "/smithersai/smithers/" || path === "/effect-ts/effect/")
+      ? new Response('<div id="root"></div>', { headers: { "content-type": "text/html" } })
+      : new Response("<h1>Page not found</h1>", { status: 404, headers: { "content-type": "text/html" } })
+  } }
+  return { ASSETS, seen }
+}
+
+test("the reported pull request URL and its tabs reach the app document, from the catalog page or the fallback", async () => {
+  for (const pathname of [
+    "/roninjin10/e2e-verify/pull/2/files",
+    "/roninjin10/e2e-verify/pull/2",
+    "/roninjin10/e2e-verify/pull/2/commits",
+    "/roninjin10/e2e-verify/pull/2/checks",
+    "/roninjin10/e2e-verify/pull/2/conversation",
+    "/roninjin10/e2e-verify/pulls",
+    "/roninjin10/e2e-verify/issues",
+    "/roninjin10/e2e-verify/issues/6",
+    "/smithersai/smithers/pull/2/files",
+    "/smithersai/smithers/issues/4039"
+  ]) {
+    const { ASSETS, seen } = appDocumentProbe()
+    const response = await edge.fetch(new Request(`https://smithers.sh${pathname}`), { ASSETS })
+    expect({ pathname, status: response.status }).toEqual({ pathname, status: 200 })
+    expect(response.headers.get("cross-origin-embedder-policy")).toBe("require-corp")
+    // A catalog repository is served from its OWN prerendered page; any other
+    // repository falls back to the one shell, exactly as `/owner/repo` does.
+    // At this catalog size both are the same document, so what this pins is
+    // that a document was served at all, and the next test pins which read.
+    expect({ pathname, document: seen.at(-1) }).toEqual({ pathname, document: "/smithersai/smithers/" })
+  }
+})
+
+test("a catalog repository's subject is served from that repository's own page without a second asset read", async () => {
+  const { ASSETS, seen } = appDocumentProbe()
+  const response = await edge.fetch(new Request("https://smithers.sh/smithersai/smithers/pull/2/files"), { ASSETS })
+  expect(response.status).toBe(200)
+  expect(seen).toEqual(["/smithersai/smithers/"])
+})
+
+test("a mixed-case subject path redirects to the canonical page and KEEPS the subject", async () => {
+  const { ASSETS } = appDocumentProbe()
+  const response = await edge.fetch(new Request("https://smithers.sh/SmithersAI/Smithers/pull/2/files"), { ASSETS })
+  expect(response.status).toBe(301)
+  expect(new URL(response.headers.get("location")!).pathname).toBe("/smithersai/smithers/pull/2/files")
+})
+
+test("the frame path this change did not touch is still the app", async () => {
+  const { ASSETS, seen } = appDocumentProbe()
+  const response = await edge.fetch(new Request("https://smithers.sh/w/ws-1/b/main/f/frame-1"), { ASSETS })
+  expect(response.status).toBe(200)
+  expect(seen).toEqual(["/smithersai/smithers/"])
+})
+
+test("site, API, coming-soon and unsupported subject paths never become the app", async () => {
+  // Every one of these is either another owner's route or a shape this app has
+  // no view for. The honest answer is the site's, not a blank application.
+  for (const pathname of [
+    "/docs/cli/pull/2",
+    "/api/repos/a/b/pull/2",
+    "/migration/1.0/pull/2",
+    "/effect-ts/effect/pull/2",
+    "/owner/repo/pull/0",
+    "/owner/repo/pull/-1",
+    "/owner/repo/pull/2x",
+    "/owner/repo/pull/99999999999",
+    "/owner/repo/pull/%32",
+    "/owner/repo/pu%6Cl/2",
+    "/owner/repo/pull/2/files/src/index.ts",
+    "/owner/repo/pull/2/rebase",
+    "/owner/repo/pulls/2",
+    "/owner/repo/issues/2/comments",
+    "/owner/repo/tree/main/src",
+    "/owner/repo/blob/main/src/index.ts",
+    "/owner/repo/commit/abc123"
+  ]) {
+    const { ASSETS, seen } = appDocumentProbe()
+    const response = await edge.fetch(new Request(`https://smithers.sh${pathname}`), { ASSETS })
+    expect({ pathname, served: seen.filter(path => path.endsWith("/smithers/")) }).toEqual({ pathname, served: [] })
+    expect({ pathname, status: response.status }).toEqual({ pathname, status: pathname.startsWith("/api/") ? 503 : 404 })
+  }
+})
+
+test("a subject path is read-only: only GET and HEAD fall back to the app shell", async () => {
+  const { ASSETS, seen } = appDocumentProbe()
+  for (const method of ["HEAD", "GET"]) {
+    const response = await edge.fetch(new Request("https://smithers.sh/roninjin10/e2e-verify/pull/2/files", { method }), { ASSETS })
+    expect(response.status).toBe(200)
+  }
+  const posted = await edge.fetch(new Request("https://smithers.sh/roninjin10/e2e-verify/pull/2/files", { method: "POST" }), { ASSETS })
+  expect(posted.status).toBe(404)
+  expect(seen.filter(path => path === "/smithersai/smithers/")).toHaveLength(2)
+})
