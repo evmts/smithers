@@ -59,6 +59,20 @@ WHERE w.deleted_at IS NULL AND (w.status IN ('pending','starting','releasing') O
  OR (w.status='failed' AND w.provisioning_stage='' AND w.vm_id<>''
      AND w.failure_code='conflict'
      AND w.failure_message='workspace release interrupted by host restart')
+ -- The repository-advertisement door, proved for the same shape. The
+ -- authenticated ref advertisement runs INSIDE the start, after the guest is
+ -- already up and reported running; its refusal is a 'conflict', so
+ -- markWorkspaceProvisionFailed published a terminal 'failed' with NO cleanup
+ -- stage over a live guest and reaped nothing -- the row was in no backlog and
+ -- the placement kept its compute reservation with nothing left to look at it.
+ -- These rows carry user work (repository materialization is the subject), so
+ -- they are listed here for a STOP and deliberately NOT routed into the
+ -- failed-start cleanup backlog, which deletes. Same exclusions as above: any
+ -- other failure reason, any recorded cleanup stage and any unbound placement
+ -- are out, and the row leaves this backlog for good once the stop is confirmed.
+ OR (w.status='failed' AND w.provisioning_stage='' AND w.vm_id<>''
+     AND w.failure_code='conflict'
+     AND w.failure_message='workspace repository advertisement could not be verified')
  OR (w.status='running' AND EXISTS (SELECT 1 FROM workspace_sessions s WHERE s.workspace_id=w.id AND s.status IN ('pending','starting'))))
 AND (w.status IN ('running','releasing','failed') OR w.updated_at < now()-interval '10 minutes')
 AND NOT EXISTS (SELECT 1 FROM workspace_children c WHERE c.workspace_id=w.id)

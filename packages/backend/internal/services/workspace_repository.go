@@ -545,28 +545,34 @@ func (s *WorkspaceService) readRuntimeRepositoryFile(ctx context.Context, row db
 	return s.runtime.ReadFile(operationCtx, row.ID, filePath)
 }
 
-func (s *WorkspaceService) executeRuntimeRepositoryTransfer(ctx context.Context, row db.Workspace, requesterID int64, step string, command workspaceapi.Command) (workspaceapi.CommandResult, error) {
+// executeRuntimeRepositoryTransfer runs one repository command, retrying an
+// admission refusal, and reports how many attempts it took. The count is
+// returned rather than discarded because it is the difference between a
+// refusal that was never retryable and a 503 that exhausted the budget, and
+// the caller is the only place that can record it.
+func (s *WorkspaceService) executeRuntimeRepositoryTransfer(ctx context.Context, row db.Workspace, requesterID int64, step string, command workspaceapi.Command) (workspaceapi.CommandResult, int, error) {
 	// Git transfers safely retry an admission
 	// refusal. Give each completed failed attempt its own durable operation ID;
 	// otherwise the adapter would replay that failure instead of fetching again.
 	execCtx, cancel := context.WithTimeout(ctx, workspaceCloneTimeout)
 	defer cancel()
 	var result workspaceapi.CommandResult
-	for attempt := 0; ; attempt++ {
+	attempt := 0
+	for ; ; attempt++ {
 		attemptStep := step
 		if attempt > 0 {
 			attemptStep += "-retry-" + strconv.Itoa(attempt)
 		}
 		operationCtx, err := s.runtimeRepositoryContext(execCtx, row, requesterID, attemptStep)
 		if err != nil {
-			return result, err
+			return result, attempt + 1, err
 		}
 		if err := operationCtx.Err(); err != nil {
-			return result, err
+			return result, attempt + 1, err
 		}
 		result, err = s.runtime.ExecuteCommand(operationCtx, row.ID, command)
 		if err != nil {
-			return result, s.workspaceRuntimeOperationError(ctx, "initialize workspace repository ("+step+")", err, row, requesterID)
+			return result, attempt + 1, s.workspaceRuntimeOperationError(ctx, "initialize workspace repository ("+step+")", err, row, requesterID)
 		}
 		if attempt >= 3 || !retryableWorkspaceTransfer(command, result) {
 			break
@@ -577,7 +583,7 @@ func (s *WorkspaceService) executeRuntimeRepositoryTransfer(ctx context.Context,
 			// repositories or user files to make a retry possible.
 			entries, err := s.listRuntimeRepositoryFiles(execCtx, row, requesterID, attemptStep+"-retry-inspect", "")
 			if err != nil {
-				return result, s.workspaceRuntimeOperationError(ctx, "inspect refused workspace clone", err, row, requesterID)
+				return result, attempt + 1, s.workspaceRuntimeOperationError(ctx, "inspect refused workspace clone", err, row, requesterID)
 			}
 			if len(entries) != 0 {
 				break
@@ -587,15 +593,15 @@ func (s *WorkspaceService) executeRuntimeRepositoryTransfer(ctx context.Context,
 		select {
 		case <-execCtx.Done():
 			timer.Stop()
-			return result, execCtx.Err()
+			return result, attempt + 1, execCtx.Err()
 		case <-timer.C:
 		}
 	}
-	return result, nil
+	return result, attempt + 1, nil
 }
 
 func (s *WorkspaceService) runRuntimeRepositoryCommand(ctx context.Context, row db.Workspace, requesterID int64, step string, command workspaceapi.Command) error {
-	result, err := s.executeRuntimeRepositoryTransfer(ctx, row, requesterID, step, command)
+	result, _, err := s.executeRuntimeRepositoryTransfer(ctx, row, requesterID, step, command)
 	if err != nil {
 		return err
 	}
@@ -627,13 +633,32 @@ func retryableWorkspaceTransfer(command workspaceapi.Command, result workspaceap
 	return strings.Contains(result.Stderr, "The requested URL returned error: 503") || strings.Contains(result.Stderr, "The requested URL returned error: 504")
 }
 
+// runtimeRepositoryCommandOutput reads a repository check's output, and
+// refuses when the command did not verify: a nonzero status, or an answer the
+// adapter could not return whole. Both are collapsed into ONE registered
+// sentence on purpose — the sentence is the stored verdict and a verdict is
+// not a diagnosis — but the evidence is no longer thrown away with them. The
+// finite outcome is recorded for the operator and attached as the error's
+// cause, so a future refusal on this door can be told apart from the next
+// one without reading stdout, stderr or the command's environment.
 func (s *WorkspaceService) runtimeRepositoryCommandOutput(ctx context.Context, row db.Workspace, requesterID int64, step string, command workspaceapi.Command) (string, error) {
-	result, err := s.executeRuntimeRepositoryTransfer(ctx, row, requesterID, step, command)
+	result, attempts, err := s.executeRuntimeRepositoryTransfer(ctx, row, requesterID, step, command)
 	if err != nil {
 		return "", err
 	}
 	if result.ExitCode != 0 || result.OutputTruncated {
-		return "", pkgerrors.Conflict("workspace repository " + step + " could not be verified")
+		outcome := workspaceRepositoryStepOutcome{
+			step:      workspaceRepositoryStepLabel(step),
+			exitClass: workspaceRepositoryExitClassFor(result),
+			truncated: result.OutputTruncated,
+			attempts:  attempts,
+			retryable: retryableWorkspaceTransfer(command, result),
+		}
+		outcome.record(row.ID)
+		// WithCause, never concatenation: the sentence IS the persisted
+		// verdict (see workspaceRepositoryStepUnverifiedMessage), so the
+		// Message must stay these bytes exactly.
+		return "", pkgerrors.Conflict(workspaceRepositoryStepUnverifiedMessage(step)).WithCause(outcome)
 	}
 	return strings.TrimSpace(result.Stdout), nil
 }

@@ -152,11 +152,11 @@ func (s *WorkspaceService) ReconcileWorkspaceProvisioning(ctx context.Context) e
 			}
 			continue
 		}
-		if interruptedReleaseStopPending(ws) {
+		if door, ok := retainedGuestStopPending(ws); ok {
 			// The diagnostic is the outcome's finite fields, never the error:
 			// see interruptedReleaseStopOutcome.
-			if outcome, err := s.reconcileInterruptedReleaseStop(ctx, ws); err != nil {
-				slog.Warn("interrupted release stop retry failed", outcome.logArgs(ws.ID)...)
+			if outcome, err := s.reconcileRetainedGuestStop(ctx, ws, door); err != nil {
+				slog.Warn(door.logMessage, outcome.logArgs(ws.ID)...)
 			}
 			continue
 		}
@@ -394,13 +394,115 @@ const workspaceReleaseInterruptedStoppedMessage = workspaceReleaseInterruptedMes
 //   - a bound vm_id: there is a placement to stop. An unbound row has no guest
 //     and no reservation, so there is nothing to re-drive.
 func interruptedReleaseStopPending(row db.Workspace) bool {
-	return row.Status == "failed" &&
-		strings.TrimSpace(row.ProvisioningStage) == "" &&
-		strings.TrimSpace(row.VmID) != "" &&
-		row.FailureCode.Valid &&
-		strings.TrimSpace(row.FailureCode.String) == string(pkgerrors.CodeConflict) &&
-		row.FailureMessage.Valid &&
-		strings.TrimSpace(row.FailureMessage.String) == workspaceReleaseInterruptedMessage
+	door, ok := retainedGuestStopPending(row)
+	return ok && door.reason == workspaceReleaseInterruptedMessage
+}
+
+// retainedGuestStopDoor is ONE writer that can publish a terminal `failed`
+// verdict over an owner that still binds a live guest, identified by the
+// exact sentence it stores.
+//
+// A door is a remediation and a sentence is not, which is why the registry
+// below is keyed on sentences but shaped by doors: each entry names the one
+// verdict whose own intent is finished by stopping the guest, carries the
+// receipt that records the stop, and says nothing about any other failure.
+// `failed` + `conflict` + an empty provisioning_stage + a bound placement is
+// several writers at once — markWorkspaceProvisionFailed records whatever
+// cause reached it and passes no cleanup stage — so the recorded sentence is
+// the only thing that separates them, and a failed label is never authority
+// on its own.
+type retainedGuestStopDoor struct {
+	// reason is the exact stored sentence. Whole-string equality, never a
+	// prefix and never the code class.
+	reason string
+	// confirmed is the sentence once a positive receipt says the guest is
+	// down. It keeps the original verdict legible and is also what takes the
+	// row out of the recovery backlog, so a confirmed stop is never re-driven.
+	confirmed string
+	// action labels the runtime lifecycle operation this recovery drives.
+	action string
+	// metric is the existing lifecycle observer's action label. No new metric.
+	metric string
+	// logMessage is the operator record for an attempt that did not finish.
+	// The outcome's finite fields are the diagnostic; this is only its name.
+	logMessage string
+}
+
+// retainedGuestStopDoors is the complete set of doors this recovery
+// activates on. Each one is PROVED: a writer that records its sentence with
+// no cleanup stage while deliberately keeping vm_id, so its row was in no
+// backlog and its guest kept running and kept its compute reservation.
+//
+// Adding a door is a deliberate act with a receipt behind it, not a widening
+// of a failed-workspace sweep. Nothing here deletes, purges a disk, clears a
+// placement, resets a generation, moves a status or invents a capture.
+var retainedGuestStopDoors = []retainedGuestStopDoor{
+	{
+		reason:     workspaceReleaseInterruptedMessage,
+		confirmed:  workspaceReleaseInterruptedStoppedMessage,
+		action:     "recover-release",
+		metric:     "recover-release-stop",
+		logMessage: "interrupted release stop retry failed",
+	},
+	// The repository-advertisement door. runtimeRepositorySourceEmpty asks
+	// the product remote, with the workspace's own bound credential, whether
+	// the repository advertises any ref at all — and it runs INSIDE
+	// ensureRuntimeWorkspaceRunningLocked, after the guest is already up and
+	// reported running. Its refusal is a `conflict`, so the start fails with
+	// the guest alive; markWorkspaceProvisionFailed then publishes that
+	// sentence with NO cleanup stage and reaps nothing.
+	//
+	// These rows carry user work by definition — repository materialization
+	// is the subject, and the reclaimed-disk restore that reaches this writer
+	// most often is a retained branch's own history — so a STOP is the most
+	// that may ever be considered here and a delete is never it. That is also
+	// why this door is not routed into the failed-start cleanup backlog:
+	// reapFailedRuntimeWorkspaceLocked stops AND DELETES, and a delete takes
+	// the disk, the history and the unfinished capture with it.
+	{
+		reason:     workspaceRepositoryAdvertisementUnverifiedMessage,
+		confirmed:  workspaceRepositoryAdvertisementStoppedMessage,
+		action:     "recover-provision",
+		metric:     "recover-provision-stop",
+		logMessage: "repository advertisement stop retry failed",
+	},
+}
+
+// workspaceRepositoryAdvertisementStoppedMessage is the advertisement door's
+// receipt. Same shape as the release door's: the original verdict stays
+// legible, the row stays `failed`, the placement stays bound, and the disk,
+// history and capture are still retained.
+const workspaceRepositoryAdvertisementStoppedMessage = workspaceRepositoryAdvertisementUnverifiedMessage + "; guest stop confirmed"
+
+// retainedGuestStopPending reports the door whose cohort this row is in, if
+// any. Every conjunct is load-bearing, and NONE of them is an age, a label or
+// a heuristic:
+//
+//   - status `failed` with a REGISTERED sentence: the exact writer, not the
+//     code class.
+//   - failure_code `conflict`: the same sentence under another code was not
+//     written by that door.
+//   - an empty provisioning_stage: the cleanup contract never ran, so no
+//     other reconciler owns the row (start_cleanup_pending has its own, and
+//     start_cleanup_complete is already reaped).
+//   - a bound vm_id: there is a placement to stop. An unbound row has no
+//     guest and no reservation, so there is nothing to re-drive.
+func retainedGuestStopPending(row db.Workspace) (retainedGuestStopDoor, bool) {
+	if row.Status != "failed" ||
+		strings.TrimSpace(row.ProvisioningStage) != "" ||
+		strings.TrimSpace(row.VmID) == "" ||
+		!row.FailureCode.Valid ||
+		strings.TrimSpace(row.FailureCode.String) != string(pkgerrors.CodeConflict) ||
+		!row.FailureMessage.Valid {
+		return retainedGuestStopDoor{}, false
+	}
+	reason := strings.TrimSpace(row.FailureMessage.String)
+	for _, door := range retainedGuestStopDoors {
+		if reason == door.reason {
+			return door, true
+		}
+	}
+	return retainedGuestStopDoor{}, false
 }
 
 // reconcileInterruptedReleaseStop finishes the release the verdict above
@@ -449,7 +551,13 @@ func interruptedReleaseStopPending(row db.Workspace) bool {
 //
 // The returned outcome is the attempt's diagnostic; see
 // interruptedReleaseStopOutcome for why the error itself is never logged.
+// reconcileInterruptedReleaseStop keeps the release door's own name for its
+// recovery. It is the generalized attempt below, bound to that one door.
 func (s *WorkspaceService) reconcileInterruptedReleaseStop(ctx context.Context, workspace db.Workspace) (interruptedReleaseStopOutcome, error) {
+	return s.reconcileRetainedGuestStop(ctx, workspace, retainedGuestStopDoors[0])
+}
+
+func (s *WorkspaceService) reconcileRetainedGuestStop(ctx context.Context, workspace db.Workspace, door retainedGuestStopDoor) (interruptedReleaseStopOutcome, error) {
 	outcome := interruptedReleaseStopOutcome{stage: interruptedReleaseStageClaim}
 	if s.runtime == nil {
 		return outcome.failed(errors.New("workspace release runtime unavailable"))
@@ -464,8 +572,15 @@ func (s *WorkspaceService) reconcileInterruptedReleaseStop(ctx context.Context, 
 		unlock := s.lockRuntimeWorkspace(current.ID)
 		defer unlock()
 		current, err := s.q.GetWorkspace(ctx, current.ID)
-		if err != nil || !interruptedReleaseStopPending(current) {
+		if err != nil {
 			return current, err
+		}
+		// The door is re-derived from the row this attempt holds, and must
+		// still be the one it was listed for. A row whose recorded sentence
+		// moved to another door — or out of the cohort entirely — belongs to
+		// whatever wrote it, not to this attempt.
+		if live, ok := retainedGuestStopPending(current); !ok || live.reason != door.reason {
+			return current, nil
 		}
 		// A different placement than the one this attempt was listed for means
 		// a provisioner bound a new guest after that read. It owns the row, and
@@ -476,7 +591,7 @@ func (s *WorkspaceService) reconcileInterruptedReleaseStop(ctx context.Context, 
 		}
 		outcome.stage = interruptedReleaseStageStop
 		stop, cancelStop := context.WithTimeout(ctx, workspaceReleaseStopTimeout)
-		err = s.stopRuntimeWorkspaceLocked(stop, current, current.UserID, "recover-release")
+		err = s.stopRuntimeWorkspaceLocked(stop, current, current.UserID, door.action)
 		cancelStop()
 		if err != nil {
 			return current, err
@@ -490,7 +605,7 @@ func (s *WorkspaceService) reconcileInterruptedReleaseStop(ctx context.Context, 
 		// a stop, it does not re-decide why the release failed.
 		updated, err := conditional.FailWorkspaceIfUnchanged(ctx, db.FailWorkspaceIfUnchangedParams{
 			FailureCode:       strings.TrimSpace(current.FailureCode.String),
-			FailureMessage:    workspaceReleaseInterruptedStoppedMessage,
+			FailureMessage:    door.confirmed,
 			ID:                current.ID,
 			ExpectedStatus:    current.Status,
 			ExpectedVmID:      current.VmID,
@@ -503,9 +618,9 @@ func (s *WorkspaceService) reconcileInterruptedReleaseStop(ctx context.Context, 
 			// WithCause, not string concatenation: the store's own sentence
 			// can carry a DSN, a host or a constraint's recorded values, and
 			// this verdict's Message is published.
-			return current, pkgerrors.Internal("record interrupted release stop").WithCause(err)
+			return current, pkgerrors.Internal("record retained guest stop").WithCause(err)
 		}
-		s.observeWorkspaceLifecycle("recover-release-stop", nil)
+		s.observeWorkspaceLifecycle(door.metric, nil)
 		return updated, nil
 	})
 	if err != nil {
