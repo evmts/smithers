@@ -645,19 +645,36 @@ export const make = (
      * The waiting row is the park: it is written in the same transaction as
      * the suspended transition and cleared by the claim that ends it, so a
      * parent that has one is parked and a parent mid-round has none. It is
-     * read only for a host that records, so a composition without one pays
-     * nothing per child settlement.
+     * Persist the wake even without a host recorder: the parent can belong to
+     * another process whose suspended execution discovers it by polling.
      */
-    const recordParentResume = (parentExecutionId: string): Effect.Effect<void> =>
-      dependencies.requestResume === undefined ? Effect.void : Effect.flatMap(
-        engineState.waiting(parentExecutionId),
-        (waiting) =>
-          recordResume(
-            parentExecutionId,
-            Option.isSome(waiting) && waiting.value.reason !== "quarantine",
-            "parent"
-          )
-      )
+    const parentWakePrefix = "@smthrs/engine/parent-settled/"
+    const recordParentResume = (parentExecutionId: string, childExecutionId: string): Effect.Effect<void> =>
+      Effect.gen(function*() {
+        const parent = yield* store.get(parentExecutionId).pipe(
+          Effect.catch((error) => error.code === "not_found_row" ? Effect.succeed(undefined) : Effect.die(error))
+        )
+        if (
+          parent === undefined || parent.status === "completed" || parent.status === "failed" ||
+          parent.status === "cancelled"
+        ) return
+        const state = yield* decodeState(parent.stateJson)
+        const waiting = yield* engineState.waiting(parentExecutionId)
+        if (Option.isSome(waiting) && waiting.value.reason === "quarantine") return
+        // Persist before publishing: a remote parent's poll must see this wake,
+        // including when its current round has not finished parking yet.
+        yield* transactState(Effect.gen(function*() {
+          yield* engineState.completeDeferred({
+            flowName: state.flowName,
+            executionId: parentExecutionId,
+            deferredName: parentWakePrefix + childExecutionId,
+            exit: { _tag: "Success", value: null },
+            completedAtMs: yield* Clock.currentTimeMillis
+          })
+          yield* emitDecision(parentExecutionId, { decision: "wake-scheduled", reason: "parent" })
+        })).pipe(Effect.orDie)
+        yield* recordResume(parentExecutionId, Option.isSome(waiting), "parent")
+      })
 
     /**
      * Run decisions are lifecycle records: they take the journal's durable
@@ -1935,7 +1952,7 @@ export const make = (
         if (parents.size === 0) return
         const activeCoordinator = yield* Deferred.await(coordinatorDeferred)
         for (const parentId of parents) {
-          yield* recordParentResume(parentId)
+          yield* recordParentResume(parentId, executionId)
           yield* activeCoordinator.wake(parentId)
           yield* wakeBus.wake(parentId)
         }
@@ -2114,6 +2131,11 @@ export const make = (
             return
           }
           yield* Effect.logDebug("run activated", { flowName: state.flowName })
+          for (const wake of yield* engineState.completedDeferreds(state.flowName, executionId)) {
+            if (wake.deferredName.startsWith(parentWakePrefix)) {
+              yield* engineState.consumeDeferred(wake, yield* Clock.currentTimeMillis)
+            }
+          }
 
           const activeState = withoutResult(state)
           // The activation transition carries the cancel guard: a run whose
@@ -3223,22 +3245,24 @@ export const make = (
         )
       ),
       resume: Effect.fn("FlowEngine.resume")((flow, executionId, options) =>
-        Effect.annotateCurrentSpan({ executionId, flow: flow._tag }).pipe(
-          // A resume drives the run under its admitted authority, so a caller
-          // whose authority does not cover it may not wake or join it, and a
-          // request that names no admitted run of this flow drives nothing.
-          Effect.andThen(authorizeResume(flow, executionId)),
-          Effect.flatMap((authorized) =>
-            authorized
-              ? Effect.andThen(
-                options?.poll === true
-                  ? Effect.void
-                  : scheduleResume(flow._tag, executionId, options?.delegated === true ? "delegated" : "operator"),
-                coordinator.run(executionId)
-              )
-              : Effect.void
-          )
-        )
+        Effect.gen(function*() {
+          yield* Effect.annotateCurrentSpan({ executionId, flow: flow._tag })
+          if (!(yield* authorizeResume(flow, executionId))) return
+          if (options?.poll === true) {
+            const row = yield* store.get(executionId).pipe(Effect.orDie)
+            if (row.status === "suspended" && row.cancelRequestedAtMs === null) {
+              const waiting = yield* engineState.waiting(executionId)
+              if (Option.isSome(waiting) && waiting.value.reason === "quarantine") return
+              if (
+                (Option.isNone(waiting) || waiting.value.reason !== "released") &&
+                !(yield* engineState.hasDueWake(executionId, yield* Clock.currentTimeMillis))
+              ) return
+            }
+          } else {
+            yield* scheduleResume(flow._tag, executionId, options?.delegated === true ? "delegated" : "operator")
+          }
+          yield* coordinator.run(executionId)
+        })
       ),
       scheduleResume,
       active: Effect.fn("FlowEngine.active")(() => coordinator.active)(),

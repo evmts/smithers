@@ -55,6 +55,37 @@ const awaitExit = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<Exit.
 
 export const describeContract = (harness: Harness): void => {
   describe(`DurableEngineState contract (${harness.label})`, () => {
+    it.effect("finds only unconsumed completions and due pending clocks for one execution", () =>
+      harness.run((context) =>
+        Effect.gen(function*() {
+          const state = context.state
+          yield* context.seedRun("wake-query", owner)
+          yield* context.seedRun("other-wake", owner)
+          expect(yield* state.hasDueWake("wake-query", 100)).toBe(false)
+          const address = { flowName: "query", executionId: "other-wake", deferredName: "answer" }
+          yield* state.completeDeferred({ ...address, exit: { _tag: "Success", value: null }, completedAtMs: 0 })
+          expect(yield* state.hasDueWake("wake-query", 100)).toBe(false)
+          const own = { ...address, executionId: "wake-query" }
+          yield* state.completeDeferred({ ...own, exit: { _tag: "Success", value: null }, completedAtMs: 0 })
+          expect(yield* state.hasDueWake("wake-query", 100)).toBe(true)
+          yield* state.consumeDeferred(own, 100)
+          expect(yield* state.hasDueWake("wake-query", 100)).toBe(false)
+          const clock = {
+            flowName: "query",
+            executionId: "wake-query",
+            clockName: "clock",
+            deferredName: "timer",
+            dueAtMs: 101,
+            completedAtMs: null
+          }
+          yield* state.scheduleClock(clock, owner)
+          expect(yield* state.hasDueWake("wake-query", 100)).toBe(false)
+          expect(yield* state.hasDueWake("wake-query", 101)).toBe(true)
+          yield* state.completeClock(clock, 101)
+          expect(yield* state.hasDueWake("wake-query", 102)).toBe(false)
+        })
+      ))
+
     it.effect("closes every pending run clock in stable flow/name order and preserves other runs", () =>
       Effect.gen(function*() {
         const result = yield* harness.run((context) =>

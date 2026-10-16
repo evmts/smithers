@@ -54,11 +54,11 @@ it.effect("recovers two ready timers with one completion query per flow and leav
       const queries: Array<{ readonly at: number; readonly ids: ReadonlyArray<string> }> = []
       const observed: DurableEngineState.Service = {
         ...state,
-        completedDeferreds: (flowName) =>
+        completedDeferreds: (flowName, executionId) =>
           Effect.gen(function*() {
             const at = yield* Clock.currentTimeMillis
-            const rows = yield* state.completedDeferreds(flowName)
-            queries.push({ at, ids: rows.map((row) => row.executionId) })
+            const rows = yield* state.completedDeferreds(flowName, executionId)
+            if (executionId === undefined) queries.push({ at, ids: rows.map((row) => row.executionId) })
             return rows
           })
       }
@@ -134,10 +134,10 @@ it.effect("skips deleted, settled and unregistered timer cursors while recoverin
       const completionQueries: Array<string> = []
       const observed: DurableEngineState.Service = {
         ...state,
-        completedDeferreds: (flowName) =>
-          state.completedDeferreds(flowName).pipe(Effect.tap(() =>
+        completedDeferreds: (flowName, executionId) =>
+          state.completedDeferreds(flowName, executionId).pipe(Effect.tap(() =>
             Effect.sync(() => {
-              completionQueries.push(flowName)
+              if (executionId === undefined) completionQueries.push(flowName)
             })
           )),
         waitingRuns: (filter) =>
@@ -205,5 +205,115 @@ it.effect("skips deleted, settled and unregistered timer cursors while recoverin
           (entry.payload as { status?: string }).status === "completed"
         )).toHaveLength(1)
       }
+    }).pipe(Effect.scoped, Effect.provide(stores))
+  ))
+
+it.effect("polling leaves an idle approval parked and drives only a durable wake", () =>
+  withCrypto(
+    Effect.gen(function*() {
+      const runs = yield* RunStore.RunStore
+      const state = yield* DurableEngineState.DurableEngineState
+      const journal = yield* Journal.Journal
+      yield* seed("idle-approval", "absent")
+      const sql = yield* SqlClient
+      yield* sql`UPDATE flows_runs SET waiting_reason = 'approval', waiting_wake_at_ms = NULL WHERE run_id = 'idle-approval'`
+      const driver = yield* RunDriver.make({
+        owner: { hostId: "idle-poller", pid: 2, nonce: "poll" },
+        journalSource: "idle-poll",
+        isAlive: () => Effect.succeed(false),
+        engine: Effect.succeed({} as FlowRuntime.FlowRuntime["Service"])
+      })
+      let executions = 0
+      yield* driver.register(flow, () =>
+        Effect.sync(() => {
+          executions++
+          return "done"
+        }))
+      for (let poll = 0; poll < 5; poll++) {
+        yield* driver.resume(flow, "idle-approval", { poll: true })
+        yield* TestClock.adjust("1 second")
+      }
+      expect(executions).toBe(0)
+      expect((yield* runs.get("idle-approval")).status).toBe("suspended")
+      expect(Option.getOrThrow(yield* state.waiting("idle-approval")).reason).toBe("approval")
+      yield* journal.flush
+      const page = yield* journal.entries({ runId: "idle-approval" as never, limit: 100 })
+      expect(
+        page.entries.filter((entry) => (entry.payload as { decision?: string }).decision === "claimed-and-activated")
+      ).toHaveLength(0)
+      yield* state.completeDeferred({
+        flowName: flow._tag,
+        executionId: "idle-approval",
+        deferredName: "answer",
+        exit: { _tag: "Success", value: null },
+        completedAtMs: 5000
+      })
+      yield* driver.resume(flow, "idle-approval", { poll: true })
+      expect(executions).toBe(1)
+      expect((yield* runs.get("idle-approval")).status).toBe("completed")
+    }).pipe(Effect.scoped, Effect.provide(stores))
+  ))
+
+it.effect("persists a child's wake for a parent registered only on another driver", () =>
+  withCrypto(
+    Effect.gen(function*() {
+      const runs = yield* RunStore.RunStore
+      const state = yield* DurableEngineState.DurableEngineState
+      const child = Flow.make("ReadyTimerSweep/Child", { payload: {}, success: Schema.String, body: opaqueHandlerBody })
+      yield* seed("remote-parent", "absent")
+      const sql = yield* SqlClient
+      yield* sql`UPDATE flows_runs SET waiting_reason = 'event', waiting_wake_at_ms = NULL WHERE run_id = 'remote-parent'`
+      yield* seed("remote-child", "absent", child._tag)
+      yield* state.recordRunParent("remote-child", "remote-parent")
+      const parentDriver = yield* RunDriver.make({
+        owner: { hostId: "parent-host", pid: 2, nonce: "parent" },
+        journalSource: "parent-host",
+        isAlive: () => Effect.succeed(false),
+        engine: Effect.succeed({} as FlowRuntime.FlowRuntime["Service"])
+      })
+      const childDriver = yield* RunDriver.make({
+        owner: { hostId: "child-host", pid: 3, nonce: "child" },
+        journalSource: "child-host",
+        isAlive: () => Effect.succeed(false),
+        engine: Effect.succeed({} as FlowRuntime.FlowRuntime["Service"])
+      })
+      yield* parentDriver.register(flow, () => Effect.succeed("parent-done"))
+      yield* childDriver.register(child, () => Effect.succeed("child-done"))
+      yield* childDriver.resume(child, "remote-child")
+      expect((yield* runs.get("remote-parent")).status).toBe("suspended")
+      expect(yield* state.hasDueWake("remote-parent", yield* Clock.currentTimeMillis)).toBe(true)
+      yield* parentDriver.resume(flow, "remote-parent", { poll: true })
+      expect((yield* runs.get("remote-parent")).status).toBe("completed")
+      expect(yield* state.hasDueWake("remote-parent", yield* Clock.currentTimeMillis)).toBe(false)
+    }).pipe(Effect.scoped, Effect.provide(stores))
+  ))
+
+it.effect("polling after a restart preserves an approval wait and honors cancellation", () =>
+  withCrypto(
+    Effect.gen(function*() {
+      const runs = yield* RunStore.RunStore
+      const state = yield* DurableEngineState.DurableEngineState
+      yield* seed("restart-approval", "absent")
+      const sql = yield* SqlClient
+      yield* sql`UPDATE flows_runs SET waiting_reason = 'approval', waiting_wake_at_ms = NULL WHERE run_id = 'restart-approval'`
+      let executions = 0
+      const restarted = yield* RunDriver.make({
+        owner: { hostId: "restarted", pid: 4, nonce: "restart" },
+        journalSource: "restarted",
+        isAlive: () => Effect.succeed(false),
+        engine: Effect.succeed({} as FlowRuntime.FlowRuntime["Service"])
+      })
+      yield* restarted.register(flow, () =>
+        Effect.sync(() => {
+          executions++
+          return "wrong"
+        }))
+      yield* restarted.resume(flow, "restart-approval", { poll: true })
+      expect(executions).toBe(0)
+      expect(Option.getOrThrow(yield* state.waiting("restart-approval")).reason).toBe("approval")
+      yield* runs.requestCancel("restart-approval", yield* Clock.currentTimeMillis)
+      yield* restarted.resume(flow, "restart-approval", { poll: true })
+      expect((yield* runs.get("restart-approval")).status).toBe("cancelled")
+      expect(executions).toBe(0)
     }).pipe(Effect.scoped, Effect.provide(stores))
   ))

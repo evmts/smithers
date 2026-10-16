@@ -517,6 +517,8 @@ export interface Service {
     readonly executionId?: string
     readonly flowName?: string
   }) => Effect.Effect<ReadonlyArray<ClockRow>>
+  /** Whether one execution has an unconsumed completion or a due clock. */
+  readonly hasDueWake: (executionId: string, nowMs: number) => Effect.Effect<boolean>
   /**
    * Lists unconsumed completed deferred addresses for registration-time wake recovery.
    * Observed results remain readable through `deferred` but cannot re-drive a
@@ -528,7 +530,8 @@ export interface Service {
    * that can wake nothing.
    */
   readonly completedDeferreds: (
-    flowName: string
+    flowName: string,
+    executionId?: string
   ) => Effect.Effect<ReadonlyArray<DeferredAddress>>
   /**
    * Records the waiting-reason payload for a parked run, fenced to the
@@ -1406,9 +1409,19 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
       )
   )
 
+  const hasDueWake: Service["hasDueWake"] = (executionId, nowMs) =>
+    sql`
+      SELECT 1 FROM flows_deferred_completions
+      WHERE execution_id = ${executionId} AND consumed_at_ms IS NULL
+      UNION ALL
+      SELECT 1 FROM flows_clock_deadlines
+      WHERE execution_id = ${executionId} AND completed_at_ms IS NULL AND due_at_ms <= ${nowMs}
+      LIMIT 1
+    `.pipe(Effect.orDie, Effect.map((rows) => rows.length > 0))
+
   const completedDeferreds: Service["completedDeferreds"] = Effect.fn(
     "DurableEngineState.completedDeferreds"
-  )((flowName) =>
+  )((flowName, executionId) =>
     sql<Record<string, unknown>>`
       SELECT
         flow_name AS "flowName",
@@ -1416,6 +1429,7 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
         deferred_name AS "deferredName"
       FROM flows_deferred_completions
       WHERE flow_name = ${flowName}
+        AND ${executionId === undefined ? sql`1 = 1` : sql`execution_id = ${executionId}`}
         AND consumed_at_ms IS NULL
         AND EXISTS (
           SELECT 1 FROM flows_runs
@@ -1982,6 +1996,7 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     dueClocks,
     pendingClocks,
     completedDeferreds,
+    hasDueWake,
     park,
     wake,
     waiting,
@@ -2328,11 +2343,20 @@ export const makeMemory = (options: MemoryOptions = {}): Service => {
         (rows) => Effect.forEach(rows, snapshotClock)
       )
     ),
-    completedDeferreds: Effect.fn("DurableEngineState.completedDeferreds")((flowName) =>
+    hasDueWake: (executionId, nowMs) =>
+      Effect.sync(() =>
+        Array.from(deferreds.values()).some((row) =>
+          row.executionId === executionId && !consumedDeferreds.has(deferredKey(row))
+        ) || Array.from(clocks.values()).some((row) =>
+          row.executionId === executionId && row.completedAtMs === null && row.dueAtMs <= nowMs
+        )
+      ),
+    completedDeferreds: Effect.fn("DurableEngineState.completedDeferreds")((flowName, executionId) =>
       Effect.sync(() =>
         Array.from(deferreds.values())
           .filter((row) =>
-            row.flowName === flowName && isLive(row.executionId) && !consumedDeferreds.has(deferredKey(row))
+            row.flowName === flowName && (executionId === undefined || row.executionId === executionId) &&
+            isLive(row.executionId) && !consumedDeferreds.has(deferredKey(row))
           )
           .map(({ flowName, executionId, deferredName }) => ({
             flowName,
@@ -2623,7 +2647,8 @@ export const makeMemory = (options: MemoryOptions = {}): Service => {
     dueClocks: (nowMs) => guard(unguarded.dueClocks(nowMs)),
     completeRunClocks: (executionId, completedAtMs) => guard(unguarded.completeRunClocks(executionId, completedAtMs)),
     pendingClocks: (scope) => guard(unguarded.pendingClocks(scope)),
-    completedDeferreds: (flowName) => guard(unguarded.completedDeferreds(flowName)),
+    hasDueWake: (executionId, nowMs) => guard(unguarded.hasDueWake(executionId, nowMs)),
+    completedDeferreds: (flowName, executionId) => guard(unguarded.completedDeferreds(flowName, executionId)),
     park: (runId, waiting, owner) => guard(unguarded.park(runId, waiting, owner)),
     wake: (runId) => guard(unguarded.wake(runId)),
     waiting: (runId) => guard(unguarded.waiting(runId)),
