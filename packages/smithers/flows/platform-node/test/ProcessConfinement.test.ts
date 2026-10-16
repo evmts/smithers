@@ -2,6 +2,7 @@
 import * as KernelConfinement from "@smthrs/kernel/ProcessConfinement"
 import { Deferred, Effect, Fiber, Logger, type Scope, Stream } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
+import { execFileSync } from "node:child_process"
 import NodeFs from "node:fs"
 import { syncBuiltinESMExports } from "node:module"
 import * as NodeOs from "node:os"
@@ -9,6 +10,38 @@ import * as NodePath from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import * as ProcessConfinement from "../src/ProcessConfinement.ts"
 import * as ProcessSandbox from "../src/ProcessSandbox.ts"
+
+/** Inspect the host's effective permission representation, retaining the privacy gate. */
+const assertPrivateFile = (file: string) => {
+  if (process.platform !== "win32") {
+    expect(NodeFs.statSync(file).mode & 0o777).toBe(0o600)
+    return
+  }
+  // Get-Acl exposes both explicit and inherited ACEs; do not infer NTFS
+  // privacy from the DOS read-only bit returned by Node's stat.mode.
+  execFileSync("powershell.exe", [
+    "-NoProfile",
+    "-NonInteractive",
+    "-Command",
+    `
+    $ErrorActionPreference = 'Stop'
+    $sidType = [System.Security.Principal.SecurityIdentifier]
+    $current = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    $trusted = @($current, 'S-1-5-18', 'S-1-5-32-544')
+    $acl = Get-Acl -LiteralPath $env:SMITHERS_TEST_PRIVATE_FILE
+    if ($trusted -notcontains $acl.GetOwner($sidType).Value) { throw 'Unexpected file owner' }
+    $rules = @($acl.GetAccessRules($true, $true, $sidType) | Where-Object { $_.AccessControlType -eq 'Allow' })
+    if ($rules.Count -eq 0) { throw 'Missing private access rules' }
+    foreach ($rule in $rules) {
+      if ($trusted -notcontains $rule.IdentityReference.Value) { throw 'File grants access outside its owner, SYSTEM and administrators' }
+    }
+  `
+  ], {
+    env: { ...process.env, SMITHERS_TEST_PRIVATE_FILE: file },
+    timeout: 10_000,
+    stdio: "pipe"
+  })
+}
 
 const fixtures: Array<string> = []
 const fixture = () => {
@@ -39,6 +72,19 @@ afterEach(() => {
 const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope>) => Effect.runPromise(Effect.scoped(effect))
 
 describe("native ProcessConfinement", () => {
+  it("rejects a private-file assertion after granting broad read access", () => {
+    const f = fixture()
+    const file = NodePath.join(f.base, "private fixture.txt")
+    NodeFs.writeFileSync(file, "private fixture", { mode: 0o600 })
+    assertPrivateFile(file)
+    if (process.platform === "win32") {
+      execFileSync("icacls", [file, "/grant", "*S-1-1-0:(R)"], { stdio: "pipe", timeout: 10_000 })
+    } else {
+      NodeFs.chmodSync(file, 0o644)
+    }
+    expect(() => assertPrivateFile(file)).toThrow()
+  })
+
   it.each([undefined, "refuse"] as const)(
     "refuses missing mechanisms with unavailable=%s before any spawn",
     async (unavailable) => {
@@ -450,7 +496,7 @@ describe("Linux native network seccomp", () => {
           expect(wrapped.options.additionalFds?.fd5).toBeUndefined()
           const filter = wrapped.args[3]!
           const bytes = NodeFs.readFileSync(filter)
-          expect(NodeFs.statSync(filter).mode & 0o777).toBe(0o600)
+          assertPrivateFile(filter)
           expect(evaluateFilter(bytes, audit, syscall, 1)).toBe(0x00050001)
           for (const domain of [2, 10, 40]) expect(evaluateFilter(bytes, audit, syscall, domain)).toBe(0x00050001)
           const socketpair = architecture === "x64" ? 53 : 199
@@ -580,7 +626,7 @@ describe("target environment isolation", () => {
         expect(wrapped.args.some((arg) => arg.includes(value))).toBe(false)
       }
       const script = wrapped.args.find((arg) => NodePath.basename(arg) === "environment.sh")!
-      expect(NodeFs.statSync(script).mode & 0o777).toBe(0o600)
+      assertPrivateFile(script)
       const contents = NodeFs.readFileSync(script, "utf8")
       expect(contents).toContain("export LD_PRELOAD='/synthetic/fixture.so'")
       expect(contents).toContain("export KEEP='quoted '\\'' value")

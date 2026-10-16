@@ -1843,13 +1843,24 @@ describe("sandbox refusal and declaration boundaries", () => {
       Object.defineProperty(process, "getgid", { configurable: true, ...gid, value: undefined })
       const facts = ProcessSandbox.host({ PATH: base })
       expect(facts.executable("fixture")).toBe(executable)
+      expect(facts.executable(executable)).toBe(executable)
+      expect(facts.executable(NodePath.join(base, "missing.EXE"))).toBeUndefined()
       expect(facts.executable(base)).toBeUndefined()
       expect(facts.uid).toBeUndefined()
       expect(facts.gid).toBeUndefined()
+      Object.defineProperty(process, "getuid", { configurable: true, value: () => 501 })
+      Object.defineProperty(process, "getgid", { configurable: true, value: () => 20 })
+      const identified = ProcessSandbox.host({})
+      expect(identified.uid).toBe(501)
+      expect(identified.gid).toBe(20)
       expect(ProcessSandbox.host({ PATH: base, PATHEXT: ".EXE" }).executable("fixture")).toBe(executable)
       expect(ProcessSandbox.host({}).executable("fixture")).toBeUndefined()
       expect(ProcessSandbox.environment(planned(linux), {}, "/home/dev")["COREPACK_HOME"]).toBe(
         "/home/dev/AppData/Local/node/corepack"
+      )
+      Object.defineProperty(process, "platform", { ...descriptor, value: "linux" })
+      expect(ProcessSandbox.environment(planned(linux), {}, "/home/dev")["COREPACK_HOME"]).toBe(
+        "/home/dev/.cache/node/corepack"
       )
     } finally {
       Object.defineProperty(process, "platform", descriptor)
