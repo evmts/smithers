@@ -790,6 +790,69 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/AccessError'}
+  /api/user/github-pull-review-requests/{id}:
+    get:
+      summary: Read a GitHub pull request review request
+      description: >-
+        What became of one of the caller's own pull request reviews. A
+        completed request names the review GitHub itself answered on the
+        readback, bound to the submitted text, head and verdict under this
+        credential's own GitHub user id. An uncertain one names no review,
+        records the attempt and is never retried: the pull request may already
+        carry the review, so it is re-read rather than submitted again. The
+        answer survives a browser reload, because the operation lives in the
+        durable store rather than in the page.
+      operationId: get_api_user_github_pull_review_requests_id
+      tags:
+        - User
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 128}
+      x-required-token-scope: read:repository
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: The request's durable state
+          headers:
+            Cache-Control:
+              description: Always `private, no-store`.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [operation_id, state, verified]
+                properties:
+                  operation_id: {type: string}
+                  state: {type: string, enum: [accepted, dispatching, running, waiting, completed, failed, cancelled, uncertain]}
+                  stage: {type: string, enum: [resolve-actor, fence, submit, readback]}
+                  code:
+                    type: string
+                    enum: [reauthorize_github, github_permission, actor_changed, review_head_moved, pull_request_not_open, pull_request_mismatch, github_rejected_review, rate_limited, invalid_request, github_review_uncertain, readback_mismatch]
+                  review_id: {type: integer, format: int64}
+                  review_state: {type: string, enum: [APPROVED, CHANGES_REQUESTED, COMMENTED]}
+                  commit_id: {type: string}
+                  verified: {type: boolean}
+                  external_attempt: {type: integer}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          description: The review store is not wired
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessError'}
   /api/user/github-repos:
     get:
       summary: GET /api/user/github-repos
@@ -1171,19 +1234,23 @@ paths:
       description: >-
         Requires write:repository and a user credential that is not
         repository-restricted; a session write also carries the browser CSRF
-        token. The review is submitted to GitHub with the signed-in person's
-        own GitHub credential, so GitHub attributes it to that person. The
-        request names no actor: the catalog command (github.account-review) is
-        person-only and agent never, so an agent's review analysis can return
-        findings but can never submit someone's verdict here. commit_id is the
-        head commit the person reviewed; the request is refused with 409 if the
-        pull request has moved to another head, is no longer open, or is not
-        the named number. The review is read back from GitHub before this door
-        answers, and verified is true only for a review that readback matched
-        at that head. A lost acknowledgement is reconciled by reading, never by
-        resending; when reading cannot settle it the answer is the
-        github_unavailable failure and the pull request may already carry the
-        review.
+        token. Admits one durable review operation and answers without waiting
+        on GitHub. The review is submitted ONCE, on the shared worker, with the
+        signed-in person's own GitHub credential, so GitHub attributes it to
+        that person. The request names no actor: the catalog command
+        (github.account-review) is person-only and agent never, so an agent's
+        review analysis can return findings but can never submit someone's
+        verdict here. The idempotency key is derived from that actor and this
+        intent (repository, number, verdict, text and reviewed head), so a
+        repeated request joins the one operation instead of recording a second
+        review. commit_id is the head commit the person reviewed; the worker
+        refuses before any write if the pull request has moved to another head,
+        is no longer open, or is not the named number. What became of the
+        operation is read at /api/user/github-pull-review-requests/{id}: only a
+        completed operation names a review, and it names one only because
+        GitHub's own answer carried this intent's text, head and verdict under
+        this credential's own GitHub user id. An ambiguous reply leaves the
+        operation uncertain and is never blindly retried.
       operationId: create_api_user_github_repos_owner_repo_pulls_number_reviews
       tags:
         - User
@@ -1237,8 +1304,10 @@ paths:
                   description: The head commit the person reviewed, a 40-character SHA.
                   pattern: '^[0-9a-fA-F]{40}$'
       responses:
-        '201':
-          description: The review GitHub recorded, as read back.
+        '202':
+          description: >-
+            Durable admission; the review reaches GitHub only once the
+            operation runs.
           headers:
             Cache-Control:
               description: Always `private, no-store`.
@@ -1248,25 +1317,13 @@ paths:
             application/json:
               schema:
                 type: object
-                required:
-                  - review_id
-                  - state
-                  - commit_id
-                  - verified
+                required: [operationId, requestId, kind, state, acceptedAt]
                 properties:
-                  review_id:
-                    type: integer
-                    format: int64
-                  state:
-                    type: string
-                    enum:
-                      - APPROVED
-                      - CHANGES_REQUESTED
-                      - COMMENTED
-                  commit_id:
-                    type: string
-                  verified:
-                    type: boolean
+                  operationId: {type: string}
+                  requestId: {type: string}
+                  kind: {type: string}
+                  state: {type: string, enum: [accepted, dispatching, running, waiting, completed, failed, cancelled, uncertain]}
+                  acceptedAt: {type: string, format: date-time}
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1283,6 +1340,11 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '500':
           $ref: '#/components/responses/InternalError'
+        '503':
+          description: The review store is not wired
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessError'}
   /api/user/github-repos/{owner}/{repo}/pulls/{number}/diff:
     get:
       summary: GET /api/user/github-repos/{owner}/{repo}/pulls/{number}/diff

@@ -1835,10 +1835,13 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 	gitHubRepoListHandler := &routes.GitHubRepoListHandler{Service: gitHubRepoListService}
 	gitHubUserReposHandler := &routes.GitHubUserReposHandler{Service: gitHubUserReposService}
-	// The hosted composition's real GitHub repository create runs as a durable
-	// operation on the shared store. An install serves no such door, so it
-	// wires no worker for it either.
-	if gitHubUserReposService != nil && !config.IsSingleOwner(cfg.Auth) {
+	// The account's own external GitHub writes run as durable operations on
+	// the shared store. The repository create door is hosted-only, but the
+	// person's pull request review is served in BOTH compositions, so the
+	// store is wired in both: an install that mounts the review door must own
+	// the operation it admits, not answer unavailable or write GitHub inline
+	// from a request.
+	if gitHubUserReposService != nil {
 		gitHubUserReposService.SetGitHubRepoCreateJobs(commandJobs)
 	}
 	gitHubImportHandler := &routes.GitHubImportHandler{Service: gitHubImportService, Metrics: smithersMetrics}
@@ -2616,10 +2619,23 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 			}
 		})
 	}
-	if gitHubUserReposService != nil && !config.IsSingleOwner(cfg.Auth) && options.topology.workers() {
+	// The account's own external GitHub writes — one real repository create
+	// and one person's pull request review — are durable product jobs on the
+	// SAME store, claimed by ONE worker that runs in every composition that
+	// owns product background jobs (the install's and the hosted backend's),
+	// exactly as the issue-write worker above does. A composition that mounts
+	// only one of the two doors simply never sees the other's operations.
+	if gitHubUserReposService != nil && options.topology.workers() {
 		launchWorker(func() {
-			if err := commandJobs.RunWorker(workerCtx, jobs.WorkerConfig{WorkerID: "github-repo-create-" + uuid.NewString(), Capacity: 1, Lease: time.Minute, PollInterval: 250 * time.Millisecond, RetryDelay: time.Second, Operations: []string{services.GitHubUserRepoCreateOperation}}, gitHubUserReposService.HandleGitHubUserRepoCreate); err != nil && workerCtx.Err() == nil {
-				slog.Error("GitHub repository create worker stopped", "error", err)
+			operations := []string{services.GitHubUserRepoCreateOperation, services.GitHubUserPullReviewOperation}
+			handle := func(ctx context.Context, lease *jobs.Lease) error {
+				if lease.Claim().Operation == services.GitHubUserPullReviewOperation {
+					return gitHubUserReposService.HandleGitHubUserPullReview(ctx, lease)
+				}
+				return gitHubUserReposService.HandleGitHubUserRepoCreate(ctx, lease)
+			}
+			if err := commandJobs.RunWorker(workerCtx, jobs.WorkerConfig{WorkerID: "github-account-write-" + uuid.NewString(), Capacity: 1, Lease: time.Minute, PollInterval: 250 * time.Millisecond, RetryDelay: time.Second, Operations: operations}, handle); err != nil && workerCtx.Err() == nil {
+				slog.Error("GitHub account write worker stopped", "error", err)
 			}
 		})
 	}

@@ -1531,6 +1531,9 @@ const FIXTURES: Record<
     },
     full: {
       sourceRepo: "smithersai/smithers",
+      // The head this card was read at: the head a verdict typed against it
+      // names (#4038).
+      headCommit: "0d1dc5a1a4f0bd02a9e5ba9a1f86e7f1a3b4c5d6",
       tab: "files",
       repo: "smithersai/smithers",
       number: 12,

@@ -45,11 +45,10 @@ var hostedIssueOperationCommands = map[string]string{
 	HostedIssueCloseOperation:       "issues.close",
 	HostedIssueReopenOperation:      "issues.reopen",
 	HostedIssueCommentEditOperation: "issue.comment",
-	// A declared transition is an issue LABEL write, which the product
-	// already authorizes as labels.create (middleware/auth.go classifies
-	// POST /api/repos/{o}/{r}/issues/{n}/labels as that command). Its
-	// catalog policy is agent "never", actors ["person"], so a declaration
-	// can only narrow who may ask, never widen it.
+	// A declared transition carries its own catalog command, like the close
+	// and reopen above: `issues.transition`, member-level with actors
+	// ["person", "app_agent"]. A repository declaration can only narrow who
+	// may ask, never widen it (issue_transitions.go).
 	HostedIssueTransitionOperation: issueTransitionCommand,
 }
 

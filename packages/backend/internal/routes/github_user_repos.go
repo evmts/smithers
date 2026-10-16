@@ -13,6 +13,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
+	"github.com/smithersai/smithers/packages/backend/jobs"
 )
 
 type GitHubUserReposRouteService interface {
@@ -25,7 +26,8 @@ type GitHubUserReposRouteService interface {
 	ListAuthenticatedUserGitHubPullCommits(ctx context.Context, userID int64, owner, repo string, number int64, query url.Values) (services.GitHubRepoMetadataResult, error)
 	GetAuthenticatedUserGitHubCommitCheckRuns(ctx context.Context, userID int64, owner, repo, ref string, query url.Values) (services.GitHubRepoMetadataResult, error)
 	DiagnoseGitHubAccess(ctx context.Context, userID int64, owner, repo, surface string) (services.GitHubAccessDiagnosis, error)
-	SubmitAuthenticatedUserGitHubPullReview(ctx context.Context, userID int64, owner, repo string, number int64, input services.GitHubPullReviewInput) (services.GitHubPullReviewResult, error)
+	RequestAuthenticatedUserGitHubPullReview(ctx context.Context, userID int64, owner, repo string, number int64, input services.GitHubPullReviewInput) (jobs.RequestReceipt, error)
+	GitHubPullReviewStatusOf(ctx context.Context, userID int64, operationID string) (services.GitHubPullReviewStatus, error)
 }
 
 type GitHubUserReposHandler struct {
@@ -126,7 +128,14 @@ func (h *GitHubUserReposHandler) GetGitHubPull(w http.ResponseWriter, r *http.Re
  * agent: never, so an app agent's analysis cannot arrive here as someone's
  * verdict — and the request body carries no actor, login or on-behalf-of
  * field it could forge. `commit_id` is the head the person reviewed; the
- * service refuses the write if the pull request has since moved.
+ * worker refuses the write if the pull request has since moved.
+ *
+ * The answer is 202 and a durable operation, not a review: the verdict is
+ * admitted here and submitted ONCE on the shared worker. The idempotency key
+ * is derived server-side from the actor and this intent, so a repeat press —
+ * after a lost acknowledgment, a browser reload or a restart — joins that one
+ * operation and is read at GetGitHubPullReviewRequest instead of posting a
+ * second review.
  */
 func (h *GitHubUserReposHandler) SubmitGitHubPullReview(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "private, no-store")
@@ -152,7 +161,7 @@ func (h *GitHubUserReposHandler) SubmitGitHubPullReview(w http.ResponseWriter, r
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	result, svcErr := h.Service.SubmitAuthenticatedUserGitHubPullReview(
+	receipt, svcErr := h.Service.RequestAuthenticatedUserGitHubPullReview(
 		r.Context(), user.ID, chi.URLParam(r, "owner"), chi.URLParam(r, "repo"), number,
 		services.GitHubPullReviewInput{Event: req.Event, Body: req.Body, CommitID: req.CommitID},
 	)
@@ -160,7 +169,30 @@ func (h *GitHubUserReposHandler) SubmitGitHubPullReview(w http.ResponseWriter, r
 		writeRouteError(w, r, svcErr)
 		return
 	}
-	pkgerrors.WriteJSON(w, http.StatusCreated, result)
+	pkgerrors.WriteJSON(w, http.StatusAccepted, receipt)
+}
+
+// GetGitHubPullReviewRequest answers one of the caller's own review requests,
+// so a lost acknowledgment is READ instead of submitted again. It is the
+// door the app polls across a reload: the operation lives in PostgreSQL, and
+// `uncertain` is an answer to read, never a cue to retry.
+func (h *GitHubUserReposHandler) GetGitHubPullReviewRequest(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "private, no-store")
+	user, err := requireRouteUser(r)
+	if err != nil {
+		pkgerrors.WriteError(w, err.(*pkgerrors.APIError))
+		return
+	}
+	if h.Service == nil {
+		pkgerrors.WriteError(w, pkgerrors.Internal("github pull review service unavailable"))
+		return
+	}
+	status, svcErr := h.Service.GitHubPullReviewStatusOf(r.Context(), user.ID, chi.URLParam(r, "id"))
+	if svcErr != nil {
+		writeRouteError(w, r, svcErr)
+		return
+	}
+	pkgerrors.WriteJSON(w, http.StatusOK, status)
 }
 
 func (h *GitHubUserReposHandler) listGitHubRepoMetadata(w http.ResponseWriter, r *http.Request, resource string) {

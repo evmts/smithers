@@ -246,6 +246,7 @@ export const FLOW_NAMES = [
   "issues.create",
   "issues.list",
   "issues.reopen",
+  "issues.transition",
   "issues.view",
   "palette.actions",
   "palette.open",

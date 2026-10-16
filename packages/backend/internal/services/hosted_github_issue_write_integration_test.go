@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -13,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
@@ -41,6 +45,10 @@ off a receipt the product wrote about itself. No live GitHub request is made.
 // hostedIssueInstallations gives each fixture its own App installation id:
 // installation tokens are cached process-wide by installation.
 var hostedIssueInstallations atomic.Int64
+
+// hostedIssueCredentials keeps each minted delegated credential distinct, so
+// one test may hold several of them at once.
+var hostedIssueCredentials atomic.Int64
 
 // passthroughOAuthToken stores each person's GitHub token verbatim, so the
 // fixture can give three people three different GitHub identities.
@@ -94,6 +102,39 @@ func (f *hostedIssueFixture) session(user int64, login string) context.Context {
 		`INSERT INTO auth_sessions(session_key,user_id,username,expires_at) VALUES ($1,$2,$3,now()+interval '1 hour')`, key, user, login)
 	require.NoError(f.t, err)
 	return middleware.ContextWithAuthInfo(context.Background(), &middleware.AuthInfo{User: &db.User{ID: user, Username: login}, SessionHash: key})
+}
+
+// delegated is one system-issued delegated credential for `user`, reloaded
+// through the same credential path the HTTP chain uses. `via` is what tells
+// the app's own agent apart from an external one.
+func (f *hostedIssueFixture) delegated(user int64, login, via string) context.Context {
+	f.t.Helper()
+	q := db.New(f.pool)
+	sum := sha256.Sum256([]byte(fmt.Sprintf("delegated-%d-%s-%d", user, via, hostedIssueCredentials.Add(1))))
+	hash := hex.EncodeToString(sum[:])
+	scopes := "read:repository,write:repository,via:" + via
+	if via == "smithers" {
+		// An app-agent bearer belongs to exactly one LIVE producer
+		// generation (db.GetAuthInfoByTokenHash), so the credential only
+		// authenticates while its own turn is running. That is the real
+		// credential, not a looser stand-in for one.
+		turn := uuid.NewString()
+		_, err := f.pool.Exec(context.Background(), `INSERT INTO chat_turns
+ (id,user_id,run_id,leg_id,request_hash,access_hash,state,producer_generation,producer_token_hash,producer_lease_expires_at)
+ VALUES($1,$2,$1,'fixture','fixture','fixture','running',1,'fixture',NOW()+interval '1 hour')`, turn, user)
+		require.NoError(f.t, err)
+		scopes += ",terminal-session:" + turn + "/1"
+	}
+	_, err := q.CreateAccessToken(context.Background(), db.CreateAccessTokenParams{
+		UserID: user, Name: "agent-" + via, TokenHash: hash, TokenLastEight: hash[len(hash)-8:],
+		Scopes: scopes, SystemIssued: true,
+		ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+	})
+	require.NoError(f.t, err)
+	info, err := middleware.ReloadCredential(context.Background(), q, middleware.Credential{TokenHash: hash}, time.Now())
+	require.NoError(f.t, err)
+	info.User.Username = login
+	return middleware.ContextWithAuthInfo(context.Background(), info)
 }
 
 func newHostedIssueFixture(t *testing.T) *hostedIssueFixture {

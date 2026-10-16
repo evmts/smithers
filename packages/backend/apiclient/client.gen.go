@@ -2937,6 +2937,19 @@ type GetAPIUserGithubRepoRequestsIDResponse struct {
 	ExternalAttempt *int64  `json:"external_attempt,omitempty"`
 }
 
+// GetAPIUserGithubPullReviewRequestsIDResponse is generated from docs/api/openapi.yaml.
+type GetAPIUserGithubPullReviewRequestsIDResponse struct {
+	OperationID     string  `json:"operation_id"`
+	State           string  `json:"state"`
+	Stage           *string `json:"stage,omitempty"`
+	Code            *string `json:"code,omitempty"`
+	ReviewID        *int64  `json:"review_id,omitempty"`
+	ReviewState     *string `json:"review_state,omitempty"`
+	CommitID        *string `json:"commit_id,omitempty"`
+	Verified        bool    `json:"verified"`
+	ExternalAttempt *int64  `json:"external_attempt,omitempty"`
+}
+
 // PostAPIUserGithubReposBody is generated from docs/api/openapi.yaml.
 type PostAPIUserGithubReposBody struct {
 	Name    string `json:"name"`
@@ -3056,10 +3069,11 @@ type CreateAPIUserGithubReposOwnerRepoPullsNumberReviewsBody struct {
 
 // CreateAPIUserGithubReposOwnerRepoPullsNumberReviewsResponse is generated from docs/api/openapi.yaml.
 type CreateAPIUserGithubReposOwnerRepoPullsNumberReviewsResponse struct {
-	ReviewID int64  `json:"review_id"`
-	State    string `json:"state"`
-	CommitID string `json:"commit_id"`
-	Verified bool   `json:"verified"`
+	OperationID string    `json:"operationId"`
+	RequestID   string    `json:"requestId"`
+	Kind        string    `json:"kind"`
+	State       string    `json:"state"`
+	AcceptedAt  time.Time `json:"acceptedAt"`
 }
 
 // ListAPIUserGithubReposOwnerRepoPullsNumberCommitsParams is the query of GET /api/user/github-repos/{owner}/{repo}/pulls/{number}/commits.
@@ -7110,6 +7124,13 @@ func (c *Client) GetAPIUserGithubAppInstallationsInstallationID(ctx context.Cont
 func (c *Client) GetAPIUserGithubRepoRequestsID(ctx context.Context, id string) (GetAPIUserGithubRepoRequestsIDResponse, error) {
 	var out GetAPIUserGithubRepoRequestsIDResponse
 	err := c.do(ctx, "GET", "/api/user/github-repo-requests/"+url.PathEscape(id), nil, nil, &out)
+	return out, err
+}
+
+// GetAPIUserGithubPullReviewRequestsID calls GET /api/user/github-pull-review-requests/{id}.
+func (c *Client) GetAPIUserGithubPullReviewRequestsID(ctx context.Context, id string) (GetAPIUserGithubPullReviewRequestsIDResponse, error) {
+	var out GetAPIUserGithubPullReviewRequestsIDResponse
+	err := c.do(ctx, "GET", "/api/user/github-pull-review-requests/"+url.PathEscape(id), nil, nil, &out)
 	return out, err
 }
 

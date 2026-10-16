@@ -18,6 +18,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
+	"github.com/smithersai/smithers/packages/backend/jobs"
 )
 
 type mockGitHubUserReposRouteService struct {
@@ -49,16 +50,26 @@ type mockGitHubUserReposRouteService struct {
 	pullFn         func(context.Context, int64, string, string, int64) (services.GitHubRepoMetadataResult, error)
 	pullErr        error
 
-	reviewFn     func(context.Context, int64, string, string, int64, services.GitHubPullReviewInput) (services.GitHubPullReviewResult, error)
-	reviewResult services.GitHubPullReviewResult
+	reviewFn     func(context.Context, int64, string, string, int64, services.GitHubPullReviewInput) (jobs.RequestReceipt, error)
+	reviewResult jobs.RequestReceipt
 	reviewErr    error
+	statusFn     func(context.Context, int64, string) (services.GitHubPullReviewStatus, error)
+	statusResult services.GitHubPullReviewStatus
+	statusErr    error
 }
 
-func (m mockGitHubUserReposRouteService) SubmitAuthenticatedUserGitHubPullReview(ctx context.Context, userID int64, owner, repo string, number int64, input services.GitHubPullReviewInput) (services.GitHubPullReviewResult, error) {
+func (m mockGitHubUserReposRouteService) RequestAuthenticatedUserGitHubPullReview(ctx context.Context, userID int64, owner, repo string, number int64, input services.GitHubPullReviewInput) (jobs.RequestReceipt, error) {
 	if m.reviewFn != nil {
 		return m.reviewFn(ctx, userID, owner, repo, number, input)
 	}
 	return m.reviewResult, m.reviewErr
+}
+
+func (m mockGitHubUserReposRouteService) GitHubPullReviewStatusOf(ctx context.Context, userID int64, operationID string) (services.GitHubPullReviewStatus, error) {
+	if m.statusFn != nil {
+		return m.statusFn(ctx, userID, operationID)
+	}
+	return m.statusResult, m.statusErr
 }
 
 func (m mockGitHubUserReposRouteService) ListAuthenticatedUserGitHubRepos(ctx context.Context, userID int64, query url.Values) (services.GitHubRepoListResult, error) {
@@ -679,16 +690,19 @@ func TestGitHubUserReposHandler_SubmitsPullReviewForTheSessionPerson(t *testing.
 	var gotOwner, gotRepo string
 	var gotNumber int64
 	var gotInput services.GitHubPullReviewInput
-	service := mockGitHubUserReposRouteService{reviewFn: func(_ context.Context, userID int64, owner, repo string, number int64, input services.GitHubPullReviewInput) (services.GitHubPullReviewResult, error) {
+	service := mockGitHubUserReposRouteService{reviewFn: func(_ context.Context, userID int64, owner, repo string, number int64, input services.GitHubPullReviewInput) (jobs.RequestReceipt, error) {
 		gotUser, gotOwner, gotRepo, gotNumber, gotInput = userID, owner, repo, number, input
-		return services.GitHubPullReviewResult{ReviewID: 55, State: "CHANGES_REQUESTED", CommitID: head, Verified: true}, nil
+		return jobs.RequestReceipt{OperationID: "op-55", RequestID: "key-55", Kind: "requested", State: jobs.StateAccepted}, nil
 	}}
 	req := githubPullReviewRequest(t, "17", `{"event":"REQUEST_CHANGES","body":"please rename it","commit_id":"`+head+`"}`)
 	rec := httptest.NewRecorder()
 	(&GitHubUserReposHandler{Service: service}).SubmitGitHubPullReview(rec, req)
 
-	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
-	assert.JSONEq(t, `{"review_id":55,"state":"CHANGES_REQUESTED","commit_id":"`+head+`","verified":true}`, rec.Body.String())
+	// The answer is a durable admission, not a review: the verdict reaches
+	// GitHub once, on the worker, and is read back at the request door.
+	require.Equal(t, http.StatusAccepted, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), `"operationId":"op-55"`)
+	assert.Contains(t, rec.Body.String(), `"state":"accepted"`)
 	assert.Equal(t, "private, no-store", rec.Header().Get("Cache-Control"))
 	assert.Equal(t, int64(42), gotUser)
 	assert.Equal(t, "upstream", gotOwner)

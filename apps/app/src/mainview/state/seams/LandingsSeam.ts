@@ -238,6 +238,62 @@ const reviewable = (state: string): boolean => !["merged", "closed", "landed"].i
 const GITHUB_REVIEW_EVENT = { approve: "APPROVE", request_changes: "REQUEST_CHANGES", comment: "COMMENT" } as const
 const GITHUB_REVIEW_STATE = { approve: "APPROVED", request_changes: "CHANGES_REQUESTED", comment: "COMMENTED" } as const
 
+/** The durable states a review operation can still move on; any other is terminal. */
+const REVIEW_REQUEST_PENDING = new Set(["accepted", "dispatching", "running", "waiting"])
+
+/**
+ * How long this seam reads one admitted review before reporting it as still
+ * running. The operation stays on the server either way, so running out is
+ * never a reason to submit the verdict a second time.
+ */
+const reviewRequestPollMs = 500
+const reviewRequestAttempts = 60
+
+/**
+ * The sentence for one settled review operation. Each reason names a
+ * different act, and none of them reports a review the server did not read
+ * back from GitHub under this intent.
+ */
+const githubPullReviewAnswer = (
+  number: number,
+  sourceRepo: string,
+  type: "approve" | "request_changes" | "comment",
+  reviewed: string,
+  state: string,
+  status: unknown
+): string | void => {
+  const code = isRecord(status) && typeof status.code === "string" ? status.code : ""
+  if (state === "completed") {
+    const verified = isRecord(status) && status.verified === true
+      && status.commit_id === reviewed && status.review_state === GITHUB_REVIEW_STATE[type]
+    if (verified) return
+    return `GitHub didn't confirm the review on #${number}. Read the pull request again before reviewing it — it may already carry this review.`
+  }
+  if (state === "uncertain") {
+    return `Whether the review on #${number} reached ${sourceRepo} is unknown, so it was not sent again. Read the pull request on GitHub before reviewing it a second time.`
+  }
+  switch (code) {
+    case "review_head_moved":
+      return `Pull request #${number} on ${sourceRepo} moved to a new head commit before the review was sent, so nothing was posted. Read it again and review the new head.`
+    case "pull_request_not_open":
+      return `Pull request #${number} on ${sourceRepo} is no longer open, so the review was not posted.`
+    case "pull_request_mismatch":
+      return `GitHub answered with a different pull request than #${number} on ${sourceRepo}, so nothing was posted.`
+    case "reauthorize_github":
+      return `GitHub didn't accept the credential linked to this account, so the review on #${number} was not posted. Sign in with GitHub again.`
+    case "github_permission":
+      return `GitHub refused this account the review on #${number} of ${sourceRepo}.`
+    case "actor_changed":
+      return `The signed-in GitHub account changed, so the review on #${number} was not posted.`
+    case "rate_limited":
+      return `GitHub is rate-limiting this account, so the review on #${number} was not posted. Try again in a few minutes.`
+    case "github_rejected_review":
+      return `GitHub refused the review on #${number} of ${sourceRepo}.`
+    default:
+      return `The review on #${number} couldn't be posted to GitHub.`
+  }
+}
+
 /**
  * The files of one unified patch, one row per `diff --git` section.
  *
@@ -827,7 +883,13 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
     const payload: PrPayload = {
       repo,
       number,
-      ...(source.kind === "github" ? { sourceRepo: source.repo, ...(isRecord(raw) && typeof raw.draft === "boolean" ? { draft: raw.draft } : {}), ...(isRecord(raw) && Array.isArray(raw.labels) ? { labels: raw.labels.flatMap(label => isRecord(label) && typeof label.name === "string" ? [label.name] : []) } : {}), ...(isRecord(raw) && isRecord(raw.head) && typeof raw.head.ref === "string" ? { branch: raw.head.ref } : {}) } : {}),
+      /*
+       * `headCommit` is the head this card was built from — the head the
+       * person is looking at. A review typed against this card names it, so
+       * a force-push between the read and the verdict is refused instead of
+       * approving an unseen head (#4038).
+       */
+      ...(source.kind === "github" ? { sourceRepo: source.repo, ...(typeof githubHead === "string" && githubHead !== "" ? { headCommit: githubHead.toLowerCase() } : {}), ...(isRecord(raw) && typeof raw.draft === "boolean" ? { draft: raw.draft } : {}), ...(isRecord(raw) && Array.isArray(raw.labels) ? { labels: raw.labels.flatMap(label => isRecord(label) && typeof label.name === "string" ? [label.name] : []) } : {}), ...(isRecord(raw) && isRecord(raw.head) && typeof raw.head.ref === "string" ? { branch: raw.head.ref } : {}) } : {}),
       title: landing.title,
       state: stateOverride ?? landing.state,
       author: landing.author,
@@ -973,13 +1035,23 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
    * The actual GitHub pull request review (#4038).
    *
    * A person's verdict on an imported pull request belongs to THAT pull
-   * request on GitHub, pinned to the head it was read at. The door
-   * (POST /api/user/github-repos/{owner}/{repo}/pulls/{number}/reviews) is
-   * person-only and carries the caller's own GitHub credential: there is no
-   * actor field on this wire, so an agent's analysis can never ride in as
-   * someone's approval. The backend fences the head, submits once and reads
-   * the review back from GitHub before it answers; this seam believes only
-   * that verified answer.
+   * request on GitHub, pinned to the head THEY READ — the head the mounted
+   * card was built from, not whatever GitHub holds at click time. A card is
+   * therefore required: without one nobody has read this pull request here,
+   * and there is no reviewed head to name.
+   *
+   * The door (POST /api/user/github-repos/{owner}/{repo}/pulls/{number}/reviews)
+   * is person-only and carries the caller's own GitHub credential: there is
+   * no actor field on this wire, so an agent's analysis can never ride in as
+   * someone's approval. It admits a DURABLE operation and answers 202; the
+   * verdict reaches GitHub ONCE, on the worker, behind the credential
+   * re-proof and the head fence, and is believed only on the receipt this
+   * seam then reads from the operation's own door.
+   *
+   * The key is the server's, derived from the actor and this intent, so
+   * submitting the same verdict again — after a closed browser, a reload or
+   * a restart — joins that one operation and READS it. `uncertain` is never
+   * retried here.
    */
   const reviewGitHubPull = async (
     sourceRepo: string,
@@ -990,6 +1062,18 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
     ownerCurrent: () => boolean,
     conversation: string | undefined
   ): Promise<string | void> => {
+    /*
+     * The head the person SAW. It comes off the mounted card, so a remote
+     * head that moved after the read cannot be approved — the refusal below
+     * asks for a re-read instead.
+     */
+    const card = ctx.store.collections.cards.get(`pr-${repo}-${number}`)
+    const reviewed = card?.kind === "pr" && typeof card.payload.headCommit === "string"
+      ? card.payload.headCommit.toLowerCase()
+      : ""
+    if (reviewed === "") {
+      return `Read pull request #${number} on ${sourceRepo} before reviewing it, so the verdict names the head you read: /prs.view ${number}`
+    }
     const root = githubPullsRoot(ctx, sourceRepo)
     let detail: Response
     try {
@@ -1000,13 +1084,21 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
     if (!detail.ok) return readErrorMessage(detail, `Pull request #${number} on ${sourceRepo} couldn't be read from GitHub before submitting.`)
     const payload: unknown = await detail.json().catch(() => null)
     const row = parseLandingRow(payload)
-    // The door answers with the commit it wrote at, normalized; compare like with like.
     const head = isRecord(payload) && isRecord(payload.head) && typeof payload.head.sha === "string" ? payload.head.sha.toLowerCase() : ""
     if (row === null || row.number !== number || head === "") {
       return `Pull request #${number} on ${sourceRepo} is unavailable for review.`
     }
     if (!reviewable(row.state)) {
       return `Pull request #${number} on ${sourceRepo} is ${row.state.toLowerCase()}, so it can no longer be reviewed.`
+    }
+    if (head !== reviewed) {
+      /*
+       * The pull request moved after the card was read. The verdict is about
+       * the code on screen, so nothing is submitted and nothing is
+       * retargeted: the person re-reads and reviews what is there now.
+       */
+      await surfaceLanding(repo, number)
+      return `Pull request #${number} on ${sourceRepo} moved to a new head commit after you read it, so nothing was posted. Read it again and review the new head.`
     }
     // The detail read was in flight too; re-check before the one write.
     if (!ownerCurrent() || conversationTabIdOf(ctx.store.session()) !== conversation) {
@@ -1017,26 +1109,70 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
       response = await ctx.http(`${root}/${number}/reviews`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ event: GITHUB_REVIEW_EVENT[type], body: text, commit_id: head })
+        body: JSON.stringify({ event: GITHUB_REVIEW_EVENT[type], body: text, commit_id: reviewed })
       })
     } catch {
       /*
-       * The request left; GitHub's answer did not come back. Whether the
-       * review was recorded is UNKNOWN, and a review carries no idempotency
-       * key, so this is never retried here — the next read of the pull
-       * request is the reconciliation.
+       * The admission's answer did not come back. The operation may exist, so
+       * this is never a second submit: pressing the same verdict again
+       * reaches the same server-derived key and joins it.
        */
-      return `The review on #${number} wasn't acknowledged by GitHub, so whether it was recorded is unknown. Re-read the pull request before reviewing it again — it may already carry this review.`
+      return `The review on #${number} wasn't acknowledged, so whether it was admitted is unknown. Read the pull request again before reviewing it — it may already carry this review.`
     }
     if (!response.ok) return readErrorMessage(response, `The review on #${number} couldn't be posted to GitHub.`)
-    const receipt: unknown = await response.json().catch(() => null)
-    if (!isRecord(receipt) || receipt.verified !== true || receipt.commit_id !== head
-      || receipt.state !== GITHUB_REVIEW_STATE[type]) {
-      return `GitHub didn't confirm the review on #${number}. Re-read the pull request before reviewing it again — it may already carry this review.`
+    const admitted: unknown = await response.json().catch(() => null)
+    const operation = isRecord(admitted) && typeof admitted.operationId === "string" && admitted.operationId !== ""
+      ? admitted.operationId
+      : null
+    if (operation === null) {
+      return `The review on #${number} was admitted, but this app couldn't read which request it is. Read the pull request again before reviewing it.`
     }
+    const settled = await readGitHubPullReviewRequest(operation, number, sourceRepo, type, reviewed, ownerCurrent, conversation)
+    if (typeof settled === "string") return settled
     const refreshError = await surfaceLanding(repo, number)
     if (typeof refreshError !== "string") return
     return `The review on #${number} was posted to ${sourceRepo}, but the pull request couldn't be re-read: ${refreshError}`
+  }
+
+  /*
+   * Reading what became of one admitted review. The operation lives in the
+   * server's durable store, so this survives a reload: the same verdict
+   * pressed again joins the same operation and lands back here.
+   *
+   * Only `completed` is a review. `uncertain` says the submit may have
+   * reached GitHub and is NEVER turned into a fresh retry; a still-running
+   * operation is reported as still running, which is true.
+   */
+  const readGitHubPullReviewRequest = async (
+    operation: string,
+    number: number,
+    sourceRepo: string,
+    type: "approve" | "request_changes" | "comment",
+    reviewed: string,
+    ownerCurrent: () => boolean,
+    conversation: string | undefined
+  ): Promise<string | void> => {
+    const door = `${ctx.baseUrl}/api/user/github-pull-review-requests/${encodeURIComponent(operation)}`
+    for (let attempt = 0; attempt < reviewRequestAttempts; attempt++) {
+      let answer: Response
+      try {
+        answer = await ctx.http(door)
+      } catch {
+        return `The review on #${number} was admitted, but this app couldn't read what became of it. Read the pull request again — it may already carry this review.`
+      }
+      if (!answer.ok) return readErrorMessage(answer, `The review on #${number} was admitted, but this app couldn't read what became of it.`)
+      if (!ownerCurrent() || conversationTabIdOf(ctx.store.session()) !== conversation) {
+        return `The repository or account changed while the review on #${number} was being submitted. The request is on the server; read the pull request again.`
+      }
+      const status: unknown = await answer.json().catch(() => null)
+      const state = isRecord(status) && typeof status.state === "string" ? status.state : ""
+      if (state === "") return `The review on #${number} was admitted, but this app couldn't read what became of it.`
+      if (!REVIEW_REQUEST_PENDING.has(state)) {
+        return githubPullReviewAnswer(number, sourceRepo, type, reviewed, state, status)
+      }
+      await new Promise<void>(resolve => setTimeout(resolve, reviewRequestPollMs))
+    }
+    return `The review on #${number} is still being submitted. Nothing was repeated; read the pull request again in a moment.`
   }
 
   return {

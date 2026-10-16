@@ -116,6 +116,23 @@ func agentContext() context.Context {
 		&middleware.AuthInfo{User: &db.User{ID: 6, Username: "smithers-bot", LowerUsername: "smithers-bot", UserType: "bot"}})
 }
 
+// appAgentContext and externalAgentContext are the two delegated agent kinds,
+// told apart the way the confirmation path tells them apart: the stored `via`
+// on a system-issued credential, never a field in a payload.
+func appAgentContext() context.Context {
+	return middleware.ContextWithAuthInfo(context.Background(), &middleware.AuthInfo{
+		User:        &db.User{ID: 5, Username: "will", LowerUsername: "will", UserType: "user"},
+		IsTokenAuth: true, TokenSystemIssued: true, RawScopes: "read:repository,write:repository,via:smithers",
+	})
+}
+
+func externalAgentContext() context.Context {
+	return middleware.ContextWithAuthInfo(context.Background(), &middleware.AuthInfo{
+		User:        &db.User{ID: 5, Username: "will", LowerUsername: "will", UserType: "user"},
+		IsTokenAuth: true, TokenSystemIssued: true, RawScopes: "read:repository,write:repository,via:codex",
+	})
+}
+
 func TestAnUndeclaredIssueTransitionIsRefusedBeforeAnythingIsAsked(t *testing.T) {
 	t.Parallel()
 	host := &issueViewHost{factory: issueTransitionsFactory}
@@ -185,29 +202,45 @@ func TestAnAgentCannotRunAPersonOnlyTransition(t *testing.T) {
 	assert.Equal(t, "proposed", declared.From)
 }
 
-// And a declaration of "anyone" grants an agent NOTHING: the product already
-// says an issue LABEL write is a person's, and that catalog policy is what
-// decides for every transition the repository did not mark person-only.
+// A declaration of "anyone" cannot widen past the catalog's own actor list.
+// The row for THIS operation (issues.transition) admits a person and the
+// app's own agent and nothing else, so an external agent and an agent
+// account with no delegation are refused whatever the repository declared.
 func TestADeclarationCannotWidenWhoMayWriteAnIssueLabel(t *testing.T) {
 	t.Parallel()
 	policy, known := OperationPolicy(issueTransitionCommand)
-	require.True(t, known, "the transition rides an EXISTING catalog command")
-	assert.Equal(t, "never", policy.Agent)
-	assert.Equal(t, []string{"person"}, policy.Actors)
+	require.True(t, known, "the transition rides its OWN EXISTING catalog command")
+	assert.Equal(t, "confirm", policy.Agent)
+	assert.Equal(t, []string{"person", "app_agent"}, policy.Actors)
 
 	transitions, err := parseFactoryIssueTransitions([]byte(issueTransitionsFactory))
 	require.NoError(t, err)
 	assert.False(t, transitions[0].NeedsPerson(), "triage is the one the repository did not reserve")
 
-	// And the catalog's rule is what then refuses an agent for it anyway.
 	host := &issueViewHost{factory: issueTransitionsFactory}
+	// An agent account carrying no delegation names no catalog actor the row
+	// lists, so it is refused even for the transition nobody reserved.
 	_, err = authorizeIssueTransition(agentContext(), host, "will", transitionRepo(), "triage")
 	require.Error(t, err)
 	var refusal *AccessError
 	require.ErrorAs(t, err, &refusal)
 	assert.Equal(t, "permission", refusal.Code)
+	// So is an EXTERNAL agent: the row does not list that actor.
+	_, err = authorizeIssueTransition(externalAgentContext(), host, "will", transitionRepo(), "triage")
+	require.Error(t, err)
+	require.ErrorAs(t, err, &refusal)
+	assert.Equal(t, "permission", refusal.Code)
+	// The app's own agent is the one kind the row admits, and only for the
+	// transition the repository did not reserve.
+	declared, err := authorizeIssueTransition(appAgentContext(), host, "will", transitionRepo(), "triage")
+	require.NoError(t, err, "M-47: a repository flow makes a transition it declared anyone may make")
+	assert.Equal(t, "needs-triage", declared.To)
+	_, err = authorizeIssueTransition(appAgentContext(), host, "will", transitionRepo(), "accept")
+	require.Error(t, err, "a person-only declaration still narrows the catalog row")
+	require.ErrorAs(t, err, &refusal)
+	assert.Equal(t, "permission", refusal.Code)
 	// A person asking for the same transition is answered it.
-	declared, err := authorizeIssueTransition(personContext(), host, "will", transitionRepo(), "triage")
+	declared, err = authorizeIssueTransition(personContext(), host, "will", transitionRepo(), "triage")
 	require.NoError(t, err)
 	assert.Equal(t, "needs-triage", declared.To)
 }

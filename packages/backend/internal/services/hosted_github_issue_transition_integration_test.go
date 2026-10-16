@@ -390,3 +390,52 @@ func TestTheDeclarationIsReadFromTheRepositoryTheActNames(t *testing.T) {
 		"the declaration comes off the repository the act names")
 	assert.Contains(t, host.reads[len(host.reads)-1], ".smithers/factory.json")
 }
+
+/*
+ * The two delegated agent kinds, end to end on the real writer (M-47: "a
+ * transition a flow makes is attributed to the flow and the person who ran
+ * it"). The catalog row for this operation admits the app's own agent and a
+ * person; an external agent is not on the list. The repository's declaration
+ * still narrows: `accept` is person-only, so no agent of either kind makes
+ * it.
+ */
+func TestADeclaredAnyoneTransitionAdmitsTheAppsOwnAgentAndNoOtherKind(t *testing.T) {
+	f := newHostedIssueFixture(t)
+	f.declare(transitionFactory)
+	const repo = "will/flows"
+	number := f.fake.OpenIssue(repo, "will", "A proposal", "Body")
+	f.fake.LabelIssue(repo, number, "will", "proposed")
+	before := f.admitted(t)
+
+	// An EXTERNAL agent is refused the transition the repository reserved for
+	// nobody, because the operation's own row does not list that actor.
+	_, err := f.service.RequestGitHubIssueTransition(f.delegated(f.writer, "will", "codex"), f.flows, number, "triage", "external-triage")
+	require.Error(t, err)
+	var refusal *AccessError
+	require.ErrorAs(t, err, &refusal)
+	assert.Equal(t, "permission", refusal.Code)
+	assert.Equal(t, before, f.admitted(t), "a refused actor admits nothing")
+
+	// And neither kind of agent makes the move the repository says a person
+	// has to make.
+	for _, via := range []string{"smithers", "codex"} {
+		_, err = f.service.RequestGitHubIssueTransition(f.delegated(f.writer, "will", via), f.flows, number, "accept", "agent-accept-"+via)
+		require.Error(t, err, via)
+		require.ErrorAs(t, err, &refusal, via)
+		assert.Equal(t, "permission", refusal.Code, via)
+	}
+	assert.Equal(t, before, f.admitted(t))
+	assert.Equal(t, []string{"proposed"}, f.labels(t, repo, number))
+	assert.Empty(t, f.comments(t, repo, number))
+
+	// The app's own agent makes the one the repository declared anyone may.
+	receipt, err := f.service.RequestGitHubIssueTransition(f.delegated(f.writer, "will", "smithers"), f.flows, number, "triage", "app-agent-triage")
+	require.NoError(t, err)
+	require.Equal(t, jobs.StateCompleted, f.work(t, receipt.OperationID))
+	assert.ElementsMatch(t, []string{"proposed", "needs-triage"}, f.labels(t, repo, number),
+		"triage declares no `from`, so it takes nothing off")
+	said := f.comments(t, repo, number)
+	require.Len(t, said, 1, "the attribution is said once")
+	assert.Contains(t, said[0], "Triage it")
+	assert.Contains(t, said[0], "@will")
+}

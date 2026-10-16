@@ -56,6 +56,7 @@ delegated credentials land.
 | `members.write` | Maintainer | `POST /api/members`, `PATCH`, `DELETE /api/members/{login}` |
 | `secrets.write` (person-only) | Maintainer | `POST /api/repos/{o}/{r}/secrets`, `PATCH`, `DELETE /api/repos/{o}/{r}/secrets/{name}` |
 | `github.account-review` (person-only) | Owner | `POST /api/user/github-repos/{owner}/{repo}/pulls/{number}/reviews` |
+| `github.account-read` | Owner | `GET /api/user/github-pull-review-requests/{id}` |
 
 `github.account-review` is the only write among the GitHub account
 surfaces: one person's own approve, request-changes or comment review,
@@ -66,6 +67,22 @@ review analysis can return findings but can never arrive here as somebody's
 verdict. A moved head, another number or a pull request that is no longer
 open is refused, not retargeted, and a lost acknowledgement is reconciled
 by reading GitHub, never by resending.
+
+It is a DURABLE operation, like the account's own repository create: the door
+answers `202` and one operation, the review is submitted ONCE on the shared
+worker, and the idempotency key is derived server-side from the actor and the
+intent (repository, number, verdict, text and the reviewed head). A repeat
+press — after a lost acknowledgement, a browser reload or a server restart —
+joins that one operation and is READ at
+`GET /api/user/github-pull-review-requests/{id}`, which is a read of the
+caller's own request on the account's read command. An operation whose send
+cannot be settled stays terminal `uncertain` and is never retried; only a
+refusal GitHub gave before it could record anything reopens the key.
+
+The readback is bound to the intent: GitHub's own answer must carry this
+operation's body, head and verdict under the credential's own GitHub user id
+(`GET /user`). An older review of the same verdict at the same head with
+different text is a different review and never settles this one.
 
 A person-only command checks the role first, then the credential, and it
 applies to the owner too. Only the person's own browser session acts. A

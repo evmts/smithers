@@ -1575,6 +1575,17 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
       sourceRepo: z.string().optional(),
       number: z.number().int(),
       title: z.string(),
+      /*
+       * The head commit this card was BUILT from, for a GitHub source: the
+       * head the person is looking at. A verdict typed against this card
+       * names this head, not whatever GitHub holds at click time, so a
+       * force-push between reading and reviewing refuses rather than
+       * approving code nobody read (#4038). Optional, like its siblings — an
+       * older reader simply drops a key it does not know, and a card without
+       * it is a card whose head was never captured, which is not a reviewed
+       * head.
+       */
+      headCommit: z.string().optional(),
       /** Platform landing state; "queued" after a land — never "merged". */
       state: z.string(),
       author: z.string().nullable(),

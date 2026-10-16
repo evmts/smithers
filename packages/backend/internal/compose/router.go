@@ -1971,7 +1971,11 @@ func buildRouter(
 				// review verdict, submitted to GitHub with the person's own
 				// credential and read back before it is reported (#4038).
 				// Write scope, and `github.account-review` is person-only.
+				// It admits a DURABLE operation and answers 202; reading the
+				// receipt is a read of the caller's own request, so a lost
+				// acknowledgment never becomes a second review.
 				r.With(githubUserRepoWrite...).Post("/user/github-repos/{owner}/{repo}/pulls/{number}/reviews", gitHubUserReposHandler.SubmitGitHubPullReview)
+				r.With(githubUserRepoRead...).Get("/user/github-pull-review-requests/{id}", gitHubUserReposHandler.GetGitHubPullReviewRequest)
 				r.With(githubUserRepoRead...).Get("/user/github-repos/{owner}/{repo}/commits/{sha}/check-runs", gitHubUserReposHandler.ListGitHubCommitCheckRuns)
 				// Typed access diagnosis for the surfaces above: WHY a read fails
 				// (app-not-installed / permission-missing / no-org-grant / token-broken

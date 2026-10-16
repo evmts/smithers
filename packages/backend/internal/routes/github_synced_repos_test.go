@@ -17,6 +17,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
+	"github.com/smithersai/smithers/packages/backend/jobs"
 )
 
 // withRouteUser attaches an authenticated user, the way the auth middleware
@@ -121,8 +122,12 @@ func (s *stubMetadataStalenessService) ListAuthenticatedUserGitHubRepos(context.
 	return services.GitHubRepoListResult{}, pkgerrors.Internal("unused")
 }
 
-func (s *stubMetadataStalenessService) SubmitAuthenticatedUserGitHubPullReview(context.Context, int64, string, string, int64, services.GitHubPullReviewInput) (services.GitHubPullReviewResult, error) {
-	return services.GitHubPullReviewResult{}, nil
+func (s *stubMetadataStalenessService) RequestAuthenticatedUserGitHubPullReview(context.Context, int64, string, string, int64, services.GitHubPullReviewInput) (jobs.RequestReceipt, error) {
+	return jobs.RequestReceipt{}, nil
+}
+
+func (s *stubMetadataStalenessService) GitHubPullReviewStatusOf(context.Context, int64, string) (services.GitHubPullReviewStatus, error) {
+	return services.GitHubPullReviewStatus{}, nil
 }
 
 func (s *stubMetadataStalenessService) DiagnoseGitHubAccess(context.Context, int64, string, string, string) (services.GitHubAccessDiagnosis, error) {

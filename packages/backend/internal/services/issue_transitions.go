@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -28,10 +29,12 @@ import (
 //
 // Actor is who the REPOSITORY says may ask for it. "person" (the default,
 // and what an unnamed actor means) says a person has to make this move.
-// "anyone" only says the repository does not itself require one: it grants
-// nothing, because the server's own catalog still decides who may write an
-// issue label (operationCatalog "labels.create": agent "never", actors
-// ["person"]). A declaration can narrow this authority and never widen it.
+// "anyone" says the repository does not itself require one; who may then ask
+// is still the server's own catalog row for this operation
+// (operationCatalog "issues.transition": agent "confirm", actors
+// ["person", "app_agent"]), so an external agent is refused whatever the
+// repository declared. A declaration can narrow this authority, never widen
+// it.
 type IssueTransition struct {
 	ID    string `json:"id"`
 	Title string `json:"title"`
@@ -52,11 +55,26 @@ var issueTransitionID = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 // The bound the declaration side enforces; a projection past it is refused.
 const maximumIssueTransitions = 32
 
-// The transition catalog command: the EXISTING operation the product already
-// authorizes an issue label write with (middleware/auth.go classifies
-// POST /api/repos/{o}/{r}/issues/{n}/labels as labels.create). No new
-// catalog operation name, wire field or done code exists for a transition.
-const issueTransitionCommand = "labels.create"
+/*
+ * The transition catalog command: the operation's OWN declared row.
+ *
+ * `issues.transition` is what `apps/app/src/mainview/flows/entries/issues.ts`
+ * declares, what the generator projects into the catalog, and what
+ * `retained-http.json` records for this act — agent "confirm", minimumRole
+ * "member", actors ["person", "app_agent"], exactly like its siblings
+ * `issues.close`, `issues.reopen` and `issue.comment`, which ride the same
+ * writer.
+ *
+ * It is deliberately NOT `labels.create`. That row belongs to a different
+ * operation: POST /api/repos/{o}/{r}/labels, which defines a repository's
+ * label set and is minimumRole "owner", actors ["person"]. Binding the
+ * transition door to it refused an install MAINTAINER and an install MEMBER
+ * a move whose own descriptor is member-level (compose/member_commands.go
+ * runs services.Authorize on the route's mapped command), and read a
+ * minimumRole this function never enforced. `labels.create` and its own
+ * doors are unchanged.
+ */
+const issueTransitionCommand = "issues.transition"
 
 // parseFactoryIssueTransitions reads a factory projection's
 // issueTransitions. A missing projection or key declares none; an unreadable
@@ -221,10 +239,11 @@ func issueTransitionUnreadable() error {
 //  2. a transition the repository says a person must make refuses an agent,
 //     by the request's own credential kind (middleware AuthInfo.IsAgent) —
 //     never a field in a payload and never an instruction in a prompt;
-//  3. the server's EXISTING catalog rule for an issue label write
-//     (issueTransitionCommand, whose row is agent "never") refuses an agent
-//     whatever the repository declared, so a declaration of "anyone" grants
-//     an agent nothing. A declaration can only narrow.
+//  3. the server's EXISTING catalog row for THIS operation
+//     (issueTransitionCommand) decides which actor kinds may ask at all: a
+//     row of agent "never" refuses every agent, and an actor kind the row
+//     does not list is refused whatever the repository declared. A
+//     declaration can only narrow.
 //
 // Who may write THIS repository at all is not decided here and is not this
 // lane's to decide: it is the hosted writer's own live authority — the
@@ -249,7 +268,8 @@ func authorizeIssueTransition(ctx context.Context, host repositoryPolicyHost, ow
 	if declared == nil {
 		return IssueTransition{}, issueTransitionUndeclared(id)
 	}
-	agent := middleware.AuthInfoFromContext(ctx).IsAgent()
+	info := middleware.AuthInfoFromContext(ctx)
+	agent := info.IsAgent()
 	if declared.NeedsPerson() && agent {
 		return IssueTransition{}, issueTransitionNeedsPerson()
 	}
@@ -257,8 +277,27 @@ func authorizeIssueTransition(ctx context.Context, host repositoryPolicyHost, ow
 	if !known {
 		return IssueTransition{}, issueTransitionUnreadable()
 	}
-	if agent && policy.Agent == "never" {
-		return IssueTransition{}, issueTransitionNeedsPerson()
+	if agent {
+		if policy.Agent == "never" {
+			return IssueTransition{}, issueTransitionNeedsPerson()
+		}
+		// Which agent kind. The classification is the one the confirmation
+		// path already uses (approvals_confirmations.go): only a delegation
+		// whose stored via is the app itself is an app agent, and every
+		// other delegated credential is an external agent. It comes from the
+		// credential, never from a payload field or a prompt.
+		if !slices.Contains(policy.Actors, issueTransitionActorKind(info)) {
+			return IssueTransition{}, issueTransitionNeedsPerson()
+		}
 	}
 	return *declared, nil
+}
+
+// issueTransitionActorKind names the catalog actor one agent credential is,
+// so the row's own actors list decides rather than a rule of this module's.
+func issueTransitionActorKind(info *middleware.AuthInfo) string {
+	if delegated, ok := info.Delegation(); ok && delegated.Via == "smithers" {
+		return "app_agent"
+	}
+	return "external_agent"
 }

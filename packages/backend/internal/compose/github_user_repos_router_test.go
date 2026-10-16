@@ -16,6 +16,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/internal/routes"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
+	"github.com/smithersai/smithers/packages/backend/jobs"
 )
 
 type githubUserReposRouterService struct {
@@ -74,9 +75,14 @@ func (s *githubUserReposRouterService) DiagnoseGitHubAccess(context.Context, int
 	return services.GitHubAccessDiagnosis{Verdict: services.GitHubAccessVerdictOK, Surface: "issues"}, nil
 }
 
-func (s *githubUserReposRouterService) SubmitAuthenticatedUserGitHubPullReview(context.Context, int64, string, string, int64, services.GitHubPullReviewInput) (services.GitHubPullReviewResult, error) {
+func (s *githubUserReposRouterService) RequestAuthenticatedUserGitHubPullReview(context.Context, int64, string, string, int64, services.GitHubPullReviewInput) (jobs.RequestReceipt, error) {
 	s.calls.Add(1)
-	return services.GitHubPullReviewResult{ReviewID: 55, State: "APPROVED", CommitID: "0d1dc5a1a4f0bd02a9e5ba9a1f86e7f1a3b4c5d6", Verified: true}, nil
+	return jobs.RequestReceipt{OperationID: "op-review", RequestID: "key", Kind: "requested", State: jobs.StateAccepted}, nil
+}
+
+func (s *githubUserReposRouterService) GitHubPullReviewStatusOf(context.Context, int64, string) (services.GitHubPullReviewStatus, error) {
+	s.calls.Add(1)
+	return services.GitHubPullReviewStatus{OperationID: "op-review", State: "completed", Verified: true}, nil
 }
 
 func githubUserReposSecurityRouter(service routes.GitHubUserReposRouteService) http.Handler {
@@ -294,8 +300,52 @@ func TestServerRouter_GitHubPullReviewRouteRefusesBeforeService(t *testing.T) {
 		}))
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
-		require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
-		assert.JSONEq(t, `{"review_id":55,"state":"APPROVED","commit_id":"0d1dc5a1a4f0bd02a9e5ba9a1f86e7f1a3b4c5d6","verified":true}`, rec.Body.String())
+		// A durable admission, not a review: 202 and one operation.
+		require.Equal(t, http.StatusAccepted, rec.Code, rec.Body.String())
+		assert.Contains(t, rec.Body.String(), `"operationId":"op-review"`)
+		assert.Contains(t, rec.Body.String(), `"state":"accepted"`)
 		assert.Equal(t, int32(1), service.calls.Load())
+	})
+
+	// Reading what became of one is a READ of the caller's own account
+	// surface: it takes the read stack, and a write-less read-only credential
+	// may ask (which is what makes the lost-acknowledgment path a read).
+	t.Run("the request door is a read", func(t *testing.T) {
+		service := &githubUserReposRouterService{}
+		router := githubUserReposSecurityRouter(service)
+		const scopes = string(middleware.ScopeReadRepository)
+		req := httptest.NewRequest(http.MethodGet, "/api/user/github-pull-review-requests/10000000-0000-4000-8000-000000000001", nil)
+		req = req.WithContext(middleware.ContextWithAuthInfo(req.Context(), &middleware.AuthInfo{
+			User:        &db.User{ID: 7, Username: "octo", LowerUsername: "octo"},
+			RawScopes:   scopes,
+			Scopes:      middleware.ParseTokenScopes(scopes),
+			IsTokenAuth: true,
+			TokenSource: middleware.TokenSourcePersonalAccessToken,
+		}))
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		assert.Equal(t, "private, no-store", rec.Header().Get("Cache-Control"))
+		assert.Equal(t, int32(1), service.calls.Load())
+	})
+
+	// And a repository-restricted credential is refused it, like every other
+	// surface on this family.
+	t.Run("the request door refuses a repository-restricted credential", func(t *testing.T) {
+		service := &githubUserReposRouterService{}
+		router := githubUserReposSecurityRouter(service)
+		scopes := string(middleware.ScopeReadRepository) + "," + middleware.RepositoryRestrictionScope(99)
+		req := httptest.NewRequest(http.MethodGet, "/api/user/github-pull-review-requests/10000000-0000-4000-8000-000000000001", nil)
+		req = req.WithContext(middleware.ContextWithAuthInfo(req.Context(), &middleware.AuthInfo{
+			User:        &db.User{ID: 7, Username: "octo", LowerUsername: "octo"},
+			RawScopes:   scopes,
+			Scopes:      middleware.ParseTokenScopes(scopes),
+			IsTokenAuth: true,
+			TokenSource: middleware.TokenSourcePersonalAccessToken,
+		}))
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusForbidden, rec.Code)
+		assert.Equal(t, int32(0), service.calls.Load())
 	})
 }

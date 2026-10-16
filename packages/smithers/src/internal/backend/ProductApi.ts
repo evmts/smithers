@@ -7077,6 +7077,26 @@ export interface GetApiUserGithubRepoRequestsIdInput {
 export const getApiUserGithubRepoRequestsId = (transport: Transport, input: GetApiUserGithubRepoRequestsIdInput): Promise<GetApiUserGithubRepoRequestsIdResponse> =>
   transport.request("GET", `/api/user/github-repo-requests/${segment(input.path.id)}`) as Promise<GetApiUserGithubRepoRequestsIdResponse>
 
+export type GetApiUserGithubPullReviewRequestsIdResponse = {
+  operation_id: string
+  state: "accepted" | "dispatching" | "running" | "waiting" | "completed" | "failed" | "cancelled" | "uncertain"
+  stage?: "resolve-actor" | "fence" | "submit" | "readback"
+  code?: "reauthorize_github" | "github_permission" | "actor_changed" | "review_head_moved" | "pull_request_not_open" | "pull_request_mismatch" | "github_rejected_review" | "rate_limited" | "invalid_request" | "github_review_uncertain" | "readback_mismatch"
+  review_id?: number
+  review_state?: "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED"
+  commit_id?: string
+  verified: boolean
+  external_attempt?: number
+}
+
+export interface GetApiUserGithubPullReviewRequestsIdInput {
+  readonly path: { readonly id: string }
+}
+
+/** GET /api/user/github-pull-review-requests/{id}: Read a GitHub pull request review request */
+export const getApiUserGithubPullReviewRequestsId = (transport: Transport, input: GetApiUserGithubPullReviewRequestsIdInput): Promise<GetApiUserGithubPullReviewRequestsIdResponse> =>
+  transport.request("GET", `/api/user/github-pull-review-requests/${segment(input.path.id)}`) as Promise<GetApiUserGithubPullReviewRequestsIdResponse>
+
 export type GetApiUserGithubReposResponse = AnyJSON
 
 /** GET /api/user/github-repos */
@@ -7184,10 +7204,11 @@ export type CreateApiUserGithubReposOwnerRepoPullsNumberReviewsBody = {
 }
 
 export type CreateApiUserGithubReposOwnerRepoPullsNumberReviewsResponse = {
-  review_id: number
-  state: "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED"
-  commit_id: string
-  verified: boolean
+  operationId: string
+  requestId: string
+  kind: string
+  state: "accepted" | "dispatching" | "running" | "waiting" | "completed" | "failed" | "cancelled" | "uncertain"
+  acceptedAt: string
 }
 
 export interface CreateApiUserGithubReposOwnerRepoPullsNumberReviewsInput {

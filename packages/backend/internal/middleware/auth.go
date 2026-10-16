@@ -418,8 +418,10 @@ var installMemberRoutes = []struct {
 	{http.MethodDelete, "account.connection.delete", regexp.MustCompile(`^/api/user/connections/[^/]+$`)},
 	{http.MethodGet, "github.import-read", regexp.MustCompile(`^/api/github/import/[^/]+$`)},
 	// The one person-only write on an imported pull request: a review verdict
-	// submitted to GitHub with the person's own credential (#4038).
+	// submitted to GitHub with the person's own credential (#4038). Reading
+	// what became of one is a read of the caller's own account surface.
 	{http.MethodPost, "github.account-review", regexp.MustCompile(`^/api/user/github-repos/[^/]+/[^/]+/pulls/[0-9]+/reviews$`)},
+	{http.MethodGet, "github.account-read", regexp.MustCompile(`^/api/user/github-pull-review-requests/[^/]+$`)},
 	{http.MethodGet, "github.account-read", regexp.MustCompile(`^/api/user/github(?:/repos|-repos(?:/[^/]+/[^/]+(?:/(?:issues(?:/[0-9]+/comments)?|pulls(?:/[0-9]+(?:/(?:diff|commits))?)?|commits/[^/]+/check-runs))?)?|-access/[^/]+/[^/]+|-app/installations(?:/[0-9]+)?)$`)},
 	{http.MethodPost, "branch.archive", regexp.MustCompile(`^/api/branches/[^/]+/archive$`)},
 	{http.MethodPost, "labels.create", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/labels$`)},
@@ -749,10 +751,13 @@ var installMemberRoutes = []struct {
 	{http.MethodPost, "issues.close", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/github/issues/[0-9]+/close$`)},
 	{http.MethodPost, "issues.reopen", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/github/issues/[0-9]+/reopen$`)},
 	{http.MethodPatch, "issue.comment", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/github/issues/comments/[0-9]+$`)},
-	// A declared transition is an issue LABEL write, which this table
-	// already classifies as labels.create below; the repository's own
-	// declaration can only narrow who may ask for it.
-	{http.MethodPost, "labels.create", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/github/issues/[0-9]+/transitions/[a-z0-9][a-z0-9-]*$`)},
+	// A declared transition is its own operation, like the close, reopen and
+	// comment above it: `issues.transition` (agent "confirm", minimumRole
+	// "member", actors ["person", "app_agent"]). It is NOT labels.create,
+	// which is the repository LABEL SET door below (POST …/labels, owner
+	// only): binding this door to that row refused an install maintainer and
+	// member a member-level move.
+	{http.MethodPost, "issues.transition", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/github/issues/[0-9]+/transitions/[a-z0-9][a-z0-9-]*$`)},
 	{http.MethodGet, "issue.read", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/github/issues/requests/[^/]+$`)},
 	{http.MethodPost, "self", regexp.MustCompile(`^/api/model/anthropic/.+$`)},
 	{http.MethodHead, "self", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/build-cache/cas/[^/]+$`)},
