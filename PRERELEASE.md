@@ -1,8 +1,11 @@
 # Prerelease status
 
-## 1.0.0-rc.10 — 2026-10-16
+## 1.0.0-rc.11 — 2026-10-16
 
-Cut from current main plus the release preflight table formatting.
+Recovery of rc.10, whose MCP consumer selected Effect 4.0.5 against the
+executable adapters built on 4.0.4. Its immutable tag is preserved; the
+[failed candidate](https://github.com/smithersai/smithers/actions/runs/38913993371)
+published zero packages. rc.11 pins the executable Effect peers (#4002).
 Release commit: `aeff7cd6627294ac839b40ed9de3cbf97c43f2fc`.
 [Release run 38913993371](https://github.com/smithersai/smithers/actions/runs/38913993371)
 failed before publication: clean builds and native helpers passed, but the
@@ -38,16 +41,17 @@ No announcement or GitHub Release is part of this cut.
 - **Unverified — other open sweep findings:** #3830 repository admission,
   #3831 hosted prototype workflows and #3812 long replies remain open.
   Flows/runtime findings #3898, #3899, #3906, #3999, #4004, #4008, #4010
-  and #4020 remain open, as does npm workspace Effect duplication #4002.
+  and #4020 remain open. #4002 has passing unpinned CLI-only and CLI/targets
+  npm/pnpm install regressions; published MCP verification is pending.
   Their issue receipts, rather than source presence, determine completion.
 - **Off:** file-card code intelligence and live code co-editing remain off
   for this prerelease. Learning remains on and unverified on this cut.
 - **Unverified — end to end:** J1–J11 and a real installed TODO through a
-  merged PR have not been repeated on rc.10. Historical results below are
+  merged PR have not been repeated on rc.11. Historical results below are
   evidence only for their named revisions. Hosted use is in release scope
   (M-44–M-48); historical self-hosted-only statements are superseded.
 
-## Historical evidence (not rc.10 verification)
+## Historical evidence (not rc.11 verification)
 
 ```
 Updated       2026-10-14 09:30 PDT
