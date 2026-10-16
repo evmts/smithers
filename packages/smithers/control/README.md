@@ -6,7 +6,7 @@ This package declares `effect` as a `^4.0.4` peer dependency. Install one
 `effect` release in that range so all Smithers packages share one Effect
 runtime.
 
-**Documentation:** https://control.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/control/docs
 
 Control services and RPC projections for flows. It defines the
 transport-independent Control service, its runtime and execution ports, local
@@ -25,7 +25,7 @@ It imports no `node:*` module, so the same modules run in Node.js and in a
 browser that supplies a SQL driver. That is a statement about the imports, not
 a tested guarantee: verify your own bundle before you depend on it.
 
-The `smthrs` command line, [`@smthrs/cli`](https://cli.smithers.sh), is a host
+The `smthrs` command line, [`@smthrs/cli`](https://github.com/smithersai/smithers/tree/main/packages/smithers/docs), is a host
 over this package: its verbs call the `Control` service defined here and
 nothing else. Install the CLI to drive runs from a shell; install this package
 to build a host of your own, such as a gateway, an MCP server, or a dashboard.
@@ -34,7 +34,7 @@ to build a host of your own, such as a gateway, an MCP server, or a dashboard.
 
 The root entry point exports these namespaces; each is also importable from
 `@smthrs/control/<Module>`. Every export of every namespace, with its
-signature, is on the [API reference](https://control.smithers.sh/reference/api/).
+signature, is on the [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/control/docs/api.md).
 
 | Namespace                                           | What it is                                                                                             |
 | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |

@@ -17,7 +17,7 @@ Three error types, from three layers:
 
 Persistence raises a fourth, `PlanStoreError`, from
 [`@smthrs/plan-store`](/api/plan-store); its
-[troubleshooting page](https://plan-store.smithers.sh/troubleshooting/) covers
+[troubleshooting page](../../plan-store/docs/troubleshooting.md) covers
 every code.
 
 ## GraphBuildError

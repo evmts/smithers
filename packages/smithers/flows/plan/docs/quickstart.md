@@ -124,5 +124,5 @@ reader-after-writer pass would have ordered it behind the producer anyway.
   does not, and why invalidation is re-keying.
 - [Diff two plans](./guides/diff-two-plans.md): report what a re-plan changed,
   attributed to the field that changed it.
-- [Persist a plan](https://plan-store.smithers.sh/guides/persist-a-plan/): the
+- [Persist a plan](../../plan-store/docs/guides/persist-a-plan.md): the
   append-only store, in production shape.

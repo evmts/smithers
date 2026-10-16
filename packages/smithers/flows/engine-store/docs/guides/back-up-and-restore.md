@@ -10,7 +10,7 @@ against its own manifest, restores one into a fresh directory, and invalidates
 the ownership fences the restored file still carries.
 
 Back up the authoritative stores even when using the additive
-[typed event contracts](https://journal.smithers.sh/concepts/state-event-authority/).
+[typed event contracts](../../../journal/docs/concepts/state-event-authority.md).
 The demonstrated attempt projection rebuilds disclosed history, including from
 a retained snapshot and suffix. It does not recover arbitrary private results,
 all execution state, or live ownership fences. Current writers and retained

@@ -34,7 +34,7 @@ write from an idempotent repeat:
 A successful mutation means the row is durable. Callers may therefore journal
 and schedule a wake only after the mutation returns.
 
-The additive [state event schemas](https://journal.smithers.sh/concepts/state-event-authority/)
+The additive [state event schemas](../../../journal/docs/concepts/state-event-authority.md)
 describe execution, deferred and clock history with explicit lineage. Existing
 writers retain their bytes and these stores remain authoritative. A retained
 attempt-history projection cannot replace deferred, clock or ownership state.

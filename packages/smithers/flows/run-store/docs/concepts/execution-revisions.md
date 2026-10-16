@@ -48,6 +48,6 @@ explicit source rotation and projection rebuild by the host. Revisions are local
 to one database. They do not establish a transaction with the separate control
 database, and a projection's applied watermark can lag the engine's watermark.
 
-See [engine observation and listing](https://engine-store.smithers.sh/guides/observe-executions/)
+See [engine observation and listing](../../../engine-store/docs/guides/observe-executions.md)
 for bounded snapshots, keyset cursor semantics, live-page concurrency and the
 revision comparison that rejects stale projection updates.

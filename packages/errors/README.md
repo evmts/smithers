@@ -2,7 +2,7 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-**Documentation:** https://errors.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/errors/docs
 
 `SmithersError` and the five error codes the Smithers integration adapters
 raise.
@@ -62,12 +62,12 @@ engine that no longer exists; 1.0 keeps the five the integration trees raise.
 | `UNSUPPORTED`                | The runtime lacks a primitive an integration needs, such as Web Crypto or Ed25519 verification.                                                                                                     | none                                                                             |
 
 Every raise site, the `details` it attaches, and the caller's move are at
-https://errors.smithers.sh/reference/error-codes/.
+https://github.com/smithersai/smithers/blob/main/packages/errors/docs/reference/error-codes.md.
 
 ## Documentation
 
-https://errors.smithers.sh covers the error shape and its redaction contract,
+https://github.com/smithersai/smithers/tree/main/packages/errors/docs covers the error shape and its redaction contract,
 handling a failure from the caller's side, raising one from an adapter,
 detecting one across module copies, every code with every raise site, and the
 API. The procedure for adding a sixth code is at
-https://errors.smithers.sh/guides/add-an-error-code/.
+https://github.com/smithersai/smithers/blob/main/packages/errors/docs/guides/add-an-error-code.md.

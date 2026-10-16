@@ -6,7 +6,7 @@ This package declares `effect` as a `^4.0.4` peer dependency. Install one
 `effect` release in that range so all Smithers packages share one Effect
 runtime.
 
-**Documentation:** https://mcp.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/mcp/docs
 
 Model Context Protocol client and flow adapter for Smithers.
 
@@ -75,7 +75,7 @@ results are accepted with `content: []`, and declared `outputSchema` documents
 are enforced for the supported keyword subset.
 
 Session errors withhold raw child stderr, remote error text/data, and property
-paths. An optional host-only [Diagnostics observer](https://mcp.smithers.sh/reference/api/#diagnostics)
+paths. An optional host-only [Diagnostics observer](https://github.com/smithersai/smithers/blob/main/packages/smithers/mcp/docs/api.md#diagnostics)
 provides credential-redacted `Redacted` details for explicit local inspection,
 with child stderr bounded by `maxStderrBytes` (2048 by default). Successful tool
 outputs, including `isError: true`, are returned unchanged.
@@ -92,20 +92,20 @@ the Smithers MCP server behind `smthrs mcp`.
 
 ## Documentation
 
-Full documentation is at [mcp.smithers.sh](https://mcp.smithers.sh):
+Full documentation is at [the package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/mcp/docs):
 
-- [Quickstart](https://mcp.smithers.sh/quickstart/): a real server in its own
+- [Quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/mcp/docs/quickstart.md): a real server in its own
   process, two tool calls, and the flows they project.
-- [A remote tool as a flow](https://mcp.smithers.sh/concepts/tools-as-flows/):
+- [A remote tool as a flow](https://github.com/smithersai/smithers/blob/main/packages/smithers/mcp/docs/concepts/tools-as-flows.md):
   what the projection produces, and why nothing downstream knows the flow is
   remote.
-- [Grant authority to MCP tools](https://mcp.smithers.sh/guides/grant-authority-to-mcp-tools/):
+- [Grant authority to MCP tools](https://github.com/smithersai/smithers/blob/main/packages/smithers/mcp/docs/guides/grant-authority-to-mcp-tools.md):
   the step between a projected source and a cell that can call it.
-- [Configure servers for the CLI](https://mcp.smithers.sh/guides/configure-servers-for-the-cli/):
+- [Configure servers for the CLI](https://github.com/smithersai/smithers/blob/main/packages/smithers/mcp/docs/guides/configure-servers-for-the-cli.md):
   the `--mcp-config` file the `smthrs` command line reads.
-- [API reference](https://mcp.smithers.sh/reference/api/): every public export
+- [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/mcp/docs/api.md): every public export
   of `Diagnostics`, `McpClient`, `McpError`, and `McpFlows`.
-- [Troubleshooting](https://mcp.smithers.sh/troubleshooting/): every failure
+- [Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/mcp/docs/troubleshooting.md): every failure
   this package reports, with its cause and fix.
 
 ## License

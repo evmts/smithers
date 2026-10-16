@@ -6,7 +6,7 @@ This package declares `effect` as a `^4.0.4` peer dependency. Install one
 `effect` release in that range so all Smithers packages share one Effect
 runtime.
 
-**Documentation:** https://sandbox.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sandbox/docs
 
 Provisioned machines, provider-neutral remote process execution, and sandbox
 liveness for flows. A provider adapts its SDK session to one of two seams:
@@ -18,7 +18,7 @@ them.
 
 It implements no isolation of its own. What a sandbox does and does not prevent
 differs per provider and is documented at
-https://sandbox.smithers.sh/concepts/isolation/.
+https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sandbox/docs/concepts/isolation.md.
 
 ```bash
 npm install @smthrs/sandbox@next effect
@@ -113,7 +113,7 @@ tools use these operations to replace files while preserving their metadata.
 result with the `Work` its checkout gained, a git diff from a base the host can
 fetch. `SandboxMerge.apply` lands that work in a host jj repository as one
 change, recording conflicts the way `jj rebase` does. See
-[Return work from a sandbox](https://sandbox.smithers.sh/guides/return-work-from-a-sandbox/).
+[Return work from a sandbox](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sandbox/docs/guides/return-work-from-a-sandbox.md).
 
 A provider that can be pinged can also be supervised. `SandboxSupervision`
 probes the open session on a cadence and retires it when the probe says it is
@@ -157,8 +157,8 @@ turn a host directory into a filesystem, user, or network security boundary.
 
 ## Limits
 
-See [Limits](https://sandbox.smithers.sh/limits/) for operation bounds,
+See [Limits](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sandbox/docs/limits.md) for operation bounds,
 buffering, and provider-specific byte fidelity.
 
-See the [API reference](https://sandbox.smithers.sh/reference/api/) and the
-[kernel reference](https://kernel.smithers.sh/reference/api/).
+See the [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sandbox/docs/api.md) and the
+[kernel reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md).

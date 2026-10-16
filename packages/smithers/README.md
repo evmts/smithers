@@ -7,7 +7,7 @@ It bundles the private `@effect/platform-node` adapter pinned to `4.0.4` as a de
 dependency, at `4.0.4`; `@effect/sql-pg` is an optional peer for PostgreSQL. Keep the application on that version so
 all Smithers packages share one Effect runtime.
 
-**Documentation:** https://cli.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/docs
 
 `@smthrs/cli` installs `smithers` (also named `smthrs`), the only Smithers CLI. It manages repositories, issues, wiki pages, boxes, authentication, target graphs, and durable agent flows. Build, test, lint, review, and query `PACKAGE.ts` targets, then start flows and manage their persisted runs, approvals, memory, and schedules through the same executable.
 
@@ -174,7 +174,7 @@ These nested modules are exported as `@smthrs/cli/<dir>/<Module>` only. The root
 
 `@smthrs/cli/cli/LegacyBin` runs the retained command line at import, like `@smthrs/cli/bin`; both are declared in `sideEffects`.
 
-Every export of every namespace is on the [API reference](https://cli.smithers.sh/reference/api/), and [Embed the command tree](https://cli.smithers.sh/guides/embed-the-command-tree/) is the guide.
+Every export of every namespace is on the [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/api.md), and [Embed the command tree](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/embed-the-command-tree.md) is the guide.
 
 Control servers bind `127.0.0.1` by default. See the [control-plane guide](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/serve-the-workspace-gateway.md) before opting into a non-loopback bind.
 

@@ -161,7 +161,7 @@ runs, and inspects flows for someone who never imports a package at all.
   stays out, and why invalidation is re-keying.
 - [Declared effects and conflicts](./concepts/effects-and-conflicts.md): how
   reads and writes become ordering edges.
-- [Persist a plan](https://plan-store.smithers.sh/guides/persist-a-plan/): the
+- [Persist a plan](../../plan-store/docs/guides/persist-a-plan.md): the
   store composition and every outcome `record` can answer with.
 - [Troubleshooting](./troubleshooting.md): every refusal this package raises and
   what to change.

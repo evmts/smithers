@@ -75,7 +75,7 @@ questions. For this local trial, use the allow-all store, so that the only
 thing left refusing anything is the confinement itself. `GrantStore.layerNoop`
 is a seam for tests and boot paths, not a production policy; a real host
 answers with rules, as
-[Write a capability policy](https://kernel.smithers.sh/guides/write-a-capability-policy/)
+[Write a capability policy](../../kernel/docs/guides/write-a-capability-policy.md)
 shows:
 
 ```ts

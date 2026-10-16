@@ -6,19 +6,19 @@ This package declares `effect` as a `^4.0.4` peer dependency. Install one
 `effect` release in that range so all Smithers packages share one Effect
 runtime.
 
-**Documentation:** https://core.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/core/docs
 
 Metadata and compatibility adapters over `@smthrs/flow`. Author flows with its canonical `Flow.make(tag, { payload, success, body })`. Beside that it publishes the metadata projections the registry and execution layers read: annotations, effects, placement, key material, digests, and Markdown lowering. The node model is `@smthrs/plan`'s and the graph builder is `@smthrs/flow`'s; `Node` and `Graph` here are the names this package's consumers reach them through.
 
 JavaScript and TypeScript declarations and all planning callbacks must be trusted. `Graph.build` executes flow bodies, `Node.andThen` builders, `Node.catch` recovery callbacks, and an optional `resolveLayers` callback in the caller process with ambient process authority. Purity is a caller obligation, not an enforced boundary. Placement, capability, and effect metadata does not sandbox planning, including sandbox placement, empty capability grants, and sealed effects.
 
-For agent-generated declarations, use a constrained data-only ingestion boundary that trusted code validates and translates into nodes, or load and plan untrusted code in an externally isolated environment with restricted permissions and resources. See [Plan time](https://core.smithers.sh/concepts/plan-time/#planning-requires-trusted-declarations).
+For agent-generated declarations, use a constrained data-only ingestion boundary that trusted code validates and translates into nodes, or load and plan untrusted code in an externally isolated environment with restricted permissions and resources. See [Plan time](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/core/docs/concepts/plan-time.md#planning-requires-trusted-declarations).
 
 ```bash
 npm install @smthrs/core@next effect
 ```
 
-The full API reference lives at [core.smithers.sh/reference/api](https://core.smithers.sh/reference/api/).
+The full API reference lives at [docs/api.md](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/core/docs/api.md).
 
 ## Public API
 

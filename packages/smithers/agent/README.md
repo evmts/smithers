@@ -6,7 +6,7 @@ This package declares `effect` as a `^4.0.4` peer dependency. Install one
 `effect` release in that range so all Smithers packages share one Effect
 runtime.
 
-**Documentation:** https://agent.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/docs
 
 The Smithers agent, and the two ways to run it.
 
@@ -15,7 +15,7 @@ loop on the durable engine. A **cell** is the JavaScript program the model emits
 each frame; it runs in the sandbox, and its only authority is
 `ctx.call(flowName, input)`, so every capability a cell reaches is an ordinary
 flow settling through a durable boundary. The contract is
-[`@smthrs/harness/Cell`](https://harness.smithers.sh/concepts/#the-cell-loop).
+[`@smthrs/harness/Cell`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/docs/concepts.md#the-cell-loop).
 
 `AgentSession` runs that agent as a durable control-plane run — the production
 `ControlExecutor`, where the launch is a flow execution, the events go to the
@@ -49,7 +49,7 @@ const Research = AgentAction.make("docs/Research", {
 })
 ```
 
-[The quickstart](https://agent.smithers.sh/quickstart/) runs that step end to
+[The quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/docs/quickstart.md) runs that step end to
 end against a scripted model, with no API key. The rest of this file is the
 composition guide: what each piece is, and what a host has to provide.
 
@@ -135,7 +135,7 @@ from the record and refuses questions it does not understand. Neither it nor
 host names, taken from `QuickJSSandbox.Variant`. A runtime that refuses to
 compile WebAssembly from bytes, such as Cloudflare's workerd, uses it and
 provides `QuickJSSandbox.layerVariant(variant)` beneath. See
-[Run on Cloudflare workerd](https://harness.smithers.sh/guides/workerd/) for how
+[Run on Cloudflare workerd](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/docs/guides/workerd.md) for how
 a worker builds that variant.
 
 `flows` is an ordered list of `FlowBinding.Source`s; plugin `cellFlows` handlers
@@ -191,7 +191,7 @@ it. It is what a markdown flow's `model:` frontmatter carries and what
 no client — a declaration is portable, and a run that reads one out of a
 repository must not be handed the keys with it. `provider:modelId`
 (`anthropic:claude-sonnet-4-5`) is the convention the resolver in
-[`@smthrs/cli`](https://cli.smithers.sh) understands, not a rule the agent
+[`@smthrs/cli`](https://github.com/smithersai/smithers/tree/main/packages/smithers/docs) understands, not a rule the agent
 enforces.
 
 `Seat.Seat` is the resolved half, and the only thing `Agent.run` accepts: a live
@@ -241,7 +241,7 @@ when it wakes. A host that means to enforce nothing says so with
 over real `Route.anthropic` / `Route.openai` routes with API keys read from the
 environment, and `StandardFlows.filesystem/shell/memory` over the
 permission-guarded host layers from
-[`@smthrs/kernel`](https://kernel.smithers.sh).
+[`@smthrs/kernel`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/kernel/docs).
 
 The module also exports the pieces the session builds itself out of, and they
 stay public because a host that runs the agent its own way needs the same ones:
@@ -664,7 +664,7 @@ The root entry point exports these namespaces, and each is also importable from
 `WorkspaceSandbox`.
 
 Every export of every one of them, with its signature and its errors, is
-documented on [the API reference](https://agent.smithers.sh/reference/api/).
+documented on [the API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/docs/api.md).
 That page is the list; this README is the composition guide.
 
 `@smthrs/agent/package.json` is also exported. `internal/*` and nested `*/index`
@@ -672,7 +672,7 @@ subpaths are not public.
 
 ## Not to be confused with
 
-[`@smthrs/testing`](https://testing.smithers.sh) exports a `FlowEngineLike` of
+[`@smthrs/testing`](https://github.com/smithersai/smithers/tree/main/packages/testing/docs) exports a `FlowEngineLike` of
 its own, and it is a different thing. That one adapts the same engine to
 `EngineSubject` (`run` / `result` / `interrupt` / `resume` / `journal`), the
 conformance contract that library checks engine implementations against. The

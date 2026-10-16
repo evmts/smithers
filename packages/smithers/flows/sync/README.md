@@ -6,10 +6,10 @@ This package declares `effect` as a `^4.0.4` peer dependency. Install one
 `effect` release in that range so all Smithers packages share one Effect
 runtime.
 
-**Documentation:** https://smithers-sync.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/sync/docs
 
 Browser-safe, read-only replication of canonical
-[`@smthrs/journal`](https://journal.smithers.sh) entries. It defines the wire
+[`@smthrs/journal`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/journal/docs) entries. It defines the wire
 protocol, the RPC group, the server, and the replay-then-follow client.
 
 The read path, `SyncRpcs` served by `SyncServer` and followed by `SyncClient`,
@@ -66,7 +66,7 @@ browser, `@effect/platform-node`'s socket layer in Node. Pass
 lists and your credential covers.
 
 The serving side is `SyncServer` over a journal and a run catalog.
-[`@smthrs/gateway`](https://gateway.smithers.sh) already mounts it on
+[`@smthrs/gateway`](https://github.com/smithersai/smithers/tree/main/packages/smithers/gateway/docs) already mounts it on
 `POST /sync` and `/sync/ws`, so a follower against a Smithers gateway writes
 only the code above.
 
@@ -97,7 +97,7 @@ scheme label, and carry a rotation-ready `kid` inside the signed claims. An
 open subscription ends with `unauthorized` when the credential that opened it
 expires, because a stream authorized once at open is otherwise the one thing a
 signed expiry cannot revoke. See
-[Authorization](https://smithers-sync.smithers.sh/concepts/authorization/).
+[Authorization](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sync/docs/concepts/authorization.md).
 
 ## Branch collaboration
 
@@ -114,7 +114,7 @@ when its authenticated runtime bridge is configured. The Go install resolves
 membership, branch and socket session before forwarding; this host adapter uses
 the same `BranchPresence` lease roster. Branch commands and share-link bootstrap
 remain unserved on that mount. See
-[Branch collaboration](https://smithers-sync.smithers.sh/concepts/branches/).
+[Branch collaboration](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sync/docs/concepts/branches.md).
 
 ## Bounds
 
@@ -130,7 +130,7 @@ validated where it enters: a value that is not a positive safe integer fails
 the constructor with `invalid_request` rather than quietly disabling the
 comparison it configures.
 The table of bounds and defaults is in the
-[API reference](https://smithers-sync.smithers.sh/reference/api/#bounds).
+[API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sync/docs/api.md#bounds).
 
 Both change feeds slide rather than block, and neither is a source of truth.
 `RunCatalog.list` and `BranchPresence.list` are the authoritative state, and
@@ -159,13 +159,13 @@ Append-only journal adapters may omit `Journal.Service.generation`. Any adapter
 that truncates or replaces history must implement it and advance the generation
 in its truncation transaction. Upgrade sync clients and servers together;
 older clients cannot detect generation changes. See
-[Rewind generations](https://smithers-sync.smithers.sh/reference/api/#rewind-generations).
+[Rewind generations](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sync/docs/api.md#rewind-generations).
 
 ## Public API
 
 The root exports these namespaces, also available from matching
 `@smthrs/sync/*` subpaths. The
-[API reference](https://smithers-sync.smithers.sh/reference/api/) documents
+[API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sync/docs/api.md) documents
 each one.
 
 | Namespace          | What it owns                                                                                                    |
@@ -194,16 +194,16 @@ Public test subpaths are `@smthrs/sync/test/TestSocket` (`FrameFilter`,
 
 ## Documentation
 
-- [Installation](https://smithers-sync.smithers.sh/installation/)
-- [Quickstart](https://smithers-sync.smithers.sh/quickstart/)
-- [Scopes and cursors](https://smithers-sync.smithers.sh/concepts/scopes-and-cursors/)
-- [Replay then follow](https://smithers-sync.smithers.sh/concepts/replay-then-follow/)
-- [Authorization](https://smithers-sync.smithers.sh/concepts/authorization/)
-- [Follow a run](https://smithers-sync.smithers.sh/guides/follow-a-run/)
-- [Serve the read path](https://smithers-sync.smithers.sh/guides/serve-the-read-path/)
-- [Wire protocol](https://smithers-sync.smithers.sh/protocol/)
-- [API reference](https://smithers-sync.smithers.sh/reference/api/)
-- [Troubleshooting](https://smithers-sync.smithers.sh/troubleshooting/)
+- [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sync/docs/installation.md)
+- [Quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sync/docs/quickstart.md)
+- [Scopes and cursors](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sync/docs/concepts/scopes-and-cursors.md)
+- [Replay then follow](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sync/docs/concepts/replay-then-follow.md)
+- [Authorization](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sync/docs/concepts/authorization.md)
+- [Follow a run](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sync/docs/guides/follow-a-run.md)
+- [Serve the read path](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sync/docs/guides/serve-the-read-path.md)
+- [Wire protocol](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sync/docs/protocol.md)
+- [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sync/docs/api.md)
+- [Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sync/docs/troubleshooting.md)
 - [Optional long soak](docs/guides/run-a-long-soak.md)
 
 ## License

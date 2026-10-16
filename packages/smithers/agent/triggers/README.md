@@ -2,7 +2,7 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-**Documentation:** https://triggers.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/triggers/docs
 
 Durable cron triggers and verified inbound channels for flows. A trigger is a
 durable row: a flow id, a JSON input, and a cron expression. A channel is a
@@ -10,7 +10,7 @@ verified door: it authenticates raw request bytes and maps them onto a start or
 a signal.
 
 Nothing here executes a flow. A launch is handed to
-[`@smthrs/control`](https://control.smithers.sh), so a scheduled or webhook
+[`@smthrs/control`](https://github.com/smithersai/smithers/tree/main/packages/smithers/control/docs), so a scheduled or webhook
 started run gets exactly the authority a person starting it would get.
 
 ## Install
@@ -21,7 +21,7 @@ npm install @smthrs/triggers@next effect
 
 It needs Node.js 26.4.0 or later and `effect` `^4.0.4`. The full
 requirements, the import forms, and the layers a running host adds are on
-the [installation page](https://triggers.smithers.sh/installation/).
+the [installation page](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/triggers/docs/installation.md).
 
 ## The smallest declaration
 
@@ -44,7 +44,7 @@ const nightly = Trigger.make({
 `nightly` is an `Effect<Trigger, TriggerError>`. `Trigger.make` fills the policy
 defaults and refuses a cron expression the calendar never satisfies. Registering
 it in a `TriggerStore` makes it durable, and a running `Scheduler` fires it from
-there. The [quickstart](https://triggers.smithers.sh/quickstart/) walks that
+there. The [quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/triggers/docs/quickstart.md) walks that
 whole path, launch included, on a test clock.
 
 ## What the package does that a cron loop does not
@@ -66,7 +66,7 @@ replay, including across host restarts.
 The root entry point exports these namespaces, and each is also importable from
 `@smthrs/triggers/<Module>`. Every export, with its signature and its
 guarantees, is on the
-[API reference](https://triggers.smithers.sh/reference/api/).
+[API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/triggers/docs/api.md).
 
 | Namespace         | What it is                                                                                   |
 | ----------------- | -------------------------------------------------------------------------------------------- |
@@ -91,12 +91,12 @@ or a column shape needs `SqlTriggerStore`.
 
 ## Documentation
 
-- [Overview](https://triggers.smithers.sh)
-- [Quickstart](https://triggers.smithers.sh/quickstart/)
-- [The claim protocol](https://triggers.smithers.sh/concepts/claim-protocol/)
-- [Choose an overlap and catch-up policy](https://triggers.smithers.sh/guides/choose-a-policy/)
-- [Ingest a verified webhook](https://triggers.smithers.sh/guides/ingest-a-webhook/)
-- [Troubleshooting](https://triggers.smithers.sh/troubleshooting/), which lists
+- [Overview](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/triggers/docs)
+- [Quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/triggers/docs/quickstart.md)
+- [The claim protocol](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/triggers/docs/concepts/claim-protocol.md)
+- [Choose an overlap and catch-up policy](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/triggers/docs/guides/choose-a-policy.md)
+- [Ingest a verified webhook](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/triggers/docs/guides/ingest-a-webhook.md)
+- [Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/triggers/docs/troubleshooting.md), which lists
   every failure code, what causes it, and what to change.
 
 ## License

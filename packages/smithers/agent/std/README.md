@@ -6,7 +6,7 @@ This package declares `effect` as a `^4.0.4` peer dependency. Install one
 `effect` release in that range so all Smithers packages share one Effect
 runtime.
 
-**Documentation:** https://std.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/std/docs
 
 The standard flows tool library for filesystem, search, HTTP, shell, language-server, and Jev judgment work. Each callable tool is an ordinary `@smthrs/core` flow declaration with explicit capabilities and effects, plus an injectable handler where execution is host-owned.
 
@@ -107,7 +107,7 @@ Every limit is a display budget disclosed to the caller, never a silent cut. A c
 | `NodeLanguageServer.MAX_QUEUED_FRAMES`    | 256         | frames buffered for one language server's stdin                 |
 | `NodeLanguageServer.MAX_PENDING_REQUESTS` | 512         | concurrent in-flight JSON-RPC requests to one server            |
 
-Shell capture is bounded where it is read rather than after: a command that prints gigabytes costs the bound, not the whole of what it printed, and the `<stream>DroppedBytes` fields count what the process actually produced. `bash` keeps the first and last 15,000 bytes of a stream and puts one line naming the omitted bytes where the middle was. Every caller-supplied command (`bash`, `test`, `shell_command`) passes a bound. The internal `git` plumbing calls behind `Checkpoints` and `TestRun`'s baseline do not, because a listing read for its content is useless with its head missing. Those fields and the `<stream>Truncated` flags beside them are a wire convention: [`@smthrs/harness`](https://harness.smithers.sh) reads them to refuse a later write of those exact bytes, so check the flag before writing captured output anywhere.
+Shell capture is bounded where it is read rather than after: a command that prints gigabytes costs the bound, not the whole of what it printed, and the `<stream>DroppedBytes` fields count what the process actually produced. `bash` keeps the first and last 15,000 bytes of a stream and puts one line naming the omitted bytes where the middle was. Every caller-supplied command (`bash`, `test`, `shell_command`) passes a bound. The internal `git` plumbing calls behind `Checkpoints` and `TestRun`'s baseline do not, because a listing read for its content is useless with its head missing. Those fields and the `<stream>Truncated` flags beside them are a wire convention: [`@smthrs/harness`](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/harness/docs) reads them to refuse a later write of those exact bytes, so check the flag before writing captured output anywhere.
 
 ## Failures
 
@@ -147,11 +147,11 @@ Six services are injected, and a flow whose service a host has not bound gets a 
 
 ## Documentation
 
-The full documentation is at [std.smithers.sh](https://std.smithers.sh):
+The full documentation is at [the package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/std/docs):
 
-- [Quickstart](https://std.smithers.sh/quickstart/): search a tree and read the definition a hit sits in.
-- [Flows and handlers](https://std.smithers.sh/concepts/flows-and-handlers/): the model behind the two halves.
-- [The search contract](https://std.smithers.sh/concepts/search-contract/): Smithers Ripgrep Subset v1 and its two peers.
-- [Flow reference](https://std.smithers.sh/reference/flows/): every flow's input and output fields.
-- [API reference](https://std.smithers.sh/reference/api/): every module and every public export.
-- [Troubleshooting](https://std.smithers.sh/troubleshooting/): the failures this package produces and what to change.
+- [Quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/std/docs/quickstart.md): search a tree and read the definition a hit sits in.
+- [Flows and handlers](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/std/docs/concepts/flows-and-handlers.md): the model behind the two halves.
+- [The search contract](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/std/docs/concepts/search-contract.md): Smithers Ripgrep Subset v1 and its two peers.
+- [Flow reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/std/docs/reference/flows.md): every flow's input and output fields.
+- [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/std/docs/api.md): every module and every public export.
+- [Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/std/docs/troubleshooting.md): the failures this package produces and what to change.

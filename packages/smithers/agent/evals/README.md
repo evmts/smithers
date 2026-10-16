@@ -2,7 +2,7 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-**Documentation:** https://evals.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/evals/docs
 
 Fixed-suite evaluation for flows: it connects target execution and scorer runners
 to validated suites, committed baselines, regression comparison, reports, and CI
@@ -27,7 +27,7 @@ pnpm add @smthrs/evals@next effect@^4.0.4
 ```
 
 Requirements and entry points are at
-https://evals.smithers.sh/installation/.
+https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/evals/docs/installation.md.
 
 ## Example
 
@@ -58,10 +58,10 @@ const program = Effect.gen(function*() {
 
 `Runner.run` needs only `CaseExecutor`: scoring runs in process by default.
 Baselines, regression comparison, reports, and gates complete the loop;
-https://evals.smithers.sh/quickstart/ walks all of it end to end.
+https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/evals/docs/quickstart.md walks all of it end to end.
 
 ## Reference
 
-https://evals.smithers.sh/reference/api/ documents every export, the stable
+https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/evals/docs/api.md documents every export, the stable
 failure codes, the batch-runner protocol, the step-key rule that separates a
 regression from nondeterminism, and the declared size and concurrency limits.

@@ -1,6 +1,6 @@
 # @smthrs/chain
 
-**Documentation:** https://chain.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/chain/docs
 
 A crash-safe agent loop for TypeScript. A model writes a small JavaScript
 program, the program's only way to reach the outside world is
@@ -69,7 +69,7 @@ To drive a real agent, swap `Author.layerMock` for `ModelAuthor.layer(config)`
 over a real model AND pass the model its instructions: neither `Chain` nor
 `ModelAuthor` writes a prompt, so read the mounted catalog and call
 `Chain.run({ goal, prefix: Prompt.forCatalog(catalog, "concierge") })`. The
-[Quickstart](https://chain.smithers.sh/quickstart/) shows that composition.
+[Quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/chain/docs/quickstart.md) shows that composition.
 `Chain.run` requires `Journal`, `Catalog`, `Author`, and `ScriptRunner`, and
 picks up the optional `Authorize` and `Steering` seams when they are mounted.
 A catalog layer that itself needs those services, such as `SubChains`, must
@@ -105,14 +105,14 @@ JSON boundary bounded at depth 128 and an 8 MiB size budget.
 
 ## Documentation
 
-The full documentation is at https://chain.smithers.sh:
+The full documentation is at https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/chain/docs:
 
-- [Quickstart](https://chain.smithers.sh/quickstart/): a two-link run, the
+- [Quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/chain/docs/quickstart.md): a two-link run, the
   journal it writes, and the replay that repeats nothing.
-- [API reference](https://chain.smithers.sh/reference/api/): every export of
+- [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/chain/docs/api.md): every export of
   the 20 namespaces.
-- [The chain contract](https://chain.smithers.sh/contract/): the gates, the
+- [The chain contract](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/chain/docs/contract.md): the gates, the
   failure taxonomy, the concurrency rule, the resource limits, and the JSON
   boundary.
-- [Troubleshooting](https://chain.smithers.sh/troubleshooting/): every typed
+- [Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/chain/docs/troubleshooting.md): every typed
   failure a run can carry, what causes it, and what to do.

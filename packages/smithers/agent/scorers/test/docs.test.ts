@@ -79,7 +79,7 @@ describe("documentation", () => {
     const readme = read("../README.md")
     // npm renders this file, so its references have to resolve for a reader
     // who has only the tarball. A relative `docs/` path does not.
-    expect(readme).toContain("https://scorers.smithers.sh")
+    expect(readme).toContain("https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/scorers/docs")
     expect(readme).not.toMatch(/\]\(\.\/docs\//)
     // The package is on npm under `next`, where `latest` is an older release.
     expect(readme).toContain("npm install @smthrs/scorers@next effect")

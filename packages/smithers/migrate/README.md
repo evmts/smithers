@@ -6,7 +6,7 @@ This package declares `effect`, `@effect/platform-node` and
 `@effect/platform-node-shared` as exact `4.0.4` dependencies. Keep the
 application on that version so all Smithers packages share one Effect runtime.
 
-**Documentation:** https://migrate.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/migrate/docs
 
 Upgrades a Smithers 0.x (JSX) project to the Smithers 1.0 authoring model and writes an auditable migration report.
 
@@ -59,7 +59,7 @@ Two gates stand before any edit, and both exit 3 with the project untouched. Per
 
 ## The scanner API
 
-The root entry point exports these namespaces; each is also importable from `@smthrs/migrate/<Module>`. The [API reference](https://migrate.smithers.sh/reference/api/) names every export, its signature, and where to import it from.
+The root entry point exports these namespaces; each is also importable from `@smthrs/migrate/<Module>`. The [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/migrate/docs/api.md) names every export, its signature, and where to import it from.
 
 | Module           | Description                                                                                                                                              |
 | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -90,7 +90,7 @@ Read the verification output before you commit it. Each command's last 12 KB of 
 
 ## What a unit is allowed to write
 
-A unit declares its sources and its targets, and that is the only place it may write. A checkpoint (jj change, git ref, or file copy) is taken before the unit starts, along with a digest of the whole tree, and a write outside the unit's file set fails the unit and restores it. The agent cannot read run state at all: the grant rules deny every filesystem action on each 0.x run-state path, so a database, an execution log, or a subscription file is refused before its bytes reach a model call. [Checkpoints and confinement](https://migrate.smithers.sh/concepts/checkpoints/) has the whole guarantee, including what a rollback removes and what it puts back byte for byte.
+A unit declares its sources and its targets, and that is the only place it may write. A checkpoint (jj change, git ref, or file copy) is taken before the unit starts, along with a digest of the whole tree, and a write outside the unit's file set fails the unit and restores it. The agent cannot read run state at all: the grant rules deny every filesystem action on each 0.x run-state path, so a database, an execution log, or a subscription file is refused before its bytes reach a model call. [Checkpoints and confinement](https://github.com/smithersai/smithers/blob/main/packages/smithers/migrate/docs/concepts/checkpoints.md) has the whole guarantee, including what a rollback removes and what it puts back byte for byte.
 
 A verified unit archives what the migration replaced. `package.json`, `tsconfig*.json`, and `.gitignore` are rewritten in place and never moved; every other source of a workflow or project unit moves to `.smithers-migrate/archive/<original path>`. Before a unit is called `migrated` it has to satisfy the postconditions of its kind, and then the whole verification runs again over the final tree.
 
@@ -108,7 +108,7 @@ A derived command is an executable and its arguments, spawned with no shell: a t
 
 ## Documentation
 
-https://migrate.smithers.sh covers the installation shapes, the quickstart, migration units, checkpoints, the mapping table, the report, the guides, every failure code, and the full API reference.
+https://github.com/smithersai/smithers/tree/main/packages/smithers/migrate/docs covers the installation shapes, the quickstart, migration units, checkpoints, the mapping table, the report, the guides, every failure code, and the full API reference.
 
 The operator walkthrough for the whole 0.x upgrade, including every removed CLI verb and flag, is [Upgrade from 0.x to 1.0](https://smithers.sh/migration/1.0).
 

@@ -6,7 +6,7 @@ This package declares `effect` as a `^4.0.4` peer dependency. Install one
 `effect` release in that range so all Smithers packages share one Effect
 runtime.
 
-**Documentation:** https://observability.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/observability/docs
 
 # `@smthrs/observability`
 
@@ -74,13 +74,13 @@ request bytes, byte limit, and running drop count.
 
 ## Documentation
 
-Full documentation is at [observability.smithers.sh](https://observability.smithers.sh):
+Full documentation is at [the package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/observability/docs):
 
-- [Quickstart](https://observability.smithers.sh/quickstart/): export a trace, a log record, and a metric series to a collector you can watch.
-- [Installation](https://observability.smithers.sh/installation/): requirements, import forms, and the rule that keeps the root entry point bundling for a browser.
-- [The layer map](https://observability.smithers.sh/concepts/layer-map/): which builder to reach for, and what each one costs.
-- [API reference](https://observability.smithers.sh/reference/api/): every public export, with validation, backpressure, shutdown, retry, and platform contracts.
-- [Troubleshooting](https://observability.smithers.sh/troubleshooting/): the typed refusals this package reports, and the silent cases that are not refusals at all.
+- [Quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/observability/docs/quickstart.md): export a trace, a log record, and a metric series to a collector you can watch.
+- [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/observability/docs/installation.md): requirements, import forms, and the rule that keeps the root entry point bundling for a browser.
+- [The layer map](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/observability/docs/concepts/layer-map.md): which builder to reach for, and what each one costs.
+- [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/observability/docs/api.md): every public export, with validation, backpressure, shutdown, retry, and platform contracts.
+- [Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/observability/docs/troubleshooting.md): the typed refusals this package reports, and the silent cases that are not refusals at all.
 
 ## License
 

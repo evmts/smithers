@@ -145,4 +145,4 @@ change.
 
 - [Append a generation](./append-a-generation.md): grow a recorded plan without
   rewriting it.
-- [Diff two plans](https://plan.smithers.sh/guides/diff-two-plans/): report what a re-plan changed.
+- [Diff two plans](../../../plan/docs/guides/diff-two-plans.md): report what a re-plan changed.

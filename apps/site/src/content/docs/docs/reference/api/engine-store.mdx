@@ -37,7 +37,7 @@ Every namespace below is also importable from `@smthrs/engine-store/<Module>`.
 `@smthrs/engine-store/*/index` are blocked in the export map.
 
 Shared versioned event schemas are public at `@smthrs/journal/EngineEvent`; see
-[state and event authority](https://journal.smithers.sh/concepts/state-event-authority/).
+[state and event authority](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/concepts/state-event-authority.md).
 Engine adapters `TypedEvents`, `AttemptLifecycle`, and `ResultEnvelope` remain
 internal. They are additive contracts: current writers retain their bytes, and
 the disclosed attempt projection does not replace executable recovery stores.
@@ -59,7 +59,7 @@ Node.js and Bun compositions use SQLite or the shipped PostgreSQL adapter;
 bundling does not supply a durable browser driver or qualify browser execution.
 PostgreSQL storage alone does not qualify a canonical backend deployment:
 artifacts, workspaces, and native process state still need durable host storage.
-See [database configuration](https://database.smithers.sh/concepts/sqlite-only/)
+See [database configuration](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/database/docs/concepts/sqlite-only.md)
 and [platform support](/docs/reference/api/#platform-support).
 
 ## EngineStore

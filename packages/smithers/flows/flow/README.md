@@ -6,7 +6,7 @@ This package declares `effect` as a `^4.0.4` peer dependency. Install one
 `effect` release in that range so all Smithers packages share one Effect
 runtime.
 
-**Documentation:** https://flow.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/flow/docs
 
 `@smthrs/flow` is the authoring model for durable workflows in TypeScript. You
 declare each step as an **action**: a stable name and the schemas on either side
@@ -22,8 +22,8 @@ implements `flow.action` and renders `flow.prompt` at execution. See
 The package carries no engine. It declares the `FlowRuntime` port that an engine
 implements, so the whole authoring surface bundles for a browser and a test can
 swap the runtime for a fixture without touching a declaration.
-[`@smthrs/engine`](https://engine.smithers.sh) implements that port;
-[`@smthrs/engine-store`](https://engine-store.smithers.sh) makes it durable.
+[`@smthrs/engine`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/engine/docs) implements that port;
+[`@smthrs/engine-store`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/engine-store/docs) makes it durable.
 
 ## Why
 
@@ -192,18 +192,18 @@ Every namespace below is exported from the root and from a matching
 
 ## Documentation
 
-Full documentation is at [flow.smithers.sh](https://flow.smithers.sh).
+Full documentation is at [the package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/flow/docs).
 
-- [Quickstart](https://flow.smithers.sh/quickstart/): the program above end to
+- [Quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/quickstart.md): the program above end to
   end, including what happens on the second run.
-- [Flows and actions](https://flow.smithers.sh/concepts/flows-and-actions/): the
+- [Flows and actions](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/concepts/flows-and-actions.md): the
   two nouns, and why an implementation attaches as a layer.
-- [Bodies are plans](https://flow.smithers.sh/concepts/bodies-and-plans/): what a
+- [Bodies are plans](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/concepts/bodies-and-plans.md): what a
   body may not do, and why that restriction is what makes replay work.
-- [Guides](https://flow.smithers.sh/guides/build-a-body/): composing a body,
+- [Guides](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/guides/build-a-body.md): composing a body,
   retries, durable waits, human decisions, child flows, and rollback.
-- [API reference](https://flow.smithers.sh/reference/api/): every public export.
-- [Testing](https://flow.smithers.sh/testing/): topology, interpretation, and
+- [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/api.md): every public export.
+- [Testing](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/docs/testing.md): topology, interpretation, and
   execution, and which level a given assertion belongs at.
 
 ## License

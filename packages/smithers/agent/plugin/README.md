@@ -6,7 +6,7 @@ This package declares `effect` as a `^4.0.4` peer dependency. Install one
 `effect` release in that range so all Smithers packages share one Effect
 runtime.
 
-**Documentation:** https://plugin.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/plugin/docs
 
 A typed, bounded plugin kernel for Effect programs: Vite's plugin model, with
 hooks that are ordinary Effects, ordering that follows Vite's rules exactly, and
@@ -52,10 +52,10 @@ declare module "@smthrs/plugin" {
 ```
 
 The shipped host is the Smithers agent loop in
-[`@smthrs/agent`](https://agent.smithers.sh), which adds three waterfalls to the
+[`@smthrs/agent`](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/docs), which adds three waterfalls to the
 kernel's two hooks and dispatches them around each frame of an agent cell. Both
 packages sit under the `smthrs` command line,
-[`@smthrs/cli`](https://cli.smithers.sh).
+[`@smthrs/cli`](https://github.com/smithersai/smithers/tree/main/packages/smithers/docs).
 
 ## What it does not do
 
@@ -77,13 +77,13 @@ startup cannot change dispatch or sealed cache keys.
 
 ## Documentation
 
-- [Quickstart](https://plugin.smithers.sh/quickstart/): build a host with a hook
+- [Quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/plugin/docs/quickstart.md): build a host with a hook
   of its own and run it.
-- [Hook kinds](https://plugin.smithers.sh/concepts/hook-kinds/),
-  [Resolution](https://plugin.smithers.sh/concepts/resolution/), and
-  [Configuration](https://plugin.smithers.sh/concepts/configuration/): the model
+- [Hook kinds](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/plugin/docs/concepts/hook-kinds.md),
+  [Resolution](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/plugin/docs/concepts/resolution.md), and
+  [Configuration](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/plugin/docs/concepts/configuration.md): the model
   behind the kernel.
-- [API reference](https://plugin.smithers.sh/reference/api/): every export, with
+- [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/plugin/docs/api.md): every export, with
   signatures and limits.
-- [Troubleshooting](https://plugin.smithers.sh/troubleshooting/): every error
+- [Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/plugin/docs/troubleshooting.md): every error
   code, what causes it, and what to change.

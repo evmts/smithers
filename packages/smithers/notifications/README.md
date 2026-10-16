@@ -6,7 +6,7 @@ This package declares `effect` as a `^4.0.4` peer dependency. Install one
 `effect` release in that range so all Smithers packages share one Effect
 runtime.
 
-**Documentation:** https://notifications.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/notifications/docs
 
 Durable notification queue, admission policy, and journal projection for flows. It models human and system notifications, derives queue state from journal events, and drains eligible work at harness boundaries.
 
@@ -33,7 +33,7 @@ The root entry point exports these namespaces; each is also importable from `@sm
 
 Every export of every module, with its signature and the meaning of each
 parameter, is on
-[the API reference](https://notifications.smithers.sh/reference/api/). This file
+[the API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/notifications/docs/api.md). This file
 deliberately does not repeat it.
 
 ## What a caller has to know

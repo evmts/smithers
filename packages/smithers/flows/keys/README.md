@@ -6,7 +6,7 @@ This package declares `effect` as a `^4.0.4` peer dependency. Install one
 `effect` release in that range so all Smithers packages share one Effect
 runtime.
 
-**Documentation:** https://keys.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/keys/docs
 
 Give a piece of structured data a name that any process can compute for itself:
 a 69-character key such as `key1_74a286a3...ec55c683`. The same input always
@@ -22,8 +22,8 @@ npm install @smthrs/keys@next effect
 `@effect/platform-node` provides `NodeCrypto` for the example below and is
 optional if you supply your own `Crypto` implementation.
 
-`effect` is a peer dependency in the range `^4.0.4`; [`@smthrs/canonical`](https://canonical.smithers.sh) and
-[`@smthrs/crypto`](https://crypto.smithers.sh) install with the package and are
+`effect` is a peer dependency in the range `^4.0.4`; [`@smthrs/canonical`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/canonical/docs) and
+[`@smthrs/crypto`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/crypto/docs) install with the package and are
 the only other runtime dependencies. Node.js 26.4.0 or later; the package
 imports no `node:` built-in, so the same code runs under Bun and in a browser.
 
@@ -68,4 +68,4 @@ Derivation inherits `Canonical` semantics, is one-shot, and imposes no size or
 depth limit of its own, so bound untrusted input before canonicalizing it.
 
 Full documentation, including the `Crypto` layer to provide on Node.js, on Bun,
-and in a browser, is at https://keys.smithers.sh.
+and in a browser, is at https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/keys/docs.

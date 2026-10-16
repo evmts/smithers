@@ -2,7 +2,7 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-**Documentation:** https://capability.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/capability/docs
 
 Capability values and permission failures: the vocabulary a program uses to
 decide whether one operation may proceed.
@@ -15,11 +15,11 @@ the answer back to a caller.
 
 The package holds no state. It reads no files, opens no sockets, and enforces
 nothing. Its one runtime dependency is
-[`@smthrs/canonical`](https://canonical.smithers.sh), and
+[`@smthrs/canonical`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/canonical/docs), and
 [`effect`](https://effect.website) is a peer in the range `effect@^4.0.4`.
 It bundles for a browser unchanged. Enforcement, the grant store, the layers
 that decorate host services, and the journal live in
-[`@smthrs/kernel`](https://kernel.smithers.sh).
+[`@smthrs/kernel`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/kernel/docs).
 
 ## Install
 
@@ -81,7 +81,7 @@ Both are re-exported from the root entry point and are also importable from
 | `Capability` | `Capability`, `CapabilityPattern`, `Action`, `PatternAction`, `EffectTier`, `TierOptions`, `maxResourceLength`, `maxMatchWork`, `make`, `format`, `parse`, `parsePattern`, `patternFromCapability`, `withinMatchBudget`, `matches`, `subsumes`, `tierOf`, `requiresIdempotencyKey`.                              |
 | `Permission` | `PermissionRequired`, `PermissionDenied`, `GrantStoreError`, `GrantStoreErrorCode`, the `PermissionError` union and its schema, `Rule`, `RuleEffect`, `evaluate`, `permissionRequired`, `permissionDenied`, `isPermissionError`, `formatError`, `maxDisplayFieldLength`, `toPlatformError`, `fromPlatformError`. |
 
-Full reference: <https://capability.smithers.sh/reference/api/>.
+Full reference: <https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/capability/docs/api.md>.
 
 ## Contracts
 

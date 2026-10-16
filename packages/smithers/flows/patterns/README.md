@@ -6,7 +6,7 @@ This package declares `effect` as a `^4.0.4` peer dependency. Install one
 `effect` release in that range so all Smithers packages share one Effect
 runtime.
 
-**Documentation:** https://smithers-patterns.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/patterns/docs
 
 Higher-order flow patterns and decorators for flows: review loops, escalation
 ladders, sagas, merge queues, check suites, and model-authored delegation. Every
@@ -59,7 +59,7 @@ graph of six calls you can count and cost before anything happens.
 its result.
 
 The full API reference lives at
-[smithers-patterns.smithers.sh/reference/api](https://smithers-patterns.smithers.sh/reference/api/).
+[docs/api.md](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/patterns/docs/api.md).
 
 ## Public API
 
@@ -119,7 +119,7 @@ Unicode normalization. Every `make`, `run`, and decorator factory snapshots
 its options at the call, so a later edit to the caller's objects does not
 change a declaration or a run. Flows, callbacks, inputs, and the values
 callbacks return stay the caller's references. The full contract is in
-[Identity and ownership](https://smithers-patterns.smithers.sh/reference/api/#identity-and-ownership).
+[Identity and ownership](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/patterns/docs/api.md#identity-and-ownership).
 
 ## Where a `WithCache` policy takes effect
 
@@ -130,12 +130,12 @@ nonblank string. Invalid declarations throw `PatternError` with code
 
 The options enter declaration identity. `ttlMs` and `scope` also travel in the
 flow's annotation bag, preserved through decorator composition. The
-[`@smthrs/registry`](https://registry.smithers.sh) bridge lowers a module's
+[`@smthrs/registry`](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/registry/docs) bridge lowers a module's
 default-exported flow policy onto a dispatched action. Ordinary nested core
 calls do not propagate the flow's bag. The durable engine reads the action
 policy set by `CacheEnvironment.withCache(action, policy)` from
-[`@smthrs/flow`](https://flow.smithers.sh).
+[`@smthrs/flow`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/flow/docs).
 
-See the [WithCache reference](https://smithers-patterns.smithers.sh/reference/api/#withcache)
+See the [WithCache reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/patterns/docs/api.md#withcache)
 for the options, host boundary, and a minimal hermetic flow example, and
-[`@smthrs/step-cache`](https://step-cache.smithers.sh/reference/api/) for enforcement.
+[`@smthrs/step-cache`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/step-cache/docs/api.md) for enforcement.

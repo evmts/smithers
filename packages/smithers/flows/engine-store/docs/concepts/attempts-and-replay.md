@@ -141,7 +141,7 @@ fails with `fence_lost` and self-interrupts instead of appending.
 
 ## Typed history and execution authority
 
-The shared [state and event authority contract](https://journal.smithers.sh/concepts/state-event-authority/)
+The shared [state and event authority contract](../../../journal/docs/concepts/state-event-authority.md)
 defines additive versioned event families. Current attempt writers retain their
 existing bytes. The engine's internal attempt lifecycle and projection adapters
 do not change that writer contract or expose new public entrypoints.

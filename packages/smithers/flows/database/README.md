@@ -6,7 +6,7 @@ This package declares `effect` as a `^4.0.4` peer dependency. Install one
 `effect` release in that range so all Smithers packages share one Effect
 runtime.
 
-**Documentation:** https://database.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/database/docs
 
 One transaction boundary for SQL writes in an Effect application. Every write
 goes through `DurableWriter.write`, which runs it inside a transaction, replays
@@ -107,18 +107,18 @@ classification and the error vocabulary are dialect blind. SQLite and PostgreSQL
 
 ## Documentation
 
-Full documentation is at [database.smithers.sh](https://database.smithers.sh):
+Full documentation is at [the package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/database/docs):
 
-- [Quickstart](https://database.smithers.sh/quickstart/): the same program
+- [Quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/database/docs/quickstart.md): the same program
   built one piece at a time, down to what the migration ledger holds.
-- [The write boundary](https://database.smithers.sh/concepts/write-boundary/):
+- [The write boundary](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/database/docs/concepts/write-boundary.md):
   the serialization guarantee consumers depend on, savepoint nesting, and what
   replays.
-- [The migration ladder](https://database.smithers.sh/concepts/migration-ladder/):
+- [The migration ladder](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/database/docs/concepts/migration-ladder.md):
   namespaces, id blocks, and the skip the loader refuses to perform.
-- [API reference](https://database.smithers.sh/reference/api/): every public
+- [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/database/docs/api.md): every public
   export.
-- [Troubleshooting](https://database.smithers.sh/troubleshooting/): the
+- [Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/database/docs/troubleshooting.md): the
   messages this package produces and what to change.
 
 ## License

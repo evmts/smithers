@@ -6,7 +6,7 @@ This package declares `effect` as a `^4.0.4` peer dependency. Install one
 `effect` release in that range so all Smithers packages share one Effect
 runtime.
 
-**Documentation:** https://platform-browser.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/platform-browser/docs
 
 Two Effect platform services a browser tab otherwise cannot have: `FileSystem`,
 over a virtual filesystem the page mounts, and `ChildProcessSpawner`, over a
@@ -139,10 +139,10 @@ forwards `mode`, `writeFile` forwards `flag` and `mode`, `access` answers from
 the reported mode bits, `stream` honours its bounds and refuses fractional ones,
 and `realPath` canonicalizes through the backend's own `realpath` when it has
 one. Without `realpath`, `realPath` fails with a `PermissionDenied` `PlatformError`;
-there is no fallback. The full statement is at https://platform-browser.smithers.sh/contract/,
+there is no fallback. The full statement is at https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-browser/docs/contract.md,
 each option and backend error tag is tabled at
-https://platform-browser.smithers.sh/reference/api/, and every refusal with its
-fix is at https://platform-browser.smithers.sh/troubleshooting/.
+https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-browser/docs/api.md, and every refusal with its
+fix is at https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-browser/docs/troubleshooting.md.
 
 ## Runtimes
 
@@ -159,4 +159,4 @@ durable engine does not run there: its `SqlClient` uses `node:sqlite`, and
 Because both backend slices are structural, a test satisfies them without either
 vendor package: Node's own `node:fs/promises` satisfies `ZenFsPromisesLike`, and
 `JustBashLike` is one function. See
-https://platform-browser.smithers.sh/testing/.
+https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-browser/docs/testing.md.

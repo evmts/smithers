@@ -6,7 +6,7 @@ This package declares `effect` as a `^4.0.4` peer dependency. Install one
 `effect` release in that range so all Smithers packages share one Effect
 runtime.
 
-**Documentation:** https://time-travel.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/time-travel/docs
 
 Read a durable run's past, branch it, or take it back. One injectable Effect
 service, `TimeTravel`, carries the four verbs that do it: `replay` and `inspect`
@@ -26,7 +26,7 @@ npm install @smthrs/time-travel@next effect
 A durable fork reuses completed action results through its frame, including
 compensable and irreversible actions. Steps after the frame execute under the
 child's own identity, even with a shared cache environment. See
-[Fork a run](https://time-travel.smithers.sh/guides/fork-a-run/).
+[Fork a run](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/time-travel/docs/guides/fork-a-run.md).
 
 Node.js 26.4.0 or later. The package ships ESM and CommonJS with TypeScript
 declarations, and its root entry point bundles for the browser with no `node:`
@@ -89,7 +89,7 @@ const rewound = Effect.gen(function*() {
 ## Failure behaviour
 
 Every operation fails as a `TimeTravelError` discriminated by a closed `code`.
-The [API reference](https://time-travel.smithers.sh/reference/api/) carries the
+The [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/time-travel/docs/api.md) carries the
 full table; in short:
 
 `busy` (another owner holds the run), `live_parent` / `live_child` (the run or a
@@ -137,13 +137,13 @@ discarded future cannot answer them.
 
 ## Documentation
 
-- [Quickstart](https://time-travel.smithers.sh/quickstart/): execute a durable
+- [Quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/time-travel/docs/quickstart.md): execute a durable
   run, then fold its journal into a number.
-- [Installation](https://time-travel.smithers.sh/installation/): the five
+- [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/time-travel/docs/installation.md): the five
   services `TimeTravel.layer` requires.
-- [API reference](https://time-travel.smithers.sh/reference/api/): every public
+- [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/time-travel/docs/api.md): every public
   export and the closed list of failure codes.
-- [Troubleshooting](https://time-travel.smithers.sh/troubleshooting/): each
+- [Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/time-travel/docs/troubleshooting.md): each
   refusal, and what to change.
 
 Licensed MIT.

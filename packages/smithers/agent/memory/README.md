@@ -6,7 +6,7 @@ This package declares `effect` as a `^4.0.4` peer dependency. Install one
 `effect` release in that range so all Smithers packages share one Effect
 runtime.
 
-**Documentation:** https://memory.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/memory/docs
 
 Durable memory for an AI agent: facts, notes, and message threads kept in
 SQLite, ranked for recall, and reachable by a model through two operations it
@@ -28,7 +28,7 @@ generation of the package, which has a different API.
 
 It needs Node.js 26.4.0 or later and `effect` `^4.0.4` as a peer. The full
 requirements, and the two packages a file-backed store adds, are on the
-[installation page](https://memory.smithers.sh/installation/).
+[installation page](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/memory/docs/installation.md).
 
 ## Write a fact and recall it
 
@@ -52,7 +52,7 @@ const rows = await Effect.runPromise(program.pipe(Effect.provide(memory)))
 `global-notes` is a bank, the public string spelling of a namespace.
 `TestMemory.layer` forgets everything when the process exits; swapping it for
 `MemoryStore.layer` over a SQLite file is a one-layer change, and the
-[quickstart](https://memory.smithers.sh/quickstart/) walks that whole path.
+[quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/memory/docs/quickstart.md) walks that whole path.
 
 ## What the package gives you
 
@@ -81,7 +81,7 @@ const rows = await Effect.runPromise(program.pipe(Effect.provide(memory)))
 
 The root entry point exports these namespaces, and each is also importable from
 `@smthrs/memory/<Module>`. Every export, with its signature and its guarantees,
-is on the [API reference](https://memory.smithers.sh/reference/api/).
+is on the [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/memory/docs/api.md).
 
 | Namespace          | What it is                                                                        |
 | ------------------ | --------------------------------------------------------------------------------- |
@@ -109,13 +109,13 @@ authoritative store over a fresh in-memory database. `internal/*`,
 
 ## Documentation
 
-- [Overview](https://memory.smithers.sh)
-- [Quickstart](https://memory.smithers.sh/quickstart/)
-- [What memory persists](https://memory.smithers.sh/concepts/durability/)
-- [How recall works](https://memory.smithers.sh/concepts/recall/)
-- [Memory policies](https://memory.smithers.sh/concepts/policies/)
-- [Give an agent opening memory](https://memory.smithers.sh/guides/agent-opening-context/)
-- [Troubleshooting](https://memory.smithers.sh/troubleshooting/), which lists
+- [Overview](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/memory/docs)
+- [Quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/memory/docs/quickstart.md)
+- [What memory persists](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/memory/docs/concepts/durability.md)
+- [How recall works](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/memory/docs/concepts/recall.md)
+- [Memory policies](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/memory/docs/concepts/policies.md)
+- [Give an agent opening memory](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/memory/docs/guides/agent-opening-context.md)
+- [Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/memory/docs/troubleshooting.md), which lists
   every failure code, what causes it, and what to change.
 
 ## License

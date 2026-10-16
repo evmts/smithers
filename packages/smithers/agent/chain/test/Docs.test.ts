@@ -199,11 +199,11 @@ describe("package documentation", () => {
   })
 
   // The npm README is a reader's front page, not a maintainer's map, so it
-  // links the published site rather than the source files under `docs/`.
+  // links the docs files on GitHub, which resolve from the tarball.
   it("keeps the README pointing at the published documentation", () => {
-    expect(readme).toContain("https://chain.smithers.sh")
-    expect(readme).toContain("https://chain.smithers.sh/reference/api/")
-    expect(readme).toContain("https://chain.smithers.sh/contract/")
+    expect(readme).toContain("https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/chain/docs")
+    expect(readme).toContain("https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/chain/docs/api.md")
+    expect(readme).toContain("https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/chain/docs/contract.md")
   })
 
   // Neither `Chain` nor `ModelAuthor` supplies a prompt: `Chain.run` defaults

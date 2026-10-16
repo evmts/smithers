@@ -6,7 +6,7 @@ This package declares `effect` as a `^4.0.4` peer dependency. Install one
 `effect` release in that range so all Smithers packages share one Effect
 runtime.
 
-**Documentation:** https://model.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/model/docs
 
 Schema-first Effect model protocols, routes, and streaming events for flows. It
 separates provider-neutral model requests from provider framing,
@@ -24,7 +24,7 @@ speaking one of those wire formats reach your code as the same typed
 npm install @smthrs/model@next effect
 ```
 
-Requirements and import forms are at https://model.smithers.sh/installation/.
+Requirements and import forms are at https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/model/docs/installation.md.
 
 ## Example
 
@@ -123,7 +123,7 @@ The root entry point exports these namespaces. Each is also importable from
 
 ## Reference
 
-https://model.smithers.sh/reference/api/ documents every export, the failure
+https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/model/docs/api.md documents every export, the failure
 vocabulary and its stable codes, the retry ladder, the redaction rules, and the
 declared resource limits.
 

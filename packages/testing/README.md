@@ -6,7 +6,7 @@ This package declares `effect` as a `^4.0.4` peer dependency. Install one
 `effect` release in that range so all Smithers packages share one Effect
 runtime.
 
-**Documentation:** https://testing.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/testing/docs
 
 Testing and conformance library for Smithers flows. It provides layered engine
 and model doubles, pure plan and journal assertions, restart and parity suites,
@@ -53,7 +53,7 @@ supplies what a test says about the run those services produced and the doubles
 the run executes against.
 
 Every module, every export, and the contract of each is at
-<https://testing.smithers.sh/reference/api/>.
+<https://github.com/smithersai/smithers/blob/main/packages/testing/docs/api.md>.
 
 ## Inspect real processes
 

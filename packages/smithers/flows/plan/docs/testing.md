@@ -27,7 +27,7 @@ anything: a plan is a pure function of its declarations, so a plan test is an
 ordinary value test.
 
 Testing persistence is [`@smthrs/plan-store`](/api/plan-store)'s
-[testing page](https://plan-store.smithers.sh/testing/). It drives the same
+[testing page](../../plan-store/docs/testing.md). It drives the same
 fixtures this package ships at `@smthrs/plan/test/PlanFixtures`, so a draft
 builder is written once and used on both sides.
 

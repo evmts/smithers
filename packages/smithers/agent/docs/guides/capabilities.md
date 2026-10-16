@@ -109,7 +109,7 @@ sets must refuse, and a constant yes is a disabled brake. See the repository's
 fixture: it checks named commands against the record and refuses other questions.
 It is not a production default or a general language judge.
 
-See [the harness's completion brake](https://harness.smithers.sh/reference/api/#completionclaim).
+See [the harness's completion brake](../../harness/docs/api.md#completionclaim).
 
 ## Jev as a flow the cell can call
 

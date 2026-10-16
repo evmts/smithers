@@ -6,9 +6,9 @@ This package declares `effect` as a `^4.0.4` peer dependency. Install one
 `effect` release in that range so all Smithers packages share one Effect
 runtime.
 
-**Documentation:** https://plan-store.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/plan-store/docs
 
-Durable, append-only persistence for a [`@smthrs/plan`](https://plan.smithers.sh) plan.
+Durable, append-only persistence for a [`@smthrs/plan`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/plan/docs) plan.
 
 A plan is an inert value: nodes, edges, computed keys, effect declarations,
 conflict annotations, and the digest a run's approval binds to. Compiling one
@@ -29,7 +29,7 @@ npm install @smthrs/plan-store@next effect
 It needs Node.js 26.4.0 or later and `effect` `^4.0.4`. The root names no
 database driver, so it bundles for the browser; the driver layers a durable
 composition adds are on the
-[installation page](https://plan-store.smithers.sh/installation/).
+[installation page](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan-store/docs/installation.md).
 
 ## Record a plan and read it back
 
@@ -100,7 +100,7 @@ true
 The root entry point exports these namespaces, and each is also importable from
 `@smthrs/plan-store/<Module>`. Every export, with its signature and its
 guarantees, is on the
-[API reference](https://plan-store.smithers.sh/reference/api/).
+[API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan-store/docs/api.md).
 
 | Namespace    | What it is                                                         |
 | ------------ | ------------------------------------------------------------------ |
@@ -109,12 +109,12 @@ guarantees, is on the
 
 ## Documentation
 
-- [Overview](https://plan-store.smithers.sh)
-- [Quickstart](https://plan-store.smithers.sh/quickstart/)
-- [Persist a plan](https://plan-store.smithers.sh/guides/persist-a-plan/)
-- [Append a generation](https://plan-store.smithers.sh/guides/append-a-generation/)
-- [Testing](https://plan-store.smithers.sh/testing/)
-- [Troubleshooting](https://plan-store.smithers.sh/troubleshooting/), which
+- [Overview](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/plan-store/docs)
+- [Quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan-store/docs/quickstart.md)
+- [Persist a plan](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan-store/docs/guides/persist-a-plan.md)
+- [Append a generation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan-store/docs/guides/append-a-generation.md)
+- [Testing](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan-store/docs/testing.md)
+- [Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan-store/docs/troubleshooting.md), which
   lists every failure message, what causes it, and what to change.
 
 ## License

@@ -56,7 +56,7 @@ it("typechecks the return-work guide's actions and resolver strategy", () => {
 
 it("links README limits to the authored limits page without copying its table", () => {
   const limits = read("README.md").split("## Limits\n")[1]!
-  expect(limits).toMatch(/\[Limits\]\(https:\/\/sandbox\.smithers\.sh\/limits\/\)/)
+  expect(limits).toMatch(/\[Limits\]\(https:\/\/github\.com\/smithersai\/smithers\/blob\/main\/packages\/smithers\/flows\/sandbox\/docs\/limits\.md\)/)
   expect(limits).not.toContain("| Path")
   expect(limits).not.toContain("Two things here are bounded")
 })

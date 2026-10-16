@@ -36,11 +36,11 @@ describe("documentation", () => {
   })
 
   // The README is what npm renders, and the package's "files" list does not
-  // ship docs/, so the reference it points a reader at has to be the published
-  // site rather than a path that is absent from the tarball.
+  // ship docs/, so the reference it points a reader at has to be an absolute
+  // GitHub URL rather than a path that is absent from the tarball.
   it("keeps the package README pointing at the published reference", () => {
     const readme = read("../README.md")
-    expect(readme).toContain("https://evals.smithers.sh/reference/api/")
+    expect(readme).toContain("https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/evals/docs/api.md")
     expect(readme).not.toContain("npm install")
   })
 

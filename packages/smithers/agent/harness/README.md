@@ -6,7 +6,7 @@ This package declares `effect` as a `^4.0.4` peer dependency. Install one
 `effect` release in that range so all Smithers packages share one Effect
 runtime.
 
-**Documentation:** https://harness.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/harness/docs
 
 An agent loop where the model writes JavaScript instead of calling tools. Each
 turn the model emits a **cell**: a small program that runs in a sandbox the run
@@ -23,7 +23,7 @@ client.
 npm install @smthrs/harness@next effect
 ```
 
-[Installation](https://harness.smithers.sh/installation/) covers the runtimes
+[Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/docs/installation.md) covers the runtimes
 it supports and its `effect` peer range.
 
 ## A working example
@@ -65,7 +65,7 @@ The controller also keeps the script itself, for the one host that needs it. A f
 
 Every `ctx.call` inside a cell is its own keyed, journaled, permission-gated boundary at the tier the flow declares, so a cell is never one opaque activity. That is what makes a crash or a permission park mid-cell recoverable: the cell source re-executes from the top, boundaries that already settled replay their recorded values, and execution reaches the parked call deterministically.
 
-One case is bounded rather than free: a call the `callMs` ceiling interrupted settled nowhere, so a re-executed frame issues it to the host again and is then handed the recorded timeout. The cell's branch is stable either way; what the run pays for twice is the interrupted call. [Durability](https://harness.smithers.sh/reference/api/#durability) says why the call cannot move inside the record that would suppress it.
+One case is bounded rather than free: a call the `callMs` ceiling interrupted settled nowhere, so a re-executed frame issues it to the host again and is then handed the recorded timeout. The cell's branch is stable either way; what the run pays for twice is the interrupted call. [Durability](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/docs/api.md#durability) says why the call cannot move inside the record that would suppress it.
 
 ## Flows are the only capability primitive
 
@@ -77,7 +77,7 @@ A cell is handed exactly one authority: `ctx.call(flowName, input)`. There is no
 
 ## Running an agent needs a configured judge
 
-The sixth brake on a completion asks Jev, TypeSafe's decision model, whether the claim the run wrote matches the evidence the run produced, through the `Evaluator` service of [`@smthrs/model`](https://model.smithers.sh). It never falls back. A completion nothing could judge fails the turn as `HarnessError` `completion_unjudged` carrying the reason, the way `read_only_cap` fails it, rather than standing unjudged: a brake that goes quiet when its model is down is a brake that is only there when it is not needed.
+The sixth brake on a completion asks Jev, TypeSafe's decision model, whether the claim the run wrote matches the evidence the run produced, through the `Evaluator` service of [`@smthrs/model`](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/model/docs). It never falls back. A completion nothing could judge fails the turn as `HarnessError` `completion_unjudged` carrying the reason, the way `read_only_cap` fails it, rather than standing unjudged: a brake that goes quiet when its model is down is a brake that is only there when it is not needed.
 
 It runs only where the workflow arms it. `claimCap` defaults to 0, so no model reads a completion unless the flow running the agent passes a positive cap through `AgentAction`'s `claimCap`, `AgentAction.Host.claimCap` or `Agent.Options.claimCap` (Will, 2026-10-14, #3993): a model checking the work spends tokens and time on every completion and is a verification policy, which belongs to the workflow. On the 2026-10-14 SWE-bench Pro run the default judge refused 10 runs as `claim_unproven`, 9 of them correct. The deterministic completion demands run on every completion either way. Armed, it never goes quiet: every completion with a claim is read, the cap (3 is the measured number) is the number of frames the run is given to prove one, and a claim with no bounce left fails the turn as `claim_unproven` carrying both probabilities. The cap used to end the brake instead of the run, so the second claim stood unread: on a real seat a run bounced once re-claimed the identical sentence and finished `stop` on it while the served repository's own test exited 1.
 
@@ -95,9 +95,9 @@ An offline host binds `Evaluator.layerScripted` deliberately, dispatches by ques
 The root entry point exports one namespace per module; each is also importable from `@smthrs/harness/<Module>`. `QuickJSSandbox` is deliberately _not_ re-exported from the root: it carries an embedded WebAssembly build, so it is imported from its own subpath by hosts that want it.
 
 Every module and every export it publishes is listed in the
-[module and export inventory](https://harness.smithers.sh/reference/).
+[module and export inventory](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/docs/reference.md).
 
-`@smthrs/harness/QuickJSSandbox` exports `make` and `layer`: the QuickJS-WASM `Sandbox` binding, which runs the same single-file build on Node and in a browser and enforces the default ceilings above. It is also the one binding that offers `Sandbox.openRealm`, the persistent realm every run holds for its whole life ([Repl realm](https://harness.smithers.sh/concepts/#repl-realm)). It also exports `VariantService`, `Variant`, `layerVariantLive`, `layerVariant`, `makeWithVariant` and `layerWithVariant`, which are how a host names the build instead of taking the default; see below.
+`@smthrs/harness/QuickJSSandbox` exports `make` and `layer`: the QuickJS-WASM `Sandbox` binding, which runs the same single-file build on Node and in a browser and enforces the default ceilings above. It is also the one binding that offers `Sandbox.openRealm`, the persistent realm every run holds for its whole life ([Repl realm](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/docs/concepts.md#repl-realm)). It also exports `VariantService`, `Variant`, `layerVariantLive`, `layerVariant`, `makeWithVariant` and `layerWithVariant`, which are how a host names the build instead of taking the default; see below.
 
 `@smthrs/harness/package.json` is also exported. `internal/*` and nested `*/index` subpaths are not public.
 
@@ -122,19 +122,19 @@ const layer = QuickJSSandbox.layerWithVariant.pipe(
 ```
 
 The full workerd setup, including the `wrangler` configuration a worker needs,
-is in [Run on Cloudflare workerd](https://harness.smithers.sh/guides/workerd/).
+is in [Run on Cloudflare workerd](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/docs/guides/workerd.md).
 
 ## Documentation
 
-The published site is https://harness.smithers.sh.
+The published site is https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/harness/docs.
 
-- [Quickstart](https://harness.smithers.sh/quickstart/): run two cells against
+- [Quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/docs/quickstart.md): run two cells against
   one realm and read the frames they produce.
-- [Concepts](https://harness.smithers.sh/concepts/): the cell loop, the
+- [Concepts](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/docs/concepts.md): the cell loop, the
   persistent realm, and durable flow calls as the only I/O.
-- [API reference](https://harness.smithers.sh/reference/api/): behavior and
+- [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/docs/api.md): behavior and
   signatures for every public export.
-- [Module and export inventory](https://harness.smithers.sh/reference/): every
+- [Module and export inventory](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/docs/reference.md): every
   module and its exports, one table per module.
-- [Troubleshooting](https://harness.smithers.sh/troubleshooting/): the failure
+- [Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/docs/troubleshooting.md): the failure
   modes the package raises, and what to do about each.

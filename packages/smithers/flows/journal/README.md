@@ -6,7 +6,7 @@ This package declares `effect` as a `^4.0.4` peer dependency. Install one
 `effect` release in that range so all Smithers packages share one Effect
 runtime.
 
-**Documentation:** https://journal.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/journal/docs
 
 An append-only event history for [Effect](https://effect.website) applications.
 `@smthrs/journal` records what a long-running piece of work did, in order, in
@@ -133,7 +133,7 @@ journaling cannot abandon the cleanup that follows the commit.
 
 The root exports each module as a namespace, and each is also importable from
 the matching `@smthrs/journal/*` subpath. The
-[API reference](https://journal.smithers.sh/reference/api/) lists every export
+[API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/api.md) lists every export
 with its one-line summary.
 
 | Namespace        | What it holds                                                                                                                                                                                                                                                      |
@@ -165,7 +165,7 @@ fences through `SqlConsensus`, whose lease lives in `flows_consensus_leases`, a
 table this package's own migrations create; `SqlJournal.layerWith` takes any
 strategy, such as `Consensus.layerLocal` for a single process or the browser.
 An owner takes the run through the strategy's `claim` and `activate`, which
-[`@smthrs/run-store`](https://run-store.smithers.sh) drives for a durable run.
+[`@smthrs/run-store`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/run-store/docs) drives for a durable run.
 
 `emitDurableUnfenced` is the sanctioned path for a genuinely ownerless
 admission, such as an import or a repair tool. Reaching for it to dodge
@@ -174,10 +174,10 @@ admission, such as an import or a repair tool. Reaching for it to dodge
 ## Where the journal sits
 
 The journal holds the history and nothing else. Run and attempt state live in
-[`@smthrs/run-store`](https://run-store.smithers.sh), sealed step results in
-[`@smthrs/step-cache`](https://step-cache.smithers.sh), and the durable
+[`@smthrs/run-store`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/run-store/docs), sealed step results in
+[`@smthrs/step-cache`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/step-cache/docs), and the durable
 deferred and clock tables in
-[`@smthrs/engine-store`](https://engine-store.smithers.sh). Those stores hold
+[`@smthrs/engine-store`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/engine-store/docs). Those stores hold
 the executable state, which is not derived from journal entries; `transact` is
 what keeps the two halves consistent, because every one of them writes through
 the same `DurableWriter`.
@@ -196,13 +196,13 @@ travel without adding a migration below an already applied migration block.
 ## Documentation
 
 - [State and event authority](./docs/concepts/state-event-authority.md)
-- [Installation](https://journal.smithers.sh/installation/)
-- [Quickstart](https://journal.smithers.sh/quickstart/)
-- [The two channels](https://journal.smithers.sh/concepts/two-channels/)
-- [The owner fence](https://journal.smithers.sh/concepts/owner-fence/)
-- [Checkpoints and compaction](https://journal.smithers.sh/concepts/compaction/)
-- [API reference](https://journal.smithers.sh/reference/api/)
-- [Troubleshooting](https://journal.smithers.sh/troubleshooting/)
+- [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/installation.md)
+- [Quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/quickstart.md)
+- [The two channels](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/concepts/two-channels.md)
+- [The owner fence](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/concepts/owner-fence.md)
+- [Checkpoints and compaction](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/concepts/compaction.md)
+- [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/api.md)
+- [Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/troubleshooting.md)
 
 ## License
 

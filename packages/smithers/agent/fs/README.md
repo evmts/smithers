@@ -1,6 +1,6 @@
 # `@smthrs/fs`
 
-**Documentation:** https://fs.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/fs/docs
 
 Turn a directory of Smithers flows into named, schema-checked commands for
 agents, shells, HTTP clients, and MCP tools.
@@ -31,7 +31,7 @@ pnpm install
 ```
 
 To run flows from a shell today, use the `smthrs` command line
-(https://cli.smithers.sh).
+(https://github.com/smithersai/smithers/tree/main/packages/smithers/docs).
 
 ## Example
 
@@ -68,6 +68,6 @@ over HTTP, lives in `examples/agent-command.ts`.
 
 ## Documentation
 
-https://fs.smithers.sh covers the quickstart, the guides for agent, CLI, HTTP,
+https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/fs/docs covers the quickstart, the guides for agent, CLI, HTTP,
 and MCP surfaces, the normative routing contract, the full API reference, and
 every `FsError` code with its fix.

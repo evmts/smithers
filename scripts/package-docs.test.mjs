@@ -3,12 +3,16 @@ import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
+import { legacySites } from "./package-docs.mjs"
 import { libraryPackages, repoRoot } from "./workspace-packages.mjs"
 
 const pack = promisify(execFile)
 const packages = libraryPackages().filter(({ manifest }) => !manifest.private)
 let count = 0
 const unpublishedClaim = /not (?:yet )?on npm|not (?:yet )?published to npm|not on the npm registry/i
+// The retired docs sites answer only with a redirect to a docs folder, which
+// drops the page a link named (#3902). Link the docs file on GitHub instead.
+const retiredDocsHost = new RegExp(String.raw`https?://(?:${legacySites.map(([slug]) => slug).join("|")})\.smithers\.sh\b`)
 const check = async ({ dir }) => {
   const { stdout } = await pack("npm", ["pack", "--dry-run", "--json", "--ignore-scripts", "--workspaces=false", "--offline"], { cwd: join(repoRoot, dir), encoding: "utf8", maxBuffer: 16 * 1024 * 1024 })
   const files = JSON.parse(stdout)[0].files.map(({ path }) => path)
@@ -19,6 +23,7 @@ const check = async ({ dir }) => {
   for (const path of files.filter((path) => path.endsWith(".md") && !path.endsWith("CHANGELOG.md"))) {
     const text = readFileSync(join(repoRoot, dir, path), "utf8")
     assert.doesNotMatch(text, unpublishedClaim, `${dir}/${path} says a published package is not on npm`)
+    assert.doesNotMatch(text, retiredDocsHost, `${dir}/${path} links a retired <slug>.smithers.sh docs site`)
   }
   console.log(`PASS ${dir}`)
   count++

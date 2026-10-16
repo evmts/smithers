@@ -6,7 +6,7 @@ This package declares `effect` as a `^4.0.4` peer dependency. Install one
 `effect` release in that range so all Smithers packages share one Effect
 runtime.
 
-**Documentation:** https://engine.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/engine/docs
 
 The runtime that executes `@smthrs/flow` flows, plus the transport
 projections that expose them. It implements `FlowRuntime`, the port
@@ -87,7 +87,7 @@ calls `Compile` a second time.
 
 The root exports these namespaces, also available from matching
 `@smthrs/engine/*` subpaths. The flow-authoring namespaces live in
-[`@smthrs/flow`](https://flow.smithers.sh).
+[`@smthrs/flow`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/flow/docs).
 
 | Namespace         | What it is                                                                                                                                                                                                                 |
 | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -97,20 +97,20 @@ The root exports these namespaces, also available from matching
 | `PlacedAction`    | Implements an action whose body runs on the host its placement names, under the action's invocation key.                                                                                                                   |
 | `FlowProxyServer` | Binds those derived definitions to a running engine.                                                                                                                                                                       |
 
-Full signatures: <https://engine.smithers.sh/reference/api/>.
+Full signatures: <https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/docs/api.md>.
 
 ## Documentation
 
 | Page                                                                           | What it covers                                                   |
 | ------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
-| [Quickstart](https://engine.smithers.sh/quickstart/)                           | Run a flow, then prove the second submission replays.            |
-| [The port and the seam](https://engine.smithers.sh/concepts/port-and-seam/)    | Why the engine is two layers, and what crosses the seam encoded. |
-| [Execution identity](https://engine.smithers.sh/concepts/execution-identity/)  | Caller-supplied execution ids, joins, and refused reuses.        |
-| [Step identity](https://engine.smithers.sh/concepts/step-identity/)            | Cache keys, invocation keys, and the keyless-dispatch guard.     |
-| [Retries and attempts](https://engine.smithers.sh/concepts/retries/)           | The single retry decision point and the durable attempt counter. |
-| [Suspension and cancellation](https://engine.smithers.sh/concepts/suspension/) | Parking, the caller's budget, and interrupt semantics.           |
-| [Trampoline rounds](https://engine.smithers.sh/concepts/trampoline-rounds/)    | Handoffs, derived round ids, and `maxRounds`.                    |
-| [Troubleshooting](https://engine.smithers.sh/troubleshooting/)                 | Every refusal and warning, with the fix.                         |
+| [Quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/docs/quickstart.md)                           | Run a flow, then prove the second submission replays.            |
+| [The port and the seam](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/docs/concepts/port-and-seam.md)    | Why the engine is two layers, and what crosses the seam encoded. |
+| [Execution identity](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/docs/concepts/execution-identity.md)  | Caller-supplied execution ids, joins, and refused reuses.        |
+| [Step identity](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/docs/concepts/step-identity.md)            | Cache keys, invocation keys, and the keyless-dispatch guard.     |
+| [Retries and attempts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/docs/concepts/retries.md)           | The single retry decision point and the durable attempt counter. |
+| [Suspension and cancellation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/docs/concepts/suspension.md) | Parking, the caller's budget, and interrupt semantics.           |
+| [Trampoline rounds](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/docs/concepts/trampoline-rounds.md)    | Handoffs, derived round ids, and `maxRounds`.                    |
+| [Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/docs/troubleshooting.md)                 | Every refusal and warning, with the fix.                         |
 
 ## Examples
 

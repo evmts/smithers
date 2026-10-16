@@ -6,7 +6,7 @@ This package declares `effect` as a `^4.0.4` peer dependency. Install one
 `effect` release in that range so all Smithers packages share one Effect
 runtime.
 
-**Documentation:** https://registry.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/registry/docs
 
 Answers the question "what flows does this project have" without running any of
 them. It scans ordered directories into serializable flow descriptors, keeps
@@ -212,19 +212,19 @@ every descriptor a pack contributes carries `provenance.pack` with the pack
 name, version, and origin, so a catalog entry says where it came from. The
 manifest format, the path confinement rules, the content address, and the
 compatibility grammar are documented in
-[Load workflow packs](https://registry.smithers.sh/guides/load-packs/).
+[Load workflow packs](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/registry/docs/guides/load-packs.md).
 
 ## Documentation
 
-- [Installation](https://registry.smithers.sh/installation/) and
-  [Quickstart](https://registry.smithers.sh/quickstart/).
-- [Delegation](https://registry.smithers.sh/concepts/delegation/): the delegate
+- [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/registry/docs/installation.md) and
+  [Quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/registry/docs/quickstart.md).
+- [Delegation](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/registry/docs/concepts/delegation.md): the delegate
   a descriptor names, and what the runtime does with its declarations.
-- [Run a discovered flow](https://registry.smithers.sh/guides/run-a-discovered-flow/):
+- [Run a discovered flow](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/registry/docs/guides/run-a-discovered-flow.md):
   the whole composition, from registered delegates to a running host.
-- [API reference](https://registry.smithers.sh/reference/api/): every export,
+- [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/registry/docs/api.md): every export,
   field, and constructor.
-- [Troubleshooting](https://registry.smithers.sh/troubleshooting/): every
+- [Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/registry/docs/troubleshooting.md): every
   failure code this package raises, and what to change.
 
 Markdown `model` accepts a seat name or a non-empty ordered list, for example

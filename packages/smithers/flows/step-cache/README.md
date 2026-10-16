@@ -6,7 +6,7 @@ This package declares `effect` as a `^4.0.4` peer dependency. Install one
 `effect` release in that range so all Smithers packages share one Effect
 runtime.
 
-**Documentation:** https://step-cache.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/step-cache/docs
 
 Content-addressed storage for finished step results. Record a result under a
 digest of its inputs, and the next run that computes the same digest reads the
@@ -26,7 +26,7 @@ npm install @smthrs/step-cache@next effect
 
 It needs Node.js 26.4.0 or later and `effect` `^4.0.4`. The import forms
 and the driver layers a durable composition adds are on the
-[installation page](https://step-cache.smithers.sh/installation/).
+[installation page](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/step-cache/docs/installation.md).
 
 ## Reuse a result instead of recomputing it
 
@@ -105,7 +105,7 @@ compute: this store receives one and never inspects what it names.
 The root entry point exports these namespaces, and each is also importable from
 `@smthrs/step-cache/<Module>`. Every export, with its signature and its
 guarantees, is on the
-[API reference](https://step-cache.smithers.sh/reference/api/).
+[API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/step-cache/docs/api.md).
 
 | Namespace            | What it is                                                                                              |
 | -------------------- | ------------------------------------------------------------------------------------------------------- |
@@ -126,12 +126,12 @@ local `put` outcome. Both increment `flows_step_cache_remote_failures` with an
 
 ## Documentation
 
-- [Overview](https://step-cache.smithers.sh)
-- [Quickstart](https://step-cache.smithers.sh/quickstart/)
-- [The head and the ledger](https://step-cache.smithers.sh/concepts/head-and-ledger/)
-- [What the cache admits](https://step-cache.smithers.sh/concepts/admission/)
-- [Share results across machines](https://step-cache.smithers.sh/guides/share-results-across-machines/)
-- [Troubleshooting](https://step-cache.smithers.sh/troubleshooting/), which
+- [Overview](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/step-cache/docs)
+- [Quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/step-cache/docs/quickstart.md)
+- [The head and the ledger](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/step-cache/docs/concepts/head-and-ledger.md)
+- [What the cache admits](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/step-cache/docs/concepts/admission.md)
+- [Share results across machines](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/step-cache/docs/guides/share-results-across-machines.md)
+- [Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/step-cache/docs/troubleshooting.md), which
   lists every failure message, what causes it, and what to change.
 
 ## License

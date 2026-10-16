@@ -10,7 +10,7 @@ and read the matching section. The full error schemas are in the
 `PlanStoreError` is the one error type, raised by recording, appending, and
 reading rows. A plan that fails before it reaches a row raises
 [`@smthrs/plan`](/api/plan)'s `PlanError` or `KeyMaterialError` instead; its
-[troubleshooting page](https://plan.smithers.sh/troubleshooting/) covers those.
+[troubleshooting page](../../plan/docs/troubleshooting.md) covers those.
 
 ## PlanStoreError
 

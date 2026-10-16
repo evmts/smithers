@@ -6,7 +6,7 @@ This package declares `effect` as a `^4.0.4` peer dependency. Install one
 `effect` release in that range so all Smithers packages share one Effect
 runtime.
 
-**Documentation:** https://jj.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/jj/docs
 
 Jujutsu version control as a portable Effect host service. Nine operations
 behind one service tag: snapshot the working copy, restore it, diff two
@@ -25,7 +25,7 @@ codes, and a test swaps the layer instead of the code.
 npm install @smthrs/jj@next effect
 ```
 
-The [installation page](https://jj.smithers.sh/installation/) covers the
+The [installation page](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/jj/docs/installation.md) covers the
 `effect` peer range and the wasm asset a browser layer needs.
 
 `NodeJj` and `BunJj` spawn the `jj` executable, which this package does not
@@ -214,15 +214,15 @@ git interop, only `snapshot` creates a missing repository while `status`,
 `diff`, and `restore` refuse one with `unknown` and write nothing, real
 symlinks are rejected before snapshotting, and durability belongs to the mount
 rather than to this layer. All of them are listed in
-[Run jj in a browser tab](https://jj.smithers.sh/guides/run-jj-in-a-browser/).
+[Run jj in a browser tab](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/jj/docs/guides/run-jj-in-a-browser.md).
 
 ## More
 
-- [Installation](https://jj.smithers.sh/installation/)
-- [Quickstart](https://jj.smithers.sh/quickstart/)
-- [API reference](https://jj.smithers.sh/reference/api/)
-- [Troubleshooting](https://jj.smithers.sh/troubleshooting/)
-- [`@smthrs/kernel`](https://kernel.smithers.sh/reference/api/), which owns the
+- [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/jj/docs/installation.md)
+- [Quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/jj/docs/quickstart.md)
+- [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/jj/docs/api.md)
+- [Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/jj/docs/troubleshooting.md)
+- [`@smthrs/kernel`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/api.md), which owns the
   closed host service list this contract is one slot of.
 
 ## License

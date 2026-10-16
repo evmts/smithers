@@ -2,7 +2,7 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-**Documentation:** https://smthrs.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smthrs-deprecation/docs
 
 `npx smthrs <verb>` runs the Smithers CLI (`@smthrs/cli`). `npx smthrs tui`
 opens the terminal coding agent; it requires [Bun](https://bun.sh).

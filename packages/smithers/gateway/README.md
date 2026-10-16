@@ -4,13 +4,13 @@ The gateway requires `effect` in the range `^4.0.4` as its only peer. Node and B
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-**Documentation:** https://gateway.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/gateway/docs
 
 The assembled workspace gateway: one HTTP surface carrying the control plane, the sync read path, the served projections, and a health probe. It also defines the gateway wire schemas and re-exports the durable journal synchronization package gateway hosts use.
 
-The mounts, the bind and credential policy, the projections and their rows, the subscription and cursor semantics, every failure code with the status it answers, and the resource limits are documented once, on [the API page](https://gateway.smithers.sh/reference/api/). This file lists what the package exports and shows how a host composes it.
+The mounts, the bind and credential policy, the projections and their rows, the subscription and cursor semantics, every failure code with the status it answers, and the resource limits are documented once, on [the API page](https://github.com/smithersai/smithers/blob/main/packages/smithers/gateway/docs/api.md). This file lists what the package exports and shows how a host composes it.
 
-`smthrs serve`, from [`@smthrs/cli`](https://cli.smithers.sh), is a host over this package: it resolves a project on disk, builds the control plane and the journal over that project's database, and hands the assembly here to bind and serve. Install the CLI when you want a gateway without writing code; install this package when you are writing a client against the wire, or embedding the surface in a process of your own.
+`smthrs serve`, from [`@smthrs/cli`](https://github.com/smithersai/smithers/tree/main/packages/smithers/docs), is a host over this package: it resolves a project on disk, builds the control plane and the journal over that project's database, and hands the assembly here to bind and serve. Install the CLI when you want a gateway without writing code; install this package when you are writing a client against the wire, or embedding the surface in a process of your own.
 
 ## Install
 

@@ -13802,7 +13802,7 @@ Every namespace below is also importable from `@smthrs/engine-store/<Module>`.
 `@smthrs/engine-store/*/index` are blocked in the export map.
 
 Shared versioned event schemas are public at `@smthrs/journal/EngineEvent`; see
-[state and event authority](https://journal.smithers.sh/concepts/state-event-authority/).
+[state and event authority](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/concepts/state-event-authority.md).
 Engine adapters `TypedEvents`, `AttemptLifecycle`, and `ResultEnvelope` remain
 internal. They are additive contracts: current writers retain their bytes, and
 the disclosed attempt projection does not replace executable recovery stores.
@@ -13824,7 +13824,7 @@ Node.js and Bun compositions use SQLite or the shipped PostgreSQL adapter;
 bundling does not supply a durable browser driver or qualify browser execution.
 PostgreSQL storage alone does not qualify a canonical backend deployment:
 artifacts, workspaces, and native process state still need durable host storage.
-See [database configuration](https://database.smithers.sh/concepts/sqlite-only/)
+See [database configuration](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/database/docs/concepts/sqlite-only.md)
 and [platform support](/docs/reference/api/#platform-support).
 
 ## EngineStore
@@ -18634,7 +18634,7 @@ planned run. Existing approvals and recorded keys remain bound to their
 original bytes; no decoder translates identities. Intermediate builds that
 added the `success-without-failure-code/v1` filter to the encoded schema derived
 different keys. Finish their executions on the same build before upgrading.
-See the agent's [persisted cell-call identity](https://agent.smithers.sh/concepts/engine-port/#persisted-cell-call-identity)
+See the agent's [persisted cell-call identity](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/docs/concepts/engine-port.md#persisted-cell-call-identity)
 for the retained algorithm and composition versions.
 
 **Checkpoints.** `Cell.baseCheckpoint` is `"base"`, the id naming the tree a
@@ -29687,7 +29687,7 @@ const capture: <C extends Readonly<Record<string, unknown>>, Args extends Readon
 ) => (...args: Args) => A
 ```
 
-Declares the inert values a plan-time function closes over, which gives that function deterministic identity instead of process-local entropy. A deeply frozen plain copy is canonicalized into function identity and bound as the callback's `this` receiver. Use a function expression to read that copy; ordinary arguments keep their positions. Caller objects remain unchanged, and mutable lexical aliases must not supply semantic state. Sealed, non-extensible, frozen and Immer ordinary data are supported. Built-in brands and Proxies are refused, and object capture requires `structuredClone`. See the [admission algorithm](https://crypto.smithers.sh/reference/api/#identitycapture). Unsupported values, accessors, exotic prototypes, symbols, cycles, and member nesting beyond 256 levels throw a `TypeError` naming the path, instead of producing an identity that cannot describe the function's behavior.
+Declares the inert values a plan-time function closes over, which gives that function deterministic identity instead of process-local entropy. A deeply frozen plain copy is canonicalized into function identity and bound as the callback's `this` receiver. Use a function expression to read that copy; ordinary arguments keep their positions. Caller objects remain unchanged, and mutable lexical aliases must not supply semantic state. Sealed, non-extensible, frozen and Immer ordinary data are supported. Built-in brands and Proxies are refused, and object capture requires `structuredClone`. See the [admission algorithm](/docs/reference/api/crypto/#identitycapture). Unsupported values, accessors, exotic prototypes, symbols, cycles, and member nesting beyond 256 levels throw a `TypeError` naming the path, instead of producing an identity that cannot describe the function's behavior.
 
 Plan uses the capture and function-identity implementation from `@smthrs/crypto/Identity`, the one implementation every node model embeds. Capturing an already-captured function preserves its original source and folds both capture sets into the identity. Wrappers can be captured and identified interchangeably by either package. A non-function operation throws `TypeError("Node.capture requires a function operation")`.
 

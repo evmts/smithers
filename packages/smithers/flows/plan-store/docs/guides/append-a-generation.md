@@ -122,6 +122,6 @@ the high-water mark.
 
 ## Next
 
-- [Diff two plans](https://plan.smithers.sh/guides/diff-two-plans/): show what a re-plan changed.
-- [The plan value](https://plan.smithers.sh/concepts/plan-value/): why growth is the only move
+- [Diff two plans](../../../plan/docs/guides/diff-two-plans.md): show what a re-plan changed.
+- [The plan value](../../../plan/docs/concepts/plan-value.md): why growth is the only move
   available.

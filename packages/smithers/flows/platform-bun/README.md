@@ -6,7 +6,7 @@ This package declares `effect` as a `^4.0.4` peer dependency. Install one
 `effect` release in that range so all Smithers packages share one Effect
 runtime.
 
-**Documentation:** https://platform-bun.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/platform-bun/docs
 
 The Bun host bundle for Smithers, which runs long jobs as durable flows: each
 step is recorded, so a restart resumes what did not finish instead of starting

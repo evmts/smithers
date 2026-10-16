@@ -2,7 +2,7 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-**Documentation:** https://scorers.smithers.sh
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/scorers/docs
 
 Flow-native scoring for Smithers. Declare a scorer with a durable identity,
 attach it to a target flow, sample deterministically, and persist every score or
@@ -27,7 +27,7 @@ npm install @smthrs/scorers@next effect
 
 It needs Node.js 26.4.0 or later and
 [`effect`](https://effect.website) `^4.0.4`, plus
-[`@smthrs/database`](https://database.smithers.sh) when you persist
+[`@smthrs/database`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/database/docs) when you persist
 observations.
 
 ## Grade one execution
@@ -78,7 +78,7 @@ it was grading.
 Use `SqlScoreStore.layer` for persistence, `ScoreStore.layerNoop` to run a flow
 with scoring inert, and `RunnerLive.layer()` for live execution over whichever
 store is provided. The
-[quickstart](https://scorers.smithers.sh/quickstart/) composes the database
+[quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/scorers/docs/quickstart.md) composes the database
 layers and runs this end to end.
 
 ## Public API
@@ -106,13 +106,13 @@ subpaths are blocked, so the migrations are reachable only through the root
 | `Scorers` | Built-in normalized equality, containment, sandbox test verdicts, diff budgets and rubric. |
 
 Every export, with signatures and bounds, is in the
-[API reference](https://scorers.smithers.sh/reference/api/).
+[API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/scorers/docs/api.md).
 
 ## Failures and limits
 
 Every constraint a caller can trip, in one place. The reasoning behind each is
-in the [API reference](https://scorers.smithers.sh/reference/api/) and under
-[Durability](https://scorers.smithers.sh/durability/).
+in the [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/scorers/docs/api.md) and under
+[Durability](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/scorers/docs/durability.md).
 
 - **Sampling** is `"all"`, `"none"`, or a `ratio` in the **open** interval
   `(0, 1)` with a non-empty `seed`. Use `"all"` and `"none"` for the endpoints;
