@@ -1219,6 +1219,7 @@ const moduleServices = (
 ): Effect.Effect<
   {
     readonly layer: Layer.Layer<unknown>
+    readonly memoMap: Layer.MemoMap
     readonly scope: Scope.Closeable
     readonly quiesce: (executionIds: Iterable<string>) => Effect.Effect<void>
   },
@@ -1269,7 +1270,10 @@ const moduleServices = (
           )
       }))
     const input = Context.add(Context.merge(hostServices, local), Action.Implementations, moduleTable)
-    const built = yield* Layer.buildWithScope(Layer.fresh(implementation), scope).pipe(
+    // Later registrations reuse the built-in handlers its exported interpreters
+    // built, while other modules and refreshes keep independent memo maps.
+    const memoMap = Layer.makeMemoMapUnsafe()
+    const built = yield* Layer.buildWithMemoMap(implementation, memoMap, scope).pipe(
       // Dynamic module types erase requirements; this host closes them here.
       Effect.provideContext(
         Option.isSome(registrationRuntime) ? Context.add(input, FlowRuntime, registrationRuntime.value) : input
@@ -1319,7 +1323,7 @@ const moduleServices = (
     )
     // Consumers register independently; only the loading host or a catalog
     // refresh that retires this entry releases the acquired module resources.
-    return { layer: Layer.succeedContext(services), scope, quiesce: quiescence.quiesce }
+    return { layer: Layer.succeedContext(services), memoMap, scope, quiesce: quiescence.quiesce }
   })
 
 /**
@@ -1674,7 +1678,11 @@ export const fromDescriptor = (
               Scope.fork(implementations.scope),
               (scope, exit) => Scope.close(scope, exit)
             )
-            yield* Layer.buildWithScope(registrations.pipe(Layer.provide(implementations.layer)), scope)
+            yield* Layer.buildWithMemoMap(
+              registrations.pipe(Layer.provide(implementations.layer)),
+              Layer.forkMemoMapUnsafe(implementations.memoMap),
+              scope
+            )
           }))) as Layer.Layer<never, never, Registration>
       }
       if (implementations !== undefined) {

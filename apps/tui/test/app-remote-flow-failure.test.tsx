@@ -58,6 +58,7 @@ const submit = async (text: string) => {
 }
 beforeAll(async () => {
   await control.warm!()
+  await control.input!("failure")
 }, 30_000)
 beforeEach(async () => {
   previousSessions = process.env.SMITHERS_TUI_SESSION_DIR
