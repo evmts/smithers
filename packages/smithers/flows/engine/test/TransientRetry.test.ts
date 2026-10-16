@@ -46,6 +46,7 @@ const run = (
     payload: {},
     success: Schema.Number,
     error: ErrorSchema,
+    implementationVersion: "transient/v1",
     ...options
   })
   const flow = Flow.make(`Transient/${name}`, {
@@ -54,7 +55,10 @@ const run = (
     error: ErrorSchema,
     body: (payload) => action.call(payload)
   })
-  const layer = Layer.mergeAll(action.toLayer(() => implementation), Interpreter.layer(flow)).pipe(
+  const layer = Layer.mergeAll(
+    action.toLayer(() => implementation, { implementationVersion: "transient/v1" }),
+    Interpreter.layer(flow)
+  ).pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory)
   )

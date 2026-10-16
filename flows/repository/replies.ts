@@ -109,16 +109,24 @@ export const ConfirmReply = Flow.make("repository/ConfirmReply", {
   payload: { reply: Reply, deadlineAt: Schema.Number },
   success: Schema.Boolean,
   error: HumanTask.HumanTaskFailed,
-  body: ({ reply, deadlineAt }) =>
-    RemainingBudget.call({ deadlineAt }).pipe(Node.bindPlanned((timeoutMs) =>
-      Node.succeed(reply).pipe(
-        Node.map((value) => `Post this reply to issue #${value.issueNumber}?\n\n${value.body}`),
-        Node.bindPlanned((prompt) =>
-          HumanTask.action.call({ name: "repository-reply", kind: "confirm", prompt, maxAttempts: 1, timeoutMs })
-        ),
-        Node.map((answer) => answer === true)
+  body: Node.capture(
+    { budget: RemainingBudget.name, humanTask: HumanTask.action.name, version: "reply-confirm/v1" },
+    ({ reply, deadlineAt }) =>
+      RemainingBudget.call({ deadlineAt }).pipe(
+        Node.bindPlanned(Node.capture(
+          { reply, humanTask: HumanTask.action.name, version: "reply-question/v1" },
+          (timeoutMs) =>
+            HumanTask.action.call({
+              name: "repository-reply",
+              kind: "confirm",
+              prompt: `Post this reply to issue #${reply.issueNumber}?\n\n${reply.body}`,
+              maxAttempts: 1,
+              timeoutMs
+            })
+        )),
+        Node.map(Node.capture({}, (answer) => answer === true))
       )
-    ))
+  )
 })
 /** Nobody refused a question that was never answered: the draft is retained
  * with the reason, and a failure never reads as a maintainer's decision. */
