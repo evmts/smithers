@@ -234,6 +234,28 @@ const runAll = async (root: string, flowIds: ReadonlyArray<string>) => {
 const first = (events: ReadonlyArray<Journaled>, kind: string) => events.find((event) => event.kind === kind)
 
 describe("the shipped Node executor under ScriptedJudge.layerAll", () => {
+  it("persists one completion after native settlement and replays it after reopening", async () => {
+    const root = await project()
+    const { watched } = await runAll(root, ["survey"])
+    const events = watched[0]!
+    const completed = events.filter((event) => event.kind === "control.run.completed")
+    expect(completed).toHaveLength(1)
+    const runId = completed[0]!.payload.runId as string
+    const orderedKinds = ["control.agent.resolved", "control.engine.projection-settled", "control.run.completed"]
+    expect(events.map((event) => event.kind).filter((kind) => orderedKinds.includes(kind))).toEqual(orderedKinds)
+
+    // Reopen the actual databases: completion must survive the writer's scope.
+    const recovered = await Effect.runPromise(
+      Effect.gen(function*() {
+        const control = yield* Control.Control
+        const page = yield* control.list({ _tag: "runs", filters: { runId } })
+        const replayed = yield* control.watch({ runId, follow: false }).pipe(Stream.runCollect)
+        return { page, replayed: [...replayed] }
+      }).pipe(Effect.provide(NodeControl.layerObserve({ root })), Effect.scoped)
+    )
+    expect(recovered.page).toMatchObject({ _tag: "runs", items: [{ runId, status: "completed" }] })
+    expect(recovered.replayed.filter((event) => event.kind === "control.run.completed")).toHaveLength(1)
+  }, 60_000)
   it("forwards workspace AGENTS.md into the relevance gate", async () => {
     const root = await project()
     // The scripted judge keeps an instruction chunk that shares a word with the

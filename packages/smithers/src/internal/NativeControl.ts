@@ -2034,7 +2034,10 @@ export const make = (
       WorkspaceSandbox.layerFileSystem(),
       registration.pipe(Layer.provide(ReplacedFlowPolicy.layer))
     ).pipe(
-      Layer.provide([engineHost, native.crypto, actionJj]),
+      // Terminal facts use the captured control journal. Its runtime must use
+      // the same connection, even when Application.layer supplies another graph:
+      // otherwise the status transition waits on its own journal transaction.
+      Layer.provide([engineHost, native.crypto, actionJj, engine.runtime]),
       // Resolved by the engine at composition, like its sandboxes.
       (runtime) => options.replayOnly === undefined ? runtime : Layer.provide(runtime, options.replayOnly),
       Layer.tap(() => secureSqliteFiles(engineFile).pipe(Effect.provide(native.host))),
@@ -2066,10 +2069,22 @@ export const make = (
   ): ReturnType<typeof executorFromEngine> => {
     const startsRuns = options.startsRuns !== false
     const evaluator = evaluatorFor(options.environment, options.evaluator, startsRuns)
-    const built = Layer.unwrap(Effect.map(
-      materializeEngine(engine),
-      (materialized) => executorFromEngine(registry, materialized, root, options, evaluator)
-    ))
+    const built = Layer.unwrap(Effect.gen(function*() {
+      const runtime = yield* ControlRuntime.ControlRuntime
+      const journal = yield* Journal.Journal
+      const materialized = yield* materializeEngine(engine)
+      return executorFromEngine(
+        registry,
+        {
+          ...materialized,
+          runtime: Layer.succeed(ControlRuntime.ControlRuntime, runtime),
+          journal: Layer.succeed(Journal.Journal, journal)
+        },
+        root,
+        options,
+        evaluator
+      )
+    }))
     if (startsRuns) return built
     // The observing executor still reads `engine.db`, because that is where a
     // run's current round, its waiting reason and the human waits parked below
