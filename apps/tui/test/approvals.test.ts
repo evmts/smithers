@@ -520,6 +520,20 @@ describe("read-only declarations", () => {
     expect(Approvals.readOnly("cat ../check.mjs", root, join(root, "src"))).toBe("reads")
   })
 
+  it("reads a chain of listed reads joined by && or ;, and nothing else chained (#3669)", () => {
+    const root = workspace()
+    reads(root, ["cat check.mjs && ls src", "pwd; wc -l check.mjs", "ls && pwd; cat src/a.ts"], "reads")
+    reads(root, ["git status --porcelain && git diff -- check.mjs", "cat check.mjs; git log -1"], "runs")
+    reads(root, [
+      "cat check.mjs && node check.mjs",
+      "cat check.mjs || ls",
+      "cat check.mjs & ls",
+      "cat check.mjs;",
+      "; ls",
+      "ls && && pwd"
+    ], false)
+  })
+
   it("never runs an interpreter, test runner or build tool unasked", () => {
     reads(workspace(), [
       "node check.mjs",
@@ -1235,6 +1249,50 @@ describe("a run remembers what the person decided", () => {
         return { before, after }
       }), root)
     expect(result).toEqual({ before: { unasked: 0, code }, after: { unasked: 0, git, code } })
+  })
+
+  it("runs declared reads after a denial, even naming the refused file, and asks for other commands (#3669)", async () => {
+    const root = scripted()
+    writeFileSync(join(root, "NOTES.md"), "existing\n")
+    const declared = (command: string) => callOf("bash", { mode: "hermetic", reads: [], writes: [], command })
+    const result = await withStore("ask", (grants) =>
+      Effect.gen(function*() {
+        const memory = new Approvals.Memory()
+        const authorize = Approvals.authorize(grants, { cwd: root, source: "t1", memory })
+        const write = yield* Effect.forkChild(authorize(notes("write")))
+        yield* Approvals.reply(grants, memory, (yield* settledPending(grants, 1))[0]!, "deny", root)
+        yield* Fiber.await(write)
+        for (const command of ["git status --porcelain && git diff -- NOTES.md", "cat NOTES.md; wc -l check.mjs"]) {
+          yield* authorize(declared(command))
+        }
+        const unasked = (yield* grants.list).length
+        const fiber = yield* Effect.forkChild(authorize(declared("cat check.mjs && node check.mjs")))
+        const [asked] = yield* settledPending(grants, 1)
+        yield* Fiber.interrupt(fiber)
+        return { unasked, asked: asked!.subject }
+      }), root)
+    expect(result).toEqual({ unasked: 0, asked: "cat check.mjs && node check.mjs" })
+  })
+
+  it("asks before Git once any run of the session allowed anything with a (#3670)", async () => {
+    const root = scripted()
+    const declared = (command: string) => callOf("bash", { mode: "hermetic", reads: [], writes: [], command })
+    const result = await withStore("ask", (grants) =>
+      Effect.gen(function*() {
+        const memory = new Approvals.Memory()
+        const worker = Approvals.authorize(grants, { cwd: root, source: "worker", memory })
+        const chat = Approvals.authorize(grants, { cwd: root, source: "chat", memory })
+        const edit = yield* Effect.forkChild(worker(callOf("write", { path: "a.js", content: "x" })))
+        yield* Approvals.reply(grants, memory, (yield* settledPending(grants, 1))[0]!, "run", root)
+        yield* Fiber.join(edit)
+        yield* chat(declared("cat check.mjs"))
+        const unasked = (yield* grants.list).length
+        const fiber = yield* Effect.forkChild(chat(declared("git diff")))
+        const [asked] = yield* settledPending(grants, 1)
+        yield* Fiber.interrupt(fiber)
+        return { unasked, asked: asked!.subject, source: asked!.source }
+      }), root)
+    expect(result).toEqual({ unasked: 0, asked: "git diff", source: "chat" })
   })
 
   it("holds a denial through a hard link to the refused file, by any route and either name", async () => {

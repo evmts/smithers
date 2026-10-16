@@ -447,12 +447,18 @@ const installed = (program: string, root: string, base: string): boolean => {
 }
 
 /**
- * Whether shell text is one `quiet` program called plainly, run from `base`
- * inside the workspace `root` (both real): letters, digits, `_`, `.`, `/`,
- * `-` and single spaces only, so nothing in it expands, redirects, chains or
- * assigns; only its listed options; and every other word a path inside `root`.
+ * Whether shell text is `quiet` programs called plainly, run from `base`
+ * inside the workspace `root` (both real), joined by `&&` or `;`: each one
+ * letters, digits, `_`, `.`, `/`, `-` and single spaces only, so nothing in
+ * it expands, redirects or assigns; only its listed options; and every other
+ * word a path inside `root`. `runs` when any of them is Git.
  */
 export const readOnly = (shell: string, root: string, base = root): Reading => {
+  const each = shell.split(/ *(?:&&|;) */).map((part) => plainly(part, root, base))
+  return each.includes(false) ? false : each.includes("runs") ? "runs" : "reads"
+}
+
+const plainly = (shell: string, root: string, base: string): Reading => {
   if (!/^[\w./-]+(?: [\w./-]+)*$/.test(shell)) return false
   const [program, ...rest] = shell.split(" ")
   const allowed = quiet.get(program!)
@@ -720,6 +726,8 @@ interface Run {
   readonly refused: Set<string>
   /** Real paths whose change was denied. */
   readonly paths: Set<string>
+  /** Whether `n` refused anything but a file change. */
+  refusedOther: boolean
   /** What `a` allowed. */
   readonly grants: Array<Capability.CapabilityPattern>
   /** Commands asked about, by identity, so an answer can settle the waiting ones it covers. */
@@ -785,10 +793,10 @@ const internal = (resource: string): boolean => /\/\.(git|jj)(\/|$)/i.test(resou
  *   an earlier `y`: every command, and every write not to one named file.
  * - `a` allows every request its label names for the rest of the run,
  *   except writes to `.git` or `.jj`.
- * - A shell call that declares `writes: []` and is a `quiet` program called
- *   plainly (`readOnly`) runs unasked while the run has refused nothing.
- *   A Git one asks once `a` allowed anything, which could have configured
- *   a helper Git runs.
+ * - A shell call that declares `writes: []` and is `quiet` programs called
+ *   plainly (`readOnly`) runs unasked, even naming a refused file: it only
+ *   reads. Once the run refused anything but a file change, it asks. A Git one asks once `a` allowed anything in any run, which could
+ *   have configured a helper Git runs.
  *
  * A denial wins over every allowance. The host keeps one `Memory` under
  * `ask` only: `deny` must never meet an allowance.
@@ -799,7 +807,14 @@ export class Memory {
   private run(source: string): Run {
     let found = this.runs.get(source)
     if (found === undefined) {
-      found = { allowed: new Set(), refused: new Set(), paths: new Set(), grants: [], commands: new Map() }
+      found = {
+        allowed: new Set(),
+        refused: new Set(),
+        paths: new Set(),
+        refusedOther: false,
+        grants: [],
+        commands: new Map()
+      }
       this.runs.set(source, found)
     }
     return found
@@ -818,8 +833,10 @@ export class Memory {
   decide(request: Pick<Request, "capability" | "meta" | "command">, local = true): Decision {
     const run = this.runs.get(request.meta.source)
     const shell = request.command ?? run?.commands.get(request.meta.identity)
-    const quiet = local && (run === undefined || run.refused.size === 0) &&
-      (shell?.readOnly === "reads" || (shell?.readOnly === "runs" && (run?.grants.length ?? 0) === 0))
+    // A read cannot change a refused file; a Git helper any run's `a` configured could.
+    const quiet = local && run?.refusedOther !== true &&
+      (shell?.readOnly === "reads" ||
+        (shell?.readOnly === "runs" && [...this.runs.values()].every((each) => each.grants.length === 0)))
     if (quiet) return { _tag: "allow" }
     if (run !== undefined) {
       if (run.refused.has(request.meta.identity)) return { _tag: "deny" }
@@ -868,6 +885,7 @@ export class Memory {
     const run = this.run(request.source)
     run.refused.add(request.identity)
     if (request.action === "fs:write") run.paths.add(request.resource)
+    else run.refusedOther = true
   }
 
   allowed(request: Pending, choice: "once" | "run", cwd: string): void {
