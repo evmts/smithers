@@ -126,6 +126,12 @@ test("Get started for free mounts the real island in place when it loads", async
   await page.route("**/api/bootstrap", route => route.fulfill({ json: {
     apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: [], authFlow: "none", sandbox: null,
   } }))
+  // This row asserts a clean console, so every read the root launcher makes
+  // (#4022) has to answer here: an unrouted one logs the browser's own status
+  // line, and the releases source is a real unauthenticated GitHub endpoint
+  // whose rate limit is not this row's subject.
+  await page.route("**/api/public/repos", route => route.fulfill({ json: [] }))
+  await page.route("https://api.github.com/repos/smithersai/smithers/releases*", route => route.fulfill({ json: [] }))
   await page.goto("/")
   await page.getByRole("link", { name: "Get started for free", exact: true }).click()
   await expect(page.getByTestId("composer-input")).toBeAttached()

@@ -31,13 +31,21 @@ mock.module("./runtime/Runtime", () => ({
 }))
 mock.module("./state/AppStore", () => ({ createAppStore: async () => fakeStore }))
 mock.module("./state/AppController", () => ({ createAppController: () => fakeController }))
+// Each door this fixture records keeps the rest of its module real. A double
+// that lists only the doors it watches breaks the child with a missing-export
+// SyntaxError as soon as the module graph imports another of its exports, and
+// a re-listed constant is a second copy to keep in step: FrameHistory gained
+// ROOT_APP_PATH (#3861), and RepoLink.pathRepo is read through FrameHistory.
+const repoLink = await import("./RepoLink")
 mock.module("./RepoLink", () => ({
+  ...repoLink,
   requestedRepo: () => "roninjin10/smithers",
   beginRepositoryEntry: () => { calls.push("repository.entry"); return "entry" },
   openRequestedRepo: async () => { calls.push("repository.open") },
   withoutRepoParam: () => "/roninjin10/smithers"
 }))
-mock.module("./runtime/FrameHistory", () => ({ ROOT_APP_PATH: "/?tutorial", createBrowserFrameHistory: () => ({}) }))
+const frameHistory = await import("./runtime/FrameHistory")
+mock.module("./runtime/FrameHistory", () => ({ ...frameHistory, createBrowserFrameHistory: () => ({}) }))
 mock.module("./runtime/TurnErasure", () => ({ createTurnEraser: () => async () => {} }))
 const { runControllerBoot } = await import("./ControllerBoot.client")
 const controller = await runControllerBoot()

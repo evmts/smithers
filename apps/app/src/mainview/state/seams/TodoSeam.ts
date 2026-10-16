@@ -22,9 +22,24 @@ import { actorName } from "../../cards/views/actorName"
 import { randomUuid } from "../../runtime/RandomUuid"
 
 class TodoTopicMismatch extends Data.TaggedError("TodoTopicMismatch") { readonly message = "TODO topic mismatch" }
-/** Rejected field paths only; the TODO's contents never enter diagnostics. */
-class TodoListInvalid extends Data.TaggedError("TodoListInvalid")<{ readonly fields: ReadonlyArray<string> }> {
-  override get message() { return `Invalid TODO fields: ${this.fields.join(", ")}` }
+/**
+ * Rejected field paths only; the TODO's contents never enter diagnostics. The
+ * list is also finite: a host that rejects every row would otherwise write one
+ * path per row per field into the diagnostic ring.
+ */
+class TodoListInvalid extends Data.TaggedError("TodoListInvalid")<{ readonly fields: ReadonlyArray<string>; readonly omitted: number }> {
+  override get message() {
+    return `Invalid TODO fields: ${this.fields.join(", ")}${this.omitted > 0 ? ` and ${this.omitted} more` : ""}`
+  }
+}
+
+/** At most this many distinct rejected paths are named; the rest are counted. */
+const REPORTED_FIELDS = 24
+
+/** The distinct paths a decode rejected, in the order the decoder found them. */
+const rejectedFields = (issues: ReadonlyArray<{ readonly path: ReadonlyArray<PropertyKey> }>): { readonly fields: ReadonlyArray<string>; readonly omitted: number } => {
+  const paths = [...new Set(issues.map(issue => issue.path.join(".")))]
+  return { fields: paths.slice(0, REPORTED_FIELDS), omitted: Math.max(0, paths.length - REPORTED_FIELDS) }
 }
 /** main's .smithers/machine.json could not be read or decoded for a machine image draft. */
 class MachineJsonUnreadable extends Data.TaggedError("MachineJsonUnreadable") {
@@ -642,7 +657,7 @@ export const createTodoSeam = (ctx: SeamContext, options: TodoSeamOptions = {}) 
       const response = await ctx.http(`${ctx.baseUrl}${TODOS_PATH}`, { credentials: "include" })
       const body: unknown = response.ok ? await response.json() : undefined
       const parsed = Array.isArray(body) ? TodoCardSchema.array().safeParse(body.map(value => todoActors(value, options.actors?.()))) : undefined
-      if (response.ok && parsed && !parsed.success) ctx.report?.("todo.list", new TodoListInvalid({ fields: parsed.error.issues.map(issue => issue.path.join(".")) }))
+      if (response.ok && parsed && !parsed.success) ctx.report?.("todo.list", new TodoListInvalid(rejectedFields(parsed.error.issues)))
       next = response.status === 401 || response.status === 403 ? { error: "forbidden" }
         : response.status === 404 ? { error: "absent" }
         : !response.ok ? { ...shared.list.snapshot, error: "internal" }

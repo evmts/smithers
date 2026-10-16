@@ -23,16 +23,21 @@ test("keyboard takeover at the Astro root consumes its intent and restores the s
   await expect(second.getByTestId("composer-input")).toBeAttached()
   await expect(page.getByRole("heading", { name: "Smithers moved to another tab" })).toBeVisible()
 
-  // This document has no query marker: its explicit request must cross the landing boundary.
-  await expect(page).toHaveURL("/")
+  // This document was loaded with no query marker: its explicit request crossed
+  // the landing boundary in place, and the app it mounted made that entry
+  // addressable (#3861) without loading a second document.
+  expect(await page.evaluate(() => new URL((performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming).name).search)).toBe("")
+  await expect(page).toHaveURL("/?tutorial")
   await page.getByRole("button", { name: "Use Smithers here" }).focus()
   await page.keyboard.press("Enter")
   await expect(page.getByTestId("composer-input")).toBeAttached()
   await expect(second.getByRole("heading", { name: "Smithers moved to another tab" })).toBeVisible()
   expect(await page.evaluate(() => sessionStorage.getItem("smithers.writer-takeover"))).toBeNull()
 
-  // Ordinary reload still shows the landing: taking over is a one-shot action.
-  await page.reload()
+  // An unmarked landing entry still shows the landing: taking over is a one-shot
+  // action, never a stored one. (A reload of the addressable entry above
+  // resumes the app by its own marker, which is #3861's behaviour, not this.)
+  await page.goto("/")
   await expect(page.getByRole("link", { name: "Get started for free", exact: true })).toBeVisible()
   expect(errors).toEqual([])
 })

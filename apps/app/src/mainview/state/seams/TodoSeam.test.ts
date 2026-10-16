@@ -1024,6 +1024,23 @@ describe("TodoSeam — the TODO list Home reads where no `home` topic is served 
     } finally { leave(); h.close() }
   })
 
+  test("a host that rejects every row reports a finite path list, not one per row", async () => {
+    const model = fixtures.queued.model
+    const broken = (n: number) => ({ ...model, n, prompt_revisions: [{ ...model.prompt_revisions[0]!, text: "PRIVATE PROMPT", by: { kind: "person", login: "ben" } }] })
+    const h = await listHarness([() => json(Array.from({ length: 40 }, (_, index) => broken(index + 1)), 200)])
+    const leave = h.seam.list.subscribe(() => {})
+    try {
+      await waitFor(() => h.seam.list.get().error === "invalid")
+      expect(h.reports).toHaveLength(1)
+      const message = String(h.reports[0]!.error)
+      // 40 rows reject 3 fields each: the report names the first 24 paths and counts the rest.
+      expect(message.match(/prompt_revisions/g)).toHaveLength(24)
+      expect(message).toContain("and 96 more")
+      expect(message).not.toContain("PRIVATE PROMPT")
+      expect(message.length).toBeLessThan(2000)
+    } finally { leave(); h.close() }
+  })
+
   test("a host that serves no TODOs answers absent and drops the list it held", async () => {
     const last = deferred<Response>()
     const h = await listHarness([() => json([fixtures.queued.model], 200), () => new Response("404 page not found", { status: 404 }), () => last.promise])
