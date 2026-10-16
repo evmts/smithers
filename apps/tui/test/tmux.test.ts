@@ -5,6 +5,26 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Tui } from "../e2e/tmux.ts"
 
+it("reports an exited terminal's status and private startup diagnostic while awaiting a screen", async () => {
+  const root = mkdtempSync(join(tmpdir(), "tui-driver-startup-"))
+  let tui: Tui | undefined
+  try {
+    writeFileSync(join(root, "tui.log"), JSON.stringify({ tag: "failure.startup", detail: "native bootstrap probe" }))
+    tui = await Tui.start({
+      cwd: root,
+      command: "sh -c 'printf boot-failed; exit 7'",
+      env: { SMITHERS_TUI_SESSION_DIR: root }
+    })
+    await tui.waitForExit()
+    await expect(tui.until(() => false, 100, "first draw")).rejects.toThrow(
+      /terminal exited \(code 7\).*first draw[\s\S]*native bootstrap probe/
+    )
+  } finally {
+    await tui?.stop()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 it("isolates tmux panes, preserves raw UTF-8 input, resizes, and retains the exit status", async () => {
   const root = mkdtempSync(join(tmpdir(), "tui-driver-"))
   let tui: Tui | undefined

@@ -2,9 +2,11 @@
 import * as SubagentCard from "@smthrs/rpc/SubagentCard"
 import { seatName } from "./models.ts"
 import type * as Panels from "./panels.ts"
-import * as Tabs from "./tabs.ts"
 import type * as Transcript from "./transcript.ts"
 import type { Tab } from "./workspace.ts"
+
+/** A worker or run clock, shared with the terminal views without loading their renderer. */
+export const clock = (ms: number): string => ms < 1000 ? `${Math.floor(Math.max(0, ms))}ms` : SubagentCard.duration(ms)
 
 /** A tab and how deep it sits under the walk's roots. */
 export interface Node {
@@ -53,12 +55,12 @@ export const panel = (
     const caption = transcript(tab.id).items.filter((item) => item.kind === "cell").at(-1)
     const current = caption?.kind === "cell" ? caption.prose.replace(/\s+/g, " ").slice(0, 48) : ""
     const seat = seatName(tab, [])
-    const clock = tab.launchedAt === undefined ? "—" : Tabs.clock((tab.endedAt ?? now) - tab.launchedAt)
+    const elapsed = tab.launchedAt === undefined ? "—" : clock((tab.endedAt ?? now) - tab.launchedAt)
     return {
       id: `tree:${tab.id}`,
       label: `${"  ".repeat(level)}${children.length ? "▾ " : "  "}${
         SubagentCard.glyph(tab.status, now).glyph
-      } ${tab.title}  ${seat}  ${clock}${current ? `  ${current}` : ""}${
+      } ${tab.title}  ${seat}  ${elapsed}${current ? `  ${current}` : ""}${
         children.length ? `  ${done}/${children.length} children` : ""
       }`.slice(0, 240),
       status: tab.status,

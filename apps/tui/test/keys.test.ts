@@ -22,7 +22,7 @@ const literal = String.raw`"(?:[^"\\]|\\.)*"`
 const ctrlBefore = String.raw`(key\.ctrl\s*&&\s*\(?\s*)?`
 /** Every way the handlers name a key; a shape outside these fails the guard below. */
 const shapes = [
-  new RegExp(String.raw`${ctrlBefore}key\.name\s*===\s*(${literal})`, "g"),
+  new RegExp(String.raw`${ctrlBefore}key\.name\s*[!=]==\s*(${literal})`, "g"),
   new RegExp(String.raw`${ctrlBefore}\[((?:\s*${literal}\s*,?)+)\]\.includes\(key\.name\)`, "g")
 ]
 

@@ -4,7 +4,7 @@
  */
 import { Terminal } from "@xterm/headless"
 import { spawnSync } from "node:child_process"
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { stopDaemons } from "../test/scratch.ts"
@@ -84,7 +84,8 @@ export class Tui {
     private readonly directory: string,
     private readonly socket: string,
     public rows: number,
-    public cols: number
+    public cols: number,
+    private readonly log?: string
   ) {
     this.terminal = new Terminal({ rows, cols, allowProposedApi: true })
   }
@@ -109,7 +110,14 @@ export class Tui {
   }): Promise<Tui> {
     const directory = mkdtempSync(join(tmpdir(), "tui-tmux-"))
     const socket = join(directory, "t.sock")
-    const tui = new Tui(directory, socket, options.rows ?? 40, options.cols ?? 110)
+    const sessions = options.env?.SMITHERS_TUI_SESSION_DIR
+    const tui = new Tui(
+      directory,
+      socket,
+      options.rows ?? 40,
+      options.cols ?? 110,
+      sessions === undefined ? undefined : join(sessions, "tui.log")
+    )
     live.add(tui)
     try {
       // macOS limits Unix socket paths to 103 bytes plus the terminating NUL.
@@ -235,14 +243,29 @@ export class Tui {
     return this.run(["capture-pane", "-p", "-N"]).replace(/\n$/, "")
   }
 
+  /** Only the test's explicit session log, whose writer already redacts credentials. */
+  private diagnostic(): string {
+    if (this.log === undefined) return ""
+    try {
+      return `\nterminal log:\n${readFileSync(this.log, "utf8").slice(-16_000)}`
+    } catch {
+      return ""
+    }
+  }
+
   async until(predicate: (screen: string) => boolean, timeoutMs = 15_000, label = "screen"): Promise<string> {
     const deadline = Date.now() + timeoutMs
     while (Date.now() < deadline) {
       const screen = this.screen()
       if (predicate(screen)) return screen
+      const exited = this.exited
+      if (exited !== undefined) {
+        const status = exited.code === null ? `signal ${exited.signal}` : `code ${exited.code}`
+        throw new Error(`terminal exited (${status}) waiting for ${label}; screen:\n${screen}${this.diagnostic()}`)
+      }
       await sleep(100)
     }
-    throw new Error(`timed out waiting for ${label}; screen:\n${this.screen()}`)
+    throw new Error(`timed out waiting for ${label}; screen:\n${this.screen()}${this.diagnostic()}`)
   }
 
   async waitForExit(timeoutMs = 5_000): Promise<Exit> {
