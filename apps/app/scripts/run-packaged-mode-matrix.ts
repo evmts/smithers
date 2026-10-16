@@ -26,34 +26,60 @@ const option = (name: string): string | undefined => {
   return value
 }
 
-const revision = await sourceRevision(rootDir)
+/*
+ * The stage this run reached, on stderr before the stage runs. A child the
+ * deadline kills — a timed-out CI gate, a cancelled job — reports nothing of
+ * its own, so these lines are all a reader has. The names are a closed set
+ * and carry no arguments, environment, paths, targets or credentials.
+ */
+const stage = (name: "arguments" | "external-config" | "conflict-check" | "revision" | "output-dir" | "launch" | "runner" | "teardown"): void => {
+  process.stderr.write(`mode matrix stage: ${name}\n`)
+}
 
+stage("arguments")
 const outputDir = resolve(option("--output-dir") ?? process.env.SMITHERS_MODE_MATRIX_OUTPUT_DIR ?? resolve(appDir, "test-results/mode-matrix"))
 const modeSelection = option("--modes")
 const selectedModes = selectMatrixModes(modeSelection).modes
 const wants = (mode: string): boolean => selectedModes.some((selected) => selected === mode)
 const configPath = resolve(outputDir, "config.json")
 const reportPath = resolve(outputDir, "report.json")
-mkdirSync(outputDir, { recursive: true })
 
+/*
+ * Every refusal readable from the arguments alone comes first, because the
+ * stages below are effects: `sourceRevision` snapshots the whole working copy
+ * through `jj` and `git` — unbounded on a CI checkout carrying build output —
+ * and the output directory is a write. A configuration this run will refuse
+ * must not pay for either, nor leave a directory behind.
+ */
+stage("external-config")
 const externalPath = option("--external-config") ?? process.env.SMITHERS_MODE_MATRIX_EXTERNAL_CONFIG
-let external: MatrixConfig = { revision, modes: [] }
+let external: MatrixConfig | undefined
 if (externalPath !== undefined) {
   if (!existsSync(externalPath)) throw new Error(`external mode configuration does not exist: ${externalPath}`)
   external = parseMatrixConfig(JSON.parse(readFileSync(resolve(externalPath), "utf8")) as unknown)
-  if (external.revision !== revision) throw new Error(`external mode revision ${external.revision} does not match checkout ${revision}`)
   if (external.modes.some(({ mode }) => mode === "local-own")) {
     throw new Error("external mode configuration must not replace an in-repo owned launch")
   }
 }
+const externalModes = external?.modes ?? []
 
+stage("conflict-check")
 const plueTarget = process.env.SMITHERS_MODE_MATRIX_PLUE_URL?.trim()
 const plueWebTarget = process.env.SMITHERS_MODE_MATRIX_PLUE_WEB_URL?.trim()
 const plueTokenEnvironment = "SMITHERS_MODE_MATRIX_PLUE_TOKEN"
 if (plueTarget && process.env[plueTokenEnvironment]?.trim() && (wants("web-plue") || wants("local-plue")) &&
-  external.modes.some(({ mode }) => mode === "web-plue" || mode === "local-plue")) {
+  externalModes.some(({ mode }) => mode === "web-plue" || mode === "local-plue")) {
   throw new Error("external configuration must not duplicate the configured Plue web or local target")
 }
+
+stage("revision")
+const revision = await sourceRevision(rootDir)
+if (external !== undefined && external.revision !== revision) {
+  throw new Error(`external mode revision ${external.revision} does not match checkout ${revision}`)
+}
+
+stage("output-dir")
+mkdirSync(outputDir, { recursive: true })
 
 let localSession: LocalOwnSession | undefined
 let plueSessions: PlueSession[] = []
@@ -79,6 +105,7 @@ const interrupt = (signal: NodeJS.Signals): void => {
 }
 process.once("SIGINT", interrupt)
 process.once("SIGTERM", interrupt)
+stage("launch")
 try {
   if (plueTarget && process.env[plueTokenEnvironment]?.trim() && (wants("web-plue") || wants("local-plue"))) {
     if (wants("web-plue")) try {
@@ -104,10 +131,11 @@ try {
   const config: MatrixConfig = {
     revision,
     modes: [...(localSession === undefined ? [] : [localSession.modeConfig]),
-      ...plueSessions.map(({ modeConfig }) => modeConfig), ...external.modes]
+      ...plueSessions.map(({ modeConfig }) => modeConfig), ...externalModes]
   }
   writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 })
 
+  stage("runner")
   const matrix = Bun.spawn([
     "bun", "scripts/run-mode-matrix.ts", matrixCommand,
     "--config", configPath,
@@ -127,6 +155,7 @@ try {
 } finally {
   process.off("SIGINT", interrupt)
   process.off("SIGTERM", interrupt)
+  stage("teardown")
   try { await stop() } catch (error) {
     teardownFailure = error
     console.error(`mode launcher teardown failed: ${error instanceof Error ? error.message : String(error)}`)

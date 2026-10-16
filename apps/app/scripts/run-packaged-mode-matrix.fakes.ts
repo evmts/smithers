@@ -7,7 +7,8 @@
  * `sourceRevision` and `matrix` into every later test file in the same
  * `bun test` run. A child process keeps them to one CLI invocation.
  *
- * The child reports which sessions it acquired and closed as JSON written to
+ * The child reports which sessions it acquired and closed, and every
+ * working-copy revision read it performed, as JSON written to
  * MATRIX_FAKES_LOG when it exits; MATRIX_FAKES_FAIL_CLOSE=1 makes the
  * local session's close throw.
  */
@@ -17,6 +18,7 @@ import { writeFileSync } from "node:fs"
 const revision = "a".repeat(40)
 const acquisitions: string[] = []
 const closes: string[] = []
+const revisions: string[] = []
 let matrixEnvironment: Record<string, string> | undefined
 const failClose = process.env.MATRIX_FAKES_FAIL_CLOSE === "1"
 const modeConfig = (mode: string) => ({
@@ -26,14 +28,18 @@ const modeConfig = (mode: string) => ({
 
 process.on("exit", () => {
   const log = process.env.MATRIX_FAKES_LOG
-  if (log !== undefined) writeFileSync(log, JSON.stringify({ acquisitions, closes, matrixEnvironment }))
+  if (log !== undefined) writeFileSync(log, JSON.stringify({ acquisitions, closes, revisions, matrixEnvironment }))
 })
 
 mock.module("../e2e/real/coverage/matrix", () => ({
   selectMatrixModes: (selection?: string) => ({ modes: selection?.split(",") ?? [] }),
   parseMatrixConfig: (value: { revision: string; modes: unknown[] }) => value
 }))
-mock.module("./mode-matrix/source-revision", () => ({ sourceRevision: async () => revision }))
+// The real reader snapshots the whole working copy through `jj` and `git`;
+// the fake only records that the CLI asked for it.
+mock.module("./mode-matrix/source-revision", () => ({
+  sourceRevision: async () => { revisions.push("source"); return revision }
+}))
 mock.module("./mode-matrix/local-own", () => ({
   startLocalOwn: async () => {
     acquisitions.push("local")
