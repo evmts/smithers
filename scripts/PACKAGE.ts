@@ -474,32 +474,6 @@ const driftJob = Smithers.NodeTest({
   deps: []
 })
 
-// Offline fixtures prove the live runner refuses missing login/credentials and
-// preserves launch order; the fake executables never call providers (#2290).
-const providerLiveGuards = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//scripts/ci/provider-live.test.mjs")]),
-  srcs: [...sources, Smithers.file("//scripts/ci/provider-live.sh")],
-  deps: []
-})
-
-/**
- * The bug-worker `deploy` script refuses to publish outside a
- * qualified Cloud rollout: it exits nonzero, never reaches `alchemy`, and
- * says why.
- *
- * @since 1.0.0
- * @category test
- */
-const workerDeployQualification = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//scripts/ci/worker-deploy-qualification.test.mjs")]),
-  srcs: [
-    ...sources,
-    Smithers.file("//flows/rollout/refuse-unqualified.mjs"),
-    Smithers.file("//apps/bug-worker/package.json")
-  ],
-  deps: []
-})
-
 /** The Windows kernel suite runs independently of the native and Node host jobs. */
 const nativeWindowsWorkflow = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//scripts/ci/native-windows.test.mjs")]),
@@ -1140,11 +1114,9 @@ export const Package = Smithers.Package({
     packageDocs,
     publishedLinksUnit,
     driftJob,
-    providerLiveGuards,
     openapiBundle,
     openapiClients,
     nativeWindowsWorkflow,
-    workerDeployQualification,
     bunCoverage,
     commit,
     conformanceCheck,

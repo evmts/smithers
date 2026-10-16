@@ -28,9 +28,17 @@ const reviewDocsAgainstCode = ReviewDocsAgainstCode({
 /** Changed exports against their own JSDoc. */
 const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd })
 
+// Offline fixtures prove the live runner refuses missing login/credentials and
+// preserves launch order; the fake executables never call providers (#2290).
+const providerLiveGuards = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//packages/smithers/agent/model/scripts/provider-live.test.mjs")]),
+  srcs: [Smithers.file("//packages/smithers/agent/model/scripts/provider-live.sh")],
+  deps: []
+})
+
 const securityReview = Smithers.SecurityReview({
   cwd,
-  include: ["src/**", "docs/**", "README.md", "examples/**", "test/examples/**"],
+  include: ["src/**", "docs/**", "README.md", "examples/**", "test/examples/**", "scripts/provider-live.sh"],
   checks: [
     {
       id: "example-provider-key-handling",
@@ -180,6 +188,7 @@ export const Package = Smithers.Package({
     fmt,
     lib,
     lint,
+    providerLiveGuards,
     reviewDocsAgainstCode,
     reviewJsdocAgainstCode,
     test,

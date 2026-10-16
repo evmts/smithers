@@ -18,6 +18,6 @@ fi
 unset codex_status
 export SMITHERS_LIVE_MODEL_TESTS=1
 export SMITHERS_REQUIRE_LIVE_CREDENTIALS=1
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../.." && pwd)"
 pnpm --dir "$repo_root/packages/smithers/agent/model" exec vitest run test/CerebrasStructuredOutput.integration.test.ts --coverage.enabled=false
 pnpm --dir "$repo_root/packages/smithers" exec vitest run test/CodexSeat.integration.test.ts --coverage.enabled=false
