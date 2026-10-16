@@ -32,6 +32,16 @@ export interface ChatArchiveSnapshot {
   /** Entries of the archives the person opened, by archive id. */
   readonly opened: Readonly<Record<string, SharedConversation>>
   readonly error?: "History unavailable"
+  /**
+   * A listing is in flight. It is not an answer, so a card reading one says
+   * so rather than claiming this identity archived nothing.
+   */
+  readonly reading?: boolean
+  /**
+   * What a read of one archive's entries is doing, by archive id: absent once
+   * its entries are in hand, and never an empty conversation.
+   */
+  readonly reads?: Readonly<Record<string, "reading" | "unavailable">>
 }
 
 /** What history groups an archived chat by: the header's repository and branch. */
@@ -47,40 +57,73 @@ export interface ChatArchiveOptions {
 
 const EMPTY: ChatArchiveSnapshot = { opened: {} }
 
+/** One archive's read, retired from the record it is keyed in. */
+const without = (reads: ChatArchiveSnapshot["reads"], id: string): Readonly<Record<string, "reading" | "unavailable">> => {
+  const rest = { ...reads }
+  delete rest[id]
+  return rest
+}
+
 /** Archived chats stay on the host; account generations fence every answer. */
 export function createChatArchiveSeam(ctx: ControllerContext, options: ChatArchiveOptions) {
   let snapshot = EMPTY, generation = 0, disposed = false
   let archiving: Promise<unknown> | undefined
+  /** The listing in flight, and what the last one for this account answered. */
+  let listing: Promise<void> | undefined
+  let listed: "unread" | "read" | "unavailable" = "unread"
+  /** One read per archive id, so a second ask for the same chat joins the first. */
+  const opening = new Map<string, Promise<string | undefined>>()
   const listeners = new Set<() => void>()
   const publish = (next: ChatArchiveSnapshot) => { snapshot = next; for (const listener of listeners) listener() }
-  const valid = (revision: number) => !disposed && !ctx.disposed && generation === revision
+  /** A disposed seam reads nothing more and publishes nothing more. */
+  const active = () => !disposed && !ctx.disposed
+  const valid = (revision: number) => active() && generation === revision
   const signedIn = () => ctx.store.collections.identitySessions.get("identity")?.state === "signed-in" && !!ctx.accountOwner()
 
   const list = async (): Promise<void> => {
     const revision = generation
-    if (!signedIn()) return
+    if (!active() || !signedIn()) return
+    // One read answers every asker: a mount, `/history` and a retry join the request in flight.
+    if (listing !== undefined) return listing
+    if (snapshot.reading !== true) publish({ ...snapshot, reading: true })
     // A failed refresh keeps the rows already shown.
-    const unavailable = () => { if (valid(revision)) publish({ ...snapshot, error: "History unavailable" }) }
-    try {
-      const response = await ctx.boundedFetch(`${ctx.baseUrl}/api/conversation-archives`, { credentials: "same-origin" })
-      if (!response.ok) return unavailable()
-      const { archives } = ListSchema.parse(await response.json())
-      if (valid(revision)) publish({ archives, opened: snapshot.opened })
-    } catch { unavailable() }
+    const unavailable = () => { if (valid(revision)) { listed = "unavailable"; publish({ ...snapshot, reading: undefined, error: "History unavailable" }) } }
+    const work = (async (): Promise<void> => {
+      try {
+        const response = await ctx.boundedFetch(`${ctx.baseUrl}/api/conversation-archives`, { credentials: "same-origin" })
+        if (!response.ok) return unavailable()
+        const { archives } = ListSchema.parse(await response.json())
+        if (valid(revision)) { listed = "read"; publish({ ...snapshot, archives, reading: undefined, error: undefined }) }
+      } catch { unavailable() }
+    })()
+    listing = work
+    try { await work } finally { if (listing === work) listing = undefined }
   }
 
   /** Loads one archived chat's entries; a refusal is the sentence the person reads. */
   const open = async (id: string): Promise<string | undefined> => {
     const revision = generation
-    if (!signedIn()) return "History unavailable"
+    if (!active() || !signedIn()) return "History unavailable"
     if (snapshot.opened[id] !== undefined) return undefined
+    const running = opening.get(id)
+    if (running !== undefined) return running
+    const mark = (state: "reading" | "unavailable") => { if (valid(revision)) publish({ ...snapshot, reads: { ...snapshot.reads, [id]: state } }) }
+    const work = (async (): Promise<string | undefined> => {
+      try {
+        const response = await ctx.boundedFetch(`${ctx.baseUrl}/api/conversation-archives/${encodeURIComponent(id)}`, { credentials: "same-origin" })
+        if (!response.ok) return "Archived chat unavailable"
+        const { conversation } = OpenedSchema.parse(await response.json())
+        if (valid(revision)) publish({ ...snapshot, opened: { ...snapshot.opened, [id]: conversation }, reads: without(snapshot.reads, id) })
+        return undefined
+      } catch { return "Archived chat unavailable" }
+    })()
+    opening.set(id, work)
+    mark("reading")
     try {
-      const response = await ctx.boundedFetch(`${ctx.baseUrl}/api/conversation-archives/${encodeURIComponent(id)}`, { credentials: "same-origin" })
-      if (!response.ok) return "Archived chat unavailable"
-      const { conversation } = OpenedSchema.parse(await response.json())
-      if (valid(revision)) publish({ ...snapshot, opened: { ...snapshot.opened, [id]: conversation } })
-      return undefined
-    } catch { return "Archived chat unavailable" }
+      const refusal = await work
+      if (refusal !== undefined) mark("unavailable")
+      return refusal
+    } finally { if (opening.get(id) === work) opening.delete(id) }
   }
 
   /**
@@ -116,13 +159,36 @@ export function createChatArchiveSeam(ctx: ControllerContext, options: ChatArchi
     return { value: "Archive requested" }
   }
 
-  const reset = () => { ++generation; archiving = undefined; publish(EMPTY) }
+  /**
+   * The index this identity reaches, and one archive's entries when a card
+   * holds that chat open: read unless they are in hand, in flight, or a read
+   * already settled them. This is what a render may call — a request in
+   * flight is joined, an answer in hand is a no-op, and a failed read waits
+   * for its retry — so a mount, a remount and StrictMode's second
+   * subscription produce one read, never a loop.
+   */
+  const ensure = (selected?: string): void => {
+    if (!active() || !signedIn()) return
+    if (listed === "unread" && listing === undefined) void list()
+    if (selected === undefined || snapshot.opened[selected] !== undefined) return
+    if (snapshot.reads?.[selected] === undefined && !opening.has(selected)) void open(selected)
+  }
+
+  /** Asks again after a failed read: the index, or one archive's entries. */
+  const retry = (selected?: string): void => {
+    if (!active() || !signedIn()) return
+    if (selected === undefined) { void list(); return }
+    if (snapshot.reads?.[selected] === "unavailable") publish({ ...snapshot, reads: without(snapshot.reads, selected) })
+    void open(selected)
+  }
+
+  const reset = () => { ++generation; archiving = undefined; listing = undefined; listed = "unread"; opening.clear(); publish(EMPTY) }
   const stopAccount = ctx.onAccountChange(reset)
-  ctx.onDispose(() => { disposed = true; stopAccount(); listeners.clear() })
+  ctx.onDispose(() => { disposed = true; stopAccount(); listeners.clear(); listing = undefined; opening.clear() })
   return {
     get: () => snapshot,
     subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
-    list, open, archive
+    list, open, archive, ensure, retry
   }
 }
 export type ChatArchiveSeam = ReturnType<typeof createChatArchiveSeam>

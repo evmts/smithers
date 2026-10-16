@@ -22,7 +22,10 @@ const many: Model["repositories"] = [
   { repository: "acme/web", current: false, branches: [{ branch: "main", current: false, chats: [{ id: "e", title: "Ship checkout", archivedAt: at, summary: undefined, runs: [] }] }] },
   { repository: null, current: false, branches: [{ branch: null, current: false, chats: [{ id: "f", title: "Plan the week", archivedAt: at, summary: undefined, runs: [] }] }] }
 ]
-const failure: UserFailure = { tag: "HistoryUnavailable", fault: "infra", sentence: "History unavailable", actions: [], detail: "History unavailable" }
+const failure: UserFailure = { tag: "HistoryUnavailable", fault: "infra", sentence: "History unavailable", actions: ["retry"], detail: "History unavailable" }
+const chatFailure: UserFailure = { tag: "ArchivedChatUnavailable", fault: "infra", sentence: "Archived chat unavailable", actions: ["retry"], detail: "Archived chat unavailable" }
+/* A retry reads again; the story records the press and expects no flow and no view patch. */
+const retry: StoryInteraction = { selector: "[role='status'] button", action: null }
 
 const chat = (id: string, selected: string | undefined): StoryInteraction => ({ selector: `[data-archive="${id}"] > button`, patch: { selected } })
 const group = (kind: "repository" | "branch", name: string): StoryInteraction => ({ selector: `[data-history="${kind}"][data-name="${name}"] > button` })
@@ -31,8 +34,9 @@ const closed = (name: string): StoryInteraction[] => [group("repository", name),
 
 const story = (name: string, expect: readonly string[], model: Partial<Model>, selected: string | undefined, interactions: readonly StoryInteraction[], actions: readonly Action[] = []): ViewStory => ({
   name, expect, actions, interactions,
-  render: (callbacks, supplied = actions) => <HistoryView model={{ repositories: [], loaded: true, failure: undefined, opened: undefined, ...model }}
-    actions={supplied as readonly Action[]} view={{ selected }} onAction={callbacks.onAction} onView={callbacks.onView} />,
+  render: (callbacks, supplied = actions) => <HistoryView
+    model={{ repositories: [], loaded: true, reading: false, failure: undefined, opened: undefined, openedReading: false, openedFailure: undefined, ...model }}
+    actions={supplied as readonly Action[]} view={{ selected }} onAction={callbacks.onAction} onView={callbacks.onView} onRetry={() => {}} />,
 })
 
 export const stories: ViewStory[] = [
@@ -41,7 +45,11 @@ export const stories: ViewStory[] = [
   story("Other repositories closed", ["acme/api", "main", "Fix Safari login", "Compare two queue designs", "acme/web", "No repository"], { repositories: many }, undefined,
     [chat("a", "a"), chat("d", "d"), group("branch", "main"), ...closed("acme/web"), ...closed("No repository"), group("repository", "acme/api")]),
   story("No archived chats", ["No archived chats"], {}, undefined, []),
-  story("Reading", [], { loaded: false }, undefined, []),
-  story("Unavailable", ["History unavailable", "acme/api", "Fix Safari login"], { repositories: one, failure }, undefined,
-    [chat("a", "a"), chat("b", "b"), group("branch", "main"), group("repository", "acme/api")]),
+  story("Reading", ["Reading history"], { loaded: false, reading: true }, undefined, []),
+  story("Unavailable", ["History unavailable", "Retry", "acme/api", "Fix Safari login"], { repositories: one, failure }, undefined,
+    [retry, chat("a", "a"), chat("b", "b"), group("branch", "main"), group("repository", "acme/api")]),
+  story("Reading a chat", ["Reading chat", "Fix Safari login"], { repositories: one, openedReading: true }, "a",
+    [chat("a", undefined), chat("b", "b"), group("branch", "main"), group("repository", "acme/api")]),
+  story("Chat unavailable", ["Archived chat unavailable", "Retry", "Fix Safari login"], { repositories: one, openedFailure: chatFailure }, "a",
+    [retry, chat("a", undefined), chat("b", "b"), group("branch", "main"), group("repository", "acme/api")]),
 ]

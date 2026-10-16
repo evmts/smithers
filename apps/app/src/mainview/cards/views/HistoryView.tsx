@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react"
 import { Markdown } from "@smthrs/ui/markdown"
 import type { Action, CatalogTag } from "@smthrs/rpc/CardAction"
 import type { UserFailure } from "@smthrs/rpc/UserFailure"
+import { FailureNotice } from "../../FailureNotice"
 import type { SharedConversation } from "../../state/seams/SharedConversationSeam"
 
 /** One archived chat's row: its line, when it was archived, its summary, and the runs it started. */
@@ -16,10 +17,16 @@ export interface HistoryViewProps {
     readonly repositories: ReadonlyArray<HistoryRepositoryRows>
     /** False until the first listing answers. */
     readonly loaded: boolean
+    /** A listing is in flight: not an answer, and not an empty history. */
+    readonly reading: boolean
     /** A listing that failed; rows already read stay beside it. */
     readonly failure: UserFailure | undefined
     /** The selected archive's entries, once read. */
     readonly opened: SharedConversation | undefined
+    /** The selected archive's entries are in flight: not a chat with no entries. */
+    readonly openedReading: boolean
+    /** The selected archive's entries could not be read. */
+    readonly openedFailure: UserFailure | undefined
   }
   /** One `run` action per run a chat started, told apart by `args.id`. */
   readonly actions: ReadonlyArray<Action>
@@ -27,6 +34,8 @@ export interface HistoryViewProps {
   /** The archive whose entries the card shows. */
   readonly view: { readonly selected: string | undefined }
   readonly onView: (patch: { readonly selected: string | undefined }) => void
+  /** Reads again after a failure: the listing, or the named archive's entries. */
+  readonly onRetry: (id?: string) => void
 }
 
 const day = (at: number): string => new Date(at).toLocaleDateString("en-US", { month: "short", day: "numeric" })
@@ -62,7 +71,11 @@ function Entries({ conversation }: { conversation: SharedConversation }) {
   </div>
 }
 
-function Chat({ chat, selected, opened, actions, onAction, onView }: { chat: HistoryChat; selected: boolean; opened: SharedConversation | undefined } & Pick<HistoryViewProps, "actions" | "onAction" | "onView">) {
+function Chat({ chat, selected, opened, note, actions, onAction, onView }: {
+  chat: HistoryChat; selected: boolean; opened: SharedConversation | undefined
+  /** What stands where this chat's entries would be when nobody has read them: a line, or a notice with its retry. */
+  note: ReactNode
+} & Pick<HistoryViewProps, "actions" | "onAction" | "onView">) {
   const runs = chat.runs.flatMap(id => actions.filter(action => action.tag === "run" && action.args?.id === id))
   return <li data-history="chat" data-archive={chat.id}>
     <button type="button" className="tree-row" aria-expanded={selected} aria-current={selected ? "true" : undefined} onClick={() => onView({ selected: selected ? undefined : chat.id })}>
@@ -74,19 +87,29 @@ function Chat({ chat, selected, opened, actions, onAction, onView }: { chat: His
       {runs.length > 0 ? <ol className="history-runs">{runs.map(action => <li key={action.label} data-history="run">
         <button type="button" className="tree-row" data-flow={action.tag} onClick={() => onAction(action.tag, action.args)}><span className="tree-name">{action.label}</span></button>
       </li>)}</ol> : null}
-      {opened ? <Entries conversation={opened} /> : null}
+      {opened ? <Entries conversation={opened} /> : note}
     </div> : null}
   </li>
 }
 
 /** Archived chats as a tree: repository, branch, chat, then the runs the chat started. */
-export function HistoryView({ model, actions, onAction, view, onView }: HistoryViewProps) {
-  const { repositories, loaded, failure, opened } = model
-  const chats = (rows: ReadonlyArray<HistoryChat>) => rows.map(chat =>
-    <Chat key={chat.id} chat={chat} selected={chat.id === view.selected} opened={chat.id === view.selected ? opened : undefined} actions={actions} onAction={onAction} onView={onView} />)
+export function HistoryView({ model, actions, onAction, view, onView, onRetry }: HistoryViewProps) {
+  const { repositories, loaded, reading, failure, opened, openedReading, openedFailure } = model
+  /* Nobody has read the selected chat's entries yet, which is not a chat that holds none. */
+  const note = openedFailure
+    ? <FailureNotice className="history-note" role="status" failure={openedFailure} actions={{ retry: { onClick: () => onRetry(view.selected) } }} />
+    : openedReading ? <p className="history-note" role="status">Reading chat</p> : null
+  const chats = (rows: ReadonlyArray<HistoryChat>) => rows.map(chat => {
+    const holds = chat.id === view.selected
+    return <Chat key={chat.id} chat={chat} selected={holds} opened={holds ? opened : undefined} note={holds ? note : null}
+      actions={actions} onAction={onAction} onView={onView} />
+  })
   const holds = (rows: ReadonlyArray<HistoryChat>) => rows.some(chat => chat.id === view.selected)
   return <article className="history-card" aria-label="History" data-keyboard-pane="History">
-    {failure ? <p className="history-note" role="status" data-failure={failure.tag ?? undefined}>{failure.sentence}</p> : null}
+    {/* A read in flight supersedes the failed one before it: the card is asking again, not refusing. */}
+    {failure && !reading ? <FailureNotice className="history-note" role="status" failure={failure} actions={{ retry: { onClick: () => onRetry() } }} /> : null}
+    {/* A listing nobody answered yet is not a history with nothing in it. */}
+    {!loaded && reading ? <p className="history-note" role="status">Reading history</p> : null}
     {loaded && repositories.length === 0 && !failure ? <p className="history-note">No archived chats</p> : null}
     {repositories.length > 0 ? <ol className="history-tree">{repositories.map(repository => {
       const all = repository.branches.flatMap(branch => branch.chats)

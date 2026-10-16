@@ -31,6 +31,14 @@ export const describedFailure = <Tag extends string>(tag: Tag, copy: UserFailure
 export const unavailableFailure = <Tag extends string>(tag: Tag, sentence: string, detail: string): UserFailure =>
   describedFailure(tag, { fault: "infra", sentence, actions: [] }, detail)
 
+/**
+ * An infrastructure read nobody answered, where asking again is the one act
+ * that can change it. The surface still decides whether it can retry: a
+ * notice with no `retry` entry draws no button.
+ */
+export const retryableFailure = <Tag extends string>(tag: Tag, sentence: string, detail: string): UserFailure =>
+  describedFailure(tag, { fault: "infra", sentence, actions: ["retry"] }, detail)
+
 const LABELS: Readonly<Record<UserFailureAction, string>> = {
   retry: "Retry",
   "sign-in": "Sign in",

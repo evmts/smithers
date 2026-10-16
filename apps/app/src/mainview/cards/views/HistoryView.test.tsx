@@ -3,7 +3,7 @@ import { afterEach, expect, mock, test } from "bun:test"
 import { act } from "react"
 import type { Action } from "@smthrs/rpc/CardAction"
 import { SharedConversationSchema } from "../../state/seams/SharedConversationSeam"
-import { unavailableFailure } from "../../FailureNotice"
+import { describedFailure } from "../../FailureNotice"
 import { lintCopy } from "../productWords"
 import { createRoot } from "./testDom"
 import { HistoryView, type HistoryViewProps } from "./HistoryView"
@@ -27,17 +27,21 @@ const opened = SharedConversationSchema.parse({ id: "archive-a", entries: [{
 
 let unmount: (() => Promise<void>) | undefined
 afterEach(async () => { await unmount?.(); unmount = undefined })
+const unavailable = (tag: string, sentence: string) => describedFailure(tag, { fault: "infra", sentence, actions: ["retry"] }, sentence)
 const mount = async (model: Partial<HistoryViewProps["model"]> = {}, selected?: string) => {
   const host = document.createElement("div")
   document.body.append(host)
   const root = createRoot(host)
   const onAction = mock((_tag: string, _input?: Record<string, string>) => {})
   const onView = mock((_patch: { readonly selected: string | undefined }) => {})
-  await act(async () => root.render(<HistoryView model={{ repositories, loaded: true, failure: undefined, opened: undefined, ...model }} actions={[run]} onAction={onAction} view={{ selected }} onView={onView} />))
+  const onRetry = mock((_id?: string) => {})
+  await act(async () => root.render(<HistoryView
+    model={{ repositories, loaded: true, reading: false, failure: undefined, opened: undefined, openedReading: false, openedFailure: undefined, ...model }}
+    actions={[run]} onAction={onAction} view={{ selected }} onView={onView} onRetry={onRetry} />))
   unmount = async () => { await act(async () => root.unmount()); host.remove() }
   const names = () => [...host.querySelectorAll(".tree-name")].map(node => node.textContent)
   const press = async (button: Element | null | undefined) => { await act(async () => (button as HTMLButtonElement).click()) }
-  return { host, onAction, onView, names, press }
+  return { host, onAction, onView, onRetry, names, press }
 }
 
 test("the header's repository and branch start open; other repositories and branches start closed", async () => {
@@ -103,16 +107,59 @@ test("empty, loading and failed listings", async () => {
   const empty = await mount({ repositories: [] })
   expect(empty.host.textContent).toBe("No archived chats")
   await unmount!()
-  // Before the first answer the card says nothing, rather than claim there is no history.
-  const loading = await mount({ repositories: [], loaded: false })
-  expect(loading.host.textContent).toBe("")
+  // A listing in flight says so; it never claims this identity archived nothing.
+  const reading = await mount({ repositories: [], loaded: false, reading: true })
+  expect(reading.host.querySelector("[role='status']")?.textContent).toBe("Reading history")
+  expect(reading.host.textContent).not.toContain("No archived chats")
   await unmount!()
-  const failed = await mount({ repositories: [], failure: unavailableFailure("HistoryUnavailable", "History unavailable", "History unavailable") })
-  expect(failed.host.querySelector("[role='status']")?.textContent).toBe("History unavailable")
-  expect(failed.host.textContent).toBe("History unavailable")
+  // Nobody asked yet, so the card neither claims an empty history nor says it is reading one.
+  const unasked = await mount({ repositories: [], loaded: false })
+  expect(unasked.host.textContent).toBe("")
+  await unmount!()
+  const failed = await mount({ repositories: [], failure: unavailable("HistoryUnavailable", "History unavailable") })
+  expect(failed.host.querySelector("[role='status']")?.getAttribute("data-failure")).toBe("HistoryUnavailable")
+  expect(failed.host.textContent).toContain("History unavailable")
+  expect(failed.host.textContent).not.toContain("No archived chats")
+  // The one act that can change a failed read is offered, and it asks for the listing, not a chat.
+  const retry = failed.host.querySelector<HTMLButtonElement>("[role='status'] button")!
+  expect(retry.textContent).toBe("Retry")
+  await failed.press(retry)
+  expect(failed.onRetry.mock.calls).toEqual([[undefined]])
+  expect(failed.onAction).toHaveBeenCalledTimes(0)
+  expect(failed.onView).toHaveBeenCalledTimes(0)
+  await unmount!()
+  // While the next read is in flight the card says so; the failed read before it no longer offers a retry.
+  const retrying = await mount({ repositories: [], loaded: false, reading: true, failure: unavailable("HistoryUnavailable", "History unavailable") })
+  expect(retrying.host.querySelector("[role='status']")?.textContent).toBe("Reading history")
+  expect(retrying.host.textContent).not.toContain("History unavailable")
+  expect(retrying.host.querySelector("button")).toBeNull()
   await unmount!()
   // A failed refresh keeps the rows already shown beside its notice.
-  const stale = await mount({ failure: unavailableFailure("HistoryUnavailable", "History unavailable", "History unavailable") })
+  const stale = await mount({ failure: unavailable("HistoryUnavailable", "History unavailable") })
   expect(stale.names()).toContain("Fix Safari login")
-  expect(stale.host.querySelector("[role='status']")?.textContent).toBe("History unavailable")
+  expect(stale.host.querySelector("[role='status']")?.textContent).toContain("History unavailable")
+})
+
+test("a selected chat whose entries are being read says so, and a failed read offers that chat's retry", async () => {
+  const reading = await mount({ openedReading: true }, "a")
+  const body = reading.host.querySelector("[data-archive='a'] .history-chat")!
+  expect(body.querySelector("[role='status']")?.textContent).toBe("Reading chat")
+  expect(body.querySelector("[data-archived-entries]")).toBeNull()
+  expect(lintCopy(reading.host)).toEqual([])
+  await unmount!()
+  const failed = await mount({ openedFailure: unavailable("ArchivedChatUnavailable", "Archived chat unavailable") }, "a")
+  const notice = failed.host.querySelector("[data-archive='a'] .history-chat [role='status']")!
+  expect(notice.getAttribute("data-failure")).toBe("ArchivedChatUnavailable")
+  expect(notice.textContent).toContain("Archived chat unavailable")
+  await failed.press(notice.querySelector("button"))
+  expect(failed.onRetry.mock.calls).toEqual([["a"]])
+  expect(failed.onView).toHaveBeenCalledTimes(0)
+  await unmount!()
+  // Entries in hand win: no notice stands beside a chat the host already answered for.
+  const read = await mount({ opened, openedReading: true, openedFailure: unavailable("ArchivedChatUnavailable", "Archived chat unavailable") }, "a")
+  expect(read.host.querySelector("[data-archive='a'] [data-archived-entries]")).not.toBeNull()
+  expect(read.host.textContent).not.toContain("Archived chat unavailable")
+  expect(read.host.textContent).not.toContain("Reading chat")
+  // An unselected chat never wears another chat's read state.
+  expect(read.host.querySelectorAll("[role='status']")).toHaveLength(0)
 })

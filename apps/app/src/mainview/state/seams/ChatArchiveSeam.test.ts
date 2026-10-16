@@ -147,19 +147,22 @@ describe("chat archive seam", () => {
   test("list keeps the rows it has when a refresh fails, and clears the error when one succeeds", async () => {
     let fail = false
     const h = harness(() => fail ? new Response("{}", { status: 500 }) : Response.json({ archives: [chat("a", "acme/api", "main", 1)] }))
-    const seen: number[] = []
-    const stop = h.seam.subscribe(() => seen.push(h.seam.get().archives?.length ?? -1))
+    const seen: Array<[number, boolean]> = []
+    const stop = h.seam.subscribe(() => seen.push([h.seam.get().archives?.length ?? -1, h.seam.get().reading === true]))
     await h.seam.list()
+    expect(h.seam.get().reading).not.toBe(true)
     fail = true
     await h.seam.list()
     expect(h.seam.get().archives?.map(each => each.id)).toEqual(["a"])
     expect(h.seam.get().error).toBe("History unavailable")
+    expect(h.seam.get().reading).not.toBe(true)
     fail = false
     await h.seam.list()
     expect(h.seam.get().error).toBeUndefined()
     stop()
     await h.seam.list()
-    expect(seen).toEqual([1, 1, 1])
+    // Every read says it is in flight before it answers, and stops saying it once it has.
+    expect(seen).toEqual([[-1, true], [1, false], [1, true], [1, false], [1, true], [1, false]])
     const broken = harness(() => Response.json({ archives: [{ id: "x" }] }))
     await broken.seam.list()
     expect(broken.seam.get()).toEqual({ opened: {}, error: "History unavailable" })
@@ -176,5 +179,102 @@ describe("chat archive seam", () => {
     const garbled = harness(() => Response.json({ archive: null }))
     expect(await garbled.seam.open("a")).toBe("Archived chat unavailable")
     expect(garbled.seam.get().opened).toEqual({})
+  })
+})
+
+describe("chat archive rehydration (#4033)", () => {
+  const index = (calls: Call[]) => calls.filter(call => call.url.endsWith("/api/conversation-archives")).length
+  const fixture = (held?: { release: (response: Response) => void }) => harness(call => {
+    if (call.url.endsWith("/api/conversation-archives")) {
+      if (held === undefined) return Response.json({ archives: [chat("a1", "acme/api", "feature x", 500)] })
+      return new Promise<Response>(resolve => { held.release = resolve })
+    }
+    return Response.json({ archive: chat("a1", null, null, 1), conversation: { id: "archive-a1", entries: [] } })
+  })
+
+  test("ensure reads the index once for a card that never asked, and says it is reading until it answers", async () => {
+    const h = fixture()
+    expect(h.seam.get().archives).toBeUndefined()
+    h.seam.ensure()
+    // The read is in flight, which is not an answer and not an empty history.
+    expect(h.seam.get().reading).toBe(true)
+    expect(h.seam.get().archives).toBeUndefined()
+    // A remount, StrictMode's second subscription and a repeated render all join that one read.
+    h.seam.ensure(); h.seam.ensure(); void h.seam.list()
+    await settle()
+    expect(index(h.calls)).toBe(1)
+    expect(h.seam.get().archives?.map(each => each.id)).toEqual(["a1"])
+    expect(h.seam.get().reading).not.toBe(true)
+    // An answer in hand is a no-op: ensure never re-reads what the seam holds.
+    h.seam.ensure(); h.seam.ensure()
+    await settle()
+    expect(index(h.calls)).toBe(1)
+    expect(h.calls.filter(call => call.method !== "GET")).toEqual([])
+  })
+
+  test("ensure reads the selected archive's entries once, and holds them as that chat's own state", async () => {
+    const h = fixture()
+    h.seam.ensure("a1")
+    expect(h.seam.get().reads).toEqual({ a1: "reading" })
+    h.seam.ensure("a1"); h.seam.ensure("a1")
+    await settle()
+    expect(h.calls.filter(call => call.url.endsWith("/a1"))).toHaveLength(1)
+    expect(h.seam.get().opened.a1).toEqual({ id: "archive-a1", entries: [] })
+    expect(h.seam.get().reads).toEqual({})
+    h.seam.ensure("a1")
+    await settle()
+    expect(h.calls.filter(call => call.url.endsWith("/a1"))).toHaveLength(1)
+  })
+
+  test("a failed read waits for its retry instead of looping, and the retry recovers", async () => {
+    let fail = true
+    const h = harness(call => fail ? new Response("{}", { status: 500 })
+      : call.url.endsWith("/api/conversation-archives") ? Response.json({ archives: [chat("a1", null, null, 1)] })
+      : Response.json({ archive: chat("a1", null, null, 1), conversation: { id: "archive-a1", entries: [] } }))
+    h.seam.ensure("a1")
+    await settle()
+    expect(h.seam.get().error).toBe("History unavailable")
+    expect(h.seam.get().reads).toEqual({ a1: "unavailable" })
+    expect(h.seam.get().archives).toBeUndefined()
+    const spent = h.calls.length
+    // A render after the failure asks for nothing: a refused read is not retried by drawing the card again.
+    for (let i = 0; i < 5; i++) h.seam.ensure("a1")
+    await settle()
+    expect(h.calls).toHaveLength(spent)
+    fail = false
+    h.seam.retry()
+    h.seam.retry("a1")
+    await settle()
+    expect(h.seam.get().archives?.map(each => each.id)).toEqual(["a1"])
+    expect(h.seam.get().error).toBeUndefined()
+    expect(h.seam.get().opened.a1).toEqual({ id: "archive-a1", entries: [] })
+    expect(h.seam.get().reads).toEqual({})
+  })
+
+  test("an account change drops a read in flight and reads again for the new identity", async () => {
+    const held = { release: undefined as unknown as (response: Response) => void }
+    const h = fixture(held)
+    h.seam.ensure()
+    await settle()
+    h.switchAccount()
+    expect(h.seam.get()).toEqual({ opened: {} })
+    held.release(Response.json({ archives: [chat("other", null, null, 9)] }))
+    await settle()
+    // The previous account's answer is dropped, and the new identity's read is a new request.
+    expect(h.seam.get()).toEqual({ opened: {} })
+    h.seam.ensure()
+    expect(h.seam.get().reading).toBe(true)
+    expect(index(h.calls)).toBe(2)
+  })
+
+  test("signed out, ensure and retry send nothing", async () => {
+    const h = fixture()
+    h.signOut()
+    h.seam.ensure("a1")
+    h.seam.retry()
+    h.seam.retry("a1")
+    await settle()
+    expect(h.calls).toEqual([])
+    expect(h.seam.get()).toEqual({ opened: {} })
   })
 })
