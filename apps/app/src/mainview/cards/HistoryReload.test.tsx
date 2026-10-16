@@ -15,6 +15,8 @@ import { ControllerTestProvider } from "../ControllerContext"
 import { createAppController, type AppController } from "../state/AppController"
 import { createAppStore, type AppStore } from "../state/AppStore"
 import { memoryStorage, settle, unavailableAgent, waitFor } from "../state/TestFixtures"
+import { useCardRows } from "../state/useCardRows"
+import type { CardActions } from "./CardFamily"
 import { renderCardBody } from "./CardRenderers"
 
 /*
@@ -84,14 +86,14 @@ const serve = (): Host => {
   return host
 }
 
-const open = async (storage: StorageApi, origin: string, login = "maya"): Promise<{ store: AppStore; controller: AppController; dispose: () => Promise<void> }> => {
+const open = async (storage: StorageApi, origin: string, login = "maya", provider?: "github" | "local"): Promise<{ store: AppStore; controller: AppController; dispose: () => Promise<void> }> => {
   const store = await createAppStore({ kind: "localStorage", storage })
   const controller = createAppController(store, unavailableAgent, {
     baseUrl: origin,
     bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["agent", "chat.archive"], authFlow: "none",
       sandbox: { platform: "darwin", mode: "trusted-only" } }
   })
-  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login, admin: false, scopesPlain: null }).isPersisted.promise
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login, provider, admin: false, scopesPlain: null }).isPersisted.promise
   await settle()
   return { store, controller, dispose: async () => { await controller.dispose(); await store.dispose?.() } }
 }
@@ -107,9 +109,9 @@ const storedCard = (storage: StorageApi): unknown => {
  * The page before the reload: `/history` writes the durable card, with its
  * selection when one is named, and then the session goes away.
  */
-const archived = async (host: Host, selected?: string): Promise<StorageApi> => {
+const archived = async (host: Host, selected?: string, provider?: "github" | "local"): Promise<StorageApi> => {
   const storage = memoryStorage()
-  const page = await open(storage, host.origin)
+  const page = await open(storage, host.origin, "maya", provider)
   try {
     await page.controller.showHistory(selected)
     await settle()
@@ -120,19 +122,34 @@ const archived = async (host: Host, selected?: string): Promise<StorageApi> => {
   return storage
 }
 
+const CARD_ACTIONS: CardActions = {
+  presentation: "embedded", onDecideApproval: () => {}, onConnectGitHub: () => {}, onRunWorkflow: () => {}, onStopRun: () => {},
+  onRetryRun: () => {}, onChooseWorkflowRepo: () => {}, worldDocuments: [], onChangeWorldDocument: () => {},
+  onRunCommand: () => { throw new Error("History must not run a command on its own") }
+}
+
+/*
+ * The transcript draws cards from the LIVE card rows (App.tsx `useCardRows`),
+ * so a card an account boundary retires leaves the page with it. A case that
+ * crosses an account has to render this way: holding one captured row mounted
+ * would be a harness the product does not have.
+ */
+const LiveHistoryCards = ({ controller }: { readonly controller: AppController }) => {
+  const rows = useCardRows(controller.store.collections.cards)
+  return <>{rows.filter(row => row.kind === "archives").map(row => <div key={row.id}>{renderCardBody(row, CARD_ACTIONS)}</div>)}</>
+}
+
 /** The page after the reload: the same storage, a fresh store and controller, the card mounted. */
-const reload = async (storage: StorageApi, host: Host, options: { readonly strict?: boolean; readonly login?: string } = {}) => {
-  const page = await open(storage, host.origin, options.login)
+const reload = async (storage: StorageApi, host: Host, options: { readonly strict?: boolean; readonly login?: string; readonly provider?: "github" | "local"; readonly live?: boolean } = {}) => {
+  const page = await open(storage, host.origin, options.login, options.provider)
   const card = page.store.collections.cards.get("archived-chats")!
   expect(card.kind).toBe("archives")
   const element = document.createElement("div")
   document.body.append(element)
   const root = createRoot(element)
-  const body = <ControllerTestProvider controller={page.controller}>{renderCardBody(card, {
-    presentation: "embedded", onDecideApproval: () => {}, onConnectGitHub: () => {}, onRunWorkflow: () => {}, onStopRun: () => {},
-    onRetryRun: () => {}, onChooseWorkflowRepo: () => {}, worldDocuments: [], onChangeWorldDocument: () => {},
-    onRunCommand: () => { throw new Error("History must not run a command on its own") }
-  })}</ControllerTestProvider>
+  const body = <ControllerTestProvider controller={page.controller}>{options.live === true
+    ? <LiveHistoryCards controller={page.controller} />
+    : renderCardBody(card, CARD_ACTIONS)}</ControllerTestProvider>
   flushSync(() => root.render(options.strict === true ? <StrictMode>{body}</StrictMode> : body))
   const reads = (path: string) => host.seen.filter(call => call.method === "GET" && call.path === path).length
   return {
@@ -262,6 +279,69 @@ test("a signed-in identity change drops the previous account's answers and reads
     host.index = { rows: [archive("b1", "Ben's own chat", 600)] }
     host.release()
     await page.settled(() => page.text().includes("Ben's own chat"))
+    expect(page.text()).not.toContain("Fix Safari login")
+    expect(page.text()).not.toContain("Why does login fail?")
+    expect(page.text()).not.toContain("The cookie lacked SameSite.")
+    expect(page.writes()).toEqual([])
+  } finally { await page.close(); await host.stop() }
+})
+
+test("a known provider switch under the same login retires the retained card, so it cannot hold the local account's archives", async () => {
+  const host = serve()
+  host.index = { rows: [archive("a1", "Fix Safari login", 500)] }
+  host.opened = { id: "a1", prompt: "Why does login fail?" }
+  const storage = await archived(host, "a1", "local")
+  const page = await reload(storage, host, { login: "maya", provider: "local", live: true })
+  try {
+    await page.settled(() => page.text().includes("Why does login fail?"))
+    expect(page.host.querySelector("[aria-label='History']")).not.toBeNull()
+    const before = page.reads(ARCHIVES)
+    // The local account's own listing is in flight when the switch lands.
+    host.index = null
+    page.controller.chatArchives.retry()
+    await page.settled(() => page.controller.chatArchives.get().reading === true)
+    /*
+     * A known provider switch is a new account even when both accounts spell
+     * the login alike (state/AccountOwner.ts), and both rows read `signed-in`,
+     * so the card's own `state:login` stamp does not change across it. What
+     * keeps the card from standing blank is not the stamp: the account
+     * boundary retires the card row itself
+     * (AppProjection.appTransitionErasesPrivateState -> forgetAccountState),
+     * and the transcript draws cards from the live rows.
+     */
+    await page.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "maya", provider: "github", admin: false, scopesPlain: null }).isPersisted.promise
+    await settle()
+    const row = page.store.collections.identitySessions.get("identity")!
+    // Only the provider moved: the stamp the card's subscription is keyed on reads the same before and after.
+    expect(`${row.state}:${row.login}`).toBe("signed-in:maya")
+    expect(row.provider).toBe("github")
+    expect(page.store.collections.cards.get("archived-chats")).toBeUndefined()
+    // The card left the page with the account, so there is no History body standing over nothing.
+    expect(page.host.querySelector("[aria-label='History']")).toBeNull()
+    expect(page.text()).toBe("")
+    expect(page.controller.chatArchives.get()).toEqual({ opened: {} })
+    // The local account's held listing answers into nothing, and nothing asked again for it.
+    host.index = { rows: [archive("a1", "Fix Safari login", 500)] }
+    host.release()
+    await settle()
+    expect(page.controller.chatArchives.get().archives).toBeUndefined()
+    expect(page.reads(ARCHIVES)).toBe(before + 1)
+    /*
+     * The GitHub account asking for the same archive reads for itself: its own
+     * index, and that archive, which it does not reach. The local account's
+     * entries are never redrawn, and an archive this account's index does not
+     * list has no row, so nothing stands selected either.
+     */
+    host.index = { rows: [archive("g1", "Ship the GitHub app", 600)] }
+    host.opened = { status: 404 }
+    const opens = page.reads(`${ARCHIVES}/a1`)
+    await page.controller.showHistory("a1")
+    await page.settled(() => page.text().includes("Ship the GitHub app"))
+    expect(page.reads(`${ARCHIVES}/a1`)).toBe(opens + 1)
+    expect(page.controller.chatArchives.get().opened).toEqual({})
+    expect(page.controller.chatArchives.get().reads).toEqual({ a1: "unavailable" })
+    expect(page.host.querySelector("[data-archive='a1']")).toBeNull()
+    expect(page.host.querySelector("[data-archived-entries]")).toBeNull()
     expect(page.text()).not.toContain("Fix Safari login")
     expect(page.text()).not.toContain("Why does login fail?")
     expect(page.text()).not.toContain("The cookie lacked SameSite.")
