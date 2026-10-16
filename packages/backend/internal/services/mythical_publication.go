@@ -524,12 +524,12 @@ func (st *mythicalItemStep) shape(ctx context.Context, item db.MythicalItem) (my
 	if mythicalTodo(item) {
 		for _, entry := range currentTodoEvidence(item).Items {
 			if entry["kind"] == "diff" {
-				shape.DiffStat = fmt.Sprintf("%v files changed, %v insertions(+), %v deletions(-)", entry["files"], entry["added"], entry["removed"])
+				shape.DiffStat = mythicalDiffStat(entry["files"], entry["added"], entry["removed"])
 			}
 		}
 	} else if st.r != nil && item.CandidateHead != "" && st.fetchCandidate(ctx, item) == nil {
 		if diff, err := st.r.g.diffEvidence(ctx, st.prefix(item), item.CandidateHead); err == nil {
-			shape.DiffStat = fmt.Sprintf("%d files changed, %d insertions(+), %d deletions(-)", diff.Files, diff.Added, diff.Removed)
+			shape.DiffStat = mythicalDiffStat(diff.Files, diff.Added, diff.Removed)
 		}
 	}
 	return shape, nil
@@ -856,4 +856,15 @@ func (st *mythicalItemStep) appSettle(ctx context.Context, item db.MythicalItem,
 		return item, err
 	}
 	return *bound, nil
+}
+
+func mythicalDiffStat(files, added, removed any) string {
+	count := func(value any, singular string) string {
+		suffix := "s"
+		if fmt.Sprint(value) == "1" {
+			suffix = ""
+		}
+		return fmt.Sprintf("%v %s%s", value, singular, suffix)
+	}
+	return count(files, "file") + " changed, " + count(added, "insertion") + "(+), " + count(removed, "deletion") + "(-)"
 }

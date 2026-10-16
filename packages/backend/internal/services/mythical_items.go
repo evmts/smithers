@@ -4257,6 +4257,9 @@ func (st *mythicalItemStep) fetchCandidate(ctx context.Context, item db.Mythical
 	if r.g.has(ctx, item.CandidateHead) {
 		return nil
 	}
+	if r.bridge == nil {
+		return errors.New("the candidate is not retained in the repository")
+	}
 	keep := repohost.MythicalReservedRefNS + "keep/" + item.CandidateHead
 	if refs, err := r.g.lsRemote(ctx, r.bridge.URL()); err == nil {
 		var want []string
@@ -4295,6 +4298,9 @@ func (st *mythicalItemStep) propose(ctx context.Context, item db.MythicalItem) (
 		next.Reason = err.Error()
 		next.NextAttemptAt = pgtype.Timestamptz{Time: st.now.Add(st.s.pullPollEvery()), Valid: true}
 		return &next, nil
+	}
+	if err := st.retainTodoDiff(ctx, &item); err != nil {
+		return nil, err
 	}
 	s, r := st.s, st.r
 	shape, err := st.shape(ctx, item)

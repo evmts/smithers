@@ -381,7 +381,7 @@ func TestTodoDiffEvidenceMeasuresRealCandidateAndKeepsEarlierAttempt(t *testing.
 	require.NoError(t, err)
 	shape, err := (&mythicalItemStep{s: &MythicalService{prFacts: func(context.Context, db.MythicalItem) (mythicalPRShape, error) { return mythicalPRShape{}, nil }}}).shape(context.Background(), item)
 	require.NoError(t, err)
-	require.Equal(t, "4 files changed, 4 insertions(+), 1 deletions(-)", shape.DiffStat)
+	require.Equal(t, "4 files changed, 4 insertions(+), 1 deletion(-)", shape.DiffStat)
 	item.Attempt = 2
 	item.CandidateHead = f.commit("later", map[string]string{"a.txt": "new\nkeep\nextra\nlater\n"})
 	require.NoError(t, step.retainTodoDiff(context.Background(), &item))

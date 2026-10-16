@@ -511,6 +511,9 @@ func (st *mythicalItemStep) retainTodoDiff(ctx context.Context, item *db.Mythica
 	if diff := checks.Diff; diff != nil && diff.Base == item.CandidateBase && diff.Head == item.CandidateHead {
 		return nil
 	}
+	if err := st.fetchCandidate(ctx, *item); err != nil {
+		return err
+	}
 	diff, err := st.r.g.diffEvidence(ctx, item.CandidateBase, item.CandidateHead)
 	if err != nil {
 		return err
