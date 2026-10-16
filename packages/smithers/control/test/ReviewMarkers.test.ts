@@ -1,8 +1,7 @@
 /**
  * The internal `@slop` review marker never ships.
  *
- * `factory/flows/slop-sweep.ts` tags every unreviewed export with `@slop`. The
- * marker is a note to maintainers, and a published declaration carrying it
+ * A retired sweep tagged every unreviewed export with `@slop`. The marker is a note to maintainers, and a published declaration carrying it
  * tells every user the control-plane surface was never reviewed.
  */
 import * as Fs from "node:fs"

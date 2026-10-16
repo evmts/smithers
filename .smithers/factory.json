@@ -1180,7 +1180,7 @@
       "path": "flows/memory/mine/flow.ts",
       "capabilities": [
         "fs:read:**",
-        "fs:write:factory/wiki/decisions/**",
+        "fs:write:.smithers/wiki/decisions/**",
         "memory:write:**",
         "model:call:typesafe-ai/jev"
       ],

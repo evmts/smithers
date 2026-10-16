@@ -380,7 +380,6 @@ gate_tools() {
     jsdoc) echo 'js' ;;
     script-lint) echo 'js' ;;
     jsdoc-rules) echo 'js' ;;
-    factory-harness) echo 'js jj' ;;
     agent-eval) echo 'js' ;;
     agent-check) echo 'js' ;;
     authoring-eval) echo 'js' ;;
@@ -516,9 +515,6 @@ run_gate() {
       ;;
     jsdoc-rules)
       pnpm exec smthrs test '//:jsdocRules' --known-red '.github/ci-known-red.json' --verbose
-      ;;
-    factory-harness)
-      pnpm exec smthrs test '//:factoryHarness' --known-red '.github/ci-known-red.json' --verbose
       ;;
     agent-eval)
       pnpm exec smthrs test '//evals/agent:test' --known-red '.github/ci-known-red.json' --verbose

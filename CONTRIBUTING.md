@@ -1,11 +1,27 @@
 # Contributing
 
-Track actionable work in a GitHub issue and run the coding factory and CI/CD
-on Smithers Cloud. The stack service alone writes the repository's linear
-`mythical` stack. This repository sends work upstream through a GitHub PR the
-owner merges, with one commit per item on append-only `main`. Never rewrite
-`main` or push `mythical` by hand. Local work is bootstrap or repair; see
-[the factory workflow](factory/README.md) and [Cloud development](docs/cloud-workspace.md).
+Track actionable work in a GitHub issue. Smithers' own coding factory runs on
+the stack of the self-hosted install on Will's Mac mini, not on Smithers Cloud
+([M-31](.specs/product/mvp.md)). Its target loop:
+
+```text
+GitHub issue -> mythical stack item -> TODO run on the install -> checks/review
+  -> GitHub PR -> owner merge -> append-only main -> wiki refresh + issue receipt
+```
+
+This is the operating target, not a claim that the loop is qualified: fix
+blockers to it before adding features, and record each one in an issue. Local
+agent work outside the stack is bootstrap or repair. The stack service alone
+writes the repository's linear `mythical` stack. This repository sends work
+upstream through a GitHub PR the owner merges, with one commit per item on
+append-only `main`. Never rewrite `main` or push `mythical` by hand. Close
+issues and refresh documentation from real completion evidence. See
+[Cloud development](docs/cloud-workspace.md).
+
+The factory's repository configuration lives in `.smithers/`: `FACTORY.ts` and
+its projections, `coding-project.json` (the wiki page catalog and coding host
+settings) and `wiki/` (the [wiki recipe](.smithers/wiki/README.md) and the
+page documents the catalog names).
 
 Use the Node release in `.node-version` at the root. It is the one release CI
 installs and the Cloud runner bootstraps, and fnm, nvm and asdf read that file,
@@ -48,7 +64,7 @@ and verify package tarballs with `pnpm docs:check`. Preview the main docs locall
 `pnpm --filter @smithers/site run dev` and open `/docs/`. Commit generated
 content with its source changes.
 
-Regeneration does not publish the app's repository Wiki; [the wiki recipe](factory/wiki/README.md)
+Regeneration does not publish the app's repository Wiki; [the wiki recipe](.smithers/wiki/README.md)
 tracks its distinct generation, review, and Cloud publication receipts.
 
 Cloud's gates use `.github/ci-known-red.json` with `--known-red` where declared

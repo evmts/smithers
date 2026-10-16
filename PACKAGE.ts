@@ -703,7 +703,6 @@ const ci = Smithers.GithubCiGen({
         { name: "Public export JSDoc", verb: Smithers.Verb.Lint, pattern: "//:jsdocTree" },
         { name: "Script lint", verb: Smithers.Verb.Lint, pattern: "//scripts:lint" },
         { name: "JSDoc rule harness", verb: Smithers.Verb.Test, pattern: "//:jsdocRules" },
-        { name: "Factory harness", verb: Smithers.Verb.Test, pattern: "//:factoryHarness" },
         // Every `evals/*` directory is its own workspace member now, so each
         // one's targets carry the standard `check`/`test` names and run from
         // the directory that pins their toolchain.
@@ -1155,30 +1154,6 @@ const jsdocRules = Smithers.NodeTest({
 })
 
 /**
- * The factory flows' shared harness: workspace package identities, package
- * selection, confinement and process guards, plus the queue inventory (every
- * retained queue prompt names its issue and is queued). `factory/` has no
- * manifest of its own, so the root owns the suites; they are written against
- * `bun:test`.
- *
- * @since 1.0.0
- * @category test
- */
-const factoryHarness = Smithers.NodeTest({
-  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
-  runner: Smithers.testRunner([
-    Smithers.file("//factory/flows/harness.test.ts"),
-    Smithers.file("//factory/queue/queue.test.ts")
-  ]),
-  srcs: [
-    Smithers.glob("//factory/flows/*.ts"),
-    Smithers.glob("//factory/queue/*.md"),
-    Smithers.file("//scripts/workspace-packages.mjs")
-  ],
-  deps: []
-})
-
-/**
  * The commit-level `CHANGELOG.md` section for the version the manifests carry.
  *
  * `Generate`'s kinds are `run` and `lint`, not `build` and `lint`, so writing
@@ -1223,7 +1198,7 @@ export const packageDefaults = Smithers.PackageDefaults({
 
 // Security review of the files the root owns and no nested PACKAGE.ts does:
 // the GitHub workflows, the self-host distribution image, the native FFI
-// crate, the factory harness, install-time hooks and patches, and the public
+// crate, install-time hooks and patches, and the public
 // `.smithers` projections. `crates/flows-jj`, `scripts`, `flows`, `examples`,
 // `apps`, `evals`, and `packages` have their own reviewers.
 const securityReview = Smithers.SecurityReview({
@@ -1243,7 +1218,6 @@ const securityReview = Smithers.SecurityReview({
     "distribution/*",
     "crates/smithers-ffi/Cargo.toml",
     "crates/smithers-ffi/src/*.rs",
-    "factory/flows/*.ts",
     "patches/*.patch"
   ],
   checks: [
@@ -1350,19 +1324,6 @@ const securityReview = Smithers.SecurityReview({
       paths: ["crates/smithers-ffi/src/lib.rs"]
     },
     {
-      id: "factory-agent-confinement",
-      title: "Factory agent runs stay inside their allowed paths and environment",
-      threat:
-        "Text in a package README, source file, or queue item steers a headless `claude -p` agent into editing files outside its lane or reading the maintainer's credentials.",
-      lookFor: [
-        "An AgentTask whose --allowedTools grants unrestricted Bash, Write, or network tools, or whose environment is process.env rather than the agentEnvironment allowlist.",
-        "The unscoped `Read` tool plus a real HOME letting an injected agent read ~/.ssh, ~/.claude, or ~/.config credentials and copy them into an allowed path that later lands in a commit.",
-        "makeConfinementValidator skipped, or a task treated as successful when git reports changed paths outside allowedPaths plus logDir.",
-        "Package names, file names, or file contents spliced into a prompt or a `pnpm --filter` argument without the selectPackages validation."
-      ],
-      paths: ["factory/flows/*.ts"]
-    },
-    {
       id: "install-hook-supply-chain",
       title: "Install-time hooks, patches, and build allowlists add no hidden code execution",
       threat:
@@ -1420,7 +1381,6 @@ export const Package = Smithers.Package({
     driftCi,
     trustedDriftCi,
     environmentToolchain,
-    factoryHarness,
     factoryProjection,
     reviewDocsAgainstCode,
     jsdocRules,

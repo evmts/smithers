@@ -8,7 +8,7 @@
  *   nothing is copied and nothing drifts.
  * - Dependency pages are the Markdown a wiki refresh imported under
  *   `.flows/wiki/deps/<name>/`, from the `docs` the workspace declares.
- * - Decisions pages are `factory/wiki/decisions/<item>.md`, the steering a
+ * - Decisions pages are `.smithers/wiki/decisions/<item>.md`, the steering a
  *   person gave runs on one item, which `memory/mine` appends. They are
  *   pages; one the catalog already lists is read once, as its catalog page.
  *
@@ -63,7 +63,7 @@ export const depsDirectory = ".flows/wiki/deps"
  * @since 1.0.0
  * @private
  */
-export const decisionsDirectory = "factory/wiki/decisions"
+export const decisionsDirectory = ".smithers/wiki/decisions"
 
 const catalogPath = ".smithers/coding-project.json"
 const skillsDirectory = ".agents/skills"

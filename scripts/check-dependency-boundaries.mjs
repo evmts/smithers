@@ -197,11 +197,9 @@ function filesForPackage(pkg, memberDirs = new Set()) {
   /** @type {string[]} */
   const nestedPackageDirs = []
   if (pkg.dir === ".") {
-    // The root workspace's own sources live under scripts/ and factory/ (the
-    // dogfood harness has no manifest and runs against the root install),
-    // and it owns every build-graph declaration in the tree.
+    // The root workspace's own sources live under scripts/, and it owns
+    // every build-graph declaration in the tree.
     collectSourceFiles("scripts", files, nestedPackageDirs)
-    collectSourceFiles("factory", files, nestedPackageDirs)
     collectGraphFiles("", memberDirs, files)
   } else if (isDirectory(join(repoRoot, pkg.dir, "src"))) {
     collectSourceFiles(join(pkg.dir, "src"), files, nestedPackageDirs)

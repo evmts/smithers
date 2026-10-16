@@ -130,7 +130,7 @@ let
 
   # jj at the release the repository pins, for every gate whose toolchain list
   # names `jj` (`workspace`, `packages`, `examples`, `scripts`, `server`,
-  # `faults`, the `ui-*` gates, `factory-harness`, `swebench`). The base module
+  # `faults`, the `ui-*` gates, `swebench`). The base module
   # ships jujutsu from the platform's unstable pin, which is a different
   # release; cloud.sh's `ensure_jj` re-downloads unless `jj --version` is
   # exactly this, so the pin belongs here.

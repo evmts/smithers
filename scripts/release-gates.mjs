@@ -87,7 +87,6 @@ export const releaseGates = [
   { name: "Public export JSDoc", verb: "lint", target: "//:jsdocTree" },
   { name: "Script lint", verb: "lint", target: "//scripts:lint" },
   { name: "JSDoc rule harness", verb: "test", target: "//:jsdocRules" },
-  { name: "Factory harness", verb: "test", target: "//:factoryHarness" },
   { name: "Agent eval suite (offline, baseline-gated)", verb: "test", target: "//evals/agent:test" },
   { name: "Agent eval typecheck", verb: "build", target: "//evals/agent:check" },
   { name: "Authoring eval dataset (offline)", verb: "test", target: "//evals/authoring:test" },
