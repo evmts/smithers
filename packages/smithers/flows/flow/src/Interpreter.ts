@@ -76,9 +76,12 @@ import { FlowRuntime } from "./FlowRuntime/FlowRuntime.ts"
 import type * as NodeRecord from "./FlowRuntime/NodeRecord.ts"
 import { annotateWaiting } from "./FlowRuntime/WaitingAnnotation.ts"
 import * as Graph from "./Graph.ts"
+import * as HumanTask from "./HumanTask.ts"
 import * as BoundedJson from "./internal/BoundedJson.ts"
 import { ExecutionMiddleware } from "./internal/ExecutionMiddleware.ts"
 import { OutcomeValueTypeId } from "./internal/OutcomeMarker.ts"
+import * as Sleep from "./Sleep.ts"
+import * as WaitFor from "./WaitFor.ts"
 
 /**
  * A graph the interpreter will not drive.
@@ -1464,7 +1467,15 @@ export const layer = <
 >(
   flow: Flow<Tag, Payload, Success, Error, any>,
   options: Graph.BuildOptions = {}
-) => makeLayer(flow, options)
+) => makeLayer(flow, options).pipe(Layer.provide(systemActions))
+
+// These layers only register handlers at construction. Crypto is supplied by
+// the executing interpreter (Services), not required to register a flow.
+const systemActions = Layer.mergeAll(HumanTask.layer, Sleep.layer, WaitFor.layer) as Layer.Layer<
+  never,
+  never,
+  FlowRuntime
+>
 
 /** Registers the interpreter and reachable child flows under one policy. @private */
 const makeLayer = <
@@ -1584,8 +1595,11 @@ export const layerWithImplementations = <
 ) =>
   Layer.merge(
     implementations,
-    makeLayer(flow, { ...options, callbackIdentity: options.callbackIdentity ?? "stable" })
+    makeLayer(flow, { ...options, callbackIdentity: options.callbackIdentity ?? "stable" }).pipe(
+      Layer.provide(systemActions)
+    )
   )
     .pipe(
-      Layer.provide(Layer.fresh(layerImplementations))
+      Layer.provide(layerImplementations),
+      Layer.fresh
     )

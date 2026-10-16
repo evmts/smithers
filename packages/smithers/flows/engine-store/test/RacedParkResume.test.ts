@@ -20,6 +20,7 @@ import { FlowEngine } from "@smthrs/engine"
 import { Action, DurableClock, DurableDeferred, Flow, FlowRuntime, HumanTask, Interpreter } from "@smthrs/flow"
 import { Journal } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
+import * as Node from "@smthrs/plan/Node"
 import { AttemptStore, type Ownership, RunStore } from "@smthrs/run-store"
 import type * as Crypto from "effect/Crypto"
 import * as Duration from "effect/Duration"
@@ -146,7 +147,10 @@ const Asked = Flow.make("RacedParkResume/HumanTask", {
   payload: { name: Schema.String, timeoutMs: Schema.Number },
   success: Schema.Json,
   error: HumanTask.HumanTaskFailed,
-  body: ({ name, timeoutMs }) => HumanTask.action.call({ name, kind: "ask", prompt: "Why?", timeoutMs })
+  body: Node.capture(
+    { humanTask: HumanTask.tag, version: 1 },
+    ({ name, timeoutMs }) => HumanTask.action.call({ name, kind: "ask", prompt: "Why?", timeoutMs })
+  )
 })
 
 /**
@@ -174,7 +178,7 @@ const asking = <A, E>(
     const engine = (yield* makeEngine) as FlowRuntime.FlowRuntime["Service"]
     return yield* body(engine).pipe(
       Effect.provide(
-        Layer.mergeAll(HumanTask.layer, Interpreter.layer(Asked)).pipe(
+        Interpreter.layer(Asked).pipe(
           Layer.provideMerge(Action.layerImplementations),
           Layer.provideMerge(Layer.succeed(FlowRuntime.FlowRuntime, engine as never))
         )
@@ -333,3 +337,39 @@ describe("an irreversible dispatch that parks", () => {
       expect(afterResume).toEqual(["intended", "succeeded"])
     }))))
 })
+
+it.live("restores engine-owned HumanTask registration after a durable engine restart", () =>
+  provide(Effect.gen(function*() {
+    const payload = { name: "restart", timeoutMs: 60_000 }
+    const runId = "human-system-restart"
+    const phase = <A, E>(body: Effect.Effect<A, E, Services | FlowRuntime.FlowRuntime>) =>
+      Effect.scoped(Effect.gen(function*() {
+        const engine = yield* makeEngine
+        return yield* body.pipe(Effect.provide(
+          Interpreter.layerWithImplementations(Asked, Layer.empty).pipe(
+            Layer.provideMerge(Layer.succeed(FlowRuntime.FlowRuntime, engine as never))
+          )
+        ))
+      }))
+    yield* phase(Effect.gen(function*() {
+      yield* Asked.execute(payload, { executionId: runId, discard: true })
+      const store = yield* RunStore.RunStore
+      yield* TestDatabase.until(Effect.map(store.get(runId), (row) => row.status === "suspended"))
+    }))
+    yield* phase(Effect.gen(function*() {
+      yield* HumanTask.answer({
+        token: DurableDeferred.tokenFromExecutionId(HumanTask.deferred("restart", 1), {
+          flow: Asked,
+          executionId: runId
+        }),
+        value: "restored"
+      })
+      expect((yield* settles(runId)).status).toBe("completed")
+      const result = yield* Asked.poll(runId)
+      expect(
+        Option.isSome(result) && result.value._tag === "Complete" && Exit.isSuccess(result.value.exit)
+          ? result.value.exit.value :
+          undefined
+      ).toBe("restored")
+    }))
+  })))

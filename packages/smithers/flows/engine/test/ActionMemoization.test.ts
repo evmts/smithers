@@ -7,7 +7,8 @@
  * the settled result.
  */
 import { describe, expect, it } from "@effect/vitest"
-import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { Action, DurableDeferred, Flow, FlowRuntime, HumanTask, Interpreter, Sleep, WaitFor } from "@smthrs/flow"
+import * as Node from "@smthrs/plan/Node"
 import { Effect, Exit, Layer, Option, Result, Schema } from "effect"
 import type * as Crypto from "effect/Crypto"
 import { FlowEngine } from "../src/index.ts"
@@ -163,5 +164,73 @@ describe("sealed-key memoization of terminal outcomes", () => {
       // second dispatch replayed the settled completion.
       expect(executions).toBe(2)
     }).pipe(Effect.provide(layer))
+  })
+})
+
+describe("engine-owned system actions", () => {
+  effect("registers Sleep and WaitFor for independent canonical flows", () => {
+    const sleeper = Flow.make("SystemActions/sleep", {
+      payload: {},
+      error: Sleep.SleepRequestInvalid,
+      body: Node.capture({ sleep: Sleep.tag, version: 1 }, () => Sleep.action.call({ millis: 0 }))
+    })
+    const waiter = Flow.make("SystemActions/wait", {
+      payload: {},
+      success: Schema.Json,
+      error: WaitFor.WaitForRequestInvalid,
+      body: Node.capture({ waitFor: WaitFor.tag, version: 1 }, () => WaitFor.action.call({ name: "signal" }))
+    })
+    const registered = Layer.mergeAll(
+      Interpreter.layerWithImplementations(sleeper, Sleep.layer),
+      Interpreter.layerWithImplementations(waiter, Layer.empty)
+    ).pipe(Layer.provideMerge(FlowEngine.layerMemory))
+    return Effect.gen(function*() {
+      expect(yield* sleeper.execute({})).toBeUndefined()
+      yield* waiter.execute({}, { executionId: "system-wait", discard: true })
+      const parked = yield* pollUntil(waiter.poll("system-wait"), (result) => result._tag === "Suspended", {
+        turns: 200
+      })
+      expect(Option.isSome(parked) && parked.value._tag).toBe("Suspended")
+      const deferred = WaitFor.deferred("signal")
+      yield* DurableDeferred.succeed(deferred, {
+        token: DurableDeferred.tokenFromExecutionId(deferred, { flow: waiter, executionId: "system-wait" }),
+        value: "received"
+      })
+      expect(yield* waiter.execute({}, { executionId: "system-wait" })).toBe("received")
+    }).pipe(Effect.provide(registered))
+  })
+
+  it.effect("asks and answers without an author-supplied HumanTask layer", () => {
+    const question = Flow.make("SystemActions/question", {
+      payload: {},
+      success: Schema.Json,
+      error: HumanTask.HumanTaskFailed,
+      body: Node.capture(
+        { humanTask: HumanTask.tag, version: 1 },
+        () => HumanTask.action.call({ name: "approval", kind: "ask", prompt: "Why?" })
+      )
+    })
+    const program = Effect.gen(function*() {
+      yield* question.execute({}, { executionId: "system-question", discard: true })
+      const parked = yield* pollUntil(question.poll("system-question"), (result) => result._tag === "Suspended", {
+        turns: 200
+      })
+      expect(Option.isSome(parked) && parked.value._tag).toBe("Suspended")
+      yield* HumanTask.answer({
+        token: DurableDeferred.tokenFromExecutionId(HumanTask.deferred("approval", 1), {
+          flow: question,
+          executionId: "system-question"
+        }),
+        value: "because"
+      })
+      const settled = yield* question.execute({}, { executionId: "system-question" })
+      expect(settled).toBe("because")
+    })
+    return Effect.gen(function*() {
+      const registered = yield* Layer.build(
+        Interpreter.layerWithImplementations(question, Layer.empty).pipe(Layer.provideMerge(FlowEngine.layerMemory))
+      )
+      return yield* withCrypto(program.pipe(Effect.provide(registered)))
+    })
   })
 })
