@@ -2074,8 +2074,7 @@ describe("worker tabs", () => {
   it("heads a running worker with its status, model and clock, and renders its transcript", async () => {
     const tui = await launch()
     await tui.until(
-      (screen) =>
-        screen.includes("worker ·") && /\d+\.\ds/.test(screen) && screen.includes("Investigate the failing check."),
+      (screen) => /worker · \d+(?:ms|s)\b/.test(screen) && screen.includes("Investigate the failing check."),
       5_000,
       "header and transcript"
     )
@@ -2484,11 +2483,10 @@ describe("approvals", () => {
       asked.push(screen.match(asking)![0].replace(/\s+/g, " "))
       return "y"
     })
-    // A script always asks, once: its second, identical run is remembered. A chained Git read asks.
+    // A script asks once and the edit asks; the listed read-only Git chain runs unasked (#3669).
     expect(asked).toEqual([
       "? run cd . && node check.mjs y Allow once",
-      "? edit math.js +1 −1 - export const add = (a, b) => a - b + export const add = (a, b) => a + b y Allow once",
-      "? run cd . && git status --porcelain && git diff -- math.js y Allow once"
+      "? edit math.js +1 −1 - export const add = (a, b) => a - b + export const add = (a, b) => a + b y Allow once"
     ])
     expect(readFileSync(join(cwd, "math.js"), "utf8")).toContain("a + b")
   }, 240_000)
