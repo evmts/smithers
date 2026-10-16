@@ -21,7 +21,9 @@ import * as Discovery from "@smthrs/registry/Discovery"
 import * as Executable from "@smthrs/registry/Executable"
 import * as Registry from "@smthrs/registry/Registry"
 import { Effect, Layer, Schema, Stream } from "effect"
+import { execFileSync } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -407,4 +409,45 @@ describe("retained legacy entry loading", () => {
     expect(readFileSync(join(folder, entry), "utf8")).toBe(text)
     expect(existsSync(join(folder, "flow.ts"))).toBe(false)
   })
+})
+
+it("typechecks the generated flow and rejects wrong imported prompt props with its own config", () => {
+  const root = directory()
+  const result = Init.scaffold(root, "review", {})
+  symlinkSync(fileURLToPath(new URL("../node_modules", import.meta.url)), join(root, "node_modules"), "dir")
+  const tsc = createRequire(import.meta.url).resolve("typescript/bin/tsc")
+  const config = join(root, "flows/review/tsconfig.json")
+  expect(() => execFileSync(process.execPath, [tsc, "-p", config], { cwd: root, encoding: "utf8" })).not.toThrow()
+  writeFileSync(result.flowFile, "import Instructions from \"./prompt.mdx\"; Instructions({ args: 42 });")
+  let diagnostics = ""
+  try {
+    execFileSync(process.execPath, [tsc, "-p", config], { cwd: root, encoding: "utf8" })
+  } catch (error) {
+    diagnostics = (error as { stdout: string }).stdout
+  }
+  expect(diagnostics).toContain("not assignable to type 'string'")
+  expect(diagnostics).not.toContain("Cannot find module './prompt.mdx'")
+})
+
+it.each(["tsconfig.json", "prompt.mdx", "prompt.d.mdx.ts"])("preserves an authored %s beside a new flow", (entry) => {
+  const root = directory()
+  const folder = join(root, "flows/review")
+  mkdirSync(folder, { recursive: true })
+  writeFileSync(join(folder, entry), "authored\n")
+  Init.scaffold(root, "review", {})
+  expect(readFileSync(join(folder, entry), "utf8")).toBe("authored\n")
+  Init.scaffold(root, "review", {})
+  expect(readFileSync(join(folder, entry), "utf8")).toBe("authored\n")
+})
+
+it("refuses a symlinked compiler config without touching its target", () => {
+  const root = directory()
+  const outside = directory()
+  mkdirSync(join(root, "flows/review"), { recursive: true })
+  const config = join(outside, "tsconfig.json")
+  writeFileSync(config, "authored\n")
+  symlinkSync(config, join(root, "flows/review/tsconfig.json"))
+  expect(() => Init.scaffold(root, "review", {})).toThrow(expect.objectContaining({ code: "unsafe_scaffold_path" }))
+  expect(readFileSync(config, "utf8")).toBe("authored\n")
+  expect(existsSync(join(root, "flows/review/flow.ts"))).toBe(false)
 })

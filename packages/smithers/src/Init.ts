@@ -248,6 +248,23 @@ export const scaffold = (
   if (!exists) {
     mkdirSync(directory, { recursive: true })
     const content = {
+      "tsconfig.json": JSON.stringify(
+        {
+          compilerOptions: {
+            target: "ES2024",
+            module: "ESNext",
+            moduleResolution: "Bundler",
+            strict: true,
+            noEmit: true,
+            skipLibCheck: true,
+            allowImportingTsExtensions: true,
+            allowArbitraryExtensions: true
+          },
+          include: ["flow.ts", "prompt.d.mdx.ts"]
+        },
+        null,
+        2
+      ) + "\n",
       "prompt.mdx": "{props.args ?? \"Summarize this project and suggest one small improvement.\"}\n",
       "prompt.d.mdx.ts":
         "import type { Component } from \"@smthrs/registry/Prompt\"\n\ndeclare const Instructions: Component<{ readonly args?: string }>\nexport default Instructions\n"
