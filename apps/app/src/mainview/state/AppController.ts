@@ -165,7 +165,7 @@ import { createInstallSeam, type InstallSeam, type InstallTopic } from "./seams/
 import { createGitHubSyncSeam, type GitHubSyncSeam } from "./seams/GitHubSyncSeam"
 import { createTimelineTitleSeam, modelStreamTitles, type TimelineTitleSeam } from "./seams/TimelineTitleSeam"
 import { createMembersSeam, type MembersSnapshots } from "./seams/MembersSeam"
-import { createRunMonitorSeam, type RunMonitorSnapshots } from "./seams/RunMonitorSeam"
+import { createRunMonitorSeam, RUN_READ_REFUSALS, type RunMonitorSnapshots } from "./seams/RunMonitorSeam"
 import { traceNamed } from "./seams/DesignWorld/run"
 import { createFlowsSeam, type FlowsSnapshots } from "./seams/FlowsSeam"
 import { createTodoSeam, type TodoSeam, type TodoTopics } from "./seams/TodoSeam"
@@ -986,18 +986,41 @@ export const createAppController = (
     const scope = TranscriptOrder.scope(store.collections.identitySessions.get("identity"), store.session())
     return scope === undefined ? undefined : { scope, afterSequence: TranscriptOrder.sequence(sharedConversation.get().conversation?.entries ?? []) }
   }))
-  const runMonitorSeam = createRunMonitorSeam({ owner: () => `${ctx.accountOwner()}:${ctx.accountEpoch}`, view: id => {
+  /*
+   * Whether this composition serves the SEEDED DESIGN FIXTURE rather than a
+   * backend: an explicit fixture build, or no bootstrap at all. Hoisted above
+   * the seams because it is the door every "is this real?" question belongs at.
+   *
+   * [#4032](https://github.com/smithersai/smithers/issues/4032): the monitor
+   * asked `installHost` and `services.live` instead, and neither answers it.
+   * The HOSTED app is a real backend with the fixture OFF, so `/monitor` fell
+   * through to a DISABLED world, upserted nothing and resolved its notice as a
+   * success with no words in it. Same class as
+   * [#3865](https://github.com/smithersai/smithers/issues/3865), where
+   * `design.enabled` was asked of a hosted host that serves `cloud`.
+   */
+  const designEnabled = !installHost && (services.designFixture === true || services.bootstrap === undefined)
+  /*
+   * A run belongs to ONE repository as well as one account, and the monitor's
+   * ids are the host's (`workspace:run`), so the selected repository is part of
+   * whose answer a cached monitor is. Without it a run read under one selection
+   * stayed vouched for under the next one, and these doors take no repository
+   * argument to re-scope with (#4032). A changed selection refuses the stale
+   * card rather than opening the wrong run; selecting it back restores it.
+   */
+  const monitorOwner = () => `${ctx.accountOwner()}:${ctx.accountEpoch}:${activeRepositoryId(store) ?? ""}`
+  const runMonitorSeam = createRunMonitorSeam({ owner: monitorOwner, view: id => {
     const card = store.collections.cards.get(`run:${id}`)
     if (card?.kind !== "run") return undefined
     const member = design.enabled ? design.viewer() : store.collections.identitySessions.get("identity")?.login
     return member ? card.payload.memberViews?.[member] ?? (card.payload.memberViews === undefined ? card.payload.view : undefined) : card.payload.view
   }, http: (path, init) => seamCtx.http(`${baseUrl.replace(/\/$/, "")}${path}`, init), live: services.live })
   ctx.onDispose(runMonitorSeam.dispose)
-  const runMonitors = installHost || services.live ? runMonitorSeam.snapshots : undefined
+  const runMonitors = designEnabled ? undefined : runMonitorSeam.snapshots
   services.live?.registerProjection?.("home", projectHome)
   // Missing host capabilities are not demo permission. Remove this fixture
   // composition when the DesignWorld journey fixtures are retired.
-  const design = createDesignWorld({ enabled: !installHost && (services.designFixture === true || services.bootstrap === undefined) })
+  const design = createDesignWorld({ enabled: designEnabled })
   /** Whether this host serves the issues doors from its repository's own tracker: the mirror of `hostIssues()` in `flows/entries/subjects.ts`. */
   const hostServesIssues = !design.enabled && (installHost || services.bootstrap?.capabilities.includes("cloud") === true)
   ctx.onDispose(design.dispose)
@@ -1253,7 +1276,7 @@ export const createAppController = (
       patch: { kind: "run", payload: { ...card.payload, view: member ? undefined : view,
         ...(member ? { memberViews: { ...card.payload.memberViews, [member]: view } } : {}) } }
     }).isPersisted.promise
-    if (installHost && (patch.tab === "journal" || patch.at !== undefined)) {
+    if (runMonitors !== undefined && (patch.tab === "journal" || patch.at !== undefined)) {
       const epoch = ctx.accountEpoch
       void withToast(`monitor.trace:${card.payload.id}`, "Loading journal", "", async () => {
         const error = await runMonitorSeam.trace(card.payload.id, patch.at ?? previous?.at)
@@ -1284,7 +1307,8 @@ export const createAppController = (
     if (inspect) maximizeCard(id)
     return inspect ? `Inspecting ${title}` : `Opened ${title}`
   } }))
-  const monitorLists = new Map<number, Promise<unknown>>()
+  /* Keyed by the same stamp the seam reads with, so a repository change asks again rather than joining the previous repository's read. */
+  const monitorLists = new Map<string, Promise<unknown>>()
   const { openRunMonitor, listRunMonitors } = actors.pair(ctx, (context, select) => ({
     openRunMonitor: async (id: string, maximize: boolean): Promise<string | { readonly value: string } | void> => {
       const stored = contextRun(id)
@@ -1295,35 +1319,43 @@ export const createAppController = (
       return runMonitors ? { value: await select(presentRun)(id, id, maximize) } : `No run ${id}`
     },
     listRunMonitors: async (): Promise<string | { readonly value: string } | void> => {
-      if (!installHost && !services.live) {
+      /* Only the seeded fixture answers from a world; every real host reads the server's index. */
+      if (designEnabled) {
         for (const trace of design.world().traces) await select(presentRun)(trace.id, trace.title, false)
         return
       }
-      const epoch = ctx.accountEpoch
-      const owner = ctx.accountOwner()
-      if (monitorLists.has(epoch)) return { value: "Requested" }
+      const stamp = monitorOwner()
+      const ours = () => !ctx.disposed && stamp === monitorOwner()
+      if (monitorLists.has(stamp)) return { value: "Requested" }
       const work = withToast("monitor.list", "Loading runs", "Runs", async () => {
-        const runs = await runMonitorSeam.list()
-        if (ctx.disposed || epoch !== ctx.accountEpoch || owner !== ctx.accountOwner()) return TOAST_SUPERSEDED
-        if (!runs && !installHost) {
-          for (const trace of design.world().traces) await select(presentRun)(trace.id, trace.title, false)
-          return true
-        }
-        if (!runs) return "Runs unavailable"
+        const read = await runMonitorSeam.list()
+        if (!ours()) return TOAST_SUPERSEDED
+        if ("superseded" in read) return TOAST_SUPERSEDED
         /*
          * A read that upserts no card has to answer in the transcript: the
          * notice is transient and a settled success with nothing shown says
          * nothing at all (@smthrs/ui notification-policy shouldShowSettlement),
          * so an install with nothing running used to resolve a check mark with
          * no words and leave no result behind.
+         *
+         * A refusal owes the same durable answer and its own reason. OUTSIDE AN
+         * INSTALL it used to fall through to the design world here — the branch
+         * the hosted app actually ran — so a refused read upserted nothing and
+         * answered `true`: a check mark for an act with no result and no reason
+         * ([#4032](https://github.com/smithersai/smithers/issues/4032)).
          */
-        if (runs.length === 0) {
+        if ("refused" in read) {
+          const sentence = RUN_READ_REFUSALS[read.refused]
+          await store.dispatch({ type: "message.appended", actor: "system", text: sentence, spoken: true }).isPersisted.promise
+          return sentence
+        }
+        if (read.runs.length === 0) {
           await store.dispatch({ type: "message.appended", actor: "system", text: "No runs yet.", spoken: true }).isPersisted.promise
           return true
         }
-        for (const run of runs) {
+        for (const run of read.runs) {
           const existing = store.collections.cards.get(`run:${run.id}`)
-          if (ctx.disposed || epoch !== ctx.accountEpoch || owner !== ctx.accountOwner()) return TOAST_SUPERSEDED
+          if (!ours()) return TOAST_SUPERSEDED
           await store.dispatch({ type: "card.upsert", actor: context.commandActor, card: {
             id: `run:${run.id}`, kind: "run", title: run.title, status: "active", createdAt: existing?.createdAt ?? Date.now(),
             ordinal: existing?.ordinal ?? store.nextOrdinal(), payload: { id: run.id, view: existing?.kind === "run" ? existing.payload.view : undefined, memberViews: existing?.kind === "run" ? existing.payload.memberViews : undefined }
@@ -1331,8 +1363,8 @@ export const createAppController = (
         }
         return true
       })
-      monitorLists.set(epoch, work)
-      void work.finally(() => { if (monitorLists.get(epoch) === work) monitorLists.delete(epoch) })
+      monitorLists.set(stamp, work)
+      void work.finally(() => { if (monitorLists.get(stamp) === work) monitorLists.delete(stamp) })
         .catch(error => ctx.failures.report("toast.work", error, "monitor.list"))
       return { value: "Requested" }
     }

@@ -4,7 +4,6 @@
  * the aggregator order.
  */
 import { Schema } from "effect"
-import { hasCapability } from "@smthrs/rpc/AppBootstrap"
 import { line, text } from "@smthrs/ui/flow-form"
 import type { FlowEntry, Namespace } from "../registry"
 import { flow, type CommandActions } from "./Declare"
@@ -54,7 +53,15 @@ export const runsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
         case "approval-open": return actions.openApproval(Schema.decodeUnknownSync(Schema.String)(input.runId), input.sourceCard)
         case "attention": return actions.listRuns({ repo: input.repo, sourceCard: input.sourceCard, status: "attention" })
       }
-      if (actions.bootstrap && hasCapability(actions.bootstrap, "install")) return actions.listRunMonitors()
+      /*
+       * `/runs` is `/monitor`'s core door, so it reads the same authoritative
+       * list on every real host. It asked for the `install` capability instead,
+       * which left the HOSTED app answering "No active runs" off a DISABLED
+       * fixture without reading anything
+       * ([#4032](https://github.com/smithersai/smithers/issues/4032)). Only the
+       * seeded design world answers from its own traces.
+       */
+      if (!actions.design.enabled) return actions.listRunMonitors()
       const traces = activeTraces(actions.design.world())
       for (const trace of traces) await actions.presentRun(trace.id, trace.title, false)
       return { value: traces.length === 0 ? "No active runs" : `${traces.length} active ${traces.length === 1 ? "run" : "runs"}` }

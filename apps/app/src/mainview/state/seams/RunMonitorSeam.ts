@@ -1,5 +1,6 @@
 import { MonitorCardSchema, type MonitorCard } from "@smthrs/rpc/RunCard"
 import { monitorFromJournal, type JournalRecord } from "@smthrs/gateway/RunTrace"
+import { refusalOf } from "@smthrs/rpc/Refusal"
 import { z } from "zod"
 import type { LiveChannel } from "../../runtime/LiveChannel"
 
@@ -42,6 +43,61 @@ const replayArchive = (model: z.infer<typeof TraceResponseSchema>, at: number): 
 
 const unavailable = "Run unavailable"
 const empty: RunMonitorSnapshot = {}
+
+/**
+ * Why a run list read produced no runs, in product words.
+ *
+ * A closed vocabulary on purpose. A refused read is not an empty one and not a
+ * fixture ([#4032](https://github.com/smithersai/smithers/issues/4032)), so it
+ * owes the reader a reason — but the reason is this app's own sentence, never a
+ * URL, an origin, a route, an upstream status line or a server error body.
+ */
+export const RUN_READ_REFUSALS = {
+  /** Nothing answered: the request never reached anyone who could judge it. */
+  unreachable: "Could not reach your runs.",
+  /** A server answered and serves no runs without a session. */
+  "signed-out": "Sign in to read your runs.",
+  /** A server answered and this account reaches nothing here. */
+  forbidden: "This account cannot read these runs.",
+  /** A server answered and refused, stating no reason this app can act on. */
+  unavailable: "Runs unavailable",
+  /** An answer arrived in a shape this build does not know — a gap, not an outage. */
+  unreadable: "This app could not read the runs answer."
+} as const
+
+/** One reason of {@link RUN_READ_REFUSALS}. */
+export type RunReadRefusal = keyof typeof RUN_READ_REFUSALS
+
+/**
+ * The outcome of one run list read. The three cases never collapse: an empty
+ * `runs` is the server saying this account has none, `refused` is nobody
+ * having said, and `superseded` is the read no longer being ours to show.
+ */
+export type RunListRead =
+  | { readonly runs: ReadonlyArray<Pick<MonitorCard, "id" | "title">> }
+  | { readonly refused: RunReadRefusal }
+  | { readonly superseded: true }
+
+/**
+ * The refusal a response states, read off its own evidence.
+ *
+ * The CODE is asked first, through the one classifier the whole stack shares
+ * (`@smthrs/rpc/Refusal`), because it is what the wire actually carries and it
+ * survives an edge that restates the prose and picks its own status: root's
+ * native read of the deployed index came back `code: "permission"`
+ * ([#4032](https://github.com/smithersai/smithers/issues/4032) receipt), and
+ * that is a thing to tell the reader, not a generic outage. The status answers
+ * only when no registered code did; a 404 on the index states no reason this
+ * app can act on, so it does not pretend to.
+ */
+const refusalOfResponse = (status: number, body: unknown): RunReadRefusal => {
+  switch (refusalOf({ body, status, message: "" }).code) {
+    case "unauthenticated": case "unauthorized": case "session_expired": case "sign_in_required": return "signed-out"
+    case "permission": case "forbidden": return "forbidden"
+    default: return status === 401 ? "signed-out" : status === 403 ? "forbidden" : "unavailable"
+  }
+}
+
 const RunTopicSchema = z.object({
   summary: z.object({ runId: z.string().min(1), flowId: z.string().min(1) }),
   steps: z.array(z.unknown()), events: z.array(z.unknown())
@@ -80,11 +136,34 @@ export function createRunMonitorSeam(options: {
     rows.set(id, next)
     for (const notify of listeners.get(id) ?? []) notify()
   }
+  /*
+   * A host with no live channel has no `run:<id>` topic, so the authenticated
+   * monitor read is the authority instead: the route authorizes the monitor
+   * command and resolves the repository server-side, so its 200 is this
+   * account's grant on this run and its refusal is the refusal.
+   *
+   * [#4032](https://github.com/smithersai/smithers/issues/4032): this branch
+   * published "Run unavailable" instead, reporting an outage for a host that
+   * had simply never been asked. Where a topic DOES exist it stays the fence —
+   * a pending or refused topic grants nothing and reads nothing — because a
+   * server that pushes a run's frames has already said who may read them.
+   */
+  const authoritativeRead = (id: string, owner: string | undefined) => {
+    authorized.set(id, owner)
+    const view = options.view?.(id)
+    void read(id, view?.at, view?.tab === "journal" || view?.at !== undefined).then(error => {
+      if (error) publish(id, { error }, owner)
+    })
+  }
   const observe = (id: string) => {
     if (disposed || subscriptions.has(id)) return
     const owner = options.owner?.()
     const topic = `run:${id}`
-    if (!options.live) { publish(id, { error: unavailable }); return }
+    if (!options.live) {
+      subscriptions.set(id, () => { authorized.delete(id) })
+      authoritativeRead(id, owner)
+      return
+    }
     const receive = () => {
       if (owner !== options.owner?.()) return
       const value = options.live?.getSnapshot(topic)
@@ -155,14 +234,33 @@ export function createRunMonitorSeam(options: {
   }
   /** The journal tab and the replay scrubber: the monitor with its journal. */
   const trace = (id: string, at?: number): Promise<string | void> => read(id, at, true)
-  const list = async (): Promise<ReadonlyArray<Pick<MonitorCard, "id" | "title">> | undefined> => {
-    if (disposed || !options.live) return undefined
+  /**
+   * The account's own runs, from the server's canonical index. One GET: it
+   * never launches a flow, creates a workspace or wakes a machine to discover
+   * whether any run exists.
+   *
+   * A live channel is not a precondition. It used to be, and the index is not
+   * the topic's to grant: a composition without a channel could not list at
+   * all, and {@link RunListRead} is what the caller needs instead of the one
+   * `undefined` that let a REFUSAL be mistaken for an empty account
+   * ([#4032](https://github.com/smithersai/smithers/issues/4032)).
+   */
+  const list = async (): Promise<RunListRead> => {
+    if (disposed) return { superseded: true }
     const owner = options.owner?.()
+    const ours = () => !disposed && owner === options.owner?.()
+    let response: Response
     try {
-      const response = await options.http("/api/runs", { method: "GET", credentials: "same-origin" })
-      const parsed = response.ok ? RunListSchema.safeParse(await response.json()) : undefined
-      return !disposed && owner === options.owner?.() && parsed?.success ? parsed.data : undefined
-    } catch { return undefined }
+      response = await options.http("/api/runs", { method: "GET", credentials: "same-origin" })
+    } catch {
+      return ours() ? { refused: "unreachable" } : { superseded: true }
+    }
+    if (!ours()) return { superseded: true }
+    if (!response.ok) return { refused: refusalOfResponse(response.status, await response.json().catch(() => null)) }
+    const parsed = RunListSchema.safeParse(await response.json().catch(() => null))
+    if (!ours()) return { superseded: true }
+    /* An answer this build cannot read proves nothing, and it is not an empty list. */
+    return parsed.success ? { runs: parsed.data } : { refused: "unreadable" }
   }
   const dispose = () => {
     disposed = true

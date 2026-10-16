@@ -56,7 +56,7 @@ test("authenticated run data reaches the mounted View with costs, phases, waits 
   expect(await h.seam.trace("native-run")).toBeUndefined()
   expect(await h.seam.trace("native-run", 3)).toBeUndefined()
   expect(h.seam.snapshots.get("native-run").model?.journal?.[0]?.text).toBe("2 failed")
-  expect(await h.seam.list()).toEqual([{ id: "native-run", title: "Retry checks" }])
+  expect(await h.seam.list()).toEqual({ runs: [{ id: "native-run", title: "Retry checks" }] })
   expect(h.requests).toEqual([
     { path: "/api/runs/native-run/trace", method: "GET" },
     { path: "/api/runs/native-run/trace?at=3", method: "GET" },
