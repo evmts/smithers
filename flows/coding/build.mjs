@@ -10,6 +10,18 @@ import { hostModulesSource } from "./host-modules-build.mjs"
 import { typecheckInputs, typecheckSource } from "./flow-typecheck-build.mjs"
 import { wikiPolicyIdentity } from "./wiki-policy.ts"
 
+/**
+ * The files a packaged default ships, relative to its directory: `flow.ts` and
+ * its `src/` tree (`shipsWithDefault`). Only those are listed. Node's recursive
+ * readdir follows directory links, and a default that is also a workspace
+ * package has a node_modules whose links lead back into the workspace.
+ */
+export const defaultFiles = async (directory) => {
+  const top = await readdir(directory)
+  const source = top.includes("src") ? await readdir(resolve(directory, "src"), { recursive: true }) : []
+  return [...top, ...source.map(entry => `src/${entry.replaceAll("\\", "/")}`)].filter(shipsWithDefault).sort()
+}
+
 /** Used to build the same runtime acceptance entry with the deployment bundler; not a package export. */
 export const bundle = async (entryPoint, outfile) => {
   // Resolve workspace packages from this checkout even when node_modules is
@@ -116,8 +128,7 @@ export const bundle = async (entryPoint, outfile) => {
   const defaults = {}
   for (const name of builtinDefaults) {
     const directory = resolve(root, "flows", name)
-    const listed = (await readdir(directory, { recursive: true })).map(entry => entry.replaceAll("\\", "/"))
-    for (const relative of listed.filter(shipsWithDefault).sort()) {
+    for (const relative of await defaultFiles(directory)) {
       defaults[`${name}/${relative}`] = await readFile(resolve(directory, relative), "utf8")
     }
   }

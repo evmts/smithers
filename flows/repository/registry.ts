@@ -157,9 +157,11 @@ export const shippedDefaults: Effect.Effect<Readonly<Record<string, string>>, Er
     const files: Record<string, string> = {}
     for (const name of builtinDefaults) {
       const directory = fileURLToPath(new URL(`../${name}/`, import.meta.url))
-      const listed = (yield* fs.readDirectory(directory, { recursive: true })).map((entry) =>
-        entry.replaceAll("\\", "/")
-      )
+      // Only flow.ts and src/ ship. A recursive listing of the whole directory
+      // follows a workspace package's node_modules links without end.
+      const top = yield* fs.readDirectory(directory)
+      const source = top.includes("src") ? yield* fs.readDirectory(`${directory}src`, { recursive: true }) : []
+      const listed = [...top, ...source.map((entry) => `src/${entry.replaceAll("\\", "/")}`)]
       for (const relative of listed.filter(shipsWithDefault).sort()) {
         files[`${name}/${relative}`] = yield* fs.readFileString(`${directory}${relative}`)
       }
