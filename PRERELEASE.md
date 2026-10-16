@@ -1,6 +1,6 @@
 # Prerelease status
 
-## 1.0.0-rc.11 — 2026-10-16
+## 1.0.0-rc.12 — 2026-10-16
 
 Recovery of rc.10 (cut `aeff7cd66272`), whose MCP consumer selected Effect
 4.0.5 against executable adapters built on 4.0.4. Its immutable tag is
@@ -20,15 +20,16 @@ a local migration-package build; it requires a new version to publish.
 A local reproduction of the broad release smoke also fails: its wildcard
 optional peers select `@effect/sql-pg`, `@effect/sql-sqlite-node`,
 `@effect/sql-sqlite-bun` and `@effect/vitest` 4.0.5, which require Effect
-`^4.0.5` while the executable peer selects 4.0.4. The smoke has not been
-changed or bypassed. Publication remains blocked pending resolution of that
-adapter contract (#4002, #4042).
+`^4.0.5` while the executable peer selects 4.0.4. The owning manifests now pin those adapters at 4.0.4. CLI-only, CLI/targets
+and all-adapter installs pass on npm and pnpm; library consumers also pass
+on Effect 4.0.5. The smoke itself has not been changed or bypassed. rc.12
+will carry the adapter and builder corrections (#4002, #4042).
 
-Registry verification on 2026-10-16: all 49 rc.11 versions are absent;
+Registry verification on 2026-10-16: all 49 rc.10 and rc.11 versions are absent;
 all 49 `next` tags remain rc.9 and every `latest` matches the pre-rc.10
 snapshot (`@smthrs/flows`: rc.9; legacy `smthrs`: 0.35.0).
 The new candidate's npm version/help/start smoke cannot run before it is
-published; no rc.11 installed-runtime success is claimed. Evidence and
+published; no rc.12 installed-runtime success is claimed. Evidence and
 remaining reporting-lane results are tracked in #4042.
 No announcement, GitHub Release or `latest` move is part of this recovery.
 
@@ -58,11 +59,11 @@ No announcement, GitHub Release or `latest` move is part of this recovery.
 - **Off:** file-card code intelligence and live code co-editing remain off
   for this prerelease. Learning remains on and unverified on this cut.
 - **Unverified — end to end:** J1–J11 and a real installed TODO through a
-  merged PR have not been repeated on rc.11. Historical results below are
+  merged PR have not been repeated on rc.12. Historical results below are
   evidence only for their named revisions. Hosted use is in release scope
   (M-44–M-48); historical self-hosted-only statements are superseded.
 
-## Historical evidence (not rc.11 verification)
+## Historical evidence (not rc.12 verification)
 
 ```
 Updated       2026-10-14 09:30 PDT
