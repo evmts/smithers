@@ -2492,14 +2492,15 @@ type SandboxEgressDailyUsage struct {
 }
 
 type SandboxEgressUsage struct {
-	ID             string      `json:"id"`
-	SandboxID      string      `json:"sandbox_id"`
-	BillingUserID  int64       `json:"billing_user_id"`
-	Day            pgtype.Date `json:"day"`
-	RequestedBytes int64       `json:"requested_bytes"`
-	Bytes          int64       `json:"bytes"`
-	QuotaBytes     int64       `json:"quota_bytes"`
-	CreatedAt      time.Time   `json:"created_at"`
+	ID               string      `json:"id"`
+	SandboxID        string      `json:"sandbox_id"`
+	BillingUserID    int64       `json:"billing_user_id"`
+	Day              pgtype.Date `json:"day"`
+	RequestedBytes   int64       `json:"requested_bytes"`
+	Bytes            int64       `json:"bytes"`
+	QuotaBytes       int64       `json:"quota_bytes"`
+	CreatedAt        time.Time   `json:"created_at"`
+	BillingOwnerType string      `json:"billing_owner_type"`
 }
 
 type SandboxUsageInterval struct {

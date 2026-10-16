@@ -201,6 +201,7 @@ var migrationRegistry = []migrationSpec{
 	{163, "migrations/0163_hosted_account_conversations.sql"},
 	{164, "migrations/0164_chat_archives.sql"},
 	{165, "migrations/0165_github_main_commits.sql"},
+	{166, "migrations/0166_sandbox_egress_billing_owner.sql"},
 }
 
 type migration struct {

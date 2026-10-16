@@ -439,7 +439,9 @@ func ValidEgressHost(host string) bool {
 // DailyBytes counts proxy bytes in both directions; -1 is unlimited, 0 denies.
 type EgressQuota struct {
 	BillingUserID int64 `json:"billingUserId"`
-	DailyBytes    int64 `json:"dailyBytes"`
+	// Empty means user for persisted policies predating organization billing.
+	BillingOwnerType string `json:"billingOwnerType,omitempty"`
+	DailyBytes       int64  `json:"dailyBytes"`
 }
 
 // DefaultEgressDailyQuotaBytes bounds infrastructure sandboxes with no billing user.
@@ -540,7 +542,7 @@ func (p *EgressProxyPolicy) Validate() error {
 	if p == nil || !p.Enabled {
 		return nil
 	}
-	if p.Quota != nil && (p.Quota.BillingUserID <= 0 || p.Quota.DailyBytes < -1) {
+	if p.Quota != nil && (p.Quota.BillingUserID <= 0 || p.Quota.DailyBytes < -1 || (p.Quota.BillingOwnerType != "" && p.Quota.BillingOwnerType != "user" && p.Quota.BillingOwnerType != "org")) {
 		return fmt.Errorf("invalid egress quota")
 	}
 	seen := make(map[string]struct{}, len(p.Secrets))
