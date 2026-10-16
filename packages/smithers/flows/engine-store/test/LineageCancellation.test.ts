@@ -44,9 +44,10 @@ const complete = (store: RunStore.Service, id: string, value = state()) =>
 
 const seedHandoff = (store: RunStore.Service, contents = state()) =>
   Effect.gen(function*() {
-    yield* store.create("root", contents, { lineageId: "root", roundOrdinal: 0 })
+    const rootState = JSON.stringify({ ...JSON.parse(contents), flowName: First._tag })
+    yield* store.create("root", rootState, { lineageId: "root", roundOrdinal: 0 })
     yield* store.create("next", contents, { lineageId: "root", roundOrdinal: 1, parentRunId: "root" })
-    yield* complete(store, "root", contents)
+    yield* complete(store, "root", rootState)
   })
 
 const cancelFromProcess = (filename: string, runId: string) =>
@@ -375,7 +376,7 @@ describe("cancellation follows logical runs", () => {
       yield* store.create("fork", state(), { parentRunId: "root", lineageId: "fork", roundOrdinal: 0 })
       yield* edges.recordRunParent("child", "root")
       yield* edges.recordRunParent("grandchild", "child-next")
-      yield* observer.interrupt(First, "middle")
+      yield* observer.interrupt(Next, "middle")
       for (const id of ["last", "child-next", "grandchild"]) {
         expect((yield* store.get(id)).cancelRequestedAtMs, id).not.toBeNull()
       }
