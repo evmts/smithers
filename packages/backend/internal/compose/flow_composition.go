@@ -349,13 +349,48 @@ func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Po
 		if err != nil {
 			return err
 		}
-		if current.WorkspaceID != authority.WorkspaceID || current.RepositoryID != authority.RepositoryID || current.UserID != authority.UserID || current.SourceRevision != authority.SourceRevision {
+		if initializationAuthorityChanged(ctx, current, authority) {
 			return errors.New("background initialization authority changed")
 		}
 		return services.FlowHostMachineInitialized(ctx, db.New(pool), runtime, current)
 	})
 
 	return &flowComposition{pool: pool, review: review, jobs: store, dispatcher: dispatcher, bindings: bindings, stopper: stopper, archive: archive}, nil
+}
+
+// initializationAuthorityChanged reports whether the authority a host was
+// admitted with still holds when its background workspace initialization
+// re-resolves the target, and names which identity moved.
+//
+// The workspace, repository and sponsor are always compared. The source
+// revision is compared only when the resolver restates one:
+// flowhost.Authority documents that SourceRevision "may be empty when
+// reconnecting to an existing, pinned binding", and a resolver that pins no
+// revision of its own restates none here — the repository wiki's
+// (services.resolveWikiTarget) is one. Comparing an unrestated revision with
+// != made that refusal unconditional, so every wiki-bound coding host was
+// refused for good with expected_source set and actual_source empty, which is
+// absence of a restatement and not evidence of a different revision. A
+// restated revision that differs still refuses, and nothing else about the
+// fence moved.
+func initializationAuthorityChanged(ctx context.Context, current, authority flowhost.Authority) bool {
+	sourceChanged := current.SourceRevision != "" && current.SourceRevision != authority.SourceRevision
+	if current.WorkspaceID == authority.WorkspaceID && current.RepositoryID == authority.RepositoryID &&
+		current.UserID == authority.UserID && !sourceChanged {
+		return false
+	}
+	// The booleans carry no id, and the two revisions are the same kind of
+	// value authorizeStackCandidate already records on a subject mismatch:
+	// a commit, never a credential, payload, header or URL.
+	slog.WarnContext(ctx, "flow_host.initialization_authority_changed",
+		"kind", authority.Target.BindingKind,
+		"workspace_changed", current.WorkspaceID != authority.WorkspaceID,
+		"repository_changed", current.RepositoryID != authority.RepositoryID,
+		"sponsor_changed", current.UserID != authority.UserID,
+		"source_changed", sourceChanged,
+		"source_restated", current.SourceRevision != "",
+		"expected_source", authority.SourceRevision, "actual_source", current.SourceRevision)
+	return true
 }
 
 // relayPlanStore keeps the browser relay's plans in PostgreSQL, so a plan
