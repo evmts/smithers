@@ -646,23 +646,14 @@ func (h *GitHubAppSetupHandler) SetSettings(w http.ResponseWriter, r *http.Reque
 			return
 		}
 	}
-	if input.Capacity != nil {
-		if err = h.Setup.Capacity.Set(r.Context(), info.User.ID, *input.Capacity); err != nil {
-			var capacity *microsandbox.CapacityError
-			if errors.As(err, &capacity) {
-				pkgerrors.WriteJSON(w, http.StatusUnprocessableEntity, capacity)
-			} else {
-				writeInstallAPIError(w, pkgerrors.New(pkgerrors.CodeServiceUnavailable, "install capacity unavailable"))
-			}
-			return
-		}
-	}
-	if input.ChatGPT != nil {
-		raw, _ := json.Marshal(*input.ChatGPT)
-		if err = db.New(h.Setup.Pool).UpsertInstallSetting(r.Context(), db.UpsertInstallSettingParams{Key: "models.chatgpt", Value: raw}); err != nil {
+	if err = h.Setup.SetModelSettings(r.Context(), info.User.ID, input.Capacity, input.ChatGPT); err != nil {
+		var capacity *microsandbox.CapacityError
+		if errors.As(err, &capacity) {
+			pkgerrors.WriteJSON(w, http.StatusUnprocessableEntity, capacity)
+		} else {
 			writeInstallAPIError(w, pkgerrors.New(pkgerrors.CodeServiceUnavailable, "install setting unavailable"))
-			return
 		}
+		return
 	}
 
 	h.Status(w, r)

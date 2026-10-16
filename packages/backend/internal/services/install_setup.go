@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
@@ -1042,4 +1043,47 @@ func InstallChatGPTEnabled(ctx context.Context, q *db.Queries) (bool, error) {
 		return false, err
 	}
 	return enabled, nil
+}
+
+// SetModelSettings commits capacity and ChatGPT together and records the owner
+// who changed model access. Reuse capacity validation inside this transaction.
+func (s *InstallSetupService) SetModelSettings(ctx context.Context, actor int64, capacity *int, chatgpt *bool) error {
+	if capacity == nil && chatgpt == nil {
+		return nil
+	}
+	if s == nil || s.Pool == nil {
+		return pkgerrors.New(pkgerrors.CodeServiceUnavailable, "install settings unavailable")
+	}
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(context.WithoutCancel(ctx))
+	var owner int64
+	if err = tx.QueryRow(ctx, `SELECT user_id FROM self_host_owners FOR UPDATE`).Scan(&owner); err != nil {
+		return err
+	}
+	if actor <= 0 || owner != actor {
+		return pkgerrors.Forbidden("install owner session required")
+	}
+	if capacity != nil {
+		if s.Capacity == nil {
+			return pkgerrors.New(pkgerrors.CodeServiceUnavailable, "install capacity unavailable")
+		}
+		service := *s.Capacity
+		service.Queries = db.New(tx)
+		if err = service.Set(ctx, actor, *capacity); err != nil {
+			return err
+		}
+	}
+	if chatgpt != nil {
+		raw, _ := json.Marshal(*chatgpt)
+		if err = db.New(tx).UpsertInstallSetting(ctx, db.UpsertInstallSettingParams{Key: "models.chatgpt", Value: raw, UpdatedBy: pgtype.Int8{Int64: actor, Valid: true}}); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(ctx, `INSERT INTO audit_log(event_type,actor_id,actor_name,target_type,target_name,action,metadata,ip_address) SELECT 'settings.models.chatgpt',id,username,'install','models.chatgpt','update',jsonb_build_object('enabled',$2::boolean),'' FROM users WHERE id=$1`, actor, *chatgpt); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
 }

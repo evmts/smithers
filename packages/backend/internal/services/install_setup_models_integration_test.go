@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sort"
 	"sync"
 	"testing"
@@ -245,4 +246,36 @@ func TestInstallModelAccessPreservesOwnerFastAssignmentPostgres(t *testing.T) {
 	binding, err := q.EffectiveInstallAgentModel(t.Context(), "app")
 	require.NoError(t, err)
 	require.JSONEq(t, `{"protocol":"openai-responses","modelId":"gpt-5.1","credential":"OPENAI_API_KEY"}`, string(binding))
+}
+
+func TestInstallModelAccessNeverPersistsProviderEchoesPostgres(t *testing.T) {
+	for _, transportError := range []bool{false, true} {
+		t.Run(fmt.Sprint(transportError), func(t *testing.T) {
+			service, _ := modelAccessFixture(t, "OPENAI_API_KEY", "AI_GATEWAY_API_KEY")
+			secret := "provider-echo-must-stay-private"
+			recorder := &modelTestRecorder{requests: map[string]json.RawMessage{}, answers: map[string]string{
+				"coding": `{"ok":false,"failure":{"code":"refused","status":401,"message":"` + secret + `"}}`,
+			}}
+			if transportError {
+				recorder.err = errors.New(secret)
+			}
+			service.Models = recorder
+			step := runModelAccess(t, service, "echo")
+			require.Equal(t, InstallFailed, step.Status)
+			projection, err := service.Status(t.Context())
+			require.NoError(t, err)
+			raw, err := json.Marshal(projection)
+			require.NoError(t, err)
+			require.NotContains(t, string(raw), secret)
+			rows, err := service.Pool.Query(t.Context(), `SELECT value::text FROM install_settings`)
+			require.NoError(t, err)
+			defer rows.Close()
+			for rows.Next() {
+				var value string
+				require.NoError(t, rows.Scan(&value))
+				require.NotContains(t, value, secret)
+			}
+			require.NoError(t, rows.Err())
+		})
+	}
 }

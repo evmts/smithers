@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/live"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
@@ -28,6 +29,15 @@ func TestInstallStatusOwnerHTTPModelPostgres(t *testing.T) {
 	pool, _ := postgresfixture.NewProductDatabase(t)
 	q := db.New(pool)
 	ctx := t.Context()
+	setupSessions := &services.InstallSetupSessions{Pool: pool}
+	setupDigest := sha256.Sum256([]byte("host-status-setup-token"))
+	setupValue, err := json.Marshal(hex.EncodeToString(setupDigest[:]))
+	require.NoError(t, err)
+	err = q.UpsertInstallSetting(ctx, db.UpsertInstallSettingParams{Key: "setup.token", Value: setupValue})
+	require.NoError(t, err)
+	setupCookie, err := setupSessions.Exchange(ctx, "host-status-setup-token")
+	require.NoError(t, err)
+	require.NoError(t, setupSessions.Validate(ctx, setupCookie))
 	bus := revocation.NewBus(pool, q)
 	busContext, stopBus := context.WithCancel(ctx)
 	defer stopBus()
@@ -66,7 +76,7 @@ func TestInstallStatusOwnerHTTPModelPostgres(t *testing.T) {
 	cfg.Auth.Mode = "selfhost"
 	cfg.Server.PublicURL = "http://localhost:4000"
 	cfg.Server.AllowedOrigins = []string{"http://localhost:4000"}
-	handler := &routes.GitHubAppSetupHandler{Owners: q, Origins: middleware.FixedOrigins("http://localhost:4000"), Setup: &services.InstallSetupService{Pool: pool, Capacity: capacity}}
+	handler := &routes.GitHubAppSetupHandler{Sessions: setupSessions, Owners: q, Origins: middleware.FixedOrigins("http://localhost:4000"), Setup: &services.InstallSetupService{Pool: pool, Capacity: capacity}}
 	cfg.FeatureFlags.SubscriptionConnections = false
 	connections := &routes.ProviderConnectionHandler{Service: routerProviderConnectionStub{}, Pool: &routes.ProviderPoolHandler{}}
 	router := githubAppSetupComposeRouter(cfg, pool, handler, connections)
@@ -74,7 +84,11 @@ func TestInstallStatusOwnerHTTPModelPostgres(t *testing.T) {
 		r := httptest.NewRequest(method, "http://localhost:4000"+path, strings.NewReader(body))
 		r.RemoteAddr = "127.0.0.1:1234"
 		r.Header.Set("Content-Type", "application/json")
-		if credential != "" {
+		if strings.HasPrefix(credential, "setup:") {
+			r.AddCookie(&http.Cookie{Name: "smithers_setup_session", Value: strings.TrimPrefix(credential, "setup:")})
+		} else if strings.HasPrefix(credential, "smithers_") {
+			r.Header.Set("Authorization", "Bearer "+credential)
+		} else if credential != "" {
 			r.AddCookie(&http.Cookie{Name: "smithers_session", Value: credential})
 		}
 		if method != "GET" {
@@ -128,12 +142,27 @@ func TestInstallStatusOwnerHTTPModelPostgres(t *testing.T) {
 	}
 	assertPoolAuthentication(good)
 	assertPoolAuthentication("")
+
+	// A failed ChatGPT write must roll capacity back, including its attribution.
+	_, err = pool.Exec(ctx, `CREATE FUNCTION reject_chatgpt() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.key='models.chatgpt' THEN RAISE EXCEPTION 'chatgpt refused'; END IF; RETURN NEW; END $$; CREATE TRIGGER reject_chatgpt BEFORE INSERT OR UPDATE ON install_settings FOR EACH ROW EXECUTE FUNCTION reject_chatgpt()`)
+	require.NoError(t, err)
+	failed := request("PUT", "/api/install", good, `{"capacity":1,"chatgpt":true}`)
+	require.Equal(t, 503, failed.Code, failed.Body.String())
+	current, err := capacity.Read(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 2, current.Machines.Capacity, "capacity must roll back with chatgpt")
+	_, err = pool.Exec(ctx, `DROP TRIGGER reject_chatgpt ON install_settings; DROP FUNCTION reject_chatgpt()`)
+	require.NoError(t, err)
 	for _, body := range []string{`{"chatgpt":true}`, `{"chatgpt":false}`} {
 		denied := request("PUT", "/api/install", other, body)
 		require.Equal(t, 403, denied.Code)
 		updated := request("PUT", "/api/install", good, body)
 		require.Equal(t, 200, updated.Code, updated.Body.String())
 		require.Contains(t, updated.Body.String(), body[1:len(body)-1])
+
+		var actor int64
+		require.NoError(t, pool.QueryRow(ctx, `SELECT actor_id FROM audit_log WHERE target_name='models.chatgpt' ORDER BY id DESC LIMIT 1`).Scan(&actor))
+		require.Equal(t, owner.ID, actor)
 		// Toggle through Settings without rebuilding the router or host catalog.
 		connectionResponse := request("GET", "/api/user/provider-connections", good, "")
 		assertPoolAuthentication(good)
@@ -149,9 +178,49 @@ func TestInstallStatusOwnerHTTPModelPostgres(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, strings.Contains(body, "true"), projection["chatgpt"])
 	}
+
+	// An audit failure also rolls both settings back; the owner cannot make an
+	// unaudited change even when the settings table itself accepted the values.
+	_, err = pool.Exec(ctx, `CREATE FUNCTION reject_model_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.target_name='models.chatgpt' THEN RAISE EXCEPTION 'audit refused'; END IF; RETURN NEW; END $$; CREATE TRIGGER reject_model_audit BEFORE INSERT ON audit_log FOR EACH ROW EXECUTE FUNCTION reject_model_audit()`)
+	require.NoError(t, err)
+	require.Equal(t, 503, request("PUT", "/api/install", good, `{"capacity":1,"chatgpt":true}`).Code)
+	current, err = capacity.Read(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 2, current.Machines.Capacity)
+	persisted, err := q.GetInstallSetting(ctx, "models.chatgpt")
+	require.NoError(t, err)
+	require.JSONEq(t, `false`, string(persisted.Value))
+	require.True(t, persisted.UpdatedBy.Valid)
+	require.Equal(t, owner.ID, persisted.UpdatedBy.Int64)
+	_, err = pool.Exec(ctx, `DROP TRIGGER reject_model_audit ON audit_log; DROP FUNCTION reject_model_audit()`)
+	require.NoError(t, err)
+
 	for _, body := range []string{`{"chatgpt":"true"}`, `{"chatgpt":null}`, `{"chatgpt":true,"unknown":1}`, `{"chatgpt":null,"capacity":2}`, `{"chatgpt":true,"capacity":null}`} {
 		require.Equal(t, 400, request("PUT", "/api/install", good, body).Code)
 	}
+
+	for _, credential := range []struct {
+		name, scopes string
+		issued       bool
+	}{
+		{"pat", "all", false}, {"run", "write:repository", true}, {"delegated", "write:repository,via:cli", true},
+	} {
+		seed := sha256.Sum256([]byte(credential.name))
+		raw := "smithers_" + hex.EncodeToString(seed[:])[:40]
+		digest := sha256.Sum256([]byte(raw))
+		_, err := q.CreateAccessToken(ctx, db.CreateAccessTokenParams{UserID: owner.ID, Name: credential.name, TokenHash: hex.EncodeToString(digest[:]), TokenLastEight: hex.EncodeToString(digest[:])[56:], Scopes: credential.scopes, SystemIssued: credential.issued, ExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true}})
+		require.NoError(t, err)
+		denied := request("PUT", "/api/install", raw, `{"capacity":1,"chatgpt":true}`)
+		require.Equal(t, 403, denied.Code, denied.Body.String())
+	}
+	setupDenied := request("PUT", "/api/install", "setup:"+setupCookie, `{"capacity":1,"chatgpt":true}`)
+	require.Equal(t, http.StatusUnauthorized, setupDenied.Code, setupDenied.Body.String())
+	unchanged, err := capacity.Read(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 2, unchanged.Machines.Capacity)
+	savedChatGPT, err := q.GetInstallSetting(ctx, "models.chatgpt")
+	require.NoError(t, err)
+	require.JSONEq(t, `false`, string(savedChatGPT.Value))
 	// A real authenticated Home socket shares the production capacity reader
 	// with Settings. Keep it open across owner writes to prove refresh, rather
 	// than checking only a separately seeded Home model.

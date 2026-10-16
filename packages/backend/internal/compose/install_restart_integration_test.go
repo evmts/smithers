@@ -234,7 +234,11 @@ func TestInstallCompiledHostKillRecoveryHTTPPostgres(t *testing.T) {
 					}
 					t.Cleanup(stop)
 					var origin string
-					require.Eventually(t, func() bool { value, err := os.ReadFile(ready); origin = string(value); return err == nil }, 15*time.Second, 20*time.Millisecond, "compiled host did not start; log: %s", logPath)
+					require.Eventually(t, func() bool {
+						value, err := os.ReadFile(ready)
+						origin = string(value)
+						return err == nil && origin != ""
+					}, 15*time.Second, 20*time.Millisecond, "compiled host did not start; log: %s", logPath)
 					return origin, stop
 				}
 				var responses []string
