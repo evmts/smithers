@@ -53,7 +53,7 @@ func TestInvokeWorkflowLaunchesTheNamedFlow(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, int64(42), result.Run.ID)
-	assert.Equal(t, "flows/echo/flow.ts", result.Definition.Path)
+	assert.Equal(t, ".smithers/flows/echo/flow.ts", result.Definition.Path)
 	require.Len(t, invoker.launches, 1)
 	launch := invoker.launches[0]
 	assert.Equal(t, InvokedFlowLaunch{RepositoryID: 7, UserID: 3, FlowID: "echo", Input: launch.Input, TriggerRef: "trunk"}, launch)
@@ -76,7 +76,7 @@ func TestInvokeWorkflowBillingDeniedLaunchesNothing(t *testing.T) {
 }
 
 func TestInvokeWorkflowReviewCannotUseWorkingCopyAdmission(t *testing.T) {
-	for _, identifier := range []string{"review", "flows/review/flow.ts", " review ", " flows/review/flow.ts "} {
+	for _, identifier := range []string{"review", ".smithers/flows/review/flow.ts", " review ", " .smithers/flows/review/flow.ts "} {
 		t.Run(identifier, func(t *testing.T) {
 			policy := &denyWorkflowDispatchBillingPolicy{}
 			invoker := &recordingFlowInvoker{}
@@ -101,7 +101,7 @@ func TestInvokeWorkflowReviewCannotUseWorkingCopyAdmission(t *testing.T) {
 // pinned to its attempt. Invoking it by name admits, bills and launches
 // nothing; a flow whose name merely starts with todo still runs.
 func TestInvokeWorkflowNeverStartsTheTodoComposition(t *testing.T) {
-	for _, identifier := range []string{"todo", "flows/todo/flow.ts", " todo ", " flows/todo/flow.ts "} {
+	for _, identifier := range []string{"todo", ".smithers/flows/todo/flow.ts", " todo ", " .smithers/flows/todo/flow.ts "} {
 		t.Run(identifier, func(t *testing.T) {
 			policy := &denyWorkflowDispatchBillingPolicy{}
 			invoker := &recordingFlowInvoker{}
@@ -130,7 +130,7 @@ func TestInvokeWorkflowNeverStartsTheTodoComposition(t *testing.T) {
 
 func TestInvokeWorkflowReadsAFlowNameOrItsPath(t *testing.T) {
 	for identifier, want := range map[string]string{
-		"echo": "echo", "flows/echo/flow.ts": "echo", "ci-2": "ci-2", "7": "7",
+		"echo": "echo", ".smithers/flows/echo/flow.ts": "echo", "ci-2": "ci-2", "7": "7",
 	} {
 		invoker := &recordingFlowInvoker{}
 		svc := NewWorkflowAPIService(&mockWorkflowAPIQuerier{}, nil, WithWorkflowAPIFlowInvoker(invoker))
@@ -151,8 +151,9 @@ func TestInvokeWorkflowRejectsInvalidRequests(t *testing.T) {
 		{"blank flow", InvokeWorkflowInput{UserID: 3, Identifier: "  "}, false, 400},
 		{"legacy workflow file", InvokeWorkflowInput{UserID: 3, Identifier: ".smithers/workflows/echo.tsx"}, false, 400},
 		{"uppercase name", InvokeWorkflowInput{UserID: 3, Identifier: "Echo"}, false, 400},
-		{"flow directory", InvokeWorkflowInput{UserID: 3, Identifier: "flows/echo"}, false, 400},
-		{"nested path", InvokeWorkflowInput{UserID: 3, Identifier: "flows/a/b/flow.ts"}, false, 400},
+		{"flow directory", InvokeWorkflowInput{UserID: 3, Identifier: ".smithers/flows/echo"}, false, 400},
+		{"nested path", InvokeWorkflowInput{UserID: 3, Identifier: ".smithers/flows/a/b/flow.ts"}, false, 400},
+		{"root flows path", InvokeWorkflowInput{UserID: 3, Identifier: "flows/echo/flow.ts"}, false, 400},
 		{"traversal", InvokeWorkflowInput{UserID: 3, Identifier: "../echo"}, false, 400},
 		{"no person", InvokeWorkflowInput{Identifier: "echo"}, false, 401},
 		{"no Flow runtime", InvokeWorkflowInput{UserID: 3, Identifier: "echo"}, true, 503},
@@ -237,7 +238,7 @@ func TestInvokeWorkflowAdmitsThroughFlowDispatch(t *testing.T) {
 	assert.Equal(t, "queued", result.Run.Status)
 	assert.Equal(t, WorkflowRunPlaneFlow, result.Run.ExecutionPlane, "the sandbox scheduler claims only sandbox-plane runs")
 	assert.Equal(t, InvokeTriggerEvent, result.Run.TriggerEvent)
-	assert.Equal(t, "flows/echo/flow.ts", result.Definition.Path)
+	assert.Equal(t, ".smithers/flows/echo/flow.ts", result.Definition.Path)
 
 	scope := repositoryJobFlowScope(repositoryID, userID)
 	operation, err := store.GetByRequest(ctx, scope, flowdispatch.OperationLaunch, invokedFlowRequestID(result.Run.ID))
@@ -751,7 +752,7 @@ func TestInvokeWorkflowReadsTheFlowFileOnTheRepoHost(t *testing.T) {
 	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")
 	owner, repository := "owner"+suffix, "repo"+suffix
 	host := newNativeRepoHost(t, owner, repository)
-	commit := host.commit(repository, "refs/heads/main", "", map[string]string{"flows/echo/flow.ts": "export default {}\n"})
+	commit := host.commit(repository, "refs/heads/main", "", map[string]string{".smithers/flows/echo/flow.ts": "export default {}\n", "flows/legacy/flow.ts": "export default {}\n"})
 
 	var userID, repositoryID int64
 	require.NoError(t, pool.QueryRow(ctx,
@@ -775,6 +776,8 @@ func TestInvokeWorkflowReadsTheFlowFileOnTheRepoHost(t *testing.T) {
 	for _, input := range []InvokeWorkflowInput{
 		{RepositoryID: repositoryID, UserID: userID, Identifier: "missing", TriggerRef: "main"},
 		{RepositoryID: repositoryID, UserID: userID, Identifier: "echo", TriggerRef: "nope"},
+		// A flow file under a root flows/ is not a repository flow (M-49).
+		{RepositoryID: repositoryID, UserID: userID, Identifier: "legacy", TriggerRef: "main"},
 	} {
 		_, err := api.InvokeWorkflow(ctx, input)
 		var apiErr *pkgerrors.APIError

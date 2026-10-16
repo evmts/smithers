@@ -14,7 +14,7 @@ test("C-J5-02: a broken merged version leaves the previous flow Active", async (
   await expect(flow.getByRole('button', { name: /^Active/ })).toBeVisible()
   await flow.getByRole('button', { name: /^Merged · not active/ }).press('Enter')
   await expect(flow).toContainText('Load failed')
-  await expect(flow).toContainText('flows/todo/flow.ts:12')
+  await expect(flow).toContainText('.smithers/flows/todo/flow.ts:12')
   await flow.getByRole('button', { name: /^Active/ }).press('Enter')
   await expect(flow).toContainText('pnpm test')
   await say(page, '/todo T2')

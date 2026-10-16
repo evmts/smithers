@@ -1,6 +1,6 @@
 /** The built-in TODO composition: route, plan, implement and deliver one TODO
  * over the coding package's step flows (`@smthrs/coding`). A repository
- * overrides it by copying only this file to `flows/todo/flow.ts`; the steps it
+ * overrides it by copying only this file to `.smithers/flows/todo/flow.ts`; the steps it
  * keeps come from the coding host the install ships. The stack engine launches it once per attempt, pinned to its digest, and
  * keeps verification and review as its own launches. No host serves it,
  * packaged or overridden, until pinned-source activation (T-FLW-03/04) binds

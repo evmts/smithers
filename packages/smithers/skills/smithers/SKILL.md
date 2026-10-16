@@ -64,7 +64,8 @@ actual result before reporting success. Use `smthrs <command> --help` or
 
 ## The flow directory
 
-Put a file flow at `flows/<name>/flow.ts`. Default-export a literal tagged
+Put a file flow at `.smithers/flows/<name>/flow.ts`; Smithers never reads a
+root `flows/`. Default-export a literal tagged
 `Flow.make("<name>", { description, capabilities, effects, payload, success,
 error?, body })` from `@smthrs/flow`. Discovery reads metadata without executing
 that module. Keep metadata literal; helpers and computed metadata can hide an

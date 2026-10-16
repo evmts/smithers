@@ -32,7 +32,7 @@ it("scheduled durable histories retain reproducible seeds and operation artifact
   assert.match(artifact.with.path, /reliability-results\.json/)
   assert.match(artifact.with.path, /reliability-artifacts/)
   assert.equal(artifact.with["if-no-files-found"], "error")
-  assert.match(steps.find((step) => step.name === "Verify complete campaign evidence").run, /check-signal-campaign\.mjs reliability-artifacts/)
+  assert.match(steps.find((step) => step.name === "Verify complete campaign evidence").run, /smthrs flow start bench\/signal-campaign --data '\{"directory":"reliability-artifacts"\}' --wait/)
   assert.match(steps.find((step) => step.name === "Prove signal transition mutation sensitivity").run, /check-signal-mutations\.mjs/)
   assert.notEqual(job["continue-on-error"], true)
 })

@@ -115,7 +115,7 @@ func invokedFlowRequestID(runID int64) string {
 }
 
 func invokedFlowPath(flowID string) string {
-	return "flows/" + flowID + "/flow.ts"
+	return flowdispatch.RepositoryFlowPath(flowID)
 }
 
 // flowSourceCommit is the commit the trigger ref names, where the flow file

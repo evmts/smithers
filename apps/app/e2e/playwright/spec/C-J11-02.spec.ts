@@ -19,7 +19,7 @@ test("C-J11-02: Source and Plan test a draft flow on a scratch branch", async ({
   await expect(page.getByText('Hello, Ada', { exact: true }).last()).toBeVisible()
   await say(page, '/flow todo')
   await page.getByRole('button', { name: 'Source', exact: true }).last().press('Enter')
-  await expect(page.getByText('flows/todo/flow.ts', { exact: true }).last()).toBeVisible()
+  await expect(page.getByText('.smithers/flows/todo/flow.ts', { exact: true }).last()).toBeVisible()
   const source = page.getByRole('textbox', { name: /flow.ts/ }).last()
   // The seeded source includes this complete standalone check call.
   const original = await source.inputValue()

@@ -605,7 +605,7 @@ const migrateFlags = {
     Flag.optional
   ),
   flowsDir: Flag.String("flows-dir").pipe(
-    Flag.withDescription("Where the written flows go, instead of `flows/`"),
+    Flag.withDescription("Where the written flows go, instead of `.smithers/flows/`"),
     Flag.optional
   ),
   verifyInstall: Flag.String("verify-install").pipe(

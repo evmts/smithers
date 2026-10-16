@@ -36,7 +36,7 @@ const serverBundle = Smithers.Shell.Build({
   shell: 'SMITHERS_BUILD_SHA="$(git rev-parse HEAD)" bun apps/app/scripts/build-native.ts',
   data: [Smithers.glob("//apps/app/scripts/**/*"), Smithers.glob("//apps/app/src/**/*"),
     Smithers.file("//packages/smithers/src/internal/backend/HostService.ts"), distributionInputs, crateInputs,
-    backendPackage.buildInputs, Smithers.file("//scripts/build-backend.sh"),
+    backendPackage.buildInputs, Smithers.file("//packages/backend/scripts/build-backend.sh"),
     Smithers.file("//package.json"), Smithers.file("//pnpm-lock.yaml"), Smithers.file("//rust-toolchain.toml")],
   outDirs: ["//apps/app/.native", "//apps/app/.native-archive"],
   sandbox: "none",
@@ -148,7 +148,7 @@ const unitTests = Smithers.NodeTest({
     Smithers.file("bunfig.toml"),
     Smithers.file("//package.json"),
     Smithers.file("//pnpm-lock.yaml"),
-    Smithers.file("//scripts/require-toolchain.mjs"),
+    Smithers.file("//packages/repo-targets/contracts/require-toolchain.mjs"),
     Smithers.file("//packages/backend/internal/compose/bootstrap.go"),
     Smithers.file("//packages/rpc/fixtures/force/graph.json"),
     Smithers.file("//packages/rpc/fixtures/force/plan-typeCheck.json")
@@ -190,7 +190,7 @@ const conformance = Smithers.NodeTest({
     Smithers.file("bunfig.toml"),
     Smithers.file("//package.json"),
     Smithers.file("//pnpm-lock.yaml"),
-    Smithers.file("//scripts/require-toolchain.mjs")
+    Smithers.file("//packages/repo-targets/contracts/require-toolchain.mjs")
   ],
   // Globs cannot cross PACKAGE.ts boundaries; dependency keys carry these sources.
   deps: [rpcPackage.check, componentPackage.check, gatewayPackage.check, harnessDetectPackage.check],
@@ -219,7 +219,7 @@ const browserTier = (shard?: string) => Smithers.NodeTest({
     Smithers.file("playwright.config.ts"), Smithers.file("playwright.site.config.ts"), Smithers.file("playwright.graph.config.ts"),
     Smithers.file("playwright.showcase.config.ts"), Smithers.file("package.json"), Smithers.file("//pnpm-lock.yaml"),
     // `bun test` steps preload the toolchain floor.
-    Smithers.file("bunfig.toml"), Smithers.file("//package.json"), Smithers.file("//scripts/require-toolchain.mjs")],
+    Smithers.file("bunfig.toml"), Smithers.file("//package.json"), Smithers.file("//packages/repo-targets/contracts/require-toolchain.mjs")],
   deps: [],
   env: { SMITHERS_CHAT_STUB: "1" },
   exclusive: true,

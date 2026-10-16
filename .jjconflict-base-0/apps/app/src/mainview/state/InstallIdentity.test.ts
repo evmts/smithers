@@ -1,0 +1,125 @@
+/*
+ * On an install the owner is admitted part-way through Setup (GitHub sign-in, then the repository claim), after the
+ * page read its identity at boot. The TODO, Draft and Members doors need that identity signed in without a reload.
+ */
+import { expect, test } from "bun:test"
+import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
+import type { InstallModel } from "./seams/InstallModel"
+import { installFixture } from "./seams/InstallFixtures.test-support"
+import { createAppStore } from "./AppStore"
+import { scopedControllers } from "./ControllerTestScope"
+import { memoryStorage, settle, silentAgent, waitFor } from "./TestFixtures"
+
+const createAppController = scopedControllers()
+const bootstrap: AppBootstrap = { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", authFlow: "redirect", sandbox: null, capabilities: ["identity", "install"] }
+
+test("an install reads the owner's identity again as Setup steps finish, until it answers signed in", async () => {
+  let model: InstallModel = { ...installFixture(), steps: installFixture().steps.map(step => ({ id: step.id, state: ["address", "app_manifest", "sign_in"].includes(step.id) ? "done" : "pending" })) }
+  let admitted = false, reads = 0
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = createAppController(store, silentAgent, { bootstrap,
+    applicationIdentity: { current: async () => { reads++; return admitted ? { memberId: 17, username: "smithersai", admin: false, scopes: null } : null } },
+    fetchImpl: async input => String(input).endsWith("/api/install") ? Response.json(model) : new Response("", { status: 404 }) })
+  const identity = () => store.collections.identitySessions.get("identity")
+  await controller.showSetup()
+  await waitFor(() => reads === 1 && identity()?.state === "signed-out")
+  // The repository claim admits the owner; the next served install names one more step done.
+  admitted = true
+  model = { ...model, steps: model.steps.map(step => step.id === "repository" ? { ...step, state: "done" } : step) }
+  await controller.showSetup()
+  await waitFor(() => identity()?.state === "signed-in")
+  expect(identity()?.login).toBe("smithersai")
+  expect(identity()?.memberId).toBe(17)
+  expect(reads).toBe(2)
+  // Signed in, a later step reads nothing more.
+  model = { ...model, steps: model.steps.map(step => step.id === "models" ? { ...step, state: "done" } : step) }
+  await controller.showSetup()
+  await settle()
+  expect(reads).toBe(2)
+})
+
+test("private topic identity is cleared on unavailable, sign-out, and legacy identity observations", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const identity = () => store.collections.identitySessions.get("identity")
+  for (const state of ["unavailable", "signed-out", "signed-in"] as const) {
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "maya", memberId: 17, admin: false, scopesPlain: null }).isPersisted.promise
+    expect(identity()?.memberId).toBe(17)
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state, login: state === "signed-in" ? "ben" : null, admin: false, scopesPlain: null }).isPersisted.promise
+    expect(identity()?.memberId).toBeUndefined()
+  }
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "maya", memberId: 18, admin: false, scopesPlain: null }).isPersisted.promise
+  await store.dispatch({ type: "identity.session.cleared", actor: "user" }).isPersisted.promise
+  expect(identity()?.memberId).toBeUndefined()
+})
+
+test("a host without the install capability never reads identity from Setup progress", async () => {
+  let reads = 0
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  createAppController(store, silentAgent, { bootstrap: { ...bootstrap, capabilities: ["identity"] },
+    applicationIdentity: { current: async () => { reads++; return null } },
+    fetchImpl: async input => String(input).endsWith("/api/install") ? Response.json(installFixture()) : new Response("", { status: 404 }) })
+  await settle()
+  expect(reads).toBe(0)
+})
+
+test("Source ready reads the repositories again, so the mirrored repository reaches the agent without a reload", async () => {
+  // gh-setup-walk-2 row 9: boot listed the owner's repositories before Mirror created the row, and nothing read them again.
+  let model: InstallModel = { ...installFixture(), steps: installFixture().steps.map(step => ({ id: step.id, state: step.id === "source" || step.id === "machine" ? "pending" : "done" })) }
+  let mirrored = false, repoReads = 0
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = createAppController(store, silentAgent, { bootstrap,
+    applicationIdentity: { current: async () => ({ username: "smithersai", admin: false, scopes: null }) },
+    fetchImpl: async input => {
+      const url = String(input)
+      if (url.endsWith("/api/install")) return Response.json(model)
+      if (url.includes("/user/repos")) {
+        repoReads++
+        return Response.json(mirrored ? [{ id: 7, name: "smithers", owner: { login: "smithersai" }, full_name: "smithersai/smithers", default_bookmark: null }] : [])
+      }
+      return new Response("", { status: 404 })
+    } })
+  await controller.loadSession()
+  await waitFor(() => store.collections.identitySessions.get("identity")?.state === "signed-in" && repoReads === 1)
+  await settle()
+  expect(store.collections.repositories.size).toBe(0)
+  // Machine finishing first changes nothing; Source ready reads once more.
+  model = { ...model, steps: model.steps.map(step => step.id === "machine" ? { ...step, state: "done" } : step) }
+  await controller.showSetup(); await settle()
+  expect(repoReads).toBe(1)
+  mirrored = true
+  model = { ...model, steps: model.steps.map(step => step.id === "source" ? { ...step, state: "done" } : step) }
+  await controller.showSetup()
+  await waitFor(() => repoReads === 2)
+  await waitFor(() => store.collections.repositories.size === 1)
+  await controller.showSetup(); await settle()
+  expect(repoReads).toBe(2)
+})
+
+test("the install uses the shared live channel for readiness, outages and revoked access", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  let snapshot: { topic: string; data?: unknown; error?: string } | undefined
+  let receive: (() => void) | undefined
+  let stopped = 0
+  const controller = createAppController(store, silentAgent, { bootstrap,
+    fetchImpl: async input => String(input).endsWith("/api/install") ? Response.json({ ...installFixture(),
+      steps: installFixture().steps.map(step => step.id === "machine" ? { ...step, state: "running" } : step) }) : new Response("", { status: 404 }),
+    live: { getSnapshot: () => snapshot, subscribe: (topic, notify) => {
+      if (topic !== "install") return () => {}
+      receive = notify
+      return () => { stopped++ }
+    } } })
+  await controller.showSetup()
+  await waitFor(() => receive !== undefined && controller.installSnapshots.get().model !== undefined)
+  expect(controller.installSnapshots.get().model!.steps[6]!.state).toBe("running")
+  snapshot = { topic: "install", data: installFixture() }; receive!()
+  expect(controller.installSnapshots.get().model!.steps[6]!.state).toBe("done")
+  snapshot = { topic: "install", error: "unavailable" }; receive!()
+  expect(controller.installSnapshots.get().error?.class).toBe("infra")
+  expect(controller.installSnapshots.get().model!.steps[6]!.state).toBe("done")
+  snapshot = { topic: "install", data: installFixture() }; receive!()
+  expect(controller.installSnapshots.get().error).toBeUndefined()
+  snapshot = { topic: "install", error: "unauthenticated" }; receive!()
+  expect(controller.installSnapshots.get().error?.class).toBe("permission")
+  expect(controller.installSnapshots.get().model).toBeUndefined()
+  expect(stopped).toBe(1)
+})

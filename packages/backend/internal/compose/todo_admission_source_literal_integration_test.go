@@ -22,7 +22,7 @@ func TestTodoAdmissionSourceTransitionLiteralCases(t *testing.T) {
 	require.NoError(t, err)
 	_, err = f.pool.Exec(ctx, `UPDATE mythical_items SET state='cancelled',pr_number=NULL,pr_state='',workspace_id='',checks='{}' WHERE id=$1`, f.item.ID)
 	require.NoError(t, err)
-	_, err = f.pool.Exec(ctx, `INSERT INTO workflow_definitions(repository_id,name,path,config,is_active,source_commit,digest,status) VALUES($1,'todo','flows/todo/flow.ts','{}',true,'4f098b2e90ef23159043fd5dfecbc305e0017549',$2,'loaded')`, f.repo, startFaultDigest)
+	_, err = f.pool.Exec(ctx, `INSERT INTO workflow_definitions(repository_id,name,path,config,is_active,source_commit,digest,status) VALUES($1,'todo','.smithers/flows/todo/flow.ts','{}',true,'4f098b2e90ef23159043fd5dfecbc305e0017549',$2,'loaded')`, f.repo, startFaultDigest)
 	require.NoError(t, err)
 	service := startFaultService(t, f.pool, f.host, false)
 	server := mergeFaultServer(t, f.pool, service)

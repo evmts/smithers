@@ -1,12 +1,12 @@
 import assert from "node:assert/strict"
 import { spawn } from "node:child_process"
 import { once } from "node:events"
-import { createPlanner, requestPlan } from "../ci-planner.mjs"
+import { createPlanner, requestPlan } from "../../packages/repo-targets/contracts/ci-planner.mjs"
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { basename, dirname, join } from "node:path"
 import { test } from "node:test"
-import { planned, plannedInProcess, resolveInventory, root, runnerFor, targetInvocation } from "../ci-inventory.mjs"
+import { planned, plannedInProcess, resolveInventory, root, runnerFor, targetInvocation } from "../../packages/repo-targets/contracts/ci-inventory.mjs"
 import { openPackageIndex } from "@smthrs/build-cli/Cli"
 import * as Target from "@smthrs/targets/Target"
 import * as Exec from "@smthrs/targets/Exec"
@@ -194,12 +194,13 @@ test("required CI resolves package, app, script and evaluation suites to real ru
     ["//flows/review:unitTests", "repository"], ["//apps/bug-worker:unitTests", "repository"],
     ["//flows/review:check", "repository"], ["//flows/review:checkTests", "repository"],
     ["//apps/bug-worker:check", "repository"],
-    ["//evals/agent:test", "repository"], ["//evals/authoring:test", "repository"],
-    ["//evals/agent:check", "repository"], ["//evals/authoring:check", "repository"], ["//evals/swebench:check", "repository"],
-    ["//evals/review-seeded-bugs:suite", "repository"], ["//evals/review-seeded-bugs:test", "repository"],
-    ["//evals/review-seeded-bugs:check", "repository"],
-    ["//evals/recommend:suite", "repository"], ["//evals/recommend:test", "repository"], ["//evals/recommend:check", "repository"],
-    ["//scripts/repo-contract:ciInventory", "scripts"], ["//scripts:mutationGate", "scripts"], ["//scripts:benchmarkGate", "scripts"],
+    ["//packages/smithers/agent/regression:test", "repository"], ["//evals/authoring:test", "repository"],
+    ["//packages/smithers/agent/regression:check", "repository"], ["//evals/authoring:check", "repository"], ["//packages/smithers/agent/harness/benchmarks/swebench:check", "repository"],
+    ["//flows/review/seeded-bugs:suite", "repository"], ["//flows/review/seeded-bugs:test", "repository"],
+    ["//flows/review/seeded-bugs:check", "repository"],
+    ["//packages/backend/modelhost/recommend-eval:suite", "repository"], ["//packages/backend/modelhost/recommend-eval:test", "repository"], ["//packages/backend/modelhost/recommend-eval:check", "repository"],
+    ["//scripts/repo-contract:ciInventory", "scripts"], ["//flows:mutationGate", "scripts"], ["//flows:benchmarkGate", "scripts"],
+    ["//flows:campaignVerifiers", "scripts"], ["//flows:signalCampaign", "scripts"], ["//flows:perfUnit", "scripts"],
     ["//scripts:tierContracts", "scripts"],
     ["//scripts:webBundleContract", "browser"],
     ["//packages/smithers/gateway:test", "test"], ["//packages/smithers/flows/jj:test", "packages"]
@@ -339,7 +340,7 @@ test("jobs that install the workspace restore the pnpm store", () => {
 
 test("the root TypeScript project owns declarations, not package source or fixtures", () => {
   const { include } = JSON.parse(readFileSync(join(root, "tsconfig.json"), "utf8"))
-  for (const entry of ["scripts/*/PACKAGE.ts", "flows/PACKAGE.ts", "examples/PACKAGE.ts",
+  for (const entry of ["scripts/*/PACKAGE.ts", "flows/PACKAGE.ts",
     "packages/*/PACKAGE.ts", "packages/*/*/PACKAGE.ts", "packages/*/*/*/PACKAGE.ts"])
     assert.ok(include.includes(entry), `tsconfig.json include omits ${entry}`)
   assert.ok(include.every((entry) => !entry.includes("/src/") && !entry.includes("/test/") && !entry.includes("/examples/")),
@@ -348,21 +349,21 @@ test("the root TypeScript project owns declarations, not package source or fixtu
 
 
 test("CI discovery preserves a generated results path and rejects repeated flags", () => {
-  const run = `pnpm exec smthrs test '//scripts:packageDocs' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose`
-  assert.deepEqual(targetInvocation(run), { verb: "test", pattern: "//scripts:packageDocs", jobs: undefined, verbose: true, resultsFile: "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" })
+  const run = `pnpm exec smthrs test '//flows:packageDocs' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose`
+  assert.deepEqual(targetInvocation(run), { verb: "test", pattern: "//flows:packageDocs", jobs: undefined, verbose: true, resultsFile: "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" })
   assert.throws(() => targetInvocation(`${run} --results-file "other"`), /Unrecognized CI target option/)
 })
 
 test("the published documentation gate resolves through the public CLI with matching metadata", async () => {
   const index = await packageIndex()
-  const metadata = await PackageExec.plan({ index, verb: "test", patterns: ["//scripts:packageDocs"], cacheDirectory: index.workspace.cache.directory })
-  const cli = planned("test", "//scripts:packageDocs")
-  const target = cli.targets.find(({ label }) => label === "//scripts:packageDocs")
-  const node = metadata.nodes.get("//scripts:packageDocs")
+  const metadata = await PackageExec.plan({ index, verb: "test", patterns: ["//flows:packageDocs"], cacheDirectory: index.workspace.cache.directory })
+  const cli = planned("test", "//flows:packageDocs")
+  const target = cli.targets.find(({ label }) => label === "//flows:packageDocs")
+  const node = metadata.nodes.get("//flows:packageDocs")
   assert.ok(target)
   assert.ok(node)
   assert.equal(target.key ?? target.keyPreview, node.key ?? node.keyPreview)
   const runner = runnerFor(node, index.workspace)
-  assert.deepEqual(runner.slice(1), ["--test", "scripts/package-docs.test.mjs", "scripts/package-docs-redirect.test.mjs"])
+  assert.deepEqual(runner.slice(1), ["--test", "docs-sync/package-docs-redirect.test.mjs", "docs-sync/flow.test.ts"])
   assert.equal(node.attrs.cache, false)
 })

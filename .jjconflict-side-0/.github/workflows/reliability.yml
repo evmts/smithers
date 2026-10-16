@@ -1,0 +1,373 @@
+name: Scheduled reliability
+on:
+  schedule:
+    - cron: '23 3 * * *'
+  workflow_dispatch:
+    inputs:
+      campaign:
+        description: 'Campaign'
+        type: choice
+        default: all
+        options:
+          - all
+          - faults-linux
+      seed:
+        description: 'Replay seed; empty chooses the current UTC day'
+        type: string
+        default: ''
+permissions:
+  contents: read
+concurrency:
+  group: reliability-${{ github.ref }}-${{ inputs.campaign || 'all' }}
+  cancel-in-progress: false
+jobs:
+  benchmark-observations:
+    if: ${{ inputs.campaign != 'faults-linux' }}
+    name: scheduler and journal counters, latency and retained resources
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 26.4.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Measure cold, warmup and repeated warm fixtures without result-cache reuse
+        env:
+          SMITHERS_BENCH_ARTIFACT_DIR: ${{ github.workspace }}/reliability-artifacts/bench
+        run: |
+          pnpm exec smthrs flow start bench/gate --data '{"measure":true,"exposeGc":true}' --wait
+      - name: Preserve benchmark observations and failures
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: benchmark-observations-${{ github.run_id }}
+          path: reliability-artifacts/bench/**
+          if-no-files-found: error
+          retention-days: 30
+  sync-long-soak:
+    if: ${{ inputs.campaign != 'faults-linux' }}
+    name: sync subscriber lifecycle (60 minute soak, Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['26.4.0', '26.10.0']
+    env:
+      SMITHERS_SOAK_MINUTES: '60'
+      SMITHERS_SOAK_SEED: '20260904'
+      SMITHERS_SOAK_NODE: ${{ matrix.node }}
+      SMITHERS_SOAK_ARTIFACT: ${{ github.workspace }}/reliability-artifacts/sync/sync-soak.json
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Record the deterministic soak workload
+        run: |
+          mkdir -p reliability-artifacts/sync
+          echo "sync soak: seed $SMITHERS_SOAK_SEED, $SMITHERS_SOAK_MINUTES minutes"
+      - name: Execute env-scaled sync soak directly
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm --filter @smthrs/sync exec vitest run test/ServerLongSoak.test.ts --coverage.enabled=false --maxWorkers=1 --reporter=default --reporter=json --outputFile="$GITHUB_WORKSPACE/reliability-artifacts/sync/vitest.json" 2>&1 | tee reliability-artifacts/sync/workload.log
+      - name: Require completed soak artifact
+        if: always()
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reliability-artifacts/sync
+          pnpm exec smthrs flow start bench/soak-campaign --data "{\"artifact\":\"$SMITHERS_SOAK_ARTIFACT\"}" --wait 2>&1 | tee reliability-artifacts/sync/verifier.log
+      - name: Preserve soak checkpoints, cleanup and failure evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sync-long-soak-${{ matrix.node }}-${{ github.run_id }}
+          path: reliability-artifacts/sync/**
+          if-no-files-found: error
+          retention-days: 30
+  signal-state-machine:
+    if: ${{ inputs.campaign != 'faults-linux' }}
+    name: durable signal state machine (rotating seed)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 26.4.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Select and record reproducible campaign
+        env:
+          REQUESTED_SEED: ${{ inputs.seed }}
+        run: |
+          node --input-type=module <<'JS'
+          import { appendFileSync } from 'node:fs'
+          const seed = process.env.REQUESTED_SEED || String(Math.floor(Date.now() / 86400000))
+          if (!/^\d+$/.test(seed) || !Number.isInteger(Number(seed)) || Number(seed) > 4294967295) throw new Error('seed must be an unsigned 32-bit integer')
+          const configuration = `SMITHERS_FUZZ_SEED=${seed}\nSMITHERS_FUZZ_CASES=50\nSMITHERS_FUZZ_STEPS=500\n`
+          appendFileSync(process.env.GITHUB_ENV, configuration)
+          console.log(configuration)
+          JS
+      - name: Run generated durable histories
+        env:
+          SMITHERS_FUZZ_ARTIFACT_DIR: ${{ github.workspace }}/reliability-artifacts
+        run: pnpm --filter @smthrs/control exec vitest run test/SignalInboxModel.test.ts --coverage.enabled=false --reporter=default --reporter=json --outputFile=reliability-results.json
+      - name: Verify complete campaign evidence
+        run: |
+          pnpm exec smthrs flow start bench/signal-campaign --data '{"directory":"reliability-artifacts"}' --wait
+      - name: Prove signal transition mutation sensitivity
+        env:
+          SMITHERS_MUTATION_ARTIFACT_DIR: ${{ github.workspace }}/reliability-artifacts/signal-mutations
+        run: node packages/smithers/control/scripts/check-signal-mutations.mjs
+      - name: Preserve history and seed evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: signal-state-machine-${{ github.run_id }}
+          path: |
+            packages/smithers/control/reliability-results.json
+            reliability-artifacts/**
+          if-no-files-found: error
+          retention-days: 30
+  run-lifecycle-state-model:
+    if: ${{ inputs.campaign != 'faults-linux' }}
+    name: run lifecycle state model (rotating seed)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 26.4.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Select and record reproducible campaign
+        env:
+          REQUESTED_SEED: ${{ inputs.seed }}
+        run: |
+          node --input-type=module <<'JS'
+          import { appendFileSync } from 'node:fs'
+          const seed = process.env.REQUESTED_SEED || String(Math.floor(Date.now() / 86400000))
+          if (!/^\d+$/.test(seed) || !Number.isInteger(Number(seed)) || Number(seed) > 4294967295) throw new Error('seed must be an unsigned 32-bit integer')
+          const configuration = `SMITHERS_FUZZ_SEED=${seed}\nSMITHERS_FUZZ_CASES=40\nSMITHERS_FUZZ_STEPS=200\n`
+          appendFileSync(process.env.GITHUB_ENV, configuration)
+          console.log(configuration)
+          JS
+      - name: Run generated run lifecycle histories
+        env:
+          SMITHERS_FUZZ_ARTIFACT_DIR: ${{ github.workspace }}/reliability-artifacts
+        run: pnpm --filter @smthrs/engine-store exec vitest run test/RunLifecycleModel.test.ts --coverage.enabled=false
+      - name: Verify campaign evidence
+        run: |
+          node --input-type=module <<'JS'
+          import { readFileSync } from 'node:fs'
+          const seed = Number(process.env.SMITHERS_FUZZ_SEED)
+          const cases = Number(process.env.SMITHERS_FUZZ_CASES)
+          const artifact = JSON.parse(readFileSync(`reliability-artifacts/run-lifecycle-${seed}.json`, 'utf8'))
+          if (artifact.status !== 'passed' || artifact.seed !== seed || artifact.executed < cases || artifact.restarts < 1) throw new Error(`Incomplete run lifecycle campaign evidence: ${JSON.stringify(artifact)}`)
+          console.log(JSON.stringify(artifact))
+          JS
+      - name: Preserve seed and shrunk case
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: run-lifecycle-state-model-${{ github.run_id }}
+          path: reliability-artifacts/**
+          if-no-files-found: error
+          retention-days: 30
+  jj-native-wasm-abi:
+    if: ${{ inputs.campaign != 'faults-linux' }}
+    name: generated native and real WASM ABI corpus
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 26.4.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+      - name: Execute and verify parser, native and WASM ABI tiers
+        env:
+          REQUESTED_SEED: ${{ inputs.seed }}
+          SMITHERS_ABI_CASES: '5000'
+          SMITHERS_ABI_STEPS: '32'
+          SMITHERS_ABI_ARTIFACT_DIR: ${{ github.workspace }}/reliability-artifacts/jj-abi
+        run: |
+          seed="${REQUESTED_SEED:-$(( $(date -u +%s) / 86400 ))}"
+          case "$seed" in ''|*[!0-9]*) echo 'seed must be an unsigned 32-bit integer' >&2; exit 1 ;; esac
+          pnpm exec smthrs flow start bench/jj-abi-campaign --data "{\"seed\":$seed}" --wait
+      - name: Install pinned nightly for parser AddressSanitizer
+        run: rustup toolchain install nightly-2025-08-08 --profile minimal --component rust-src
+      - name: Execute parser corpus under AddressSanitizer
+        shell: bash
+        timeout-minutes: 15
+        env:
+          CARGO_BUILD_JOBS: '1'
+          CARGO_TARGET_DIR: target/jj-parser-asan
+          RUSTFLAGS: -Zsanitizer=address
+          ASAN_OPTIONS: detect_leaks=1:detect_stack_use_after_return=1:halt_on_error=1
+          SMITHERS_ABI_CASES: '5000'
+          SMITHERS_ABI_ARTIFACT_DIR: ${{ github.workspace }}/reliability-artifacts/jj-abi/asan
+        run: |
+          mkdir -p "$SMITHERS_ABI_ARTIFACT_DIR"
+          SMITHERS_ABI_SEED="$(node -p "require('./reliability-artifacts/jj-abi/campaign.json').seed")"
+          export SMITHERS_ABI_SEED
+          cargo +nightly-2025-08-08 test -p flows-jj --locked \
+            -Zbuild-std --target x86_64-unknown-linux-gnu --test test_abi_parser \
+            -- --nocapture 2>&1 | tee "$SMITHERS_ABI_ARTIFACT_DIR/asan.log"
+          pnpm exec smthrs flow start bench/jj-abi-campaign --data '{"phase":"verify-parser"}' --wait
+      - name: Preserve native and WASM corpus, results and allocation evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: jj-native-wasm-abi-${{ github.run_id }}
+          path: reliability-artifacts/jj-abi/**
+          if-no-files-found: error
+          retention-days: 30
+  "e2e-faults":
+    name: "fault-injection matrix"
+    strategy:
+      fail-fast: false
+      matrix:
+        host: ${{ fromJSON(inputs.campaign == 'faults-linux' && '["linux"]' || '["linux","reference"]') }}
+        # release is the release gate's matrix, //packages/smithers:faults;
+        # long is //packages/smithers:faultsLong, the cases measured in tens of
+        # minutes or budgeted in hours, which only this nightly job runs.
+        tier: [release, long]
+    runs-on: ${{ matrix.host == 'reference' && fromJSON('["self-hosted","macOS","ARM64","smithers-reference"]') || fromJSON('["ubuntu-latest"]') }}
+    # The fault targets declare their PostgreSQL service, its URL, the host
+    # class and the programs they build: the runner passes a case only the host
+    # bootstrap environment, so a value set here never reached it (#3459).
+    # The long tier's budget is the hosted runner's six-hour ceiling; its
+    # target stops at 345 minutes so it reports before the job is cut.
+    timeout-minutes: ${{ matrix.tier == 'long' && 360 || 60 }}
+    steps:
+      - uses: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+      - name: Refuse unapproved reference-host execution
+        if: matrix.host == 'reference'
+        run: |
+          node --input-type=module <<'JS'
+          import { readFileSync } from 'node:fs'
+          const mapping = JSON.parse(readFileSync('scripts/check-commands.json', 'utf8'))
+          for (const id of ['C-SEC-02', 'C-DUR-02', 'C-DUR-04']) {
+            if (mapping.checks[id]?.status || !mapping.checks[id]?.target) {
+              throw new Error(`Reference-host case refused: ${id} has no approved target`)
+            }
+          }
+          throw new Error('Reference-host case refused: approved main-bundle provenance and authenticated host selection are not yet composed')
+          JS
+        shell: bash
+      - name: Install Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.26.8'
+      - name: "Start smthrs results"
+        run: "mkdir -p \"$RUNNER_TEMP/smthrs-results\" && printf '%s\\n' '{\"version\":1,\"results\":[]}' > \"$RUNNER_TEMP/smthrs-results/attempt.json\""
+        shell: "bash"
+      - uses: "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
+      - uses: "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020"
+        with:
+          "node-version-file": ".node-version"
+          "cache": "pnpm"
+      - name: "Install certified npm"
+        run: |
+          npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
+          test "$(npm --version)" = '11.16.0'
+        shell: "bash"
+      - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - uses: "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+      - name: "Install native smithers-jj-export"
+        run: |
+          case "$(uname -s)" in Linux|Darwin|MINGW*|MSYS*)
+            native_suffix=''
+            case "$(uname -s)" in MINGW*|MSYS*) native_suffix='.exe';; esac
+            rustup toolchain install '1.98.0' --profile minimal
+            cargo +1.98.0 build --locked -p 'smithers-ffi' --bin 'smithers-jj-export'
+            mkdir -p "$RUNNER_TEMP/smithers-native"
+            native_path="$RUNNER_TEMP/smithers-native/smithers-jj-export$native_suffix"
+            install -m 755 "target/debug/smithers-jj-export$native_suffix" "$native_path"
+            if [ "$native_suffix" = '.exe' ]; then native_path="$(cygpath -w "$native_path")"; fi
+            printf '%s=%s\n' 'SMITHERS_WORKSPACE_JJ_EXPORT_BINARY' "$native_path" >> "$GITHUB_ENV"
+          esac
+        shell: "bash"
+      - name: "Install jj"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
+        with:
+          "tool": "jj-cli@0.39.0"
+      - name: "Initialize colocated jj repository"
+        id: setup
+        run: "jj git init --colocate"
+      # K7's document installs run the daemon in Linux user namespaces and its
+      # epoch cases drive the shipped app client under Bun.
+      - name: Prepare the long fault tier host
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.tier == 'long' }}
+        run: |
+          if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
+            if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+              sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            fi
+          fi
+        shell: bash
+      - uses: "oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.tier == 'long' }}
+        with:
+          "bun-version": "1.4.1"
+      # The fault matrix's disk case (#3367) boots one Microsandbox microVM
+      # from a cached node:26-trixie image and refuses to pull, so the runner
+      # needs KVM for its user and that image in msb's cache. The step carries
+      # the fault matrix's condition, so it runs exactly when the matrix does.
+      - name: Prepare the fault matrix microVM
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.tier == 'release' }}
+        run: |
+          if [ "$(uname -s)" = Linux ]; then
+            echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules >/dev/null
+            sudo udevadm control --reload-rules
+            sudo udevadm trigger --name-match=kvm
+          fi
+          msb="$(cd packages/smithers/flows && node -e '
+            const { dirname, join } = require("node:path")
+            const { existsSync, readdirSync } = require("node:fs")
+            const scope = join(dirname(dirname(dirname(require.resolve("microsandbox")))), "@superradcompany")
+            const triple = "microsandbox-" + process.platform + "-" + process.arch
+            const found = readdirSync(scope).filter((name) => (name === triple || name.startsWith(triple + "-")) && existsSync(join(scope, name, "bin", "msb")))
+            if (found.length !== 1) throw new Error("expected one " + triple + " package with bin/msb in " + scope + ", found " + found.length)
+            console.log(join(scope, found[0], "bin", "msb"))
+          ')"
+          "$msb" pull docker.io/library/node:26-trixie
+      - name: "Exclusive fault matrix"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.tier == 'release' }}
+        run: "pnpm exec smthrs test '//packages/...:faults' --jobs 1 --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+      - name: "Long fault tier"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.tier == 'long' }}
+        run: "pnpm exec smthrs test '//packages/smithers:faultsLong' --jobs 1 --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+      - name: "Upload smthrs results"
+        if: always()
+        uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+        with:
+          "name": "smthrs-results-e2e-faults-${{ matrix.host }}-${{ matrix.tier }}-${{ github.run_attempt }}"
+          "path": "${{ runner.temp }}/smthrs-results"
+          "if-no-files-found": "error"
+      - name: Preserve durability observations
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: durability-observations-${{ matrix.host }}-${{ matrix.tier }}-${{ github.run_attempt }}
+          path: .artifacts/checks/C-DUR-*/**
+          if-no-files-found: warn

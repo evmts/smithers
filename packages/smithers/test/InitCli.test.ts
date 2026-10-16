@@ -38,10 +38,10 @@ describe("init through the public CLI", () => {
       expect(initialized.flow).toMatchObject({
         name: "review_2-final",
         created: true,
-        flowFile: join(root, "flows/review_2-final/flow.ts")
+        flowFile: join(root, ".smithers/flows/review_2-final/flow.ts")
       })
       expect(existsSync(join(root, "node_modules"))).toBe(false)
-      expect(existsSync(join(root, "flows/review_2-final/flow.mdx"))).toBe(false)
+      expect(existsSync(join(root, ".smithers/flows/review_2-final/flow.mdx"))).toBe(false)
       const listed = JSON.parse((await command(["flow", "list"])).stdout)
       expect(listed.items).toContainEqual(expect.objectContaining({ flowId: "review_2-final" }))
       const planned = JSON.parse((await command(["flow", "plan", "review_2-final"])).stdout)
@@ -66,9 +66,9 @@ describe("init through the public CLI", () => {
       } finally {
         database.close()
       }
-      const before = await readFile(join(root, "flows/review_2-final/flow.ts"), "utf8")
+      const before = await readFile(join(root, ".smithers/flows/review_2-final/flow.ts"), "utf8")
       expect(JSON.parse((await command(["init", "review_2-final"])).stdout).flow.created).toBe(false)
-      expect(await readFile(join(root, "flows/review_2-final/flow.ts"), "utf8")).toBe(before)
+      expect(await readFile(join(root, ".smithers/flows/review_2-final/flow.ts"), "utf8")).toBe(before)
     } finally {
       await rm(root, { recursive: true, force: true })
     }

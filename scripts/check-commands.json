@@ -628,7 +628,7 @@
     },
     "C-GH-07": {
       "status": "pending-owner",
-      "reason": "Runner present: scripts/perf/github-freshness.ts; requires aggregate check/review projections, two-phase reference-host evidence and owner-approved argv/host",
+      "reason": "Runner present: flows/perf/github-freshness/github-freshness.mjs; requires aggregate check/review projections, two-phase reference-host evidence and owner-approved argv/host",
       "ticket": "T-GH-02"
     },
     "C-GH-08": {
@@ -2303,28 +2303,28 @@
     },
     "C-PERF-01": {
       "status": "manual",
-      "reason": "Runner present: scripts/perf/agent-first-token.mjs; requires production Inspect binding, reference host and second Mac and owner-approved evidence"
+      "reason": "Runner present: flows/perf/agent-first-token.mjs; requires production Inspect binding, reference host and second Mac and owner-approved evidence"
     },
     "C-PERF-02": {
       "status": "manual",
-      "reason": "Runner present: scripts/perf/projection-delta.mjs; requires reference host and second Mac and owner-approved evidence"
+      "reason": "Runner present: flows/perf/projection-delta.mjs; requires reference host and second Mac and owner-approved evidence"
     },
     "C-PERF-03": {
       "status": "manual",
-      "reason": "Runner present: scripts/perf/keystroke.mjs; requires production document relay, qualified lifecycle, reference host and second Mac and owner-approved evidence"
+      "reason": "Runner present: flows/perf/keystroke.mjs; requires production document relay, qualified lifecycle, reference host and second Mac and owner-approved evidence"
     },
     "C-PERF-04": {
       "status": "manual",
-      "reason": "Runner present: scripts/perf/disk-write.mjs; requires qualified lifecycle, reference host and authenticated browser/SSH fixtures and owner-approved evidence"
+      "reason": "Runner present: flows/perf/disk-write.mjs; requires qualified lifecycle, reference host and authenticated browser/SSH fixtures and owner-approved evidence"
     },
     "C-PERF-05": {
       "status": "pending-owner",
-      "reason": "Runner and terminal host observations present: scripts/perf/warm-wake.mjs; requires qualified lifecycle, reference host, real 100-sample evidence and owner-approved evidence",
+      "reason": "Runner and terminal host observations present: flows/perf/warm-wake.mjs; requires qualified lifecycle, reference host, real 100-sample evidence and owner-approved evidence",
       "ticket": "T-MCH-06"
     },
     "C-PERF-06": {
       "status": "manual",
-      "reason": "Runner present: scripts/perf/rebase-hold.mjs; requires production Rebase now binding, qualified lifecycle, reference host and second Mac and owner-approved evidence"
+      "reason": "Runner present: flows/perf/rebase-hold.mjs; requires production Rebase now binding, qualified lifecycle, reference host and second Mac and owner-approved evidence"
     },
     "C-PRC-01": {
       "status": "pending-owner",
@@ -2813,10 +2813,10 @@
     },
     "C-SPK-08": {
       "status": "manual",
-      "reason": "Person/hardware required: reference host, VS Code on a second Mac; Automation present: scripts/spikes/trm-06/run.sh; authenticated owner approval of argv/host and qualification receipts pending",
+      "reason": "Person/hardware required: reference host, VS Code on a second Mac; Automation present: packages/smithers-machined/checks/C-SPK-08/run.sh; authenticated owner approval of argv/host and qualification receipts pending",
       "pendingBinding": {
         "files": [
-          "scripts/spikes/trm-06/run.sh"
+          "packages/smithers-machined/checks/C-SPK-08/run.sh"
         ],
         "commands": [],
         "unboundSubcases": [

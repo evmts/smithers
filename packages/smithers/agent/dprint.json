@@ -28,6 +28,7 @@
     "model",
     "plugin",
     "registry",
+    "regression",
     "scorers",
     "std",
     "triggers"

@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/smithersai/smithers/packages/backend/flowdispatch"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
@@ -62,13 +63,13 @@ func (s *MythicalService) FlowProposals(ctx context.Context, repositoryID int64)
 		}
 		dirs := map[string]string{}
 		for _, rev := range []string{item.CandidateBase, item.CandidateHead} {
-			listing, err := g.command(ctx, nil, "ls-tree", "-r", "-z", "--name-only", rev, "--", "flows/")
+			listing, err := g.command(ctx, nil, "ls-tree", "-r", "-z", "--name-only", rev, "--", flowdispatch.RepositoryFlowsDir)
 			if err != nil {
 				return nil, err
 			}
 			for _, path := range strings.Split(string(listing), "\x00") {
 				if name, ok := flowEntryName(path); ok && Overridable(name) {
-					dirs["flows/"+name+"/"] = name
+					dirs[flowdispatch.RepositoryFlowsDir+name+"/"] = name
 				}
 			}
 		}

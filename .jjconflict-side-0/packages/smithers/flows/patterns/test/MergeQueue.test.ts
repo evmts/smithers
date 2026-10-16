@@ -1,0 +1,609 @@
+import { describe, it } from "@effect/vitest"
+import { Action, Flow, Graph } from "@smthrs/flow"
+import * as Node from "@smthrs/plan/Node"
+import * as Planned from "@smthrs/plan/Planned"
+import * as Cause from "effect/Cause"
+import * as Effect from "effect/Effect"
+import * as Fiber from "effect/Fiber"
+import * as Latch from "effect/Latch"
+import * as Result from "effect/Result"
+import * as Schema from "effect/Schema"
+import { expect } from "vitest"
+import * as MergeQueue from "../src/MergeQueue.ts"
+import { PatternError } from "../src/PatternError.ts"
+import { execute } from "./Execute.ts"
+import { callsTo, payloadOf } from "./Graphs.ts"
+
+const land = Flow.make("land", {
+  payload: { id: Schema.Unknown, position: Schema.Unknown, input: Schema.Unknown },
+  success: Schema.Unknown,
+  error: Schema.Unknown,
+  body: ({ input }) => Node.succeed(input)
+})
+
+const target = { input: "land" }
+
+const members: ReadonlyArray<MergeQueue.Member> = [
+  { id: "docs", flow: land },
+  { id: "hotfix", flow: land, priority: 5000 },
+  { id: "feature", flow: land }
+]
+
+const invalidPriorities = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 1.5, 2 ** 53]
+
+// `@smthrs/flow` hydrates a call payload onto the graph node, where core kept
+// it as the node's first key-material input.
+const literals = (graph: Graph.Graph): ReadonlyArray<Record<string, unknown>> =>
+  callsTo(graph, "land").map((node) => payloadOf(node))
+
+// When a declared landing's steps run is a RUN-time fact, so each step is an
+// action: it appends `<phase> <id>` when it really starts, then holds long
+// enough that an unserialized queue would start the next member meanwhile.
+const step = Action.make("mergeQueue/step", {
+  payload: Schema.Struct({ id: Schema.String, phase: Schema.String }),
+  success: Schema.Unknown,
+  error: Schema.String,
+  tier: "irreversible"
+})
+
+const stepLayer = (trace: Array<string>, failing: ReadonlySet<string> = new Set()) =>
+  step.toLayer(({ id, phase }) =>
+    Effect.gen(function*() {
+      trace.push(`${phase} ${id}`)
+      yield* Effect.sleep("10 millis")
+      if (failing.has(`${phase} ${id}`)) return yield* Effect.fail(`${id} conflicts`)
+      return id
+    })
+  )
+
+// A landing of two steps, like a merge request and the refinery that lands it.
+const staged = Flow.make("staged", {
+  payload: { id: Schema.Unknown, position: Schema.Unknown, input: Schema.Unknown },
+  success: Schema.Unknown,
+  error: Schema.Unknown,
+  body: ({ id }) =>
+    Node.andThen(step.call({ id: id as string, phase: "first" }), step.call({ id: id as string, phase: "last" }))
+})
+
+const settle = (running: Promise<unknown>): Promise<Result.Result<unknown, unknown>> =>
+  running.then((value) => Result.succeed(value), (failure: unknown) => Result.fail(failure))
+
+describe("MergeQueue", () => {
+  it("sorts members by descending priority then declaration order", () => {
+    expect(MergeQueue.ordered(members, MergeQueue.DefaultPriority).map((member) => member.id)).toEqual([
+      "hotfix",
+      "docs",
+      "feature"
+    ])
+    expect(MergeQueue.ordered(members, MergeQueue.DefaultPriority).map((member) => member.priority)).toEqual([
+      5000,
+      1000,
+      1000
+    ])
+  })
+
+  it("keeps the caller's name and description on the declared flow", () => {
+    const queue = MergeQueue.make({
+      members: members,
+      failurePolicy: "halt",
+      name: "landing-queue",
+      description: "Land every branch in priority order."
+    })
+
+    expect(queue._tag).toBe("landing-queue")
+    expect(queue.description).toBe("Land every branch in priority order.")
+    expect(MergeQueue.make({ members: members, failurePolicy: "halt" }).description).toBeUndefined()
+  })
+
+  it("declares a serial chain at concurrency 1 in priority order", () => {
+    const graph = Graph.build(MergeQueue.make({ members: members, failurePolicy: "halt" }), target)
+
+    expect(Graph.diagnostics(graph)).toEqual([])
+    expect(Graph.nodes(graph).filter((node) => node.kind === "All")).toHaveLength(0)
+    expect(literals(graph).map((value) => value.id)).toEqual(["hotfix", "docs", "feature"])
+  })
+
+  it("gives every member the default priority unless it sets its own, as an annotation", () => {
+    const graph = Graph.build(MergeQueue.make({ members: members, failurePolicy: "halt" }), target)
+
+    // The scheduler reads the annotation. A priority carried as call input
+    // would instead be key material, and re-prioritizing a queue that lands in
+    // the same order would re-land every member.
+    expect(callsTo(graph, "land").map((node) => node.draft.priority)).toEqual([5000, 1000, 1000])
+    expect(literals(graph).map((value) => value.priority)).toEqual([undefined, undefined, undefined])
+  })
+
+  it("keeps a member's step identity when a priority change does not reorder the queue", () => {
+    const body = (priority: number) =>
+      Graph.nodes(
+        Graph.build(
+          MergeQueue.make({
+            members: [{ id: "docs", flow: land }, { id: "hotfix", flow: land, priority }],
+            failurePolicy: "halt"
+          }),
+          target
+        )
+      ).map((node) => node.draft.material.body)
+
+    expect(body(5000)).toEqual(body(7000))
+  })
+
+  it("declares one recovery arm per member under the quarantine policy", () => {
+    const serial = Graph.build(MergeQueue.make({ members: members, failurePolicy: "quarantine" }), target)
+    const batched = Graph.build(
+      MergeQueue.make({ members: members, concurrency: 2, failurePolicy: "quarantine" }),
+      target
+    )
+    const halting = Graph.build(MergeQueue.make({ members: members, failurePolicy: "halt" }), target)
+
+    expect(Graph.nodes(serial).filter((node) => node.kind === "Catch")).toHaveLength(3)
+    expect(Graph.nodes(serial).filter((node) => node.kind === "All")).toHaveLength(0)
+    expect(Graph.nodes(batched).filter((node) => node.kind === "Catch")).toHaveLength(3)
+    expect(Graph.nodes(halting).filter((node) => node.kind === "Catch")).toHaveLength(0)
+    expect(Graph.diagnostics(serial)).toEqual([])
+    expect(Graph.diagnostics(batched)).toEqual([])
+  })
+
+  it("settles a declared quarantine with a tagged wire marker", () => {
+    const graph = Graph.build(
+      MergeQueue.make({ members: [{ id: "docs", flow: land }], failurePolicy: "quarantine" }),
+      target
+    )
+    // The marker a `Succeed` carries is the node's payload under
+    // `@smthrs/flow`, and the error inside it is the planned reference to the
+    // member the arm recovers.
+    const marker = Graph.nodes(graph)
+      .filter((node) => node.kind === "Succeed")
+      .map((node) => node.payload)
+      .find(
+        (value) =>
+          typeof value === "object" &&
+          value !== null &&
+          "_tag" in value &&
+          value._tag === "Quarantined"
+      ) as { readonly _tag: string; readonly id: string; readonly error: unknown }
+
+    expect(marker._tag).toBe("Quarantined")
+    expect(marker.id).toBe("docs")
+    expect(Planned.reference(marker.error)?.path).toEqual([])
+  })
+
+  it("batches by two at concurrency 2", () => {
+    const graph = Graph.build(
+      MergeQueue.make({ members: members, concurrency: 2, failurePolicy: "quarantine" }),
+      target
+    )
+
+    expect(Graph.nodes(graph).filter((node) => node.kind === "All")).toHaveLength(2)
+    expect(callsTo(graph, "land")).toHaveLength(3)
+    expect(Graph.diagnostics(graph)).toEqual([])
+  })
+
+  it("rejects an empty queue, a duplicate id, and an invalid bound", () => {
+    expect(() => MergeQueue.make({ members: [], failurePolicy: "halt" })).toThrow(
+      expect.objectContaining({ code: "invalid_decorator", message: "MergeQueue requires at least one member" })
+    )
+    expect(() => MergeQueue.make({ members: [members[0]!, members[0]!], failurePolicy: "halt" })).toThrow(
+      expect.objectContaining({ code: "invalid_decorator", message: "MergeQueue member ids must be unique" })
+    )
+    expect(() => MergeQueue.make({ members: members, concurrency: 0, failurePolicy: "halt" })).toThrow(
+      expect.objectContaining({
+        code: "invalid_decorator",
+        message: "MergeQueue concurrency must be a positive safe integer"
+      })
+    )
+    expect(() => MergeQueue.make({ members: members, priority: 1.5, failurePolicy: "halt" })).toThrow(
+      expect.objectContaining({
+        code: "invalid_decorator",
+        message: "MergeQueue priority for member \"docs\" must be a safe integer, received 1.5"
+      })
+    )
+  })
+
+  it("refuses halt above concurrency 1, because a member behind a failure must never have started", () => {
+    expect(() => MergeQueue.make({ members: members, concurrency: 2, failurePolicy: "halt" })).toThrow(
+      expect.objectContaining({
+        code: "invalid_decorator",
+        message: "MergeQueue halt requires concurrency 1"
+      })
+    )
+    expect(Flow.isFlow(MergeQueue.make({ members: members, concurrency: 1, failurePolicy: "halt" }))).toBe(true)
+    expect(Flow.isFlow(MergeQueue.make({ members: members, concurrency: 2, failurePolicy: "quarantine" }))).toBe(true)
+  })
+
+  it("declares from the snapshot make took of its members and options", () => {
+    const other = Flow.make("other", {
+      payload: { id: Schema.Unknown, position: Schema.Unknown, input: Schema.Unknown },
+      success: Schema.Unknown,
+      error: Schema.Unknown,
+      body: () => Node.succeed("other")
+    })
+    const mutableMembers = members.map((member) => ({ ...member }))
+    const options: MergeQueue.MakeOptions = { members: mutableMembers, failurePolicy: "quarantine" }
+    const queue = MergeQueue.make(options)
+    const before = Graph.nodes(Graph.build(queue, target)).map((node) => node.draft.material.body)
+
+    // A swapped flow, a re-prioritized member, an appended member, and a
+    // changed policy, all after the call.
+    mutableMembers[0]!.flow = other
+    mutableMembers[0]!.priority = 9000
+    mutableMembers.push({ id: "late", flow: other })
+    ;(options as { failurePolicy: MergeQueue.FailurePolicy }).failurePolicy = "halt"
+
+    const after = Graph.nodes(Graph.build(queue, target))
+    expect(after.map((node) => node.draft.material.body)).toEqual(before)
+    expect(after.filter((node) => node.kind === "Catch")).toHaveLength(3)
+    expect(literals(Graph.build(queue, target)).map((value) => value.id)).toEqual(["hotfix", "docs", "feature"])
+  })
+
+  it("refuses every unsafe member priority at declaration time", () => {
+    for (const priority of invalidPriorities) {
+      expect(() => MergeQueue.ordered([{ id: "unstable", priority }], MergeQueue.DefaultPriority)).toThrow(
+        expect.objectContaining({
+          code: "invalid_decorator",
+          message: `MergeQueue priority for member "unstable" must be a safe integer, received ${priority}`
+        })
+      )
+      expect(() => MergeQueue.make({ members: [{ id: "unstable", flow: land, priority }], failurePolicy: "halt" }))
+        .toThrow(
+          expect.objectContaining({
+            code: "invalid_decorator",
+            message: `MergeQueue priority for member "unstable" must be a safe integer, received ${priority}`
+          })
+        )
+    }
+  })
+
+  it.effect("lands members one at a time in priority then declaration order", () =>
+    Effect.gen(function*() {
+      const trace: Array<string> = []
+      const queued = ["docs", "hotfix", "feature"].map((id) => ({
+        id,
+        ...(id === "hotfix" ? { priority: 5000 } : {}),
+        run: () =>
+          Effect.gen(function*() {
+            trace.push(`start ${id}`)
+            yield* Effect.yieldNow
+            trace.push(`end ${id}`)
+            return id
+          })
+      }))
+
+      const result = yield* MergeQueue.run("main", { members: queued, failurePolicy: "halt" })
+
+      expect(trace).toEqual([
+        "start hotfix",
+        "end hotfix",
+        "start docs",
+        "end docs",
+        "start feature",
+        "end feature"
+      ])
+      expect(result.order).toEqual(["hotfix", "docs", "feature"])
+      expect(result.landed.map((entry) => entry.id)).toEqual(["hotfix", "docs", "feature"])
+      expect(result.quarantined).toEqual([])
+    }))
+
+  it.effect("preserves prototype-shaped member ids in declaration and runtime order", () =>
+    Effect.gen(function*() {
+      const ids = ["__proto__", "constructor", "toString", "normal"]
+      const declared = ids.map((id) => ({ id, flow: land }))
+      const graph = Graph.build(MergeQueue.make({ members: declared, failurePolicy: "halt" }), "land")
+      expect(literals(graph).map((value) => value.id)).toEqual(ids)
+
+      const result = yield* MergeQueue.run("main", {
+        failurePolicy: "halt",
+        members: ids.map((id) => ({ id, run: ({ id }) => Effect.succeed(`${id}-value`) }))
+      })
+      expect(result.order).toEqual(ids)
+      expect(result.landed).toEqual(ids.map((id) => ({ id, output: `${id}-value` })))
+    }))
+
+  it.effect("stops later members when one fails under halt", () =>
+    Effect.gen(function*() {
+      const ran: Array<string> = []
+      const queued = ["first", "second", "third"].map((id) => ({
+        id,
+        run: () =>
+          Effect.suspend(() => {
+            ran.push(id)
+            return id === "second" ? Effect.fail(`${id} conflicts`) : Effect.succeed(id)
+          })
+      }))
+
+      const failure = yield* MergeQueue.run("main", { members: queued, failurePolicy: "halt" }).pipe(Effect.flip)
+
+      expect(failure).toBe("second conflicts")
+      expect(ran).toEqual(["first", "second"])
+    }))
+
+  it.effect("never starts a member behind one that fails under halt", () =>
+    Effect.gen(function*() {
+      const ran: Array<string> = []
+      const queued = ["first", "second"].map((id) => ({
+        id,
+        run: () =>
+          Effect.gen(function*() {
+            ran.push(id)
+            // Yielding hands the scheduler a chance to start the next member
+            // before this one has failed, which a concurrent queue would take.
+            yield* Effect.yieldNow
+            return yield* Effect.fail(`${id} conflicts`)
+          })
+      }))
+
+      const failure = yield* MergeQueue.run("main", { members: queued, failurePolicy: "halt" }).pipe(Effect.flip)
+
+      expect(failure).toBe("first conflicts")
+      expect(ran).toEqual(["first"])
+    }))
+
+  it.effect("refuses halt above concurrency 1 before any member starts", () =>
+    Effect.gen(function*() {
+      let ran = 0
+      const failure = yield* MergeQueue.run("main", {
+        members: [{ id: "a", run: () => Effect.sync(() => (ran += 1, "landed")) }],
+        concurrency: 2,
+        failurePolicy: "halt"
+      }).pipe(Effect.flip)
+
+      expect(failure).toBeInstanceOf(PatternError)
+      expect((failure as PatternError).code).toBe("invalid_decorator")
+      expect((failure as PatternError).message).toBe("MergeQueue halt requires concurrency 1")
+      expect(ran).toBe(0)
+    }))
+
+  it.effect("runs the snapshot run took of its members and options", () =>
+    Effect.gen(function*() {
+      const trace: Array<string> = []
+      const mutableMembers = [{ id: "a", run: () => Effect.sync(() => (trace.push("a"), "a")) }]
+      const options = { members: mutableMembers, failurePolicy: "quarantine" as MergeQueue.FailurePolicy }
+      const queue = MergeQueue.run("main", options)
+
+      // A swapped member, an appended member, and a changed policy, between
+      // the call and the execution.
+      mutableMembers[0] = { id: "a", run: () => Effect.sync(() => (trace.push("swapped"), "swapped")) }
+      mutableMembers.push({ id: "late", run: () => Effect.sync(() => (trace.push("late"), "late")) })
+      options.failurePolicy = "halt"
+
+      const result = yield* queue
+      expect(trace).toEqual(["a"])
+      expect(result).toEqual({ landed: [{ id: "a", output: "a" }], quarantined: [], order: ["a"] })
+    }))
+
+  it.effect("lands the rest and reports the failure under quarantine", () =>
+    Effect.gen(function*() {
+      const ran: Array<string> = []
+      const queued = ["first", "second", "third"].map((id) => ({
+        id,
+        run: () =>
+          Effect.suspend(() => {
+            ran.push(id)
+            return id === "second" ? Effect.fail(`${id} conflicts`) : Effect.succeed(id)
+          })
+      }))
+
+      const result = yield* MergeQueue.run("main", { members: queued, failurePolicy: "quarantine" })
+
+      expect(ran).toEqual(["first", "second", "third"])
+      expect(result.landed).toEqual([{ id: "first", output: "first" }, { id: "third", output: "third" }])
+      expect(result.quarantined).toEqual([{ id: "second", error: "second conflicts" }])
+    }))
+
+  it.effect("quarantines a runtime failure as an untagged entry", () =>
+    Effect.gen(function*() {
+      const result = yield* MergeQueue.run("main", {
+        members: [{ id: "docs", run: () => Effect.fail("docs conflicts") }],
+        failurePolicy: "quarantine"
+      })
+
+      // The declaration tags its marker because a plan carries it beside
+      // arbitrary successful values. `run` returns landed and quarantined
+      // members in separate arrays, so the entry needs no tag to be read.
+      expect(result.quarantined).toEqual([{ id: "docs", error: "docs conflicts" }])
+      expect(Object.hasOwn(result.quarantined[0]!, "_tag")).toBe(false)
+    }))
+
+  it.effect("propagates a member defect instead of quarantining it", () =>
+    Effect.gen(function*() {
+      const defect = new Error("the landing threw")
+      const exit = yield* Effect.exit(
+        MergeQueue.run("main", {
+          members: [
+            { id: "first", run: () => Effect.succeed("first") },
+            { id: "second", run: () => Effect.die(defect) }
+          ],
+          failurePolicy: "quarantine"
+        })
+      )
+
+      expect(exit._tag).toBe("Failure")
+      if (exit._tag === "Failure") {
+        // `quarantine` holds back a member that fails, not one that is broken.
+        expect(Cause.hasDies(exit.cause)).toBe(true)
+        expect(Result.getOrThrow(Cause.findDefect(exit.cause))).toBe(defect)
+      }
+    }))
+
+  it.effect("never lands more than the concurrency bound at once", () =>
+    Effect.gen(function*() {
+      // The test holds every started landing on `held`, so the queue cannot make
+      // progress on its own: what lands concurrently is what the bound admits,
+      // not what the scheduler happened to interleave.
+      const held = yield* Latch.make()
+      const saturated = yield* Latch.make()
+      const entered: Array<string> = []
+      let inFlight = 0
+      let peak = 0
+      const queued = ["a", "b", "c", "d"].map((id) => ({
+        id,
+        run: () =>
+          Effect.gen(function*() {
+            inFlight += 1
+            peak = Math.max(peak, inFlight)
+            entered.push(id)
+            if (entered.length === 2) yield* Latch.open(saturated)
+            yield* Latch.await(held)
+            inFlight -= 1
+            return id
+          })
+      }))
+
+      const running = yield* MergeQueue.run("main", { members: queued, concurrency: 2, failurePolicy: "quarantine" })
+        .pipe(Effect.forkChild({ startImmediately: true }))
+
+      yield* Latch.await(saturated)
+
+      // Both slots are taken and neither can finish, so no third member started.
+      expect(entered).toEqual(["a", "b"])
+      expect(inFlight).toBe(2)
+
+      yield* Latch.open(held)
+      const result = yield* Fiber.join(running)
+
+      expect(result.landed.map((entry) => entry.id)).toEqual(["a", "b", "c", "d"])
+      expect(entered).toEqual(["a", "b", "c", "d"])
+      expect(peak).toBe(2)
+    }))
+
+  it.effect("rejects an empty queue and an invalid bound at runtime", () =>
+    Effect.gen(function*() {
+      const empty = yield* MergeQueue.run("main", { members: [], failurePolicy: "halt" }).pipe(Effect.flip)
+      expect(empty).toBeInstanceOf(PatternError)
+      expect(empty.code).toBe("invalid_decorator")
+      expect(empty.message).toBe("MergeQueue requires at least one member")
+
+      const bound = yield* MergeQueue.run("main", {
+        members: [{ id: "a", run: () => Effect.succeed("a") }],
+        concurrency: -1,
+        failurePolicy: "halt"
+      }).pipe(Effect.flip)
+      expect(bound).toBeInstanceOf(PatternError)
+      expect(bound.code).toBe("invalid_decorator")
+      expect(bound.message).toBe("MergeQueue concurrency must be a positive safe integer")
+
+      const duplicate = yield* MergeQueue.run("main", {
+        members: [{ id: "a", run: () => Effect.succeed("a") }, { id: "a", run: () => Effect.succeed("b") }],
+        failurePolicy: "halt"
+      }).pipe(Effect.flip)
+      expect(duplicate).toBeInstanceOf(PatternError)
+      expect(duplicate.code).toBe("invalid_decorator")
+      expect(duplicate.message).toBe("MergeQueue member ids must be unique")
+    }))
+
+  it.effect("refuses every unsafe member priority before running the queue", () =>
+    Effect.gen(function*() {
+      let ran = 0
+      for (const priority of invalidPriorities) {
+        const failure = yield* MergeQueue.run("main", {
+          members: [{ id: "unstable", priority, run: () => Effect.sync(() => (ran += 1, "landed")) }],
+          failurePolicy: "halt"
+        }).pipe(Effect.flip)
+
+        expect(failure).toBeInstanceOf(PatternError)
+        expect((failure as PatternError).code).toBe("invalid_decorator")
+        expect((failure as PatternError).message).toBe(
+          `MergeQueue priority for member "unstable" must be a safe integer, received ${priority}`
+        )
+      }
+      expect(ran).toBe(0)
+    }))
+
+  it("starts a declared member at concurrency 1 only after the one before it has finished", async () => {
+    for (const failurePolicy of ["halt", "quarantine"] as const) {
+      const trace: Array<string> = []
+      const result = await execute(
+        MergeQueue.make({
+          members: [{ id: "a", flow: staged }, { id: "b", flow: staged }, { id: "c", flow: staged }],
+          failurePolicy
+        }),
+        { input: "main" },
+        `mergequeue-serial-${failurePolicy}`,
+        stepLayer(trace)
+      )
+
+      expect(trace).toEqual(["first a", "last a", "first b", "last b", "first c", "last c"])
+      expect(result).toEqual({
+        landed: [{ id: "a", output: "a" }, { id: "b", output: "b" }, { id: "c", output: "c" }],
+        quarantined: [],
+        order: ["a", "b", "c"]
+      })
+    }
+  })
+
+  it("never starts a declared member behind one that fails under halt", async () => {
+    const trace: Array<string> = []
+    const settled = await settle(
+      execute(
+        MergeQueue.make({ members: [{ id: "a", flow: staged }, { id: "b", flow: staged }], failurePolicy: "halt" }),
+        { input: "main" },
+        "mergequeue-serial-halt-failure",
+        stepLayer(trace, new Set(["last a"]))
+      )
+    )
+
+    expect(Result.isFailure(settled)).toBe(true)
+    expect(trace).toEqual(["first a", "last a"])
+  })
+
+  it("starts a declared member behind a quarantined one only after the quarantine settles", async () => {
+    const trace: Array<string> = []
+    const result = await execute(
+      MergeQueue.make({ members: [{ id: "a", flow: staged }, { id: "b", flow: staged }], failurePolicy: "quarantine" }),
+      { input: "main" },
+      "mergequeue-serial-quarantine-failure",
+      stepLayer(trace, new Set(["last a"]))
+    )
+
+    expect(trace).toEqual(["first a", "last a", "first b", "last b"])
+    expect(result).toEqual({
+      landed: [{ id: "b", output: "b" }],
+      quarantined: [{ id: "a", error: "a conflicts" }],
+      order: ["a", "b"]
+    })
+  })
+
+  it("starts a declared batch only after every member of the batch before it has settled", async () => {
+    const trace: Array<string> = []
+    const result = await execute(
+      MergeQueue.make({
+        members: ["a", "b", "c", "d", "e"].map((id) => ({ id, flow: staged })),
+        concurrency: 2,
+        failurePolicy: "quarantine"
+      }),
+      { input: "main" },
+      "mergequeue-batched-order",
+      stepLayer(trace, new Set(["last b"]))
+    )
+
+    const at = (entry: string) => trace.indexOf(entry)
+    expect([...trace].sort()).toEqual(
+      ["a", "b", "c", "d", "e"].flatMap((id) => [`first ${id}`, `last ${id}`]).sort()
+    )
+    // A batch's members overlap one another, never a member of another batch.
+    expect(at("first b")).toBeLessThan(at("last a"))
+    for (const [earlier, later] of [[["a", "b"], ["c", "d"]], [["c", "d"], ["e"]]] as const) {
+      for (const before of earlier) {
+        for (const after of later) expect(at(`last ${before}`)).toBeLessThan(at(`first ${after}`))
+      }
+    }
+    expect(result).toEqual({
+      landed: ["a", "c", "d", "e"].map((id) => ({ id, output: id })),
+      quarantined: [{ id: "b", error: "b conflicts" }],
+      order: ["a", "b", "c", "d", "e"]
+    })
+  })
+
+  it("gives a halting queue and a quarantining queue different topology and identity", () => {
+    const material = (failurePolicy: MergeQueue.FailurePolicy) =>
+      Graph.nodes(Graph.build(MergeQueue.make({ members: members, failurePolicy }), target))
+
+    const halting = material("halt")
+    const quarantining = material("quarantine")
+
+    expect(halting.map((node) => node.kind)).not.toEqual(quarantining.map((node) => node.kind))
+    expect(halting.map((node) => node.draft.material.body)).not.toEqual(
+      quarantining.map((node) => node.draft.material.body)
+    )
+  })
+})

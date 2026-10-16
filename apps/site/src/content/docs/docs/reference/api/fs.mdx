@@ -41,7 +41,7 @@ body kind.
 import { Command, FileRouter } from "@smthrs/fs"
 
 const program = Effect.gen(function*() {
-  const { routes } = yield* FileRouter.scan({ root: "flows" })
+  const { routes } = yield* FileRouter.scan({ root: ".smithers/flows" })
   const commands = yield* Command.make(routes)
   return yield* commands.execute("review --number 42")
 })

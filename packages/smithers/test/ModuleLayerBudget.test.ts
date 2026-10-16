@@ -20,9 +20,9 @@ describe("an exported module's approved budget", () => {
     const root = await realpath(await mkdtemp(join(tmpdir(), "smithers-exported-module-budget-")))
     const observed: Array<{ sameBudget: boolean; before: string; after: string; tokens: number }> = []
     try {
-      await mkdir(join(root, "flows", "budget"), { recursive: true })
+      await mkdir(join(root, ".smithers", "flows", "budget"), { recursive: true })
       await writeFile(
-        join(root, "flows", "budget", "flow.ts"),
+        join(root, ".smithers", "flows", "budget", "flow.ts"),
         `
 import { Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"

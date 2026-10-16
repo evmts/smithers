@@ -1,0 +1,60 @@
+smthrs@1.0.0-rc.12 — Build workspace targets and operate durable agent flows
+
+Usage: smthrs <command>
+
+Commands:
+  agent      Ask the Smithers helper and hold remote conversations
+  agents     The factory's agents
+  api        Make raw API calls to the Smithers server
+  branch     Branches and machines
+  branches   List branches with presence
+  cp         Copy files or directories between the local machine and a workspace
+  diff       Show a branch's changes
+  exec       Run a workspace command with a durable receipt and bounded output
+  file       Open and co-edit a file
+  files      Browse a branch's files
+  flow       Discover, plan, and start durable flows
+  flows      List the repository's flows
+  github     Show sync status and retry
+  host       Operate this installation’s host
+  issue      Manage repository issues
+  issues     List the repository's issues
+  login      Log in to Smithers
+  merge      Review and merge the next item; waits for the person's confirmation
+  monitor    Every run, with its debug view
+  pr         Open a pull request's card
+  review     Review a change, return findings; waits for the person's confirmation
+  run        Advanced
+  runs       Inspect and control durable execution records
+  search     Search repositories, issues, code and users
+  shell      Open an interactive terminal in a workspace via the WebSocket terminal endpoint
+  ssh        Copy the SSH line for a branch
+  ssh-key    Manage your SSH keys
+  stack      Show the stack and background runs
+  todo       Answer the install's TODOs
+  wiki       Read and edit wiki pages
+  workspace  Create, open and run commands in workspaces
+
+Integrations:
+  completions  Generate shell completion script
+  mcp          Register as MCP server (add, doctor)
+  skills       Sync skill files to agents (add, list)
+
+Custom Global Options:
+  --audience <auto|human|agent>  Presentation audience; auto detects agent harnesses, CI, and terminals (default: auto)
+  --silent                       Suppress progress; retain the result and actionable failures
+  --ui <auto|tty|stream|plain>   Terminal renderer: tty draws in place, stream colours without cursor motion, plain prints bare lines; auto shows live human progress; agent, --silent, pipe and dumb-terminal policies take precedence (default: auto)
+
+Global Options:
+  --filter-output <keys>              Filter output by key paths (e.g. foo,bar.baz,a[0,3])
+  --format <toon|json|yaml|md|jsonl>  Output format
+  --full-output                       Show full output envelope
+  --help                              Show help
+  --llms, --llms-full                 Print LLM-readable manifest
+  --mcp                               Start as MCP stdio server
+  --schema                            Show JSON Schema for command
+  --token-count                       Print token count of output (instead of output)
+  --token-limit <n>                   Limit output to n tokens
+  --token-offset <n>                  Skip first n tokens of output
+  --update                            Update to latest version
+  --version                           Show version

@@ -1,0 +1,211 @@
+package compose
+
+import (
+	"context"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/smithersai/smithers/packages/backend/hostexec"
+	"github.com/smithersai/smithers/packages/backend/internal/machined"
+	"github.com/smithersai/smithers/packages/backend/internal/machined/wire"
+	"github.com/smithersai/smithers/packages/backend/internal/repohost"
+	"github.com/smithersai/smithers/packages/backend/internal/repohostffi"
+	"github.com/smithersai/smithers/packages/backend/internal/repohostserver"
+	"github.com/smithersai/smithers/packages/backend/repository"
+	"github.com/stretchr/testify/require"
+)
+
+// Real PostgreSQL, native repository engine/maintenance exclusion and mutually
+// authenticated host link. Only the guest is a scripted wire peer; this does
+// not certify capture/event ACKs, real-machine confinement or sleep.
+func TestMachineObjectsProductionBinding(t *testing.T) {
+	b := newRelayBoxes(t)
+	branch := b.box(b.repo, b.machines, "running", b.owner)
+	library := os.Getenv("SMITHERS_FFI_LIBRARY_PATH")
+	require.NotEmpty(t, library, "native repository library required")
+	native := repohostffi.New(library)
+	require.NoError(t, native.Load())
+	cfg := repohostserver.Config{StoragePath: t.TempDir(), AuthToken: "machine-objects-test"}
+	repoPath := cfg.RepoPath(b.login, "repo")
+	_, err := native.InitRepo(repoPath)
+	require.NoError(t, err)
+	store := filepath.Join(repoPath, ".jj", "repo", "store", "git")
+	git := func(args ...string) string {
+		t.Helper()
+		out, err := hostexec.Git(t.Context(), append([]string{"-c", "user.name=Test", "-c", "user.email=test@example.com", "-c", "core.hooksPath=/dev/null"}, args...)...).CombinedOutput()
+		require.NoError(t, err, "%s", out)
+		return strings.TrimSpace(string(out))
+	}
+	source := filepath.Join(t.TempDir(), "source")
+	git("init", "--initial-branch=main", source)
+	require.NoError(t, os.WriteFile(filepath.Join(source, "task.txt"), []byte("original\n"), 0600))
+	git("-C", source, "add", ".")
+	git("-C", source, "commit", "-m", "base")
+	base := git("-C", source, "rev-parse", "HEAD")
+	git("-C", store, "fetch", source, "main:refs/heads/main")
+	require.NoError(t, native.ImportGitRefs(repoPath))
+	require.NoError(t, os.WriteFile(filepath.Join(source, "task.txt"), []byte("captured member work\n"), 0600))
+	git("-C", source, "add", ".")
+	git("-C", source, "commit", "-m", "capture")
+	head := git("-C", source, "rev-parse", "HEAD")
+	git("-C", source, "update-ref", "refs/heads/guest-chosen", head)
+	bundle := filepath.Join(t.TempDir(), "snapshot.bundle")
+	git("-C", source, "bundle", "create", bundle, "--all")
+	data, err := os.ReadFile(bundle)
+	require.NoError(t, err)
+	server, err := repohostserver.NewWithFFI(cfg, native)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, server.Shutdown(context.Background())) })
+	client := repohost.NewLocalClient(http.NotFoundHandler(), cfg.AuthToken)
+	client.BindMachineRepository(server.WithMachineRepository)
+	registry := new(machined.Registry)
+	stop := bindMachineObjects(t.Context(), registry, b.pool, client)
+	t.Cleanup(stop)
+	_, peer := presenceTestLink(t, registry, branch)
+	require.NoError(t, peer.SetDeadline(time.Now().Add(10*time.Second)))
+	send := func(peer net.Conn, stream uint32) {
+		t.Helper()
+		for offset := 0; offset < len(data); {
+			n := min(65536, len(data)-offset)
+			require.NoError(t, wire.Write(peer, wire.Frame{Kind: wire.Objects, Stream: stream, Payload: append([]byte{1, 0}, data[offset:offset+n]...)}))
+			window, err := wire.Read(peer)
+			require.NoError(t, err)
+			require.Equal(t, wire.Frame{Kind: wire.Objects, Stream: stream, Payload: append([]byte{6}, wire.U32(uint32(n))...)}, window)
+			offset += n
+		}
+		require.NoError(t, wire.Write(peer, wire.Frame{Kind: wire.Objects, Stream: stream, Payload: []byte{2, 0}}))
+	}
+	// Final sleep capture transfers objects after the releasing transition.
+	_, err = b.pool.Exec(t.Context(), `UPDATE workspaces SET status='releasing' WHERE id=$1`, branch)
+	require.NoError(t, err)
+	send(peer, 8)
+	closed, err := wire.Read(peer)
+	require.NoError(t, err)
+	require.Equal(t, wire.Frame{Kind: wire.Objects, Stream: 8, Payload: []byte{7}}, closed)
+	require.Equal(t, head, git("-C", store, "rev-parse", "refs/smithers/branches/"+branch+"/incoming/"+head))
+	require.Equal(t, base, git("-C", store, "rev-parse", "refs/heads/main"))
+	require.Empty(t, git("-C", store, "for-each-ref", "--format=%(refname)", "refs/heads/guest-chosen"))
+	git("-C", store, "gc", "--prune=now")
+	require.Equal(t, "captured member work", git("-C", store, "show", head+":task.txt"))
+	var count int
+	require.NoError(t, b.pool.QueryRow(t.Context(), `SELECT count(*) FROM machine_event_receipts WHERE workspace_id=$1`, branch).Scan(&count))
+	require.Zero(t, count, "object stream close does not acknowledge a captured event")
+	row, err := b.GetWorkspace(t.Context(), branch)
+	require.NoError(t, err)
+	require.Empty(t, row.HeadCommitID, "capture publication is a separate verified transaction")
+	// The same production binding exports only this branch's authoritative head.
+	// The peer imports real Git bytes before granting the stream receipt.
+	git("-C", store, "update-ref", "refs/smithers/branches/"+branch+"/head", base)
+	exporter := machineObjectExporter(t.Context(), b.pool, client)
+	for _, id := range []string{"not-a-uuid", strings.ToUpper(branch), "11111111-1111-4111-8111-111111111111"} {
+		source, err := exporter(t.Context(), id, base, 0x80000005)
+		require.ErrorIs(t, err, machined.ErrUnauthorized)
+		require.Nil(t, source)
+	}
+	sourceSnapshot, err := exporter(t.Context(), branch, head, 0x80000005)
+	require.ErrorIs(t, err, machined.ErrNotReady, "a stored object is not authority for this branch")
+	require.Nil(t, sourceSnapshot)
+	wake := make(chan error, 1)
+	go func() { _, err := registry.WakeReconcile(t.Context(), branch, base); wake <- err }()
+	var received []byte
+	var incomingStream uint32
+	for {
+		frame, err := wire.Read(peer)
+		require.NoError(t, err)
+		require.Equal(t, wire.Objects, frame.Kind, "wake RPC preceded bundle import")
+		require.GreaterOrEqual(t, frame.Stream, uint32(0x80000000))
+		if incomingStream == 0 {
+			incomingStream = frame.Stream
+		}
+		require.Equal(t, incomingStream, frame.Stream)
+		if frame.Payload[0] == 2 {
+			break
+		}
+		require.Equal(t, byte(1), frame.Payload[0])
+		received = append(received, frame.Payload[2:]...)
+		require.NoError(t, wire.Write(peer, wire.Frame{Kind: wire.Objects, Stream: incomingStream, Payload: append([]byte{6}, wire.U32(uint32(len(frame.Payload)-2))...)}))
+	}
+	target := filepath.Join(t.TempDir(), "receiver")
+	git("init", "--bare", target)
+	wakeBundle := filepath.Join(t.TempDir(), "wake.bundle")
+	require.NoError(t, os.WriteFile(wakeBundle, received, 0600))
+	git("-C", target, "bundle", "verify", wakeBundle)
+	git("-C", target, "bundle", "unbundle", wakeBundle)
+	require.Equal(t, base, git("-C", target, "rev-parse", base+"^{commit}"))
+	require.Empty(t, git("-C", target, "for-each-ref"))
+	require.NoError(t, wire.Write(peer, wire.Frame{Kind: wire.Objects, Stream: incomingStream, Payload: []byte{7}}))
+	request, err := wire.Read(peer)
+	require.NoError(t, err)
+	requestID, method, _, err := request.Request()
+	require.NoError(t, err)
+	require.Equal(t, byte(wire.WakeReconcile), method)
+	require.NoError(t, wire.Write(peer, wire.Frame{Kind: wire.Control, Payload: wire.Union(2, wire.Field(1, wire.U32(requestID)), wire.Field(2, wire.Union(5, wire.Field(1, wire.Union(1)))))}))
+	require.NoError(t, <-wake)
+	require.Empty(t, git("-C", store, "for-each-ref", "refs/smithers/xfer"))
+	require.Equal(t, base, git("-C", store, "rev-parse", "refs/heads/main"))
+	file, err := os.Open(bundle)
+	require.NoError(t, err)
+	defer file.Close()
+	importer := machineObjectImporter(t.Context(), b.pool, client)
+	for _, id := range []string{"not-a-uuid", strings.ToUpper(branch), "11111111-1111-4111-8111-111111111111"} {
+		require.ErrorIs(t, importer(t.Context(), id, file), machined.ErrUnauthorized)
+	}
+	for _, change := range []struct {
+		sql     string
+		restore string
+	}{
+		{`UPDATE workspaces SET vm_id='' WHERE id=$1`, `UPDATE workspaces SET vm_id='restored-machine' WHERE id=$1`},
+		{`UPDATE workspaces SET status='failed' WHERE id=$1`, `UPDATE workspaces SET status='running' WHERE id=$1`},
+	} {
+		b.exec(change.sql, branch)
+		require.ErrorIs(t, importer(t.Context(), branch, file), machined.ErrUnauthorized)
+		snapshot, err := exporter(t.Context(), branch, base, 0x80000005)
+		require.ErrorIs(t, err, machined.ErrUnauthorized)
+		require.Nil(t, snapshot)
+		b.exec(change.restore, branch)
+	}
+	require.Error(t, machineObjectImporter(t.Context(), b.pool, &repohost.Client{})(t.Context(), branch, file), "an unbound repository port cannot certify an import")
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	require.ErrorIs(t, importer(ctx, branch, file), context.Canceled)
+	// A new process may reconnect the same branch before ready. Stopping this
+	// composition also disables the importer retained by an existing link.
+	_, peer2 := presenceTestLink(t, registry, branch)
+	require.NoError(t, peer2.SetDeadline(time.Now().Add(10*time.Second)))
+	stop()
+	send(peer2, 9)
+	_, err = wire.Read(peer2)
+	require.Error(t, err, "shutdown must not certify stored bytes on an old link")
+	require.Equal(t, base, git("-C", store, "rev-parse", "refs/heads/main"))
+}
+
+func TestInstallMachineObjectsResolveHostBranch(t *testing.T) {
+	f := presenceInstall(t)
+	client := repository.NewRemoteClient(nil, "test")
+	_, err := f.pool.Exec(t.Context(), `UPDATE workspaces SET vm_id='fixture-machine' WHERE id=$1`, f.row.ID)
+	require.NoError(t, err)
+	objects := machineObjects(f.pool, client)
+	// A remote client cannot silently grant local filesystem access.
+	_, err = objects.VerifyCapture(t.Context(), f.row.ID, wire.Captured{})
+	require.Error(t, err)
+	visits := 0
+	client.BindMachineRepository(func(ctx context.Context, owner, repo string, visit func(string) error) error {
+		require.NotEmpty(t, owner)
+		require.NotEmpty(t, repo)
+		visits++
+		return visit(t.TempDir())
+	})
+	_, err = objects.VerifyCapture(t.Context(), f.row.ID, wire.Captured{Head: "--all", Tree: strings.Repeat("a", 40), Base: strings.Repeat("b", 40)})
+	require.ErrorIs(t, err, wire.BadValue)
+	require.Equal(t, 1, visits)
+	_, err = objects.VerifyCapture(t.Context(), "11111111-1111-4111-8111-111111111111", wire.Captured{})
+	require.Error(t, err)
+	require.Equal(t, 1, visits, "unknown branches cannot select a host repository")
+	_, err = machineObjects(nil, client).VerifyCapture(t.Context(), f.row.ID, wire.Captured{})
+	require.ErrorIs(t, err, machined.ErrNotReady)
+}

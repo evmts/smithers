@@ -26,7 +26,7 @@ var contentsOperations = []string{
 }
 
 // publishedAPIPath is the product API document every typed client is generated
-// from; scripts/openapi-bundle.mjs bundles it from docs/api/openapi/*.yaml.
+// from; packages/backend/scripts/openapi-bundle.mjs bundles it from docs/api/openapi/*.yaml.
 const publishedAPIPath = "../../../../docs/api/openapi.yaml"
 
 const contentsSurfaceCommit = "0123456789012345678901234567890123456789"

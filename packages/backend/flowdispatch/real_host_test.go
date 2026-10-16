@@ -1,17 +1,19 @@
 package flowdispatch
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -27,10 +29,10 @@ import (
 )
 
 // The project flow the box's coding host serves from the fixture repository.
-// Its one model turn is answered by distribution/fake-coding-provider.mjs, the
-// same scripted provider the image acceptance uses: it writes and reads back
-// flow-proof.txt. Its real local HTTP service also answers the gateway
-// evaluator's completion questions, so neither request needs a live model/key.
+// Its model turn reads README.md and answers with its first line. The turn and
+// the gateway evaluator's questions are a real model's and Jev's answers,
+// recorded once and replayed by @smthrs/testing's model server
+// (startModelServer), so a run needs no live model or key.
 const realHostFlow = `import { Action, Flow } from "@smthrs/flow"
 import { Schema } from "effect"
 
@@ -48,21 +50,21 @@ const DispatchTurn = Action.make("coding/dispatch-turn", {
 
 export default Flow.make("proof", {
   description: "Write the proof file.",
-  capabilities: ["fs:read:**", "fs:write:**"],
-  effects: { reads: ["**"], writes: ["**"], mode: "expected", onConflict: "serialize", tier: "irreversible" },
+  capabilities: ["fs:read:**"],
+  effects: { reads: ["**"], writes: [], mode: "expected", onConflict: "serialize", tier: "irreversible" },
   payload: {},
   success: Schema.Struct({ messages: Schema.Array(Schema.String) }),
   error: Schema.Unknown,
   body: () => DispatchTurn.call({
     turnId: "proof",
-    prompt: "Write flow-proof.txt and read it back.",
+    prompt: "Read README.md, then finish with its first line, exactly, as your only message.",
     history: [],
     role: "coding/implement"
   })
 })
 `
 
-// A file flow in the one shape every repository flow has (flows/<name>/flow.ts
+// A file flow in the one shape every repository flow has (.smithers/flows/<name>/flow.ts
 // with Flow.make): it imports @smthrs/flow, @smthrs/plan and effect from the
 // repository's own node_modules, not from the host's bundle (#2197).
 const realHostFileFlow = `import { Flow } from "@smthrs/flow"
@@ -133,13 +135,13 @@ func startCodingHost(t *testing.T, fixture realHostFixture, port int, generation
 	command.Env = append(os.Environ(),
 		"SMITHERS_API_KEY=fixture",
 		"SMITHERS_GATEWAY_ID=11111111-1111-4111-8111-111111111111",
-		"SMITHERS_CODING_IMPLEMENT_MODEL=openai:scripted",
-		"OPENAI_API_KEY=scripted-provider-key",
+		"SMITHERS_CODING_IMPLEMENT_MODEL=openai:gpt-5-mini",
+		"OPENAI_API_KEY=replayed-provider-key",
 		"SMITHERS_OPENAI_AUTH=api-key",
 		"SMITHERS_ACCOUNT_POOL_URL=",
 		// Exercise the real gateway Evaluator transport against the local
-		// scripted dependency, never a live gateway or subscription account.
-		"AI_GATEWAY_API_KEY=scripted-evaluator-key",
+		// model server, never a live gateway or subscription account.
+		"AI_GATEWAY_API_KEY=replayed-evaluator-key",
 		"SMITHERS_EVALUATOR_BASE_URL="+fixture.provider+"/v4/ai/evaluation-model",
 		"SMITHERS_MODEL_PROXY_URL="+fixture.provider,
 		"SMITHERS_MODEL_PROXY_PROVIDERS=anthropic",
@@ -244,55 +246,65 @@ func stopAcceptanceWorker(t *testing.T, cancel context.CancelFunc, done <-chan e
 	}
 }
 
-// startScriptedProvider serves the scripted model provider on a free loopback
-// port and returns its origin.
-func startScriptedProvider(t *testing.T, node, repositoryRoot string) string {
+// realHostModelFixture holds the real model turns and Jev judgments the proof
+// flow's run makes, recorded once through @smthrs/testing's model server.
+const realHostModelFixture = "testdata/real-host-model.json"
+
+// startModelServer serves the recorded model on a free loopback port and
+// returns its origin. With SMITHERS_RECORD_MODEL=1 it records the misses
+// against the AI Gateway as openai/gpt-5-mini, with AI_GATEWAY_API_KEY, which
+// never reaches the fixture; otherwise it replays and a miss is an HTTP 501.
+// The host's prompts name the test's temporary directory, which differs on
+// every run, and its built-in flows' policy root, whose digest covers the
+// host artifact and so changes with any host source; both are normalized out
+// of every recorded request. A change to the host's teaching itself is a
+// miss: re-record with SMITHERS_RECORD_MODEL=1.
+func startModelServer(t *testing.T, node, repositoryRoot, testDirectory string) string {
 	t.Helper()
-	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	fixture, err := filepath.Abs(realHostModelFixture)
 	require.NoError(t, err)
-	port := listener.Addr().(*net.TCPAddr).Port
-	require.NoError(t, listener.Close())
+	arguments := []string{filepath.Join(repositoryRoot, "packages", "testing", "bin", "smthrs-model-server.mjs"),
+		"--fixture", fixture, "--normalize", regexp.QuoteMeta(testDirectory), "--normalize", `builtin-flows/[0-9a-f]{64}`}
+	if os.Getenv("SMITHERS_RECORD_MODEL") == "1" {
+		arguments = append(arguments, "--record", "--upstream", "https://ai-gateway.vercel.sh",
+			"--upstream-model", "openai/gpt-5-mini", "--key-env", "AI_GATEWAY_API_KEY")
+	}
 	logs := &processLog{}
-	command := exec.Command(node, filepath.Join(repositoryRoot, "distribution", "fake-coding-provider.mjs"))
-	command.Env = append(os.Environ(), "PORT="+strconv.Itoa(port), "HOST=127.0.0.1")
-	command.Stdout = logs
+	command := exec.Command(node, arguments...)
+	stdout, err := command.StdoutPipe()
+	require.NoError(t, err)
 	command.Stderr = logs
 	require.NoError(t, command.Start())
 	t.Cleanup(func() {
-		_ = command.Process.Kill()
+		// SIGTERM, so a recording run publishes its fixture before it exits.
+		_ = command.Process.Signal(syscall.SIGTERM)
 		_ = command.Wait()
-		// Retain only the bounded method/path trace on successful runs too, so
-		// acceptance receipts prove both the model and evaluator were called.
-		// Never include request bodies, headers, or credentials in this trace.
-		trace := make([]string, 0, 32)
-		for _, line := range strings.Split(logs.String(), "\n") {
-			if len(trace) == cap(trace) {
-				break
-			}
-			if strings.HasPrefix(line, "provider ") {
-				trace = append(trace, line)
-			}
+		if t.Failed() {
+			t.Logf("model server log:\n%s", logs.String())
 		}
-		t.Logf("scripted provider request trace:\n%s", strings.Join(trace, "\n"))
 	})
-	origin := "http://127.0.0.1:" + strconv.Itoa(port)
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		if response, err := http.Get(origin + "/health"); err == nil {
-			_ = response.Body.Close()
-			if response.StatusCode == http.StatusOK {
-				return origin
-			}
+	listening := make(chan string, 1)
+	go func() {
+		line, _ := bufio.NewReader(stdout).ReadString('\n')
+		listening <- line
+		_, _ = io.Copy(logs, stdout)
+	}()
+	select {
+	case line := <-listening:
+		var server struct {
+			URL string `json:"url"`
 		}
-		time.Sleep(50 * time.Millisecond)
+		require.NoError(t, json.Unmarshal([]byte(line), &server), "model server did not start\n%s", logs.String())
+		return server.URL
+	case <-time.After(30 * time.Second):
+		t.Fatalf("model server did not start\n%s", logs.String())
+		return ""
 	}
-	t.Fatalf("scripted provider did not start\n%s", logs.String())
-	return ""
 }
 
 // realHostFixtureFor builds the packaged coding host from source, a JJ
-// repository whose project flow the host serves, and the scripted provider
-// that answers the flow's model turn.
+// repository whose project flow the host serves, and the model server that
+// replays the flow's model turn.
 func realHostFixtureFor(t *testing.T) realHostFixture {
 	t.Helper()
 	exporter := os.Getenv("SMITHERS_WORKSPACE_JJ_EXPORT_BINARY")
@@ -310,10 +322,10 @@ func realHostFixtureFor(t *testing.T) realHostFixture {
 	require.NoError(t, err)
 
 	root := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(root, "flows", "proof"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(root, "flows", "proof", "flow.ts"), []byte(realHostFlow), 0o644))
-	require.NoError(t, os.MkdirAll(filepath.Join(root, "flows", "echo"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(root, "flows", "echo", "flow.ts"), []byte(realHostFileFlow), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".smithers", "flows", "proof"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".smithers", "flows", "proof", "flow.ts"), []byte(realHostFlow), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".smithers", "flows", "echo"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".smithers", "flows", "echo", "flow.ts"), []byte(realHostFileFlow), 0o644))
 	require.NoError(t, os.Symlink(filepath.Join(repositoryRoot, "node_modules"), filepath.Join(root, "node_modules")))
 	require.NoError(t, os.WriteFile(filepath.Join(root, ".gitignore"), []byte("node_modules\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "README.md"), []byte("# Fixture\n"), 0o644))
@@ -337,7 +349,7 @@ func realHostFixtureFor(t *testing.T) realHostFixture {
 	return realHostFixture{
 		node: node, artifact: artifact, digest: hex.EncodeToString(digestBytes[:]), root: root,
 		stateDir: filepath.Join(t.TempDir(), "state"), revision: revision, exporter: exporter, jj: jj,
-		provider: startScriptedProvider(t, node, repositoryRoot),
+		provider: startModelServer(t, node, repositoryRoot, filepath.Dir(root)),
 	}
 }
 
@@ -444,9 +456,9 @@ func TestRealBundledHostAdmissionReconnectCompletionAndCancellation(t *testing.T
 	require.NoError(t, json.Unmarshal(completed.TerminalReceipt, &terminal))
 	require.NotNil(t, terminal.Run)
 	require.Equal(t, "completed", terminal.Run.Status)
-	proof, err := os.ReadFile(filepath.Join(fixture.root, "flow-proof.txt"))
-	require.NoError(t, err, "the run must have written through the box's host")
-	require.Equal(t, "The coding Flow wrote this file through the packaged host.\n", string(proof))
+	// Only the host's read put README.md's first line in the model's context.
+	require.NotNil(t, terminal.Run.FinalOutput, "terminal receipt: %s", completed.TerminalReceipt)
+	require.Contains(t, *terminal.Run.FinalOutput, "# Fixture")
 	page, err := store.Replay(context.Background(), request.Scope, 0, 1000)
 	require.NoError(t, err)
 	require.NotEmpty(t, page.Events)

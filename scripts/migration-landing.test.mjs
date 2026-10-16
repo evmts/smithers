@@ -109,8 +109,8 @@ for (const vcs of ['git', 'jj']) for (const defect of ['duplicate', 'gap', 'drif
     writeFileSync(join(tools, 'jj'), `#!/bin/sh\ncase "$*" in\n *conflicts*) exit 0;;\n 'diff --summary') exit 0;;\n 'git push '*) echo PUSH >> '${log}';;\n 'git fetch '*) exit 0;;\n log*) echo 0123456789abcdef;;\n *) echo unexpected-jj-command >&2; exit 1;;\nesac\n`, { mode: 0o755 })
    }
    if (['duplicate', 'gap'].includes(defect)) pending(dir, defect === 'gap' ? '0003' : '0001', 'installed')
-   if (defect === 'drift missing') rmSync(join(dir, 'scripts/check-sqlc-drift.sh'))
-   if (defect === 'target missing') writeFileSync(join(dir, 'scripts/PACKAGE.ts'), 'import { Smithers as S } from "@smthrs/targets"; export const Package = S.Package({targets:{conflictMarkers:S.Shell.Diff({shell:"true",changes:[],sandbox:"none"})}})\n')
+   if (defect === 'drift missing') rmSync(join(dir, 'packages/backend/scripts/check-sqlc-drift.sh'))
+   if (defect === 'target missing') writeFileSync(join(dir, 'packages/repo-targets/PACKAGE.ts'), 'import { Smithers as S } from "@smthrs/targets"; export const Package = S.Package({targets:{conflictMarkers:S.Shell.Diff({shell:"true",changes:[],sandbox:"none"})}})\n')
    if (defect === 'target failure') writeFileSync(join(dir, 'PACKAGE.ts'), readFileSync(join(dir, 'PACKAGE.ts'), 'utf8').replace('shell:"true"', 'shell:"false"'))
    if (defect === 'drift failure') writeFileSync(join(dir, 'packages/backend/internal/db/models.go'), '// stale generated models\n')
    const result = invoke(dir, 'node', ['scripts/commit.mjs', '--push', '--test', 'true'], { PATH: `${tools}:${process.env.PATH}` })
@@ -120,7 +120,7 @@ for (const vcs of ['git', 'jj']) for (const defect of ['duplicate', 'gap', 'drif
     assert.equal(result.status, 0, result.stdout + result.stderr)
     assert.equal(commands.filter(x => x === 'PUSH').length, 1)
     assert.equal(commands[1], 'go test -count=1 -run ^TestSQLCRegenerationIsClean$ -v packages/backend/internal/db/sqlc_regeneration_test.go')
-    assert.equal(commands.at(-2), 'smthrs lint //:driftCi //:targetIndex //:ci //scripts:trackedHygiene //scripts:conflictMarkers')
+    assert.equal(commands.at(-2), 'smthrs lint //:driftCi //:targetIndex //:ci //packages/repo-targets:trackedHygiene //packages/repo-targets:conflictMarkers')
     assert.equal(commands.at(-1), 'PUSH')
    } else {
     assert.notEqual(result.status, 0);assert.match(result.stdout + result.stderr, defect === 'drift missing' ? /drift gate is unavailable/ : defect === 'drift failure' ? /differs|no committed sqlc/ : defect.startsWith('target ') ? /targets_failed|target.*found|target.*unknown|pattern.*match/i : /duplicate or gap/);assert.equal(commands.filter(x => x === 'PUSH').length, 0)

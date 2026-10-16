@@ -41,6 +41,12 @@ test("relative links and anchors resolve", () => {
   }
 })
 
+// M-49: a repository's flows live under `.smithers/flows/`; a root `flows/` is never read.
+test("pages place repository flows under .smithers/flows/", () => {
+  expect(pages.get("flows.md")).toContain("`.smithers/flows/<name>/flow.ts`")
+  for (const markdown of pages.values()) expect(markdown).not.toMatch(/(?<![\w.\/-])flows\/</)
+})
+
 test("page prose uses product words", () => {
   // C-UI-02 terms, from spec.md §14.6b.
   const terms = ["workflow", "thread", "task", "lane", "box", "workspace", "mythical", "sandbox", "VM", "seat", "profile", "Jev", "forge"]

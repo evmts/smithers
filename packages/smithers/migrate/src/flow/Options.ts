@@ -18,6 +18,7 @@ import * as Schema from "effect/Schema"
 import { isAbsolute, normalize, parse, sep } from "node:path"
 import * as Fs from "../internal/Fs.ts"
 import { make, type MigrateError } from "../MigrateError.ts"
+import * as Units from "../Units.ts"
 
 /**
  * What a run is allowed to do to the project.
@@ -317,12 +318,12 @@ export const defaultReportDir = ".smithers-migrate"
 
 /**
  * The directory the migrated flows are written to, relative to the project
- * root. It follows the registry's own project source layout.
+ * root: `Units.defaultFlowsDir`, the registry's project flows directory.
  *
  * @category models
  * @since 1.0.0-rc.0
  */
-export const defaultFlowsDir = "flows"
+export const defaultFlowsDir: string = Units.defaultFlowsDir
 
 /**
  * How many times a failing unit is handed back to the agent with the failing

@@ -14,6 +14,7 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync
@@ -88,17 +89,20 @@ const make = (name: string) => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), `fault-3367-${name}-`)))
   roots.push(root)
   cpSync(fixture, root, { recursive: true })
+  // The fixture keeps its flows at `flows/`; a project keeps them at `.smithers/flows/`.
+  mkdirSync(join(root, ".smithers"))
+  renameSync(join(root, ".smithers", "flows"), join(root, ".smithers", "flows"))
   json(join(root, "runtime.json"), { node: process.version, platform: process.platform, arch: process.arch })
   const keep = new Set([
     "burndown",
     ...(name === "disk" ? ["disk"] : []),
     ...(name === "identity" ? ["reuse"] : name.startsWith("recover") ? ["recover"] : name === "source" ? ["live"] : [])
   ])
-  for (const name of readdirSync(join(root, "flows"))) {
-    if (!keep.has(name)) rmSync(join(root, "flows", name), { recursive: true })
+  for (const name of readdirSync(join(root, ".smithers", "flows"))) {
+    if (!keep.has(name)) rmSync(join(root, ".smithers", "flows", name), { recursive: true })
   }
-  copyOwner(root, "host.ts", join(root, "flows", "burndown", "host.ts"))
-  if (name.startsWith("recover")) copyOwner(root, "identity.ts", join(root, "flows", "recover", "identity.ts"))
+  copyOwner(root, "host.ts", join(root, ".smithers", "flows", "burndown", "host.ts"))
+  if (name.startsWith("recover")) copyOwner(root, "identity.ts", join(root, ".smithers", "flows", "recover", "identity.ts"))
   mkdirSync(join(root, ".flows"))
   mkdirSync(join(root, "node_modules"))
   for (const name of readdirSync(modules).filter((name) => !name.startsWith("."))) {
@@ -568,7 +572,7 @@ describe("host stall", () => {
 describe("slow body load", () => {
   it("#3359 a 31-second real module load retries catalog admission and completes N=2", async () => {
     const root = make("load")
-    const source = join(root, "flows", "burndown", "flow.ts")
+    const source = join(root, ".smithers", "flows", "burndown", "flow.ts")
     const evaluations = JSON.stringify(join(root, "load-evaluations.jsonl"))
     writeFileSync(
       source,
@@ -796,7 +800,7 @@ describe("generic execute identity guard control", () => {
     await reap(root)
     integrity(root, 2, true, true, true)
     assertRecovery(receipt(root, 2))
-    const source = join(root, "flows", "reuse", "flow.ts")
+    const source = join(root, ".smithers", "flows", "reuse", "flow.ts")
     writeFileSync(source, readFileSync(source, "utf8").replace("capabilities: [\"fs:read:**\"]", "capabilities: []"))
     const second = launch(root, 1, 2, "reuse")
     await completed(second, 1)
@@ -823,7 +827,7 @@ describe("issue-sweep terminal identity recovery policy through public CLI", () 
     const root = make("recover-terminal")
     await completed(launch(root, 1, 2, "recover"), 0)
     const before = records(root)
-    const source = join(root, "flows", "recover", "flow.ts")
+    const source = join(root, ".smithers", "flows", "recover", "flow.ts")
     writeFileSync(source, readFileSync(source, "utf8").replace("capabilities: [\"fs:read:**\"]", "capabilities: []"))
     await completed(launch(root, 1, 2, "recover"), 0)
     await reap(root)
@@ -864,7 +868,7 @@ it("#3320 #3367 live source edit retains admitted bytes for later durable childr
   )
   expect(records(root).some((row) => row.index === "2")).toBe(false)
   for (const name of ["live", "burndown"]) {
-    const source = join(root, "flows", name, "flow.ts")
+    const source = join(root, ".smithers", "flows", name, "flow.ts")
     const old = readFileSync(source, "utf8")
     const updated = old.replaceAll("fault-3367/v1", "unapproved-version").replace("Launch later", "Edited later")
     expect(updated).not.toBe(old)
@@ -895,7 +899,8 @@ it.skipIf(!["darwin", "linux"].includes(process.platform))(
     // Measure the external program separately; it is not the authored source closure.
     for (const name of ["disk-guest.mjs", "flows/disk/probe.ts"]) {
       const original = readFileSync(join(fixture, name))
-      expect(readFileSync(join(root, name)).equals(original)).toBe(true)
+      const copied = name.startsWith("flows/") ? join(root, ".smithers", name) : join(root, name)
+      expect(readFileSync(copied).equals(original)).toBe(true)
       appendFileSync(
         join(root, "source-receipts.jsonl"),
         JSON.stringify({
@@ -906,7 +911,7 @@ it.skipIf(!["darwin", "linux"].includes(process.platform))(
       )
     }
     for (const name of ["disk.ts", "host.ts", "msb-nice.sh"]) {
-      copyOwner(root, name, join(root, "flows", "disk", name))
+      copyOwner(root, name, join(root, ".smithers", "flows", "disk", name))
     }
     const require = createRequire(new URL("../../../../flows/package.json", import.meta.url))
     const sdkEntry = require.resolve("microsandbox")
@@ -936,7 +941,7 @@ it.skipIf(!["darwin", "linux"].includes(process.platform))(
       sdkEntry,
       binary: join(platform, "bin", "msb"),
       library: join(platform, "lib", library!),
-      wrapper: join(root, "flows", "disk", "msb-nice.sh")
+      wrapper: join(root, ".smithers", "flows", "disk", "msb-nice.sh")
     }
     json(join(root, "disk.json"), config)
     let mounted = false

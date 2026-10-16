@@ -26,7 +26,7 @@ const fixture = () => {
   return { root, profile }
 }
 // The character evals compose through the same RoleProfile.compose
-// (evals/agent/character/profile.ts), so matching it here is matching them.
+// (packages/smithers/agent/regression/character/profile.ts), so matching it here is matching them.
 test("production uses the shared eval composition and its exact digest", async () => {
   const { root } = fixture()
   const expected = Profile.compose({

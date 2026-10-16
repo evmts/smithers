@@ -14,7 +14,7 @@ import (
 // invokeWorkflowRequest is the JSON body for POST /api/repos/{owner}/{repo}/invoke.
 type invokeWorkflowRequest struct {
 	// Flow is the file flow to run: its name (`echo`) or path
-	// (`flows/echo/flow.ts`).
+	// (`.smithers/flows/echo/flow.ts`).
 	Flow string `json:"flow"`
 	// Input is the flow's payload, recorded as the run's dispatch_inputs.
 	Input map[string]interface{} `json:"input,omitempty"`

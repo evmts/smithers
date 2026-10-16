@@ -32,6 +32,6 @@ describe("examples", () => {
       expect(plan.markdown).toContain(`| Project | ${root} |`)
       expect(plan.markdown).toContain("| Mode | plan |")
       expect(plan.markdown).toContain("| package.json | 1 | smithers up | cli-verb |")
-      expect(plan.markdown).toContain("- `flows/simple-workflow/flow.ts`")
+      expect(plan.markdown).toContain("- `.smithers/flows/simple-workflow/flow.ts`")
     }))
 })

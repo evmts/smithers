@@ -1,0 +1,196 @@
+{
+  "name": "@smthrs/plugin",
+  "type": "module",
+  "version": "1.0.0-rc.12",
+  "license": "MIT",
+  "smthrs": {
+    "group": "agent"
+  },
+  "description": "Vite-style typed plugin kernel for flows: hooks, resolution, and config execution",
+  "homepage": "https://github.com/smithersai/smithers",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/smithers/agent/plugin"
+  },
+  "bugs": {
+    "url": "https://github.com/smithersai/smithers/issues"
+  },
+  "tags": [
+    "typescript",
+    "effect",
+    "plugin",
+    "hooks"
+  ],
+  "keywords": [
+    "typescript",
+    "effect",
+    "plugin",
+    "hooks"
+  ],
+  "engines": {
+    "node": ">=26.4.0"
+  },
+  "sideEffects": [],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null,
+    "./*/index": null,
+    "./Config": "./src/Config.ts",
+    "./Hooks": "./src/Hooks.ts",
+    "./Kernel": "./src/Kernel.ts",
+    "./Plugin": "./src/Plugin.ts",
+    "./PluginError": "./src/PluginError.ts",
+    "./Plugins": "./src/Plugins.ts",
+    "./Resolve": "./src/Resolve.ts",
+    "./index": "./src/index.ts"
+  },
+  "files": [
+    "src/**/*.ts",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/package.json",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next",
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./internal/*": null,
+      "./*/index": null,
+      "./Config": {
+        "import": {
+          "types": "./dist/esm/Config.d.ts",
+          "default": "./dist/esm/Config.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Config.d.ts",
+          "default": "./dist/cjs/Config.js"
+        }
+      },
+      "./Hooks": {
+        "import": {
+          "types": "./dist/esm/Hooks.d.ts",
+          "default": "./dist/esm/Hooks.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Hooks.d.ts",
+          "default": "./dist/cjs/Hooks.js"
+        }
+      },
+      "./Kernel": {
+        "import": {
+          "types": "./dist/esm/Kernel.d.ts",
+          "default": "./dist/esm/Kernel.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Kernel.d.ts",
+          "default": "./dist/cjs/Kernel.js"
+        }
+      },
+      "./Plugin": {
+        "import": {
+          "types": "./dist/esm/Plugin.d.ts",
+          "default": "./dist/esm/Plugin.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Plugin.d.ts",
+          "default": "./dist/cjs/Plugin.js"
+        }
+      },
+      "./PluginError": {
+        "import": {
+          "types": "./dist/esm/PluginError.d.ts",
+          "default": "./dist/esm/PluginError.js"
+        },
+        "require": {
+          "types": "./dist/cjs/PluginError.d.ts",
+          "default": "./dist/cjs/PluginError.js"
+        }
+      },
+      "./Plugins": {
+        "import": {
+          "types": "./dist/esm/Plugins.d.ts",
+          "default": "./dist/esm/Plugins.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Plugins.d.ts",
+          "default": "./dist/cjs/Plugins.js"
+        }
+      },
+      "./Resolve": {
+        "import": {
+          "types": "./dist/esm/Resolve.d.ts",
+          "default": "./dist/esm/Resolve.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Resolve.d.ts",
+          "default": "./dist/cjs/Resolve.js"
+        }
+      },
+      "./index": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint src examples --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "circular": "node scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "vitest --coverage"
+  },
+  "dependencies": {
+    "@smthrs/canonical": "1.0.0-rc.12",
+    "@smthrs/flow": "1.0.0-rc.12"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@effect/vitest": "4.0.4",
+    "@eslint/js": "9.39.5",
+    "@types/node": "26.4.1",
+    "@vitest/coverage-v8": "5.0.0",
+    "dprint": "0.57.1",
+    "effect": "4.0.4",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "madge": "8.0.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0"
+  },
+  "peerDependencies": {
+    "effect": "^4.0.4"
+  }
+}

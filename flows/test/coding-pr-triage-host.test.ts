@@ -30,13 +30,13 @@ test(
     const temporary = await mkdtemp(join(tmpdir(), "coding-pr-triage-host-"))
     t.after(() => rm(temporary, { recursive: true, force: true }))
     const repositoryPath = join(temporary, "repository")
-    await mkdir(join(repositoryPath, "flows"), { recursive: true })
+    await mkdir(join(repositoryPath, ".smithers", "flows"), { recursive: true })
     const context = JSON.stringify({ pullRequest: { number: 17, title: "Review this change" }, patch: "+return 17" })
     const { registry, prompt, seat } = await Effect.runPromise(
       Effect.gen(function*() {
         const builtins = yield* provisionBuiltins(join(temporary, "state"), "a".repeat(64))
         const project = yield* Registry.make({
-          sources: [{ root: join(repositoryPath, "flows"), source: "project", naming: "path" }]
+          sources: [{ root: join(repositoryPath, ".smithers", "flows"), source: "project", naming: "path" }]
         }).pipe(Effect.provide(Discovery.layer))
         const registry = bindRepositoryRegistry(project, builtins.registry, "a".repeat(64), systemFlows)
         const descriptor = yield* registry.get("pr-triage")

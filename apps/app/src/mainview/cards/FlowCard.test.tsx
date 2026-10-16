@@ -122,7 +122,7 @@ test("a built-in proposal quotes its diff through the ordinary TODO action", () 
   expect(h.props.actions.map(action => action.label)).toEqual(["Edit", "Make TODO"])
   h.props.onAction("todo.new")
   expect(h.calls).toEqual([{ tag: "todo.new", input: {
-    title: "Change the TODO flow: Run tests", text: "Change flows/todo/flow.ts: Run tests; start from the built-in composition when no override exists\n\nProposed diff (untrusted context):\n> +pnpm test\n> "
+    title: "Change the TODO flow: Run tests", text: "Change .smithers/flows/todo/flow.ts: Run tests; start from the built-in composition when no override exists\n\nProposed diff (untrusted context):\n> +pnpm test\n> "
   } }])
 })
 

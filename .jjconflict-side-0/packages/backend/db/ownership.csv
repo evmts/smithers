@@ -1,0 +1,284 @@
+table,target_owner,status
+users,product,product baseline
+organizations,product,product baseline
+owner_namespaces,product,product baseline
+auth_sessions,product,product baseline
+auth_nonces,product,product baseline
+oauth_states,product,product baseline
+linear_oauth_setups,product,product baseline
+email_addresses,product,product baseline
+email_verification_tokens,product,product baseline
+oauth_accounts,product,product baseline
+ssh_keys,product,product baseline
+access_tokens,product,product baseline
+user_ai_keys,product,product baseline
+repositories,product,product baseline
+repository_storage_operations,product,product migration 0007; neutral repository recovery journal
+legacy_mutation_fence_control,private,Plue private migration 000001; dropped by Plue private migration 000023
+repo_storage_sets,private,Plue private migration 000001; dropped by Plue private migration 000023
+repo_storage_nodes,private,Plue private migration 000001; dropped by Plue private migration 000023
+repo_replicas,private,Plue private migration 000001; dropped by Plue private migration 000023
+repo_write_locks,private,Plue private migration 000001; dropped by Plue private migration 000023
+repo_replication_jobs,private,Plue private migration 000001; dropped by Plue private migration 000023
+deploy_keys,product,product baseline
+lfs_objects,product,product baseline
+lfs_upload_reservations,product,product baseline
+storage_legacy_capability_horizons,private,Plue private migration 000001
+storage_deletion_queue,private,Plue private migration 000001
+lfs_locks,product,product baseline
+lfs_meta_objects,product,product baseline
+code_search_documents,product,product baseline
+search_rate_limits,product,product baseline
+org_members,product,product baseline
+teams,product,product baseline
+team_members,product,product baseline
+team_repos,product,product baseline
+collaborators,product,product baseline
+milestones,product,product baseline
+issues,product,product baseline
+issue_comments,product,product baseline
+labels,product,product baseline
+issue_labels,product,product baseline
+issue_assignees,product,product baseline
+issue_state_journals,product,product baseline
+issue_state_facts,product,product baseline
+issue_events,product,product baseline
+issue_dependencies,product,product baseline
+pinned_issues,product,product baseline
+landing_requests,product,product baseline
+landing_tasks,product,product baseline
+landing_request_changes,product,product baseline
+landing_review_requests,product,product baseline
+landing_request_reviews,product,product baseline
+landing_request_comments,product,product baseline
+stacks,product,product baseline
+stack_changes,product,product baseline
+bookmarks,product,product baseline
+changes,product,product baseline
+change_revisions,product,product baseline
+issue_change_links,product,product baseline
+analyzer_runs,product,product baseline
+findings,product,product baseline
+finding_feedback,product,product baseline
+change_walkthroughs,product,product baseline
+conflicts,product,product baseline
+protected_bookmarks,product,product baseline
+jj_operations,product,product baseline
+reactions,product,product baseline
+mentions,product,product baseline
+workflow_definitions,product,product baseline
+workflow_triggers,product,product baseline
+workflow_schedule_specs,product,product baseline
+workflow_runs,product,product baseline
+workflow_log_budget_initializations,product,product baseline
+workflow_sandbox_claims,product,product migration 0091 (adopts Plue private migration 000001)
+workflow_steps,product,product baseline
+workflow_tasks,product,product baseline
+workflow_logs,product,product baseline
+workflow_run_logs,product,product baseline
+github_proxy_audit_log,private,Plue private migration 000001; dropped by Plue private migration 000023
+commit_statuses,product,product baseline
+runner_pool,private,Plue private migration 000001; dropped by Plue private migration 000024
+agent_sessions,product,product baseline
+agent_messages,product,product baseline
+agent_parts,product,product baseline
+notifications,product,product baseline
+notification_journals,product,product baseline
+notification_facts,product,product baseline
+user_notification_preferences,product,product baseline
+user_devices,product,product baseline
+stars,product,product baseline
+watches,product,product baseline
+webhooks,product,product baseline
+webhook_deliveries,product,product baseline
+github_app_installations,product,product baseline
+github_app_installation_repositories,product,product baseline
+github_webhook_jobs,product,product baseline
+repo_connections,product,product baseline
+import_jobs,product,product baseline
+wiki_pages,product,product baseline
+workspaces,product,product baseline
+workflow_run_coding_hosts,product,Canonical coding Flow receipt for both self-host and Plue
+workspace_snapshots,product,product baseline
+workspace_sessions,product,product baseline
+workspace_shares,product,product baseline
+repository_secrets,product,product baseline
+repository_variables,product,product baseline
+repository_agent_environments,product,product baseline
+repository_agent_environment_secrets,product,product baseline
+organization_secrets,product,product baseline
+organization_variables,product,product baseline
+audit_log,product,product baseline
+oauth2_applications,product,product baseline
+oauth2_authorization_codes,product,product baseline
+oauth2_access_tokens,product,product baseline
+oauth2_refresh_tokens,product,product baseline
+workflow_caches,product,product baseline
+workflow_artifacts,product,product baseline
+releases,product,product baseline
+release_assets,product,product baseline
+release_deletion_intents,product,product baseline
+release_deletion_tag_tombstones,product,product baseline
+billing_accounts,product,product baseline
+billing_subscriptions,product,product baseline
+billing_entitlements,product,product baseline
+billing_usage_counters,product,product baseline
+billing_credit_ledger,product,product baseline
+stripe_processed_events,product,product baseline
+linear_integrations,product,product baseline
+linear_issue_map,product,product baseline
+linear_comment_map,product,product baseline
+linear_sync_runs,product,product baseline
+linear_sync_ops,product,product baseline
+canary_results,private,Plue private migration 000001; dropped by Plue private migration 000023
+sse_tickets,product,product baseline
+issue_artifacts,product,product baseline
+sandbox_access_tokens,private,Plue private migration 000001; dropped by Plue private migration 000023
+_sync_queue,retired,excluded from product baseline; historical Plue data retained
+_id_remap,retired,excluded from product baseline; historical Plue data retained
+devtools_snapshots,product,product baseline
+approvals,product,product baseline
+alert_incidents,private,Plue private migration 000001; dropped by Plue private migration 000023
+alert_incident_deliveries,private,Plue private migration 000001; dropped by Plue private migration 000023
+alert_remediation_jobs,private,Plue private migration 000001; dropped by Plue private migration 000023
+repo_gateways,private,Plue private migration 000001
+github_repo_listings,product,product baseline
+sandbox_golden_snapshots,private,Plue private migration 000001
+sandbox_environment_images,private,Plue private migration 000001
+file_drafts,product,product baseline
+anon_sandboxes,product,product baseline
+repository_provisioning_control,private,Plue private migration 000001; dropped by Plue private migration 000023
+repository_provisioning_operations,private,Plue private migration 000001
+repository_creation_jobs,product,additive product migration 0003
+sandbox_hosts,private,Plue private migration 000001
+sandbox_instances,private,Plue private migration 000001
+sandbox_egress_audit,private,Plue private migration 000001
+sandbox_operations,private,Plue private migration 000001
+sandbox_snapshots,private,Plue private migration 000001
+sandbox_volumes,private,Plue private migration 000001; dropped by Plue private migration 000023
+sandbox_access_identities,private,Plue private migration 000001
+sandbox_access_permissions,private,Plue private migration 000001
+sandbox_access_grants,private,Plue private migration 000001
+sandbox_domain_mappings,private,Plue private migration 000001
+sandbox_orphans,private,Plue private migration 000001
+memory_provisioning_tasks,private,Plue private migration 000001; dropped by Plue private migration 000023
+memory_promotion_tasks,private,Plue private migration 000001; dropped by Plue private migration 000023
+memory_promotion_items,private,Plue private migration 000001; dropped by Plue private migration 000023
+memory_ingest_cursors,private,Plue private migration 000001; dropped by Plue private migration 000023
+memory_maintenance_cursors,private,Plue private migration 000001; dropped by Plue private migration 000023
+memory_ingest_batches,private,Plue private migration 000001; dropped by Plue private migration 000023
+memory_cleanup_tasks,private,Plue private migration 000001; dropped by Plue private migration 000023
+memory_cleanup_items,private,Plue private migration 000001; dropped by Plue private migration 000023
+memory_write_freezes,private,Plue private migration 000001; dropped by Plue private migration 000023
+memory_restore_manifests,private,Plue private migration 000001; dropped by Plue private migration 000023
+branch_locks,product,product baseline
+branch_lock_join_requests,product,product baseline
+github_synced_repos,product,product baseline
+github_synced_issues,product,product baseline
+github_synced_issue_comments,product,product baseline
+github_mirror_sync_runs,product,product baseline
+github_mirror_sync_ref_results,product,product baseline
+changesets,product,product baseline
+changeset_members,product,product baseline
+build_cache_entries,product,product baseline
+build_cache_artifacts,product,product baseline
+build_cache_entry_artifacts,product,product baseline
+build_cache_read_tokens,product,product baseline
+revocation_events,product,product baseline
+provider_connections,product,product baseline
+provider_connection_grants,product,product baseline
+wiki_page_revisions,product,product baseline
+code_search_index_state,product,product baseline
+sandbox_usage_intervals,product,product baseline
+repository_job_registrations,product,product baseline
+repository_job_events,product,product baseline
+repository_job_dispatches,product,product baseline
+repository_job_trials,product,product baseline
+repository_job_comments,product,product baseline
+repository_job_approvals,product,product baseline
+repository_ci_check_receipts,product,product baseline
+self_host_owners,product,product migration 0004
+product_job_streams,product,product migration 0005
+product_job_requests,product,product migration 0005
+product_job_dispatches,product,product migration 0005
+product_job_events,product,product migration 0005
+chat_turns,product,product migration 0007
+chat_account_views,product,product migration 0163
+chat_archives,product,product migration 0164
+chat_turn_batches,product,product migration 0007
+flow_runtime_host_bindings,product,product migration 0008
+storage_sets,private,Plue private migration 000002
+storage_nodes,private,Plue private migration 000002
+repository_placements,private,Plue private migration 000003
+workflow_run_coding_reconciliations,private,Plue private migration 000001; dropped by Plue private migration 000023
+owner_model_credentials,product,product migration 0009
+owner_model_defaults,product,product migration 0009
+owner_model_credential_receipts,product,product migration 0009
+workflow_run_flow_invocations,product,product migration 0064
+onboarding_answers,product,product migration 0011
+workspace_setup_jobs,product,product migration 0011
+repo_push_events,product,product migration 0016
+github_main_pulls,product,product migration 0024
+github_main_commits,product,product migration 0165; T-GH-02
+landing_github_merges,product,product migration 0035
+provider_connection_device_logins,product,product migration 0025
+mythical_stacks,product,product migration 0026
+mythical_changes,product,product migration 0026
+mythical_items,product,product migration 0026
+mythical_lanes,product,product migration 0026
+mythical_wikis,product,product migration 0036
+billing_model_usage,private,Plue private migration 000012; dropped by Plue private migration 000023
+credit_accounts,product,product migration 0027
+credit_grants,product,product migration 0027
+credit_reservations,product,product migration 0027
+credit_reservation_grants,product,product migration 0027
+credit_events,product,product migration 0027
+credit_legacy_imports,product,product migration 0027
+canonical_import_receipts,product,product migration 0028
+workspace_provider_uses,product,product migration 0029
+model_usage,product,product migration 0030
+workflow_task_guest_tokens,product,product migration 0032
+credit_signup_identities,product,product migration 0033
+issue_sync_channels,product,issue chat routing and durable receipts
+issue_sync_threads,product,issue chat routing and durable receipts
+issue_external_messages,product,issue chat routing and durable receipts
+issue_sync_receipts,product,issue chat routing and durable receipts
+issue_sync_deliveries,product,issue chat routing and durable receipts
+issue_external_reactions,product,issue chat routing and durable receipts
+issue_comment_keys,product,durable issue comment request identities
+github_mirror_refreshes,product,GitHub import mirror refresh cooldown
+smithers_product_migrations,product,product migration ledger
+chat_turn_erasures,product,product migration 0013
+recommendation_logs,product,product migration 0014
+github_synced_repo_read_grants,product,product migration 0015
+repository_setup_requests,product,product migration 0020
+wiki_spaces,product,product migration 0043
+landing_source_workspaces,product,product migration 0045
+outsider_workspaces,product,product migration 0045
+stored_subscription_token_scan,product,product migration 0046
+workspace_service_previews,product,product migration 0071
+email_recipient_rate_limits,product,product migration 0072
+build_cache_repository_usage,product,product migration 0074
+sandbox_egress_daily_usage,product,product migration 0076
+sandbox_egress_usage,product,product migration 0076
+repository_transfer_requests,product,product migration 0077
+billing_plan_grants,product,product migration 0078
+workspace_child_batches,product,product migration 0089
+workspace_children,product,product migration 0089
+repository_egress_policies,product,product migration 0092
+repository_git_usage,product,product migration 0097
+factory_issue_claims,product,durable shared implementation ownership
+install_settings,product,product migration 0104; shared install settings from spec section 3
+github_app,product,product migration 0105
+github_app_manifest_states,product,product migration 0105
+flow_relay_plans,product,product migration 0113; plans the browser workflow relay saved
+flow_loads,product,product migration 0117
+memory_notes,product,product migration 0129; T-FLW-06 learning notes
+burst_files,product,working-together I6
+machine_event_receipts,product,working-together I6
+machine_actor_references,product,product migration 0139
+fast_model_installs,product,product migration 0148
+fast_model_counts,product,product migration 0148
+run_summaries,product,product migration 0151; T-APP-07;owner:smithers-3f
+run_archives,product,product migration 0154; T-FLW-07;owner:smithers-3f
+run_archive_events,product,product migration 0155; T-FLW-07;owner:smithers-3f

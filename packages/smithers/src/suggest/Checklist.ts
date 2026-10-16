@@ -21,6 +21,7 @@
  * @since 1.0.0-rc.0
  */
 
+import { projectFlowsDirectory } from "@smthrs/registry/Descriptor"
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { join } from "node:path"
 import { parse as parseToml } from "smol-toml"
@@ -491,9 +492,8 @@ export const evidence = (repository: Repository): Evidence => {
     ...workflows,
     ...[".gitlab-ci.yml", ".circleci/config.yml", "Jenkinsfile"].filter((file) => repository.exists(file))
   ]
-  const flows = repository.list("flows").filter((name) => repository.exists(`flows/${name}/flow.mdx`)).map((name) =>
-    `flows/${name}/flow.mdx`
-  )
+  const flows = repository.list(projectFlowsDirectory).map((name) => `${projectFlowsDirectory}/${name}/flow.mdx`)
+    .filter((file) => repository.exists(file))
   const git = repository.exists(".git")
   const gitConfig = git ? repository.read(".git/config") : undefined
   const github = (gitConfig !== undefined && gitConfig.includes("github.com")) || repository.exists(".github")

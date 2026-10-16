@@ -25,7 +25,7 @@ for (const [line, copy] of [
   if (line === "/agent implementer") await page.route("**/api/agents", route => route.fulfill({ json: {
     native: false, canAssign: true, agents: [{ id: "implementer", label: "Implementer agent", purpose: "",
       model: { id: "model-a", label: "model-a", provider: "openai-responses" }, builtin: true,
-      available: false, account: "", reason: "", source: "owner", instructions: "flows/todo/flow.ts" }]
+      available: false, account: "", reason: "", source: "owner", instructions: ".smithers/flows/todo/flow.ts" }]
   } }))
   await page.goto("/")
   await say(page, line)
@@ -67,7 +67,7 @@ test("C-UI-13: /help mounts live Commands inline, maximized and after reload", a
   test.setTimeout(120_000)
   await owner(page)
   await page.route("**/contents/.smithers/factory.json", route => route.fulfill({ json: { content: JSON.stringify({ on: [], flows: [
-    { id: "release-notes", description: "Write release notes", summary: "Live repository summary", featured: false, kind: "ts", path: "flows/release-notes/flow.ts", capabilities: [], model: null, modelInvocable: true }
+    { id: "release-notes", description: "Write release notes", summary: "Live repository summary", featured: false, kind: "ts", path: ".smithers/flows/release-notes/flow.ts", capabilities: [], model: null, modelInvocable: true }
   ] }) } }))
   await page.goto("/")
   await say(page, "/repo.select smithersai/smithers")

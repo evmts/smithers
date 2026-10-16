@@ -179,9 +179,9 @@ const containment = async (mode: "shell" | "mcp", recovery: "automatic" | "reape
     expect(spawnSync("git", ["init", "--quiet"], { cwd: root }).status).toBe(0)
     writeFileSync(join(root, ".gitignore"), ".flows/\nrecording/\n")
     for (const name of ["busy", "done"]) {
-      mkdirSync(join(root, "flows", name), { recursive: true })
+      mkdirSync(join(root, ".smithers", "flows", name), { recursive: true })
       writeFileSync(
-        join(root, "flows", name, "flow.mdx"),
+        join(root, ".smithers", "flows", name, "flow.mdx"),
         [
           "---",
           `name: ${name}`,

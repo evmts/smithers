@@ -227,7 +227,7 @@ describe("private native journal supervision", () => {
         // One bundle that touched a registry entry and reached the host.
         yield* f.native(
           "flows.engine.diff-bundle-captured",
-          bundle("applied", { changedPaths: ["flows/authored/flow.ts"] }),
+          bundle("applied", { changedPaths: [".smithers/flows/authored/flow.ts"] }),
           "captured-applied"
         )
         yield* f.native("flows.engine.copy-back-settled", bundle("applied", { rebases: 0 }), "settled-applied")
@@ -236,7 +236,7 @@ describe("private native journal supervision", () => {
         // would rebuild a catalog from bytes no run ever applied.
         yield* f.native(
           "flows.engine.diff-bundle-captured",
-          bundle("proposed", { changedPaths: ["flows/proposed/flow.ts"] }),
+          bundle("proposed", { changedPaths: [".smithers/flows/proposed/flow.ts"] }),
           "captured-proposed"
         )
         yield* f.finish()

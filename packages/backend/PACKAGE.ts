@@ -108,7 +108,9 @@ const securityReview = Smithers.SecurityReview({
   cwd: "packages/backend",
   include: [
     "egressrelay/**/*.go", "previewgateway/**/*.go", "credits/**/*.go", "modelprice/**/*.go",
-    "hostexec/**/*.go", "ironproxy/**/*.go", "sandbox/**/*.go"
+    "hostexec/**/*.go", "ironproxy/**/*.go", "sandbox/**/*.go",
+    Smithers.glob("scripts/*.mjs", { exclude: ["scripts/*.test.mjs"] }), "scripts/*.sh",
+    Smithers.glob("scripts/*.py", { exclude: ["scripts/test_*.py"] })
   ],
   checks: [
     {
@@ -158,12 +160,71 @@ const securityReview = Smithers.SecurityReview({
         "A git invocation that leaves repository hooks, fsmonitor or alternateRefsCommand enabled."
       ],
       paths: ["hostexec/**"]
+    },
+    {
+      id: "script-subprocess-args",
+      title: "Backend scripts spawn processes with argument vectors, never shell strings built from inputs",
+      threat:
+        "A crafted CLI flag, environment value or file name makes a backend build or test script run arbitrary shell commands on a maintainer or CI host.",
+      lookFor: [
+        "exec, execSync or spawn with shell:true, or sh -c, interpolating argv, environment variables, file contents or git output.",
+        "An unvalidated positional argument placed into go build -ldflags or a similar command-line flag string."
+      ],
+      paths: ["scripts/build-backend.sh", "scripts/test-backend-consumer.sh"]
     }
   ]
 })
 
-/** The backend documentation freshness gate.
+/** The per-tag product API sources `scripts/openapi-bundle.mjs` bundles. */
+const apiSchemas = Smithers.Filegroup({ cwd: "docs/api/openapi", srcs: [Smithers.glob("*.yaml")] })
+
+/** The access-test list behind //:backendGoAccess and the compose file runner behind //:backendGo. */
+const goTestRunners = Smithers.NodeTest({
+  runner: Smithers.testRunner([
+    Smithers.file("scripts/backend-access-tests.test.mjs"),
+    Smithers.file("scripts/backend-compose-tests.test.mjs")
+  ]),
+  srcs: [],
+  deps: [buildInputs],
+  cwd: "packages/backend"
+})
+
+/** Hosting drift gate: deployment-mode branches in the backend, app and API spec stay frozen. */
+const deploymentBranches = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("scripts/check-deployment-branches.test.mjs")]),
+  srcs: [Smithers.file("//docs/api/openapi.yaml")],
+  deps: [buildInputs, apiSchemas, Smithers.Filegroup({ cwd: "apps/app", srcs: [Smithers.glob("src/**/*"), Smithers.file("package.json")] })],
+  cwd: "packages/backend"
+})
+
+// The per-tag OpenAPI bundler: ordering, refusals, merge-freedom across tags,
+// and that the committed bundle matches its sources.
+const openapiBundle = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("scripts/openapi-bundle.test.mjs")]),
+  srcs: [Smithers.file("scripts/openapi-bundle.mjs"), Smithers.file("//docs/api/openapi.yaml")],
+  deps: [apiSchemas],
+  cwd: "packages/backend"
+})
+
+// The product API client generator: naming, schema mapping, refusals, the
+// --check drift report, and that the committed clients match the spec.
+const openapiClients = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("scripts/openapi-clients.test.mjs")]),
+  srcs: [
+    Smithers.file("scripts/openapi-clients.mjs"),
+    Smithers.file("//docs/api/openapi.yaml"),
+    Smithers.file("apiclient/client.gen.go"),
+    Smithers.file("//packages/smithers/src/internal/backend/ProductApi.ts")
+  ],
+  deps: [],
+  cwd: "packages/backend"
+})
+
+/** The backend package: build inputs, script gates, the documentation freshness gate and the security review.
  * @since 1.0.0
  * @category packages
  */
-export const Package = Smithers.Package({ targets: { machineContractInputs, buildInputs, docs, journeyTodoLabel, ...securityReview } })
+export const Package = Smithers.Package({ targets: {
+  machineContractInputs, buildInputs, apiSchemas, docs, goTestRunners, deploymentBranches, openapiBundle, openapiClients,
+  journeyTodoLabel, ...securityReview
+} })

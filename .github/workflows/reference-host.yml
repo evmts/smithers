@@ -3,7 +3,7 @@
 # Ubuntu CI skips every `[requires macOS]` test (apps/app/scripts/RequiresMacOS.ts)
 # since 4dc985222b, so this job is the only place they run. It runs on the Mac
 # mini registered as the self-hosted runner `reference-host`
-# (scripts/reference-host/setup-runner.sh).
+# (.github/scripts/reference-host/setup-runner.sh).
 #
 # TRUST. smithers-3f, #3471 issuecomment-6020436303: the runner is persistent
 # and wipes its workspace before every job, so it may only ever run code that
@@ -14,7 +14,7 @@
 #   - permissions: {} (a public checkout needs no token scope);
 #   - a guard step refuses pull-request events and other repositories;
 #   - the runner's root-owned job-started hook
-#     (scripts/reference-host/job-started.sh) refuses any job that is not this
+#     (.github/scripts/reference-host/job-started.sh) refuses any job that is not this
 #     file on refs/heads/main, before any step runs. The org is on the free
 #     plan, which has no runner groups, so that hook, not this file, is what
 #     keeps another workflow (a fork PR's included) off the runner.
@@ -47,7 +47,7 @@ jobs:
     # Until the runner is registered no machine carries the label, and every
     # push would leave a run queued until it fails after 24 hours, marking
     # main red. The repository variable is set once the runner shows online
-    # (scripts/reference-host/setup-runner.sh, register step) and unset on
+    # (.github/scripts/reference-host/setup-runner.sh, register step) and unset on
     # rollback; while it is unset the job is skipped and queues nothing.
     if: vars.REFERENCE_HOST_ONLINE == 'true'
     runs-on: [self-hosted, reference-host]

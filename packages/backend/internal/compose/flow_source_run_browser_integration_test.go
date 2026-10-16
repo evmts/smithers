@@ -36,7 +36,7 @@ func TestFlowSourceRunBrowserComposedInstall(t *testing.T) {
 	}
 	upstream := filepath.Join(r.gitRoot, "rehearsal-owner/app.git")
 	git("clone", upstream, source)
-	path := filepath.Join(source, "flows/todo/flow.ts")
+	path := filepath.Join(source, ".smithers/flows/todo/flow.ts")
 	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0700))
 	require.NoError(t, os.WriteFile(path, []byte(flowSourceRunFixture), 0600))
 	git("-C", source, "add", ".")

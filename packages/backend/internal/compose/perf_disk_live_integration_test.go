@@ -15,7 +15,7 @@ func TestPerfDiskWriteProductionSubscriptions(t *testing.T) {
 	require.NoError(t, err)
 	command := exec.CommandContext(t.Context(), "node", "--input-type=module", "-e", `
 import { createRequire } from 'node:module'
-import { subscribeFiles } from './scripts/perf/disk-write.mjs'
+import { subscribeFiles } from './flows/perf/disk-write.mjs'
 const require = createRequire(new URL('./packages/smithers/package.json', import.meta.url))
 const Socket = require('ws')
 globalThis.window = {}

@@ -1,0 +1,241 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+out/
+packages/*/dist/
+packages/*/dist-chrome/
+packages/*/dist-firefox/
+*.tsbuildinfo
+*.tgz
+
+# Cargo build output (crates/flows-jj and friends)
+/target
+
+# Electrobun build output
+app/.electrobun/
+
+# Caches
+.artifacts/
+.eslintcache
+.cache/
+.pnpm-store/
+.backend-go-modcache/
+.backend-sqlc/
+.native-ffi/
+.native-ffi-check/
+.rehearsal-native/
+.nyc_output/
+coverage/
+# Browser qualification sources, not generated coverage output.
+!/apps/app/e2e/real/coverage/
+*.lcov
+
+# Logs and profiles
+*.log
+# The migration corpus retains a 0.x loose log to prove archive preservation.
+!/packages/smithers/migrate/test/fixtures/persisted-db/.smithers/workflows/run-1783757199651.log
+*.cpuprofile
+tui-debug.log
+default.profraw
+
+# Environment
+.env
+.env.*
+!.env.example
+!.env.*.example
+!.env.sample
+!.env.template
+*.pem
+
+# Editor and OS files
+.vscode/
+.zed/
+.idea/
+.claude/
+.opencode/
+.gemini-clipboard/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Playwright and other test output
+playwright-report/
+.playwright-mcp/
+test-results/
+.tui-test/
+
+# Local agent and review scratch
+.gstack/
+.smithers-review/
+.review-tmp/
+.e2e-flakes/
+REVIEW-*.md
+# Review campaign working docs: intermediate evidence and plans, kept on disk, never committed
+review-evidence/
+consolidated-review-plan.md
+release-rc0-review.md
+release-review-*.md
+packages/*/REVIEW-*.md
+packages/std/test/__repro.test.ts
+packages/std/test/ScratchGrepTiming.test.ts
+compaction-results/
+syntax.jsonl
+out.jsonl
+out.html
+pi-*.html
+collect.sh
+todo.md
+plans/
+.pi/hf-sessions/
+.pi/hf-sessions-backup/
+.pi_config/
+.money-scratch/
+
+# Working copies
+.worktrees/
+worktrees/
+
+# Infrastructure-as-code and edge local state
+.alchemy/
+.wrangler/
+
+# flows engine state (artifact CAS under .flows/objects, fork lanes under
+# .flows/forks) — derived and engine-owned. jj must not snapshot it: a restore
+# to a pre-publication change would delete CAS blobs live cache rows reference.
+.flows/
+
+# `.smithers/` holds the workspace declaration (WORKSPACE.ts), the factory
+# declaration beside it (FACTORY.ts), the two files `//:factoryProjection`
+# projects from it (factory.json, home.json), the target index
+# `//:targetIndex` generates (target-index.json), and the Cloud machine
+# expression Smithers Cloud builds this repository's image from
+# (environment.nix), all of which are source. Only run state written beside
+# them is ignored.
+/.smithers/*
+!/.smithers/WORKSPACE.ts
+!/.smithers/FACTORY.ts
+!/.smithers/factory.json
+!/.smithers/home.json
+!/.smithers/target-index.json
+!/.smithers/environment.nix
+!/.smithers/memory-thresholds.json
+!/.smithers/memory-thresholds.receipt.json
+# Repository-owned factory configuration and CI workflow source.
+!/.smithers/coding-project.json
+!/.smithers/cross-package-globs.json
+!/.smithers/workflows/
+/.smithers/workflows/*
+!/.smithers/workflows/ci.tsx
+**/.smithers/*.db
+**/.smithers/*.db-*
+**/.smithers/runs/
+**/.smithers/executions/
+# Persisted migration input is source evidence, not a live execution directory.
+!/packages/smithers/migrate/test/fixtures/persisted-db/.smithers/executions/
+!/packages/smithers/migrate/test/fixtures/persisted-db/.smithers/executions/run-1783757199651/stdout.log
+**/.smithers/cache/
+# Project roots `packages/smithers/test/FlowCatalogRefresh.test.ts` builds and
+# then imports out of. They sit inside the package so this process loads their
+# registration file as its own module, and the test removes each one; a killed
+# run must not leave the checkout dirty with one.
+packages/smithers/test/fixtures/.catalog-refresh/
+# Scratch flow roots the registry tests create under their fixtures, so their
+# modules resolve this package's dependencies, and remove after each case. A
+# concurrent graph evaluation must not read one as a declared input (#3979).
+packages/smithers/agent/registry/test/fixtures/**/.*/
+# Module load siblings. The registry evaluates each flow module from a copy
+# beside its original, `.smithers-<digest>-<sequence>-<stamp><ext>`
+# (`packages/smithers/agent/registry/src/Executable.ts`), and removes it once
+# the import settles. A snapshot taken mid-load, or a killed load, must not
+# commit one.
+.smithers-*-*-*.*
+
+# Scratch trees test lanes leave behind; never source.
+/tmp/
+smithers.db
+smithers.db-shm
+smithers.db-wal
+
+# Reference corpus — shallow clones read by agents, never committed.
+reference/*
+!reference/electrobun-shell/
+
+# Launch-checklist dry runs prove the runner, not the product: they touch no
+# origin, so they are never evidence and never belong in the tracked report
+# trail under apps/reports/launch-checklist/.
+apps/reports/launch-checklist/*-dry-run/
+
+# Crush agent local session database
+.crush/
+
+# Commit-pass mutexes. Several sessions commit into this checkout at once and
+# coordinate through these paths, so they exist while work is in flight. They
+# are host state, not source: jj snapshots the working copy, so an unignored
+# lock reaches the index.
+.commit-lock
+.commit-lock-pass/
+
+# apps/app agent-lane evidence: reports, screenshots, handoffs and A/B
+# harness configs, kept on disk, never committed
+apps/app/*.png
+apps/app/.fix2.*
+apps/app/tutorial2-shots/
+apps/app/handoffs/
+apps/app/first-load-fix2-evidence/
+apps/app/AUTO_ADVANCE.md
+apps/app/BUTTONS.md
+apps/app/FILL_HEIGHT.md
+apps/app/FIRST_LOAD_*
+apps/app/KEYS3.md
+apps/app/NAV_KEYS*.md
+apps/app/NOTIFY_*
+apps/app/PALETTE_VERIFY.md
+apps/app/PIN_NAV.md
+apps/app/REORDER.md
+apps/app/TUTORIAL2_INTEGRATION.md
+apps/app/WHITESPACE*.md
+
+# apps/app/e2e root-level *.mjs are throwaway screenshot/probe scripts (hardcoded ports, temp paths)
+apps/app/e2e/*.mjs
+
+# Review reports and ledgers stay on disk (Will 2026-09-04: review evidence is never committed)
+docs/reviews/
+
+# disposable one-off probe scripts (apps/app/.impl13.tmp.mjs style)
+.*.tmp.mjs
+
+# pnpm self-links: `pnpm install` links each workspace package into
+# node_modules/.pnpm/node_modules/<name>, and that link points back at the
+# package directory. When the package's own folder then gains a link of the
+# same name, the path resolves to its own parent: an infinite self-reference
+# that jj snapshots as a tracked file. Exact paths only; the package name is
+# still legitimately used by `pnpm --filter <name>`.
+/apps/app/smithers-app
+/apps/ui/smithers-ui
+/apps/server/smithers-server
+/apps/tutorial-coordinator/smithers-tutorial-coordinator
+/packages/smthrs-deprecation/smthrs
+
+# Throwaway discovery and repro scripts; they say "not shipped" in their headers.
+apps/app/scripts/tmp-*
+zz-*-repro.*
+
+# Run scratch: captured shell exit codes and enrollment-sweep traces.
+# scripts/repo-contract/scratch-artifacts.test.mjs fails if one is tracked.
+.enrollment-*
+*.exit
+/apps/backend/backend
+__pycache__/
+*.orig
+/dispatch/claims/
+/apps/app/tsconfig.qual-*.json
+/packages/smithers/agent/model/model
+
+# Local review diffs
+.review-diff*.patch
+
+# Lane reports are written outside the repository (~/lanes/<lane>.REPORT.md).
+/REPORT.md

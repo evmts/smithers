@@ -2,11 +2,13 @@
 
 This repository's own project flow directory.
 
-`smthrs flow list` discovers flows by walking `<project>/flows/**` for `flow.ts`,
-`flow.mdx`, or `SKILL.md`, parsing frontmatter and module metadata without
+`smthrs flow list` discovers flows by walking `<project>/.smithers/flows/**` for
+`flow.ts`, `flow.mdx`, or `SKILL.md`, parsing frontmatter and module metadata without
 importing a module or reading a prompt body. Every directory here is a flow
 named by its path, so `flows/create-flow/scaffold/flow.mdx` is the flow
-`create-flow/scaffold`. Run state goes to `.flows/`, never here.
+`create-flow/scaffold`. Run state goes to `.flows/`, never here. A root `flows/`
+is never read (mvp.md M-49): flow entries left there load nothing and produce one
+`retired_root` diagnostic naming `.smithers/flows/`.
 
 ## Factory flow catalog
 

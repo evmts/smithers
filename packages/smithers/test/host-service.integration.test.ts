@@ -21,7 +21,7 @@ import { expect, it } from "vitest"
 // Reuse the isolation check's tested process parser rather than matching bundle
 // paths, which can select another user's install and omit PostgreSQL workers.
 const { descendants } = await import(
-  new URL("../../../scripts/checks/host-process-sampler.mjs", import.meta.url).href
+  new URL("../scripts/host-process-sampler.mjs", import.meta.url).href
 ) as {
   descendants: (text: string, rootPid: number) => Array<{ pid: number; uid: number; command: string }>
 }

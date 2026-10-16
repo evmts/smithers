@@ -1,0 +1,220 @@
+/**
+ * A join answers the result the admitted authority produced, so the in-memory
+ * engine admits a join only when the caller's ceiling covers the one the
+ * execution was admitted with (#2852). The durable driver applies the same
+ * `FlowEngine.joinable` rule; its cases live in `@smthrs/engine-store`. The
+ * ceiling the engine itself was built under bounds every one of them (#3233).
+ */
+import { describe, expect, it } from "@effect/vitest"
+import { Capability, CapabilityPattern } from "@smthrs/capability/Capability"
+import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
+import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { Cause, Deferred, Effect, Exit, Layer, Option, Schema } from "effect"
+import { FlowEngine } from "../src/index.ts"
+import { withCrypto } from "./Crypto.ts"
+
+const secret = new Capability({ action: "fs:read", resource: "secret/key" })
+const readSecret = [new CapabilityPattern({ action: "fs:read", resource: "secret/**" })]
+const readSource = [new CapabilityPattern({ action: "fs:read", resource: "src/**" })]
+const everything = [new CapabilityPattern({ action: "*", resource: "**" })]
+
+const conflictOf = (exit: Exit.Exit<unknown, unknown>) =>
+  Exit.isFailure(exit) ? exit.cause.reasons.find(Cause.isDieReason)?.defect : undefined
+
+const executeConflictOf = (exit: Exit.Exit<unknown, unknown>) =>
+  Exit.isFailure(exit) ? exit.cause.reasons.find(Cause.isFailReason)?.error : undefined
+
+const setup = (
+  capabilities?: ReadonlyArray<string>,
+  engine: Layer.Layer<FlowRuntime.FlowRuntime> = FlowEngine.layerMemory
+) => {
+  let runs = 0
+  const Read = Action.make("join-authority/read", { payload: {}, success: Schema.String })
+  const flow = Flow.make("join-authority/flow", {
+    payload: { id: Schema.String },
+    success: Schema.String,
+    ...(capabilities === undefined ? {} : { capabilities }),
+    body: () => Read.call({})
+  })
+  const layer = Layer.mergeAll(
+    Read.toLayer(() =>
+      Effect.map(CapabilitySet.current, (set) => {
+        runs++
+        return CapabilitySet.allows(set, secret) ? "secret contents" : "denied"
+      })
+    ),
+    Interpreter.layer(flow)
+  ).pipe(Layer.provideMerge(Action.layerImplementations), Layer.provideMerge(engine))
+  return { flow, layer, runs: () => runs }
+}
+
+const under = CapabilitySet.attenuate
+
+describe("joining an execution under a capability ceiling", () => {
+  it.effect("refuses a narrower caller the result a wider run produced", () =>
+    withCrypto(Effect.gen(function*() {
+      const { flow, layer, runs } = setup()
+      yield* Effect.gen(function*() {
+        expect(yield* flow.execute({ id: "a" }, { executionId: "wide" })).toBe("secret contents")
+        for (const narrower of [readSource, []]) {
+          const exit = yield* Effect.exit(under(narrower)(flow.execute({ id: "a" }, { executionId: "wide" })))
+          expect(executeConflictOf(exit)).toBeInstanceOf(FlowEngine.ExecutionIdentityConflict)
+          expect(executeConflictOf(exit)).toMatchObject({
+            code: "execution_identity_conflict",
+            executionId: "wide",
+            field: "capabilities"
+          })
+          const discarded = yield* Effect.exit(
+            under(narrower)(flow.execute({ id: "a" }, { executionId: "wide", discard: true }))
+          )
+          expect(executeConflictOf(discarded)).toMatchObject({ field: "capabilities" })
+        }
+        expect(runs()).toBe(1)
+      }).pipe(Effect.provide(layer))
+    })))
+
+  it.effect("lets the same, an equivalent, or a wider caller join a narrower run", () =>
+    withCrypto(Effect.gen(function*() {
+      const { flow, layer, runs } = setup()
+      yield* Effect.gen(function*() {
+        expect(yield* under(readSource)(flow.execute({ id: "a" }, { executionId: "narrow" }))).toBe("denied")
+        expect(yield* under(readSource)(flow.execute({ id: "a" }, { executionId: "narrow" }))).toBe("denied")
+        expect(yield* flow.execute({ id: "a" }, { executionId: "narrow" })).toBe("denied")
+        expect(yield* under(everything)(flow.execute({ id: "a" }, { executionId: "narrow" }))).toBe("denied")
+        // A declared `*` is the whole authority, so it joins an omitted admission.
+        expect(yield* under(everything)(flow.execute({ id: "b" }, { executionId: "universal" })))
+          .toBe("secret contents")
+        expect(yield* flow.execute({ id: "b" }, { executionId: "universal" })).toBe("secret contents")
+        expect(runs()).toBe(2)
+      }).pipe(Effect.provide(layer))
+    })))
+
+  it.effect("compares both sides narrowed by the flow's own declaration", () =>
+    withCrypto(Effect.gen(function*() {
+      // The declaration already excludes the secret, so a caller who also
+      // lacks it could have produced exactly this result and may join.
+      const { flow, layer, runs } = setup(["fs:read:src/**"])
+      yield* Effect.gen(function*() {
+        expect(yield* flow.execute({ id: "a" }, { executionId: "declared" })).toBe("denied")
+        expect(yield* under(readSource)(flow.execute({ id: "a" }, { executionId: "declared" }))).toBe("denied")
+        const exit = yield* Effect.exit(under(readSecret)(flow.execute({ id: "a" }, { executionId: "declared" })))
+        expect(executeConflictOf(exit)).toMatchObject({ field: "capabilities" })
+        expect(runs()).toBe(1)
+      }).pipe(Effect.provide(layer))
+    })))
+
+  it.effect("does not reopen a wider result through a declaration narrowed since admission", () =>
+    withCrypto(Effect.gen(function*() {
+      const { flow, layer } = setup()
+      yield* Effect.gen(function*() {
+        expect(yield* flow.execute({ id: "a" }, { executionId: "redeclared" })).toBe("secret contents")
+        const Narrowed = flow.annotate(Flow.Capabilities, [])
+        const exit = yield* Effect.exit(Narrowed.execute({ id: "a" }, { executionId: "redeclared" }))
+        expect(executeConflictOf(exit)).toMatchObject({ field: "capabilities" })
+        const polled = yield* Effect.exit(Narrowed.poll("redeclared"))
+        expect(conflictOf(polled)).toMatchObject({ field: "capabilities" })
+      }).pipe(Effect.provide(layer))
+    })))
+
+  it.effect("refuses a narrower caller's poll and resume of a wider run", () =>
+    withCrypto(Effect.gen(function*() {
+      const { flow, layer, runs } = setup()
+      yield* Effect.gen(function*() {
+        expect(yield* flow.execute({ id: "a" }, { executionId: "polled" })).toBe("secret contents")
+        const polled = yield* Effect.exit(under(readSource)(flow.poll("polled")))
+        expect(conflictOf(polled)).toMatchObject({ field: "capabilities", executionId: "polled" })
+        const runtime = yield* FlowRuntime.FlowRuntime
+        const resumed = yield* Effect.exit(under(readSource)(runtime.resume(flow, "polled")))
+        expect(conflictOf(resumed)).toMatchObject({ field: "capabilities" })
+        const polledWide = yield* flow.poll("polled")
+        expect(Option.isSome(polledWide)).toBe(true)
+        yield* runtime.resume(flow, "polled")
+        // A resume naming an unknown id or another declaration drives nothing.
+        yield* under(readSource)(runtime.resume(flow, "never-admitted"))
+        const Other = Flow.make("join-authority/other", {
+          payload: {},
+          success: Schema.String,
+          body: () => Node.succeed("other")
+        })
+        yield* under(readSource)(runtime.resume(Other, "polled"))
+        // An unknown id is left to the engine's own not-found answer.
+        const unknown = yield* Effect.flip(under(readSource)(flow.poll("never-admitted")))
+        expect(unknown).toMatchObject({ code: "execution_not_found" })
+        expect(runs()).toBe(1)
+      }).pipe(Effect.provide(layer))
+    })))
+
+  it.effect("admits, joins, polls, and resumes under the ceiling the engine was built under", () =>
+    withCrypto(
+      Effect.gen(function*() {
+        // Only the engine is built under the narrower host; its handlers are
+        // registered, and every call below made, from unrestricted contexts.
+        const engine = yield* under(readSource)(Layer.build(FlowEngine.layerMemory))
+        const { flow, layer, runs } = setup(undefined, Layer.succeedContext(engine))
+        yield* Effect.gen(function*() {
+          expect(yield* flow.execute({ id: "a" }, { executionId: "hosted" })).toBe("denied")
+          // The admission recorded the host, so a caller under just the host joins.
+          expect(yield* under(readSource)(flow.execute({ id: "a" }, { executionId: "hosted" }))).toBe("denied")
+          expect(Option.isSome(yield* under(readSource)(flow.poll("hosted")))).toBe(true)
+          const runtime = yield* FlowRuntime.FlowRuntime
+          yield* under(readSource)(runtime.resume(flow, "hosted"))
+          // A caller narrower than the host still may not read it.
+          const narrower = yield* Effect.exit(under(readSecret)(flow.execute({ id: "a" }, { executionId: "hosted" })))
+          expect(executeConflictOf(narrower)).toMatchObject({ field: "capabilities", executionId: "hosted" })
+          expect(runs()).toBe(1)
+        }).pipe(Effect.provide(layer))
+      }).pipe(Effect.scoped)
+    ))
+
+  it.effect("authorizes cancellation before touching a run", () =>
+    withCrypto(Effect.gen(function*() {
+      const { flow, layer } = setup()
+      yield* Effect.gen(function*() {
+        yield* flow.execute({ id: "a" }, { executionId: "cancel-wide" })
+        const runtime = yield* FlowRuntime.FlowRuntime
+        for (const cancel of [runtime.interrupt, runtime.interruptUnsafe]) {
+          const refused = yield* Effect.exit(under(readSource)(cancel(flow, "cancel-wide")))
+          expect(conflictOf(refused)).toMatchObject({ field: "capabilities", executionId: "cancel-wide" })
+          yield* cancel(flow, "unknown")
+        }
+        expect(Option.isSome(yield* flow.poll("cancel-wide"))).toBe(true)
+      }).pipe(Effect.provide(layer))
+    })))
+
+  it.effect("ignores foreign flow ids and allows a covering caller to cancel", () =>
+    withCrypto(
+      Effect.gen(function*() {
+        const { flow: Other } = setup()
+        const flow = Flow.make("cancel-authority/running", {
+          payload: {},
+          success: Schema.Void,
+          body: () => Node.succeed(undefined)
+        })
+        const started = Deferred.makeUnsafe<void>()
+        const stopped = Deferred.makeUnsafe<void>()
+        const runtime = yield* FlowRuntime.FlowRuntime
+        yield* runtime.register(flow, () =>
+          Deferred.succeed(started, undefined).pipe(
+            Effect.andThen(Effect.never),
+            Effect.onInterrupt(() => Deferred.succeed(stopped, undefined))
+          ))
+        yield* runtime.execute(flow, { executionId: "running", payload: {}, discard: true })
+        yield* Deferred.await(started)
+        for (const cancel of [runtime.interrupt, runtime.interruptUnsafe]) {
+          yield* cancel(Other, "running")
+          expect(yield* Deferred.isDone(stopped)).toBe(false)
+        }
+        yield* runtime.interrupt(flow, "running")
+        yield* Deferred.await(stopped)
+      }).pipe(Effect.provide(FlowEngine.layerMemory), Effect.scoped)
+    ))
+
+  it("joinable compares the admitted authority as recorded", () => {
+    const narrow = CapabilitySet.fromPatterns(readSource).groups
+    expect(FlowEngine.joinable(narrow, [])).toBe(true)
+    expect(FlowEngine.joinable([], narrow)).toBe(false)
+    expect(FlowEngine.joinable([[]], narrow)).toBe(true)
+    expect(FlowEngine.joinable(narrow, narrow)).toBe(true)
+  })
+})

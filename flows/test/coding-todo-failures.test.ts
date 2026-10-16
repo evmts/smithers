@@ -175,7 +175,7 @@ for (const scenario of cases) {
       body: (input) => Step.call(input)
     })
     for (const name of ["implementation", "check"]) {
-      const directory = join(root, "flows", name)
+      const directory = join(root, ".smithers", "flows", name)
       await mkdir(directory, { recursive: true })
       await writeFile(
         join(directory, "flow.mdx"),
@@ -186,7 +186,7 @@ for (const scenario of cases) {
       Effect.gen(function*() {
         const found = yield* (yield* Discovery.Discovery).scan({
           source: "project",
-          root: join(root, "flows"),
+          root: join(root, ".smithers", "flows"),
           naming: "path"
         })
         return yield* Effect.forEach(

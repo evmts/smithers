@@ -460,7 +460,7 @@ func testPerfWarmWakeObservationComposedInstall(t *testing.T, scheduled bool, mo
 			// Feed the actual server record to the actual workload validator.
 			input, err := json.Marshal(map[string]any{"sample": map[string]any{"requestId": requestID, "branch": branch.ID, "capturedHead": perfWakeHead, "clientMs": 0}, "observation": record, "awake": awake, "asleep": asleepFrame})
 			require.NoError(t, err)
-			command := exec.CommandContext(t.Context(), "node", "--input-type=module", "-e", `import { verifyWake, awakeFrame } from './scripts/perf/warm-wake.mjs'; let raw=''; for await (const part of process.stdin) raw+=part; const {sample,observation,awake,asleep}=JSON.parse(raw); if (!observation.failed && !awakeFrame([{...awake,sequence:2}],1,asleep.cursor)) throw new Error('production awake frame rejected'); console.log(JSON.stringify(verifyWake(sample,observation)));`)
+			command := exec.CommandContext(t.Context(), "node", "--input-type=module", "-e", `import { verifyWake, awakeFrame } from './flows/perf/warm-wake.mjs'; let raw=''; for await (const part of process.stdin) raw+=part; const {sample,observation,awake,asleep}=JSON.parse(raw); if (!observation.failed && !awakeFrame([{...awake,sequence:2}],1,asleep.cursor)) throw new Error('production awake frame rejected'); console.log(JSON.stringify(verifyWake(sample,observation)));`)
 			command.Dir = "../../../.."
 			command.Stdin = bytes.NewReader(input)
 			output, err := command.CombinedOutput()
@@ -472,7 +472,7 @@ func testPerfWarmWakeObservationComposedInstall(t *testing.T, scheduled bool, mo
 				endpoint := "ws" + strings.TrimPrefix(terminalServer.URL, "http") + "/api/repos/presence-owner/app/workspace/sessions/" + accepted.ID + "/terminal"
 				closeInput, err := json.Marshal(map[string]any{"endpoint": endpoint, "headers": map[string]string{"Cookie": "smithers_session=" + f.cookie, "Origin": cfg.Server.PublicURL}})
 				require.NoError(t, err)
-				closeCommand := exec.CommandContext(t.Context(), "node", "--input-type=module", "-e", `import { closeOwnerTerminal } from './scripts/perf/warm-wake.mjs'; import {createRequire} from 'node:module'; import {resolve} from 'node:path'; const require=createRequire(resolve('packages/smithers/package.json')); let raw=''; for await (const part of process.stdin) raw+=part; const {endpoint,headers}=JSON.parse(raw); await closeOwnerTerminal(require('ws'),endpoint,headers);`)
+				closeCommand := exec.CommandContext(t.Context(), "node", "--input-type=module", "-e", `import { closeOwnerTerminal } from './flows/perf/warm-wake.mjs'; import {createRequire} from 'node:module'; import {resolve} from 'node:path'; const require=createRequire(resolve('packages/smithers/package.json')); let raw=''; for await (const part of process.stdin) raw+=part; const {endpoint,headers}=JSON.parse(raw); await closeOwnerTerminal(require('ws'),endpoint,headers);`)
 				closeCommand.Dir = "../../../.."
 				closeCommand.Stdin = bytes.NewReader(closeInput)
 				closeOutput, err := closeCommand.CombinedOutput()

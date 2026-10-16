@@ -569,7 +569,7 @@ export const seedDesignWorld = (): DesignWorldRows => {
       { id: `b-retry:${RETRY_FILE}`, path: RETRY_FILE, branch: "b-retry", lines: retrySource() },
       { id: "main:src/mail/reset.ts", path: "src/mail/reset.ts", branch: "main", lines: mailSource() },
       { id: "b-checkout:src/checkout/checkout.test.ts", path: "src/checkout/checkout.test.ts", branch: "b-checkout", lines: checkoutTest() },
-      { id: "main:flows/todo/flow.ts", path: "flows/todo/flow.ts", branch: "main", lines: flowSource() }
+      { id: "main:.smithers/flows/todo/flow.ts", path: ".smithers/flows/todo/flow.ts", branch: "main", lines: flowSource() }
     ],
     issues: [
       { number: 212, title: "Failed webhooks are never retried", author: ALICE, age: "2 d ago", open: true, todo: "t-retry", fixes: true,
@@ -590,8 +590,8 @@ export const seedDesignWorld = (): DesignWorldRows => {
       { id: "r-release", title: "release-notes", state: "failed", detail: "GitHub API rate limited" }
     ],
     flowVersions: [
-      { id: "v1", flow: "todo", label: "v1 · flows/todo/flow.ts", state: "active", steps: TODO_FLOW },
-      { id: "v2", flow: "todo", label: "v2 · flows/todo/flow.ts · proposed", state: "proposed", by: BEN, steps: [
+      { id: "v1", flow: "todo", label: "v1 · .smithers/flows/todo/flow.ts", state: "active", steps: TODO_FLOW },
+      { id: "v2", flow: "todo", label: "v2 · .smithers/flows/todo/flow.ts · proposed", state: "proposed", by: BEN, steps: [
         ...TODO_FLOW.slice(0, 3),
         { id: "changelog", title: "Changelog", detail: "Add a line to CHANGELOG.md." },
         ...TODO_FLOW.slice(3)
@@ -623,7 +623,7 @@ export const seedDesignWorld = (): DesignWorldRows => {
         state: "open", requestedBy: MAYA, body: prBody(todos[0]!), approvals: [], required: 0 }
     ],
     secrets: [{ name: "STRIPE_TEST_KEY", scope: "all branches" }, { name: "SENTRY_DSN", scope: "main only" }],
-    agents: ["plan", "implement", "review"].map(step => ({ id: step, steps: [step], instructions: `flows/todo/${step}.md`, model: "Fable 5.1" })),
+    agents: ["plan", "implement", "review"].map(step => ({ id: step, steps: [step], instructions: `.smithers/flows/todo/${step}.md`, model: "Fable 5.1" })),
     acts: [],
     reviews: [],
     proposals: [

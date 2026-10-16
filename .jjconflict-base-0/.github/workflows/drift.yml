@@ -1,0 +1,23 @@
+name: "Drift"
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}-${{ github.sha }}
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  trusted-drift:
+    uses: "smithersai/smithers/.github/workflows/trusted-drift.yml@d578fb2d62f0b7164a25c625918ddb3a192458c0"
+  drift:
+    name: "Per-commit drift"
+    needs: trusted-drift
+    if: ${{ always() }}
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 5
+    steps:
+      - name: "Trusted drift result"
+        run: "test '${{ needs.trusted-drift.result }}' = 'success'"
+        shell: "bash"

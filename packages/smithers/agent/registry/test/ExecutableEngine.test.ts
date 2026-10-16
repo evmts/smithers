@@ -44,9 +44,9 @@ import * as Descriptor from "../src/Descriptor.ts"
 import * as Discovery from "../src/Discovery.ts"
 import * as Executable from "../src/Executable.ts"
 import * as Registry from "../src/Registry.ts"
-import standalone, { Shout } from "./fixtures/executable/flows/standalone/flow.ts"
+import standalone, { Shout } from "./fixtures/executable/.smithers/flows/standalone/flow.ts"
 
-const flowsRoot = fileURLToPath(new URL("./fixtures/executable/flows", import.meta.url))
+const flowsRoot = fileURLToPath(new URL("./fixtures/executable/.smithers/flows", import.meta.url))
 const projectRoot = fileURLToPath(new URL("./fixtures/executable", import.meta.url))
 const platform = Layer.mergeAll(AtomicFileSystem.layer, NodePath.layer)
 

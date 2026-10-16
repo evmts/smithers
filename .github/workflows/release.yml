@@ -443,13 +443,6 @@ jobs:
       - name: Release changelog section
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
         run: node scripts/generate-changelog.mjs --check --version "$RELEASE_VERSION"
-      - name: Examples
-        if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
-        run: pnpm exec smthrs ci '//examples/...' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
-        env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: Workspace targets
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
         run: pnpm exec smthrs ci '//packages/...' --jobs 2 --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
@@ -458,7 +451,7 @@ jobs:
           SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       # The migration-landing regressions in //scripts:engineeringScriptRegressions
-      # regenerate a fixture with the pinned sqlc (scripts/check-sqlc-drift.sh).
+      # regenerate a fixture with the pinned sqlc (packages/backend/scripts/check-sqlc-drift.sh).
       - name: Install pinned sqlc
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
         run: |
@@ -467,6 +460,41 @@ jobs:
       - name: Script gates
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
         run: pnpm exec smthrs test '//scripts/...' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Benchmark cost gate
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
+        run: pnpm exec smthrs test '//flows:benchmarkGate' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Mutation gate
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
+        run: pnpm exec smthrs test '//flows:mutationGate' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Campaign verifiers
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
+        run: pnpm exec smthrs test '//flows:campaignVerifiers' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Signal campaign verifier
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
+        run: pnpm exec smthrs test '//flows:signalCampaign' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Performance and fault drivers
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
+        run: pnpm exec smthrs test '//flows:perfUnit' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
         env:
           SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
           SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
@@ -527,6 +555,13 @@ jobs:
           SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
           SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Reference-host runner hooks
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
+        run: pnpm exec smthrs test '//:referenceHostHooks' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: Factory harness
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
         run: pnpm exec smthrs test '//:factoryHarness' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
@@ -536,14 +571,14 @@ jobs:
           SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Agent eval suite (offline, baseline-gated)"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
-        run: pnpm exec smthrs test '//evals/agent:test' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
+        run: pnpm exec smthrs test '//packages/smithers/agent/regression:test' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
         env:
           SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
           SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: Agent eval typecheck
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
-        run: pnpm exec smthrs build '//evals/agent:check' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
+        run: pnpm exec smthrs build '//packages/smithers/agent/regression:check' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
         env:
           SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
           SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
@@ -564,21 +599,21 @@ jobs:
           SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: SWE-bench offline fixtures
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
-        run: pnpm exec smthrs test '//evals/swebench:offline' --jobs 1 --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
+        run: pnpm exec smthrs test '//packages/smithers/agent/harness/benchmarks/swebench:offline' --jobs 1 --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
         env:
           SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
           SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: SWE-bench rig typecheck
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
-        run: pnpm exec smthrs build '//evals/swebench:check' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
+        run: pnpm exec smthrs build '//packages/smithers/agent/harness/benchmarks/swebench:check' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
         env:
           SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
           SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: SWE-bench rig lint
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
-        run: pnpm exec smthrs lint '//evals/swebench/...' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
+        run: pnpm exec smthrs lint '//packages/smithers/agent/harness/benchmarks/swebench/...' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
         env:
           SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
           SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
@@ -632,13 +667,13 @@ jobs:
         run: bash .github/scripts/install-postgres-18.sh
       - name: Real PostgreSQL backup and restore
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
-        run: go test -p 1 ./distribution -run 'TestRealBackupRestorePostgreSQL|TestRealFailedUpgradeRecoveryPostgreSQL|TestFailedUpgradeReportsRecovery|TestIncompleteUpgrade' -count=1 -v
+        run: go test -p 1 ./packages/backend/native -run 'TestRealBackupRestorePostgreSQL|TestRealFailedUpgradeRecoveryPostgreSQL|TestFailedUpgradeReportsRecovery|TestIncompleteUpgrade' -count=1 -v
         env:
           SMITHERS_POSTGRES_TEST_BIN: /usr/lib/postgresql/18/bin
           SMITHERS_POSTGRES_TEST_MAJOR: "18"
       - name: Distribution release contracts
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
-        run: node --test scripts/repo-contract/mac-distribution.test.mjs distribution/fake-coding-provider.test.mjs
+        run: node --test scripts/repo-contract/mac-distribution.test.mjs
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 26.4.0
@@ -703,28 +738,28 @@ jobs:
           SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Review eval suite (offline, baseline-gated)"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
-        run: pnpm exec smthrs test '//evals/review-seeded-bugs/...' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
+        run: pnpm exec smthrs test '//flows/review/seeded-bugs/...' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
         env:
           SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
           SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: Review eval typecheck
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
-        run: pnpm exec smthrs build '//evals/review-seeded-bugs:check' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
+        run: pnpm exec smthrs build '//flows/review/seeded-bugs:check' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
         env:
           SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
           SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Recommend eval suite (offline, baseline-gated)"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
-        run: pnpm exec smthrs test '//evals/recommend/...' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
+        run: pnpm exec smthrs test '//packages/backend/modelhost/recommend-eval/...' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
         env:
           SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
           SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: Recommend eval typecheck
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
-        run: pnpm exec smthrs build '//evals/recommend:check' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
+        run: pnpm exec smthrs build '//packages/backend/modelhost/recommend-eval:check' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
         env:
           SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
           SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
@@ -752,7 +787,7 @@ jobs:
           SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Package documentation tarballs"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
-        run: "pnpm exec smthrs test '//scripts:packageDocs' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//flows:packageDocs' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"

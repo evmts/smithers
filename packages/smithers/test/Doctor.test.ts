@@ -151,7 +151,7 @@ describe("the report", () => {
 
   it("warns when a flow directory holds no flow body", () => {
     const root = project()
-    mkdirSync(join(root, "flows", "empty"), { recursive: true })
+    mkdirSync(join(root, ".smithers", "flows", "empty"), { recursive: true })
 
     expect(check(Doctor.inspect({ root, environment: {}, nodeVersion: "26.4.0" }), "registry"))
       .toMatchObject({ level: "warn" })
@@ -159,9 +159,9 @@ describe("the report", () => {
 
   it("counts discovered flows and the directories it skipped", () => {
     const root = project()
-    mkdirSync(join(root, "flows", "review"), { recursive: true })
-    mkdirSync(join(root, "flows", "empty"), { recursive: true })
-    writeFileSync(join(root, "flows", "review", "flow.mdx"), "# review\n")
+    mkdirSync(join(root, ".smithers", "flows", "review"), { recursive: true })
+    mkdirSync(join(root, ".smithers", "flows", "empty"), { recursive: true })
+    writeFileSync(join(root, ".smithers", "flows", "review", "flow.mdx"), "# review\n")
 
     const registry = check(Doctor.inspect({ root, environment: {}, nodeVersion: "26.4.0" }), "registry")
 
@@ -177,7 +177,7 @@ describe("the report", () => {
     ] as const
   )("recognizes %s using the real discovery file forms", (_label, segments) => {
     const root = project()
-    const file = join(root, "flows", ...segments)
+    const file = join(root, ".smithers", "flows", ...segments)
     mkdirSync(join(file, ".."), { recursive: true })
     writeFileSync(file, "export default {}\n")
 
@@ -211,14 +211,14 @@ describe("the report", () => {
       nodeVersion: "26.4.0",
       discoveredFlows: [{ flowId: "review", description: "Review" }],
       discoveryWarnings: [
-        { code: "invalid_metadata", path: `${root}/flows/review/flow.ts`, message: "Invalid metadata" },
-        { code: "unreadable", path: `${root}/flows/private/flow.mdx`, message: "Could not inspect source" }
+        { code: "invalid_metadata", path: `${root}/.smithers/flows/review/flow.ts`, message: "Invalid metadata" },
+        { code: "unreadable", path: `${root}/.smithers/flows/private/flow.mdx`, message: "Could not inspect source" }
       ]
     })
 
-    expect(check(report, `registry ${root}/flows/review/flow.ts`))
+    expect(check(report, `registry ${root}/.smithers/flows/review/flow.ts`))
       .toMatchObject({ level: "warn", detail: "invalid_metadata: Invalid metadata" })
-    expect(check(report, `registry ${root}/flows/private/flow.mdx`))
+    expect(check(report, `registry ${root}/.smithers/flows/private/flow.mdx`))
       .toMatchObject({ level: "warn", detail: "unreadable: Could not inspect source" })
   })
 

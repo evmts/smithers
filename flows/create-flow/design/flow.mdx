@@ -13,7 +13,7 @@ concrete, buildable design. Write no files: this is the blueprint the scaffolder
 implements and the thing a person approves.
 
 The appended arguments carry the specification, the provisioning notes, and the
-project's `flows/` directory.
+project's `.smithers/flows/` directory.
 
 ## Design rules
 
@@ -28,7 +28,7 @@ project's `flows/` directory.
   use it. `ReviewLoop`, `Loop`, `MapReduce`, `Escalation`, and `WithApproval`
   already carry the bound, the exit condition, and the failure behavior you
   would otherwise write twice.
-- **One flow directory.** The flow lives at `flows/<name>/flow.ts`, is
+- **One flow directory.** The flow lives at `.smithers/flows/<name>/flow.ts`, is
   discovered by its path, and is the `export default` of one `@smthrs/flow`
   `Flow.make("<tag>", { description, capabilities, effects, modelInvocable?,
   payload, success, error?, body })`. The tag is the first argument and is

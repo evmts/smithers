@@ -87,7 +87,8 @@ import * as Evaluator from "@smthrs/model/Evaluator"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import * as SuggestFlow from "../src/suggest/SuggestFlow.ts"
 
-const characterSource: string = new URL("../../../evals/agent/character/subject.ts", import.meta.url).href
+const characterSource: string =
+  new URL("../../../packages/smithers/agent/regression/character/subject.ts", import.meta.url).href
 
 const evaluator = Layer.succeed(Evaluator.Evaluator, { evaluate: () => Effect.die("unused") })
 

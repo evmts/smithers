@@ -1,0 +1,217 @@
+{
+  "name": "@smthrs/evals",
+  "type": "module",
+  "version": "1.0.0-rc.12",
+  "license": "MIT",
+  "smthrs": {
+    "group": "agent"
+  },
+  "description": "Fixed-suite evaluation, baselines, regression reports, and score gates for flows",
+  "homepage": "https://github.com/smithersai/smithers",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/smithers/agent/evals"
+  },
+  "bugs": {
+    "url": "https://github.com/smithersai/smithers/issues"
+  },
+  "tags": [
+    "typescript",
+    "effect",
+    "flow",
+    "evaluation"
+  ],
+  "keywords": [
+    "typescript",
+    "effect",
+    "flow",
+    "evaluation"
+  ],
+  "engines": {
+    "node": ">=26.4.0"
+  },
+  "sideEffects": [],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null,
+    "./*/index": null,
+    "./Baseline": "./src/Baseline.ts",
+    "./CaseExecutor": "./src/CaseExecutor.ts",
+    "./EvalError": "./src/EvalError.ts",
+    "./Gate": "./src/Gate.ts",
+    "./Regression": "./src/Regression.ts",
+    "./Report": "./src/Report.ts",
+    "./Runner": "./src/Runner.ts",
+    "./Suite": "./src/Suite.ts",
+    "./Trials": "./src/Trials.ts",
+    "./index": "./src/index.ts"
+  },
+  "files": [
+    "src/**/*.ts",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/package.json",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next",
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./internal/*": null,
+      "./*/index": null,
+      "./Baseline": {
+        "import": {
+          "types": "./dist/esm/Baseline.d.ts",
+          "default": "./dist/esm/Baseline.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Baseline.d.ts",
+          "default": "./dist/cjs/Baseline.js"
+        }
+      },
+      "./CaseExecutor": {
+        "import": {
+          "types": "./dist/esm/CaseExecutor.d.ts",
+          "default": "./dist/esm/CaseExecutor.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CaseExecutor.d.ts",
+          "default": "./dist/cjs/CaseExecutor.js"
+        }
+      },
+      "./EvalError": {
+        "import": {
+          "types": "./dist/esm/EvalError.d.ts",
+          "default": "./dist/esm/EvalError.js"
+        },
+        "require": {
+          "types": "./dist/cjs/EvalError.d.ts",
+          "default": "./dist/cjs/EvalError.js"
+        }
+      },
+      "./Gate": {
+        "import": {
+          "types": "./dist/esm/Gate.d.ts",
+          "default": "./dist/esm/Gate.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Gate.d.ts",
+          "default": "./dist/cjs/Gate.js"
+        }
+      },
+      "./Regression": {
+        "import": {
+          "types": "./dist/esm/Regression.d.ts",
+          "default": "./dist/esm/Regression.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Regression.d.ts",
+          "default": "./dist/cjs/Regression.js"
+        }
+      },
+      "./Report": {
+        "import": {
+          "types": "./dist/esm/Report.d.ts",
+          "default": "./dist/esm/Report.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Report.d.ts",
+          "default": "./dist/cjs/Report.js"
+        }
+      },
+      "./Runner": {
+        "import": {
+          "types": "./dist/esm/Runner.d.ts",
+          "default": "./dist/esm/Runner.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Runner.d.ts",
+          "default": "./dist/cjs/Runner.js"
+        }
+      },
+      "./Suite": {
+        "import": {
+          "types": "./dist/esm/Suite.d.ts",
+          "default": "./dist/esm/Suite.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Suite.d.ts",
+          "default": "./dist/cjs/Suite.js"
+        }
+      },
+      "./Trials": {
+        "import": {
+          "types": "./dist/esm/Trials.d.ts",
+          "default": "./dist/esm/Trials.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Trials.d.ts",
+          "default": "./dist/cjs/Trials.js"
+        }
+      },
+      "./index": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint src examples --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "circular": "node scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "vitest --coverage"
+  },
+  "dependencies": {
+    "@smthrs/core": "1.0.0-rc.12",
+    "@smthrs/scorers": "1.0.0-rc.12"
+  },
+  "peerDependencies": {
+    "effect": "^4.0.4"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@eslint/js": "9.39.5",
+    "@types/node": "26.4.1",
+    "@vitest/coverage-v8": "5.0.0",
+    "dprint": "0.57.1",
+    "effect": "4.0.4",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "madge": "8.0.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0"
+  }
+}

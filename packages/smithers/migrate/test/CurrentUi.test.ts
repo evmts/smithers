@@ -131,10 +131,10 @@ describe("current @smthrs/ui migration", () => {
       }
       const scanned = yield* MigrateFlow.scan(chosen)
       const outline = MigrateFlow.outlines(scanned, chosen).find((unit) => unit.id === "project")!
-      mkdirSync(join(root, "flows", "simple-workflow"), { recursive: true })
+      mkdirSync(join(root, ".smithers", "flows", "simple-workflow"), { recursive: true })
       writeFileSync(
-        join(root, "flows", "simple-workflow", "flow.ts"),
-        readFileSync(join(fixture("jsx-single.migrated"), "flows", "simple-workflow", "flow.ts"), "utf8")
+        join(root, ".smithers", "flows", "simple-workflow", "flow.ts"),
+        readFileSync(join(fixture("jsx-single.migrated"), ".smithers", "flows", "simple-workflow", "flow.ts"), "utf8")
       )
       const checkpoint = yield* Checkpoint.take({
         root,

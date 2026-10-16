@@ -20,7 +20,7 @@ tools_dir="$PWD/.flows/cloud-tools"
 export PATH="$tools_dir/bin:$PATH"
 
 # A Cloud sandbox carries no user configuration, so jj and git have no author to
-# name. Run 11727's `//evals/swebench:offline` warned "Name and email not
+# name. Run 11727's `//packages/smithers/agent/harness/benchmarks/swebench:offline` warned "Name and email not
 # configured. Until configured, your commits will be created with the empty
 # identity", and its wave-11 predicate check then read a tree those commits
 # could not produce. The identity is environment rather than a written-out user
@@ -369,7 +369,6 @@ gate_tools() {
   case "$1" in
     workspace) echo 'js jj foundry postgres' ;;
     packages) echo 'js jj foundry postgres sshd' ;;
-    examples) echo 'js jj' ;;
     scripts) echo 'js jj rust' ;;
     flows) echo 'js' ;;
     flows-egress) echo 'js' ;;
@@ -484,9 +483,6 @@ run_gate() {
     workspace)
       pnpm exec smthrs ci '//packages/...' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
       ;;
-    examples)
-      pnpm exec smthrs ci '//examples/...' --known-red '.github/ci-known-red.json' --verbose
-      ;;
     scripts)
       pnpm exec smthrs test '//scripts/...' --known-red '.github/ci-known-red.json' --verbose
       ;;
@@ -506,7 +502,7 @@ run_gate() {
       pnpm exec smthrs lint '//flows/...' --known-red '.github/ci-known-red.json' --verbose
       ;;
     swebench-lint)
-      pnpm exec smthrs lint '//evals/swebench/...' --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs lint '//packages/smithers/agent/harness/benchmarks/swebench/...' --known-red '.github/ci-known-red.json' --verbose
       ;;
     jsdoc)
       pnpm exec smthrs lint '//:jsdocTree' --known-red '.github/ci-known-red.json' --verbose
@@ -521,10 +517,10 @@ run_gate() {
       pnpm exec smthrs test '//:factoryHarness' --known-red '.github/ci-known-red.json' --verbose
       ;;
     agent-eval)
-      pnpm exec smthrs test '//evals/agent:test' --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs test '//packages/smithers/agent/regression:test' --known-red '.github/ci-known-red.json' --verbose
       ;;
     agent-check)
-      pnpm exec smthrs build '//evals/agent:check' --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs build '//packages/smithers/agent/regression:check' --known-red '.github/ci-known-red.json' --verbose
       ;;
     authoring-eval)
       pnpm exec smthrs test '//evals/authoring:test' --known-red '.github/ci-known-red.json' --verbose
@@ -533,10 +529,10 @@ run_gate() {
       pnpm exec smthrs build '//evals/authoring:check' --known-red '.github/ci-known-red.json' --verbose
       ;;
     swebench)
-      pnpm exec smthrs test '//evals/swebench:offline' --jobs 1 --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs test '//packages/smithers/agent/harness/benchmarks/swebench:offline' --jobs 1 --known-red '.github/ci-known-red.json' --verbose
       ;;
     swebench-check)
-      pnpm exec smthrs build '//evals/swebench:check' --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs build '//packages/smithers/agent/harness/benchmarks/swebench:check' --known-red '.github/ci-known-red.json' --verbose
       ;;
     server)
       pnpm exec smthrs ci '//apps/server/...' --known-red '.github/ci-known-red.json' --verbose
@@ -554,19 +550,19 @@ run_gate() {
       pnpm exec smthrs ci '//apps/site/...' --known-red '.github/ci-known-red.json' --verbose
       ;;
     docs)
-      pnpm exec smthrs test '//scripts:packageDocs' --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs test '//flows:packageDocs' --known-red '.github/ci-known-red.json' --verbose
       ;;
     review-eval)
-      pnpm exec smthrs test '//evals/review-seeded-bugs/...' --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs test '//flows/review/seeded-bugs/...' --known-red '.github/ci-known-red.json' --verbose
       ;;
     review-check)
-      pnpm exec smthrs build '//evals/review-seeded-bugs:check' --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs build '//flows/review/seeded-bugs:check' --known-red '.github/ci-known-red.json' --verbose
       ;;
     recommend-eval)
-      pnpm exec smthrs test '//evals/recommend/...' --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs test '//packages/backend/modelhost/recommend-eval/...' --known-red '.github/ci-known-red.json' --verbose
       ;;
     recommend-check)
-      pnpm exec smthrs build '//evals/recommend:check' --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs build '//packages/backend/modelhost/recommend-eval:check' --known-red '.github/ci-known-red.json' --verbose
       ;;
     workflow-drift)
       pnpm exec smthrs lint '//:ci' --known-red '.github/ci-known-red.json' --verbose
@@ -598,10 +594,10 @@ run_gate() {
       pnpm exec smthrs build '//scripts:apiBaseline' --known-red '.github/ci-known-red.json' --verbose
       ;;
     conflict-markers)
-      pnpm exec smthrs lint '//scripts:conflictMarkers' --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs lint '//packages/repo-targets:conflictMarkers' --known-red '.github/ci-known-red.json' --verbose
       ;;
     tracked-hygiene)
-      pnpm exec smthrs lint '//scripts:trackedHygiene' --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs lint '//packages/repo-targets:trackedHygiene' --known-red '.github/ci-known-red.json' --verbose
       ;;
     drift-ci)
       pnpm exec smthrs lint '//:driftCi' --known-red '.github/ci-known-red.json' --verbose
@@ -631,7 +627,7 @@ run_gate() {
       pnpm exec smthrs lint '//crates/flows-jj/...' --known-red '.github/ci-known-red.json' --verbose
       ;;
     third-party-notices)
-      pnpm exec smthrs test '//scripts:thirdPartyNotices' --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs test '//packages/smithers/flows/jj:thirdPartyNotices' --known-red '.github/ci-known-red.json' --verbose
       ;;
     rust-test)
       pnpm exec smthrs test '//crates/flows-jj:cargoTest' --known-red '.github/ci-known-red.json' --verbose

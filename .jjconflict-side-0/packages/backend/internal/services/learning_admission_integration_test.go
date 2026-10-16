@@ -1,0 +1,232 @@
+package services
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/smithersai/smithers/packages/backend/flowdispatch"
+	"github.com/smithersai/smithers/packages/backend/flowruntime"
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/jobs"
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
+	"github.com/stretchr/testify/require"
+)
+
+type learningMachineFixture struct {
+	calls       chan flowruntime.Pin
+	retired     chan flowruntime.Target
+	retireError error
+}
+
+func (f learningMachineFixture) EnsureLearningMachine(ctx context.Context, repo, actor int64, item string, pin flowruntime.Pin) (flowruntime.Target, error) {
+	select {
+	case f.calls <- pin:
+	case <-ctx.Done():
+		return flowruntime.Target{}, ctx.Err()
+	}
+	return flowruntime.Target{TenantID: fmt.Sprintf("repository:%d", repo), PrincipalID: fmt.Sprintf("user:%d", actor), WorkspaceID: "isolated-learning-fixture", BindingKind: "learning", BindingID: item}, nil
+}
+
+func (f learningMachineFixture) RetireLearningMachine(_ context.Context, target flowruntime.Target) error {
+	if f.retired != nil {
+		f.retired <- target
+	}
+	return f.retireError
+}
+
+func TestLearningAdmissionDurablePinAndRefusal(t *testing.T) {
+	pool, _ := postgresfixture.NewProductDatabase(t)
+	ctx := t.Context()
+	q := db.New(pool)
+	owner, err := q.CreateUser(ctx, db.CreateUserParams{Username: "learningowner", LowerUsername: "learningowner"})
+	require.NoError(t, err)
+	var repository int64
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO repositories(user_id,name,lower_name) VALUES($1,'app','app') RETURNING id`, owner.ID).Scan(&repository))
+	var itemID string
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO mythical_items(repository_id,source,state,owner_id,pr_state,pr_merge_commit,checks) VALUES($1,'todo','landed',$2,'merged',$3,'{}') RETURNING id::text`, repository, owner.ID, strings.Repeat("a", 40)).Scan(&itemID))
+	item, err := q.GetMythicalItemByNumber(ctx, repository, 1)
+	require.NoError(t, err)
+	store, err := jobs.NewStore(pool)
+	require.NoError(t, err)
+	service := NewMythicalService(pool, nil)
+	service.EnableLearningAdmission(store)
+	digest := strings.Repeat("1", 64)
+	_, err = q.InsertFlowVersion(ctx, repository, "learning", ".smithers/flows/learning/flow.ts", strings.Repeat("a", 40), digest, "loaded", "", json.RawMessage(`{}`))
+	require.NoError(t, err)
+	_, err = q.ActivateFlowVersion(ctx, repository, "learning", digest)
+	require.NoError(t, err)
+	// A rolled-back merge has no orphaned Learning request.
+	tx, err := pool.Begin(ctx)
+	require.NoError(t, err)
+	require.NoError(t, service.admitLearningInTx(ctx, tx, item))
+	require.NoError(t, tx.Rollback(ctx))
+	var count int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM product_job_requests WHERE operation='learning.admission'`).Scan(&count))
+	require.Zero(t, count)
+	require.NoError(t, pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error { return service.admitLearningInTx(ctx, tx, item) }))
+	// Active changing cannot change either the identity or pin on replay.
+	_, err = q.InsertFlowVersion(ctx, repository, "learning", ".smithers/flows/learning/flow.ts", strings.Repeat("b", 40), strings.Repeat("2", 64), "loaded", "", json.RawMessage(`{}`))
+	require.NoError(t, err)
+	_, err = q.ActivateFlowVersion(ctx, repository, "learning", strings.Repeat("2", 64))
+	require.NoError(t, err)
+	require.NoError(t, pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error { return service.admitLearningInTx(ctx, tx, item) }))
+	workerCtx, cancel := context.WithCancel(ctx)
+	done := make(chan error, 1)
+	go func() {
+		done <- store.RunWorker(workerCtx, jobs.WorkerConfig{WorkerID: "learning-fixture", Capacity: 1, Lease: time.Second, PollInterval: time.Millisecond, Operations: []string{LearningAdmissionOperation}}, service.HandleLearningAdmission)
+	}()
+	active := true
+	t.Cleanup(func() {
+		if active {
+			cancel()
+			require.NoError(t, <-done)
+		}
+	})
+	require.Eventually(t, func() bool {
+		var checkpoint []byte
+		if pool.QueryRow(ctx, `SELECT external_receipt FROM product_job_dispatches`).Scan(&checkpoint) != nil {
+			return false
+		}
+		var saved struct {
+			Pin *flowruntime.Pin `json:"pin"`
+		}
+		return json.Unmarshal(checkpoint, &saved) == nil && saved.Pin != nil && saved.Pin.ExecutionDigest == digest
+	}, 5*time.Second, 10*time.Millisecond)
+	runs, err := service.LearningBackgroundRuns(ctx, repository)
+	require.NoError(t, err)
+	require.Len(t, runs, 1)
+	require.Equal(t, "Learning · T1", runs[0]["title"])
+	// No allocator means no machine call or runtime launch; the intent is parked.
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM product_job_requests WHERE operation='flow.runtime.launch'`).Scan(&count))
+	require.Zero(t, count)
+	cancel()
+	require.NoError(t, <-done)
+	active = false
+	// Restart on an available contract with a real durable dispatcher; the
+	// allocator alone is the test-only dependency, never a host fallback.
+	dispatcher, err := flowdispatch.New(flowdispatch.Config{Store: store, Resolver: flowruntime.ResolverFunc(func(context.Context, flowruntime.Target) (flowruntime.Runtime, error) {
+		t.Error("admission contacted runtime")
+		return nil, ErrLearningUnavailable
+	})})
+	require.NoError(t, err)
+	service.SetLauncher(dispatcher)
+	machines := learningMachineFixture{calls: make(chan flowruntime.Pin, 1)}
+	service.SetLearningMachines(machines)
+	_, err = pool.Exec(ctx, `UPDATE product_job_dispatches SET next_attempt_at=clock_timestamp() WHERE operation_id IN (SELECT id FROM product_job_requests WHERE operation='learning.admission')`)
+	require.NoError(t, err)
+	workerCtx, cancel = context.WithCancel(ctx)
+	defer cancel()
+	done = make(chan error, 1)
+	active = true
+	go func() {
+		done <- store.RunWorker(workerCtx, jobs.WorkerConfig{WorkerID: "learning-restart", Capacity: 1, Lease: time.Second, PollInterval: time.Millisecond, Operations: []string{LearningAdmissionOperation}}, service.HandleLearningAdmission)
+	}()
+	require.Eventually(t, func() bool {
+		return pool.QueryRow(ctx, `SELECT count(*) FROM product_job_requests WHERE operation='flow.runtime.launch'`).Scan(&count) == nil && count == 1
+	}, 5*time.Second, 10*time.Millisecond)
+	require.Equal(t, flowruntime.Pin{Flow: "learning", SourceCommit: strings.Repeat("a", 40), ExecutionDigest: digest}, <-machines.calls)
+	var launch []byte
+	require.NoError(t, pool.QueryRow(ctx, `SELECT payload FROM product_job_requests WHERE operation='flow.runtime.launch'`).Scan(&launch))
+	var saved struct {
+		ApprovalPolicy flowdispatch.ApprovalPolicy `json:"approvalPolicy"`
+		Pin            flowruntime.Pin             `json:"pin"`
+		Target         flowruntime.Target          `json:"target"`
+		Payload        map[string]int64            `json:"payload"`
+	}
+	require.NoError(t, json.Unmarshal(launch, &saved))
+	require.Equal(t, flowdispatch.ApprovalAuto, saved.ApprovalPolicy, "authenticated background learning must execute without a manual plan approval")
+	require.Equal(t, digest, saved.Pin.ExecutionDigest)
+	require.Equal(t, itemID, saved.Target.BindingID)
+	require.Equal(t, int64(1), saved.Payload["todo"])
+	var operationID string
+	require.NoError(t, pool.QueryRow(ctx, `SELECT id FROM product_job_requests WHERE operation='flow.runtime.launch'`).Scan(&operationID))
+	cp := flowdispatch.RuntimeCheckpoint{Target: saved.Target, FlowID: "learning", RunID: "learning-1"}
+	checkpoint, _ := json.Marshal(cp)
+	_, err = pool.Exec(ctx, `UPDATE product_job_dispatches SET external_receipt=$2 WHERE operation_id=$1`, operationID, checkpoint)
+	require.NoError(t, err)
+	retired := make(chan flowruntime.Target, 2)
+	cleanupFailure := errors.New("allocator retirement failed")
+	service.SetLearningMachines(learningMachineFixture{retired: retired, retireError: cleanupFailure})
+	update := flowdispatch.ProjectionUpdate{OperationID: operationID, Scope: learningOperationScope(item), State: jobs.StateFailed, Checkpoint: cp}
+	require.ErrorIs(t, service.LearningRuntime().ProjectFlowRuntime(ctx, update), cleanupFailure)
+	require.Equal(t, saved.Target, <-retired)
+	service.SetLearningMachines(learningMachineFixture{retired: retired})
+	require.NoError(t, service.LearningRuntime().ProjectFlowRuntime(ctx, update))
+	require.Equal(t, saved.Target, <-retired)
+	update.Checkpoint.Target.WorkspaceID = "another-machine"
+	require.ErrorIs(t, service.LearningRuntime().ProjectFlowRuntime(ctx, update), ErrLearningBinding)
+	require.Empty(t, retired)
+
+}
+
+// A wait for an execution provider parks the admission for a minute. The job
+// library refuses to park before an external effect starts; before the fix
+// that refusal became an immediate retry, so the worker reclaimed the
+// admission in a loop instead of waiting.
+func TestLearningAdmissionWaitParksWithoutRetrying(t *testing.T) {
+	pool, _ := postgresfixture.NewProductDatabase(t)
+	ctx := t.Context()
+	q := db.New(pool)
+	owner, err := q.CreateUser(ctx, db.CreateUserParams{Username: "learningwait", LowerUsername: "learningwait"})
+	require.NoError(t, err)
+	var repository int64
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO repositories(user_id,name,lower_name) VALUES($1,'app','app') RETURNING id`, owner.ID).Scan(&repository))
+	_, err = pool.Exec(ctx, `INSERT INTO mythical_items(repository_id,source,state,owner_id,pr_state,pr_merge_commit,checks) VALUES($1,'todo','landed',$2,'merged',$3,'{}')`, repository, owner.ID, strings.Repeat("a", 40))
+	require.NoError(t, err)
+	item, err := q.GetMythicalItemByNumber(ctx, repository, 1)
+	require.NoError(t, err)
+	store, err := jobs.NewStore(pool)
+	require.NoError(t, err)
+	service := NewMythicalService(pool, nil)
+	service.EnableLearningAdmission(store)
+	digest := strings.Repeat("1", 64)
+	_, err = q.InsertFlowVersion(ctx, repository, "learning", ".smithers/flows/learning/flow.ts", strings.Repeat("a", 40), digest, "loaded", "", json.RawMessage(`{}`))
+	require.NoError(t, err)
+	_, err = q.ActivateFlowVersion(ctx, repository, "learning", digest)
+	require.NoError(t, err)
+	require.NoError(t, pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error { return service.admitLearningInTx(ctx, tx, item) }))
+	type parked struct {
+		status, state, reason, lastError, pin string
+		attempt, events                       int
+		later                                 bool
+	}
+	read := func() parked {
+		var p parked
+		_ = pool.QueryRow(ctx, `SELECT d.status, r.state, coalesce(d.external_receipt->>'reason',''), d.last_error, coalesce(d.external_receipt->'pin'->>'executionDigest',''), d.attempt,
+ (SELECT count(*) FROM product_job_events e WHERE e.operation_id=r.id), d.next_attempt_at > clock_timestamp() + interval '30 seconds'
+ FROM product_job_requests r JOIN product_job_dispatches d ON d.operation_id=r.id WHERE r.operation=$1`, LearningAdmissionOperation).
+			Scan(&p.status, &p.state, &p.reason, &p.lastError, &p.pin, &p.attempt, &p.events, &p.later)
+		return p
+	}
+	// The worker sets no retry delay, as the production learning worker did:
+	// any unparked return is reclaimed after one poll interval.
+	workerCtx, cancel := context.WithCancel(ctx)
+	done := make(chan error, 1)
+	go func() {
+		done <- store.RunWorker(workerCtx, jobs.WorkerConfig{WorkerID: "learning-wait", Capacity: 1, Lease: time.Second, PollInterval: time.Millisecond, Operations: []string{LearningAdmissionOperation}}, service.HandleLearningAdmission)
+	}()
+	defer func() { cancel(); require.NoError(t, <-done) }()
+	waitParked := func(attempt int) {
+		t.Helper()
+		var p parked
+		require.Eventually(t, func() bool { p = read(); return p.status == "ready" && p.later }, 5*time.Second, 10*time.Millisecond, "last %+v", &p)
+		// Many poll intervals later the admission has not been claimed again
+		// and its journal has not grown.
+		time.Sleep(300 * time.Millisecond)
+		require.Equal(t, parked{status: "ready", state: "waiting", reason: "learning_execution_unavailable", pin: digest, attempt: attempt, events: p.events, later: true}, read())
+	}
+	waitParked(1)
+	// Waking it early finds no provider still; it parks again, keeping its pin.
+	_, err = pool.Exec(ctx, `UPDATE product_job_dispatches SET next_attempt_at=clock_timestamp()`)
+	require.NoError(t, err)
+	waitParked(2)
+	var count int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM product_job_requests WHERE operation='flow.runtime.launch'`).Scan(&count))
+	require.Zero(t, count)
+}

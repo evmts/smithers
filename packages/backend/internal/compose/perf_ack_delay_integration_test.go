@@ -147,7 +147,7 @@ func TestPerfAckDelayComposedInstall(t *testing.T) {
 	require.Equal(t, 200, code)
 	require.Equal(t, "cancelled", cancelled.State)
 	// The automatic cohort uses the full ten seconds, without an operator restore.
-	module, err := filepath.Abs("../../../../scripts/perf/lib/ack-delay.mjs")
+	module, err := filepath.Abs("../../../../flows/perf/lib/ack-delay.mjs")
 	require.NoError(t, err)
 	moduleURL := (&url.URL{Scheme: "file", Path: module}).String()
 	eventID[0] = 92
@@ -199,7 +199,7 @@ func TestPerfAckDelayComposedInstall(t *testing.T) {
 	// Recheck the production adapter against the actual completed host receipt.
 	// The matching guest identity is a wire-peer observation, not VM proof.
 	_, completed := call("GET", "", f.cookie)
-	adapter, err := filepath.Abs("../../../../scripts/perf/rebase-production.mjs")
+	adapter, err := filepath.Abs("../../../../flows/perf/rebase-production.mjs")
 	require.NoError(t, err)
 	adapterURL := (&url.URL{Scheme: "file", Path: adapter}).String()
 	armedJSON, err := json.Marshal(natural)

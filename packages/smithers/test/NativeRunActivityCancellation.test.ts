@@ -92,9 +92,9 @@ it(
       // Keep public API reads on the CLI fixture's real SQLite stores even
       // when the developer has configured an ambient PostgreSQL URL.
       vi.stubEnv("SMITHERS_BACKEND", "sqlite")
-      await mkdir(join(root, "flows", "cancel-activity"), { recursive: true })
+      await mkdir(join(root, ".smithers", "flows", "cancel-activity"), { recursive: true })
       await symlink(modules, join(root, "node_modules"), "dir")
-      await copyFile(fixture, join(root, "flows", "cancel-activity", "flow.ts"))
+      await copyFile(fixture, join(root, ".smithers", "flows", "cancel-activity", "flow.ts"))
       await writeFile(join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n")
       const marker = join(root, "entered")
       runner = command(root, ["flow", "start", "cancel-activity", "--data", JSON.stringify({ marker }), "--wait"])

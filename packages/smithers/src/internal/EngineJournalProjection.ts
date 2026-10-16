@@ -29,7 +29,7 @@ export interface Options {
    *
    * The order is the guarantee: a client reading the copied record can act on
    * what it says, because the host already has. A copy-back receipt naming
-   * `flows/<id>/flow.ts` is the case that needs it — the host rebuilds that
+   * `.smithers/flows/<id>/flow.ts` is the case that needs it — the host rebuilds that
    * flow's executable first, so the plan a client asks for on seeing the
    * receipt is a plan this host can answer.
    *

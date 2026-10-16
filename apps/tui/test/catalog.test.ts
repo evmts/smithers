@@ -9,7 +9,7 @@ const listed = (name: string, kind: "module" | "markdown" = "module"): Flows.Lis
   kind,
   flows: [],
   capabilities: [],
-  path: `flows/${name}/flow.${kind === "module" ? "ts" : "mdx"}`
+  path: `.smithers/flows/${name}/flow.${kind === "module" ? "ts" : "mdx"}`
 })
 const run = (flow: string, status: Flows.Run["status"], startedAt: number, endedAt?: number): Flows.Run => ({
   id: `${flow}-${startedAt}`,

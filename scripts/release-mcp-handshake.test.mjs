@@ -6,7 +6,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 
-import { EXPECTED_EFFECT_VERSION as pin } from "./check-single-effect-version.mjs"
+import { EXPECTED_EFFECT_VERSION as pin } from "../packages/repo-targets/contracts/check-single-effect-version.mjs"
 import {
   assertEffectFamilyAccepts,
   assertEffectFamilyInstalled,

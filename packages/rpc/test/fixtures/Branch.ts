@@ -197,7 +197,7 @@ const states = {
     {
       ...base,
       presence: [
-        { actor: ssh_person, where: { kind: "file", path: "flows/todo/flow.ts", line: 12 }, watching: "terminal-2" },
+        { actor: ssh_person, where: { kind: "file", path: ".smithers/flows/todo/flow.ts", line: 12 }, watching: "terminal-2" },
         { actor: agent, where: { kind: "file", path: "packages/rpc/src/TodoCard.ts" } },
         { actor: claude_code, where: { kind: "terminal", id: "terminal-1" } },
         { actor: reviewer, where: { kind: "step", label: "Check" } },
@@ -282,9 +282,9 @@ const states = {
         { path: "apps/app/src/mainview/cards/views/TodoView.tsx", change: "modified", authors: [person, claude_code] },
         { path: "apps/app/src/mainview/cards/LegacyTodo.tsx", change: "deleted", authors: [outside] },
         {
-          path: "flows/todo/prompt.md",
+          path: ".smithers/flows/todo/prompt.md",
           change: "renamed",
-          renamed_to: "flows/todo/instructions/implementer.md",
+          renamed_to: ".smithers/flows/todo/instructions/implementer.md",
           authors: [person, agent]
         }
       ]
@@ -307,7 +307,7 @@ export const fixtures = {
     actions: states.active.actions,
     gestures: states.active.gestures,
     view: { maximized: false, tab: "files" },
-    expect: ["todo/12", "flows/todo/instructions/implementer.md"]
+    expect: ["todo/12", ".smithers/flows/todo/instructions/implementer.md"]
   }),
   active_terminals: story("People and agents' terminals", states.active.model, {
     actions: states.active.actions,

@@ -1,8 +1,9 @@
 /**
  * Manual read-only discovery measurement; run with Bun from the repository root.
- * Method and evidence: scripts/bench/flow-discovery/README.md.
+ * Method and evidence: flows/bench/flow-discovery/README.md.
  */
 import { NodeFileSystem, NodePath } from "@effect/platform-node"
+import { projectFlowsDirectory } from "@smthrs/registry/Descriptor"
 import * as Discovery from "@smthrs/registry/Discovery"
 import { Effect, FileSystem, Layer, Path } from "effect"
 import { execFileSync } from "node:child_process"
@@ -74,7 +75,7 @@ try {
       const start = performance.now()
       const scan = yield* Discovery.make(counting, path).scan({
         source: "project",
-        root: join(cwd, "flows"),
+        root: join(cwd, projectFlowsDirectory),
         naming: "path"
       })
       return {

@@ -1,0 +1,738 @@
+package routes
+
+import (
+	"bytes"
+	"context"
+	"crypto/subtle"
+	"encoding/json"
+	"errors"
+	"github.com/smithersai/smithers/packages/backend/microsandbox"
+	"io"
+	"log/slog"
+	"net"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
+)
+
+const GitHubAppSetupSessionCookie = "smithers_setup_session"
+const GitHubAppStateCookie = "smithers_github_app_state"
+
+type GitHubAppSetupService interface {
+	Begin(context.Context, services.GitHubAppManifestRequest) (services.GitHubAppManifestStart, error)
+	ValidateCallbackOrigin(context.Context, string, string) error
+	Convert(context.Context, string, string, string) (string, error)
+	ResumeInstallation(context.Context) error
+}
+type GitHubAppSetupOwners interface {
+	GetSelfHostOwner(context.Context) (db.User, error)
+}
+type GitHubAppSetupCredentials interface {
+	Load(context.Context) (services.GitHubAppCredentials, error)
+	InstallURL(context.Context) (string, error)
+	CallbackURLs(context.Context) ([]string, error)
+	CallbackFixes(context.Context, []string) ([]services.GitHubAppCallbackFix, error)
+}
+type InstallSetupSessionAuthority interface {
+	Exchange(context.Context, string) (string, error)
+	Validate(context.Context, string) error
+}
+
+type GitHubAppSetupHandler struct {
+	SetTodoPreapprovalDefault func(context.Context, int64, bool) error
+	Setup                     *services.InstallSetupService
+	Sessions                  InstallSetupSessionAuthority
+	Service                   GitHubAppSetupService
+	Store                     GitHubAppSetupCredentials
+	Owners                    GitHubAppSetupOwners
+	// Installations lists the App's installations and repositories when
+	// GitHub returns the owner after an install or a repository change: an
+	// install whose address is not public https gets no installation webhook.
+	Installations GitHubAppInstallationReconciler
+	// Origins are the install's known origins: the configured ones and the
+	// Address the owner saved, read on every request (M-28).
+	Origins func() []string
+	// Roster lets a member read the install's state (install.read,
+	// services.Authorize); without it only the owner reads it.
+	Roster *db.Queries
+}
+
+func (h *GitHubAppSetupHandler) knownOrigins() []string {
+	if h.Origins == nil {
+		return nil
+	}
+	return h.Origins()
+}
+
+// authorize requires the live durable setup session before claim and the
+// owner browser session afterwards, on every listener.
+func (h *GitHubAppSetupHandler) authorize(w http.ResponseWriter, r *http.Request) bool {
+	if h == nil || h.Owners == nil {
+		writeInstallAPIError(w, pkgerrors.Internal("install setup is unavailable"))
+		return false
+	}
+	owner, err := h.Owners.GetSelfHostOwner(r.Context())
+	if errors.Is(err, pgx.ErrNoRows) {
+		if h.Sessions == nil {
+			writeInstallAPIError(w, pkgerrors.Internal("setup session authority unavailable"))
+			return false
+		}
+		cookie, err := r.Cookie(GitHubAppSetupSessionCookie)
+		if err != nil {
+			writeInstallAPIError(w, pkgerrors.New(pkgerrors.CodeUnauthenticated, "setup session required"))
+			return false
+		}
+		if err := h.Sessions.Validate(r.Context(), cookie.Value); err != nil {
+			WriteInstallSetupError(w, r, err)
+			return false
+		}
+
+		return true
+	}
+	if err != nil {
+		WriteInstallSetupError(w, r, pkgerrors.Internal("failed to read install owner").WithCause(err))
+		return false
+	}
+	info := middleware.AuthInfoFromContext(r.Context())
+	if cookie, err := r.Cookie(GitHubAppSetupSessionCookie); err == nil && (info == nil || info.User == nil) {
+		if h.Sessions != nil {
+			if err := h.Sessions.Validate(r.Context(), cookie.Value); err != nil {
+				WriteInstallSetupError(w, r, err)
+				return false
+			}
+		}
+		writeInstallAPIError(w, pkgerrors.New(pkgerrors.CodeSetupClosed, "setup_closed"))
+		return false
+	}
+	if info == nil || info.User == nil {
+		writeInstallAPIError(w, pkgerrors.New(pkgerrors.CodeUnauthenticated, "owner session required"))
+		return false
+	}
+	if info.User.ID != owner.ID || info.IsTokenAuth || info.IsAgent() || info.SessionHash == "" {
+		writeInstallAPIError(w, pkgerrors.Forbidden("install owner session required"))
+		return false
+	}
+	return true
+}
+
+// authorizeRead admits what authorize admits and, once the install is
+// claimed, a roster member's browser session for install.read: members read
+// the install's state (the Setup card's steps, the repository, health); only
+// the owner changes it.
+func (h *GitHubAppSetupHandler) authorizeRead(w http.ResponseWriter, r *http.Request) bool {
+	info := middleware.AuthInfoFromContext(r.Context())
+	if h != nil && h.Roster != nil && info != nil && info.User != nil {
+		owner, err := h.Roster.GetSelfHostOwner(r.Context())
+		if err == nil && owner.ID != info.User.ID {
+			if _, err := services.Authorize(r.Context(), h.Roster, "install.read"); err != nil {
+				var access *services.AccessError
+				if !errors.As(err, &access) {
+					WriteInstallSetupError(w, r, pkgerrors.Internal("failed to authorize member").WithCause(err))
+					return false
+				}
+				pkgerrors.WriteJSON(w, access.Status, access)
+				return false
+			}
+			return true
+		}
+	}
+	return h.authorize(w, r)
+}
+
+func (h *GitHubAppSetupHandler) requestOrigin(r *http.Request) (string, bool) {
+	origin, ok := middleware.ResolveEffectiveOrigin(r, h.knownOrigins())
+	if ok && r.Header.Get("Origin") != "" && !middleware.SameOrigin(r.Header.Get("Origin"), origin) {
+		return origin, false
+	}
+	return origin, ok
+}
+
+// OpenSetup exchanges the terminal token for the shared durable session before
+// any setup step. Redirect removes the token from the address and referrer.
+func (h *GitHubAppSetupHandler) OpenSetup(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	origin, ok := h.requestOrigin(r)
+	if !ok {
+		writeGitHubAppOriginError(w, origin)
+		return
+	}
+	if h.Sessions == nil {
+		writeInstallAPIError(w, pkgerrors.Internal("setup session authority unavailable"))
+		return
+	}
+	session, err := h.Sessions.Exchange(r.Context(), r.URL.Query().Get("token"))
+	if err != nil {
+		var refusal *pkgerrors.APIError
+		if errors.As(err, &refusal) && refusal.Code == pkgerrors.CodeSetupClosed && strings.Contains(r.Header.Get("Accept"), "text/html") {
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+			return
+		}
+		WriteInstallSetupError(w, r, err)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{Name: GitHubAppSetupSessionCookie, Value: session, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: strings.HasPrefix(origin, "https://"), MaxAge: 86400})
+	token, err := middleware.NewCSRFToken()
+	if err != nil {
+		WriteInstallSetupError(w, r, err)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{Name: middleware.CSRFCookieName, Value: token, Path: "/", SameSite: http.SameSiteLaxMode, Secure: strings.HasPrefix(origin, "https://"), MaxAge: 86400})
+	http.SetCookie(w, &http.Cookie{Name: "smithers_session", Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: strings.HasPrefix(origin, "https://"), MaxAge: -1})
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func writeGitHubAppOriginError(w http.ResponseWriter, origin string) {
+	if origin != "" {
+		writeInstallAPIError(w, pkgerrors.Forbidden("request origin differs from install origin"))
+		return
+	}
+	writeInstallAPIError(w, pkgerrors.New(pkgerrors.CodeUnknownOrigin, "install origin is not configured"))
+}
+
+func (h *GitHubAppSetupHandler) Status(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	if origin, ok := h.requestOrigin(r); !ok {
+		writeGitHubAppOriginError(w, origin)
+		return
+	}
+	if !h.authorizeRead(w, r) {
+		return
+	}
+	if h.Setup != nil {
+		status, err := h.Setup.Status(r.Context())
+		if err != nil {
+			WriteInstallSetupError(w, r, err)
+			return
+		}
+		if h.Store != nil {
+			fixes, fixErr := h.Store.CallbackFixes(r.Context(), h.knownOrigins())
+			if fixErr != nil && !errors.Is(fixErr, services.ErrGitHubAppNotConfigured) {
+				WriteInstallSetupError(w, r, fixErr)
+				return
+			}
+			if fixErr == nil {
+				status["callback_fixes"] = fixes
+			}
+		}
+		status["can_assign_models"] = false
+		if h.Owners != nil {
+			owner, ownerErr := h.Owners.GetSelfHostOwner(r.Context())
+			status["can_assign_models"] = ownerErr == nil && middleware.IsOwnerBrowserSession(middleware.AuthInfoFromContext(r.Context()), owner.ID)
+		}
+		pkgerrors.WriteJSON(w, http.StatusOK, status)
+		return
+	}
+	if h.Store == nil {
+		writeInstallAPIError(w, pkgerrors.Internal("GitHub App credential store is unavailable"))
+		return
+	}
+	credentials, err := h.Store.Load(r.Context())
+	if errors.Is(err, services.ErrGitHubAppNotConfigured) {
+		pkgerrors.WriteJSON(w, http.StatusOK, map[string]any{"github_app": map[string]any{"configured": false, "installed": false}})
+		return
+	}
+	if err != nil {
+		WriteInstallSetupError(w, r, err)
+		return
+	}
+	installURL, err := h.Store.InstallURL(r.Context())
+	if err != nil {
+		WriteInstallSetupError(w, r, err)
+		return
+	}
+	callbackURLs, err := h.Store.CallbackURLs(r.Context())
+	if err != nil {
+		WriteInstallSetupError(w, r, err)
+		return
+	}
+	callbackFixes, err := h.Store.CallbackFixes(r.Context(), h.knownOrigins())
+	if err != nil {
+		WriteInstallSetupError(w, r, err)
+		return
+	}
+	pkgerrors.WriteJSON(w, http.StatusOK, map[string]any{"github_app": map[string]any{"configured": true, "installed": credentials.InstallationID > 0, "slug": credentials.Slug, "installation_id": credentials.InstallationID, "install_url": installURL, "callback_urls": callbackURLs, "callback_fixes": callbackFixes}})
+}
+func (h *GitHubAppSetupHandler) Begin(w http.ResponseWriter, r *http.Request) {
+	origin, ok := h.requestOrigin(r)
+	if !ok {
+		writeGitHubAppOriginError(w, origin)
+		return
+	}
+	if !h.authorize(w, r) {
+		return
+	}
+	csrf, err := r.Cookie(middleware.CSRFCookieName)
+	if !middleware.SameOrigin(r.Header.Get("Origin"), origin) || err != nil || csrf.Value == "" || subtle.ConstantTimeCompare([]byte(csrf.Value), []byte(r.Header.Get("X-CSRF-Token"))) != 1 {
+		writeInstallAPIError(w, pkgerrors.Forbidden("setup origin and CSRF token required"))
+		return
+	}
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 16<<10))
+	if err != nil {
+		writeInstallAPIError(w, pkgerrors.BadRequest("invalid setup body"))
+		return
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil {
+		writeInstallAPIError(w, pkgerrors.BadRequest("invalid setup body"))
+		return
+	}
+	manual := false
+	for _, field := range []string{"app_id", "slug", "pem", "client_id", "client_secret", "webhook_secret", "callbacks_confirmed"} {
+		if _, ok := fields[field]; ok {
+			manual = true
+		}
+	}
+	var manualInput services.GitHubAppManualRequest
+	var input services.InstallSetupInput
+	if manual {
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.DisallowUnknownFields()
+		err = decoder.Decode(&manualInput)
+	} else {
+		input, err = services.ValidateInstallSetupBody("app_manifest", raw)
+	}
+	if err != nil {
+		if manual {
+			writeInstallAPIError(w, pkgerrors.BadRequest("invalid setup body"))
+		} else {
+			WriteInstallSetupError(w, r, err)
+		}
+		return
+	}
+	if h.Setup != nil {
+		steps, err := h.Setup.Steps(r.Context())
+		if err != nil {
+			WriteInstallSetupError(w, r, err)
+			return
+		}
+		if steps[0].Status != services.InstallReady {
+			writeInstallAPIError(w, pkgerrors.Conflict("Confirm Address first"))
+			return
+		}
+	}
+	req := services.GitHubAppManifestRequest{OwnerLogin: input.Owner}
+	req.Origin = origin
+	if h.Service == nil {
+		writeInstallAPIError(w, pkgerrors.Internal("GitHub App setup is unavailable"))
+		return
+	}
+	session := h.gitHubAppBrowserSession(r)
+	ctx := services.WithGitHubAppSetupSession(r.Context(), session, origin)
+	var start services.GitHubAppManifestStart
+	if manual {
+		service, ok := h.Service.(interface {
+			ConfigureManual(context.Context, services.GitHubAppManualRequest) (services.GitHubAppManifestStart, error)
+		})
+		if !ok {
+			writeInstallAPIError(w, pkgerrors.Internal("manual App setup unavailable"))
+			return
+		}
+		start, err = service.ConfigureManual(ctx, manualInput)
+	} else {
+		start, err = h.Service.Begin(ctx, req)
+	}
+	if err != nil {
+		WriteInstallSetupError(w, r, err)
+		return
+	}
+	if manual {
+		w.Header().Set("Cache-Control", "no-store")
+		pkgerrors.WriteJSON(w, http.StatusOK, map[string]string{"install_url": start.InstallURL})
+		return
+	}
+	if start.State != "" {
+		http.SetCookie(w, &http.Cookie{Name: GitHubAppStateCookie, Value: start.State, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: strings.HasPrefix(origin, "https://"), MaxAge: 600, Expires: time.Now().Add(10 * time.Minute)})
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	pkgerrors.WriteJSON(w, http.StatusOK, start)
+}
+
+// Called only after authorize: the owner browser takes precedence over a stale
+// pre-claim setup cookie, and both ends of the redirect bind the same authority.
+func (h *GitHubAppSetupHandler) gitHubAppBrowserSession(r *http.Request) string {
+	if info := middleware.AuthInfoFromContext(r.Context()); info != nil && info.SessionHash != "" {
+		owner, err := h.Owners.GetSelfHostOwner(r.Context())
+		if err == nil && info.User != nil && owner.ID == info.User.ID {
+			return info.SessionHash
+		}
+	}
+	if cookie, err := r.Cookie(GitHubAppSetupSessionCookie); err == nil {
+		return cookie.Value
+	}
+	return ""
+}
+
+func (h *GitHubAppSetupHandler) callbackState(w http.ResponseWriter, r *http.Request) (string, string, bool) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	origin, originAllowed := h.requestOrigin(r)
+	if !originAllowed {
+		writeGitHubAppOriginError(w, origin)
+		return "", "", false
+	}
+	if !h.authorize(w, r) {
+		return "", "", false
+	}
+	session := h.gitHubAppBrowserSession(r)
+	if session == "" {
+		writeInstallAPIError(w, pkgerrors.Forbidden("setup session required"))
+		return "", "", false
+	}
+	*r = *r.WithContext(services.WithGitHubAppSetupSession(r.Context(), session, origin))
+	cookie, err := r.Cookie(GitHubAppStateCookie)
+	state := r.URL.Query().Get("state")
+	if err != nil || cookie.Value == "" || state == "" || subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(state)) != 1 {
+		writeInstallAPIError(w, pkgerrors.Forbidden("invalid GitHub App setup state"))
+		return "", "", false
+	}
+	if h.Service == nil {
+		writeInstallAPIError(w, pkgerrors.Internal("GitHub App setup is unavailable"))
+		return "", "", false
+	}
+	if err := h.Service.ValidateCallbackOrigin(r.Context(), state, origin); err != nil {
+		WriteInstallSetupError(w, r, err)
+		return "", "", false
+	}
+	return state, cookie.Value, true
+}
+func (h *GitHubAppSetupHandler) Callback(w http.ResponseWriter, r *http.Request) {
+	state, browser, ok := h.callbackState(w, r)
+	if !ok {
+		return
+	}
+	_, err := h.Service.Convert(r.Context(), r.URL.Query().Get("code"), state, browser)
+	if err != nil {
+		WriteInstallSetupError(w, r, err)
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// Installed is GitHub's return after the App is installed, in a browser tab.
+// It lands the person back on the Setup card, whose repository step reads the
+// installation from GitHub itself; the page is never a JSON body.
+func (h *GitHubAppSetupHandler) Installed(w http.ResponseWriter, r *http.Request) {
+	origin, ok := h.requestOrigin(r)
+	if !ok {
+		writeGitHubAppOriginError(w, origin)
+		return
+	}
+	if !h.authorize(w, r) {
+		return
+	}
+	if h.Service == nil {
+		writeInstallAPIError(w, pkgerrors.Internal("installation resume unavailable"))
+		return
+	}
+	if err := h.Service.ResumeInstallation(r.Context()); err != nil {
+		slog.WarnContext(r.Context(), "GitHub App installation resume failed; the Setup card reads the installation itself", "error", err)
+	}
+	if h.Installations != nil {
+		if err := h.Installations.ReconcileGitHubAppInstallations(r.Context()); err != nil {
+			slog.WarnContext(r.Context(), "GitHub App installation listing failed; the repository step and the hourly sweep list again", "error", err)
+		}
+	}
+	http.SetCookie(w, &http.Cookie{Name: GitHubAppStateCookie, Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: strings.HasPrefix(origin, "https://")})
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// Step admits slow setup work and returns before any provider executes.
+func (h *GitHubAppSetupHandler) Step(w http.ResponseWriter, r *http.Request) {
+	origin, ok := h.requestOrigin(r)
+	if !ok {
+		writeGitHubAppOriginError(w, origin)
+		return
+	}
+	if !h.authorize(w, r) {
+		return
+	}
+	csrf, err := r.Cookie(middleware.CSRFCookieName)
+	if !middleware.SameOrigin(r.Header.Get("Origin"), origin) || err != nil || csrf.Value == "" || subtle.ConstantTimeCompare([]byte(csrf.Value), []byte(r.Header.Get("X-CSRF-Token"))) != 1 {
+		writeInstallAPIError(w, pkgerrors.Forbidden("setup origin and CSRF token required"))
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/api/install/setup/")
+	if id == "app" {
+		h.Begin(w, r)
+		return
+	}
+	if id != "address" && id != "sign_in" {
+		info := middleware.AuthInfoFromContext(r.Context())
+		if info == nil || info.User == nil || info.SessionHash == "" || info.IsTokenAuth || info.IsAgent() {
+			writeInstallAPIError(w, pkgerrors.Forbidden("install owner session required"))
+			return
+		}
+	}
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 16<<10))
+	if err != nil {
+		writeInstallAPIError(w, pkgerrors.BadRequest("invalid setup body"))
+		return
+	}
+	if _, err = services.ValidateInstallSetupBody(id, raw); err != nil {
+		WriteInstallSetupError(w, r, err)
+		return
+	}
+	if h.Setup == nil {
+		writeInstallAPIError(w, pkgerrors.New(pkgerrors.CodeServiceUnavailable, "install setup unavailable"))
+		return
+	}
+	receipt, err := h.Setup.Admit(r.Context(), id, r.Header.Get("Idempotency-Key"), raw)
+	if err != nil {
+		WriteInstallSetupError(w, r, err)
+		return
+	}
+	pkgerrors.WriteJSON(w, http.StatusAccepted, receipt)
+}
+
+func (h *GitHubAppSetupHandler) SetSettings(w http.ResponseWriter, r *http.Request) {
+	origin, ok := h.requestOrigin(r)
+	if !ok {
+		writeGitHubAppOriginError(w, origin)
+		return
+	}
+	if !h.authorize(w, r) {
+		return
+	}
+	info := middleware.AuthInfoFromContext(r.Context())
+	if info == nil || info.User == nil {
+		writeInstallAPIError(w, pkgerrors.Forbidden("install owner session required"))
+		return
+	}
+	csrf, err := r.Cookie(middleware.CSRFCookieName)
+	if !middleware.SameOrigin(r.Header.Get("Origin"), origin) || err != nil || csrf.Value == "" || subtle.ConstantTimeCompare([]byte(csrf.Value), []byte(r.Header.Get("X-CSRF-Token"))) != 1 {
+		writeInstallAPIError(w, pkgerrors.Forbidden("setup origin and CSRF token required"))
+		return
+	}
+	var rawInput struct {
+		Obsidian *struct {
+			Path string `json:"path"`
+		} `json:"wiki_sync.obsidian"`
+		Capacity              json.RawMessage `json:"capacity"`
+		Parallel              json.RawMessage `json:"parallel"`
+		TodoDailyAdmissions   json.RawMessage `json:"todo_daily_admissions"`
+		TodoPreapproveDefault json.RawMessage `json:"todo_preapprove_default"`
+		ChatGPT               json.RawMessage `json:"chatgpt"`
+		Bind                  json.RawMessage `json:"bind"`
+		Origins               json.RawMessage `json:"origins"`
+	}
+	if !decodeStrictJSONBody(w, r, &rawInput) {
+		return
+	}
+	var input struct {
+		Obsidian *struct {
+			Path string `json:"path"`
+		} `json:"wiki_sync.obsidian"`
+		ChatGPT               *bool           `json:"chatgpt"`
+		Capacity              *int            `json:"capacity"`
+		Parallel              *int            `json:"parallel"`
+		TodoDailyAdmissions   *int64          `json:"todo_daily_admissions"`
+		Bind                  json.RawMessage `json:"bind"`
+		Origins               json.RawMessage `json:"origins"`
+		TodoPreapproveDefault *bool           `json:"todo_preapprove_default"`
+	}
+	input.Obsidian, input.Bind, input.Origins = rawInput.Obsidian, rawInput.Bind, rawInput.Origins
+	// Preserve absent settings, but refuse explicit null or a wrong type
+	// before any handler can change another setting in the same request.
+	decodeSetting := func(raw json.RawMessage, target any, message string) bool {
+		if len(raw) == 0 {
+			return true
+		}
+		if strings.TrimSpace(string(raw)) == "null" || json.Unmarshal(raw, target) != nil {
+			writeInstallAPIError(w, pkgerrors.BadRequest(message))
+			return false
+		}
+		return true
+	}
+	if !decodeSetting(rawInput.Capacity, &input.Capacity, "capacity must be an integer") ||
+		!decodeSetting(rawInput.Parallel, &input.Parallel, "parallel must be an integer") ||
+		!decodeSetting(rawInput.TodoDailyAdmissions, &input.TodoDailyAdmissions, "todo_daily_admissions must be an integer") ||
+		!decodeSetting(rawInput.TodoPreapproveDefault, &input.TodoPreapproveDefault, "todo_preapprove_default must be a boolean") ||
+		!decodeSetting(rawInput.ChatGPT, &input.ChatGPT, "chatgpt must be a boolean") {
+		return
+	}
+	if input.TodoPreapproveDefault != nil {
+		if err := services.MergeCredential(r.Context(), r.Header.Get("Smithers-Via")); err != nil {
+			todoRouteError(w, err)
+			return
+		}
+		if input.Obsidian != nil || input.Parallel != nil || input.TodoDailyAdmissions != nil || input.Capacity != nil || input.ChatGPT != nil || len(input.Bind) != 0 || len(input.Origins) != 0 {
+			writeInstallAPIError(w, pkgerrors.BadRequest("Change one setting at a time"))
+			return
+		}
+		if h.SetTodoPreapprovalDefault == nil {
+			writeInstallAPIError(w, pkgerrors.New(pkgerrors.CodeServiceUnavailable, "TODO pre-approval unavailable"))
+			return
+		}
+		if err := h.SetTodoPreapprovalDefault(r.Context(), info.User.ID, *input.TodoPreapproveDefault); err != nil {
+			todoRouteError(w, err)
+			return
+		}
+		h.Status(w, r)
+		return
+	}
+	if input.Obsidian != nil {
+		if len(input.Bind) != 0 || len(input.Origins) != 0 || input.Capacity != nil || input.ChatGPT != nil || input.Parallel != nil || input.TodoDailyAdmissions != nil {
+			writeInstallAPIError(w, pkgerrors.BadRequest("Obsidian must be set separately"))
+			return
+		}
+		if h.Setup == nil || h.Setup.Obsidian == nil {
+			writeInstallAPIError(w, pkgerrors.New(pkgerrors.CodeServiceUnavailable, "install Obsidian unavailable"))
+			return
+		}
+		if err = h.Setup.Obsidian.Set(r.Context(), input.Obsidian.Path); err != nil {
+			WriteInstallSetupError(w, r, err)
+			return
+		}
+		h.Status(w, r)
+		return
+	}
+	if len(input.Bind) != 0 || len(input.Origins) != 0 {
+		if input.Capacity != nil || input.Parallel != nil || input.ChatGPT != nil || input.TodoDailyAdmissions != nil {
+			writeInstallAPIError(w, pkgerrors.BadRequest("other settings and address must be set separately"))
+			return
+		}
+		if h.Setup == nil || h.Setup.Address == nil {
+			WriteInstallSetupError(w, r, &services.InstallReadinessError{Code: "address_unavailable", Class: "transient", Message: "Install listener unavailable"})
+			return
+		}
+		current := h.Setup.Address.Settings()
+		if len(input.Bind) != 0 {
+			if strings.TrimSpace(string(input.Bind)) == "null" || json.Unmarshal(input.Bind, &current.Bind) != nil {
+				writeInstallAPIError(w, pkgerrors.BadRequest("invalid bind address"))
+				return
+			}
+		}
+		if len(input.Origins) != 0 {
+			if json.Unmarshal(input.Origins, &current.Origins) != nil {
+				writeInstallAPIError(w, pkgerrors.BadRequest("invalid public origins"))
+				return
+			}
+		}
+		bind := current.Bind
+		if net.ParseIP(bind) != nil || strings.EqualFold(bind, "localhost") {
+			bind = net.JoinHostPort(bind, "4000")
+		}
+		raw, _ := json.Marshal(map[string]any{"bind": bind, "origins": current.Origins})
+		address, validateErr := services.ValidateInstallSetupBody("address", raw)
+		if validateErr != nil {
+			WriteInstallSetupError(w, r, validateErr)
+			return
+		}
+		if err = h.Setup.SetAddress(r.Context(), info.User.ID, address); err != nil {
+			WriteInstallSetupError(w, r, err)
+			return
+		}
+		h.Status(w, r)
+		return
+	}
+	if input.Capacity == nil && input.Parallel == nil && input.ChatGPT == nil && input.TodoDailyAdmissions == nil {
+		writeInstallAPIError(w, pkgerrors.BadRequest("install setting required"))
+		return
+	}
+	if h.Setup == nil || ((input.Capacity != nil || input.Parallel != nil) && h.Setup.Capacity == nil) {
+		writeInstallAPIError(w, pkgerrors.New(pkgerrors.CodeServiceUnavailable, "install capacity unavailable"))
+		return
+	}
+	if input.TodoDailyAdmissions != nil {
+		if *input.TodoDailyAdmissions <= 0 {
+			writeInstallAPIError(w, pkgerrors.BadRequest("daily admissions must be positive"))
+			return
+		}
+		if err = h.Setup.SetTodoDailyAdmissions(r.Context(), info.User.ID, *input.TodoDailyAdmissions); err != nil {
+			WriteInstallSetupError(w, r, err)
+			return
+		}
+	}
+	if input.Parallel != nil {
+		if err = h.Setup.Capacity.SetParallel(r.Context(), *input.Parallel); err != nil {
+			WriteInstallSetupError(w, r, err)
+			return
+		}
+	}
+	if err = h.Setup.SetModelSettings(r.Context(), info.User.ID, input.Capacity, input.ChatGPT); err != nil {
+		var capacity *microsandbox.CapacityError
+		if errors.As(err, &capacity) {
+			pkgerrors.WriteJSON(w, http.StatusUnprocessableEntity, capacity)
+		} else {
+			writeInstallAPIError(w, pkgerrors.New(pkgerrors.CodeServiceUnavailable, "install setting unavailable"))
+		}
+		return
+	}
+
+	h.Status(w, r)
+}
+
+// WriteInstallSetupError is the install boundary's §6.2.3 envelope. Existing
+// hosted API fault envelopes remain unchanged.
+func WriteInstallSetupError(w http.ResponseWriter, r *http.Request, err error) {
+	var access *services.AccessError
+	if errors.As(err, &access) {
+		pkgerrors.WriteJSON(w, access.Status, access)
+		return
+	}
+	var api *pkgerrors.APIError
+	if errors.As(err, &api) {
+		writeInstallAPIError(w, api)
+		return
+	}
+	var readiness *services.InstallReadinessError
+	if errors.As(err, &readiness) {
+		status := http.StatusServiceUnavailable
+		if readiness.Class == "user" {
+			status = http.StatusBadRequest
+		} else if readiness.Class == "permission" {
+			status = http.StatusForbidden
+		}
+		pkgerrors.WriteJSON(w, status, readiness)
+		return
+	}
+	writeInstallAPIError(w, pkgerrors.Internal("install setup unavailable"))
+}
+func writeInstallAPIError(w http.ResponseWriter, err *pkgerrors.APIError) {
+	if err.RetryAfter > 0 && w.Header().Get("Retry-After") == "" {
+		w.Header().Set("Retry-After", strconv.Itoa(err.RetryAfter))
+	}
+	pkgerrors.WriteJSON(w, err.Status, installSetupFailure(err))
+}
+
+// installSetupFailure is the §6.2.3 envelope for err, as a response body or as
+// a failed step's error.
+func installSetupFailure(err error) *services.InstallReadinessError {
+	var readiness *services.InstallReadinessError
+	if errors.As(err, &readiness) {
+		return readiness
+	}
+	var api *pkgerrors.APIError
+	if !errors.As(err, &api) {
+		api = pkgerrors.Internal("install setup unavailable")
+	}
+	if api.Class == pkgerrors.ClassGitHub {
+		return &services.InstallReadinessError{Code: string(api.Code), Class: "github", Message: api.Message, RetryAt: api.RetryAt}
+	}
+	code, class, message := string(api.Code), "user", api.Message
+	switch api.Status {
+	case http.StatusUnauthorized:
+		class = "permission"
+		if code != "setup_closed" {
+			code = "unauthenticated"
+		}
+	case http.StatusForbidden:
+		code, class = "permission", "permission"
+	case http.StatusConflict:
+		class = "conflict"
+	default:
+		if api.Status >= 500 {
+			class = "infra"
+			message = "Install setup unavailable"
+		}
+	}
+	return &services.InstallReadinessError{Code: code, Class: class, Message: message}
+}

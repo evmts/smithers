@@ -93,7 +93,7 @@ describe("File states and co-editing", () => {
   test("delete and rename keep their attribution", () => {
     expect(model("deleted").gone).toEqual({ kind: "deleted", by: person })
     const renamed = model("renamed")
-    expect(renamed.gone).toEqual({ kind: "renamed", to: "flows/todo-next/flow.ts", by: person })
+    expect(renamed.gone).toEqual({ kind: "renamed", to: ".smithers/flows/todo-next/flow.ts", by: person })
     expect(renamed.branch).toBe("todo/12")
     expect(FileCardSchema.safeParse({ ...text(), gone: { kind: "renamed", by: person } }).success).toBe(false)
   })
