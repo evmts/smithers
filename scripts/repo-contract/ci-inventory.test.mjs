@@ -13,6 +13,11 @@ import * as Exec from "@smthrs/targets/Exec"
 import { parseWorkflow } from "../release-rehearsal.mjs"
 import * as PackageExec from "@smthrs/build-cli/PackageExec"
 
+// Every case reads the same declarations, so they share one index instead of
+// loading every PACKAGE.ts again per case.
+let opened
+const packageIndex = () => opened ??= openPackageIndex({ workspace: root })
+
 test("CI command discovery retains diagnostic options and refuses unknown selection syntax", () => {
   for (const options of ["--jobs 2 --verbose", "--verbose --jobs 2"]) {
     assert.deepEqual(targetInvocation(`pnpm exec smthrs ci '//packages/...' ${options}`), {
@@ -39,7 +44,7 @@ test("browser typecheck plans its direct configuration without a native prerequi
   assert.equal(check.rule, "Typecheck")
   assert.deepEqual(check.dependencies, [])
   assert.equal(check.cacheable, false, "a semantic check must run without an output restoration contract")
-  const index = await openPackageIndex({ workspace: root })
+  const index = await packageIndex()
   const declaration = index.targets().find((target) => target.label === check.label)
   assert.ok(declaration)
   const metadata = Target.metadata(declaration.target)
@@ -131,7 +136,7 @@ test("CI planning cancels the hard deadline after cooperative SIGTERM completion
 })
 
 test("release smoke retains packing, fresh execution and its measured Exec deadline", async () => {
-  const index = await openPackageIndex({ workspace: root })
+  const index = await packageIndex()
   const plan = await PackageExec.plan({
     index, verb: "test", patterns: ["//scripts:releaseSmoke"], cacheDirectory: index.workspace.cache.directory
   })
@@ -181,7 +186,9 @@ test("required CI resolves package, app, script and evaluation suites to real ru
   assert.deepEqual(inventory.selectionErrors, [], "every required command must successfully plan")
   const selected = (label, job) => inventory.rows.filter((row) => row.label === label && row.job === job && row.required && row.selectedRoot)
   for (const [label, job] of [
-    ["//apps/app:check", "apps-e2e"], ["//apps/app:unitTests", "apps-e2e"], ["//apps/app:browserE2e", "apps-e2e"],
+    ["//apps/app:check", "apps-e2e"], ["//apps/app:unitTests", "apps-e2e"],
+    ["//apps/app:browserE2eShard1", "apps-browser-1"], ["//apps/app:browserE2eShard2", "apps-browser-2"],
+    ["//apps/app:browserE2eShard3", "apps-browser-3"],
     ["//apps/tui:check", "apps-e2e"], ["//apps/tui:unitTests", "apps-e2e"], ["//apps/tui:e2eTests", "apps-e2e"],
     ["//apps/server:check", "repository"], ["//apps/server:unitTests", "repository"],
     ["//flows/review:unitTests", "repository"], ["//apps/bug-worker:unitTests", "repository"],
@@ -221,7 +228,7 @@ test("required CI resolves package, app, script and evaluation suites to real ru
       assert.ok(row.runtimes.includes(`Node ${nodeRelease}`), row.job + " must report the pinned Node release")
     const name = row.label.split(":").at(-1)
     if (/^browser|^e2e|faults$/i.test(name)) {
-      assert.ok(name === "browserE2e" || name === "faults" || row.label === "//apps/tui:e2eTests",
+      assert.ok(/^browserE2eShard[1-3]$/.test(name) || name === "faults" || row.label === "//apps/tui:e2eTests",
         `${row.label}: classify and verify this suite's E2E runner`)
     }
     if (/unitTests$/.test(row.label)) {
@@ -231,11 +238,12 @@ test("required CI resolves package, app, script and evaluation suites to real ru
       assert.doesNotMatch(row.step, /e2e|end.to.end/i)
       if (row.job === "apps-e2e") assert.ok(["//apps/app:unitTests", "//apps/tui:unitTests"].includes(row.label), row.label)
     }
-    if (/browserE2e$/.test(row.label)) {
+    if (/browserE2eShard[1-3]$/.test(row.label)) {
       assert.equal(row.rule, "NodeTest")
-      assert.ok(row.runner.includes("scripts/run-pr-e2e.mjs"))
+      // Each shard job hands its own shard number to the Playwright entry.
+      assert.deepEqual(row.runner.slice(-2), ["scripts/run-pr-e2e.mjs", row.label.at(-1)])
       const entry = readFileSync(join(root, row.cwd, "scripts/run-pr-e2e.mjs"), "utf8")
-      assert.match(entry, /\["exec", "playwright", "test"\]/)
+      assert.match(entry, /\["exec", "playwright", "test", \.\.\.\(shard \? \[`--shard=\$\{shard\}\/3`\] : \[\]\)\]/)
     }
     if (row.label === "//apps/tui:e2eTests") {
       // The terminal tier types raw keys into the production entry inside a private tmux server.
@@ -269,7 +277,7 @@ test("nightly faults resolve through the public CLI to every declared serial run
   assert.equal(invocation.knownRed, undefined)
   const plan = planned(invocation.verb, invocation.pattern)
   assert.ok(plan.roots.length >= 3, "the complete library and production fault matrix must resolve")
-  const index = await openPackageIndex({ workspace: root })
+  const index = await packageIndex()
   const native = await PackageExec.plan({ index, verb: invocation.verb, patterns: [invocation.pattern], cacheDirectory: index.workspace.cache.directory })
   for (const label of plan.roots) {
     const node = native.nodes.get(label)
@@ -346,7 +354,7 @@ test("CI discovery preserves a generated results path and rejects repeated flags
 })
 
 test("the published documentation gate resolves through the public CLI with matching metadata", async () => {
-  const index = await openPackageIndex({ workspace: root })
+  const index = await packageIndex()
   const metadata = await PackageExec.plan({ index, verb: "test", patterns: ["//scripts:packageDocs"], cacheDirectory: index.workspace.cache.directory })
   const cli = planned("test", "//scripts:packageDocs")
   const target = cli.targets.find(({ label }) => label === "//scripts:packageDocs")

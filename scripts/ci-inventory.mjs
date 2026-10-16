@@ -123,17 +123,27 @@ export async function resolveInventory() {
         const identity = `${verb} ${pattern}`
         if (!selections.has(identity)) {
           console.error(`Resolving CI selection: ${identity}`)
+          // The CLI's package report deliberately omits declaration attrs, so
+          // most selections also need the native plan. It runs here while the
+          // CLI child plans, instead of after it, which halves the wall time of
+          // whole-tree selections such as lint //:targetIndex. `ci` reports
+          // carry attrs and never need it.
+          const speculation = new AbortController()
+          const nativePlan = verb === "ci" ? undefined : PackageExec.plan({
+            index, verb, patterns: [pattern], cacheDirectory: index.workspace.cache.directory, signal: speculation.signal
+          })
+          nativePlan?.catch(() => {})
           try {
             const started = performance.now()
             const plan = await planner.plan(verb, pattern, root)
             const cliDurationMs = performance.now() - started
-            // The CLI's package report deliberately omits declaration attrs.
-            // Re-plan only when earlier selections have not supplied metadata
-            // for these exact keys, including anonymous dependency nodes.
+            // Use the native plan only when earlier selections have not
+            // supplied metadata for these exact keys, including anonymous
+            // dependency nodes.
             const needsMetadata = plan.targets.some((target) =>
               target.attrs === undefined && !metadata.has(metadataIdentity(target)))
             const native = needsMetadata
-              ? await PackageExec.plan({ index, verb, patterns: [pattern], cacheDirectory: index.workspace.cache.directory })
+              ? await (nativePlan ?? PackageExec.plan({ index, verb, patterns: [pattern], cacheDirectory: index.workspace.cache.directory }))
               : undefined
             const targets = plan.targets.map((target) => {
               if (target.attrs !== undefined) return target
@@ -151,6 +161,10 @@ export async function resolveInventory() {
             // nor the repo-contract test can pass with an unresolved command.
             selectionErrors.push({ command: identity, error: String(error) })
             selections.set(identity, { roots: [], targets: [] })
+          } finally {
+            // An unused speculative plan stops before the next selection starts.
+            speculation.abort()
+            await nativePlan?.catch(() => {})
           }
         }
         const plan = selections.get(identity)
