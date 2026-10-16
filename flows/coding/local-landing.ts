@@ -175,6 +175,7 @@ export const make = (options: Options) =>
     const fastForward = (prepared: LandingCandidate) =>
       Effect.gen(function*() {
         const main = yield* readMain
+        if (main === prepared.candidate.commitId) return main
         if (main !== prepared.main.commitId) {
           return yield* evicted(
             `${target} moved from ${prepared.main.commitId} to ${main} after the candidate was verified`
@@ -293,6 +294,20 @@ export const make = (options: Options) =>
       )
     const merge = (pull: LocalPull, prepared: LandingCandidate) =>
       Effect.gen(function*() {
+        // A lost reply may have left the merge applied. Observe the exact
+        // pull and candidate before either acknowledging it or sending again.
+        const before = yield* viewPull(pull.headRef)
+        if (
+          before === undefined || before.number !== pull.number || before.headRef !== pull.headRef ||
+          before.headSha !== prepared.candidate.commitId || before.baseRef !== target || before.state === "closed"
+        ) {
+          return yield* invalid("The pull request no longer carries this candidate on the landing target")
+        }
+        if (before.state === "merged") {
+          return before.mergeCommitId !== null && commit.test(before.mergeCommitId)
+            ? { status: "merged" as const, mainCommitId: before.mergeCommitId }
+            : yield* unavailable(`Pull request #${pull.number} is merged but its merge commit was not observed`)
+        }
         const summary = prepared.summary
         const merged = yield* gh([
           "pr",

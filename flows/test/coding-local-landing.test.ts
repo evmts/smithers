@@ -176,6 +176,11 @@ test("fast-forward lander: the tip merged onto a moved main lands as one commit"
   assert.equal(await Effect.runPromise(lander.fastForward(prepared)), candidate.commitId)
   assert.equal(commitOf(root, "main"), candidate.commitId)
   assert.equal(git(root, "rev-parse", "refs/heads/main"), candidate.commitId, "the colocated git main follows")
+  assert.equal(
+    await Effect.runPromise(lander.fastForward(prepared)),
+    candidate.commitId,
+    "a lost completion reply reconciles the already-moved bookmark"
+  )
   // Landed work has nothing left to land: the same tip merged onto the new main is empty.
   const again = await failure(lander.prepare(cleanup, requestId))
   assert.equal(again.code, "evicted")
@@ -350,6 +355,33 @@ test("pull-request lander: pushes the candidate to origin, opens its pull reques
     "--body",
     cleanup.summary
   ])
+  const appliedPull = await readFile(join(gh.state, "pull.json"), "utf8")
+  for (const changed of [
+    { number: 42 },
+    { headRefOid: "8".repeat(40) },
+    { baseRefName: "other" },
+    { state: "CLOSED", mergeCommit: null }
+  ]) {
+    await writeFile(join(gh.state, "pull.json"), JSON.stringify({ ...JSON.parse(appliedPull), ...changed }))
+    const before = (await gh.log()).filter((args) => args[1] === "merge").length
+    assert.equal((await failure(lander.merge(pull, prepared))).code, "invalid_receipt")
+    assert.equal(
+      (await gh.log()).filter((args) => args[1] === "merge").length,
+      before,
+      "a different or closed pull request must not be merged"
+    )
+  }
+  await writeFile(join(gh.state, "pull.json"), appliedPull)
+  const mergesBeforeReplay = (await gh.log()).filter((args) => args[1] === "merge").length
+  assert.deepEqual(await Effect.runPromise(lander.merge(pull, prepared)), {
+    status: "merged",
+    mainCommitId: "9".repeat(40)
+  })
+  assert.equal(
+    (await gh.log()).filter((args) => args[1] === "merge").length,
+    mergesBeforeReplay,
+    "a lost completion reply is looked up without another merge"
+  )
   assert.equal(commitOf(root, "@"), workingCopy, "the working copy never moves")
   assert.equal(commitOf(root, "main"), prepared.main.commitId, "a pull request never moves the local main")
   // A branch that moved off the candidate's line is refused, never pushed over.
