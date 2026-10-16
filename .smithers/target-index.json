@@ -69491,7 +69491,7 @@
       },
       {
         "kind": "file",
-        "path": "scripts/fixtures/check-receipts.mjs"
+        "path": "scripts/check-receipts-fixture.mjs"
       },
       {
         "kind": "file",

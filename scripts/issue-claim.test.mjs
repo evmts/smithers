@@ -8,7 +8,7 @@ import { after, describe, it } from "node:test"
 
 import { claimBody, holder, LABEL, parseRef, proxied, releaseBody, run, splitResponse, TRANSIENT } from "./issue-claim.mjs"
 
-import { fixture } from "./fixtures/check-receipts.mjs"
+import { fixture } from "./check-receipts-fixture.mjs"
 
 // Close-policy input is literal, local and machine-written. No evidence bypass.
 const evidenceFixture = fixture()

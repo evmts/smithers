@@ -3,7 +3,7 @@ import { cpSync, lstatSync, readdirSync, readlinkSync, mkdirSync, mkdtempSync, r
 import { hostname, tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { createHash } from 'node:crypto'
-import { run } from '../issue-claim.mjs'
+import { run } from './issue-claim.mjs'
 
 // Stored ZIP fixtures use actual bytes and Unix modes, without a host zip binary.
 export const zipFixture = (directory, destination) => {
@@ -47,7 +47,7 @@ export const fixture = () => {
   put('seed', 'fixture'); git('add', 'seed'); git('commit', '-m', 'fixture'); let sha = git('rev-parse', 'HEAD')
   git('init', '--bare', 'remote.git'); git('remote', 'add', 'origin', join(root, 'remote.git'))
   mkdirSync(join(root, 'scripts'), { recursive: true })
-  for (const name of ['check-run.mjs', 'check-evidence.mjs', 'issue-claim.mjs', 'github-proxy.mjs']) cpSync(new URL(`../${name}`, import.meta.url), join(root, 'scripts', name), { recursive: false })
+  for (const name of ['check-run.mjs', 'check-evidence.mjs', 'issue-claim.mjs', 'github-proxy.mjs']) cpSync(new URL(`./${name}`, import.meta.url), join(root, 'scripts', name), { recursive: false })
   put('.specs/engineering/tickets/T-FIX-01.md', 'Issue: [#7](https://github.com/o/r/issues/7)\n## Acceptance\n- [C-FIX-01](../checks/C-FIX-01.md)\n- [C-FIX-02](../checks/C-FIX-02.md)\n## Risks\n')
   for (const id of ['C-FIX-01', 'C-FIX-02']) put(`.specs/engineering/checks/${id}.md`, `Proves: fixture · Layer: integration
 Automation: \`smthrs test //fixture:canary\` · Runs in: CI

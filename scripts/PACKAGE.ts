@@ -750,7 +750,7 @@ const issueClaim = Smithers.NodeTest({
     Smithers.file("//scripts/check-run.mjs"),
     Smithers.file("//scripts/reference-host/hosts.json"),
     Smithers.file("//scripts/check-commands.json"),
-    Smithers.file("//scripts/fixtures/check-receipts.mjs"),
+    Smithers.file("//scripts/check-receipts-fixture.mjs"),
     Smithers.file("//scripts/github-proxy.mjs"),
     Smithers.file("//scripts/github-app-auth.mjs"),
     // The proxy imports `@smthrs/integrations` through this export map.

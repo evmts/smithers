@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { expectedCommand, reverifyCi, unpackResults, validMapping, verifyCiRun, zeroTests } from './check-evidence.mjs'
-import { fixture, zipFixture } from './fixtures/check-receipts.mjs'
+import { fixture, zipFixture } from './check-receipts-fixture.mjs'
 import { run as claimRun } from './issue-claim.mjs'
 
 const digest = (data) => `sha256:${createHash('sha256').update(data).digest('hex')}`
