@@ -1064,8 +1064,8 @@ func TestRetainedCommandHTTPStateEffectsPostgres(t *testing.T) {
 		}
 	}
 	require.Equal(t, 2*(httpCommands+len(dispatchCases)), runDeathCells)
-	require.Equal(t, 144, httpCommands)
-	require.Equal(t, 2113+2*11+3*21+44+132+111+8+24*len(dispatchCases)+runDeathCells+runSystemRefusalCells, len(receipts)-todoEffectCells-managementEffectCells-36-terminalProfileCells, "HTTP policy and separate dispatch-binding cells must pass")
+	require.Equal(t, 145, httpCommands)
+	require.Equal(t, 2134+2*11+3*21+44+132+111+8+24*len(dispatchCases)+runDeathCells+runSystemRefusalCells, len(receipts)-todoEffectCells-managementEffectCells-36-terminalProfileCells, "HTTP policy and separate dispatch-binding cells must pass")
 	require.Equal(t, 14*len(dispatchCases), dispatchActiveCells)
 	httpPolicyRefusalCells := 0
 	for _, receipt := range receipts {
