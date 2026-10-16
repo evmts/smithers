@@ -37,6 +37,19 @@ const payloadSchema = (schema: Record<string, any>): z.ZodType =>
     ? z.unknown().refine((value) => value !== null, "Expected a non-null value")
     : z.fromJSONSchema(schema)
 
+/**
+ * Each field made optional with its metadata kept: `partial()` wraps a field
+ * in a fresh optional that carries no description, so help would list the
+ * local command's options bare.
+ */
+const optionalKeepingMeta = (shape: Record<string, z.ZodType>): Record<string, z.ZodType> =>
+  Object.fromEntries(
+    Object.entries(shape).map(([key, field]) => {
+      const meta = field.meta()
+      return [key, meta === undefined ? field.optional() : field.optional().meta(meta)]
+    })
+  )
+
 const valueSchema = (schema: Record<string, any>): z.ZodType => {
   const decoded = payloadSchema(schema)
   // Nullable objects, arrays and numbers are unions, not top-level types.
@@ -289,7 +302,7 @@ export const mountCatalog = (cli: Cli.Cli<any, any, any, any>, runtime: Runtime)
       options: row.name === "todo.answer"
         ? definitions["todo answer"].options
         : local && "run" in local && local.options
-        ? local.options.partial().extend(options)
+        ? z.object(optionalKeepingMeta(local.options.shape)).extend(options)
         : z.object(options),
       run: (context: any) => {
         if (local && "run" in local && !targetsInstall(context, runtime)) {

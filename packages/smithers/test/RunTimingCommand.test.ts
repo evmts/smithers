@@ -238,6 +238,7 @@ describe("runs show --timing", { timeout: 120_000 }, () => {
 
   it("lists the flag where the status command is discovered", async () => {
     const help = await invoke(["runs", "show", "--help"])
-    expect(help.stdout).toMatch(/^ +--timing\b/m)
+    expect(help.stdout).toMatch(/^ +--timing +Report where the run's time and tokens went$/m)
+    expect(help.stdout).toMatch(/^ +--root <string> +Project directory; defaults to the nearest Smithers project$/m)
   })
 })
