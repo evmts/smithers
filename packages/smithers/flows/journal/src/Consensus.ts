@@ -757,10 +757,18 @@ export const resourcePermit = <A, E, R>(
               ? lease?.owner
               : { id: lease.claim.id, heartbeatAtMs: lease.claim.claimedAtMs }
             if (
-              held !== undefined && held.heartbeatAtMs < nowMs - staleAfterMs &&
+              held !== undefined &&
+              (held.heartbeatAtMs < nowMs - staleAfterMs ||
+                (lease?.claim === undefined && held.id.hostId === owner.hostId && held.id.pid !== owner.pid)) &&
               !(yield* isAlive(held.id, { claimant: owner, heartbeatAtMs: held.heartbeatAtMs, nowMs }))
             ) {
-              const evidence = { expectedOwner: held.id, checkedAtMs: nowMs, kind: "lease-expired" as const }
+              const evidence: LivenessEvidence = {
+                expectedOwner: held.id,
+                checkedAtMs: nowMs,
+                kind: held.id.hostId === owner.hostId && held.id.pid !== owner.pid
+                  ? "same-host-pid-dead"
+                  : "lease-expired"
+              }
               if (lease?.claim !== undefined) {
                 yield* strategy.recover(key, held.id, lease.claim.claimedAtMs, owner, nowMs, evidence)
               } else {

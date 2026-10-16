@@ -15,7 +15,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import type { DurableWriter } from "@smthrs/database/DurableWriter"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
-import { Clock, Duration, Effect, Layer } from "effect"
+import { Clock, Duration, Effect, Fiber, Layer } from "effect"
 import type * as Scope from "effect/Scope"
 import type * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
@@ -71,6 +71,48 @@ export const conformance = (
   ) => Effect.scoped(body.pipe(Effect.provide(stack), Effect.provide(TestClock.layer())))
 
   describe(`consensus conformance: ${name}`, () => {
+    it.effect("recovers a fresh resource permit only from a proven-dead different pid on this host", () =>
+      withStack(Effect.gen(function*() {
+        const consensus = yield* Consensus
+        const now = yield* Clock.currentTimeMillis
+        yield* consensus.claim("dead-resource", ownerA, now)
+        yield* consensus.activate("dead-resource", ownerA, now, now)
+        expect(
+          yield* Effect.raceFirst(
+            consensus.withPermit("dead-resource", ownerC, () => Effect.succeed(false), Effect.succeed("recovered")),
+            Effect.promise(() => new Promise<string>((resolve) => setTimeout(() => resolve("blocked"), 1000)))
+          )
+        )
+          .toBe("recovered")
+        expect((yield* Effect.flip(consensus.guard("dead-resource", ownerA))).code).toBe("fence_lost")
+      })))
+
+    for (
+      const [label, claimant, alive] of [
+        ["live same-host pid", ownerC, true],
+        ["claimant's own pid", { ...ownerA, nonce: "another-incarnation" }, false],
+        ["remote host", ownerB, false]
+      ] as const
+    ) {
+      it.effect(`keeps a fresh resource permit held by a ${label}`, () =>
+        withStack(Effect.gen(function*() {
+          const consensus = yield* Consensus
+          const now = yield* Clock.currentTimeMillis
+          yield* consensus.claim("held-resource", ownerA, now)
+          yield* consensus.activate("held-resource", ownerA, now, now)
+          const contender = yield* Effect.forkScoped(consensus.withPermit(
+            "held-resource",
+            claimant,
+            () => Effect.succeed(alive),
+            Effect.succeed("entered")
+          ))
+          yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 10)))
+          expect(contender.pollUnsafe()).toBeUndefined()
+          yield* consensus.guard("held-resource", ownerA)
+          yield* Fiber.interrupt(contender)
+        })))
+    }
+
     it.effect("grants one claim at a time and refuses the loser with already_claimed", () =>
       withStack(Effect.gen(function*() {
         const consensus = yield* Consensus
