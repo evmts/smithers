@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process"
 import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { describe, expect, test } from "vitest"
 
 const packageRoot = join(import.meta.dirname, "..")
@@ -34,7 +35,7 @@ test("generated form instructions retain their formatting", () => {
   const path = "src/FormInstructions.generated.ts"
   const source = readFileSync(join(packageRoot, path), "utf8")
   const format = (input: string) =>
-    execFileSync(join(packageRoot, "node_modules/.bin/dprint"), ["fmt", "--stdin", path], {
+    execFileSync(process.execPath, [fileURLToPath(import.meta.resolve("dprint/bin.cjs")), "fmt", "--stdin", path], {
       cwd: packageRoot,
       input,
       encoding: "utf8"
