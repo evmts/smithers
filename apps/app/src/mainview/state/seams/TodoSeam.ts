@@ -20,6 +20,8 @@ import type { SeamContext } from "./SeamContext"
 import { isFeatureGateRefusal, readResult, unreachableSentence } from "./SeamContext"
 import { refusalOf } from "@smthrs/rpc/Refusal"
 import { refusalLine } from "@smthrs/rpc/RefusalCopy"
+import { notifies, notificationPolicyRecord, type NotificationPolicyEvent, type NotificationPolicyStamp } from "@smthrs/rpc/NotificationPolicy"
+import type { NotificationPolicyRoute } from "../controller/notificationPolicy"
 import { actorName } from "../../cards/views/actorName"
 import { randomUuid } from "../../runtime/RandomUuid"
 
@@ -192,6 +194,13 @@ export interface TodoSeamOptions {
   readonly debounceMs?: number
   /** How often an open Home reads GET /api/todos again; 2 s by default. */
   readonly listPollMs?: number
+  /**
+   * The repository's own notification policy (M-47, #4026), when a repository
+   * declares one: it decides who is told about each notice below, among the
+   * people who already can read the work. Absent, the built-in §6.4 audience
+   * decides exactly as it always has and no policy runs.
+   */
+  readonly notificationPolicy?: NotificationPolicyRoute
   readonly onDispose?: (stop: () => void) => void
 }
 /** GET /api/todos as Home reads it where this host serves no `home` topic (T-APP-01): every TODO card, or why the read failed. */
@@ -317,6 +326,62 @@ export const createTodoSeam = (ctx: SeamContext, options: TodoSeamOptions = {}) 
       finally { shared.opening.delete(row.id) }
     }
   }
+  /**
+   * Who can already read a TODO: its owner and the people on its branch
+   * (M-08, §6.4). A notification policy chooses among these and no one else,
+   * so no decision can tell someone about work they cannot open.
+   */
+  const todoReaders = (model: TodoCard): ReadonlyArray<string> =>
+    [...new Set([model.owner.login, ...model.present.flatMap(actor => actor.kind === "person" ? [actor.login] : [])])]
+  /**
+   * Put one notice on the stack, once its recipients are known.
+   *
+   * With no repository policy declared the notice is dispatched here and now,
+   * on exactly the audience §6.4 names. With one, the decision is the
+   * repository's: the policy runs, the answer is fenced against this account
+   * and identity revision (`live`) and against the member this notice belongs
+   * to, and only a selected recipient is told. The notice records which policy
+   * decided, and a fallback records its one closed reason.
+   */
+  const deliverNotice = (
+    notice: {
+      readonly key: string
+      readonly title: string
+      readonly sourceCard: string
+      readonly todo: number
+      readonly audience: NotificationPolicyEvent & { readonly member: string; readonly actorLabel: string
+        readonly target: { readonly flow: "todo"; readonly n: number } | { readonly flow: "branch"; readonly branch: string } }
+      readonly action?: { readonly flow: "todo" | "branch"; readonly args: string; readonly label: string }
+    },
+    people: { readonly owner: string; readonly candidates: ReadonlyArray<string>; readonly defaults: ReadonlyArray<string> },
+    live: () => boolean,
+    settled?: () => void
+  ): void => {
+    const { kind, entryId, member, actorLabel, target } = notice.audience
+    const show = (policy?: NotificationPolicyStamp) => {
+      if (!live()) return
+      ctx.dispatch({ type: "toast.shown", actor: "system", key: notice.key, title: notice.title, sourceCard: notice.sourceCard,
+        audience: { member, entryId, kind, actorLabel, target, ...(policy === undefined ? {} : { policy }) },
+        ...(notice.action === undefined ? {} : { action: notice.action }) })
+      settled?.()
+    }
+    const route = options.notificationPolicy
+    // No policy declared anywhere in this session: the built-in §6.4 audience
+    // decides here and now, synchronously, exactly as it did before #4026.
+    if (route === undefined) {
+      if (people.defaults.includes(member)) show()
+      return
+    }
+    void route({ kind, entryId, todo: notice.todo }, people, live).then(
+      outcome => { if (live() && owner() === member && notifies(outcome, member)) show(notificationPolicyRecord(outcome)) },
+      error => {
+        // The router answers every refusal itself; a throw is this app's bug,
+        // and the person still gets the notice the default policy owes them.
+        ctx.report?.("notification.policy", error)
+        show({ source: "default", reason: "policy-failed" })
+      }
+    )
+  }
   // Both the whole-stack read and a card's live topic enter this one audience router.
   const routeNotable = (model: TodoCard, live: () => boolean) => {
     const n = model.n, previous = shared.notableModels.get(n)
@@ -328,36 +393,47 @@ export const createTodoSeam = (ctx: SeamContext, options: TodoSeamOptions = {}) 
     const before = asked(previous), after = asked(model)
     const sourceActor = model.present.find(actor => actor.kind === "agent")
     const actorLabel = sourceActor ? actorName(sourceActor) : "Smithers"
-    const toasted = model.owner.login === owner() || model.present.some(actor => actor.kind === "person" && actor.login === owner())
+    const readers = todoReaders(model)
+    // Access first: a viewer who cannot read this TODO is never a candidate,
+    // so no policy is asked about them and none can select them.
+    const toasted = readers.includes(owner() ?? "")
     for (const id of after) {
       const wait = model.waits.find(wait => wait.id === id)!
       const kind = wait.kind === "question" ? "needs_you" : wait.kind === "approval" ? "approval" : "conflict"
-      if (toasted && !before.has(id) && live()) ctx.dispatch({ type: "toast.shown", actor: "system", key: needsYouKey(n, id), title: `T${n} needs you`,
-        sourceCard: `todo:${n}`, audience: { member: owner()!, entryId: needsYouKey(n, id), kind,
+      if (toasted && !before.has(id) && live()) deliverNotice({
+        key: needsYouKey(n, id), title: `T${n} needs you`, sourceCard: `todo:${n}`, todo: n,
+        audience: { member: owner()!, entryId: needsYouKey(n, id), kind,
           actorLabel: wait.by ? actorName(wait.by) : actorLabel,
           target: wait.kind === "moved_off" ? { flow: "branch", branch: `T${n}` } : { flow: "todo", n } },
-        action: { flow: wait.kind === "moved_off" ? "branch" : "todo", args: `T${n}`, label: wait.kind === "moved_off" ? "Resolve" : wait.kind === "question" ? "Answer" : "Open" } })
+        action: { flow: wait.kind === "moved_off" ? "branch" : "todo", args: `T${n}`, label: wait.kind === "moved_off" ? "Resolve" : wait.kind === "question" ? "Answer" : "Open" }
+      // A wait's built-in audience is the owner and everyone on the branch.
+      }, { owner: model.owner.login, candidates: readers, defaults: readers }, live)
     }
     // The served owner and attempt identify these events; ordinary work receipts are not audience facts.
-    if (model.owner.login === owner() && live() && (model.state === "in_review" || model.state === "failed")
+    if (toasted && live() && (model.state === "in_review" || model.state === "failed")
       && (previous?.state !== model.state || previous?.run?.id !== model.run?.id
         || previous?.run?.attempt !== model.run?.attempt)) {
       const key = `todo.${model.state}.${n}.${model.run?.id ?? "no-run"}.${model.run?.attempt ?? 0}`
-      ctx.dispatch({ type: "toast.shown", actor: "system", key, title: model.title, sourceCard: `todo:${n}`,
+      deliverNotice({ key, title: model.title, sourceCard: `todo:${n}`, todo: n,
         audience: { member: owner()!, entryId: key, kind: model.state, actorLabel, target: { flow: "todo", n } },
-        action: { flow: "todo", args: `T${n}`, label: model.state === "in_review" ? "Review" : "Open" } })
+        action: { flow: "todo", args: `T${n}`, label: model.state === "in_review" ? "Review" : "Open" }
+      // A review or a failure is the owner's by default; presence does not subscribe to it.
+      }, { owner: model.owner.login, candidates: readers, defaults: [model.owner.login] }, live)
     }
     // A historical merged item is not a new event. Only the served terminal
     // transition notifies its owner; presence does not subscribe to others' merges.
     const mergeKey = `todo.merged.${n}.${model.run?.id ?? "no-run"}.${model.run?.attempt ?? 0}`
-    if (previous && previous.state !== "merged" && model.state === "merged" && model.owner.login === owner() && live() && !shared.mergedNotices.has(mergeKey)) {
+    if (previous && previous.state !== "merged" && model.state === "merged" && toasted && live() && !shared.mergedNotices.has(mergeKey)) {
       // A late REST snapshot can precede the same terminal event again. Hide
       // must survive that replay; the run/attempt identifies one merge notice.
+      // Claimed before the decision, so a policy that withholds this merge is
+      // not asked again by the next snapshot of the same merge.
       shared.mergedNotices.add(mergeKey)
       const key = mergeKey
-      ctx.dispatch({ type: "toast.shown", actor: "system", key, title: model.title, sourceCard: `todo:${n}`,
-        audience: { member: owner()!, entryId: key, kind: "merged", actorLabel, target: { flow: "todo", n } } })
-      ctx.resolveToast?.(key, { status: "ok", detail: "Merged" })
+      deliverNotice({ key, title: model.title, sourceCard: `todo:${n}`, todo: n,
+        audience: { member: owner()!, entryId: key, kind: "merged", actorLabel, target: { flow: "todo", n } }
+      }, { owner: model.owner.login, candidates: readers, defaults: [model.owner.login] }, live,
+        () => ctx.resolveToast?.(key, { status: "ok", detail: "Merged" }))
     }
     for (const id of before) if (!after.has(id) && live()) ctx.resolveToast?.(needsYouKey(n, id), { status: "ok", detail: previous?.waits.find(wait => wait.id === id)?.kind === "question" ? "Answered" : "" })
   }

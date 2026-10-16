@@ -35,6 +35,7 @@ import { RepoFileEntrySchema } from "@smthrs/rpc/LocalApp"
 import type { AgentTurnUsage } from "@smthrs/rpc/NativeAgent"
 import type { LocalRepositoryInspection,RepositoryAccess } from "@smthrs/rpc/NativeRepository"
 import { REPOSITORY_ACCESS_VALUES } from "@smthrs/rpc/NativeRepository"
+import { NotificationPolicyStampSchema } from "@smthrs/rpc/NotificationPolicy"
 import { RepositoryHomeSchema } from "@smthrs/rpc/RepositoryHome"
 import { RepositoryJobSchema, SetupRecoveryResponseSchema } from "@smthrs/rpc/RepositorySetup"
 import { z } from "zod"
@@ -778,6 +779,14 @@ export const ToastAudienceSchema = z.object({
   entryId: z.string(),
   kind: z.enum(["needs_you", "approval", "conflict", "in_review", "failed", "merged"]),
   actorLabel: z.string(),
+  /*
+   * Who chose this recipient (M-47, #4026): absent while the built-in §6.4
+   * default decided with no repository policy declared, present when a
+   * repository flow decided or when its policy could not and the default
+   * stood instead. The reason is one closed code, never error text, so a
+   * fallback is a readable fact and never prose on a notice.
+   */
+  policy: NotificationPolicyStampSchema.optional(),
   target: z.discriminatedUnion("flow", [
     z.object({ flow: z.literal("todo"), n: z.number().int().positive() }),
     z.object({ flow: z.literal("run"), id: z.string().min(1) }),

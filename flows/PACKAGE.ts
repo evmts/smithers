@@ -480,6 +480,7 @@ const repositoryFixtures = [
   "jev-reproduction",
   "jev-score",
   "native-error",
+  "notification-policy",
   "pause-integrity",
   "policy-identity",
   "proposal-review",
@@ -505,7 +506,9 @@ const repository = Smithers.NodeTest({
       ...Array<Smithers.Input.File>
     ]
   ),
-  srcs: codingSources,
+  // `repository-notification-policy` reads this repository's own projected
+  // catalog to prove the policy flow is discovered into it.
+  srcs: [...codingSources, Smithers.file("//.smithers/factory.json")],
   deps: codingDependencies,
   cwd,
   timeout: "20m"

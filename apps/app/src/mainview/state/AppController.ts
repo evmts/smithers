@@ -71,7 +71,7 @@ import { cardAvailable } from "./CardAvailability"
 import { disposePreparedViews,invalidatePreparedViews } from "./PreparedView"
 import type { KnownRepositories } from "./RepoContext"
 import { TodoCardSchema } from "@smthrs/rpc/TodoCard"
-import { activeCatalogRepositoryId,activeRepositoryId,knownRepositories,resolveTargetRepo } from "./RepoContext"
+import { activeCatalogRepositoryId,activeRepositoryId,gatewayBindingFor,knownRepositories,resolveTargetRepo } from "./RepoContext"
 import type { StorageRecoveryAction,StorageRecoveryHost } from "./StorageRecoveryAction"
 import type { AgentsController } from "./controller/agents"
 import { createModelsController } from "./controller/models"
@@ -170,6 +170,7 @@ import { createMembersSeam, type MembersSnapshots } from "./seams/MembersSeam"
 import { createRunMonitorSeam, RUN_READ_REFUSALS, type RunMonitorSnapshots } from "./seams/RunMonitorSeam"
 import { traceNamed } from "./seams/DesignWorld/run"
 import { createFlowsSeam, type FlowsSnapshots } from "./seams/FlowsSeam"
+import { createNotificationPolicyRouter } from "./controller/notificationPolicy"
 import { createTodoSeam, type TodoSeam, type TodoTopics } from "./seams/TodoSeam"
 import { createConfirmationSeam } from "./seams/ConfirmationSeam"
 import { createDesignWorld, type DesignWorld } from "./seams/DesignWorld"
@@ -1498,7 +1499,17 @@ export const createAppController = (
     } }
   })
   const orderSeam = actors.pair(seamCtx, createOrderAttentionSeam)
-  const todoSeam = actors.pair(seamCtx, context => withDesignTodos(createTodoSeam(context, { actors: () => ({ roster: (membersRoster.get().model?.members ?? []).map(member => ({ ...member, id: member.login })) }), ...(installHost ? { draftIssue: (source, signal) => draftIssueTodo(context, source, signal), readIssue: async (number, repo) => {
+  const todoSeam = actors.pair(seamCtx, context => withDesignTodos(createTodoSeam(context, { actors: () => ({ roster: (membersRoster.get().model?.members ?? []).map(member => ({ ...member, id: member.login })) }),
+    /*
+     * The repository's own notification policy (M-47, #4026), on this seam's
+     * own principal like everything else here: it reads the repository's
+     * declared `notification.route` rule and runs the flow it names through
+     * ctx.gateway, the same workspace path a button or a slash launch uses.
+     */
+    notificationPolicy: createNotificationPolicyRouter(context, {
+      gateway: ctx.gateway,
+      bindingFor: repo => gatewayBindingFor(store, repo)
+    }).route, ...(installHost ? { draftIssue: (source, signal) => draftIssueTodo(context, source, signal), readIssue: async (number, repo) => {
     const issue = await issuesSeam.readTodoIssue(number, repo)
     if (typeof issue === "string") return issue
     if (issue.state === "closed") return `Issue #${number} is closed.`

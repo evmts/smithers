@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Repository notification policy — #4026</title>
+<style>body{max-width:52rem;margin:3rem auto;padding:0 1rem;font:17px/1.6 system-ui;color:#242424;background:#faf9f6}h1,h2{line-height:1.2}code{font-size:.9em}pre{overflow-x:auto;padding:.75rem;background:#f0efe9;border-radius:4px}table{border-collapse:collapse}th,td{padding:.5rem;text-align:left;border-bottom:1px solid #bbb}@media(prefers-color-scheme:dark){body{background:#20201e;color:#eee}pre{background:#2a2a27}}</style>
+<main><h1>Repository notification policy</h1>
+<p>Implemented for <a href="https://github.com/smithersai/smithers/issues/4026">#4026</a> (M-47, <code>.specs/product/mvp.md</code> §6.17). A repository flow decides who is told about a defined set of repository notifications. Delivery is unchanged. Source-green only; this document is not production evidence.</p>
+
+<h2>Declaring it</h2>
+<p>A repository claims notification policy with one row of the Dispatcher table it already writes in <code>.smithers/FACTORY.ts</code>, on the event the app asks on:</p>
+<pre><code>on: {
+  "notification.route": { flow: "notification-policy", description: "Choose who is told" }
+}</code></pre>
+<p><code>notification.route</code> is a key of the existing event vocabulary, and the row projects into <code>.smithers/factory.json</code> through <code>//:factoryProjection</code> like every other rule. No new field, schema, store or configuration screen exists for this: the declaration is the repository's typed source, and the app reads it from the signed-out contents route it already reads the Dispatcher card from. Two rows for the event, or one row naming two flows, is ambiguous and the built-in audience stands.</p>
+<p>The flow itself is an ordinary repository flow at <code>flows/&lt;name&gt;/flow.ts</code> — repository scope, priority 2 of the catalog order in <a href="./3871-global-flows.html">#3871</a>. This repository ships <code>flows/notification-policy/flow.ts</code> as the one a maintainer copies.</p>
+
+<h2>The defined set of events</h2>
+<table><thead><tr><th>Kind</th><th>Built-in audience (§6.4)</th></tr></thead><tbody>
+<tr><td><code>needs_you</code>, <code>approval</code>, <code>conflict</code></td><td>The TODO's owner and the people on its branch</td></tr>
+<tr><td><code>in_review</code>, <code>failed</code>, <code>merged</code></td><td>The TODO's owner</td></tr>
+</tbody></table>
+<p>These are the notices §6.4 hard-coded. A kind outside the set keeps its own audience and starts no policy run.</p>
+
+<h2>The contract</h2>
+<p><code>@smthrs/rpc/NotificationPolicy</code> is the one contract both sides hold. The request carries identity alone:</p>
+<pre><code>{ repo, event: { kind, entryId, todo? }, owner, candidates, defaults }</code></pre>
+<p>No title, prompt, body, comment, diff or error text travels into a policy run, so a decision cannot carry repository content or a customer's words into a notification, a run trace or a diagnostic. <code>candidates</code> is everyone who already can read the event; <code>defaults</code> is who the built-in audience would tell, always a subset of the candidates.</p>
+<p>The answer is bounded typed recipient ids plus the one allowed handling flag, parsed strictly:</p>
+<pre><code>{ recipients: ReadonlyArray&lt;login&gt;, handling?: { quiet?: boolean } }</code></pre>
+<p>Up to 50 recipients, each a GitHub login. An answer carrying any other key does not decode, so arbitrary diagnostics, a URL or a secret value cannot ride one out of the run.</p>
+
+<h2>What the app guarantees, not the policy</h2>
+<ul>
+<li><strong>Access is checked after the policy selects.</strong> A selected recipient who is not a candidate is withheld and counted. The policy narrows who is told among people who can already read the work; it can never grant access to anything.</li>
+<li><strong>A missing policy keeps the existing default.</strong> With no declaration nothing runs, nothing is recorded, and every notice behaves exactly as before.</li>
+<li><strong>A failure is never silence.</strong> An ambiguous, unreadable, failed, malformed or superseded policy delivers the built-in audience and records one closed reason on the notice: <code>policy-ambiguous</code>, <code>policy-unavailable</code>, <code>policy-failed</code>, <code>policy-malformed</code>, <code>policy-superseded</code>. No error text, path, URL or credential is part of that record.</li>
+<li><strong>Identity stays bound.</strong> The person, identity revision and repository are captured before the run and re-checked before the answer is believed. A late answer that arrives after an account or repository switch delivers and persists nothing — a retired account's decision is never another account's notification.</li>
+<li><strong>Delivery is unchanged.</strong> The toast, the timeline entry, the browser notification and the repository update card are the same surfaces, and read receipts are untouched. Only the recipient decision moved.</li>
+</ul>
+
+<h2>How it runs</h2>
+<p>One ordinary workflow launch per notice through <code>ctx.gateway</code>: Plan, the launch's approval, Run, then the run summary's own answer — the same path a button, a slash command or an agent call uses, with the same workspace binding and the person's own session. The idempotency key is the notice's identity, so a repeated read of the same TODO joins the decision already in flight instead of starting a second run. The declaration is read once per repository per session, the cadence the flow catalog already uses. It is the repository's own public projection, served to a signed-out visitor, so nothing account-private is cached; the decision it leads to is fenced on the person, identity revision and repository instead.</p>
+<p>The example flow reads nothing, writes nothing, spawns nothing and calls no model: a routing rule is a declaration the repository owns, and keeping it deterministic is what makes it safe to run on every notice. It is <code>modelInvocable: false</code> — a notification's audience is not a model's guess.</p>
+
+<h2>Source</h2>
+<table><thead><tr><th>Part</th><th>File</th></tr></thead><tbody>
+<tr><td>Contract and the rules the app enforces</td><td><code>packages/rpc/src/NotificationPolicy.ts</code></td></tr>
+<tr><td>Declaration read, run and fallback</td><td><code>apps/app/src/mainview/state/controller/notificationPolicy.ts</code></td></tr>
+<tr><td>Delivery, with access checked first and last</td><td><code>apps/app/src/mainview/state/seams/TodoSeam.ts</code></td></tr>
+<tr><td>The example policy flow</td><td><code>flows/notification-policy/flow.ts</code></td></tr>
+</tbody></table>
+<p>Not done here: the repository update card's own activity rows still project per account and are not routed by a policy, and this repository declares no <code>notification.route</code> rule of its own, so nothing is activated by landing this.</p>
+</main></html>

@@ -1189,6 +1189,18 @@
       "flows": []
     },
     {
+      "id": "notification-policy",
+      "description": "Decide who is told about a repository notification, among the people who can already read it.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/notification-policy/flow.ts",
+      "capabilities": [],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
       "id": "release",
       "description": "Prepare a Smithers release or validate, build, smoke-test and publish its exact npm tarballs with durable human approval.",
       "summary": null,
