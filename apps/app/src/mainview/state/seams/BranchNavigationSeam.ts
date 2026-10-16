@@ -4,7 +4,7 @@ import type { LiveTopics } from "../useTopic"
 import { z } from "zod"
 import type { BranchTreeNodeCard } from "@smthrs/rpc/BranchTreeNodeCard"
 import { accountOwnerOf } from "../AccountOwner"
-import type { SeamContext } from "./SeamContext"
+import { captureCloudOwner, type SeamContext } from "./SeamContext"
 import { designBranchTree } from "./DesignWorld/shell"
 import type { DesignWorld } from "./DesignWorld"
 
@@ -74,10 +74,14 @@ export function branchTree(value: unknown): BranchTreeNodeCard[] {
 export interface HostedBranchSource {
   /** The connected repository as `owner/name`, or null when none is chosen. */
   readonly repository: () => string | null
-  /** The repository's branch names, or the honest sentence the read earned. */
+  /**
+   * Read that repository's branches into the canonical read model
+   * (RepositoryBranchesSeam.rows), answering the honest sentence the read
+   * earned. The rows ARE the hosted page's tree ({@link hostedBranchNodes}),
+   * so this read ensures them and retains nothing of its own: an answer about
+   * one repository can never be painted under another repository's header.
+   */
   readonly load: (repo: string) => Promise<{ readonly names: ReadonlyArray<string> } | { readonly error: string }>
-  /** That repository's current bookmark as the inventory last read it; null when unknown. */
-  readonly defaultBranch: (repo: string) => string | null
 }
 
 /**
@@ -98,8 +102,36 @@ export function hostedBranchTree(names: ReadonlyArray<string>, defaultBranch: st
     }))
 }
 
+/**
+ * The rows a hosted `/branches` paints: the CURRENT repository's branches as
+ * the canonical read model holds them (RepositoryBranchesSeam.rows), by the
+ * one rule the page and the header share.
+ *
+ * The session's `branchNavigation.nodes` carries no repository, so a hosted
+ * tree is never read back out of it — not while another repository's read is
+ * still in flight, and not after a reload that restored a tree one repository
+ * left behind beside a header that now names a different one. A repository
+ * with no row has no branches to paint, because nothing read it yet.
+ */
+export const hostedBranchNodes = (
+  repository: string | null,
+  names: (repo: string) => ReadonlyArray<string> | undefined,
+  defaultBranch: (repo: string) => string | null
+): BranchTreeNodeCard[] =>
+  repository === null ? [] : hostedBranchTree(names(repository) ?? [], defaultBranch(repository))
+
 export function createBranchNavigationSeam(ctx: SeamContext, design: DesignWorld, options?: { live?: LiveTopics; onDispose?: (dispose: () => void) => void; hosted?: HostedBranchSource }) {
-  let pending: Promise<void> | undefined
+  /*
+   * The read question: WHICH account generation asked, and WHICH repository
+   * it asked about. One pending promise for every question dropped the later
+   * question unread while the earlier one hung, and a fence on the account
+   * login alone could not tell an account that changed away and back from the
+   * one that asked.
+   */
+  /** The question a read is in flight for; another question's read is its own. */
+  let reading: string | undefined
+  /** The latest question this page asked: an answer to any other one is stale. */
+  let asked: string | undefined
   const watches = new Map<string, () => void>()
   const stop = () => { for (const unsubscribe of watches.values()) unsubscribe(); watches.clear() }
   const identity = options?.onDispose ? ctx.store.collections.identitySessions.subscribeChanges(() => {
@@ -129,12 +161,22 @@ export function createBranchNavigationSeam(ctx: SeamContext, design: DesignWorld
   return {
     listBookmarks: async () => {
       const owner = accountOwnerOf(ctx.store.collections.identitySessions.get("identity")) ?? null
+      const hosted = options?.hosted
+      const repo = hosted?.repository() ?? null
+      const question = `${owner ?? ""}\n${repo ?? ""}`
+      // The canonical account/provider fence: a refresh by the same owner stays current, a sign-out and back does not.
+      const generation = captureCloudOwner(ctx, false)
       const previous = ctx.store.session().branchNavigation
       await ctx.dispatch({ type: "branch.navigation.changed", actor: ctx.actor(), navigation: {
-        owner, open: true, selected_branch: previous?.owner === owner ? previous.selected_branch : "main", nodes: previous?.owner === owner ? previous.nodes : []
+        owner, open: true, selected_branch: previous?.owner === owner ? previous.selected_branch : "main",
+        // A hosted tree is derived from the repository's own rows, never retained here: this field carries no repository.
+        nodes: hosted !== undefined || previous?.owner !== owner ? [] : previous.nodes
       } }).isPersisted.promise
-      if (pending) return
-      const current = () => !ctx.isDisposed?.() && (accountOwnerOf(ctx.store.collections.identitySessions.get("identity")) ?? null) === owner
+      // Only the SAME question is already being read; another repository's is its own.
+      if (reading === question) return
+      asked = question
+      const current = () => !ctx.isDisposed?.() && generation() && asked === question
+        && (accountOwnerOf(ctx.store.collections.identitySessions.get("identity")) ?? null) === owner
       const show = async (nodes: BranchTreeNodeCard[]) => {
         const view = ctx.store.session().branchNavigation
         if (view?.owner !== owner) return false
@@ -149,24 +191,23 @@ export function createBranchNavigationSeam(ctx: SeamContext, design: DesignWorld
        * earned is what the person reads, and the stage and reason go to the
        * operational ring.
        */
-      const readHosted = async (hosted: HostedBranchSource): Promise<void | string> => {
-        const repo = hosted.repository()
+      const readHosted = async (source: HostedBranchSource): Promise<void | string> => {
         if (repo === null) {
           const refusal = new BranchNavigationFailure({ sentence: "No repository chosen", stage: "repository-read", reason: "no-repository" })
           ctx.report?.(branchNavigationDiagnostic(refusal, 0), refusal)
           throw refusal
         }
-        const loaded = await hosted.load(repo)
+        const loaded = await source.load(repo)
+        // A question this page no longer asks states nothing and paints nothing.
         if (!current()) return
         if ("error" in loaded) {
           const refusal = new BranchNavigationFailure({ sentence: "Branches unavailable", stage: "repository-read", reason: "host-refused" })
           ctx.report?.(branchNavigationDiagnostic(refusal, 0), refusal)
           return loaded.error
         }
-        await show(hostedBranchTree(loaded.names, hosted.defaultBranch(repo)))
       }
       const read = async (): Promise<void | string> => {
-        if (options?.hosted !== undefined) return readHosted(options.hosted)
+        if (hosted !== undefined) return readHosted(hosted)
         const rows: unknown[] = []
         let real = true
         let nodes: BranchTreeNodeCard[] | undefined
@@ -191,8 +232,10 @@ export function createBranchNavigationSeam(ctx: SeamContext, design: DesignWorld
         if (!await show(nodes)) return
         if (real) observe(rows, owner)
       }
-      pending = (ctx.withToast ? ctx.withToast("branch-tree", "Branches", "Branches", read, true, current) : read())
-        .then(() => {}).catch(error => { ctx.report?.("branches", error) }).finally(() => { pending = undefined })
+      reading = question
+      void (ctx.withToast ? ctx.withToast("branch-tree", "Branches", "Branches", read, true, current) : read())
+        .then(() => {}).catch(error => { ctx.report?.("branches", error) })
+        .finally(() => { if (reading === question) reading = undefined })
     }
   }
 }

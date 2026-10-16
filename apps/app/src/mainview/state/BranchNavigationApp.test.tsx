@@ -16,6 +16,7 @@ import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
 import { memoryStorage, silentAgent, waitFor } from "./TestFixtures"
 import { branchTree } from "./seams/BranchNavigationSeam"
+import { BRANCH_PICKS_STORAGE_KEY } from "./seams/RepositoryBranchesSeam"
 
 const nativeFetch = globalThis.fetch.bind(globalThis)
 const NativeAbortController = globalThis.AbortController
@@ -324,4 +325,90 @@ test("hosted /branches whose host refuses the read says branches were not listed
   expect(failed.detail).not.toContain("/api/")
   expect(failed.detail).not.toContain("404")
   expect(host.querySelectorAll('[data-node]:not([data-node="earlier"])')).toHaveLength(0)
+})
+
+/*
+ * The hosted page's read question is ONE account generation and ONE
+ * repository. `/branches` kept a single pending promise for every question
+ * and fenced it on the account login alone, so a question about one
+ * repository could answer underneath another repository's header while the
+ * later question was dropped unread; and the session's
+ * `branchNavigation.nodes` carries no repository, so a reload restored one
+ * repository's tree beside a header that named a different one.
+ */
+const hostedRepositories = [
+  { id: "acme/api", org: "acme", ownerKind: "org" as const, name: "api", head: { bookmark: "trunk", changeId: "c", commitId: "k" } },
+  { id: "acme/web", org: "acme", ownerKind: "org" as const, name: "web", head: { bookmark: "develop", changeId: "c", commitId: "k" } }
+]
+const hostedBookmarks = (names: ReadonlyArray<string>) => Response.json({ items: names.map(hostedBookmark), next_cursor: "" })
+const hostedPage = async (answer: (url: URL) => Response | Promise<Response> | undefined, storage = memoryStorage()) => {
+  // Each fixture is its own browser: the picks this page's storage holds are its own.
+  globalThis.localStorage?.removeItem(BRANCH_PICKS_STORAGE_KEY)
+  const store = await createAppStore({ kind: "localStorage", storage })
+  const paths: string[] = []
+  const controller = controllerFor(store, silentAgent, {
+    bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["identity", "agent", "cloud"], authFlow: "redirect", sandbox: null },
+    fetchImpl: async input => {
+      const url = new URL(String(input), "https://cloud.test")
+      paths.push(url.pathname)
+      return await answer(url) ?? new Response("{}", { status: 404 })
+    }
+  })
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "maya", admin: false, scopesPlain: null }).isPersisted.promise
+  await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: hostedRepositories }).isPersisted.promise
+  return { store, controller, paths, storage }
+}
+const painted = (host: HTMLElement) => [...host.querySelectorAll("[data-node]")].map(node => node.getAttribute("data-node"))
+
+test("hosted /branches reads the repository the header now names, and the earlier repository's late answer paints nothing", async () => {
+  let answerApi!: (response: Response) => void
+  const api = new Promise<Response>(resolve => { answerApi = resolve })
+  let webReads = 0
+  const { store, controller } = await hostedPage(url => {
+    if (url.pathname === "/api/repos/acme/api/bookmarks") return api
+    if (url.pathname !== "/api/repos/acme/web/bookmarks") return undefined
+    webReads += 1
+    // Refused once, so only a question that was actually re-driven lists acme/web.
+    return webReads === 1
+      ? Response.json({ code: "unavailable", class: "infra", message: "busy" }, { status: 503 })
+      : hostedBookmarks(["develop", "release"])
+  })
+  await controller.commands.run("repo.select", "acme/api")
+  const host = mount(controller)
+  await controller.submitCommand({ name: "branches", payload: {}, actor: "user" })
+  // acme/api has not answered. The person selects acme/web and asks again.
+  await controller.commands.run("repo.select", "acme/web")
+  await waitFor(() => webReads === 1)
+  expect((await controller.submitCommand({ name: "branches", payload: {}, actor: "user" })).status).toBe("executed")
+  await waitFor(() => host.querySelector('[data-node="release"]') !== null)
+  expect(painted(host)).toEqual(["develop", "release", "earlier"])
+  // acme/api answers last. It is not this page's question any more.
+  answerApi(hostedBookmarks(["trunk", "docs"]))
+  await new Promise(resolve => setTimeout(resolve, 20))
+  expect(painted(host)).toEqual(["develop", "release", "earlier"])
+  expect(host.querySelector('[data-node="develop"]')?.getAttribute("aria-current")).toBe("page")
+  expect(controller.repositoryBranches.pickOf("acme/api")).toBeUndefined()
+  expect(store.session().branchNavigation?.selected_branch).toBe("main")
+})
+
+test("a reload paints no branch tree for a repository the header no longer names", async () => {
+  const storage = memoryStorage()
+  const first = await hostedPage(url => url.pathname === "/api/repos/acme/api/bookmarks" ? hostedBookmarks(["trunk", "docs"]) : undefined, storage)
+  await first.controller.commands.run("repo.select", "acme/api")
+  const firstHost = mount(first.controller)
+  await first.controller.submitCommand({ name: "branches", payload: {}, actor: "user" })
+  await waitFor(() => firstHost.querySelector('[data-node="docs"]') !== null)
+  await first.controller.commands.run("repo.select", "acme/web")
+  await first.controller.dispose()
+  // The page is reloaded: this browser's storage restores the session, including
+  // an open branch navigation, and acme/web is the repository it restores.
+  const second = await hostedPage(url => url.pathname === "/api/repos/acme/web/bookmarks" ? hostedBookmarks(["develop", "release"]) : undefined, storage)
+  expect(second.store.session().branchNavigation?.open).toBe(true)
+  const secondHost = mount(second.controller)
+  await waitFor(() => secondHost.querySelector('[data-node="earlier"]') !== null)
+  expect(painted(secondHost)).toEqual(["earlier"])
+  // acme/web's own read is what lists acme/web.
+  await second.controller.submitCommand({ name: "branches", payload: {}, actor: "user" })
+  await waitFor(() => secondHost.querySelector('[data-node="release"]') !== null)
+  expect(painted(secondHost)).toEqual(["develop", "release", "earlier"])
 })

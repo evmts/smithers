@@ -1628,8 +1628,7 @@ export const createAppController = (
   const bookmarksSeam = actors.pair(seamCtx, (context, select) => createBranchNavigationSeam(context, design, { live: services.live, onDispose: ctx.onDispose,
     ...(installBranchIndex ? {} : { hosted: {
       repository: () => activeRepositoryId(store),
-      load: (repo: string) => select(repositoryBranches).load(repo),
-      defaultBranch: (repo: string) => store.collections.repositories.get(repo)?.head?.bookmark ?? null
+      load: (repo: string) => select(repositoryBranches).load(repo)
     } }) }))
   const fileBranchSubscriptions = new Map<string, () => void>()
   ctx.onDispose(() => { for (const dispose of fileBranchSubscriptions.values()) dispose(); fileBranchSubscriptions.clear() })

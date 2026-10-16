@@ -16,7 +16,7 @@ import { scopedControllers } from "../ControllerTestScope"
 import { headerSelection } from "../HeaderSelection"
 import { memoryStorage, silentAgent, waitFor } from "../TestFixtures"
 import { presentAppFailure } from "../controller/AppFailure"
-import { BranchNavigationFailure, branchNavigationDiagnostic, hostedBranchTree } from "./BranchNavigationSeam"
+import { BranchNavigationFailure, branchNavigationDiagnostic, hostedBranchNodes, hostedBranchTree } from "./BranchNavigationSeam"
 
 const createAppController = scopedControllers()
 const cloud = { apiVersion: 1 as const, host: "cloud" as const, version: "test", buildSha: "test", capabilities: ["identity" as const, "agent" as const, "github" as const, "cloud" as const], authFlow: "redirect" as const, sandbox: null }
@@ -42,7 +42,16 @@ const harness = async (answer: Answer, bootstrap: typeof cloud | typeof install 
   })
   await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "maya", admin: false, scopesPlain: null }).isPersisted.promise
   await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [repository("acme/api", "trunk"), repository("acme/web", "develop")] }).isPersisted.promise
-  const nodes = () => (store.session().branchNavigation?.nodes ?? []).map(node => ({ id: node.id, kind: node.kind, children: node.children.length }))
+  /*
+   * What the hosted page paints, by the view's own rule (hostedBranchNodes):
+   * the CURRENT repository's rows. Reading the session's nodes instead would
+   * accept a tree another repository's read left behind.
+   */
+  const nodes = () => hostedBranchNodes(
+    headerSelection(controller).repository,
+    repo => controller.repositoryBranches.rows.get(repo)?.names,
+    repo => store.collections.repositories.get(repo)?.head?.bookmark ?? null
+  ).map(node => ({ id: node.id, kind: node.kind, children: node.children.length }))
   const toast = () => store.collections.toasts.get("toast-branch-tree")
   return { store, controller, reads, nodes, toast, selection: () => headerSelection(controller) }
 }
@@ -150,6 +159,117 @@ describe("the hosted branch list is the connected repository's own branches", ()
     expect(h.selection()).toEqual({ repository: "acme/api", branch: "docs" })
     // The conversation a hosted page addresses is still its one conversation.
     expect(h.store.session().branchNavigation?.selected_branch).toBe("main")
+  })
+})
+
+/*
+ * One pending read for every question: `/branches` kept a single in-flight
+ * promise and a fence that compared the account login alone, so a question
+ * about one repository could answer underneath another repository's header,
+ * and the later question was dropped entirely while the earlier one hung.
+ */
+describe("the read question is one account generation and one repository", () => {
+  test("the latest repository is read without waiting for the previous one, and the late answer paints nothing", async () => {
+    let answerApi!: (response: Response) => void
+    const api = new Promise<Response>(resolve => { answerApi = resolve })
+    let webReads = 0
+    const h = await harness(url => {
+      if (url.pathname === "/api/repos/acme/api/bookmarks") return api
+      if (url.pathname !== "/api/repos/acme/web/bookmarks") return undefined
+      webReads += 1
+      // The repository change's own read is refused once, so only a question
+      // that was actually re-driven can produce acme/web's rows.
+      return webReads === 1
+        ? Response.json({ code: "unavailable", class: "infra", message: "busy" }, { status: 503 })
+        : Response.json({ items: [bookmark("develop"), bookmark("release")], next_cursor: "" })
+    })
+    await h.controller.commands.run("repo.select", "acme/api")
+    await h.controller.commands.run("branches")
+    // acme/api has not answered. The person selects another repository and asks again.
+    await h.controller.commands.run("repo.select", "acme/web")
+    await waitFor(() => webReads === 1)
+    expect((await h.controller.commands.run("branches")).status).toBe("executed")
+    await waitFor(() => h.nodes().map(node => node.id).join() === "develop,release")
+    expect(h.nodes()).toEqual([
+      { id: "develop", kind: "main", children: 0 },
+      { id: "release", kind: "scratch", children: 0 }
+    ])
+    // acme/api answers last. It is not the page's question any more.
+    answerApi(Response.json({ items: [bookmark("trunk"), bookmark("docs")], next_cursor: "" }))
+    await waitFor(() => h.reads.filter(read => read.includes("/api/repos/acme/api/bookmarks")).length === 1)
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(h.nodes().map(node => node.id)).toEqual(["develop", "release"])
+    expect(h.selection()).toEqual({ repository: "acme/web", branch: "develop" })
+    expect(h.controller.repositoryBranches.pickOf("acme/web")).toBeUndefined()
+    expect(h.store.session().branchNavigation?.selected_branch).toBe("main")
+    expect(h.toast()?.status).not.toBe("failed")
+  })
+
+  test("a repository read that began under the previous account grants no rows, no pick and no result", async () => {
+    let answer!: (response: Response) => void
+    const held = new Promise<Response>(resolve => { answer = resolve })
+    const h = await harness(url => url.pathname === "/api/repos/acme/api/bookmarks" ? held : undefined)
+    await h.controller.commands.run("repo.select", "acme/api")
+    await h.controller.commands.run("branches")
+    // `/branch docs` is waiting on the very same read.
+    const picking = h.controller.commands.submit({ name: "branch", payload: { name: "docs" }, actor: "user" })
+    await waitFor(() => h.reads.some(read => read.includes("/api/repos/acme/api/bookmarks")))
+    await h.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "alice", admin: false, scopesPlain: null }).isPersisted.promise
+    answer(Response.json({ items: [bookmark("trunk"), bookmark("docs")], next_cursor: "" }))
+    // The retired answer names a branch, and it authorizes nothing.
+    expect((await picking).status).not.toBe("executed")
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(h.controller.repositoryBranches.rows.get("acme/api")).toBeUndefined()
+    expect(h.nodes()).toEqual([])
+    expect(h.controller.repositoryBranches.pickOf("acme/api")).toBeUndefined()
+    expect(h.store.session().branchNavigation?.selected_branch).toBe("main")
+  })
+
+  test("a branch the retired account's read listed never becomes the new account's pick", async () => {
+    const answers: Array<(response: Response) => void> = []
+    // maya's read lists docs; alice's own read of the same repository does not.
+    const listings = [["trunk", "docs"], ["trunk"]]
+    const h = await harness(url => {
+      if (url.pathname !== "/api/repos/acme/api/bookmarks") return undefined
+      const names = listings[answers.length] ?? ["trunk"]
+      return new Promise<Response>(resolve => { answers.push(() => resolve(Response.json({ items: names.map(bookmark), next_cursor: "" }))) })
+    })
+    await h.controller.commands.run("repo.select", "acme/api")
+    const picking = h.controller.commands.submit({ name: "branch", payload: { name: "docs" }, actor: "user" })
+    await waitFor(() => answers.length === 1)
+    // The account changes, and the new account opens the same repository.
+    await h.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "alice", admin: false, scopesPlain: null }).isPersisted.promise
+    await h.store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [repository("acme/api", "trunk")] }).isPersisted.promise
+    await h.controller.commands.run("repo.select", "acme/api")
+    await waitFor(() => answers.length === 2)
+    answers[1]!(new Response())
+    await waitFor(() => h.controller.repositoryBranches.rows.get("acme/api")?.state === "ready")
+    // maya's answer lands last. It names docs, and it authorizes nothing here.
+    answers[0]!(new Response())
+    // The real flow registry refuses the act outright: the account that asked is gone.
+    const outcome = await picking
+    expect(outcome.status).toBe("failed")
+    expect(outcome.status === "failed" ? outcome.error : "").toContain("account, or turn changed")
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(h.controller.repositoryBranches.pickOf("acme/api")).toBeUndefined()
+    expect(h.controller.repositoryBranches.rows.get("acme/api")?.names).toEqual(["trunk"])
+    expect(h.selection()).toEqual({ repository: "acme/api", branch: "trunk" })
+  })
+
+  test("an account that signed out and back in is a new generation: the earlier answer still grants nothing", async () => {
+    let answer!: (response: Response) => void
+    const held = new Promise<Response>(resolve => { answer = resolve })
+    const h = await harness(url => url.pathname === "/api/repos/acme/api/bookmarks" ? held : undefined)
+    await h.controller.commands.run("repo.select", "acme/api")
+    await h.controller.commands.run("branches")
+    await waitFor(() => h.reads.some(read => read.includes("/api/repos/acme/api/bookmarks")))
+    await h.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, admin: false, scopesPlain: null }).isPersisted.promise
+    await h.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "maya", admin: false, scopesPlain: null }).isPersisted.promise
+    answer(Response.json({ items: [bookmark("trunk"), bookmark("docs")], next_cursor: "" }))
+    await new Promise(resolve => setTimeout(resolve, 10))
+    // The login spells the same, and the read still belongs to the generation that asked.
+    expect(h.nodes()).toEqual([])
+    expect(h.controller.repositoryBranches.pickOf("acme/api")).toBeUndefined()
   })
 })
 
