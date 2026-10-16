@@ -54,7 +54,7 @@ test('configuration requires public origin, credentials, host evidence and recor
 test('CLI workload retains refusal artifacts without credentials or a passing budget', async () => {
   const root = await mkdtemp(join(tmpdir(), 'warm-wake-test-'))
   try {
-    const result = await run({ ...env, SMITHERS_PERF_HOST_WAKE_LOG: '', SMITHERS_PERF_ARTIFACT_ROOT: root })
+    const result = await run({ ...env, SMITHERS_PERF_OWNER_COOKIE: '', SMITHERS_PERF_HOST_WAKE_LOG: '', SMITHERS_PERF_ARTIFACT_ROOT: root })
     assert.equal(result.status, 'failed')
     assert.equal(result.budgets[0].status, 'failed')
     assert.equal(result.samples.length, 0)
