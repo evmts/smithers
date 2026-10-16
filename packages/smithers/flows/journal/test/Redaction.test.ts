@@ -218,6 +218,9 @@ describe("Redaction", () => {
     ["eyJ inside a word", "prefixeyJabcdefghijk.payload.signature"],
     ["non-credential URL query", "https://example.test/search?q=a=b&page=2"],
     // #3963: a SWE-bench trace's Python import and sort key.
+    ["ordinary basic prose", "a basic example"],
+    ["invalid Basic base64", "basic abcde"],
+    ["base64 without a credential pair", "basic ZXhhbXBsZQ=="],
     ["Python import of a basic module", "from ansible.module_utils.basic import AnsibleModule"],
     ["Python sort key lambda", "return sorted(matches, key=lambda m: m.start())"],
     ["Python sort key function", "rows.sort(key=operator.itemgetter(1), reverse=True)"]
@@ -245,6 +248,8 @@ describe("Redaction", () => {
     ["single-quoted assignment", `TOKEN='dummy secret'`, `TOKEN='${Redaction.placeholder}'`],
     ["Bearer token with plus and padding", "Bearer abcdefgh+SENSITIVE==", "Bearer [REDACTED_TOKEN]"],
     ["Bearer token with the full b64token alphabet", "Bearer ab/cd+ef~gh=", "Bearer [REDACTED_TOKEN]"],
+    ["lowercase Basic credential", "sent basic dXNlcjpzM2NyZXQ= upstream", "sent Basic [REDACTED_TOKEN] upstream"],
+    ["mixed-case Basic credential", "bAsIc dXNlcjpwYXNz", "Basic [REDACTED_TOKEN]"],
     ["Basic credential in capitals", "BASIC dXNlcjpwYXNz", "Basic [REDACTED_TOKEN]"],
     ["quoted key argument", `client(key="dummy secret")`, `client(key="${Redaction.placeholder}")`],
     ["key assignment outside a call", "curl -d key=abc123 host", `curl -d key=${Redaction.placeholder} host`]

@@ -127,6 +127,13 @@
   },
   {
     "package": "packages/backend/internal/compose",
+    "file": "archive_route_authorization_integration_test.go",
+    "tests": [
+      "TestChatArchiveRoutesAuthorizeByActorPostgres"
+    ]
+  },
+  {
+    "package": "packages/backend/internal/compose",
     "file": "background_terminal_admission_test.go",
     "tests": [
       "TestBackgroundMachineTerminalAdmission"
@@ -867,7 +874,8 @@
       "TestGitHubAppManifestExpiryDuringConversionPostgres",
       "TestGitHubAppManifestReinstallationPostgres",
       "TestGitHubAppManifestCompletionFencesActiveAttemptPostgres",
-      "TestGitHubAppManifestLapsedStepNeverConsumesOrConvertsPostgres"
+      "TestGitHubAppManifestLapsedStepNeverConsumesOrConvertsPostgres",
+      "TestGitHubAppManifestOwnerAuthorityAtConsumptionPostgres"
     ]
   },
   {

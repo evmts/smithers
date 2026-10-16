@@ -83,7 +83,7 @@ The members and the value each one carries across the seam:
 | `resumeSignal`          | yes      | None.                                                                                                                                      |
 | `actionExecute`         | no       | Encoded. `makeUnsafe` decodes it through the action's `exitSchemaPartial`.                                                                 |
 | `actionReplayKey`       | yes      | None.                                                                                                                                      |
-| `encodeEngineError`    | yes      | None.                                                                                                                                      |
+| `encodeEngineError`     | yes      | None.                                                                                                                                      |
 | `actionRetryOrigin`     | yes      | None.                                                                                                                                      |
 | `actionLatestAttempt`   | yes      | None.                                                                                                                                      |
 | `actionSnapshot`        | yes      | None.                                                                                                                                      |

@@ -803,10 +803,18 @@ export const defaultRules: ReadonlyArray<Rule> = [
   },
   {
     id: "basic-authorization",
-    // Only the scheme's own spellings: a lowercase `basic` is a word or a
-    // module (`module_utils.basic import`).
-    pattern: /\b(?:Basic|BASIC)\s+[A-Za-z0-9+/]{4,}={0,2}/g,
-    replace: "Basic [REDACTED_TOKEN]"
+    // HTTP schemes are case-insensitive. For prose spellings, require an
+    // encoded user:password pair so `a basic example` and module imports survive.
+    pattern: /\bbasic\s+[A-Za-z0-9+/]{4,}={0,2}/gi,
+    rewrite: (text) =>
+      text.replace(/\b(basic)\s+([A-Za-z0-9+/]{4,}={0,2})/gi, (match: string, scheme: string, token: string) => {
+        if (scheme === "Basic" || scheme === "BASIC") return "Basic [REDACTED_TOKEN]"
+        try {
+          return atob(token).includes(":") ? "Basic [REDACTED_TOKEN]" : match
+        } catch {
+          return match
+        }
+      })
   },
   {
     id: "jwt",
