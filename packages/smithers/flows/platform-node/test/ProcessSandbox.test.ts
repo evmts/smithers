@@ -319,6 +319,8 @@ describe("plan", () => {
     if (ProcessSandbox.isUnenforceable(result)) throw new Error("expected a plan")
     expect(result.reads).toEqual([workspaceRoot + "\\src\\a.ts"])
     expect(result.writes).toEqual([workspaceRoot + "\\dist"])
+    expect(ProcessSandbox.diagnose(result, `EACCES: permission denied, open '${workspaceRoot}\\dist\\out.txt'`))
+      .toContain("dist/out.txt")
     expect(ProcessSandbox.docker(result, ["tool"], {}, facts)).toContain(
       "type=bind,src=" + workspaceRoot + "\\dist,dst=C:/work/ws/dist"
     )
