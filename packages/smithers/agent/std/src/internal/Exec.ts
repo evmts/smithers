@@ -307,6 +307,13 @@ const unbounded = (
       options.args === undefined
         ? ChildProcess.make(command, settings)
         : ChildProcess.make(command, [...options.args], settings)
+    ).pipe(
+      // Node's `spawn` throws E2BIG instead of emitting `error`, and Effect's
+      // raw Node spawner calls it unguarded, so there it arrives as a defect.
+      Effect.catchDefect((defect) => {
+        const refused = argumentsTooLong({ cause: defect })
+        return refused === undefined ? Effect.die(defect) : Effect.fail(refused)
+      })
     )
     // stdout, stderr, and the exit code have to be consumed concurrently: a
     // command that fills a pipe blocks until the pipe is drained, so waiting

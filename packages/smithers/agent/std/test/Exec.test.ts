@@ -306,3 +306,16 @@ describe("Exec.exec spawn refusals", () => {
       expect(yield* refused("EAGAIN")).toMatchObject({ code: "spawn_error" })
     }))
 })
+
+/**
+ * Effect's raw Node spawner, which the TUI composes, lets Node's synchronous
+ * E2BIG throw escape as a defect that used to end the whole run (#3990).
+ */
+describe.skipIf(process.platform === "win32")("Exec.exec over the raw Node spawner", () => {
+  it.live("names arguments too long to start instead of dying", () =>
+    Effect.gen(function*() {
+      const error = yield* Effect.flip(Exec.exec(`echo ${"x".repeat(2 * 1024 * 1024)}`, {}))
+      expect(error).toMatchObject({ code: "arguments_too_long" })
+      expect(error.message).not.toContain("xxxx")
+    }).pipe(Effect.provide(host)))
+})

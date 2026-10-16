@@ -14,6 +14,10 @@
 
 ### Fixed
 
+- A command whose arguments exceed the operating system's limit fails with
+  `arguments_too_long` under Effect's raw Node spawner too, where Node's
+  synchronous `E2BIG` throw used to end the whole run.
+
 - Container commands reject sparse argument arrays and build plans from the
   validated argument snapshot.
 
