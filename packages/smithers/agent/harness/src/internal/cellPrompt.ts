@@ -254,7 +254,7 @@ const found = await ctx.call("grep", { pattern: "timeout", root: "src", limit: 2
 const hits = {}
 for (const m of found.ok === false ? [] : found.matches) (hits[m.file] ??= []).push(m.text)
 const files = Object.keys(hits)
-const judged = await ctx.call("jev", { state: { task: "the timeout ignores its setting", hits }, questions: Object.fromEntries(files.map((f) => [f, { type: "boolean", instructions: "Must this file change?" }])) })
+const judged = await ctx.call("jev", { state: { task: ctx.task, hits }, questions: Object.fromEntries(files.map((f) => [f, { type: "boolean", instructions: "Must this file change?" }])) })
 const p = (f) => judged.answers[f].probability
 const kept = judged.ok === false ? [] : files.filter((f) => p(f) >= 0.8)
 const uncertain = judged.ok === false ? [] : files.filter((f) => p(f) > 0.2 && p(f) < 0.8)

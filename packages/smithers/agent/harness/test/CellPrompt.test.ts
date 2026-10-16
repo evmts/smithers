@@ -588,8 +588,10 @@ describe("the jev teaching", () => {
     // decisions over items that carry their evidence, rule 2 sends reviews of
     // the model's own work to reading, and the example keys each file's hit
     // lines by the id its question is keyed by. The ceiling rose to 465 (463).
-    expect(jevText()).toHaveLength(1_721)
-    expect(Digest.digest(jevText())).toBe("5399f03fafd6e4872f4c5142b0d68b0471d9060bd38d1cd0b88a1f06cee3b612")
+    // #4001: ctx.task keeps the original request out of generated cell tokens; teaching 463 → 457 estimated tokens.
+    expect(jevText()).toContain("task: ctx.task")
+    expect(jevText()).toHaveLength(1_696)
+    expect(Digest.digest(jevText())).toBe("1566c4152619750d78b7b1061b5e5f3d0bfcbbf991506c84f881ea93991a2884")
     expect(Tokens.estimate(jevText())).toBeLessThanOrEqual(465)
   })
 
@@ -628,7 +630,7 @@ describe("the jev teaching", () => {
     // the same files and do not have to repeat them.
     expect(example).toContain("(hits[m.file] ??= []).push(m.text)")
     expect(example).toContain("const files = Object.keys(hits)")
-    expect(example).toContain("state: { task: \"the timeout ignores its setting\", hits }")
+    expect(example).toContain("state: { task: ctx.task, hits }")
     expect(example).toContain("files.map((f) => [f, { type: \"boolean\", instructions: \"Must this file change?\" }])")
     expect(example).not.toContain("[...new Set(")
   })

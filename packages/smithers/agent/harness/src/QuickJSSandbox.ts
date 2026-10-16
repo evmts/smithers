@@ -241,7 +241,7 @@ const sealedCall = Cell.callFailure(
  * run survives. `CellValidation` refuses the declaration in-frame as well, so
  * the model is told rather than left to wonder.
  */
-const replPrelude = (catalog: string): string =>
+const replPrelude = (catalog: string, task: string): string =>
   `(function () {
   var bridge = globalThis.__call
   var pin = globalThis.__checkpoint
@@ -307,6 +307,7 @@ ${preludeHelpers}
   host("console", freezeValue({ log: line, info: line, warn: line, error: line }))
   host("ctx", freezeValue({
 ${preludeCall(`      if (sealed !== null) return Deferred.resolve(sealed)\n`)}
+    task: ${JSON.stringify(task)},
     get flows() { return catalog },
     done: function (output) {
       if (sealed !== null) return
@@ -1192,7 +1193,7 @@ const openRealm = (
       return context.undefined
     })
 
-    const installed = context.evalCode(replPrelude(catalogOf(options.flows)))
+    const installed = context.evalCode(replPrelude(catalogOf(options.flows), options.task ?? ""))
     if (installed.error !== undefined) {
       const failure = context.dump(installed.error)
       installed.error.dispose()

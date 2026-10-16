@@ -129,6 +129,19 @@ const conversation = (
 ): ReadonlyArray<ModelRequest.Message> => request?.messages.slice(0, -1) ?? []
 
 describe("CellTurn", () => {
+  it("forwards the original task from the run into a cell's Jev call", async () => {
+    const { engine } = await run({
+      state: state({ contextWindow: tasked }),
+      flows: [descriptor("jev")],
+      calls: [{ _tag: "Success", value: {} }],
+      script: [emits("await ctx.call(\"jev\", { state: { task: ctx.task }, questions: {} }); ctx.done(\"done\")")]
+    })
+    expect(engine.recorder.calls[0]?.input).toEqual({
+      state: { task: "The task for this run:\n\nKeep the query string." },
+      questions: {}
+    })
+  })
+
   it("projects a model-boundary retry as its own control event", async () => {
     const settled = emits(`ctx.done("done")`)
     const { events } = await run({

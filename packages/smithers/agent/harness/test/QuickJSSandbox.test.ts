@@ -451,6 +451,35 @@ describe("QuickJSSandbox limits", () => {
 })
 
 describe("QuickJSSandbox realm", () => {
+  it("passes the immutable original task to Jev across frames without copying it into cell source", async () => {
+    const task = "Fix file selection.\nRequirements: preserve \"quoted\" paths and Unicode λ."
+    await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const sandbox = yield* QuickJSSandbox.make
+      const realm = yield* sandbox.openRealm!({
+        flows: { jev: new Cell.FlowProjection({ ...flows["fs/list"]!, name: "jev" }) },
+        task
+      })
+      const received: Array<Schema.Json> = []
+      for (
+        const [frame, text] of [
+          "try { ctx.task = \"paraphrase\" } catch {} ; await ctx.call(\"jev\", { state: { task: ctx.task }, questions: {} })",
+          "await ctx.call(\"jev\", { state: { task: ctx.task }, questions: {} })"
+        ].entries()
+      ) {
+        const result = yield* realm.evaluate({
+          cell: Cell.source(text),
+          frame,
+          call: ({ input }) => {
+            received.push(input)
+            return succeeds({ ordinal: 0, flow: "jev", input })
+          }
+        })
+        expect(result.outcome._tag).toBe("settled")
+      }
+      expect(received).toEqual(Array.from({ length: 2 }, () => ({ state: { task }, questions: {} })))
+    })))
+  })
+
   it("does not invoke an array index accessor while weighing the realm", async () => {
     const frames = await Effect.gen(function*() {
       const sandbox = yield* QuickJSSandbox.make

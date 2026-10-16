@@ -4601,7 +4601,11 @@ export const run = (
         }
         return sandbox.openRealm === undefined
           ? Effect.fail(Sandbox.realmUnsupported)
-          : sandbox.openRealm({ flows: projections, limits: input.limits })
+          : sandbox.openRealm({
+            flows: projections,
+            limits: input.limits,
+            task: Frame.taskText(input.state.contextWindow)
+          })
       }).pipe(
         Effect.mapError((cause) =>
           new HarnessError({

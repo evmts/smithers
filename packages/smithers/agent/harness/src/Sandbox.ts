@@ -599,6 +599,8 @@ export interface Realm {
  * @since 0.1.0
  */
 export interface RealmOptions {
+  /** The original request, exposed as immutable `ctx.task` without model output. */
+  readonly task?: string | undefined
   readonly flows: Readonly<Record<string, Cell.FlowProjection>>
   /**
    * The ceilings the realm enforces. `memoryBytes` becomes a **run** budget once
