@@ -93,11 +93,27 @@ const realReceipt = (versionId: string | null): Record<string, unknown> => ({
   wranglerVersionId: versionId
 })
 
+/*
+ * Every run of the probe ends in one of its own lines: a `FAIL:` argument
+ * refusal, or one of the three CN-24 verdicts. Output carrying none of them
+ * means the child never reached the script, which is a launch failure and not
+ * a verdict about rollback readiness.
+ */
+const PROBE_SPOKE = ["CN-24 ROLLBACK PROBE", "FAIL: "] as const
+
 const runProbe = async (
   args: ReadonlyArray<string>,
-  env: Record<string, string> = {}
+  env: Record<string, string> = {},
+  interpreter: string = globalThis.process.execPath
 ): Promise<{ exitCode: number; stdout: string }> => {
-  const proc = Bun.spawn(["bun", SCRIPT, ...args], {
+  /*
+   * `globalThis.process.execPath` is the interpreter running this test, named
+   * absolutely. The child's environment is deliberately minimal so an ambient
+   * CLOUDFLARE_API_TOKEN cannot reach the probe; resolving the interpreter out
+   * of that same environment's PATH would make a PATH entry the probe never
+   * reads decide whether the probe runs at all.
+   */
+  const proc = Bun.spawn([interpreter, SCRIPT, ...args], {
     env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", ...env },
     stdout: "pipe",
     stderr: "pipe"
@@ -107,7 +123,18 @@ const runProbe = async (
     new Response(proc.stderr).text(),
     proc.exited
   ])
-  return { exitCode, stdout: `${stdout}${stderr}` }
+  const output = `${stdout}${stderr}`
+  /*
+   * Bounded: a stage, a reason and byte counts. The child's own text is not
+   * quoted here — a launcher failure diffed against an expected verdict reads
+   * as a probe failure that never happened.
+   */
+  if (!PROBE_SPOKE.some((line) => output.includes(line))) {
+    throw new Error(
+      `the rollback probe never ran: stage=launch exit=${exitCode} stdoutBytes=${stdout.length} stderrBytes=${stderr.length}`
+    )
+  }
+  return { exitCode, stdout: output }
 }
 
 describe("rollback-verdict", () => {
@@ -373,6 +400,47 @@ describe("rollback-probe.ts against a Cloudflare API double", () => {
     expect(result.exitCode).toBe(0)
     expect(result.stdout).toContain("CN-24 ROLLBACK PROBE INCONCLUSIVE: nothing was verified, 3 skipped.")
     expect(result.stdout).not.toContain("PROBE PASS")
+  })
+
+  /*
+   * The probe is handed a deliberately minimal environment so an ambient
+   * CLOUDFLARE_API_TOKEN cannot reach it. Resolving the interpreter out of
+   * that same environment's PATH would couple the two: a PATH entry the probe
+   * itself never reads would decide whether the probe runs at all, and a
+   * launcher's refusal would then be diffed against an expected verdict. The
+   * probe is launched by absolute path, so an empty PATH still produces the
+   * probe's own output.
+   */
+  test("the probe runs by absolute interpreter path, not from the child's PATH", async () => {
+    live = cloudflareDouble()
+    const result = await runProbe(["--receipt", receiptFile(realReceipt(VERSION_B)), "--api-base", live.base], {
+      PATH: ""
+    })
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain("ok: the deploy receipt names a version")
+    expect(result.stdout).toContain("CN-24 ROLLBACK PROBE PASS")
+    expect(live.paths).toEqual([])
+  })
+
+  /*
+   * A launcher that refuses before the script runs — an interposed `bun`
+   * wrapper missing its own environment is the real case — produces no probe
+   * output at all. That is a launch failure, and reporting it as one keeps a
+   * missing verdict from being diffed against an expected verdict. The
+   * reported reason is a stage, an exit code and byte counts; the launcher's
+   * own text is never quoted.
+   */
+  test("a launcher that refuses before the probe runs is reported as a launch failure", async () => {
+    live = cloudflareDouble()
+    workdir = mkdtempSync(join(tmpdir(), "cn24-launcher-"))
+    const launcher = join(workdir, "refusing-launcher")
+    const refusal = "LAUNCHER: it must name the real bun binary"
+    writeFileSync(launcher, `#!/bin/sh\nprintf '%s' '${refusal}' >&2\nexit 1\n`, { mode: 0o700 })
+    const attempt = runProbe(["--api-base", live.base], { CLOUDFLARE_API_TOKEN: "cf-token-123" }, launcher)
+    await expect(attempt).rejects.toThrow(
+      `the rollback probe never ran: stage=launch exit=1 stdoutBytes=0 stderrBytes=${refusal.length}`
+    )
+    expect(live.paths).toEqual([])
   })
 
   test("a corrupt receipt fails instead of skipping", async () => {

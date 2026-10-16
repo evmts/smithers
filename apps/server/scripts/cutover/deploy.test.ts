@@ -28,15 +28,27 @@ const world = async () => {
   ;(w.deployments[0] as { annotations?: Record<string, string> }).annotations = { "workers/message": live.message }
   const parent = mkdtempSync(join(tmpdir(), "sealed-deploy-")); parents.push(parent)
   const dir = join(parent, "private")
-  expect(Bun.spawnSync(["bun", join(import.meta.dir, "keys.ts"), dir]).exitCode).toBe(0)
+  expect(Bun.spawnSync([globalThis.process.execPath, join(import.meta.dir, "keys.ts"), dir]).exitCode).toBe(0)
   const originalId = live.id, originalBytes = live.modules[0]!.bytes
   /** One CLI command; `trap` names the request whose response the fixture drops after committing it. */
   const cli = async (mode: "prepare" | "apply" | "restore", drop?: (method: string, path: string) => boolean) => {
     const loopback = fake.serve(parent, (method, path) => drop?.(method, path) ? "drop-after" : undefined)
     try {
-      const child = Bun.spawn(["bun", "--preload", loopback.preload, join(import.meta.dir, "deploy.ts"), mode, dir], {
-        stdout: "pipe", stderr: "pipe", env: { ...process.env, CLOUDFLARE_API_TOKEN: "fake-control-plane-token" }
-      })
+      /*
+       * The interpreter is named absolutely and PATH is emptied: this CLI
+       * spawns nothing, so PATH is the child's data and never how the child
+       * is launched. A `bun` resolved from PATH could be a wrapper with its
+       * own preloads and its own banner, which the stderr assertions below
+       * would read as the CLI's output.
+       */
+      const child = Bun.spawn(
+        [globalThis.process.execPath, "--preload", loopback.preload, join(import.meta.dir, "deploy.ts"), mode, dir],
+        {
+          stdout: "pipe",
+          stderr: "pipe",
+          env: { ...process.env, PATH: "", CLOUDFLARE_API_TOKEN: "fake-control-plane-token" }
+        }
+      )
       const [stdout, stderr] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text()])
       return { exitCode: await child.exited, stdout, stderr }
     } finally { loopback.stop() }
