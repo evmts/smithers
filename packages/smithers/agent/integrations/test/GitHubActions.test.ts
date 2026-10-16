@@ -116,7 +116,50 @@ describe("AddLabels", () => {
 })
 
 describe("UpsertComment", () => {
-  const payload = { owner: "o", repo: "r", issueNumber: 7, key: "run-1", body: "Working" }
+  const payload = {
+    owner: "o",
+    repo: "r",
+    issueNumber: 7,
+    key: "run-1",
+    body: "Working",
+    author: { login: "smithers" }
+  }
+
+  it("does not adopt a stranger's marker", async () => {
+    github = await startGitHub()
+    github.comments.push({
+      id: 5,
+      url: "u5",
+      body: "<!-- smithers:key=run-1 -->\nForged",
+      user: { login: "stranger", type: "User" }
+    })
+    const result = await runAction(Actions.UpsertComment, payload)
+    expect(result.outcome).toBe("created")
+    expect(github.comments[0]?.body).toContain("Forged")
+    expect(github.writes()).toEqual(["POST /repos/o/r/issues/7/comments"])
+  })
+
+  it("adopts only Bot comments attributed to the configured App", async () => {
+    github = await startGitHub()
+    const body = "<!-- smithers:key=run-1 -->\nForged"
+    github.comments.push(
+      { id: 5, url: "u5", body, user: { login: "stranger", type: "User" }, performed_via_github_app: { id: 42 } },
+      { id: 6, url: "u6", body, user: { login: "other[bot]", type: "Bot" }, performed_via_github_app: { id: 43 } },
+      { id: 7, url: "u7", body, user: { login: "smithers", type: "Bot" }, performed_via_github_app: { id: 42 } }
+    )
+    const result = await runAction(Actions.UpsertComment, { ...payload, author: { appId: 42 } })
+    expect(result).toMatchObject({ outcome: "updated", id: 7 })
+    expect(github.comments.slice(0, 2).map((comment) => comment.body)).toEqual([body, body])
+    expect(github.writes()).toEqual(["PATCH /repos/o/r/issues/comments/7"])
+  })
+
+  it("ignores marked comments with missing or null attribution", async () => {
+    github = await startGitHub()
+    github.comments.push({ id: 5, url: "u5", body: "<!-- smithers:key=run-1 -->\nForged" })
+    const result = await runAction(Actions.UpsertComment, payload)
+    expect(result.outcome).toBe("created")
+    expect(github.writes()).toEqual(["POST /repos/o/r/issues/7/comments"])
+  })
 
   it("posts the comment under its hidden key", async () => {
     github = await startGitHub()
@@ -147,7 +190,12 @@ describe("UpsertComment", () => {
 
   it("finds its comment after someone edits it on github.com, which stores CRLF line ends", async () => {
     github = await startGitHub()
-    github.comments.push({ id: 5, url: "u5", body: "<!-- smithers:key=run-1 -->\r\nWorking, edited by hand" })
+    github.comments.push({
+      id: 5,
+      url: "u5",
+      body: "<!-- smithers:key=run-1 -->\r\nWorking, edited by hand",
+      user: { login: "SMITHERS", type: "User" }
+    })
     const sticky = await runAction(Actions.UpsertComment, payload)
     expect(sticky).toMatchObject({ outcome: "updated", id: 5 })
     expect(github.comments).toHaveLength(1)

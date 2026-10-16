@@ -14,6 +14,8 @@ export interface FakeComment {
   readonly id: number
   readonly url: string
   body: string
+  user?: { login: string; type: string }
+  performed_via_github_app?: { id: number } | null
 }
 
 export interface FakeCheckRun {
@@ -92,7 +94,13 @@ export const startGitHub = async (): Promise<FakeGitHub> => {
           : {}
         return json(response, 200, [{ id: 1, url: "u1", body: "unrelated" }, { bad: true }, ...state.comments], headers)
       }
-      const comment = { id: nextId++, url: `https://api.github.test/comments/${nextId}`, body: body.body }
+      const comment = {
+        id: nextId++,
+        url: `https://api.github.test/comments/${nextId}`,
+        body: body.body,
+        user: { login: "smithers", type: "Bot" },
+        performed_via_github_app: { id: 42 }
+      }
       state.comments.push(comment)
       return answer(request, response, 201, comment)
     }

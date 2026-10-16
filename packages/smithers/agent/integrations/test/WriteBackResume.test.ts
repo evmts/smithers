@@ -139,7 +139,7 @@ it("upsert-comment resumes to one sticky comment", async () => {
     GitHubActions.UpsertComment,
     GitHubActions.layerUpsertComment,
     client,
-    { owner: "o", repo: "r", issueNumber: 7, key: "run-1", body: "Working" },
+    { owner: "o", repo: "r", issueNumber: 7, key: "run-1", body: "Working", author: { login: "smithers" } },
     github.held
   )
   expect(result.outcome).toBe("unchanged")

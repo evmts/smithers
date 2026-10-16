@@ -260,6 +260,8 @@ export const stickyMarker = (key: string): string => `<!-- smithers:key=${key} -
  *
  * `key` names the comment. A flow passes its run id to keep one progress
  * comment per run; every upsert under that key edits the same comment.
+ * `author` identifies the token’s user login or installation App id; comments
+ * from other identities are never adopted.
  *
  * @category schemas
  * @since 1.0.0
@@ -269,7 +271,11 @@ export const UpsertCommentPayload = Schema.Struct({
   repo: Repo,
   issueNumber: IssueNumber,
   key: StickyKey,
-  body: Schema.String
+  body: Schema.String,
+  author: Schema.Union([
+    Schema.Struct({ login: Schema.String.check(Schema.isMinLength(1)) }),
+    Schema.Struct({ appId: Schema.Int.check(Schema.isGreaterThan(0)) })
+  ])
 })
 
 /**
@@ -321,7 +327,13 @@ export const UpsertComment = Action.make("integrations/github/upsert-comment", {
   retryPolicy
 })
 
-const ListedComment = Schema.Struct({ id: Schema.Number, url: Schema.String, body: Schema.optional(Schema.String) })
+const ListedComment = Schema.Struct({
+  id: Schema.Number,
+  url: Schema.String,
+  body: Schema.optional(Schema.String),
+  user: Schema.optional(Schema.NullOr(Schema.Struct({ login: Schema.String, type: Schema.String }))),
+  performed_via_github_app: Schema.optional(Schema.NullOr(Schema.Struct({ id: Schema.Number })))
+})
 
 /**
  * Implements {@link UpsertComment} over the client in context.
@@ -346,7 +358,10 @@ export const layerUpsertComment: Layer.Layer<
       // github.com's editor saves CRLF line ends, so a comment a person edited
       // still starts with the marker, followed by `\r\n`.
       const existing = decodeItems(ListedComment, page.items).find((comment) =>
-        comment.body?.split("\n", 1)[0]?.replace(/\r$/, "") === marker
+        comment.body?.split("\n", 1)[0]?.replace(/\r$/, "") === marker &&
+        ("login" in payload.author
+          ? comment.user?.login.toLowerCase() === payload.author.login.toLowerCase()
+          : comment.user?.type === "Bot" && comment.performed_via_github_app?.id === payload.author.appId)
       )
       if (existing === undefined && page.truncated) {
         return yield* Effect.fail(
