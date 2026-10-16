@@ -45,13 +45,16 @@ export const ApprovalFlow = Flow.make("e2e/wait/approval", {
   payload: { label: Schema.String },
   success: Schema.Json,
   error: HumanTask.HumanTaskFailed,
-  body: ({ label }) =>
-    HumanTask.action.call({
-      name: taskName,
-      kind: "confirm",
-      prompt: `ship ${label}?`,
-      maxAttempts
-    })
+  body: Node.capture(
+    { action: HumanTask.action.name, taskName, maxAttempts, implementationVersion: "wait-approval/v1" },
+    ({ label }) =>
+      HumanTask.action.call({
+        name: taskName,
+        kind: "confirm",
+        prompt: `ship ${label}?`,
+        maxAttempts
+      })
+  )
 })
 
 /** The declared step of the waiting-event flow. */
@@ -64,7 +67,10 @@ export const EventStep = Action.make("e2e/wait/EventStep", {
 export const EventFlow = Flow.make("e2e/wait/event", {
   payload: { label: Schema.String },
   success: Schema.String,
-  body: (payload) => EventStep.call(payload)
+  body: Node.capture(
+    { action: EventStep.name, implementationVersion: "wait-event/v1" },
+    (payload) => EventStep.call(payload)
+  )
 })
 
 /** A counted action that must not execute twice when timer hosts race. */
@@ -82,7 +88,10 @@ export const TimerFlow = Flow.make("e2e/wait/timer", {
   // Poll the durable result promptly so the race checks ownership and exactly
   // once execution instead of the default 30-second retry cap's phase.
   suspendedRetryPolicy: RetryPolicy.make({ initialMs: 200, factor: 1.5, maxMs: 2_000 }),
-  body: ({ millis }) => Node.andThen(Sleep.action.call({ millis }), TimerStep.call({}))
+  body: Node.capture(
+    { sleep: Sleep.action.name, action: TimerStep.name, implementationVersion: "wait-timer/v1" },
+    ({ millis }) => Node.andThen(Sleep.action.call({ millis }), TimerStep.call({}))
+  )
 })
 
 /** Everything a parking child needs. */
