@@ -43,7 +43,7 @@ import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Registry from "@smthrs/registry/Registry"
 import { Migrations as RunStoreMigrations, type Ownership, RunStore } from "@smthrs/run-store"
-import { Cause, Deferred, Duration, Effect, Exit, Layer, Logger, Option, Schema, Stream } from "effect"
+import { Cause, Deferred, Duration, Effect, Exit, Layer, Logger, Option, Schedule, Schema, Stream } from "effect"
 import * as References from "effect/References"
 import { mkdtempSync } from "node:fs"
 import { rm } from "node:fs/promises"
@@ -546,19 +546,34 @@ describe("an agent execution quarantined by the durable engine", () => {
           engineJournal,
           resumed,
           beforeEngineResume: (id) =>
-            Effect.sync(() => {
-              if (!quarantineOnResume) return
+            Effect.suspend(() => {
+              if (!quarantineOnResume) return Effect.void
               quarantineOnResume = false
               quarantines++
-              const database = new DatabaseSync(join(root, "engine.db"))
-              try {
-                database.exec("PRAGMA busy_timeout = 5000")
-                database.prepare(
-                  "UPDATE flows_runs SET waiting_reason = 'quarantine', waiting_token = 'peer-corruption' WHERE run_id = ?"
-                ).run(id)
-              } finally {
-                database.close()
-              }
+              // The peer writes from this process's event loop, so a busy wait
+              // here would block the engine fiber that holds `engine.db`'s write
+              // lock and fail after the timeout with no quarantine recorded.
+              // Retry a refused lock after yielding instead (#3853).
+              return Effect.try({
+                try: () => {
+                  const database = new DatabaseSync(join(root, "engine.db"))
+                  try {
+                    database.prepare(
+                      "UPDATE flows_runs SET waiting_reason = 'quarantine', waiting_token = 'peer-corruption' WHERE run_id = ?"
+                    ).run(id)
+                  } finally {
+                    database.close()
+                  }
+                },
+                catch: (error) => error
+              }).pipe(
+                Effect.retry({
+                  schedule: Schedule.spaced("5 millis"),
+                  times: 2_000,
+                  while: (error) => (error as { readonly errcode?: unknown }).errcode === 5
+                }),
+                Effect.orDie
+              )
             })
         })),
         Effect.scoped,
