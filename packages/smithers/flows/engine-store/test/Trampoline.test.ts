@@ -321,16 +321,25 @@ describe("a durable suspended caller", () => {
       expect(observed.answer).toEqual(Exit.succeed("answered"))
     }))
 
-  it.effect("makes exactly one durable claim for one elapsed suspension poll", () =>
+  it.effect("does not claim an unanswered approval when its suspension poll elapses", () =>
     Effect.gen(function*() {
       const bus = WakeBus.makeUnsafe()
       const observed = yield* durable(
         Effect.gen(function*() {
+          const state = yield* DurableEngineState.DurableEngineState
+          let polls = 0
+          const observedState = DurableEngineState.DurableEngineState.of({
+            ...state,
+            hasDueWake: (runId, nowMs) =>
+              state.hasDueWake(runId, nowMs).pipe(Effect.tap(() => Effect.sync(() => ++polls)))
+          })
           const engine = (yield* EngineStore.make({
             owner: { hostId: "elapsed-poll-host" },
             journalSource: "trampoline-elapsed-poll",
             isAlive: () => Effect.succeed(false)
-          })) as FlowRuntime.FlowRuntime["Service"]
+          }).pipe(
+            Effect.provideService(DurableEngineState.DurableEngineState, observedState)
+          )) as FlowRuntime.FlowRuntime["Service"]
           const registered = yield* Layer.build(
             Interpreter.layer(PollingGate).pipe(
               Layer.provideMerge(Action.layerImplementations),
@@ -346,12 +355,12 @@ describe("a durable suspended caller", () => {
 
           yield* TestClock.adjust("5 seconds")
           yield* TestDatabase.until(Effect.gen(function*() {
-            return (yield* claimsFor("elapsed-poll-lineage")) > before &&
+            return polls > 0 &&
               (yield* bus.waiters("elapsed-poll-lineage")) === 1
           }))
           const after = yield* claimsFor("elapsed-poll-lineage")
           yield* Fiber.interrupt(caller)
-          return { before, after }
+          return { before, after, polls }
         }).pipe(
           Effect.provideService(WakeBus.WakeBus, bus),
           Effect.provide(TestClock.layer())
@@ -359,7 +368,8 @@ describe("a durable suspended caller", () => {
       )
 
       expect(observed.before).toBe(1)
-      expect(observed.after - observed.before).toBe(1)
+      expect(observed.after).toBe(observed.before)
+      expect(observed.polls).toBe(1)
     }))
 })
 
