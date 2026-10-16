@@ -1151,21 +1151,105 @@ const mythicalStopped = "stopped: "
 
 const mythicalInterrupted = "stopped: interrupted: interrupted"
 
-// mythicalFailedStage reads the closed-set site a registered failure named
-// first in its own message, as the source refusal projection already reads one
-// (`/source_refused` below): a lower-case identifier followed by ": ". The
-// site is a closed set the raising flow declares (coding's are
-// `flows/coding/planning-memory.ts` planningSites and
-// `flows/coding/source-refusal.ts`); anything else is "unnamed", which is the
-// honest answer that nothing in the chain said where it stopped.
+// mythicalFailedStageSites is the FINITE allowlist of refusal sites the
+// product's own flows declare. A stage label is only ever one of these or
+// "unnamed": a syntactically plausible prefix that no producer declares is
+// NOT a site, so no error-derived or customer-derived text can become a log
+// label through this record.
+//
+// The producers are the repository flows that raise a typed failure: the
+// `planningSites` of `flows/coding/planning-memory.ts` and every
+// `sourceRefusal("<site>")` a `flows/**/*.ts` module declares. The backend's
+// own same-named helper records to its log and never reaches a flow's typed
+// message, so its sites are deliberately not here.
+// TestMythicalFailedStageSitesMatchTheirSourceDeclarations reads the flow
+// sources and fails when this set drifts from them.
+var mythicalFailedStageSites = map[string]struct{}{
+	"admission_snapshot_refused":         {},
+	"attached_sources_moved":             {},
+	"context_over_budget":                {},
+	"head_moved":                         {},
+	"main_commit_invalid":                {},
+	"memory_budget_invalid":              {},
+	"memory_selection_unavailable":       {},
+	"native_history_conflicted":          {},
+	"native_history_moved":               {},
+	"native_history_unresolved":          {},
+	"native_import_duplicate_or_zero":    {},
+	"native_import_identity_invalid":     {},
+	"native_snapshot_conflict":           {},
+	"native_snapshot_refused":            {},
+	"native_snapshot_unavailable":        {},
+	"native_stack_authority_missing":     {},
+	"planning_executable_unverified":     {},
+	"planning_freshness_unavailable":     {},
+	"planning_memory_unavailable":        {},
+	"remote_http_refused":                {},
+	"remote_source_invalid":              {},
+	"retention_identity_invalid":         {},
+	"stack_base_parent_mismatch":         {},
+	"stack_candidate_authority_missing":  {},
+	"stack_candidate_invocation_missing": {},
+	"stack_import_unavailable":           {},
+	"stack_import_unresolved":            {},
+	"stack_proposal_generation_mismatch": {},
+	"stack_propose_authority_missing":    {},
+	"stack_propose_invocation_missing":   {},
+	"stack_retained_unresolved":          {},
+	"verify_import_unavailable":          {},
+	"verify_import_unresolved":           {},
+	"wiki_check_without_wiki":            {},
+	"wiki_pages_moved":                   {},
+}
+
+// mythicalFailedFaults is the finite set of fault classes the failure registry
+// answers with. flowruntime.Run documents that FailureFault and FailureTag are
+// empty unless the run failed with a REGISTERED error (contracts.go), so this
+// set and mythicalRegisteredLabel are defence in addition to that upstream
+// contract, not a lookup that establishes it: they bound what a malformed or
+// future runtime answer can put in a label.
+var mythicalFailedFaults = map[string]struct{}{
+	"user": {}, "wait": {}, "infra": {}, "dependency": {},
+	"bug": {}, "factory": {}, "policy": {}, "interrupted": {},
+}
+
+// mythicalRegisteredLabel passes a value through only when its characters are
+// those a registry identifier uses (`@scope/pkg/Tag/code`, `flow-id`). It does
+// NOT look the value up in any registry and does not establish that the value
+// is registered: the upstream contract already says these fields carry only a
+// registered error's identifiers. This bounds what reaches the label if that
+// contract is ever broken, and anything outside the character set, including
+// anything an error's text or a person's input could reach, is reported
+// "unregistered".
+func mythicalRegisteredLabel(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || len(value) > 128 {
+		return "unregistered"
+	}
+	for _, c := range value {
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+		case c == '/' || c == '-' || c == '_' || c == '.' || c == '@':
+		default:
+			return "unregistered"
+		}
+	}
+	return value
+}
+
+// mythicalFailedStage reads the site a registered failure named first in its
+// own message, as the source refusal projection already reads one
+// (`/source_refused` below): a lower-case identifier followed by ": ".
+//
+// The site must be one the product's own flows DECLARE
+// ({@link mythicalFailedStageSites}). A syntactically plausible prefix that no
+// producer declares is not a site and is reported "unnamed", so no part of an
+// error's text, a path, an id, a URL, a header, a payload or a credential can
+// become a label here even when it happens to look like an identifier.
 //
 // The runtime reports a registered failure's message under its own code
 // ("stale_revision: ..."), and that code is already the tag's last segment, so
-// a leading segment equal to it is skipped rather than reported as the stage.
-//
-// Only the identifier is read. No part of the message's text, no stack frame,
-// no path, no id, no payload and no credential can reach the record through
-// it, and the item's own request_outcome is unchanged.
+// a leading segment equal to it is skipped rather than read as the stage.
 func mythicalFailedStage(tag, message string) string {
 	rest := strings.TrimSpace(message)
 	code := tag
@@ -1174,16 +1258,14 @@ func mythicalFailedStage(tag, message string) string {
 	}
 	for round := 0; round < 2; round++ {
 		name, tail, found := strings.Cut(rest, ": ")
-		if !found || name == "" || len(name) > 48 {
+		if !found {
 			return "unnamed"
 		}
-		for _, c := range name {
-			if c != '_' && (c < 'a' || c > 'z') {
-				return "unnamed"
-			}
+		if _, declared := mythicalFailedStageSites[name]; declared {
+			return name
 		}
 		if code == "" || name != code {
-			return name
+			return "unnamed"
 		}
 		rest = tail
 	}
@@ -1192,11 +1274,14 @@ func mythicalFailedStage(tag, message string) string {
 
 // mythicalRecordFailedStage says where a failed run stopped, in the install's
 // own log, with the fault class and typed tag the failure registry gave it and
-// the closed-set stage its message named. flowruntime.Run carries
+// the declared stage its message named. flowruntime.Run carries
 // FailureMessage beside FailureTag and every recorder of a failed TODO reads
 // only the tag, so a reproduced failure used to leave nothing anywhere that
 // named its site: the backend access rehearsal spent two rounds on one host
 // fault whose own sentence the runtime had been reporting all along.
+//
+// Every value in the record is a registry identifier or a declared site, never
+// text a failure or a person supplied.
 func mythicalRecordFailedStage(flow string, run *flowruntime.Run) {
 	if run == nil {
 		return
@@ -1206,8 +1291,11 @@ func mythicalRecordFailedStage(flow string, run *flowruntime.Run) {
 	if fault == "" && tag == "" {
 		return
 	}
-	slog.Warn("mythical.run_failed", "flow", flow, "fault", fault, "tag", tag,
-		"stage", mythicalFailedStage(tag, run.FailureMessage))
+	if _, registered := mythicalFailedFaults[fault]; !registered {
+		fault = "unregistered"
+	}
+	slog.Warn("mythical.run_failed", "flow", mythicalRegisteredLabel(flow), "fault", fault,
+		"tag", mythicalRegisteredLabel(tag), "stage", mythicalFailedStage(tag, run.FailureMessage))
 }
 
 // mythicalFailedOutcome reads a failed run by the fault its typed error was
