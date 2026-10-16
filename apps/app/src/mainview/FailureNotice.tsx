@@ -1,5 +1,5 @@
 import { FailureDetails } from "./FailureDetails"
-import { Button } from "@smthrs/ui"
+import { Button } from "@smthrs/ui/button"
 import type { UserFailure, UserFailureAction, UserFailureCopy } from "@smthrs/rpc/UserFailure"
 import type { ReactNode } from "react"
 
