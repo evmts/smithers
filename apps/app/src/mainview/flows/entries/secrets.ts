@@ -34,8 +34,21 @@ export const secretsFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> 
     } catch { return { error: "Enter a JSON object" } }
   },
   input: Schema.Struct({ operation: Schema.optional(Schema.Literals(["set", "delete", "scope", "bind"])), ...fields }),
-  preflight: input => {
+  /*
+   * The door reads the authority of the repository this call names, not the
+   * authority of whatever repository is on screen and not a role the seeded
+   * roster published. An authority nobody could read refuses; it never opens
+   * a form that the platform would then refuse with the person's value in it.
+   */
+  preflight: async input => {
     if (!input.operation) return
+    const authority = actions.secretAuthority
+    if (authority !== undefined) {
+      const scoped = await authority.read(scopeRepo(actions, input as Record<string, unknown>))
+      if (scoped.phase === "unreadable") return scoped.message
+      if (scoped.phase !== "ready") return "Secrets unavailable"
+      return scoped.role === "owner" || scoped.role === "maintainer" ? undefined : "Maintainer required"
+    }
     const role = actions.secretsProviders?.authority?.() ?? actions.snapshot().viewerRole
     return role === undefined ? "Secrets unavailable" : role === "owner" || role === "maintainer" ? undefined : "Maintainer required"
   },

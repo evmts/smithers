@@ -67,6 +67,14 @@ type RepoResponse struct {
 	// present on a single-repository read so a client can show the fork offer
 	// instead of guessing — or worse, forking on the user's behalf.
 	CanWrite             bool       `json:"can_write"`
+	// Permission is the requesting viewer's effective permission on this
+	// repository as middleware.ResolveRepoPermission ranked it ("read",
+	// "write", "admin" or "owner"), the one resolver every repository route
+	// asks. It answers what can_write cannot: whether this viewer may change
+	// repository settings that need admin, such as its secrets. Absent when
+	// the response was not built on a loaded repository context (a create),
+	// so a client that cannot read it must fail closed rather than assume.
+	Permission           string     `json:"permission,omitempty"`
 	NumStars             int64      `json:"num_stars"`
 	NumForks             int64      `json:"num_forks"`
 	NumWatches           int64      `json:"num_watches"`
@@ -220,6 +228,12 @@ func (h *RepoHandler) GetRepo(w http.ResponseWriter, r *http.Request) {
 
 	resp := mapRepoResponse(owner, view.Repository, h.SSHHost)
 	resp.CanWrite = view.CanWrite
+	// The route's own loaded permission, never a role the client sent or a
+	// rank inferred from can_write: "write" and "admin" both write, and only
+	// one of them administers.
+	if permission := middleware.RepoPermissionFromContext(r.Context()); permission != middleware.PermissionNone {
+		resp.Permission = string(permission)
+	}
 	resp.GitHubSource = view.GitHubSource
 	resp.GitHubSourceAmbiguous = view.GitHubSourceAmbiguous
 	resp.GitHubSourceUnavailable = view.GitHubSourceUnavailable

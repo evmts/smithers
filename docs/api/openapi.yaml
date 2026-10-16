@@ -8335,6 +8335,7 @@ paths:
           $ref: '#/components/responses/InternalError'
     get:
       summary: GET /api/repos/{owner}/{repo}
+      description: 'Reads one repository as this viewer sees it. `can_write` is the viewer''s write access. `permission` is the viewer''s effective permission on this repository — `read`, `write`, `admin` or `owner` — and is what a client reads before offering a setting only an administrator may change, such as a secret. It is absent when the answer carries none, and an absent value grants nothing.'
       operationId: get_api_repos_owner_repo
       tags:
         - Repositories
@@ -8350,6 +8351,7 @@ paths:
           schema:
             type: string
       x-smithers-client-contract: multi-v1
+      x-required-repository-permission: read
       security:
         - tokenAuth: []
         - bearerAuth: []

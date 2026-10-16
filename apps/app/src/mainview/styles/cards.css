@@ -2668,6 +2668,9 @@
 
 /* SecretsView (T-UI-18): write-only forms and scope, from People.tsx. */
 .secrets-view { font-family: var(--font-ui); font-size: var(--fs-small); container-type: inline-size; }
+.secret-note { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--text-muted); font-family: var(--font-ui); font-size: var(--fs-small); }
+.secret-note button { padding: 5px 10px; border: 0; border-radius: 4px; background: transparent; color: var(--text-muted); font: inherit; cursor: pointer; }
+.secret-note button:hover { background: var(--hover); color: var(--text); }
 .secrets-view h2 { margin: 0 0 16px; font-size: var(--fs-body); font-weight: 600; }
 .secrets-view .secrets-list { display: flex; flex-direction: column; gap: 6px; margin: 0 0 16px; padding: 0; list-style: none; }
 .secrets-view .secrets-list > li { display: flex; flex-wrap: wrap; align-items: start; gap: 6px 10px; font-size: var(--fs-small); }

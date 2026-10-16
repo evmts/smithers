@@ -173,6 +173,7 @@ import { createConfirmationSeam } from "./seams/ConfirmationSeam"
 import { createDesignWorld, type DesignWorld } from "./seams/DesignWorld"
 import { actCard, confirmSubject, designPlainTurn, designTurn, mergeCard, type DesignTurn } from "./seams/DesignWorld/chat"
 import { designMembers, designMembersRoster, designSecrets, designSettings, designViewerRole } from "./seams/DesignWorld/settings"
+import { createRepositoryAuthoritySeam, type RepositoryAuthoritySeam } from "./seams/RepositoryAuthority"
 import { shellViewsOf } from "./seams/DesignWorld/shell"
 import { DESIGN_CARD, newWikiPage, wikiCard } from "./seams/DesignWorld/subjects"
 import { flowCardOf, flowNames, flowTitle } from "./seams/DesignWorld/run"
@@ -553,6 +554,14 @@ export interface AppController extends IssueFlowsController {
   readonly membersRoster: MembersSnapshots
   /** The signed-in person's role on that roster; "member" until the roster names them. */
   readonly membersRole: () => "owner" | "maintainer" | "member"
+  /**
+   * The viewer's secret-management authority on ONE hosted repository, read
+   * from the platform's own resolver (RepositoryAuthority.ts). Undefined off
+   * a hosted repository, where the install's own providers answer. It is
+   * scoped on purpose: it unlocks secrets and nothing else, because every
+   * other members and settings mutation is still seeded.
+   */
+  readonly secretAuthority?: RepositoryAuthoritySeam
   /** Reads the roster for the Members card (an install rereads GET /api/members). */
   readonly showMembers: () => void
   /** The flow catalog the Flow card reads on an install (GET /api/flows); undefined elsewhere, where the seeded flows answer. */
@@ -1036,6 +1045,21 @@ export const createAppController = (
     ctx.onDispose(() => membershipIdentity.unsubscribe())
   }
   const membersRoster = installHost ? membersSeam.snapshots : designMembersRoster(design)
+  /*
+   * Hosted secrets (M-47): the seeded roster above knows nothing about a
+   * hosted repository and answers "member" for its owner, so the Secrets card
+   * and the secrets flow ask the platform about the repository in front of
+   * them instead. Deliberately narrow — the other seeded settings writes keep
+   * the seeded role until their own seams answer.
+   */
+  const secretAuthority = !installHost && !design.enabled
+    ? createRepositoryAuthoritySeam(seamCtx, { ready: true })
+    : undefined
+  if (secretAuthority) {
+    ctx.onDispose(secretAuthority.dispose)
+    const authorityIdentity = store.collections.identitySessions.subscribeChanges(secretAuthority.identityChanged)
+    ctx.onDispose(() => authorityIdentity.unsubscribe())
+  }
   const membersRole = (): "owner" | "maintainer" | "member" => {
     if (!installHost) return designViewerRole(design)
     const login = store.collections.identitySessions.get("identity")?.login?.toLowerCase()
@@ -2564,6 +2588,7 @@ export const createAppController = (
     startCheckout: billingSeam.startCheckout,
     openBillingPortal: billingSeam.openBillingPortal,
     ...repositoryUpdate,
+    secretAuthority,
     listSecrets: secretsSeam.listSecrets,
     scopeSecret: secretsSeam.scopeSecret,
     bindSecret: secretsSeam.bindSecret,
@@ -2969,6 +2994,7 @@ export const createAppController = (
     installSnapshots: installSeam.snapshots,
     membersRoster,
     membersRole,
+    secretAuthority,
     secretsProviders,
     flowCatalog: installHost ? flowsSeam.snapshots : undefined,
     homeView,

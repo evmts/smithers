@@ -7,11 +7,15 @@ import { settledPill } from "./CardFamily"
 import { cardActions, type CardActionDefinition, type CardCommandDispatch } from "../flows/cardActions"
 import { SecretsView } from "./views/SecretsView"
 import { useController } from "../ControllerContext"
-import { useSyncExternalStore, type ComponentType } from "react"
+import { useCallback, useSyncExternalStore, type ComponentType } from "react"
 import { writeOnlyGesture } from "../flows/CommandGesture"
 import { secretsReadAvailable, secretsWriteAvailable } from "../state/seams/SecretsProviders"
+import type { RepositoryAuthority } from "../state/seams/RepositoryAuthority"
 
 type StoredSecrets = Extract<Card, { kind: "secrets" }>
+
+/** No repository is in scope: nothing is granted and nothing was read. */
+const UNSCOPED: RepositoryAuthority = { phase: "unscoped" }
 
 /* Model keys stay on the host: a known key name is bound to its provider (§8.8.1b). */
 const providerBindings: Readonly<Record<string, { readonly hosts: string; readonly headers: string }>> = {
@@ -24,15 +28,19 @@ const secretControl = (operation: SecretOperation, definition: CardActionDefinit
   ...(definition.resolve_input ? { resolve_input: input => secretInput(operation, definition.resolve_input!(input) ?? {}) } : {})
 })
 
-export const SecretsCardBody = ({ card, dispatch, role = "member", View = SecretsView, confirm = message => window.confirm(message) }: {
+export const SecretsCardBody = ({ card, dispatch, role = "member", access = "ready", View = SecretsView, confirm = message => window.confirm(message) }: {
   readonly card: StoredSecrets
   readonly dispatch: CardCommandDispatch
   readonly role?: "owner" | "maintainer" | "member"
+  /** What is known about this repository's authority. Only "ready" may offer a write. */
+  readonly access?: "ready" | "loading" | "unreadable"
   readonly View?: ComponentType<SecretsViewProps>
   readonly confirm?: (message: string) => boolean
 }) => {
   const definitions: CardActionDefinition[] = []
-  if (role !== "member") {
+  /* An authority nobody could read is asked for again by the same door that read it. */
+  if (access === "unreadable") definitions.push({ tag: "secrets", label: "Retry", command_input: {} })
+  if (access === "ready" && role !== "member") {
     definitions.push(secretControl("set", { tag: "secrets", label: "Add", args: { door: "add" }, command_input: { name: "", value: "" },
       input: [{ name: "name", label: "NAME", kind: "text", required: true },
         { name: "value", label: "Value", kind: "secret", required: true },
@@ -58,10 +66,22 @@ export const SecretsCardBody = ({ card, dispatch, role = "member", View = Secret
     if (tag === "secrets" && (input as { operation?: string }).operation === "scope" && (input as { scope: string }).scope === "all_branches" && !confirm("Give to all branches?")) return
     return dispatch(tag, input)
   }, definitions)
-  return <View model={{ secrets: card.payload.secrets.map(secret => ({ name: secret.name,
-    scope: secret.mainOnly ? "main_only" : "all_branches", hosts: secret.hosts, ...(secret.path ? { path: secret.path } : {}),
-    actions: bindings.actions.filter(action => action.args?.name === secret.name) })) }}
-    {...bindings} actions={bindings.actions.filter(action => !action.args?.name)} view={{ maximized: false }} onView={() => {}} />
+  /*
+   * An empty card has to say which empty it is. A list nobody may add to, an
+   * authority still being read and an authority that could not be read are
+   * three different answers, and a heading over nothing is none of them.
+   */
+  const note = access === "loading" ? "Checking access\u2026"
+    : access === "unreadable" ? "Access unknown."
+    : definitions.length === 0 && card.payload.secrets.length === 0 ? "No secrets; only a maintainer can add one."
+    : undefined
+  return <>
+    <View model={{ secrets: card.payload.secrets.map(secret => ({ name: secret.name,
+      scope: secret.mainOnly ? "main_only" : "all_branches", hosts: secret.hosts, ...(secret.path ? { path: secret.path } : {}),
+      actions: bindings.actions.filter(action => action.args?.name === secret.name) })) }}
+      {...bindings} actions={bindings.actions.filter(action => !action.args?.name)} view={{ maximized: false }} onView={() => {}} />
+    {note === undefined ? null : <p className="secret-note">{note}</p>}
+  </>
 }
 
 const SecretsBody = ({ card }: { card: StoredSecrets }) => {
@@ -78,8 +98,33 @@ const SecretsBody = ({ card }: { card: StoredSecrets }) => {
       name: secret.name, mainOnly: secret.scope === "main_only", hosts: secret.hosts ?? [], matchHeaders: [], updatedAt: null,
       ...(secret.path ? { path: secret.path } : {})
     })) } } : card
-  const role = install ? providers?.authority?.() ?? "member" : controller.membersRole()
-  return <SecretsCardBody card={projected} View={install ? providers?.View : SecretsView} role={unavailable ? "member" : role} dispatch={(name, input) => {
+  /*
+   * Hosted secrets: the repository's own authority, not the seeded roster.
+   * `membersRole` still answers off a hosted repository, where the seeded
+   * design world stands in for the roster and calls that repository's owner a
+   * member — so it decides nothing here.
+   */
+  const authority = install ? undefined : controller.secretAuthority
+  const repo = card.payload.repo
+  const scoped = useSyncExternalStore(
+    useCallback((notify: () => void) => {
+      if (authority === undefined) return () => {}
+      const stop = authority.subscribe(notify)
+      authority.refresh(repo)
+      return stop
+    }, [authority, repo]),
+    () => authority?.state(repo) ?? UNSCOPED,
+    () => authority?.state(repo) ?? UNSCOPED
+  )
+  const access = authority === undefined || scoped.phase === "ready" || scoped.phase === "refused" || scoped.phase === "unscoped"
+    ? "ready" as const : scoped.phase === "loading" ? "loading" as const : "unreadable" as const
+  const role = install ? providers?.authority?.() ?? "member"
+    : authority !== undefined ? (scoped.phase === "ready" ? scoped.role : "member")
+    : controller.membersRole()
+  return <SecretsCardBody card={projected} View={install ? providers?.View : SecretsView} role={unavailable ? "member" : role}
+    access={access} dispatch={(name, input) => {
+    /* A re-read of the card is a re-read of who the person is on it. */
+    if (authority !== undefined && name === "secrets" && (input as { operation?: string } | undefined)?.operation === undefined) authority.refresh(repo)
     const payload: Record<string, unknown> = { ...(input ?? {}), repo: card.payload.repo || undefined }
     const gesture = name === "secrets" && payload.operation === "set" ? writeOnlyGesture(name, { value: String(payload.value ?? "") }) : undefined
     Object.assign(payload, secretsBinding(name, payload))
