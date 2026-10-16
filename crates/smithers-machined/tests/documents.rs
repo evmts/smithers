@@ -1540,13 +1540,13 @@ mod dispatcher {
         }
         service.flush_all(&mut cx).unwrap();
         service.poll(&mut cx).unwrap();
-        let mut child = Command::new("bun")
+        let mut child = Command::new("node")
             .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/yjs-interop.ts"))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()
-            .expect("Bun and app Yjs dependency required");
+            .expect("Node and app Yjs dependency required");
         let mut to_client = child.stdin.take().unwrap();
         writeln!(
             to_client,
