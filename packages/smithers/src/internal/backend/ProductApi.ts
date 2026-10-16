@@ -2768,6 +2768,62 @@ export interface PostApiIssuesNumberCommentsInput {
 export const postApiIssuesNumberComments = (transport: Transport, input: PostApiIssuesNumberCommentsInput): Promise<PostApiIssuesNumberCommentsResponse> =>
   transport.request("POST", `/api/issues/${segment(input.path.number)}/comments`, input.body, { headers: { "Idempotency-Key": input.headers["Idempotency-Key"] } }) as Promise<PostApiIssuesNumberCommentsResponse>
 
+export type PatchApiIssuesCommentsIdBody = {
+  body: string
+}
+
+export type PatchApiIssuesCommentsIdResponse = ConfirmationReceipt | {
+  operationId: string
+  requestId: string
+  kind: string
+  state: "accepted" | "dispatching" | "running" | "waiting" | "completed" | "failed" | "cancelled" | "uncertain"
+  acceptedAt: string
+}
+
+export interface PatchApiIssuesCommentsIdInput {
+  readonly path: { readonly id: number }
+  readonly headers: { readonly "Idempotency-Key": string }
+  readonly body: PatchApiIssuesCommentsIdBody
+}
+
+/** PATCH /api/issues/comments/{id}: Request an issue comment edit */
+export const patchApiIssuesCommentsId = (transport: Transport, input: PatchApiIssuesCommentsIdInput): Promise<PatchApiIssuesCommentsIdResponse> =>
+  transport.request("PATCH", `/api/issues/comments/${segment(input.path.id)}`, input.body, { headers: { "Idempotency-Key": input.headers["Idempotency-Key"] } }) as Promise<PatchApiIssuesCommentsIdResponse>
+
+export type PostApiIssuesNumberCloseResponse = ConfirmationReceipt | {
+  operationId: string
+  requestId: string
+  kind: string
+  state: "accepted" | "dispatching" | "running" | "waiting" | "completed" | "failed" | "cancelled" | "uncertain"
+  acceptedAt: string
+}
+
+export interface PostApiIssuesNumberCloseInput {
+  readonly path: { readonly number: number }
+  readonly headers: { readonly "Idempotency-Key": string }
+}
+
+/** POST /api/issues/{number}/close: Request an issue close */
+export const postApiIssuesNumberClose = (transport: Transport, input: PostApiIssuesNumberCloseInput): Promise<PostApiIssuesNumberCloseResponse> =>
+  transport.request("POST", `/api/issues/${segment(input.path.number)}/close`, undefined, { headers: { "Idempotency-Key": input.headers["Idempotency-Key"] } }) as Promise<PostApiIssuesNumberCloseResponse>
+
+export type PostApiIssuesNumberReopenResponse = ConfirmationReceipt | {
+  operationId: string
+  requestId: string
+  kind: string
+  state: "accepted" | "dispatching" | "running" | "waiting" | "completed" | "failed" | "cancelled" | "uncertain"
+  acceptedAt: string
+}
+
+export interface PostApiIssuesNumberReopenInput {
+  readonly path: { readonly number: number }
+  readonly headers: { readonly "Idempotency-Key": string }
+}
+
+/** POST /api/issues/{number}/reopen: Request an issue reopen */
+export const postApiIssuesNumberReopen = (transport: Transport, input: PostApiIssuesNumberReopenInput): Promise<PostApiIssuesNumberReopenResponse> =>
+  transport.request("POST", `/api/issues/${segment(input.path.number)}/reopen`, undefined, { headers: { "Idempotency-Key": input.headers["Idempotency-Key"] } }) as Promise<PostApiIssuesNumberReopenResponse>
+
 /** GET /api/live: Follow the install's shared topics over one WebSocket */
 export const getApiLive = (transport: Transport): Promise<void> =>
   transport.request("GET", `/api/live`).then(() => undefined)

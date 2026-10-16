@@ -127,17 +127,25 @@ test("the hosted app's canonical /issue.comment posts to the repository's own is
   } finally { await h.controller.dispose() }
 })
 
-test("an install keeps its GitHub-App issue door, and states that the comment door is not in the app", async () => {
-  const h = await hosted({ bootstrap: INSTALL, routes: { "POST /api/issues": { operationId: "op-1" }, "GET /api/issues/requests/op-1": { state: "running" } } })
+test("an install writes both its GitHub-App issue doors and never the Cloud tracker", async () => {
+  const h = await hosted({ bootstrap: INSTALL, routes: {
+    "POST /api/issues": { operationId: "op-1" }, "GET /api/issues/requests/op-1": { state: "running" },
+    "POST /api/issues/5/comments": { operationId: "op-2", kind: "requested" }
+  } })
   try {
     const before = seedState(h.controller as never)
     expect(await h.controller.runCommandForResult("issue.new", JSON.stringify({ title: "Install issue", body: "Body" }))).toMatchObject({ status: "executed" })
     expect(h.calls.filter(call => call.method === "POST")).toEqual([{ method: "POST", path: "/api/issues", body: { title: "Install issue", body: "Body" } }])
     h.calls.length = 0
+    /*
+     * The comment used to answer "a member confirmation on this install, not
+     * an app write yet" and keep the comment the person had written. It goes
+     * to the install's own GitHub comment door now — never to the Cloud
+     * tracker, whose same-numbered row is a different issue.
+     */
     const comment = await h.controller.runCommandForResult("issue.comment", "#5 Install comment")
-    expect(comment).toEqual({ status: "failed", error: "Commenting on a GitHub issue is a member confirmation on this install, not an app write yet." })
-    /* A refusal writes nothing: no Cloud route, no GitHub door, no seeded comment. The create's own poll keeps reading. */
-    expect(h.calls.filter(call => call.method !== "GET")).toEqual([])
+    expect(comment).toMatchObject({ status: "executed" })
+    expect(h.calls.filter(call => call.method === "POST")).toEqual([{ method: "POST", path: "/api/issues/5/comments", body: { body: "Install comment" } }])
     expect(seedState(h.controller as never)).toBe(before)
   } finally { await h.controller.dispose() }
 })
@@ -227,7 +235,6 @@ test("where the issue door does run, /issue.new still asks for the body it is mi
  */
 test("/issue.comment names the door it does not have BEFORE the form, through every trigger", async () => {
   for (const [bootstrap, error] of [
-    [INSTALL, "Commenting on a GitHub issue is a member confirmation on this install, not an app write yet."],
     [WITHOUT_CLOUD, "Commenting on an issue needs the GitHub App install or Smithers Cloud."]
   ] as const) {
     const h = await hosted({ bootstrap, routes: { [`POST ${ISSUES}/5/comments`]: postedComment, "POST /api/issues/5/comments": postedComment } })
@@ -327,7 +334,6 @@ test("a typed /issue n over an open list reads the Cloud door and navigates the 
  */
 test("an agent asking /issue.comment on a host with no comment door reads the refusal, and no one is asked to authorize it", async () => {
   for (const [bootstrap, refusal] of [
-    [INSTALL, "Commenting on a GitHub issue is a member confirmation on this install, not an app write yet."],
     [WITHOUT_CLOUD, "Commenting on an issue needs the GitHub App install or Smithers Cloud."]
   ] as const) {
     const h = await hosted({ bootstrap })
@@ -343,6 +349,13 @@ test("an agent asking /issue.comment on a host with no comment door reads the re
 })
 
 test("an agent asking /issue.comment where the door does write is still the person's confirmation", async () => {
+  // The install's own GitHub comment door is such a door too, since it writes.
+  const install = await hosted({ bootstrap: INSTALL, routes: { "POST /api/issues/5/comments": { operationId: "op-2", kind: "requested" } } })
+  try {
+    expect(await install.controller.commands.runForAgent("issue.comment", "#5 Agent comment"))
+      .toMatchObject({ status: "executed", value: expect.stringContaining("asked the user to confirm") })
+    expect(install.calls.filter(call => call.method !== "GET")).toEqual([])
+  } finally { await install.controller.dispose() }
   const h = await hosted({ routes: { [`POST ${ISSUES}/5/comments`]: postedComment } })
   try {
     expect(await h.controller.commands.runForAgent("issue.comment", "#5 Agent comment"))

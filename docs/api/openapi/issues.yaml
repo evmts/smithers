@@ -240,6 +240,187 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/AccessError'}
+  /api/issues/comments/{id}:
+    patch:
+      x-composition: install
+      summary: Request an issue comment edit
+      description: Queues a new body for one comment on the install repository's GitHub issues, addressed by GitHub's own comment id, without waiting on GitHub. GitHub lets only a comment's author edit it, so a comment the App did not write answers GitHub's own refusal. An ambiguous GitHub reply leaves the background operation uncertain and is never blindly retried.
+      operationId: patch_api_issues_comments_id
+      tags:
+        - Issues
+      security:
+        - sessionCookie: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: integer, minimum: 1}
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 256}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [body]
+              properties:
+                body: {type: string, minLength: 1, maxLength: 65536}
+      responses:
+        '202':
+          description: Durable background admission or private confirmation
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ConfirmationReceipt'
+                  - type: object
+                    required: [operationId, requestId, kind, state, acceptedAt]
+                    properties:
+                      operationId: {type: string}
+                      requestId: {type: string}
+                      kind: {type: string}
+                      state: {type: string, enum: [accepted, dispatching, running, waiting, completed, failed, cancelled, uncertain]}
+                      acceptedAt: {type: string, format: date-time}
+        '400':
+          description: Invalid comment
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessError'}
+        '401':
+          description: Sign in again
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessError'}
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '409':
+          description: idempotency_mismatch
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessError'}
+        '503':
+          description: github_unavailable or confirmation_unavailable, before admission
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessError'}
+  /api/issues/{number}/close:
+    post:
+      x-composition: install
+      summary: Request an issue close
+      description: Queues the close of the install repository's GitHub issue without waiting on GitHub, on the same durable writer as the comment beside it. The door names the act, so a request authorized to close can never reopen; GitHub records the close as completed. An ambiguous GitHub reply leaves the background operation uncertain and is never blindly retried.
+      operationId: post_api_issues_number_close
+      tags:
+        - Issues
+      security:
+        - sessionCookie: []
+        - bearerAuth: []
+      parameters:
+        - name: number
+          in: path
+          required: true
+          schema: {type: integer, minimum: 1}
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 256}
+      responses:
+        '202':
+          description: Durable background admission or private confirmation
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ConfirmationReceipt'
+                  - type: object
+                    required: [operationId, requestId, kind, state, acceptedAt]
+                    properties:
+                      operationId: {type: string}
+                      requestId: {type: string}
+                      kind: {type: string}
+                      state: {type: string, enum: [accepted, dispatching, running, waiting, completed, failed, cancelled, uncertain]}
+                      acceptedAt: {type: string, format: date-time}
+        '400':
+          description: Invalid issue
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessError'}
+        '401':
+          description: Sign in again
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessError'}
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '409':
+          description: idempotency_mismatch
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessError'}
+        '503':
+          description: github_unavailable or confirmation_unavailable, before admission
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessError'}
+  /api/issues/{number}/reopen:
+    post:
+      x-composition: install
+      summary: Request an issue reopen
+      description: Queues the reopen of the install repository's GitHub issue without waiting on GitHub, on the same durable writer as the close beside it. An ambiguous GitHub reply leaves the background operation uncertain and is never blindly retried.
+      operationId: post_api_issues_number_reopen
+      tags:
+        - Issues
+      security:
+        - sessionCookie: []
+        - bearerAuth: []
+      parameters:
+        - name: number
+          in: path
+          required: true
+          schema: {type: integer, minimum: 1}
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 256}
+      responses:
+        '202':
+          description: Durable background admission or private confirmation
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ConfirmationReceipt'
+                  - type: object
+                    required: [operationId, requestId, kind, state, acceptedAt]
+                    properties:
+                      operationId: {type: string}
+                      requestId: {type: string}
+                      kind: {type: string}
+                      state: {type: string, enum: [accepted, dispatching, running, waiting, completed, failed, cancelled, uncertain]}
+                      acceptedAt: {type: string, format: date-time}
+        '400':
+          description: Invalid issue
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessError'}
+        '401':
+          description: Sign in again
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessError'}
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '409':
+          description: idempotency_mismatch
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessError'}
+        '503':
+          description: github_unavailable or confirmation_unavailable, before admission
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessError'}
 components:
   schemas:
     InstallIssuePerson:

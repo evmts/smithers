@@ -47,16 +47,14 @@ const json = (payload: Record<string, unknown>) => JSON.stringify(payload)
 
 /**
  * The doors `/issue.new` and `/issue.comment` name when this host does not
- * serve theirs. `CLOUD_ISSUE_DOOR` is the mirror of `issues.create`'s own
- * refusal ("Use /issue.new on this install."): a Cloud issue row is not the
- * install's GitHub App issue identity, and neither sentence substitutes one
- * source for the other.
+ * serve theirs. A Smithers Cloud origin reads GitHub's issues but writes only
+ * its own tracker, so `/issue.new` there names the door that writes the
+ * tracker it does have; the sentence never substitutes one source for the
+ * other. An install serves both doors itself.
  */
 const CLOUD_ISSUE_DOOR = "Use /issues.create on Smithers Cloud."
 const NO_ISSUE_DOOR = "Opening an issue needs the GitHub App install or Smithers Cloud."
 const NO_COMMENT_DOOR = "Commenting on an issue needs the GitHub App install or Smithers Cloud."
-/** An install's GitHub comment is a member confirmation the server performs (backend compose/member_commands.go); the browser has no port for it. */
-const INSTALL_COMMENT_DOOR = "Commenting on a GitHub issue is a member confirmation on this install, not an app write yet."
 
 export const subjectFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => {
   const design = actions.design
@@ -150,17 +148,17 @@ export const subjectFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> 
        * "asked the user to confirm" and post a confirmation message for a
        * write this host cannot perform, so the person authorizes a refusal.
        */
-      unavailable: () => cloudIssueWrites() ? undefined : install() ? INSTALL_COMMENT_DOOR : design.enabled ? undefined : NO_COMMENT_DOOR,
+      unavailable: () => cloudIssueWrites() || install() ? undefined : design.enabled ? undefined : NO_COMMENT_DOOR,
       handler: ({ number, body }) => {
         /*
-         * Cloud comments on the repository's own issue — the one `/issue` just
-         * opened. An install's GitHub comment (POST /api/issues/{n}/comments)
-         * is a member confirmation the server performs (backend
-         * compose/member_commands.go), and the browser has no port for it, so
-         * it says so rather than writing the fixture.
+         * One seam decides which tracker the comment addresses and sends it:
+         * on an install the repository's GitHub issue, through the canonical
+         * durable writer (POST /api/issues/{n}/comments); on Smithers Cloud
+         * the repository's own issue — the one `/issue` just opened. An
+         * install used to answer "a member confirmation, not an app write
+         * yet" and keep the comment the person had written.
          */
-        if (cloudIssueWrites()) return actions.commentOnIssue(number, body)
-        if (install()) return INSTALL_COMMENT_DOOR
+        if (cloudIssueWrites() || install()) return actions.commentOnIssue(number, body, undefined, undefined, install() ? "github" : undefined)
         if (!design.enabled) return NO_COMMENT_DOOR
         return commentIssue(design, number, body, design.viewer()) ? { value: `Commented on #${number}` } : `No issue #${number}`
       } }),

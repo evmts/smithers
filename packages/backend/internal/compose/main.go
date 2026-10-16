@@ -2586,7 +2586,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 	if config.IsSingleOwner(cfg.Auth) && options.topology.workers() {
 		launchWorker(func() {
-			if err := commandJobs.RunWorker(workerCtx, jobs.WorkerConfig{WorkerID: "issue-write-" + uuid.NewString(), Capacity: 1, Lease: time.Minute, PollInterval: 250 * time.Millisecond, Operations: []string{services.InstallIssueCommentOperation, services.InstallIssueCreateOperation}}, mythicalService.HandleInstallIssueWrite); err != nil && workerCtx.Err() == nil {
+			if err := commandJobs.RunWorker(workerCtx, jobs.WorkerConfig{WorkerID: "issue-write-" + uuid.NewString(), Capacity: 1, Lease: time.Minute, PollInterval: 250 * time.Millisecond, Operations: []string{services.InstallIssueCommentOperation, services.InstallIssueCreateOperation, services.InstallIssueCloseOperation, services.InstallIssueReopenOperation, services.InstallIssueCommentEditOperation}}, mythicalService.HandleInstallIssueWrite); err != nil && workerCtx.Err() == nil {
 				slog.Error("Issue comment worker stopped", "error", err)
 			}
 		})

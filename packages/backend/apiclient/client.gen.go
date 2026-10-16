@@ -2414,6 +2414,11 @@ type PostAPIIssuesNumberCommentsBody struct {
 	Body string `json:"body"`
 }
 
+// PatchAPIIssuesCommentsIDBody is generated from docs/api/openapi.yaml.
+type PatchAPIIssuesCommentsIDBody struct {
+	Body string `json:"body"`
+}
+
 // PostAPIMembersBody is generated from docs/api/openapi.yaml.
 type PostAPIMembersBody struct {
 	Login string `json:"login"`
@@ -4121,6 +4126,27 @@ func (c *Client) GetAPIIssuesN(ctx context.Context, n int64) (InstallIssueThread
 func (c *Client) PostAPIIssuesNumberComments(ctx context.Context, number int64, idempotencyKey string, body PostAPIIssuesNumberCommentsBody) (json.RawMessage, error) {
 	var out json.RawMessage
 	err := c.withHeader("Idempotency-Key", idempotencyKey).do(ctx, "POST", "/api/issues/"+url.PathEscape(strconv.FormatInt(number, 10))+"/comments", nil, body, &out)
+	return out, err
+}
+
+// PatchAPIIssuesCommentsID calls PATCH /api/issues/comments/{id}.
+func (c *Client) PatchAPIIssuesCommentsID(ctx context.Context, id int64, idempotencyKey string, body PatchAPIIssuesCommentsIDBody) (json.RawMessage, error) {
+	var out json.RawMessage
+	err := c.withHeader("Idempotency-Key", idempotencyKey).do(ctx, "PATCH", "/api/issues/comments/"+url.PathEscape(strconv.FormatInt(id, 10)), nil, body, &out)
+	return out, err
+}
+
+// PostAPIIssuesNumberClose calls POST /api/issues/{number}/close.
+func (c *Client) PostAPIIssuesNumberClose(ctx context.Context, number int64, idempotencyKey string) (json.RawMessage, error) {
+	var out json.RawMessage
+	err := c.withHeader("Idempotency-Key", idempotencyKey).do(ctx, "POST", "/api/issues/"+url.PathEscape(strconv.FormatInt(number, 10))+"/close", nil, nil, &out)
+	return out, err
+}
+
+// PostAPIIssuesNumberReopen calls POST /api/issues/{number}/reopen.
+func (c *Client) PostAPIIssuesNumberReopen(ctx context.Context, number int64, idempotencyKey string) (json.RawMessage, error) {
+	var out json.RawMessage
+	err := c.withHeader("Idempotency-Key", idempotencyKey).do(ctx, "POST", "/api/issues/"+url.PathEscape(strconv.FormatInt(number, 10))+"/reopen", nil, nil, &out)
 	return out, err
 }
 

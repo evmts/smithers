@@ -76,19 +76,15 @@ export const issuesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
     confirm: "create this issue",
     ...issueWriteConfirmation(actions),
     /*
-     * Cloud issue rows are not the install's GitHub App issue identity. That
-     * reads the HOST and no part of the payload, so it is `unavailable`, which
-     * `Commands.settle` answers BEFORE the form asks for a title — an install
-     * serves both `install` and `cloud` (`compose/bootstrap.go`), so this door
-     * is registered here and a bare `/issues.create` used to collect a title
-     * it could never send (`entries/subjects.ts` names the same bug on
-     * `/issue.new`). The repository target's refusal reads `payload.repo` and
-     * stays a `preflight`.
+     * This door serves both trackers. On an install the repository IS a
+     * connected GitHub repository, so an ordinary issue goes through the
+     * install's own durable create — the same writer `/issue.new` uses — and
+     * a conversation stays in Smithers Cloud. It no longer answers "Use
+     * /issue.new on this install" before the form opens: the door works.
      */
-    unavailable: () => actions.bootstrap?.capabilities.includes("install") ? "Use /issue.new on this install." : undefined,
     form: { fields: { repo: { optionsFrom: "cloud-repos", kind: "text" } }, args: payload => line(text(payload, "title"), text(payload, "repo"), flag(payload, "kind"), flag(payload, "source")) },
     summary: "Create an issue, or a private conversation with --kind conversation",
-    runtime: ["cloud"],
+    runtimeAny: ["cloud", "install"],
     args: "<title> [owner/repo] [--kind conversation] [--source github|smithers-cloud]",
     requires: ["signed-in"],
     input: Schema.Struct({ title: Schema.String, repo: Schema.optional(Schema.String), kind: Schema.optional(Schema.Literals(["issue", "conversation"])), source: IssueSource }),
@@ -101,7 +97,8 @@ export const issuesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
     summary: "Close an issue",
     /* The tracker rides the line as a flag, exactly as issues.view carries it. */
     form: { args: payload => line(text(payload, "number"), text(payload, "repo"), flag(payload, "source")) },
-    runtimeAny: ["cloud"],
+    /* An install closes its repository's GitHub issue (POST /api/issues/{n}/close). */
+    runtimeAny: ["cloud", "install"],
     args: "<number> [owner/repo] [--source github|smithers-cloud]",
     requires: ["repo-read"],
     input: Schema.Struct({ ...NumberedTarget.fields, source: IssueSource }),
@@ -113,7 +110,7 @@ export const issuesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
     ...issueWriteConfirmation(actions),
     summary: "Reopen a closed issue",
     form: { args: payload => line(text(payload, "number"), text(payload, "repo"), flag(payload, "source")) },
-    runtimeAny: ["cloud"],
+    runtimeAny: ["cloud", "install"],
     args: "<number> [owner/repo] [--source github|smithers-cloud]",
     requires: ["repo-read"],
     input: Schema.Struct({ ...NumberedTarget.fields, source: IssueSource }),
@@ -131,7 +128,7 @@ export const issuesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
      */
     form: { fields: { repo: { optionsFrom: "cloud-repos", kind: "text" } }, args: payload => line(text(payload, "number"), text(payload, "text"), text(payload, "repo"), flag(payload, "source")) },
     summary: "Comment on an issue",
-    runtimeAny: ["cloud"],
+    runtimeAny: ["cloud", "install"],
     args: "<number> <text> [owner/repo] [--source github|smithers-cloud]",
     requires: ["repo-read"],
     input: Schema.Struct({

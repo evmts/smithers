@@ -20,6 +20,26 @@ import (
 const InstallIssueCommentOperation = "install.issue.comment"
 const InstallIssueCreateOperation = "install.issue.create"
 
+// The remaining ordinary GitHub issue acts ride the SAME durable pipeline as
+// the create and the comment above: one admission, one worker, one send
+// fence. Each act is its own operation so the worker's command never comes
+// from the payload an admission wrote — only from the operation it claimed.
+const (
+	InstallIssueCloseOperation       = "install.issue.close"
+	InstallIssueReopenOperation      = "install.issue.reopen"
+	InstallIssueCommentEditOperation = "install.issue.comment.edit"
+)
+
+// installIssueOperationCommands maps each operation to the ONE catalog command
+// that authorizes it, on admission and again on the worker.
+var installIssueOperationCommands = map[string]string{
+	InstallIssueCommentOperation:     "issue.comment",
+	InstallIssueCreateOperation:      "issue.new",
+	InstallIssueCloseOperation:       "issues.close",
+	InstallIssueReopenOperation:      "issues.reopen",
+	InstallIssueCommentEditOperation: "issue.comment",
+}
+
 type installIssueWriteJob struct {
 	Repository int64  `json:"repository"`
 	Requester  int64  `json:"requester"`
@@ -27,6 +47,9 @@ type installIssueWriteJob struct {
 	Body       string `json:"body"`
 	Login      string `json:"login"`
 	Title      string `json:"title,omitempty"`
+	// Comment is the GitHub comment id install.issue.comment.edit replaces.
+	// A legacy create or comment job carries none and decodes as before.
+	Comment int64 `json:"comment,omitempty"`
 }
 
 func (s *MythicalService) SetInstallIssueJobs(store *jobs.Store) { s.issueJobs = store }
@@ -109,12 +132,8 @@ func (s *MythicalService) HandleInstallIssueWrite(ctx context.Context, lease *jo
 		return lease.Fail(ctx, json.RawMessage(`{"code":"invalid_issue_comment"}`))
 	}
 
-	command := "issue.comment"
-	switch claim.Operation {
-	case InstallIssueCommentOperation:
-	case InstallIssueCreateOperation:
-		command = "issue.new"
-	default:
+	command, known := installIssueOperationCommands[claim.Operation]
+	if !known {
 		return lease.Fail(ctx, json.RawMessage(`{"code":"invalid_issue_operation"}`))
 	}
 	info, err := middleware.ReloadCredential(ctx, s.queries(), credential, time.Now())
@@ -162,14 +181,25 @@ func (s *MythicalService) HandleInstallIssueWrite(ctx context.Context, lease *jo
 		return tx.Commit(current)
 	}))
 	body := job.Body + "\n\nRequested by @" + job.Login
-	if command == "issue.new" {
+	switch claim.Operation {
+	case InstallIssueCreateOperation:
 		var created mythicalIssue
 		created, err = s.github.CreateIssue(bound, gh, job.Title, body)
 		if err == nil {
 			receipt, _ := json.Marshal(map[string]any{"state": "completed", "number": created.Number})
 			return lease.Complete(ctx, receipt)
 		}
-	} else {
+	case InstallIssueCloseOperation:
+		err = s.github.UpdateIssue(bound, gh, job.Number, mythicalIssueEdit{State: "closed"})
+	case InstallIssueReopenOperation:
+		err = s.github.UpdateIssue(bound, gh, job.Number, mythicalIssueEdit{State: "open"})
+	case InstallIssueCommentEditOperation:
+		// The edit keeps the attribution line the original comment carried,
+		// so rewriting the text never drops who asked for it.
+		err = s.github.UpdateIssueComment(bound, gh, job.Comment, body)
+	default:
+		// The keyed comment is said once per operation: a retry after a post
+		// whose reply was lost edits that comment instead of repeating it.
 		err = s.github.Comment(bound, gh, job.Number, claim.OperationID, body)
 	}
 	if err != nil {
@@ -277,6 +307,9 @@ func (s *MythicalService) prepareIssueCreateConfirmation(ctx context.Context, tx
 	return p, nil
 }
 
+// InstallIssueCreateStatus answers the state of one admitted issue write —
+// the create's new number once GitHub has given one. It is the door a client
+// whose acknowledgment never arrived reads instead of repeating the write.
 func (s *MythicalService) InstallIssueCreateStatus(ctx context.Context, repository int64, id string) (map[string]any, error) {
 	if s == nil || s.issueJobs == nil {
 		return nil, issuesUnavailable()
@@ -297,7 +330,10 @@ func (s *MythicalService) InstallIssueCreateStatus(ctx context.Context, reposito
 		identity, _ := json.Marshal(middleware.CredentialOf(info))
 		digest := sha256.Sum256(identity)
 		operation, err := s.issueJobs.GetInTx(bound, tx, jobs.Scope{TenantID: fmt.Sprintf("repository:%d", repository), PrincipalID: "credential:" + hex.EncodeToString(digest[:])}, id)
-		if errors.Is(err, jobs.ErrNotFound) || err == nil && operation.Operation != InstallIssueCreateOperation {
+		// Every issue write this pipeline admits is readable here: a client
+		// whose POST reply was lost reads its outcome rather than sending the
+		// write a second time.
+		if errors.Is(err, jobs.ErrNotFound) || err == nil && installIssueOperationCommands[operation.Operation] == "" {
 			return &TodoControlError{Status: 404, Class: "user", Code: "issue_request_not_found", Message: "Issue request unavailable"}
 		}
 		if err != nil {
@@ -313,4 +349,87 @@ func (s *MythicalService) InstallIssueCreateStatus(ctx context.Context, reposito
 		return nil
 	})
 	return result, err
+}
+
+// InstallIssueStateInput is the state an issue should hold: open or closed.
+// It is the whole body of the close and reopen doors, which carry no text.
+type InstallIssueStateInput struct {
+	State string `json:"state"`
+}
+
+// RequestInstallIssueClose and RequestInstallIssueReopen admit the ordinary
+// close and reopen of the install repository's GitHub issue, on the same
+// durable pipeline as the create and the comment: the acknowledgment is
+// immediate, the send happens once on the worker behind the same credential
+// reload, actor re-authorization and send fence, and an outcome GitHub never
+// confirmed stays visible as uncertain rather than being POSTed again.
+func (s *MythicalService) RequestInstallIssueClose(ctx context.Context, repository, number int64, key string) (jobs.RequestReceipt, error) {
+	return s.requestInstallIssueState(ctx, repository, number, key, InstallIssueCloseOperation)
+}
+
+func (s *MythicalService) RequestInstallIssueReopen(ctx context.Context, repository, number int64, key string) (jobs.RequestReceipt, error) {
+	return s.requestInstallIssueState(ctx, repository, number, key, InstallIssueReopenOperation)
+}
+
+func validIssueNumber(number int64, key string) error {
+	if number <= 0 || key == "" || len(key) > 256 {
+		return &TodoControlError{Status: 400, Code: "invalid_issue_state", Class: "user", Message: "Invalid issue"}
+	}
+	return nil
+}
+
+func (s *MythicalService) requestInstallIssueState(ctx context.Context, repository, number int64, key, operation string) (jobs.RequestReceipt, error) {
+	if s == nil || s.store == nil || s.github == nil || s.issueJobs == nil {
+		return jobs.RequestReceipt{}, issuesUnavailable()
+	}
+	command := installIssueOperationCommands[operation]
+	decision, err := Authorize(ctx, s.queries(), command)
+	if err != nil {
+		return jobs.RequestReceipt{}, err
+	}
+	ctx = WithInstallAuthorization(ctx, command, decision)
+	if err = validIssueNumber(number, key); err != nil {
+		return jobs.RequestReceipt{}, err
+	}
+	var receipt jobs.RequestReceipt
+	err = pgx.BeginFunc(ctx, s.store, func(tx pgx.Tx) error {
+		var err error
+		receipt, err = s.admitIssueWrite(ctx, tx, repository, installIssueWriteJob{Number: number}, key, command, operation)
+		return err
+	})
+	return receipt, err
+}
+
+// RequestInstallIssueCommentEdit admits an edit of one comment the install's
+// App wrote. GitHub only lets a comment's own author edit it, so a person's
+// own comment answers the provider's refusal rather than being rewritten by
+// the App on their behalf.
+func (s *MythicalService) RequestInstallIssueCommentEdit(ctx context.Context, repository, comment int64, body, key string) (jobs.RequestReceipt, error) {
+	if s == nil || s.store == nil || s.github == nil || s.issueJobs == nil {
+		return jobs.RequestReceipt{}, issuesUnavailable()
+	}
+	const command = "issue.comment"
+	decision, err := Authorize(ctx, s.queries(), command)
+	if err != nil {
+		return jobs.RequestReceipt{}, err
+	}
+	ctx = WithInstallAuthorization(ctx, command, decision)
+	if err = validIssueComment(comment, body, key); err != nil {
+		return jobs.RequestReceipt{}, err
+	}
+	var receipt jobs.RequestReceipt
+	err = pgx.BeginFunc(ctx, s.store, func(tx pgx.Tx) error {
+		var err error
+		receipt, err = s.admitIssueWrite(ctx, tx, repository, installIssueWriteJob{Comment: comment, Body: body}, key, command, InstallIssueCommentEditOperation)
+		return err
+	})
+	return receipt, err
+}
+
+// InstallIssueStateWriter is the close and reopen pair the route calls. One
+// interface keeps the two doors literally the same code path apart from the
+// operation each admits.
+type InstallIssueStateWriter interface {
+	RequestInstallIssueClose(ctx context.Context, repository, number int64, key string) (jobs.RequestReceipt, error)
+	RequestInstallIssueReopen(ctx context.Context, repository, number int64, key string) (jobs.RequestReceipt, error)
 }

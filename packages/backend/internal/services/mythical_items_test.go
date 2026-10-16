@@ -73,6 +73,9 @@ type fakeMythicalGitHub struct {
 	// accounts are the GitHub accounts Account answers, by numeric id.
 	accounts map[int64]gitHubActor
 	closeErr error
+	// edits are the issue and comment edits UpdateIssue / UpdateIssueComment
+	// applied, in order.
+	edits []string
 }
 
 // MergeToken answers a token the fake does not check.
@@ -155,6 +158,57 @@ func (g *fakeMythicalGitHub) CloseIssue(_ context.Context, _ mythicalGitHubRepo,
 			g.issues[i].State = "closed"
 		}
 	}
+	return nil
+}
+
+// UpdateIssue applies the edit to the fake's own issue and records it, as
+// "#<issue> state=<state>" / "#<issue> title=…" / "#<issue> body=…".
+func (g *fakeMythicalGitHub) UpdateIssue(_ context.Context, _ mythicalGitHubRepo, number int64, edit mythicalIssueEdit) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if edit.payload() == nil {
+		return errors.New("the issue edit names no change")
+	}
+	if g.closeErr != nil {
+		return g.closeErr
+	}
+	if edit.State != "" {
+		g.edits = append(g.edits, fmt.Sprintf("#%d state=%s", number, edit.State))
+		if edit.State == "closed" {
+			g.closed = append(g.closed, number)
+		}
+	}
+	if edit.Title != nil {
+		g.edits = append(g.edits, fmt.Sprintf("#%d title=%s", number, *edit.Title))
+	}
+	if edit.Body != nil {
+		g.edits = append(g.edits, fmt.Sprintf("#%d body=%s", number, *edit.Body))
+	}
+	for i := range g.issues {
+		if g.issues[i].Number != number {
+			continue
+		}
+		if edit.State != "" {
+			g.issues[i].State = edit.State
+		}
+		if edit.Title != nil {
+			g.issues[i].Title = *edit.Title
+		}
+		if edit.Body != nil {
+			g.issues[i].Body = *edit.Body
+		}
+	}
+	return nil
+}
+
+// UpdateIssueComment records the comment edit as "comment:<id> <body>".
+func (g *fakeMythicalGitHub) UpdateIssueComment(_ context.Context, _ mythicalGitHubRepo, id int64, body string) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.commentErr != nil {
+		return g.commentErr
+	}
+	g.edits = append(g.edits, fmt.Sprintf("comment:%d %s", id, body))
 	return nil
 }
 

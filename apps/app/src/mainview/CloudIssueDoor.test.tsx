@@ -222,21 +222,29 @@ test("the door the overlay now admits writes the Cloud issue it names, and nothi
   expect([...view.store.collections.messages.values()].filter((message) => message.action?.flow === "issues.create")).toHaveLength(1)
 })
 
-test("an install still refuses before the form and still names /issue.new", async () => {
+/*
+ * On an install this door writes the repository's own GitHub issue, through
+ * the install's canonical durable create (POST /api/issues, the writer
+ * `/issue.new` uses). It used to answer "Use /issue.new on this install."
+ * before the form, because the Cloud create addressed a Smithers tracker the
+ * install has none of (#4030). The form law holds: a missing title is asked
+ * for, and the write that leaves is the install's, never the Cloud route.
+ */
+test("an install writes its own GitHub issue through this door", async () => {
   const writes: Array<string> = []
   const view = await mount({
     fetchImpl: async (input, init) => {
-      if ((init?.method ?? "GET").toUpperCase() === "POST") writes.push(String(input))
+      const url = new URL(String(input), "https://app.test")
+      if ((init?.method ?? "GET").toUpperCase() === "POST") writes.push(url.pathname)
+      if (url.pathname === "/api/issues") return json(202, { kind: "requested", operationId: "op-1" })
+      if (url.pathname === "/api/issues/requests/op-1") return json(200, { state: "accepted" })
       return json(404, { status: "error", message: "no stub" })
     }
   }, ["identity", "cloud", "install"])
-  const refused = { status: "failed", error: "Use /issue.new on this install." }
-  expect(await view.controller.commands.run("issues.create")).toMatchObject(refused)
-  expect(formCard(view.store, "issues.create")).toBeUndefined()
-  expect(await view.controller.commands.submit({ name: "issues.create", payload: { title: "Legacy issue" }, actor: "user" })).toMatchObject(refused)
+  // A bare line asks for the title it is missing, as the Cloud origin does.
+  expect(await view.controller.commands.run("issues.create")).toMatchObject({ status: "form", flow: "issues.create" })
   expect(writes).toEqual([])
-  // The overlay names the door either way; what Enter gets here is the host's refusal, never silence.
-  await view.act(() => view.controller.changeDraft("/issues.create"))
-  expect(refusalLine(view.host)).toContain("/issues.create")
-  expect(refusalLine(view.host)).not.toContain("There is no")
+  expect(await view.controller.commands.submit({ name: "issues.create", payload: { title: "Legacy issue" }, actor: "user" })).toMatchObject({ status: "executed" })
+  // The install's own door, never the Cloud tracker's same-numbered row.
+  expect(writes).toEqual(["/api/issues"])
 })

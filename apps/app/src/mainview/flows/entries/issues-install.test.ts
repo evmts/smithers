@@ -5,7 +5,14 @@ import { memoryStorage, silentAgent } from "../../state/TestFixtures"
 
 const createAppController = scopedControllers()
 
-test("install refuses legacy issue creation at the slash, button and agent doors before any write", async () => {
+/*
+ * `issues.create` on an install opens its repository's GitHub issue through
+ * the install's canonical durable create — the same writer `/issue.new`
+ * uses. It used to answer "Use /issue.new on this install." at every door,
+ * because the Cloud create addressed a Smithers tracker the install has
+ * none of. One seam now decides the tracker and one writer performs it.
+ */
+test("install creates its repository's GitHub issue through the durable create door", async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "will", admin: false, scopesPlain: null }).isPersisted.promise
   await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: "owner/repo", org: "owner", ownerKind: "user", name: "repo", head: null }] }).isPersisted.promise
@@ -14,31 +21,35 @@ test("install refuses legacy issue creation at the slash, button and agent doors
   const controller = createAppController(store, silentAgent, {
     bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["install", "identity", "cloud"], authFlow: "credentials", sandbox: null },
     fetchImpl: async (input, init) => {
-      if (init?.method === "POST") writes.push(String(input))
+      const url = new URL(String(input), "https://app.test")
+      if (init?.method === "POST") writes.push(url.pathname)
+      if (url.pathname === "/api/issues" && init?.method === "POST") return Response.json({ kind: "requested", operationId: "op-1" }, { status: 202 })
+      if (url.pathname === "/api/issues/requests/op-1") return Response.json({ state: "accepted" })
       return Response.json({}, { status: 404 })
     }
   })
   try {
-    expect(await controller.commands.run("issues.create", "Legacy issue owner/repo")).toMatchObject({ status: "failed", error: "Use /issue.new on this install." })
-    for (const actor of ["user", "agent"] as const) {
-      expect(await controller.commands.submit({ name: "issues.create", payload: { title: "Legacy issue", repo: "owner/repo" }, actor })).toMatchObject({ status: "failed", error: "Use /issue.new on this install." })
-    }
+    expect(await controller.commands.run("issues.create", "Legacy issue owner/repo")).toMatchObject({ status: "executed" })
+    expect(await controller.commands.submit({ name: "issues.create", payload: { title: "Button issue", repo: "owner/repo" }, actor: "user" })).toMatchObject({ status: "executed" })
+    // The Cloud tracker is a different tracker: no write may address it.
+    expect(writes).toEqual(["/api/issues", "/api/issues"])
+    expect(writes.some(path => path.startsWith("/api/repos/"))).toBe(false)
+
+    // An agent still performs none of it: the person is asked, nothing is sent.
+    writes.length = 0
+    const asked = await controller.commands.submit({ name: "issues.create", payload: { title: "Agent issue", repo: "owner/repo" }, actor: "agent" })
+    expect(asked).toMatchObject({ status: "executed" })
+    expect(asked.status === "executed" && asked.value).toContain("nothing has happened yet")
     expect(writes).toEqual([])
-    expect([...store.collections.messages.values()].some(row => row.action?.flow === "issues.create")).toBe(false)
-    expect([...store.collections.cards.values()].some(row => row.kind === "issue")).toBe(false)
   } finally { controller.dispose() }
 })
 
 /*
- * The mirror image of the c3ca bug (`subjects.cloudWrites.test.ts`). An
- * install serves both `install` and `cloud` (`compose/bootstrap.go`), so
- * `issues.create` IS registered here and names `/issue.new` instead — but
- * that sentence reads the HOST, and as a `preflight` it could not be reached
- * until a payload existed. A bare `/issues.create` therefore opened the
- * Title form, and only the submit named the door. The repository target's own
- * refusal still reads the payload and stays a `preflight`.
+ * THE FORM LAW on an install too: the door runs here now, so a bare
+ * `/issues.create` asks for the title it is missing instead of naming
+ * another door. It used to answer `unavailable` before the form.
  */
-test("install names /issue.new before the issues.create form asks for a title", async () => {
+test("install asks for the title issues.create is missing", async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "will", admin: false, scopesPlain: null }).isPersisted.promise
   await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: "owner/repo", org: "owner", ownerKind: "user", name: "repo", head: null }] }).isPersisted.promise
@@ -51,13 +62,8 @@ test("install names /issue.new before the issues.create form asks for a title", 
       return Response.json({}, { status: 404 })
     }
   })
-  const refused = { status: "failed", error: "Use /issue.new on this install." }
   try {
-    const cards = store.collections.cards.size
-    expect(await controller.commands.run("issues.create")).toMatchObject(refused)
-    expect(await controller.commands.submit({ name: "issues.create", payload: {}, actor: "user" })).toMatchObject(refused)
-    expect([...store.collections.cards.values()].filter(row => row.kind === "flow-form")).toEqual([])
-    expect(store.collections.cards.size).toBe(cards)
+    expect(await controller.commands.run("issues.create")).toMatchObject({ status: "form", flow: "issues.create" })
     expect(writes).toEqual([])
   } finally { controller.dispose() }
 })

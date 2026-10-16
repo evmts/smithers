@@ -1537,9 +1537,18 @@ export const createAppController = (
     return row === undefined ? undefined : { repo: row.id, flows: row.flows, home: row.home, loadedAt: row.loadedAt }
   }
   /* An install reads its repository's GitHub issues at /api/issues (T-STK-09, J2 1 and 2). */
+  /*
+   * The durable create door, filled in once IssueCreateSeam exists: it opens
+   * the issue the create produced, which needs the issues seam, so the two
+   * reference each other and only one can be built first.
+   */
+  let durableIssueCreate: ((title: string, body: string) => Promise<string | void | { readonly value: string }>) | undefined
   const issuesSeam = actors.pair(seamCtx, (context, select) => createIssuesSeam(context, request => select(renderFlowForm)(request), undefined, { install: installHost,
-    repository: () => { const repository = installSeam.snapshots.get().model?.repository; return repository && `${repository.owner}/${repository.name}` } }))
+    repository: () => { const repository = installSeam.snapshots.get().model?.repository; return repository && `${repository.owner}/${repository.name}` },
+    /* A GitHub-source create uses the one durable create door, not a second pipeline. */
+    ...(installHost ? { requestGitHubIssue: (title: string, body: string) => durableIssueCreate?.(title, body) ?? Promise.resolve("Issue unavailable") } : {}) }))
   const issueCreateSeam = actors.pair(seamCtx, (context, select) => createIssueCreateSeam(context, number => select(issuesSeam).viewIssue(number, undefined, "github")))
+  durableIssueCreate = (title, body) => issueCreateSeam.request(title, body)
   /* The services that sync with conversations, issues and the wiki (smithers-ui-DESIGN.md §3.6). */
   const landingsSeam = actors.pair(seamCtx, (context, select) => createLandingsSeam(context, request => select(renderFlowForm)(request)))
   const repositoriesSeam = actors.pair(seamCtx, (context) => createRepositoriesSeam(context))

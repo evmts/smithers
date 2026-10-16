@@ -137,7 +137,7 @@ describe("issue writes resolve their tracker", () => {
     const outcome = await controller.commands.run("issues.close", "6")
     expect(outcome.status).toBe("failed")
     expect(refusal(outcome)).toContain("GitHub issue in will/flows")
-    expect(refusal(outcome)).toContain("nothing was sent")
+    expect(refusal(outcome)).toContain("Act on it on GitHub")
     // The Cloud row is a DIFFERENT issue: no write may reach it.
     expect(patched).toEqual([])
     expect(writes(calls)).toEqual([])
@@ -272,25 +272,46 @@ describe("issue writes resolve their tracker", () => {
   })
 
   /*
-   * A host that serves both `install` and `cloud` (compose/bootstrap.go)
-   * offers these Cloud doors beside the install's own. The install DOES write
-   * its repository's GitHub issues — through its App doors, the durable
-   * writer in services/install_issue_comment.go — so the refusal names the
-   * door that works instead of claiming no writer exists.
+   * With a GitHub #6 and a Smithers Cloud #6 both recorded, "#6" does not name
+   * an issue. The act is REFUSED rather than resolved to one of them: the
+   * mounted-card heuristic this replaces resolved the pair to the Cloud row
+   * and wrote the wrong object.
    */
-  test("on an install the refusal names the install's own GitHub writer", async () => {
-    const calls: string[] = []
-    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = createAppController(store, unavailableAgent, {
-      ...backend({ "GET /api/issues": json(200, []) }, calls),
-      bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", authFlow: "redirect", sandbox: null, capabilities: ["identity", "cloud", "install"] }
+  test("both trackers holding #6 refuses the act instead of choosing one", async () => {
+    const patched: Array<unknown> = []
+    const posted: Array<unknown> = []
+    const { store, controller, calls } = await controllerFor({
+      ...githubSixRoutes(),
+      ...cloudSixRoutes(),
+      "PATCH /api/repos/will/flows/issues/6": async (request) => { patched.push(await request.json()); return json(200, wireCloudIssue(6, { state: "closed" })) },
+      "POST /api/repos/will/flows/issues/6/comments": async (request) => { posted.push(await request.json()); return json(201, { id: 31 }) }
     })
-    store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "will", admin: false, scopesPlain: null })
-    store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: "will/flows", org: "will", ownerKind: "user", name: "flows", head: null }] })
+    const card = (id: string, source?: "github"): Extract<Card, { kind: "issue" }> => ({
+      id, kind: "issue", title: `Issue #6 · will/flows`, status: "active", createdAt: 0, ordinal: 1,
+      payload: { repo: "will/flows", number: 6, ...(source === undefined ? {} : { source }), title: "Row 6", state: "open", author: "ana", issueBody: "", labels: [], comments: [] }
+    })
+    for (const row of [card("issue-github-will/flows-6", "github"), card("issue-will/flows-6")]) {
+      await store.dispatch({ type: "card.upsert", actor: "user", card: row }).isPersisted.promise
+    }
     await settled()
 
-    expect(refusal(await controller.commands.run("issues.comment", "6 please look will/flows"))).toBe("Use /issue.comment on this install.")
+    for (const line of ["6", "6 will/flows"]) {
+      const closed = await controller.commands.run("issues.close", line)
+      expect(closed.status).toBe("failed")
+      expect(refusal(closed)).toContain("a GitHub #6 and a Smithers Cloud #6")
+      expect(refusal(closed)).toContain("--source")
+    }
+    const commented = await controller.commands.run("issues.comment", "6 please look will/flows")
+    expect(commented.status).toBe("failed")
+    expect(refusal(commented)).toContain("a GitHub #6 and a Smithers Cloud #6")
+    // Neither tracker was written: an ambiguous number sends nothing.
+    expect(patched).toEqual([])
+    expect(posted).toEqual([])
     expect(writes(calls)).toEqual([])
+
+    // Naming the tracker resolves it, and only that tracker is written.
+    expect((await controller.commands.run("issues.close", "6 will/flows --source smithers-cloud")).status).toBe("executed")
+    expect(patched).toEqual([{ state: "closed" }])
   })
 
   test("an unknown source is refused, never guessed", () => {

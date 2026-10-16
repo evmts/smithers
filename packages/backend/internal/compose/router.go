@@ -1130,6 +1130,14 @@ func buildRouter(
 			r.Get("/issues/requests/{id}", issues.CreateStatus)
 			r.Get("/issues/{n}", issues.Get)
 			r.Post("/issues/{number}/comments", issues.Comment)
+			// The remaining ordinary issue acts, on the same durable writer as
+			// the create and the comment above. Close and reopen are separate
+			// doors so the act a request is authorized for is the act that
+			// reaches GitHub; the comment edit is keyed by comment id, as the
+			// hosted comment door is.
+			r.Post("/issues/{number}/close", issues.Close)
+			r.Post("/issues/{number}/reopen", issues.Reopen)
+			r.Patch("/issues/comments/{id}", issues.EditComment)
 			reviewService, _ := extras.Mythical.Service.(routes.InstallReviewRouteService)
 			reviews := &routes.InstallReviewHandler{Queries: queries, Service: reviewService}
 			r.Post("/reviews", reviews.Request)

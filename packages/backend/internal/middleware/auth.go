@@ -556,6 +556,12 @@ var installMemberRoutes = []struct {
 	{http.MethodGet, "repo.read", regexp.MustCompile(`^/api/reviews/[^/]+$`)},
 	{http.MethodGet, "issue.read", regexp.MustCompile(`^/api/issues/[0-9]+$`)},
 	{http.MethodPost, "issue.comment", regexp.MustCompile(`^/api/issues/[0-9]+/comments$`)},
+	// Closing, reopening and editing one of the install repository's GitHub
+	// issues are mutations of the issue, classified as the catalog's own
+	// issue acts — never as a repository or account read.
+	{http.MethodPost, "issues.close", regexp.MustCompile(`^/api/issues/[0-9]+/close$`)},
+	{http.MethodPost, "issues.reopen", regexp.MustCompile(`^/api/issues/[0-9]+/reopen$`)},
+	{http.MethodPatch, "issue.comment", regexp.MustCompile(`^/api/issues/comments/[0-9]+$`)},
 	{http.MethodGet, "todo.read", regexp.MustCompile(`^/api/(todos|stack)$`)},
 	{http.MethodGet, "todo.read", regexp.MustCompile(`^/api/todos/[0-9]+(/events|/attempts/[0-9]+/logs/[0-9a-f]{64})?$`)},
 	{http.MethodPost, "todo.new", regexp.MustCompile(`^/api/todos$`)},

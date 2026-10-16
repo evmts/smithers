@@ -119,6 +119,13 @@ type mythicalGitHub interface {
 	Comment(ctx context.Context, gh mythicalGitHubRepo, number int64, key, body string) error
 	// CloseIssue closes an issue as completed; a closed one stays closed.
 	CloseIssue(ctx context.Context, gh mythicalGitHubRepo, number int64) error
+	// UpdateIssue applies one issue edit as GitHub's single-issue PATCH: a
+	// new state (open or closed), a new title, a new body, or a
+	// combination. An edit that names nothing is the caller's error.
+	UpdateIssue(ctx context.Context, gh mythicalGitHubRepo, number int64, edit mythicalIssueEdit) error
+	// UpdateIssueComment replaces one comment's body. GitHub only lets the
+	// comment's own author edit it, so the App can edit the App's comments.
+	UpdateIssueComment(ctx context.Context, gh mythicalGitHubRepo, id int64, body string) error
 	// OnMain reports whether commit is reachable from the bookmark on
 	// GitHub.
 	OnMain(ctx context.Context, gh mythicalGitHubRepo, bookmark, commit string) (bool, error)
@@ -913,6 +920,83 @@ func (g *mythicalGitHubAPI) CloseIssue(ctx context.Context, gh mythicalGitHubRep
 		return landingGitHubStatusError(status, gh.Owner, gh.Name, "close issues")
 	}
 	return nil
+}
+
+// mythicalIssueEdit is one issue edit: the state GitHub should hold the issue
+// in, and the title and body it should carry. A nil field is left alone, so a
+// state change never rewrites the text and an edit never reopens a closed
+// issue by accident.
+type mythicalIssueEdit struct {
+	// State is "open", "closed" or "" (leave the state alone).
+	State string
+	Title *string
+	Body  *string
+}
+
+// payload is the PATCH body GitHub reads, or nil when the edit names nothing.
+func (e mythicalIssueEdit) payload() map[string]any {
+	body := map[string]any{}
+	switch e.State {
+	case "closed":
+		// GitHub records WHY an issue closed; the stack's own close says
+		// completed, and so does a person's close through the app.
+		body["state"], body["state_reason"] = "closed", "completed"
+	case "open":
+		body["state"] = "open"
+	}
+	if e.Title != nil {
+		body["title"] = *e.Title
+	}
+	if e.Body != nil {
+		body["body"] = *e.Body
+	}
+	if len(body) == 0 {
+		return nil
+	}
+	return body
+}
+
+// UpdateIssue sends the edit through the caller's send fence, like every other
+// issue write on this provider: the token is minted and the marker read
+// outside it, and only the actual request runs inside.
+func (g *mythicalGitHubAPI) UpdateIssue(ctx context.Context, gh mythicalGitHubRepo, number int64, edit mythicalIssueEdit) error {
+	payload := edit.payload()
+	if payload == nil {
+		return errors.New("the issue edit names no change")
+	}
+	token, err := g.installationToken(ctx, gh, map[string]string{"issues": "write"})
+	if err != nil {
+		return err
+	}
+	path := landingGitHubRepoPath(gh.Owner, gh.Name) + "/issues/" + strconv.FormatInt(number, 10)
+	return sendGitHubIssueWrite(ctx, func(sendContext context.Context) error {
+		status, err := g.api.request(sendContext, token, http.MethodPatch, path, payload, nil)
+		if err != nil {
+			return err
+		}
+		if status != http.StatusOK {
+			return landingGitHubStatusError(status, gh.Owner, gh.Name, "edit issues")
+		}
+		return nil
+	})
+}
+
+func (g *mythicalGitHubAPI) UpdateIssueComment(ctx context.Context, gh mythicalGitHubRepo, id int64, body string) error {
+	token, err := g.installationToken(ctx, gh, map[string]string{"issues": "write"})
+	if err != nil {
+		return err
+	}
+	path := landingGitHubRepoPath(gh.Owner, gh.Name) + "/issues/comments/" + strconv.FormatInt(id, 10)
+	return sendGitHubIssueWrite(ctx, func(sendContext context.Context) error {
+		status, err := g.api.request(sendContext, token, http.MethodPatch, path, map[string]string{"body": body}, nil)
+		if err != nil {
+			return err
+		}
+		if status != http.StatusOK {
+			return landingGitHubStatusError(status, gh.Owner, gh.Name, "edit issue comments")
+		}
+		return nil
+	})
 }
 
 // OnMain compares the bookmark with the commit: a commit the bookmark is

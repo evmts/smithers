@@ -215,7 +215,14 @@ for (const command of ["todo.from-issue"]) test(`${command} refuses a failed pre
 })
 
 
-test("retained issue-write commands are unavailable to agents on an install", async () => {
+/*
+ * These doors DO write the install repository's GitHub issues now, through
+ * the canonical durable writer. An agent still performs none of them on its
+ * own: each is a `confirm` command, so an agent's submission asks the person
+ * and nothing leaves until they confirm. Before, the install answered
+ * `unavailable`, which was the same safety by absence of a writer.
+ */
+test("an agent's issue write on an install waits for the person and sends nothing", async () => {
   const { store, controller, posts } = await installApp()
   try {
     for (const [name, payload] of [
@@ -224,8 +231,11 @@ test("retained issue-write commands are unavailable to agents on an install", as
       ["issues.reopen", { number: 2, repo: REPO }],
       ["issues.comment", { number: 2, text: "Do not post", repo: REPO }]
     ] as const) {
-      expect(await controller.commands.submit({ name, payload, actor: "agent" })).toMatchObject({ status: "unavailable" })
-      expect([...store.collections.messages.values()].some(message => message.action?.flow === name)).toBe(false)
+      const outcome = await controller.commands.submit({ name, payload, actor: "agent" })
+      expect(outcome).toMatchObject({ status: "executed" })
+      expect(outcome.status === "executed" && outcome.value).toContain("nothing has happened yet")
+      // The act is offered to the person as that exact command, never run.
+      expect([...store.collections.messages.values()].some(message => message.action?.flow === name)).toBe(true)
     }
     expect(posts).toEqual([])
   } finally { controller.dispose() }

@@ -45,19 +45,32 @@ export interface IssuesSeam {
   /** Reads an authorized snapshot for Make TODO without mounting an issue card. */
   readonly readTodoIssue: (number: number, repo: string) => Promise<IssuePayload | string>
   readonly viewIssue: ViewAction<[number: number, repo?: string, source?: IssueSource]>
-  readonly createIssue: (title: string, repo?: string, kind?: "issue" | "chat", source?: IssueSource) => Promise<string | void>
+  /*
+   * A GitHub-source act is admitted durably and answers that it was
+   * requested — `{ value }`, as a posted comment already did — so no answer
+   * claims GitHub did the write before GitHub has.
+   */
+  readonly createIssue: (title: string, repo?: string, kind?: "issue" | "chat", source?: IssueSource) => Promise<string | void | { readonly value: string }>
   readonly setIssueState: (
     number: number,
     state: IssueState,
     repo?: string,
     source?: IssueSource
-  ) => Promise<string | void>
-  readonly editIssueComment: (number: number, commentId: number, text: string, repo?: string) => Promise<string | void>
-  readonly deleteIssueComment: (number: number, commentId: number, repo?: string) => Promise<string | void>
+  ) => Promise<string | void | { readonly value: string }>
+  readonly editIssueComment: (number: number, commentId: number, text: string, repo?: string) => Promise<string | void | { readonly value: string }>
+  readonly deleteIssueComment: (number: number, commentId: number, repo?: string) => Promise<string | void | { readonly value: string }>
   readonly commentOnIssue: (number: number, text: string, repo?: string, persona?: { username: string; iconEmoji?: string; iconUrl?: string }, source?: IssueSource) => Promise<string | void | { readonly value: string }>
 }
 
 const issueMessageWrites = new WeakMap<SeamContext["store"], Set<string>>()
+
+/**
+ * The idempotency key each GitHub issue act carries, by the act itself
+ * (subject and payload). Repeating an act reuses its key, so the server
+ * replays the one durable operation it admitted and GitHub never sees the
+ * write twice; a different act is a different key.
+ */
+const installIssueActKeys = new WeakMap<SeamContext["store"], Map<string, string>>()
 
 type IssueListPayload = Extract<Card, { kind: "issue-list" }>["payload"]
 type IssueListRow = IssueListPayload["issues"][number]
@@ -449,6 +462,13 @@ export const fetchIssuePayload = async (
 /** One GitHub comment off GitHub's shape (`user.login`, `body`, `created_at`). */
 const githubCommentOf = (row: unknown): IssueCommentRow[] => isRecord(row) ? [{
   author: authorLogin(row.user),
+  /*
+   * GitHub's own comment id. An edit addresses the comment, not the issue, so
+   * the id has to come off the authoritative read: without it an edit has no
+   * subject at all. A read that states none leaves the field absent, and the
+   * card reads exactly as it did before.
+   */
+  ...(asInt(row.id) === null ? {} : { id: row.id as number }),
   ...(isRecord(row.user) && typeof row.user.avatar_url === "string" ? { authorAvatar: row.user.avatar_url } : {}),
   commentBody: typeof row.body === "string" ? row.body : "",
   createdAt: typeof row.created_at === "string" ? row.created_at : null
@@ -468,6 +488,13 @@ export interface IssuesSeamOptions {
    * of its own, so the install's stands in.
    */
   readonly repository?: () => string | undefined
+  /**
+   * The install's canonical durable issue create (IssueCreateSeam, the door
+   * `/issue.new` uses): it persists the request, acknowledges immediately,
+   * and opens the issue GitHub actually numbered. A GitHub-source create
+   * goes through it rather than through a second client pipeline.
+   */
+  readonly requestGitHubIssue?: (title: string, body: string) => Promise<string | void | { readonly value: string }>
 }
 
 export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: RepositoryForm, launchConversationTurn?: (text: string, turnId: string, owner: string) => Promise<boolean> | void, options: IssuesSeamOptions = {}): IssuesSeam => {
@@ -489,57 +516,97 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       card.kind === "issue" && card.payload.repo === repo && card.payload.number === number ? [card] : [])
 
   /**
-   * The tracker a write addresses: the source the command named, else the
-   * source of the issue the act came off, else Smithers Cloud's own tracker.
+   * Which tracker a write addresses, decided from RECORDED identity:
    *
-   * A connected repository's GitHub issues and its Smithers Cloud issues
-   * number independently, so `#6` names two different objects. Writes used to
-   * resolve NO source and address `/api/repos/{o}/{r}/issues` unconditionally:
-   * closing or commenting from a GitHub-source card changed (or 404ed on) the
-   * same-numbered Cloud row, and `/issues.create` reported a Cloud number as
-   * though it were GitHub's canonical one — root read back "#6" on
-   * 2026-10-15 while `roninjin10/e2e-verify#6` was an unrelated closed
-   * auto-PR test. The explicit `--source` always wins so a person can still
-   * name either tracker; a conversation is owner-private and never GitHub's.
+   * 1. the source recorded on the issue this act came off — an authoritative
+   *    read's own label, which is part of the issue's identity;
+   * 2. the `--source` a command named;
+   * 3. the repository's real tracker: an install's repository IS a connected
+   *    GitHub repository (the server binds one and answers its GitHub issues),
+   *    so its ordinary issues are GitHub's; a Smithers Cloud repository's own
+   *    tracker is Smithers Cloud's.
+   *
+   * A connected repository's two trackers number independently, so `#6` names
+   * two different objects. Writes used to resolve NO source and address
+   * `/api/repos/{o}/{r}/issues` unconditionally: closing or commenting from a
+   * GitHub-source card changed (or 404ed on) the same-numbered Cloud row, and
+   * `/issues.create` reported a Cloud number as though it were GitHub's
+   * canonical one — root read back "#6" on 2026-10-15 while
+   * `roninjin10/e2e-verify#6` was an unrelated closed auto-PR test.
+   *
+   * When BOTH trackers hold a recorded row at this number, the number alone
+   * does not name an issue, so the act is REFUSED rather than resolved to one
+   * of them: either choice could write the wrong object. A conversation is
+   * owner-private and never GitHub's, whatever a command asks.
    */
-  const writeSource = (repo: string, number: number, asked?: IssueSource): IssueSource => {
-    if (asked !== undefined) return asked
-    // An install has no Smithers tracker: every issue on it is GitHub's.
-    if (install) return "github"
-    const mounted = mountedIssues(repo, number)
-    if (mounted.length === 0 || mounted.some((card) => card.payload.kind === "chat")) return "smithers-cloud"
-    // A native row the person has open is the authority: it exists. Only a
-    // GitHub-source card standing alone means the act is on a GitHub issue.
-    return mounted.every((card) => card.payload.source === "github") ? "github" : "smithers-cloud"
+  type IssueWriteTarget = { readonly source: IssueSource } | { readonly refusal: string }
+
+  const issueWriteTarget = (repo: string, number: number, asked?: IssueSource): IssueWriteTarget => {
+    const recorded = mountedIssues(repo, number)
+    if (recorded.some((card) => card.payload.kind === "chat")) {
+      return asked === "github"
+        ? { refusal: `#${number} in ${repo} is a private conversation. It stays in Smithers Cloud and is never posted to GitHub.` }
+        : { source: "smithers-cloud" }
+    }
+    const sources = new Set(recorded.map((card): IssueSource => card.payload.source === "github" ? "github" : "smithers-cloud"))
+    if (asked !== undefined) return { source: asked }
+    if (sources.size > 1) {
+      return { refusal: `${repo} has a GitHub #${number} and a Smithers Cloud #${number}. Add --source github or --source smithers-cloud.` }
+    }
+    const [recordedSource] = [...sources]
+    return { source: recordedSource ?? (install ? "github" : "smithers-cloud") }
   }
 
   /**
-   * A GitHub-source write with nowhere to send it, as the whole answer.
+   * A GitHub-source write this origin has no writer for, as the whole answer.
    *
-   * The GitHub-source door is read-only (`GET /api/user/github-repos/**`,
-   * GET-only through the Worker), so this host has no writer for a GitHub
-   * issue. Naming that is the honest outcome: sending the write to the
-   * same-numbered Smithers Cloud row instead would change a DIFFERENT issue
-   * and report its number as GitHub's, which is exactly the false acceptance
-   * this refusal exists to prevent. Never a fabricated native issue, never a
-   * silent success.
+   * The install writes its repository's GitHub issues through the canonical
+   * durable writer below. A Smithers Cloud origin reads GitHub's issues but
+   * writes only its own tracker, so a GitHub-source write there sends
+   * NOTHING: addressing the same-numbered Smithers Cloud row instead would
+   * change a different issue and report its number as GitHub's. One short,
+   * actionable sentence — no route, origin or internal prose.
    */
   const githubWriteUnsendable = (act: IssueWriteAct, subject: string, repo: string): string => {
     reportIssueWriteUnsendable(ctx, act)
-    /*
-     * An install DOES write its repository's GitHub issues, through its own
-     * App doors (`/issue.new`, `/issue.comment` → POST /api/issues and
-     * POST /api/issues/{n}/comments, the durable writer in
-     * services/install_issue_comment.go). It is these Cloud doors that
-     * address a Smithers tracker the install has none of, so the answer
-     * names the door that works rather than claiming no writer exists.
-     */
-    if (install) {
-      if (act === "create") return "Use /issue.new on this install."
-      if (act === "comment") return "Use /issue.comment on this install."
-      return `${subject} is a GitHub issue in ${repo}; change its state on GitHub.`
+    return `${subject} ${act === "create" ? "would be" : "is"} a GitHub issue in ${repo}. ${act === "create" ? "Open it" : "Act on it"} on GitHub, or add --source smithers-cloud.`
+  }
+
+  /**
+   * One GitHub issue act through the install's canonical durable writer
+   * (`services/install_issue_comment.go`): credential reload and actor
+   * re-authorization on the worker, the send fence around the one actual
+   * request, and a receipt. The server acknowledges the ADMISSION, before the
+   * act reaches GitHub, so the answer says it was requested — never that
+   * GitHub did it.
+   *
+   * `act` is the whole act, payload included, and names the idempotency key:
+   * repeating the same act replays the one admitted operation instead of
+   * sending a second write, and a reply this client never saw leaves the key
+   * in place rather than POSTing again.
+   */
+  const sendInstallIssueAct = async (
+    act: string, path: string, method: "POST" | "PATCH", requested: string, failure: string, body?: unknown
+  ): Promise<string | { readonly value: string }> => {
+    let keys = installIssueActKeys.get(ctx.store)
+    if (!keys) installIssueActKeys.set(ctx.store, keys = new Map())
+    let key = keys.get(act)
+    if (key === undefined) keys.set(act, key = randomUuid())
+    let response: Response
+    try {
+      response = await ctx.http(`${ctx.baseUrl}/api/issues${path}`, {
+        method,
+        headers: { "content-type": "application/json", "Idempotency-Key": key },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) })
+      })
+    } catch {
+      // The act may already have been admitted. The key is kept, so asking
+      // again resumes that operation rather than starting a second one.
+      return `${requested} status unknown: nothing answered. Ask again to resume it.`
     }
-    return `${subject} ${act === "create" ? "would be" : "is"} a GitHub issue in ${repo}, and Smithers cannot write GitHub issues on this host yet, so nothing was sent. Act on it on GitHub, or add --source smithers-cloud for ${repo}'s Smithers Cloud tracker.`
+    if (!response.ok) return readErrorMessage(response, `${failure} (${response.status})`)
+    await response.body?.cancel().catch(() => {})
+    return { value: `${requested} requested.` }
   }
 
   const unreachable = (what: string, error: unknown): string => unreachableSentence(`the backend to ${what}`, error)
@@ -962,17 +1029,35 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     return { value: `Comment posted. ${detail}` }
   }
 
-  const mutateComment = async (number: number, commentId: number, explicitRepo: string | undefined, method: "PATCH" | "DELETE", body?: { body: string }): Promise<string | void> => {
-    const target = resolveTargetRepo(ctx.store, explicitRepo)
+  const mutateComment = async (number: number, commentId: number, explicitRepo: string | undefined, method: "PATCH" | "DELETE", body?: { body: string }): Promise<string | void | { readonly value: string }> => {
+    const target = resolveTargetRepo(ctx.store, repoOf(explicitRepo))
     if ("error" in target) return target.error
     const { repo } = target
     // The global comment route does not carry the issue number. Only mutate a
     // comment from the issue card's authoritative read, never an unrelated ID.
     const comment = [...ctx.store.collections.cards.values()].some(card => card.kind === "issue" && card.payload.source !== "github" && card.payload.repo === repo && card.payload.number === number && card.payload.comments.some(row => row.id === commentId))
-    // A GitHub-source card's comment is GitHub's: say so, rather than
-    // "open the message", which reads as a Smithers bug for an act that has
-    // no door at all.
-    if (!comment && writeSource(repo, number) === "github") return githubWriteUnsendable("comment", `Issue #${number}`, repo)
+    const tracker = issueWriteTarget(repo, number)
+    if ("refusal" in tracker) return tracker.refusal
+    if (!comment && tracker.source === "github") {
+      /*
+       * A GitHub comment is edited in place through the canonical durable
+       * writer, keyed by the comment id the issue card's own read carries.
+       * GitHub lets only a comment's author edit it, so a person's own
+       * comment answers GitHub's refusal rather than being rewritten by the
+       * App on their behalf. There is no delete: GitHub keeps the comment.
+       */
+      const edited = [...ctx.store.collections.cards.values()].some(card => card.kind === "issue" && card.payload.source === "github" &&
+        card.payload.repo === repo && card.payload.number === number && card.payload.comments.some(row => row.id === commentId))
+      if (!edited) return "Open the message before changing it."
+      if (method === "DELETE") return `GitHub keeps its comments. Edit the message on #${number} in ${repo} instead.`
+      if (!install) return githubWriteUnsendable("comment", `Issue #${number}`, repo)
+      return sendInstallIssueAct(
+        `comment.edit:${repo}#${number}:${commentId}:${body?.body ?? ""}`, `/comments/${commentId}`, "PATCH",
+        `Edit of the message on issue #${number} in ${repo}`,
+        `Changing the message on issue #${number} in ${repo} failed`,
+        { body: body?.body ?? "" }
+      )
+    }
     if (!comment) return "Open the message before changing it."
     let response: Response
     try {
@@ -1251,12 +1336,23 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     issueWriteTarget: repo => resolveTargetRepo(ctx.store, repo),
 
     createIssue: async (title, explicitRepo, kind, source) => {
-      const target = resolveTargetRepo(ctx.store, explicitRepo)
+      const target = resolveTargetRepo(ctx.store, repoOf(explicitRepo))
       if ("error" in target) return target.error
       const { repo } = target
       // A conversation is owner-private and MUST never reach GitHub (§3.1).
       if (source === "github" && kind === "chat") return `A conversation stays in ${repo}'s Smithers Cloud tracker; GitHub has no private conversations.`
-      if (source === "github") return githubWriteUnsendable("create", `"${title}"`, repo)
+      /*
+       * A new issue has no number yet, so there is nothing recorded to read a
+       * source off: the repository's own tracker decides. An install's
+       * repository is a connected GitHub repository, so its ordinary issues
+       * are GitHub's, and the create goes through the canonical durable
+       * writer — the same door `/issue.new` uses, which opens the issue
+       * GitHub actually numbered.
+       */
+      if (kind !== "chat" && (source === "github" || source === undefined && install)) {
+        if (options.requestGitHubIssue === undefined) return githubWriteUnsendable("create", `"${title}"`, repo)
+        return options.requestGitHubIssue(title, "")
+      }
       let response: Response
       try {
         response = await ctx.http(issuesPath(repo), {
@@ -1288,10 +1384,29 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     },
 
     setIssueState: async (number, state, explicitRepo, source) => {
-      const target = resolveTargetRepo(ctx.store, explicitRepo)
+      const target = resolveTargetRepo(ctx.store, repoOf(explicitRepo))
       if ("error" in target) return target.error
       const { repo } = target
-      if (writeSource(repo, number, source) === "github") return githubWriteUnsendable("state", `Issue #${number}`, repo)
+      const tracker = issueWriteTarget(repo, number, source)
+      if ("refusal" in tracker) return tracker.refusal
+      if (tracker.source === "github") {
+        /*
+         * GitHub holds an issue open or closed and nothing else. Fixed and
+         * verified are Smithers Cloud's own stages, so naming one for a
+         * GitHub issue is refused rather than sent as a close.
+         */
+        if (state === "fixed" || state === "verified") {
+          return `GitHub issues are open or closed; ${state} is a Smithers Cloud stage. Close #${number} in ${repo}, or add --source smithers-cloud.`
+        }
+        if (!install) return githubWriteUnsendable("state", `Issue #${number}`, repo)
+        const verb = state === "closed" ? "Closing" : "Reopening"
+        return sendInstallIssueAct(
+          `${state === "closed" ? "close" : "reopen"}:${repo}#${number}`,
+          `/${number}/${state === "closed" ? "close" : "reopen"}`, "POST",
+          `${verb} issue #${number} in ${repo}`,
+          `Could not ${state === "closed" ? "close" : "reopen"} issue #${number} in ${repo}`
+        )
+      }
       const verb = state === "closed" ? "close" : state === "fixed" ? "mark fixed" : state === "verified" ? "verify" : "reopen"
       let response: Response
       try {
@@ -1324,21 +1439,26 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
 
     commentOnIssue: async (number, text, explicitRepo, persona, source) => {
       if (text.trim() === "") return "Write a comment before posting it."
-      const target = resolveTargetRepo(ctx.store, explicitRepo)
+      const target = resolveTargetRepo(ctx.store, repoOf(explicitRepo))
       if ("error" in target) return target.error
       const { repo } = target
-      if (writeSource(repo, number, source) === "github") {
-        /*
-         * A conversation is owner-private; its messages MUST never leave for
-         * GitHub, not even when a command names the GitHub source (an agent
-         * replaying `--source github` over a chat number, a stale card id).
-         * The private row has no GitHub counterpart, so this is a refusal,
-         * never a quiet redirect into the chat.
-         */
-        if (mountedIssues(repo, number).some((card) => card.payload.kind === "chat")) {
-          return `#${number} in ${repo} is a private conversation. It stays in Smithers Cloud and is never posted to GitHub.`
-        }
-        return githubWriteUnsendable("comment", `Issue #${number}`, repo)
+      /*
+       * A conversation is owner-private; its messages MUST never leave for
+       * GitHub, not even when a command names the GitHub source (an agent
+       * replaying `--source github` over a chat number, a stale card id).
+       * The private row has no GitHub counterpart, so `issueWriteTarget`
+       * refuses, never quietly redirects the message into the chat.
+       */
+      const tracker = issueWriteTarget(repo, number, source)
+      if ("refusal" in tracker) return tracker.refusal
+      if (tracker.source === "github") {
+        if (!install) return githubWriteUnsendable("comment", `Issue #${number}`, repo)
+        return sendInstallIssueAct(
+          `comment:${repo}#${number}:${text}`, `/${number}/comments`, "POST",
+          `Comment on issue #${number} in ${repo}`,
+          `Commenting on issue #${number} in ${repo} failed`,
+          { body: text }
+        )
       }
       const chat = [...ctx.store.collections.cards.values()].find(card => card.kind === "issue" && card.payload.kind === "chat" && card.payload.source !== "github" && card.payload.repo === repo && card.payload.number === number)
       if (chat?.kind === "issue") {

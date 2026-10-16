@@ -169,3 +169,79 @@ func (h *InstallIssuesHandler) CreateStatus(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("Cache-Control", "no-store")
 	errors.WriteJSON(w, http.StatusOK, result)
 }
+
+// state queues a close or a reopen of the install repository's GitHub issue.
+// Both carry no body: the door itself names the act, so a classified
+// `issues.close` request can never turn into a reopen (or a comment) between
+// authorization and the write.
+func (h *InstallIssuesHandler) state(w http.ResponseWriter, r *http.Request, command string,
+	admit func(services.InstallIssueStateWriter, context.Context, int64, int64, string) (jobs.RequestReceipt, error)) {
+	repository, _, ok := authorizeInstallRepository(w, r, h.Queries, command)
+	if !ok {
+		return
+	}
+	writer, ok := h.Service.(services.InstallIssueStateWriter)
+	if !ok {
+		todoRouteError(w, nil)
+		return
+	}
+	number, err := strconv.ParseInt(chi.URLParam(r, "number"), 10, 64)
+	if err != nil || number <= 0 {
+		todoRouteError(w, &services.TodoControlError{Status: 400, Code: "invalid_issue_state", Class: "user", Message: "Invalid issue number"})
+		return
+	}
+	receipt, err := admit(writer, r.Context(), repository, number, r.Header.Get("Idempotency-Key"))
+	if err != nil {
+		todoRouteError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	errors.WriteJSON(w, http.StatusAccepted, receipt)
+}
+
+// Close requests POST /api/issues/{number}/close.
+func (h *InstallIssuesHandler) Close(w http.ResponseWriter, r *http.Request) {
+	h.state(w, r, "issues.close", services.InstallIssueStateWriter.RequestInstallIssueClose)
+}
+
+// Reopen requests POST /api/issues/{number}/reopen.
+func (h *InstallIssuesHandler) Reopen(w http.ResponseWriter, r *http.Request) {
+	h.state(w, r, "issues.reopen", services.InstallIssueStateWriter.RequestInstallIssueReopen)
+}
+
+// EditComment requests PATCH /api/issues/comments/{id}: a new body for one
+// comment the install's App wrote. The comment id is the subject, as the
+// hosted comment door uses it, so no issue number can disagree with it.
+func (h *InstallIssuesHandler) EditComment(w http.ResponseWriter, r *http.Request) {
+	repository, _, ok := authorizeInstallRepository(w, r, h.Queries, "issue.comment")
+	if !ok {
+		return
+	}
+	writer, ok := h.Service.(interface {
+		RequestInstallIssueCommentEdit(context.Context, int64, int64, string, string) (jobs.RequestReceipt, error)
+	})
+	if !ok {
+		todoRouteError(w, nil)
+		return
+	}
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		todoRouteError(w, &services.TodoControlError{Status: 400, Code: "invalid_issue_comment", Class: "user", Message: "Invalid comment"})
+		return
+	}
+	var input struct {
+		Body string `json:"body"`
+	}
+	if !decodeStrictJSONBody(w, r, &input) {
+		return
+	}
+	receipt, err := writer.RequestInstallIssueCommentEdit(r.Context(), repository, id, input.Body, r.Header.Get("Idempotency-Key"))
+	if err != nil {
+		todoRouteError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	errors.WriteJSON(w, http.StatusAccepted, receipt)
+}
