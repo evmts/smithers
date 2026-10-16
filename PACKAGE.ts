@@ -359,7 +359,7 @@ const nativeFfi = Smithers.Shell.Build({
   timeout: "30m"
 })
 
-const rehearsalNativeEnv = "export SMITHERS_REHEARSAL_JJ_EXPORT_BINARY=\"$PWD/.rehearsal-native/smithers-jj-export\" SMITHERS_REHEARSAL_MACHINED_BINARY=\"$PWD/.rehearsal-native/rehearsal_daemon\"; "
+const rehearsalNativeEnv = "export SMITHERS_WORKSPACE_JJ_EXPORT_BINARY=\"$PWD/.rehearsal-native/smithers-jj-export\" SMITHERS_REHEARSAL_JJ_EXPORT_BINARY=\"$PWD/.rehearsal-native/smithers-jj-export\" SMITHERS_REHEARSAL_MACHINED_BINARY=\"$PWD/.rehearsal-native/rehearsal_daemon\"; "
 
 // Fill a declared module cache on a clean runner.
 const backendGoModules = Smithers.Go.ModDownload({
