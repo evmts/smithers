@@ -35,6 +35,26 @@ export interface SecretsSeam {
   readonly deleteSecret: (name: string, repo?: string) => Promise<{ readonly value: string } | string>
   /** Settle secret writes a reload interrupted: deletes replay, saves fail (their value is gone). */
   readonly resumeSecretRequests: () => void
+  /** Whether one repository's published metadata is what the platform last answered. */
+  readonly metadata: SecretsMetadataSeam
+}
+
+/**
+ * How current a secrets card's rows are. "fresh" is the last authoritative
+ * read; "checking" is one in flight over rows that already stand;
+ * "unreadable" is a revalidation that failed, so the rows on screen are the
+ * last anybody read and not what the platform holds now.
+ */
+export type SecretsMetadataPhase = "fresh" | "checking" | "unreadable"
+
+export interface SecretsMetadataSeam {
+  readonly subscribe: (listener: () => void) => () => void
+  readonly state: (repo: string | undefined) => SecretsMetadataPhase
+  /**
+   * Revalidate a retained card's metadata once for this identity — what a
+   * render may call, because an answer or a running read makes it a no-op.
+   */
+  readonly ensure: (repo: string | undefined) => void
 }
 
 export interface SecretInput {
@@ -72,10 +92,14 @@ type Flight = { readonly current: () => boolean; readonly admitted: Promise<bool
 const shared = new WeakMap<object, {
   readonly inFlight: Map<string, Flight>
   readonly secretReads: Map<string, number>; readonly secretApplied: Map<string, number>
+  /** One phase per identity and repository; a changed identity never inherits one. */
+  readonly metadata: Map<string, SecretsMetadataPhase>
+  readonly metadataListeners: Set<() => void>
 }>()
 const sharedFor = (store: object) => {
   let state = shared.get(store)
-  if (!state) shared.set(store, state = { inFlight: new Map(), secretReads: new Map(), secretApplied: new Map() })
+  if (!state) shared.set(store, state = { inFlight: new Map(), secretReads: new Map(), secretApplied: new Map(),
+    metadata: new Map(), metadataListeners: new Set() })
   return state
 }
 
@@ -188,17 +212,70 @@ export const createSecretsSeam = (ctx: SeamContext, withToast: FailureController
   const secretUrl = (repo: string, name?: string) => options.install
     ? `${ctx.baseUrl}/api/secrets${name === undefined ? "" : `/${encodeURIComponent(name)}`}`
     : repositorySecretsUrl(ctx, repo, name)
-  /** Re-read an open secrets card in place after a write; a failed read keeps the rows it had. */
+  /*
+   * The identity an answer belongs to. A phase is one person's reading of one
+   * repository; a changed account inherits none of it.
+   */
+  const metadataStamp = (): string => {
+    const identity = ctx.store.collections.identitySessions.get("identity")
+    return `${identity?.login ?? ""}:${identity?.ownerRevision ?? identity?.revision ?? ""}`
+  }
+  const metadataKey = (repo: string): string => `${metadataStamp()}:${repo}`
+  const markMetadata = (repo: string, phase: SecretsMetadataPhase, notify = true): void => {
+    const key = metadataKey(repo)
+    const prefix = `${metadataStamp()}:`
+    for (const held of [...state.metadata.keys()]) if (!held.startsWith(prefix)) state.metadata.delete(held)
+    if (state.metadata.get(key) === phase) return
+    state.metadata.set(key, phase)
+    if (notify) for (const listener of [...state.metadataListeners]) listener()
+  }
+  /*
+   * A revalidation reads the platform, never the seeded design rows: a
+   * retained card holds metadata a real read published, and answering a
+   * failed re-read with the seed would replace it with a list nobody has.
+   * The seeded world stands in only where it already answered.
+   */
+  const reread = async (repo: string): Promise<ReadonlyArray<RepositorySecret> | string> => {
+    if (options.install) return readSecrets(repo)
+    const rows = await readRepositorySecrets(ctx, repo)
+    if (typeof rows !== "string") { source = "real"; return rows }
+    if (source === "seed" && options.fallback) return options.fallback.rows()
+    return rows
+  }
+  /**
+   * Re-read an open secrets card in place: after a write, and once for a card
+   * a reload retained. A failed read keeps the rows it had and says they are
+   * not current — it never empties the card and never invents a row.
+   */
   const refreshSecrets = async (repo: string, current: () => boolean): Promise<void> => {
     if (ctx.store.collections.cards?.get(`secrets-${repo}`)?.kind !== "secrets") return
     const seq = secretRead(repo)
     if (options.install) return
-    const config = await readSecrets(repo).catch(() => "unread")
-    if (!current() || typeof config === "string" || !secretFresh(repo, seq)) return
+    markMetadata(repo, "checking")
+    const config = await reread(repo).catch(() => "unread")
+    if (!current() || !secretFresh(repo, seq)) return
+    if (typeof config === "string") return markMetadata(repo, "unreadable")
     const previous = ctx.store.collections.cards?.get(`secrets-${repo}`)
     if (previous?.kind !== "secrets") return
+    markMetadata(repo, "fresh")
     ctx.dispatch({ type: "card.upsert", actor: "system", card: { ...secretsCard(repo, config, previous.ordinal), createdAt: previous.createdAt } })
   }
+  const metadata: SecretsMetadataSeam = {
+    subscribe: listener => {
+      state.metadataListeners.add(listener)
+      return () => { state.metadataListeners.delete(listener) }
+    },
+    state: repo => (repo === undefined ? undefined : state.metadata.get(metadataKey(repo))) ?? "fresh",
+    ensure: repo => {
+      if (options.install || repo === undefined) return
+      if (ctx.store.collections.cards?.get(`secrets-${repo}`)?.kind !== "secrets") return
+      /* An answer in hand, or a read already running, stands: a render cannot loop here. */
+      if (state.metadata.has(metadataKey(repo))) return
+      markMetadata(repo, "checking", false)
+      void refreshSecrets(repo, captureCloudOwner(ctx, false))
+    }
+  }
+  options.onDispose?.(() => state.metadataListeners.clear())
 
   type SecretRequest = NonNullable<ReturnType<typeof ctx.store.session>["secretRequests"]>[number]
   const secretRequests = (): SecretRequest[] => ctx.store.session().secretRequests ?? []
@@ -358,6 +435,7 @@ export const createSecretsSeam = (ctx: SeamContext, withToast: FailureController
     if (typeof config === "string") return config
     // A list is the person's newest read: it applies, and any earlier refresh still in flight is dropped.
     state.secretApplied.set(target.repo, Math.max(seq, state.secretApplied.get(target.repo) ?? 0))
+    markMetadata(target.repo, "fresh")
     const card = secretsCard(target.repo, config, ctx.nextOrdinal())
     return { card, ...readResult(card.payload.secrets.length === 0
       ? `No secrets in ${card.payload.repo}.`
@@ -404,6 +482,8 @@ export const createSecretsSeam = (ctx: SeamContext, withToast: FailureController
     }
     if (!response.ok) return readErrorMessage(response, `${name} couldn't be changed in ${target.repo} (HTTP ${response.status}).`)
     const stored = await response.json().catch(() => undefined) as { main_only?: unknown } | undefined
+    /* The open card published the old mark; only a read of the store replaces it. */
+    void refreshSecrets(target.repo, captureCloudOwner(ctx, false))
     return { value: `${name}: ${stored?.main_only === true ? "main only" : "all branches"}` }
   }
 
@@ -433,11 +513,12 @@ export const createSecretsSeam = (ctx: SeamContext, withToast: FailureController
     if (!response.ok) return readErrorMessage(response, `${name} couldn't be changed in ${target.repo} (HTTP ${response.status}).`)
     const stored = await response.json().catch(() => undefined) as { hosts?: unknown } | undefined
     const bound = Array.isArray(stored?.hosts) ? stored.hosts.filter((host): host is string => typeof host === "string") : []
+    void refreshSecrets(target.repo, captureCloudOwner(ctx, false))
     return { value: `${name}: ${bound.join(", ")}` }
   }
 
   return {
     listSecrets, scopeSecret, bindSecret,
-    setSecret, deleteSecret, resumeSecretRequests
+    setSecret, deleteSecret, resumeSecretRequests, metadata
   }
 }

@@ -177,6 +177,7 @@ describe("the controller's command surface", () => {
       "openBranchTerminal",
       "setRunView",
       "secretAuthority",
+      "secretsMetadata",
       "secretsProviders",
       "sharedConversation",
       "installSnapshots",

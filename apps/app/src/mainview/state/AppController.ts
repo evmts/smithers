@@ -562,6 +562,12 @@ export interface AppController extends IssueFlowsController {
    * other members and settings mutation is still seeded.
    */
   readonly secretAuthority?: RepositoryAuthoritySeam
+  /**
+   * How current one hosted repository's published secret metadata is, and the
+   * one door that revalidates it (SecretsSeam.ts). Undefined on an install,
+   * where the live secrets topic is the authority.
+   */
+  readonly secretsMetadata?: SecretsSeam["metadata"]
   /** Reads the roster for the Members card (an install rereads GET /api/members). */
   readonly showMembers: () => void
   /** The flow catalog the Flow card reads on an install (GET /api/flows); undefined elsewhere, where the seeded flows answer. */
@@ -3027,6 +3033,7 @@ export const createAppController = (
     membersRoster,
     membersRole,
     secretAuthority,
+    secretsMetadata: installHost ? undefined : secretsSeam.metadata,
     secretsProviders,
     flowCatalog: installHost ? flowsSeam.snapshots : undefined,
     homeView,

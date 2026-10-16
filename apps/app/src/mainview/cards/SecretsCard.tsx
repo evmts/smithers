@@ -10,6 +10,7 @@ import { useController } from "../ControllerContext"
 import { useCallback, useSyncExternalStore, type ComponentType } from "react"
 import { writeOnlyGesture } from "../flows/CommandGesture"
 import { secretsReadAvailable, secretsWriteAvailable } from "../state/seams/SecretsProviders"
+import type { SecretsMetadataPhase } from "../state/seams/SecretsSeam"
 import type { RepositoryAuthority } from "../state/seams/RepositoryAuthority"
 
 type StoredSecrets = Extract<Card, { kind: "secrets" }>
@@ -28,7 +29,7 @@ const secretControl = (operation: SecretOperation, definition: CardActionDefinit
   ...(definition.resolve_input ? { resolve_input: input => secretInput(operation, definition.resolve_input!(input) ?? {}) } : {})
 })
 
-export const SecretsCardBody = ({ card, dispatch, role = "member", access = "ready", listed = true, View = SecretsView, confirm = message => window.confirm(message) }: {
+export const SecretsCardBody = ({ card, dispatch, role = "member", access = "ready", listed = true, metadata = "fresh", View = SecretsView, confirm = message => window.confirm(message) }: {
   readonly card: StoredSecrets
   readonly dispatch: CardCommandDispatch
   readonly role?: "owner" | "maintainer" | "member"
@@ -36,12 +37,17 @@ export const SecretsCardBody = ({ card, dispatch, role = "member", access = "rea
   readonly access?: "ready" | "loading" | "unreadable"
   /** False when the metadata read failed: the card lists nothing because it read nothing. */
   readonly listed?: boolean
+  /** How current these rows are: "unreadable" means nobody could re-read them. */
+  readonly metadata?: SecretsMetadataPhase
   readonly View?: ComponentType<SecretsViewProps>
   readonly confirm?: (message: string) => boolean
 }) => {
   const definitions: CardActionDefinition[] = []
-  /* An authority nobody could read is asked for again by the same door that read it. */
-  if (access === "unreadable") definitions.push({ tag: "secrets", label: "Retry", command_input: {} })
+  /*
+   * An authority nobody could read, and rows nobody could re-read, are asked
+   * for again by the same door that read them.
+   */
+  if (access === "unreadable" || (access === "ready" && metadata === "unreadable")) definitions.push({ tag: "secrets", label: "Retry", command_input: {} })
   if (access === "ready" && role !== "member") {
     definitions.push(secretControl("set", { tag: "secrets", label: "Add", args: { door: "add" }, command_input: { name: "", value: "" },
       input: [{ name: "name", label: "NAME", kind: "text", required: true },
@@ -77,6 +83,8 @@ export const SecretsCardBody = ({ card, dispatch, role = "member", access = "rea
   const note = access === "loading" ? "Checking access\u2026"
     : access === "unreadable" ? "Access unknown."
     : !listed ? "Secrets couldn't be read."
+    /* The rows stand, but they are the last read, not the stored answer. */
+    : metadata === "unreadable" ? "Secrets couldn't be re-read."
     : definitions.length === 0 && card.payload.secrets.length === 0 ? "No secrets; read only."
     : undefined
   return <>
@@ -113,6 +121,23 @@ const SecretsBody = ({ card }: { card: StoredSecrets }) => {
     () => authority?.state(repo) ?? UNSCOPED,
     () => authority?.state(repo) ?? UNSCOPED
   )
+  /*
+   * The metadata authority (SecretsSeam): a card this transcript retained
+   * carries what the last read published, which a scope change made somewhere
+   * else has already outdated. Mounting it asks the platform once; nothing
+   * else may change a row.
+   */
+  const freshness = install ? undefined : controller.secretsMetadata
+  const current = useSyncExternalStore(
+    useCallback((notify: () => void) => {
+      if (freshness === undefined) return () => {}
+      const stop = freshness.subscribe(notify)
+      freshness.ensure(repo)
+      return stop
+    }, [freshness, repo]),
+    () => freshness?.state(repo) ?? "fresh",
+    () => "fresh" as const
+  )
   /* Every hook is held above this line: the install's secrets provider arrives after its catalog does. */
   if (install && !secretsReadAvailable(providers)) return null
   const unavailable = install && !secretsWriteAvailable(providers)
@@ -129,7 +154,7 @@ const SecretsBody = ({ card }: { card: StoredSecrets }) => {
     : authority !== undefined ? (scoped.phase === "ready" ? scoped.role : "member")
     : controller.membersRole()
   return <SecretsCardBody card={projected} View={install ? providers?.View : SecretsView} role={unavailable ? "member" : role}
-    access={access} listed={!unread} dispatch={(name, input) => {
+    access={access} listed={!unread} metadata={current} dispatch={(name, input) => {
     /* Re-listing the card also asks for an authority nobody could read; a settled one stands. */
     if (authority !== undefined && name === "secrets" && (input as { operation?: string } | undefined)?.operation === undefined) authority.ensure(repo)
     const payload: Record<string, unknown> = { ...(input ?? {}), repo: card.payload.repo || undefined }
