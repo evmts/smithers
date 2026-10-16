@@ -2430,14 +2430,17 @@ export const make = (deps: Dependencies) => {
                * A host shutdown also leaves the attempt unfinished: the driver
                * releases the run for recovery rather than cancelling it. Only
                * an explicit run interruption settles its interrupted attempt.
+               * Release is included only when preserving the attempt row: an
+               * effect crossing still has an unknown outcome, never a parked
+               * marker that would authorize replaying an unkeyed effect.
                */
-              const parked = (cause: Cause.Cause<unknown>) =>
+              const parked = (cause: Cause.Cause<unknown>, includeRelease = false) =>
                 Effect.map(
                   Effect.serviceOption(FlowRuntime.FlowInstance),
                   (instance) =>
                     evidenceQuarantined(cause) !== undefined ||
                     (Option.isSome(instance) && Cause.hasInterruptsOnly(cause) &&
-                      (instance.value.suspended || !instance.value.interrupted))
+                      (instance.value.suspended || (includeRelease && !instance.value.interrupted)))
                 )
               /**
                * The row's meta as this dispatch last wrote it. The crossing writes
@@ -2553,7 +2556,7 @@ export const make = (deps: Dependencies) => {
                  * in-progress state the attempt store admits, so a later settlement
                  * of this attempt is an ordinary fenced `finish`.
                  */
-                if (yield* parked(outcome.cause)) {
+                if (yield* parked(outcome.cause, true)) {
                   return yield* Effect.failCause(outcome.cause)
                 }
                 const finishedAtMs = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))

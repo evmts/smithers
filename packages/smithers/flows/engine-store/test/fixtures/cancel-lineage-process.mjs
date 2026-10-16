@@ -8,7 +8,7 @@ import * as TestStores from "../../src/test/TestStores.ts"
 
 const [filename, executionId] = process.argv.slice(2)
 if (!filename || !executionId) throw new Error("Expected fixture database and execution ID")
-const flow = Flow.make("LineageCancel/Process", {
+const flow = Flow.make("LineageCancel/First", {
   payload: {}, success: Schema.String, body: () => Node.succeed("inert")
 })
 await Effect.runPromise(Effect.gen(function*() {

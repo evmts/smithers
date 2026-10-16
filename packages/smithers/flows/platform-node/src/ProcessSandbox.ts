@@ -1292,7 +1292,8 @@ export const diagnose = (confinement: Plan, text: string): string | undefined =>
   const covered = (path: string, set: ReadonlyArray<string>): boolean =>
     set.some((entry) => entry === path || path.startsWith(entry + pathApi(entry).sep))
   const lines = [...named.entries()].sort(([left], [right]) => (left < right ? -1 : 1)).map(([path, write]) => {
-    const relative = toPosix(pathApi(confinement.workspaceRoot).relative(confinement.workspaceRoot, path))
+    const relative = pathApi(confinement.workspaceRoot).relative(confinement.workspaceRoot, path)
+      .split(pathApi(confinement.workspaceRoot).sep).join("/")
     // A path that lexically sits in the workspace can still leave it through
     // a symlink in an existing ancestor; the declaration covers the tree, not
     // wherever a link points.
