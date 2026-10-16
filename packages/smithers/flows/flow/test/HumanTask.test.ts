@@ -1584,6 +1584,23 @@ describe("HumanTask.decode", () => {
     schema: { type: "object", required: ["decision"], properties: { decision: { enum: ["ship", "hold"] } } }
   }).pipe(HumanTask.decode(Decision))
 
+  it("keeps a rebuilt answer decoder's identity and distinguishes different schemas", () => {
+    const build = (schema: typeof Decision | typeof Schema.String) => {
+      const flow = Flow.make("humanTask/decode-rebuild", {
+        payload: {},
+        success: Schema.Json,
+        error: HumanTask.HumanTaskFailed,
+        body: () =>
+          HumanTask.action.call({ name: "release", kind: "json", prompt: "Decide." }).pipe(
+            HumanTask.decode(schema)
+          )
+      })
+      return Graph.nodes(Graph.build(flow, {})).map((node) => node.ast)
+    }
+    expect(build(Decision)).toEqual(build(Decision))
+    expect(build(Decision)).not.toEqual(build(Schema.String))
+  })
+
   effect("gives the answer the caller's own type", () =>
     drive(
       Effect.gen(function*() {

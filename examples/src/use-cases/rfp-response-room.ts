@@ -267,33 +267,36 @@ const reviewAndPackage = (
       legal: ReviewDrafts.call({ role: "legal", drafts, rfp }),
       product: ReviewDrafts.call({ role: "product", drafts, rfp })
     }),
-    ({ legal, product, security }): ReadonlyArray<Review> => [security, legal, product]
+    Node.capture({}, ({ legal, product, security }): ReadonlyArray<Review> => [security, legal, product])
   )
-  return Node.bindPlanned(reviewed, (reviews: Planned.Planned<ReadonlyArray<Review>>) => {
-    const pack = (approval: Planned.Planned<typeof Approval.Type> | null) =>
-      PackageProposal.call({ rfp, drafts, reviews, approval, outputFormat })
-    return Node.branch(Node.map(Node.succeed({ drafts, reviews, confidenceThreshold }), exceptions), {
-      if: (gate) => gate.needsReview,
-      then: (gate) =>
-        Node.branch(
-          HumanTask.decode(Approval)(
-            HumanTask.action.call({ name: smeReview, kind: "json", prompt: gate.prompt, schema: approvalAnswer })
+  return Node.bindPlanned(
+    reviewed,
+    Node.capture({ confidenceThreshold, outputFormat }, (reviews: Planned.Planned<ReadonlyArray<Review>>) => {
+      const pack = (approval: Planned.Planned<typeof Approval.Type> | null) =>
+        PackageProposal.call({ rfp, drafts, reviews, approval, outputFormat })
+      return Node.branch(Node.map(Node.succeed({ drafts, reviews, confidenceThreshold }), exceptions), {
+        if: Node.capture({}, (gate) => gate.needsReview),
+        then: (gate) =>
+          Node.branch(
+            HumanTask.decode(Approval)(
+              HumanTask.action.call({ name: smeReview, kind: "json", prompt: gate.prompt, schema: approvalAnswer })
+            ),
+            {
+              if: Node.capture({}, (approval) => approval.approved),
+              then: (approval) => pack(approval),
+              // `Node.fail` types its error as the JSON projection of `toJSON`,
+              // which is `unknown`; the flow's error schema decodes it back.
+              else: () =>
+                Node.fail(new ProposalDenied({ message: "The SME denied the RFP response exceptions." })) as Node.Node<
+                  never,
+                  ProposalDenied
+                >
+            }
           ),
-          {
-            if: (approval) => approval.approved,
-            then: (approval) => pack(approval),
-            // `Node.fail` types its error as the JSON projection of `toJSON`,
-            // which is `unknown`; the flow's error schema decodes it back.
-            else: () =>
-              Node.fail(new ProposalDenied({ message: "The SME denied the RFP response exceptions." })) as Node.Node<
-                never,
-                ProposalDenied
-              >
-          }
-        ),
-      else: () => pack(null)
+        else: () => pack(null)
+      })
     })
-  })
+  )
 }
 
 /** The flow: parse, plan, draft, review, gate, package. */
@@ -318,16 +321,33 @@ export const RfpResponseRoom = Flow.make("examples/RfpResponseRoom", {
     pricingRules = "fixtures/rfp-response-room/pricing-rules.md",
     rfp = "fixtures/rfp-response-room/rfp.md"
   }) =>
-    Node.bindPlanned(ParseRfp.call({ rfp, customer }), (parsed: Planned.Planned<Rfp>) =>
-      Node.bindPlanned(
-        BuildAnswerPlan.call({ rfp: parsed, approvedSources, pricingRules }),
-        (answerPlan: Planned.Planned<typeof AnswerPlan.Type>) =>
+    Node.bindPlanned(
+      ParseRfp.call({ rfp, customer }),
+      Node.capture(
+        { approvedSources, pricingRules, maxDraftConcurrency, confidenceThreshold, outputFormat },
+        (parsed: Planned.Planned<Rfp>) =>
           Node.bindPlanned(
-            DraftAnswers.child({ requirements: parsed.requirements, answerPlan, approvedSources, maxDraftConcurrency }),
-            (drafts: Planned.Planned<ReadonlyArray<AnswerDraft>>) =>
-              reviewAndPackage(parsed, drafts, confidenceThreshold, outputFormat)
+            BuildAnswerPlan.call({ rfp: parsed, approvedSources, pricingRules }),
+            Node.capture(
+              { approvedSources, maxDraftConcurrency, confidenceThreshold, outputFormat },
+              (answerPlan: Planned.Planned<typeof AnswerPlan.Type>) =>
+                Node.bindPlanned(
+                  DraftAnswers.child({
+                    requirements: parsed.requirements,
+                    answerPlan,
+                    approvedSources,
+                    maxDraftConcurrency
+                  }),
+                  Node.capture(
+                    { confidenceThreshold, outputFormat },
+                    (drafts: Planned.Planned<ReadonlyArray<AnswerDraft>>) =>
+                      reviewAndPackage(parsed, drafts, confidenceThreshold, outputFormat)
+                  )
+                )
+            )
           )
-      ))
+      )
+    )
 })
 
 /** Every step the flow calls, the SME question included, and the child flow it starts. */
