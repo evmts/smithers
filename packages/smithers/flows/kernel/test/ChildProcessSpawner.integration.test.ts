@@ -102,7 +102,7 @@ describe("ChildProcessSpawner real Node lifecycle", () => {
             ...(declared?.[name] === undefined ? {} : { secret: declared[name] }),
             ...(declared?.ORDINARY === undefined ? {} : { ordinary: declared.ORDINARY }),
             ...(options.extendEnv === false || declared !== undefined && "PATH" in declared
-              ? {}
+              ? process.platform === "win32" ? { path: "" } : {}
               : { path: process.env.PATH })
           })
         }

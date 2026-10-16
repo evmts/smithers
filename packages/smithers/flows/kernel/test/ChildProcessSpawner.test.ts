@@ -75,6 +75,34 @@ const hostSpawner = (options: {
   )
 
 describe("ChildProcessSpawner", () => {
+  itEffect("keeps an absent Windows search path empty instead of inheriting the host path", () => {
+    const platform = Object.getOwnPropertyDescriptor(process, "platform")!
+    const observed: ChildProcess.Command[] = []
+    return Effect.acquireUseRelease(
+      Effect.sync(() => Object.defineProperty(process, "platform", { ...platform, value: "win32" })),
+      () =>
+        Effect.gen(function*() {
+          const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+          yield* spawner.string(ChildProcess.make("tool", [], { extendEnv: false }))
+          yield* spawner.string(ChildProcess.make("tool", [], { env: { PATH: undefined } }))
+          yield* spawner.string(ChildProcess.make("tool", [], { env: { path: "declared" }, extendEnv: false }))
+          expect(observed.map((command) =>
+            command._tag === "StandardCommand"
+              ? Object.entries(command.options.env ?? {}).filter(([name]) => name.toUpperCase() === "PATH")
+              : []
+          )).toEqual([[["PATH", ""]], [["PATH", ""]], [["path", "declared"]]])
+        }),
+      () => Effect.sync(() => Object.defineProperty(process, "platform", platform))
+    ).pipe(
+      Effect.provide(guarded),
+      Effect.provideService(
+        HostChildProcessSpawner,
+        hostSpawner({ stdout: "out", onSpawn: (command) => observed.push(command) })
+      ),
+      Effect.provideService(GrantStore, scriptedStore(new Set(["proc:spawn:tool", "proc:spawn:env path -- tool"]), []))
+    )
+  })
+
   for (const length of [4096, 4097]) {
     itEffect(`keeps a ${length}-unit command resource in the typed channel`, () => {
       const checks: Array<Capability.Capability> = []

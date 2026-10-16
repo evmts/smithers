@@ -170,17 +170,22 @@ const snapshotCommand = (command: ChildProcess.Command): ChildProcess.Command =>
   throw new TypeError("unsupported command shape")
 }
 
-const replaceEnvironment = (command: ChildProcess.Command): ChildProcess.Command =>
-  command._tag === "StandardCommand"
-    ? ChildProcess.make(command.command, command.args, {
-      ...command.options,
-      env: ChildProcessEnvironment.make(
-        command.options.extendEnv === false ? {} : ambientEnvironment(),
-        command.options.env
-      ),
-      extendEnv: false
-    })
-    : ChildProcess.pipeTo(replaceEnvironment(command.right), command.options)(replaceEnvironment(command.left))
+const replaceEnvironment = (command: ChildProcess.Command): ChildProcess.Command => {
+  if (command._tag !== "StandardCommand") {
+    return ChildProcess.pipeTo(replaceEnvironment(command.right), command.options)(replaceEnvironment(command.left))
+  }
+  const environment = ChildProcessEnvironment.make(
+    command.options.extendEnv === false ? {} : ambientEnvironment(),
+    command.options.env
+  )
+  // libuv restores an absent Windows PATH from the parent. An explicit empty
+  // value preserves the caller's request to withhold executable search paths.
+  const platform = (globalThis as { readonly process?: { readonly platform?: string } }).process?.platform
+  if (platform === "win32" && !Object.keys(environment).some((name) => name.toUpperCase() === "PATH")) {
+    environment.PATH = ""
+  }
+  return ChildProcess.make(command.command, command.args, { ...command.options, env: environment, extendEnv: false })
+}
 
 const maximumEnvironmentNames = 64
 
