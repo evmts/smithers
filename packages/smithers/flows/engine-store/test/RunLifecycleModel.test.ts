@@ -69,6 +69,7 @@ const LifecycleFlow = Flow.make("RunLifecycleModel/Test", {
   success: Schema.String,
   body: opaqueHandlerBody
 })
+const stateJson = (payload: object): string => JSON.stringify({ version: 1, flowName: LifecycleFlow._tag, payload })
 const fakeEngine = {} as unknown as FlowRuntime.FlowRuntime["Service"]
 
 // ---------------------------------------------------------------------------
@@ -289,7 +290,7 @@ const transition = (model: Model, op: Op): Outcome => {
         createdAtMs: now,
         startedAtMs: null,
         finishedAtMs: null,
-        stateJson: JSON.stringify({ run: runId })
+        stateJson: stateJson({ run: runId })
       })
       return undefined
     }
@@ -400,11 +401,11 @@ const transition = (model: Model, op: Op): Outcome => {
         (op.guard === "absent" && row.cancelRequestedAtMs !== null) ||
         (op.guard === "present" && row.cancelRequestedAtMs === null)
       ) return { _tag: "GuardFailed" }
-      const stateJson = JSON.stringify({ commit: model.commits })
+      const nextStateJson = stateJson({ commit: model.commits })
       model.rows.set(
         runId,
         op.to === "running"
-          ? { ...row, finishedAtMs: null, stateJson }
+          ? { ...row, finishedAtMs: null, stateJson: nextStateJson }
           : {
             ...row,
             status: op.to,
@@ -413,7 +414,7 @@ const transition = (model: Model, op: Op): Outcome => {
             heartbeatAtMs: null,
             claim: null,
             claimedAtMs: null,
-            stateJson
+            stateJson: nextStateJson
           }
       )
       return { _tag: "Transitioned" }
@@ -578,7 +579,7 @@ const execute = async (model: Model, real: Harness, op: Op): Promise<unknown> =>
         now,
         Effect.flatMap(
           RunStore.RunStore,
-          (store) => store.create(RUNS[op.run]!, JSON.stringify({ run: RUNS[op.run] })).pipe(Effect.as(undefined))
+          (store) => store.create(RUNS[op.run]!, stateJson({ run: RUNS[op.run] })).pipe(Effect.as(undefined))
         )
       ))
     case "link":
@@ -665,7 +666,7 @@ const execute = async (model: Model, real: Harness, op: Op): Promise<unknown> =>
             RUNS[op.run]!,
             OWNERS[op.owner]!,
             op.to,
-            JSON.stringify({ commit: model.commits + 1 }),
+            stateJson({ commit: model.commits + 1 }),
             op.guard === "none" ? undefined : { cancelRequested: op.guard }
           ))
       ))
