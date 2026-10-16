@@ -98,6 +98,7 @@
   {"id":"patch_api_issues_comments_id","fields":[{"name":"path:id","label":"id","required":true,"kind":"text"},{"name":"body","label":"JSON","kind":"text","multiline":true,"required":true}]},
   {"id":"post_api_issues_number_close","fields":[{"name":"path:number","label":"number","required":true,"kind":"text"}]},
   {"id":"post_api_issues_number_reopen","fields":[{"name":"path:number","label":"number","required":true,"kind":"text"}]},
+  {"id":"post_api_issues_number_transitions_id","fields":[{"name":"path:number","label":"number","required":true,"kind":"text"},{"name":"path:id","label":"id","required":true,"kind":"text"}]},
   {"id":"post_api_repos_owner_repo_github_issues","fields":[{"name":"path:owner","label":"owner","required":true,"kind":"text"},{"name":"path:repo","label":"repo","required":true,"kind":"text"},{"name":"body","label":"JSON","kind":"text","multiline":true,"required":true}]},
   {"id":"post_api_repos_owner_repo_github_issues_number_comments","fields":[{"name":"path:owner","label":"owner","required":true,"kind":"text"},{"name":"path:repo","label":"repo","required":true,"kind":"text"},{"name":"path:number","label":"number","required":true,"kind":"text"},{"name":"body","label":"JSON","kind":"text","multiline":true,"required":true}]},
   {"id":"post_api_repos_owner_repo_github_issues_number_close","fields":[{"name":"path:owner","label":"owner","required":true,"kind":"text"},{"name":"path:repo","label":"repo","required":true,"kind":"text"},{"name":"path:number","label":"number","required":true,"kind":"text"}]},

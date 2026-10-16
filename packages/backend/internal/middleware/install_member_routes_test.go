@@ -110,6 +110,19 @@ func TestInstallMemberCommandRoutes(t *testing.T) {
 		{http.MethodPost, "/api/issues", "issue.new"},
 		{http.MethodGet, "/api/issues/requests/request-id", "issue.read"},
 		{http.MethodGet, "/api/issues/requests/request-id/extra", ""},
+		// The install's declared issue transition (#4067): the door the
+		// install client already addresses carries the same `issues.transition`
+		// row the repo-scoped door carries, so no second policy decides it.
+		{http.MethodPost, "/api/issues/7/transitions/accept", "issues.transition"},
+		{http.MethodPost, "/api/issues/7/transitions/e2e-accept", "issues.transition"},
+		// And nothing beside it is named: no transition by GET, no bare
+		// collection, no empty or upper-case id, and no nested path.
+		{http.MethodGet, "/api/issues/7/transitions/accept", ""},
+		{http.MethodPost, "/api/issues/7/transitions", ""},
+		{http.MethodPost, "/api/issues/7/transitions/", ""},
+		{http.MethodPost, "/api/issues/7/transitions/Accept", ""},
+		{http.MethodPost, "/api/issues/7/transitions/accept/again", ""},
+		{http.MethodPost, "/api/issues/0/transitions/accept", "issues.transition"},
 		{http.MethodPost, "/api/todos/12", "todo.control"},
 		{http.MethodPatch, "/api/todos/12", "todo.amend"},
 		{http.MethodPatch, "/api/todos/T12", ""},

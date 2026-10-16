@@ -38,6 +38,11 @@ var installIssueOperationCommands = map[string]string{
 	InstallIssueCloseOperation:       "issues.close",
 	InstallIssueReopenOperation:      "issues.reopen",
 	InstallIssueCommentEditOperation: "issue.comment",
+	// A declared transition carries its own catalog command, like the close
+	// and reopen above: `issues.transition`, member-level with actors
+	// ["person", "app_agent"]. A repository declaration can only narrow who
+	// may ask, never widen it (issue_transitions.go).
+	InstallIssueTransitionOperation: issueTransitionCommand,
 }
 
 type installIssueWriteJob struct {
@@ -169,6 +174,17 @@ func (s *MythicalService) HandleInstallIssueWrite(ctx context.Context, lease *jo
 	if err != nil {
 		return err
 	}
+	// A declared transition also needs the repository the DECLARATION is
+	// read from, because the labels come from that declaration and never
+	// from the payload. Every other act reads none.
+	var owner string
+	var repo db.Repository
+	if claim.Operation == InstallIssueTransitionOperation {
+		repo, owner, err = s.repository(bound, job.Repository)
+		if err != nil {
+			return err
+		}
+	}
 	// The App writer may look up a prior marker and mint its narrow token.
 	// Fence only its actual send: slow reads hold no credential/roster locks.
 	bound = context.WithValue(bound, gitHubIssueSendKey{}, gitHubIssueSendFence(func(send func(context.Context) error) error {
@@ -187,6 +203,17 @@ func (s *MythicalService) HandleInstallIssueWrite(ctx context.Context, lease *jo
 		if _, err = Authorize(current, db.New(tx), command, subject); err != nil {
 			return err
 		}
+		/*
+		 * A transition also re-checks the repository's OWN rule here, as the
+		 * hosted branch does: a declaration that became person-only, or a
+		 * credential that became an agent's, stops the act before its next
+		 * external request.
+		 */
+		if claim.Operation == InstallIssueTransitionOperation {
+			if err = s.lockedIssueTransitionAuthority(current, owner, repo, job.Transition); err != nil {
+				return err
+			}
+		}
 		if err = lease.StartExternal(current, json.RawMessage(`{"state":"sending"}`)); err != nil {
 			return err
 		}
@@ -195,6 +222,11 @@ func (s *MythicalService) HandleInstallIssueWrite(ctx context.Context, lease *jo
 		}
 		return tx.Commit(current)
 	}))
+	// The act comes from the operation the lease CLAIMED, never the payload,
+	// so an admitted comment can never arrive here as a transition.
+	if claim.Operation == InstallIssueTransitionOperation {
+		return s.sendIssueTransition(ctx, bound, lease, gh, job, owner, repo)
+	}
 	return s.sendIssueWriteAct(ctx, bound, lease, gh, job, claim.Operation)
 }
 

@@ -2428,6 +2428,15 @@ type PatchAPIIssuesCommentsIDBody struct {
 	Body string `json:"body"`
 }
 
+// PostAPIIssuesNumberTransitionsIDResponse is generated from docs/api/openapi.yaml.
+type PostAPIIssuesNumberTransitionsIDResponse struct {
+	OperationID string    `json:"operationId"`
+	RequestID   string    `json:"requestId"`
+	Kind        string    `json:"kind"`
+	State       string    `json:"state"`
+	AcceptedAt  time.Time `json:"acceptedAt"`
+}
+
 // PostAPIReposOwnerRepoGithubIssuesBody is generated from docs/api/openapi.yaml.
 type PostAPIReposOwnerRepoGithubIssuesBody struct {
 	Title string `json:"title"`
@@ -4319,6 +4328,13 @@ func (c *Client) PostAPIIssuesNumberClose(ctx context.Context, number int64, ide
 func (c *Client) PostAPIIssuesNumberReopen(ctx context.Context, number int64, idempotencyKey string) (json.RawMessage, error) {
 	var out json.RawMessage
 	err := c.withHeader("Idempotency-Key", idempotencyKey).do(ctx, "POST", "/api/issues/"+url.PathEscape(strconv.FormatInt(number, 10))+"/reopen", nil, nil, &out)
+	return out, err
+}
+
+// PostAPIIssuesNumberTransitionsID calls POST /api/issues/{number}/transitions/{id}.
+func (c *Client) PostAPIIssuesNumberTransitionsID(ctx context.Context, number int64, id string, idempotencyKey string) (PostAPIIssuesNumberTransitionsIDResponse, error) {
+	var out PostAPIIssuesNumberTransitionsIDResponse
+	err := c.withHeader("Idempotency-Key", idempotencyKey).do(ctx, "POST", "/api/issues/"+url.PathEscape(strconv.FormatInt(number, 10))+"/transitions/"+url.PathEscape(id), nil, nil, &out)
 	return out, err
 }
 

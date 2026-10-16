@@ -98,6 +98,7 @@
   {"id":"patch_api_issues_comments_id","method":"PATCH","path":"/api/issues/comments/{id}"},
   {"id":"post_api_issues_number_close","method":"POST","path":"/api/issues/{number}/close"},
   {"id":"post_api_issues_number_reopen","method":"POST","path":"/api/issues/{number}/reopen"},
+  {"id":"post_api_issues_number_transitions_id","method":"POST","path":"/api/issues/{number}/transitions/{id}"},
   {"id":"post_api_repos_owner_repo_github_issues","method":"POST","path":"/api/repos/{owner}/{repo}/github/issues"},
   {"id":"post_api_repos_owner_repo_github_issues_number_comments","method":"POST","path":"/api/repos/{owner}/{repo}/github/issues/{number}/comments"},
   {"id":"post_api_repos_owner_repo_github_issues_number_close","method":"POST","path":"/api/repos/{owner}/{repo}/github/issues/{number}/close"},

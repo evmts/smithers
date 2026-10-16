@@ -210,6 +210,45 @@ func (h *InstallIssuesHandler) Reopen(w http.ResponseWriter, r *http.Request) {
 	h.state(w, r, "issues.reopen", services.InstallIssueStateWriter.RequestInstallIssueReopen)
 }
 
+// Transition requests POST /api/issues/{number}/transitions/{id}: ONE
+// transition the install repository's OWN committed declaration names.
+//
+// The transition id is a path segment and the issue number another, so the
+// request carries no body at all: it can name neither a label, nor a
+// repository, nor an actor. Which labels the move carries, and whether a
+// person has to make it, come from the repository's declaration at its
+// default bookmark — read by the service before this returns and re-read on
+// the worker before the write.
+//
+// An undeclared transition, a declaration this server could not read, and an
+// agent asking for a person-only move are all refused by the service, so no
+// durable operation exists for them and nothing is asked of GitHub.
+func (h *InstallIssuesHandler) Transition(w http.ResponseWriter, r *http.Request) {
+	repository, _, ok := authorizeInstallRepository(w, r, h.Queries, "issues.transition")
+	if !ok {
+		return
+	}
+	writer, ok := h.Service.(services.InstallIssueTransitionWriter)
+	if !ok {
+		todoRouteError(w, nil)
+		return
+	}
+	number, err := strconv.ParseInt(chi.URLParam(r, "number"), 10, 64)
+	if err != nil || number <= 0 {
+		todoRouteError(w, &services.TodoControlError{Status: 400, Code: "invalid_issue_state", Class: "user", Message: "Invalid issue number"})
+		return
+	}
+	receipt, err := writer.RequestInstallIssueTransition(r.Context(), repository, number,
+		chi.URLParam(r, "id"), r.Header.Get("Idempotency-Key"))
+	if err != nil {
+		todoRouteError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	errors.WriteJSON(w, http.StatusAccepted, receipt)
+}
+
 // EditComment requests PATCH /api/issues/comments/{id}: a new body for one
 // comment the install's App wrote. The comment id is the subject, as the
 // hosted comment door uses it, so no issue number can disagree with it.

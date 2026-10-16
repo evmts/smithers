@@ -1138,6 +1138,11 @@ func buildRouter(
 			r.Post("/issues/{number}/close", issues.Close)
 			r.Post("/issues/{number}/reopen", issues.Reopen)
 			r.Patch("/issues/comments/{id}", issues.EditComment)
+			// One transition the install repository's own committed
+			// declaration names (#4067, M-47). The install client already
+			// addresses this door; it rides the same durable writer and the
+			// same `issues.transition` authority the repo-scoped door uses.
+			r.Post("/issues/{number}/transitions/{id}", issues.Transition)
 			reviewService, _ := extras.Mythical.Service.(routes.InstallReviewRouteService)
 			reviews := &routes.InstallReviewHandler{Queries: queries, Service: reviewService}
 			r.Post("/reviews", reviews.Request)

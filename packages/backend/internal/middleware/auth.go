@@ -576,6 +576,11 @@ var installMemberRoutes = []struct {
 	{http.MethodPost, "issues.close", regexp.MustCompile(`^/api/issues/[0-9]+/close$`)},
 	{http.MethodPost, "issues.reopen", regexp.MustCompile(`^/api/issues/[0-9]+/reopen$`)},
 	{http.MethodPatch, "issue.comment", regexp.MustCompile(`^/api/issues/comments/[0-9]+$`)},
+	// One transition the install repository's OWN committed declaration
+	// names (#4067, M-47). It is the SAME row the repo-scoped door carries
+	// below, so one catalog operation decides both: a declaration can narrow
+	// who may ask for a move, never widen it.
+	{http.MethodPost, "issues.transition", regexp.MustCompile(`^/api/issues/[0-9]+/transitions/[a-z0-9][a-z0-9-]*$`)},
 	{http.MethodGet, "todo.read", regexp.MustCompile(`^/api/(todos|stack)$`)},
 	{http.MethodGet, "todo.read", regexp.MustCompile(`^/api/todos/[0-9]+(/events|/attempts/[0-9]+/logs/[0-9a-f]{64})?$`)},
 	{http.MethodPost, "todo.new", regexp.MustCompile(`^/api/todos$`)},

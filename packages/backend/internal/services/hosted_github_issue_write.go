@@ -59,7 +59,7 @@ var hostedIssueOperationCommands = map[string]string{
 func IssueWriteOperations() []string {
 	return []string{
 		InstallIssueCommentOperation, InstallIssueCreateOperation, InstallIssueCloseOperation,
-		InstallIssueReopenOperation, InstallIssueCommentEditOperation,
+		InstallIssueReopenOperation, InstallIssueCommentEditOperation, InstallIssueTransitionOperation,
 		HostedIssueCreateOperation, HostedIssueCommentOperation, HostedIssueCloseOperation,
 		HostedIssueReopenOperation, HostedIssueCommentEditOperation,
 		HostedIssueTransitionOperation,
@@ -80,6 +80,7 @@ var issueWriteActs = map[string]string{
 	HostedIssueReopenOperation:       "reopen",
 	InstallIssueCommentEditOperation: "comment.edit",
 	HostedIssueCommentEditOperation:  "comment.edit",
+	InstallIssueTransitionOperation:  "transition",
 	HostedIssueTransitionOperation:   "transition",
 }
 

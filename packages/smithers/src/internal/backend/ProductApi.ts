@@ -2840,6 +2840,23 @@ export interface PostApiIssuesNumberReopenInput {
 export const postApiIssuesNumberReopen = (transport: Transport, input: PostApiIssuesNumberReopenInput): Promise<PostApiIssuesNumberReopenResponse> =>
   transport.request("POST", `/api/issues/${segment(input.path.number)}/reopen`, undefined, { headers: { "Idempotency-Key": input.headers["Idempotency-Key"] } }) as Promise<PostApiIssuesNumberReopenResponse>
 
+export type PostApiIssuesNumberTransitionsIdResponse = {
+  operationId: string
+  requestId: string
+  kind: string
+  state: "accepted" | "dispatching" | "running" | "waiting" | "completed" | "failed" | "cancelled" | "uncertain"
+  acceptedAt: string
+}
+
+export interface PostApiIssuesNumberTransitionsIdInput {
+  readonly path: { readonly number: number; readonly id: string }
+  readonly headers: { readonly "Idempotency-Key": string }
+}
+
+/** POST /api/issues/{number}/transitions/{id}: Perform one declared issue transition on the install repository */
+export const postApiIssuesNumberTransitionsId = (transport: Transport, input: PostApiIssuesNumberTransitionsIdInput): Promise<PostApiIssuesNumberTransitionsIdResponse> =>
+  transport.request("POST", `/api/issues/${segment(input.path.number)}/transitions/${segment(input.path.id)}`, undefined, { headers: { "Idempotency-Key": input.headers["Idempotency-Key"] } }) as Promise<PostApiIssuesNumberTransitionsIdResponse>
+
 export type PostApiReposOwnerRepoGithubIssuesBody = {
   title: string
   body: string

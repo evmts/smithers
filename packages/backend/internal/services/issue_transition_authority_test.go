@@ -45,11 +45,20 @@ func TestIssueTransitionDoorCarriesItsOwnDeclaredOperation(t *testing.T) {
 	// (compose/member_commands.go runs services.Authorize on exactly this).
 	assert.Equal(t, "issues.transition",
 		middleware.InstallMemberCommand(http.MethodPost, "/api/repos/maya/demo/github/issues/6/transitions/accept"))
+	// The INSTALL door the install client already addresses (#4067). The
+	// install client sends every GitHub issue act to /api/issues{path}
+	// (IssuesSeam.ts githubIssueActUrl), so the declared transition arrives
+	// here — and it must carry the SAME row, never a second policy.
+	assert.Equal(t, "issues.transition",
+		middleware.InstallMemberCommand(http.MethodPost, "/api/issues/6/transitions/accept"))
 	// Its siblings on the same family and the same writer, unchanged.
 	for path, command := range map[string]string{
 		"/api/repos/maya/demo/github/issues/6/close":    "issues.close",
 		"/api/repos/maya/demo/github/issues/6/reopen":   "issues.reopen",
 		"/api/repos/maya/demo/github/issues/6/comments": "issue.comment",
+		"/api/issues/6/close":                           "issues.close",
+		"/api/issues/6/reopen":                          "issues.reopen",
+		"/api/issues/6/comments":                        "issue.comment",
 	} {
 		assert.Equal(t, command, middleware.InstallMemberCommand(http.MethodPost, path), path)
 	}
