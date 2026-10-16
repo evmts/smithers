@@ -2,37 +2,39 @@
 
 ## 1.0.0-rc.12 — 2026-10-16
 
-Recovery of rc.10 (cut `aeff7cd66272`), whose MCP consumer selected Effect
-4.0.5 against executable adapters built on 4.0.4. Its immutable tag is
-preserved and its [candidate](https://github.com/smithersai/smithers/actions/runs/38913993371)
-published zero packages.
+Published all 49 packages under npm `next` from clean-mini cut
+`67e7ec9c5f49f57930d98571b8662ace8e6e1681`.
+[Release run 38922904480](https://github.com/smithersai/smithers/actions/runs/38922904480)
+passed the candidate build, pack and installed-consumer smoke. The publisher
+verified all 49 tarball integrities with nothing awaiting registry visibility.
+All 49 `next` tags are rc.12; every `latest` matches the pre-cut snapshot
+(`@smthrs/flows`: rc.9; legacy `smthrs`: 0.35.0). No announcement or GitHub Release.
 
-rc.11 was cut on the clean Mac mini checkout at
-`b20e90aed82eb50f7b7cc8919b22c2534030920a`, with executable Effect peers
-pinned to 4.0.4 in `d40b1e7318df`. Its
-[Release candidate](https://github.com/smithersai/smithers/actions/runs/38918852041)
-failed during the migration package build: the private-adapter builder
-required a caret peer and rejected the exact peer. Native helpers passed.
-No candidate archive was produced and no rc.11 package was published.
-The builder correction `364ed0f819a9` has passing real-manifest/private-adapter tests and
-a local migration-package build; it requires a new version to publish.
+Verified on Williams-MacBook-Pro-3.local (darwin/arm64), Node 26.10.0,
+npm 11.19.1, at 2026-10-16T17:26:32Z: a new directory and empty npm cache,
+`npm install @smthrs/flows@next @smthrs/cli@next`, one physical Effect 4.0.4,
+CLI version/help, init, targets, flow discovery and MCP initialization passed.
+The documented durable quickstart printed `the note` twice after changing the
+input between runs, using the packaged helper with no workspace override.
+Receipts: #4042 and `/tmp/smithers-rc12-evidence/npm-smoke.json` on this Mac.
 
-A local reproduction of the broad release smoke also fails: its wildcard
-optional peers select `@effect/sql-pg`, `@effect/sql-sqlite-node`,
-`@effect/sql-sqlite-bun` and `@effect/vitest` 4.0.5, which require Effect
-`^4.0.5` while the executable peer selects 4.0.4. The owning manifests now pin those adapters at 4.0.4. CLI-only, CLI/targets
-and all-adapter installs pass on npm and pnpm; library consumers also pass
-on Effect 4.0.5. The smoke itself has not been changed or bypassed. rc.12
-will carry the adapter and builder corrections (#4002, #4042).
+Fixes #4002: executable Effect peers are exact (`d40b1e7318df`), the private
+adapter builder accepts that contract (`364ed0f819a9`), and selected adapter
+peers constrain the tested cohort (`aba067ea9c3b`). The release smoke is
+unchanged. Twenty-two policy/dedupe tests and nine private-adapter tests pass.
+The release's 22 runtime consumer profiles, both unsupported-Effect refusals
+and both quickstarts passed; library quickstarts used Effect 4.0.5.
 
-Registry verification on 2026-10-16: all 49 rc.10 and rc.11 versions are absent;
-all 49 `next` tags remain rc.9 and every `latest` matches the pre-rc.10
-snapshot (`@smthrs/flows`: rc.9; legacy `smthrs`: 0.35.0).
-The new candidate's npm version/help/start smoke cannot run before it is
-published; no rc.12 installed-runtime success is claimed. Evidence and
-remaining reporting-lane results are tracked in #4042.
-No announcement, GitHub Release or `latest` move is part of this recovery.
+rc.10's MCP cohort check failed; rc.11's builder rejected the new exact peer.
+Both tags remain immutable and neither published a package. rc.12 carries
+both corrections. The final Mac receipt above was taken after all 49 rc.12
+packages were visible; a saved partial-train attempt still installed CLI rc.9.
 
+- **Failing — reporting gates (#4040):** Examples, Build and test shared
+  backend, and Backend access-control tests failed in this run. The remaining
+  gates and four platform installer jobs were still running when recorded.
+  Native helpers and the darwin-arm64 server bundle passed. No full CI green
+  or completed installer-platform verification is claimed.
 - **Unverified — CI (#4040):** today's app browser/unit, TUI CI/E2E and
   targeted workspace repairs have clean Mac mini receipts on the revisions
   named in the issue. They do not establish full CI green on this cut.
@@ -54,7 +56,7 @@ No announcement, GitHub Release or `latest` move is part of this recovery.
   #3831 hosted prototype workflows and #3812 long replies remain open.
   Flows/runtime findings #3898, #3899, #3906, #3999, #4004, #4008, #4010
   and #4020 remain open. #4002 has passing unpinned CLI-only and CLI/targets
-  npm/pnpm install regressions; published MCP verification is pending.
+  npm/pnpm install regressions and published Mac MCP verification.
   Their issue receipts, rather than source presence, determine completion.
 - **Off:** file-card code intelligence and live code co-editing remain off
   for this prerelease. Learning remains on and unverified on this cut.
