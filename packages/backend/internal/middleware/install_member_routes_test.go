@@ -87,6 +87,19 @@ func TestInstallMemberCommandRoutes(t *testing.T) {
 		{http.MethodPut, "/api/conversations/main/view-state", "agent.turn"},
 		{http.MethodGet, "/api/conversations/main/view-state/ben", ""},
 		{http.MethodPost, "/api/agent/conversations/replay", "agent.turn"},
+		// A chat's archives: the person-only archive act, and the member read
+		// the History card runs. Neither is an unlisted route any more.
+		{http.MethodPost, "/api/conversations/main/archive", "archive"},
+		{http.MethodPost, "/api/conversations/scratch%2Fben%2Ffeature/archive", "archive"},
+		{http.MethodGet, "/api/conversation-archives", "history"},
+		{http.MethodGet, "/api/conversation-archives/8f1c2b3a", "history"},
+		// The archive doors are these three only: no write by GET, no read of
+		// a nested path, and no archive of an unescaped multi-segment branch.
+		{http.MethodGet, "/api/conversations/main/archive", ""},
+		{http.MethodPost, "/api/conversations/scratch/ben/feature/archive", ""},
+		{http.MethodDelete, "/api/conversation-archives/8f1c2b3a", ""},
+		{http.MethodGet, "/api/conversation-archives/8f1c2b3a/entries", ""},
+		{http.MethodPost, "/api/conversation-archives", ""},
 		{http.MethodGet, "/api/user/orgs", "self.read"},
 		{http.MethodGet, "/api/user/workspaces", "self.read"},
 		{http.MethodPost, "/api/telemetry/errors", "telemetry.report"},

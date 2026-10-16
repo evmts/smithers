@@ -343,8 +343,17 @@ func TestGitHubUserRepoCreateRefusesAForkedViewer(t *testing.T) {
 	assert.Equal(t, 0, fixture.countOf("POST /user/repos"))
 }
 
-// A readback that answers a different repository is not this create's proof.
-func TestGitHubUserRepoCreateRefusesAMismatchedReadback(t *testing.T) {
+/*
+ * A readback that answers a different repository is not this create's proof —
+ * and it is not a refusal either. GitHub answered 201 before it, so the POST
+ * MAY have created the repository: the only honest outcome is uncertain, and a
+ * repeat press must JOIN that one operation instead of issuing a second POST.
+ *
+ * This is the regression for root's 2026-10-16 review of lane 59: the mismatch
+ * settled `failed`, and `failed` is the one state githubRepoCreateKey reopens,
+ * so pressing Create again created a second repository.
+ */
+func TestGitHubUserRepoCreateMismatchedReadbackStaysUncertainAndIsNeverRepeated(t *testing.T) {
 	pool, _ := postgresfixture.NewProductDatabase(t)
 	fixture := newGitHubCreateFixture()
 	fixture.readbackBody = map[string]any{
@@ -357,10 +366,150 @@ func TestGitHubUserRepoCreateRefusesAMismatchedReadback(t *testing.T) {
 	receipt, err := service.RequestGitHubUserRepoCreate(context.Background(), 7, "widget", true)
 	require.NoError(t, err)
 	status := settleGitHubCreate(t, service, 7, receipt.OperationID)
-	assert.Equal(t, string(jobs.StateFailed), status.State)
+	assert.Equal(t, string(jobs.StateUncertain), status.State, "a create that got 201 is never reported as a refusal")
 	assert.Equal(t, GitHubRepoCreateCodeReadbackMismatch, status.Code)
-	assert.Equal(t, githubRepoCreateStageReadback, status.Stage)
-	assert.Empty(t, status.FullName)
+	assert.Empty(t, status.FullName, "an unverified create names no repository")
+	assert.Zero(t, status.RepositoryID)
+	assert.Equal(t, 1, status.ExternalAttempt)
+	assert.Equal(t, 1, fixture.countOf("POST /user/repos"))
+
+	// The press that used to open a second generation of the key.
+	again, err := service.RequestGitHubUserRepoCreate(context.Background(), 7, "widget", true)
+	require.NoError(t, err)
+	assert.Equal(t, receipt.OperationID, again.OperationID, "a repeat press joins the uncertain operation")
+	assert.True(t, again.Joined)
+	// Settle whatever that press admitted. A joined operation is already
+	// terminal, so this returns the SAME receipt; a second generation would
+	// run the worker again and leave a second POST behind.
+	repeated := settleGitHubCreate(t, service, 7, again.OperationID)
+	assert.Equal(t, string(jobs.StateUncertain), repeated.State)
+	assert.Equal(t, 1, fixture.countOf("POST /user/repos"), "no second repository is ever created")
+
+	// Reading it again still answers uncertain, and still names nothing.
+	reread, err := service.GitHubUserRepoCreateStatus(context.Background(), 7, receipt.OperationID)
+	require.NoError(t, err)
+	assert.Equal(t, string(jobs.StateUncertain), reread.State)
+	assert.Equal(t, GitHubRepoCreateCodeReadbackMismatch, reread.Code)
+	assert.Empty(t, reread.FullName)
+}
+
+/*
+ * Nothing but a complete, agreeing identity is a created repository. Each case
+ * below is one GitHub answered after its own 201, and none of them may be
+ * claimed as a create: a zero or absent id (JSON's default, not an identity),
+ * two different ids across the two answers, another account's owner id, and a
+ * name that is not the one asked for.
+ */
+func TestGitHubUserRepoCreateRefusesMalformedCreatedIdentities(t *testing.T) {
+	const full = testGitHubLogin + "/widget"
+	owner := func() map[string]any {
+		return map[string]any{"id": testGitHubUserID, "login": testGitHubLogin}
+	}
+	for _, testCase := range []struct {
+		name            string
+		created, readbk map[string]any
+	}{
+		{"the readback has no id at all",
+			map[string]any{"id": 909, "full_name": full, "owner": owner()},
+			map[string]any{"full_name": full, "owner": owner()}},
+		{"the readback's id is zero",
+			map[string]any{"id": 909, "full_name": full, "owner": owner()},
+			map[string]any{"id": 0, "full_name": full, "owner": owner()}},
+		{"the created id is zero",
+			map[string]any{"id": 0, "full_name": full, "owner": owner()},
+			map[string]any{"id": 909, "full_name": full, "owner": owner()}},
+		{"the created id is absent",
+			map[string]any{"full_name": full, "owner": owner()},
+			map[string]any{"id": 909, "full_name": full, "owner": owner()}},
+		{"the two ids are different repositories",
+			map[string]any{"id": 909, "full_name": full, "owner": owner()},
+			map[string]any{"id": 910, "full_name": full, "owner": owner()}},
+		{"the created owner is another account",
+			map[string]any{"id": 909, "full_name": full, "owner": map[string]any{"id": 55, "login": testGitHubLogin}},
+			map[string]any{"id": 909, "full_name": full, "owner": owner()}},
+		{"the created name is another repository",
+			map[string]any{"id": 909, "full_name": testGitHubLogin + "/other", "owner": owner()},
+			map[string]any{"id": 909, "full_name": full, "owner": owner()}},
+		{"the created answer carries no identity",
+			map[string]any{},
+			map[string]any{"id": 909, "full_name": full, "owner": owner()}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			pool, _ := postgresfixture.NewProductDatabase(t)
+			fixture := newGitHubCreateFixture()
+			fixture.createBody, fixture.readbackBody = testCase.created, testCase.readbk
+			fixture.start(t)
+			service := newGitHubCreateService(t, pool, linkedGitHubAccount())
+
+			receipt, err := service.RequestGitHubUserRepoCreate(context.Background(), 7, "widget", true)
+			require.NoError(t, err)
+			status := settleGitHubCreate(t, service, 7, receipt.OperationID)
+			assert.Equal(t, string(jobs.StateUncertain), status.State)
+			assert.Equal(t, GitHubRepoCreateCodeReadbackMismatch, status.Code)
+			assert.Empty(t, status.FullName, "no malformed identity is ever claimed created")
+			assert.Zero(t, status.RepositoryID)
+
+			again, err := service.RequestGitHubUserRepoCreate(context.Background(), 7, "widget", true)
+			require.NoError(t, err)
+			assert.Equal(t, receipt.OperationID, again.OperationID)
+			assert.Equal(t, 1, fixture.countOf("POST /user/repos"))
+		})
+	}
+}
+
+/*
+ * The queued actor fence. The payload names the account whose credential the
+ * worker is about to load, so an admission whose payload disagrees with the
+ * scope or the authorization context it was admitted under is not this
+ * operation's intent: it is refused BEFORE any credential lookup or GitHub
+ * call. Admitted here through the store's own Admit, the way a poisoned queue
+ * row would reach the worker.
+ */
+func TestGitHubUserRepoCreateRefusesAPoisonedPayloadScope(t *testing.T) {
+	for _, testCase := range []struct {
+		name          string
+		scopeUser     int64
+		payload       string
+		authorization string
+	}{
+		{"the payload names another account than the scope it was admitted under",
+			7, `{"user_id":8,"github_user_id":"4242","name":"widget","private":true}`,
+			`{"user_id":8,"github_user_id":"4242"}`},
+		{"the payload names another account than the authorization context",
+			7, `{"user_id":7,"github_user_id":"4242","name":"widget","private":true}`,
+			`{"user_id":8,"github_user_id":"4242"}`},
+		{"the payload names another GitHub identity than the authorization context",
+			7, `{"user_id":7,"github_user_id":"4242","name":"widget","private":true}`,
+			`{"user_id":7,"github_user_id":"8888"}`},
+		{"the operation carries no authorization context at all",
+			7, `{"user_id":7,"github_user_id":"4242","name":"widget","private":true}`, ``},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			pool, _ := postgresfixture.NewProductDatabase(t)
+			fixture := newGitHubCreateFixture()
+			fixture.start(t)
+			service := newGitHubCreateService(t, pool, linkedGitHubAccount())
+
+			admission := jobs.Admission{
+				Scope: githubRepoCreateScope(testCase.scopeUser), Operation: GitHubUserRepoCreateOperation,
+				RequestID: "poisoned-" + testCase.name, Payload: json.RawMessage(testCase.payload),
+				EffectPolicy: jobs.EffectUnsafe,
+			}
+			if testCase.authorization != "" {
+				admission.AuthorizationContext = json.RawMessage(testCase.authorization)
+			}
+			receipt, err := service.createJobs.Admit(context.Background(), admission)
+			require.NoError(t, err)
+
+			status := settleGitHubCreate(t, service, testCase.scopeUser, receipt.OperationID)
+			assert.Equal(t, string(jobs.StateFailed), status.State)
+			assert.Equal(t, GitHubRepoCreateCodeInvalid, status.Code)
+			assert.Equal(t, githubRepoCreateStageActor, status.Stage)
+			assert.Equal(t, 0, fixture.countOf("GET /user"), "no credential is proved for a payload the fence refused")
+			assert.Equal(t, 0, fixture.countOf("POST /user/repos"), "and nothing is written on GitHub")
+			assert.Empty(t, status.FullName, "and the refusal names no repository")
+		})
+	}
 }
 
 // A create nobody can read back is unconfirmed, not a success.

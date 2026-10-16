@@ -91,7 +91,39 @@ const (
 
 // errGitHubRepoCreateUncertain settles the operation uncertain. Its text is the
 // only thing stored as the reason, so no upstream prose can reach a receipt.
+//
+// Returning one of these sentinels — rather than calling lease.Fail — is the
+// canonical unsafe external settlement: RunWorker hands the error to
+// Store.Abandon, and an unsafe operation whose external attempt was already
+// committed becomes terminal `uncertain` with this text as its reason
+// (jobs/claims.go recoverClaim). Terminal uncertain is never reclaimed and
+// never reopens a generation, so no second POST can follow it.
 var errGitHubRepoCreateUncertain = stdErrors.New(GitHubRepoCreateCodeUncertain)
+
+// errGitHubRepoCreateReadbackMismatch settles the operation uncertain with the
+// readback reason. GitHub answered 201 and then answered a readback that is
+// not this operation's repository: the POST MAY have created something, so the
+// only honest outcome is uncertain. It must never be lease.Fail, because a
+// failed operation is the one state a repeat press reopens.
+var errGitHubRepoCreateReadbackMismatch = stdErrors.New(GitHubRepoCreateCodeReadbackMismatch)
+
+/*
+ * githubRepoCreateProvedAbsent is the closed set of refusals this module
+ * records only where GitHub itself proved nothing was created: it answered
+ * before the create (a refused credential, a refused account, a rate limit, a
+ * name the account already has, an actor that changed, an unrunnable intent).
+ * A repeat press may open a new generation of the key for exactly these, and
+ * for nothing else. Any other terminal state — uncertain, completed, or a
+ * failure whose code is not listed here — is JOINED and read, never repeated.
+ */
+var githubRepoCreateProvedAbsent = map[string]bool{
+	GitHubRepoCreateCodeExists:       true,
+	GitHubRepoCreateCodeReauthorize:  true,
+	GitHubRepoCreateCodePermission:   true,
+	GitHubRepoCreateCodeRateLimited:  true,
+	GitHubRepoCreateCodeActorChanged: true,
+	GitHubRepoCreateCodeInvalid:      true,
+}
 
 // githubRepoCreateJob is the admitted intent. The owner is NOT in it: the
 // account and the GitHub identity its credential resolved to are, and the
@@ -229,12 +261,14 @@ const githubRepoCreateGenerations = 32
  *
  * The first key is the digest itself, so pressing Create twice on one intent
  * joins ONE operation: an accepted, running, uncertain or completed create is
- * read, never repeated. A FAILED one is the single case that opens a new
- * generation of the same key, and it is safe by construction — every refusal
- * this module records (a refused credential, a refused create, a name GitHub
- * already has, an actor that changed) is one where GitHub created nothing.
- * An uncertain attempt, which MAY have created the repository, is never
- * reopened; it keeps its receipt and sends the reader to GitHub.
+ * read, never repeated. A failed one opens a new generation of the same key
+ * ONLY when its own receipt names a refusal from githubRepoCreateProvedAbsent
+ * — a refusal GitHub gave before it could create anything. The check is on the
+ * receipt, not on the state alone: `failed` is reachable from several places,
+ * and reading the state alone would let a create whose POST was answered 201
+ * be pressed again and issue a second POST.
+ * An attempt that MAY have created the repository is never reopened; it keeps
+ * its receipt and sends the reader to GitHub.
  */
 func (s *GitHubUserReposService) githubRepoCreateKey(ctx context.Context, scope jobs.Scope, job githubRepoCreateJob) (string, error) {
 	base := githubRepoCreateRequestID(job)
@@ -247,12 +281,41 @@ func (s *GitHubUserReposService) githubRepoCreateKey(ctx context.Context, scope 
 		if err != nil {
 			return "", err
 		}
-		if existing.State != jobs.StateFailed {
+		if existing.State != jobs.StateFailed || !githubRepoCreateProvedAbsent[githubRepoCreateReceiptCode(existing.TerminalReceipt)] {
 			return key, nil
 		}
 		key = base + ":" + strconv.Itoa(generation)
 	}
 	return "", pkgerrors.Conflict("too many refused creations of this repository name")
+}
+
+// githubRepoCreateReceipt is the shape of every receipt this module writes,
+// plus the `reason` the store itself records for an unsafe settlement.
+type githubRepoCreateReceipt struct {
+	Code         string `json:"code"`
+	Stage        string `json:"stage"`
+	Reason       string `json:"reason"`
+	FullName     string `json:"full_name"`
+	RepositoryID int64  `json:"repository_id"`
+}
+
+// githubRepoCreateReceiptCode reads the closed reason out of a stored receipt.
+// A receipt this module wrote carries `code`; one the store wrote for an
+// unsafe settlement carries `reason`, which is this module's own constant.
+// An unreadable or absent receipt names no reason at all, which is never a
+// proved-absent refusal.
+func githubRepoCreateReceiptCode(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var receipt githubRepoCreateReceipt
+	if json.Unmarshal(raw, &receipt) != nil {
+		return ""
+	}
+	if receipt.Code != "" {
+		return receipt.Code
+	}
+	return receipt.Reason
 }
 
 // GitHubUserRepoCreateStatus reads one of this account's own create operations.
@@ -277,23 +340,38 @@ func (s *GitHubUserReposService) GitHubUserRepoCreateStatus(ctx context.Context,
 		return GitHubRepoCreateStatus{}, err
 	}
 	status := GitHubRepoCreateStatus{OperationID: operation.ID, State: string(operation.State), ExternalAttempt: operation.ExternalAttempt}
-	var receipt struct {
-		Code         string `json:"code"`
-		Stage        string `json:"stage"`
-		Reason       string `json:"reason"`
-		FullName     string `json:"full_name"`
-		RepositoryID int64  `json:"repository_id"`
-	}
+	var receipt githubRepoCreateReceipt
 	if len(operation.TerminalReceipt) > 0 && json.Unmarshal(operation.TerminalReceipt, &receipt) == nil {
 		status.Stage, status.FullName, status.RepositoryID = receipt.Stage, receipt.FullName, receipt.RepositoryID
+		// An unsafe operation the store settled itself records the reason its
+		// worker returned; that reason is this module's own code.
 		status.Code = receipt.Code
 		if status.Code == "" {
-			// An unsafe operation the store settled itself records the reason
-			// its worker returned; that reason is this module's own code.
 			status.Code = receipt.Reason
 		}
 	}
+	if operation.State != jobs.StateCompleted {
+		// Only a completed operation read a repository back. No other state
+		// may name one, whatever a receipt happens to carry.
+		status.FullName, status.RepositoryID = "", 0
+	}
 	return status, nil
+}
+
+// githubRepoCreateAuthorizes is the admitted authorization context's own
+// answer to "is this payload the actor and intent this operation was admitted
+// for". RequestGitHubUserRepoCreate writes it from the route's authenticated
+// user, never from a request field, so it is the fence a queued payload is
+// measured against.
+func githubRepoCreateAuthorizes(raw json.RawMessage, job githubRepoCreateJob) bool {
+	var authorization struct {
+		UserID       int64  `json:"user_id"`
+		GitHubUserID string `json:"github_user_id"`
+	}
+	if len(raw) == 0 || json.Unmarshal(raw, &authorization) != nil {
+		return false
+	}
+	return authorization.UserID == job.UserID && authorization.GitHubUserID == job.GitHubUserID
 }
 
 func githubRepoCreateRefusal(code, stage string) json.RawMessage {
@@ -312,6 +390,15 @@ func (s *GitHubUserReposService) HandleGitHubUserRepoCreate(ctx context.Context,
 		return lease.Fail(ctx, githubRepoCreateRefusal(GitHubRepoCreateCodeInvalid, githubRepoCreateStageActor))
 	}
 	if _, err := normalizeGitHubRepoMetadataSegment(job.Name, "repository"); err != nil {
+		return lease.Fail(ctx, githubRepoCreateRefusal(GitHubRepoCreateCodeInvalid, githubRepoCreateStageActor))
+	}
+	// 0. The fence. The payload names the account whose credential is about to
+	//    be loaded, so it must be the account this operation was ADMITTED for
+	//    before any credential lookup or external call. The admitted scope and
+	//    the admitted authorization context are both checked: a payload that
+	//    disagrees with either is not this operation's intent, and running it
+	//    would read one account's credential under another's tenant.
+	if claim.Scope != githubRepoCreateScope(job.UserID) || !githubRepoCreateAuthorizes(claim.AuthorizationContext, job) {
 		return lease.Fail(ctx, githubRepoCreateRefusal(GitHubRepoCreateCodeInvalid, githubRepoCreateStageActor))
 	}
 
@@ -381,14 +468,17 @@ func (s *GitHubUserReposService) HandleGitHubUserRepoCreate(ctx context.Context,
 
 	// 3. The readback. The repository is reported only because GitHub answered
 	//    it again, under this actor's own login and account id.
+	//
+	//    Everything from here on is AFTER a 201, so no outcome may be a
+	//    lease.Fail: GitHub may already hold the repository, and `failed` is
+	//    the one state a repeat press reopens. Every unverifiable result
+	//    settles uncertain and names no repository.
 	readback, status, err := s.requestGitHubRepoIdentity(ctx, token, viewer.Login, job.Name)
 	if err != nil || status != http.StatusOK {
 		return errGitHubRepoCreateUncertain
 	}
-	expected := viewer.Login + "/" + job.Name
-	if !strings.EqualFold(readback.FullName, expected) || readback.Owner.ID != viewer.ID ||
-		created.FullName != "" && !strings.EqualFold(created.FullName, expected) {
-		return lease.Fail(ctx, githubRepoCreateRefusal(GitHubRepoCreateCodeReadbackMismatch, githubRepoCreateStageReadback))
+	if !githubRepoCreateIdentityMatches(created, readback, viewer, job.Name) {
+		return errGitHubRepoCreateReadbackMismatch
 	}
 	receipt, err := json.Marshal(map[string]any{
 		"stage": githubRepoCreateStageReadback, "full_name": readback.FullName, "repository_id": readback.ID,
@@ -397,6 +487,31 @@ func (s *GitHubUserReposService) HandleGitHubUserRepoCreate(ctx context.Context,
 		return err
 	}
 	return lease.Complete(ctx, receipt)
+}
+
+/*
+ * githubRepoCreateIdentityMatches is the whole proof a repository was created
+ * for THIS actor under THIS intent. Both GitHub answers must agree, and they
+ * must agree on an identity that exists:
+ *
+ *   - the readback's numeric id is positive. A zero id is JSON's default for
+ *     an absent, null or malformed field, so it is never read as identity.
+ *   - the created id is positive and EXACTLY the readback's id. GitHub's 201
+ *     carries the new repository's id; two different ids are two different
+ *     repositories, and a missing one proves nothing.
+ *   - both full names are the owner GitHub itself named for this credential
+ *     plus the admitted name, matched case-insensitively because GitHub
+ *     compares repository names that way.
+ *   - both owner ids are the viewer's own account id, so a repository under
+ *     any other account can never be reported as this person's create.
+ *
+ * Any disagreement means the operation is unverifiable, never a success.
+ */
+func githubRepoCreateIdentityMatches(created, readback githubRepoIdentity, viewer githubViewer, name string) bool {
+	expected := viewer.Login + "/" + name
+	return viewer.ID > 0 && readback.ID > 0 && created.ID == readback.ID &&
+		strings.EqualFold(readback.FullName, expected) && strings.EqualFold(created.FullName, expected) &&
+		readback.Owner.ID == viewer.ID && created.Owner.ID == viewer.ID
 }
 
 type githubRepoIdentity struct {

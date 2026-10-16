@@ -45,6 +45,8 @@ delegated credentials land.
 | `sync.read`, `sync.retry` | Member | `GET`, `POST /api/github/sync` |
 | `live` | Member | `GET /api/live` |
 | `agent.turn` | Member | `POST /api/conversations/{branch}/prompt`, `POST /api/conversations/{branch}/turns/{turnId}/stop` |
+| `history` | Member | `GET /api/conversation-archives`, `GET /api/conversation-archives/{id}` |
+| `archive` (person-only) | Member | `POST /api/conversations/{branch}/archive` |
 | `issue.read` | Member | `GET /api/issues`, `GET /api/issues/{n}` |
 | `todo.read`, `todo.new`, `todo.answer` | Member | `GET /api/todos`, `GET /api/todos/{n}`, `POST /api/todos`, `POST /api/todos/{n}/answer` |
 | `todo.steer`, `todo.stop`, `todo.resume`, `todo.retry`, `todo.drop`, `stack.move` | Member | `POST /api/todos/{n}` (by `op`) |

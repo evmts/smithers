@@ -121,6 +121,23 @@ describe("the launcher's GitHub create", () => {
     await expect(seam.createGitHubRepository("widget")).resolves.toBe(sentence)
   })
 
+  /*
+   * The pairing the server actually settles a post-201 mismatch as: GitHub
+   * answered 201 and then answered a readback that was not this operation's
+   * repository, so the create is `uncertain` with the readback reason (it may
+   * already exist on GitHub and is never retried), not a refusal.
+   */
+  test("a mismatched readback after a created repository reads as unconfirmed, not refused", async () => {
+    const { calls, seam } = await harness((path, method) =>
+      path === created && method === "POST"
+        ? json(202, ACCEPTED)
+        : json(200, { operation_id: "op-1", state: "uncertain", code: "readback_mismatch", external_attempt: 1 }))
+    await expect(seam.createGitHubRepository("widget")).resolves.toBe(
+      "Smithers couldn't confirm whether widget was created on GitHub, so it did not try again. Check your GitHub account before creating it a second time."
+    )
+    expect(calls.filter(call => call.startsWith("POST"))).toHaveLength(1)
+  })
+
   test("a completed operation with no repository claims none", async () => {
     const { seam } = await harness((path, method) =>
       path === created && method === "POST" ? json(202, ACCEPTED) : json(200, { operation_id: "op-1", state: "completed" }))

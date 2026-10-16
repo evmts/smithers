@@ -547,6 +547,15 @@ var installMemberRoutes = []struct {
 	{http.MethodGet, "agent.turn", regexp.MustCompile(`^/api/conversations/[^/]+/view-state$`)},
 	{http.MethodPut, "agent.turn", regexp.MustCompile(`^/api/conversations/[^/]+/view-state$`)},
 	{http.MethodPost, "agent.turn", regexp.MustCompile(`^/api/agent/conversations/replay$`)},
+	// A branch holds one live chat and any number of archived ones (#3827).
+	// Archiving is the /archive flow: a person's own act, which the handler
+	// also refuses an agent credential. Reading the archives and one archived
+	// chat is the /history flow, which the app agent may run as its member.
+	// Both are the same conversations these routes already serve, so they take
+	// the catalog's own `archive` and `history` commands and no new policy.
+	{http.MethodPost, "archive", regexp.MustCompile(`^/api/conversations/[^/]+/archive$`)},
+	{http.MethodGet, "history", regexp.MustCompile(`^/api/conversation-archives$`)},
+	{http.MethodGet, "history", regexp.MustCompile(`^/api/conversation-archives/[^/]+$`)},
 	{http.MethodGet, "search", regexp.MustCompile(`^/api/search/(repositories|issues|users|code)$`)},
 	// The issue list card and the issue card (J2 1 and 2).
 	{http.MethodGet, "issue.read", regexp.MustCompile(`^/api/issues$`)},
