@@ -1400,7 +1400,7 @@ describe("HumanTask.answer", () => {
   effect("refuses a bad token with its parse issue and a bounded excerpt", () =>
     drive(
       Effect.gen(function*() {
-        const token = "*".repeat(100) as DurableDeferred.Token
+        const token = "*".repeat(100)
         const exit = yield* Effect.exit(
           HumanTask.answer({ token, value: true })
         )
@@ -1531,7 +1531,7 @@ describe("HumanTask.answer", () => {
     const executionId = "human-second-answer"
     const instance = makeInstance(Host, executionId)
     const point = HumanTask.deferred("release", 1)
-    const token = DurableDeferred.tokenFromExecutionId(point, { flow: Host, executionId })
+    const token: string = DurableDeferred.tokenFromExecutionId(point, { flow: Host, executionId })
     const ask = Flow.intoResult(
       Interpreter.interpret(HumanTask.action.call({ name: "release", kind: "json", prompt: "Decide." }))
     )

@@ -903,7 +903,9 @@ export const layer: Layer.Layer<never, never, Crypto.Crypto | FlowRuntime> = act
  * authorize the caller before calling `answer`.
  *
  * ```ts
- * yield* HumanTask.answer({ token: waiting.token, value: { decision: "ship" } })
+ * if (waiting.token !== null) {
+ *   yield* HumanTask.answer({ token: waiting.token, value: { decision: "ship" } })
+ * }
  * ```
  *
  * The durable JSON boundary is validated here: the value must be inert,
@@ -929,7 +931,7 @@ export const layer: Layer.Layer<never, never, Crypto.Crypto | FlowRuntime> = act
  * @since 0.1.0
  */
 export const answer = (options: {
-  readonly token: DurableDeferred.Token
+  readonly token: string
   readonly value: typeof Schema.Json.Type
 }): Effect.Effect<void, DurableDeferred.TokenInvalid | HumanAnswerInvalid, FlowRuntime> =>
   Effect.gen(function*() {
