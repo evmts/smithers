@@ -82,11 +82,11 @@ GID and supplementary team group before connecting to guest loopback.
 Run unprivileged, with the lane toolchain and `$HOME/.cargo/bin` on PATH:
 
 ```sh
-python3 scripts/spikes/trm-06/test_launcher.py
-go test ./scripts/spikes/trm-06/gateway -timeout 10s
-go vet ./scripts/spikes/trm-06/gateway
-cargo test --locked --manifest-path scripts/spikes/trm-06/supervisor/Cargo.toml
-cargo clippy --locked --all-targets --manifest-path scripts/spikes/trm-06/supervisor/Cargo.toml -- -D warnings
+python3 packages/smithers-machined/checks/C-SPK-08/test_launcher.py
+go test ./packages/smithers-machined/checks/C-SPK-08/gateway -timeout 10s
+go vet ./packages/smithers-machined/checks/C-SPK-08/gateway
+cargo test --locked --manifest-path packages/smithers-machined/checks/C-SPK-08/supervisor/Cargo.toml
+cargo clippy --locked --all-targets --manifest-path packages/smithers-machined/checks/C-SPK-08/supervisor/Cargo.toml -- -D warnings
 ```
 
 SSH listener/channel tests use synthetic guest streams. Reconnect tests use
@@ -190,7 +190,7 @@ Run unprivileged after fetching main, with an existing uninstalled main release
 bundle at the same revision and the security owner's actual raw reviewer key:
 
 ```sh
-python3 scripts/spikes/trm-06/assemble.py --base /path/to/main-bundle --output /path/to/new-spike-bundle --review-key /path/to/smithers-3f.pub > /path/to/artifact-map.json
+python3 packages/smithers-machined/checks/C-SPK-08/assemble.py --base /path/to/main-bundle --output /path/to/new-spike-bundle --review-key /path/to/smithers-3f.pub > /path/to/artifact-map.json
 ```
 
 This archives the exact fetched `origin/main`, builds Darwin ARM64 gateway and
@@ -265,7 +265,7 @@ launcher/cgroup race matrices are still required. No alternate kernel, image,
 branch executable, seccomp shim or activation bypass is selected by the command.
 
 Run the supplemental launcher matrix directly with
-`python3 scripts/spikes/trm-06/test_launcher_races.py`; its executable entrypoint
+`python3 packages/smithers-machined/checks/C-SPK-08/test_launcher_races.py`; its executable entrypoint
 now runs the eight tests (including actual fd exec/environment observations).
 These Linux results do not replace installed Darwin launcher evidence.
 
@@ -318,7 +318,7 @@ Landlock and native/manual evidence remain incomplete.
 
 ### Pass 6 release inputs and cgroup schedules
 
-`python3 scripts/spikes/trm-06/assemble.py --build-only --output <new-dir>`
+`python3 packages/smithers-machined/checks/C-SPK-08/assemble.py --build-only --output <new-dir>`
 builds the Darwin ARM64 gateway, static Linux ARM64 supervisor and spike scripts
 from one archived `origin/main` revision, unprivileged. It retains exact hashes,
 the source archive hash and compiler versions in `build-receipt.json`. These are

@@ -19,7 +19,7 @@ import subprocess
 import tarfile
 import tempfile
 
-SPIKE = Path("scripts/spikes/trm-06")
+SPIKE = Path("packages/smithers-machined/checks/C-SPK-08")
 FILES = {"host_validation.py": 0o644, "launcher.py": 0o644, "install.py": 0o644, "validation.py": 0o644,
          "run.sh": 0o755, "revoke.sh": 0o755, "flow.sh": 0o755}
 
@@ -301,7 +301,7 @@ def build_artifacts(repo, output, expected_revision=None):
         source = build / "source"
         environment = dict(os.environ, GOOS="darwin", GOARCH="arm64", CGO_ENABLED="0", GOFLAGS="", GOWORK="off")
         gateway = build / "trm06-gateway"
-        subprocess.run(["go", "build", "-trimpath", "-buildvcs=false", "-o", str(gateway), "./scripts/spikes/trm-06/gateway"], cwd=source, env=environment, check=True)
+        subprocess.run(["go", "build", "-trimpath", "-buildvcs=false", "-o", str(gateway), "./packages/smithers-machined/checks/C-SPK-08/gateway"], cwd=source, env=environment, check=True)
         validate_gateway(gateway)
         subprocess.run(["cargo", "build", "--locked", "--release", "--target", "aarch64-unknown-linux-musl", "--manifest-path", str(source / SPIKE / "supervisor/Cargo.toml")], cwd=source, env=supervisor_build_environment(build / "cargo-target", source), check=True)
         # Cargo hardlinks its executable to deps. Retain a private single-link copy.
@@ -548,7 +548,7 @@ if __name__ == "__main__":
     parser.add_argument("--archive", type=Path, help="publish a deterministic complete overlay archive")
     parser.add_argument("--verify-reproducible", action="store_true", help="build twice and retain independent artifact/archive comparisons")
     args = parser.parse_args()
-    repo = Path(__file__).resolve().parents[3]
+    repo = Path(__file__).resolve().parents[4]
     if args.verify_reproducible:
         if args.archive is not None or (args.build_only and (args.base is not None or args.review_key is not None)):
             parser.error("reproducibility manages its own archives; build-only excludes base/key")

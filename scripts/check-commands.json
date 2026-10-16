@@ -2813,10 +2813,10 @@
     },
     "C-SPK-08": {
       "status": "manual",
-      "reason": "Person/hardware required: reference host, VS Code on a second Mac; Automation present: scripts/spikes/trm-06/run.sh; authenticated owner approval of argv/host and qualification receipts pending",
+      "reason": "Person/hardware required: reference host, VS Code on a second Mac; Automation present: packages/smithers-machined/checks/C-SPK-08/run.sh; authenticated owner approval of argv/host and qualification receipts pending",
       "pendingBinding": {
         "files": [
-          "scripts/spikes/trm-06/run.sh"
+          "packages/smithers-machined/checks/C-SPK-08/run.sh"
         ],
         "commands": [],
         "unboundSubcases": [

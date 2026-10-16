@@ -26,7 +26,7 @@ def namespace_campaign(temporary):
     # of these mounts, ownership changes or canaries can reach the host install.
     assert os.geteuid() == 0
     os.umask(0o022)
-    templates = {name: assemble.render_entry(SOURCE.parents[2], name,
+    templates = {name: assemble.render_entry(SOURCE.parents[3], name,
                     hashlib.sha256(Path("/bin/true").read_bytes()).hexdigest(), "a" * 40)
                  for name in ("run.sh", "revoke.sh", "flow.sh")}
     bootstrap = (SOURCE / "bootstrap.py").read_text()
@@ -284,7 +284,7 @@ class BootstrapBoundary(unittest.TestCase):
         for digest, revision in [("x" * 64, "a" * 40), ("a" * 64, "a" * 39)]:
             with self.subTest(digest=digest, revision=revision):
                 with self.assertRaises(ValueError):
-                    assemble.render_entry(SOURCE.parents[2], "run.sh", digest, revision)
+                    assemble.render_entry(SOURCE.parents[3], "run.sh", digest, revision)
 
 
 if __name__ == "__main__":

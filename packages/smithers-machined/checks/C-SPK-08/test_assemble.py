@@ -96,7 +96,7 @@ class BundleAssembly(unittest.TestCase):
     def overlay(self, temporary):
         base, manifest = self.base(temporary)
         manifest["revision"] = subprocess.check_output([
-            "git", "-C", str(Path(__file__).resolve().parents[3]),
+            "git", "-C", str(Path(__file__).resolve().parents[4]),
             "rev-parse", "origin/main"], text=True).strip()
         gateway = Path(temporary) / "gateway"
         gateway.write_bytes(struct.pack("<8I", 0xFEEDFACF, 0x0100000C, 0, 2, 1, 8, 0, 0) + struct.pack("<II", 1, 8))
@@ -118,7 +118,7 @@ class BundleAssembly(unittest.TestCase):
         return base
 
     def test_complete_overlay_archive_reproduces_across_paths_and_metadata(self):
-        repo = Path(__file__).resolve().parents[3]
+        repo = Path(__file__).resolve().parents[4]
         with tempfile.TemporaryDirectory() as temporary:
             base = self.overlay(temporary)
             first = Path(temporary) / "first.tar.gz"
@@ -140,7 +140,7 @@ class BundleAssembly(unittest.TestCase):
             with self.assertRaises(ValueError): assemble.archive_overlay(repo, base, base / "nested.tar.gz")
 
     def test_archive_refuses_incomplete_and_changed_overlay(self):
-        repo = Path(__file__).resolve().parents[3]
+        repo = Path(__file__).resolve().parents[4]
         for mode in ("missing", "bytes", "unmanifested", "key", "gateway"):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as temporary:
                 base = self.overlay(temporary)
@@ -159,7 +159,7 @@ class BundleAssembly(unittest.TestCase):
                 self.assertFalse(archive.exists())
 
     def test_archive_checks_actual_tar_bytes_even_when_staging_is_unchanged(self):
-        repo = Path(__file__).resolve().parents[3]
+        repo = Path(__file__).resolve().parents[4]
         with tempfile.TemporaryDirectory() as temporary:
             base = self.overlay(temporary)
             destination = Path(temporary) / "refused.tar.gz"
@@ -189,7 +189,7 @@ class BundleAssembly(unittest.TestCase):
             subprocess.run(["git", "init", "-q", str(repo)], check=True)
             writer = repo / "apps/app/scripts/deterministic-tar.py"
             writer.parent.mkdir(parents=True)
-            original = Path(__file__).resolve().parents[3] / "apps/app/scripts/deterministic-tar.py"
+            original = Path(__file__).resolve().parents[4] / "apps/app/scripts/deterministic-tar.py"
             writer.write_bytes(original.read_bytes())
             subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
             subprocess.run(["git", "-C", str(repo), "-c", "user.name=Fixture",
@@ -218,7 +218,7 @@ class BundleAssembly(unittest.TestCase):
             self.assertFalse(sentinel.exists())
 
     def test_archive_publication_never_overwrites_raced_output_symlink(self):
-        repo = Path(__file__).resolve().parents[3]
+        repo = Path(__file__).resolve().parents[4]
         with tempfile.TemporaryDirectory() as temporary:
             base = self.overlay(temporary)
             destination = Path(temporary) / "refused.tar.gz"
@@ -239,7 +239,7 @@ class BundleAssembly(unittest.TestCase):
             self.assertFalse(list(Path(temporary).glob("trm06-archive-*")))
 
     def test_archive_publication_holds_complete_destination_ancestry(self):
-        repo = Path(__file__).resolve().parents[3]
+        repo = Path(__file__).resolve().parents[4]
         for timing in ("before-link", "during-link"):
             for target in ("parent", "ancestor", "staging", "archive"):
                 with self.subTest(timing=timing, target=target), tempfile.TemporaryDirectory() as temporary:
@@ -359,7 +359,7 @@ class BundleAssembly(unittest.TestCase):
             self.assertEqual((base / "libexec/trm06-supervisor").read_bytes(), artifact.read_bytes())
             self.assertEqual((base / "libexec/trm06-supervisor").stat().st_mode & 0o777, 0o755)
             (base / "manifest.json").write_text(json.dumps(manifest))
-            verifier = Path(__file__).resolve().parents[3] / "apps/app/scripts/server-bundle-manifest.ts"
+            verifier = Path(__file__).resolve().parents[4] / "apps/app/scripts/server-bundle-manifest.ts"
             verified = subprocess.run(["bun", str(verifier), str(base)], capture_output=True, timeout=10)
             self.assertEqual(verified.returncode, 0, verified.stderr.decode())
             with self.assertRaises(FileExistsError):

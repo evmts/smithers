@@ -97,7 +97,7 @@ const isRecorded = (path) =>
  * than an operator's checkout.
  *
  * - `packages/backend/checks/C-SPK-02/` shares member homes over VirtioFS.
- * - `scripts/spikes/trm-06/` confines terminal sessions to guest accounts.
+ * - `packages/smithers-machined/checks/C-SPK-08/` confines terminal sessions to guest accounts.
  *
  * Each creates these accounts inside the VM or namespace it boots, so the path
  * resolves on every machine that runs it. Only the named accounts are exempt:
@@ -105,7 +105,7 @@ const isRecorded = (path) =>
  */
 const modeledAccounts = new Map([
   ["packages/backend/checks/C-SPK-02/", ["alice", "ben", "carol", "member", "root"]],
-  ["scripts/spikes/trm-06/", ["agent", "ben", "environment", "other", "root"]]
+  ["packages/smithers-machined/checks/C-SPK-08/", ["agent", "ben", "environment", "other", "root"]]
 ])
 // The account a Linux home belongs to. Accounts are named, not spelled as
 // paths, so this gate's own source names no home either.
