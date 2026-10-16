@@ -462,6 +462,12 @@ test("an install's main row reads its GitHub sync over an unavailable stack: syn
   expect(markup).toContain('data-health="refused"')
   expect(markup).toContain("GitHub App not installed")
   expect(markup).toContain('data-flow="github"')
+  for (const [cause, message] of [["member_missing_github_id", "Member GitHub identity missing"], ["member_login_conflict", "Member GitHub logins conflict"]] as const) {
+    health = { state: "refused", last_success_at: null, cause }
+    markup = render()
+    expect(markup).toContain('data-health="refused"')
+    expect(markup).toContain(message)
+  }
   // Initial failures still carry authoritative health and a Retry door.
   for (const state of ["stale", "limited"] as const) {
     health = { state, last_success_at: null, ...(state === "limited" ? { retry_at: new Date(Date.now() + 60_000).toISOString() } : {}) }

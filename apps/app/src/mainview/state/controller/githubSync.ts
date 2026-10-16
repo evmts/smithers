@@ -1,3 +1,4 @@
+import { GITHUB_SYNC_CAUSES } from "../seams/GitHubSyncSeam"
 import type { ControllerContext } from "./context"
 import type { GitHubSyncSeam } from "../seams/GitHubSyncSeam"
 import type { Session } from "../AppState"
@@ -36,7 +37,7 @@ export const createGitHubSyncRetry = (ctx: ControllerContext, seam: GitHubSyncSe
         const observe = () => {
           const health = seam.snapshots.get()
           if (!current()) finish(TOAST_SUPERSEDED)
-          else if (health?.state === "refused") finish(health.cause === "not_installed" ? "GitHub App not installed" : "GitHub App permission missing")
+          else if (health?.state === "refused") finish(GITHUB_SYNC_CAUSES[health.cause ?? "permission"])
           else if (health?.state === "fresh" && health.last_success_at !== request.lastSuccessAt) finish(true)
         }
         stop = seam.snapshots.subscribe(observe)

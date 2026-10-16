@@ -5,7 +5,7 @@ import type { ControllerContext } from "./context"
 import type { Session } from "../AppState"
 import { waitFor } from "../TestFixtures"
 
-for (const settlement of ["fresh", "permission", "not_installed", "admission"] as const) {
+for (const settlement of ["fresh", "permission", "not_installed", "member_missing_github_id", "member_login_conflict", "admission"] as const) {
   test(`Retry acknowledges before admission and settles only on ${settlement}`, async () => {
     let health: Record<string, unknown> = { state: "stale", last_success_at: "2026-10-06T00:00:00Z" }
     let release!: (response: Response) => void
@@ -43,7 +43,7 @@ for (const settlement of ["fresh", "permission", "not_installed", "admission"] a
           : { ...health, state: "refused", cause: settlement }
         await seam.read()
         await waitFor(() => receipts.length === 1)
-        expect(receipts).toEqual([settlement === "fresh" ? true : settlement === "permission" ? "GitHub App permission missing" : "GitHub App not installed"])
+        expect(receipts).toEqual([settlement === "fresh" ? true : settlement === "permission" ? "GitHub App permission missing" : settlement === "member_missing_github_id" ? "Member GitHub identity missing" : settlement === "member_login_conflict" ? "Member GitHub logins conflict" : "GitHub App not installed"])
       }
       expect(await retry()).toEqual({ value: "Sync requested" })
       expect(posts).toBe(2)

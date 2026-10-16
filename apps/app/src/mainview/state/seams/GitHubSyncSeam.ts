@@ -10,9 +10,15 @@ import { randomUuid } from "../../runtime/RandomUuid"
 export const GitHubSyncHealthSchema = z.object({
   state: SyncHealthSchema,
   last_success_at: z.string().nullable(),
-  cause: z.enum(["permission", "not_installed"]).optional(),
+  cause: z.enum(["permission", "not_installed", "member_missing_github_id", "member_login_conflict"]).optional(),
   retry_at: z.string().optional()
 })
+export const GITHUB_SYNC_CAUSES = {
+  permission: "GitHub App permission missing",
+  not_installed: "GitHub App not installed",
+  member_missing_github_id: "Member GitHub identity missing",
+  member_login_conflict: "Member GitHub logins conflict"
+} as const
 export type GitHubSyncHealth = z.infer<typeof GitHubSyncHealthSchema>
 export interface MainResetBinding { readonly id: string; readonly old: string; readonly new: string }
 

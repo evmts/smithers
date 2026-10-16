@@ -1,3 +1,4 @@
+import { GITHUB_SYNC_CAUSES } from "../state/seams/GitHubSyncSeam"
 import { useMemo, useSyncExternalStore, type ComponentType } from "react"
 import { HomeCardSchema, type HomeCard as HomeModel, type HomeViewProps } from "@smthrs/rpc/HomeCard"
 import { type CatalogTag } from "@smthrs/rpc/CardAction"
@@ -156,7 +157,7 @@ const NO_INSTALL: InstallSnapshots = { get: () => NO_INSTALL_SNAPSHOT, subscribe
 const NO_INSTALL_SNAPSHOT = {}
 const NO_TODO_LIST: TodoListSnapshots = { get: () => NO_INSTALL_SNAPSHOT, subscribe: () => () => {} }
 const NO_SYNC: GitHubSyncSnapshots = { get: () => undefined, subscribe: () => () => {} }
-const SYNC_CAUSES = { permission: "GitHub App permission missing", not_installed: "GitHub App not installed" } as const
+
 
 /**
  * `main`'s row from the install's GitHub sync (GET /api/github/sync), where no `home` topic serves it. Health is authoritative even before the first successful read.
@@ -165,7 +166,7 @@ export const withGitHubSync = (model: HomeModel, sync: GitHubSyncHealth | undefi
   if (sync === undefined) return model
   const { cause: _cause, retry_at: _retry, ...main } = model.main
   return { ...model, main: { ...main, health: sync.state, last_success_at: sync.last_success_at ?? new Date(0).toISOString(),
-    ...(sync.cause ? { cause: SYNC_CAUSES[sync.cause] } : {}), ...(sync.retry_at ? { retry_at: sync.retry_at } : {}) } }
+    ...(sync.cause ? { cause: GITHUB_SYNC_CAUSES[sync.cause] } : {}), ...(sync.retry_at ? { retry_at: sync.retry_at } : {}) } }
 }
 
 /**
