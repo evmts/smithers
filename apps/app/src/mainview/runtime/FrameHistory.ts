@@ -15,6 +15,9 @@ export interface FrameHistoryPort {
   readonly subscribe: (listener: (location: FrameLocation | undefined) => void) => () => void
 }
 
+/** Addressable root launcher entry; unlike `/`, this remounts after a reload. */
+export const ROOT_APP_PATH = "/?tutorial"
+
 const segment = (value: string): string => encodeURIComponent(value)
 
 export const framePath = (location: FrameLocation): string =>
@@ -72,7 +75,7 @@ const stateLocation = (state: unknown): FrameLocation | undefined => {
  *   history entries and back/forward still fire popstate; the location
  *   travels in each entry's state instead of its URL.
  * - Mounted with `keepUrl` (AppMount.tsx, the smithers.sh home page): the
- *   entry URL is kept for the life of the page.
+ *   root launcher uses `/?tutorial` so reloads remount it. Other entry paths stay pinned.
  */
 export interface BrowserFrameHistoryOptions {
   readonly keepUrl?: boolean
@@ -82,7 +85,9 @@ export const createBrowserFrameHistory = (
   host: BrowserHistoryHost,
   options: BrowserFrameHistoryOptions = {}
 ): FrameHistoryPort => {
-  const pinned = pathRepo(host.location.pathname) !== null || options.keepUrl === true ? host.location.pathname : undefined
+  const pinned = options.keepUrl === true && host.location.pathname === "/"
+    ? ROOT_APP_PATH
+    : pathRepo(host.location.pathname) !== null || options.keepUrl === true ? host.location.pathname : undefined
   const current = (): FrameLocation | undefined =>
     pinned === undefined ? parseFramePath(host.location.pathname) : stateLocation(host.history.state)
   const url = (location: FrameLocation): string => pinned === undefined ? framePath(location) : pinned

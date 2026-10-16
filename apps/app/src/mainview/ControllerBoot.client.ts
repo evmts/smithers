@@ -6,7 +6,7 @@ import { Effect } from "effect"
 import { hasCapability } from "@smthrs/rpc/AppBootstrap"
 import { loadRuntimeApplicationClient } from "./runtime/ApplicationTransport"
 import { beginRepositoryEntry, openRequestedRepo, requestedRepo, withoutRepoParam } from "./RepoLink"
-import { createBrowserFrameHistory } from "./runtime/FrameHistory"
+import { createBrowserFrameHistory, ROOT_APP_PATH } from "./runtime/FrameHistory"
 import { BootstrapFailure, createRuntime, warmBootstrap, unavailableAgent } from "./runtime/Runtime"
 import { createAppController } from "./state/AppController"
 import type { AppController } from "./state/AppController"
@@ -174,10 +174,10 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
     // frame history stores the frame location there, not in the URL.
     // A GitHub App setup-URL return carries its own parameters.
     if (controller.handleInstallReturn(entrySearch)) {
-      window.history.replaceState(window.history.state, "", window.location.pathname)
+      window.history.replaceState(window.history.state, "", window.location.pathname === "/" && options.keepUrl === true ? ROOT_APP_PATH : window.location.pathname)
     }
     if (controller.handleAuthReturn(entrySearch)) {
-      window.history.replaceState(window.history.state, "", window.location.pathname)
+      window.history.replaceState(window.history.state, "", window.location.pathname === "/" && options.keepUrl === true ? ROOT_APP_PATH : window.location.pathname)
     }
     // `/owner/name` (or the landing page's `/?repo=owner/name`) preselects a public-catalog repository.
     // The path stays in the address bar; the parameter leaves it.

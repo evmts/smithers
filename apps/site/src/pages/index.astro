@@ -54,7 +54,7 @@ const githubHref = "https://github.com/smithersai/smithers"
    * Get started for free, or S, mounts the app directly inside a view
    * transition: the hero wordmark glides onto the app's top-left mark, the
    * page fades away, and Suspense paints the shell while boot fills in the
-   * app. The URL stays where it is.
+   * app. The root app entry stays addressable as `/?tutorial`.
    */
   type AppMount = Pick<typeof import("../../../app/src/mainview/AppMount"), "mountApp"> & Partial<Pick<typeof import("../../../app/src/mainview/AppMount"), "warmApp">>
   type Sheet = HTMLLinkElement | HTMLStyleElement
@@ -234,6 +234,9 @@ const githubHref = "https://github.com/smithersai/smithers"
         if (!instant) reload.focus({ preventScroll: true })
         return
       }
+      // Make the app reloadable before boot starts. Authentication returns keep
+      // their query until boot consumes it.
+      if (!instant) history.replaceState(history.state, "", start.href)
       // Mount first: Suspense paints the shell while boot runs alongside the
       // transition. The app owns boot failures through its boundary and watchdog.
       if (instant || reduced.matches || typeof document.startViewTransition !== "function") {

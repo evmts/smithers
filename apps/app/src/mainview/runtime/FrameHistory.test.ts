@@ -93,12 +93,12 @@ describe("browser frame history", () => {
     expect(seen).toEqual([root, card])
   })
 
-  test("mounted with keepUrl at /, push and replace leave / in the address bar and back/forward still report frames", () => {
-    const { host, entries } = browser("/")
+  for (const entry of ["/", "/?tutorial", "/?signed-in=github", "/?auth=failed", "/?auth=error"]) test(`mounted from ${entry}, frames retain the reloadable root app URL`, () => {
+    const { host, entries } = browser(entry)
     const history = createBrowserFrameHistory(host, { keepUrl: true })
     history.replace(root)
     history.push(card)
-    expect(entries()).toEqual(["/", "/"])
+    expect(entries()).toEqual(["/?tutorial", "/?tutorial"])
     expect(history.current()).toEqual(card)
     history.back()
     expect(history.current()).toEqual(root)
