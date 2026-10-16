@@ -552,3 +552,34 @@ func TestGitHubPermissionEventsForgetCachedMaintainers(t *testing.T) {
 	restored := stampIssueText(t, stamper, "opened", issueTextEvent(t, "opened", issueAuthor))
 	assert.True(t, gitHubIssueEventApproves("issues", "opened", restored, "", nil))
 }
+
+func TestGitHubIssueTextRejectsIncompleteHistory(t *testing.T) {
+	for _, history := range []string{
+		``, `,"userContentEdits":null,"timelineItems":null`,
+		`,"userContentEdits":{},"timelineItems":{"nodes":[]}`,
+		`,"userContentEdits":{"nodes":[]},"timelineItems":{}`,
+		`,"userContentEdits":{"nodes":null},"timelineItems":{"nodes":[]}`,
+	} {
+		t.Run(history, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = w.Write([]byte(`{"data":{"repository":{"issueOrPullRequest":{"title":"T","body":"B","author":{"__typename":"User","login":"owner"}` + history + `}}}}`))
+			}))
+			defer server.Close()
+			api := &gitHubIssueTextAPI{api: &landingGitHubAPI{baseURL: func() string { return server.URL }, client: server.Client()}}
+			_, err := api.IssueText(context.Background(), "token", "o", "r", 1)
+			require.Error(t, err, "incomplete history must never inherit the author's authority")
+		})
+	}
+}
+
+func TestGitHubIssueTextNormalizesGraphQLBotLogin(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":{"repository":{"issueOrPullRequest":{"title":"T","body":"B","author":{"__typename":"Bot","login":"smithers"},"userContentEdits":{"nodes":[]},"timelineItems":{"nodes":[]}}}}}`))
+	}))
+	defer server.Close()
+	api := &gitHubIssueTextAPI{api: &landingGitHubAPI{baseURL: func() string { return server.URL }, client: server.Client()}}
+	text, err := api.IssueText(context.Background(), "token", "o", "r", 1)
+	require.NoError(t, err)
+	require.Equal(t, "smithers[bot]", text.Author.Login)
+	require.Equal(t, "Bot", text.Author.Type)
+}

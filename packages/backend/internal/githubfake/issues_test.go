@@ -490,3 +490,16 @@ func TestAppIssueCreationRequiresIssueWriteAndKeepsAppProvenance(t *testing.T) {
 	require.Equal(t, 200, status)
 	require.Contains(t, string(body), "Created")
 }
+
+func TestGraphQLBotUsesGitHubLoginWithoutRESTSuffix(t *testing.T) {
+	server, cfg, key := fixture(t)
+	n := server.OpenIssue("acme/app", "smithers[bot]", "Title", "Body")
+	require.EqualValues(t, 1, n)
+	status, body := request(t, server, "POST", "/app/installations/91/access_tokens", jwt(t, key, cfg.AppID, time.Now().Add(time.Minute)), nil)
+	require.Equal(t, 201, status)
+	var access struct{ Token string }
+	require.NoError(t, json.Unmarshal(body, &access))
+	status, body = request(t, server, "POST", "/graphql", access.Token, []byte(`{"query":"query{repository{issueOrPullRequest(number:1){author{login}}}}","variables":{"owner":"acme","name":"app","number":1}}`))
+	require.Equal(t, 200, status)
+	require.Contains(t, string(body), `"__typename":"Bot","login":"smithers"`)
+}

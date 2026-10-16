@@ -69,7 +69,11 @@ func (a *gitHubGraphQLActor) actor() *gitHubActor {
 	if a == nil || strings.TrimSpace(a.Login) == "" {
 		return nil
 	}
-	return &gitHubActor{Login: a.Login, Type: a.Typename}
+	login := a.Login
+	if a.Typename == "Bot" && !strings.HasSuffix(login, "[bot]") {
+		login += "[bot]"
+	}
+	return &gitHubActor{Login: login, Type: a.Typename}
 }
 
 // IssueText reads an issue's current text and the last writer of each part:
@@ -85,12 +89,12 @@ func (g *gitHubIssueTextAPI) IssueText(ctx context.Context, token, owner, repo s
 					LastEditedAt time.Time           `json:"lastEditedAt"`
 					Body         string              `json:"body"`
 					Author       *gitHubGraphQLActor `json:"author"`
-					Edits        struct {
+					Edits        *struct {
 						Nodes []struct {
 							Editor *gitHubGraphQLActor `json:"editor"`
 						} `json:"nodes"`
 					} `json:"userContentEdits"`
-					Renames struct {
+					Renames *struct {
 						Nodes []struct {
 							Actor     *gitHubGraphQLActor `json:"actor"`
 							CreatedAt time.Time           `json:"createdAt"`
@@ -119,6 +123,9 @@ func (g *gitHubIssueTextAPI) IssueText(ctx context.Context, token, owner, repo s
 		return gitHubIssueText{}, pkgerrors.Forbidden("GitHub did not show who wrote the issue text")
 	}
 	issue := out.Data.Repository.Issue
+	if issue.Edits == nil || issue.Renames == nil || issue.Edits.Nodes == nil || issue.Renames.Nodes == nil {
+		return gitHubIssueText{}, errGitHubIssueTextUnavailable
+	}
 	text := gitHubIssueText{Title: issue.Title, Body: issue.Body, BodyEditedAt: issue.LastEditedAt}
 	if author := issue.Author.actor(); author != nil {
 		// GraphQL types the author by its account; the rule needs a user.

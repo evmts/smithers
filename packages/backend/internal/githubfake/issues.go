@@ -508,6 +508,7 @@ func (s *Server) issueText(installationID int64, body []byte) (int, any) {
 			kind := "User"
 			if strings.HasSuffix(login, "[bot]") {
 				kind = "Bot"
+				login = strings.TrimSuffix(login, "[bot]")
 			}
 			return map[string]string{"__typename": kind, "login": login}
 		}
