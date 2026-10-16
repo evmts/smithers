@@ -466,6 +466,28 @@ function boundTodo(model: TodoCard, definitions: CardActionDefinition[], slot?: 
   render(model);
   return { host, calls, render, close: () => { act(() => root.unmount()); host.remove(); } };
 }
+for (const state of ["waiting", "ready", "blocked", "merging", "done"] as const) {
+  test(`TODO supplied merge action remains available when merge status is ${state}`, () => {
+    const view = boundTodo({ ...repairTodo, merge: { state, on_github: false } }, [
+      { tag: "todo.retry", label: "Retry", command_input: { n: 24 } },
+      { tag: "merge", label: "Merge", command_input: { n: 24 } },
+    ]);
+    try {
+      expect(Array.from(view.host.querySelectorAll("button")).map(button => button.textContent)).toEqual(["Retry", "Merge"]);
+      act(() => view.host.querySelector<HTMLButtonElement>('[data-flow="merge"]')!.click());
+      expect(view.calls).toEqual([["merge", { n: 24 }]]);
+      view.render({ ...repairTodo, merge: { state, on_github: false } }, [
+        { tag: "merge", label: "Merge", disabled: { reason: "Checks running" }, command_input: { n: 24 } },
+      ]);
+      expect(view.host.querySelector("button")).toBeNull();
+      expect(view.host.querySelector(".todo-actions")!.textContent).toBe("Checks running");
+      expect(view.host.textContent).not.toContain("a maintainer merges");
+      view.render({ ...repairTodo, merge: { state, on_github: false } }, []);
+      expect(view.host.querySelector("button")).toBeNull();
+      expect(view.calls).toHaveLength(1);
+    } finally { view.close(); }
+  });
+}
 function typeTodoInput(input: HTMLInputElement | HTMLTextAreaElement, value: string) {
   act(() => {
     const prototype = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;

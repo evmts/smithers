@@ -59,7 +59,6 @@ export function TodoView({ model: todo, actions, onAction, conflictTerminal }: T
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const mergeAction = actions.find((action) => action.tag === "merge");
   const mergeReason =
-    mergeAction?.disabled?.reason ??
     todo.merge.detail ??
     {
       state: "Waiting for review",
@@ -295,7 +294,7 @@ export function TodoView({ model: todo, actions, onAction, conflictTerminal }: T
       {todo.merged_via && <p>Merged · in T{todo.merged_via}'s commit</p>}
       <div className="todo-actions">
         {actions.map((action, index) =>
-          action.tag === "merge" && (todo.merge.state !== "ready" || action.disabled) ? null : (
+          (
             action.tag === "todo.amend" && todo.state === "queued" ? <details key={`${action.tag}-${index}`}>
               <summary>Edit</summary>
               <TodoActionView action={action} onAction={onAction} drafts={drafts} onView={(next) => setDrafts(next)} />
@@ -309,7 +308,7 @@ export function TodoView({ model: todo, actions, onAction, conflictTerminal }: T
           ),
         )}
       </div>
-      {todo.merge.state !== "done" && (!mergeAction || todo.merge.state !== "ready" || mergeAction.disabled) && (
+      {todo.merge.state !== "done" && !mergeAction && (
         <div
           className="todo-merge-reason"
           data-tone={
