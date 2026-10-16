@@ -219,6 +219,7 @@ onboarding_answers,product,product migration 0011
 workspace_setup_jobs,product,product migration 0011
 repo_push_events,product,product migration 0016
 github_main_pulls,product,product migration 0024
+github_main_commits,product,product migration 0165; T-GH-02
 landing_github_merges,product,product migration 0035
 provider_connection_device_logins,product,product migration 0025
 mythical_stacks,product,product migration 0026
