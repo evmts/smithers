@@ -40,7 +40,9 @@ describe("documentation", () => {
   // GitHub URL rather than a path that is absent from the tarball.
   it("keeps the package README pointing at the published reference", () => {
     const readme = read("../README.md")
-    expect(readme).toContain("https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/evals/docs/api.md")
+    expect(readme).toContain(
+      "https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/evals/docs/api.md"
+    )
     expect(readme).not.toContain("npm install")
   })
 

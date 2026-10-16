@@ -101,8 +101,8 @@ Full signatures: <https://github.com/smithersai/smithers/blob/main/packages/smit
 
 ## Documentation
 
-| Page                                                                           | What it covers                                                   |
-| ------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| Page                                                                                                                                       | What it covers                                                   |
+| ------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
 | [Quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/docs/quickstart.md)                           | Run a flow, then prove the second submission replays.            |
 | [The port and the seam](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/docs/concepts/port-and-seam.md)    | Why the engine is two layers, and what crosses the seam encoded. |
 | [Execution identity](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/docs/concepts/execution-identity.md)  | Caller-supplied execution ids, joins, and refused reuses.        |

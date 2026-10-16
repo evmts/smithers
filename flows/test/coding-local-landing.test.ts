@@ -356,12 +356,14 @@ test("pull-request lander: pushes the candidate to origin, opens its pull reques
     cleanup.summary
   ])
   const appliedPull = await readFile(join(gh.state, "pull.json"), "utf8")
-  for (const changed of [
-    { number: 42 },
-    { headRefOid: "8".repeat(40) },
-    { baseRefName: "other" },
-    { state: "CLOSED", mergeCommit: null }
-  ]) {
+  for (
+    const changed of [
+      { number: 42 },
+      { headRefOid: "8".repeat(40) },
+      { baseRefName: "other" },
+      { state: "CLOSED", mergeCommit: null }
+    ]
+  ) {
     await writeFile(join(gh.state, "pull.json"), JSON.stringify({ ...JSON.parse(appliedPull), ...changed }))
     const before = (await gh.log()).filter((args) => args[1] === "merge").length
     assert.equal((await failure(lander.merge(pull, prepared))).code, "invalid_receipt")

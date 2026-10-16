@@ -202,8 +202,12 @@ describe("package documentation", () => {
   // links the docs files on GitHub, which resolve from the tarball.
   it("keeps the README pointing at the published documentation", () => {
     expect(readme).toContain("https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/chain/docs")
-    expect(readme).toContain("https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/chain/docs/api.md")
-    expect(readme).toContain("https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/chain/docs/contract.md")
+    expect(readme).toContain(
+      "https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/chain/docs/api.md"
+    )
+    expect(readme).toContain(
+      "https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/chain/docs/contract.md"
+    )
   })
 
   // Neither `Chain` nor `ModelAuthor` supplies a prompt: `Chain.run` defaults

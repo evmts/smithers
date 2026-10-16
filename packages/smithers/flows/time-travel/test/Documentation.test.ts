@@ -63,7 +63,9 @@ it("documents completed-prefix reuse and fresh child actions", () => {
   expect(guide).toContain("A frame inside an irreversible action")
   expect(readme).toContain("A durable fork reuses completed action results through its frame")
   expect(readme).toContain("child's own identity, even with a shared cache environment")
-  expect(readme).toContain("https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/time-travel/docs/guides/fork-a-run.md")
+  expect(readme).toContain(
+    "https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/time-travel/docs/guides/fork-a-run.md"
+  )
 })
 
 it("tells a handler author that receipts persist unredacted and must not carry credentials", () => {
