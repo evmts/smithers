@@ -627,14 +627,6 @@ const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
     reason: "TODO EvidenceItem discriminator declared in ui-components.md; the callback reads attempt.items, never cards."
   },
   {
-    literal: "check", file: "e2e/local/team-no-github.spec.ts",
-    reason: "TODO EvidenceItem discriminator declared in ui-components.md; the callback reads attempt.items, never cards."
-  },
-  {
-    literal: "review", file: "e2e/local/team-no-github.spec.ts",
-    reason: "TODO EvidenceItem discriminator declared in ui-components.md; the callback reads attempt.items, never cards."
-  },
-  {
     literal: "smithers-local-own-", file: "e2e/playwright/debug-api/local-own-read.ts",
     reason: "Child-owned temporary directory prefix emitted by scripts/mode-matrix/local-own.ts, outside product src."
   },
@@ -1490,6 +1482,19 @@ describe("non-card discriminator provenance", () => {
       const actor = key ? actors[key]?.model.actor : undefined;
       actor?.kind === "agent";
     `)).toEqual([])
+  })
+  test("only the canonical TODO schema parse proves the evidence domain", () => {
+    const evidence = `const todo = schema.parse(await response.json());
+      todo.evidence.find(e => e.attempt === 1).items.find(item => item.kind === "model_access");`
+    expect(claims(`import { TodoCardSchema as schema } from "@smthrs/rpc/TodoCard"; ${evidence}`)).toEqual([])
+    for (const source of [
+      `import { TodoCardSchema as schema } from "./lookalike"; ${evidence}`,
+      `const schema = { parse: value => value }; ${evidence}`,
+      `import { TodoCardSchema as schema } from "@smthrs/rpc/TodoCard"; { const schema = other; ${evidence} }`,
+      `import { TodoCardSchema as schema } from "@smthrs/rpc/TodoCard";
+       let todo = schema.parse(value); todo = other;
+       todo.evidence[0].items.find(item => item.kind === "model_access");`
+    ]) expect(claims(source).length).toBeGreaterThan(0)
   })
   test("unproven receivers, card APIs, shadowed bindings and mixed assignments retain card claims", () => {
     for (const source of [

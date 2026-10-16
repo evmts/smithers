@@ -155,7 +155,7 @@ const calleeName = (expression: ts.Expression): string | undefined => {
 }
 
 /** Follow source contracts rather than treating every `.kind` union as a card. */
-type KindDomain = "reference" | "todo" | "run" | "attempts" | "attempt" | "evidence" | "evidence-item" | "events" | "event" | "actor-fixtures" | "actor-story" | "actor-model" | "actor"
+type KindDomain = "reference" | "todo-schema" | "todo" | "run" | "attempts" | "attempt" | "evidence" | "evidence-item" | "events" | "event" | "actor-fixtures" | "actor-story" | "actor-model" | "actor"
 const kindCheckers = new WeakMap<ts.SourceFile, ts.TypeChecker>()
 const checkerForKinds = (source: ts.SourceFile): ts.TypeChecker => {
   const cached = kindCheckers.get(source)
@@ -190,6 +190,7 @@ const kindDomain = (expression: ts.Expression, seen = new Set<ts.Node>()): KindD
     if (declaration && ts.isImportSpecifier(declaration)) {
       const imported = declaration.parent.parent.parent
       if (ts.isImportDeclaration(imported) && ts.isStringLiteral(imported.moduleSpecifier) && imported.moduleSpecifier.text === "@smthrs/rpc/fixtures/ActorChip" && (declaration.propertyName?.text ?? declaration.name.text) === "fixtures") return "actor-fixtures"
+      if (ts.isImportDeclaration(imported) && ts.isStringLiteral(imported.moduleSpecifier) && imported.moduleSpecifier.text === "@smthrs/rpc/TodoCard" && (declaration.propertyName?.text ?? declaration.name.text) === "TodoCardSchema") return "todo-schema"
     }
     if (declaration && ts.isParameter(declaration)) {
       const callback = declaration.parent
@@ -233,6 +234,7 @@ const kindDomain = (expression: ts.Expression, seen = new Set<ts.Node>()): KindD
   if (ts.isCallExpression(expression) && ts.isPropertyAccessExpression(expression.expression)) {
     const method = expression.expression.name.text
     const receiverDomain = kindDomain(expression.expression.expression, next)
+    if (method === "parse" && receiverDomain === "todo-schema") return "todo"
     if (method === "read" && receiverDomain === "reference") {
       const path = expression.arguments[1]
       const prefix = path && (ts.isStringLiteral(path) || ts.isNoSubstitutionTemplateLiteral(path)) ? path.text : path && ts.isTemplateExpression(path) ? path.head.text : ""

@@ -1,6 +1,8 @@
 import { test, expect, type Browser, type BrowserContext, type Page } from "@playwright/test"
 import { appendFileSync, existsSync, readFileSync } from "node:fs"
 import { README } from "./demo-repository"
+import { TodoCardSchema } from "@smthrs/rpc/TodoCard"
+import assert from "node:assert/strict"
 
 // J1 step 8, then J2 and J4 as Ben (Maintainer) and Alice (Member), on the install setup-no-github.spec.ts set up.
 // Every request the install answers 401 or 403 is recorded by person; a member's path must have none beyond the
@@ -251,29 +253,33 @@ test("C-J2-04 owner opens the completed canary's attempt evidence", async ({ bro
   const card = page.getByRole("article", { name: "TODO T1", exact: true }).last()
   const response = await page.request.get(`${app}/api/todos/1`)
   expect(response.status()).toBe(200)
-  const todo = await response.json()
-  const attempt = todo.evidence.find((entry: { attempt: number }) => entry.attempt === 1)
-  expect(attempt).toBeTruthy()
+  const todo = TodoCardSchema.parse(await response.json())
+  const attempt = todo.evidence.find(entry => entry.attempt === 1)
+  assert(attempt)
   expect(attempt.revision).toMatch(/^[a-f0-9]{40}$/)
   const evidence = card.getByRole("region", { name: "Attempt 1 evidence", exact: true })
   await expect(evidence).toBeVisible()
-  const diff = attempt.items.find((item: { kind: string }) => item.kind === "diff")
+  const diff = attempt.items.find(item => item.kind === "diff")
+  assert(diff)
   expect(diff.files).toBeGreaterThan(0)
   expect(diff.added).toBeGreaterThan(0)
   expect(diff.removed).toBeGreaterThanOrEqual(0)
-  const checks = attempt.items.filter((item: { kind: string }) => item.kind === "check")
+  const checks = attempt.items.filter(item => item.kind === "check")
   expect(checks.length).toBeGreaterThanOrEqual(2)
   for (const check of checks) {
     expect(check.state).toBe("passed")
     expect(check.took_s).toBeGreaterThanOrEqual(0)
     await expect(evidence).toContainText(check.name)
   }
-  const review = attempt.items.find((item: { kind: string }) => item.kind === "review")
+  const review = attempt.items.find(item => item.kind === "review")
+  assert(review)
   expect(review.summary).toMatch(/^approve(?:\s|$)/)
-  const usage = attempt.items.find((item: { kind: string }) => item.kind === "usage")
+  const usage = attempt.items.find(item => item.kind === "usage")
+  assert(usage)
   expect(usage.tokens).toBeGreaterThan(0)
   expect(usage.time_s).toBeGreaterThan(0)
-  const access = attempt.items.find((item: { kind: string }) => item.kind === "model_access")
+  const access = attempt.items.find(item => item.kind === "model_access")
+  assert(access)
   expect(access.label.length).toBeGreaterThan(0)
   await expect(evidence).toContainText("approve")
   await expect(evidence).not.toContainText("not measured yet")
