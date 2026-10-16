@@ -2,7 +2,7 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package takes `effect` as a `^4.0.4` peer and keeps its Node platform
+This package takes `effect` as a `4.0.4` peer and keeps its Node platform
 adapters at `4.0.4`. Install one Effect runtime shared by the CLI and the
 application.
 

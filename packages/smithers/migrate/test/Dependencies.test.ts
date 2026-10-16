@@ -106,7 +106,6 @@ describe("the scan surface's dependency boundary", () => {
     // the published package. Their external dependencies remain explicit.
     expect(Object.keys(manifest.dependencies).sort()).toEqual([
       "@types/ws",
-      "effect",
       "redis",
       "typescript",
       "undici",
@@ -127,7 +126,7 @@ describe("the scan surface's dependency boundary", () => {
     // The scanner can run before a project installs the flow runtime. Its own
     // Effect remains external; the Node adapter and its shared platform are
     // private build inputs at the same exact family pin (#2398, #3093).
-    expect(manifest.dependencies.effect).toBe(EXPECTED_EFFECT_VERSION)
+    expect(manifest.dependencies.effect).toBeUndefined()
     expect(manifest.devDependencies.effect).toBe(EXPECTED_EFFECT_VERSION)
     for (const name of privateEffectAdapters(manifest)) {
       expect(manifest.devDependencies[name]).toBe(EXPECTED_EFFECT_VERSION)
@@ -135,6 +134,6 @@ describe("the scan surface's dependency boundary", () => {
       expect(manifest.peerDependencies?.[name]).toBeUndefined()
       expect(manifest.optionalDependencies[name]).toBeUndefined()
     }
-    expect(manifest.peerDependencies).toBeUndefined()
+    expect(manifest.peerDependencies).toEqual({ effect: EXPECTED_EFFECT_VERSION })
   })
 })
