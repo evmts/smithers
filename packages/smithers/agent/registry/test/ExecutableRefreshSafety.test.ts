@@ -230,34 +230,37 @@ describe("a rebuild swaps a body without dropping the one it replaces", () => {
         //
         // Every build registers TWO flows, because the entry is a module that
         // is its own flow: the bridged flow the registry name resolves to, and
-        // the flow it calls. Startup registered #1 and #2. The first rebuild
-        // registers #3 and #4 and holds their scope; the second registers #5
-        // and #6 and releases that scope, newest finalizer first.
+        // the flow it calls. Startup registered #4 and #5. The first rebuild
+        // registers #6 and #7 and holds their scope; the second registers #8
+        // and #9 and releases that scope, newest finalizer first.
         expect((yield* refresh.flow("early"))._tag).toBe("Registered")
         expect((yield* refresh.flow("early"))._tag).toBe("Registered")
 
         expect([...registrations.events]).toEqual([
-          "register:early#1",
-          "register:safety/early#2",
-          "register:early#3",
-          "register:safety/early#4",
-          "register:early#5",
-          "register:safety/early#6",
-          "release:safety/early#4",
-          "release:early#3"
+          "register:system/human-task#1",
+          "register:system/sleep#2",
+          "register:system/wait-for#3",
+          "register:early#4",
+          "register:safety/early#5",
+          "register:early#6",
+          "register:safety/early#7",
+          "register:early#8",
+          "register:safety/early#9",
+          "release:safety/early#7",
+          "release:early#6"
         ])
         // And the previous body was still registered at the moment the new
         // one arrived: an execution dispatched across the swap reaches one.
-        expect([...registrations.liveOnRegister]).toEqual([0, 0, 1, 1, 2, 2])
+        expect([...registrations.liveOnRegister]).toEqual([0, 0, 0, 0, 0, 1, 1, 2, 2])
       }))
   }, 60_000)
 
   it.effect("keeps the previous entry and its live body when a registration dies", () => {
     const registrations = runtime({
-      // Startup registers the entry's two flows, #1 and #2; #3 is the first
+      // Startup registers the entry's two flows, #4 and #5; #6 is the first
       // registration a REBUILD performs. A body that cannot register is the
       // case this arm exists for.
-      onRegister: (_tag, count) => count === 3 ? Effect.die("registration died") : Effect.void
+      onRegister: (_tag, count) => count === 6 ? Effect.die("registration died") : Effect.void
     })
     return withProject(registrations, () =>
       Effect.gen(function*() {
@@ -274,10 +277,13 @@ describe("a rebuild swaps a body without dropping the one it replaces", () => {
         // The rebuild's own registration was unwound with the build that made
         // it; the bodies registered before it were left alone.
         expect([...registrations.events]).toEqual([
-          "register:early#1",
-          "register:safety/early#2",
-          "register:early#3",
-          "release:early#3"
+          "register:system/human-task#1",
+          "register:system/sleep#2",
+          "register:system/wait-for#3",
+          "register:early#4",
+          "register:safety/early#5",
+          "register:early#6",
+          "release:early#6"
         ])
 
         // And the host is not wedged. The next rebuild registers both flows,
@@ -285,12 +291,15 @@ describe("a rebuild swaps a body without dropping the one it replaces", () => {
         // scope, which this seam does not hold.
         expect((yield* refresh.flow("early"))._tag).toBe("Registered")
         expect([...registrations.events]).toEqual([
-          "register:early#1",
-          "register:safety/early#2",
-          "register:early#3",
-          "release:early#3",
+          "register:system/human-task#1",
+          "register:system/sleep#2",
+          "register:system/wait-for#3",
           "register:early#4",
-          "register:safety/early#5"
+          "register:safety/early#5",
+          "register:early#6",
+          "release:early#6",
+          "register:early#7",
+          "register:safety/early#8"
         ])
       }))
   }, 60_000)
@@ -314,10 +323,10 @@ describe("two rebuilds of one name", () => {
             depth.set(tag, (depth.get(tag) ?? 0) + 1)
             peak = Math.max(peak, depth.get(tag)!)
             entered.push(`enter:${tag}`)
-            // Startup registers #1 and #2, so #3 is the first registration a
+            // Startup registers #4 and #5, so #6 is the first registration a
             // rebuild performs. Only that one waits, so a second rebuild that
             // is not held off by the gate has a whole second to overlap it.
-            if (count === 3) yield* Deferred.await(hold)
+            if (count === 6) yield* Deferred.await(hold)
             depth.set(tag, depth.get(tag)! - 1)
             entered.push(`exit:${tag}`)
           })
@@ -343,6 +352,12 @@ describe("two rebuilds of one name", () => {
       // waits, and the module flow it merges with proceeds meanwhile — which
       // is one build's two layers, not two builds.
       expect(entered).toEqual([
+        "enter:system/human-task",
+        "exit:system/human-task",
+        "enter:system/sleep",
+        "exit:system/sleep",
+        "enter:system/wait-for",
+        "exit:system/wait-for",
         "enter:early",
         "exit:early",
         "enter:safety/early",

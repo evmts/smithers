@@ -159,7 +159,7 @@ describe("rebuilding one catalog entry without restarting the host", () => {
         const catalog = yield* Executable.Catalog
         const refresh = yield* Executable.Refresh
         expect(catalog.executables.map((entry) => entry.descriptor.name)).toEqual(["early"])
-        expect(registered).toEqual(["early", "refresh/early"])
+        expect(registered).toEqual(["system/human-task", "system/sleep", "system/wait-for", "early", "refresh/early"])
 
         yield* fs.makeDirectory(`${root}/flows/late`, { recursive: true })
         yield* fs.writeFileString(`${root}/flows/late/flow.ts`, declaration("late", chained))
@@ -173,7 +173,15 @@ describe("rebuilding one catalog entry without restarting the host", () => {
         expect(catalog.executables.map((entry) => entry.descriptor.name).sort()).toEqual(["early", "late"])
         // The bridged flow the registry name resolves to, and the flow it
         // calls: a module that is its own flow registers both.
-        expect(registered).toEqual(["early", "refresh/early", "late", "refresh/late"])
+        expect(registered).toEqual([
+          "system/human-task",
+          "system/sleep",
+          "system/wait-for",
+          "early",
+          "refresh/early",
+          "late",
+          "refresh/late"
+        ])
 
         // The plan this host would now draw for `late` is the declaration's own
         // topology, keyed nodes and all, rather than the empty one a missing
@@ -254,7 +262,7 @@ describe("rebuilding one catalog entry without restarting the host", () => {
         expect(outcome.error.delegate).toBe("refresh/Nobody")
         expect(catalog.executables.map((entry) => entry.descriptor.name)).toEqual(["early"])
         expect(catalog.refused.map((failure) => failure.flow)).toEqual(["orphan"])
-        expect(registered).toEqual(["early", "refresh/early"])
+        expect(registered).toEqual(["system/human-task", "system/sleep", "system/wait-for", "early", "refresh/early"])
       }))
   }, 60_000)
 
@@ -276,7 +284,7 @@ describe("rebuilding one catalog entry without restarting the host", () => {
         // their bytes come from.
         expect((yield* refresh.flow("early"))._tag).toBe("Fixed")
         expect(catalog.executables.find((entry) => entry.descriptor.name === "early")).toBe(before)
-        expect(registered).toEqual(["early", "refresh/early"])
+        expect(registered).toEqual(["system/human-task", "system/sleep", "system/wait-for", "early", "refresh/early"])
       }).pipe(
         Effect.provide(
           Executable.layer({ delegates: [Delegate, Other], refreshable: () => false }).pipe(
@@ -358,7 +366,7 @@ describe("rebuilding one catalog entry without restarting the host", () => {
         expect(kept[0]!.descriptor.body.contentDigest).toBe(digest)
         expect(drafts(kept[0]!.flow)).toContain("root.flow.flow.andThen")
         expect(catalog.refused.map((failure) => failure.flow)).toEqual(["early"])
-        expect(registered).toEqual(["early", "refresh/early"])
+        expect(registered).toEqual(["system/human-task", "system/sleep", "system/wait-for", "early", "refresh/early"])
         // First use still reaches the runnable entry.
         expect(yield* catalog.load!("early")).toBe(first)
       }))

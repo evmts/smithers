@@ -889,7 +889,7 @@ export default ({
               yield* Deferred.await(acquired)
               expect(resources).toEqual(["acquired"])
               yield* Fiber.interrupt(loading)
-              expect(resources).toEqual(["acquired", "released"])
+              expect(resources).toEqual(["acquired", "acquired", "acquired", "released", "released", "released"])
               expect(catalog.refused).toEqual([original])
               expect(catalog.executables).toEqual([])
             } else {
@@ -2205,6 +2205,9 @@ describe("registration", () => {
         // A module that is its own flow registers twice: the bridged flow the
         // registry name resolves to, and the flow it calls.
         "standalone",
+        "system/human-task",
+        "system/sleep",
+        "system/wait-for",
         "test/standalone",
         "tuned"
       ])

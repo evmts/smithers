@@ -442,3 +442,23 @@ describe("a hand annotation on a toLayer result", () => {
     expectTypeOf<FlowRuntime.FlowRuntime extends Inferred ? true : false>().toEqualTypeOf<true>()
   })
 })
+
+describe("interpreter built-in ownership", () => {
+  it.effect("shares built-ins across independent layer builds until the last registration closes", () =>
+    Effect.gen(function*() {
+      const table = yield* Action.Implementations
+      const first = yield* Effect.acquireRelease(Scope.make(), (scope) => Scope.close(scope, Exit.void))
+      const second = yield* Effect.acquireRelease(Scope.make(), (scope) => Scope.close(scope, Exit.void))
+      const a = Flow.make("builtin-owner/a", { payload: {}, success: Schema.Void, body: () => Node.succeed(undefined) })
+      const b = Flow.make("builtin-owner/b", { payload: {}, success: Schema.Void, body: () => Node.succeed(undefined) })
+      yield* Layer.buildWithScope(Interpreter.layer(a), first)
+      const original = yield* table.get(Sleep.action.name)
+      expect(Option.isSome(original)).toBe(true)
+      yield* Layer.buildWithScope(Interpreter.layer(b), second)
+      expect(yield* table.get(Sleep.action.name)).toEqual(original)
+      yield* Scope.close(first, Exit.void)
+      expect(yield* table.get(Sleep.action.name)).toEqual(original)
+      yield* Scope.close(second, Exit.void)
+      expect(yield* table.get(Sleep.action.name)).toEqual(Option.none())
+    }).pipe(Effect.scoped, Effect.provide(Layer.merge(Action.layerImplementations, layerMemory)), withCrypto))
+})

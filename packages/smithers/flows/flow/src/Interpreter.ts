@@ -1486,11 +1486,26 @@ export const layer = <
 
 // These layers only register handlers at construction. Crypto is supplied by
 // the executing interpreter (Services), not required to register a flow.
-const systemActions = Layer.mergeAll(HumanTask.layer, Sleep.layer, WaitFor.layer) as Layer.Layer<
+const systemHandlers = Layer.mergeAll(HumanTask.layer, Sleep.layer, WaitFor.layer) as Layer.Layer<
   never,
   never,
   FlowRuntime
 >
+
+// Independent module/refresh layer builds can share one implementation table.
+// Memoize the built-ins by that owner, with Layer retaining each live scope's
+// reference, rather than registering a second handler or overriding the first.
+const systemMemoMaps = new WeakMap<Implementations["Service"], Layer.MemoMap>()
+const systemActions = Layer.fromBuild((currentMemoMap, scope) =>
+  Effect.flatMap(Implementations, (table) => {
+    let memoMap = systemMemoMaps.get(table)
+    if (memoMap === undefined) {
+      memoMap = currentMemoMap
+      systemMemoMaps.set(table, memoMap)
+    }
+    return Layer.buildWithMemoMap(systemHandlers, memoMap, scope)
+  })
+)
 
 /** Registers the interpreter and reachable child flows under one policy. @private */
 const makeLayer = <
