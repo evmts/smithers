@@ -799,6 +799,15 @@ func (s *MythicalService) ProjectFlowRuntime(ctx context.Context, update flowdis
 				projectTodoThrash(&next, update)
 				projectTodoFailureStep(&next, projection, update)
 			}
+			if !pinMismatch && s.todoRunEvidence != nil && (projection.Phase == "todo" || projection.Phase == "request") && runID != "" && next.RequestRunID == runID && update.Checkpoint.Target.WorkspaceID == next.WorkspaceID && update.Checkpoint.Target.TenantID == fmt.Sprintf("repository:%d", next.RepositoryID) {
+				evidence, err := s.todoRunEvidence(ctx, next.RepositoryID, update.Checkpoint)
+				if err != nil {
+					return err
+				}
+				if evidence != nil {
+					next = retainTodoRunEvidence(next, runID, *evidence)
+				}
+			}
 			if err := s.persistTodoLogs(ctx, &next); err != nil {
 				return err
 			}
@@ -1018,6 +1027,9 @@ func mythicalProjectRun(next *db.MythicalItem, item db.MythicalItem, projection 
 		}
 		if outcome != "" {
 			checks.Review.Verdict = outcome
+			if (outcome == "approve" || outcome == "request-changes") && update.Checkpoint.Run != nil && update.Checkpoint.Run.FinalOutput != nil {
+				checks.Review.Summary = strings.TrimSpace(mythicalReviewText(*update.Checkpoint.Run.FinalOutput))
+			}
 			if !strings.HasPrefix(outcome, mythicalOutage) {
 				// The verdict is due now: an approved automerge TODO merges.
 				// A review that did not run waits for the pull request poll.
@@ -1103,12 +1115,16 @@ func mythicalRunOutcome(phase string, update flowdispatch.ProjectionUpdate) stri
 // request-changes. Nothing after it counts, so a finding that quotes
 // "approve" cannot flip a rejection; any other first line is a failed
 // review, and nothing merges on it.
-func mythicalReviewVerdict(output string) string {
+func mythicalReviewText(output string) string {
 	var text string
 	if json.Unmarshal([]byte(output), &text) != nil {
-		text = output
+		return output
 	}
-	first, _, _ := strings.Cut(text, "\n")
+	return text
+}
+
+func mythicalReviewVerdict(output string) string {
+	first, _, _ := strings.Cut(mythicalReviewText(output), "\n")
 	// CRLF is a line ending; other whitespace is part of the verdict.
 	switch verdict := strings.TrimSuffix(first, "\r"); verdict {
 	case "approve", "request-changes":
@@ -6338,6 +6354,7 @@ func appliedByMaintainer(applied gitHubLabelApplication, label string) bool {
 // made its issue a TODO and asked for automerge, and the review of its pull
 // request's head.
 type mythicalChecks struct {
+	RunUsage              *todoRunUsage                      `json:"runUsage,omitempty"`
 	Publications          []todoPublicationEvidence          `json:"publications,omitempty"`
 	Diff                  *todoDiffEvidence                  `json:"diff,omitempty"`
 	FailureStep           *todoFailureStep                   `json:"failureStep,omitempty"`
@@ -6610,6 +6627,7 @@ type mythicalReview struct {
 	Candidate string `json:"candidate,omitempty"`
 	RunID     string `json:"runId,omitempty"`
 	Verdict   string `json:"verdict,omitempty"`
+	Summary   string `json:"summary,omitempty"`
 	// Posted reports that the pull request body carries this verdict
 	// (reviewBody), or that it will not: a person's body stands, or the body
 	// could not be written.

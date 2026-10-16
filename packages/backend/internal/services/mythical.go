@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/smithersai/smithers/packages/backend/flowdispatch"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -61,6 +62,7 @@ type mythicalRepoHost interface {
 }
 
 type MythicalService struct {
+	todoRunEvidence            func(context.Context, int64, flowdispatch.RuntimeCheckpoint) (*TodoRunEvidence, error)
 	todoRunSettlement          func(context.Context, int64, db.MythicalItem) error
 	conversationEntryPublisher func(context.Context, pgx.Tx, db.MythicalItem, jobs.Event, map[string]any) error
 	movedReturn                MovedOffReturn

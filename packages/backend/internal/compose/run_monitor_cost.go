@@ -2,8 +2,12 @@ package compose
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/smithersai/smithers/packages/backend/flowdispatch"
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"math"
 	"time"
 )
@@ -25,7 +29,7 @@ type dispatchUsage struct {
 // rows on the run's workspace (T-FLW-07), and sets the run's token and USD
 // totals to their sum. A step with no model call keeps no usage. Calls still
 // in flight are not yet spend.
-func (m *runMonitors) priceRunMonitor(ctx context.Context, workspace string, value map[string]any) error {
+func (m *runMonitors) priceRunMonitor(ctx context.Context, repository int64, workspace string, value map[string]any) error {
 	type meteredStep struct {
 		step   map[string]any
 		meter  []string
@@ -132,6 +136,14 @@ func (m *runMonitors) priceRunMonitor(ctx context.Context, workspace string, val
 	}
 	value["tokens"] = runTokens
 	value["cost_usd"] = usd(runNanos)
+	models, err := db.New(m.pool).MythicalRunModelAccess(ctx, repository, workspace, keys)
+	if err != nil {
+		return err
+	}
+	if models == nil {
+		models = []db.ModelAccess{}
+	}
+	value["model_access"] = models
 	return nil
 }
 
@@ -167,4 +179,26 @@ func journalWindow(value map[string]any) (time.Time, time.Time, bool) {
 		}
 	}
 	return first, last, !first.IsZero()
+}
+
+func (m *runMonitors) todoRunEvidence(ctx context.Context, repository int64, cp flowdispatch.RuntimeCheckpoint) (*services.TodoRunEvidence, error) {
+	raw, err := m.reader.Monitor(ctx, cp.Target, cp.RunID, nil)
+	if err != nil {
+		return nil, err
+	}
+	var value map[string]any
+	if json.Unmarshal(raw, &value) != nil || value["id"] != cp.RunID {
+		return nil, errors.New("invalid TODO run monitor")
+	}
+	if err := m.priceRunMonitor(ctx, repository, cp.Target.WorkspaceID, value); err != nil {
+		if errors.Is(err, errRunMeteringUnavailable) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	seconds, ok := value["time_s"].(float64)
+	if !ok || seconds < 0 || math.IsNaN(seconds) || math.IsInf(seconds, 0) {
+		return nil, errors.New("invalid TODO run duration")
+	}
+	return &services.TodoRunEvidence{Tokens: value["tokens"].(int64), TimeS: seconds, Models: value["model_access"].([]db.ModelAccess)}, nil
 }

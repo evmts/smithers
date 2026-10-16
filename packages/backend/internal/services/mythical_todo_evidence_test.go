@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -469,4 +470,37 @@ func TestTodoGitHubEvidenceUsesPersistedPublicationOwnership(t *testing.T) {
 	item = retainTodoPublication(item)
 	_, ok = todoCheckPublication(item, 1, "published")
 	require.False(t, ok, "a head reused by another producer has no unambiguous callback owner")
+}
+
+func TestTodoRunUsageIsBoundToItsOpenAttempt(t *testing.T) {
+	item := db.MythicalItem{Source: "todo", Attempt: 1, RequestRunID: "run"}
+	usage := TodoRunEvidence{Tokens: 123, TimeS: 2.5}
+	item = retainTodoRunEvidence(item, "run", usage)
+	require.Equal(t, []map[string]any{{"kind": "usage", "tokens": int64(123), "time_s": 2.5}}, currentTodoEvidence(item).Items)
+	require.Equal(t, item, retainTodoRunEvidence(item, "other", usage))
+	closed := settleTodoAttemptEvidence(item, "merged")
+	require.Equal(t, closed, retainTodoRunEvidence(closed, "run", TodoRunEvidence{Tokens: 999, TimeS: 5}))
+	for _, invalid := range []TodoRunEvidence{{Tokens: -1}, {TimeS: -1}, {TimeS: math.NaN()}, {TimeS: math.Inf(1)}} {
+		require.Equal(t, item, retainTodoRunEvidence(item, "run", invalid))
+	}
+	item.Attempt++
+	item.RequestRunID = "next-run"
+	require.Empty(t, currentTodoEvidence(item).Items, "a successor does not inherit usage")
+}
+
+func TestTodoEvidenceRetainsReviewSummary(t *testing.T) {
+	item := db.MythicalItem{Source: "todo", Attempt: 1, CandidateHead: "candidate", PRHead: "published", Checks: json.RawMessage(`{"review":{"head":"published","candidate":"candidate","verdict":"approve","summary":"approve\n\nReviewed boundary cases."}}`)}
+	require.Equal(t, []map[string]any{{"kind": "review", "summary": "approve\n\nReviewed boundary cases."}}, currentTodoEvidence(item).Items)
+	text, summary := mythicalTodoEvidenceText(item)
+	require.Empty(t, text)
+	require.Equal(t, "Review: approve\n\nReviewed boundary cases.", summary)
+}
+
+func TestTodoEvidenceReviewProjectionKeepsSummary(t *testing.T) {
+	item := db.MythicalItem{Source: "todo", Attempt: 1, CandidateHead: "candidate", PRHead: "published", Checks: mythicalChecks{Review: &mythicalReview{Head: "published", Candidate: "candidate"}}.encode()}
+	output, _ := json.Marshal("approve\n\nReviewed boundary cases.")
+	update := receiptUpdate(string(output))
+	require.True(t, mythicalProjectRun(&item, item, mythicalProjection{Phase: "review"}, update, "review-run", false))
+	require.Equal(t, "approve", mythicalChecksOf(item).Review.Verdict)
+	require.Equal(t, "approve\n\nReviewed boundary cases.", currentTodoEvidence(item).Items[0]["summary"])
 }

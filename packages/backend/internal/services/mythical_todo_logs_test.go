@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/smithersai/smithers/packages/backend/internal/blob"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
@@ -51,7 +52,7 @@ func TestTodoReceiptLogRetention(t *testing.T) {
 	require.NoError(t, service.persistTodoLogs(ctx, &item))
 }
 
-func TestTodoLogWriteRefusesUnavailableOrOversized(t *testing.T) {
+func TestTodoLogWriteRefusesUnavailable(t *testing.T) {
 	for _, text := range []string{"bytes", strings.Repeat("x", todoLogLimit+1)} {
 		item := db.MythicalItem{Source: "todo", Checks: mythicalChecks{Receipts: &mythicalReceipts{Checks: []mythicalReceipt{{Evidence: text}}}}.encode()}
 		original := append([]byte(nil), item.Checks...)
@@ -96,4 +97,30 @@ func TestTodoTerminalRuntimeCallbacksChangeNothing(t *testing.T) {
 	require.Equal(t, "completed", settled.RequestOutcome)
 	require.Equal(t, "merged", todoState(settled))
 	require.Empty(t, todoOpenWaits(settled))
+}
+
+func TestTodoLogRetentionCapsAtOneMiBWithHeadAndTail(t *testing.T) {
+	for _, text := range []string{strings.Repeat("x", 1<<20), "first\n" + strings.Repeat("中", 400000) + "\nlast\n"} {
+		store := blob.NewMemoryStore()
+		service := &MythicalService{todoLogs: store}
+		item := db.MythicalItem{Source: "todo", RepositoryID: 42, Checks: mythicalChecks{Receipts: &mythicalReceipts{Checks: []mythicalReceipt{{Evidence: text}}}}.encode()}
+		require.NoError(t, service.persistTodoLogs(context.Background(), &item))
+		digest := mythicalChecksOf(item).Receipts.Checks[0].LogDigest
+		reader, err := store.NewReader(context.Background(), todoLogKey(42, digest))
+		require.NoError(t, err)
+		payload, err := io.ReadAll(reader)
+		reader.Close()
+		require.NoError(t, err)
+		require.LessOrEqual(t, len(payload), 1<<20)
+		require.True(t, utf8.Valid(payload))
+		if len(text) <= 1<<20 {
+			require.Equal(t, text, string(payload))
+		} else {
+			require.True(t, strings.HasPrefix(string(payload), "first\n"))
+			require.True(t, strings.HasSuffix(string(payload), "\nlast\n"))
+			require.Contains(t, string(payload), "\n[log truncated]\n")
+		}
+		hash := sha256.Sum256(payload)
+		require.Equal(t, hex.EncodeToString(hash[:]), digest)
+	}
 }

@@ -15,13 +15,23 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
 
+	"github.com/smithersai/smithers/packages/backend/flowdispatch"
 	"github.com/smithersai/smithers/packages/backend/flowhost"
+	"github.com/smithersai/smithers/packages/backend/flowruntime"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/internal/webhook"
 	"github.com/smithersai/smithers/packages/backend/modelproxy"
 	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 )
+
+// Only Control's monitor response is supplied: these assertions exercise the
+// production proxy transport, payer, metered rows and attempt evidence adapter.
+type meterEvidenceReader struct{ raw json.RawMessage }
+
+func (r meterEvidenceReader) Monitor(context.Context, flowruntime.Target, string, *int64) (json.RawMessage, error) {
+	return append(json.RawMessage{}, r.raw...), nil
+}
 
 // A native coding host names the engine dispatch each model call ran under
 // (T-FLW-07). The owner-paid proxy records it on the metered row beside the
@@ -121,7 +131,7 @@ func TestNativeStepMeteringPostgres(t *testing.T) {
 	monitor := func(raw string) (map[string]any, error) {
 		var value map[string]any
 		require.NoError(t, json.Unmarshal([]byte(raw), &value))
-		return value, monitors.priceRunMonitor(ctx, workspaceID, value)
+		return value, monitors.priceRunMonitor(ctx, repository.ID, workspaceID, value)
 	}
 	unused := "run-1:" + strings.Repeat("9", 64)
 	priced, err := monitor(`{"tokens":999,"attempts":[{"steps":[
@@ -145,6 +155,21 @@ func TestNativeStepMeteringPostgres(t *testing.T) {
 	encoded, err := json.Marshal(priced)
 	require.NoError(t, err)
 	require.Contains(t, string(encoded), `"cost_usd":0.00033`)
+
+	// TODO evidence reuses this exact pricing path and excludes another run on
+	// the same machine. Native journal token estimates never become evidence.
+	require.Equal(t, http.StatusOK, call(hostCredential, "other-root:"+strings.Repeat("7", 64)))
+	monitors.reader = meterEvidenceReader{raw: json.RawMessage(`{"id":"root","time_s":2.5,"tokens":999,"attempts":[{"steps":[{"meter":["` + review + `"],"model_calls":2},{"meter":["` + edit + `"],"model_calls":1}]}]}`)}
+	evidence, err := monitors.todoRunEvidence(ctx, repository.ID, flowdispatch.RuntimeCheckpoint{RunID: "root", Target: flowruntime.Target{WorkspaceID: workspaceID}})
+	require.NoError(t, err)
+	require.Equal(t, &services.TodoRunEvidence{Tokens: 600, TimeS: 2.5, Models: []db.ModelAccess{{PaidBy: "owner", Provider: "cerebras", Model: "gpt-oss-120b"}}}, evidence)
+	monitors.reader = meterEvidenceReader{raw: json.RawMessage(`{"id":"other","time_s":2.5}`)}
+	_, err = monitors.todoRunEvidence(ctx, repository.ID, flowdispatch.RuntimeCheckpoint{RunID: "root", Target: flowruntime.Target{WorkspaceID: workspaceID}})
+	require.ErrorContains(t, err, "invalid TODO run monitor")
+	monitors.reader = meterEvidenceReader{raw: json.RawMessage(`{"id":"root","time_s":2.5,"unmetered_tokens":8,"attempts":[]}`)}
+	evidence, err = monitors.todoRunEvidence(ctx, repository.ID, flowdispatch.RuntimeCheckpoint{RunID: "root", Target: flowruntime.Target{WorkspaceID: workspaceID}})
+	require.NoError(t, err)
+	require.Nil(t, evidence, "unknown usage is omitted, never reported as zero")
 
 	// Spend that cannot be priced refuses the monitor rather than showing zero.
 	_, err = monitor(`{"attempts":[{"steps":[{"key":"plan#1","meter":["` + unused + `"],"model_calls":1}]}]}`)

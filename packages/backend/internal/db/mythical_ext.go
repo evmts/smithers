@@ -577,18 +577,17 @@ func (q *Queries) MythicalRepositoryTokensSince(ctx context.Context, repositoryI
 // ModelAccess is one provider, model and payer ('credit' or 'owner') that
 // model_usage recorded.
 type ModelAccess struct {
-	PaidBy   string
-	Provider string
-	Model    string
+	PaidBy   string `json:"paid_by"`
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
 }
 
-// MythicalWorkspaceModelAccess is each distinct provider, model and payer the
-// repository's calls on workspaceID recorded, first used first: the model
-// access a TODO's run on that branch machine used (engineering spec §15.2.1).
-func (q *Queries) MythicalWorkspaceModelAccess(ctx context.Context, repositoryID int64, workspaceID string) ([]ModelAccess, error) {
+// MythicalRunModelAccess names only the native dispatches the run monitor
+// attests, scoped to its repository and workspace, in first-used order.
+func (q *Queries) MythicalRunModelAccess(ctx context.Context, repositoryID int64, workspaceID string, dispatches []string) ([]ModelAccess, error) {
 	rows, err := q.db.Query(ctx, `SELECT paid_by, provider, model FROM model_usage
-		WHERE repository_id = $1 AND workspace_id = $2
-		GROUP BY paid_by, provider, model ORDER BY min(id)`, repositoryID, workspaceID)
+		WHERE repository_id = $1 AND workspace_id = $2 AND native_step = ANY($3)
+		GROUP BY paid_by, provider, model ORDER BY min(id)`, repositoryID, workspaceID, dispatches)
 	if err != nil {
 		return nil, err
 	}

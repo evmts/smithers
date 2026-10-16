@@ -246,7 +246,6 @@ test("J2 2-3 Alice privately drafts, edits and commits once, then watches the TO
   appendFileSync(`${output}/j2-todo-states.txt`, `T${made!.n} issue #${issueNumber}: ${seen.join(" -> ")}\n`)
 })
 test("C-J2-04 owner opens the completed canary's attempt evidence", async ({ browser }) => {
-  test.fixme(true, "Written before implementation: C-J2-04 step 2; the TODO evidence projection (mythical_todo_read.go currentTodoEvidence) emits no diff, usage, model_access or github_check item; lands with T-STK-10")
   const page = await person(browser, "owner")
   await say(page, "/todo T1")
   const card = page.getByRole("article", { name: "TODO T1", exact: true }).last()
@@ -270,7 +269,12 @@ test("C-J2-04 owner opens the completed canary's attempt evidence", async ({ bro
     await expect(evidence).toContainText(check.name)
   }
   const review = attempt.items.find((item: { kind: string }) => item.kind === "review")
-  expect(review.summary).toBe("approve")
+  expect(review.summary).toMatch(/^approve(?:\s|$)/)
+  const usage = attempt.items.find((item: { kind: string }) => item.kind === "usage")
+  expect(usage.tokens).toBeGreaterThan(0)
+  expect(usage.time_s).toBeGreaterThan(0)
+  const access = attempt.items.find((item: { kind: string }) => item.kind === "model_access")
+  expect(access.label.length).toBeGreaterThan(0)
   await expect(evidence).toContainText("approve")
   await expect(evidence).not.toContainText("not measured yet")
   appendFileSync(`${output}/j2-evidence.jsonl`, JSON.stringify({ todo: 1, attempt }) + "\n")

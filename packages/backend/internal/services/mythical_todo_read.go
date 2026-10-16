@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
 	"regexp"
 	"slices"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/smithersai/smithers/packages/backend/flowdispatch"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/jobs"
@@ -396,26 +398,6 @@ func (s *MythicalService) todoCardAtQueuePosition(ctx context.Context, item db.M
 			"included_items": append(append([]int64{}, checks.PRIncludes...), item.Number.Int64), "reviews": todoPRReviews(checks.GitHubInputs)}
 	}
 	evidence := todoEvidence(item)
-	// The run's model access is read from the lane it holds, else from the
-	// lane the card names once that lane was released.
-	accessLane := item.WorkspaceID
-	if accessLane == "" && hasBranch {
-		accessLane = workspace.ID
-	}
-	if item.Attempt > 0 && accessLane != "" {
-		access, err := s.queries().MythicalWorkspaceModelAccess(ctx, item.RepositoryID, accessLane)
-		if err != nil {
-			return nil, err
-		}
-		if label := modelAccessLabel(access); label != "" {
-			entry := map[string]any{"kind": "model_access", "label": label}
-			if n := len(evidence); n > 0 && evidence[n-1].Attempt == item.Attempt {
-				evidence[n-1].Items = append(append([]map[string]any{}, evidence[n-1].Items...), entry)
-			} else {
-				evidence = append(evidence, todoAttemptEvidence{Attempt: item.Attempt, RunID: item.RequestRunID, Revision: item.CandidateHead, Items: []map[string]any{entry}})
-			}
-		}
-	}
 	// Resolve only the repository route; page identity stays the captured ID.
 	for i := range evidence {
 		for j, entry := range evidence[i].Items {
@@ -632,7 +614,17 @@ func currentTodoEvidence(item db.MythicalItem) todoAttemptEvidence {
 	// (Candidate); a review recorded before Candidate existed names it as Head.
 	if review := checks.Review; review != nil && item.CandidateHead != "" && review.Verdict != "" &&
 		(review.Candidate == item.CandidateHead || review.Candidate == "" && review.Head == item.CandidateHead || review.Rebase != nil && review.Rebase.Candidate == item.CandidateHead && review.Rebase.Base == item.CandidateBase && review.Rebase.PatchID != "") {
-		evidence.Items = append(evidence.Items, map[string]any{"kind": "review", "summary": checks.Review.Verdict})
+		summary := checks.Review.Summary
+		if summary == "" {
+			summary = checks.Review.Verdict
+		}
+		evidence.Items = append(evidence.Items, map[string]any{"kind": "review", "summary": summary})
+	}
+	if usage := checks.RunUsage; usage != nil && usage.Attempt == item.Attempt && usage.RunID == item.RequestRunID && usage.RunID != "" {
+		evidence.Items = append(evidence.Items, map[string]any{"kind": "usage", "tokens": usage.Tokens, "time_s": usage.TimeS})
+		if usage.Label != "" {
+			evidence.Items = append(evidence.Items, map[string]any{"kind": "model_access", "label": usage.Label})
+		}
 	}
 	if item.FlowDigest.Valid && item.FlowDigest.String != "" {
 		evidence.Items = append(evidence.Items, map[string]any{"kind": "flow", "name": "todo", "version": item.FlowDigest.String, "source_commit": checks.FlowSource})
@@ -928,4 +920,39 @@ func retainTodoGitHubChecks(item db.MythicalItem, owner todoPublicationEvidence,
 		break
 	}
 	return item
+}
+
+// TodoRunEvidence is measured by the shared native monitor and model proxy.
+// No credential, model transcript or raw journal enters the evidence row.
+type TodoRunEvidence struct {
+	Tokens int64
+	TimeS  float64
+	Models []db.ModelAccess
+}
+
+type todoRunUsage struct {
+	Attempt int32   `json:"attempt"`
+	RunID   string  `json:"run_id"`
+	Tokens  int64   `json:"tokens"`
+	TimeS   float64 `json:"time_s"`
+	Label   string  `json:"label,omitempty"`
+}
+
+func (s *MythicalService) SetTodoRunEvidence(read func(context.Context, int64, flowdispatch.RuntimeCheckpoint) (*TodoRunEvidence, error)) {
+	s.todoRunEvidence = read
+}
+
+func retainTodoRunEvidence(item db.MythicalItem, runID string, evidence TodoRunEvidence) db.MythicalItem {
+	if !mythicalTodo(item) || item.Attempt <= 0 || runID == "" || item.RequestRunID != runID || evidence.Tokens < 0 || evidence.TimeS < 0 || math.IsNaN(evidence.TimeS) || math.IsInf(evidence.TimeS, 0) {
+		return item
+	}
+	checks := mythicalChecksOf(item)
+	for _, held := range checks.Attempts {
+		if held.Attempt == item.Attempt && held.Outcome != "" {
+			return item
+		}
+	}
+	checks.RunUsage = &todoRunUsage{Attempt: item.Attempt, RunID: runID, Tokens: evidence.Tokens, TimeS: evidence.TimeS, Label: modelAccessLabel(evidence.Models)}
+	item.Checks = checks.encode()
+	return retainTodoAttemptEvidence(item)
 }

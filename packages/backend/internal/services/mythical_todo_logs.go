@@ -9,13 +9,16 @@ import (
 	"github.com/jackc/pgx/v5"
 	"io"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/smithersai/smithers/packages/backend/internal/blob"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 )
 
+// Historical logs remain readable; new receipts retain at most one MiB.
 const todoLogLimit = 10 << 20
+const todoLogRetainLimit = 1 << 20
 
 func (s *MythicalService) SetTodoLogStore(store blob.Store) { s.todoLogs = store }
 func todoLogKey(repository int64, digest string) string {
@@ -37,12 +40,22 @@ func (s *MythicalService) persistTodoLogs(ctx context.Context, item *db.Mythical
 		if receipt.Evidence == "" {
 			continue
 		}
-		if len(receipt.Evidence) > todoLogLimit {
-			return fmt.Errorf("TODO log exceeds retention limit")
-		}
 		if s.todoLogs == nil {
 			return fmt.Errorf("TODO log store unavailable")
 		}
+		if len(receipt.Evidence) > todoLogRetainLimit {
+			const marker = "\n[log truncated]\n"
+			head := (todoLogRetainLimit - len(marker)) / 2
+			tail := len(receipt.Evidence) - (todoLogRetainLimit - len(marker) - head)
+			for head > 0 && !utf8.RuneStart(receipt.Evidence[head]) {
+				head--
+			}
+			for tail < len(receipt.Evidence) && !utf8.RuneStart(receipt.Evidence[tail]) {
+				tail++
+			}
+			receipt.Evidence = receipt.Evidence[:head] + marker + receipt.Evidence[tail:]
+		}
+
 		hash := sha256.Sum256([]byte(receipt.Evidence))
 		digest := hex.EncodeToString(hash[:])
 		if err := blob.Put(ctx, s.todoLogs, todoLogKey(item.RepositoryID, digest), "text/plain", strings.NewReader(receipt.Evidence)); err != nil {

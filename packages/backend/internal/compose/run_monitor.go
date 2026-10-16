@@ -227,7 +227,7 @@ func (m *runMonitors) readCheckpoint(ctx context.Context, repo int64, id string,
 		value["archive_replay"] = map[string]any{"run_id": cp.RunID}
 	}
 	// Each step's spend is priced from the proxy rows its dispatches name.
-	if err := m.priceRunMonitor(ctx, cp.Target.WorkspaceID, value); err != nil {
+	if err := m.priceRunMonitor(ctx, repo, cp.Target.WorkspaceID, value); err != nil {
 		return nil, err
 	}
 	// Only the admitted version is authoritative; the journal does not name a

@@ -124,6 +124,7 @@ export const MonitorCardSchema = z.object({
     since: z.string(),
     settled: z.object({ by: ActorSchema, at: z.string() }).optional()
   })),
+  model_access: z.array(z.object({ provider: z.string(), model: z.string(), paid_by: z.string() })).optional(),
   tokens: z.number().int().nonnegative(),
   time_s: z.number().nonnegative(),
   cost_usd: z.number().nonnegative().optional(),

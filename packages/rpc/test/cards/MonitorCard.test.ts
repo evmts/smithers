@@ -209,3 +209,8 @@ test("journal usage survives decoding before metered spend is priced", () => {
     }
   }
 })
+
+test("retains the run's credential-free model access", () => {
+  const model_access = [{ provider: "cerebras", model: "gpt-oss-120b", paid_by: "owner" }]
+  expect(MonitorCardSchema.parse({ ...running(), model_access }).model_access).toEqual(model_access)
+})

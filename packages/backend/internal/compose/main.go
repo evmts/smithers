@@ -1743,6 +1743,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		repositoryJobService.SetFlowDispatcher(flow.dispatcher)
 		invokedFlowService.SetFlowDispatcher(flow.dispatcher)
 		mythicalService.SetLauncher(flow.dispatcher)
+		mythicalService.SetTodoRunEvidence((&runMonitors{pool: pool, reader: flow.dispatcher}).todoRunEvidence)
 		if config.IsSingleOwner(cfg.Auth) {
 			mythicalService.SetTodoFlow(func(ctx context.Context, repositoryID int64, sourceCommit string) (string, error) {
 				return services.ActiveFlowDigest(ctx, queries, repositoryID, "todo")
