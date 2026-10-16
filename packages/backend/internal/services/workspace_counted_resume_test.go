@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"github.com/jackc/pgx/v5/pgtype"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -16,6 +17,7 @@ type countedResumePolicy struct {
 	sandboxPolicyStub
 	countedCalls int
 	startErr     error
+	countedErr   error
 }
 
 type countedResumeStore struct {
@@ -38,7 +40,7 @@ func (p *countedResumePolicy) AuthorizeSandboxStart(context.Context, int64) erro
 
 func (p *countedResumePolicy) AuthorizeCountedSandboxResume(context.Context, int64, string, string) error {
 	p.countedCalls++
-	return nil
+	return p.countedErr
 }
 
 // c240bd3cf7 (#3568) replaced the billing-only wake, in which an idle-slept
@@ -55,7 +57,9 @@ func TestWorkspaceIdleSleptWakeNeedsAdmission(t *testing.T) {
 			workspace.Status = status
 			workspace.VmID = "vm-counted"
 			service := func() *WorkspaceService {
-				return newWorkspaceServiceForTests(&countedResumeStore{mockWorkspaceQuerier: &mockWorkspaceQuerier{}, workspace: workspace},
+				return newWorkspaceServiceForTests(&countedResumeStore{mockWorkspaceQuerier: &mockWorkspaceQuerier{getRepoByIDFn: func(context.Context, int64) (db.Repository, error) {
+					return db.Repository{UserID: pgtype.Int8{Int64: workspace.UserID, Valid: true}}, nil
+				}}, workspace: workspace},
 					WithWorkspaceBillingPolicy(policy),
 					WithWorkspaceSandboxClient(&mockWorkspaceSandboxVMClient{
 						getVMFn: func(context.Context, string) (sandbox.Sandbox, error) {
@@ -74,6 +78,32 @@ func TestWorkspaceIdleSleptWakeNeedsAdmission(t *testing.T) {
 			_, err = composeHostedSandboxWake(service(), unopenedBranchTransactions{t}).ensureExistingWorkspaceRunning(context.Background(), workspace)
 			require.ErrorContains(t, err, startFailed.Error())
 			assert.Equal(t, 1, starts)
+		})
+	}
+}
+
+// A changed plan refuses hosted wake before any provider boot.
+func TestHostedWorkspaceWakeChecksPlanBeforeBoot(t *testing.T) {
+	denied := errors.New("daily sandbox hours exhausted")
+	for _, status := range []string{"running", "suspended"} {
+		t.Run(status, func(t *testing.T) {
+			row := sampleDBWorkspace("hosted-plan")
+			row.Status, row.VmID = status, "hosted-vm"
+			policy := &countedResumePolicy{countedErr: denied}
+			starts := 0
+			svc := composeHostedSandboxWake(newWorkspaceServiceForTests(
+				&countedResumeStore{mockWorkspaceQuerier: &mockWorkspaceQuerier{getRepoByIDFn: func(context.Context, int64) (db.Repository, error) {
+					return db.Repository{UserID: pgtype.Int8{Int64: row.UserID, Valid: true}}, nil
+				}}, workspace: row},
+				WithWorkspaceBillingPolicy(policy),
+				WithWorkspaceSandboxClient(&mockWorkspaceSandboxVMClient{startVMFn: func(context.Context, string, sandbox.StartRequest) (sandbox.StartResult, error) {
+					starts++
+					return sandbox.StartResult{}, nil
+				}})), unopenedBranchTransactions{t})
+			_, err := svc.resumeWorkspaceVM(context.Background(), row)
+			require.ErrorIs(t, err, denied)
+			require.Equal(t, 1, policy.countedCalls)
+			require.Zero(t, starts)
 		})
 	}
 }

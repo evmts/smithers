@@ -833,7 +833,24 @@ func (s *WorkspaceService) authorizeWorkspaceResume(ctx context.Context, row db.
 	if err := s.branchMachineProviders.MicroVM(ctx); err != nil {
 		return err
 	}
-	return s.branchMachineProviders.SessionIdentity(ctx)
+	if err := s.branchMachineProviders.SessionIdentity(ctx); err != nil {
+		return err
+	}
+	// Hosted admission does not replace the repository payer's plan. An idle
+	// stopped VM may already occupy its exact reservation.
+	if s.runtime == nil && s.billing != nil {
+		billingCtx, _, err := s.workspaceBillingContext(ctx, row.UserID, row.RepositoryID)
+		if err != nil {
+			return err
+		}
+		if policy, ok := s.billing.(interface {
+			AuthorizeCountedSandboxResume(context.Context, int64, string, string) error
+		}); ok {
+			return policy.AuthorizeCountedSandboxResume(billingCtx, row.UserID, row.ID, row.VmID)
+		}
+		return s.billing.AuthorizeSandboxStart(billingCtx, row.UserID)
+	}
+	return nil
 }
 
 func (s *WorkspaceService) resumeWorkspaceVM(ctx context.Context, workspace db.Workspace) (out db.Workspace, retErr error) {
