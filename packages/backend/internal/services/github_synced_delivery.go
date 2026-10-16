@@ -379,10 +379,38 @@ func lockFetchedRepo(ctx context.Context, tx pgx.Tx, id int64) (db.GithubSyncedR
 	return db.New(tx).GetGitHubSyncedRepoByGitHubID(ctx, pgtype.Int8{Int64: githubID, Valid: true})
 }
 
+// The providers an install authority bind must have. A closed set: a declined
+// bind names the one it does not have and nothing else.
+const (
+	authorityUnboundNoSync        = "no_install_sync"
+	authorityUnboundNoCredentials = "no_app_credentials"
+	authorityUnboundRuntime       = "runtime_not_ready"
+)
+
+// installAuthorityUnbound names the provider an install authority bind does not
+// have, or "" when it has all of them.
+func installAuthorityUnbound(s *GitHubSyncedRepoService, credentials GitHubAppCredentialReader, runtimeReady bool) string {
+	switch {
+	case s == nil || s.install == nil:
+		return authorityUnboundNoSync
+	case credentials == nil:
+		return authorityUnboundNoCredentials
+	case !runtimeReady:
+		return authorityUnboundRuntime
+	}
+	return ""
+}
+
 // BindInstallAuthority activates reads only for the sealed installation on an
 // unprivileged install runtime with the real storage and credential providers.
+// A declined bind refuses every fetched-state read for the life of the process,
+// and the only evidence was the downstream no_install_authority fence on each
+// read: a composed install answered its issues card 503 on a privileged runtime
+// and named the bind nowhere. The decision is unchanged; it reports the
+// provider it does not have, once, from a closed set, with no id or credential.
 func (s *GitHubSyncedRepoService) BindInstallAuthority(credentials GitHubAppCredentialReader, runtimeReady bool) {
-	if s == nil || s.install == nil || credentials == nil || !runtimeReady {
+	if provider := installAuthorityUnbound(s, credentials, runtimeReady); provider != "" {
+		slog.Warn("github.install_authority_unbound", "provider", provider)
 		return
 	}
 	s.install.authorize = func(ctx context.Context, row db.GithubSyncedRepo) error {

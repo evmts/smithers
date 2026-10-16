@@ -25,6 +25,14 @@ func TestAccessIssueCreateProfilesComposedPostgres(t *testing.T) {
 	if testing.Short() {
 		t.Skip("composed issue creation effects require PostgreSQL and native helpers")
 	}
+	// The matrix reads the install's own issues card, and the composed install
+	// binds the fetched-state authority behind it only on the installing user's
+	// runtime (compose/main.go's composeGitHubInstallAuthority). A privileged
+	// run therefore refuses the first cell's GET /api/issues with a 503 whose
+	// body names no cause, which is how this case read as a product defect for
+	// a whole lane. State the precondition the install already requires, as
+	// every other composed case that reads install sync state does.
+	require.NotZero(t, os.Geteuid(), "the install's fetched-state authority is admitted only on the installing user's runtime")
 	t.Setenv("SMITHERS_ACCESS_ISSUE_CREATE_PROFILES", "1")
 	r := newRehearsal(t, "SMITHERS_ACCESS_ISSUE_CREATE_PROFILES", "C-ACC-02", "issue-create-profiles-")
 	require.True(t, r.install("Issue create profiles"))
