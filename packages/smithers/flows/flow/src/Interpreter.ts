@@ -420,14 +420,13 @@ export const interpret = (
   flowOrNode: Parameters<typeof Graph.build>[0],
   payload?: unknown,
   options: Graph.BuildOptions = {}
-): Effect.Effect<Interpretation, unknown, Services> => interpretWithPolicy(flowOrNode, payload, options, false)
+): Effect.Effect<Interpretation, unknown, Services> => interpretWithPolicy(flowOrNode, payload, options)
 
-/** The canonical composition requires versions before permitting content-key reuse. @private */
+/** Every interpreter requires versions before permitting content-key reuse. @private */
 const interpretWithPolicy = (
   flowOrNode: Parameters<typeof Graph.build>[0],
   payload: unknown,
   options: Graph.BuildOptions,
-  requireReusableVersions: boolean,
   registerReachable?: (flow: AnyWithProps) => Effect.Effect<void>
 ): Effect.Effect<Interpretation, unknown, Services> =>
   Effect.gen(function*() {
@@ -542,6 +541,9 @@ const interpretWithPolicy = (
           `Node "${node.id}" reads "${dependency}", which this graph does not hold.`
         )
       }
+    }
+    // Diagnose lost operations before action declarations, regardless of graph order.
+    for (const node of graphNodes) {
       if (node.ast._tag === "FlowCall" && node.ast.mode === "handoff") {
         const declaration = Node.declaration(node.ast)
         if (!Predicate.hasProperty(declaration, FlowTypeId)) {
@@ -589,27 +591,25 @@ const interpretWithPolicy = (
       }
       const declaration = Node.declaration(node.ast)
       const declaredVersion = ownDataProperty(declaration, "implementationVersion")
-      if (requireReusableVersions) {
-        const tier = ownDataProperty(declaration, "tier")
-        if (tier === undefined) {
-          return yield* refuse(
-            "incomplete_graph",
-            node.id,
-            `Action "${node.ast.action}" lost its declaration, so its implementation identity cannot be checked. ` +
-              "Build the canonical composition from the authored action nodes."
-          )
-        }
-        if (
-          tier === "sealed" && ownDataProperty(declaration, "idempotencyKey") !== undefined &&
-          declaredVersion === undefined
-        ) {
-          return yield* refuse(
-            "missing_implementation_version",
-            node.id,
-            `Sealed action "${node.ast.action}" declares an idempotency key and can reuse recorded content. ` +
-              "Declare implementationVersion on Action.make and attest the same version in toLayer."
-          )
-        }
+      const tier = ownDataProperty(declaration, "tier")
+      if (tier === undefined) {
+        return yield* refuse(
+          "incomplete_graph",
+          node.id,
+          `Action "${node.ast.action}" lost its declaration, so its implementation identity cannot be checked. ` +
+            "Build the canonical composition from the authored action nodes."
+        )
+      }
+      if (
+        tier === "sealed" && ownDataProperty(declaration, "idempotencyKey") !== undefined &&
+        declaredVersion === undefined
+      ) {
+        return yield* refuse(
+          "missing_implementation_version",
+          node.id,
+          `Sealed action "${node.ast.action}" declares an idempotency key and can reuse recorded content. ` +
+            "Declare implementationVersion on Action.make and attest the same version in toLayer."
+        )
       }
       if (declaredVersion !== implementation.value.implementationVersion) {
         return yield* refuse(
@@ -1464,9 +1464,9 @@ export const layer = <
 >(
   flow: Flow<Tag, Payload, Success, Error, any>,
   options: Graph.BuildOptions = {}
-) => makeLayer(flow, options, false)
+) => makeLayer(flow, options)
 
-/** Registers one interpreter policy without changing the low-level compatibility surface. @private */
+/** Registers the interpreter and reachable child flows under one policy. @private */
 const makeLayer = <
   Tag extends string,
   Payload extends AnyStructSchema,
@@ -1475,7 +1475,6 @@ const makeLayer = <
 >(
   flow: Flow<Tag, Payload, Success, Error, any>,
   options: Graph.BuildOptions,
-  requireReusableVersions: boolean,
   reachable?: Set<AnyWithProps>,
   ifAbsent = false
 ): Layer.Layer<
@@ -1509,7 +1508,6 @@ const makeLayer = <
         makeLayer(
           declaration as Flow<string, AnyStructSchema, Schema.Top, Schema.Top, any>,
           options,
-          requireReusableVersions,
           registered,
           true
         ),
@@ -1523,7 +1521,7 @@ const makeLayer = <
       flow,
       ((payload: Payload["Type"]) => {
         const body = Effect.flatMap(
-          interpretWithPolicy(flow, payload, options, requireReusableVersions, registerReachable),
+          interpretWithPolicy(flow, payload, options, registerReachable),
           (interpretation) => settleOutcome(interpretation.value)
         )
         // Registration owns action resolution. A caller may supply a different
@@ -1586,7 +1584,7 @@ export const layerWithImplementations = <
 ) =>
   Layer.merge(
     implementations,
-    makeLayer(flow, { ...options, callbackIdentity: options.callbackIdentity ?? "stable" }, true)
+    makeLayer(flow, { ...options, callbackIdentity: options.callbackIdentity ?? "stable" })
   )
     .pipe(
       Layer.provide(Layer.fresh(layerImplementations))

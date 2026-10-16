@@ -6,9 +6,15 @@ sidebar:
 ---
 
 Every sealed action's result is recorded and replayed inside its own execution.
-Reusing one across executions is a stronger claim, and it takes three
-declarations. Missing any one of them scopes the key to the run that produced it,
-which is safe and does nothing.
+Reusing one across executions requires an explicit implementation version plus
+the three declarations below. Every interpreter refuses a sealed action with an
+`idempotencyKey` but no `implementationVersion`, before dispatch. Declare the
+version on `Action.make` and attest the same version in `toLayer`. Bump it when
+the implementation or its imported behavior changes, then start a new execution.
+The runtime does not fingerprint code or detect edits under an unchanged version.
+
+Without a hard boundary or complete environment, results stay scoped to their
+producing execution.
 
 1. **An identity a second run can derive.** The action's `idempotencyKey`.
 2. **A hermetic boundary.** The action's declared `FileBoundary`, with
@@ -32,6 +38,7 @@ const compile = Action.withCache(
     success: Schema.String,
     tier: "sealed",
     idempotencyKey: "build/compile/v1",
+    implementationVersion: "compile/v1",
     fileBoundary: { readSet: [], writeSet: [], boundaryMode: "hard" },
     execute: Effect.sync(() => "dist/server.js")
   }),

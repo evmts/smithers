@@ -1,13 +1,13 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Action, Flow, Interpreter, StepIdentity } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { Effect, Layer, Schema } from "effect"
+import { Cause, Effect, Exit, Layer, Schema } from "effect"
 import { actionKey, ordinalScope } from "../src/FlowEngine/ActionKey.ts"
 import { withCrypto } from "./Crypto.ts"
 import { layerDurable, makeLog } from "./DurableLogEngine.ts"
 
 describe("implementation version reuse", () => {
-  it.effect("documents that legacy keys do not infer a changed handler", () =>
+  it.effect("refuses unversioned reusable handlers before either implementation runs", () =>
     withCrypto(Effect.gen(function*() {
       const log = makeLog()
       let calls = 0
@@ -19,6 +19,7 @@ describe("implementation version reuse", () => {
       const flow = Flow.make("ImplementationVersion/legacy-flow", {
         payload: {},
         success: Schema.String,
+        error: Interpreter.InterpreterError,
         body: Node.capture({ action: declaration.name, implementationVersion: "test/v1" }, () => declaration.call({}))
       })
       const run = (executionId: string, output: string) =>
@@ -36,10 +37,15 @@ describe("implementation version reuse", () => {
           ),
           Effect.provideService(Action.CurrentCacheEnvironment, { layers: ["same-host"], capabilities: {} })
         )
-      expect(yield* run("legacy-first", "old behavior")).toBe("old behavior")
-      expect(yield* run("legacy-second", "new behavior")).toBe("old behavior")
-      expect(calls).toBe(1)
-      expect(log.executions.size).toBe(2)
+      for (const [executionId, output] of [["legacy-first", "old behavior"], ["legacy-second", "new behavior"]]) {
+        const exit = yield* Effect.exit(run(executionId!, output!))
+        expect(Exit.isFailure(exit)).toBe(true)
+        if (Exit.isFailure(exit)) {
+          expect(Cause.squash(exit.cause)).toMatchObject({ code: "missing_implementation_version" })
+        }
+      }
+      expect(calls).toBe(0)
+      expect(log.actionOutcomes.size).toBe(0)
     })))
 })
 

@@ -131,6 +131,45 @@ describe("NodeRuntime.layerHost without jj", () => {
       flows
     )
 
+  it("refuses an unversioned reusable step before host dispatch", async () => {
+    let calls = 0
+    const keyed = Action.make("no-jj/unversioned", {
+      payload: {},
+      success: Schema.String,
+      idempotencyKey: "shared"
+    })
+    const flow = Flow.make("no-jj/unversioned-flow", {
+      payload: {},
+      success: Schema.String,
+      error: Interpreter.InterpreterError,
+      body: () => keyed.call({})
+    })
+    const registrations = Layer.merge(
+      Interpreter.layer(flow),
+      keyed.toLayer(() =>
+        Effect.sync(() => {
+          calls++
+          return "ran"
+        })
+      )
+    ).pipe(Layer.provide(Action.layerImplementations))
+    mkdirSync(workspace(), { recursive: true })
+    const exit = await Effect.runPromiseExit(
+      flow.execute({}, { executionId: "unversioned" }).pipe(
+        Effect.provide(NodeRuntime.layerHost({
+          filename: join(workspace(), "unversioned.sqlite"),
+          workspaceRoot: workspace(),
+          owner: { hostId: "unversioned" },
+          signals: []
+        }, registrations)),
+        Effect.scoped
+      )
+    )
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toMatchObject({ code: "missing_implementation_version" })
+    expect(calls).toBe(0)
+  }, 60_000)
+
   it("starts the host and runs a sealed step", async () => {
     mkdirSync(workspace(), { recursive: true })
     writeFileSync(join(workspace(), "note.txt"), "the note")

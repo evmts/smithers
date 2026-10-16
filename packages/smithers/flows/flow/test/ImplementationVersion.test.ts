@@ -1,9 +1,9 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Action, Flow, Graph, Interpreter } from "@smthrs/flow"
+import { Action, Flow, FlowRuntime, Graph, Interpreter } from "@smthrs/flow"
 import { Node, Plan } from "@smthrs/plan"
 import { Cause, Context, Effect, Exit, Layer, Schema } from "effect"
 import { withCrypto } from "./Crypto.ts"
-import { layerMemory } from "./MemoryFlowRuntime.ts"
+import { layerMemory, makeInstance } from "./MemoryFlowRuntime.ts"
 
 const declaration = (implementationVersion?: string) =>
   Action.make("version/read", {
@@ -127,38 +127,46 @@ describe("declared implementation versions", () => {
 })
 
 describe("canonical content-reuse admission", () => {
-  it.effect("requires a version for every declared form of a sealed idempotency key", () =>
+  it.effect("every interpreter path refuses all reusable key forms before dispatch", () =>
     withCrypto(Effect.gen(function*() {
-      for (const idempotencyKey of ["shared", { request: "shared" }, () => "shared"] as const) {
-        let calls = 0
-        const keyed = Action.make("canonical/keyed", { payload: {}, success: Schema.String, idempotencyKey })
-        const flow = Flow.make("canonical/keyed-flow", {
-          payload: {},
-          success: Schema.String,
-          body: Node.capture({ action: keyed.name, bodyVersion: "v1" }, () => keyed.call({}))
-        })
-        const exit = yield* Effect.exit(
-          flow.execute({}).pipe(Effect.provide(
-            Interpreter.layerWithImplementations(
-              flow,
-              keyed.toLayer(() =>
-                Effect.sync(() => {
-                  calls++
-                  return "ran"
-                })
-              )
-            ).pipe(Layer.provideMerge(layerMemory))
-          ))
-        )
-        expect(Exit.isFailure(exit)).toBe(true)
-        if (Exit.isFailure(exit)) {
-          expect(Cause.squash(exit.cause)).toMatchObject({
-            code: "missing_implementation_version",
-            node: "root.flow",
-            message: expect.stringContaining("Declare implementationVersion on Action.make")
+      for (const path of ["canonical", "low-level", "direct"] as const) {
+        for (const idempotencyKey of ["shared", { request: "shared" }, () => "shared"] as const) {
+          let calls = 0
+          const keyed = Action.make("canonical/keyed", { payload: {}, success: Schema.String, idempotencyKey })
+          const flow = Flow.make("canonical/keyed-flow", {
+            payload: {},
+            success: Schema.String,
+            body: Node.capture({ action: keyed.name, bodyVersion: "v1" }, () => keyed.call({}))
           })
+          const implementation = keyed.toLayer(() =>
+            Effect.sync(() => {
+              calls++
+              return "ran"
+            })
+          )
+          const registration = path === "canonical"
+            ? Interpreter.layerWithImplementations(flow, implementation)
+            : Layer.merge(Interpreter.layer(flow), implementation).pipe(Layer.provide(Action.layerImplementations))
+          const execution = path === "direct"
+            ? Interpreter.interpret(flow, {}).pipe(
+              Effect.provideService(FlowRuntime.FlowInstance, makeInstance(flow, "direct")),
+              Effect.provide(
+                implementation.pipe(Layer.provideMerge(Action.layerImplementations), Layer.provideMerge(layerMemory))
+              ),
+              Effect.asVoid
+            )
+            : flow.execute({}).pipe(Effect.provide(registration.pipe(Layer.provideMerge(layerMemory))), Effect.asVoid)
+          const exit = yield* Effect.exit(execution)
+          expect(Exit.isFailure(exit), path).toBe(true)
+          if (Exit.isFailure(exit)) {
+            expect(Cause.squash(exit.cause)).toMatchObject({
+              code: "missing_implementation_version",
+              node: "root.flow",
+              message: expect.stringContaining("Declare implementationVersion on Action.make")
+            })
+          }
+          expect(calls).toBe(0)
         }
-        expect(calls).toBe(0)
       }
     })))
 

@@ -62,6 +62,11 @@ refuses uncaptured callbacks before dispatch. The lower-level `Graph.build` and
 `Interpreter.layer` default to `process-local`, which makes no cross-process
 callback identity guarantee.
 
+All interpreter paths require `implementationVersion` on a sealed action with an
+`idempotencyKey`, and the same version in its `toLayer` registration. Bump the
+version when its implementation changes. This quickstart uses invocation-scoped
+actions without an idempotency key, so no implementation version is required.
+
 Compose the layers:
 
 ```ts
