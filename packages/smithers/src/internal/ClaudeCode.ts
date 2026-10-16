@@ -138,6 +138,8 @@ interface Session {
   seen: ReadonlyArray<string>
   last: string
   answer: ReadonlyArray<ModelEvent>
+  /** Claude Code's running cost estimate for the session, in USD, as of the last turn. */
+  spentUsd: number
   /** Sends Claude the next user turn. */
   readonly send: (text: string) => void
   /** Stops the idle clock while a turn runs, and restarts it once the session waits. */
@@ -207,8 +209,16 @@ const usageOf = (raw: {
   }
 }
 
-/** Reads one turn: its text, then its usage and why it stopped, from the turn's result. */
-const read = async (messages: AsyncIterator<Sdk.SDKMessage>): Promise<ReadonlyArray<ModelEvent>> => {
+/**
+ * Reads one turn: its text, then its usage and why it stopped, from the turn's
+ * result. The turn's cost is its share of the session's running total, so a
+ * seat whose alias the rate card cannot price (`haiku`) still has a price; a
+ * total that went backwards prices nothing.
+ */
+const read = async (
+  messages: AsyncIterator<Sdk.SDKMessage>,
+  ledger: { spentUsd: number }
+): Promise<ReadonlyArray<ModelEvent>> => {
   let text = ""
   let responseId: string | undefined
   let failure: ModelError | undefined
@@ -235,11 +245,13 @@ const read = async (messages: AsyncIterator<Sdk.SDKMessage>): Promise<ReadonlyAr
           ...(status === undefined ? {} : { httpStatus: status })
         })
       }
+      const costUsd = message.total_cost_usd - ledger.spentUsd
+      ledger.spentUsd = message.total_cost_usd
       return [
         { type: "text-start", id: "text" },
         { type: "text-delta", id: "text", text },
         { type: "text-end", id: "text" },
-        { type: "usage", ...usageOf(message.usage) },
+        { type: "usage", ...usageOf(message.usage), ...(costUsd >= 0 ? { costUsd } : {}) },
         {
           type: "settle",
           stopReason: message.stop_reason === "max_tokens" ? "length" : "stop",
@@ -325,6 +337,7 @@ export const make = (options: Options): Model.Model & { readonly close: () => vo
       seen: [],
       last: "",
       answer: [],
+      spentUsd: 0,
       send: (text) => {
         turns.push(userTurn(text))
         wake()
@@ -369,7 +382,7 @@ export const make = (options: Options): Model.Model & { readonly close: () => vo
     session.rest(false)
     try {
       if (added !== undefined) session.send(added.map(textOf).join("\n\n"))
-      const answer = await read(session.messages)
+      const answer = await read(session.messages, session)
       session.seen = messages
       session.last = last
       session.answer = answer
@@ -388,7 +401,7 @@ export const make = (options: Options): Model.Model & { readonly close: () => vo
     const abort = () => void query.interrupt().catch(() => {})
     signal.addEventListener("abort", abort, { once: true })
     try {
-      return await read(query[Symbol.asyncIterator]())
+      return await read(query[Symbol.asyncIterator](), { spentUsd: 0 })
     } finally {
       signal.removeEventListener("abort", abort)
       query.close()

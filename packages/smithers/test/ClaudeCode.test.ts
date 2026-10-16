@@ -87,6 +87,8 @@ const scripted = (answer: (turn: string) => Reply, hangInterrupt = false) => {
           result: said,
           stop_reason: "end_turn",
           usage: { input_tokens: 10, cache_read_input_tokens: 90, cache_creation_input_tokens: 5, output_tokens: 7 },
+          // Claude Code's running estimate for the session: a quarter dollar a turn.
+          total_cost_usd: 0.25 * record.turns.length,
           ...("reported" in reply && reply.status !== undefined ? { api_error_status: reply.status } : {})
         })
       }
@@ -156,7 +158,8 @@ describe("ClaudeCode.make", () => {
         outputTokens: 7,
         cachedInputTokens: 90,
         cacheWriteTokens: 5,
-        totalTokens: 112
+        totalTokens: 112,
+        costUsd: 0.25
       },
       { type: "settle", stopReason: "stop", responseId: "msg_1_1", sessionId: "sess_1" }
     ])
@@ -200,6 +203,8 @@ describe("ClaudeCode.make", () => {
     expect(settled(second).content).toEqual([{ type: "text", text: cell(`seen("frame 1 ran\\n\\nalso do Y")`) }])
     expect(claude.started).toHaveLength(1)
     expect(claude.started[0]!.turns).toEqual(["task", "frame 1 ran\n\nalso do Y"])
+    // Claude Code reports the session's running total; each turn is charged its own share (#3824).
+    expect(ModelEvent.ModelEvent.settledMessage(second).usage.costUsd).toBe(0.25)
   })
 
   it("passes a reply with no cell through like any other text", async () => {
