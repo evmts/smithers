@@ -9,7 +9,7 @@ import { readRepositoryListError, repositoryListRead, type RepositoryForm } from
  * commitStatuses.ts; the create payload assembly mirrors multi
  * src/landings/landingsStore.ts executeCreate + src/smithersCloud/repoChanges.ts.
  */
-import type { Card } from "../AppState"
+import { conversationTabIdOf, type Card } from "../AppState"
 import type { FieldOption } from "@smthrs/ui/flow-form"
 import { parseUnifiedFile } from "@smthrs/ui/diff-paginate"
 
@@ -19,7 +19,7 @@ type FileRow = NonNullable<PrPayload["files"]>[number]
 const STACK_CAP = 20
 import { resolveTargetRepo } from "../RepoContext"
 import type { SeamContext } from "./SeamContext"
-import { readErrorMessage, readResult } from "./SeamContext"
+import { captureCloudOwner, readErrorMessage, readResult } from "./SeamContext"
 
 export interface LandingsSeam {
   readonly setTab: (cardId: string, tab: "conversation" | "commits" | "checks" | "files") => Promise<string | void>
@@ -748,9 +748,10 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
   const readLanding = async (
     repo: string,
     number: number,
-    stateOverride?: string
+    stateOverride?: string,
+    resolvedSource?: Exclude<PullSource, { readonly error: string }>
   ): Promise<ViewResult> => {
-    const source = await pullSource(ctx, repo)
+    const source = resolvedSource ?? await pullSource(ctx, repo)
     if ("error" in source) return source.error
     let response: Response
     try {
@@ -866,12 +867,12 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
         : `Pull requests · ${repo}\n${landings.map((landing) => `#${landing.number} ${landing.title} · ${landing.state}`).join("\n")}`) }
     } }
   })
-  const landingView = preparedView(ctx, (number: number, repoArg?: string, stateOverride?: string) => {
+  const landingView = preparedView(ctx, (number: number, repoArg?: string, stateOverride?: string, source?: Exclude<PullSource, { readonly error: string }>) => {
     const target = resolveTargetRepo(ctx.store, repoArg)
     if ("error" in target) return target.error
     const repo = target.repo
     return { id: `pr-${repo}-${number}`, title: `Pull request #${number} · ${repo}`, pane: repo,
-      key: JSON.stringify(["pr", repo, number, stateOverride]), read: () => readLanding(repo, number, stateOverride) }
+      key: JSON.stringify(["pr", repo, number, stateOverride, source]), read: () => readLanding(repo, number, stateOverride, source) }
   })
   const surfaceLanding = (repo: string, number: number, stateOverride?: string) => {
     invalidatePreparedViews(ctx.store)
@@ -940,7 +941,13 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
     viewLanding: Object.assign(async (number: number, repoArg?: string) => {
       const target = resolveTargetRepo(ctx.store, repoArg)
       if ("error" in target) return target.error
-      return readRepositoryDetail(ctx, target.repo, "pr", number, () => landingView(number, target.repo))
+      const ownerCurrent = captureCloudOwner(ctx, false)
+      const conversation = conversationTabIdOf(ctx.store.session())
+      const source = await pullSource(ctx, target.repo)
+      if (!ownerCurrent() || conversationTabIdOf(ctx.store.session()) !== conversation) return "The repository or account changed while its pull request was loading."
+      if ("error" in source) return source.error
+      return readRepositoryDetail(ctx, target.repo, "pr", number,
+        () => landingView(number, target.repo, undefined, source), source.kind === "github" ? "github" : "smithers")
     }, { preload: landingView.preload }),
 
     reviewLanding: async (number, type, body, repoArg) => {

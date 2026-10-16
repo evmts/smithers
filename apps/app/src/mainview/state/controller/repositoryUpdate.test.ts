@@ -201,3 +201,39 @@ test("the overview states real counts when a door is switched off and the GitHub
   expect(card.payload).toMatchObject({ repo: "roninjin10/e2e-verify", problems: [], openIssues: 2, openPrs: 0 })
   expect(card.payload.summary).not.toContain("could not be checked")
 })
+
+for (const origin of ["github", "smithers"] as const) for (const scenario of ["success", "newer", "failed", "account", "source-account"] as const) {
+  test(`PR read receipts use repository authority: ${origin}, ${scenario}`, async () => {
+    let started!: () => void
+    const reading = new Promise<void>(resolve => { started = resolve })
+    let finish!: () => void
+    const pending = new Promise<void>(resolve => { finish = resolve })
+    const { store, ctx } = await setup(memoryStorage(), async url => {
+      if (url === "/api/repos/owner/repo") {
+        if (scenario === "source-account") { started(); await pending }
+        return Response.json({ full_name: REPO,
+          ...(origin === "github" ? { github_source: { owner: "upstream", repo: "project" } } : {}) })
+      }
+      if (url.endsWith("/pulls/6") || url.endsWith("/landings/6")) {
+        started(); await pending
+        return Response.json({ number: 6, title: "PR", state: "open", body: "" }, { status: scenario === "failed" ? 503 : 200 })
+      }
+      return Response.json([])
+    })
+    const notifications = ["github", "smithers"].map(source => ({ id: source, source, scope: "anonymous", repo: REPO,
+      sourceId: "6", kind: "pr" as const, number: 6, title: "PR", state: "open", updatedAt: null, version: "v1", tags: [], processedAt: 0 }))
+    const observe = (rows = notifications) => store.dispatch({ type: "repo.update.observed", actor: "system",
+      context: { id: "test", scope: "anonymous", data: { repo: REPO, checkedAt: 0, openIssues: 0, openPrs: 1, problems: [], items: [], truncated: false } }, notifications: rows }).isPersisted.promise
+    await observe()
+    const read = createLandingsSeam(ctx).viewLanding(6, REPO)
+    await reading
+    if (scenario === "newer") await observe(notifications.map(row => ({ ...row, version: "v2" })))
+    if (scenario === "account" || scenario === "source-account") await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "other", admin: false, scopesPlain: null }).isPersisted.promise
+    finish(); await read
+    const receipts = [...store.collections.notificationReceipts.values()]
+    expect(receipts.map(row => [row.notificationId, row.version])).toEqual(scenario !== "success" ? [] : [[origin, "v1"]])
+    expect(store.collections.repositoryNotifications.get(origin === "github" ? "smithers" : "github")?.readVersion).toBeUndefined()
+    if (scenario === "newer") expect(store.collections.repositoryNotifications.get(origin)?.readVersion).not.toBe("v2")
+    await store.dispose?.()
+  })
+}
