@@ -51,8 +51,8 @@ export const toggleKind = (filter: Filter, kind: Kind): Filter => ({ ...filter, 
 /** A chat item's row key. */
 export const key = (id: string): string => `chat:${id}`
 
-/** Everything a row says, for the text filter to match. */
-export const text = (item: Transcript.Item): string => {
+/** Everything a row says, for the text filter to match; a cell's code and output only while its `program` shows. */
+export const text = (item: Transcript.Item, program = true): string => {
   switch (item.kind) {
     case "user":
     case "answer":
@@ -66,17 +66,24 @@ export const text = (item: Transcript.Item): string => {
     case "run":
       return [item.request ?? "", item.title].join("\n")
     case "cell":
-      return [item.prose, item.source, item.printed, item.error ?? "", ...item.calls.map((call) => call.subject)].join(
-        "\n"
-      )
+      return [
+        ...program ? [item.prose, item.source, item.printed] : [],
+        item.error ?? "",
+        ...item.calls.map((call) => call.subject)
+      ].join("\n")
   }
 }
 
 /**
  * The transcript's rows, oldest first. A row's time is never earlier than the
  * row before it: an item without a time, or with a skewed one, keeps its place.
+ * `shown` is whether cells draw their program (the filter's Cells, or Ctrl+O).
  */
-export const rows = (transcript: Transcript.Transcript, filter: Filter = all): ReadonlyArray<Row> => {
+export const rows = (
+  transcript: Transcript.Transcript,
+  filter: Filter = all,
+  shown = program(filter)
+): ReadonlyArray<Row> => {
   const query = filter.query.toLowerCase()
   let at = 0
   return transcript.items
@@ -85,19 +92,21 @@ export const rows = (transcript: Transcript.Transcript, filter: Filter = all): R
       return { key: key(item.id), item, at }
     })
     .filter((row) => row.item.kind === "cell" || !filter.kinds.includes(row.item.kind))
-    .filter((row) => query === "" || text(row.item).toLowerCase().includes(query))
+    .filter((row) => query === "" || text(row.item, shown).toLowerCase().includes(query))
 }
 
 /** One view's row cache: clock-only renders reuse rows without filtering again. */
 export const cached = (): typeof rows => {
   let previous: Transcript.Transcript | undefined
   let selected: Filter | undefined
+  let drawn: boolean | undefined
   let kept: ReadonlyArray<Row> = []
-  return (transcript, filter = all) => {
-    if (previous === transcript && selected === filter) return kept
+  return (transcript, filter = all, shown = program(filter)) => {
+    if (previous === transcript && selected === filter && drawn === shown) return kept
     previous = transcript
     selected = filter
-    kept = rows(transcript, filter)
+    drawn = shown
+    kept = rows(transcript, filter, shown)
     return kept
   }
 }

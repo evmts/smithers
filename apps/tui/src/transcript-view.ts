@@ -138,8 +138,9 @@ export const useTranscriptView = (options: {
   /** A worker's lane color: its card rail, its crumb and its steering accent. */
   const lane = (id: string): string => laneColor(Math.max(0, tabs.findIndex((tab) => tab.id === id)))
   const chatRows = useMemo(() => Timeline.cached(), [])
-  const projectedChat = RunCard.chat(transcript, options.expanded || Timeline.program(filter))
-  const rows = chatRows(projectedChat, filter)
+  const drawsProgram = options.expanded || Timeline.program(filter)
+  const projectedChat = RunCard.chat(transcript, drawsProgram)
+  const rows = chatRows(projectedChat, filter, drawsProgram)
   const lines = Subagents.lines(rows, Subagents.batches(transcript, tabs, undefined, options.runs), earlierOpen())
   const workerTab = surface.startsWith("tab:") ? tabs.find((tab) => `tab:${tab.id}` === surface) : undefined
   const workerEarlier = workerTab === undefined ? undefined : Subagents.lines(
