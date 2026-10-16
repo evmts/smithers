@@ -42,7 +42,7 @@ import * as Semaphore from "effect/Semaphore"
 import * as Stream from "effect/Stream"
 import * as ChildProcess from "node:child_process"
 import { readFileSync, realpathSync, statSync } from "node:fs"
-import { mkdtemp, readdir, rename, rm, rmdir, unlink, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readdir, rename, rm, rmdir, unlink, writeFile } from "node:fs/promises"
 import { hostname } from "node:os"
 import { dirname, isAbsolute, join, resolve } from "node:path"
 import { stripVTControlCharacters } from "node:util"
@@ -945,6 +945,22 @@ const operations = (spawn: Run, repositoryRoot?: string) => {
 
   const workspaceForget = (name: string) => repositoryCritical("workspaceForget", forgetWorkspace(name))
 
+  // `jj workspace add` creates only the lane directory itself, so a lane whose
+  // parents are missing (a fork's `.flows/forks`) needs them created first.
+  const createParent = (path: string) =>
+    Effect.tryPromise({
+      try: () => mkdir(dirname(resolve(repositoryRoot ?? process.cwd(), path)), { recursive: true }),
+      catch: (cause) =>
+        new JjError({
+          code: "unknown",
+          module: MODULE,
+          method: "workspaceAdd",
+          command: "jj workspace add",
+          message: `jj workspaceAdd: could not create the lane's parent directory: ${String(cause)}`,
+          cause: jjErrorCause(cause)
+        })
+    })
+
   /**
    * `--name=` and the `--` terminator are what make the claim "a workspace name
    * is opaque argv" true for a value that starts with `-`. Without them clap
@@ -957,7 +973,7 @@ const operations = (spawn: Run, repositoryRoot?: string) => {
    * earlier version of the parent's working-copy change; building on it would
    * revive it beside the parent's current `@` as a divergent change.
    */
-  const workspaceAdd = (name: string, path: string, revision?: string) =>
+  const addWorkspace = (name: string, path: string, revision?: string) =>
     Effect.asVoid(
       revision === undefined
         ? repositoryCritical(
@@ -1009,6 +1025,9 @@ const operations = (spawn: Run, repositoryRoot?: string) => {
             )
           ))
     )
+
+  const workspaceAdd = (name: string, path: string, revision?: string) =>
+    Effect.andThen(createParent(path), addWorkspace(name, path, revision))
 
   const status = () => repositoryCritical("status", inRepository("status", ["status"]))
 

@@ -115,6 +115,24 @@ describe.skipIf(!jjInstalled)("NodeJj workspaces and restore", () => {
       expect(existsSync(lane)).toBe(false)
     }))
 
+  it.effect("creates a lane's missing parent directories, as a fork's .flows/forks needs", () =>
+    Effect.gen(function*() {
+      const parent = join(repository, "..", `fork-root-${process.pid}`)
+      const lane = join(parent, ".flows", "forks", "lane")
+      const pinnedLane = join(parent, "pinned", "forks", "lane")
+
+      yield* run(Effect.flatMap(Jj, (jj) => jj.workspaceAdd("nested", lane)))
+      yield* run(Effect.flatMap(Jj, (jj) => jj.workspaceAdd("nested-pinned", pinnedLane, "@")))
+      expect(workspaces()).toContain("nested:")
+      expect(workspaces()).toContain("nested-pinned:")
+      expect(existsSync(join(lane, ".jj"))).toBe(true)
+      expect(existsSync(join(pinnedLane, ".jj"))).toBe(true)
+
+      yield* run(Effect.flatMap(Jj, (jj) => jj.workspaceForget("nested")))
+      yield* run(Effect.flatMap(Jj, (jj) => jj.workspaceForget("nested-pinned")))
+      yield* Effect.promise(() => rm(parent, { recursive: true, force: true }))
+    }))
+
   it.effect("rejects an ambiguous revset before creating a lane, then accepts the same name", () =>
     Effect.gen(function*() {
       const lane = join(repository, "..", `ambiguous-revset-${process.pid}`)
