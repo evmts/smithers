@@ -226,7 +226,6 @@ export const layerMemory: Layer.Layer<FlowRuntime.FlowRuntime> = Layer.effect(Fl
     // Publish all intent synchronously before sending an interrupt or re-drive.
     // A body that admits another child during cleanup inherits this intent.
     const requestCancellation = (executionId: string): ReadonlyArray<string> => {
-      if (!executions.has(executionId)) return []
       const pending = [executionId]
       const seen = new Set(pending)
       const visitedLineages = new Set<Round.RootExecutionId>()

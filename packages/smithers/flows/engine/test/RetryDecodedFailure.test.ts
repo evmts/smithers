@@ -138,3 +138,25 @@ for (const originalDefect of [false, true]) {
     }).pipe(Effect.provideService(FlowRuntime.FlowInstance, FlowEngine.makeInstance(flow, "engine-failure")))
   })
 }
+
+liveEffect("an engine-error recognizer leaves an unrecognized business error in its declared channel", () => {
+  const action = Action.make({
+    name: "RetryDecodedFailure/unrecognized",
+    error: Schema.String,
+    execute: Effect.fail("declared")
+  })
+  const recognized: unknown[] = []
+  const engine = scriptedEngine({
+    encodeEngineError: (error) => {
+      recognized.push(error)
+      return Option.none()
+    },
+    actionExecute: () => Effect.succeed(new Flow.Complete({ exit: Exit.fail("declared") }))
+  })
+  return Effect.gen(function*() {
+    const result = yield* engine.actionExecute(action, 1)
+    expect(result._tag).toBe("Complete")
+    expect(result._tag === "Complete" && result.exit).toEqual(Exit.fail("declared"))
+    expect(recognized).toEqual(["declared"])
+  }).pipe(Effect.provideService(FlowRuntime.FlowInstance, FlowEngine.makeInstance(flow, "unrecognized")))
+})
