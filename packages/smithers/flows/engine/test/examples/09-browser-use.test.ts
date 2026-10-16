@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect"
 import { build } from "esbuild"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { main } from "../src/09-browser-use.ts"
+import { main } from "../../examples/09-browser-use.ts"
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -18,7 +18,7 @@ it.effect("runs on the in-memory engine", () =>
 
 it("bundles for the browser with no node: imports", async () => {
   const result = await build({
-    entryPoints: [join(here, "../src/09-browser-use.ts")],
+    entryPoints: [join(here, "../../examples/09-browser-use.ts")],
     absWorkingDir: join(here, ".."),
     bundle: true,
     write: false,
