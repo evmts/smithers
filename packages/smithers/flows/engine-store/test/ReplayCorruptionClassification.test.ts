@@ -30,6 +30,7 @@ import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
+import * as Schema from "effect/Schema"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -294,15 +295,20 @@ describe("replay-failed classification (issue #150)", () => {
           return { failed, healed, provenance, corruption, row }
         }).pipe(Effect.provide(Layer.mergeAll(TestStores.layer(), jjLayer)), Effect.scoped)
       )
-      // The failure is the TYPED quarantine error, not the evictable-cache
-      // corruption class: the driver keys the operator park off it.
-      expect(Exit.isFailure(outcome.failed) && Cause.squash(outcome.failed.cause))
-        .toBeInstanceOf(ActionPersistence.AttemptEvidenceQuarantined)
-      const failure = Cause.squash(
-        (outcome.failed as Exit.Failure<never, never>).cause
-      ) as ActionPersistence.AttemptEvidenceQuarantined
-      expect(failure.code).toBe("attempt_evidence_quarantined")
-      expect(failure.keyDigest).toBe(sha256(key))
+      // Quarantine is an encoded defect: persistence must retain every field,
+      // and the driver must still recognize it for the operator park.
+      const cause = (outcome.failed as Exit.Failure<never, never>).cause
+      const failure = Cause.squash(cause)
+      expect(Schema.encodeSync(Schema.Defect())(failure)).toEqual({
+        _tag: "@smthrs/engine-store/AttemptEvidenceQuarantined",
+        code: "attempt_evidence_quarantined",
+        keyDigest: sha256(key),
+        attempt: 1,
+        path: corruptionError.path,
+        recordedDigest: corruptionError.recordedDigest,
+        measuredDigest: corruptionError.measuredDigest
+      })
+      expect(ActionPersistence.evidenceQuarantined(cause)?.keyDigest).toBe(sha256(key))
       expect(outcome.healed).toBe("durable-outcome")
       // The completion and its outcome remain durable; only the poisoned replay
       // evidence is removed and marked quarantined.

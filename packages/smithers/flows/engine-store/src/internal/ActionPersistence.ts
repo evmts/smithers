@@ -218,9 +218,8 @@ export const evidenceQuarantined = (
       : Cause.isDieReason(reason)
       ? reason.defect
       : undefined
-    if (carried instanceof AttemptEvidenceQuarantined) {
-      return carried
-    }
+    const decoded = Schema.decodeUnknownOption(AttemptEvidenceQuarantined)(carried)
+    if (Option.isSome(decoded)) return decoded.value
   }
   return undefined
 }
@@ -1917,14 +1916,16 @@ export const make = (deps: Dependencies) => {
                       // would make the action's error schema replace it with
                       // a SchemaError.
                       return yield* Effect.die(
-                        new AttemptEvidenceQuarantined({
-                          code: "attempt_evidence_quarantined",
-                          keyDigest: stepKeyDigest,
-                          attempt: input.attempt,
-                          path: corruption.path,
-                          recordedDigest: corruption.recordedDigest,
-                          measuredDigest: corruption.measuredDigest
-                        })
+                        Schema.encodeSync(AttemptEvidenceQuarantined)(
+                          new AttemptEvidenceQuarantined({
+                            code: "attempt_evidence_quarantined",
+                            keyDigest: stepKeyDigest,
+                            attempt: input.attempt,
+                            path: corruption.path,
+                            recordedDigest: corruption.recordedDigest,
+                            measuredDigest: corruption.measuredDigest
+                          })
+                        )
                       )
                     }
                   }

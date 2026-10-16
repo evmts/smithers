@@ -1,7 +1,7 @@
 import { expect } from "@effect/vitest"
 import { Action, Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { Cause, Effect, Exit, Schema, SchemaGetter } from "effect"
+import { Cause, Effect, Exit, Option, Schema, SchemaGetter } from "effect"
 import { FlowEngine } from "../src/index.ts"
 import { liveEffect } from "./Harness.ts"
 import { scriptedEngine } from "./ScriptedEngine.ts"
@@ -111,3 +111,30 @@ liveEffect("does not invent a retryable error for a recorded empty cause", () =>
     expect(attempts).toBe(1)
   }).pipe(Effect.provideService(FlowRuntime.FlowInstance, FlowEngine.makeInstance(flow, "empty")))
 })
+
+const storeFailure = { _tag: "StoreUnavailable", code: "store_unavailable" }
+for (const originalDefect of [false, true]) {
+  liveEffect(`engine failures preserve retry eligibility from their original channel: defect=${originalDefect}`, () => {
+    const action = Action.make({
+      name: "RetryDecodedFailure/engine-error",
+      success: Schema.String,
+      retryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 2 }),
+      execute: Effect.succeed("unused")
+    })
+    let attempts = 0
+    const engine = scriptedEngine({
+      encodeEngineError: (error) => error === storeFailure ? Option.some(storeFailure) : Option.none(),
+      actionExecute: () =>
+        Effect.sync(() => {
+          attempts++
+          return new Flow.Complete({ exit: originalDefect ? Exit.die(storeFailure) : Exit.fail(storeFailure) })
+        })
+    })
+    return Effect.gen(function*() {
+      const result = yield* engine.actionExecute(action, 1)
+      expect(attempts).toBe(originalDefect ? 1 : 2)
+      expect(result._tag === "Complete" && Exit.isFailure(result.exit) && result.exit.cause.reasons)
+        .toEqual([expect.objectContaining({ _tag: "Die", defect: storeFailure })])
+    }).pipe(Effect.provideService(FlowRuntime.FlowInstance, FlowEngine.makeInstance(flow, "engine-failure")))
+  })
+}

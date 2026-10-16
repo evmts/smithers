@@ -210,6 +210,20 @@ const boundaryRefusal = (error: unknown): Result.Result<unknown, unknown> => {
   return Option.isSome(encoded) ? Result.succeed(encoded.value) : Result.fail(error)
 }
 
+/** Store failures are engine outcomes, independent of an action's error codec. */
+const EngineError = Schema.Union([
+  ActionPersistence.CacheConflictDetected,
+  ActionPersistence.CacheCorruptionDetected,
+  ActionPersistence.AttemptAdmissionRejected,
+  WorkspaceSandbox.MaterializationConflict,
+  WorkspaceSandbox.WorkspaceError
+])
+const encodeEngineError = (error: unknown): Option.Option<unknown> =>
+  Option.orElse(
+    Schema.encodeUnknownOption(EngineError)(error),
+    () => Option.flatMap(Schema.decodeUnknownOption(EngineError)(error), Schema.encodeUnknownOption(EngineError))
+  )
+
 /**
  * Constructs the production encoded composition.
  *
@@ -444,6 +458,8 @@ const makeWithEngineJj = (
     })
 
     const encoded: FlowEngine.Encoded = {
+      encodeEngineError,
+
       // Unspanned here: `driver.register` already opens the
       // `FlowEngine.register` span, and a second identical wrapper would nest
       // two same-name spans around one operation.

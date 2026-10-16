@@ -323,8 +323,18 @@ export const makeActionExecute = (options: Encoded) => {
       if (result._tag !== "Complete") {
         return result
       }
+      // Engine failures are not action business errors. Encode their fields
+      // before the action codec, retaining classification for the one retry
+      // decision below on fresh dispatch and durable replay alike.
+      const encodedExit = Exit.isFailure(result.exit) && options.encodeEngineError !== undefined
+        ? Exit.failCause(Cause.fromReasons(result.exit.cause.reasons.map((reason) => {
+          if (!Cause.isFailReason(reason)) return reason
+          const encoded = options.encodeEngineError!(reason.error)
+          return Option.isSome(encoded) ? Cause.makeDieReason(encoded.value) : reason
+        })))
+        : result.exit
       const exit = yield* Effect.orDie(
-        Schema.decodeEffect(action.exitSchemaPartial)(toJsonExit(result.exit)).pipe(
+        Schema.decodeEffect(action.exitSchemaPartial)(toJsonExit(encodedExit)).pipe(
           // An action whose recorded outcome does not match its declared
           // schemas is a defect either way, but `orDie` alone reports only
           // the schema mismatch — "Expected /harness/HarnessError at
@@ -344,16 +354,20 @@ export const makeActionExecute = (options: Encoded) => {
       // the attempt count — persisted by durable engines and passed back in
       // on resume — so a backoff sequence survives process death.
       // nonRetryable classification is evaluated here and nowhere else.
-      // Defects and interruptions are not retried, with one exception: an
-      // attempt that outlived its declared `attemptTimeoutMs` or
-      // `heartbeatTimeoutMs` dies with `AttemptTimedOut`, and that is an
-      // attempt failure the policy decides on like a typed one.
+      // Original defects and interruptions are not retried, except for an
+      // AttemptTimedOut. Engine failures moved from Fail to Die above still
+      // receive their original retry decision; unrelated defects never do.
       const retryable = policy === undefined || exit._tag !== "Failure" || Cause.hasInterrupts(exit.cause)
         ? undefined
         : !Cause.hasDies(exit.cause)
         ? exit.cause.reasons.find(Cause.isFailReason)
-        : timedOutOnly(exit.cause)
-        ? exit.cause.reasons.find(Cause.isDieReason)
+        : timedOutOnly(exit.cause) || (Exit.isFailure(result.exit) && !Cause.hasDies(result.exit.cause) &&
+            options.encodeEngineError !== undefined &&
+            exit.cause.reasons.every((reason) =>
+              Cause.isFailReason(reason) ||
+              (Cause.isDieReason(reason) && Option.isSome(options.encodeEngineError!(reason.defect)))
+            ))
+        ? exit.cause.reasons.find((reason) => Cause.isFailReason(reason) || Cause.isDieReason(reason))
         : undefined
       const error = retryable === undefined ?
         undefined :

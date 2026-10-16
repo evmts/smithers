@@ -214,6 +214,13 @@ export interface Encoded {
       ) => Effect.Effect<string, Schema.SchemaError, Crypto.Crypto>
     ) => Effect.Effect<string, Schema.SchemaError, FlowRuntime.FlowInstance | Crypto.Crypto>)
     | undefined
+  /**
+   * Recognizes live or persisted engine failures and returns their JSON fields.
+   * Dispatch keeps these out of the action's error codec, but still asks the
+   * action retry policy before propagating them as defects. Unrecognized
+   * failures remain subject to the action's declared error schema.
+   */
+  readonly encodeEngineError?: ((error: unknown) => Option.Option<unknown>) | undefined
   readonly actionExecute: (
     options: ActionExecuteOptions
   ) => Effect.Effect<
