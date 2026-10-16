@@ -1154,13 +1154,17 @@ export const implement = <
       )
     })
 
-  return declared.toLayer((payload) =>
-    options.timeout === undefined ? execute(payload) : execute(payload).pipe(
-      Effect.interruptible,
-      Effect.timeoutOrElse({
-        duration: typeof options.timeout === "function" ? options.timeout(payload) : options.timeout,
-        orElse: () => Effect.fail(new HarnessError({ code: "model_failed", message: `${tag} timed out.` }))
-      })
-    )
-  )
+  // A step's resolver belongs to its implementation layer. Capture only this
+  // host service; invocation identity and the remaining run services stay live.
+  return Layer.unwrap(Effect.map(SeatResolver, (seats) =>
+    declared.toLayer((payload) => {
+      const run = execute(payload).pipe(Effect.provideService(SeatResolver, seats))
+      return options.timeout === undefined ? run : run.pipe(
+        Effect.interruptible,
+        Effect.timeoutOrElse({
+          duration: typeof options.timeout === "function" ? options.timeout(payload) : options.timeout,
+          orElse: () => Effect.fail(new HarnessError({ code: "model_failed", message: `${tag} timed out.` }))
+        })
+      )
+    })))
 }

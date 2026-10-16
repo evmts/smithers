@@ -181,6 +181,44 @@ const run = (
   )
 
 describe("AgentAction.make", () => {
+  it("uses each step's provided resolver beside the outer default", async () => {
+    const specificRequests: Array<string> = []
+    const defaultRequests: Array<string> = []
+    const DefaultReviewer = AgentAction.make("agent/test/DefaultReviewer", {
+      payload: { diff: Schema.String },
+      output: Review,
+      seat: "anthropic:test-model",
+      prompt: ({ diff }) => diff
+    })
+    const Both = Flow.make("agent/test/PerStepResolver", {
+      payload: { diff: Schema.String },
+      success: Schema.Struct({ specific: Review, default: Review }),
+      error: AgentAction.AgentFailure,
+      body: (payload) => Node.all({ specific: Reviewer.call(payload), default: DefaultReviewer.call(payload) })
+    })
+    const yes = answering(JSON.stringify({ approved: true, issues: [] }))
+    const no = answering(JSON.stringify({ approved: false, issues: [] }))
+    const layers = Layer.mergeAll(
+      Reviewer.layer.pipe(Layer.provide(seats(scripted([yes], specificRequests)))),
+      DefaultReviewer.layer,
+      Interpreter.layer(Both)
+    ).pipe(
+      Layer.provideMerge(AgentAction.layerHost(host)),
+      Layer.provideMerge(seats(scripted([no], defaultRequests))),
+      Layer.provideMerge(Layer.mergeAll(Agent.layer, Agent.layerDefaults, scriptedCompletionJudge)),
+      Layer.provideMerge(Safety.layer),
+      Layer.provideMerge(Action.layerImplementations),
+      Layer.provideMerge(FlowEngine.layerMemory),
+      Layer.provideMerge(NodeCrypto.layer)
+    )
+    const result = await Effect.runPromise(
+      Both.execute({ diff: "diff" }, { executionId: "per-step-resolver" }).pipe(Effect.provide(layers))
+    )
+    expect(result).toEqual({ specific: { approved: true, issues: [] }, default: { approved: false, issues: [] } })
+    expect(specificRequests).toHaveLength(1)
+    expect(defaultRequests).toHaveLength(1)
+  })
+
   for (const duration of ["constant", "payload"] as const) {
     for (const stage of ["resolution", "model"] as const) {
       it(`applies ${duration} action timeout during ${stage} through the ordinary implementation layer`, async () => {
