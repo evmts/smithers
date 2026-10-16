@@ -21,7 +21,7 @@ SmithersUiStyles
 } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import type { ReactNode, PointerEvent as ReactPointerEvent } from "react"
-import { useMemo,useRef } from "react"
+import { useMemo,useRef,useState } from "react"
 import { controllerCardActions as cardActions } from "./cards/controllerCardActions"
 import { LoginScreen } from "./cards/LoginScreen"
 import { CardView } from "./ChatCards"
@@ -67,6 +67,16 @@ const entryId = (entry: TranscriptEntry): string => entry.kind === "card" ? entr
 function AppContent() {
   const controller = useController()
   const { collections } = controller.store
+  // A branch change remounts the keyed transcript. Keep its pending receipt above that boundary.
+  const [savingNavigation, setSavingNavigation] = useState(false)
+  const pendingNavigation = useRef(0)
+  const setBranchNavigationView = (patch: Parameters<typeof controller.setBranchNavigationView>[0]) => {
+    const request = ++pendingNavigation.current
+    setSavingNavigation(true)
+    void controller.setBranchNavigationView(patch)
+      .catch(() => { /* The store owns persistence failure and recovery. */ })
+      .finally(() => { if (request === pendingNavigation.current) setSavingNavigation(false) })
+  }
   /*
    * The transcript's order is the QUERY's order (§hot path): sorting a copy of
    * every row on every render made each keystroke O(messages log messages) on
@@ -630,7 +640,7 @@ function AppContent() {
                 onRunCommand={(flow, args) => controller.runCommand(flow, args)} />
             </MessageScrollerItem>}
             {!earlier && !repositoryNotice && home && <MessageScrollerItem messageId={HOME_ENTRY_ID}>{homeCard}</MessageScrollerItem>}
-            {!loginScreen && !repositoryNotice && <BranchNavigation />}
+            {!loginScreen && !repositoryNotice && <BranchNavigation saving={savingNavigation} onView={setBranchNavigationView} />}
             {!earlier && controller.sharedConversation && <SharedConversation source={controller.sharedConversation} localCardIds={new Set(visibleEntries.flatMap(entry => entry.kind === "card" ? [entry.card.id] : []))} localEntries={visibleEntries.map(entry => ({ id: entryId(entry), content: renderEntry(entry) }))} />}
             {!earlier && !controller.sharedConversation && visibleEntries.map(renderEntry)}
             {!earlier && privateConfirms.map(row => <MessageScrollerItem key={`confirmation:${row.id}`} messageId={`confirmation:${row.id}`}>

@@ -356,11 +356,11 @@ const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
     reason: "Playwright HAR artifact filename passed to recordHar in members.spec.ts; never an application identifier."
   },
   {
-    literal: "dom.pointerdown", file: "e2e/real/support/keyboard-journey-input.test.ts",
+    literal: "dom.pointerdown", file: "e2e/probes/keyboard-journey-input.test.ts",
     reason: "Test-owned keyboard audit method label in support/keyboardOnly and keyboard-journey-input fixtures; never an app flow."
   },
   {
-    literal: "dom.keydown", file: "e2e/real/support/keyboard-journey-input.test.ts",
+    literal: "dom.keydown", file: "e2e/probes/keyboard-journey-input.test.ts",
     reason: "Test-owned keyboard audit method label in support/keyboardOnly and keyboard-journey-input fixtures; never an app flow."
   },
   {
