@@ -589,11 +589,13 @@ const formCommand = (row: CatalogDescriptor, command: FormInstructionCommand): B
     }
   })
 
-/** A form's payload schema as the list action shows it: the catalog row's, with no field required. */
-const formArgs = (row: CatalogDescriptor): string => {
-  const { required: _required, ...schema } = row.payload.schema
-  return JSON.stringify({ ...schema, $defs: row.payload.definitions, additionalProperties: false })
-}
+/** The public text draft fields the catalog form accepts, with no field required. */
+const formArgs = (command: FormInstructionCommand): string =>
+  JSON.stringify({
+    type: "object",
+    properties: Object.fromEntries(FORM_INSTRUCTION_FIELDS[command].map((field) => [field, { type: "string" }])),
+    additionalProperties: false
+  })
 
 /**
  * `docs` over the bundled pages, as the app runs it: a read hands the model a
@@ -785,7 +787,7 @@ const offeredCommands = (grant: DurableChatGrant, transport: HostTransport): Rea
         name: row.name,
         summary: row.summary,
         agent: row.agent,
-        args: formArgs(row)
+        args: formArgs(row.name)
       }
       return [{ command, run: formCommand(row, row.name), asked: true }]
     }

@@ -1,7 +1,8 @@
+import { FORM_INSTRUCTION_FIELDS, UI_INSTRUCTION_FIELDS } from "@smthrs/rpc/UiInstruction"
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import appendixA from "./fixtures/AppendixA.json"
-import { generateCatalog, generateSkill } from "../../../../../scripts/catalog-mvp"
+import { generateCatalog, generateSkill, generateFormInstructions } from "../../../../../scripts/catalog-mvp"
 import { lintText } from "../cards/productWords"
 import { disclosedToAgent, visible, viewerAdmitted, type CommandState } from "./registry"
 
@@ -80,4 +81,16 @@ describe("C-CAT-03 generated Smithers skill", () => {
     expect(generateSkill(rows)).toContain("smthrs github")
     expect(generateSkill(rows)).toContain("smthrs merge` — confirm; waits for the person's confirmation")
   })
+})
+
+test("account form projection follows the real app catalog and preserves actor fences", async () => {
+  const forms = await generateFormInstructions()
+  expect(forms).toEqual(FORM_INSTRUCTION_FIELDS)
+  expect(forms["flow.new"]).toEqual(["description", "repo"])
+  expect(forms["flow.edit"]).toContain("request")
+  expect(forms["flow.run"]).toContain("name")
+  for (const name of ["issue.new", "todo.new", "todo.drop", "form.submit", "palette.open", "chat.retry", "toString", ...Object.keys(UI_INSTRUCTION_FIELDS)]) {
+    expect(Object.hasOwn(forms, name)).toBe(false)
+  }
+  expect(forms["flow.edit"]).not.toContain("diff")
 })

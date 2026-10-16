@@ -1,4 +1,5 @@
 import { SharedConversationSchema } from "./seams/SharedConversationSeam"
+import { FORM_INSTRUCTION_FIELDS } from "@smthrs/rpc/UiInstruction"
 import { docsCard } from "@smthrs/rpc/DocsPages"
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import { afterAll, expect, test } from "bun:test"
@@ -914,3 +915,32 @@ test("a capacity-deferred prompt waits honestly, names the busy fleet, and leave
     expect(alone.host.textContent).toContain("Short reply please")
   } finally { await alone.unmount() }
 }, 20_000)
+
+// #3872: the private-view door renders each request with the agent actor; it never submits.
+for (const name of Object.keys(FORM_INSTRUCTION_FIELDS)) {
+  test(`private instruction opens /${name} as an agent form without a write`, async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const writes: string[] = []
+    const controller = createAppController(store, silentAgent, {
+      bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["agent", "cloud", "browser.read"], authFlow: "redirect", sandbox: null },
+      fetchImpl: async (input, init) => {
+        const path = String(input)
+        if (init?.method && init.method !== "GET") writes.push(path)
+        if (path === "/api/conversations/main") return Response.json({ id: "main", entries: [ben] })
+        if (path.endsWith("/view-state")) return Response.json({ instructions: [{ id: "form-request", command: name, payload: {} }] })
+        return new Response("{}", { status: 404 })
+      }
+    })
+    try {
+      await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ben", admin: false, scopesPlain: null }).isPersisted.promise
+      await controller.sharedConversation!.read()
+      await waitFor(() => [...store.collections.cards.values()].some(card => card.kind === "flow-form" && card.payload.flow === name))
+      const card = [...store.collections.cards.values()].find(card => card.kind === "flow-form" && card.payload.flow === name)!
+      expect(card.kind).toBe("flow-form")
+      if (card.kind === "flow-form") expect(card.payload.via).toBe("agent")
+      await controller.sharedConversation!.read()
+      expect([...store.collections.cards.values()].filter(card => card.kind === "flow-form" && card.payload.flow === name)).toHaveLength(1)
+      expect(writes).toEqual([])
+    } finally { await controller.dispose() }
+  })
+}

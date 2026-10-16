@@ -1,3 +1,4 @@
+import { FORM_INSTRUCTION_FIELDS } from "@smthrs/rpc/UiInstruction"
 import type { Locator, Page } from "@playwright/test"
 import { authenticatedTest } from "./auth-permissions/profile"
 import { bootWorkspace, captureTurnTraffic, nextTurnResponse, parseTurnFrames } from "./chat-tools/ui"
@@ -211,3 +212,29 @@ agentTest("asked what it can do here, the agent runs the app's own command list 
   expect(reply).not.toMatch(/\/docs\b/)
   expect(launches).toEqual([])
 })
+
+// #3872: every catalog form has a deployed-agent row; opening never submits it.
+for (const name of Object.keys(FORM_INSTRUCTION_FIELDS)) {
+  agentTest(`the Cloud agent opens /${name}'s form without submitting`, scenario(`agent.acts.form.${name}`, {
+    capabilities: ["agent", "identity", "cloud"],
+    coverage: ["action:chat.send", `action:${name}`, "host:production", "path:success", "door:agent",
+      "dimension:form", "dimension:no-remote-side-effect", "evidence:rendered-form-card"],
+    description: `Ask the deployed Cloud agent to open /${name}'s form, without submitting it.`
+  }), async ({ page }, testInfo) => {
+    await bootWorkspace(page)
+    const form = page.locator(`.flow-form[data-flow-name="${name}"]`)
+    for (let remaining = await form.count(); remaining > 0; remaining--) {
+      await form.first().getByTestId("flow-form-cancel").click()
+    }
+    try {
+      const { reply, launches } = await askAgent(page, `Open the /${name} form on my screen. Leave its fields empty; do not submit or execute it.`)
+      await testInfo.attach("form-request", { body: Buffer.from(JSON.stringify({ name, reply, launches })), contentType: "application/json" })
+      await expect(form).toBeVisible({ timeout: 30_000 })
+      expect(launches).toEqual([])
+    } finally {
+      for (let remaining = await form.count(); remaining > 0; remaining--) {
+        await form.first().getByTestId("flow-form-cancel").click()
+      }
+    }
+  })
+}

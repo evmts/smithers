@@ -3351,3 +3351,17 @@ test("persisted fork filters decode as all without dropping the old journal", ()
   })
   expect(CardSchema.parse(JSON.parse(JSON.stringify(decoded)))).toEqual(decoded)
 })
+
+// #3872: an active command's form must survive storage instead of becoming a tombstone.
+test.each(["agent.edit", "flows"])("preserves the active /%s form", (flow) => {
+  const form = {
+    id: `form-${flow}`,
+    kind: "flow-form",
+    title: flow,
+    status: "active",
+    createdAt: 1,
+    ordinal: 1,
+    payload: { flow, via: "agent", fields: [], draft: {}, given: {} }
+  }
+  expect(CardSchema.parse(form)).toEqual(form)
+})

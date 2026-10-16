@@ -62,16 +62,30 @@ describe("a flow asked for with its form", () => {
     ) expect(UiInstructionFrameSchema.safeParse(frame).success, JSON.stringify(frame)).toBe(false)
   })
   test("is never also a UI-only flow, and no other flow is asked for this way", () => {
-    expect(Object.keys(FORM_INSTRUCTION_FIELDS)).toEqual(["flow.new"])
+    expect(Object.keys(FORM_INSTRUCTION_FIELDS)).toContain("flow.edit")
     for (const name of Object.keys(FORM_INSTRUCTION_FIELDS)) {
       expect([name, isFormInstructionCommand(name), isUiInstructionCommand(name)]).toEqual([name, true, false])
     }
     for (const name of Object.keys(UI_INSTRUCTION_FIELDS)) {
       expect([name, isFormInstructionCommand(name)]).toEqual([name, false])
     }
-    for (const name of ["flow.run", "flow.edit", "form.submit", "todo.new", "toString"]) {
+    for (const name of ["form.submit", "toString"]) {
       expect([name, isFormInstructionCommand(name), UiInstructionFrameSchema.safeParse({ command: name }).success])
         .toEqual([name, false, false])
     }
   })
+})
+
+// Every permitted form is draft-only; authority fields and non-text values fail closed.
+test("all catalog forms carry only optional declared text", () => {
+  for (const [command, fields] of Object.entries(FORM_INSTRUCTION_FIELDS)) {
+    expect(UiInstructionFrameSchema.safeParse({ command }).success, command).toBe(true)
+    for (const field of fields) {
+      expect(UiInstructionFrameSchema.safeParse({ command, [field]: "draft" }).success, `${command}.${field}`).toBe(
+        true
+      )
+      expect(UiInstructionFrameSchema.safeParse({ command, [field]: { confirmed: true } }).success).toBe(false)
+    }
+    expect(UiInstructionFrameSchema.safeParse({ command, confirmed: "true" }).success).toBe(false)
+  }
 })

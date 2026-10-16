@@ -2,7 +2,7 @@ import * as Model from "@smthrs/model/Model"
 import { ModelError } from "@smthrs/model/ModelError"
 import type * as ModelEvent from "@smthrs/model/ModelEvent"
 import { agentTurnJournalDigestInput } from "@smthrs/rpc/AgentTurnJournal"
-import { UI_INSTRUCTION_FIELDS } from "@smthrs/rpc/UiInstruction"
+import { FORM_INSTRUCTION_FIELDS, UI_INSTRUCTION_FIELDS } from "@smthrs/rpc/UiInstruction"
 import { Effect, Metric, Stream } from "effect"
 import { createHash } from "node:crypto"
 import { describe, expect, test, vi } from "vitest"
@@ -953,8 +953,8 @@ test("a Cloud account conversation's private marker reaches the turn through the
   expect(lines).toContain(
     "- /flow.new — Create a new flow (asks the person: it only shows them what to confirm, and their press acts)"
   )
-  expect([...lines.map((line) => line.slice(3).split(" ")[0]!).filter((name) => name !== "flow.new")].sort())
-    .toEqual([...Object.keys(UI_INSTRUCTION_FIELDS)].sort())
+  expect(lines.map((line) => line.slice(3).split(" ")[0]!).sort())
+    .toEqual([...Object.keys(UI_INSTRUCTION_FIELDS), ...Object.keys(FORM_INSTRUCTION_FIELDS)].sort())
   // Without the marker, or on a turn that belongs to a repository, the host offers what it did: nothing here.
   expect(await offered({ ...account, privateConversation: false })).toEqual([])
   expect(await offered({ ...account, privateConversation: true }, { repositoryId: 3 })).toEqual([])

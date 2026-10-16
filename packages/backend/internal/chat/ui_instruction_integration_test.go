@@ -88,7 +88,17 @@ func TestUIInstructionsReachOnlyTheirAuthorsView(t *testing.T) {
 // flow.new and commits the request through the real producer callbacks, and
 // the account's view state serves it to that account alone. Only the model
 // endpoint is scripted. Saved browser input still supplies no instruction.
-func TestHostedAccountAgentAsksForANewFlowWithItsForm(t *testing.T) {
+func TestHostedAccountAgentAsksForForms(t *testing.T) {
+	for _, row := range []struct{ command, field, summary string }{
+		{"flow.new", "description", "Create a new flow"},
+		{"flow.edit", "request", "Propose a change to a flow"},
+		{"flow.run", "name", "Run a flow with typed input"},
+	} {
+		t.Run(row.command, func(t *testing.T) { hostedAccountForm(t, row.command, row.field, row.summary) })
+	}
+}
+
+func hostedAccountForm(t *testing.T, command, field, summary string) {
 	pool, _ := postgresfixture.NewProductDatabase(t)
 	store, err := NewStore(pool)
 	require.NoError(t, err)
@@ -149,8 +159,8 @@ func TestHostedAccountAgentAsksForANewFlowWithItsForm(t *testing.T) {
 		mu.Unlock()
 		delta, finish := map[string]any{"content": "The form is on your screen."}, "stop"
 		if result == "" {
-			args, _ := json.Marshal(map[string]string{"description": said})
-			arguments, _ := json.Marshal(map[string]string{"action": "execute", "name": "flow.new", "args": string(args)})
+			args, _ := json.Marshal(map[string]string{field: said})
+			arguments, _ := json.Marshal(map[string]string{"action": "execute", "name": command, "args": string(args)})
 			delta = map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"index": 0, "id": "flow-call", "type": "function",
 				"function": map[string]string{"name": "commands", "arguments": string(arguments)}}}}
 			finish = "tool_calls"
@@ -197,9 +207,11 @@ func TestHostedAccountAgentAsksForANewFlowWithItsForm(t *testing.T) {
 	// The host offered flow.new to the account conversation and told the model the form is open.
 	mu.Lock()
 	require.Len(t, systems, 2, "one leg asks, one answers from the result")
-	require.Contains(t, systems[0], "- /flow.new — Create a new flow")
-	require.Contains(t, systems[0], "run flow.new in that turn")
-	require.Equal(t, []string{`The "Create a new flow" form is open on the author's screen, with description filled in. Nothing is created until they press Submit: tell them the form is on their screen, and never ask them to type arguments.`}, results)
+	require.Contains(t, systems[0], "- /"+command+" — "+summary)
+	if command == "flow.new" {
+		require.Contains(t, systems[0], "run flow.new in that turn")
+	}
+	require.Equal(t, []string{`The "` + summary + `" form is open on the author's screen, with ` + field + ` filled in. Nothing is created until they press Submit: tell them the form is on their screen, and never ask them to type arguments.`}, results)
 	mu.Unlock()
 
 	var served struct {
@@ -213,8 +225,8 @@ func TestHostedAccountAgentAsksForANewFlowWithItsForm(t *testing.T) {
 	require.Equal(t, http.StatusOK, status, body)
 	require.NoError(t, json.Unmarshal([]byte(body), &served))
 	require.Len(t, served.Instructions, 1, body)
-	require.Equal(t, "flow.new", served.Instructions[0].Command)
-	require.JSONEq(t, `{"description":"`+said+`"}`, string(served.Instructions[0].Payload))
+	require.Equal(t, command, served.Instructions[0].Command)
+	require.JSONEq(t, `{"`+field+`":"`+said+`"}`, string(served.Instructions[0].Payload))
 	require.True(t, strings.HasPrefix(served.Instructions[0].ID, receipt.TurnID+":"), served.Instructions[0].ID)
 
 	// Another account reads its own empty view, never this one's request.

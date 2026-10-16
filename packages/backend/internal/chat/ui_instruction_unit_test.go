@@ -22,6 +22,12 @@ type catalogRow struct {
 	Payload    struct {
 		Schema struct {
 			Properties map[string]json.RawMessage `json:"properties"`
+			AnyOf      []struct {
+				Properties map[string]json.RawMessage `json:"properties"`
+			} `json:"anyOf"`
+			OneOf []struct {
+				Properties map[string]json.RawMessage `json:"properties"`
+			} `json:"oneOf"`
 		} `json:"schema"`
 	} `json:"payload"`
 }
@@ -55,9 +61,8 @@ func TestUIInstructionsMatchScreenOnlyCatalogRows(t *testing.T) {
 	}
 }
 
-// A flow asked for with its form is the opposite kind of row: it has an HTTP
-// door and confirms for an agent, so a request for it only fills in the form
-// its author submits. No row is in both tables.
+// A form request belongs to an agent-invocable catalog row, but only fills
+// the form its author submits. No row is in both tables.
 func TestFormInstructionsMatchAgentConfirmedCatalogRows(t *testing.T) {
 	raw, err := os.ReadFile("../../../smithers/src/internal/backend/catalog.mvp.json")
 	require.NoError(t, err)
@@ -65,21 +70,29 @@ func TestFormInstructionsMatchAgentConfirmedCatalogRows(t *testing.T) {
 		Operations []catalogRow `json:"operations"`
 	}
 	require.NoError(t, json.Unmarshal(raw, &catalog))
-	require.Len(t, formInstructionFields, 1)
+	require.Contains(t, formInstructionFields, "flow.edit")
 	for command, declared := range formInstructionFields {
 		index := slices.IndexFunc(catalog.Operations, func(row catalogRow) bool { return row.Name == command })
 		require.NotEqual(t, -1, index, command)
 		row := catalog.Operations[index]
 		require.True(t, slices.Contains(row.Actors, "app_agent"), command)
-		require.Equal(t, []any{"confirm", false, false}, []any{row.Agent, string(row.HTTP) == "null", row.Visibility == "hidden"}, command)
+		require.Contains(t, []string{"run", "confirm"}, row.Agent, command)
+		require.NotEqual(t, "hidden", row.Visibility, command)
 		fields := []string{}
 		for field := range row.Payload.Schema.Properties {
 			fields = append(fields, field)
 		}
+		for _, variant := range append(row.Payload.Schema.AnyOf, row.Payload.Schema.OneOf...) {
+			for field := range variant.Properties {
+				fields = append(fields, field)
+			}
+		}
 		want := slices.Clone(declared)
 		sort.Strings(fields)
 		sort.Strings(want)
-		require.Equal(t, want, fields, command)
+		for _, field := range want {
+			require.Contains(t, fields, field, command)
+		}
 		require.NotContains(t, declared, "command", command)
 		require.NotContains(t, uiInstructionFields, command)
 	}
@@ -108,7 +121,7 @@ func TestFormUIInstructionCarriesOnlyDeclaredText(t *testing.T) {
 		{"flow.new", `"flow.new"`, false},
 		// The request is the settled call's own: another command's name cannot carry it.
 		{"docs", `{"command":"flow.new","description":"label new issues"}`, false},
-		{"flow.run", `{"command":"flow.run","name":"create-flow"}`, false},
+		{"flow.run", `{"command":"flow.run","name":"create-flow"}`, true},
 		{"form.submit", `{"command":"form.submit","cardId":"form-flow.new"}`, false},
 	} {
 		var frame map[string]any
@@ -145,5 +158,24 @@ func TestMonitorUIInstructionRefusesUndeclaredState(t *testing.T) {
 		require.NoError(t, decoder.Decode(&frame))
 		want := state == `{"at":1e0}` || state == `{"at":3.0}` || state == `{}` || state == `null` || state == `{"selected":"cell-1","at":0,"tab":"journal"}` || state == `{"selected":null,"at":null,"tab":null}`
 		require.Equal(t, want, validUIInstruction(frame), state)
+	}
+}
+
+func TestEveryCatalogFormInstructionIsDraftOnly(t *testing.T) {
+	for command, fields := range formInstructionFields {
+		t.Run(command, func(t *testing.T) {
+			ui := map[string]any{"command": command}
+			frame := map[string]any{"name": command, "ui": ui}
+			require.True(t, validUIInstruction(frame))
+			for _, field := range fields {
+				ui[field] = "draft"
+				require.True(t, validUIInstruction(frame), field)
+				ui[field] = true
+				require.False(t, validUIInstruction(frame), field)
+				delete(ui, field)
+			}
+			ui["confirmed"] = "true"
+			require.False(t, validUIInstruction(frame))
+		})
 	}
 }

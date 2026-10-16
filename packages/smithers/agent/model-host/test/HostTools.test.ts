@@ -1,4 +1,5 @@
 import { catalogDescriptors } from "@smthrs/cli/Catalog"
+import { estimate } from "@smthrs/harness/Tokens"
 import * as Model from "@smthrs/model/Model"
 import type * as ModelEvent from "@smthrs/model/ModelEvent"
 import type { JsonObject, ModelRequest } from "@smthrs/model/ModelRequest"
@@ -1779,12 +1780,17 @@ describe("an install's host runs the catalog commands its grant allows, as the t
     }
   })
 
-  test("each flow asked for with its form is an agent-confirmed catalog row with an HTTP door, never a screen-only one", () => {
+  test("each requested form belongs to a permitted catalog row, never a screen-only one", () => {
     for (const [name, fields] of Object.entries(FORM_INSTRUCTION_FIELDS)) {
       const row = catalogDescriptors.find((entry) => entry.name === name)!
-      expect([name, row.actors.includes("app_agent"), row.agent, row.http === null, row.visibility === "hidden"])
-        .toEqual([name, true, "confirm", false, false])
-      expect(Object.keys(row.payload.schema.properties ?? {}).sort()).toEqual([...fields].sort())
+      expect(row.actors, name).toContain("app_agent")
+      expect(row.visibility, name).not.toBe("hidden")
+      expect(["run", "confirm"]).toContain(row.agent)
+      const properties = (schema: Record<string, any>): string[] => [
+        ...Object.keys(schema.properties ?? {}),
+        ...(schema.anyOf ?? schema.oneOf ?? []).flatMap(properties)
+      ]
+      for (const field of fields) expect(properties(row.payload.schema), name).toContain(field)
       expect(fields).not.toContain("command")
       expect(Object.keys(UI_INSTRUCTION_FIELDS)).not.toContain(name)
     }
@@ -2191,7 +2197,7 @@ const formOpen = (filled: string): string =>
  * offered. Each request is the whole act: it calls no route and spends no
  * credential, so an account turn without an install API still runs them.
  */
-const CLOUD_ACCOUNT_COMMANDS = [
+const ORIGINAL_CLOUD_ACCOUNT_COMMANDS = [
   "card.dismiss",
   "card.history.back",
   "card.history.forward",
@@ -2231,6 +2237,10 @@ const CLOUD_ACCOUNT_COMMANDS = [
   "wiki.view"
 ]
 
+const CLOUD_ACCOUNT_COMMANDS = [
+  ...new Set([...ORIGINAL_CLOUD_ACCOUNT_COMMANDS, ...Object.keys(FORM_INSTRUCTION_FIELDS)])
+].sort()
+
 // #3823: asked "can we create a workflow" on smithers.sh, the agent had one command, docs, and recited the Flows page.
 describe("a Cloud account conversation asks for a new flow with its form", () => {
   test("the turn is offered the author's own screen, docs and flow.new, every form field optional, and nothing else", async () => {
@@ -2254,8 +2264,7 @@ describe("a Cloud account conversation asks for a new flow with its form", () =>
       expect(listed.commands.map((command) => command.name)).toEqual(names)
       expect(JSON.parse(listed.commands.find((command) => command.name === "flow.new")!.args)).toEqual({
         type: "object",
-        properties: { description: { type: "string" }, repo: { anyOf: [{ type: "string" }, { type: "null" }] } },
-        $defs: {},
+        properties: { description: { type: "string" }, repo: { type: "string" } },
         additionalProperties: false
       })
       expect(journal.calls).toEqual([])
@@ -2628,4 +2637,44 @@ describe("a Cloud account conversation runs the screen-only flows for its author
     const bare = await read({ ...sourceless, request: { ...question, messages: [] } })
     expect(bare.record).toMatchObject({ replaced: true, messages: 0 })
   })
+})
+
+// #3872: requesting a form must not execute its shared-state command.
+test("Cloud asks for flow.edit on the author's screen without calling the install API", async () => {
+  const journal = producer((path) => file(path, JOURNEY), stackRoutes)
+  const provider = model([execute("flow.edit", JSON.stringify({ name: "review", request: "Check accessibility" }))])
+  await runWithDocs(account, provider, journal, PAGES)
+  expect(journal.calls).toEqual([])
+  expect(journal.frames.find((frame) => frame.type === "call.settled")).toMatchObject({
+    name: "flow.edit",
+    ui: { command: "flow.edit", name: "review", request: "Check accessibility" }
+  })
+})
+
+test("each catalog form reaches only the author's screen with no HTTP call", async () => {
+  for (const name of Object.keys(FORM_INSTRUCTION_FIELDS)) {
+    const journal = producer((path) => file(path, JOURNEY), stackRoutes)
+    const provider = model([execute(name, "{}")])
+    await runWithDocs(account, provider, journal, PAGES)
+    expect(journal.calls, name).toEqual([])
+    expect(journal.frames.find((frame) => frame.type === "call.settled"), name).toMatchObject({
+      name,
+      ui: { command: name }
+    })
+  }
+}, 120_000)
+
+// Same host seam as the command-selection tests: local estimates, never billing claims.
+test("Cloud form command prompt accounting", async () => {
+  const provider = model([])
+  await runWithDocs(account, provider, producer((path) => file(path, JOURNEY), stackRoutes), PAGES)
+  const system = systemText(provider.requests[0])
+  process.stdout.write(
+    JSON.stringify({
+      metric: "cloud-form-prompt",
+      bytes: Buffer.byteLength(system),
+      estimatedTokens: estimate(system)
+    }) + "\n"
+  )
+  expect(toolNames(provider.requests[0])).toEqual(["commands"])
 })

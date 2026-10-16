@@ -48,17 +48,6 @@ var uiInstructionFields = map[string][]string{
 	"wiki.view":            {"view"},
 }
 
-// formInstructionFields lists the flows an app-agent turn may only ask for
-// with their form, and the fields a request may fill in. Each has an HTTP door
-// and confirms for an agent, so it is not a UI-only flow: the request opens
-// the form on its author's own screen with these fields as its draft, and the
-// person's Submit runs the flow. It mirrors FORM_INSTRUCTION_FIELDS in
-// packages/rpc/src/UiInstruction.ts; both are checked against the generated
-// catalog.
-var formInstructionFields = map[string][]string{
-	"flow.new": {"description", "repo"},
-}
-
 // validUIInstruction checks a settled call's optional `ui` field: the call's
 // own command beside its declared fields. Only runs.trace.view carries the
 // structured per-member monitor selection declared by the catalog, and a

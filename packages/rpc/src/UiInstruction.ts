@@ -9,6 +9,8 @@
  */
 
 import { z } from "zod"
+import { FORM_INSTRUCTION_FIELDS } from "./FormInstructions.generated.ts"
+export { FORM_INSTRUCTION_FIELDS } from "./FormInstructions.generated.ts"
 
 /**
  * The Appendix B.1 rows the app agent may run for its author, with the payload
@@ -70,19 +72,6 @@ export type UiInstructionCommand = keyof typeof UI_INSTRUCTION_FIELDS
  */
 export const isUiInstructionCommand = (name: string): name is UiInstructionCommand =>
   Object.prototype.hasOwnProperty.call(UI_INSTRUCTION_FIELDS, name)
-
-/**
- * The flows the app agent may only ask for with their form (THE FORM LAW,
- * apps/app/AGENTS.md), with the fields a request may fill in. Each has an HTTP
- * door and confirms for an agent, so it is not a UI-only flow: the request
- * opens the form on the author's screen with these fields as its draft, and
- * the person's Submit runs the flow.
- * @since 1.0.0
- * @category constants
- */
-export const FORM_INSTRUCTION_FIELDS = {
-  "flow.new": ["description", "repo"]
-} as const satisfies Readonly<Record<string, ReadonlyArray<string>>>
 
 /**
  * One flow asked for with its form.
