@@ -31,7 +31,7 @@ Use upstream’s Docker **environment** with the deployer’s **local** executor
 the harness runs outside the task sandbox and connects to the remote shell and
 computer-use MCP bridges. Set `SMITHERS_ROOT` to the immutable built checkout,
 put it and the pinned ALE checkout on `PYTHONPATH`, and reference
-[configs/agents/smithers.yaml](../../../configs/agents/smithers.yaml) in the ALE
+[smithers.yaml](../smithers.yaml) as an agent path in the ALE
 experiment. `install()` discovers both bridge catalogs; `launch()` uses the
 current public `flow start --wait` command with a named TypeScript `Flow.make`
 and `AgentAction` layer and requires a completed journal plus
