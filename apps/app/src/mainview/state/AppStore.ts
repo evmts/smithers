@@ -1873,6 +1873,9 @@ const initializeAppStore = async (
     const cards = scope.branchId === currentScope.branchId && scope.workspaceId === currentScope.workspaceId ? recoverySnapshot.cards
       : recoverySnapshot.branches.find(branch => branch.id === scope.branchId && branch.workspaceId === scope.workspaceId)?.snapshot?.cards
     const prior = cards?.find(row => row.id === value.id)
+    // A new form's creation may still be uncommitted when its first edit is
+    // prepared. Nothing durable since that edit means nothing removed the form.
+    if (cards !== undefined && prior === undefined) return record.revision > recoveryBoundary!.head.revision
     if (prior?.kind !== "flow-form" || prior.status === "acted" || prior.payload.submitting) return false
     const metadata = (card: Extract<Card, { kind: "flow-form" }>) => {
       const { draft: _draft, error: _error, ...payload } = card.payload

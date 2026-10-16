@@ -251,6 +251,29 @@ for (const compact of [false, true]) test(`a prepared edit of an errored form su
   }
 })
 
+test("a prepared edit cannot resurrect a saved form removed after the edit was prepared", async () => {
+  const recovery = memoryStorage(), storage = memoryStorage(), prior = Object.getOwnPropertyDescriptor(globalThis, "window")
+  Object.defineProperty(globalThis, "window", { configurable: true, value: { localStorage: recovery, matchMedia: () => ({ matches: false }) } })
+  try {
+    const store = await createAppStore({ kind: "localStorage", storage })
+    const form: Extract<Card, { kind: "flow-form" }> = { ...card as Extract<Card, { kind: "flow-form" }>,
+      payload: { ...(card as Extract<Card, { kind: "flow-form" }>).payload, fields: [{ name: "path", label: "Path", kind: "text", required: true }], draft: {} } }
+    await store.dispatch({ type: "card.upsert", actor: "user", card: form }).isPersisted.promise
+    expect(store.stagePendingCardInput(form.id, { ...form, payload: { ...form.payload, draft: { path: "Typed.md" } } }, "stale-edit", "path")).toBeDefined()
+    await store.dispatch({ type: "card.removed", actor: "system", id: form.id }).isPersisted.promise
+    expect(readEntityRecoveries(recovery)).toHaveLength(1)
+    await store.dispose?.()
+    const reopened = await createAppStore({ kind: "localStorage", storage })
+    expect(reopened.collections.cards.get(form.id)).toBeUndefined()
+    expect(readEntityRecoveries(recovery)).toEqual([])
+    await reopened.dispose?.()
+  } finally {
+    try { await closeStores() } finally {
+      if (prior) Object.defineProperty(globalThis, "window", prior); else Reflect.deleteProperty(globalThis, "window")
+    }
+  }
+})
+
 test("an invalid prepared prefix cannot be rebound by a later field edit or hide a current recovery write", async () => {
   const recovery = memoryStorage(), prior = Object.getOwnPropertyDescriptor(globalThis, "window")
   Object.defineProperty(globalThis, "window", { configurable: true, value: { localStorage: recovery, matchMedia: () => ({ matches: false }) } })

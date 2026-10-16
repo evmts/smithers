@@ -4,7 +4,7 @@ import { initialSetup } from "@smthrs/rpc/RepositorySetup"
 import type { StorageApi } from "@tanstack/db"
 import { Database } from "bun:sqlite"
 import { afterEach,describe,expect,test } from "bun:test"
-import { mkdtempSync,rmSync } from "node:fs"
+import { copyFileSync,existsSync,mkdtempSync,rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { APP_SCHEMA_VERSION,SCHEMA_VERSION_STORAGE_KEY } from "../chain/SchemaVersion"
@@ -1378,6 +1378,38 @@ test("settled from a collection observer includes its committed runtime receipt"
   } finally { subscription.unsubscribe() }
 })
 
+
+for (const held of [true, false]) test(`a new form edited ${held ? "during" : "after"} its held SQLite creation commit survives immediate reopen`, async () => {
+  const directory = mkdtempSync(join(tmpdir(), "smithers-form-commit-")); directories.push(directory)
+  const path = join(directory, "app.sqlite"), copy = join(directory, "reopened.sqlite")
+  const recovery = memoryStorage(), frozen = memoryStorage(), prior = Object.getOwnPropertyDescriptor(globalThis, "window")
+  Object.defineProperty(globalThis, "window", { configurable: true, value: { localStorage: recovery, matchMedia: () => ({ matches: false }) } })
+  try {
+    const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>()
+    let hold = false
+    const { store } = await sqliteStore(path, async () => { if (hold) { entered.resolve(); await release.promise } })
+    opened.push(store)
+    const form = CardSchema.parse({ id: "new-form", kind: "flow-form", title: "Open page", status: "active", createdAt: 1, ordinal: 1,
+      payload: { flow: "wiki.open", via: "user", fields: [{ name: "path", label: "Path", kind: "text", required: true }], draft: {}, given: {} } })
+    if (form.kind !== "flow-form") throw new Error("fixture is a form")
+    hold = held
+    const created = store.dispatch({ type: "card.upsert", actor: "user", card: form })
+    if (held) await entered.promise; else await created.isPersisted.promise
+    expect(store.stagePendingCardInput(form.id, { ...form, payload: { ...form.payload, draft: { path: "Typed.md" } } }, "first-edit", "path")).toBeDefined()
+    // The page dies here: freeze the committed database and recovery bytes.
+    for (const suffix of ["", "-journal", "-wal"]) if (existsSync(path + suffix)) copyFileSync(path + suffix, copy + suffix)
+    frozen.setItem(ENTITY_RECOVERY_STORAGE_KEY, recovery.getItem(ENTITY_RECOVERY_STORAGE_KEY)!)
+    hold = false; release.resolve()
+    await created.isPersisted.promise
+    Object.defineProperty(window, "localStorage", { configurable: true, value: frozen })
+    const restored = await sqliteStore(copy); opened.push(restored.store)
+    expect(restored.store.collections.cards.get(form.id)).toMatchObject({ kind: "flow-form", payload: { flow: "wiki.open", draft: { path: "Typed.md" } } })
+    expect(readEntityRecoveries(frozen)).toEqual([])
+    expect((await restored.store.verifyState()).valid).toBe(true)
+  } finally {
+    if (prior) Object.defineProperty(globalThis, "window", prior); else Reflect.deleteProperty(globalThis, "window")
+  }
+})
 
 test("an approval stays pending through a held SQLite commit and survives immediate reopen", async () => {
   const directory = mkdtempSync(join(tmpdir(), "smithers-approval-commit-")); directories.push(directory)
