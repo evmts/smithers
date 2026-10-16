@@ -603,3 +603,33 @@ test("a commit the platform cannot read is that read's own refusal, never a diff
   expect(backend.seen.filter(path => path.includes("src/edge.ts")))
     .toEqual([`${ROOT}/contents/apps/server/src/edge.ts?ref=${missing}`])
 })
+
+test("a stack-only repository landing shows its fallback and keeps Files reachable without launching work", async () => {
+  const writes: string[] = []
+  const backend = ownedRepository({
+    [`${ROOT}/home`]: json(200, { kind: "blocks", blocks: [{ type: "stack", title: "Project work" }] }),
+    [`${ROOT}/contents`]: json(200, [{ name: "README.md", path: "README.md", type: "file" }]),
+    [`${ROOT}/flows`]: json(200, [])
+  })
+  const originalFetch = backend.fetchImpl
+  backend.services.fetchImpl = async (input, init) => {
+    if (init?.method !== undefined && init.method !== "GET") writes.push(init.method)
+    return originalFetch(input, init)
+  }
+  const { store, controller } = await enter(`/${REPO}`, backend)
+  const { host } = mount(controller)
+  await settled()
+  const home = host.querySelector('[data-testid="repository-home"]')
+  expect(home).not.toBeNull()
+  expect(home!.textContent).toContain("Project work")
+  expect(home!.querySelector('[role="status"]')?.textContent).toBe("Stack unavailable")
+  expect(writes).toEqual([])
+  const files = home!.querySelector<HTMLButtonElement>(".repository-home-files")
+  expect(files).not.toBeNull()
+  flushSync(() => files!.click())
+  await settled()
+  expect([...store.collections.repoTree.values()]).toContainEqual(expect.objectContaining({
+    copyId: `shared:${REPO}`, path: "", state: "loaded", entries: [{ name: "README.md", kind: "file" }]
+  }))
+  expect(writes).toEqual([])
+})

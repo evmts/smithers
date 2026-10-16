@@ -48,9 +48,6 @@ export interface RepositoryHomeViewProps {
   readonly onRunCommand: RunDynamicCommand
 }
 
-/** A block kind this build does not draw is left out, never the whole homepage. */
-const DRAWN = new Set(["prompt", "app", "flows", "markdown", "text", "links"])
-
 /** The repository's file tree, always one press from its own default view. */
 const FilesAction = ({ treeCopyId, onRunCommand }: Pick<RepositoryHomeViewProps, "treeCopyId" | "onRunCommand">) =>
   treeCopyId === undefined ? null : <Button
@@ -75,12 +72,17 @@ export function RepositoryHomeView({ repo, home, treeCopyId, onRunCommand }: Rep
   }
   const blocks = home.kind === "readme"
     ? [{ type: "markdown" as const, path: "README.md", markdown: home.markdown }]
-    : home.blocks.filter((block) => DRAWN.has(block.type))
+    : home.blocks
   if (blocks.length === 0) return null
   return <section className="repository-home" data-testid="repository-home" data-home={home.kind} aria-label={`${repo} home`}>
     {blocks.map((block, index) => {
       const key = `${block.type}:${index}`
       switch (block.type) {
+        case "stack":
+          return <div className="repository-home-block" key={key}>
+            {block.title === undefined ? null : <h2>{block.title}</h2>}
+            <p className="repository-home-notice" role="status">Stack unavailable</p>
+          </div>
         case "markdown":
           return <div className="repository-home-block" key={key}>
             {block.title === undefined ? null : <h2>{block.title}</h2>}

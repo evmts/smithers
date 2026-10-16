@@ -102,3 +102,28 @@ test("with no copy to read there is no Files act claiming a tree this page canno
   const { host } = render(RepositoryHomeSchema.parse({ kind: "readme", markdown: "# Widgets" }), null)
   expect(host.querySelector<HTMLElement>("[data-testid=repository-home] .repository-home-files")).toBeNull()
 })
+
+for (const mixed of [false, true]) {
+  for (const copy of [COPY, null]) {
+    test(`a ${mixed ? "mixed" : "stack-only"} homepage keeps the unavailable stack visible (${copy === null ? "no copy" : "copy"})`, () => {
+      const home = RepositoryHomeSchema.parse({ kind: "blocks", blocks: [
+        ...(mixed ? [{ type: "text", text: "Project overview" }] : []),
+        { type: "stack", title: "Project work" }
+      ] })
+      const { host, calls } = render(home, copy)
+      const view = host.querySelector<HTMLElement>("[data-testid=repository-home]")
+      expect(view).not.toBeNull()
+      expect(view!.textContent).toContain("Project work")
+      expect(view!.querySelector('[role="status"]')?.textContent).toBe("Stack unavailable")
+      if (mixed) expect(view!.textContent).toContain("Project overview")
+      expect(calls).toEqual([])
+      const files = view!.querySelector<HTMLButtonElement>(".repository-home-files")
+      if (copy === null) expect(files).toBeNull()
+      else {
+        expect(files).not.toBeNull()
+        files!.click()
+        expect(calls).toEqual([["files", JSON.stringify({ operation: "tree", copy })]])
+      }
+    })
+  }
+}
