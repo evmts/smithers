@@ -552,6 +552,14 @@ and the transaction's `FileSystem` surface is deliberately partial.
 
 Full model: [Workspace transactions](./concepts/workspace-transactions.md).
 
+Cache-eligible actions hold a durable `engine-cache:<digest>` consensus permit
+through execution and cache recording. Another engine or process waits, then
+reads the recorded result. Unkeyed or ineligible actions retain their existing
+admission rules. A stale permit is recovered only after the configured liveness
+policy reports its owner dead; the default uses lease expiry. This applies to
+both engine dispatch and plan scheduling. `PlanScheduler.Options.isAlive` accepts
+the same `Ownership.LivenessCheck` as `EngineStore.Options.isAlive`.
+
 ## PlanScheduler
 
 Every declared effect tier is schedulable. Sealed dispatches retain their

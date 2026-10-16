@@ -30,6 +30,7 @@
  * @since 1.0.0
  */
 
+import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
@@ -445,6 +446,17 @@ export class ConsensusError extends Schema.TaggedError<ConsensusError>()("@smthr
  * @category models
  */
 export interface Service {
+  /** Holds a named durable resource lease through work, with heartbeat supervision. */
+  readonly withPermit: <A, E, R>(
+    key: string,
+    owner: OwnerId,
+    isAlive: (
+      owner: OwnerId,
+      context: { readonly claimant: OwnerId; readonly heartbeatAtMs: number | null; readonly nowMs: number }
+    ) => Effect.Effect<boolean>,
+    effect: Effect.Effect<A, E, R>
+  ) => Effect.Effect<A, E | ConsensusError, R>
+
   readonly claim: (
     runId: string,
     claimant: OwnerId,
@@ -536,6 +548,8 @@ export const makeNoop = (overrides: Partial<Service> = {}): Service =>
     steal: Effect.fn("Consensus.steal")(() => Effect.succeed(rejected("unavailable"))),
     recover: Effect.fn("Consensus.recover")(() => Effect.succeed(rejected("unavailable"))),
     guard: Effect.fn("Consensus.guard")((runId: string, owner: OwnerId) => Effect.fail(fenceLost(runId, owner))),
+    withPermit: () =>
+      Effect.fail(new ConsensusError({ code: "persistence_failed", message: "resource leases unavailable" })),
     ...overrides
   })
 
@@ -576,7 +590,9 @@ export const makeLocal: Effect.Effect<Service> = Effect.sync(() => {
     }
   }
 
-  return Consensus.of({
+  const service: Service = Consensus.of({
+    withPermit: (key, owner, isAlive, effect) =>
+      resourcePermit(service, () => Effect.sync(() => leases.get(key)), key, owner, isAlive, effect),
     claim: Effect.fn("Consensus.claim")((runId: string, claimant: OwnerId, nowMs: number) =>
       Effect.sync(() => {
         const lease = leaseOf(runId)
@@ -691,6 +707,7 @@ export const makeLocal: Effect.Effect<Service> = Effect.sync(() => {
       })
     )
   })
+  return service
 })
 
 /**
@@ -713,3 +730,71 @@ export const makeLocal: Effect.Effect<Service> = Effect.sync(() => {
  * @category layers
  */
 export const layerLocal: Layer.Layer<Consensus> = Layer.effect(Consensus, makeLocal)
+
+/**
+ * Shares the existing consensus lease lifecycle with named engine resources.
+ * The reader is private to the strategy; resource leases never create runs.
+ * @since 1.0.0
+ * @category constructors
+ */
+export const resourcePermit = <A, E, R>(
+  strategy: Omit<Service, "withPermit">,
+  read: () => Effect.Effect<LocalLease | undefined, ConsensusError>,
+  key: string,
+  owner: OwnerId,
+  isAlive: Parameters<Service["withPermit"]>[2],
+  effect: Effect.Effect<A, E, R>
+): Effect.Effect<A, E | ConsensusError, R> =>
+  Effect.uninterruptibleMask((restore) => {
+    const acquire = Effect.gen(function*() {
+      while (true) {
+        const admitted = yield* Effect.uninterruptible(Effect.gen(function*() {
+          const nowMs = yield* Clock.currentTimeMillis
+          let grant = yield* strategy.claim(key, owner, nowMs)
+          if (grant._tag === "Rejected") {
+            const lease = yield* read()
+            const held = lease?.claim === undefined
+              ? lease?.owner
+              : { id: lease.claim.id, heartbeatAtMs: lease.claim.claimedAtMs }
+            if (
+              held !== undefined && held.heartbeatAtMs < nowMs - staleAfterMs &&
+              !(yield* isAlive(held.id, { claimant: owner, heartbeatAtMs: held.heartbeatAtMs, nowMs }))
+            ) {
+              const evidence = { expectedOwner: held.id, checkedAtMs: nowMs, kind: "lease-expired" as const }
+              if (lease?.claim !== undefined) {
+                yield* strategy.recover(key, held.id, lease.claim.claimedAtMs, owner, nowMs, evidence)
+              } else {
+                grant = yield* strategy.steal(key, owner, nowMs, evidence)
+              }
+            }
+          }
+          if (grant._tag !== "Claimed") return false
+          const activated = yield* strategy.activate(key, owner, grant.grantedAtMs, nowMs).pipe(
+            Effect.onError(() => strategy.release(key, owner).pipe(Effect.orDie))
+          )
+          if (activated._tag === "Activated") return true
+          yield* strategy.release(key, owner)
+          return false
+        }))
+        if (admitted) return
+        yield* restore(Effect.sleep("50 millis"))
+      }
+    })
+    const pulse = Effect.forever(
+      Effect.sleep(heartbeatInterval).pipe(
+        Effect.andThen(Effect.gen(function*() {
+          const nowMs = yield* Clock.currentTimeMillis
+          const renewed = yield* strategy.reconfirm(key, owner, nowMs).pipe(Effect.timeout(heartbeatInterval))
+          if (renewed._tag !== "Renewed") return yield* Effect.fail(fenceLost(key, owner))
+        })),
+        Effect.mapError(() => fenceLost(key, owner))
+      )
+    )
+    return acquire.pipe(
+      Effect.andThen(() =>
+        restore(Effect.raceFirst(effect, pulse)).pipe(
+          Effect.ensuring(strategy.release(key, owner).pipe(Effect.orDie))
+        )
+      )
+    )
+  })

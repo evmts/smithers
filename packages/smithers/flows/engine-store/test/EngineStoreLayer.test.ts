@@ -460,12 +460,10 @@ describe("EngineStore.make liveness", () => {
 })
 
 describe("EngineStore boundary metadata", () => {
-  it.effect("propagates declared nondeterminism through a keyed durable cache race between two engines", () =>
+  it.live("serializes a keyed durable cache race between two engines", () =>
     Effect.gen(function*() {
-      // One engine runs a cache key once across its runs (issue #3898), so
-      // the race needs two incarnations over one store: two processes.
+      // Independent engines share storage but have separate in-process permits.
       const state = DurableEngineState.makeMemory()
-      const bothStarted = yield* Deferred.make<void>()
       const executions = yield* Ref.make(0)
       const action = Action.make({
         name: "hermetic-nondeterministic",
@@ -476,8 +474,7 @@ describe("EngineStore boundary metadata", () => {
         metadata: { readSet: [], writeSet: ["output.txt"], boundaryMode: "hard" },
         execute: Effect.gen(function*() {
           const ordinal = yield* Ref.updateAndGet(executions, (value) => value + 1)
-          if (ordinal === 2) yield* Deferred.succeed(bothStarted, undefined)
-          yield* Deferred.await(bothStarted)
+          yield* Effect.sleep("100 millis")
           return `result-${ordinal}`
         })
       })
@@ -538,10 +535,10 @@ describe("EngineStore boundary metadata", () => {
         )
       )
 
-      expect(new Set(result.raced)).toEqual(new Set(["result-1", "result-2"]))
+      expect(result.raced).toEqual(["result-1", "result-1"])
       expect(result.raced).toContain(result.replayed)
-      expect(result.executions).toBe(2)
-      expect(result.firstWriterEvents).toHaveLength(1)
+      expect(result.executions).toBe(1)
+      expect(result.firstWriterEvents).toHaveLength(0)
     }))
 
   it.effect("forwards a hermetic boundary descriptor so a sealed result is shared across runs", () =>

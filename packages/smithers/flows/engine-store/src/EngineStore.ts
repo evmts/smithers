@@ -372,6 +372,7 @@ const makeWithEngineJj = (
         runId: parent.executionId,
         owner,
         sourceId: options.journalSource,
+        isAlive: options.isAlive,
         engineJj,
         execute: (actionInput) => (actionInput.action as Action.Any).executeEncoded as Effect.Effect<unknown, unknown>,
         idempotencyKey: input.action.idempotencyKey === undefined

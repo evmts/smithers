@@ -61,6 +61,33 @@ const scheduler = (runId: string) => PlanScheduler.make({ runId, owner, sourceId
 const failureOf = (exit: Exit.Exit<unknown, unknown>) =>
   exit._tag === "Failure" ? exit.cause.reasons.find((reason) => reason._tag === "Fail")?.error : undefined
 
+it("shares a cached node between independently constructed schedulers", async () => {
+  let executions = 0
+  const reports = await runPromise(
+    Effect.gen(function*() {
+      const plan = yield* Plan.compile({ planId: "cache-race", flow: "test", nodes: [draft("shared", [])] })
+      yield* activate("cache-first")
+      yield* activate("cache-second")
+      return yield* Effect.all([
+        scheduler("cache-first").run(plan),
+        scheduler("cache-second").run(plan)
+      ], { concurrency: "unbounded" })
+    }).pipe(
+      Effect.provide(runtime({
+        execute: () =>
+          Effect.gen(function*() {
+            executions++
+            yield* Effect.sleep("100 millis")
+            return "shared-result"
+          })
+      })),
+      Effect.provide(TestStores.layer())
+    )
+  )
+  expect(executions).toBe(1)
+  expect(reports.map((report) => report.settlements[0]?.outcome).sort()).toEqual(["built", "clean"])
+})
+
 describe("scheduler validates plans before side effects", () => {
   it("executes the verified snapshot when caller-owned plan data changes during dispatch", async () => {
     const plan = await runPromise(

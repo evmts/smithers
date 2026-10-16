@@ -37,7 +37,7 @@ const at = (millis: number) =>
       currentTimeNanos: Effect.succeed(BigInt(millis) * 1_000_000n),
       monotonicTimeNanosUnsafe: () => BigInt(millis) * 1_000_000n,
       monotonicTimeNanos: Effect.succeed(BigInt(millis) * 1_000_000n),
-      sleep: () => Effect.void
+      sleep: (duration) => Clock.Clock.defaultValue().sleep(duration)
     } satisfies Clock.Clock
   )
 const lineage = (runId: string) => `smithers-journal-lineage/v1:${JSON.stringify([runId])}`

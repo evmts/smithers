@@ -163,6 +163,13 @@ or belongs to another owner. Repeated acknowledgements preserve the original
 owner and timestamp. This does not make the run terminal or prove cleanup ended.
 Engine snapshots expose the record separately from request and finish.
 
+#### withPermit
+
+`withPermit(key, owner, isAlive, effect)` delegates named resource exclusion to
+the store's existing consensus strategy. It shares its durable lease lifecycle
+without creating a run or journal event. Its error channel includes
+`ConsensusError`; cleanup releases ownership on success, failure or interruption.
+
 #### claim
 
 ```ts

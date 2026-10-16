@@ -12,6 +12,7 @@ import { Action, FlowRuntime } from "@smthrs/flow"
 import * as CacheEnvironment from "@smthrs/flow/CacheEnvironment"
 import type { FileBoundary } from "@smthrs/flow/FileBoundary"
 import { Journal, type JournalEvent, Redaction } from "@smthrs/journal"
+import { ConsensusError } from "@smthrs/journal/Consensus"
 import { Jj } from "@smthrs/kernel"
 import { DerivedKey } from "@smthrs/keys"
 import { AttemptStore, Ownership, RunStore } from "@smthrs/run-store"
@@ -302,6 +303,7 @@ const settlementViolated = (cause: Cause.Cause<unknown>): boolean =>
 export interface Dependencies {
   readonly runId: string
   readonly owner: Ownership.OwnerId
+  readonly isAlive?: Ownership.LivenessCheck | undefined
   readonly sourceId: string
   /** Runs one action body. The only part of a dispatch this module delegates. */
   readonly execute: (input: ActionInput) => Effect.Effect<unknown, unknown>
@@ -1237,11 +1239,26 @@ export const make = (deps: Dependencies) => {
       // cache row instead of running the body beside it. That includes a run
       // the stale-running sweep reclaimed from a dead owner, whose in-flight
       // attempt would otherwise re-execute next to the run that superseded
-      // it. Other processes are not excluded: two processes may still execute
-      // one key at once, and the second recording resolves as before.
-      const exclusive = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      // it. The shared consensus strategy also holds a durable resource lease
+      // across this span, excluding other engines and processes.
+      const exclusive = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E | ConsensusError, R> =>
         admission.withPermit(`run:${deps.runId}|${stepKeyDigest}`)(
-          cacheDeclaration._tag === "Eligible" ? admission.withPermit(`cache:${keyDigest}`)(effect) : effect
+          cacheDeclaration._tag === "Eligible"
+            ? admission.withPermit(`cache:${keyDigest}`)(
+              runs.withPermit(
+                `engine-cache:${keyDigest}`,
+                { ...deps.owner, nonce: `${deps.owner.nonce}:${deps.runId}` },
+                deps.isAlive ?? Ownership.leaseLiveness(),
+                effect
+              ).pipe(
+                Effect.catch((error) =>
+                  error instanceof ConsensusError && error.code === "fence_lost"
+                    ? Effect.interrupt
+                    : Effect.fail(error)
+                )
+              )
+            )
+            : effect
         )
       return yield* exclusive(
         Effect.gen(function*() {

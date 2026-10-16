@@ -38,9 +38,11 @@ import {
   Consensus,
   type ConsensusError,
   type LivenessEvidence,
+  makeNoop as makeConsensusNoop,
   matchesEvidence,
   provesDeath,
-  sameOwner
+  sameOwner,
+  type Service as ConsensusService
 } from "@smthrs/journal/Consensus"
 import type { JournalError } from "@smthrs/journal/Journal"
 import { isCompanionRunId } from "@smthrs/journal/JournalEvent"
@@ -465,6 +467,9 @@ export const ownershipEventType = (transition: OwnershipTransition): string => `
  * @category models
  */
 export interface Service {
+  /** Named engine resource exclusion using this store’s consensus strategy. */
+  readonly withPermit: ConsensusService["withPermit"]
+
   readonly create: (
     runId: string,
     stateJson: string,
@@ -1988,6 +1993,7 @@ export const make: Effect.Effect<Service, never, Consensus | DurableWriter | Sql
     )
 
     return RunStore.of({
+      withPermit: consensus.withPermit,
       create,
       get,
       lineage,
@@ -2019,6 +2025,7 @@ export const makeNoop = (overrides: Partial<Service> = {}): Service => {
   const unavailable = (method: string) =>
     Effect.fail(runStoreError(method, "persistence_failed", "no run store in this environment", method))
   return RunStore.of({
+    withPermit: makeConsensusNoop().withPermit,
     create: Effect.fn("RunStore.create")(() => unavailable("create")),
     get: Effect.fn("RunStore.get")(() => unavailable("get")),
     lineage: Effect.fn("RunStore.lineage")(() => unavailable("lineage")),

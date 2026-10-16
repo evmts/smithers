@@ -238,6 +238,8 @@ export interface Report {
 export interface Options {
   readonly runId: string
   readonly owner: Ownership.OwnerId
+  /** Liveness policy for recovering a stale shared cache lease. */
+  readonly isAlive?: Ownership.LivenessCheck | undefined
   readonly sourceId: string
   /**
    * Engine-resolved identity, copied at scheduler construction and durably
@@ -1116,6 +1118,7 @@ export const make = (options: Options): Service => {
             const exit = yield* ActionPersistence.make({
               runId: options.runId,
               owner: options.owner,
+              isAlive: options.isAlive,
               admission,
               cacheAgeVerdict,
               replayOnly,

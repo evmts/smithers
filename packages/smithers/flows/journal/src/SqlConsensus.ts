@@ -43,6 +43,7 @@ import {
   type RecoverOutcome,
   type Rejected,
   type RejectionReason,
+  resourcePermit,
   type Service
 } from "./Consensus.ts"
 import type { OwnerId } from "./OwnerId.ts"
@@ -333,7 +334,45 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     }))
   )
 
-  return Consensus.of({ claim, activate, heartbeat, reconfirm, release, steal, recover, guard })
+  const strategy = { claim, activate, heartbeat, reconfirm, release, steal, recover, guard }
+  return Consensus.of({
+    ...strategy,
+    withPermit: (key, owner, isAlive, effect) =>
+      resourcePermit(
+        strategy,
+        () =>
+          sql<
+            LeaseRow & {
+              readonly granted_at_ms: number | null
+              readonly heartbeat_at_ms: number | null
+              readonly claimed_at_ms: number | null
+            }
+          >`
+        SELECT * FROM flows_consensus_leases WHERE run_id = ${key}
+      `.pipe(
+            Effect.map((rows) => {
+              const row = rows[0]
+              if (row === undefined) return undefined
+              return {
+                owner: row.owner_host_id === null ? undefined : {
+                  id: { hostId: row.owner_host_id, pid: Number(row.owner_pid), nonce: row.owner_nonce! },
+                  grantedAtMs: Number(row.granted_at_ms),
+                  heartbeatAtMs: Number(row.heartbeat_at_ms)
+                },
+                claim: row.claim_host_id === null ? undefined : {
+                  id: { hostId: row.claim_host_id, pid: Number(row.claim_pid), nonce: row.claim_nonce! },
+                  claimedAtMs: Number(row.claimed_at_ms)
+                }
+              }
+            }),
+            Effect.mapError(strategyError)
+          ),
+        key,
+        owner,
+        isAlive,
+        effect
+      )
+  })
 })
 
 /**
