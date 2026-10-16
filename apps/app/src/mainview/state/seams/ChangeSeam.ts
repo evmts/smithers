@@ -448,7 +448,8 @@ interface LandingWire {
 const parseLanding = (value: unknown): LandingWire | null => {
   if (!isRecord(value)) return null
   const number = intOrNull(value.number)
-  if (number === null) return null
+  const targetBookmark = str(value.target_bookmark)
+  if (number === null || targetBookmark === null) return null
   const landablePrefix = intOrNull(value.landable_prefix)
   const blockedBy = isRecord(value.blocked_by)
     ? Object.fromEntries(
@@ -465,7 +466,7 @@ const parseLanding = (value: unknown): LandingWire | null => {
     number,
     state: str(value.state) ?? "unknown",
     changeIds: strings(value.change_ids),
-    targetBookmark: str(value.target_bookmark) ?? "main",
+    targetBookmark,
     conflictStatus: str(value.conflict_status) ?? "unknown",
     landablePrefix: landablePrefix === null || landablePrefix < 0 ? null : landablePrefix,
     blockedBy,
@@ -825,7 +826,7 @@ export const createChangeSeam = (ctx: SeamContext, deps: ChangeSeamDeps = {}): C
     if (rows === null) return { unread: `Smithers Cloud's answer for the landing requests of ${repoId} was malformed` }
     for (const entry of rows) {
       const landing = parseLanding(entry)
-      if (landing === null) continue
+      if (landing === null) return { unread: `Smithers Cloud's answer for the landing requests of ${repoId} was malformed` }
       const index = landing.changeIds.indexOf(changeId)
       if (index !== -1) return { value: { landing, position: index + 1 } }
     }

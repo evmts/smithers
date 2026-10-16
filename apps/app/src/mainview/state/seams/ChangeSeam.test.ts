@@ -1621,3 +1621,11 @@ test("malformed findings reread replaces a successful panel with unread before v
   expect(payloadOf(store)?.unread?.findings).toBeUndefined()
 })
 
+
+test("an unread landing target never invents main for a change's stack (#3831)", async () => {
+  const { target_bookmark: _target, ...unread } = LANDING
+  const { store, seam } = await harness({ ...viewRoutes, [`${REPO}/landings?limit=100`]: json(200, { items: [unread] }) })
+  await seam.viewChange("qupxosqw")
+  expect(payloadOf(store)?.stack).toBeNull()
+  expect(payloadOf(store)?.unread?.stack).toBeDefined()
+})

@@ -14,7 +14,7 @@ afterAll(async () => { await new Promise(resolve => setTimeout(resolve, 20)); aw
 test("an unavailable identity is visible with the design fixture off (#3831)", async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const controller = createAppController(store, silentAgent, {
-    bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: [], authFlow: null, sandbox: null },
+    bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: [], authFlow: "none", sandbox: null },
     fetchImpl: async () => Response.json({}, { status: 404 })
   })
   const host = document.createElement("div"); document.body.append(host)
