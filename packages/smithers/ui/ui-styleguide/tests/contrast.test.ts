@@ -111,3 +111,24 @@ describe("documented text token contrast", () => {
     expect(ratio).toBeGreaterThanOrEqual(AA_MINIMUM);
   });
 });
+
+
+describe("focus indicator contrast", () => {
+  for (const theme of ["light", "dark"] as const) {
+    for (const [name, readTokens] of [["workflow", themeTokens], ["standalone", standaloneTokens]] as const) {
+      for (const surface of ["--bg", "--surface", "--surface-2", "--surface-3"]) {
+        test(`${name} ${theme} focus border on ${surface} meets 3:1`, () => {
+          const tokens = readTokens(theme);
+          const background = resolveColor(surface, tokens);
+          const value = tokens.get("--ring-border")!;
+          const transparentMix = value.match(/^color-mix\(in srgb, var\((--[\w-]+)\) ([\d.]+)%, transparent\)$/);
+          const ring = transparentMix
+            ? resolveColor(transparentMix[1]!, tokens).map((channel, index) =>
+                channel * Number(transparentMix[2]) / 100 + background[index]! * (1 - Number(transparentMix[2]) / 100)) as unknown as Rgb
+            : resolveColor("--ring-border", tokens);
+          expect(contrastRatio(ring, background)).toBeGreaterThanOrEqual(3);
+        });
+      }
+    }
+  }
+});

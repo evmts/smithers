@@ -124,7 +124,7 @@ expressions, overriding a semantic color re-derives every one that reads it.
 | `--info-soft`            | `color-mix(in srgb, var(--info) 10%, var(--surface))`    | A fill under info-colored text.                |
 | `--info-border`          | `color-mix(in srgb, var(--info) 40%, transparent)`       | Border on an info-tinted control.              |
 | `--ring`                 | `color-mix(in srgb, var(--brand) 22%, transparent)`      | The `:focus-visible` glow.                     |
-| `--ring-border`          | `color-mix(in srgb, var(--brand) 50%, transparent)`      | The `:focus-visible` border color.             |
+| `--ring-border`          | `var(--brand)`      | The `:focus-visible` border color.             |
 
 **10 percent is a ceiling, not a taste call.** Every `*-soft` tint is 10 percent
 because that is the most a fill can take and still carry 11px text in the same

@@ -90,8 +90,8 @@
 	--on-confluence: var(--ink-900);
 
 	/* ── Focus (derived from the palette's brand) ────────────── */
+	--ring-border: var(--brand);
 	--ring: color-mix(in srgb, var(--brand) 45%, transparent);
-	--ring-border: var(--water-500);
 
 	/* ── Chat bubbles (light) — recipes over the semantic tokens ── */
 	--bubble-incoming: #fff;
@@ -236,9 +236,6 @@
 	--code-text: #ece7db;
 	--inline-code-bg: rgb(236 231 219 / 8%);
 	--shadow-rgb: 0 0 0;
-
-	/* ── Focus (dark): the ring border lifts toward the text ─── */
-	--ring-border: var(--water-300);
 
 	/*
 	 * Paper chat bubbles (dark).

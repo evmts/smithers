@@ -69,7 +69,7 @@ export const sharedTokens = [
   softTint("info"),
   "--info-border:color-mix(in srgb, var(--info) 40%, transparent)",
   "--ring:color-mix(in srgb, var(--brand) 22%, transparent)",
-  "--ring-border:color-mix(in srgb, var(--brand) 50%, transparent)",
+  "--ring-border:var(--brand)",
   // Geometry: spacing, type scale, radii, and shared control heights.
   // Spacing policy (enforced by @smthrs/ui css-contract tests):
   // the --sp scale (4px steps) paces layout-level spacing; component-internal

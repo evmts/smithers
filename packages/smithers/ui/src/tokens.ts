@@ -90,7 +90,7 @@ export const tokens = {
    * properties so a host that themes the ring re-themes these components too.
    */
   ring: "var(--ring, color-mix(in srgb, var(--brand, #0f766e) 22%, transparent))",
-  ringBorder: "var(--ring-border, color-mix(in srgb, var(--brand, #0f766e) 50%, transparent))",
+  ringBorder: "var(--ring-border, var(--brand, #0f766e))",
   /** Extra-subtle fill for chips and hover washes. */
   hoverSubtle: "var(--hover-subtle, rgba(33, 29, 24, 0.03))",
   /** Faint text (placeholders use --text-placeholder). */

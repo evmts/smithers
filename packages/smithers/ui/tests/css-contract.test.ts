@@ -115,7 +115,7 @@ describe("css contract", () => {
     // Routed through --ring/--ring-border so a host that themes the ring
     // re-themes these components; the fallbacks stay the house recipe.
     expect(smithersUiCss).toContain(
-      "border-color:var(--ring-border, color-mix(in srgb, var(--brand, #0f766e) 50%, transparent))",
+      "border-color:var(--ring-border, var(--brand, #0f766e))",
     );
     expect(smithersUiCss).toContain(
       "0 0 0 3px var(--ring, color-mix(in srgb, var(--brand, #0f766e) 22%, transparent))",
