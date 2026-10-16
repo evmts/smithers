@@ -1083,12 +1083,10 @@ func (s *WorkspaceService) refuseUnnarrowedOutsiderBox(ctx context.Context, work
 	if err == nil && !outsider {
 		return nil
 	}
-	if suspendErr := s.suspendWorkspace(ctx, workspace); suspendErr != nil {
-		slog.Warn("suspend a box that booted before its outsider mark", "workspace_id", workspace.ID, "error", suspendErr)
-	}
+	containmentErr := s.containUnnarrowedOutsiderBox(ctx, workspace)
 	failure := pkgerrors.New(pkgerrors.CodeServiceUnavailable, "the workspace restarts with the egress of a box that ran outsider-started work; retry")
 	failure.RetryAfter = 5
-	return failure
+	return failure.WithCause(containmentErr)
 }
 
 // NarrowOutsiderEgress makes sure every proxy a marked workspace runs is
@@ -1124,11 +1122,38 @@ func (s *WorkspaceService) NarrowOutsiderEgress(ctx context.Context, workspaceID
 	}
 	switch workspace.Status {
 	case "running":
-		if err := s.suspendWorkspace(ctx, workspace); err != nil {
+		if err := s.containUnnarrowedOutsiderBox(ctx, workspace); err != nil {
 			return err
 		}
 	}
 	return s.q.SealOutsiderWorkspaceEgress(ctx, workspaceID)
+}
+
+// A hosted boot that raced its outsider mark has failed admission. Stop its
+// execution even when normal capture-backed sleep is unavailable, retaining its
+// disk and VM identity for recovery. This publishes failure, never a successful
+// sleep or a final-capture receipt. Cancellation cannot leave full egress live.
+func (s *WorkspaceService) containUnnarrowedOutsiderBox(ctx context.Context, row db.Workspace) error {
+	if s.runtime != nil {
+		return s.suspendWorkspace(ctx, row)
+	}
+	if s.sandbox == nil || row.VmID == "" {
+		return pkgerrors.Internal("outsider sandbox containment unavailable")
+	}
+	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), workspaceResumeTimeout)
+	defer cancel()
+	if _, err := s.sandbox.SuspendSandbox(cleanup, row.VmID); err != nil && !vmAlreadyStopped(err) {
+		return pkgerrors.Internal("stop unnarrowed outsider sandbox").WithCause(err)
+	}
+	observed, err := s.sandbox.InspectSandbox(cleanup, row.VmID)
+	if err != nil && !vmAlreadyGone(err) {
+		return pkgerrors.Internal("confirm outsider sandbox stopped").WithCause(err)
+	}
+	if err == nil && observed.State != sandbox.StateStopped {
+		return pkgerrors.Internal("outsider sandbox stop unconfirmed")
+	}
+	_, err = s.failWorkspace(cleanup, row, errors.New("workspace boot raced outsider egress admission; retry with narrowed egress"))
+	return err
 }
 
 // withholdRuntimeConversation has the workspace runtime run a marked

@@ -15,6 +15,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/microsandbox"
 	"github.com/smithersai/smithers/packages/backend/sandbox"
+	"github.com/smithersai/smithers/packages/backend/sandbox/sandboxfake"
 	workspaceapi "github.com/smithersai/smithers/packages/backend/workspace"
 )
 
@@ -160,6 +161,9 @@ func TestNarrowOutsiderEgressSuspendsABoxThatBootedBeforeTheMark(t *testing.T) {
 		},
 	}}
 	service := newWorkspaceServiceForTests(q, WithWorkspaceSandboxClient(&mockWorkspaceSandboxVMClient{
+		getVMFn: func(context.Context, string) (sandbox.Sandbox, error) {
+			return sandbox.Sandbox{State: sandbox.StateStopped}, nil
+		},
 		suspendVMFn: func(context.Context, string) (sandbox.SuspendResult, error) {
 			suspended++
 			return sandbox.SuspendResult{}, nil
@@ -173,17 +177,19 @@ func TestNarrowOutsiderEgressSuspendsABoxThatBootedBeforeTheMark(t *testing.T) {
 
 	status = "running"
 	err := service.NarrowOutsiderEgress(ctx, "ws-box")
-	require.ErrorContains(t, err, "branch sleep requires verified capture")
-	assert.False(t, q.sealed, "a box still running the full egress keeps the workspace unsealed")
+	require.NoError(t, err)
+	assert.True(t, q.sealed)
+	assert.Equal(t, 1, suspended, "failed admission stops the unsafe box")
+	q.sealed = false
 
 	status = "suspended"
 	require.NoError(t, service.NarrowOutsiderEgress(ctx, "ws-box"))
-	assert.Zero(t, suspended, "a suspended box needs no suspension to seal")
+	assert.Equal(t, 1, suspended, "a suspended box needs no further suspension to seal")
 	assert.True(t, q.sealed)
 
 	status = "running"
 	require.NoError(t, service.NarrowOutsiderEgress(ctx, "ws-box"))
-	assert.Zero(t, suspended, "a sealed workspace's boxes all booted narrowed")
+	assert.Equal(t, 1, suspended, "a sealed workspace's boxes all booted narrowed")
 }
 
 // unopenedBranchTransactions completes the activation providers for a
@@ -218,10 +224,13 @@ func TestResumeNarrowsAMarkedBoxAndRefusesOneThatPredatesTheMark(t *testing.T) {
 		var applied *sandbox.EgressProxyPolicy
 		suspended := 0
 		q := &markingWorkspaceQuerier{markedAfter: markedAfter}
-		service := newWorkspaceServiceForTests(q, WithWorkspaceTransactions(unopenedBranchTransactions{t}), WithBranchMachineProviders(branchMachineTestProviders()), WithWorkspaceSandboxClient(&mockWorkspaceSandboxVMClient{
+		service := newWorkspaceServiceForTests(q, WithWorkspaceTransactions(newProductTestPool(t)), WithBranchMachineProviders(branchMachineTestProviders()), WithWorkspaceSandboxClient(&mockWorkspaceSandboxVMClient{
 			startVMFn: func(_ context.Context, _ string, req sandbox.StartRequest) (sandbox.StartResult, error) {
 				applied = req.EgressProxy
 				return sandbox.StartResult{}, nil
+			},
+			getVMFn: func(context.Context, string) (sandbox.Sandbox, error) {
+				return sandbox.Sandbox{State: sandbox.StateStopped}, nil
 			},
 			suspendVMFn: func(context.Context, string) (sandbox.SuspendResult, error) {
 				suspended++
@@ -240,7 +249,8 @@ func TestResumeNarrowsAMarkedBoxAndRefusesOneThatPredatesTheMark(t *testing.T) {
 	assert.Equal(t, sandbox.ConversationWithheldHostRules(), applied.HostRules)
 	assert.Zero(t, suspended)
 
-	applied, _, err = resume(1)
+	applied, suspended, err = resume(1)
+	require.Equal(t, 1, suspended)
 	require.ErrorContains(t, err, "restarts with the egress of a box that ran outsider-started work")
 	assert.Equal(t, http.StatusServiceUnavailable, apiStatus(t, err))
 	assert.Nil(t, applied, "the policy was computed before the mark")
@@ -336,4 +346,96 @@ func TestWorkspaceRuntimeWithholdsConversationBeforeAMarkedBoxStarts(t *testing.
 	service = waking(&unmarked, maintainer)
 	_, _ = service.ensureRuntimeWorkspaceRunningLocked(ctx, row, row.UserID)
 	assert.Equal(t, []string{"start " + row.ID}, maintainer.calls, "an unmarked workspace needs nothing of its runtime")
+}
+
+// Unit containment at the provider boundary: a boot raced the outsider mark,
+// and normal sleep cannot capture. Refusing the caller must also stop execution.
+func TestOutsiderBootRaceStopsHostedSandboxWithoutClaimingSleep(t *testing.T) {
+	provider := sandboxfake.New()
+	row := sampleDBWorkspace("outsider-boot")
+	row.VmID = provider.Boot(map[string]string{"unpublished.txt": "retain this work"})
+	status := "running"
+	q := &markingWorkspaceQuerier{markedAfter: 0}
+	q.updateWorkspaceStatusFn = func(_ context.Context, arg db.UpdateWorkspaceStatusParams) (db.Workspace, error) {
+		status = arg.Status
+		row.Status = arg.Status
+		return row, nil
+	}
+	svc := newWorkspaceServiceForTests(q, WithWorkspaceSandboxClient(provider))
+	err := svc.refuseUnnarrowedOutsiderBox(context.Background(), row, nil)
+	require.Error(t, err)
+	observed, inspectErr := provider.InspectSandbox(context.Background(), row.VmID)
+	require.NoError(t, inspectErr)
+	require.Equal(t, sandbox.StateStopped, observed.State)
+	require.Equal(t, "failed", status, "failed admission is not a verified sleep")
+	machine, exists := provider.Machine(row.VmID)
+	require.True(t, exists)
+	require.Equal(t, "retain this work", machine.Files["unpublished.txt"])
+}
+
+type refusedOutsiderStop struct {
+	*sandboxfake.Provider
+	stopErr     error
+	inspectErr  error
+	unconfirmed bool
+}
+
+func (p *refusedOutsiderStop) SuspendSandbox(ctx context.Context, id string) (sandbox.SuspendResult, error) {
+	if err := ctx.Err(); err != nil {
+		return sandbox.SuspendResult{}, err
+	}
+	if p.stopErr != nil {
+		return sandbox.SuspendResult{}, p.stopErr
+	}
+	if p.unconfirmed {
+		return sandbox.SuspendResult{}, nil
+	}
+	return p.Provider.SuspendSandbox(ctx, id)
+}
+func (p *refusedOutsiderStop) InspectSandbox(ctx context.Context, id string) (sandbox.Sandbox, error) {
+	if p.inspectErr != nil {
+		return sandbox.Sandbox{}, p.inspectErr
+	}
+	return p.Provider.InspectSandbox(ctx, id)
+}
+func TestOutsiderContainmentRequiresConfirmedStopAndSurvivesCancellation(t *testing.T) {
+	for _, boundary := range []string{"stop", "inspect", "still-running", "canceled"} {
+		t.Run(boundary, func(t *testing.T) {
+			provider := &refusedOutsiderStop{Provider: sandboxfake.New()}
+			row := sampleDBWorkspace("outsider-stop")
+			row.VmID = provider.Boot(map[string]string{"work": "retained"})
+			failure := errors.New("provider unavailable")
+			switch boundary {
+			case "stop":
+				provider.stopErr = failure
+			case "inspect":
+				provider.inspectErr = failure
+			case "still-running":
+				provider.unconfirmed = true
+			}
+			published := 0
+			q := &mockWorkspaceQuerier{updateWorkspaceStatusFn: func(_ context.Context, arg db.UpdateWorkspaceStatusParams) (db.Workspace, error) {
+				published++
+				require.Equal(t, "failed", arg.Status)
+				return row, nil
+			}}
+			svc := newWorkspaceServiceForTests(q, WithWorkspaceSandboxClient(provider))
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if boundary == "canceled" {
+				cancel()
+			}
+			err := svc.containUnnarrowedOutsiderBox(ctx, row)
+			if boundary == "canceled" {
+				require.NoError(t, err)
+				require.Equal(t, 1, published)
+			} else {
+				require.Error(t, err)
+				require.Zero(t, published)
+			}
+			retained, exists := provider.Machine(row.VmID)
+			require.True(t, exists)
+			require.Equal(t, "retained", retained.Files["work"])
+		})
+	}
 }
