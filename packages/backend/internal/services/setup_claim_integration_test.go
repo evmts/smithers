@@ -158,6 +158,14 @@ func TestVerifyOwnerLivePermissionPostgres(t *testing.T) {
 			require.JSONEq(t, `{"permissions":{"metadata":"read"}}`, string(body), "the owner check asks for metadata:read and nothing else")
 			w.WriteHeader(201)
 			w.Write([]byte(`{"token":"installation-token","expires_at":"2099-01-01T00:00:00Z"}`))
+		case "/users/owner/keys":
+			w.Write([]byte(`[]`))
+		case "/repos/acme/app":
+			require.Equal(t, "Bearer installation-token", r.Header.Get("Authorization"))
+			w.Write([]byte(`{"id":100,"full_name":"acme/app"}`))
+		case "/installation/repositories":
+			require.Equal(t, "Bearer installation-token", r.Header.Get("Authorization"))
+			w.Write([]byte(`{"total_count":1,"repositories":[{"id":100}]}`))
 		case "/repos/acme/app/collaborators/owner/permission":
 			require.Equal(t, "Bearer installation-token", r.Header.Get("Authorization"))
 			json.NewEncoder(w).Encode(map[string]string{"permission": permission, "role_name": role})
@@ -183,7 +191,7 @@ func TestVerifyOwnerLivePermissionPostgres(t *testing.T) {
 	permission = "write"
 	require.NoError(t, m.BindRepository(ctx, user, "acme", "app", repo.ID))
 	// The one minter caches the token, so only the first check mints.
-	require.Len(t, calls, 7)
+	require.Len(t, calls, 15)
 	require.Equal(t, []string{"GET /repos/acme/app/installation", "POST /app/installations/91/access_tokens", "GET /repos/acme/app/collaborators/owner/permission"}, calls[:3])
 	var count int
 	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM collaborators WHERE repository_id=$1 AND user_id=$2 AND permission='admin'`, repo.ID, user.ID).Scan(&count))
