@@ -230,7 +230,8 @@ describe.each(handlers)("$name process confinement", ({ run }) => {
             Effect.forkChild({ startImmediately: true })
           )
           const started: Effect.Effect<void> = Effect.suspend(() =>
-            existsSync(join(workspace, "out", "started"))
+            existsSync(join(workspace, "out", "started")) &&
+              readFileSync(join(workspace, "out", "started"), "utf8") === "started"
               ? Effect.void
               : Effect.sleep("5 millis").pipe(Effect.andThen(started))
           )
