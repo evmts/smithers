@@ -47,7 +47,7 @@ def main():
     state = Path(args.state).resolve()
     while not state.exists():
         state = state.parent
-    detected = json.loads(output("go", "run", "./scripts/spikes/mch-01-memory/profile", str(state)))
+    detected = json.loads(output("go", "run", "./packages/backend/checks/C-SPK-05/profile", str(state)))
     profile = detected["profile"]
     memory_mib = detected["limits"]["memory_mib"]
     cpus = detected["limits"]["cpus"]

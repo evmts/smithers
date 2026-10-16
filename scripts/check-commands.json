@@ -2790,10 +2790,10 @@
     },
     "C-SPK-05": {
       "status": "manual",
-      "reason": "Person/hardware required: the reference host plus one Apple Silicon Mac with a different memory size; Automation present: scripts/spikes/mch-01-memory/run.sh; authenticated owner approval of argv/host and qualification receipts pending",
+      "reason": "Person/hardware required: the reference host plus one Apple Silicon Mac with a different memory size; Automation present: packages/backend/checks/C-SPK-05/run.sh; authenticated owner approval of argv/host and qualification receipts pending",
       "pendingBinding": {
         "files": [
-          "scripts/spikes/mch-01-memory/run.sh"
+          "packages/backend/checks/C-SPK-05/run.sh"
         ],
         "commands": [],
         "unboundSubcases": [
