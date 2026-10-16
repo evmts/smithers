@@ -269,11 +269,11 @@ describe("the workspace package contract", () => {
       }
       if (effectRuntimeOwners.has(manifest.name)) {
         assert.equal(
-          manifest.dependencies?.effect,
+          manifest.peerDependencies?.effect,
           effectVersion,
-          `${manifest.name} is an executable and must install its Effect runtime`
+          `${manifest.name} must share the exact tested Effect runtime with its host`
         )
-        assert.equal(manifest.peerDependencies?.effect, undefined, `${manifest.name} must not also peer Effect`)
+        assert.equal(manifest.dependencies?.effect, undefined, `${manifest.name} must not install a nested Effect runtime`)
         continue
       }
       assert.equal(
@@ -298,11 +298,11 @@ describe("the workspace package contract", () => {
     const owners = publishable.filter(({ manifest }) => manifest.smthrs?.privateEffectAdapters)
     assert.equal(owners.length, 7)
     for (const { manifest } of owners) {
-      // An executable installs the release its adapters are built from. A
+      // An executable requires the exact peer its adapters are built from. A
       // library builds them from the release it develops against, and its
       // peer starts there.
       if (effectRuntimeOwners.has(manifest.name)) {
-        assert.equal(manifest.dependencies?.effect, effectVersion)
+        assert.equal(manifest.peerDependencies?.effect, effectVersion)
       } else {
         assert.equal(manifest.peerDependencies?.effect, effectRange)
         assert.equal(manifest.devDependencies?.effect, effectVersion)

@@ -497,13 +497,13 @@ test("packsPath reads npm files globs the way npm packs them", () => {
 test("every published library takes Effect as a ranged peer and every executable installs the tested release", () => {
   const manifests = readWorkspaceManifests()
   const published = packedWorkspaces.map((directory) => manifests.get(directory))
-  const peers = new Set(published.map((manifest) => manifest.peerDependencies?.effect).filter((range) => range !== undefined))
+  const peers = new Set(published.filter((manifest) => manifest.bin === undefined).map((manifest) => manifest.peerDependencies?.effect).filter((range) => range !== undefined))
   assert.deepEqual([...peers], [SUPPORTED_EFFECT_RANGE], "one supported Effect range across the published libraries")
-  const installed = published.filter((manifest) => manifest.dependencies?.effect !== undefined)
+  const installed = published.filter((manifest) => manifest.bin !== undefined && manifest.peerDependencies?.effect !== undefined)
   assert.deepEqual(
-    installed.map((manifest) => [manifest.name, manifest.dependencies.effect, manifest.peerDependencies?.effect]).sort(),
+    installed.map((manifest) => [manifest.name, manifest.peerDependencies.effect, manifest.dependencies?.effect]).sort(),
     ["@smthrs/build-cli", "@smthrs/cli", "@smthrs/migrate"].map((name) => [name, EXPECTED_EFFECT_VERSION, undefined]),
-    "only the executables install Effect, at the tested release, and none of them also peers it"
+    "executables require the exact tested peer and never a nested Effect runtime"
   )
   const misplaced = published
     .filter((manifest) => manifest.bin === undefined && manifest.dependencies?.effect !== undefined)
@@ -533,7 +533,7 @@ test("published adapters remain optional while executable SQLite and Bun host pr
     // over a ranged one (scripts/check-single-effect-version.mjs). The tested
     // release is what the package itself develops against.
     "@effect/sql-sqlite-node": undefined,
-    "@effect/sql-sqlite-bun": undefined,
+    "@effect/sql-sqlite-bun": EXPECTED_EFFECT_VERSION,
     "@effect/sql-pg": undefined,
     "@effect/vitest": undefined,
     "@opentelemetry/exporter-logs-otlp-http": ">=0.222.0 <0.300.0",
@@ -547,7 +547,8 @@ test("published adapters remain optional while executable SQLite and Bun host pr
     const manifest = byName.get(name)
     for (const [peer, version] of Object.entries(peers)) {
       assert.equal(manifest.dependencies?.[peer], undefined, name + " must not force " + peer)
-      assert.equal(manifest.peerDependencies[peer], peer in peerRanges ? peerRanges[peer] : version, name + " " + peer)
+      const expectedPeer = name === "@smthrs/testing" && peer === "@effect/vitest" ? version : peer in peerRanges ? peerRanges[peer] : version
+      assert.equal(manifest.peerDependencies[peer], expectedPeer, name + " " + peer)
       assert.deepEqual(manifest.peerDependenciesMeta[peer], { optional: true })
       assert.equal(manifest.devDependencies[peer], version)
     }
@@ -567,13 +568,11 @@ test("published adapters remain optional while executable SQLite and Bun host pr
     assert.equal(byName.get(name).peerDependencies[peer], version)
     assert.notEqual(byName.get(name).peerDependenciesMeta?.[peer]?.optional, true)
   }
-  // An Effect adapter a package always needs is a dependency at the tested
-  // release, never a peer: it accepts any later Effect the application picks,
-  // and as a peer a strict install of a pinned application fails the day
-  // upstream publishes a newer adapter.
+  // Required adapters stay pinned to the tested release. The CLI also peers
+  // its SQLite driver so npm shares the executable's exact Effect cohort.
   for (const [name, adapter] of [["@smthrs/cli", "@effect/sql-sqlite-node"], ["@smthrs/observability", "@effect/opentelemetry"]]) {
     assert.equal(byName.get(name).dependencies[adapter], EXPECTED_EFFECT_VERSION, name + " must install " + adapter)
-    assert.equal(byName.get(name).peerDependencies?.[adapter], undefined)
+    assert.equal(byName.get(name).peerDependencies?.[adapter], name === "@smthrs/cli" ? EXPECTED_EFFECT_VERSION : undefined)
     assert.equal(byName.get(name).peerDependenciesMeta?.[adapter], undefined)
   }
   assert.equal(byName.get("@smthrs/observability").dependencies["@opentelemetry/sdk-logs"], "0.222.0")

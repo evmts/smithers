@@ -217,6 +217,7 @@ it("binds freshly emitted private adapter declarations and leaves workspace outp
             ["undici", "redis", "ws", "@types/ws"].map((name) => [name, current.dependencies[name]])
           )
         },
+        peerDependencies: { effect: "^" + current.devDependencies.effect },
         devDependencies: current.devDependencies,
         publishConfig: {
           exports: { ".": { import: { types: "./dist/esm/index.d.ts", default: "./dist/esm/index.js" } } }
