@@ -66,7 +66,7 @@ type RepoResponse struct {
 	// CanWrite is the requesting viewer's effective write access. It is always
 	// present on a single-repository read so a client can show the fork offer
 	// instead of guessing — or worse, forking on the user's behalf.
-	CanWrite             bool       `json:"can_write"`
+	CanWrite bool `json:"can_write"`
 	// Permission is the requesting viewer's effective permission on this
 	// repository as middleware.ResolveRepoPermission ranked it ("read",
 	// "write", "admin" or "owner"), the one resolver every repository route
