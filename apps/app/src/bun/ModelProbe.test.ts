@@ -36,3 +36,26 @@ test("the removed model experiment route makes no model call", async () => {
   expect(response.status).toBe(404)
   expect(calls).toBe(0)
 })
+
+test("a default local host never discovers ambient model credentials", async () => {
+  const previousOrigin = Bun.env.SMITHERS_MODEL_KEY_AMBIENT_ORIGIN
+  Bun.env.SMITHERS_MODEL_KEY_AMBIENT_ORIGIN = "http://127.0.0.1:47500"
+  const previous = Bun.env.SMITHERS_MODEL_KEY_AMBIENT
+  Bun.env.SMITHERS_MODEL_KEY_AMBIENT = "ambient-must-stay-private"
+  let isolated: LocalServer | undefined
+  try {
+    isolated = await startLocalServer({ port: 0, distDir: dist })
+    const response = await fetch(`${isolated.origin}${MODEL_CATALOG_PATH}`, {
+      headers: { [LOCAL_SESSION_HEADER]: isolated.sessionToken }
+    })
+    expect(response.status).toBe(200)
+    const catalog = ModelCatalogSchema.parse(await response.json())
+    expect(catalog.credentials.find(row => row.name === "AMBIENT")).toBeUndefined()
+  } finally {
+    await isolated?.stop()
+    if (previousOrigin === undefined) delete Bun.env.SMITHERS_MODEL_KEY_AMBIENT_ORIGIN
+    else Bun.env.SMITHERS_MODEL_KEY_AMBIENT_ORIGIN = previousOrigin
+    if (previous === undefined) delete Bun.env.SMITHERS_MODEL_KEY_AMBIENT
+    else Bun.env.SMITHERS_MODEL_KEY_AMBIENT = previous
+  }
+})

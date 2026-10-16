@@ -728,7 +728,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
       home
     }))
 
-  const modelEnv: ModelCredentialEnv = options.env ?? Bun.env
+  const modelEnv: ModelCredentialEnv = options.env ?? {}
   /** Offline performs no egress, so a configured model may be reached on loopback only. */
   const modelEgress = remoteEnabled ? {} : { egress: false }
   /** Live configured-model turns by runId: what a cancel interrupts. */
@@ -901,8 +901,8 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
 
   /*
    * The Models surface. This host answers both routes itself and proxies
-   * neither: the credentials are this machine's own, read by name from the
-   * environment it was started with, so no sign-in stands in front of them
+   * neither: the credentials are explicitly supplied to this host, read by name from the
+   * configured credential environment, so no sign-in stands in front of them
    * (R8). The catalog carries names and presence, never a value.
    */
   const modelProbe = createModelProbe({
