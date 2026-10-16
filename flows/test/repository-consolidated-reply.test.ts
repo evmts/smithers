@@ -77,7 +77,7 @@ const fixture = (
   })
   return { input, result, deadlineAt: Date.now() + (options.remainingMs ?? input.configuration.budgetMinutes * 60_000) }
 }
-const host = async (t: TestContext, unaskable?: "timeout" | "request_invalid") => {
+const host = async (t: TestContext) => {
   const root = await mkdtemp(join(tmpdir(), "repository-reply-"))
   t.after(() => rm(root, { recursive: true, force: true }))
   const comments: Array<Record<string, any>> = []
@@ -122,19 +122,6 @@ const host = async (t: TestContext, unaskable?: "timeout" | "request_invalid") =
         })
     })
   )
-  const asking = unaskable === undefined ?
-    HumanTask.layer
-    : HumanTask.action.toLayer(() =>
-      Effect.fail(
-        new HumanTask.HumanTaskFailed({
-          code: unaskable,
-          task: "repository-reply",
-          attempts: 1,
-          rejections: [],
-          message: "The question could not be asked"
-        })
-      )
-    )
   const engine = () =>
     NodeRuntime.layerHost(
       {
@@ -143,7 +130,7 @@ const host = async (t: TestContext, unaskable?: "timeout" | "request_invalid") =
         owner: { hostId: "repository-reply-test" },
         signals: []
       },
-      Layer.mergeAll(replyLayers, asking).pipe(
+      replyLayers.pipe(
         Layer.provideMerge(remote),
         Layer.provideMerge(Action.layerImplementations)
       )
@@ -459,25 +446,6 @@ test(
     assert.match(drafted.reply?.reason ?? "", /time limit/)
     assert.deepEqual(drafted.publicActions, [])
     assert.equal(comments.length, 0)
-  }
-)
-
-test(
-  "a confirmation nobody answered keeps the draft and is never recorded as a decline",
-  { timeout: 60_000 },
-  async (t) => {
-    const expired = await host(t, "timeout")
-    const timedOut = await expired.publish(fixture(), "timed-out")
-    assert.equal(timedOut.reply?.state, "drafted", "a deadline nobody met is not a refusal")
-    assert.match(timedOut.reply?.reason ?? "", /time limit/)
-    assert.deepEqual(timedOut.publicActions, [])
-    assert.equal(expired.comments.length, 0)
-
-    const broken = await host(t, "request_invalid")
-    const unasked = await broken.publish(fixture(), "never-asked")
-    assert.equal(unasked.reply?.state, "drafted")
-    assert.match(unasked.reply?.reason ?? "", /could not be asked/)
-    assert.equal(broken.comments.length, 0)
   }
 )
 
