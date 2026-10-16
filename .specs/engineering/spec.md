@@ -1588,7 +1588,7 @@ Install, first-answer and first-merge times come from `product_job_events` and c
 | Layer | Scope | Where |
 | --- | --- | --- |
 | Unit | Pure rules: the TODO state projection and engine guards, capacity formula, placement, merge guard, permission matrix and `agent: run/confirm/never`, burst grouping and session attribution, catalog and Appendix B/C parity | Next to the code, `go test` / `bun test` / `cargo test` |
-| Integration | Real PostgreSQL, real jj, real inotify and cgroups (in a microVM or a Linux CI runner), a fake GitHub server that speaks REST, GraphQL drafts and ETags | `packages/backend/internal/...`, `crates/smithers-machined/tests` |
+| Integration | Real PostgreSQL, real jj, real inotify and cgroups (in a microVM or a Linux CI runner), a fake GitHub server that speaks REST, GraphQL drafts and ETags | `packages/backend/internal/...`, `packages/smithers-machined/tests` |
 | End to end | Real app in a browser against a real install with microVMs and a scratch GitHub repository | `apps/app/e2e/real/` |
 | Fault | Kill points across runs, merges, GitHub writes, bursts, rebases | `packages/smithers/test/faults/`, `packages/backend/...` |
 | Performance | §18 budgets on the reference host | `scripts/perf/` |
