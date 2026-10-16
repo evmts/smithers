@@ -63,11 +63,23 @@ import (
  *      acted from was showing, carried in the intent. A review that silently
  *      lands on a force-pushed head approves code nobody read, so a moved
  *      head is a refusal before the send, not a retargeting.
- *   5. AFTER the write, the recorded review is bound to THIS intent: GitHub's
- *      own answer must carry this operation's body, head and verdict, under
- *      the credential's own GitHub user id. An older review of the same
- *      verdict at the same head with different text is a DIFFERENT review and
- *      never settles this one.
+ *   5. AFTER the write, the recorded review is bound to THIS intent, and the
+ *      binding is TEMPORAL as well as textual:
+ *
+ *        - a WITNESS is read before the send: the highest review id the pull
+ *          request already carries. A review this operation created has an id
+ *          GREATER than that, because GitHub issues review ids in creation
+ *          order. Without it, an older review that happens to carry the SAME
+ *          text at the SAME head with the SAME verdict under the SAME account
+ *          — a person who already reviewed, then reviewed again with the same
+ *          words — would stand in for a write that never happened. A witness
+ *          the bounded read could not establish settles nothing.
+ *        - GitHub's own answer must carry this operation's body, head and
+ *          verdict, under the credential's own GitHub user id.
+ *        - a `201` is not the readback. The review GitHub says it created is
+ *          READ BACK BY ID (`GET …/pulls/{n}/reviews/{id}`) and must still
+ *          carry the same intent; a create whose own answer cannot be read
+ *          again is unverified, never a success.
  */
 
 // GitHubUserPullReviewOperation is the durable operation one review runs as.
@@ -554,8 +566,24 @@ func (s *GitHubUserReposService) HandleGitHubUserPullReview(ctx context.Context,
 		return refuse(GitHubPullReviewCodeHeadMoved, githubPullReviewStageFence)
 	}
 
-	// 3. The write. The attempt is durable BEFORE the POST leaves.
-	if err = lease.StartExternal(ctx, json.RawMessage(`{"stage":"`+githubPullReviewStageSubmit+`"}`)); err != nil {
+	// 3. The PRE-WRITE witness: the highest review id this pull request
+	//    already carries. It is read BEFORE anything is sent, so a review
+	//    this operation created can be told apart from an identical earlier
+	//    one. A refusal here has had no effect either.
+	witness, established, err := s.readGitHubPullReviewWitness(ctx, token, root)
+	if err != nil {
+		return err
+	}
+
+	// 4. The write. The attempt — and the witness it will be judged against —
+	//    are durable BEFORE the POST leaves.
+	evidence, err := json.Marshal(map[string]any{
+		"stage": githubPullReviewStageSubmit, "witness": witness, "witness_established": established,
+	})
+	if err != nil {
+		return err
+	}
+	if err = lease.StartExternal(ctx, evidence); err != nil {
 		return err
 	}
 	created, sent, err := s.sendGitHubPullReview(ctx, token, root, job.Event, job.Body, job.CommitID)
@@ -564,13 +592,32 @@ func (s *GitHubUserReposService) HandleGitHubUserPullReview(ctx context.Context,
 		return refuse(githubPullReviewRefusalCode(err), githubPullReviewStageSubmit)
 	}
 	expectedState := githubPullReviewStates[job.Event]
-	// 4. The readback, bound to THIS intent. Everything from here on is after
-	//    a request that may have been applied, so no outcome may be a
-	//    lease.Fail: `failed` is the one state a repeat press reopens.
-	if err == nil && githubPullReviewMatches(created, job, viewer.ID, expectedState) {
-		return lease.Complete(ctx, githubPullReviewCompletion(created, expectedState, job))
+	// 5. The readback, bound to THIS intent in text AND in time. Everything
+	//    from here on is after a request that may have been applied, so no
+	//    outcome may be a lease.Fail: `failed` is the one state a repeat press
+	//    reopens.
+	//
+	//    A `201` is not the readback. The review GitHub says it created is
+	//    read back BY ID and must still carry this intent and an id above the
+	//    witness; a create whose own answer cannot be read again is
+	//    unverified.
+	if err == nil && created != nil && created.ID > witness && githubPullReviewMatches(created, job, viewer.ID, expectedState) {
+		stored, readErr := s.readGitHubPullReviewByID(ctx, token, root, created.ID)
+		if readErr != nil {
+			return errGitHubPullReviewUncertain
+		}
+		if stored.ID != created.ID || !githubPullReviewMatches(&stored, job, viewer.ID, expectedState) {
+			return errGitHubPullReviewReadbackMismatch
+		}
+		return lease.Complete(ctx, githubPullReviewCompletion(&stored, expectedState, job))
 	}
-	recorded, settled, readErr := s.reconcileGitHubPullReview(ctx, token, root, job, viewer.ID, expectedState)
+	if !established {
+		// Without a witness nothing in GitHub's list can be proved to be THIS
+		// review rather than an identical earlier one, so the reconcile is
+		// not attempted and the operation stays unknown.
+		return errGitHubPullReviewUncertain
+	}
+	recorded, settled, readErr := s.reconcileGitHubPullReview(ctx, token, root, job, viewer.ID, expectedState, witness)
 	switch {
 	case readErr != nil:
 		return errGitHubPullReviewUncertain
@@ -579,10 +626,10 @@ func (s *GitHubUserReposService) HandleGitHubUserPullReview(ctx context.Context,
 		// operation's review. Something may stand on GitHub; say so.
 		return errGitHubPullReviewReadbackMismatch
 	case !settled:
-		// The reply was lost and GitHub does not show this review. An absent,
-		// truncated or eventually-consistent list is NOT proof it never
-		// happened, so this is uncertain, never a settled failure a client
-		// may repeat.
+		// The reply was lost and GitHub shows no review this operation could
+		// have created. An absent, truncated or eventually-consistent list is
+		// NOT proof it never happened, so this is uncertain, never a settled
+		// failure a client may repeat.
 		return errGitHubPullReviewUncertain
 	}
 	return lease.Complete(ctx, githubPullReviewCompletion(&recorded, expectedState, job))
@@ -750,8 +797,8 @@ func (s *GitHubUserReposService) sendGitHubPullReview(
 }
 
 // reconcileGitHubPullReview answers whether GitHub holds THIS operation's own
-// review — this credential's, this head's, this verdict's and this TEXT's. It
-// never writes.
+// review — this credential's, this head's, this verdict's, this TEXT's, and
+// created AFTER the pre-write witness. It never writes.
 func (s *GitHubUserReposService) reconcileGitHubPullReview(
 	ctx context.Context,
 	token string,
@@ -759,6 +806,7 @@ func (s *GitHubUserReposService) reconcileGitHubPullReview(
 	job githubPullReviewJob,
 	viewerID int64,
 	expectedState string,
+	witness int64,
 ) (githubPullReviewRow, bool, error) {
 	var match githubPullReviewRow
 	found := false
@@ -768,6 +816,13 @@ func (s *GitHubUserReposService) reconcileGitHubPullReview(
 			return githubPullReviewRow{}, false, err
 		}
 		for _, row := range rows {
+			// The witness is what tells this review apart from an IDENTICAL
+			// earlier one by the same person at the same head: GitHub issues
+			// review ids in creation order, so only an id above the witness
+			// can belong to this operation.
+			if row.ID <= witness {
+				continue
+			}
 			if !githubPullReviewMatches(&row, job, viewerID, expectedState) {
 				continue
 			}
@@ -785,6 +840,68 @@ func (s *GitHubUserReposService) reconcileGitHubPullReview(
 	}
 	// The bound was reached with pages still to come: absence is not proved.
 	return githubPullReviewRow{}, false, stdErrors.New("github review readback was truncated")
+}
+
+/*
+ * readGitHubPullReviewWitness is the PRE-WRITE temporal witness: the highest
+ * review id this pull request already carries, read before anything is sent.
+ *
+ * GitHub issues review ids in creation order, so a review this operation
+ * creates has an id greater than every id that existed before it. That is the
+ * only thing that tells this operation's review apart from an identical
+ * earlier one — same account, same head, same verdict, same words — and
+ * without it a lost acknowledgement could be settled by a review the person
+ * wrote an hour ago.
+ *
+ * `established` is false when the bounded read ran out of pages with a full
+ * page still coming: the true maximum is then unknown, and an unknown witness
+ * settles nothing rather than settling it permissively.
+ */
+func (s *GitHubUserReposService) readGitHubPullReviewWitness(ctx context.Context, token, root string) (highest int64, established bool, err error) {
+	for page := 1; page <= githubPullReviewReadbackPages; page++ {
+		rows, err := s.readGitHubPullReviewPage(ctx, token, root, page)
+		if err != nil {
+			return 0, false, err
+		}
+		for _, row := range rows {
+			if row.ID > highest {
+				highest = row.ID
+			}
+		}
+		if len(rows) < githubPullReviewPageSize {
+			return highest, true, nil
+		}
+	}
+	return highest, false, nil
+}
+
+// readGitHubPullReviewByID reads one stored review back by its own id. It is
+// what makes a `201` a readback rather than an acknowledgement: GitHub must
+// answer the review again, and it must still be this operation's intent.
+func (s *GitHubUserReposService) readGitHubPullReviewByID(ctx context.Context, token, root string, id int64) (githubPullReviewRow, error) {
+	endpoint := root + "/reviews/" + strconv.FormatInt(id, 10)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return githubPullReviewRow{}, pkgerrors.Internal("failed to build the github review read request").WithCause(err)
+	}
+	setGitHubPullReviewHeaders(req, token)
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return githubPullReviewRow{}, GitHubRequestFailure(ctx, "github review read failed")
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if err := gitHubRepoMetadataUpstreamError(resp, s.now()); err != nil {
+		return githubPullReviewRow{}, err
+	}
+	raw, readErr := io.ReadAll(io.LimitReader(resp.Body, githubRepoMetadataMaxResponseBytes+1))
+	if readErr != nil || int64(len(raw)) > githubRepoMetadataMaxResponseBytes {
+		return githubPullReviewRow{}, GitHubRequestFailure(ctx, "failed to read the github review response")
+	}
+	var row githubPullReviewRow
+	if json.Unmarshal(raw, &row) != nil {
+		return githubPullReviewRow{}, pkgerrors.New(pkgerrors.CodeGitHubUnavailable, "failed to decode the github review response")
+	}
+	return row, nil
 }
 
 func (s *GitHubUserReposService) readGitHubPullReviewPage(ctx context.Context, token, root string, page int) ([]githubPullReviewRow, error) {

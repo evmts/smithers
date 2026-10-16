@@ -79,10 +79,18 @@ caller's own request on the account's read command. An operation whose send
 cannot be settled stays terminal `uncertain` and is never retried; only a
 refusal GitHub gave before it could record anything reopens the key.
 
-The readback is bound to the intent: GitHub's own answer must carry this
+The readback is bound to the intent in TEXT and in TIME. A **pre-write
+witness** — the highest review id the pull request already carries — is read
+before anything is sent, and only a review whose id is above it can belong to
+this operation, because GitHub issues review ids in creation order. That is
+what tells this review apart from an IDENTICAL earlier one by the same person
+at the same head with the same words; a witness the bounded read could not
+establish settles nothing. GitHub's own answer must then carry this
 operation's body, head and verdict under the credential's own GitHub user id
-(`GET /user`). An older review of the same verdict at the same head with
-different text is a different review and never settles this one.
+(`GET /user`). And a `201` is not the readback: the review GitHub says it
+created is read back BY ID (`GET …/pulls/{n}/reviews/{id}`) and must still
+carry the same intent, so a create whose own answer cannot be read again is
+unverified rather than a success.
 
 A person-only command checks the role first, then the credential, and it
 applies to the owner too. Only the person's own browser session acts. A

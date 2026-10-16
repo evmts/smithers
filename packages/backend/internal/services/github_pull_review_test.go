@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -47,12 +48,16 @@ type reviewGitHub struct {
 	requests []string
 	bodies   []map[string]any
 
-	pull      func() (int, string)
-	submit    func(attempt int) (int, string)
-	list      func(attempt int) (int, string)
+	pull   func() (int, string)
+	submit func(attempt int) (int, string)
+	list   func(attempt int) (int, string)
+	// review answers GET …/pulls/7/reviews/{id}: the stored review, read
+	// back by its own id. A `201` is not a readback without it.
+	review    func(id int64) (int, string)
 	identity  func() (int, string)
 	submitted int
 	listed    int
+	read      int
 }
 
 func (g *reviewGitHub) handler() http.Handler {
@@ -84,6 +89,16 @@ func (g *reviewGitHub) handler() http.Handler {
 			} else {
 				status, body = 201, fmt.Sprintf(`{"id":55,"state":"APPROVED","commit_id":%q,"user":{"id":4242}}`, reviewHead)
 			}
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/reviews/"):
+			id, _ := strconv.ParseInt(r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:], 10, 64)
+			g.mu.Lock()
+			g.read++
+			g.mu.Unlock()
+			if g.review != nil {
+				status, body = g.review(id)
+			} else {
+				status, body = 200, g.stored(id)
+			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/reviews"):
 			g.mu.Lock()
 			attempt := g.listed
@@ -105,6 +120,21 @@ func (g *reviewGitHub) handler() http.Handler {
 		w.WriteHeader(status)
 		_, _ = w.Write([]byte(body))
 	})
+}
+
+// stored is what GitHub answers for one review id: by default the review the
+// POST said it created, so the by-id readback agrees with the create.
+func (g *reviewGitHub) stored(id int64) string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if len(g.bodies) == 0 {
+		return `{}`
+	}
+	sent := g.bodies[len(g.bodies)-1]
+	text, _ := sent["body"].(string)
+	commit, _ := sent["commit_id"].(string)
+	state := map[string]string{"APPROVE": "APPROVED", "REQUEST_CHANGES": "CHANGES_REQUESTED", "COMMENT": "COMMENTED"}[fmt.Sprint(sent["event"])]
+	return fmt.Sprintf(`{"id":%d,"state":%q,"commit_id":%q,"body":%q,"user":{"id":4242}}`, id, state, commit, text)
 }
 
 func (g *reviewGitHub) seen() []string {
@@ -241,9 +271,16 @@ func TestGitHubPullReview_EachVerdictReachesGitHubPinnedToTheReviewedHead(t *tes
 			assert.Equal(t, reviewHead, status.CommitID)
 			assert.Equal(t, githubPullReviewStageReadback, status.Stage)
 			assert.Empty(t, status.Code)
-			// The credential is proved, then the head is read, then exactly
-			// one review is written.
-			assert.Equal(t, []string{"GET /user", "GET /repos/octo/widget/pulls/7", "POST /repos/octo/widget/pulls/7/reviews"}, github.seen())
+			// The credential is proved, the head is read, the pre-write
+			// witness is read, exactly ONE review is written, and the stored
+			// review is read back by its own id before success.
+			assert.Equal(t, []string{
+				"GET /user",
+				"GET /repos/octo/widget/pulls/7",
+				"GET /repos/octo/widget/pulls/7/reviews",
+				"POST /repos/octo/widget/pulls/7/reviews",
+				"GET /repos/octo/widget/pulls/7/reviews/55",
+			}, github.seen())
 			github.mu.Lock()
 			sent := github.bodies[0]
 			github.mu.Unlock()
@@ -360,8 +397,12 @@ func TestGitHubPullReview_RevokedAccessIsTypedAndWritesNothing(t *testing.T) {
 			require.NoError(t, err)
 			assert.NotContains(t, string(raw), "ignored")
 			// The refusal had no effect, so nothing is reconciled or resent.
+			// The list was read exactly ONCE — the pre-write witness, before
+			// the send — and the POST is the last request of all.
 			assert.Equal(t, 1, github.writes())
-			assert.NotContains(t, strings.Join(github.seen(), ","), "GET /repos/octo/widget/pulls/7/reviews")
+			assert.Equal(t, 1, github.listed)
+			seen := github.seen()
+			assert.Equal(t, "POST /repos/octo/widget/pulls/7/reviews", seen[len(seen)-1])
 		})
 	}
 }
@@ -411,13 +452,18 @@ func TestGitHubPullReview_AnOlderReviewWithDifferentTextNeverSettlesThisOne(t *t
 	assert.Zero(t, status.ReviewID, "an uncertain operation names no review")
 	assert.Equal(t, 1, github.writes(), "and is never resent")
 
-	// And the same body IS this review: the fence binds text, it does not
-	// merely forbid reconciliation.
+	// And the same body IS this review, when it was created after the
+	// pre-write witness: the fence binds text, it does not merely forbid
+	// reconciliation.
+	var sent bool
+	older := reviewRow(11, "APPROVED", reviewHead, "an older, different review", 4242)
 	exact := &reviewGitHub{
-		submit: func(int) (int, string) { return 502, `{}` },
+		submit: func(int) (int, string) { sent = true; return 502, `{}` },
 		list: func(int) (int, string) {
-			return 200, "[" + reviewRow(11, "APPROVED", reviewHead, "an older, different review", 4242) +
-				"," + reviewRow(12, "APPROVED", reviewHead, intent.Body, 4242) + "]"
+			if !sent {
+				return 200, "[" + older + "]"
+			}
+			return 200, "[" + older + "," + reviewRow(12, "APPROVED", reviewHead, intent.Body, 4242) + "]"
 		},
 	}
 	settled, _ := submitReview(t, exact, intent)
@@ -449,10 +495,15 @@ func TestGitHubPullReview_ACreatedReviewWithAnotherBodyIsNotThisIntent(t *testin
 
 func TestGitHubPullReview_LostAcknowledgementIsSettledByReadback(t *testing.T) {
 	input := reviewInput("APPROVE")
+	var sent bool
 	github := &reviewGitHub{
 		// A 500 is an answer whose meaning for the write is unknown.
-		submit: func(int) (int, string) { return 500, `{"message":"ignored"}` },
+		submit: func(int) (int, string) { sent = true; return 500, `{"message":"ignored"}` },
 		list: func(int) (int, string) {
+			if !sent {
+				// The pre-write witness: the pull request carries no review yet.
+				return 200, `[]`
+			}
 			return 200, "[" + reviewRow(88, "APPROVED", reviewHead, input.Body, 4242) + "]"
 		},
 	}
@@ -639,4 +690,103 @@ func TestGitHubPullReview_CatalogCommandIsPersonOnly(t *testing.T) {
 	read, ok := OperationPolicy("github.account-read")
 	require.True(t, ok)
 	assert.Equal(t, "read:repository", read.CredentialScope)
+}
+
+/*
+ * The TEMPORAL half of the readback fence. An older review by the SAME
+ * person, at the SAME head, with the SAME verdict and the SAME TEXT — a
+ * person who already reviewed and then reviewed again with the same words —
+ * is still a DIFFERENT review. Only the pre-write witness can tell them
+ * apart: GitHub issues review ids in creation order, so this operation's
+ * review has an id above every id that existed before the send.
+ */
+func TestGitHubPullReview_AnIdenticalOlderReviewNeverSettlesThisOne(t *testing.T) {
+	intent := GitHubPullReviewInput{Event: "APPROVE", Body: "same words, an hour ago", CommitID: reviewHead}
+	older := reviewRow(41, "APPROVED", reviewHead, intent.Body, 4242)
+	github := &reviewGitHub{
+		// The POST left and its answer never arrived.
+		submit: func(int) (int, string) { return 502, `{}` },
+		// GitHub's list holds ONLY that older, byte-identical review.
+		list: func(int) (int, string) { return 200, "[" + older + "]" },
+	}
+	status, _ := submitReview(t, github, intent)
+	assert.Equal(t, string(jobs.StateUncertain), status.State,
+		"an identical earlier review is not proof this one was recorded")
+	assert.False(t, status.Verified)
+	assert.Zero(t, status.ReviewID)
+	assert.Equal(t, 1, github.writes(), "and is never resent")
+
+	// A review created AFTER the witness, with the same text, IS this one.
+	var sent bool
+	fresh := &reviewGitHub{
+		submit: func(int) (int, string) { sent = true; return 502, `{}` },
+		list: func(int) (int, string) {
+			if !sent {
+				// The pre-write witness read: only the older review exists.
+				return 200, "[" + older + "]"
+			}
+			return 200, "[" + older + "," + reviewRow(42, "APPROVED", reviewHead, intent.Body, 4242) + "]"
+		},
+	}
+	settled, _ := submitReview(t, fresh, intent)
+	assert.Equal(t, string(jobs.StateCompleted), settled.State)
+	assert.Equal(t, int64(42), settled.ReviewID, "the one created after the witness, not the older twin")
+	assert.True(t, settled.Verified)
+	assert.Equal(t, 1, fresh.writes())
+}
+
+// A `201` is not a readback. The review GitHub says it created is read back by
+// its own id, and a create whose own answer cannot be read again, or reads
+// back as something else, is unverified — never a success.
+func TestGitHubPullReview_ACreateIsReadBackByItsOwnID(t *testing.T) {
+	input := reviewInput("APPROVE")
+
+	t.Run("the stored review cannot be read", func(t *testing.T) {
+		github := &reviewGitHub{review: func(int64) (int, string) { return 500, `{}` }}
+		status, _ := submitReview(t, github, input)
+		assert.Equal(t, string(jobs.StateUncertain), status.State)
+		assert.False(t, status.Verified)
+		assert.Equal(t, 1, github.writes())
+	})
+
+	t.Run("the stored review is a different review", func(t *testing.T) {
+		github := &reviewGitHub{review: func(id int64) (int, string) {
+			return 200, reviewRow(id, "APPROVED", reviewHead, "not what this operation submitted", 4242)
+		}}
+		status, _ := submitReview(t, github, input)
+		assert.NotEqual(t, string(jobs.StateCompleted), status.State)
+		assert.False(t, status.Verified)
+		assert.Equal(t, 1, github.writes())
+	})
+
+	t.Run("a created id at or below the witness is not this review", func(t *testing.T) {
+		// GitHub answers 201 naming a review that already existed.
+		existing := reviewRow(77, "APPROVED", reviewHead, input.Body, 4242)
+		github := &reviewGitHub{
+			submit: func(int) (int, string) { return 201, existing },
+			list:   func(int) (int, string) { return 200, "[" + existing + "]" },
+		}
+		status, _ := submitReview(t, github, input)
+		assert.NotEqual(t, string(jobs.StateCompleted), status.State)
+		assert.False(t, status.Verified)
+		assert.Equal(t, 1, github.writes())
+	})
+}
+
+// The pre-write witness is read BEFORE the send, so a refused witness read
+// reaches GitHub with no write at all.
+func TestGitHubPullReview_AWitnessThatCannotBeEstablishedSettlesNothing(t *testing.T) {
+	page := func(int) (int, string) {
+		rows := make([]string, 0, githubPullReviewPageSize)
+		for i := 0; i < githubPullReviewPageSize; i++ {
+			rows = append(rows, reviewRow(int64(i+1), "COMMENTED", reviewHead, "someone else", 9999))
+		}
+		return 200, "[" + strings.Join(rows, ",") + "]"
+	}
+	github := &reviewGitHub{submit: func(int) (int, string) { return 500, `{}` }, list: page}
+	status, _ := submitReview(t, github, reviewInput("APPROVE"))
+	assert.Equal(t, string(jobs.StateUncertain), status.State)
+	assert.Equal(t, githubPullReviewReadbackPages, github.listed,
+		"the witness read is bounded, and an unestablished witness reconciles nothing")
+	assert.Equal(t, 1, github.writes())
 }
