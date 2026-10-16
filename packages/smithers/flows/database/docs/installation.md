@@ -29,11 +29,11 @@ one copy cannot see a client provided from the other.
 
 ## Requirements
 
-| Requirement | Value               | Why                                                                                                                   |
-| ----------- | ------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Node.js     | 26.4.0 or later     | `NodeDatabase` opens the database through the built-in `node:sqlite` module.                                          |
+| Requirement | Value               | Why                                                                                                                       |
+| ----------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Node.js     | 26.4.0 or later     | `NodeDatabase` opens the database through the built-in `node:sqlite` module.                                              |
 | Bun         | 1.4.0 or later      | Select `BunDatabase` and the tested `@effect/sql-sqlite-bun@4.0.4` peer. NodeDatabase deliberately refuses use under Bun. |
-| Database    | SQLite / PostgreSQL | SQLite is the default; PostgreSQL uses the optional `@effect/sql-pg` adapter.                                         |
+| Database    | SQLite / PostgreSQL | SQLite is the default; PostgreSQL uses the optional `@effect/sql-pg` adapter.                                             |
 
 ## Import subpaths
 
