@@ -4,7 +4,9 @@
 # visible in the tree and a reviewer reads the relationship instead of
 # inferring it. Nesting changes directories only — every npm name, version,
 # dist-tag, and the published set are exactly what they were when the tree was
-# flat.
+# flat. The tree splits into apps and packages, never by language: a Rust crate
+# is a package like any other and lives under `packages/` beside the package
+# that consumes it, so there is no top-level `crates/` (Will, 2026-10-16).
 #
 # The shape below is what makes that safe. A built package writes a generated
 # `dist/cjs/package.json`, which sits TWO levels below its package directory,
