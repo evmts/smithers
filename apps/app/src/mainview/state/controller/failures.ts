@@ -91,7 +91,7 @@ export const browserNotificationAskAvailable = (): boolean =>
 
 export const firstNotificationAsk = (toasts: readonly Toast[], member: string | null | undefined): Toast | undefined =>
   member && browserNotificationAskAvailable()
-    ? [...toasts].filter(toast => toast.audience?.member === member && toast.audience.kind === "needs_you" && toast.action?.flow !== "notifications.allow")
+    ? [...toasts].filter(toast => toast.audience?.member === member && toast.audience.kind === "needs_you" && toast.audience.quiet !== true && toast.action?.flow !== "notifications.allow")
       .sort((a, b) => a.createdAt - b.createdAt)[0] : undefined
 
 export const createFailureController = (ctx: ControllerContext): FailureController => {
@@ -123,7 +123,9 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
     }
     for (const toast of toasts) {
       const audience = toast.audience
-      if (!audience || toast.action?.flow === "notifications.allow" || audience.member !== member || observed.has(audience.entryId)) continue
+      // A quiet notice (#4026) is never raised here, and never counted as
+      // observed either: a later decision that does raise the same entry still can.
+      if (!audience || toast.action?.flow === "notifications.allow" || audience.member !== member || audience.quiet === true || observed.has(audience.entryId)) continue
       observed.add(audience.entryId)
       if (!document.hidden || Notification.permission !== "granted") continue
       try {

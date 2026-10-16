@@ -787,6 +787,16 @@ export const ToastAudienceSchema = z.object({
    * fallback is a readable fact and never prose on a notice.
    */
   policy: NotificationPolicyStampSchema.optional(),
+  /*
+   * The repository's policy asked for this notice WITHOUT raising it (M-47,
+   * #4026 `handling.quiet`): the record is kept — the timeline line, the
+   * repository update and Hide all read it — and the surfaces that raise a
+   * notice skip it (ShellRail `railNotices`, controller/failures.ts browser
+   * delivery). Absent on every notice no policy asked to quiet, so an
+   * already-stored row reprojects to exactly the state its sealed hash names
+   * and no projector moved with it (AppEventStream.ts 36/37).
+   */
+  quiet: z.boolean().optional(),
   target: z.discriminatedUnion("flow", [
     z.object({ flow: z.literal("todo"), n: z.number().int().positive() }),
     z.object({ flow: z.literal("run"), id: z.string().min(1) }),

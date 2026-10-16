@@ -228,9 +228,14 @@ export const railEdges = (lines: ReadonlyArray<TimelineLine>, band: readonly [st
 
 const TOAST_TONE: Record<Toast["status"], ToastCard["tone"]> = { running: "live", ok: "done", failed: "failed", cancelled: "quiet" }
 
-/** Notices: newest first; a running toast with no action is the timeline's job, not a notice. */
+/**
+ * Notices: newest first; a running toast with no action is the timeline's job,
+ * not a notice. A notice the repository's policy asked to keep quiet (#4026
+ * `handling.quiet`) is a record and not a raised notice, so it is not here —
+ * the timeline line and the repository update still have it.
+ */
 export const railNotices = (toasts: ReadonlyArray<Toast>, lines: readonly TimelineLine[] = [], member?: string | null): ToastCard[] => [...toasts]
-  .filter(toast => (!toast.audience || toast.audience.member === member) && (toast.action?.flow !== "notifications.allow" || browserNotificationAskAvailable()))
+  .filter(toast => (!toast.audience || (toast.audience.member === member && toast.audience.quiet !== true)) && (toast.action?.flow !== "notifications.allow" || browserNotificationAskAvailable()))
   .sort((left, right) => right.createdAt - left.createdAt)
   .map(toast => {
     const entry = lines.find(line => line.entry_id === toast.sourceCard)

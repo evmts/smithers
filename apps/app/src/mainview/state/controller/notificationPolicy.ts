@@ -45,13 +45,45 @@ import type { GatewaySeam, GatewayWorkspaceBinding } from "./gateway"
 
 /*
  * How long a notice waits for the repository's answer: 40 run-summary reads,
- * 250 ms apart, so ten seconds at most, then the built-in audience is told
- * with `policy-failed`. A repository that claims the decision owns that wait;
- * a repository that claims nothing waits for nothing, because no run starts.
+ * 250 ms apart, then the built-in audience is told with `policy-failed`. A
+ * repository that claims the decision owns that wait; a repository that claims
+ * nothing waits for nothing, because no run starts.
+ *
+ * The read count alone bounds nothing: neither the launch nor one HTTP read is
+ * bounded by this loop — `controller/gateway.ts` sets no fetch deadline, and it
+ * re-reads a provisioning snapshot for up to 180 s PER call. So the wait is
+ * bounded by the clock as well as by the count, and whichever ends first ends
+ * the wait. Past the deadline nobody is still polling and the default is told
+ * exactly once, so a hung policy can delay a notification but never suppress
+ * it and never deliver it twice.
  */
 const DEFAULT_ATTEMPTS = 40
 
 const DEFAULT_POLL_MS = 250
+
+/** The end-to-end wait, launch included: ten seconds, as #4026 states. */
+const DEFAULT_DEADLINE_MS = 10_000
+
+/** The wait ended before the work did. */
+const EXPIRED = Symbol("notification-policy-deadline")
+
+/**
+ * `work`, or {@link EXPIRED} once `ms` has passed. A rejection the race has
+ * already lost stays this promise's own, so an orphaned read is never an
+ * unhandled rejection.
+ */
+const withinDeadline = async <T>(work: Promise<T>, ms: number): Promise<T | typeof EXPIRED> => {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  void work.catch(() => {})
+  try {
+    return await Promise.race([
+      work,
+      new Promise<typeof EXPIRED>((resolve) => { timer = setTimeout(() => resolve(EXPIRED), Math.max(1, ms)) })
+    ])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
+}
 
 const TERMINAL = new Set(["completed", "failed", "cancelled"])
 
@@ -85,6 +117,9 @@ export interface NotificationPolicyRouterOptions {
   readonly repoFor?: () => string | undefined
   readonly pollMs?: number
   readonly attempts?: number
+  /** The whole wait for one decision, launch included; ten seconds by default. */
+  readonly deadlineMs?: number
+  readonly now?: () => number
 }
 
 export interface NotificationPolicyRouter {
@@ -127,11 +162,12 @@ export const createNotificationPolicyRouter = (
     repo: string,
     runId: string,
     binding: GatewayWorkspaceBinding,
-    current: () => boolean
+    current: () => boolean,
+    beyond: () => boolean
   ): Promise<unknown> => {
     const attempts = options.attempts ?? DEFAULT_ATTEMPTS
     for (let attempt = 0; attempt < attempts; attempt += 1) {
-      if (!current()) return undefined
+      if (!current() || beyond()) return undefined
       const summary = await options.gateway.run(repo, runId, binding)
       if (summary.status !== "ok") return undefined
       const row = summary.value
@@ -149,14 +185,29 @@ export const createNotificationPolicyRouter = (
     return undefined
   }
 
-  const route: NotificationPolicyRoute = async (event, people, current) => {
-    const candidates = [...new Set(people.candidates)]
-    const defaults = candidates.filter((login) => people.defaults.includes(login))
-    const repo = options.repoFor?.() ?? (() => {
-      const target = resolveTargetRepo(ctx.store, undefined)
-      return "error" in target ? undefined : target.repo
-    })()
-    const parsed = NotificationPolicyRequestSchema.safeParse({ repo: repo ?? "", event, owner: people.owner, candidates, defaults })
+  /**
+   * The repository this session is pointed at right now, by the same
+   * resolution every other act uses (RepoContext.ts `resolveTargetRepo`).
+   * Read again on every fence, never captured once: a TODO card carries no
+   * repository of its own, so the active target is the only repository a
+   * notice has, and a notice decided under one must not be delivered under
+   * another.
+   */
+  const activeRepo = (): string | undefined => {
+    if (options.repoFor !== undefined) return options.repoFor()
+    const target = resolveTargetRepo(ctx.store, undefined)
+    return "error" in target ? undefined : target.repo
+  }
+
+  const decide = async (
+    event: NotificationPolicyEvent,
+    owner: string,
+    current: () => boolean,
+    candidates: ReadonlyArray<string>,
+    defaults: ReadonlyArray<string>
+  ): Promise<NotificationPolicyOutcome> => {
+    const repo = activeRepo()
+    const parsed = NotificationPolicyRequestSchema.safeParse({ repo: repo ?? "", event, owner, candidates, defaults })
     /*
      * No repository, or an identity this contract cannot name: there is no
      * repository policy to ask, so the built-in audience stands exactly as it
@@ -165,12 +216,22 @@ export const createNotificationPolicyRouter = (
      */
     if (!parsed.success) return { recipients: defaults, stamp: { source: "default" }, withheld: [], quiet: false }
     const request: NotificationPolicyRequest = parsed.data
-    if (!current()) return notificationPolicySuperseded()
+    /*
+     * The caller's fence AND this decision's own repository. The caller knows
+     * the account and the identity revision; only this seam knows which
+     * repository the decision was started for, and #4026 promises all three
+     * are re-checked before an answer is believed.
+     */
+    const fenced = () => current() && activeRepo() === request.repo
+    const now = options.now ?? Date.now
+    const until = now() + (options.deadlineMs ?? DEFAULT_DEADLINE_MS)
+    const beyond = () => now() >= until
+    if (!fenced()) return notificationPolicySuperseded()
     const declaration = await readDeclaration(request.repo)
     if (declaration === undefined) return notificationPolicyDefault(request, "policy-unavailable")
     if (declaration.kind === "ambiguous") return notificationPolicyDefault(request, "policy-ambiguous")
     if (declaration.kind === "none") return notificationPolicyDefault(request)
-    if (!current()) return notificationPolicySuperseded()
+    if (!fenced()) return notificationPolicySuperseded()
     const binding = options.bindingFor(request.repo)
     if ("error" in binding) return notificationPolicyDefault(request, "policy-unavailable")
     /*
@@ -178,18 +239,35 @@ export const createNotificationPolicyRouter = (
      * read of the same TODO joins the decision already in flight instead of
      * starting a second policy run.
      */
-    const launched = await options.gateway.launch(request.repo, declaration.flowId, request, binding, {
+    const launched = await withinDeadline(options.gateway.launch(request.repo, declaration.flowId, request, binding, {
       idempotencyKey: `notification-policy:${request.repo}:${request.event.kind}:${request.event.entryId}`,
-      stillCurrent: current
-    })
-    if (!current()) return notificationPolicySuperseded()
-    if (launched.status !== "ok") return notificationPolicyDefault(request, "policy-failed")
-    const answer = await decisionOf(request.repo, launched.value.runId, binding, current)
+      stillCurrent: fenced
+    }), until - now())
+    if (!fenced()) return notificationPolicySuperseded()
+    if (launched === EXPIRED || launched.status !== "ok") return notificationPolicyDefault(request, "policy-failed")
+    const answer = await withinDeadline(decisionOf(request.repo, launched.value.runId, binding, fenced, beyond), until - now())
     // A late answer belongs to work this session no longer owns: it decides
     // nothing and nobody is told from it.
-    if (!current()) return notificationPolicySuperseded()
-    if (answer === undefined) return notificationPolicyDefault(request, "policy-failed")
+    if (!fenced()) return notificationPolicySuperseded()
+    if (answer === EXPIRED || answer === undefined) return notificationPolicyDefault(request, "policy-failed")
     return notificationPolicyResult(request, answer)
+  }
+
+  const route: NotificationPolicyRoute = async (event, people, current) => {
+    const candidates = [...new Set(people.candidates)]
+    const defaults = candidates.filter((login) => people.defaults.includes(login))
+    try {
+      return await decide(event, people.owner, current, candidates, defaults)
+    } catch {
+      /*
+       * Rule 3 holds for this seam's own boundary too: an unexpected throw
+       * below — a store read, a workspace binding, a transport — is a refusal
+       * like any other, so the default audience is told with one closed
+       * reason. Nothing of the throw is part of that record, and the caller
+       * never has to own a rejection to keep its notifications working.
+       */
+      return { recipients: defaults, stamp: { source: "default", reason: "policy-unavailable" }, withheld: [], quiet: false }
+    }
   }
 
   return { route }

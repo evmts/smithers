@@ -352,16 +352,23 @@ export const createTodoSeam = (ctx: SeamContext, options: TodoSeamOptions = {}) 
       readonly audience: NotificationPolicyEvent & { readonly member: string; readonly actorLabel: string
         readonly target: { readonly flow: "todo"; readonly n: number } | { readonly flow: "branch"; readonly branch: string } }
       readonly action?: { readonly flow: "todo" | "branch"; readonly args: string; readonly label: string }
+      /**
+       * Whether the event this notice names is STILL the card's own state. A
+       * policy decides while the work moves: a wait can be answered and a
+       * state can be superseded before the answer lands, and a decision
+       * about an event that is over must not raise it again.
+       */
+      readonly stillAsked?: () => boolean
     },
     people: { readonly owner: string; readonly candidates: ReadonlyArray<string>; readonly defaults: ReadonlyArray<string> },
     live: () => boolean,
     settled?: () => void
   ): void => {
     const { kind, entryId, member, actorLabel, target } = notice.audience
-    const show = (policy?: NotificationPolicyStamp) => {
-      if (!live()) return
+    const show = (policy?: NotificationPolicyStamp, quiet = false) => {
+      if (!live() || !(notice.stillAsked?.() ?? true)) return
       ctx.dispatch({ type: "toast.shown", actor: "system", key: notice.key, title: notice.title, sourceCard: notice.sourceCard,
-        audience: { member, entryId, kind, actorLabel, target, ...(policy === undefined ? {} : { policy }) },
+        audience: { member, entryId, kind, actorLabel, target, ...(policy === undefined ? {} : { policy }), ...(quiet ? { quiet: true } : {}) },
         ...(notice.action === undefined ? {} : { action: notice.action }) })
       settled?.()
     }
@@ -373,12 +380,19 @@ export const createTodoSeam = (ctx: SeamContext, options: TodoSeamOptions = {}) 
       return
     }
     void route({ kind, entryId, todo: notice.todo }, people, live).then(
-      outcome => { if (live() && owner() === member && notifies(outcome, member)) show(notificationPolicyRecord(outcome)) },
+      // `handling.quiet` is the repository asking for the record without the
+      // raised notice: it is kept here and read by the surfaces that raise one.
+      outcome => { if (live() && owner() === member && notifies(outcome, member)) show(notificationPolicyRecord(outcome), outcome.quiet) },
       error => {
-        // The router answers every refusal itself; a throw is this app's bug,
-        // and the person still gets the notice the default policy owes them.
+        /*
+         * The router answers every refusal itself, so a throw is this app's
+         * bug — and a bug may not widen an audience. The person still gets
+         * the notice the DEFAULT policy owes them, which for an owner-only
+         * §6.4 kind is nobody but its owner: a branch reader the default
+         * never tells is not told by a failure either.
+         */
         ctx.report?.("notification.policy", error)
-        show({ source: "default", reason: "policy-failed" })
+        if (owner() === member && people.defaults.includes(member)) show({ source: "default", reason: "policy-failed" })
       }
     )
   }
@@ -405,7 +419,10 @@ export const createTodoSeam = (ctx: SeamContext, options: TodoSeamOptions = {}) 
         audience: { member: owner()!, entryId: needsYouKey(n, id), kind,
           actorLabel: wait.by ? actorName(wait.by) : actorLabel,
           target: wait.kind === "moved_off" ? { flow: "branch", branch: `T${n}` } : { flow: "todo", n } },
-        action: { flow: wait.kind === "moved_off" ? "branch" : "todo", args: `T${n}`, label: wait.kind === "moved_off" ? "Resolve" : wait.kind === "question" ? "Answer" : "Open" }
+        action: { flow: wait.kind === "moved_off" ? "branch" : "todo", args: `T${n}`, label: wait.kind === "moved_off" ? "Resolve" : wait.kind === "question" ? "Answer" : "Open" },
+        // An answered wait is settled below; a policy decision that lands
+        // after it must not resurrect the Needs You it already dismissed.
+        stillAsked: () => shared.notableModels.get(n)?.waits.some(open => open.id === id) === true
       // A wait's built-in audience is the owner and everyone on the branch.
       }, { owner: model.owner.login, candidates: readers, defaults: readers }, live)
     }
@@ -416,7 +433,10 @@ export const createTodoSeam = (ctx: SeamContext, options: TodoSeamOptions = {}) 
       const key = `todo.${model.state}.${n}.${model.run?.id ?? "no-run"}.${model.run?.attempt ?? 0}`
       deliverNotice({ key, title: model.title, sourceCard: `todo:${n}`, todo: n,
         audience: { member: owner()!, entryId: key, kind: model.state, actorLabel, target: { flow: "todo", n } },
-        action: { flow: "todo", args: `T${n}`, label: model.state === "in_review" ? "Review" : "Open" }
+        action: { flow: "todo", args: `T${n}`, label: model.state === "in_review" ? "Review" : "Open" },
+        // A newer state is a newer event with its own notice; the decision
+        // this one was still waiting for no longer describes the work.
+        stillAsked: () => shared.notableModels.get(n)?.state === model.state
       // A review or a failure is the owner's by default; presence does not subscribe to it.
       }, { owner: model.owner.login, candidates: readers, defaults: [model.owner.login] }, live)
     }
@@ -431,7 +451,8 @@ export const createTodoSeam = (ctx: SeamContext, options: TodoSeamOptions = {}) 
       shared.mergedNotices.add(mergeKey)
       const key = mergeKey
       deliverNotice({ key, title: model.title, sourceCard: `todo:${n}`, todo: n,
-        audience: { member: owner()!, entryId: key, kind: "merged", actorLabel, target: { flow: "todo", n } }
+        audience: { member: owner()!, entryId: key, kind: "merged", actorLabel, target: { flow: "todo", n } },
+        stillAsked: () => shared.notableModels.get(n)?.state === "merged"
       }, { owner: model.owner.login, candidates: readers, defaults: [model.owner.login] }, live,
         () => ctx.resolveToast?.(key, { status: "ok", detail: "Merged" }))
     }
