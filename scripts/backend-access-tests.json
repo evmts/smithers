@@ -910,7 +910,9 @@
       "TestMemberPermissionFailuresPreserveCommittedAccessPostgres",
       "TestMemberPermissionIdentityBindingPostgres",
       "TestMemberPermissionInstallationRefusalIsRosterAtomicPostgres",
-      "TestMemberPermissionRoundTwoIsolationPostgres"
+      "TestMemberPermissionRoundTwoIsolationPostgres",
+      "TestMemberPermissionLoginSwapPostgres",
+      "TestMemberPermissionLoginConflictHealthPostgres"
     ]
   },
   {
@@ -940,7 +942,12 @@
       "TestPermissionPollMintPausePrecedesMinterPostgres",
       "TestGitHubSyncObservationAggregatesMemberFailures",
       "TestPermissionPollKeyFailureCannotUndoSuspensionPostgres",
-      "TestPermissionPollRestartProjectsPersistedHealthPostgres"
+      "TestPermissionPollRestartProjectsPersistedHealthPostgres",
+      "TestPermissionPollRetriesTransientFailureBeforeHourlyDeadlinePostgres",
+      "TestPermissionPollBindingRunsWithoutHourlyWaitPostgres",
+      "TestPermissionBindingRefreshesHealthPostgres",
+      "TestPermissionPollScheduledRetryRevokesAllCredentialsPostgres",
+      "TestGitHubSyncHealthNamedMemberDefects"
     ]
   },
   {
@@ -1065,7 +1072,8 @@
     "package": "packages/backend/internal/services",
     "file": "todo_from_issue_members_integration_test.go",
     "tests": [
-      "TestMembersMakeTodosFromIssuesThroughTheApp"
+      "TestMembersMakeTodosFromIssuesThroughTheApp",
+      "TestIssueTextRequiresActiveRosterAndCurrentPush"
     ]
   },
   {
