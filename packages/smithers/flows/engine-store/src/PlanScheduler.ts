@@ -1132,6 +1132,7 @@ export const make = (options: Options): Service => {
               cacheAgeVerdict,
               replayOnly,
               sourceId: `${options.sourceId}/node/${node.id}`,
+              preserveInterruption: () => abortedForFailure,
               execute: () =>
                 Ref.set(ran, true).pipe(
                   Effect.andThen(executor.execute({ node, attempt: attempts, boundary, inputs: start.inputs }))

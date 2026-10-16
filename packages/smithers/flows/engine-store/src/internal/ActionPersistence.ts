@@ -306,6 +306,8 @@ export interface Dependencies {
   readonly sourceId: string
   /** Runs one action body. The only part of a dispatch this module delegates. */
   readonly execute: (input: ActionInput) => Effect.Effect<unknown, unknown>
+  /** The owning scheduler will settle this interruption in its fenced abort transaction. */
+  readonly preserveInterruption?: (() => boolean) | undefined
   /** Repository authority reserved for engine bookkeeping. */
   readonly engineJj?: Jj.Jj | undefined
   /**
@@ -2439,8 +2441,10 @@ export const make = (deps: Dependencies) => {
                   Effect.serviceOption(FlowRuntime.FlowInstance),
                   (instance) =>
                     evidenceQuarantined(cause) !== undefined ||
-                    (Option.isSome(instance) && Cause.hasInterruptsOnly(cause) &&
-                      (instance.value.suspended || (includeRelease && !instance.value.interrupted)))
+                    (Cause.hasInterruptsOnly(cause) &&
+                      ((Option.isSome(instance) &&
+                        (instance.value.suspended || (includeRelease && !instance.value.interrupted))) ||
+                        (includeRelease && deps.preserveInterruption?.() === true)))
                 )
               /**
                * The row's meta as this dispatch last wrote it. The crossing writes
