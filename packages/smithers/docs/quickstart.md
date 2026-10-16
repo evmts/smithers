@@ -34,8 +34,9 @@ smthrs init hello
 ```
 
 `init` creates workspace declarations, a package manifest when absent, and
-`flows/hello/flow.mdx`. Existing declarations are retained. It adds `.flows/`
-to `.gitignore` in a repository; execution databases are acquired by runtime
+`flows/hello/flow.ts`. Existing declarations and any single `flow.ts`,
+`flow.mdx` or `SKILL.md` entry are retained. Conflicting entry files are refused.
+It adds `.flows/` to `.gitignore` in a repository; execution databases are acquired by runtime
 commands, not by generating a flow.
 
 For an existing npm or Bun workspace, use the supported flow-only path:
@@ -50,30 +51,42 @@ writing project files and points to this command. A `bun@` manager is refused
 the same way, because Smithers cannot install `node_modules` with Bun; write
 `WORKSPACE.ts` by hand to run tools under Bun.
 
-The scaffold declares a model seat chosen from the provider credentials this
-environment sets, in the order `doctor` reports them:
+The starter default-exports `Flow.make("hello", { ... })` from `@smthrs/flow`:
+its tag matches the directory name. Its body plans one `AgentAction`, and its
+named `layer` exports that action's implementation for the existing host.
 
-```text
----
-description: A starter Smithers flow.
-capabilities: ["fs:read:**", "fs:write:**", "proc:spawn:*"]
-model: anthropic:claude-sonnet-4-5
----
+```ts
+export const layer = Work.layer
+export default Flow.make("hello", {
+  description: "A starter Smithers flow.",
+  capabilities: ["fs:read:**", "fs:write:**", "proc:spawn:*", "model:call:*"],
+  effects: { reads: ["**"], writes: ["**"], mode: "expected", onConflict: "serialize", tier: "irreversible" },
+  model: "anthropic:claude-sonnet-4-5",
+  payload: { args: Schema.optional(Schema.String) },
+  success: Schema.Struct({ summary: Schema.String }),
+  error: AgentAction.AgentFailure,
+  body: Node.capture({ action: Work.name }, (input) => Work.call(input))
+})
 ```
 
-The directory supplies the flow's name. The starter requests file reads,
-file writes, and process spawning for its editing and testing instructions;
-narrow those capabilities when the task needs less authority.
+The generated file includes the imports and `Work` declaration. With no `args`,
+it summarizes the project and suggests one small improvement. Pass work through
+`--data '{"args":"Your request"}'`; the result is `{ "summary": "..." }`.
+Narrow the file, process and model capabilities when the work needs less authority.
 
-Connect a subscription and choose its model in the flow's `model:` field:
+`init` chooses a model seat from the provider credentials this environment sets,
+in the order `doctor` reports them. Edit both `Work`'s `seat` and the flow's
+`model` to choose another. Credentials stay in the environment.
+
+For a Codex subscription:
 
 ```bash
 codex login --device-auth
 export SMITHERS_OPENAI_AUTH=chatgpt
 ```
 
-For Codex, use `model: openai:gpt-6.1-sol`. For a Claude subscription, run
-`claude auth login` and use `model: opus`; with `ANTHROPIC_API_KEY` unset the
+For Codex, use `openai:gpt-6.1-sol` for both fields. For a Claude subscription, run
+`claude auth login` and use `opus` for both fields; with `ANTHROPIC_API_KEY` unset the
 seat runs on your own Claude Code, and with it set, on the Anthropic API. Team hosts use
 their connected accounts.
 
@@ -102,15 +115,35 @@ smthrs flow list
   "_tag": "flows",
   "items": [
     {
+      "flowId": "hello",
       "description": "A starter Smithers flow.",
-      "flowId": "hello"
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": true
+        },
+        "definitions": {}
+      }
     }
   ]
 }
 ```
 
-Members are ordered by UTF-16 code unit in every document the CLI prints, which
-is why `description` comes before `flowId`.
+`inputSchema` is the starter's declared payload. Input is decoded against it
+before a run exists, so `--data '{"args":42}'` is refused by `flow plan`.
 
 ## Plan the flow
 
@@ -174,11 +207,11 @@ is accepted, waits for the run to settle, and reports the run's outcome as its
 own exit status: 0 for `completed`, 1 for `failed`, 130 for `cancelled`, 3 if
 it parks again on an in-run ask.
 
-With no resolvable provider credential the launch is refused rather than left
-hanging, and the run row settles `failed`:
+With no resolvable provider credential, the run settles `failed` and its
+`cause` names the key to set:
 
 ```text
-LaunchFailed: Set OPENAI_API_KEY to run the openai:gpt-6-sol seat
+{"_tag":"Accepted","cause":"Set ANTHROPIC_API_KEY to run the anthropic:claude-sonnet-4-5 seat","receiptId":"approve:plan-1","runId":"run-1","status":"failed"}
 ```
 
 ## Read the run back

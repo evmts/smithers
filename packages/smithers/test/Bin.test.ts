@@ -614,7 +614,7 @@ describe("removed verbs and flags at the process boundary", processBudget, () =>
 
     expect(result.status).toBe(1)
     expect(result.stderr).toContain("smthrs rewind was removed in 1.0.0-rc.0")
-    expect(result.stderr).toContain(`${Unsupported.migrationUrl}#rewind`)
+    expect(result.stderr).toContain(`${Unsupported.migrationUrl}#gateway`)
   })
 
   it("names the sub-verb when a removed group is called with one", () => {
@@ -642,7 +642,7 @@ describe("removed verbs and flags at the process boundary", processBudget, () =>
 
     expect(result.status).toBe(1)
     expect(result.stderr).toContain("smthrs workflows was removed in 1.0.0-rc.0")
-    expect(result.stderr).toContain(`${Unsupported.migrationUrl}#workflows`)
+    expect(result.stderr).toContain(`${Unsupported.migrationUrl}#workflow`)
   })
 
   it("answers `gateway status` and `gateway stop` with the removed-command message, not a usage error", () => {
@@ -655,7 +655,7 @@ describe("removed verbs and flags at the process boundary", processBudget, () =>
 
     expect(status.status).toBe(1)
     expect(status.stderr).toContain("smthrs gateway status was removed in 1.0.0-rc.0")
-    expect(status.stderr).toContain(`${Unsupported.migrationUrl}#gateway`)
+    expect(status.stderr).toContain(`${Unsupported.migrationUrl}#cli`)
     expect(stop.status).toBe(1)
     expect(stop.stderr).toContain("smthrs gateway stop was removed in 1.0.0-rc.0")
   })
@@ -670,7 +670,7 @@ describe("removed verbs and flags at the process boundary", processBudget, () =>
     expect(result.status).toBe(1)
     expect(result.stderr).toContain("smthrs workflow path was removed in 1.0.0-rc.0")
     expect(result.stderr).toContain("JSX pack tooling is gone")
-    expect(result.stderr).toContain(`${Unsupported.migrationUrl}#workflow`)
+    expect(result.stderr).toContain(`${Unsupported.migrationUrl}#cli`)
   })
 
   it("keeps `workflow list` alive as the `ls` alias while removing the rest", () => {
@@ -2159,15 +2159,14 @@ describe("the smthrs init scaffold, launched as written", processBudget, () => {
       env: environment
     })
 
-  /** Every run row `engine.db` holds, which for an unlaunched run is none. */
-  const engineRunIds = (cwd: string): ReadonlyArray<string> => {
+  /** Both the native module and its control wrapper must settle on failure. */
+  const engineRuns = (cwd: string): ReadonlyArray<{ runId: string; status: string }> => {
     const file = join(cwd, ".flows", "engine.db")
     if (!existsSync(file)) return []
     const handle = new DatabaseSync(file, { readOnly: true })
     try {
-      return (handle.prepare("SELECT run_id FROM flows_runs").all() as unknown as ReadonlyArray<
-        { readonly run_id: string }
-      >).map((row) => row.run_id)
+      return handle.prepare("SELECT run_id AS runId, status FROM flows_runs ORDER BY run_id")
+        .all() as unknown as ReadonlyArray<{ runId: string; status: string }>
     } finally {
       handle.close()
     }
@@ -2247,12 +2246,9 @@ describe("the smthrs init scaffold, launched as written", processBudget, () => {
 
       expect(smithers(cwd, ["init", "hello", "--json"], environment).status).toBe(0)
 
-      const flow = readFileSync(join(cwd, "flows", "hello", "flow.mdx"), "utf8")
-      expect(flow).toContain("\nmodel: openai:gpt-6-sol\n")
-      // Credential metadata stays out of the agent's Markdown instructions.
-      expect(flow).toContain("OPENAI_API_KEY")
-      expect(flow).toContain("Provider credentials are read from the environment.")
-      expect(flow.split("---\n")[2]).not.toContain("OPENAI_API_KEY")
+      const flow = readFileSync(join(cwd, "flows", "hello", "flow.ts"), "utf8")
+      expect(flow).toContain("model: \"openai:gpt-6-sol\"")
+      expect(flow).toContain("Credentials stay in the environment.")
       expect(flow).not.toContain(environment.OPENAI_API_KEY)
       expect(flow).not.toContain("sk-not-used-by-init")
     } finally {
@@ -2260,25 +2256,23 @@ describe("the smthrs init scaffold, launched as written", processBudget, () => {
     }
   })
 
-  it("refuses the launch by naming the missing key and rolls back its admission", () => {
+  it("settles a missing-seat launch as failed and names its credential", () => {
     const cwd = stageEmptyProject()
     try {
       const environment = withoutSeats()
       const initialized = smithers(cwd, ["init", "hello", "--json"], environment)
       expect(initialized.status).toBe(0)
-      expect(readFileSync(join(cwd, "flows", "hello", "flow.mdx"), "utf8"))
-        .toContain("\nmodel: anthropic:claude-sonnet-4-5\n")
+      expect(readFileSync(join(cwd, "flows", "hello", "flow.ts"), "utf8"))
+        .toContain("model: \"anthropic:claude-sonnet-4-5\"")
 
       const launched = smithers(cwd, ["up", "hello", "--json"], environment)
 
       expect(launched.status).toBe(1)
-      expect(launched.stderr).toContain(
-        "Set ANTHROPIC_API_KEY to run the anthropic:claude-sonnet-4-5 seat"
-      )
-      // The `--json` contract holds under the refusal: the refusal is a
-      // diagnostic and belongs on stderr, so stdout carries no half-written
-      // document for a pipeline to choke on.
-      expect(launched.stdout).toBe("")
+      expect(JSON.parse(launched.stdout)).toMatchObject({
+        status: "failed",
+        cause: "Set ANTHROPIC_API_KEY to run the anthropic:claude-sonnet-4-5 seat"
+      })
+      expect(launched.stderr).toBe("")
 
       // Admission commits before the executor is consulted (df753aff66), so
       // a refused launch keeps its run and receipt and settles the run as
@@ -2289,9 +2283,11 @@ describe("the smthrs init scaffold, launched as written", processBudget, () => {
         readonly items: ReadonlyArray<{ readonly runId: string; readonly status: string }>
       }).items
       expect(runs).toEqual([expect.objectContaining({ flowId: "hello", status: "failed" })])
-      // No engine row was ever created: the executor refused before the engine
-      // was handed anything, so there is nothing for a later sweep to reclaim.
-      expect(engineRunIds(cwd)).toEqual([])
+      // The native module resolves its seat at dispatch. Both engine rows
+      // settle failed; neither remains available for a recovery sweep.
+      const engine = engineRuns(cwd)
+      expect(engine).toHaveLength(2)
+      expect(engine.every((run) => run.status === "failed")).toBe(true)
 
       // `--older-than 0s` is refused, because "delete everything" wearing the
       // spelling of a retention policy is the flag's most destructive value.
@@ -2319,6 +2315,9 @@ describe("the smthrs init scaffold, launched as written", processBudget, () => {
       // The refused launch keeps its admission as a failed run (df753aff66).
       expect(initial.items).toEqual([expect.objectContaining({ status: "failed" })])
       const refused = initial.items[0]!.runId
+      const initialEngine = engineRuns(cwd)
+      expect(initialEngine).toHaveLength(2)
+      expect(initialEngine.every((run) => run.status === "failed")).toBe(true)
 
       // A second `smithers` over the same `.flows` composes its own executor,
       // exactly as every local verb does, and sweeps for stale rows as it
@@ -2326,7 +2325,12 @@ describe("the smthrs init scaffold, launched as written", processBudget, () => {
       const second = smithers(cwd, ["up", "hello", "--json"], environment)
       expect(second.status).toBe(1)
 
-      expect(engineRunIds(cwd)).toEqual([])
+      const laterEngine = engineRuns(cwd)
+      expect(laterEngine).toHaveLength(4)
+      expect(laterEngine.every((run) => run.status === "failed")).toBe(true)
+      expect(laterEngine.filter((run) => initialEngine.some((before) => before.runId === run.runId))).toEqual(
+        initialEngine
+      )
       const runs = (JSON.parse(smithers(cwd, ["ps", "--json"], environment).stdout) as {
         readonly items: ReadonlyArray<{ readonly runId: string; readonly status: string }>
       }).items

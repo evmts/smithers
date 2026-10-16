@@ -195,7 +195,7 @@ const generateTarget = async (
 export const createGenerateCli = (config: RuntimeConfig = {}) =>
   Cli.create("generate", { description: "Scaffold flows, packages, and CI configuration" })
     .command("flow", {
-      description: "Create a durable Markdown flow without replacing an existing flow",
+      description: "Create a tagged TypeScript flow without replacing an existing flow",
       mcp: { annotations: { readOnlyHint: false } },
       args: z.object({ name: z.string().min(1) }),
       options: localOptions,

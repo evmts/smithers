@@ -111,7 +111,7 @@ describe("workspace initialization behavior", () => {
     expect(workspace).toContain("S.PackageManager.Pnpm")
     expect(workspace).toContain("S.file(\"//pnpm-lock.yaml\")")
     expect(await readFile(join(root, "PACKAGE.ts"), "utf8")).toContain("S.glob([\"src/**\"])")
-    expect(await readFile(result.flow.flowFile, "utf8")).toContain("model: openai:gpt-6-sol")
+    expect(await readFile(result.flow.flowFile, "utf8")).toContain("model: \"openai:gpt-6-sol\"")
     expect(existsSync(join(root, ".flows"))).toBe(true)
     expect(existsSync(join(root, ".gitignore"))).toBe(false)
   })
@@ -276,10 +276,10 @@ describe("generator command behavior", () => {
     const result = await invoke(["flow", "example", "--root", root], { environment: { OPENAI_API_KEY: "fixture" } })
     expect(result.codes).not.toContain(1)
     expect(JSON.parse(result.stdout)).toMatchObject({ name: "example", created: true })
-    expect(await readFile(join(root, "flows", "example", "flow.mdx"), "utf8")).toContain("model: openai:gpt-6-sol")
-    await writeFile(join(root, "flows", "example", "flow.mdx"), "authored flow")
+    expect(await readFile(join(root, "flows", "example", "flow.ts"), "utf8")).toContain("model: \"openai:gpt-6-sol\"")
+    await writeFile(join(root, "flows", "example", "flow.ts"), "authored flow")
     expect(JSON.parse((await invoke(["flow", "example", "--root", root])).stdout)).toMatchObject({ created: false })
-    expect(await readFile(join(root, "flows", "example", "flow.mdx"), "utf8")).toBe("authored flow")
+    expect(await readFile(join(root, "flows", "example", "flow.ts"), "utf8")).toBe("authored flow")
     expect(await readFile(join(root, "package.json"), "utf8")).toBe("{\"packageManager\":\"npm@10.9.0\"}")
     expect(existsSync(join(root, "WORKSPACE.ts"))).toBe(false)
   })
@@ -290,8 +290,8 @@ describe("generator command behavior", () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "fixture")
     const result = await invoke(["flow", "example"], { environment: undefined })
     expect(result.codes).not.toContain(1)
-    expect(await readFile(join(root, "flows", "example", "flow.mdx"), "utf8")).toContain(
-      "model: anthropic:claude-sonnet-4-5"
+    expect(await readFile(join(root, "flows", "example", "flow.ts"), "utf8")).toContain(
+      "model: \"anthropic:claude-sonnet-4-5\""
     )
   })
 

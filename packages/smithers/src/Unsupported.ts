@@ -45,7 +45,7 @@ export interface RemovedVerb {
   readonly subcommands?: ReadonlyArray<string> | undefined
 }
 
-const timeTravel = "use `smthrs runs inspect|replay|fork|rewind` for current execution history"
+const timeTravel = "use `smthrs runs inspect|replay` for current execution history"
 const recovery = "the run driver's heartbeat sweep owns recovery"
 const uiHosting = "replaced by `smthrs serve`; the terminal monitor is deleted"
 const control = "not available; use `smthrs runs steer|signal|cancel|resume` and `smthrs approvals approve|deny`"

@@ -227,3 +227,12 @@ describe("the SQLite-only backend flag", () => {
     }
   })
 })
+
+describe("current history guidance", () => {
+  it("only recommends history commands the CLI exposes", () => {
+    const message = Unsupported.message("fork", Unsupported.removedVerbs.find((verb) => verb.name === "fork")!.reason)
+    expect(message).toContain("runs inspect|replay")
+    expect(message).not.toContain("replay|fork")
+    expect(message).not.toContain("rewind` for current")
+  })
+})

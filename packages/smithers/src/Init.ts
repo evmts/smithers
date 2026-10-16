@@ -1,28 +1,10 @@
 /**
- * `smthrs init`: the smallest project a flow can be run from.
- *
- * rc.0 scaffolds one thing, a markdown flow at `flows/<name>/flow.mdx`, and
- * makes one edit, adding `.flows/` to the repository's ignore file. The 0.x
- * ceremony, interactive agent selection, a workflow pack, a global
- * `~/.smithers` install, and skill installation as a side effect, is gone: seats
- * resolve from environment keys, and every side effect a command performs
- * without being asked is a side effect an operator has to undo.
- *
- * The one thing the scaffold reads from the host is its seat. `smthrs up`
- * cannot run a prompt flow that declares none, so a scaffold without a
- * `model:` line is a scaffold that is not launchable, which is what rc.0 first
- * shipped (release rehearsal). {@link defaultSeat} chooses it from
- * the same environment keys `smthrs doctor` reports.
- *
- * The ignore edit is idempotent and repository-scoped, carried over from the
- * 0.x `ensureRootGitignore` requirement: append once, never inside a
- * non-repository directory, and never a second time when a rule already
- * covers the path.
- *
+ * `smthrs init`: a tagged TypeScript flow and repository-scoped run state.
+ * Existing flow entries and user-authored files are retained.
  * @since 1.0.0
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { isAbsolute, join } from "node:path"
 import * as CliError from "./CliError.ts"
 import * as Environment from "./Environment.ts"
@@ -30,7 +12,7 @@ import * as Project from "./Project.ts"
 import { starterSeats } from "./Providers.ts"
 
 /**
- * The ignore rule rc.0 state needs.
+ * The ignore rule run state needs.
  *
  * @category constants
  * @since 1.0.0
@@ -129,7 +111,7 @@ export const ensureIgnored = (root: string): IgnoreStatus => {
  * @since 1.0.0
  */
 export interface Seat {
-  /** The `model:` line's value. */
+  /** The model seat id. */
   readonly seat: string
   /** The environment variable that resolves it. */
   readonly variable: string
@@ -140,17 +122,9 @@ export interface Seat {
 /**
  * The seat `smthrs init` writes into the scaffold.
  *
- * rc.0 resolves seats from environment keys, so the scaffold's seat is chosen
- * from the same keys `smthrs doctor` reports, in doctor's order. An `openai`
- * seat is credentialed by `OPENAI_API_KEY` or by the ChatGPT session
- * `SMITHERS_OPENAI_AUTH=chatgpt` selects, exactly as `NodeControl.seatResolver`
- * reads them.
- *
- * A directory with no provider key still gets a `model:` line. A scaffold
- * without one is not launchable at all: `smthrs up` on it answered `Run
- * run-1 was accepted but the executor did not take it` and left a run nothing
- * would ever drive (release rehearsal). With the line, the same
- * launch refuses by naming the key to set.
+ * Chooses from the same provider keys `smthrs doctor` reports, in that order.
+ * With no key, the default seat is still declared so execution can name the
+ * credential it needs. Credentials are never written into the generated flow.
  *
  * @category constructors
  * @since 1.0.0
@@ -169,57 +143,41 @@ export const defaultSeat = (
   return { seat, variable, resolved: false }
 }
 
-/** The YAML comment that says where the seat came from and how to replace it. */
-const seatNote = (seat: Seat): string =>
-  seat.resolved
-    ? `# The model seat this flow runs on. \`smthrs init\` chose it from
-# ${seat.variable}, the first provider credential this environment sets. Change
-# the line to run somewhere else; Provider credentials are read from the environment.`
-    : `# The model seat this flow runs on. No provider credential was set when
-# \`smthrs init\` ran, so this is the default: set ${seat.variable}, or change
-# the line to a seat you have a key for. Provider credentials are read from the environment.`
-
 /**
- * The scaffolded flow body.
- *
- * Markdown, not TypeScript: `flow.mdx` needs no build step, no import
- * resolution, and no dependency on the package layout of the project it lands
- * in, so `smthrs flow start <name>` works in the directory `init` just created.
- *
- * The seat is a frontmatter comment rather than prose, because every line of
- * the markdown body below the frontmatter is an instruction the agent is
- * handed.
- *
+ * The scaffolded tagged flow and its ordinary model-backed action layer.
+ * Dynamic strings are emitted as JavaScript literals, never executable source.
  * @category constructors
  * @since 1.0.0
  */
-export const template = (name: string, seat: Seat): string =>
-  `---
-description: A starter Smithers flow.
-# The starter reads and edits files and runs the project's tests. Narrow these
-# capabilities to the task before running it; proc:spawn permits shell commands.
-capabilities: ["fs:read:**", "fs:write:**", "proc:spawn:*"]
-${seatNote(seat)}
-model: ${seat.seat}
----
+export const template = (name: string, seat: Seat): string => {
+  const problem = nameProblem(name)
+  if (problem !== undefined) throw new CliError.UsageError({ message: problem })
+  return `import * as AgentAction from "@smthrs/agent/AgentAction"
+import { Flow } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { Schema } from "effect"
 
-# ${name}
+const Work = AgentAction.make(${JSON.stringify(`${name}/work`)}, {
+  payload: { args: Schema.optional(Schema.String) },
+  output: Schema.Struct({ summary: Schema.String }),
+  // Change the seat to use another model. Credentials stay in the environment.
+  seat: ${JSON.stringify(seat.seat)},
+  prompt: ({ args }) => args ?? "Summarize this project and suggest one small improvement."
+})
 
-Describe the work in prose. Headings organize the instructions given to the
-agent; they do not create separate durable steps or enforce execution order.
-
-## Read the request
-
-Summarise what was asked for, and list the files that answer it.
-
-## Do the work
-
-Make the change. Keep it small enough to review in one sitting.
-
-## Check the work
-
-Run the project's tests and report what passed.
+export const layer = Work.layer
+export default Flow.make(${JSON.stringify(name)}, {
+  description: "A starter Smithers flow.",
+  capabilities: ["fs:read:**", "fs:write:**", "proc:spawn:*", "model:call:*"],
+  effects: { reads: ["**"], writes: ["**"], mode: "expected", onConflict: "serialize", tier: "irreversible" },
+  model: ${JSON.stringify(seat.seat)},
+  payload: { args: Schema.optional(Schema.String) },
+  success: Schema.Struct({ summary: Schema.String }),
+  error: AgentAction.AgentFailure,
+  body: Node.capture({ action: Work.name }, (input) => Work.call(input))
+})
 `
+}
 
 /**
  * What `smthrs init` created.
@@ -239,7 +197,7 @@ export interface Scaffolded {
 }
 
 /**
- * Scaffolds `flows/<name>/flow.mdx` and ignores `.flows/`.
+ * Scaffolds `flows/<name>/flow.ts` and ignores `.flows/`.
  *
  * An existing flow file is left exactly as it is: `init` is a starting point,
  * not an overwrite, and a second `init` in a project that already has flows
@@ -256,19 +214,45 @@ export const scaffold = (
   const problem = nameProblem(name)
   if (problem !== undefined) throw new CliError.UsageError({ message: problem })
   const directory = join(root, "flows", name)
-  const flowFile = join(directory, "flow.mdx")
+  const stateDirectory = Project.stateDirectory(root)
+  for (const path of [join(root, "flows"), directory, stateDirectory]) {
+    const stat = statIfPresent(path)
+    if (stat !== undefined && (!stat.isDirectory() || stat.isSymbolicLink())) {
+      throw new CliError.Refused({
+        fault: "user",
+        code: "unsafe_scaffold_path",
+        message: `Refusing scaffold path ${path}`
+      })
+    }
+  }
+  // lstat also sees dangling symlinks: no entry spelling may be overwritten.
+  const entries = ["flow.ts", "flow.mdx", "SKILL.md"].map((entry) => join(directory, entry))
+    .filter((path) => statIfPresent(path) !== undefined)
+  if (entries.length > 1) {
+    throw new CliError.Refused({
+      fault: "user",
+      code: "flow_conflict",
+      message: `Flow ${name} has multiple entry files; retain one of flow.ts, flow.mdx or SKILL.md`
+    })
+  }
+  const flowFile = entries[0] ?? join(directory, "flow.ts")
   const seat = defaultSeat(environment)
-  const exists = existsSync(flowFile)
+  const exists = entries.length > 0
+  if (isRepository(root)) {
+    const ignore = statIfPresent(join(root, ".gitignore"))
+    if (ignore !== undefined && (!ignore.isFile() || ignore.isSymbolicLink())) {
+      throw new CliError.Refused({ fault: "user", code: "unsafe_scaffold_path", message: "Refusing .gitignore path" })
+    }
+  }
   if (!exists) {
     mkdirSync(directory, { recursive: true })
-    writeFileSync(flowFile, template(name, seat), "utf8")
+    writeFileSync(flowFile, template(name, seat), { encoding: "utf8", flag: "wx" })
   }
   // The empty state directory is the project's anchor. `Project.root` treats
   // `.flows/` as proof on its own and a bare `flows/` only beside a project
   // marker, so a scaffold in a plain directory that is neither a package nor a
   // repository would otherwise resolve a different root from every
   // subdirectory, which is the one failure `init` exists to prevent.
-  const stateDirectory = Project.stateDirectory(root)
   mkdirSync(stateDirectory, { recursive: true })
   return { name, flowFile, created: !exists, gitignore: ensureIgnored(root), stateDirectory, seat: seat.seat }
 }
@@ -283,4 +267,14 @@ export const defaultName = (root: string): string => {
   const base = root.split(/[/\\]/).filter((part) => part !== "").at(-1) ?? "flow"
   const slug = base.toLowerCase().replaceAll(/[^a-z0-9-]+/g, "-").replaceAll(/^-+|-+$/g, "")
   return slug === "" ? "flow" : slug
+}
+
+/** Reads entry metadata without following symlinks; only absence is ignored. */
+const statIfPresent = (path: string) => {
+  try {
+    return lstatSync(path)
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code === "ENOENT") return undefined
+    throw cause
+  }
 }

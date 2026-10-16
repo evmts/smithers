@@ -7,7 +7,7 @@
       "anchor": "replay",
       "name": "replay",
       "group": "Time travel and checkpoints",
-      "reason": "use `smthrs runs inspect|replay|fork|rewind` for current execution history",
+      "reason": "use `smthrs runs inspect|replay` for current execution history",
       "subcommands": [],
       "spellings": [
         "smthrs replay"
@@ -18,7 +18,7 @@
       "anchor": "rewind",
       "name": "rewind",
       "group": "Time travel and checkpoints",
-      "reason": "use `smthrs runs inspect|replay|fork|rewind` for current execution history",
+      "reason": "use `smthrs runs inspect|replay` for current execution history",
       "subcommands": [],
       "spellings": [
         "smthrs rewind"
@@ -29,7 +29,7 @@
       "anchor": "fork",
       "name": "fork",
       "group": "Time travel and checkpoints",
-      "reason": "use `smthrs runs inspect|replay|fork|rewind` for current execution history",
+      "reason": "use `smthrs runs inspect|replay` for current execution history",
       "subcommands": [],
       "spellings": [
         "smthrs fork"
@@ -40,7 +40,7 @@
       "anchor": "timetravel",
       "name": "timetravel",
       "group": "Time travel and checkpoints",
-      "reason": "use `smthrs runs inspect|replay|fork|rewind` for current execution history",
+      "reason": "use `smthrs runs inspect|replay` for current execution history",
       "subcommands": [],
       "spellings": [
         "smthrs timetravel"
@@ -51,7 +51,7 @@
       "anchor": "snapshots",
       "name": "snapshots",
       "group": "Time travel and checkpoints",
-      "reason": "use `smthrs runs inspect|replay|fork|rewind` for current execution history",
+      "reason": "use `smthrs runs inspect|replay` for current execution history",
       "subcommands": [],
       "spellings": [
         "smthrs snapshots"
@@ -62,7 +62,7 @@
       "anchor": "restore",
       "name": "restore",
       "group": "Time travel and checkpoints",
-      "reason": "use `smthrs runs inspect|replay|fork|rewind` for current execution history",
+      "reason": "use `smthrs runs inspect|replay` for current execution history",
       "subcommands": [],
       "spellings": [
         "smthrs restore"
@@ -73,7 +73,7 @@
       "anchor": "snapshot-hook",
       "name": "snapshot-hook",
       "group": "Time travel and checkpoints",
-      "reason": "use `smthrs runs inspect|replay|fork|rewind` for current execution history",
+      "reason": "use `smthrs runs inspect|replay` for current execution history",
       "subcommands": [],
       "spellings": [
         "smthrs snapshot-hook"
@@ -84,7 +84,7 @@
       "anchor": "revert",
       "name": "revert",
       "group": "Time travel and checkpoints",
-      "reason": "use `smthrs runs inspect|replay|fork|rewind` for current execution history",
+      "reason": "use `smthrs runs inspect|replay` for current execution history",
       "subcommands": [],
       "spellings": [
         "smthrs revert"
@@ -95,7 +95,7 @@
       "anchor": "retry-task",
       "name": "retry-task",
       "group": "Time travel and checkpoints",
-      "reason": "use `smthrs runs inspect|replay|fork|rewind` for current execution history",
+      "reason": "use `smthrs runs inspect|replay` for current execution history",
       "subcommands": [],
       "spellings": [
         "smthrs retry-task"
@@ -106,7 +106,7 @@
       "anchor": "tree",
       "name": "tree",
       "group": "Time travel and checkpoints",
-      "reason": "use `smthrs runs inspect|replay|fork|rewind` for current execution history",
+      "reason": "use `smthrs runs inspect|replay` for current execution history",
       "subcommands": [],
       "spellings": [
         "smthrs tree"
@@ -117,7 +117,7 @@
       "anchor": "timeline",
       "name": "timeline",
       "group": "Time travel and checkpoints",
-      "reason": "use `smthrs runs inspect|replay|fork|rewind` for current execution history",
+      "reason": "use `smthrs runs inspect|replay` for current execution history",
       "subcommands": [],
       "spellings": [
         "smthrs timeline"
@@ -128,7 +128,7 @@
       "anchor": "worktrees",
       "name": "worktrees",
       "group": "Time travel and checkpoints",
-      "reason": "use `smthrs runs inspect|replay|fork|rewind` for current execution history",
+      "reason": "use `smthrs runs inspect|replay` for current execution history",
       "subcommands": [
         "list",
         "prune"

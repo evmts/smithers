@@ -5,20 +5,30 @@
  * and `init.e2e.test.js`): run state must never reach a commit, the edit is
  * idempotent, and a directory that is not a repository is left alone.
  */
-import * as Capability from "@smthrs/capability/Capability"
-import * as Descriptor from "@smthrs/registry/Descriptor"
-import * as MarkdownFlow from "@smthrs/registry/MarkdownFlow"
-import * as ApplyPatch from "@smthrs/std/ApplyPatch"
-import * as Bash from "@smthrs/std/Bash"
-import * as Read from "@smthrs/std/Read"
-import * as TestRun from "@smthrs/std/TestRun"
-import { Option } from "effect"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { NodeCrypto, NodeFileSystem, NodePath } from "@effect/platform-node"
+import * as Agent from "@smthrs/agent/Agent"
+import * as AgentAction from "@smthrs/agent/AgentAction"
+import * as Budget from "@smthrs/agent/Budget"
+import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
+import * as Seat from "@smthrs/agent/Seat"
+import * as SeatResolver from "@smthrs/agent/SeatResolver"
+import { FlowEngine } from "@smthrs/engine"
+import { Action, FlowRuntime, Graph } from "@smthrs/flow"
+import * as Model from "@smthrs/model/Model"
+import { ModelEvent } from "@smthrs/model/ModelEvent"
+import * as Discovery from "@smthrs/registry/Discovery"
+import * as Executable from "@smthrs/registry/Executable"
+import * as Registry from "@smthrs/registry/Registry"
+import { Effect, Layer, Schema, Stream } from "effect"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { basename, join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, it } from "vitest"
 import * as Init from "../src/Init.ts"
 import * as Project from "../src/Project.ts"
+import * as Verb from "../src/Verb.ts"
 
 const staged: Array<string> = []
 
@@ -84,27 +94,78 @@ describe("the ignore rule", () => {
 })
 
 describe("the scaffold", () => {
-  it("writes flows/<name>/flow.mdx and ignores .flows/", () => {
+  it("writes flows/<name>/flow.ts and ignores .flows/", () => {
     const root = directory(".git")
 
     const result = Init.scaffold(root, "review", {})
 
     expect(result).toMatchObject({ name: "review", created: true, gitignore: "created" })
-    expect(result.flowFile).toBe(join(root, "flows", "review", "flow.mdx"))
+    expect(result.flowFile).toBe(join(root, "flows", "review", "flow.ts"))
     const body = readFileSync(result.flowFile, "utf8")
     expect(body).not.toContain("\nname:")
-    expect(body).toContain("# review")
+    expect(body).toContain("export default Flow.make(\"review\", {")
   })
 
-  it("never overwrites an existing flow", () => {
+  it("names the entry file it writes in the init verb's own help", () => {
     const root = directory(".git")
-    Init.scaffold(root, "review", {})
-    writeFileSync(join(root, "flows", "review", "flow.mdx"), "mine\n", "utf8")
 
+    // The published help and the owning docs named `flow.mdx` after the
+    // scaffold moved to a module (#3638), so the sentence is pinned to the
+    // file the scaffold actually writes rather than to a literal.
+    expect(Verb.find("init")!.help).toContain(basename(Init.scaffold(root, "review", {}).flowFile))
+  })
+
+  it.each(["flow.ts", "flow.mdx", "SKILL.md"])("retains an authored %s without creating another entry", (entry) => {
+    const root = directory(".git")
+    const folder = join(root, "flows", "review")
+    mkdirSync(folder, { recursive: true })
+    const file = join(folder, entry)
+    writeFileSync(file, "mine\n")
     const second = Init.scaffold(root, "review", {})
-
     expect(second.created).toBe(false)
-    expect(readFileSync(second.flowFile, "utf8")).toBe("mine\n")
+    expect(second.flowFile).toBe(file)
+    expect(readFileSync(file, "utf8")).toBe("mine\n")
+    for (const other of ["flow.ts", "flow.mdx", "SKILL.md"].filter((value) => value !== entry)) {
+      expect(existsSync(join(folder, other))).toBe(false)
+    }
+  })
+
+  it.each([["flow.ts", "flow.mdx"], ["flow.ts", "SKILL.md"], ["flow.mdx", "SKILL.md"]])(
+    "refuses duplicate entries %s and %s before writing state",
+    (first, second) => {
+      const root = directory(".git")
+      const folder = join(root, "flows", "review")
+      mkdirSync(folder, { recursive: true })
+      for (const entry of [first, second]) writeFileSync(join(folder, entry), entry)
+      expect(() => Init.scaffold(root, "review", {})).toThrow(expect.objectContaining({ code: "flow_conflict" }))
+      for (const entry of [first, second]) expect(readFileSync(join(folder, entry), "utf8")).toBe(entry)
+      expect(existsSync(join(root, ".flows"))).toBe(false)
+      expect(existsSync(join(root, ".gitignore"))).toBe(false)
+    }
+  )
+
+  it.each(["flows", "flows/review", ".flows", ".gitignore"])(
+    "refuses a symlink at %s without writing outside the project",
+    (path) => {
+      const root = directory(".git")
+      const outside = directory()
+      mkdirSync(join(root, "flows"), { recursive: true })
+      if (path === "flows") rmSync(join(root, "flows"), { recursive: true })
+      symlinkSync(outside, join(root, path))
+      expect(() => Init.scaffold(root, "review", {})).toThrow(expect.objectContaining({ code: "unsafe_scaffold_path" }))
+      expect(existsSync(join(outside, "flow.ts"))).toBe(false)
+      expect(existsSync(join(outside, "review"))).toBe(false)
+    }
+  )
+
+  it("retains a dangling entry symlink without replacing it", () => {
+    const root = directory()
+    const folder = join(root, "flows", "review")
+    mkdirSync(folder, { recursive: true })
+    symlinkSync(join(root, "missing"), join(folder, "flow.mdx"))
+    expect(Init.scaffold(root, "review", {}).created).toBe(false)
+    expect(existsSync(join(folder, "flow.ts"))).toBe(false)
+    expect(existsSync(join(root, "missing"))).toBe(false)
   })
 
   it("leaves behind the .flows/ anchor, so every subdirectory resolves one root", () => {
@@ -210,54 +271,140 @@ describe("the seat the scaffold writes", () => {
     expect(Init.defaultSeat({ GOOGLE_API_KEY: "k" }).seat).toBe("gemini:gemini-2.5-pro")
   })
 
-  it("writes the seat, and the sentence that says how to change it, into the frontmatter", () => {
-    const body = Init.template("review", Init.defaultSeat({ OPENAI_API_KEY: "k" }))
-
-    expect(body).toContain("\nmodel: openai:gpt-6-sol\n")
-    expect(body).toContain("OPENAI_API_KEY")
-    expect(body).toContain("Provider credentials are read from the environment.")
-    // The explanation is a YAML comment, not prose: every line of the body is
-    // an instruction the agent is handed.
-    const frontmatter = body.split("---")[1] ?? ""
-    expect(frontmatter).toContain("# ")
-    expect(body.slice(body.indexOf("# review"))).not.toContain("doctor")
+  it("emits seat strings as literals and never writes credentials", () => {
+    const secret = "fixture-credential"
+    const body = Init.template("review", Init.defaultSeat({ OPENAI_API_KEY: secret }))
+    expect(body).toContain("seat: \"openai:gpt-6-sol\"")
+    expect(body).not.toContain(secret)
+    expect(() => Init.template("bad\"name", Init.defaultSeat({}))).toThrow("one path segment")
   })
+})
 
-  it("discovers the generated flow by its path without warnings and grants its editing tools explicitly", () => {
-    const name = "review_2-final"
-    const root = directory(".git")
-    const scaffolded = Init.scaffold(root, name, {})
-    const result = MarkdownFlow.fromMarkdown({
-      text: readFileSync(scaffolded.flowFile, "utf8"),
-      path: scaffolded.flowFile,
-      baseDirectory: join(root, "flows", name),
-      naming: "path",
-      name: Option.some(name),
-      dirBasename: name,
-      provenance: new Descriptor.Provenance({ source: "project", root })
-    })
-    const descriptor = Option.getOrThrow(result.descriptor)
-    expect(descriptor.name).toBe(name)
-    expect(result.warnings).toEqual([])
-    const grants = descriptor.capabilities.map((value) => Option.getOrThrow(Capability.parsePattern(value)))
-    expect(grants.map((grant) => grant.action)).toEqual(["fs:read", "fs:write", "proc:spawn"])
-    for (const flow of [Read.flow, ApplyPatch.flow, Bash.flow, TestRun.flow]) {
-      for (const formatted of flow.capabilities) {
-        const required = Option.getOrThrow(Capability.parsePattern(formatted))
-        expect(grants.some((grant) => Capability.subsumes(grant, required))).toBe(true)
+const platform = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer)
+
+describe("generated TypeScript through the public registry and runtime", () => {
+  it.each([
+    { name: "review_2-final", selectedSeat: "openai:gpt-6-sol" },
+    { name: "HELLO", selectedSeat: "openai:gpt-6-sol" },
+    { name: "_escaped", selectedSeat: "fixture:\"\\\nseat" }
+  ])("discovers, plans and completes $name with the selected seat", async ({ name, selectedSeat }) => {
+    const root = directory()
+    const scaffolded = Init.scaffold(root, name, { OPENAI_API_KEY: "never-written" })
+    if (selectedSeat !== "openai:gpt-6-sol") {
+      writeFileSync(
+        scaffolded.flowFile,
+        Init.template(name, { seat: selectedSeat, variable: "unused", resolved: true })
+      )
+    }
+    symlinkSync(fileURLToPath(new URL("../node_modules", import.meta.url)), join(root, "node_modules"), "dir")
+    const resolved: Array<string> = []
+    const requests: Array<string> = []
+    // Only the provider and completion judge are scripted; discovery, module
+    // loading, planning, action registration, schema decoding and engine are real.
+    const model = Model.make({
+      stream: (request) => {
+        requests.push(JSON.stringify({ messages: request.messages, system: request.system }))
+        return Stream.fromIterable([
+          ModelEvent.TextStart({ type: "text-start", id: "answer" }),
+          ModelEvent.TextDelta({
+            type: "text-delta",
+            id: "answer",
+            text: "```cell\nctx.done(JSON.stringify({ summary: \"Checked the project.\" }))\n```"
+          }),
+          ModelEvent.TextEnd({ type: "text-end", id: "answer" }),
+          ModelEvent.Settle({ type: "settle", stopReason: "stop" })
+        ])
       }
-    }
-    for (const action of ["net:post", "model:call", "jj:snapshot"] as const) {
-      expect(grants.some((grant) => Capability.matches(grant, Capability.make(action, "unrequested")))).toBe(false)
-    }
+    })
+    const resolver = SeatResolver.layer({
+      resolve: (id) =>
+        Effect.sync(() => {
+          resolved.push(id)
+          return Seat.make({
+            id,
+            modelId: "fixture",
+            model,
+            contextWindowTokens: 200_000,
+            route: {
+              prepare: () =>
+                Effect.succeed({
+                  routeId: "fixture",
+                  protocolId: "fixture",
+                  method: "POST",
+                  url: "https://fixture.invalid",
+                  publicHeaders: {},
+                  body: new Uint8Array(),
+                  bodyText: ""
+                })
+            }
+          })
+        })
+    })
+    const host = Layer.mergeAll(
+      Agent.layer,
+      Agent.layerDefaults,
+      ScriptedJudge.layer,
+      AgentAction.layerHost({ registry: Registry.makeNoop(), limits: { calls: 3 }, maxFrames: 2, claimCap: 0 }),
+      resolver,
+      Action.layerImplementations,
+      FlowEngine.layerMemory,
+      platform
+    ).pipe(Layer.provideMerge(Layer.merge(Budget.layerUnbounded(), QuotaPolicy.layerUnclassified())))
+    const result = await Effect.runPromise(
+      Effect.gen(function*() {
+        const registry = yield* Registry.Registry
+        const descriptors = yield* registry.list()
+        expect(descriptors.map((entry) => entry.name)).toEqual([name])
+        expect(descriptors[0]!.capabilities).toEqual(["fs:read:**", "fs:write:**", "proc:spawn:*", "model:call:*"])
+        expect(yield* registry.warnings()).toEqual([])
+        expect(scaffolded.flowFile).toBe(join(root, "flows", name, "flow.ts"))
+        const executable = yield* Executable.fromDescriptor(yield* registry.get(name), { delegates: [] })
+        const input = { args: "Inspect the generated starter." }
+        const graph = Graph.build(executable.flow, { input }, { callbackIdentity: "stable" })
+        expect(graph.diagnostics).toEqual([])
+        expect(graph.nodes.filter((node) => node.kind === "ActionCall")).toHaveLength(1)
+        const runtime = yield* FlowRuntime.FlowRuntime
+        return yield* runtime.execute(executable.flow, { payload: { input }, executionId: `init-${name}` }).pipe(
+          Effect.provide(executable.layer)
+        )
+      }).pipe(
+        Effect.provide(Registry.layerProject({ root }).pipe(Layer.provide(Discovery.layer))),
+        Effect.provide(host),
+        Effect.scoped
+      )
+    )
+    expect(Schema.decodeUnknownSync(Schema.Struct({ summary: Schema.String }))(result)).toEqual({
+      summary: "Checked the project."
+    })
+    expect(resolved).toEqual([selectedSeat])
+    expect(requests).toHaveLength(1)
+    expect(requests[0]).toContain("Inspect the generated starter.")
   })
+})
 
-  it("scaffolds the flow the environment can launch", () => {
-    const root = directory(".git")
-
-    const result = Init.scaffold(root, "review", { OPENAI_API_KEY: "k" })
-
-    expect(result.seat).toBe("openai:gpt-6-sol")
-    expect(readFileSync(result.flowFile, "utf8")).toContain("model: openai:gpt-6-sol")
+describe("retained legacy entry loading", () => {
+  it.each(["flow.mdx", "SKILL.md"])("keeps %s discoverable and lazily loadable", async (entry) => {
+    const root = directory()
+    const folder = join(root, "flows", "legacy")
+    mkdirSync(folder, { recursive: true })
+    const text =
+      "---\ndescription: An authored legacy flow.\ncapabilities: []\nmodel: openai:gpt-6-sol\n---\n\nKeep these instructions.\n"
+    writeFileSync(join(folder, entry), text)
+    expect(Init.scaffold(root, "legacy", {}).created).toBe(false)
+    const result = await Effect.runPromise(
+      Effect.gen(function*() {
+        const registry = yield* Registry.Registry
+        expect((yield* registry.list()).map((descriptor) => descriptor.name)).toEqual(["legacy"])
+        expect(yield* registry.warnings()).toEqual([])
+        return yield* registry.loadBody("legacy")
+      }).pipe(
+        Effect.provide(Registry.layerProject({ root }).pipe(Layer.provide(Discovery.layer))),
+        Effect.provide(platform)
+      )
+    )
+    expect(result._tag).toBe("Prompt")
+    expect(JSON.stringify(result)).toContain("Keep these instructions.")
+    expect(readFileSync(join(folder, entry), "utf8")).toBe(text)
+    expect(existsSync(join(folder, "flow.ts"))).toBe(false)
   })
 })
