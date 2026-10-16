@@ -17,8 +17,8 @@ import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { expect, it } from "vitest"
 import * as FlowEngineLike from "../src/FlowEngineLike.ts"
-import materialApproval from "./fixtures/cell-call-material-approval-required.json" with { type: "json" }
 import materialV1 from "./fixtures/cell-call-material-effect-rc115.json" with { type: "json" }
+import materialCost from "./fixtures/cell-call-material-reported-cost.json" with { type: "json" }
 import * as V1 from "./fixtures/CellCallV1.ts"
 import { HarnessErrorBeforeApproval } from "./fixtures/HarnessErrorBeforeApproval.ts"
 import * as Safety from "./Safety.ts"
@@ -35,8 +35,8 @@ const flow = Flow.make("agent/test/cell-call-v1-reopen", {
 const proceed = DurableDeferred.make("agent/test/cell-call-v1-proceed", { success: Schema.Void })
 
 const reopenDeclaration = async (declaration: "retained-prior" | "current"): Promise<void> => {
-  const material = declaration === "retained-prior" ? materialV1 : materialApproval
-  const expectedKey = declaration === "retained-prior" ? V1.effect115Key : V1.approvalRequiredKey
+  const material = declaration === "retained-prior" ? materialV1 : materialCost
+  const expectedKey = declaration === "retained-prior" ? V1.effect115Key : V1.reportedCostKey
   const wireError = declaration === "retained-prior" ? HarnessErrorBeforeApproval : HarnessError
   const directory = mkdtempSync(join(tmpdir(), "smithers-m1-cell-key-"))
   const filename = join(directory, "engine.sqlite")
@@ -153,7 +153,7 @@ const reopenDeclaration = async (declaration: "retained-prior" | "current"): Pro
         // `HarnessErrorCode` gained `completion_incomplete` (#3009).
         step_key_digest: declaration === "retained-prior"
           ? "324184457f5da0916c2970fdd8d1894ee48713c8042adada8f7620dbfe543a12"
-          : "4d57bd555b001d364c1c33844519654a7132fbacc13291cea7d0136f8b1653d0",
+          : "4db9c79b98eccc3310c71f990e17cfd5d1d5e7c7d773029c3492ce66e2aa9c6a",
         state: "succeeded"
       }])
     } finally {

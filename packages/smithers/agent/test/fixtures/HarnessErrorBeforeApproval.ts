@@ -1,11 +1,28 @@
-import * as Evaluator from "@smthrs/model/Evaluator"
 import { Schema } from "effect"
 
-// Archived declaration immediately before 6206550ccc (#3161). The sole
-// representation change was the addition of approval_unavailable. Current
-// EvaluatorError fields are also pinned by the complete rc.115 preimage.
-// This fixture retains the original declaration for durable replay; it does
-// not install a second production error family or relax a current schema.
+// Frozen evaluator declaration from 6206550c. Importing today's error here
+// silently changes the archived declaration whenever its usage schema grows.
+class EvaluatorError extends Schema.TaggedError<EvaluatorError>()("flows/model/EvaluatorError", {
+  code: Schema.Literals([
+    "unconfigured",
+    "unreachable",
+    "refused",
+    "empty",
+    "timeout",
+    "invalid_answer",
+    "invalid_question"
+  ]),
+  status: Schema.optional(Schema.Number),
+  resetAtEpochMillis: Schema.optional(Schema.Number),
+  message: Schema.String,
+  usage: Schema.optional(Schema.Struct({
+    inputTokens: Schema.Number,
+    outputTokens: Schema.Number,
+    modelId: Schema.optional(Schema.String)
+  }))
+}) {}
+
+// Archived declaration immediately before approval_unavailable (#3161).
 export class HarnessErrorBeforeApproval extends Schema.TaggedError<HarnessErrorBeforeApproval>()(
   "/harness/HarnessError",
   {
@@ -22,6 +39,6 @@ export class HarnessErrorBeforeApproval extends Schema.TaggedError<HarnessErrorB
       "suspended"
     ]),
     message: Schema.String,
-    cause: Schema.optional(Schema.Union([Evaluator.EvaluatorError, Schema.Defect()]))
+    cause: Schema.optional(Schema.Union([EvaluatorError, Schema.Defect()]))
   }
 ) {}

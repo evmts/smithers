@@ -250,7 +250,9 @@ describe("the sealed model step key", () => {
     // resumed after it asks the provider again for the model calls in its
     // prefix, so in-flight runs finish on their original revision.
     expect(observed.host).not.toBe("key1_3f683043bfe48814c4f4fe4ea219b2f5475539f72142abaef067987e9bf8241e")
-    expect(observed.host).toBe("key1_1f993b7602a78244c50e2d62884a7adaf57aa1d9bb84d96c71f3a4938a2f85a3")
+    expect(observed.host).not.toBe("key1_1f993b7602a78244c50e2d62884a7adaf57aa1d9bb84d96c71f3a4938a2f85a3")
+    // EvaluatorError usage now declares the reported cost (#3824).
+    expect(observed.host).toBe("key1_598ea5fa58ff895d326e7542cd8c166083fdff827c01165992bdd165b27945c1")
     // Sealed means content-addressed: the same declaration through a second
     // port of the same composition is one recorded answer, not two calls.
     expect(observed.again).toBe(observed.host)
@@ -285,7 +287,8 @@ describe("the sealed cell-call key", () => {
     expect(observed.host).not.toBe("key1_a839b582877e4aed09963b2cc3aa15af094379d286e83018dd67dd3efb06d4c8")
     // The same schema migration for `approval_unavailable` (#3161/#3317).
     expect(observed.host).not.toBe("key1_425bb2aeef11571a366804d4700e45def8ac0aceac7c7c585b3e1f9461259283")
-    expect(observed.host).toBe("key1_1e7f6586798d0220c9866f7d53e4d17ba33245e13e476b7e59ce3d080ec2fc8e")
+    expect(observed.host).not.toBe("key1_1e7f6586798d0220c9866f7d53e4d17ba33245e13e476b7e59ce3d080ec2fc8e")
+    expect(observed.host).toBe("key1_5a55d5f0eb804f94c23df600642072cbe5e926f26ae6c8cbb549d3834bfcb68c")
     // The composition really is in the key: the same call resolved under a
     // different layer set is a different boundary, not a cache hit.
     expect(observed.other).not.toBe(observed.host)
