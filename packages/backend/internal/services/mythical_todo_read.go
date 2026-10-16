@@ -511,6 +511,34 @@ type todoAttemptEvidence struct {
 	Previous     *todoRevisionEvidence `json:"previous,omitempty"`
 }
 
+type todoDiffEvidence struct {
+	Base    string `json:"base"`
+	Head    string `json:"head"`
+	Files   int64  `json:"files"`
+	Added   int64  `json:"added"`
+	Removed int64  `json:"removed"`
+}
+
+// The stack measures its accepted immutable candidate, before publication or
+// lane retirement. The item version check commits this binding with the step.
+func (st *mythicalItemStep) retainTodoDiff(ctx context.Context, item *db.MythicalItem) error {
+	if !mythicalTodo(*item) || item.CandidateBase == "" || item.CandidateHead == "" {
+		return nil
+	}
+	checks := mythicalChecksOf(*item)
+	if diff := checks.Diff; diff != nil && diff.Base == item.CandidateBase && diff.Head == item.CandidateHead {
+		return nil
+	}
+	diff, err := st.r.g.diffEvidence(ctx, item.CandidateBase, item.CandidateHead)
+	if err != nil {
+		return err
+	}
+	checks.Diff = &diff
+	item.Checks = checks.encode()
+	*item = retainTodoAttemptEvidence(*item)
+	return nil
+}
+
 type todoRevisionEvidence struct {
 	Revision string           `json:"revision"`
 	Items    []map[string]any `json:"items"`
@@ -550,6 +578,9 @@ func currentTodoEvidence(item db.MythicalItem) todoAttemptEvidence {
 				break
 			}
 		}
+	}
+	if diff := checks.Diff; diff != nil && diff.Head == item.CandidateHead && diff.Base == item.CandidateBase {
+		evidence.Items = append(evidence.Items, map[string]any{"kind": "diff", "files": diff.Files, "added": diff.Added, "removed": diff.Removed})
 	}
 	if checks.Receipts != nil {
 		for _, receipt := range checks.Receipts.Checks {

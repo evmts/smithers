@@ -782,3 +782,41 @@ func (t mythicalRevisionTree) files(_ context.Context, dir string) ([]string, er
 	sort.Strings(files)
 	return files, nil
 }
+
+// numstat is NUL-delimited so a filename containing tabs or newlines cannot
+// become a count. Rename records include two extra NUL-delimited paths.
+func (g mythicalGit) diffEvidence(ctx context.Context, base, head string) (todoDiffEvidence, error) {
+	result := todoDiffEvidence{Base: base, Head: head}
+	raw, err := g.command(ctx, nil, "diff", "--numstat", "-z", "--no-ext-diff", "--no-textconv", base, head)
+	if err != nil {
+		return result, err
+	}
+	rows := bytes.Split(raw, []byte{0})
+	for i := 0; i < len(rows); i++ {
+		if len(rows[i]) == 0 {
+			continue
+		}
+		fields := bytes.SplitN(rows[i], []byte{'\t'}, 3)
+		if len(fields) != 3 {
+			return result, fmt.Errorf("invalid candidate diff stat")
+		}
+		if len(fields[2]) == 0 {
+			if i+2 >= len(rows) || len(rows[i+1]) == 0 || len(rows[i+2]) == 0 {
+				return result, fmt.Errorf("invalid candidate rename stat")
+			}
+			i += 2
+		}
+		result.Files++
+		if string(fields[0]) == "-" && string(fields[1]) == "-" {
+			continue
+		}
+		added, addErr := strconv.ParseInt(string(fields[0]), 10, 64)
+		removed, removeErr := strconv.ParseInt(string(fields[1]), 10, 64)
+		if addErr != nil || removeErr != nil || added < 0 || removed < 0 {
+			return result, fmt.Errorf("invalid candidate line counts")
+		}
+		result.Added += added
+		result.Removed += removed
+	}
+	return result, nil
+}

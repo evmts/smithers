@@ -521,9 +521,15 @@ func (st *mythicalItemStep) shape(ctx context.Context, item db.MythicalItem) (my
 	if item.CandidateVerified && item.CandidateHead != "" && item.CandidateBase == base {
 		shape.Manifest = manifest
 	}
-	if st.r != nil && item.CandidateHead != "" && st.fetchCandidate(ctx, item) == nil {
-		if stat, err := st.r.g.git(ctx, "diff", "--shortstat", "--no-ext-diff", "--no-textconv", st.prefix(item), item.CandidateHead); err == nil {
-			shape.DiffStat = stat
+	if mythicalTodo(item) {
+		for _, entry := range currentTodoEvidence(item).Items {
+			if entry["kind"] == "diff" {
+				shape.DiffStat = fmt.Sprintf("%v files changed, %v insertions(+), %v deletions(-)", entry["files"], entry["added"], entry["removed"])
+			}
+		}
+	} else if st.r != nil && item.CandidateHead != "" && st.fetchCandidate(ctx, item) == nil {
+		if diff, err := st.r.g.diffEvidence(ctx, st.prefix(item), item.CandidateHead); err == nil {
+			shape.DiffStat = fmt.Sprintf("%d files changed, %d insertions(+), %d deletions(-)", diff.Files, diff.Added, diff.Removed)
 		}
 	}
 	return shape, nil

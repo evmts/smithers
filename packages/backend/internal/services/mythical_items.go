@@ -1734,6 +1734,13 @@ func (s *MythicalService) advanceItems(ctx context.Context, r *mythicalRun) {
 			r.dueAt(mythicalDue(item, false, step.now))
 			continue
 		}
+		if !saved {
+			if err := step.retainTodoDiff(ctx, next); err != nil {
+				s.logger.Warn("mythical.evidence_failed", "repository_id", r.row.RepositoryID, "item", uuidString(item.ID), "error", err)
+				r.dueAt(mythicalStepFailedDue(err, step.now))
+				continue
+			}
+		}
 		nextHeld := mythicalHoldsLane(*next)
 		if step.machineHeld != nil {
 			nextHeld = false
@@ -6331,6 +6338,7 @@ func appliedByMaintainer(applied gitHubLabelApplication, label string) bool {
 // made its issue a TODO and asked for automerge, and the review of its pull
 // request's head.
 type mythicalChecks struct {
+	Diff                  *todoDiffEvidence                  `json:"diff,omitempty"`
 	FailureStep           *todoFailureStep                   `json:"failureStep,omitempty"`
 	InitialPrefix         string                             `json:"initialPrefix,omitempty"`
 	Pause                 *todoPause                         `json:"pause,omitempty"`

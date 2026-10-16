@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -345,4 +346,82 @@ func TestTodoWikiEvidenceRequiresCurrentPlannerReceipt(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestTodoEvidenceProjectsOnlyItsCandidateDiff(t *testing.T) {
+	item := db.MythicalItem{Source: "todo", Attempt: 1, CandidateBase: "base", CandidateHead: "head", Checks: json.RawMessage(`{"diff":{"base":"base","head":"head","files":2,"added":3,"removed":1}}`)}
+	require.Equal(t, []map[string]any{{"kind": "diff", "files": int64(2), "added": int64(3), "removed": int64(1)}}, currentTodoEvidence(item).Items)
+	archived := retainTodoAttemptEvidence(item)
+	for _, field := range []string{"base", "head"} {
+		moved := item
+		if field == "base" {
+			moved.CandidateBase = "other"
+		} else {
+			moved.CandidateHead = "other"
+		}
+		require.Empty(t, currentTodoEvidence(moved).Items, "a different candidate cannot inherit a diff")
+	}
+	archived = settleTodoAttemptEvidence(archived, "merged")
+	archived.Checks = append([]byte{}, archived.Checks...)
+	before := currentTodoEvidence(archived)
+	archived.CandidateHead = "later"
+	require.Equal(t, before, currentTodoEvidence(archived), "settled evidence is immutable")
+}
+
+func TestTodoDiffEvidenceMeasuresRealCandidateAndKeepsEarlierAttempt(t *testing.T) {
+	f := newMythicalFixture(t)
+	base := f.commit("base", map[string]string{"a.txt": "old\nkeep\n", "old-name": "rename\n", "binary": "\x00old\n"})
+	head := f.commit("candidate", map[string]string{"a.txt": "new\nkeep\nextra\n", "old-name": "", "new-name": "rename\n", "binary": "\x00new\n", "tabs\tand\nnew.txt": "one\ntwo\n"})
+	item := db.MythicalItem{Source: "todo", Attempt: 1, CandidateBase: base, CandidateHead: head}
+	step := mythicalItemStep{r: &mythicalRun{g: f.git}}
+	require.NoError(t, step.retainTodoDiff(context.Background(), &item))
+	require.Equal(t, []map[string]any{{"kind": "diff", "files": int64(4), "added": int64(4), "removed": int64(1)}}, currentTodoEvidence(item).Items)
+	first, err := json.Marshal(mythicalChecksOf(item).Attempts[0])
+	require.NoError(t, err)
+	shape, err := (&mythicalItemStep{s: &MythicalService{prFacts: func(context.Context, db.MythicalItem) (mythicalPRShape, error) { return mythicalPRShape{}, nil }}}).shape(context.Background(), item)
+	require.NoError(t, err)
+	require.Equal(t, "4 files changed, 4 insertions(+), 1 deletions(-)", shape.DiffStat)
+	item.Attempt = 2
+	item.CandidateHead = f.commit("later", map[string]string{"a.txt": "new\nkeep\nextra\nlater\n"})
+	require.NoError(t, step.retainTodoDiff(context.Background(), &item))
+	require.Equal(t, int64(5), currentTodoEvidence(item).Items[0]["added"])
+	after, err := json.Marshal(mythicalChecksOf(item).Attempts[0])
+	require.NoError(t, err)
+	require.Equal(t, string(first), string(after), "a later candidate cannot rewrite attempt 1")
+	item.CandidateHead = strings.Repeat("f", 40)
+	before := item
+	require.Error(t, step.retainTodoDiff(context.Background(), &item))
+	require.Equal(t, before, item, "an unreadable candidate commits no invented evidence")
+}
+
+// Only admission's external providers use the existing fixture stand-ins; this
+// seam uses real Git objects, PostgreSQL version checks and the card reader.
+func TestTodoDiffEvidencePostgres(t *testing.T) {
+	o, session := newTodoAdmission(t)
+	item := o.fileTodo(session, "retain-diff")
+	f := newMythicalFixture(t)
+	base := f.commit("base", map[string]string{"a": "before\n"})
+	head := f.commit("candidate", map[string]string{"a": "after\n"})
+	item.Attempt, item.State = 1, "blocked"
+	item.CandidateBase, item.CandidateHead = base, head
+	step := mythicalItemStep{r: &mythicalRun{g: f.git}}
+	require.NoError(t, step.retainTodoDiff(context.Background(), &item))
+	saved, err := o.service.queries().SaveMythicalItem(context.Background(), item)
+	require.NoError(t, err)
+	first, err := json.Marshal(mythicalChecksOf(saved).Attempts[0])
+	require.NoError(t, err)
+	card := o.todoCard(saved.Number.Int64)
+	entries := card["evidence"].([]any)
+	require.Len(t, entries, 1)
+	require.Equal(t, []any{map[string]any{"kind": "diff", "files": float64(1), "added": float64(1), "removed": float64(1)}}, entries[0].(map[string]any)["items"])
+	saved.Attempt = 2
+	saved.CandidateHead = f.commit("retry", map[string]string{"a": "after\nmore\n"})
+	require.NoError(t, step.retainTodoDiff(context.Background(), &saved))
+	saved, err = o.service.queries().SaveMythicalItem(context.Background(), saved)
+	require.NoError(t, err)
+	after, err := json.Marshal(mythicalChecksOf(saved).Attempts[0])
+	require.NoError(t, err)
+	require.Equal(t, string(first), string(after))
+	card = o.todoCard(saved.Number.Int64)
+	require.Len(t, card["evidence"].([]any), 2)
 }
