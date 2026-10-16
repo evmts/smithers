@@ -187,14 +187,16 @@ const run = <A, E, R>(body: Effect.Effect<A, E, R>, bridged = false): Promise<A>
     Effect.provide(body, stack(bridged) as unknown as Layer.Layer<R>).pipe(Effect.scoped, Effect.orDie)
   )
 
-/** Polls until the run reaches a terminal state, or gives up and reports it. */
-const settled = (runId: string, attempts = 2_000): Effect.Effect<string, unknown, RunStore.RunStore> =>
+/** Waits for a durable terminal state; yielding to I/O lets the owner commit it. */
+const settled = (runId: string): Effect.Effect<string, unknown, RunStore.RunStore> =>
   Effect.gen(function*() {
     const store = yield* RunStore.RunStore
-    const row = yield* store.get(runId)
-    if (!["suspended", "running", "pending"].includes(row.status) || attempts <= 0) return row.status
-    yield* Effect.yieldNow
-    return yield* settled(runId, attempts - 1)
+    yield* TestDatabase.until(
+      store.get(runId).pipe(
+        Effect.map((row) => !["suspended", "running", "pending"].includes(row.status))
+      )
+    )
+    return (yield* store.get(runId)).status
   })
 
 /**
@@ -206,20 +208,22 @@ const settled = (runId: string, attempts = 2_000): Effect.Effect<string, unknown
  */
 const waitingOn = (
   runId: string,
-  deferredName: string,
-  attempts = 2_000
+  deferredName: string
 ): Effect.Effect<string, unknown, DurableEngineState.DurableEngineState> =>
   Effect.gen(function*() {
     const state = yield* DurableEngineState.DurableEngineState
-    const waiting = yield* state.waiting(runId)
-    const token = Option.isSome(waiting) ? waiting.value.token : null
-    if (token !== null) {
-      const parsed = yield* Schema.decodeEffect(DurableDeferred.TokenParsed.FromString)(token).pipe(Effect.orDie)
-      if (parsed.deferredName === deferredName) return token
-    }
-    if (attempts <= 0) return yield* Effect.die(`run ${runId} never parked on ${deferredName}`)
-    yield* Effect.yieldNow
-    return yield* waitingOn(runId, deferredName, attempts - 1)
+    let token: string | undefined
+    yield* TestDatabase.until(Effect.gen(function*() {
+      const waiting = yield* state.waiting(runId)
+      if (Option.isNone(waiting)) return false
+      const parsed = yield* Schema.decodeEffect(DurableDeferred.TokenParsed.FromString)(waiting.value.token).pipe(
+        Effect.orDie
+      )
+      if (parsed.deferredName !== deferredName) return false
+      token = waiting.value.token
+      return true
+    }))
+    return token!
   })
 
 /**

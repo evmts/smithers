@@ -303,7 +303,7 @@ const parkedOn = (
     const human = (yield* state.waitingTree(runId)).find((row) => row.reason === "approval")
     if (human !== undefined) return human
     if (attempts <= 0) return yield* Effect.die(`${runId} never parked on a human wait`)
-    yield* Effect.yieldNow
+    yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 2)))
     return yield* parkedOn(runId, attempts - 1)
   })
 
@@ -311,6 +311,6 @@ const settledRun = (runId: string, attempts = 4_000): Effect.Effect<string, unkn
   Effect.gen(function*() {
     const row = yield* (yield* RunStore.RunStore).get(runId)
     if (!["suspended", "running", "pending"].includes(row.status) || attempts <= 0) return row.status
-    yield* Effect.yieldNow
+    yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 2)))
     return yield* settledRun(runId, attempts - 1)
   })
