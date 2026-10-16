@@ -990,7 +990,31 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
       if ("error" in source) return source.error
       return readRepositoryDetail(ctx, target.repo, "pr", number,
         () => landingView(number, target.repo, undefined, source), source.kind === "github" ? "github" : "smithers")
-    }, { preload: landingView.preload }),
+    }, {
+      /*
+       * Speculation has to prepare the read the activation will actually ask
+       * for. The read is keyed by the RESOLVED source, because the same
+       * number is a different pull request on an import and on the platform
+       * (#4036), so a preload that skips resolving it prepares a read under
+       * another key: the activation never found it and every rest gesture on
+       * a pull request affordance paid for a second whole landing read — the
+       * detail, its reviews, its retained changes and its diff — whose answer
+       * was thrown away. The source is resolved here exactly as the
+       * activation resolves it, under the same account and conversation
+       * guard, so ONE read feeds both and it is the read of the source the
+       * receipt will name. Speculation publishes and acknowledges nothing, so
+       * a context that has moved on simply prepares nothing.
+       */
+      preload: async (number: number, repoArg?: string) => {
+        const target = resolveTargetRepo(ctx.store, repoArg)
+        if ("error" in target) return
+        const ownerCurrent = captureCloudOwner(ctx, false)
+        const conversation = conversationTabIdOf(ctx.store.session())
+        const source = await pullSource(ctx, target.repo)
+        if (!ownerCurrent() || conversationTabIdOf(ctx.store.session()) !== conversation || "error" in source) return
+        await landingView.preload(number, target.repo, undefined, source)
+      }
+    }),
 
     reviewLanding: async (number, type, body, repoArg) => {
       const target = resolveTargetRepo(ctx.store, repoArg)

@@ -292,3 +292,82 @@ test("a refused read acknowledges nothing, and a newer version arriving mid-read
     expect(row.readVersion).not.toBe(row.version)
   } finally { await second.controller.dispose() }
 })
+
+/** The speculation the rest gesture runs; a registry without it cannot prepare anything. */
+const restGesture = (controller: { readonly commands: { readonly preload?: (name: string, args?: string) => Promise<void> } }) => {
+  const preload = controller.commands.preload
+  if (preload === undefined) throw new Error("expected the command registry to offer speculation")
+  return preload
+}
+
+/*
+ * One read feeds speculation and activation.
+ *
+ * `bindFlowPreloading` runs a flow's `prepare` on the rest gesture that
+ * precedes its activation (FlowAction.ts: pointerover, focusin, pointerdown),
+ * and the prepared view exists so that read is the one the click consumes.
+ * The pull request read is keyed by its RESOLVED source, so speculation that
+ * skipped resolving it prepared a read under a different key: the activation
+ * found nothing there and read the whole pull request a second time — the
+ * detail, its reviews, its retained changes and its diff — and threw the
+ * first answer away. Hovering Retry inside a refused tab therefore cost two
+ * complete re-reads instead of one (e2e/playwright/landing-history.spec.ts
+ * counted six retained-history reads where four are mandated).
+ *
+ * The invariant is stronger than a count: the read the activation publishes
+ * must be the read taken against the source the receipt acknowledges, so the
+ * source resolution and the read cannot come apart.
+ */
+test("the rest gesture's read is the read the click publishes, taken against the source the receipt names", async () => {
+  const services = backend()
+  const { store, controller } = await ready(services)
+  try {
+    await controller.showRepoOverview(REPO)
+    const pane = paneOf(store)
+    const github = notification(store, "github")
+    const since = services.calls.length
+    const reads = (path: string) => services.calls.slice(since).filter(entry => entry === path).length
+
+    /* The rest gesture, exactly as the delegated listener runs it. */
+    await restGesture(controller)("pr", `2 ${REPO}`)
+    expect(reads(`${PULLS}/2`)).toBe(1)
+
+    expect((await controller.commands.run("pr", `2 ${REPO}`)).status).toBe("executed")
+    await settled()
+    /* The activation consumed the prepared read; it did not take its own. */
+    expect(reads(`${PULLS}/2`)).toBe(1)
+    expect(reads(`${PULLS}/2/diff`)).toBe(1)
+    expect(reads(`${PULLS}/2/commits`)).toBe(1)
+    expect(reads(CHECK_RUNS)).toBe(1)
+
+    /* And it is the import's pull request that was read and acknowledged. */
+    const opened = prCardAt(store, pane)
+    expect(opened.payload).toMatchObject({ repo: REPO, number: 2, sourceRepo: SOURCE_REPO })
+    expect(opened.payload.files?.map(file => file.path)).toEqual(["README.md"])
+    expect(notification(store, "github").readVersion).toBe(github.version)
+    expect(notification(store, "smithers").readVersion).toBeUndefined()
+  } finally { await controller.dispose() }
+})
+
+/* A speculative read of a native repository's landing is the native read, and the platform's own notification is the one the click acknowledges. */
+test("speculation on a native repository prepares the native read the click publishes", async () => {
+  const services = backend({ source: NATIVE })
+  const { store, controller } = await ready(services)
+  try {
+    await controller.showRepoOverview(REPO)
+    const native = notification(store, "smithers")
+    const since = services.calls.length
+    const reads = (path: string) => services.calls.slice(since).filter(entry => entry === path).length
+
+    await restGesture(controller)("pr", `2 ${REPO}`)
+    expect(reads(`${CLOUD}/landings/2`)).toBe(1)
+    expect(reads(`${PULLS}/2`)).toBe(0)
+
+    expect((await controller.commands.run("pr", `2 ${REPO}`)).status).toBe("executed")
+    await settled()
+    expect(reads(`${CLOUD}/landings/2`)).toBe(1)
+    expect(reads(`${CLOUD}/landings/2/reviews`)).toBe(1)
+    expect(notification(store, "smithers").readVersion).toBe(native.version)
+    expect(notification(store, "github").readVersion).toBeUndefined()
+  } finally { await controller.dispose() }
+})
