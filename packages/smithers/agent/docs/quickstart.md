@@ -11,7 +11,7 @@ needs no API key. By the end you will have a step whose answer arrives as a
 typed value, decoded by the schema you declared.
 
 A runnable version of this walkthrough lives in the Smithers repository, as
-[`examples/src/11-agent-step.ts`](https://github.com/smithersai/smithers/blob/main/examples/src/11-agent-step.ts).
+[`packages/smithers/agent/examples/11-agent-step.ts`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/examples/11-agent-step.ts).
 
 ## Prerequisites
 

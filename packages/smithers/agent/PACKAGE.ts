@@ -6,7 +6,11 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
   deps: [],
   cwd: "packages/smithers/agent",
   testData: ["docs/quickstart.md"],
-  tests: Smithers.glob("test/**/*.test.ts", { exclude: ["test/faults/**"] })
+  tests: Smithers.glob("test/**/*.test.ts", { exclude: ["test/faults/**"] }),
+  // examples/ is type-checked and formatted with the tests, and run by
+  // test/examples/; each example is documentation users copy, so it is not
+  // held to the library lint rules.
+  testSources: Smithers.glob("{test,examples}/**/*.ts")
 })
 
 /**
@@ -52,8 +56,57 @@ const faults = Smithers.FaultSuite({ cwd: "packages/smithers/agent" })
  */
 const securityReview = Smithers.SecurityReview({
   cwd: "packages/smithers/agent",
-  include: ["src/**"],
+  include: ["src/**", "examples/**", "test/examples/**", "vitest.config.ts"],
   checks: [
+    {
+      id: "example-scratch-fs-confinement",
+      title: "Example agent file tools reach only the scratch root",
+      threat: "A prompt-injected or scripted model cell reads or overwrites host files outside the scratch directory.",
+      lookFor: [
+        "A confinedFileSystem method that calls host.* without passing the name through resolve().",
+        "resolve() accepting an absolute path, a '..' segment, a NUL byte, a symlink component, or a hard-linked file.",
+        "confinedFileSystem accepting, on POSIX, a root another user owns or whose mode grants any group or other permission (mode & 0o077).",
+        "Read/Write FlowBinding capabilities or effects wider than `${canonicalRoot}/**`, or a capabilityEnvelope without that resource."
+      ],
+      paths: ["examples/25-agent-tools-in-sandbox.ts", "test/examples/25-*.test.ts"]
+    },
+    {
+      id: "example-provider-key-handling",
+      title: "Example provider API keys come only from the environment and stay redacted",
+      threat:
+        "A user running a live smoke example leaks their OpenAI, Gemini, or other provider key into logs, argv, the journal, or a test report.",
+      lookFor: [
+        "An API key accepted as a positional argument, hardcoded, or read from process.env at module load.",
+        "A key passed to a route or header without Redacted.make, or printed in an error or console line.",
+        "A live smoke test that runs without an explicit opt-in because vitest.config.ts masks only OPENAI_API_KEY."
+      ],
+      paths: [
+        "examples/12-agent-live-smoke.ts",
+        "examples/13-agent-live-smoke-local.ts",
+        "examples/14-agent-live-smoke-gemini.ts",
+        "test/examples/12-*.test.ts",
+        "test/examples/13-*.test.ts",
+        "test/examples/fixtures/live-test-selection.ts",
+        "examples/use-cases/dstack.ts",
+        "examples/use-cases/tweet-thread.ts",
+        "test/examples/use-cases/dstack.test.ts",
+        "test/examples/use-cases/tweet-thread.test.ts",
+        "vitest.config.ts",
+        "examples/README.md"
+      ]
+    },
+    {
+      id: "example-agent-prompt-payload",
+      title: "Payload text in example agent prompts cannot widen the tools a cell may call",
+      threat:
+        "A flow caller injects instructions through a prompt-interpolated payload field and makes the agent call tools beyond its declared envelope.",
+      lookFor: [
+        "An AgentAction prompt interpolating payload text while the host exposes flows beyond those the example needs.",
+        "A scripted model that splices prompt text into cell code without JSON.stringify.",
+        "Budget.layerUnbounded or QuotaPolicy.layerUnclassified used in an example that reaches a real provider."
+      ],
+      paths: ["examples/11-agent-step.ts", "examples/25-agent-tools-in-sandbox.ts", "examples/39-agent-policies.ts"]
+    },
     {
       id: "flow-store-confinement",
       title: "A saved flow is written only under .smithers/flows/<id>/ inside the store root",
