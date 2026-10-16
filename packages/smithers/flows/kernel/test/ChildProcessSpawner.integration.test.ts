@@ -73,6 +73,62 @@ const waitForEsrch = async (pid: number): Promise<void> => {
 }
 
 describe("ChildProcessSpawner real Node lifecycle", () => {
+  it.effect("withholds ambient credentials unless a child explicitly declares them", () =>
+    Effect.gen(function*() {
+      const name = "SMITHERS_CHILD_TEST_SECRET"
+      const previous = process.env[name]
+      process.env[name] = "ambient-secret"
+      try {
+        const cases: Array<ChildProcess.CommandOptions> = [
+          {},
+          { extendEnv: true },
+          { env: { ORDINARY: "kept" }, extendEnv: true },
+          { env: { [name]: "declared-secret" }, extendEnv: true },
+          { env: { [name]: "declared-secret" }, extendEnv: false },
+          { env: { PATH: undefined }, extendEnv: true }
+        ]
+        for (const options of cases) {
+          const command = ChildProcess.make(process.execPath, [
+            "-e",
+            "console.log(JSON.stringify({secret:process.env.SMITHERS_CHILD_TEST_SECRET,path:process.env.PATH,ordinary:process.env.ORDINARY}))"
+          ], options)
+          const pattern = new CapabilityPattern({ action: "proc:spawn", resource: "**" })
+          const output = yield* withGuardedSpawner({
+            attended: false,
+            rules: [new Permission.Rule({ effect: "allow", pattern })]
+          }, () => Effect.flatMap(EffectChildProcessSpawner, (spawner) => spawner.string(command)))
+          const declared = options.env
+          expect(JSON.parse(output)).toEqual({
+            ...(declared?.[name] === undefined ? {} : { secret: declared[name] }),
+            ...(declared?.ORDINARY === undefined ? {} : { ordinary: declared.ORDINARY }),
+            ...(options.extendEnv === false || declared !== undefined && "PATH" in declared
+              ? {}
+              : { path: process.env.PATH })
+          })
+        }
+        const producer = ChildProcess.make(process.execPath, [
+          "-e",
+          "console.log(process.env.SMITHERS_CHILD_TEST_SECRET ?? 'withheld')"
+        ])
+        const consumer = ChildProcess.make(process.execPath, [
+          "-e",
+          "let input='';process.stdin.on('data',chunk=>input+=chunk);process.stdin.on('end',()=>console.log(JSON.stringify({input,secret:process.env.SMITHERS_CHILD_TEST_SECRET})))"
+        ], { extendEnv: true })
+        const pattern = new CapabilityPattern({ action: "proc:spawn", resource: "**" })
+        const output = yield* withGuardedSpawner({
+          attended: false,
+          rules: [new Permission.Rule({ effect: "allow", pattern })]
+        }, () =>
+          Effect.flatMap(EffectChildProcessSpawner, (spawner) =>
+            spawner.string(ChildProcess.pipeTo(consumer)(producer))))
+        expect(JSON.parse(output)).toEqual({ input: "withheld\n" })
+      } finally {
+        if (previous === undefined) {
+          delete process.env[name]
+        } else process.env[name] = previous
+      }
+    }))
+
   it.effect("passes own __proto__ and ordinary environment values to a real child", () =>
     Effect.gen(function*() {
       const env = Object.create(null) as Record<string, string>

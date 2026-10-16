@@ -584,7 +584,7 @@ describe("ChildProcessSpawner", () => {
           args: ["safe"],
           options: {
             cwd: "/workspace/work",
-            env: { MODE: "safe", OPTIONAL: undefined },
+            env: { MODE: "safe" },
             stdin: { stream: "ignore", endOnDone: false, encoding: "utf8" },
             additionalFds: {
               fd3: { type: "input" },

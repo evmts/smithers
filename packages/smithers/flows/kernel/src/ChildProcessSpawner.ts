@@ -27,6 +27,7 @@ import { Effect, FileSystem, Layer, Option, Path, type Scope } from "effect"
 import { type PlatformError, systemError } from "effect/PlatformError"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
+import * as ChildProcessEnvironment from "./ChildProcessEnvironment.ts"
 import * as CommandLine from "./CommandLine.ts"
 import { GrantStore } from "./GrantStore.ts"
 import * as Containment from "./internal/Containment.ts"
@@ -168,6 +169,18 @@ const snapshotCommand = (command: ChildProcess.Command): ChildProcess.Command =>
   }
   throw new TypeError("unsupported command shape")
 }
+
+const replaceEnvironment = (command: ChildProcess.Command): ChildProcess.Command =>
+  command._tag === "StandardCommand"
+    ? ChildProcess.make(command.command, command.args, {
+      ...command.options,
+      env: ChildProcessEnvironment.make(
+        command.options.extendEnv === false ? {} : ambientEnvironment(),
+        command.options.env
+      ),
+      extendEnv: false
+    })
+    : ChildProcess.pipeTo(replaceEnvironment(command.right), command.options)(replaceEnvironment(command.left))
 
 const maximumEnvironmentNames = 64
 
@@ -404,7 +417,10 @@ export const layer: Layer.Layer<
           }).pipe(
             Effect.map((snapshot) => Rooted.command(snapshot, rooted)),
             Effect.flatMap((rooted) =>
-              check(rooted).pipe(Effect.andThen(confine(rooted)), Effect.flatMap(spawner.spawn))
+              check(rooted).pipe(
+                Effect.andThen(Effect.suspend(() => confine(replaceEnvironment(rooted)))),
+                Effect.flatMap(spawner.spawn)
+              )
             )
           )
         )
