@@ -95,6 +95,11 @@ describe("durable public execute identity refusal (#3371)", () => {
                 field,
                 status
               })
+              if (field === "payload") {
+                expect((failure as FlowEngine.ExecutionIdentityConflict).message).toBe(
+                  "execution existing was started with a different input; choose a new executionId to run this input"
+                )
+              }
             }
             expect(workers).toBe(0)
             expect(yield* store.get("existing")).toEqual(before)

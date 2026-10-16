@@ -28,6 +28,11 @@ const assertConflict = (exit: Exit.Exit<unknown, unknown>, field: string, status
     field,
     status
   })
+  if (field === "payload") {
+    expect((failure as FlowEngine.ExecutionIdentityConflict).message).toBe(
+      "execution existing was started with a different input; choose a new executionId to run this input"
+    )
+  }
 }
 
 describe("public execute identity conflict (#3371)", () => {

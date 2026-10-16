@@ -397,7 +397,7 @@ An `executionId` that already finished cannot take a different input either.
 `ISSUE="#43" node fix.ts` under `fix-1` stops with:
 
 ```text
-@smthrs/engine/ExecutionIdentityConflict: execution fix-1 already belongs to payload identity the encoded payload the execution was admitted with; it cannot be reused for a different encoded payload
+@smthrs/engine/ExecutionIdentityConflict: execution fix-1 was started with a different input; choose a new executionId to run this input
 ```
 
 Name an `executionId` when you want one run's recorded result back. After you

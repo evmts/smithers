@@ -544,8 +544,8 @@ export const layerMemory: Layer.Layer<FlowRuntime.FlowRuntime> = Layer.effect(Fl
                     field: "payload",
                     expected: "the payload the execution was admitted with",
                     actual: "a different payload",
-                    message: `execution ${options.executionId} already belongs to the payload it was admitted with; ` +
-                      "it cannot be reused for a different payload"
+                    message: `execution ${options.executionId} was started with a different input; ` +
+                      "choose a new executionId to run this input"
                   })
                 )
               }

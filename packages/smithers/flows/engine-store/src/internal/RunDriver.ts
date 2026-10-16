@@ -1721,8 +1721,11 @@ export const make = (
               executionId: options.executionId,
               status: existing.status,
               ...conflict,
-              message: `execution ${options.executionId} already belongs to ${conflict.field} identity ` +
-                `${conflict.expected}; it cannot be reused for ${conflict.actual}`
+              message: conflict.field === "payload"
+                ? `execution ${options.executionId} was started with a different input; ` +
+                  "choose a new executionId to run this input"
+                : `execution ${options.executionId} already belongs to ${conflict.field} identity ` +
+                  `${conflict.expected}; it cannot be reused for ${conflict.actual}`
             })
           )
         }
