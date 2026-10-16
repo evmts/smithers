@@ -391,6 +391,23 @@ describe("Sleep refusals", () => {
       }
     }))
 
+  effect("a host without node history still refuses non-finite absolute deadlines", () =>
+    Effect.gen(function*() {
+      for (const until of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+        const exit = yield* withCrypto(
+          Interpreter.interpret(Sleep.action.call({ until })).pipe(
+            Effect.provideService(FlowRuntime.FlowInstance, makeInstance(Host, "sleep-no-history")),
+            Effect.updateService(FlowRuntime.FlowRuntime, (runtime) => ({ ...runtime, recordNode: undefined })),
+            Effect.provide(wired()),
+            Effect.exit
+          )
+        )
+        expect(Exit.isFailure(exit) && exit.cause.reasons[0]).toMatchObject({
+          error: { _tag: "@smthrs/flow/SleepRequestInvalid", code: "invalid_deadline" }
+        })
+      }
+    }))
+
   effect("refuses absolute values that are not epoch times", () =>
     Effect.gen(function*() {
       for (const until of [Number.NaN, Number.POSITIVE_INFINITY]) {
