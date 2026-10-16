@@ -108,12 +108,15 @@ plan that no longer describes the alternative.
 ## Recover from a typed failure
 
 `Node.catch` is failure topology. With an `error` schema it handles only the
-failures the schema accepts and leaves the rest in the node's error type:
+failures the schema accepts. The node's error type keeps the protected graph's
+`E`, because a schema can reject a value its TypeScript type admits, so the flow
+still declares `error: GateFailed`:
 
 ```ts
 export const Gate = Flow.make("release/Gate", {
   payload: { target: Schema.String },
   success: Schema.String,
+  error: GateFailed,
   body: ({ target }) =>
     gate(target).pipe(
       Node.catch({
