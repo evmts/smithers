@@ -182,8 +182,8 @@ export interface LocalServerOptions {
   /** Test/replay override; production generates 256 fresh random bits. */
   readonly sessionToken?: string
   /**
-   * The environment model credentials are read from, by name (R4). Defaults to
-   * Bun.env; a test passes its own record, and nothing else reads a model key.
+   * Explicit model credentials, read by name (R4). Defaults to an empty record;
+   * ambient process credentials never authorize model access.
    */
   readonly env?: ModelCredentialEnv
   /** Test override for the one deadline a model test runs under. */
