@@ -605,7 +605,8 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "@effect/sql-pg": "*",
+        "@effect/sql-pg": "4.0.4",
+        "@effect/sql-sqlite-node": "4.0.4",
         "effect": "4.0.4",
       },
       "optionalPeers": [
@@ -1560,7 +1561,7 @@
       },
       "peerDependencies": {
         "@effect/sql-pg": "*",
-        "@effect/sql-sqlite-bun": "*",
+        "@effect/sql-sqlite-bun": "4.0.4",
         "@effect/sql-sqlite-node": "*",
         "effect": "^4.0.4",
       },
@@ -2542,7 +2543,7 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "@effect/vitest": "*",
+        "@effect/vitest": "4.0.4",
         "effect": "^4.0.4",
         "vitest": "^5.0.0",
       },

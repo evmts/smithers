@@ -22,6 +22,8 @@ import { SINGLETONS, copiesOf, maxPackagesFrom, optionalPeersOf, resolveConsumer
 import { EXPECTED_EFFECT_VERSION } from "./check-single-effect-version.mjs"
 import { assertConsumerTree } from "./release-consumers.mjs"
 import { repoRoot } from "./workspace-packages.mjs"
+import { readWorkspaceManifests } from "./pack-release.mjs"
+import { peerRangesOf } from "./release-peer-ranges.mjs"
 
 it("refuses a --max-packages value that cannot fail", () => {
   // The budget's only use is `total > maxPackages`, and that comparison is
@@ -158,6 +160,30 @@ it("unpinned CLI-only and CLI plus targets installs select the tested shared Eff
     assert.ok(profile.resolutions.some(result => result.name === "@smthrs/build-cli"))
     if (profile.profile === "cli-targets-unpinned") {
       assert.ok(profile.resolutions.some(result => result.name === "@smthrs/targets"))
+    }
+  }
+})
+
+// The main release smoke selects every optional peer. Test its real manifest
+// intersection before building or cutting an immutable release tag.
+it("the release all-adapter consumer shares the tested Effect runtime", { timeout: 10 * 60_000 }, async () => {
+  const manifests = [...readWorkspaceManifests(repoRoot).values()]
+  // The unscoped package is only a deprecation notice, not a runtime consumer.
+  const dependencies = Object.fromEntries(manifests.filter(manifest => manifest.name.startsWith("@smthrs/"))
+    .map(manifest => [manifest.name, manifest.version]))
+  for (const [name, range] of peerRangesOf(manifests)) {
+    if (!Object.hasOwn(dependencies, name)) dependencies[name] = range
+  }
+  const results = await resolveConsumerProfiles({
+    managers: ["npm", "pnpm"],
+    profiles: [{ name: "release-all-adapters", dependencies, imports: [] }]
+  })
+  const profiles = results.filter(result => result.profile === "release-all-adapters")
+  assert.equal(profiles.length, 2)
+  for (const profile of profiles) {
+    assert.equal(profile.effectCopies.length, 1)
+    for (const name of ["@effect/sql-pg", "@effect/sql-sqlite-node", "@effect/sql-sqlite-bun", "@effect/vitest"]) {
+      assert.ok(profile.effectFamily.some(entry => entry.name === name && entry.version === EXPECTED_EFFECT_VERSION), name)
     }
   }
 })

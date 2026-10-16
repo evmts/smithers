@@ -410,7 +410,8 @@
   },
   "peerDependencies": {
     "effect": "^4.0.4",
-    "vitest": "^5.0.0"
+    "vitest": "^5.0.0",
+    "@effect/vitest": "4.0.4"
   },
   "peerDependenciesMeta": {
     "@effect/vitest": {

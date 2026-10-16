@@ -32,11 +32,10 @@ in production.
 ## Install the vitest peers only if you use the adapter
 
 `vitest` and `@effect/vitest` are optional peer dependencies. Only the
-`Vitest` module imports them. Install `@effect/vitest` at the same version as
-your `effect`:
+`Vitest` module imports them. The adapter peer selects the tested release:
 
 ```bash
-npm install --save-dev vitest@5.0.0 @effect/vitest
+npm install --save-dev vitest@5.0.0 @effect/vitest@4.0.4
 ```
 
 Every other module works under any runner, because an assertion is an ordinary

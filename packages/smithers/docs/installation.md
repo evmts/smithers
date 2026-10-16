@@ -46,10 +46,12 @@ npm install -g smthrs@next
 
 ## Install the executable
 
-The executable depends on `@effect/sql-sqlite-node@4.0.4` because its
+The executable selects `effect@4.0.4` through its peer and depends on
+`@effect/sql-sqlite-node@4.0.4` because its
 default runtime opens SQLite, so every package manager installs it with the
 CLI. The
 database library itself keeps SQLite optional for driver-neutral consumers.
+The CLI’s optional PostgreSQL adapter is `@effect/sql-pg@4.0.4`.
 
 Confirm what you got, and what the registry offers, with the CLI itself:
 

@@ -201,18 +201,19 @@ test("every published workspace manifest follows the declaration policy", () => 
 // set even when nothing installs it. A ranged optional adapter peer therefore
 // refused every application pinned at the tested release the day upstream
 // published the next adapter (measured against a registry serving 4.0.5).
-test("a library declares an optional Effect adapter in peerDependenciesMeta alone", () => {
+test("optional Effect adapters are pinned or left to application selection", () => {
   const meta = { peerDependenciesMeta: { "@effect/sql-pg": { optional: true }, vitest: { optional: true } } }
-  for (const version of [range, pin, "*"]) {
+  for (const version of [range, "*"]) {
     const problems = optionalAdapterPeerProblems(manifests([
       { ...meta, peerDependencies: { effect: range, "@effect/sql-pg": version, vitest: "5.0.0" } }
     ]))
     assert.deepEqual(problems, [
-      `packages/fixture-0 (@fixture/0): optional peer @effect/sql-pg@${version} must be declared in peerDependenciesMeta only`
+      `packages/fixture-0 (@fixture/0): optional peer @effect/sql-pg@${version} must be pinned to ${pin} or declared in peerDependenciesMeta only`
     ])
   }
   const accepted = manifests([
     { ...meta, peerDependencies: { effect: range, vitest: "5.0.0" } },
+    { ...meta, peerDependencies: { effect: range, "@effect/sql-pg": pin } },
     // A required adapter peer, an executable's exact optional peer, and a private package are other rules.
     { peerDependencies: { effect: range, "@effect/opentelemetry": range } },
     { dependencies: { effect: pin }, peerDependencies: { "@effect/sql-pg": pin }, ...meta },

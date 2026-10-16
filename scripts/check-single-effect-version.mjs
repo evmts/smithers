@@ -55,10 +55,13 @@ const isFamily = (name) => name === "effect" || name.startsWith("@effect/") && !
  * lists as a regular dependency, and every entry of an executable. Executables
  * ship private adapters built against the tested release, so their peer selects that
  * release too. Keeping it a peer shares one runtime with workspace libraries
- * without a nested dependency copy (#4002).
+ * without a nested dependency copy (#4002). Optional adapters with an explicit
+ * peer contract also select the tested release; metadata-only peers leave the
+ * application free to select its own adapter.
  */
-export const expectedEffectDeclaration = (manifest, section) =>
+export const expectedEffectDeclaration = (manifest, section, name) =>
   section === "peerDependencies" && manifest.private !== true && manifest.bin === undefined &&
+    manifest.peerDependenciesMeta?.[name]?.optional !== true &&
     manifest.peerDependencies?.effect !== undefined
     ? SUPPORTED_EFFECT_RANGE
     : EXPECTED_EFFECT_VERSION
@@ -66,7 +69,7 @@ export const expectedEffectDeclaration = (manifest, section) =>
 export const effectDeclarations = (manifest, source) => sections.flatMap((section) =>
   Object.entries(manifest[section] ?? {}).filter(([name]) => isFamily(name))
     .map(([name, version]) => ({
-      name, version, expected: expectedEffectDeclaration(manifest, section), source: `${source} (${section})`
+      name, version, expected: expectedEffectDeclaration(manifest, section, name), source: `${source} (${section})`
     })))
 
 /** Read resolved package entries, including quoted scoped pnpm keys. */
@@ -130,18 +133,11 @@ export const assertNodeSharedPins = (manifests) => {
 }
 
 /**
- * A published library's optional Effect adapter is declared in
- * `peerDependenciesMeta` alone, with no `peerDependencies` entry.
- *
- * npm `--strict-peer-deps` loads the newest version an optional peer range
- * allows into the peer set even when nothing installs it, and that adapter
- * peers `effect` from its own version up. With `^4.0.4` here, an application
- * pinned at 4.0.4 was refused the day a 4.0.5 adapter existed; an exact peer
- * instead refuses an application that picks a later adapter. Without the
- * entry npm adds no edge and pnpm treats the name as an optional peer of any
- * version: the application chooses the adapter, and the adapter's own `effect`
- * peer holds it to the application's Effect. An executable installs its own
- * Effect, so its exact optional peers are not this rule.
+ * Optional adapters either pin the tested release at their owning package or
+ * leave selection to the application through `peerDependenciesMeta` alone.
+ * A caret on an optional peer lets npm select a newer adapter whose Effect
+ * floor excludes the tested runtime, even when that adapter is not installed.
+ * Exact peers constrain selected adapters without installing them by default.
  */
 export const optionalAdapterPeerProblems = (manifests) => {
   const problems = []
@@ -149,7 +145,9 @@ export const optionalAdapterPeerProblems = (manifests) => {
     if (manifest.private === true || manifest.peerDependencies?.effect === undefined) continue
     for (const [name, version] of Object.entries(manifest.peerDependencies)) {
       if (name === "effect" || !isFamily(name) || manifest.peerDependenciesMeta?.[name]?.optional !== true) continue
-      problems.push(`${directory} (${manifest.name}): optional peer ${name}@${version} must be declared in peerDependenciesMeta only`)
+      if (version !== EXPECTED_EFFECT_VERSION) {
+        problems.push(`${directory} (${manifest.name}): optional peer ${name}@${version} must be pinned to ${EXPECTED_EFFECT_VERSION} or declared in peerDependenciesMeta only`)
+      }
     }
   }
   return problems

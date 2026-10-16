@@ -903,7 +903,9 @@
     "@effect/platform-bun": "4.0.4"
   },
   "peerDependencies": {
-    "effect": "4.0.4"
+    "effect": "4.0.4",
+    "@effect/sql-pg": "4.0.4",
+    "@effect/sql-sqlite-node": "4.0.4"
   },
   "peerDependenciesMeta": {
     "@effect/sql-pg": {
