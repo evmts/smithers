@@ -324,12 +324,7 @@ func (h *GitHubAppSetupHandler) Begin(w http.ResponseWriter, r *http.Request) {
 		writeInstallAPIError(w, pkgerrors.Internal("GitHub App setup is unavailable"))
 		return
 	}
-	session := ""
-	if cookie, err := r.Cookie(GitHubAppSetupSessionCookie); err == nil {
-		session = cookie.Value
-	} else if info := middleware.AuthInfoFromContext(r.Context()); info != nil {
-		session = info.SessionHash
-	}
+	session := h.gitHubAppBrowserSession(r)
 	ctx := services.WithGitHubAppSetupSession(r.Context(), session, origin)
 	var start services.GitHubAppManifestStart
 	if manual {
@@ -359,6 +354,22 @@ func (h *GitHubAppSetupHandler) Begin(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	pkgerrors.WriteJSON(w, http.StatusOK, start)
 }
+
+// Called only after authorize: the owner browser takes precedence over a stale
+// pre-claim setup cookie, and both ends of the redirect bind the same authority.
+func (h *GitHubAppSetupHandler) gitHubAppBrowserSession(r *http.Request) string {
+	if info := middleware.AuthInfoFromContext(r.Context()); info != nil && info.SessionHash != "" {
+		owner, err := h.Owners.GetSelfHostOwner(r.Context())
+		if err == nil && info.User != nil && owner.ID == info.User.ID {
+			return info.SessionHash
+		}
+	}
+	if cookie, err := r.Cookie(GitHubAppSetupSessionCookie); err == nil {
+		return cookie.Value
+	}
+	return ""
+}
+
 func (h *GitHubAppSetupHandler) callbackState(w http.ResponseWriter, r *http.Request) (string, string, bool) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Referrer-Policy", "no-referrer")
@@ -370,12 +381,12 @@ func (h *GitHubAppSetupHandler) callbackState(w http.ResponseWriter, r *http.Req
 	if !h.authorize(w, r) {
 		return "", "", false
 	}
-	session, sessionErr := r.Cookie(GitHubAppSetupSessionCookie)
-	if sessionErr != nil || len(session.Value) != 64 {
+	session := h.gitHubAppBrowserSession(r)
+	if session == "" {
 		writeInstallAPIError(w, pkgerrors.Forbidden("setup session required"))
 		return "", "", false
 	}
-	*r = *r.WithContext(services.WithGitHubAppSetupSession(r.Context(), session.Value, origin))
+	*r = *r.WithContext(services.WithGitHubAppSetupSession(r.Context(), session, origin))
 	cookie, err := r.Cookie(GitHubAppStateCookie)
 	state := r.URL.Query().Get("state")
 	if err != nil || cookie.Value == "" || state == "" || subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(state)) != 1 {

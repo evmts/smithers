@@ -195,12 +195,13 @@ func (s *GitHubAppManifestService) knownOrigins() []string {
 // Setup session values are transient request context; only their digest is persisted.
 type gitHubAppSetupSessionKey struct{}
 type gitHubAppSetupSession struct {
+	key    string
 	digest string
 	origin string
 }
 
 func WithGitHubAppSetupSession(ctx context.Context, session, origin string) context.Context {
-	return context.WithValue(ctx, gitHubAppSetupSessionKey{}, gitHubAppSetupSession{digest: GitHubAppStateDigest(session), origin: origin})
+	return context.WithValue(ctx, gitHubAppSetupSessionKey{}, gitHubAppSetupSession{key: session, digest: GitHubAppStateDigest(session), origin: origin})
 }
 func GitHubAppStateDigest(value string) string {
 	sum := sha256.Sum256([]byte(value))
@@ -278,7 +279,7 @@ func (s *GitHubAppManifestService) Begin(ctx context.Context, req GitHubAppManif
 		return GitHubAppManifestStart{}, err
 	}
 	manifest.RedirectURL = origin + "/setup/github/callback"
-	manifest.SetupURL = origin + "/setup/github/installed?state=" + url.QueryEscape(state)
+	manifest.SetupURL = origin + "/setup/github/installed"
 	manifest.URL = origin
 	callbackURLs, _ := json.Marshal(manifest.CallbackURLs) // A string slice always encodes.
 	tx, err := s.pool.Begin(ctx)
@@ -496,7 +497,7 @@ func (s *GitHubAppManifestService) Convert(ctx context.Context, code, state, bro
 	if err = s.validateAttemptLease(ctx, db.New(admission), state); err != nil {
 		return "", err
 	}
-	attempt, err := db.New(admission).ConsumeGithubAppManifestState(ctx, db.ConsumeGithubAppManifestStateParams{Digest: GitHubAppStateDigest(state), SetupSessionDigest: session.digest, Origin: session.origin})
+	attempt, err := db.New(admission).ConsumeGithubAppManifestState(ctx, db.ConsumeGithubAppManifestStateParams{Digest: GitHubAppStateDigest(state), SetupSessionDigest: session.digest, Origin: session.origin, OwnerSessionKey: session.key})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", pkgerrors.Forbidden("GitHub App setup state is used or expired")
 	}

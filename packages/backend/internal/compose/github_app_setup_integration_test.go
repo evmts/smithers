@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -727,4 +728,91 @@ func TestPlueEnvAppCompositionValidatesAtFirstTokenCaller(t *testing.T) {
 	_, err = services.NewRepoConnectionService(nil, restarted).CreateGitHubInstallationToken(t.Context(), 914401, scope)
 	require.NoError(t, err)
 	require.EqualValues(t, 5, identities.Load())
+}
+
+// The owner can create the App after claiming the install, without the
+// pre-claim setup cookie. Exercise the actual auth loader and SQL consume.
+func TestGitHubAppPostClaimManifestCallbackPostgres(t *testing.T) {
+	for _, staleCookie := range []bool{false, true} {
+		t.Run(strconv.FormatBool(staleCookie), func(t *testing.T) {
+			ctx := context.Background()
+			pool, _ := postgresfixture.NewProductDatabase(t)
+			q := db.New(pool)
+			owner, err := q.CreateUser(ctx, db.CreateUserParams{Username: "manifest-owner", LowerUsername: "manifest-owner"})
+			require.NoError(t, err)
+			_, err = pool.Exec(ctx, `INSERT INTO self_host_owners(singleton,user_id) VALUES(TRUE,$1)`, owner.ID)
+			require.NoError(t, err)
+			rawSession := "owner-manifest-browser-session"
+			sessionHash := sha256.Sum256([]byte(rawSession))
+			_, err = q.CreateAuthSession(ctx, db.CreateAuthSessionParams{SessionKey: hex.EncodeToString(sessionHash[:]), UserID: owner.ID, Username: owner.Username, ExpiresAt: time.Now().Add(time.Hour)})
+			require.NoError(t, err)
+			key, err := rsa.GenerateKey(rand.Reader, 2048)
+			require.NoError(t, err)
+			pemKey := string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}))
+			remote, err := githubfake.New(githubfake.Config{AppID: 42, Slug: "owner-app", OwnerLogin: "acme", OwnerKind: "org", PrivateKeyPEM: pemKey, ClientID: "owner-client", ClientSecret: "owner-secret", WebhookSecret: "owner-hook", ConversionCode: "owner-code"})
+			require.NoError(t, err)
+			t.Cleanup(remote.Close)
+			codec, err := webhook.NewSecretCodec("post-claim-manifest-key")
+			require.NoError(t, err)
+			store := services.NewGitHubAppCredentialStore(pool, codec)
+			server := httptest.NewUnstartedServer(nil)
+			origin := "http://" + server.Listener.Addr().String()
+			origins := middleware.FixedOrigins(origin)
+			service := services.NewGitHubAppManifestService(pool, store, remote.URL, origins)
+			h := &routes.GitHubAppSetupHandler{Service: service, Store: store, Owners: q, Origins: origins}
+			cfg := testConfigAllFlagsOn()
+			cfg.Auth.Mode, cfg.Server.PublicURL, cfg.Server.AllowedOrigins = "selfhost", origin, []string{origin}
+			server.Config.Handler = githubAppSetupComposeRouter(cfg, pool, h)
+			server.Start()
+			t.Cleanup(server.Close)
+			server.Client().CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+			request := func(method, path string, stateCookie *http.Cookie) *http.Response {
+				t.Helper()
+				req, err := http.NewRequest(method, server.URL+path, strings.NewReader(`{"owner":"acme"}`))
+				require.NoError(t, err)
+				req.AddCookie(&http.Cookie{Name: "smithers_session", Value: rawSession})
+				req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "csrf"})
+				if staleCookie {
+					req.AddCookie(&http.Cookie{Name: routes.GitHubAppSetupSessionCookie, Value: strings.Repeat("x", 64)})
+				}
+				if stateCookie != nil {
+					req.AddCookie(stateCookie)
+				}
+				if method == http.MethodPost {
+					req.Header.Set("Origin", origin)
+					req.Header.Set("X-CSRF-Token", "csrf")
+					req.Header.Set("Content-Type", "application/json")
+				}
+				resp, err := server.Client().Do(req)
+				require.NoError(t, err)
+				t.Cleanup(func() { resp.Body.Close() })
+				return resp
+			}
+			begun := request(http.MethodPost, "/api/install/setup/app", nil)
+			body, err := io.ReadAll(begun.Body)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, begun.StatusCode, string(body))
+			var start services.GitHubAppManifestStart
+			require.NoError(t, json.Unmarshal(body, &start))
+			require.Equal(t, origin+"/setup/github/installed", start.Manifest.SetupURL)
+			var stateCookie *http.Cookie
+			for _, cookie := range begun.Cookies() {
+				if cookie.Name == routes.GitHubAppStateCookie {
+					stateCookie = cookie
+				}
+			}
+			require.NotNil(t, stateCookie)
+			callback := request(http.MethodGet, "/setup/github/callback?code=owner-code&state="+url.QueryEscape(start.State), stateCookie)
+			body, err = io.ReadAll(callback.Body)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusSeeOther, callback.StatusCode, string(body))
+			credentials, err := store.Load(ctx)
+			require.NoError(t, err)
+			require.Equal(t, int64(42), credentials.ID)
+			require.Len(t, remote.Writes(), 1)
+			replay := request(http.MethodGet, "/setup/github/callback?code=owner-code&state="+url.QueryEscape(start.State), stateCookie)
+			require.NotEqual(t, http.StatusSeeOther, replay.StatusCode)
+			require.Len(t, remote.Writes(), 1)
+		})
+	}
 }

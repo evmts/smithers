@@ -1126,3 +1126,52 @@ func TestGitHubAppManifestLapsedStepNeverConsumesOrConvertsPostgres(t *testing.T
 	_, err = f.store.Load(ctx)
 	require.ErrorIs(t, err, ErrGitHubAppNotConfigured)
 }
+
+func TestGitHubAppManifestOwnerAuthorityAtConsumptionPostgres(t *testing.T) {
+	for _, authority := range []string{"owner", "expired", "revoked", "other-user", "setup-after-claim"} {
+		t.Run(authority, func(t *testing.T) {
+			f := newAppManifestFixture(t)
+			ctx := context.Background()
+			q := db.New(f.pool)
+			owner, err := q.CreateUser(ctx, db.CreateUserParams{Username: "manifest-owner", LowerUsername: "manifest-owner"})
+			require.NoError(t, err)
+			_, err = f.pool.Exec(ctx, `INSERT INTO self_host_owners(singleton,user_id) VALUES(TRUE,$1)`, owner.ID)
+			require.NoError(t, err)
+			session := strings.Repeat("o", 64)
+			user := owner
+			if authority == "other-user" {
+				user, err = q.CreateUser(ctx, db.CreateUserParams{Username: "other-user", LowerUsername: "other-user"})
+				require.NoError(t, err)
+			}
+			_, err = q.CreateAuthSession(ctx, db.CreateAuthSessionParams{SessionKey: session, UserID: user.ID, Username: user.Username, ExpiresAt: time.Now().Add(time.Hour)})
+			require.NoError(t, err)
+			// Bind the pending state to the browser authority used at Begin.
+			if authority == "setup-after-claim" {
+				session = strings.Repeat("s", 64)
+			}
+			_, err = f.pool.Exec(ctx, `UPDATE github_app_manifest_states SET setup_session_digest=$1`, GitHubAppStateDigest(session))
+			require.NoError(t, err)
+			if authority == "expired" {
+				_, err = f.pool.Exec(ctx, `UPDATE auth_sessions SET expires_at=now()-interval '1 second'`)
+			}
+			if authority == "revoked" {
+				_, err = f.pool.Exec(ctx, `DELETE FROM auth_sessions`)
+			}
+			require.NoError(t, err)
+			ctx = WithGitHubAppSetupSession(ctx, session, "http://localhost:4000")
+			_, err = f.service.Convert(ctx, "manifest-code", f.start.State, f.start.State)
+			if authority == "owner" {
+				require.NoError(t, err)
+				require.Len(t, f.github.Writes(), 1)
+			} else {
+				var refusal *pkgerrors.APIError
+				require.ErrorAs(t, err, &refusal)
+				require.Equal(t, http.StatusForbidden, refusal.Status)
+				require.Empty(t, f.github.Writes())
+				var used bool
+				require.NoError(t, f.pool.QueryRow(ctx, `SELECT used_at IS NOT NULL FROM github_app_manifest_states`).Scan(&used))
+				require.False(t, used)
+			}
+		})
+	}
+}

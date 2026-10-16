@@ -27,11 +27,17 @@ SET used_at = NOW()
 WHERE digest = sqlc.arg(digest)
   AND setup_session_digest = sqlc.arg(setup_session_digest)
   AND origin = sqlc.arg(origin)
-  AND NOT EXISTS (SELECT 1 FROM self_host_owners)
-  AND EXISTS (
-    SELECT 1 FROM install_settings
-    WHERE key = 'setup.session.' || sqlc.arg(setup_session_digest)::TEXT
-      AND (value->>'expires_at')::TIMESTAMPTZ > NOW()
+  AND (
+    (NOT EXISTS (SELECT 1 FROM self_host_owners) AND EXISTS (
+      SELECT 1 FROM install_settings
+      WHERE key = 'setup.session.' || sqlc.arg(setup_session_digest)::TEXT
+        AND (value->>'expires_at')::TIMESTAMPTZ > NOW()
+    ))
+    OR EXISTS (
+      SELECT 1 FROM auth_sessions s JOIN self_host_owners o ON o.user_id = s.user_id
+      WHERE s.session_key = sqlc.arg(owner_session_key)::TEXT
+        AND s.expires_at > NOW()
+    )
   )
   AND used_at IS NULL
   AND expires_at > NOW()

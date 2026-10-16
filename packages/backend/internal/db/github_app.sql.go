@@ -19,11 +19,17 @@ SET used_at = NOW()
 WHERE digest = $1
   AND setup_session_digest = $2
   AND origin = $3
-  AND NOT EXISTS (SELECT 1 FROM self_host_owners)
-  AND EXISTS (
-    SELECT 1 FROM install_settings
-    WHERE key = 'setup.session.' || $2::TEXT
-      AND (value->>'expires_at')::TIMESTAMPTZ > NOW()
+  AND (
+    (NOT EXISTS (SELECT 1 FROM self_host_owners) AND EXISTS (
+      SELECT 1 FROM install_settings
+      WHERE key = 'setup.session.' || $2::TEXT
+        AND (value->>'expires_at')::TIMESTAMPTZ > NOW()
+    ))
+    OR EXISTS (
+      SELECT 1 FROM auth_sessions s JOIN self_host_owners o ON o.user_id = s.user_id
+      WHERE s.session_key = $4::TEXT
+        AND s.expires_at > NOW()
+    )
   )
   AND used_at IS NULL
   AND expires_at > NOW()
@@ -40,10 +46,16 @@ type ConsumeGithubAppManifestStateParams struct {
 	Digest             string `json:"digest"`
 	SetupSessionDigest string `json:"setup_session_digest"`
 	Origin             string `json:"origin"`
+	OwnerSessionKey    string `json:"owner_session_key"`
 }
 
 func (q *Queries) ConsumeGithubAppManifestState(ctx context.Context, arg ConsumeGithubAppManifestStateParams) (GithubAppManifestState, error) {
-	row := q.db.QueryRow(ctx, consumeGithubAppManifestState, arg.Digest, arg.SetupSessionDigest, arg.Origin)
+	row := q.db.QueryRow(ctx, consumeGithubAppManifestState,
+		arg.Digest,
+		arg.SetupSessionDigest,
+		arg.Origin,
+		arg.OwnerSessionKey,
+	)
 	var i GithubAppManifestState
 	err := row.Scan(
 		&i.Digest,
