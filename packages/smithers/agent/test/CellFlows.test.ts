@@ -344,6 +344,7 @@ const files = (initial: Readonly<Record<string, string>>) => {
 }
 
 const collect = (options: {
+  readonly prompt?: string | undefined
   readonly registry?: Registry.Registry | undefined
   readonly cells: ReadonlyArray<string>
   readonly requests?: Array<string> | undefined
@@ -364,7 +365,7 @@ const collect = (options: {
         route,
         contextWindowTokens: 0
       }),
-      prompt: "do the task",
+      prompt: options.prompt ?? "do the task",
       registry: options.registry ?? registryOf([]),
       // The standard flows declare real capabilities, so the run needs a real
       // envelope; an empty one refuses every declared capability by contract.
@@ -2164,6 +2165,7 @@ ctx.done(files.filter((_, i) => judged.answers[String(i)].value).map((f) => f.pa
     const printed: Array<string> = []
     const outcome = await drive(collect({
       requests: printed,
+      prompt: "the timeout ignores its setting",
       flows: [StandardFlows.filesystem(files({}).services, search), StandardFlows.jev(judge.services)],
       cells: [example![1]!, `ctx.done(JSON.stringify({ kept, uncertain }))`]
     }))
@@ -2176,7 +2178,7 @@ ctx.done(files.filter((_, i) => judged.answers[String(i)].value).map((f) => f.pa
     // Each file's evidence is its hit lines, under the id its question is
     // keyed by, and Jev reads each question behind that id (#3992).
     expect(judge.asked[0]!.state).toEqual({
-      task: "the timeout ignores its setting",
+      task: "The task for this run:\n\nthe timeout ignores its setting",
       hits: { "src/session.py": ["timeout", "timeout"], "src/config.py": ["timeout"], "src/clock.py": ["timeout"] }
     })
     expect(Object.values(judge.asked[0]!.questions).map((question) => question.instructions)).toEqual([
