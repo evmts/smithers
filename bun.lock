@@ -1781,7 +1781,7 @@
       "peerDependencies": {
         "@effect/vitest": "*",
         "effect": "^4.0.4",
-        "vitest": "5.0.0",
+        "vitest": "^5.0.0",
       },
       "optionalPeers": [
         "@effect/vitest",
