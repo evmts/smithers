@@ -1,6 +1,6 @@
 # C-SPK-06 input preflight (not qualified)
 
-Run `scripts/spikes/homebrew-hypervisor/run.sh --bundle <absolute-bundle>`.
+Run `apps/backend/checks/C-SPK-06/run.sh --bundle <absolute-bundle>`.
 Without `--execute`, this disposable entry point performs input verification and
 exits 2 without installing or booting anything. With `--execute`, it runs the real
 macOS harness after approval and refuses execution on Linux. Delete it after the
@@ -15,7 +15,7 @@ The manifest uses T-INS-01's version/platform/revision/files layout. Every file
 must match its digest and mode; extra files and symlinks refuse. Symlink support
 requires a reviewed complete input inventory before qualification.
 
-`python3 -m unittest discover -s scripts/spikes/homebrew-hypervisor -p 'test_*.py' -v`
+`python3 -m unittest discover -s apps/backend/checks/C-SPK-06 -p 'test_*.py' -v`
 exercises the shell entry point using inert fixture files and a disposable local
 Git repository. These tests are refusal evidence only, never boot evidence.
 macOS strips DYLD variables before launching system Python; observable inherited

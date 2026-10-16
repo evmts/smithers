@@ -17,7 +17,7 @@ class TestHomebrewSpikeRootInputs(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        self.script = self.root / 'scripts/spikes/homebrew-hypervisor'
+        self.script = self.root / 'apps/backend/checks/C-SPK-06'
         self.script.mkdir(parents=True)
         for name in ('run.sh', 'preflight.py'):
             shutil.copy2(SOURCE / name, self.script / name)
@@ -28,7 +28,7 @@ class TestHomebrewSpikeRootInputs(unittest.TestCase):
         self.git('init', '-b', 'main')
         self.git('config', 'user.email', 'fixture@example.invalid')
         self.git('config', 'user.name', 'Input fixture')
-        self.git('add', 'scripts')
+        self.git('add', 'apps')
         self.git('commit', '-m', 'fixture harness')
         revision = self.git('rev-parse', 'HEAD').strip()
         # Inert files: never executable, never used to claim a VM ran.

@@ -15,7 +15,7 @@ test("C-SPK-06: Installed hypervisor qualification retains signing and boot resu
   const terminal = page.getByRole("region", { name: / output$/ }).last()
   await expect(terminal).toBeVisible()
   await terminal.click()
-  await page.keyboard.type("scripts/spikes/homebrew-hypervisor/run.sh")
+  await page.keyboard.type("apps/backend/checks/C-SPK-06/run.sh")
   await page.keyboard.press("Enter")
   await expect(terminal).toContainText("doctor")
   // Retain output beside the composer so qualification failures remain readable.

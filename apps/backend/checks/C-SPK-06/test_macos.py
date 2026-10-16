@@ -18,7 +18,7 @@ from preflight import IMAGE, digest, git, validate
 class HomebrewEvidence(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.root = Path(__file__).resolve().parents[3]
+        cls.root = Path(__file__).resolve().parents[4]
         cls.bundle = Path(os.environ['C_SPK_06_BUNDLE']).resolve(strict=True)
         cls.inventory = validate(cls.root, cls.bundle)
         cls.inventory['harness_commit'] = git(cls.root, 'rev-parse', 'HEAD')

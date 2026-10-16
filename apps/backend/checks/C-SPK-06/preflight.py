@@ -84,7 +84,7 @@ def main():
                      or key.startswith('SMITHERS_')]
         if forbidden:
             raise ValueError('inherited guest/runtime environment refused: ' + ','.join(sorted(forbidden)))
-        root = Path(__file__).resolve().parents[3]
+        root = Path(__file__).resolve().parents[4]
         bundle = Path(args.bundle).resolve(strict=True)
         inventory = validate(root, bundle)
         print(json.dumps({'status': 'inputs-verified', 'vm_commands': 0, **inventory}, sort_keys=True))
@@ -92,7 +92,7 @@ def main():
             if sys.platform != 'darwin':
                 raise ValueError('fresh-user macOS reference host required')
             for name in ('preflight.py', 'test_macos.py', 'run.sh'):
-                relative = 'scripts/spikes/homebrew-hypervisor/' + name
+                relative = 'apps/backend/checks/C-SPK-06/' + name
                 approved = subprocess.check_output(['/usr/bin/git', '-C', str(root), 'show', 'refs/heads/main:' + relative])
                 if (root / relative).read_bytes() != approved:
                     raise ValueError('branch harness refused: ' + name)
