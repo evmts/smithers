@@ -14,10 +14,17 @@ import { Effect, Layer, Option } from "effect"
 import { describe, expect, it } from "vitest"
 import * as CellTurn from "../src/CellTurn.ts"
 import * as ContextWindow from "../src/ContextWindow.ts"
-import { paidUsage } from "../src/internal/paidUsage.ts"
+import { paidTogether, paidUsage } from "../src/internal/paidUsage.ts"
 import { emits, run } from "./fixtures/cellTurn.ts"
 
 describe("paidUsage", () => {
+  it("retains the total reported charge of both completion readings", () => {
+    expect(paidTogether(
+      { inputTokens: 90, outputTokens: 10, modelId: "judge", costUsd: 0.01 },
+      { inputTokens: 10, outputTokens: 2, modelId: "judge", costUsd: 0.02 }
+    )).toEqual({ inputTokens: 100, outputTokens: 12, modelId: "judge", costUsd: 0.03 })
+  })
+
   it("is absent when no reading was metered, not zero", () => {
     expect(paidUsage([])).toBeUndefined()
     expect(paidUsage([undefined, undefined])).toBeUndefined()
