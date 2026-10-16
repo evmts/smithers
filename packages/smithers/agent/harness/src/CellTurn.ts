@@ -2380,7 +2380,7 @@ const callHandler = (
       new AgentEvent.CellCallStarted({
         eventType: eventType.cellCallStarted,
         call,
-        declared: invocation.declared === true
+        ...(invocation.declared === true ? { declared: true } : {})
       })
     )
     const issuedAt = yield* Clock.currentTimeMillis
