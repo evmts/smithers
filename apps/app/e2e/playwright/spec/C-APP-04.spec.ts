@@ -9,14 +9,19 @@ test("C-APP-04: the composer admits host prompts and Earlier remains read-only",
   await installCloudFixture(page, { capabilities: ["install", "identity", "agent"] })
   const entries: unknown[] = []
   let admissionCount = 0
+  const requestKeys: string[] = []
   await page.route("**/api/conversations/main", route => route.fulfill({ json: { id: "main", entries } }))
   await page.route("**/api/conversations/main/view-state", route => route.fulfill({ json: { queue: [] } }))
   await page.route("**/api/conversations/main/prompt", async route => {
     expect(route.request().postDataJSON()).toMatchObject({ prompt: "Show the repository summary", idempotencyKey: expect.any(String) })
-    admissionCount++
-    entries.push({ id: "summary", author: 1, authorLogin: "scoped-user", runId: "summary-run", prompt: "Show the repository summary", state: "completed", frames: [
-      { runId: "summary-run", type: "delta", kind: "text", text: "Repository summary." }, { runId: "summary-run", type: "done", reason: "stop" }
-    ] })
+    const { idempotencyKey } = route.request().postDataJSON()
+    if (!requestKeys.includes(idempotencyKey)) {
+      admissionCount++
+      entries.push({ id: "summary", author: 1, authorLogin: "scoped-user", runId: "summary-run", prompt: "Show the repository summary", state: "completed", frames: [
+        { runId: "summary-run", type: "delta", kind: "text", text: "Repository summary." }, { runId: "summary-run", type: "done", reason: "stop" }
+      ] })
+    }
+    requestKeys.push(idempotencyKey)
     await route.fulfill({ status: 202, json: { turnId: "summary", terminal: false } })
   })
   await page.route("**/api/branches?*", route => route.fulfill({ json: [] }))
@@ -27,6 +32,13 @@ test("C-APP-04: the composer admits host prompts and Earlier remains read-only",
   await page.goto("/")
   await say(page, "Show the repository summary")
   await expect(page.getByTestId("transcript").getByText("Repository summary.", { exact: true })).toBeVisible()
+  // Recovery can replay an admission whose response was not durable at reload.
+  // Exercise that contract even when this run happens to persist the response first.
+  await page.evaluate(async idempotencyKey => {
+    const response = await fetch("/api/conversations/main/prompt", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: "Show the repository summary", idempotencyKey }) })
+    if (!response.ok) throw new Error("Replay refused")
+  }, requestKeys[0]!)
+  expect(admissionCount).toBe(1)
   await page.reload()
   await expect(page.getByTestId("transcript").getByText("Repository summary.", { exact: true })).toBeVisible()
   await say(page, "/branches")
@@ -36,5 +48,6 @@ test("C-APP-04: the composer admits host prompts and Earlier remains read-only",
   await expect(earlier).toContainText("Archived journal greeting")
   await expect(earlier.locator(".archive-entries button")).toHaveCount(0)
   expect(admissionCount).toBe(1)
+  expect(new Set(requestKeys).size).toBe(1)
   expect(legacyWrites).toEqual([])
 })
