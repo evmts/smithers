@@ -2427,13 +2427,17 @@ export const make = (deps: Dependencies) => {
                * a nested action also parks its wrapper: resume must re-enter it
                * to consume the inner action's preserved outcome. Both the effect
                * boundary and the attempt row read it: a park closes neither.
+               * A host shutdown also leaves the attempt unfinished: the driver
+               * releases the run for recovery rather than cancelling it. Only
+               * an explicit run interruption settles its interrupted attempt.
                */
               const parked = (cause: Cause.Cause<unknown>) =>
                 Effect.map(
                   Effect.serviceOption(FlowRuntime.FlowInstance),
                   (instance) =>
                     evidenceQuarantined(cause) !== undefined ||
-                    (Option.getOrUndefined(instance)?.suspended === true && Cause.hasInterruptsOnly(cause))
+                    (Option.isSome(instance) && Cause.hasInterruptsOnly(cause) &&
+                      (instance.value.suspended || !instance.value.interrupted))
                 )
               /**
                * The row's meta as this dispatch last wrote it. The crossing writes
