@@ -26,7 +26,7 @@ test("C-J5-01 chat teaching activates only for new TODO attempts", scenario("jou
     const teaching = page.locator('.flow-view').last()
     await expect(teaching).toBeVisible({ timeout: 120_000 })
     const diff = teaching.locator(".flow-proposal pre")
-    await expect(diff).toContainText("flows/todo/flow.ts", { timeout: 120_000 })
+    await expect(diff).toContainText(".smithers/flows/todo/flow.ts", { timeout: 120_000 })
     await expect(diff).toContainText("pnpm test")
     await expect(diff).toContainText("CHANGELOG.md")
     // The proposed diff is still a conversation card, not a committed TODO.
@@ -55,7 +55,7 @@ test("C-J5-01 chat teaching activates only for new TODO attempts", scenario("jou
     expect(before.version.source_commit).toMatch(/^[0-9a-f]{40}$/)
     // Independently inspect the candidate on GitHub before authorizing its merge.
     const files = await f.github("Will", "GET", `/pulls/${change.pr.number}/files?per_page=100`) as any[]
-    const patch = files.find(file => file.filename === "flows/todo/flow.ts")?.patch
+    const patch = files.find(file => file.filename === ".smithers/flows/todo/flow.ts")?.patch
     expect(patch).toContain("pnpm test")
     expect(patch).toContain("CHANGELOG.md")
     await runSlash(page, "/flow todo")

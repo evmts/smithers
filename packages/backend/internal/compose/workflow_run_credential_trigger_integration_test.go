@@ -183,7 +183,7 @@ func buildWorkflowTriggerRouter(q *db.Queries, pool *pgxpool.Pool, workflow *rou
 	)
 }
 
-// invokeTestSources is a repo host whose main holds flows/ci/flow.ts.
+// invokeTestSources is a repo host whose main holds .smithers/flows/ci/flow.ts.
 type invokeTestSources struct{}
 
 func (invokeTestSources) ListBookmarks(context.Context, string, string, string, int) ([]repohost.Bookmark, string, error) {
@@ -191,7 +191,7 @@ func (invokeTestSources) ListBookmarks(context.Context, string, string, string, 
 }
 
 func (invokeTestSources) GetFileAtChange(_ context.Context, _, _, _, path string) (repohost.FileContent, error) {
-	if path != "flows/ci/flow.ts" {
+	if path != ".smithers/flows/ci/flow.ts" {
 		return repohost.FileContent{}, &repohost.StatusError{StatusCode: 404}
 	}
 	return repohost.FileContent{Path: path}, nil

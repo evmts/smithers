@@ -30,8 +30,18 @@ const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd })
 
 const securityReview = Smithers.SecurityReview({
   cwd,
-  include: ["src/**", "docs/**", "README.md"],
+  include: ["src/**", "docs/**", "README.md", "examples/**", "test/examples/**"],
   checks: [
+    {
+      id: "example-provider-key-handling",
+      title: "The model smoke example reads its provider key only from the environment and keeps it redacted",
+      threat: "A user running the smoke example leaks their provider key into argv, logs, or a test report.",
+      lookFor: [
+        "An API key accepted as a positional argument, hardcoded, or read from process.env at module load.",
+        "A key passed to a route or header without Redacted.make, or printed in an error or console line."
+      ],
+      paths: ["examples/15-model-layer-smoke.ts", "test/examples/15-*.test.ts"]
+    },
     {
       id: "credential-out-of-sealed-view",
       title: "Credentials never enter the endpoint, public headers, or sealed request view",

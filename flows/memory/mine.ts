@@ -8,7 +8,7 @@
  * and each accepted fact is written by `MemoryMine.write`. This file adds
  * what only a journal reader does: it parses JSONL, skips candidates already
  * stored before asking Jev, appends decisions to
- * `factory/wiki/decisions/<item>.md` (`MemoryMine.decisionsDirectory`, which
+ * `.smithers/wiki/decisions/<item>.md` (`MemoryMine.decisionsDirectory`, which
  * `memory`'s wiki source reads back as pages) as one section per run with
  * each line citing the run id and journal sequence (a page's existing bytes
  * are never rewritten), and returns issues, never filing them.
@@ -119,7 +119,7 @@ const line = (text: string): string => text.replace(/\s+/g, " ").trim().replaceA
 export const marker = (runId: string): string => `<!-- memory/mine run=${runId} -->`
 
 /**
- * Appends this run's section to `factory/wiki/decisions/<item>.md`. A page
+ * Appends this run's section to `.smithers/wiki/decisions/<item>.md`. A page
  * with a line that is the run's marker is left as it is; otherwise its bytes
  * are kept and the section follows them.
  */

@@ -28468,7 +28468,7 @@ components:
       properties:
         name: {type: string}
         source:
-          description: '{"builtin": true} for the install''s version, or {"path": "flows/<name>/flow.ts"} for the repository''s'
+          description: '{"builtin": true} for the install''s version, or {"path": ".smithers/flows/<name>/flow.ts"} for the repository''s'
           type: object
           properties:
             builtin: {type: boolean}

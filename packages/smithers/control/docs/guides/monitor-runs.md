@@ -171,7 +171,7 @@ const rules = {
 Narrowing the detector to the beat keeps the heal record, which names the same
 health, from reopening a condition the next beat closed. The complete loop, with
 two real durable runs, is
-[`examples/src/38-monitor-and-alert.ts`](https://github.com/smithersai/smithers/blob/main/examples/src/38-monitor-and-alert.ts).
+[`packages/smithers/flows/examples/38-monitor-and-alert.ts`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/examples/38-monitor-and-alert.ts).
 
 ## Where to go next
 

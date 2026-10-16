@@ -2,7 +2,7 @@
  * An action implemented with `PlacedAction.layer` runs its body here, or on
  * the holder that serves `PlacedAction.served(action)`, under its invocation
  * key. The secret-holder scenario over two durable engines is
- * `examples/test/42-placed-deploy.test.ts`.
+ * `packages/smithers/flows/test/examples/42-placed-deploy.test.ts`.
  */
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import { describe, expect, it } from "@effect/vitest"

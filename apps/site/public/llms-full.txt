@@ -7094,7 +7094,7 @@ calls `extract`, `judge` and `write` over a finished run's journal.
 | `reading`, `judge(task, candidates)`  | One `memory/mine` reading: `durable` and `issue` per candidate, each accepted when `accepts(p)` (τ 0.70).                                                                               |
 | `write(store, { bank, runId, text })` | The one fact writer: redacted, keyed by `noteId(bank, text)`, `source:transcript`; a stored fact is kept as it is.                                                                      |
 | `settle(input)`                       | The run-end reading as the `memory-mine` boundary; returns its `decision-settled` or `decision-unjudged` rows and a `supervisor-memory-failed` row per refused write or engine failure. |
-| `decisionsDirectory`                  | `factory/wiki/decisions`: where `memory/mine` appends `<item>.md` and where the `memory` wiki source reads decisions pages.                                                             |
+| `decisionsDirectory`                  | `.smithers/wiki/decisions`: where `memory/mine` appends `<item>.md` and where the `memory` wiki source reads decisions pages.                                                             |
 
 A Jev or engine failure writes nothing and never fails the run. A replayed run
 is served the recorded reading.
@@ -16150,7 +16150,7 @@ const aggregate = (cases: Readonly<Record<string, ReadonlyArray<boolean>>>, k: n
 
 ## A worked suite
 
-[`evals/agent`](https://github.com/smithersai/smithers/tree/main/evals/agent)
+[`packages/smithers/agent/regression`](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/regression)
 is a suite built on these modules that evaluates the Smithers agent from
 [@smthrs/agent](/docs/reference/api/agent/). Each case is a whole agent run against a scripted
 model with no network access, reduced to one observation, and two scorers grade
@@ -16168,15 +16168,16 @@ https://smithers.sh/docs/reference/api/flows/
 
 > **Related APIs:** [`@smthrs/artifacts`](/docs/reference/api/artifacts/) · [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/engine`](/docs/reference/api/engine/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/keys`](/docs/reference/api/keys/) · [`@smthrs/observability`](/docs/reference/api/observability/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/plan-store`](/docs/reference/api/plan-store/) · [`@smthrs/platform-bun`](/docs/reference/api/platform-bun/) · [`@smthrs/platform-node`](/docs/reference/api/platform-node/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/sandbox`](/docs/reference/api/sandbox/) · [`@smthrs/step-cache`](/docs/reference/api/step-cache/) · [`@smthrs/sync`](/docs/reference/api/sync/) · [`@smthrs/time-travel`](/docs/reference/api/time-travel/)
 
-`@smthrs/flows` has three public entry points.
+`@smthrs/flows` has these public entry points.
 
-| Entry point                   | Contents                                                                         |
-| ----------------------------- | -------------------------------------------------------------------------------- |
-| `@smthrs/flows`               | The barrel: twenty engine packages re-exported, plus `namespaces`. Browser-safe. |
-| `@smthrs/flows/Runtime`       | Shared engine/storage composition over injected Effect SQL and host services.    |
-| `@smthrs/flows/NodeRuntime`   | Native Node composition, preserving the existing API.                            |
-| `@smthrs/flows/BunRuntime`    | Native Bun composition using the Bun SQL adapter.                                |
-| `@smthrs/flows/SandboxedFlow` | Running a child flow's own code inside a provisioned machine. Node-only.         |
+| Entry point                          | Contents                                                                         |
+| ------------------------------------ | -------------------------------------------------------------------------------- |
+| `@smthrs/flows`                      | The barrel: twenty engine packages re-exported, plus `namespaces`. Browser-safe. |
+| `@smthrs/flows/Runtime`              | Shared engine/storage composition over injected Effect SQL and host services.    |
+| `@smthrs/flows/NodeRuntime`          | Native Node composition, preserving the existing API.                            |
+| `@smthrs/flows/BunRuntime`           | Native Bun composition using the Bun SQL adapter.                                |
+| `@smthrs/flows/SandboxedFlow`        | Running a child flow's own code inside a provisioned machine. Node-only.         |
+| `@smthrs/flows/test/TestNodeRuntime` | Test support: a durable Node engine over one SQLite file. Node-only.             |
 
 ```ts
 import { Action, Flow, Kernel, RunStore } from "@smthrs/flows"
@@ -16818,6 +16819,22 @@ SandboxedFlow.toLayer(RunChild, Child, ({ executionId, callId }) => ({
 
 Compose the returned layer beside `Interpreter.layer(parent)` over one
 `Action.layerImplementations`, exactly as any other action implementation.
+
+## test/TestNodeRuntime
+
+[src/test/TestNodeRuntime.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/src/test/TestNodeRuntime.ts)
+
+A durable Node engine over one SQLite file, for tests and examples. The
+examples in this package, `@smthrs/agent` and `@smthrs/mcp` run on it.
+
+| Export          | Signature                                          | Meaning                                                                                                                       |
+| --------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `durableEngine` | `(filename: string, hostId: string) => Layer<...>` | `NodeRuntime.layer` over `filename`, owned as `hostId`, with the production step boundary and sandbox and the stores exposed. |
+| `requirements`  | `(filename: string) => Layer<...>`                 | The same stores, boundary, and sandbox without an engine, for reading a run back or driving a private engine.                 |
+| `stubJj`        | `Layer<Jj>`                                        | A Jujutsu service that records nothing. A sealed action never asks for it; a compensable one needs a real service.            |
+
+It is not a host: it grants no capabilities and its `Jj` restores nothing. A
+program uses [`NodeRuntime.layerHost`](#noderuntime).
 
 ## See also
 
@@ -19924,7 +19941,7 @@ recorded drains hold. A reading in flight when the run ends gets
 `closeGraceMs` (1,500) to settle; one still unanswered is interrupted and
 journaled `interrupted`, and the run never waits longer. The offline replay over
 archived journals that measures the triggers' precision is
-`evals/swebench/lib/jev-replay.mjs`.
+`packages/smithers/agent/harness/benchmarks/swebench/lib/jev-replay.mjs`.
 
 ## Monitor
 
@@ -32232,6 +32249,7 @@ interface Source {
   readonly system?: boolean | undefined
   readonly optionalRoot?: boolean | undefined
   readonly confinementRoot?: string | undefined
+  readonly retiredRoot?: string | undefined
 }
 ```
 
@@ -32246,6 +32264,23 @@ Sources are required by default; declared pack roots remain required.
 `confinementRoot` bounds directories and selected entry files to that root
 when the host can resolve the root's real path. `Pack.sources` sets it to the pack
 root; ordinary project sources leave it unset.
+`retiredRoot` names a directory the source's flows moved out of. Nothing there
+loads. When it holds any entry file, the scan reports one `retired_root`
+warning whose `path` is that directory. `Registry.projectSource` sets it to
+`<root>/flows`.
+
+### Descriptor.projectFlowsDirectory
+
+```ts
+const projectFlowsDirectory: ".smithers/flows"
+const retiredProjectFlowsDirectory: "flows"
+const retiredRootMessage: string
+```
+
+Where a project keeps its flows, relative to the project root, and where it
+kept them before. Every host derives a project's flow location from these
+constants. `retiredRootMessage` is the `retired_root` warning text:
+`Flows in flows/ are not loaded; move them to .smithers/flows/.`
 
 ### Descriptor.Provenance and Descriptor.PackRef
 
@@ -32494,14 +32529,14 @@ class DiscoveryWarning {
 
 A non-fatal source-discovery diagnostic. Anything a scan can survive is
 reported this way rather than raised, and read back through
-`registry.warnings()`. The 35 codes are grouped by what they say:
+`registry.warnings()`. The 36 codes are grouped by what they say:
 
 | Group                  | Codes                                                                                                                                                                                                                                                                                                                            |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Naming and description | `missing_description`, `invalid_description`, `missing_name`, `invalid_name`, `directory_name_mismatch`, `name_field_ignored`, `duplicate_name`, `root_level_entry`                                                                                                                                                              |
 | Declaration fields     | `unknown_frontmatter_key`, `invalid_allowed_tools`, `invalid_capabilities`, `invalid_budget`, `invalid_deadline`, `invalid_model`, `invalid_model_invocation`, `invalid_placement`, `invalid_sandbox`, `invalid_compatibility`, `invalid_license`, `invalid_metadata`, `unsupported_input_schema`, `unsupported_module_metadata` |
 | Authority              | `unprojectable_authority`, `invalid_effect_declaration`, `invalid_effect_tier`                                                                                                                                                                                                                                                   |
-| Source shape           | `multiple_entry_files`, `frontmatter_parse_error`, `non_serializable_frontmatter`, `symlink_cycle`, `outside_root`, `max_depth_exceeded`, `entry_too_large`, `unreadable`                                                                                                                                                        |
+| Source shape           | `multiple_entry_files`, `frontmatter_parse_error`, `non_serializable_frontmatter`, `symlink_cycle`, `outside_root`, `max_depth_exceeded`, `entry_too_large`, `unreadable`, `retired_root`                                                                                                                                        |
 | Packs                  | `unknown_pack_key`, `shadowed`                                                                                                                                                                                                                                                                                                   |
 
 `service` names a service missing during construction of a module's exported `layer`.
@@ -32807,9 +32842,14 @@ A name claimed twice by ordinary sources resolves first-found with a
 `duplicate_name` warning. A name shared with a source declared `system: true`
 fails `RegistryError { code: "system_collision" }` in either direction.
 
-### Registry.ProjectOptions and Registry.layerProject
+### Registry.ProjectOptions, Registry.projectSource and Registry.layerProject
 
 ```ts
+const projectSource: (
+  path: { readonly join: (...segments: ReadonlyArray<string>) => string },
+  root: string
+) => Descriptor.Source
+
 interface ProjectOptions {
   readonly root: string
   readonly packs?: Registry.PackConfig | undefined
@@ -32822,7 +32862,11 @@ const layerProject: (options: ProjectOptions) => Layer.Layer<
 >
 ```
 
-The registry a Node host discovers a project in: `<root>/flows/**` first, then
+`projectSource` is the one source for a project's own flows:
+`<root>/.smithers/flows`, path-named, optional, and with `<root>/flows` as its
+`retiredRoot`. Every host that discovers a project builds its source here.
+
+The registry a Node host discovers a project in: `<root>/.smithers/flows/**` first, then
 every installed pack, all under one first-found registry, so a project flow
 shadows a pack flow of the same name and `refresh` rescans both.
 
@@ -32833,11 +32877,13 @@ carries its `provenance.pack`, a name two packs both define is reported as
 rather than beside it, so a caller cannot ask for packs without saying what
 their range is checked against.
 
-A project with no `flows/` directory has no project entries. The source stays
-configured with `optionalRoot: true`, so every `refresh()` checks it again.
-Creating the first `flows/<id>/flow.mdx` or `flow.ts` makes it discoverable on
-refresh in the same session. Removing `flows/` empties the project entries on
-refresh; recreating it makes them discoverable again. Pack entries remain,
+A project with no `.smithers/flows/` directory has no project entries. The
+source stays configured with `optionalRoot: true`, so every `refresh()` checks
+it again. Creating the first `.smithers/flows/<id>/flow.mdx` or `flow.ts` makes
+it discoverable on refresh in the same session. Removing `.smithers/flows/`
+empties the project entries on refresh; recreating it makes them discoverable
+again. Flows in a root `flows/` never load; each scan reports one
+`retired_root` warning until they move. Pack entries remain,
 and a missing declared pack directory fails with `invalid_pack`.
 
 ### Registry.layerFromDescriptors
@@ -32959,7 +33005,7 @@ One discovered flow, made runnable. `flow` is tagged with the descriptor's
 registry name and `layer` registers it with the runtime.
 
 `delegate` is the registered flow this descriptor hands its work to, and
-`undefined` when the module IS the flow: a `flows/<name>/flow.ts` that
+`undefined` when the module IS the flow: a `.smithers/flows/<name>/flow.ts` that
 `export default`s a `@smthrs/flow` flow runs its own body, so its body is the
 plan rather than one delegating node. The distinction is an authority one. A
 delegate is host-registered code the descriptor never measured, so an approved
@@ -37361,7 +37407,7 @@ https://smithers.sh/docs/reference/api/testing/
 
 > **Related APIs:** [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/engine`](/docs/reference/api/engine/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/platform-browser`](/docs/reference/api/platform-browser/) · [`@smthrs/scorers`](/docs/reference/api/scorers/)
 
-`@smthrs/testing` exports twenty modules from its root entry point, and each is
+`@smthrs/testing` exports twenty-two modules from its root entry point, and each is
 also importable from `@smthrs/testing/<Module>`:
 
 ```ts
@@ -37370,7 +37416,7 @@ import { Conformance, EngineSubject, TestLayers } from "@smthrs/testing"
 import * as TestLayers from "@smthrs/testing/TestLayers"
 ```
 
-Four modules are reachable only by subpath. `TestHost` is the deterministic
+Six modules are reachable only by subpath. `TestHost` is the deterministic
 host bundle and stays explicit at `@smthrs/testing/TestHost`. `Vitest` is ESM only, because
 `vitest` refuses to load through `require()` and a barrel that carried it would
 break `require("@smthrs/testing")` for every CommonJS consumer of the assertion
@@ -37379,6 +37425,9 @@ than a double, and keeping it off the barrel keeps that visible at the import
 site.
 `ProcessTable` spawns `ps` through `node:child_process`, which browser test
 hosts cannot load, so it lives at `@smthrs/testing/ProcessTable`.
+`ModelServer` listens through `node:http` and `ModelServerCli` reads the fixture
+file through `node:fs`, so they live at `@smthrs/testing/ModelServer` and
+`@smthrs/testing/ModelServerCli`.
 
 `@smthrs/testing/internal/*` and `@smthrs/testing/*/index` are not public.
 `@smthrs/testing/package.json` is exported.
@@ -38679,13 +38728,16 @@ A model that replays a fixture hit and records a miss.
 
 ```ts
 interface Options {
-  readonly live: Model.Model
+  readonly live?: Model.Model | undefined
   readonly fixture: FixtureStore
 }
 
 const make: (options: Options) => Model.Model
 const layer: (options: Options) => Layer.Layer<Model.Model>
 ```
+
+Without `live` the model only replays: a miss dies with `UnscriptedModelError`,
+records nothing, and never reaches the network. A CI run uses this mode.
 
 The fixture is consulted per call rather than once, so a miss recorded by one
 call is a hit for the next identical one inside the same run. Nothing is
@@ -38696,6 +38748,55 @@ which is what makes a retried step deterministic.
 switching models is an ordinary miss that records a second entry. Use it when a
 test only needs its calls to be free and deterministic; use `RecordedModel`
 when the test must assert that exactly the recorded calls happened.
+
+## CachedEvaluator
+
+`CachedModel` for the `/model/Evaluator` seam, recording into the same fixture.
+
+```ts
+interface Options {
+  readonly live?: Evaluator.Evaluator | undefined
+  readonly fixture: FixtureStore
+  readonly modelId?: string | undefined
+}
+
+const make: (options: Options) => Evaluator.Evaluator
+const layer: (options: Options) => Layer.Layer<Evaluator.Evaluator>
+```
+
+An evaluation is stored as one model call: its request is `modelId`
+(`Evaluator.defaultModel` by default) with one user message holding the
+canonical JSON of the state and the encoded questions, and its answer is one
+text part holding the answers, the confidence and the usage. The recorder's
+credential guard covers it like any model call. A replay reports `latencyMs: 0`
+and no timing. A recorded `EvaluatorError` replays with the same code, status
+and reset. Without `live` a miss dies with `UnscriptedModelError`. A state that
+is not JSON fails `invalid_question` before anything is recorded.
+
+## TurnGate
+
+Hold a model turn until the test releases it.
+
+```ts
+interface TurnGate {
+  readonly hold: (key: string) => Effect.Effect<void>
+  readonly release: (key: string) => Effect.Effect<void>
+  readonly held: () => Effect.Effect<ReadonlyArray<string>>
+}
+
+interface ModelOptions {
+  readonly gate: TurnGate
+  readonly key: (request: ModelRequest) => string | undefined
+}
+
+const make: () => Effect.Effect<TurnGate>
+const model: (inner: Model.Model, options: ModelOptions) => Model.Model
+```
+
+`model` calls `inner` only after the turn's key is released; a turn whose `key`
+is `undefined` passes at once. A release is sticky: it answers every turn held
+on the key, and every later turn on it passes at once. `held` lists one entry
+per waiting turn, in arrival order; an interrupted turn leaves the list.
 
 ## ScoreGate
 
@@ -39121,6 +39222,108 @@ not exist returns empty text. Every other failure throws: a spawn error, a
 timeout, a buffer overflow, or a non-zero exit, so a failed probe cannot pass
 for a clean process table. `Spawn` has the signature of `spawnSync` and is the
 injection point for tests of the probe itself.
+
+## ModelServer
+
+Serve a model, and optionally a judge, as a local OpenAI-compatible endpoint,
+for an install that calls its model from another process. Imported by subpath:
+
+```ts
+import * as ModelServer from "@smthrs/testing/ModelServer"
+
+const paths: {
+  readonly health: "/health"
+  readonly chat: "/v1/chat/completions"
+  readonly evaluation: "/v4/ai/evaluation-model"
+  readonly held: "/__testing/held"
+  readonly release: "/__testing/release/"
+}
+
+interface Options {
+  readonly model: Model.Model
+  readonly evaluator?: Evaluator.Evaluator | undefined
+  readonly gate?: TurnGate.TurnGate | undefined
+  readonly hostname?: string | undefined // 127.0.0.1
+  readonly port?: number | undefined // 0, any free port
+  readonly heartbeatMs?: number | undefined // 15000
+}
+
+interface ModelServer {
+  readonly url: string
+}
+
+const make: (options: Options) => Effect.Effect<ModelServer, never, Scope.Scope>
+```
+
+The server listens for the lifetime of the scope. Failing to listen is a defect.
+
+| Route                          | Behavior                                                                                                                       |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /health`                  | `200 ok`.                                                                                                                      |
+| `POST /v1/chat/completions`    | Decodes exactly `OpenAIChatCompletions.Body`, streamed; streams `model`'s events back as Chat Completions chunks and `[DONE]`. |
+| `POST /v4/ai/evaluation-model` | Served only with `evaluator`. Answers `{ answers, usage?, providerMetadata.typesafe.confidence? }`.                            |
+| `GET /__testing/held`          | Served only with `gate`. The keys turns wait on, as a JSON array.                                                              |
+| `POST /__testing/release/<k>`  | Served only with `gate`. Releases `k` (letters, digits, `.`, `_`, `-`) and answers `204`.                                      |
+
+The chat request is lifted back into the `ModelRequest` that lowers to it, so a
+recording made through the server keys exactly as the product's own request.
+A field the client never sends, `stream: false`, or `response_format` is a
+`400` naming the field. A `ModelError` before any output answers its
+`httpStatus` (500 when absent) with `{ error: { message, type: code, code? } }`;
+after output it ends the stream with an `error` chunk. An `EvaluatorError`
+answers its `status`, else `400` for `invalid_question`, `504` for `timeout`
+and `502` for the rest. A request the backing model or evaluator has no answer
+for (it dies, as a replay miss does) answers `501` with `type: "unrecorded"`
+and logs a warning naming the model and message count, never the text. A
+silent answer opens the stream after `heartbeatMs` and writes `: held` comments
+until output arrives.
+
+## ModelServerCli
+
+The `smthrs-model-server` command: a `ModelServer` over a fixture file.
+Imported by subpath, or run as the package's bin:
+
+```ts
+import * as ModelServerCli from "@smthrs/testing/ModelServerCli"
+
+interface Config {
+  readonly fixture: string
+  readonly record?: {
+    readonly upstream: string
+    readonly model?: string | undefined
+    readonly apiKey: Redacted.Redacted<string>
+  } | undefined
+  readonly hold: ReadonlyArray<RegExp>
+  readonly hostname?: string | undefined
+  readonly port?: number | undefined
+}
+
+interface Io {
+  readonly print: (line: string) => void
+  readonly stopped: Promise<void>
+}
+
+const parse: (argv: ReadonlyArray<string>, env: Readonly<Record<string, string | undefined>>) => Config
+const serve: (config: Config) => Effect.Effect<ModelServer.ModelServer, never, Scope.Scope>
+const run: (argv: ReadonlyArray<string>, env: Readonly<Record<string, string | undefined>>, io: Io) => Promise<void>
+```
+
+| Flag                    | Meaning                                                                                        |
+| ----------------------- | ---------------------------------------------------------------------------------------------- |
+| `--fixture <path>`      | The fixture file. Required. Replay refuses a path that does not exist.                         |
+| `--record`              | Record misses. Needs `--upstream` and `--key-env`.                                             |
+| `--upstream <origin>`   | The Chat Completions origin a miss is sent to; its judge is `<origin>/v4/ai/evaluation-model`. |
+| `--upstream-model <id>` | The model the upstream is asked for. The fixture keeps the requested id.                       |
+| `--key-env <NAME>`      | The environment variable holding the upstream's bearer key.                                    |
+| `--hold <regex>`        | Hold a turn whose text matches until its key, capture group 1, is released. Repeatable.        |
+| `--host`, `--port`      | Where to listen: `127.0.0.1` and any free port by default.                                     |
+
+`parse` throws an `Error` naming the first problem and the usage line. Replay
+reads the fixture once into memory and never writes it, so parallel runs can
+share one file. Recording appends through `FixtureStore.makeFile` and publishes
+the fixture when the scope closes. `run` prints `{"url":"..."}` once listening
+and closes the scope when `io.stopped` settles; the bin settles it on SIGINT or
+SIGTERM and exits `1` with the message on a parse or startup failure.
 
 ## Documented limits
 

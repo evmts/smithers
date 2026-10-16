@@ -14,7 +14,7 @@ import { Clock, Effect, Option, Schema } from "effect"
 import { Cli, z } from "incur"
 import { existsSync } from "node:fs"
 import { readFile } from "node:fs/promises"
-import { dirname, join } from "node:path"
+import { dirname } from "node:path"
 import * as CliError from "../CliError.ts"
 import { cancelAll, unexpectedRunList } from "../commands/CancelAll.ts"
 import * as FlowCatalog from "../commands/FlowCatalog.ts"
@@ -185,7 +185,8 @@ export const createFlowCli = (runtime: Bridge.Runtime = {}) =>
               ? Bridge.query(Effect.andThen(checks(c.options, runtime), RunControl.listFlows), c.options, runtime)
               : Bridge.local(
                 Effect.gen(function*() {
-                  return FlowCatalog.listing((yield* discovered(c.options, runtime)).items, yield* Project.ProjectRoot)
+                  const { items, warnings } = yield* discovered(c.options, runtime)
+                  return FlowCatalog.listing(items, yield* Project.ProjectRoot, warnings)
                 }),
                 c.options,
                 runtime
@@ -197,7 +198,9 @@ export const createFlowCli = (runtime: Bridge.Runtime = {}) =>
           {
             render: (page) =>
               FeaturedFlows.isFlowPage(page)
-                ? { human: FeaturedFlows.human(page.items, FeaturedFlows.appsOf(page)) }
+                ? {
+                  human: FeaturedFlows.human(page.items, FeaturedFlows.appsOf(page), FeaturedFlows.warningsOf(page))
+                }
                 : {},
             next: (page) => {
               const first = Array.isArray(page["items"])
@@ -286,7 +289,7 @@ export const createFlowCli = (runtime: Bridge.Runtime = {}) =>
           }
           if (!Bridge.isRemote(c.options, runtime)) {
             const root = Project.root(c.options.root, process.cwd())
-            if (!existsSync(join(root, "flows")) && !existsSync(join(root, ".flows"))) {
+            if (!existsSync(Project.flowsDirectory(root)) && !existsSync(Project.stateDirectory(root))) {
               throw new CliError.Refused({ fault: "user", code: "no_flows", message: `No flows found in ${root}` })
             }
           }

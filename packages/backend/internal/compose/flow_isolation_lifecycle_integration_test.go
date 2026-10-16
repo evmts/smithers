@@ -340,7 +340,7 @@ func csec02FixtureRepository(t *testing.T, gitRoot, nonce string, port int) stri
 	return commit
 }
 
-// csec02FlowSources is the check's repository: flows/canary/beacon.ts, on
+// csec02FlowSources is the check's repository: .smithers/flows/canary/beacon.ts, on
 // import, writes $HOME/.smithers-canary/<nonce> and dials the host listener;
 // todo, canary and merge each import it. mark records where a body ran, with
 // the account's uid as the file's content.
@@ -368,7 +368,7 @@ export default Flow.make(%q, {
 	}
 	return map[string]string{
 		"README.md": "C-SEC-02 isolation fixture\n",
-		"flows/canary/beacon.ts": fmt.Sprintf(`import { mkdirSync, writeFileSync } from "node:fs"
+		".smithers/flows/canary/beacon.ts": fmt.Sprintf(`import { mkdirSync, writeFileSync } from "node:fs"
 import { connect } from "node:net"
 import { homedir } from "node:os"
 import { join } from "node:path"
@@ -383,8 +383,8 @@ beacon.on("error", () => {})
 beacon.on("connect", () => beacon.end(%q))
 beacon.setTimeout(250, () => beacon.destroy())
 `, nonce, port, nonce),
-		"flows/canary/flow.ts": marked("canary", "./beacon.ts", "canary-run"),
-		"flows/debug-canary/flow.ts": `import { mark } from "../canary/beacon.ts"
+		".smithers/flows/canary/flow.ts": marked("canary", "./beacon.ts", "canary-run"),
+		".smithers/flows/debug-canary/flow.ts": `import { mark } from "../canary/beacon.ts"
 import { Action, Flow } from "@smthrs/flow"
 import { Effect, Schema } from "effect"
 const Probe = Action.make("cui10/probe", {
@@ -401,10 +401,10 @@ export default Flow.make("debug-canary", {
  body: () => Probe.call({})
 })
 `,
-		"flows/merge/flow.ts": marked("merge", "../canary/beacon.ts", "merge-run"),
+		".smithers/flows/merge/flow.ts": marked("merge", "../canary/beacon.ts", "merge-run"),
 		// The TODO marks, then holds in an irreversible keyless step, so its
 		// machine stays running for the canary and can be stopped mid-run.
-		"flows/todo/flow.ts": `import { mark } from "../canary/beacon.ts"
+		".smithers/flows/todo/flow.ts": `import { mark } from "../canary/beacon.ts"
 import { Action, Flow } from "@smthrs/flow"
 import { Effect, Schema } from "effect"
 const Hold = Action.make("csec02/hold", {

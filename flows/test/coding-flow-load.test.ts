@@ -47,52 +47,52 @@ for (const pinnedAdmission of [false, true]) {
       // The reviewed TODO fixture, and the same source
       // beside a system name a repository cannot take.
       const copy = await tree("copy", {
-        "flows/todo/flow.ts": source,
-        "flows/merge/flow.ts": `throw new Error("reserved module evaluated")\n${
+        ".smithers/flows/todo/flow.ts": source,
+        ".smithers/flows/merge/flow.ts": `throw new Error("reserved module evaluated")\n${
           source.replace("Flow.make(\"todo\",", "Flow.make(\"merge\",")
         }`,
         "src/index.ts": "export const unrelated = 1\n"
       })
       // The scripted [FLOWEDIT] change: the composition plus a changelog step.
       const edited = await tree("edited", {
-        "flows/todo/flow.ts": source.replace(
+        ".smithers/flows/todo/flow.ts": source.replace(
           "Request.call(input)",
           "Request.call({ ...input, prompt: `${input.prompt}\\n\\n[CHANGELOG] Add one line for this change to CHANGELOG.md.` })"
         )
       })
       // A syntax error on one line of the composition.
       const broken = await tree("broken", {
-        "flows/todo/flow.ts": source.replace("Request.call(input)", "Request.call(input")
+        ".smithers/flows/todo/flow.ts": source.replace("Request.call(input)", "Request.call(input")
       })
       const undiscoverable = await tree("undiscoverable", {
-        "flows/todo/flow.ts": source.replace("description: \"Route, plan, implement and deliver one TODO.\",", ""),
-        "flows/merge/flow.ts": "export default {}\n"
+        ".smithers/flows/todo/flow.ts": source.replace("description: \"Route, plan, implement and deliver one TODO.\",", ""),
+        ".smithers/flows/merge/flow.ts": "export default {}\n"
       })
       const rejectedAgain = await tree("undiscoverable-lock", {
-        "flows/todo/flow.ts": source.replace("description: \"Route, plan, implement and deliver one TODO.\",", ""),
+        ".smithers/flows/todo/flow.ts": source.replace("description: \"Route, plan, implement and deliver one TODO.\",", ""),
         "pnpm-lock.yaml": "lockfileVersion: 9\n"
       })
       // A composition that imports a helper; the helper's bytes are its version.
       const withHelper = (value: string) =>
         tree(`helper-${value}`, {
-          "flows/todo/flow.ts": `import { label } from "./label.ts"\n${source}\nvoid label\n`,
-          "flows/todo/label.ts": `export const label = ${JSON.stringify(value)}\n`
+          ".smithers/flows/todo/flow.ts": `import { label } from "./label.ts"\n${source}\nvoid label\n`,
+          ".smithers/flows/todo/label.ts": `export const label = ${JSON.stringify(value)}\n`
         })
       const [helperA, helperB] = [await withHelper("a"), await withHelper("b")]
       const outsideA = await tree("outside-a", {
-        "flows/todo/flow.ts": `import { label } from "../../lib/label.ts"\n${source}\nvoid label\n`,
+        ".smithers/flows/todo/flow.ts": `import { label } from "../../../lib/label.ts"\n${source}\nvoid label\n`,
         "lib/label.ts": "export const label = 'a'\n"
       })
       const outsideB = await tree("outside-b", {
-        "flows/todo/flow.ts": `import { label } from "../../lib/label.ts"\n${source}\nvoid label\n`,
+        ".smithers/flows/todo/flow.ts": `import { label } from "../../../lib/label.ts"\n${source}\nvoid label\n`,
         "lib/label.ts": "export const label = 'b'\n"
       })
       const lockA = await tree("lock-a", {
-        "flows/todo/flow.ts": source,
+        ".smithers/flows/todo/flow.ts": source,
         "pnpm-lock.yaml": "lockfileVersion: 9\n# a\n"
       })
       const lockB = await tree("lock-b", {
-        "flows/todo/flow.ts": source,
+        ".smithers/flows/todo/flow.ts": source,
         "pnpm-lock.yaml": "lockfileVersion: 9\n# b\n"
       })
       const manager = await tree("bin", {
@@ -111,35 +111,35 @@ printf '%s' "$*" > installed
           JSON.stringify(join(temporary, "import-" + name))
         }, "evaluated")\n${source}`
       const canaryLoaded = await tree("canary-loaded", {
-        "flows/todo/flow.ts": importCanary("loaded"),
+        ".smithers/flows/todo/flow.ts": importCanary("loaded"),
         "pnpm-lock.yaml": "lockfileVersion: 9\n"
       })
       const installFailed = await tree("install-failed", {
-        "flows/todo/flow.ts": importCanary("failed"),
+        ".smithers/flows/todo/flow.ts": importCanary("failed"),
         "pnpm-lock.yaml": "lockfileVersion: 9\n"
       })
       const lockMutated = await tree("lock-mutated", {
-        "flows/todo/flow.ts": importCanary("mutated"),
+        ".smithers/flows/todo/flow.ts": importCanary("mutated"),
         "pnpm-lock.yaml": "lockfileVersion: 9\n"
       })
       const otherLockMutated = await tree("other-lock-mutated", {
-        "flows/todo/flow.ts": source,
+        ".smithers/flows/todo/flow.ts": source,
         "pnpm-lock.yaml": "lockfileVersion: 9\n",
         "package-lock.json": "{}\n"
       })
       const semantic = await tree("semantic", {
-        "flows/todo/flow.ts": source.replace("Request.call(input)", "Request.call({ ...input, prompt: 123 })")
+        ".smithers/flows/todo/flow.ts": source.replace("Request.call(input)", "Request.call({ ...input, prompt: 123 })")
       })
       const helperTypeError = await tree("helper-type-error", {
-        "flows/todo/flow.ts": `import { label } from "../../lib/label.ts"\n${source}\nvoid label\n`,
+        ".smithers/flows/todo/flow.ts": `import { label } from "../../../lib/label.ts"\n${source}\nvoid label\n`,
         "lib/label.ts": "export const label: string = 123\n"
       })
       const semanticCanary = await tree("semantic-canary", {
-        "flows/todo/flow.ts": importCanary("semantic").replace(
+        ".smithers/flows/todo/flow.ts": importCanary("semantic").replace(
           "Request.call(input)",
           "Request.call({ ...input, prompt: 123 })"
         ),
-        "flows/healthy/flow.ts": source.replace("Flow.make(\"todo\",", "Flow.make(\"healthy\","),
+        ".smithers/flows/healthy/flow.ts": source.replace("Flow.make(\"todo\",", "Flow.make(\"healthy\","),
         "node_modules/@smthrs/coding/package.json": JSON.stringify({ name: "@smthrs/coding", types: "index.d.ts" }),
         "node_modules/@smthrs/coding/index.d.ts":
           "export const Request: any; export const TodoDelivery: any; export const RequestInput: any; export const VibeDelivered: any;\n",
@@ -147,8 +147,18 @@ printf '%s' "$*" > installed
         "tsconfig.json": JSON.stringify({ compilerOptions: { noCheck: true, strict: false } })
       })
       const none = await tree("none", { "README.md": "No flows here.\n" })
+      // Flows left in the retired root `flows/` never load (mvp.md M-49).
+      const retired = await tree("retired", {
+        "flows/todo/flow.ts": source,
+        "flows/checks/fast/flow.mdx": "---\ndescription: Run the fast checks.\ncapabilities: []\n---\nCheck.\n"
+      })
+      const both = await tree("both", {
+        ".smithers/flows/todo/flow.ts": source,
+        "flows/todo/flow.ts": source.replace("Request.call(input)", "Request.call(input"),
+        "flows/other/flow.ts": source.replace("Flow.make(\"todo\",", "Flow.make(\"other\",")
+      })
       const prompted = await tree("prompted", {
-        "flows/prompted/flow.ts": `import { Flow } from "@smthrs/flow"
+        ".smithers/flows/prompted/flow.ts": `import { Flow } from "@smthrs/flow"
 import { Schema } from "effect"
 export default Flow.make("prompted", {
   description: "Teach from a prompt.", capabilities: [],
@@ -183,7 +193,9 @@ export default Flow.make("prompted", {
         semantic,
         helperTypeError,
         semanticCanary,
-        prompted
+        prompted,
+        retired,
+        both
       ], {
         env: {
           ...process.env,
@@ -193,7 +205,9 @@ export default Flow.make("prompted", {
         encoding: "utf8",
         timeout: 240_000,
         stdio: ["ignore", "pipe", "pipe"]
-      }).split("\n").filter((line) => line.startsWith("versions ")).map((line) => JSON.parse(line.slice(9)))
+      })
+      const loads = lines.split("\n").filter((line) => line.startsWith("load ")).map((line) => JSON.parse(line.slice(5)))
+      const diagnostics = loads.map((load) => load.diagnostics ?? [])
       const [
         atCopy,
         atEdited,
@@ -214,8 +228,24 @@ export default Flow.make("prompted", {
         atSemantic,
         atHelperTypeError,
         atSemanticCanary,
-        atPrompted
-      ] = lines
+        atPrompted,
+        atRetired,
+        atBoth
+      ] = loads.map((load) => load.flows)
+      const retiredRoot = {
+        code: "retired_root",
+        path: "flows",
+        message: "Flows in flows/ are not loaded; move them to .smithers/flows/."
+      }
+      // A retired root loads nothing and reports exactly one diagnostic.
+      assert.deepEqual(atRetired, [])
+      assert.deepEqual(diagnostics.at(-2), [retiredRoot])
+      assert.deepEqual(atBoth.map(({ name, path, status }: FlowVersion) => ({ name, path, status })), [
+        { name: "todo", path: ".smithers/flows/todo/flow.ts", status: "loaded" }
+      ])
+      assert.deepEqual(diagnostics.at(-1), [retiredRoot])
+      // Every other repository here keeps its flows in .smithers/flows/ only.
+      assert.deepEqual(diagnostics.slice(0, -2).flat(), [])
 
       assert.equal(atPrompted[0].status, "loaded", atPrompted[0].error)
       assert.deepEqual(atPrompted[0].inspection.diagnostics, [])
@@ -230,7 +260,7 @@ export default Flow.make("prompted", {
         atCopy.slice(1).map(({ name, path, digest, status }: FlowVersion) => ({ name, path, digest, status })),
         [{
           name: "todo",
-          path: "flows/todo/flow.ts",
+          path: ".smithers/flows/todo/flow.ts",
           digest: projectDigest,
           status: "loaded"
         }]
@@ -282,15 +312,15 @@ export default Flow.make("prompted", {
       assert.notEqual(atBroken[0].digest, projectDigest)
       const line = source.split("\n").findIndex((text) => text.includes("Request.call(input)")) + 1
       assert.ok(line > 0)
-      assert.match(atBroken[0].error, /^flows\/todo\/flow\.ts:\d+: /)
-      assert.ok(Number(atBroken[0].error.match(/^flows\/todo\/flow\.ts:(\d+)/)![1]) >= line, atBroken[0].error)
+      assert.match(atBroken[0].error, /^\.smithers\/flows\/todo\/flow\.ts:\d+: /)
+      assert.ok(Number(atBroken[0].error.match(/^\.smithers\/flows\/todo\/flow\.ts:(\d+)/)![1]) >= line, atBroken[0].error)
       // A changed helper the composition imports is a new version; both load.
       assert.equal(atHelperA[0].status, "loaded", atHelperA[0].error)
       assert.equal(atHelperB[0].status, "loaded", atHelperB[0].error)
       assert.notEqual(atHelperA[0].digest, atHelperB[0].digest)
-      assert.deepEqual(atHelperA[0].dependencies, ["flows/todo/label.ts"])
+      assert.deepEqual(atHelperA[0].dependencies, [".smithers/flows/todo/label.ts"])
       assert.notEqual(atHelperA[0].digest, projectDigest)
-      // A repository without flows/ declares none.
+      // A repository without .smithers/flows/ declares none.
       assert.deepEqual(atNone, [])
       assert.equal(atLockA[0].status, "loaded")
       assert.equal(atLockB[0].status, "loaded")
@@ -315,26 +345,26 @@ export default Flow.make("prompted", {
       assert.equal(await readFile(join(temporary, "import-loaded"), "utf8"), "evaluated")
       // Discovery refusal preserves the old Active version instead of removing it.
       assert.equal(atUndiscoverable.length, 2)
-      assert.equal(atUndiscoverable.shift().error, "flows/merge/flow.ts: reserved_name")
+      assert.equal(atUndiscoverable.shift().error, ".smithers/flows/merge/flow.ts: reserved_name")
       assert.equal(atUndiscoverable[0].name, "todo")
-      assert.equal(atUndiscoverable[0].path, "flows/todo/flow.ts")
+      assert.equal(atUndiscoverable[0].path, ".smithers/flows/todo/flow.ts")
       assert.equal(atUndiscoverable[0].status, "failed")
-      assert.match(atUndiscoverable[0].error, /flows\/todo\/flow\.ts: Module flows require a literal description/)
+      assert.match(atUndiscoverable[0].error, /\.smithers\/flows\/todo\/flow\.ts: Module flows require a literal description/)
       assert.match(atUndiscoverable[0].digest, /^[0-9a-f]{64}$/)
       assert.equal(atRejectedAgain[0].status, "failed")
       assert.notEqual(atRejectedAgain[0].digest, atUndiscoverable[0].digest)
       assert.equal(atSemantic[0].status, "failed")
-      assert.match(atSemantic[0].error, /flows\/todo\/flow\.ts:\d+: .*number.*string/)
+      assert.match(atSemantic[0].error, /\.smithers\/flows\/todo\/flow\.ts:\d+: .*number.*string/)
       assert.equal(atHelperTypeError[0].status, "failed")
       assert.match(atHelperTypeError[0].error, /lib\/label\.ts:1: .*number.*string/)
       assert.equal(atSemanticCanary.find((version: FlowVersion) => version.name === "healthy").status, "loaded")
       assert.equal(atSemanticCanary.find((version: FlowVersion) => version.name === "todo").status, "failed")
       assert.match(
         atSemanticCanary.find((version: FlowVersion) => version.name === "todo").error,
-        /flows\/todo\/flow\.ts:\d+: .*number.*string/
+        /\.smithers\/flows\/todo\/flow\.ts:\d+: .*number.*string/
       )
       await assert.rejects(readFile(join(temporary, "import-semantic")), { code: "ENOENT" })
-      const incomplete = await tree("incomplete", { "flows/flow.ts": source })
+      const incomplete = await tree("incomplete", { ".smithers/flows/flow.ts": source })
       // A partial scan cannot authorize removal of previously loaded entries.
       assert.throws(() =>
         execFileSync(process.execPath, [...flags, output, incomplete], {

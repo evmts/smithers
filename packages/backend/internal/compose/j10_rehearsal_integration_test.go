@@ -29,7 +29,7 @@ var j10ClosingKeyword = regexp.MustCompile(`(?i)\b(close[sd]?|fix(e[sd])?|resolv
 // host where machine readiness alone can take minutes.
 const j10RunWait = 15 * time.Minute
 
-// j10BuiltinReviewActive is C-J10-09's setup row: with no flows/review of its
+// j10BuiltinReviewActive is C-J10-09's setup row: with no .smithers/flows/review of its
 // own, the repository's Active review is the built-in version the install
 // ships, and admission pins it at the main commit flow-load last settled.
 func (r *rehearsal) j10BuiltinReviewActive() {

@@ -486,7 +486,7 @@ func testTodoStopResumeComposedInstall(t *testing.T, engineState, productState s
 	// A new Active version arrives while the original run is stopped. Resume
 	// must signal that same run without reading Active or rewriting its pin.
 	activeDigest = strings.Repeat("f", 64)
-	_, err = pool.Exec(ctx, `INSERT INTO workflow_definitions(repository_id,name,path,config,is_active,source_commit,digest,status) VALUES($1,'todo','flows/todo/flow.ts','{}',true,$2,$3,'loaded')`, repo.ID, strings.Repeat("b", 40), activeDigest)
+	_, err = pool.Exec(ctx, `INSERT INTO workflow_definitions(repository_id,name,path,config,is_active,source_commit,digest,status) VALUES($1,'todo','.smithers/flows/todo/flow.ts','{}',true,$2,$3,'loaded')`, repo.ID, strings.Repeat("b", 40), activeDigest)
 	require.NoError(t, err)
 	// Persisted waits must belong to this exact cycle and authority. A stale
 	// wait cannot admit a freshly reconstructed signal for another cycle.

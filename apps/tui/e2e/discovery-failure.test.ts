@@ -32,11 +32,11 @@ const start = async () => {
   const where = {
     cwd: join(root, "project"),
     sessions: join(root, "sessions"),
-    flows: join(root, "project", "flows"),
+    flows: join(root, "project", ".smithers", "flows"),
     /** The working flows directory, moved into place to recover. */
     working: join(root, "project", "flows.working")
   }
-  mkdirSync(where.cwd)
+  mkdirSync(join(where.cwd, ".smithers"), { recursive: true })
   mkdirSync(join(root, "home"))
   writeFileSync(join(where.cwd, "math.js"), "export const add = (a, b) => a - b\n")
   mkdirSync(join(where.working, "greet"), { recursive: true })

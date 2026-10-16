@@ -1075,7 +1075,7 @@ describe("project source lifecycle", () => {
       Effect.scoped(Effect.gen(function*() {
         const fs = yield* FileSystem.FileSystem
         const root = yield* fs.makeTempDirectoryScoped()
-        const flows = `${root}/flows`
+        const flows = `${root}/.smithers/flows`
         if (initiallyPresent) {
           yield* fs.makeDirectory(`${flows}/original`, { recursive: true })
           yield* fs.writeFileString(
@@ -1105,6 +1105,45 @@ describe("project source lifecycle", () => {
         }).pipe(Effect.provide(Registry.layerProject({ root })))
       })).pipe(Effect.provide(platformLayer))
     )
+  })
+
+  it("loads nothing from a root flows/ and warns once, naming .smithers/flows/", async () => {
+    await Effect.runPromise(
+      Effect.scoped(Effect.gen(function*() {
+        const fs = yield* FileSystem.FileSystem
+        const root = yield* fs.makeTempDirectoryScoped()
+        for (const [directory, description] of [["flows/old", "Old"], [".smithers/flows/current", "Current"]]) {
+          yield* fs.makeDirectory(`${root}/${directory}`, { recursive: true })
+          yield* fs.writeFileString(
+            `${root}/${directory}/flow.mdx`,
+            `---\ndescription: ${description} flow.\ncapabilities: []\n---\nBody.`
+          )
+        }
+        yield* Effect.gen(function*() {
+          const registry = yield* Registry.Registry
+          expect((yield* registry.list()).map((entry) => entry.name)).toEqual(["current"])
+          expect((yield* registry.warnings()).map((item) => ({ ...item }))).toEqual([{
+            code: "retired_root",
+            path: join(root, "flows"),
+            message: "Flows in flows/ are not loaded; move them to .smithers/flows/."
+          }])
+          yield* fs.remove(`${root}/flows`, { recursive: true })
+          yield* registry.refresh()
+          expect(yield* registry.warnings()).toEqual([])
+        }).pipe(Effect.provide(Registry.layerProject({ root })))
+      })).pipe(Effect.provide(platformLayer))
+    )
+  })
+
+  it("derives the project source from the one project flows directory", () => {
+    expect(Registry.projectSource({ join }, "/repo")).toEqual({
+      source: "project",
+      root: "/repo/.smithers/flows",
+      naming: "path",
+      optionalRoot: true,
+      lockfileRoot: "/repo",
+      retiredRoot: "/repo/flows"
+    })
   })
 })
 
@@ -1149,7 +1188,8 @@ describe("optional project roots with required packs", () => {
       Effect.scoped(Effect.gen(function*() {
         const fs = yield* FileSystem.FileSystem
         const root = yield* fs.makeTempDirectoryScoped()
-        yield* fs.writeFileString(`${root}/flows`, "not a directory")
+        yield* fs.makeDirectory(`${root}/.smithers`)
+        yield* fs.writeFileString(`${root}/.smithers/flows`, "not a directory")
         const failure = yield* Effect.flip(Effect.provide(Effect.void, Registry.layerProject({ root })))
         expect(failure.code).toBe("invalid_root")
       })).pipe(Effect.provide(platformLayer))

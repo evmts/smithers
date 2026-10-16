@@ -252,7 +252,7 @@ retries asks again under the same key and receives the recorded outcome.
 Two callers that share an execution id and payload share one holder run;
 scope them with `FlowProxyServer`'s `executionId` option. Routed here on a host without the
 credential, a body that reads it fails there, as `SecretUnavailable` does in
-`examples/src/42-placed-deploy.ts`.
+`packages/smithers/flows/examples/42-placed-deploy.ts`.
 
 ## FlowProxyServer
 

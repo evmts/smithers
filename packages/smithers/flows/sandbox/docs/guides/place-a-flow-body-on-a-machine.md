@@ -12,7 +12,7 @@ file operations and child processes reach one provisioned session instead of
 the engine host.
 
 The complete program this guide walks through is
-[`examples/src/40-sandbox-placement.ts`](https://github.com/smithersai/smithers/blob/main/examples/src/40-sandbox-placement.ts).
+[`packages/smithers/flows/examples/40-sandbox-placement.ts`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/examples/40-sandbox-placement.ts).
 
 ## What layerHost provides
 

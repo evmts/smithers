@@ -131,5 +131,5 @@ cancel the holder's run once the holder is running it: an action sees only
 the cancellation its run had when it was dispatched, so place a `.child()`
 flow when a cancel must reach the remote engine. Declare an action's retry
 policy for the holder: a caller that retries asks again under the same key and
-receives the holder's recorded outcome. `examples/src/42-placed-deploy.ts` runs a deploy action only where
+receives the holder's recorded outcome. `packages/smithers/flows/examples/42-placed-deploy.ts` runs a deploy action only where
 `DEPLOY_TOKEN` is set, against the holder's own endpoint.

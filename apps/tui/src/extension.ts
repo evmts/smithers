@@ -4,7 +4,7 @@
  * contributes. Everything here is serializable data; the TUI owns rendering,
  * focus and keys, and an action runs only when a person or an agent chooses it.
  *
- * Agents are markdown flows (`flows/<name>/flow.mdx` or `SKILL.md`): the
+ * Agents are markdown flows (`.smithers/flows/<name>/flow.mdx` or `SKILL.md`): the
  * registry already parses their prompt, `model`, `effort`, `flows`,
  * `capabilities` and `budget`. There is no second agent or graph model.
  */

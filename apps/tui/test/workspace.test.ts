@@ -22,7 +22,7 @@ const descriptor = (overrides: Partial<Extension.Descriptor> = {}): Extension.De
   seat: "opus",
   flows: [],
   capabilities: ["fs:read:**"],
-  path: "/repo/flows/review/flow.mdx",
+  path: "/repo/.smithers/flows/review/flow.mdx",
   ...overrides
 })
 const listed: ReadonlyArray<Extension.Descriptor> = [
@@ -33,7 +33,7 @@ const listed: ReadonlyArray<Extension.Descriptor> = [
 const body = (text = "Review the change."): Flows.Body => ({
   descriptor: descriptor(),
   text,
-  baseDirectory: "/repo/flows/review",
+  baseDirectory: "/repo/.smithers/flows/review",
   digest: "a".repeat(64)
 })
 

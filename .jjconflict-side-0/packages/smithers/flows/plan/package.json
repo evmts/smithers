@@ -1,0 +1,281 @@
+{
+  "name": "@smthrs/plan",
+  "type": "module",
+  "version": "1.0.0-rc.12",
+  "license": "MIT",
+  "smthrs": {
+    "group": "engine"
+  },
+  "description": "The persisted flows plan: a keyed action graph, its append-only store, and its diff",
+  "homepage": "https://github.com/smithersai/smithers",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/smithers/flows/plan"
+  },
+  "bugs": {
+    "url": "https://github.com/smithersai/smithers/issues"
+  },
+  "tags": [
+    "typescript",
+    "effect",
+    "plan",
+    "graph"
+  ],
+  "keywords": [
+    "typescript",
+    "effect",
+    "plan",
+    "graph"
+  ],
+  "engines": {
+    "node": ">=26.4.0"
+  },
+  "sideEffects": [],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./GraphBuildError": "./src/GraphBuildError.ts",
+    "./Node": "./src/Node.ts",
+    "./Planned": "./src/Planned.ts",
+    "./internal/*": null,
+    "./*/index": null,
+    "./Effects": "./src/Effects.ts",
+    "./CachePolicy": "./src/CachePolicy.ts",
+    "./Repetition": "./src/Repetition.ts",
+    "./FileSet": "./src/FileSet.ts",
+    "./KeyMaterial": "./src/KeyMaterial.ts",
+    "./Migrations": null,
+    "./Plan": "./src/Plan.ts",
+    "./Placement": "./src/Placement.ts",
+    "./PlanDiff": "./src/PlanDiff.ts",
+    "./PlanStore": null,
+    "./StepKey": "./src/StepKey.ts",
+    "./Scheduling": "./src/Scheduling.ts",
+    "./index": "./src/index.ts",
+    "./test/PlanFixtures": "./src/test/PlanFixtures.ts"
+  },
+  "files": [
+    "src/**/*.ts",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/package.json",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next",
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./GraphBuildError": {
+        "import": {
+          "types": "./dist/esm/GraphBuildError.d.ts",
+          "default": "./dist/esm/GraphBuildError.js"
+        },
+        "require": {
+          "types": "./dist/cjs/GraphBuildError.d.ts",
+          "default": "./dist/cjs/GraphBuildError.js"
+        }
+      },
+      "./Node": {
+        "import": {
+          "types": "./dist/esm/Node.d.ts",
+          "default": "./dist/esm/Node.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Node.d.ts",
+          "default": "./dist/cjs/Node.js"
+        }
+      },
+      "./Planned": {
+        "import": {
+          "types": "./dist/esm/Planned.d.ts",
+          "default": "./dist/esm/Planned.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Planned.d.ts",
+          "default": "./dist/cjs/Planned.js"
+        }
+      },
+      "./internal/*": null,
+      "./*/index": null,
+      "./Effects": {
+        "import": {
+          "types": "./dist/esm/Effects.d.ts",
+          "default": "./dist/esm/Effects.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Effects.d.ts",
+          "default": "./dist/cjs/Effects.js"
+        }
+      },
+      "./CachePolicy": {
+        "import": {
+          "types": "./dist/esm/CachePolicy.d.ts",
+          "default": "./dist/esm/CachePolicy.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CachePolicy.d.ts",
+          "default": "./dist/cjs/CachePolicy.js"
+        }
+      },
+      "./Repetition": {
+        "import": {
+          "types": "./dist/esm/Repetition.d.ts",
+          "default": "./dist/esm/Repetition.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Repetition.d.ts",
+          "default": "./dist/cjs/Repetition.js"
+        }
+      },
+      "./FileSet": {
+        "import": {
+          "types": "./dist/esm/FileSet.d.ts",
+          "default": "./dist/esm/FileSet.js"
+        },
+        "require": {
+          "types": "./dist/cjs/FileSet.d.ts",
+          "default": "./dist/cjs/FileSet.js"
+        }
+      },
+      "./KeyMaterial": {
+        "import": {
+          "types": "./dist/esm/KeyMaterial.d.ts",
+          "default": "./dist/esm/KeyMaterial.js"
+        },
+        "require": {
+          "types": "./dist/cjs/KeyMaterial.d.ts",
+          "default": "./dist/cjs/KeyMaterial.js"
+        }
+      },
+      "./Migrations": null,
+      "./Plan": {
+        "import": {
+          "types": "./dist/esm/Plan.d.ts",
+          "default": "./dist/esm/Plan.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Plan.d.ts",
+          "default": "./dist/cjs/Plan.js"
+        }
+      },
+      "./Placement": {
+        "import": {
+          "types": "./dist/esm/Placement.d.ts",
+          "default": "./dist/esm/Placement.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Placement.d.ts",
+          "default": "./dist/cjs/Placement.js"
+        }
+      },
+      "./PlanDiff": {
+        "import": {
+          "types": "./dist/esm/PlanDiff.d.ts",
+          "default": "./dist/esm/PlanDiff.js"
+        },
+        "require": {
+          "types": "./dist/cjs/PlanDiff.d.ts",
+          "default": "./dist/cjs/PlanDiff.js"
+        }
+      },
+      "./PlanStore": null,
+      "./StepKey": {
+        "import": {
+          "types": "./dist/esm/StepKey.d.ts",
+          "default": "./dist/esm/StepKey.js"
+        },
+        "require": {
+          "types": "./dist/cjs/StepKey.d.ts",
+          "default": "./dist/cjs/StepKey.js"
+        }
+      },
+      "./Scheduling": {
+        "import": {
+          "types": "./dist/esm/Scheduling.d.ts",
+          "default": "./dist/esm/Scheduling.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Scheduling.d.ts",
+          "default": "./dist/cjs/Scheduling.js"
+        }
+      },
+      "./index": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./test/PlanFixtures": {
+        "import": {
+          "types": "./dist/esm/test/PlanFixtures.d.ts",
+          "default": "./dist/esm/test/PlanFixtures.js"
+        },
+        "require": {
+          "types": "./dist/cjs/test/PlanFixtures.d.ts",
+          "default": "./dist/cjs/test/PlanFixtures.js"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint src --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "circular": "node scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "vitest --coverage"
+  },
+  "dependencies": {
+    "@smthrs/crypto": "1.0.0-rc.12",
+    "@smthrs/keys": "1.0.0-rc.12",
+    "@smthrs/canonical": "1.0.0-rc.12"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@effect/platform-node": "4.0.4",
+    "@effect/vitest": "4.0.4",
+    "@eslint/js": "9.39.5",
+    "@types/node": "26.4.1",
+    "@vitest/coverage-v8": "5.0.0",
+    "dprint": "0.57.1",
+    "effect": "4.0.4",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "madge": "8.0.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0",
+    "fast-check": "4.9.0"
+  },
+  "peerDependencies": {
+    "effect": "^4.0.4"
+  }
+}

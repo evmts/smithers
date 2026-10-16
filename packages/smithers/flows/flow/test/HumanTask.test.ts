@@ -6,7 +6,7 @@
  * A restart between the park and the answer is proved twice. Here, by dropping
  * the runtime that parked and building another over the same durable record, so
  * the second process parks on the wait point the first one handed out. And on
- * the real durable engine in `examples/src/34-human-task.ts`, which parks a
+ * the real durable engine in `packages/smithers/flows/examples/34-human-task.ts`, which parks a
  * confirm on one SQLite-backed engine, drops it, and answers it from a second.
  *
  * Every deadline here is a step the case takes on the `TestClock`, so what the

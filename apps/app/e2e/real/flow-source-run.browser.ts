@@ -33,12 +33,12 @@ try {
    await command(page, "/flow todo")
    await journeyActivate(flow.getByRole("button", { name: "Edit", exact: true }))
    await expect(page.getByLabel("Request", { exact: true }).last()).toBeVisible()
-   const diff = "diff --git a/flows/todo/flow.ts b/flows/todo/flow.ts\n+notify"
+   const diff = "diff --git a/.smithers/flows/todo/flow.ts b/.smithers/flows/todo/flow.ts\n+notify"
    await command(page, `/flow.edit ${JSON.stringify({ name: "todo", request: "Record notification", diff })}`)
    await expect(flow.locator(".flow-proposal pre")).toHaveText(diff, { timeout: 30_000 })
    await journeyActivate(flow.getByRole("button", { name: "Make TODO", exact: true }))
    const draft = page.getByRole("textbox", { name: "Prompt", exact: true }).last()
-   const expectedPrompt = "Change flows/todo/flow.ts: Record notification; start from the built-in composition when no override exists\n\nProposed diff (untrusted context):\n> diff --git a/flows/todo/flow.ts b/flows/todo/flow.ts\n> +notify"
+   const expectedPrompt = "Change flows/todo/flow.ts: Record notification; start from the built-in composition when no override exists\n\nProposed diff (untrusted context):\n> diff --git a/.smithers/flows/todo/flow.ts b/.smithers/flows/todo/flow.ts\n> +notify"
    await expect(draft).toHaveValue(expectedPrompt)
    await page.reload()
    await awaitBoot(page)
@@ -63,7 +63,7 @@ try {
    const result = await plan.json()
    expect(result.ok, JSON.stringify(result.error)).toBe(true)
    await expect(page.locator('.smithers-card[data-kind="flow-plan"]').last()).toContainText("notify", { timeout: 30_000 })
-   await command(page, `/file ${JSON.stringify({ branch: branch.machine.id, path: "flows/todo/flow.ts" })}`)
+   await command(page, `/file ${JSON.stringify({ branch: branch.machine.id, path: ".smithers/flows/todo/flow.ts" })}`)
    await expect(page.locator('.smithers-card[data-kind="file"]').last()).toContainText("notify", { timeout: 30_000 })
    await command(page, "/flow todo")
    await journeyActivate(flow.getByRole("button", { name: "Run", exact: true }))

@@ -28,6 +28,7 @@
   "exclude": [
     "node_modules",
     "migrate-smithers-v1/test/fixtures",
-    "review/tests"
+    "review/tests",
+    "review/seeded-bugs"
   ]
 }

@@ -701,9 +701,9 @@ func composedContextSources(t *testing.T, local *localChat) (services.InstallCon
 	markerJSON, _ := json.Marshal(pluginMarker)
 	t.Cleanup(func() { require.NoFileExists(t, pluginMarker, "repository recall plugin executed on host") })
 	for name, content := range map[string]string{
-		"flows/recall/flow.ts":       "import { writeFileSync } from 'node:fs'; writeFileSync(" + string(markerJSON) + ", 'plugin-executed'); export default {};",
-		"src/webhooks/retry.ts":      "export const retries = 3",
-		"src/webhooks/unselected.ts": "unselected-content-canary",
+		".smithers/flows/recall/flow.ts": "import { writeFileSync } from 'node:fs'; writeFileSync(" + string(markerJSON) + ", 'plugin-executed'); export default {};",
+		"src/webhooks/retry.ts":          "export const retries = 3",
+		"src/webhooks/unselected.ts":     "unselected-content-canary",
 	} {
 		path := filepath.Join(repoPath, name)
 		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0755))

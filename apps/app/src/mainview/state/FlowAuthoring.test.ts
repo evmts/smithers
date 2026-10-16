@@ -92,14 +92,14 @@ test("settled source receipts replan on the same card, retain selection and comp
   const { store, controller } = await ready(relay)
   await controller.createWorkflow("make a review flow", REPO)
   await waitFor(() => runs(store)[0]?.payload.runId === "author-1")
-  relay.state.events = [{ sequence: 1, occurredAt: 1, kind: "control.agent.cell-call-settled", payload: { callId: "write-1", flowName: "write", outcome: "success", value: { path: "flows/review/flow.ts", bytesWritten: 12, created: true } } }]
+  relay.state.events = [{ sequence: 1, occurredAt: 1, kind: "control.agent.cell-call-settled", payload: { callId: "write-1", flowName: "write", outcome: "success", value: { path: ".smithers/flows/review/flow.ts", bytesWritten: 12, created: true } } }]
   await waitFor(() => plans(store)[0]?.payload.status === "done")
   const before = plans(store)[0]
   expect(before?.payload.nodes?.map(n => n.id)).toEqual(["read"])
   expect(before?.ordinal).toBe(runs(store)[0]!.ordinal - 1)
   await controller.commands.run("flow.plan.select", `${before!.id} read`)
   relay.state.version = 2
-  relay.state.events.push({ sequence: 2, occurredAt: 2, kind: "control.agent.cell-call-settled", payload: { callId: "write-2", flowName: "edit", outcome: "success", value: { path: "flows/review/flow.ts", replacements: 1 } } })
+  relay.state.events.push({ sequence: 2, occurredAt: 2, kind: "control.agent.cell-call-settled", payload: { callId: "write-2", flowName: "edit", outcome: "success", value: { path: ".smithers/flows/review/flow.ts", replacements: 1 } } })
   await waitFor(() => plans(store)[0]?.payload.nodes?.length === 2)
   expect(plans(store)).toHaveLength(1)
   const after = plans(store)[0]!
@@ -124,7 +124,7 @@ test("settled source receipts replan on the same card, retain selection and comp
 
   /* And it keeps working: the next write redraws the canvas again, still mid-run. */
   relay.state.version = 3
-  relay.state.events.push({ sequence: 3, occurredAt: 3, kind: "control.agent.cell-call-settled", payload: { callId: "write-3", flowName: "edit", outcome: "success", value: { path: "flows/review/flow.ts", replacements: 1 } } })
+  relay.state.events.push({ sequence: 3, occurredAt: 3, kind: "control.agent.cell-call-settled", payload: { callId: "write-3", flowName: "edit", outcome: "success", value: { path: ".smithers/flows/review/flow.ts", replacements: 1 } } })
   await waitFor(() => plans(store)[0]?.payload.planId === "plan-review-3")
   expect(store.committedRuntimeRun(runtimeRunKey(runs(store)[0]!.payload))?.summary?.status).toBe("running")
   expect(plans(store)).toHaveLength(1)
@@ -152,7 +152,7 @@ test("a source that cannot be planned stays failed and does not strand or repeat
   const { store, controller } = await ready(relay)
   await controller.createWorkflow("make a review flow", REPO)
   await waitFor(() => runs(store)[0]?.payload.runId === "author-1")
-  relay.state.events = [{ sequence: 1, occurredAt: 1, kind: "control.agent.cell-call-settled", payload: { callId: "write-1", flowName: "write", outcome: "success", value: { path: "flows/review/flow.ts" } } }]
+  relay.state.events = [{ sequence: 1, occurredAt: 1, kind: "control.agent.cell-call-settled", payload: { callId: "write-1", flowName: "write", outcome: "success", value: { path: ".smithers/flows/review/flow.ts" } } }]
   await waitFor(() => plans(store)[0]?.payload.status === "failed")
   expect(plans(store)[0]?.payload.error).toBe("The workspace refused the call.")
   expect(plans(store)[0]?.payload.error).not.toContain("source cannot compile")
@@ -213,7 +213,7 @@ test("a newer receipt arriving before the Plan door opens cannot strand its obse
     await controller.createWorkflow("make a review flow", REPO)
     await waitFor(() => runs(store)[0]?.payload.runId === "author-1")
     const event = (sequence: number) => ({ sequence, occurredAt: sequence, kind: "control.agent.cell-call-settled", payload: {
-      callId: `write-${sequence}`, flowName: "write", outcome: "success", value: { path: "flows/review/flow.ts" }
+      callId: `write-${sequence}`, flowName: "write", outcome: "success", value: { path: ".smithers/flows/review/flow.ts" }
     } })
     relay.state.events = [event(1)]
     await waitFor(() => requested)
@@ -239,7 +239,7 @@ test("reload ignores older authors and the next edit compares the latest plan", 
     relay.state.runId = `author-${version}`
     relay.state.terminal = true
     relay.state.events = [{ sequence: 1, occurredAt: version, kind: "control.agent.cell-call-settled", payload: {
-      callId: `write-${version}`, flowName: "write", outcome: "success", value: { path: "flows/review/flow.ts" }
+      callId: `write-${version}`, flowName: "write", outcome: "success", value: { path: ".smithers/flows/review/flow.ts" }
     } }]
     relay.state.recorded.set(relay.state.runId, { terminal: true, events: relay.state.events })
     await first.controller.createWorkflow(`edit ${version}`, REPO)
@@ -257,7 +257,7 @@ test("reload ignores older authors and the next edit compares the latest plan", 
   relay.state.version = 3
   relay.state.runId = "author-3"
   relay.state.events = [{ sequence: 1, occurredAt: 3, kind: "control.agent.cell-call-settled", payload: {
-    callId: "write-3", flowName: "edit", outcome: "success", value: { path: "flows/review/flow.ts" }
+    callId: "write-3", flowName: "edit", outcome: "success", value: { path: ".smithers/flows/review/flow.ts" }
   } }]
   await second.controller.createWorkflow("edit 3", REPO)
   await waitFor(() => plans(second.store)[0]?.payload.planId === "plan-review-3")

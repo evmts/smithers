@@ -1,0 +1,694 @@
+paths:
+  /api/stack:
+    get:
+      x-composition: install
+      summary: Read the install Home snapshot
+      operationId: get_api_stack
+      tags:
+        - Todos
+      security:
+        - sessionCookie: []
+        - tokenAuth: []
+      responses:
+        '200':
+          description: The author-scoped Home projection, shared with the live home topic
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HomeCard'
+        '401':
+          description: A live credential is required
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '503':
+          description: Stack projection unavailable
+  /api/stack/attention/{id}:
+    post:
+      x-composition: install
+      summary: Answer the displayed stack attention
+      operationId: post_api_stack_attention_id
+      tags:
+        - Todos
+      security: [{sessionCookie: []}]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  additionalProperties: false
+                  required: [revision]
+                  properties:
+                    revision: {type: integer, minimum: 1}
+                - type: object
+                  additionalProperties: false
+                  required: [old, new]
+                  properties:
+                    old: {type: string, pattern: '^[0-9a-f]{40}$'}
+                    new: {type: string, pattern: '^[0-9a-f]{40}$'}
+      responses:
+        '200':
+          description: Owner reset settled against the displayed main tips
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [state]
+                properties:
+                  state: {type: string, enum: [settled]}
+        '204': {description: Order attention settled by the current maintainer; same-person same-revision replay is idempotent}
+        '400': {description: Invalid attention answer}
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '409': {description: conflict/stale_attention; a newer entry remains open}
+        '503': {description: Install repository or reset serialization unavailable}
+  /api/todos:
+    get:
+      x-composition: install
+      summary: Read the install repository TODOs
+      operationId: get_api_todos
+      tags:
+        - Todos
+      security:
+        - sessionCookie: []
+        - tokenAuth: []
+      responses:
+        '200':
+          description: TODO card projections
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TodoCard'
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '503':
+          description: Install repository unavailable
+    post:
+      x-composition: install
+      summary: Put a TODO on the install repository stack
+      operationId: post_api_todos
+      tags:
+        - Todos
+      security:
+        - sessionCookie: []
+        - tokenAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 256}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PostAPITodosBody'
+      responses:
+        '202': {$ref: '#/components/responses/TodoCreateAccepted'}
+        '400':
+          description: Invalid TODO, missing Idempotency-Key, invalid_place (amend, or Before a TODO that is not on the stack), or an issue reference that is incomplete or names a pull request
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '409':
+          description: Idempotency-Key reused for a different request; merging when Before names a merging TODO; issue_changed, issue_closed, or issue_has_todo for Make TODO
+        '503':
+          description: Repository stack unavailable, or github_unavailable when Make TODO cannot read the issue
+  /api/todos/{n}/attempts/{a}/logs/{digest}:
+    get:
+      x-composition: install
+      summary: Read a retained TODO attempt log
+      operationId: get_api_todos_n_attempts_a_logs_digest
+      tags:
+        - Todos
+      security:
+        - sessionCookie: []
+        - tokenAuth: []
+      parameters:
+        - name: n
+          in: path
+          required: true
+          schema: {type: integer, minimum: 1}
+        - name: a
+          in: path
+          required: true
+          schema: {type: integer, minimum: 1}
+        - name: digest
+          in: path
+          required: true
+          schema: {type: string, pattern: '^[0-9a-f]{64}$'}
+      responses:
+        '200':
+          description: Referenced check output
+          content:
+            text/plain:
+              schema: {type: string}
+        '400':
+          description: Invalid TODO number or attempt
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '404':
+          description: No log referenced by this attempt
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [code, class, message]
+                properties:
+                  code: {type: string, enum: [not_found]}
+                  class: {type: string, enum: [user]}
+                  message: {type: string}
+  /api/todos/{n}/events:
+    get:
+      x-composition: install
+      summary: Replay a TODO's shared lifecycle events
+      operationId: get_api_todos_n_events
+      tags:
+        - Todos
+      security:
+        - sessionCookie: []
+        - tokenAuth: []
+      parameters:
+        - name: n
+          in: path
+          required: true
+          schema: {type: integer, minimum: 1}
+        - name: cursor
+          in: query
+          schema: {type: integer, minimum: 0, default: 0}
+      responses:
+        '200':
+          description: Ordered jobs replay page with original event identities and cursors
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [Events, Cursor, Head, More]
+                properties:
+                  Events:
+                    anyOf:
+                      - type: array
+                        items: {type: object, additionalProperties: true}
+                      - type: 'null'
+                  Cursor: {type: integer}
+                  Head: {type: integer}
+                  More: {type: boolean}
+        '400':
+          description: Invalid number or cursor
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '404':
+          description: TODO not found
+        '409':
+          description: Cursor expired; reload the TODO
+  /api/todos/{n}:
+    get:
+      x-composition: install
+      summary: Read a TODO by its repository number
+      operationId: get_api_todos_n
+      tags:
+        - Todos
+      security:
+        - sessionCookie: []
+        - tokenAuth: []
+      parameters:
+        - name: n
+          in: path
+          required: true
+          schema: {type: integer, minimum: 1}
+      responses:
+        '200':
+          description: TODO card projection
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/TodoCard'
+                  - $ref: '#/components/schemas/TodoSystemRead'
+        '400':
+          description: Invalid TODO number
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '404':
+          description: TODO not found
+        '503':
+          description: Install repository unavailable
+    patch:
+      x-composition: install
+      summary: Amend a TODO prompt and acceptance criteria
+      description: Appends a revision of the same TODO and admits its text through the shared steering transaction. The request preserves the TODO number, branch and PR. A repeated Idempotency-Key in the same authenticated credential scope returns the original revision; reuse for a different request or TODO returns idempotency_mismatch. A replacement credential has a separate scope. New amendments refuse while the TODO is merging or closed. Admission remains unavailable until its runtime dependencies are qualified. Delegated requests return confirmation_unavailable without mutation until shared person confirmation is wired.
+      operationId: patch_api_todos_n
+      tags:
+        - Todos
+      security:
+        - sessionCookie: []
+        - tokenAuth: []
+      parameters:
+        - name: n
+          in: path
+          required: true
+          schema: {type: integer, minimum: 1}
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 256}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [prompt]
+              description: Prompt and formatted acceptance criteria together must fit 24576 UTF-8 bytes.
+              properties:
+                prompt: {type: string, minLength: 1, maxLength: 24576}
+                acceptance:
+                  type: array
+                  items: {type: string}
+      responses:
+        '202':
+          description: Revision and steering intent committed; runtime completion is asynchronous
+          content:
+            application/json:
+              schema: {"oneOf":[{"type":"object","required":["state","n","rev"],"properties":{"state":{"type":"string","enum":["accepted"]},"n":{"type":"integer","minimum":1},"rev":{"type":"integer","minimum":2},"attempt":{"type":"integer","minimum":1}}},{"$ref":"#/components/schemas/ConfirmationReceipt"}]}
+        '400':
+          description: invalid_todo, invalid_amendment or invalid_idempotency_key
+        '401':
+          description: Authentication required
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '404':
+          description: todo_not_found
+        '409':
+          description: merging, todo_closed, or idempotency_mismatch for conflicting reuse of the Idempotency-Key
+        '503':
+          description: todo_control_unavailable or confirmation_unavailable; no revision or steer is committed
+    post:
+      x-composition: install
+      summary: Steer the coding agent, or stop, resume, retry, drop or move a TODO
+      description: A steer is {"op":"steer","text":...} or {"steer":...}; a retry may carry a steer; a move carries its direction. Members steer, stop, resume, retry, drop and move TODOs. Retry of a failed TODO starts attempt n+1 of its pinned flow with the steer as its first input and answers that attempt. Drop of an unmerged TODO cancels its run, stops every later TODO waiting on it to merge, and closes its pull request with the comment "Dropped in Smithers by @login". Move swaps the TODO with the nearest TODO still on the stack above (up) or below (down) it and answers the place it took; the stack admits and merges in that order. The same Idempotency-Key answers a Retry, a Drop or a Move again. Every other control answers todo_control_unavailable until its service is composed (T-STK-05, T-STK-06).
+      operationId: post_api_todos_n
+      tags:
+        - Todos
+      security:
+        - sessionCookie: []
+        - tokenAuth: []
+      parameters:
+        - name: n
+          in: path
+          required: true
+          schema: {type: integer, minimum: 1}
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 256}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                op: {type: string, enum: [steer, stop, resume, retry, retry-current-flow, drop, move]}
+                steer: {type: string, minLength: 1, maxLength: 65536}
+                text: {type: string, minLength: 1, maxLength: 65536}
+                direction:
+                  description: A move's direction; required for move and refused with any other op.
+                  type: string
+                  enum: [up, down]
+      responses:
+        '202':
+          description: The control was recorded; a retry names the attempt it starts and a move the place it took
+          content:
+            application/json:
+              schema: {"oneOf":[{"type":"object","required":["state"],"properties":{"state":{"type":"string","enum":["accepted"]},"attempt":{"type":"integer","minimum":1},"lessons":{"type":"integer","minimum":0}}},{"$ref":"#/components/schemas/ConfirmationReceipt"}]}
+        lessons_receipt:
+          type: object
+          required: [todo, lessons]
+          properties:
+            todo: {type: integer, minimum: 1}
+            run: {type: string}
+            lessons:
+              type: array
+              items:
+                type: object
+                required: [title, ref]
+                properties:
+                  title: {type: string}
+                  ref:
+                    type: string
+                    description: A wiki:<slug> or proposal:<id> subject.
+        place: {type: integer, minimum: 1}
+        '400':
+          description: Invalid TODO number, invalid_control, invalid_steer, or a missing Idempotency-Key
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '404':
+          description: todo_not_found
+        '409':
+          description: The TODO or the TODO a move passes is merging, the TODO is settled, the control does not apply to its state (Retry of a TODO that has not failed, Move up of the first TODO or down of the last), the Idempotency-Key was used for a different move, or a GitHub write on it is settling
+        '503':
+          description: todo_control_unavailable
+  /api/todos/{n}/merge:
+    post:
+      x-composition: install
+      summary: Request a session-approved squash merge at the reviewed head
+      operationId: post_api_todos_n_merge
+      tags:
+        - Todos
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: n
+          in: path
+          required: true
+          schema: {type: integer, minimum: 1}
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Names the press; the same key again answers its receipt and records no new approval.
+          schema: {type: string, minLength: 1, maxLength: 256}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reviewed_head_sha]
+              properties:
+                reviewed_head_sha: {type: string, pattern: '^[0-9a-fA-F]{40}$'}
+      responses:
+        '202':
+          description: Approval and merge fence recorded, or the same Idempotency-Key's request answered again; Merged requires GitHub's merge and main containment
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    required: [state]
+                    properties:
+                      state: {type: string, enum: [accepted]}
+                  - $ref: '#/components/schemas/ConfirmationReceipt'
+        '400':
+          description: Invalid TODO number, reviewed head or missing Idempotency-Key
+        '401':
+          description: No credential, or the browser session has ended
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '404':
+          description: TODO not found
+        '409':
+          description: A MergeReady row refuses (stale_head carries GitHub's current head), GitHub's facts are not fresh, the Idempotency-Key was used for a different request, or the same request's approval was refused or expired (its retained refusal); no merge sent
+        '503':
+          description: Install repository unavailable
+  /api/todos/{n}/answer:
+    post:
+      x-composition: install
+      summary: Answer the coding agent's open question; the first answer settles it and resumes the run
+      operationId: post_api_todos_n_answer
+      tags:
+        - Todos
+      security:
+        - sessionCookie: []
+        - tokenAuth: []
+      parameters:
+        - name: n
+          in: path
+          required: true
+          schema: {type: integer, minimum: 1}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [wait, answer]
+              properties:
+                wait:
+                  description: The open question's id, as the TODO card's waits list it.
+                  type: string
+                  minLength: 1
+                  maxLength: 128
+                answer: {type: string, minLength: 1, maxLength: 131072}
+      responses:
+        '202':
+          description: The answer settled the question and its signal to the parked run is admitted, or the same person's same answer was sent again
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [state]
+                properties:
+                  state: {type: string, enum: [accepted]}
+        '400':
+          description: Invalid TODO number, question or answer
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '404':
+          description: TODO or question not found
+        '409':
+          description: Someone already answered (answered_by names them), the agent no longer asks the question, or the TODO is settled
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [code, class, message]
+                properties:
+                  code: {type: string}
+                  class: {type: string}
+                  message: {type: string}
+                  answered_by: {type: string}
+        '503':
+          description: Install repository or run signalling unavailable
+  /api/todos/{n}/preapproval:
+    post:
+      x-composition: install
+      summary: Pre-approve a TODO
+      operationId: post_api_todos_n_preapproval
+      tags:
+        - Todos
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: n
+          in: path
+          required: true
+          schema: {type: integer, minimum: 1}
+      responses:
+        '202':
+          description: Attributed standing approval changed; readiness and current authority still govern dispatch
+        '400':
+          description: Invalid TODO number
+        '401':
+          description: Browser session required
+        '403':
+          description: Only an owner or maintainer person session may change pre-approval
+        '404':
+          description: TODO not found
+        '409':
+          description: TODO is already merged or dropped
+        '503':
+          description: TODO service unavailable
+    delete:
+      x-composition: install
+      summary: Remove a TODO pre-approval
+      operationId: delete_api_todos_n_preapproval
+      tags:
+        - Todos
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: n
+          in: path
+          required: true
+          schema: {type: integer, minimum: 1}
+      responses:
+        '202':
+          description: Attributed standing approval changed; readiness and current authority still govern dispatch
+        '400':
+          description: Invalid TODO number
+        '401':
+          description: Browser session required
+        '403':
+          description: Only an owner or maintainer person session may change pre-approval
+        '404':
+          description: TODO not found
+        '409':
+          description: TODO is already merged or dropped
+        '503':
+          description: TODO service unavailable
+components:
+  responses:
+    TodoCreateAccepted:
+      description: Persisted TODO creation; execution has not completed
+      content:
+        application/json:
+          schema: {"oneOf":[{"type":"object","required":["state","n","rev"],"properties":{"state":{"type":"string","enum":["accepted"]},"n":{"type":"integer","minimum":1},"rev":{"type":"integer","minimum":1}}},{"$ref":"#/components/schemas/ConfirmationReceipt"}]}
+  schemas:
+    PostAPITodosBody:
+      type: object
+      additionalProperties: false
+      required: [title, prompt]
+      properties:
+        title: {type: string, minLength: 1, maxLength: 256}
+        prompt: {type: string, minLength: 1, maxLength: 65536}
+        acceptance:
+          type: array
+          items: {type: string}
+        place:
+          description: Where the TODO goes; absent appends. Before n takes TODO n's place, and n and every later TODO move one place later. Amend is refused with invalid_place until T-STK-06.
+          type: object
+          additionalProperties: false
+          required: [mode]
+          properties:
+            mode: {type: string, enum: [append, before, amend]}
+            n: {type: integer, minimum: 1}
+        issue:
+          description: Make TODO. The GitHub issue number the Draft was made from; requires issue_digest. The TODO becomes the issue's, and an issue holds one unmerged TODO.
+          type: integer
+          minimum: 1
+        issue_digest:
+          description: The server-issued issue_digest from GET /api/issues/{n}, bound to the drafting member and that exact issue discussion. Commit preserves the read snapshot after remote edits; unknown or another member's digest is refused with issue_snapshot_unknown.
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        fixes:
+          description: Whether merging the TODO closes the issue; requires issue. Absent means true.
+          type: boolean
+    HomeCard:
+      description: HomeCardSchema in packages/rpc/src/HomeCard.ts is the full projection contract; members not listed here are preserved.
+      type: object
+      required: [repository, main, attention, items, counts, merged_since_last_look, machines, background_runs]
+      properties:
+        repository: {type: string}
+        main: {type: object, additionalProperties: true}
+        attention: {type: array, items: {type: object, additionalProperties: true}}
+        items: {type: array, items: {type: object, additionalProperties: true}}
+        counts: {type: object, additionalProperties: {type: integer, minimum: 0}}
+        merged_since_last_look: {type: array, items: {type: integer, minimum: 1}}
+        machines: {type: object, additionalProperties: true}
+        background_runs: {type: array, items: {type: object, additionalProperties: true}}
+        parallel: {type: integer, minimum: 0}
+      additionalProperties: true
+    TodoSystemRead:
+      description: Coding fields for the credential's bound TODO.
+      type: object
+      additionalProperties: false
+      required: [n, title, state, attempt, generation, workspace, run, base]
+      properties:
+        n: {type: integer}
+        title: {type: string}
+        state: {type: string}
+        attempt: {type: integer}
+        generation: {type: integer}
+        workspace: {type: string}
+        run: {type: string}
+        base: {type: string}
+    TodoCard:
+      description: One TODO as the TODO card shows it. TodoCardSchema in packages/rpc/src/TodoCard.ts is the full contract; members not listed here are kept.
+      type: object
+      additionalProperties: true
+      required: [n, title, state, owner, prompt_revisions, steps, waits, steers, evidence, merge, present]
+      properties:
+        n: {type: integer, minimum: 1}
+        title: {type: string}
+        state: {type: string}
+        owner:
+          type: object
+          required: [login, name, avatar_url]
+          properties:
+            login: {type: string}
+            name: {type: string}
+            avatar_url: {type: string}
+        flow_version:
+          type: object
+          required: [flow_name, source_commit, digest]
+          properties:
+            flow_name: {type: string}
+            source_commit: {type: string, pattern: '^[a-f0-9]{40}$'}
+            digest: {type: string, pattern: '^[a-f0-9]{64}$'}
+        place: {type: integer, minimum: 1}
+        prompt_revisions:
+          type: array
+          items:
+            type: object
+            required: [text, acceptance, by, at]
+            properties:
+              text: {type: string}
+              acceptance:
+                type: array
+                items: {type: string}
+              by: {type: object, additionalProperties: true}
+              at: {type: string}
+              reason:
+                description: from-issue on revision 1 of a TODO made from an issue (Make TODO or the todo label).
+                type: string
+              issue_digest: {type: string}
+        issue:
+          description: The GitHub issue the TODO was made from, and whether merging the TODO closes it.
+          type: object
+          required: [number, url, fixes]
+          properties:
+            number: {type: integer, minimum: 1}
+            url: {type: string}
+            fixes: {type: boolean}
+        branch:
+          type: object
+          required: [id, name, machine]
+          properties:
+            id: {type: string}
+            name: {type: string}
+            machine: {type: object, additionalProperties: true}
+        run:
+          type: object
+          required: [id, attempt, indicators]
+          properties:
+            id: {type: string}
+            attempt: {type: integer, minimum: 1}
+            indicators:
+              type: array
+              items: {type: object, additionalProperties: true}
+        pr:
+          type: object
+          required: [number, url, head, draft, included_items]
+          properties:
+            number: {type: integer, minimum: 1}
+            url: {type: string}
+            head: {type: string}
+            draft: {type: boolean}
+            draft_after: {type: integer, minimum: 1}
+            included_items:
+              type: array
+              items: {type: integer, minimum: 1}
+        steps:
+          type: array
+          items: {type: object, additionalProperties: true}
+        waits:
+          type: array
+          items: {type: object, additionalProperties: true}
+        steers:
+          type: array
+          items: {type: object, additionalProperties: true}
+        evidence:
+          type: array
+          items: {type: object, additionalProperties: true}
+        preapproval:
+          type: object
+          required: [by, at]
+          properties:
+            by: {type: string}
+            at: {type: string, format: date-time}
+        merge:
+          type: object
+          required: [state, on_github]
+          properties:
+            state: {type: string, enum: [ready, waiting, blocked, merging, done]}
+            reason: {type: string}
+            detail: {type: string}
+            on_github: {type: boolean}
+        present:
+          type: array
+          items: {type: object, additionalProperties: true}

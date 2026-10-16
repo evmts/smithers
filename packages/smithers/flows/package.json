@@ -45,7 +45,8 @@
     "./SandboxedFlow": "./src/SandboxedFlow.ts",
     "./index": "./src/index.ts",
     "./Runtime": "./src/Runtime.ts",
-    "./BunRuntime": "./src/BunRuntime.ts"
+    "./BunRuntime": "./src/BunRuntime.ts",
+    "./test/TestNodeRuntime": "./src/test/TestNodeRuntime.ts"
   },
   "files": [
     "src/**/*.ts",
@@ -127,6 +128,16 @@
           "types": "./dist/cjs/BunRuntime.d.ts",
           "default": "./dist/cjs/BunRuntime.js"
         }
+      },
+      "./test/TestNodeRuntime": {
+        "import": {
+          "types": "./dist/esm/test/TestNodeRuntime.d.ts",
+          "default": "./dist/esm/test/TestNodeRuntime.js"
+        },
+        "require": {
+          "types": "./dist/cjs/test/TestNodeRuntime.d.ts",
+          "default": "./dist/cjs/test/TestNodeRuntime.js"
+        }
       }
     }
   },
@@ -175,9 +186,12 @@
     "@effect/vitest": "4.0.4",
     "@eslint/js": "9.39.5",
     "@smthrs/control": "1.0.0-rc.12",
+    "@smthrs/core": "1.0.0-rc.12",
     "@smthrs/model": "1.0.0-rc.12",
     "@smthrs/notifications": "1.0.0-rc.12",
+    "@smthrs/patterns": "1.0.0-rc.12",
     "@smthrs/registry": "1.0.0-rc.12",
+    "@smthrs/targets": "1.0.0-rc.12",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",

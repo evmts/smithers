@@ -1,0 +1,181 @@
+import { Data } from "effect"
+import { createCollection, localOnlyCollectionOptions } from "@tanstack/db"
+import type { HomeViewProps } from "@smthrs/rpc/HomeCard"
+import { HomeCardSchema } from "@smthrs/rpc/HomeCard"
+import type { LiveTopics } from "../useTopic"
+import { TodoStateSchema } from "@smthrs/rpc/CardPrimitives"
+import { randomUuid } from "../../runtime/RandomUuid"
+import type { SeamFetch } from "./SeamContext"
+
+export class HomeViewFailure extends Data.TaggedError("HomeViewFailure")<{ readonly sentence: "Invalid Home view" | "Invalid Home menu" | "Invalid Home last look" | `Home view: ${number}` }> {
+  override get message() { return this.sentence }
+}
+
+/** Private main-conversation preferences; shared Home facts never contain these. */
+export function createHomeViewSeam(options: {
+  readonly live?: LiveTopics
+  readonly serializeView?: (work: () => Promise<void>) => Promise<void>
+  readonly http: SeamFetch
+  readonly owner: () => string | undefined
+  readonly subscribeOwner: (notify: () => void) => () => void
+  readonly report: (error: unknown) => void
+}) {
+  type Row = { id: string; view: HomeViewProps["view"] }
+  const emptyView: HomeViewProps["view"] = { maximized: false }
+  const rows = createCollection(localOnlyCollectionOptions<Row, string>({
+    id: `home-view-${randomUuid()}`, getKey: row => row.id,
+    initialData: [{ id: "main", view: emptyView }]
+  }))
+  rows.preload()
+  let disposed = false
+  let generation = 0
+  let readGeneration = 0
+  // Rapid card remounts share the existing poll interval; explicit reads stay immediate.
+  let subscribedReadAt = 0
+  let preferencesKnown = false
+  let owner = options.owner()
+  let pending = Promise.resolve()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let lookTimer: ReturnType<typeof setTimeout> | undefined
+  let stopHome: (() => void) | undefined
+  let mergeSequence = 0
+  const cancelLook = () => { if (lookTimer !== undefined) clearTimeout(lookTimer); lookTimer = undefined }
+  const scheduleLook = () => {
+    if (disposed || owner === undefined || !get().on_screen || mergeSequence <= (get().last_seen_seq ?? 0) || lookTimer !== undefined) return
+    const seen = mergeSequence
+    lookTimer = setTimeout(() => {
+      lookTimer = undefined
+      if (!disposed && get().on_screen) onView({ last_seen_seq: seen })
+    }, 2000)
+  }
+  const observeHome = () => {
+    const parsed = HomeCardSchema.safeParse(options.live?.getSnapshot("home")?.data)
+    if (!parsed.success || parsed.data.merge_history === undefined) return
+    mergeSequence = Math.max(0, ...parsed.data.merge_history.map(merge => merge.seq))
+    scheduleLook()
+  }
+  let stopOwner: (() => void) | undefined
+  const listeners = new Set<() => void>()
+  // React may read once more while the previous controller is unmounting.
+  // Return a stable empty snapshot after its collection has been cleaned up.
+  const get = () => disposed ? emptyView : rows.get("main")?.view ?? emptyView
+  const publish = (view: HomeViewProps["view"]) => {
+    if (disposed) return
+    rows.update("main", draft => { draft.view = view })
+    for (const notify of listeners) notify()
+  }
+  const valid = (revision: number, principal: string | undefined) => !disposed && revision === generation && principal !== undefined && principal === options.owner()
+  const request = async (init?: RequestInit): Promise<Record<string, unknown>> => {
+    const response = await options.http("/api/conversations/main/view-state", { credentials: "same-origin", ...init })
+    if (!response.ok) throw new HomeViewFailure({ sentence: `Home view: ${response.status}` })
+    const body: unknown = await response.json()
+    if (!body || typeof body !== "object" || Array.isArray(body)) throw new HomeViewFailure({ sentence: "Invalid Home view" })
+    return body as Record<string, unknown>
+  }
+  const apply = (body: Record<string, unknown>) => {
+    preferencesKnown = true
+    const home = body.home && typeof body.home === "object" ? body.home as Record<string, unknown> : {}
+    const parsed = TodoStateSchema.safeParse(home.filter)
+    const menu = typeof home.menu === "number" && Number.isSafeInteger(home.menu) && home.menu > 0 ? home.menu : undefined
+    const lastSeen = typeof body.last_seen_seq === "number" && Number.isSafeInteger(body.last_seen_seq) && body.last_seen_seq >= 0 ? body.last_seen_seq : 0
+    publish({ ...get(), filter: parsed.success ? parsed.data : undefined, menu, last_seen_seq: lastSeen })
+    scheduleLook()
+  }
+  const read = () => {
+    const revision = generation, principal = owner, reading = ++readGeneration
+    // A poll during admission must not return pre-write preferences after
+    // the committed write. Reads use the same local and conversation queue.
+    const work = pending.then(() => (options.serializeView ?? (work => work()))(async () => {
+      if (!valid(revision, principal)) return
+      try { const body = await request(); if (valid(revision, principal) && reading === readGeneration) apply(body) }
+      catch (error) { if (valid(revision, principal)) options.report(error) }
+    }))
+    pending = work.catch(() => {})
+    return work
+  }
+  const poll = () => {
+    timer = setTimeout(() => {
+      timer = undefined
+      void read().finally(() => { if (!disposed && listeners.size) poll() })
+    }, 2000)
+  }
+  const changeOwner = () => {
+    const next = options.owner()
+    if (next === owner) return
+    cancelLook()
+    owner = next; preferencesKnown = false; ++generation; ++readGeneration
+    pending = Promise.resolve()
+    // Visibility belongs to this mounted tab, not the previous member.
+    const onScreen = get().on_screen
+    publish({ maximized: false, ...(onScreen === undefined ? {} : { on_screen: onScreen }) })
+    void read()
+  }
+  const subscribe = (notify: () => void) => {
+    if (disposed) return () => {}
+    listeners.add(notify)
+    if (listeners.size === 1 && !disposed) {
+      stopOwner = options.subscribeOwner(changeOwner)
+      stopHome = options.live?.subscribe("home", observeHome)
+      observeHome(); changeOwner()
+      const now = Date.now()
+      if (!preferencesKnown || now - subscribedReadAt >= 2000) { subscribedReadAt = now; void read() }
+      poll()
+    }
+    return () => {
+      listeners.delete(notify)
+      if (!listeners.size) {
+        // A keyed card handoff releases then subscribes in the same commit.
+        // Keep its shared topic alive through that handoff, including its cursor.
+        cancelLook(); const releaseHome = stopHome; stopHome = undefined
+        queueMicrotask(() => releaseHome?.())
+        ++generation; stopOwner?.(); stopOwner = undefined
+        if (timer !== undefined) clearTimeout(timer)
+        timer = undefined
+      }
+    }
+  }
+  const onView: HomeViewProps["onView"] = patch => {
+    if (disposed) return
+    // Visibility is tab-local. Persist preferences only after the server commits them.
+    if (patch.on_screen !== undefined && patch.on_screen !== get().on_screen) {
+      publish({ ...get(), on_screen: patch.on_screen })
+      if (patch.on_screen) scheduleLook(); else cancelLook()
+    }
+    if (!("filter" in patch) && !("menu" in patch) && patch.last_seen_seq === undefined) return
+    if (patch.last_seen_seq !== undefined && (!Number.isSafeInteger(patch.last_seen_seq) || patch.last_seen_seq < 0)) throw new HomeViewFailure({ sentence: "Invalid Home last look" })
+    const changes: Record<string, unknown> = {}
+    if ("filter" in patch) changes.filter = patch.filter === undefined ? null : TodoStateSchema.parse(patch.filter)
+    if ("menu" in patch) {
+      if (patch.menu !== undefined && (!Number.isSafeInteger(patch.menu) || patch.menu <= 0)) throw new HomeViewFailure({ sentence: "Invalid Home menu" })
+      changes.menu = patch.menu ?? null
+    }
+    const unchanged = () => preferencesKnown &&
+      (!("filter" in patch) || patch.filter === get().filter) &&
+      (!("menu" in patch) || patch.menu === get().menu) &&
+      (patch.last_seen_seq === undefined || patch.last_seen_seq <= (get().last_seen_seq ?? 0))
+    if (unchanged()) return
+    const revision = generation, principal = owner
+    pending = pending.then(() => (options.serializeView ?? (work => work()))(async () => {
+      if (!valid(revision, principal) || unchanged()) return
+      const body = await request()
+      if (!valid(revision, principal)) return
+      // Queued prompts are read-only; the API refuses a browser-supplied queue.
+      const { queue: _queue, instructions: _instructions, ...saved } = body
+      const home = saved.home && typeof saved.home === "object" ? saved.home as Record<string, unknown> : {}
+      ++readGeneration
+      const result = await request({ method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...saved, ...(patch.last_seen_seq === undefined ? {} : { last_seen_seq: Math.max(typeof saved.last_seen_seq === "number" ? saved.last_seen_seq : 0, patch.last_seen_seq) }), home: { ...home, ...changes } }) })
+      if (valid(revision, principal)) apply(result)
+    })).catch(error => { if (valid(revision, principal)) options.report(error) })
+  }
+  const dispose = () => {
+    if (disposed) return
+    disposed = true; ++generation; stopOwner?.(); stopOwner = undefined
+    stopHome?.(); stopHome = undefined; cancelLook()
+    if (timer !== undefined) clearTimeout(timer)
+    timer = undefined
+    listeners.clear(); rows.cleanup()
+  }
+  return { get, subscribe, onView, read, dispose }
+}
+export type HomeViewSeam = ReturnType<typeof createHomeViewSeam>

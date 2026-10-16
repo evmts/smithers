@@ -1,0 +1,252 @@
+/**
+ * Which runs `List` and `Watch` answer, and run mutations accept, for each
+ * authenticated principal.
+ *
+ * A host whose authenticator stamps several principals used to show every run
+ * and every run's events to all of them. Each principal now reads only the
+ * runs it launched, and the principals the host names as operators read every
+ * run. The stack is the durable one, so the launcher travels through the SQL
+ * launch index rather than a projection that only lives in memory.
+ */
+import { Effect, Layer, Stream } from "effect"
+import { RpcTest } from "effect/rpc"
+import { describe, expect, it } from "vitest"
+import { Control } from "../src/Control.ts"
+import { type ControlError, RunNotFound } from "../src/ControlError.ts"
+import { ControlRpcs, layerAuth } from "../src/ControlRpcs.ts"
+import type { Principal, Receipt } from "../src/ControlSchema.ts"
+import * as ControlServer from "../src/ControlServer.ts"
+import { delegateApproval } from "./ApprovalFixtures.ts"
+import { durable } from "./DurableStack.ts"
+
+const alice: Principal = { id: "alice", kind: "user", stampedAt: 0 }
+const bob: Principal = { id: "bob", kind: "user", stampedAt: 0 }
+/** Same id as alice, another kind: a different principal. */
+const aliceService: Principal = { id: "alice", kind: "service", stampedAt: 0 }
+const operator: Principal = { id: "ops", kind: "operator", stampedAt: 0 }
+
+const makeClient = RpcTest.makeClient(ControlRpcs)
+type Client = Effect.Success<typeof makeClient>
+
+/** One durable stack whose authenticator answers as whoever `as` names. */
+const withStack = <A, E>(
+  body: (as: (principal: Principal) => Effect.Effect<Client, never, never>) => Effect.Effect<A, E, Control>,
+  options: { readonly seesAllRuns?: (principal: Principal) => boolean } = {
+    seesAllRuns: (principal) => principal.kind === "operator"
+  }
+): Promise<A> => {
+  let caller: Principal = operator
+  const auth = layerAuth({ authenticate: () => Effect.succeed(caller) }, options)
+  const stack = Layer.merge(ControlServer.layer, auth).pipe(
+    Layer.provideMerge(durable({ approvalAuthority: delegateApproval(operator) }))
+  )
+  return Effect.runPromise(
+    Effect.gen(function*() {
+      const rpc = yield* makeClient
+      const as = (principal: Principal) =>
+        Effect.sync(() => {
+          caller = principal
+          return rpc
+        })
+      return yield* body(as)
+    }).pipe(Effect.provide(stack), Effect.scoped, Effect.orDie)
+  )
+}
+
+/** `launcher` plans and runs; the operator approves in between. */
+const launch = (as: (principal: Principal) => Effect.Effect<Client>, launcher: Principal, suffix: string) =>
+  Effect.gen(function*() {
+    const card = yield* (yield* as(launcher)).Plan({
+      flowId: "system/test",
+      input: { suite: suffix },
+      idempotencyKey: `plan:${suffix}`
+    })
+    yield* (yield* as(operator)).Approve({ ...card.approval, idempotencyKey: `approve:${suffix}` })
+    const receipt = yield* (yield* as(launcher)).Run({
+      _tag: "Plan",
+      planId: card.planId,
+      digest: card.digest,
+      envelope: card.envelope,
+      idempotencyKey: `run:${suffix}`
+    })
+    if (receipt._tag !== "Accepted" || receipt.runId === undefined) return yield* Effect.die("expected a started run")
+    return receipt.runId
+  })
+
+const listed = (rpc: Client, filters: { readonly principalId?: string; readonly runId?: string } = {}) =>
+  Effect.map(
+    rpc.List({ _tag: "runs", filters }),
+    (page) => page._tag === "runs" ? page.items.map((run) => run.runId).sort() : []
+  )
+
+const watched = (rpc: Client) =>
+  Effect.map(
+    Stream.runCollect(rpc.Watch({ follow: false })),
+    (events) => [...new Set(Array.from(events, (event) => event.runId ?? ""))].sort()
+  )
+
+describe("run visibility per principal", () => {
+  it("lists and watches only the runs each principal launched", async () => {
+    const observed = await withStack((as) =>
+      Effect.gen(function*() {
+        const a = yield* launch(as, alice, "alice")
+        const b = yield* launch(as, bob, "bob")
+        const s = yield* launch(as, aliceService, "alice-service")
+        return {
+          runs: { a, b, s },
+          alice: {
+            list: yield* listed(yield* as(alice)),
+            watch: yield* watched(yield* as(alice)),
+            named: yield* Stream.runCollect((yield* as(alice)).Watch({ runId: a, follow: false }))
+          },
+          bob: { list: yield* listed(yield* as(bob)), watch: yield* watched(yield* as(bob)) },
+          service: { list: yield* listed(yield* as(aliceService)) },
+          operator: { list: yield* listed(yield* as(operator)), watch: yield* watched(yield* as(operator)) },
+          summary: yield* Effect.map(
+            (yield* as(alice)).List({ _tag: "runs", filters: { runId: a } }),
+            (page) => page._tag === "runs" ? page.items[0] : undefined
+          )
+        }
+      })
+    )
+    const { a, b, s } = observed.runs
+    expect(observed.alice.list).toEqual([a])
+    expect(observed.alice.named.length).toBeGreaterThan(0)
+    expect(observed.alice.named.every((event) => event.runId === a)).toBe(true)
+    expect(observed.bob.list).toEqual([b])
+    expect(observed.service.list).toEqual([s])
+    // A restricted watch carries no plan partition and no other launcher's run.
+    expect(observed.alice.watch).toEqual([a])
+    expect(observed.bob.watch).toEqual([b])
+    expect(observed.operator.list).toEqual([a, b, s].sort())
+    expect(observed.operator.watch).toEqual(expect.arrayContaining([a, b, s]))
+    expect(observed.operator.watch.some((partition) => partition.startsWith("plan:"))).toBe(true)
+    expect(observed.summary).toMatchObject({ runId: a, launchedBy: { id: "alice", kind: "user" } })
+  })
+
+  it("answers another principal's run exactly as a missing one", async () => {
+    const observed = await withStack((as) =>
+      Effect.gen(function*() {
+        const a = yield* launch(as, alice, "alice")
+        const asBob = yield* as(bob)
+        return {
+          exact: yield* listed(asBob, { runId: a }),
+          borrowed: yield* listed(asBob, { principalId: "alice" }),
+          watch: yield* Effect.flip(Stream.runCollect(asBob.Watch({ runId: a, follow: false }))),
+          missing: yield* Effect.flip(Stream.runCollect(asBob.Watch({ runId: "run-404", follow: false }))),
+          own: yield* listed(yield* as(alice), { principalId: "alice" })
+        }
+      })
+    )
+    expect(observed.exact).toEqual([])
+    expect(observed.borrowed).toEqual([])
+    expect(observed.watch).toBeInstanceOf(RunNotFound)
+    expect(observed.missing).toBeInstanceOf(RunNotFound)
+    expect(observed.own).toHaveLength(1)
+  })
+
+  it("lets an operator narrow to one launcher, and hides unrecorded runs from everyone else", async () => {
+    const observed = await withStack((as) =>
+      Effect.gen(function*() {
+        const a = yield* launch(as, alice, "alice")
+        yield* launch(as, bob, "bob")
+        // An in-process launch through Control names no reader and is recorded
+        // under the composition's own principal.
+        const control = yield* Control
+        const card = yield* control.plan({ flowId: "system/test", input: { suite: "local" } })
+        yield* control.approve({ ...card.approval, idempotencyKey: "approve:local" })
+        const local = yield* control.run({
+          _tag: "Plan",
+          planId: card.planId,
+          digest: card.digest,
+          envelope: card.envelope,
+          idempotencyKey: "run:local"
+        })
+        const inProcess = yield* control.list({ _tag: "runs" })
+        return {
+          a,
+          local: local._tag === "Accepted" ? local.runId : undefined,
+          narrowed: yield* listed(yield* as(operator), { principalId: "alice" }),
+          alice: yield* listed(yield* as(alice)),
+          inProcess: inProcess._tag === "runs" ? inProcess.items.length : -1
+        }
+      })
+    )
+    expect(observed.narrowed).toEqual([observed.a])
+    expect(observed.alice).toEqual([observed.a])
+    expect(observed.alice).not.toContain(observed.local)
+    expect(observed.inProcess).toBe(3)
+  })
+
+  it("refuses every run mutation on another principal's run exactly as on a missing one", async () => {
+    const observed = await withStack((as) =>
+      Effect.gen(function*() {
+        const a = yield* launch(as, alice, "alice")
+        const control = yield* Control
+        const card = yield* control.plan({ flowId: "system/test", input: { suite: "local" } })
+        yield* control.approve({ ...card.approval, idempotencyKey: "approve:local" })
+        const started = yield* control.run({
+          _tag: "Plan",
+          planId: card.planId,
+          digest: card.digest,
+          envelope: card.envelope,
+          idempotencyKey: "run:local"
+        })
+        if (started._tag !== "Accepted" || started.runId === undefined) return yield* Effect.die("expected a run")
+        const local = started.runId
+        const mutations = (rpc: Client, runId: string): Record<string, Effect.Effect<Receipt, ControlError>> => ({
+          steer: rpc.Steer({
+            runId,
+            message: { messageId: `steer:${runId}`, runId, principal: bob, createdAt: 1, body: "take over" },
+            idempotencyKey: `steer:${runId}`
+          }),
+          signal: rpc.Signal({ runId, signal: { name: "ready", payload: null }, idempotencyKey: `signal:${runId}` }),
+          cancel: rpc.Cancel({ runId, reason: "hijack", idempotencyKey: `cancel:${runId}` }),
+          resume: rpc.Resume({ runId, reason: "hijack", idempotencyKey: `resume:${runId}` })
+        })
+        const refusals = (rpc: Client, runId: string) =>
+          Effect.forEach(
+            Object.entries(mutations(rpc, runId)),
+            ([name, mutation]) =>
+              Effect.map(Effect.flip(mutation), (error) => [name, error instanceof RunNotFound && error.runId] as const)
+          )
+        const asBob = yield* as(bob)
+        const others = yield* refusals(asBob, a)
+        const engine = yield* refusals(asBob, local)
+        const missing = yield* refusals(asBob, "run-404")
+        const service = yield* refusals(yield* as(aliceService), a)
+        const untouched = yield* Effect.map(
+          (yield* as(alice)).List({ _tag: "runs", filters: { runId: a } }),
+          (page) => page._tag === "runs" ? page.items[0]?.cancellation : "missing"
+        )
+        const own = yield* (yield* as(alice)).Cancel({ runId: a, reason: "mine", idempotencyKey: "cancel:own" })
+        const operatorCancel = yield* (yield* as(operator)).Cancel({
+          runId: local,
+          reason: "ops",
+          idempotencyKey: "cancel:ops"
+        })
+        return { a, local, others, engine, missing, service, untouched, own, operatorCancel }
+      })
+    )
+    const refused = (runId: string) => ["steer", "signal", "cancel", "resume"].map((name) => [name, runId] as const)
+    expect(observed.others).toEqual(refused(observed.a))
+    expect(observed.engine).toEqual(refused(observed.local))
+    expect(observed.missing).toEqual(refused("run-404"))
+    expect(observed.service).toEqual(refused(observed.a))
+    expect(observed.untouched).toBeUndefined()
+    expect(observed.own._tag).not.toBe("Conflict")
+    expect(observed.operatorCancel._tag).not.toBe("Conflict")
+  })
+
+  it("restricts every principal when the host names no operator", async () => {
+    const observed = await withStack(
+      (as) =>
+        Effect.gen(function*() {
+          yield* launch(as, alice, "alice")
+          return yield* listed(yield* as(operator))
+        }),
+      {}
+    )
+    expect(observed).toEqual([])
+  })
+})

@@ -3,13 +3,27 @@ import { Smithers } from "@smthrs/targets"
 
 const cwd = "packages/testing"
 
-const standard = BuildAndCheckTypeScriptPackage({ cwd })
+const standard = BuildAndCheckTypeScriptPackage({
+  cwd,
+  // examples/ is type-checked and formatted with the tests, and run by
+  // test/examples/; each example is documentation users copy, so it is not
+  // held to the library lint rules.
+  testSources: Smithers.glob("{test,examples}/**/*.ts")
+})
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = standard
 
 const securityReview = Smithers.SecurityReview({
   cwd,
+  include: ["src/**", "examples/**"],
   checks: [
+    {
+      id: "example-host-process-scope",
+      title: "The host adapters example spawns a fixed command, never one built from input",
+      threat: "A copied example spawns a shell string built from payload or argv values on the host.",
+      lookFor: ["A child spawned with a shell string built from payload or argv values."],
+      paths: ["examples/08-host-adapters.ts"]
+    },
     {
       id: "fixture-secret-capture",
       title: "Recorded fixtures never persist credentials or private transcript data",

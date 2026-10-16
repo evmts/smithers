@@ -1,0 +1,18 @@
+{
+  "_tag": "Accepted",
+  "receiptId": "approve:plan-1",
+  "runId": "run-1",
+  "cta": {
+    "description": "Suggested commands:",
+    "commands": [
+      {
+        "command": "smthrs runs show run-1 --root /Users/williamcory/smithers/flows/.s2f-probe",
+        "description": "Inspect status and the reason execution stopped"
+      },
+      {
+        "command": "smthrs runs logs run-1 --format jsonl --root /Users/williamcory/smithers/flows/.s2f-probe",
+        "description": "Read detailed events only when needed"
+      }
+    ]
+  }
+}

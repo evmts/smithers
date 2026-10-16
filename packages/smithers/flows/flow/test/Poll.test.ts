@@ -7,7 +7,7 @@
  * is asserted rather than timed. Following a handoff to the next round is the
  * ENGINE's job, so each case opens the next round itself with the payload the
  * previous one settled on, which is what `@smthrs/engine` does for real.
- * `examples/src/34-poll.ts` runs the same poller on the durable engine across a
+ * `packages/smithers/flows/examples/34-poll.ts` runs the same poller on the durable engine across a
  * process restart.
  */
 import { describe, expect, it } from "@effect/vitest"

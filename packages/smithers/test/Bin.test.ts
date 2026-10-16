@@ -1123,6 +1123,21 @@ describe("flow start outside a repository", processBudget, () => {
       expect(result.stdout).toContain(`No flows found in ${cwd}`)
       expect(result.stderr).toBe("")
     }))
+
+  it("refuses a project whose only flows sit in the retired root flows/", () =>
+    inEmptyDirectory((cwd) => {
+      mkdirSync(join(cwd, "flows", "missing"), { recursive: true })
+      writeFileSync(join(cwd, "flows", "missing", "flow.mdx"), "---\ndescription: Old.\n---\nOld.\n")
+      const result = spawnSync(process.execPath, ["--no-warnings", executable, "flow", "start", "missing"], {
+        cwd,
+        encoding: "utf8",
+        timeout: 10_000,
+        env: { ...process.env, HOME: cwd, NODE_OPTIONS: "" }
+      })
+      expect(result.status).not.toBe(0)
+      expect(result.stdout).toContain("code: no_flows")
+      expect(existsSync(join(cwd, ".flows"))).toBe(false)
+    }))
 })
 
 describe("the signal exit codes", processBudget, () => {

@@ -1,6 +1,6 @@
 /**
  * PTY host whose flow port is the real one: `FlowControl.make` over the
- * working directory's `flows/`, launching durable runs on the native control
+ * working directory's `.smithers/flows/`, launching durable runs on the native control
  * plane. Only the network edges are local: a subscription pool that
  * answers every prompt flow with one cell, and Jev, the judge, which passes
  * the completion. Chat is a fixed reply, since chat is not under test here.

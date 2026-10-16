@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs"
  *
  * Each file is the verbatim final `cell` block of one recorded settlement,
  * lifted from that instance's journal at
- * `evals/swebench/work/<instance>/.flows/engine.db`, and named for the journal
+ * `packages/smithers/agent/harness/benchmarks/swebench/work/<instance>/.flows/engine.db`, and named for the journal
  * sequence of the `control.agent.cell-settled` event that rejected it. All five
  * are legitimate cells: the only imports in them are inside a `bash` command's
  * Python heredoc or a `grep` pattern.

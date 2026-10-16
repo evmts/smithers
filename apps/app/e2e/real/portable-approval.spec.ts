@@ -14,7 +14,7 @@ authenticatedTest.setTimeout(300_000)
 const decide = async (page: Page, request: APIRequestContext, decision: "approve" | "deny") => {
   await withProductRepository(page, request, async repo => {
     const marker = randomUUID()
-    await pushMainFiles(page, request, repo, { "flows/approval-proof/flow.mdx": approvalFlow(marker) })
+    await pushMainFiles(page, request, repo, { ".smithers/flows/approval-proof/flow.mdx": approvalFlow(marker) })
     await runningWorkspace(page, request, repo, async workspaceId => {
       const started = performance.now()
       await page.goto(productUrl(page, `/${repo.fullName}`), { waitUntil: "domcontentloaded" })

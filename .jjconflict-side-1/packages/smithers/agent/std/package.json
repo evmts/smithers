@@ -1,0 +1,496 @@
+{
+  "name": "@smthrs/std",
+  "type": "module",
+  "version": "1.0.0-rc.12",
+  "license": "MIT",
+  "smthrs": {
+    "group": "agent"
+  },
+  "description": "The flows standard tool library: filesystem, search, HTTP, web-search, shell, and language-server flows",
+  "homepage": "https://github.com/smithersai/smithers",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/smithers/agent/std"
+  },
+  "bugs": {
+    "url": "https://github.com/smithersai/smithers/issues"
+  },
+  "keywords": [
+    "typescript",
+    "effect",
+    "agent-tools",
+    "ripgrep",
+    "lsp",
+    "shell"
+  ],
+  "engines": {
+    "node": ">=26.4.0"
+  },
+  "sideEffects": [],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null,
+    "./*/index": null,
+    "./ApplyPatch": "./src/ApplyPatch.ts",
+    "./Bash": "./src/Bash.ts",
+    "./Checkpoints": "./src/Checkpoints.ts",
+    "./Container": "./src/Container.ts",
+    "./Edit": "./src/Edit.ts",
+    "./ExaWebSearch": "./src/ExaWebSearch.ts",
+    "./Explore": "./src/Explore.ts",
+    "./Fetch": "./src/Fetch.ts",
+    "./Glob": "./src/Glob.ts",
+    "./Grep": "./src/Grep.ts",
+    "./HttpPost": "./src/HttpPost.ts",
+    "./LanguageServer": "./src/LanguageServer.ts",
+    "./Ls": "./src/Ls.ts",
+    "./Lsp": "./src/Lsp.ts",
+    "./Manifest": "./src/Manifest.ts",
+    "./NativeSearch": "./src/NativeSearch.ts",
+    "./NodeLanguageServer": "./src/NodeLanguageServer.ts",
+    "./PortableSearch": "./src/PortableSearch.ts",
+    "./Probe": "./src/Probe.ts",
+    "./Read": "./src/Read.ts",
+    "./Relocate": "./src/Relocate.ts",
+    "./RemoteSearch": "./src/RemoteSearch.ts",
+    "./Search": "./src/Search.ts",
+    "./SearchConformance": "./src/SearchConformance.ts",
+    "./SearchContract": "./src/SearchContract.ts",
+    "./ShellCommand": "./src/ShellCommand.ts",
+    "./StdError": "./src/StdError.ts",
+    "./TestRun": "./src/TestRun.ts",
+    "./TestRunner": "./src/TestRunner.ts",
+    "./TreeFingerprint": "./src/TreeFingerprint.ts",
+    "./UpdatePlan": "./src/UpdatePlan.ts",
+    "./WebFetch": "./src/WebFetch.ts",
+    "./WebSearch": "./src/WebSearch.ts",
+    "./Write": "./src/Write.ts",
+    "./index": "./src/index.ts"
+  },
+  "files": [
+    "src/**/*.ts",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/package.json",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next",
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./internal/*": null,
+      "./*/index": null,
+      "./ApplyPatch": {
+        "import": {
+          "types": "./dist/esm/ApplyPatch.d.ts",
+          "default": "./dist/esm/ApplyPatch.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ApplyPatch.d.ts",
+          "default": "./dist/cjs/ApplyPatch.js"
+        }
+      },
+      "./Bash": {
+        "import": {
+          "types": "./dist/esm/Bash.d.ts",
+          "default": "./dist/esm/Bash.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Bash.d.ts",
+          "default": "./dist/cjs/Bash.js"
+        }
+      },
+      "./Checkpoints": {
+        "import": {
+          "types": "./dist/esm/Checkpoints.d.ts",
+          "default": "./dist/esm/Checkpoints.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Checkpoints.d.ts",
+          "default": "./dist/cjs/Checkpoints.js"
+        }
+      },
+      "./Container": {
+        "import": {
+          "types": "./dist/esm/Container.d.ts",
+          "default": "./dist/esm/Container.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Container.d.ts",
+          "default": "./dist/cjs/Container.js"
+        }
+      },
+      "./Edit": {
+        "import": {
+          "types": "./dist/esm/Edit.d.ts",
+          "default": "./dist/esm/Edit.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Edit.d.ts",
+          "default": "./dist/cjs/Edit.js"
+        }
+      },
+      "./ExaWebSearch": {
+        "import": {
+          "types": "./dist/esm/ExaWebSearch.d.ts",
+          "default": "./dist/esm/ExaWebSearch.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ExaWebSearch.d.ts",
+          "default": "./dist/cjs/ExaWebSearch.js"
+        }
+      },
+      "./Explore": {
+        "import": {
+          "types": "./dist/esm/Explore.d.ts",
+          "default": "./dist/esm/Explore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Explore.d.ts",
+          "default": "./dist/cjs/Explore.js"
+        }
+      },
+      "./Fetch": {
+        "import": {
+          "types": "./dist/esm/Fetch.d.ts",
+          "default": "./dist/esm/Fetch.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Fetch.d.ts",
+          "default": "./dist/cjs/Fetch.js"
+        }
+      },
+      "./Glob": {
+        "import": {
+          "types": "./dist/esm/Glob.d.ts",
+          "default": "./dist/esm/Glob.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Glob.d.ts",
+          "default": "./dist/cjs/Glob.js"
+        }
+      },
+      "./Grep": {
+        "import": {
+          "types": "./dist/esm/Grep.d.ts",
+          "default": "./dist/esm/Grep.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Grep.d.ts",
+          "default": "./dist/cjs/Grep.js"
+        }
+      },
+      "./HttpPost": {
+        "import": {
+          "types": "./dist/esm/HttpPost.d.ts",
+          "default": "./dist/esm/HttpPost.js"
+        },
+        "require": {
+          "types": "./dist/cjs/HttpPost.d.ts",
+          "default": "./dist/cjs/HttpPost.js"
+        }
+      },
+      "./LanguageServer": {
+        "import": {
+          "types": "./dist/esm/LanguageServer.d.ts",
+          "default": "./dist/esm/LanguageServer.js"
+        },
+        "require": {
+          "types": "./dist/cjs/LanguageServer.d.ts",
+          "default": "./dist/cjs/LanguageServer.js"
+        }
+      },
+      "./Ls": {
+        "import": {
+          "types": "./dist/esm/Ls.d.ts",
+          "default": "./dist/esm/Ls.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Ls.d.ts",
+          "default": "./dist/cjs/Ls.js"
+        }
+      },
+      "./Lsp": {
+        "import": {
+          "types": "./dist/esm/Lsp.d.ts",
+          "default": "./dist/esm/Lsp.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Lsp.d.ts",
+          "default": "./dist/cjs/Lsp.js"
+        }
+      },
+      "./Manifest": {
+        "import": {
+          "types": "./dist/esm/Manifest.d.ts",
+          "default": "./dist/esm/Manifest.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Manifest.d.ts",
+          "default": "./dist/cjs/Manifest.js"
+        }
+      },
+      "./NativeSearch": {
+        "import": {
+          "types": "./dist/esm/NativeSearch.d.ts",
+          "default": "./dist/esm/NativeSearch.js"
+        },
+        "require": {
+          "types": "./dist/cjs/NativeSearch.d.ts",
+          "default": "./dist/cjs/NativeSearch.js"
+        }
+      },
+      "./NodeLanguageServer": {
+        "import": {
+          "types": "./dist/esm/NodeLanguageServer.d.ts",
+          "default": "./dist/esm/NodeLanguageServer.js"
+        },
+        "require": {
+          "types": "./dist/cjs/NodeLanguageServer.d.ts",
+          "default": "./dist/cjs/NodeLanguageServer.js"
+        }
+      },
+      "./PortableSearch": {
+        "import": {
+          "types": "./dist/esm/PortableSearch.d.ts",
+          "default": "./dist/esm/PortableSearch.js"
+        },
+        "require": {
+          "types": "./dist/cjs/PortableSearch.d.ts",
+          "default": "./dist/cjs/PortableSearch.js"
+        }
+      },
+      "./Probe": {
+        "import": {
+          "types": "./dist/esm/Probe.d.ts",
+          "default": "./dist/esm/Probe.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Probe.d.ts",
+          "default": "./dist/cjs/Probe.js"
+        }
+      },
+      "./Read": {
+        "import": {
+          "types": "./dist/esm/Read.d.ts",
+          "default": "./dist/esm/Read.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Read.d.ts",
+          "default": "./dist/cjs/Read.js"
+        }
+      },
+      "./Relocate": {
+        "import": {
+          "types": "./dist/esm/Relocate.d.ts",
+          "default": "./dist/esm/Relocate.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Relocate.d.ts",
+          "default": "./dist/cjs/Relocate.js"
+        }
+      },
+      "./RemoteSearch": {
+        "import": {
+          "types": "./dist/esm/RemoteSearch.d.ts",
+          "default": "./dist/esm/RemoteSearch.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RemoteSearch.d.ts",
+          "default": "./dist/cjs/RemoteSearch.js"
+        }
+      },
+      "./Search": {
+        "import": {
+          "types": "./dist/esm/Search.d.ts",
+          "default": "./dist/esm/Search.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Search.d.ts",
+          "default": "./dist/cjs/Search.js"
+        }
+      },
+      "./SearchConformance": {
+        "import": {
+          "types": "./dist/esm/SearchConformance.d.ts",
+          "default": "./dist/esm/SearchConformance.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SearchConformance.d.ts",
+          "default": "./dist/cjs/SearchConformance.js"
+        }
+      },
+      "./SearchContract": {
+        "import": {
+          "types": "./dist/esm/SearchContract.d.ts",
+          "default": "./dist/esm/SearchContract.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SearchContract.d.ts",
+          "default": "./dist/cjs/SearchContract.js"
+        }
+      },
+      "./ShellCommand": {
+        "import": {
+          "types": "./dist/esm/ShellCommand.d.ts",
+          "default": "./dist/esm/ShellCommand.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ShellCommand.d.ts",
+          "default": "./dist/cjs/ShellCommand.js"
+        }
+      },
+      "./StdError": {
+        "import": {
+          "types": "./dist/esm/StdError.d.ts",
+          "default": "./dist/esm/StdError.js"
+        },
+        "require": {
+          "types": "./dist/cjs/StdError.d.ts",
+          "default": "./dist/cjs/StdError.js"
+        }
+      },
+      "./TestRun": {
+        "import": {
+          "types": "./dist/esm/TestRun.d.ts",
+          "default": "./dist/esm/TestRun.js"
+        },
+        "require": {
+          "types": "./dist/cjs/TestRun.d.ts",
+          "default": "./dist/cjs/TestRun.js"
+        }
+      },
+      "./TestRunner": {
+        "import": {
+          "types": "./dist/esm/TestRunner.d.ts",
+          "default": "./dist/esm/TestRunner.js"
+        },
+        "require": {
+          "types": "./dist/cjs/TestRunner.d.ts",
+          "default": "./dist/cjs/TestRunner.js"
+        }
+      },
+      "./TreeFingerprint": {
+        "import": {
+          "types": "./dist/esm/TreeFingerprint.d.ts",
+          "default": "./dist/esm/TreeFingerprint.js"
+        },
+        "require": {
+          "types": "./dist/cjs/TreeFingerprint.d.ts",
+          "default": "./dist/cjs/TreeFingerprint.js"
+        }
+      },
+      "./UpdatePlan": {
+        "import": {
+          "types": "./dist/esm/UpdatePlan.d.ts",
+          "default": "./dist/esm/UpdatePlan.js"
+        },
+        "require": {
+          "types": "./dist/cjs/UpdatePlan.d.ts",
+          "default": "./dist/cjs/UpdatePlan.js"
+        }
+      },
+      "./WebFetch": {
+        "import": {
+          "types": "./dist/esm/WebFetch.d.ts",
+          "default": "./dist/esm/WebFetch.js"
+        },
+        "require": {
+          "types": "./dist/cjs/WebFetch.d.ts",
+          "default": "./dist/cjs/WebFetch.js"
+        }
+      },
+      "./WebSearch": {
+        "import": {
+          "types": "./dist/esm/WebSearch.d.ts",
+          "default": "./dist/esm/WebSearch.js"
+        },
+        "require": {
+          "types": "./dist/cjs/WebSearch.d.ts",
+          "default": "./dist/cjs/WebSearch.js"
+        }
+      },
+      "./Write": {
+        "import": {
+          "types": "./dist/esm/Write.d.ts",
+          "default": "./dist/esm/Write.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Write.d.ts",
+          "default": "./dist/cjs/Write.js"
+        }
+      },
+      "./index": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint src --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "circular": "node scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "vitest --coverage"
+  },
+  "dependencies": {
+    "@smthrs/capability": "1.0.0-rc.12",
+    "@smthrs/control": "1.0.0-rc.12",
+    "@smthrs/core": "1.0.0-rc.12",
+    "@smthrs/kernel": "1.0.0-rc.12",
+    "@smthrs/model": "1.0.0-rc.12"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@effect/platform-node": "4.0.4",
+    "@effect/vitest": "4.0.4",
+    "@eslint/js": "9.39.5",
+    "@smthrs/flow": "1.0.0-rc.12",
+    "@smthrs/patterns": "1.0.0-rc.12",
+    "@smthrs/plan": "1.0.0-rc.12",
+    "@types/node": "26.4.1",
+    "@vitest/coverage-v8": "5.0.0",
+    "dprint": "0.57.1",
+    "effect": "4.0.4",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "madge": "8.0.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0"
+  },
+  "peerDependencies": {
+    "effect": "^4.0.4"
+  }
+}

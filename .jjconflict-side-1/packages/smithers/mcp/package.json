@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@smthrs/mcp",
+  "type": "module",
+  "version": "1.0.0-rc.12",
+  "license": "MIT",
+  "smthrs": {
+    "group": "agent"
+  },
+  "description": "Model Context Protocol client and flow adapter: projects a remote MCP server's tools as ordinary FlowBinding.Source entries",
+  "homepage": "https://github.com/smithersai/smithers",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/smithers/mcp"
+  },
+  "bugs": {
+    "url": "https://github.com/smithersai/smithers/issues"
+  },
+  "tags": [
+    "typescript",
+    "effect",
+    "mcp",
+    "flow-registry"
+  ],
+  "keywords": [
+    "typescript",
+    "effect",
+    "mcp",
+    "flow-registry"
+  ],
+  "engines": {
+    "node": ">=26.4.0"
+  },
+  "sideEffects": [],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null,
+    "./*/index": null,
+    "./Diagnostics": "./src/Diagnostics.ts",
+    "./McpClient": "./src/McpClient.ts",
+    "./McpError": "./src/McpError.ts",
+    "./McpFlows": "./src/McpFlows.ts",
+    "./index": "./src/index.ts"
+  },
+  "files": [
+    "src/**/*.ts",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/package.json",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next",
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./internal/*": null,
+      "./*/index": null,
+      "./Diagnostics": {
+        "import": {
+          "types": "./dist/esm/Diagnostics.d.ts",
+          "default": "./dist/esm/Diagnostics.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Diagnostics.d.ts",
+          "default": "./dist/cjs/Diagnostics.js"
+        }
+      },
+      "./McpClient": {
+        "import": {
+          "types": "./dist/esm/McpClient.d.ts",
+          "default": "./dist/esm/McpClient.js"
+        },
+        "require": {
+          "types": "./dist/cjs/McpClient.d.ts",
+          "default": "./dist/cjs/McpClient.js"
+        }
+      },
+      "./McpError": {
+        "import": {
+          "types": "./dist/esm/McpError.d.ts",
+          "default": "./dist/esm/McpError.js"
+        },
+        "require": {
+          "types": "./dist/cjs/McpError.d.ts",
+          "default": "./dist/cjs/McpError.js"
+        }
+      },
+      "./McpFlows": {
+        "import": {
+          "types": "./dist/esm/McpFlows.d.ts",
+          "default": "./dist/esm/McpFlows.js"
+        },
+        "require": {
+          "types": "./dist/cjs/McpFlows.d.ts",
+          "default": "./dist/cjs/McpFlows.js"
+        }
+      },
+      "./index": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint src --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "circular": "node scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "vitest --coverage"
+  },
+  "dependencies": {
+    "@smthrs/canonical": "1.0.0-rc.12",
+    "@smthrs/capability": "1.0.0-rc.12",
+    "@smthrs/core": "1.0.0-rc.12",
+    "@smthrs/harness": "1.0.0-rc.12",
+    "@smthrs/journal": "1.0.0-rc.12",
+    "@smthrs/kernel": "1.0.0-rc.12"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@effect/platform-node": "4.0.4",
+    "@effect/vitest": "4.0.4",
+    "@eslint/js": "9.39.5",
+    "@smthrs/agent": "1.0.0-rc.12",
+    "@smthrs/flow": "1.0.0-rc.12",
+    "@smthrs/flows": "1.0.0-rc.12",
+    "@smthrs/model": "1.0.0-rc.12",
+    "@smthrs/registry": "1.0.0-rc.12",
+    "@types/node": "26.4.1",
+    "@vitest/coverage-v8": "5.0.0",
+    "dprint": "0.57.1",
+    "effect": "4.0.4",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "madge": "8.0.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0"
+  },
+  "peerDependencies": {
+    "effect": "^4.0.4"
+  }
+}

@@ -58,7 +58,7 @@ const platform = Layer.merge(NodeFileSystem.layer, NodePath.layer)
 const discovery = Discovery.layer.pipe(Layer.provide(platform))
 
 const registry = Registry.layer({
-  sources: [{ source: "project", root: join(process.cwd(), "flows"), naming: "path" }]
+  sources: [{ source: "project", root: join(process.cwd(), ".smithers", "flows"), naming: "path" }]
 }).pipe(Layer.provide([discovery, platform]))
 
 const main = Effect.gen(function*() {
@@ -78,12 +78,12 @@ await Effect.runPromise(main.pipe(Effect.provide(registry), Effect.orDie))
 
 ```text
 review: Reviews a proposed change and reports concrete correctness and maintainability risks.
-skipped /repo/flows/draft/flow.mdx: Markdown flows require a non-empty frontmatter description
+skipped /repo/.smithers/flows/draft/flow.mdx: Markdown flows require a non-empty frontmatter description
 ```
 
 `list()` and `warnings()` both answer from one complete snapshot and touch no
 files. A malformed entry becomes a warning rather than a failure, because a
-`flows/` directory is a directory a person edits and one file in it is routinely
+`.smithers/flows/` directory is a directory a person edits and one file in it is routinely
 mid-edit.
 
 ## Public API
@@ -133,7 +133,7 @@ const host = NodeRuntime.layerHost(
 )
 ```
 
-`Registry.layerProject({ root, packs })` scans `<root>/flows/**` first, then
+`Registry.layerProject({ root, packs })` scans `<root>/.smithers/flows/**` first, then
 every installed pack, under one refreshable first-found registry.
 `Executable.layer` registers everything runnable, logs a warning naming each
 refusal, and provides the whole `Catalog` as a service, so a host can print what

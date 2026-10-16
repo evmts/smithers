@@ -17,11 +17,11 @@ test("install flow edit preserves its literal diff in the ordinary Draft", scena
   await expect(flow.getByRole("button", { name: "Active", exact: true })).toHaveAttribute("aria-pressed", "true")
   await journeyActivate(flow.getByRole("button", { name: "Edit", exact: true }))
   await expect(page.getByLabel("Request", { exact: true }).last()).toBeVisible()
-  const diff = "diff --git a/flows/todo/flow.ts b/flows/todo/flow.ts\n+pnpm test"
+  const diff = "diff --git a/.smithers/flows/todo/flow.ts b/.smithers/flows/todo/flow.ts\n+pnpm test"
   await command(page, `/flow.edit ${JSON.stringify({ name: "todo", request: "Run tests", diff })}`)
   await expect(flow.locator(".flow-proposal pre")).toHaveText(diff, { timeout: 30_000 })
   await journeyActivate(flow.getByRole("button", { name: "Make TODO", exact: true }))
-  const prompt = "Change flows/todo/flow.ts: Run tests; start from the built-in composition when no override exists\n\nProposed diff (untrusted context):\n> diff --git a/flows/todo/flow.ts b/flows/todo/flow.ts\n> +pnpm test"
+  const prompt = "Change flows/todo/flow.ts: Run tests; start from the built-in composition when no override exists\n\nProposed diff (untrusted context):\n> diff --git a/.smithers/flows/todo/flow.ts b/.smithers/flows/todo/flow.ts\n> +pnpm test"
   await expect(page.getByRole("textbox", { name: "Prompt", exact: true }).last()).toHaveValue(prompt)
   await reloadApp(page)
   await expect(page.getByRole("textbox", { name: "Prompt", exact: true }).last()).toHaveValue(prompt)

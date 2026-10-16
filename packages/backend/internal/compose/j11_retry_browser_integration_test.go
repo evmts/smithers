@@ -50,7 +50,7 @@ func TestJ11NativeRetryBrowser(t *testing.T) {
 
 func activateMonitorOverride(t *testing.T, r *rehearsal, source string) (string, string) {
 	t.Helper()
-	commit, err := r.pushGitHubMain("Install monitor TODO override", map[string]string{"flows/todo/flow.ts": source})
+	commit, err := r.pushGitHubMain("Install monitor TODO override", map[string]string{".smithers/flows/todo/flow.ts": source})
 	require.NoError(t, err)
 	deadline := time.Now().Add(3 * time.Minute)
 	for time.Now().Before(deadline) {

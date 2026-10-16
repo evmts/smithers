@@ -19,7 +19,7 @@ test("install /flow mounts the served versions through the production card rende
   // The DOM registry substitutes HTTP globals; use Bun's actual HTTP transport here.
   const domHttp = { fetch, Response, Request, Headers, AbortController, AbortSignal }
   Object.assign(globalThis, nativeHttp)
-  const catalog: FlowCard[] = [{ name: "todo", system: false, source: { path: "flows/todo/flow.ts" }, versions: [
+  const catalog: FlowCard[] = [{ name: "todo", system: false, source: { path: ".smithers/flows/todo/flow.ts" }, versions: [
     { id: "active", state: "active", steps: [{ id: "build", label: "Build on this install", agent: "builder" }] },
     { id: "proposed", state: "proposed", todo: 42, steps: [
       { id: "build", label: "Build on this install", agent: "builder" }, { id: "docs", label: "Write the changelog" }
@@ -42,11 +42,11 @@ test("install /flow mounts the served versions through the production card rende
     if (path === "/api/todos/43" && writes.length) return Response.json({ ...todoFixtures.in_review.model, n: 43,
       title: (writes[0] as { title: string }).title, prompt_revisions: [{ ...todoFixtures.in_review.model.prompt_revisions[0], text: (writes[0] as { prompt: string }).prompt, acceptance: [] }],
       branch: { id: "branch-43", name: "flow-source-43", machine: { state: "awake" } } })
-    if (path === "/api/branches/branch-43/files/flows/todo/flow.ts") return Response.json({ branch: "branch-43", path: "flows/todo/flow.ts", language: "typescript", digest: "file-43", content: { kind: "text", text: "export default derivedComposition\n" }, mode: "read_only", diagnostics: [], authors: [], editors: [] })
-    if (path === "/api/branches/main/files/flows/todo/flow.ts") return Response.json({ class: "infra", code: "unavailable" }, { status: sourceUnavailable ? 503 : 404 })
+    if (path === "/api/branches/branch-43/files/.smithers/flows/todo/flow.ts") return Response.json({ branch: "branch-43", path: ".smithers/flows/todo/flow.ts", language: "typescript", digest: "file-43", content: { kind: "text", text: "export default derivedComposition\n" }, mode: "read_only", diagnostics: [], authors: [], editors: [] })
+    if (path === "/api/branches/main/files/.smithers/flows/todo/flow.ts") return Response.json({ class: "infra", code: "unavailable" }, { status: sourceUnavailable ? 503 : 404 })
     if (path === "/api/todos/42" && sourceUnavailable) return Response.json({ class: "infra", code: "unavailable" }, { status: 503 })
     if (path === "/api/todos/42") return Response.json({ ...todoFixtures.in_review.model, n: 42, branch: { id: "branch-42", name: "flow-edit-42", machine: { state: "awake" } } })
-    if (path === "/api/branches/branch-42/files/flows/todo/flow.ts") return Response.json({ branch: "branch-42", path: "flows/todo/flow.ts", language: "typescript", digest: "file-42", content: { kind: "text", text: "export default pinnedComposition\n" }, mode: "read_only", diagnostics: [], authors: [], editors: [] })
+    if (path === "/api/branches/branch-42/files/.smithers/flows/todo/flow.ts") return Response.json({ branch: "branch-42", path: ".smithers/flows/todo/flow.ts", language: "typescript", digest: "file-42", content: { kind: "text", text: "export default pinnedComposition\n" }, mode: "read_only", diagnostics: [], authors: [], editors: [] })
     if (path === "/api/flows/merge") return Response.json({ name: "merge", system: true, source: { builtin: true }, versions: [] })
     if (path === "/api/flows") return catalogUnavailable ? Response.json({ class: "infra", code: "unavailable" }, { status: 503 }) : Response.json(catalog)
     if (path === "/api/install") return Response.json(installFixture())
@@ -85,7 +85,7 @@ test("install /flow mounts the served versions through the production card rende
     expect(await controller.flowCards()).toHaveLength(1)
     await act(async () => root.render(<ControllerTestProvider controller={controller!}>{renderCardBody(card, actions)}</ControllerTestProvider>))
     expect(reads).toContain("/api/flows")
-    expect(host.querySelector('.flow-path')?.textContent).toBe("flows/todo/flow.ts")
+    expect(host.querySelector('.flow-path')?.textContent).toBe(".smithers/flows/todo/flow.ts")
     expect(host.querySelector('.flow-steps')?.textContent).toContain("Build on this install")
     expect([...host.querySelectorAll('[data-flow]')].map(node => node.textContent)).toEqual(["builder", "Source", "Plan", "Run", "Edit"])
     await act(async () => host.querySelector<HTMLButtonElement>('.flow-version[data-state="proposed"]')!.click())
@@ -116,11 +116,11 @@ test("install /flow mounts the served versions through the production card rende
     expect(writes).toEqual([])
     const sourceDraft = [...store.collections.cards.values()].find(card => card.kind === "draft")!
     expect(sourceDraft).toMatchObject({ payload: { prompt: "Change flows/todo/flow.ts: Edit the source; start from the built-in composition when no override exists" } })
-    expect(sourceDraft).toMatchObject({ payload: { source: { path: "flows/todo/flow.ts", owner: "will", opened: false } } })
+    expect(sourceDraft).toMatchObject({ payload: { source: { path: ".smithers/flows/todo/flow.ts", owner: "will", opened: false } } })
     await controller.commands.submit({ name: "todo.new", actor: "user", payload: { cardId: sourceDraft.id } })
     await waitFor(() => { const row = store.collections.cards.get(sourceDraft.id); return row?.kind === "draft" && row.payload.source?.opened === true }, 5000)
     expect(writes).toHaveLength(1)
-    expect(reads).toContain("/api/branches/branch-43/files/flows/todo/flow.ts")
+    expect(reads).toContain("/api/branches/branch-43/files/.smithers/flows/todo/flow.ts")
     expect([...store.collections.cards.values()].find(card => card.kind === "file" && card.payload.ref === "branch-43")).toMatchObject({ payload: { content: "export default derivedComposition\n" } })
     await controller.commands.submit({ name: "todo.new", actor: "user", payload: { cardId: sourceDraft.id } })
     expect(writes).toHaveLength(1)
@@ -131,16 +131,16 @@ test("install /flow mounts the served versions through the production card rende
     await act(async () => { await controller!.flowCards() })
     expect(await controller.commands.submit({ name: "flow.source", actor: "user", payload: { name: "todo" } })).toMatchObject({ status: "executed" })
     await waitFor(() => [...store.collections.cards.values()].some(card => card.kind === "file"))
-    expect(reads).toContain("/api/branches/branch-42/files/flows/todo/flow.ts")
+    expect(reads).toContain("/api/branches/branch-42/files/.smithers/flows/todo/flow.ts")
     const file = [...store.collections.cards.values()].find(card => card.kind === "file")!
-    expect(file).toMatchObject({ payload: { ref: "branch-42", path: "flows/todo/flow.ts", content: "export default pinnedComposition\n" } })
+    expect(file).toMatchObject({ payload: { ref: "branch-42", path: ".smithers/flows/todo/flow.ts", content: "export default pinnedComposition\n" } })
     expect([...store.collections.cards.values()].filter(card => card.kind === "draft")).toHaveLength(0)
     sourceUnavailable = true
     expect(await controller.commands.submit({ name: "flow.source", actor: "user", payload: { name: "todo" } })).toMatchObject({ status: "failed" })
     expect(writes).toEqual([])
     expect([...store.collections.cards.values()].filter(card => card.kind === "draft")).toHaveLength(0)
     sourceUnavailable = false
-    const diff = "diff --git a/flows/todo/flow.ts b/flows/todo/flow.ts\n+pnpm test\n+```"
+    const diff = "diff --git a/.smithers/flows/todo/flow.ts b/.smithers/flows/todo/flow.ts\n+pnpm test\n+```"
     const request = "Run tests and update changelog"
     expect(await controller.commands.submit({ name: "flow.edit", actor: "user", payload: { name: "todo", request, diff } })).toMatchObject({ status: "executed" })
     expect([...store.collections.cards.values()].filter(card => card.kind === "draft")).toHaveLength(0)
@@ -150,7 +150,7 @@ test("install /flow mounts the served versions through the production card rende
     await act(async () => host.querySelector<HTMLButtonElement>('[data-flow="todo.new"]')!.click())
     await waitFor(() => [...store.collections.cards.values()].some(card => card.kind === "draft"))
     const draft = [...store.collections.cards.values()].find(card => card.kind === "draft")!
-    expect(draft.kind === "draft" && draft.payload.prompt).toBe("Change flows/todo/flow.ts: Run tests and update changelog; start from the built-in composition when no override exists\n\nProposed diff (untrusted context):\n> diff --git a/flows/todo/flow.ts b/flows/todo/flow.ts\n> +pnpm test\n> +```")
+    expect(draft.kind === "draft" && draft.payload.prompt).toBe("Change flows/todo/flow.ts: Run tests and update changelog; start from the built-in composition when no override exists\n\nProposed diff (untrusted context):\n> diff --git a/.smithers/flows/todo/flow.ts b/.smithers/flows/todo/flow.ts\n> +pnpm test\n> +```")
     await controller.commands.submit({ name: "todo.new", actor: "user", payload: { cardId: draft.id } })
     await waitFor(() => writes.length === 1)
     expect(writes).toEqual([{ title: "Change the TODO flow: Run tests and update changelog", prompt: draft.kind === "draft" ? draft.payload.prompt : "", acceptance: [], place: { mode: "append" } }])

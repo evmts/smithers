@@ -3,15 +3,16 @@ title: "API reference"
 description: "Every public export of @smthrs/flows: the barrel's namespaces and flat authoring names, the NodeRuntime composition roots and their options, and the SandboxedFlow runner with its errors, limits, and schemas."
 ---
 
-`@smthrs/flows` has three public entry points.
+`@smthrs/flows` has these public entry points.
 
-| Entry point                   | Contents                                                                         |
-| ----------------------------- | -------------------------------------------------------------------------------- |
-| `@smthrs/flows`               | The barrel: twenty engine packages re-exported, plus `namespaces`. Browser-safe. |
-| `@smthrs/flows/Runtime`       | Shared engine/storage composition over injected Effect SQL and host services.    |
-| `@smthrs/flows/NodeRuntime`   | Native Node composition, preserving the existing API.                            |
-| `@smthrs/flows/BunRuntime`    | Native Bun composition using the Bun SQL adapter.                                |
-| `@smthrs/flows/SandboxedFlow` | Running a child flow's own code inside a provisioned machine. Node-only.         |
+| Entry point                          | Contents                                                                         |
+| ------------------------------------ | -------------------------------------------------------------------------------- |
+| `@smthrs/flows`                      | The barrel: twenty engine packages re-exported, plus `namespaces`. Browser-safe. |
+| `@smthrs/flows/Runtime`              | Shared engine/storage composition over injected Effect SQL and host services.    |
+| `@smthrs/flows/NodeRuntime`          | Native Node composition, preserving the existing API.                            |
+| `@smthrs/flows/BunRuntime`           | Native Bun composition using the Bun SQL adapter.                                |
+| `@smthrs/flows/SandboxedFlow`        | Running a child flow's own code inside a provisioned machine. Node-only.         |
+| `@smthrs/flows/test/TestNodeRuntime` | Test support: a durable Node engine over one SQLite file. Node-only.             |
 
 ```ts
 import { Action, Flow, Kernel, RunStore } from "@smthrs/flows"
@@ -653,6 +654,22 @@ SandboxedFlow.toLayer(RunChild, Child, ({ executionId, callId }) => ({
 
 Compose the returned layer beside `Interpreter.layer(parent)` over one
 `Action.layerImplementations`, exactly as any other action implementation.
+
+## test/TestNodeRuntime
+
+[src/test/TestNodeRuntime.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/src/test/TestNodeRuntime.ts)
+
+A durable Node engine over one SQLite file, for tests and examples. The
+examples in this package, `@smthrs/agent` and `@smthrs/mcp` run on it.
+
+| Export          | Signature                                          | Meaning                                                                                                                       |
+| --------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `durableEngine` | `(filename: string, hostId: string) => Layer<...>` | `NodeRuntime.layer` over `filename`, owned as `hostId`, with the production step boundary and sandbox and the stores exposed. |
+| `requirements`  | `(filename: string) => Layer<...>`                 | The same stores, boundary, and sandbox without an engine, for reading a run back or driving a private engine.                 |
+| `stubJj`        | `Layer<Jj>`                                        | A Jujutsu service that records nothing. A sealed action never asks for it; a compensable one needs a real service.            |
+
+It is not a host: it grants no capabilities and its `Jj` restores nothing. A
+program uses [`NodeRuntime.layerHost`](#noderuntime).
 
 ## See also
 

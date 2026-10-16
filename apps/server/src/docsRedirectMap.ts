@@ -1202,6 +1202,7 @@ export const DOCS_PAGES: ReadonlyMap<string, ReadonlyMap<string, string>> = new 
     ["/guides/inject-a-process-fault/", "https://github.com/smithersai/smithers/blob/main/packages/testing/docs/guides/inject-a-process-fault.md"],
     ["/guides/register-effect-tests/", "https://github.com/smithersai/smithers/blob/main/packages/testing/docs/guides/register-effect-tests.md"],
     ["/guides/replay-a-model/", "https://github.com/smithersai/smithers/blob/main/packages/testing/docs/guides/replay-a-model.md"],
+    ["/guides/serve-a-recorded-model/", "https://github.com/smithersai/smithers/blob/main/packages/testing/docs/guides/serve-a-recorded-model.md"],
     ["/installation/", "https://github.com/smithersai/smithers/blob/main/packages/testing/docs/installation.md"],
     ["/quickstart/", "https://github.com/smithersai/smithers/blob/main/packages/testing/docs/quickstart.md"],
     ["/reference/api/", "https://github.com/smithersai/smithers/blob/main/packages/testing/docs/api.md"],

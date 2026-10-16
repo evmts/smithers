@@ -4226,6 +4226,16 @@
             "types": "./dist/cjs/BunRuntime.d.ts",
             "default": "./dist/cjs/BunRuntime.js"
           }
+        },
+        "./test/TestNodeRuntime": {
+          "import": {
+            "types": "./dist/esm/test/TestNodeRuntime.d.ts",
+            "default": "./dist/esm/test/TestNodeRuntime.js"
+          },
+          "require": {
+            "types": "./dist/cjs/test/TestNodeRuntime.d.ts",
+            "default": "./dist/cjs/test/TestNodeRuntime.js"
+          }
         }
       },
       "declarations": {
@@ -4239,6 +4249,7 @@
         "internal/RegistryArgs.d.ts": "7bada62d3265802b385a52ca2b1939f9be851a16795e253850c5e129917f6a81",
         "internal/RuntimeOptions.d.ts": "3d8ee88a37184cc13e95e0162c08d2508deec5708b9fb20b4591e4af52945719",
         "internal/SandboxedFlowGuest.d.ts": "cdebef8651ac2a78c13e02d3c04edab43ba98a68cb90ce4562cd2b587ccfa92e",
+        "test/TestNodeRuntime.d.ts": "fc7ae5bf510af3eb7b1eb655e24eb1ff0d2aa6b106dfd31f5bc1b177accf5f65",
         "../vendor/cjs/node-shared/NodeAddressResolver.d.ts": "51107011d7c3e68ed2635b16bb93174fdfd4c519825303855322bb18bdc61674",
         "../vendor/cjs/node-shared/NodeChildProcessSpawner.d.ts": "2b1b1c5b8a38eb94a53c5945a6358be20cc10b724cd994085f60e244a020333f",
         "../vendor/cjs/node-shared/NodeClusterSocket.d.ts": "a715e1bd05f92ebba252eef2ca02463fc3448098573db685f621fbf2a9cc8f8e",

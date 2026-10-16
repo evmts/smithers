@@ -109,7 +109,7 @@ const controlledFlow = (schema: Schema.Top) => {
       kind: "module",
       flows: [],
       capabilities: [],
-      path: join(cwd, "flows/review/flow.ts")
+      path: join(cwd, ".smithers/flows/review/flow.ts")
     }],
     input: async () => schema,
     body: async () => {
@@ -791,7 +791,7 @@ test.each([[80, 24], [110, 32]])(
           kind: "module" as const,
           flows: [],
           capabilities: [],
-          path: join(cwd, `flows/${name}/flow.ts`)
+          path: join(cwd, `.smithers/flows/${name}/flow.ts`)
         })),
       input: async () => Schema.Struct({}),
       body: async () => {

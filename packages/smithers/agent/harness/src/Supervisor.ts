@@ -53,7 +53,7 @@
  * (`CellTurn.Input.judged`), and only through a monitor that crossed and
  * passed its gates; the text of the legacy nudge is {@link nudge}, which the
  * `supervisor` lint monitor says. The offline replay of archived journals
- * (`evals/swebench/lib/jev-replay.mjs`, which scores {@link triggers} itself
+ * (`packages/smithers/agent/harness/benchmarks/swebench/lib/jev-replay.mjs`, which scores {@link triggers} itself
  * rather than a copy of it) measures their precision. The verdict is
  * journaled whenever an `Evaluator` is bound. The supervisor writes no
  * memory: a run's transcript is mined once, at run end, by `@smthrs/agent`'s

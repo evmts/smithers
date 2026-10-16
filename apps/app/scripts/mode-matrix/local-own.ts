@@ -126,8 +126,8 @@ const seedGitHubRepository = (gitRoot: string, owner: string): void => {
   writeFileSync(join(seed, "README.md"), "# demo\n\nThe mode matrix's install repository.\n")
   writeFileSync(join(seed, "JOURNEY.md"), "Add a greeting to JOURNEY.md\n")
   writeFileSync(join(seed, "Makefile"), "build:\n\ttest -s JOURNEY.md\n\ntest:\n\tgrep -q . JOURNEY.md\n")
-  mkdirSync(join(seed, "flows", "approval-proof"), { recursive: true })
-  writeFileSync(join(seed, "flows/approval-proof/flow.mdx"), approvalFlow("00000000-0000-4000-8000-000000000000"))
+  mkdirSync(join(seed, ".smithers", "flows", "approval-proof"), { recursive: true })
+  writeFileSync(join(seed, ".smithers/flows/approval-proof/flow.mdx"), approvalFlow("00000000-0000-4000-8000-000000000000"))
   git(["-C", seed, "add", "."])
   git(["-C", seed, "-c", "user.name=Owner", "-c", "user.email=owner@example.test", "commit", "-q", "-m", "Initial commit"])
   git(["clone", "-q", "--bare", seed, bare])
@@ -202,7 +202,7 @@ export const startLocalOwn = async (rootDir: string, revision: string, outputDir
     await run("build rehearsal daemon", ["cargo", "build", "--locked", "-p", "smithers-machined", "--example", "rehearsal_daemon", "--target-dir", daemonTarget])
     await run("build coding host", ["node", "--input-type=module", "-e", `import { bundle } from "./flows/coding/build.mjs"; await bundle("flows/test/rehearsal-host.ts", ${JSON.stringify(join(hostDir, "smithers-coding-host"))})`])
     await run("build model host", ["node", "apps/model-host/build.mjs", join(hostDir, "smithers-model-host")])
-    await run("write Flow host manifest", ["node", "distribution/flow-host-manifest.mjs", manifest, join(hostDir, "smithers-coding-host")])
+    await run("write Flow host manifest", ["node", "apps/app/scripts/flow-host-manifest.mts", manifest, join(hostDir, "smithers-coding-host")])
 
     // GitHub and every model provider are the install's loopback fakes, as in the no-GitHub walk.
     const owner = `matrix${randomUUID().replaceAll("-", "").slice(0, 12)}`

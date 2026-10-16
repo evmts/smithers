@@ -1,5 +1,5 @@
 /** Durable HumanTask producer for the composed TODO approval test. All work is
- * sealed human input: the example engine's unused JJ port performs no effects.
+ * sealed human input: the test engine's unused JJ port performs no effects.
  * SQLite, waiting state, journal, HumanTask validation and restart are real. */
 import * as AgentSession from "../../../../smithers/agent/src/AgentSession.ts"
 import * as SqlControlRuntime from "../../../../smithers/control/src/SqlControlRuntime.ts"
@@ -7,7 +7,7 @@ import * as ApprovalAuthority from "../../../../smithers/control/src/ApprovalAut
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import { Action, Flow, HumanTask, Interpreter } from "@smthrs/flow"
 import { Effect, Layer, Option, Schedule, Schema } from "effect"
-import { durableEngine } from "../../../../../examples/src/durable-layer.ts"
+import { durableEngine } from "../../../../smithers/flows/src/test/TestNodeRuntime.ts"
 
 const Todo = Flow.make("todo", {
   description: "Approve a plan through the installed TODO answer door.",

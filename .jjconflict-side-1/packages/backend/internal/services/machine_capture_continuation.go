@@ -1,0 +1,227 @@
+package services
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/repohost"
+)
+
+// Captured edits skip planning but never checks or review. A stale capture
+// still needs daemon reconciliation; a changed prefix needs rebase first.
+// Neither condition licenses a new coding attempt or a host rewrite of an
+// awake branch. The retained capture stays available until that boundary runs.
+func (st *mythicalItemStep) consumeCapturedEdits(ctx context.Context, item db.MythicalItem) (*db.MythicalItem, bool, error) {
+	checks := mythicalChecksOf(item)
+	capture := checks.Capture
+	submitted := capture != nil && item.RequestRunID != "" && item.RequestOutcome == "" && checks.RunAttached && checks.ProposalRun == item.RequestRunID && checks.ProposalHead == capture.Head
+	// A native observation can arrive after the same head's authenticated,
+	// validated delivery. It confirms that candidate; it is not edited work
+	// waiting for another steer or verification launch.
+	_, pinned := mythicalPinOf(item)
+	if pinned && !item.PausedAt.Valid && len(item.PendingOp) == 0 && checks.ForeignHead == "" && capture != nil && !capture.Stale && !capture.Conflict && capture.ReconciledOnto == "" && capture.ReconcileWaitID == "" &&
+		item.CandidateVerified && item.VibeOutcome == "submitted" && capture.Head == item.CandidateHead {
+		return st.consumeSubmittedCapture(ctx, item, *capture)
+	}
+	if capture == nil || capture.Stale || capture.Conflict || capture.ReconciledOnto != "" || todoReopenedAttempt(item) || item.PausedAt.Valid || len(item.PendingOp) > 0 || checks.ForeignHead != "" && !submitted {
+		return nil, false, nil
+	}
+	if _, pinned := mythicalPinOf(item); !pinned {
+		return nil, false, nil
+	}
+	if checks.Rebase != nil && !checks.Rebase.Rebased && capture.SourceRef == "" {
+		return nil, false, nil
+	}
+	if item.State == "verifying" && item.VerifyOutcome == "" {
+		return nil, false, nil
+	}
+	if review := checks.Review; review != nil && review.Verdict == "" {
+		return nil, false, nil
+	}
+	// Text holds an edited-only continuation. The current run's exact sealed
+	// submission still needs verification to unblock stack.candidate; retained
+	// history is not a consumption receipt and must remain for later inputs.
+	for _, input := range checks.Steers {
+		if input.Attempt == item.Attempt && (input.ReleasePending || !input.InputConsumed && !submitted) {
+			return nil, false, nil
+		}
+	}
+	for _, wait := range todoOpenWaits(item) {
+		// Verification may finish under an outside-push hold. Publication
+		// still refuses through its independent wait/head gate.
+		if !submitted || wait.Kind != "foreign_push" {
+			return nil, false, nil
+		}
+	}
+	if st.s == nil || st.r == nil || item.WorkspaceID == "" || item.CandidateBase == "" {
+		return nil, false, nil
+	}
+	onto := st.prefix(item)
+	// A composed native branch must follow its prefix before its sealed
+	// capture is verified. Rebasing only the host candidate leaves the guest
+	// on its old tree; its next native rebase would treat prefix bytes as
+	// deletions against the newer candidate base. The ordinary integrate
+	// continuation performs the authenticated rewrite and consumes its capture.
+	if item.CandidateBase != onto && (st.s.branchRebase != nil || capture.SourceRef == "" || !st.s.mayRebaseAtBoundary(ctx, item.RepositoryID, item.WorkspaceID)) {
+		return nil, false, nil
+	}
+	var plan struct {
+		Checks []json.RawMessage `json:"checks"`
+	}
+	if len(item.Plan) == 0 || json.Unmarshal(item.Plan, &plan) != nil {
+		return nil, false, errors.New("captured edits need the retained check plan")
+	}
+	for _, id := range []string{capture.Head, capture.Tree, capture.Base, capture.Onto} {
+		if !codingCommitID.MatchString(id) {
+			return nil, false, errors.New("invalid pending capture")
+		}
+	}
+	if capture.Head != capture.Onto {
+		return nil, false, errors.New("pending capture is not the published head")
+	}
+	if parsed, err := uuid.Parse(item.WorkspaceID); err != nil || parsed.String() != item.WorkspaceID {
+		return nil, false, errors.New("invalid captured branch")
+	}
+	if capture.SourceRef != "" && capture.SourceRef != repohost.WorkspaceSourceRef(item.WorkspaceID, capture.Head) {
+		return nil, false, errors.New("invalid retained capture ref")
+	}
+	if !st.r.g.has(ctx, capture.Head) {
+		ref := "refs/smithers/branches/" + item.WorkspaceID + "/captures/" + capture.Head
+		if capture.SourceRef != "" {
+			ref = capture.SourceRef
+		}
+		if err := st.r.g.fetch(ctx, st.r.bridge.URL(), 0, 0, ref); err != nil {
+			return nil, false, fmt.Errorf("read retained capture: %w", err)
+		}
+	}
+	commit, err := st.r.g.readCommit(ctx, capture.Head)
+	if err != nil {
+		return nil, false, err
+	}
+	if commit.Tree != capture.Tree {
+		return nil, false, errors.New("captured tree differs from its retained commit")
+	}
+	containsBase, err := st.capturedContinuationContainsBase(ctx, item, *capture)
+	if err != nil {
+		return nil, false, err
+	}
+	if !containsBase {
+		return nil, false, errors.New("captured edits need reconciliation with their candidate base")
+	}
+
+	next := retainTodoAttemptEvidence(item)
+	next.CandidateHead = capture.Head
+	if paths, err := st.protectedChanges(ctx, next); err != nil {
+		return nil, false, err
+	} else if len(paths) > 0 {
+		return nil, false, errors.New("captured edits change protected paths")
+	}
+	head := capture.Head
+	if item.CandidateBase != onto {
+		if err := st.fetchOnto(ctx, onto); err != nil {
+			return nil, false, err
+		}
+		head, err = st.r.g.rebaseCandidate(ctx, onto, mythicalCandidate{ItemID: uuidString(item.ID), Issue: item.IssueNumber.Int64, Base: item.CandidateBase, Head: capture.Head}, mythicalChainLimit)
+		if err != nil {
+			return nil, false, err
+		}
+		next.CandidateBase, next.CandidateHead = onto, head
+		if paths, err := st.protectedChanges(ctx, next); err != nil {
+			return nil, false, err
+		} else if len(paths) > 0 {
+			return nil, false, errors.New("rebased capture changes protected paths")
+		}
+	}
+	return st.verifyCandidate(ctx, item, next, onto, head, capture)
+}
+
+// Take the stack -> items -> workspace locks before the launch writes any
+// rows. An intervening capture, pause, prefix or claim change consumes nothing.
+func (st *mythicalItemStep) lockCapturedContinuation(ctx context.Context, tx pgx.Tx, item db.MythicalItem, capture MachineCapturePending, expectedPrefix string) error {
+	var live bool
+	var main string
+	if err := tx.QueryRow(ctx, `SELECT state='active' AND running AND claim=$2 AND lease_expires_at>clock_timestamp(),landed_main FROM mythical_stacks WHERE repository_id=$1 FOR UPDATE`, item.RepositoryID, st.r.row.Claim).Scan(&live, &main); err != nil {
+		return err
+	}
+	if !live {
+		return db.ErrMythicalLeaseLost
+	}
+	if main != st.r.row.LandedMain {
+		return errors.New("main moved before captured edits were consumed")
+	}
+	q := db.New(tx)
+	order, err := q.LockMythicalStackOrder(ctx, item.RepositoryID)
+	if err != nil {
+		return err
+	}
+	current, err := q.GetMythicalItem(ctx, item.ID)
+	if err != nil {
+		return err
+	}
+	if current.Version != item.Version || current.State != item.State || current.Attempt != item.Attempt || current.Generation != item.Generation || current.WorkspaceID != item.WorkspaceID || current.CandidateHead != item.CandidateHead || current.CandidateBase != item.CandidateBase || current.FlowDigest != item.FlowDigest || mythicalChecksOf(current).FlowSource != mythicalChecksOf(item).FlowSource || current.PausedAt.Valid || len(current.PendingOp) > 0 {
+		return errors.New("TODO changed before captured edits were consumed")
+	}
+	fresh := *st
+	fresh.items = order
+	if expectedPrefix != fresh.prefix(current) {
+		return errors.New("prefix moved before captured edits were consumed")
+	}
+	var head string
+	var raw []byte
+	if err := tx.QueryRow(ctx, `SELECT head_commit_id,capture_pending FROM workspaces WHERE id=$1 AND repository_id=$2 AND deleted_at IS NULL FOR NO KEY UPDATE`, item.WorkspaceID, item.RepositoryID).Scan(&head, &raw); err != nil {
+		return err
+	}
+	var pending MachineCapturePending
+	if json.Unmarshal(raw, &pending) != nil || pending != capture || head != capture.Head {
+		return errors.New("capture changed before its continuation")
+	}
+	if stored := mythicalChecksOf(current).Capture; stored == nil || *stored != capture {
+		return errors.New("capture is no longer pending on this TODO")
+	}
+	return nil
+}
+
+func (st *mythicalItemStep) consumeSubmittedCapture(ctx context.Context, item db.MythicalItem, capture MachineCapturePending) (*db.MythicalItem, bool, error) {
+	tx, err := st.s.store.Begin(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	defer tx.Rollback(context.WithoutCancel(ctx))
+	if err = st.lockCapturedContinuation(ctx, tx, item, capture, st.prefix(item)); err != nil {
+		return nil, false, err
+	}
+	next := item
+	checks := mythicalChecksOf(next)
+	checks.Capture = nil
+	next.Checks = checks.encode()
+	if _, err = tx.Exec(ctx, `UPDATE workspaces SET capture_pending=NULL WHERE id=$1`, item.WorkspaceID); err != nil {
+		return nil, false, err
+	}
+	saved, err := db.New(tx).SaveMythicalItem(ctx, next)
+	if err != nil {
+		return nil, false, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return nil, false, err
+	}
+	return &saved, true, nil
+}
+
+func (st *mythicalItemStep) capturedContinuationContainsBase(ctx context.Context, item db.MythicalItem, capture MachineCapturePending) (bool, error) {
+	containsBase, err := st.r.g.isAncestor(ctx, item.CandidateBase, capture.Head)
+	if err != nil || containsBase {
+		return containsBase, err
+	}
+	// Bring-in can retain a verified candidate whose GitHub parent contains
+	// earlier-item bytes under a different commit identity. New edits must
+	// descend from that exact retained candidate, never assert an equivalent tree.
+	if capture.SourceRef == repohost.WorkspaceSourceRef(item.WorkspaceID, capture.Head) && capture.Base == item.CandidateHead && codingCommitID.MatchString(item.CandidateHead) {
+		return st.r.g.isAncestor(ctx, item.CandidateHead, capture.Head)
+	}
+	return false, nil
+}

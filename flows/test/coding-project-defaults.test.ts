@@ -172,7 +172,7 @@ const startup = (root: string, stateRoot: string, hostPolicy = policy) =>
     const planning = yield* loadProject(root, undefined)
     const builtins = yield* provisionHostBuiltins(stateRoot, hostPolicy, { planning })
     const project = yield* Registry.make({
-      sources: [{ root: join(root, "flows"), source: "project", naming: "path" }]
+      sources: [{ root: join(root, ".smithers", "flows"), source: "project", naming: "path" }]
     }).pipe(Effect.provide(Discovery.layer))
     const registry = bindRepositoryRegistry(project, builtins.registry, hostPolicy, systemFlows)
     const built = yield* repositoryCatalog(
@@ -184,7 +184,7 @@ const startup = (root: string, stateRoot: string, hostPolicy = policy) =>
 
 test("a repository with no Smithers files serves engine verification with its detected checks registered", async (t) => {
   const { root, stateRoot } = await repository(t, goModule)
-  await mkdir(join(root, "flows"))
+  await mkdir(join(root, ".smithers", "flows"))
   const { planning, built } = await startup(root, stateRoot)
   assert.deepEqual(configuredCodingRoutes({ planning }).map((route) => route.name), [
     "coding/rebase-conflict",
@@ -229,7 +229,7 @@ test("a plan's detected checks keep one identity on every lane's host, and a cha
     "package.json": JSON.stringify({ name: "fixture", scripts: { test: "vitest run", lint: "eslint ." } }),
     "pnpm-lock.yaml": "lockfileVersion: '9.0'\n"
   })
-  await mkdir(join(root, "flows"))
+  await mkdir(join(root, ".smithers", "flows"))
   const lanes = dirname(root)
   const identities = async (lane: string, hostPolicy: string) => {
     const { built } = await startup(root, join(lanes, lane, "managed-hosts", hostPolicy.slice(0, 8)), hostPolicy)

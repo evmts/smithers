@@ -135,7 +135,7 @@ test("C-UI-01: Every P0 journey completes keyboard-only", async ({ page }) => {
   await page.keyboard.press("End")
   await command("/flow todo")
   await act("Source")
-  await expect(page.locator(".smithers-card").last()).toContainText("flows/todo/flow.ts")
+  await expect(page.locator(".smithers-card").last()).toContainText(".smithers/flows/todo/flow.ts")
   await command("/branch ben/retry-try-2")
   await command("/flow.run todo")
   await expect(page.locator(".smithers-card").last()).toContainText("Run")

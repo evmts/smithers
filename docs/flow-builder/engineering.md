@@ -176,7 +176,7 @@ interface GraphNode {
 
 Three edge reasons → three link styles. `diagnostics` is the inline error list;
 a graph with diagnostics is inspectable but not compilable (`Graph.drafts` throws
-the first one). `examples/src/17-review-loop.ts:95` (`declaredCalls`) is the
+the first one). `packages/smithers/flows/examples/17-review-loop.ts:95` (`declaredCalls`) is the
 already-written static-analysis pattern: build the graph and count its nodes
 before anything runs.
 

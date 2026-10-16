@@ -14,7 +14,6 @@
  */
 import { Smithers } from "@smthrs/targets"
 import { Package as scriptPackage } from "../../scripts/PACKAGE.ts"
-import { Package as examplesPackage } from "../../examples/PACKAGE.ts"
 import { Package as errorsPackage } from "../../packages/errors/PACKAGE.ts"
 import { Package as chainPackage } from "../../packages/smithers/agent/chain/PACKAGE.ts"
 import { Package as evalsPackage } from "../../packages/smithers/agent/evals/PACKAGE.ts"
@@ -269,11 +268,15 @@ const llms = Smithers.Generate({
 
 /**
  * Checks documentation text extraction, install guidance, public CLI page
- * selection, and built release URLs, including redirects and migration anchors.
+ * selection, and built release URLs, including redirects and migration anchors,
+ * and where site copy says a repository's flows live (M-49).
  */
 const docsTextTest = Smithers.Shell.Test({
-  shell: "node --test --test-concurrency=1 apps/site/scripts/docs-text.test.mjs apps/site/scripts/built-site.test.mjs apps/site/scripts/gen-cli-data.test.mjs",
+  shell: "node --test --test-concurrency=1 apps/site/scripts/docs-text.test.mjs apps/site/scripts/built-site.test.mjs apps/site/scripts/gen-cli-data.test.mjs apps/site/scripts/flows-location.test.mjs",
   data: [
+    Smithers.file("scripts/flows-location.test.mjs"),
+    Smithers.file("src/data/migration-paths.json"),
+    Smithers.file("src/components/HeroStage.astro"),
     Smithers.file("scripts/docs-text.mjs"),
     Smithers.file("scripts/docs-text.test.mjs"),
     Smithers.file("src/content/docs/docs/reference/http-api.mdx"),
@@ -458,7 +461,6 @@ const docsRuntimeTests = Smithers.Shell.Test({
     Smithers.file("//apps/server/scripts/canary/workers-manifest.ts"),
     Smithers.file("//apps/bug-worker/README.md"),
     Smithers.file("//apps/bug-worker/package.json"),
-    examplesPackage.docs,
     cliPackage.docsSources,
     flowPackage.docsSources,
     enginePackage.docsSources,
