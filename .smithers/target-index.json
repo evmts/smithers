@@ -210,10 +210,7 @@
       }
     ],
     "outputs": [],
-    "dependencies": [],
-    "source": {
-      "file": "PACKAGE.ts"
-    }
+    "dependencies": []
   },
   {
     "label": "//:changelog",
@@ -68752,7 +68749,9 @@
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//:backendSQLC"
+    ],
     "source": {
       "file": "scripts/PACKAGE.ts"
     }
@@ -69152,6 +69151,7 @@
     ],
     "outputs": [],
     "dependencies": [
+      "//:backendSQLC",
       "//scripts:repositoryInputs"
     ],
     "source": {

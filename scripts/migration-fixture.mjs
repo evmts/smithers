@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process'
 import { copyFileSync, mkdirSync, writeFileSync, symlinkSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 const root = resolve(import.meta.dirname, '..')
-process.env.PATH = `${join(root, 'node_modules/.bin')}:${process.env.PATH}`
+process.env.PATH = `${join(root, '.backend-sqlc')}:${join(root, 'node_modules/.bin')}:${process.env.PATH}`
 // Keep toolchain downloads outside disposable homes: Go module directories are
 // read-only and cannot be removed by recursive fixture cleanup on macOS.
 process.env.GOMODCACHE ||= spawnSync('go', ['env', 'GOMODCACHE'], { encoding: 'utf8' }).stdout.trim()

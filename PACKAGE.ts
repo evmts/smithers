@@ -1,4 +1,5 @@
 import { nativeFfiInputs, nativeFfiLib, rehearsalNative } from "./scripts/native-targets.ts"
+import { backendSQLC } from "./scripts/backend-sqlc.ts"
 import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
 import { ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
@@ -369,14 +370,6 @@ const backendGoModules = Smithers.Go.ModDownload({
   destinations: ["proxy.golang.org", "sum.golang.org", "storage.googleapis.com"]
 })
 
-// sqlc owns product row models; the backend suite regenerates and compiles them.
-const backendSQLC = Smithers.Shell.Build({
-  shell: "GOBIN=\"$PWD/.backend-sqlc\" go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0",
-  outDirs: ["//.backend-sqlc"],
-  data: [Smithers.file("//go.mod")],
-  sandbox: { network: true },
-  timeout: "15m"
-})
 
 // C-COL-06: qualify the shared corpus and daemon refusals in both languages.
 const machinedWire = Smithers.Shell.Test({

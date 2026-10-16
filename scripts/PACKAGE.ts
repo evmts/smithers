@@ -11,6 +11,7 @@
  * The interpreter comes from the root runtime declaration. Nothing here spells
  * `node`.
  */
+import { backendSQLC } from "./backend-sqlc.ts"
 import { Smithers } from "@smthrs/targets"
 import { existsSync, readdirSync } from "node:fs"
 import { listFiles } from "./check-tracked-hygiene.mjs"
@@ -61,7 +62,7 @@ const engineeringScriptRegressions = Smithers.NodeTest({
     Smithers.file("//scripts/spikes/col-01/result.test.mjs")
   ]),
   srcs: [],
-  deps: [repositoryInputs]
+  deps: [repositoryInputs, backendSQLC]
 })
 
 /**
@@ -978,7 +979,7 @@ const lint = Smithers.EsLint({
 const commit = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//scripts/commit.test.mjs")]),
   srcs: [Smithers.file("//scripts/commit.mjs")],
-  deps: [],
+  deps: [backendSQLC],
   timeout: "30m"
 })
 
