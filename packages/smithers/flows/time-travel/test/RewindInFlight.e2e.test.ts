@@ -6,6 +6,7 @@ import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { spawn } from "node:child_process"
+import { once } from "node:events"
 import { fileURLToPath } from "node:url"
 import { TimeTravel } from "../src/TimeTravel.ts"
 import {
@@ -13,7 +14,6 @@ import {
   jjInstalled,
   Journal,
   killHard,
-  parkSealedFlow,
   runReal,
   runRealEngine,
   withRealFixture
@@ -171,11 +171,25 @@ describe.skipIf(!jjInstalled)("rewind versus a genuinely in-flight engine", () =
               const stale = yield* waitUntilStale(fixture.databaseFile, runId)
               expect(stale).toMatchObject({ status: "running", owner_pid: childPid })
 
+              // Rebuild through the same native loader as the killed host.
+              // Vitest transforms function source and is a different declaration.
+              const recovery = spawn(process.execPath, [childFixture, fixture.databaseFile, runId, hostId, "recover"], {
+                cwd: fixture.repository,
+                env: { ...process.env, JJ_EDITOR: "true" }
+              })
+              const exited = once(recovery, "exit")
+              try {
+                expect(yield* Effect.promise(() => awaitCheckpoint(recovery, "recovery child")))
+                  .toEqual({ status: "recovered" })
+                expect(yield* Effect.promise(() => exited)).toEqual([0, null])
+              } finally {
+                yield* Effect.promise(() => killHard(recovery))
+              }
+
               const recovered = yield* runRealEngine(
                 fixture.databaseFile,
                 hostId,
                 Effect.gen(function*() {
-                  yield* parkSealedFlow(runId, Effect.succeed("adopted"))
                   const journal = yield* Journal.Journal
                   yield* journal.flush
                   const runs = yield* RunStore.RunStore
