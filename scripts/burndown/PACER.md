@@ -3,10 +3,10 @@
 Offline Node.js pacing, without credentials or network calls.
 
 ```sh
-node examples/burndown/pacer.mjs < usage.json
-sh examples/burndown/burndown.sh usage.json 3 0
-sh examples/burndown/burndown.sh usage.json 3 60 -- ./run-batch
-node --test examples/burndown/pacer.test.mjs
+node scripts/burndown/pacer.mjs < usage.json
+sh scripts/burndown/burndown.sh usage.json 3 0
+sh scripts/burndown/burndown.sh usage.json 3 60 -- ./run-batch
+node --test scripts/burndown/pacer.test.mjs
 ```
 
 The batch command receives `BURNDOWN_CONCURRENCY`. It owns dispatch, completion,
