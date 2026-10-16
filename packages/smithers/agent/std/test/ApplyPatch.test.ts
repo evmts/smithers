@@ -1,4 +1,5 @@
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
+import * as NodePath from "@effect/platform-node/NodePath"
 import { Cause, Effect, Exit, FileSystem, Option, Path, PlatformError } from "effect"
 import { describe, expect, it } from "vitest"
 import * as ApplyPatch from "../src/ApplyPatch.ts"
@@ -735,7 +736,7 @@ describe("ApplyPatch.run", () => {
           move,
           contents: yield* fs.readFileString(original)
         }
-      }).pipe(Effect.provide(NodeFileSystem.layer), Effect.provide(Path.layer))
+      }).pipe(Effect.provide(NodeFileSystem.layer), Effect.provide(NodePath.layer))
     ))
     for (const result of results.results) {
       expect(result.failure).toMatchObject({ code: "invalid_input" })

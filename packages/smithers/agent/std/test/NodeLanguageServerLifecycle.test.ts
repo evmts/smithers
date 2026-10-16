@@ -7,6 +7,7 @@ import { TestClock } from "effect/testing"
 import * as NodeFs from "node:fs"
 import * as NodeOs from "node:os"
 import * as NodePath from "node:path"
+import { pathToFileURL } from "node:url"
 import { describe, expect, it } from "vitest"
 import * as LanguageServer from "../src/LanguageServer.ts"
 import * as NodeLanguageServer from "../src/NodeLanguageServer.ts"
@@ -183,7 +184,7 @@ describe("NodeLanguageServer transport and request ownership", () => {
             output,
             frame(JSON.stringify({
               method: "textDocument/publishDiagnostics",
-              params: { uri: "file:///workspace/a.ts", version: 1, diagnostics: [{ message: "published" }] }
+              params: { uri: pathToFileURL(position.path).href, version: 1, diagnostics: [{ message: "published" }] }
             }))
           ).pipe(Effect.asVoid)
         }

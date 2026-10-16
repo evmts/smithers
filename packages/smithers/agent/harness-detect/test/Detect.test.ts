@@ -1,6 +1,6 @@
 import { AGENT_ROLES } from "@smthrs/rpc/AgentRoles"
 import { HARNESS_IDS } from "@smthrs/rpc/LocalApp"
-import { delimiter, join } from "node:path"
+import { delimiter, join, posix, win32 } from "node:path"
 import { describe, expect, test } from "vitest"
 import {
   decodeJwtClaims,
@@ -80,7 +80,12 @@ describe("version output at the detection boundary", () => {
 })
 
 describe("the candidate dirs", () => {
-  test.each([0, 1, 2])("orders nvm component %i exactly beyond Number precision and range", (component) => {
+  test.each(["darwin", "win32"].flatMap((platform) => [0, 1, 2].map((component) => ({ platform, component }))))(
+    "orders nvm component $component exactly beyond Number precision and range on $platform",
+    ({ platform, component }) => {
+    const { join } = platform === "win32" ? win32 : posix
+    const home = platform === "win32" ? "C:\\Users\\u" : HOME
+    const binary = platform === "win32" ? "codex.exe" : "codex"
     const versions = [
       "v9007199254740992.0.0",
       "v9007199254740993.0.0",
@@ -92,16 +97,16 @@ describe("the candidate dirs", () => {
       return `v${components.join(".")}`
     })
     const h: HarnessHost = {
-      ...host(),
+      ...host({ platform, home }),
       listDir: () => versions,
-      isFile: (path) => path.includes(".nvm") && path.endsWith("/codex")
+      isFile: (path) => path.includes(".nvm") && path.endsWith(join("bin", binary))
     }
-    const expected = [...versions].reverse().map((version) => join(HOME, ".nvm", "versions", "node", version, "bin"))
+    const expected = [...versions].reverse().map((version) => join(home, ".nvm", "versions", "node", version, "bin"))
     expect(harnessCandidateDirs(h).filter((dir) => dir.includes(".nvm"))).toEqual(expected)
-    expect(findBinary("codex", h)).toBe(join(expected[0]!, "codex"))
+    expect(findBinary("codex", h)).toBe(join(expected[0]!, binary))
     const descending = { ...h, listDir: () => [...versions].reverse() }
     expect(harnessCandidateDirs(descending).filter((dir) => dir.includes(".nvm"))).toEqual(expected)
-    expect(findBinary("codex", descending)).toBe(join(expected[0]!, "codex"))
+    expect(findBinary("codex", descending)).toBe(join(expected[0]!, binary))
   })
 
   test.each(["darwin", "win32"])("rejects path components in binary names on %s", (platform) => {

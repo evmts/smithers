@@ -48,6 +48,10 @@ export const effect115Key = "key1_425bb2aeef11571a366804d4700e45def8ac0aceac7c7c
 // 6206550ccc (#3161). Keep the preceding rc.115 vector above unchanged.
 export const approvalRequiredKey = "key1_1e7f6586798d0220c9866f7d53e4d17ba33245e13e476b7e59ce3d080ec2fc8e"
 
+// Reported evaluator charges add costUsd to the error declaration (#3824).
+// Keep all earlier preimages unchanged.
+export const reportedCostKey = "key1_5a55d5f0eb804f94c23df600642072cbe5e926f26ae6c8cbb549d3834bfcb68c"
+
 // Independent JSON oracle. This fixture contains only JSON values, no schema
 // classes, undefined, non-finite numbers or other normalization cases.
 export const canonical = (value: unknown): string => {

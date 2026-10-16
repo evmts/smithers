@@ -1114,7 +1114,7 @@ export default Flow.make("pinned", { description:"Retained", payload, success:Sc
       yield* fs.writeFileString(`${identity}/flows/changelog/SKILL.md`, "CURRENT CHECKOUT")
       const executable = yield* Executable.fromDescriptor(descriptor, options({ sourceRoot: { identity, workspace } }))
       expect(executable.invocation({ args: "retained" }).prompt).toContain("Summarize")
-      expect(executable.invocation({ args: "retained" }).prompt).toContain(`${workspace}/flows/changelog`)
+      expect(executable.invocation({ args: "retained" }).prompt).toContain(join(workspace, "flows/changelog"))
       expect(executable.invocation({ args: "retained" }).prompt).not.toContain("CURRENT CHECKOUT")
       expect(executable.descriptor).toBe(descriptor)
     }).pipe(Effect.scoped, Effect.provide(platform)))

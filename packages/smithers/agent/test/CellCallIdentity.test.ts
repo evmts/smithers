@@ -13,6 +13,7 @@ import * as FlowEngineLike from "../src/FlowEngineLike.ts"
 import * as QuotaPolicy from "../src/QuotaPolicy.ts"
 import materialApproval from "./fixtures/cell-call-material-approval-required.json" with { type: "json" }
 import materialV1 from "./fixtures/cell-call-material-effect-rc115.json" with { type: "json" }
+import materialCost from "./fixtures/cell-call-material-reported-cost.json" with { type: "json" }
 import material112 from "./fixtures/cell-call-material-v1.json" with { type: "json" }
 import * as V1 from "./fixtures/CellCallV1.ts"
 
@@ -91,6 +92,10 @@ it("pins the complete canonical material delivered to SHA-256", async () => {
   expect(`key1_${createHash("sha256").update(expected).digest("hex")}`).toBe(V1.approvalRequiredKey)
   expect(V1.approvalRequiredKey).not.toBe(V1.effect115Key)
   expect(material).not.toContain(archived115)
-  expect(material).toContain(expected)
-  expect(observed.value).toBe(V1.approvalRequiredKey)
+  const current = V1.canonical(materialCost)
+  expect(`key1_${createHash("sha256").update(current).digest("hex")}`).toBe(V1.reportedCostKey)
+  expect(V1.reportedCostKey).not.toBe(V1.approvalRequiredKey)
+  expect(material).not.toContain(expected)
+  expect(material).toContain(current)
+  expect(observed.value).toBe(V1.reportedCostKey)
 })

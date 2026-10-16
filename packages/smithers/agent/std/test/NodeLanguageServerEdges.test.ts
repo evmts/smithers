@@ -3,13 +3,15 @@ import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import { Effect, Sink, Stream } from "effect"
 import type * as ChildProcess from "effect/process/ChildProcess"
 import { makeHandle, ProcessId } from "effect/process/ChildProcessSpawner"
+import { pathToFileURL } from "node:url"
 import { describe, expect, it } from "vitest"
 import * as LanguageServer from "../src/LanguageServer.ts"
 import * as NodeLanguageServer from "../src/NodeLanguageServer.ts"
 import { hostScript } from "./hostScript.ts"
 
 const position = { path: "/workspace/a b.ts", line: 2, character: 4 }
-const positionParams = { textDocument: { uri: "file:///workspace/a%20b.ts" }, position: { line: 2, character: 4 } }
+const uri = pathToFileURL(position.path).href
+const positionParams = { textDocument: { uri }, position: { line: 2, character: 4 } }
 const childScript = (prepared: unknown = [], malformedHeader?: string, rpcError?: unknown): string => `
 const prepared = ${JSON.stringify(prepared)};
 const malformedHeader = ${JSON.stringify(malformedHeader ?? null)};
@@ -111,9 +113,9 @@ describe("NodeLanguageServer real protocol boundaries", () => {
       ["definition", "textDocument/definition", positionParams],
       ["references", "textDocument/references", { ...positionParams, context: { includeDeclaration: true } }],
       ["implementation", "textDocument/implementation", positionParams],
-      ["documentSymbols", "textDocument/documentSymbol", { textDocument: { uri: "file:///workspace/a%20b.ts" } }],
+      ["documentSymbols", "textDocument/documentSymbol", { textDocument: { uri } }],
       ["workspaceSymbols", "workspace/symbol", { query: "Widget" }],
-      ["diagnostics", "textDocument/diagnostic", { textDocument: { uri: "file:///workspace/a%20b.ts" } }]
+      ["diagnostics", "textDocument/diagnostic", { textDocument: { uri } }]
     ] as const
   )("forwards %s with its exact JSON-RPC method and parameters", async (operation, method, params) => {
     const result = await withServer((server) =>

@@ -1339,13 +1339,13 @@ describe("Bash in a registered terminal (T-TRM-05)", () => {
   it("runs a hermetic call whose paths are declared and keeps the terminal's typed failure", async () => {
     const seen: Array<Bash.Input> = []
     const declared: Bash.Input = { mode: "hermetic", command: "cat src/a.ts", reads: ["src/**"], writes: [] }
-    expect(await execute(Effect.provide(terminal(seen)(declared), Path.layer))).toEqual(ok)
+    expect(await execute(Effect.provide(terminal(seen)(declared), NodePath.layer))).toEqual(ok)
     const failing = Bash.inTerminal(() =>
       Effect.fail(
         new StdError.StdError({ code: "timeout", limitMillis: 5, message: "Agent terminal command timed out" })
       )
     )
-    const exit = await execute(Effect.provide(Effect.exit(failing(declared)), Path.layer))
+    const exit = await execute(Effect.provide(Effect.exit(failing(declared)), NodePath.layer))
     expect(Exit.isFailure(exit) && Option.getOrUndefined(Cause.findErrorOption(exit.cause))?.code).toBe("timeout")
   })
 })
