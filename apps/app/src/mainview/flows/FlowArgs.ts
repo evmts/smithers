@@ -56,8 +56,8 @@ export interface FlowInput {
   readonly "box.delete": { readonly workspaceId: string; readonly confirmName: string }
   readonly "box.facet": { readonly workspaceId: string; readonly facet: string }
   readonly "secrets": NonNullable<import("@smthrs/rpc/CardAction").CardCommandInput["secrets"]>
-  readonly "issues.close": { readonly number: number; readonly repo: string }
-  readonly "issues.reopen": { readonly number: number; readonly repo: string }
+  readonly "issues.close": { readonly number: number; readonly repo: string; readonly source?: "smithers-cloud" | "github" }
+  readonly "issues.reopen": { readonly number: number; readonly repo: string; readonly source?: "smithers-cloud" | "github" }
   readonly "findings.please-fix": { readonly changeId: string; readonly findingId: number }
   readonly "findings.not-useful": { readonly changeId: string; readonly findingId: number }
   readonly "review.unrequest": { readonly changeId: string; readonly requestId: number }
@@ -96,7 +96,7 @@ export interface FlowInput {
   readonly "review": { readonly number: number; readonly repo?: string }
   readonly "issue.add-flow": { readonly number: number; readonly repo?: string; readonly description?: string }
   /** Carried as JSON: a Markdown comment holds newlines, indentation and fences, and its repository need not be loaded. */
-  readonly "issues.comment": { readonly number: number; readonly text: string; readonly repo?: string }
+  readonly "issues.comment": { readonly number: number; readonly text: string; readonly repo?: string; readonly source?: "smithers-cloud" | "github" }
 
   /** Source-qualified launch uses the existing plan/approval/run path. */
   readonly "flow.run": { readonly name: string; readonly repo?: string; readonly sourceCard?: string; readonly workspaceId?: string; readonly input?: Readonly<Record<string, unknown>> } | { readonly operation: "stop" | "retry"; readonly cardId: string; readonly reason?: string } | { readonly operation: "stop-all"; readonly repo?: string; readonly sourceCard?: string }
@@ -209,8 +209,9 @@ const ENCODERS: { readonly [N in FlowWithInput]: (payload: Payload) => string } 
   "runs": payload => JSON.stringify(payload),
   "github": payload => JSON.stringify(payload),
   "secrets": payload => JSON.stringify(publicSecretInput(payload)),
-  "issues.close": payload => line(token(payload, "number"), token(payload, "repo")),
-  "issues.reopen": payload => line(token(payload, "number"), token(payload, "repo")),
+  /* The source rides every issue write: a GitHub row and a Smithers Cloud row share one number (IssuesSeam writeSource). */
+  "issues.close": payload => line(token(payload, "number"), token(payload, "repo"), payload.source ? `--source ${payload.source}` : undefined),
+  "issues.reopen": payload => line(token(payload, "number"), token(payload, "repo"), payload.source ? `--source ${payload.source}` : undefined),
   "findings.please-fix": payload => line(token(payload, "changeId"), token(payload, "findingId")),
   "findings.not-useful": payload => line(token(payload, "changeId"), token(payload, "findingId")),
   "review.unrequest": payload => line(token(payload, "changeId"), token(payload, "requestId")),

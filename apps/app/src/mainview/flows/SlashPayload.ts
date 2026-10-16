@@ -88,6 +88,34 @@ const numbered = (args: string | undefined, reason: string, _known?: KnownReposi
   return ok(repo === undefined ? { number } : { number, repo })
 }
 
+/**
+ * `--source github|smithers-cloud` split off an issue command's line, with
+ * the rest intact.
+ *
+ * A write that names no source is routed by the issue it came off
+ * (IssuesSeam `writeSource`); naming one is how a person addresses the other
+ * tracker on purpose, since a repository's GitHub issues and its Smithers
+ * Cloud issues number independently and `#6` is two different objects.
+ */
+export const splitIssueSource = (args: string | undefined): { readonly text: string; readonly source?: string } => {
+  const match = /(?:^|\s)--source(?:\s+|=)(\S+)\s*$/.exec(args ?? "")
+  if (match === null) return { text: trimmed(args) }
+  return { text: (args ?? "").slice(0, match.index).trim(), source: match[1] }
+}
+
+/** The two trackers a command may name; anything else is a refusal, never a guess. */
+const isIssueSource = (value: unknown): boolean => value === "github" || value === "smithers-cloud"
+
+const ISSUE_SOURCE_REFUSAL: Parsed = { error: "Choose GitHub or Smithers Cloud as the issue source" }
+
+/** A numeric issue target that may also name its tracker: `<n> [owner/repo] [--source …]`. */
+const numberedIssue = (args: string | undefined, reason: string, known?: KnownRepositories): Parsed => {
+  const { text, source } = splitIssueSource(args)
+  const parsed = numbered(text, reason, known)
+  if ("error" in parsed || source === undefined) return parsed
+  return isIssueSource(source) ? ok({ ...parsed.payload, source }) : ISSUE_SOURCE_REFUSAL
+}
+
 /** Keep source and repository when a missing issue number opens the shared form. */
 export const issueViewParts = (args: string | undefined): Record<string, unknown> => {
   const match = /^(.*?)\s*--source\s+(\S+)$/.exec(trimmed(args))
@@ -292,17 +320,19 @@ const issueComment = (args: string | undefined, known?: KnownRepositories): Pars
     const parsed = jsonObject("issues.comment")(line)
     if ("error" in parsed) return parsed
     fields = parsed.payload
-    if (Object.keys(fields).some(key => key !== "number" && key !== "text" && key !== "repo")) return no("issues.comment takes number, text and repo")
+    if (Object.keys(fields).some(key => key !== "number" && key !== "text" && key !== "repo" && key !== "source")) return no("issues.comment takes number, text, repo and source")
     if (fields.repo !== undefined && typeof fields.repo !== "string") return no("issues.comment's repository must be owner/repo")
   } else {
-    const { rest, repo } = splitTrailingRepo(line, known)
+    const { text: bare, source } = splitIssueSource(line)
+    const { rest, repo } = splitTrailingRepo(bare, known)
     const [, head = "", text = ""] = /^(\S*)\s*([\s\S]*)$/.exec(rest) ?? []
-    fields = { number: Number(head), text, ...(repo === undefined ? {} : { repo }) }
+    fields = { number: Number(head), text, ...(repo === undefined ? {} : { repo }), ...(source === undefined ? {} : { source }) }
   }
-  const { number, text, repo } = fields
+  const { number, text, repo, source } = fields
   if (typeof number !== "number" || !Number.isInteger(number) || number <= 0) return no("issues.comment needs an issue number")
   if (typeof text !== "string" || text.trim() === "") return no("issues.comment needs the comment text")
-  return ok({ number, text: text.trim(), ...(repo === undefined ? {} : { repo }) })
+  if (source !== undefined && !isIssueSource(source)) return ISSUE_SOURCE_REFUSAL
+  return ok({ number, text: text.trim(), ...(repo === undefined ? {} : { repo }), ...(source === undefined ? {} : { source }) })
 }
 
 /**
@@ -696,14 +726,16 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
     const kindMatch = /(?:^|\s)--kind(?:\s+|=)(\S+)\s*$/.exec(args ?? "")
     const kind = kindMatch?.[1]
     if (kind !== undefined && kind !== "conversation" && kind !== "issue") return no("issues.create --kind takes conversation or issue")
-    const { rest, repo } = splitTrailingRepo(kindMatch === null ? args : (args ?? "").slice(0, kindMatch.index).trim(), known)
+    const { text: beforeKind, source } = splitIssueSource(kindMatch === null ? args : (args ?? "").slice(0, kindMatch.index).trim())
+    if (source !== undefined && !isIssueSource(source)) return ISSUE_SOURCE_REFUSAL
+    const { rest, repo } = splitTrailingRepo(beforeKind, known)
     if (rest === "") return no("issues.create needs a title")
-    return ok({ title: rest, ...(repo === undefined ? {} : { repo }), ...(kind === undefined ? {} : { kind }) })
+    return ok({ title: rest, ...(repo === undefined ? {} : { repo }), ...(kind === undefined ? {} : { kind }), ...(source === undefined ? {} : { source }) })
   },
   "issues.close": (args, known) => trimmed(args).startsWith("{")
-    ? carriedPayload("issues.close")(args) : numbered(args, "issues.close needs an issue number", known),
+    ? carriedPayload("issues.close")(args) : numberedIssue(args, "issues.close needs an issue number", known),
   "issues.reopen": (args, known) => trimmed(args).startsWith("{")
-    ? carriedPayload("issues.reopen")(args) : numbered(args, "issues.reopen needs an issue number", known),
+    ? carriedPayload("issues.reopen")(args) : numberedIssue(args, "issues.reopen needs an issue number", known),
   "issues.comment": (args, known) => issueComment(args, known),
   "prs.list": (args) => repoOnly("prs.list", args),
   "prs.view": (args, known) => numbered(args, "prs.view needs a pull request number", known),

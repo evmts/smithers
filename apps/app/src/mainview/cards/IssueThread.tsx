@@ -93,8 +93,15 @@ export const TaskStrip = ({ thread, onRunCommand, compact = false }: { readonly 
 
 /** The state acts an issue offers: a conversation opens and closes; an issue also gets fixed and verified. */
 export const stateActions = (card: IssueCard, _viewer?: string) => {
-  const { state, number, repo } = card.payload
-  const args = flowArgs("issues.close", { number, repo })
+  const { state, number, repo, source } = card.payload
+  /*
+   * The act carries the card's own source. A repository's GitHub issues and
+   * its Smithers Cloud issues number independently, so #6 names two
+   * different objects; without the source these buttons sent every close and
+   * reopen to the Cloud row, which is the wrong issue whenever the card on
+   * screen is a GitHub-source one.
+   */
+  const args = flowArgs("issues.close", { number, repo, ...(source === undefined ? {} : { source }) })
   const acts: Array<{ readonly flow: "issues.close" | "issues.reopen"; readonly label: string; readonly disabled?: string }> = []
   if (state === "open") {
     acts.push({ flow: "issues.close", label: card.payload.kind === "chat" ? "Close" : "Close issue" })
@@ -136,20 +143,20 @@ const MessageRow = ({ comment, first, context, onRunCommand }: { readonly commen
 }
 
 const Composer = ({ card, onRunCommand }: { readonly card: IssueCard; readonly onRunCommand: RunCommand }) => {
-  const { number, repo } = card.payload
+  const { number, repo, source } = card.payload
   const [draft, setDraft] = useState("")
   const trimmed = draft.trim()
   /* Enter and the Send button are the same act: issues.comment with the number, the text and the repository. */
   const send = () => {
     if (trimmed === "") return
-    onRunCommand("issues.comment", flowArgs("issues.comment", { number, repo, text: trimmed }))
+    onRunCommand("issues.comment", flowArgs("issues.comment", { number, repo, text: trimmed, ...(source === undefined ? {} : { source }) }))
     setDraft("")
   }
   return (
     <form className="thread-composer" aria-label="Message" onSubmit={(event) => {
       event.preventDefault()
       if (trimmed === "") return
-      onRunCommand("issues.comment", flowArgs("issues.comment", { number, repo, text: trimmed }))
+      onRunCommand("issues.comment", flowArgs("issues.comment", { number, repo, text: trimmed, ...(source === undefined ? {} : { source }) }))
       setDraft("")
     }}>
       <Textarea

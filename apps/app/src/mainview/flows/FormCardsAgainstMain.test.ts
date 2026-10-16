@@ -373,7 +373,24 @@ const DECLARED: ReadonlyArray<DeclaredMove> = [
   },
   {
     flow: "issues.create", kind: "card", rows: 36,
-    because: "A chat thread is an issue created with `--kind chat` (smithers-ui-DESIGN.md §3.1), so the create form gains an optional Kind field: every swept line's card now lists that field beside Title and Repository; no draft or missing field changes."
+    because: "A chat thread is an issue created with `--kind chat` (smithers-ui-DESIGN.md §3.1), so the create form gains an optional Kind field: every swept line's card now lists that field beside Title and Repository; no draft or missing field changes. The same 36 cards now also list the optional Source field below, for the reason the three write doors below give."
+  },
+  /*
+   * A connected repository's GitHub issues and its Smithers Cloud issues
+   * number independently, so `#6` names two different objects and a write
+   * that named no tracker addressed the Cloud row for ANY number — the wrong
+   * issue whenever the act came off a GitHub-source card, reported as if it
+   * had been GitHub's (#4022). Every issue write now carries its tracker, so
+   * each of these forms lists one optional Source field beside the fields it
+   * already had; no draft and no missing field changes. `issues.comment`
+   * sweeps two argument shapes more than the numeric doors because its line
+   * also takes the comment text.
+   */
+  ...(["issues.close", "issues.reopen"] as const).map(flow => ({ flow, kind: "card" as const, rows: 36,
+    because: "Issue writes carry the tracker they address (IssuesSeam `writeSource`, #4022), so the card lists an optional Source field beside Number and Repository." })),
+  {
+    flow: "issues.comment", kind: "card", rows: 38,
+    because: "Issue writes carry the tracker they address (IssuesSeam `writeSource`, #4022), so the card lists an optional Source field beside Number, Text and Repository."
   },
   {
     flow: "runs.trace.view", kind: "sentence", rows: 13,

@@ -6799,6 +6799,20 @@
                   "type": "null"
                 }
               ]
+            },
+            "source": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "smithers-cloud",
+                    "github"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           },
           "required": [
@@ -6857,6 +6871,20 @@
                   "type": "null"
                 }
               ]
+            },
+            "source": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "smithers-cloud",
+                    "github"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           },
           "required": [
@@ -6909,6 +6937,20 @@
                   "enum": [
                     "issue",
                     "conversation"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "source": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "smithers-cloud",
+                    "github"
                   ]
                 },
                 {
@@ -7042,6 +7084,20 @@
               "anyOf": [
                 {
                   "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "source": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "smithers-cloud",
+                    "github"
+                  ]
                 },
                 {
                   "type": "null"

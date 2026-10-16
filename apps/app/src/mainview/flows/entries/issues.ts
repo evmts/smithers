@@ -27,6 +27,15 @@ const issueWriteConfirmation = (actions: CommandActions) => ({
   }
 })
 
+/**
+ * Which tracker an issue write addresses. A connected repository's GitHub
+ * issues and its Smithers Cloud issues number independently, so a write that
+ * named no tracker addressed the Cloud row for any number — the wrong object
+ * whenever the act came off a GitHub-source card. Omitted, the seam routes by
+ * the issue the act came off (IssuesSeam `writeSource`).
+ */
+const IssueSource = Schema.optional(Schema.Literals(["smithers-cloud", "github"]))
+
 /** The `issues.*` flows: GitHub issues. */
 export const issuesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
   ...issueFlows(actions),
@@ -77,51 +86,61 @@ export const issuesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
      * stays a `preflight`.
      */
     unavailable: () => actions.bootstrap?.capabilities.includes("install") ? "Use /issue.new on this install." : undefined,
-    form: { fields: { repo: { optionsFrom: "cloud-repos", kind: "text" } }, args: payload => line(text(payload, "title"), text(payload, "repo"), flag(payload, "kind")) },
+    form: { fields: { repo: { optionsFrom: "cloud-repos", kind: "text" } }, args: payload => line(text(payload, "title"), text(payload, "repo"), flag(payload, "kind"), flag(payload, "source")) },
     summary: "Create an issue, or a private conversation with --kind conversation",
     runtime: ["cloud"],
-    args: "<title> [owner/repo] [--kind conversation]",
+    args: "<title> [owner/repo] [--kind conversation] [--source github|smithers-cloud]",
     requires: ["signed-in"],
-    input: Schema.Struct({ title: Schema.String, repo: Schema.optional(Schema.String), kind: Schema.optional(Schema.Literals(["issue", "conversation"])) }),
-    handler: ({ title, repo, kind }) => actions.createIssue(title, repo, kind === "conversation" ? "chat" : kind)
+    input: Schema.Struct({ title: Schema.String, repo: Schema.optional(Schema.String), kind: Schema.optional(Schema.Literals(["issue", "conversation"])), source: IssueSource }),
+    handler: ({ title, repo, kind, source }) => actions.createIssue(title, repo, kind === "conversation" ? "chat" : kind, source)
   }),
   flow({
     name: "issues.close",
     confirm: "close this issue",
     ...issueWriteConfirmation(actions),
     summary: "Close an issue",
+    /* The tracker rides the line as a flag, exactly as issues.view carries it. */
+    form: { args: payload => line(text(payload, "number"), text(payload, "repo"), flag(payload, "source")) },
     runtimeAny: ["cloud"],
-    args: "<number> [owner/repo]",
+    args: "<number> [owner/repo] [--source github|smithers-cloud]",
     requires: ["repo-read"],
-    input: NumberedTarget,
-    handler: ({ number, repo }) => actions.setIssueState(number, "closed", repo)
+    input: Schema.Struct({ ...NumberedTarget.fields, source: IssueSource }),
+    handler: ({ number, repo, source }) => actions.setIssueState(number, "closed", repo, source)
   }),
   flow({
     name: "issues.reopen",
     confirm: "reopen this issue",
     ...issueWriteConfirmation(actions),
     summary: "Reopen a closed issue",
+    form: { args: payload => line(text(payload, "number"), text(payload, "repo"), flag(payload, "source")) },
     runtimeAny: ["cloud"],
-    args: "<number> [owner/repo]",
+    args: "<number> [owner/repo] [--source github|smithers-cloud]",
     requires: ["repo-read"],
-    input: NumberedTarget,
-    handler: ({ number, repo }) => actions.setIssueState(number, "open", repo)
+    input: Schema.Struct({ ...NumberedTarget.fields, source: IssueSource }),
+    handler: ({ number, repo, source }) => actions.setIssueState(number, "open", repo, source)
   }),
   flow({
     name: "issues.comment",
     confirm: "post this comment",
     ...issueWriteConfirmation(actions),
-    form: { fields: { repo: { optionsFrom: "cloud-repos", kind: "text" } } },
+    /*
+     * `--source` is read off the END of the line (SlashPayload
+     * splitIssueSource), so the comment text keeps its own spacing,
+     * newlines and fences. A card's composer submits the JSON object
+     * instead (FlowArgs), which needs no splitting at all.
+     */
+    form: { fields: { repo: { optionsFrom: "cloud-repos", kind: "text" } }, args: payload => line(text(payload, "number"), text(payload, "text"), text(payload, "repo"), flag(payload, "source")) },
     summary: "Comment on an issue",
     runtimeAny: ["cloud"],
-    args: "<number> <text> [owner/repo]",
+    args: "<number> <text> [owner/repo] [--source github|smithers-cloud]",
     requires: ["repo-read"],
     input: Schema.Struct({
       number: Schema.Number,
       text: Schema.String,
-      repo: Schema.optional(Schema.String)
+      repo: Schema.optional(Schema.String),
+      source: IssueSource
     }),
-    handler: ({ number, text, repo }) => actions.commentOnIssue(number, text, repo)
+    handler: ({ number, text, repo, source }) => actions.commentOnIssue(number, text, repo, undefined, source)
   })
 ]
 
