@@ -130,3 +130,28 @@ test("secretRoleOf never rounds a writer up", () => {
   expect(secretRoleOf("read")).toBe("member")
   expect(secretRoleOf(undefined)).toBe("member")
 })
+
+for (const invalidate of ["account", "unobserved account", "dispose"] as const) {
+  test(`an awaiting command receives no authority after ${invalidate}`, async () => {
+    let login = "ada"
+    let revision = 1
+    let resolve!: (response: Response) => void
+    const ctx = {
+      baseUrl: "https://host",
+      http: () => new Promise<Response>(done => { resolve = done }),
+      store: { collections: { identitySessions: { get: () => ({
+        state: "signed-in", login, accountOwnerLogin: login, revision, ownerRevision: revision
+      }) } } }
+    } as unknown as SeamContext
+    const authority = createRepositoryAuthoritySeam(ctx, { ready: true })
+    const pending = authority.read("ada/site")
+    if (invalidate === "dispose") authority.dispose()
+    else {
+      login = "bo"; revision = 2
+      if (invalidate === "account") authority.identityChanged()
+    }
+    resolve(Response.json({ permission: "owner" }))
+    expect(await pending).toEqual({ phase: "unscoped" })
+    expect(authority.state("ada/site")).toEqual({ phase: "unscoped" })
+  })
+}

@@ -146,9 +146,8 @@ export const createRepositoryAuthoritySeam = (ctx: SeamContext, options: { reado
     if (running !== undefined) return running
     answers.set(at, { phase: "loading", repo })
     const flight = load(repo).then(answer => {
-      if (flights.get(at) !== flight) return answer
+      if (ctx.isDisposed?.() === true || !scoped() || flights.get(at) !== flight) return UNSCOPED
       flights.delete(at)
-      if (ctx.isDisposed?.() === true || !scoped()) return answer
       answers.set(at, answer)
       changed()
       return answer
