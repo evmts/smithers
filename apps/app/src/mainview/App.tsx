@@ -386,14 +386,26 @@ function AppContent() {
   const launcherPath = useMemo(() => typeof window !== "undefined" && window.location.pathname === "/", [])
   const showLauncher = cloudWeb && launcherPath && conversationTabId === undefined && !earlier
   /*
-   * Signed out at the hosted root the launcher IS the opening (#4041). The
-   * public shelf and the update news need no account, and a welcome screen in
-   * front of them is a sign-in detour on content the visitor came to read. So
-   * the launcher goes first and keeps the one explicit sign-in door on the
-   * acts that actually need an account, while the welcome and its email door
-   * stay on the page, under it, exactly as they are everywhere else.
+   * At the hosted root the launcher IS the opening (#4041), for everybody.
+   *
+   * Signed out, the public shelf and the update news need no account, and a
+   * welcome screen in front of them is a sign-in detour on content the visitor
+   * came to read. So the launcher goes first and keeps the one explicit
+   * sign-in door on the acts that actually need an account, while the welcome
+   * and its email door stay on the page, under it, exactly as they are
+   * everywhere else.
+   *
+   * Signed in, M-45's default home is the same launcher: `/` is where a person
+   * opens a repository, and #4041 left that case opening on the Home card
+   * BELOW the launcher with the scroller following the shelf's and the news's
+   * growth to the live edge — so a returning person arrived mid-page, at old
+   * content, with the Open box above the top. The launcher is additive either
+   * way: the conversation, the saved cards and the repository already selected
+   * all stay exactly where they were, under it. An explicitly opened
+   * conversation, an earlier transcript and `/owner/repo` are not this root
+   * (`showLauncher`), so none of them is touched.
    */
-  const launcherOpening = showLauncher && identity?.state === "signed-out" && githubIdentity
+  const launcherOpening = showLauncher && githubIdentity
   /*
    * The repository's own default view at `/owner/repo` (M-45): the file tree
    * unless the repository declares a homepage, which the existing
@@ -634,6 +646,7 @@ function AppContent() {
           <div className="sui-chat-transcript smithers-transcript" data-slot="chat-transcript"
             data-repository-missing={missingRepositoryScope || undefined}
             data-login={(loginScreen && !launcherOpening) || undefined}
+            data-opening={launcherOpening ? "launcher" : undefined}
             data-testid="transcript" data-keyboard-pane="Conversation" role="log" aria-label="Conversation" aria-busy={typing}>
             <div data-slot="message-scroller" className="sui-msg-scroller" data-streaming={typing ? "true" : "false"}>
             <MessageScrollerViewport fade onScrollCapture={event => {

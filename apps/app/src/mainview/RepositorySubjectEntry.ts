@@ -1,5 +1,5 @@
 import type { RefLocation, RepositorySubject } from "@smthrs/rpc/RepositorySubjectPath"
-import { resolveRefLocation } from "@smthrs/rpc/RepositorySubjectPath"
+import { isCommitRevision, resolveRefLocation } from "@smthrs/rpc/RepositorySubjectPath"
 import { flowArgs } from "./flows/FlowArgs"
 import type { AppController } from "./state/AppController"
 import { accountOwnerOf } from "./state/AccountOwner"
@@ -182,10 +182,12 @@ const authoritativeRefs = async (
  *
  * Never a guess and never a claim the read did not make: a bookmark list
  * that WAS read says no branch of this repository begins the location, and
- * says that tags and commit ids were not in that list; a list that refused
+ * names the other spelling that needs no list — a whole 40-character commit
+ * id — so a reader holding a permalink knows what opens; a list that refused
  * says only that, names the default bookmark it does know, and offers the
  * read again. Signed out the one step is the page's own sign-in door, since
- * the bookmark list is an account's read.
+ * the bookmark list is an account's read. Tags are not claimed either way:
+ * no read here lists them.
  */
 const unresolvedNotice = (
   store: AppStore,
@@ -201,7 +203,7 @@ const unresolvedNotice = (
   const opening = `This URL names a ${subjectWord} in ${repo}, and Smithers cannot tell which part of ${subject.location} is the branch.`
   if (!inventory.partial) {
     return {
-      text: `${opening} No branch of ${repo} begins it. Tags and commit ids are not in that list.`,
+      text: `${opening} No branch of ${repo} begins it, and it does not begin with a whole 40-character commit id. Tags are not listed here.`,
       action: retry
     }
   }
@@ -248,7 +250,10 @@ const openRequestedFile = async (
   }
   if (subject.kind === "blob" && located.path === "") {
     // `/blob/<ref>` with nothing below it names a revision and no file at all.
-    await say(`This URL names the branch ${located.ref} of ${target} and no file in it.`, {
+    // Which revision it is, is said the way the URL named it: a commit id is
+    // not a branch, and calling it one would be this page's own invention.
+    const revision = isCommitRevision(located.ref) ? `commit ${located.ref}` : `branch ${located.ref}`
+    await say(`This URL names the ${revision} of ${target} and no file in it.`, {
       flow: "files", label: `Browse ${located.ref}`, args: flowArgs("files", { operation: "repository", path: "", repo: target, ref: located.ref })
     })
     return

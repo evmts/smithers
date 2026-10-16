@@ -153,6 +153,8 @@ test("the reported pull request URL and its tabs reach the app document, from th
     "/roninjin10/e2e-verify/tree/main/apps/server/src",
     "/roninjin10/e2e-verify/tree/release/1.2/apps",
     "/roninjin10/e2e-verify/blob/main/apps/server/src/edge.ts",
+    "/roninjin10/e2e-verify/blob/3bad5fe63720eb8e3f7ae33a10de9e7aefb2dc74/apps/server/src/edge.ts",
+    "/roninjin10/e2e-verify/tree/3bad5fe63720eb8e3f7ae33a10de9e7aefb2dc74/apps",
     "/smithersai/smithers/blob/main/README.md"
   ]) {
     const { ASSETS, seen } = appDocumentProbe()
@@ -220,7 +222,6 @@ test("site, API, coming-soon and unsupported subject paths never become the app"
     "/docs/cli/pull/2",
     "/api/repos/a/b/pull/2",
     "/migration/1.0/pull/2",
-    "/effect-ts/effect/pull/2",
     "/owner/repo/pull/0",
     "/owner/repo/pull/-1",
     "/owner/repo/pull/2x",
@@ -255,4 +256,77 @@ test("a subject path is read-only: only GET and HEAD fall back to the app shell"
   const posted = await edge.fetch(new Request("https://smithers.sh/roninjin10/e2e-verify/pull/2/files", { method: "POST" }), { ASSETS })
   expect(posted.status).toBe(404)
   expect(seen.filter(path => path === "/smithersai/smithers/")).toHaveLength(2)
+})
+
+/*
+ * A curated catalog row is a CATALOG fact; it was also the routing fence, and
+ * that is the gap this lane closes. `/effect-ts/effect/` served a prerendered
+ * marketing "Coming soon" page, and every subject below it was excluded from
+ * `repositorySubjectRoot` outright, so a maintainer who had just installed the
+ * Smithers GitHub App on one of these ten repositories could never reach the
+ * app's own import path (M-46): the compiled page won before any read of
+ * binding, access, installation or import state happened.
+ *
+ * These assert the ROUTING only. Serving the app grants nothing: availability
+ * is still the catalog's and the account inventory's answer
+ * (`apps/app/src/mainview/RepoLink.ts` `openRequestedRepo`, `/api/public/repos`),
+ * and the Cloud mirror lookup still consults AVAILABLE_REPOS alone.
+ */
+test("a curated coming-soon repository and its subjects reach the app, with the app's own isolation", async () => {
+  for (const pathname of [
+    "/effect-ts/effect/",
+    "/effect-ts/effect",
+    "/effect-ts/effect/pull/2",
+    "/effect-ts/effect/pull/2/files",
+    "/effect-ts/effect/pulls",
+    "/effect-ts/effect/issues",
+    "/effect-ts/effect/issues/6",
+    "/effect-ts/effect/tree/main/src",
+    "/effect-ts/effect/blob/main/README.md"
+  ]) {
+    const { ASSETS, seen } = appDocumentProbe()
+    const response = await edge.fetch(new Request(`https://smithers.sh${pathname}`), { ASSETS })
+    expect({ pathname, status: response.status }).toEqual({ pathname, status: 200 })
+    // The app document, and the app's isolation headers with it — the
+    // coming-soon page deliberately carried none, because it was not the app.
+    expect({ pathname, coep: response.headers.get("cross-origin-embedder-policy") })
+      .toEqual({ pathname, coep: "require-corp" })
+    expect({ pathname, document: seen.at(-1) }).toEqual({ pathname, document: "/effect-ts/effect/" })
+  }
+})
+
+test("a coming-soon repository's mixed-case deep link redirects once, keeping the subject's own case", async () => {
+  const { ASSETS } = appDocumentProbe()
+  const response = await edge.fetch(new Request("https://smithers.sh/Effect-TS/effect/blob/Main/docs/README.md"), { ASSETS })
+  expect(response.status).toBe(301)
+  expect(new URL(response.headers.get("location")!).pathname).toBe("/effect-ts/effect/blob/Main/docs/README.md")
+
+  const root = appDocumentProbe()
+  // A bare mixed-case root goes to the canonical document path, as every
+  // available repository's root already did.
+  const rootResponse = await edge.fetch(new Request("https://smithers.sh/Effect-TS/effect"), { ASSETS: root.ASSETS })
+  expect(rootResponse.status).toBe(301)
+  expect(new URL(rootResponse.headers.get("location")!).pathname).toBe("/effect-ts/effect/")
+})
+
+/*
+ * Routing parity, stated as the one thing that changed: a curated coming-soon
+ * repository is now answered exactly as the available catalog repository is,
+ * method for method. Nothing here widens what a method may do — a prerendered
+ * document is the assets layer's answer either way — it pins that the two
+ * rosters no longer route differently.
+ */
+test("a coming-soon repository is routed exactly as an available catalog repository is", async () => {
+  for (const method of ["GET", "HEAD", "POST"]) {
+    for (const subject of ["/pull/2", "/issues", "/blob/main/README.md"]) {
+      const available = appDocumentProbe()
+      const expected = await edge.fetch(new Request(`https://smithers.sh/smithersai/smithers${subject}`, { method }), { ASSETS: available.ASSETS })
+      const coming = appDocumentProbe()
+      const observed = await edge.fetch(new Request(`https://smithers.sh/effect-ts/effect${subject}`, { method }), { ASSETS: coming.ASSETS })
+      expect({ method, subject, status: observed.status, coep: observed.headers.get("cross-origin-embedder-policy") })
+        .toEqual({ method, subject, status: expected.status, coep: expected.headers.get("cross-origin-embedder-policy") })
+      // Each is served from its OWN prerendered page, not from the other's.
+      expect({ method, subject, served: coming.seen }).toEqual({ method, subject, served: ["/effect-ts/effect/"] })
+    }
+  }
 })

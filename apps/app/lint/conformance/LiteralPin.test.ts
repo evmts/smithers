@@ -352,6 +352,10 @@ const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
     reason: "Deliberately hostile external Host/origin used to exercise origin refusal; never an application identifier."
   },
   {
+    literal: "evil.example", file: "e2e/site/first-visit-launcher.spec.ts",
+    reason: "Deliberately hostile host typed into the launcher's Open box, to prove it navigates nowhere; never an application identifier."
+  },
+  {
     literal: "owner.har", file: "e2e/real/members.spec.ts",
     reason: "Playwright HAR artifact filename passed to recordHar in members.spec.ts; never an application identifier."
   },

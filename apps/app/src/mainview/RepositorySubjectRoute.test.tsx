@@ -505,3 +505,101 @@ test("a file read the platform refuses is reported as that read's own refusal", 
   expect(refusal ?? noticeTexts(store).join(" ")).toContain("apps/missing.ts")
   expect(fileCardOf(store)).toBeUndefined()
 })
+
+/*
+ * The commit permalink, which is what GitHub's own "copy permalink" writes and
+ * what every reader pastes out of a review: `/blob/<40 hex>/<path>`. No
+ * bookmark list holds an object name, so dividing against the list alone
+ * refused the ordinary link. The read is the same one a branch link runs —
+ * `GET /api/repos/{o}/{r}/contents/{path}?ref=<revision>`, which the backend
+ * already resolves for a revision — so nothing new is asked of the platform.
+ */
+const COMMIT = "3bad5fe63720eb8e3f7ae33a10de9e7aefb2dc74"
+
+test("a commit permalink opens that file at that revision, through the same contents read", async () => {
+  const backend = ownedRepository({
+    [`${ROOT}/bookmarks`]: bookmarks("main", "release/1.2"),
+    [`${ROOT}/contents/apps/server/src/edge.ts`]: fileContents("export const edge = 1\n")
+  })
+  const { store, refusal } = await enter(`/${REPO}/blob/${COMMIT}/apps/server/src/edge.ts`, backend)
+  expect(refusal).toBeUndefined()
+  const card = fileCardOf(store)
+  expect(card?.kind === "file" ? card.payload : undefined).toMatchObject({
+    repo: REPO, path: "apps/server/src/edge.ts", content: "export const edge = 1\n", ref: COMMIT
+  })
+  expect(backend.seen).toContain(`${ROOT}/contents/apps/server/src/edge.ts?ref=${COMMIT}`)
+})
+
+test("a commit permalink to a folder lists it at that revision, not at the head", async () => {
+  const backend = ownedRepository({
+    [`${ROOT}/bookmarks`]: bookmarks("main"),
+    [`${ROOT}/contents/apps`]: json(200, [{ name: "server", path: "apps/server", type: "dir" }])
+  })
+  const { store, refusal } = await enter(`/${REPO}/tree/${COMMIT}/apps`, backend)
+  expect(refusal).toBeUndefined()
+  const card = fileListCardOf(store)
+  expect(card?.kind === "file-list" ? card.payload : undefined).toMatchObject({ repo: REPO, path: "apps", ref: COMMIT })
+  expect(card?.kind === "file-list" ? card.payload.readAt : "unset").toBeUndefined()
+  expect(backend.seen).toContain(`${ROOT}/contents/apps?ref=${COMMIT}`)
+})
+
+/*
+ * The permalink is the link a signed-out reader is handed most often, and the
+ * bookmark list is an account's read. A full object name needs no list, so the
+ * link opens without one — and the repository root a `/blob/<commit>` with no
+ * path names is still a revision, not a branch.
+ */
+test("signed out, a commit permalink opens even though the bookmark list refuses", async () => {
+  const backend = recordingBackend({
+    "/api/user": json(401, { status: "error", code: "unauthorized" }),
+    "/api/public/repos": json(200, { repos: [{ name: REPO, title: "e2e-verify", url: `https://github.com/${REPO}`, stats: null }] }),
+    [ROOT]: json(200, { full_name: REPO, default_bookmark: "main" }),
+    [`${ROOT}/bookmarks`]: json(401, { status: "error", code: "unauthorized" }),
+    [`${ROOT}/contents/README.md`]: fileContents("# e2e\n")
+  })
+  const { store, refusal } = await enter(`/${REPO}/blob/${COMMIT}/README.md`, backend)
+  expect(refusal).toBeUndefined()
+  const card = fileCardOf(store)
+  expect(card?.kind === "file" ? card.payload : undefined).toMatchObject({ path: "README.md", ref: COMMIT })
+  expect(backend.seen).toContain(`${ROOT}/contents/README.md?ref=${COMMIT}`)
+})
+
+test("a commit URL with no file below it names the revision, and offers to browse it", async () => {
+  const backend = ownedRepository({ [`${ROOT}/bookmarks`]: bookmarks("main") })
+  const { store } = await enter(`/${REPO}/blob/${COMMIT}`, backend)
+  expect(fileCardOf(store)).toBeUndefined()
+  const notice = noticeTexts(store).find(text => text.includes(COMMIT))
+  expect(notice).toContain(`names the commit ${COMMIT}`)
+  expect(notice).not.toContain(`branch ${COMMIT}`)
+  expect(notices(store).find(message => message.text === notice)?.action).toMatchObject({ flow: "files" })
+})
+
+test("an abbreviated object name is refused with the grammar's own reason, and reads nothing", async () => {
+  const backend = ownedRepository({ [`${ROOT}/bookmarks`]: bookmarks("main", "release/1.2") })
+  const { store, refusal } = await enter(`/${REPO}/blob/3bad5fe/apps/server/src/edge.ts`, backend)
+  expect(refusal).toBeUndefined()
+  expect(fileCardOf(store)).toBeUndefined()
+  expect(backend.seen.filter(path => path.includes("src/edge.ts"))).toEqual([])
+  const notice = noticeTexts(store).find(text => text.includes("3bad5fe/apps/server/src/edge.ts"))
+  expect(notice).toContain(`No branch of ${REPO} begins it`)
+  // What IS accepted is named, so a reader with a permalink knows what to paste.
+  expect(notice).toContain("40-character commit id")
+  expect(notices(store).find(message => message.text === notice)?.action).toMatchObject({ flow: "branches" })
+})
+
+test("a commit the platform cannot read is that read's own refusal, never a different revision", async () => {
+  const missing = "0".repeat(40)
+  const backend = ownedRepository({
+    [`${ROOT}/bookmarks`]: bookmarks("main"),
+    [`${ROOT}/contents/apps/server/src/edge.ts`]: (request: Request) =>
+      new URL(request.url).searchParams.get("ref") === missing
+        ? json(404, { status: "error", code: "not_found" })
+        : fileContents("export const edge = 1\n")
+  })
+  const { store, refusal } = await enter(`/${REPO}/blob/${missing}/apps/server/src/edge.ts`, backend)
+  expect(refusal ?? noticeTexts(store).join(" ")).toContain("apps/server/src/edge.ts")
+  expect(fileCardOf(store)).toBeUndefined()
+  // No second read at another revision: the URL named one, and only it was asked for.
+  expect(backend.seen.filter(path => path.includes("src/edge.ts")))
+    .toEqual([`${ROOT}/contents/apps/server/src/edge.ts?ref=${missing}`])
+})

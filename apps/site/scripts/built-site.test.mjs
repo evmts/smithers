@@ -266,14 +266,22 @@ test("the landing page's Get started for free opens the tutorial, through Astro'
 })
 
 
-test("the build requires every coming-soon page with coming-soon copy and no app island", (t) => {
+/*
+ * Every repository page the build emits is the APP page, curated row or not
+ * (lane 95). A prerendered "Coming soon" page for a repository root was the
+ * routing fence that kept a maintainer with a fresh GitHub App installation
+ * out of the app's import path (mvp.md M-46), so a page that says it instead
+ * of mounting the app is a build failure now.
+ */
+test("the build requires an app page for every routed repository, curated or available", (t) => {
   const repos = [{ name: "Effect-TS/effect" }, { name: "withastro/starlight" }]
-  const missing = fixture(t, { "effect-ts/effect/index.html": '<h1>Effect — Coming soon</h1><a href="/api/auth/github?return_to=%2Feffect-ts%2Feffect%2F">Sign in with GitHub</a>' })
-  assert.deepEqual(checkRepositoryPages(missing, [], repos), ["withastro/starlight/index.html: missing from the build"])
-  const app = fixture(t, { "effect-ts/effect/index.html": '<astro-island>Coming soon</astro-island>' })
-  assert.deepEqual(checkRepositoryPages(app, [], [repos[0]]), ["effect-ts/effect/index.html: expected a coming-soon site page"])
-  const healthy = fixture(t, Object.fromEntries(repos.map((repo) => [`${repo.name.toLowerCase()}/index.html`, `<h1>Coming soon</h1><a href="/api/auth/github?return_to=${encodeURIComponent(`/${repo.name.toLowerCase()}/`)}">Sign in with GitHub</a>`])))
-  assert.deepEqual(checkRepositoryPages(healthy, [], repos), [])
+  const island = (name) => `<div id="root"><astro-island component-url="/_astro/AppIsland.js" client="only">${name}</astro-island></div>`
+  const missing = fixture(t, { "effect-ts/effect/index.html": island("Effect") })
+  assert.deepEqual(checkRepositoryPages(missing, repos), ["withastro/starlight/index.html: missing from the build"])
+  const marketing = fixture(t, { "effect-ts/effect/index.html": '<h1>Effect — Coming soon</h1><a href="/api/auth/github?return_to=%2Feffect-ts%2Feffect%2F">Sign in with GitHub</a>' })
+  assert.deepEqual(checkRepositoryPages(marketing, [repos[0]]), ["effect-ts/effect/index.html: expected the app page, got a page with no app island"])
+  const healthy = fixture(t, Object.fromEntries(repos.map((repo) => [`${repo.name.toLowerCase()}/index.html`, island(repo.name)])))
+  assert.deepEqual(checkRepositoryPages(healthy, repos), [])
 })
 
 test("built pages reject the retired GitHub App installation URL", (t) => {
@@ -284,11 +292,19 @@ test("built pages reject the retired GitHub App installation URL", (t) => {
   assert.deepEqual(checkBuiltSite(fixture(t, { "index.html": page("team-install") })).failures, [])
 })
 
-test("coming-soon sign-in must start OAuth and return to that repository page", (t) => {
+/*
+ * The sign-in door a curated page used to carry is the app's own now: the
+ * route owns sign-in, admission, import and every refusal, and the page that
+ * mounts it is checked for the island rather than for a marketing CTA.
+ */
+test("a curated repository page that still ships marketing copy instead of the app fails the build", (t) => {
   const repo = { name: "wevm/incur" }
-  for (const href of ["/api/auth/github/start?return_to=%2Fwevm%2Fincur%2F", "https://smithers.sh/", "/api/auth/github", "/api/auth/github?return_to=%2Fpricing%2F", "https://elsewhere.test/api/auth/github?return_to=%2Fwevm%2Fincur%2F"]) {
-    const root = fixture(t, { "wevm/incur/index.html": `<h1>Coming soon</h1><a href="${href}">Sign in with GitHub</a>` })
-    assert.match(checkRepositoryPages(root, [], [repo]).join("\n"), /sign-in.*return.*\/wevm\/incur\//i)
+  for (const html of [
+    '<h1>Coming soon</h1><a href="/api/auth/github?return_to=%2Fwevm%2Fincur%2F">Sign in with GitHub</a>',
+    "<h1>incur</h1><p class=\"sub\">Coming soon</p>"
+  ]) {
+    const root = fixture(t, { "wevm/incur/index.html": html })
+    assert.deepEqual(checkRepositoryPages(root, [repo]), ["wevm/incur/index.html: expected the app page, got a page with no app island"])
   }
 })
 

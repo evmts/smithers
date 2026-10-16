@@ -39,22 +39,31 @@ const rosterEntry = <Repo extends { readonly name: string }>(roster: ReadonlyArr
   return roster.find((entry) => `/${entry.name.toLowerCase()}` === name)
 }
 
-/** The canonical app page for a routed path, or undefined when the path names no catalog repository. */
-export const catalogDocumentPath = (pathname: string): string | undefined => {
-  const repo = rosterEntry(AVAILABLE_REPOS, pathname)
-  return repo === undefined ? undefined : appDocumentPath(repo.name)
-}
+/**
+ * The repository names the site prerenders a page for: the available ones and
+ * the curated coming-soon ones, which the same template now builds as the same
+ * app shell (apps/site/src/pages/[owner]/[repo].astro).
+ *
+ * A curated row is a CATALOG fact, and the catalog is not an admission fence.
+ * Until this list was one list, `/effect-ts/effect` served a prerendered
+ * marketing page and every subject below it was excluded from
+ * {@link repositorySubjectRoot}, so a maintainer who HAD installed the
+ * Smithers GitHub App on one of these ten repositories could never reach the
+ * app's import path (mvp.md M-46): the compiled page won before anything read
+ * the repository's binding, access, installation or import state. Serving the
+ * app grants nothing — availability is still `/api/public/repos` and the
+ * account's own inventory, and the Cloud mirror lookup still consults
+ * AVAILABLE_REPOS alone.
+ */
+const ROUTED_REPOS: ReadonlyArray<{ readonly name: string }> = [...AVAILABLE_REPOS, ...COMING_SOON_REPOS]
 
 /**
- * The prerendered coming-soon page for a path that names a COMING_SOON_REPOS
- * entry, or undefined. The same build prerenders it at /<owner>/<name>/
- * (apps/site src/pages/[owner]/[repo].astro) as a page of the site, not the
- * app: it carries no build stamp and no isolation headers. The Worker runs
- * first on every path. The router redirects mixed-case names to lowercase
- * and serves the canonical page with or without its trailing slash.
+ * The canonical app page for a routed path, or undefined when the path names
+ * no prerendered repository. The router redirects a mixed-case name to its
+ * lowercase page and serves it with or without its trailing slash.
  */
-export const comingSoonDocumentPath = (pathname: string): string | undefined => {
-  const repo = rosterEntry(COMING_SOON_REPOS, pathname)
+export const catalogDocumentPath = (pathname: string): string | undefined => {
+  const repo = rosterEntry(ROUTED_REPOS, pathname)
   return repo === undefined ? undefined : appDocumentPath(repo.name)
 }
 

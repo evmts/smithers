@@ -1,39 +1,33 @@
 ---
-/* Catalog app pages and coming-soon site pages share canonical lowercase URLs. */
+/*
+ * One prerendered page per routed repository: the app, at the repository's own
+ * canonical lowercase URL.
+ *
+ * A curated coming-soon row used to prerender a marketing page here instead,
+ * and the Worker served it for the repository root AND excluded every subject
+ * below it from the app (apps/server/src/edge.ts). So a maintainer whose
+ * Smithers GitHub App installation had just landed on one of those
+ * repositories could never reach the app's import path (mvp.md M-46): a
+ * compiled page won before anything read the repository's binding, access,
+ * installation or import state. Availability is still curated — the catalog
+ * response and the Cloud mirror lookup read AVAILABLE_REPOS alone — and
+ * serving the app grants nothing: the app asks, and the backend answers.
+ */
 import AppIsland from "../../AppIsland"
 import AppShell from "../../layouts/AppShell.astro"
-import Base from "../../layouts/Base.astro"
-import RegisterRepo from "../../components/RegisterRepo.astro"
 import { AVAILABLE_REPOS, COMING_SOON_REPOS } from "../../../../server/src/publicRepoCatalog"
 
 interface Props {
   readonly title: string
-  readonly name: string
-  readonly url: string
-  readonly available: boolean
 }
 
 export function getStaticPaths() {
-  return [
-    ...AVAILABLE_REPOS.map((repo) => ({ ...repo, available: true })),
-    ...COMING_SOON_REPOS.map((repo) => ({ ...repo, available: false }))
-  ].map((repo) => {
+  return [...AVAILABLE_REPOS, ...COMING_SOON_REPOS].map((repo) => {
     const [owner, name] = repo.name.toLowerCase().split("/")
-    return { params: { owner, repo: name }, props: { title: repo.title, name: repo.name, url: repo.url, available: repo.available } satisfies Props }
+    return { params: { owner, repo: name }, props: { title: repo.title } satisfies Props }
   })
 }
-const { title, name, url, available } = Astro.props
+const { title } = Astro.props
 ---
 
-{available ? (
-  <AppShell title={title}><div id="root"><AppIsland client:only="react" /></div></AppShell>
-) : (
-  <Base title={`${title} — Coming soon`} description={`${name} — Coming soon`}>
-    <main class="wrap hero">
-      <h1>{title}</h1>
-      <p class="sub">Coming soon</p>
-      <p><a href={url}>{name}</a></p>
-    </main>
-    <RegisterRepo />
-  </Base>
-)}
+<AppShell title={title}><div id="root"><AppIsland client:only="react" /></div></AppShell>

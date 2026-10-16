@@ -271,23 +271,24 @@ export function checkBuiltSite(root, requiredReferences = [], appPaths = []) {
   return { pageCount: pages.size, requiredReferenceCount: requiredReferences.length, failures: [...failures] }
 }
 
-/** The Worker can only serve repository documents actually emitted by Astro. */
-export function checkRepositoryPages(root, available, comingSoon) {
-  return [...available, ...comingSoon].flatMap((repo) => {
+/**
+ * The Worker can only serve repository documents actually emitted by Astro,
+ * and every routed repository root is the APP page.
+ *
+ * A curated catalog row used to prerender a marketing "Coming soon" page
+ * here, which the Worker then served INSTEAD of the app for the root and for
+ * every subject below it. A maintainer who had just installed the Smithers
+ * GitHub App on one of those repositories could not reach the app's import
+ * path (mvp.md M-46) because a compiled page won first. Availability stays
+ * curated — `/api/public/repos` and the Cloud mirror lookup are unchanged —
+ * but it is not a routing fence, so a page with no app island is a failure.
+ */
+export function checkRepositoryPages(root, repos) {
+  return repos.flatMap((repo) => {
     const file = `${repo.name.toLowerCase()}/index.html`
     if (!existsSync(join(root, file))) return [`${file}: missing from the build`]
-    if (comingSoon.includes(repo)) {
-      const html = readFileSync(join(root, file), "utf8")
-      if (!/coming soon/i.test(html) || /<astro-island[\s>]/i.test(html)) return [`${file}: expected a coming-soon site page`]
-      const path = `/${repo.name.toLowerCase()}/`
-      const signIn = [...html.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>\s*Sign in with GitHub\s*<\/a>/gi)]
-        .some((match) => {
-          const url = new URL(decode(match[1]), origin)
-          return url.origin === origin && url.pathname === APPLICATION_SIGN_IN_PATH && url.searchParams.get("return_to") === path
-        })
-      if (!signIn) return [`${file}: sign-in must start OAuth and return to ${path}`]
-    }
-    return []
+    const html = readFileSync(join(root, file), "utf8")
+    return /<astro-island[\s>]/i.test(html) ? [] : [`${file}: expected the app page, got a page with no app island`]
   })
 }
 
@@ -312,10 +313,10 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     [PUBLIC_REPOS_PATH, APPLICATION_SIGN_IN_PATH]
   )
   // The files the app Worker's assets need beyond the pages: one prerendered
-  // app page per available catalog repository, the 404 page the asset
+  // app page per routed repository, the 404 page the asset
   // host serves for an unknown path, and the build stamp apps/server's canary
   // build probe reads.
-  result.failures.push(...checkRepositoryPages(root, AVAILABLE_REPOS, COMING_SOON_REPOS))
+  result.failures.push(...checkRepositoryPages(root, [...AVAILABLE_REPOS, ...COMING_SOON_REPOS]))
   for (const file of ["404.html", "__build.json", "favicon.png", "apple-touch-icon.png", "robots.txt"]) {
     if (!existsSync(join(root, file))) result.failures.push(`${file}: missing from the build`)
   }

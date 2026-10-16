@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  isCommitRevision,
   parseRepositorySubject,
   REPOSITORY_LOCATION_MAX_SEGMENTS,
   REPOSITORY_SUBJECT_NUMBER_MAX,
@@ -203,5 +204,65 @@ describe("resolveRefLocation", () => {
     expect(resolveRefLocation("main/%2E%2E/etc", refs)).toBeUndefined()
     expect(resolveRefLocation("main/%2E", refs)).toBeUndefined()
     expect(resolveRefLocation("main/%E0%A4%A", refs)).toBeUndefined()
+  })
+
+  /*
+   * The commonest permalink there is: GitHub's own "copy permalink" writes the
+   * full 40-character commit id where a branch would go. No bookmark list can
+   * hold it, so dividing against the list alone refused the ordinary file link
+   * a reader pastes. A full object name names a revision in the contents
+   * contract this app already reads (`?ref=`), and it is the ONE spelling that
+   * says so without guessing which slash divides a branch from a path.
+   */
+  it("divides a commit permalink at its full object name, with no list to hold it", () => {
+    const commit = "3bad5fe63720eb8e3f7ae33a10de9e7aefb2dc74"
+    expect(resolveRefLocation(`${commit}/apps/server/src/edge.ts`, refs))
+      .toEqual({ ref: commit, path: "apps/server/src/edge.ts" })
+    expect(resolveRefLocation(`${commit}/apps`, [])).toEqual({ ref: commit, path: "apps" })
+    expect(resolveRefLocation(commit, [])).toEqual({ ref: commit, path: "" })
+    // The revision is kept exactly as the URL spelled it; nothing normalizes a ref here.
+    const upper = commit.toUpperCase()
+    expect(resolveRefLocation(`${upper}/apps`, [])).toEqual({ ref: upper, path: "apps" })
+  })
+
+  it("refuses an object name that is not a whole one, rather than guessing a revision", () => {
+    for (
+      const first of [
+        "3bad5fe",
+        "3bad5fe63720eb8e3f7ae33a10de9e7aefb2dc7",
+        "3bad5fe63720eb8e3f7ae33a10de9e7aefb2dc744",
+        "3bad5fe63720eb8e3f7ae33a10de9e7aefb2dc7z",
+        "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+      ]
+    ) {
+      expect(resolveRefLocation(`${first}/apps`, []), first).toBeUndefined()
+    }
+  })
+
+  it("keeps the longest listed ref even when a commit id would also divide the location", () => {
+    const commit = "3bad5fe63720eb8e3f7ae33a10de9e7aefb2dc74"
+    // A bookmark may be spelled anything, including something below an object
+    // name. The longer READ ref wins, so no link falls through to a shorter
+    // division and opens a different file.
+    expect(resolveRefLocation(`${commit}/hotfix/apps`, [`${commit}/hotfix`]))
+      .toEqual({ ref: `${commit}/hotfix`, path: "apps" })
+  })
+
+  it("refuses a tag link, because no read here lists tags", () => {
+    // `GET /api/repos/{o}/{r}/bookmarks` and the repository document's default
+    // bookmark are the two reads; neither names a tag, and the only refs read
+    // (`/git/refs`) are bookmarks and notes. A tag is refused, not guessed.
+    expect(resolveRefLocation("v1.0.0/apps", refs)).toBeUndefined()
+  })
+})
+
+describe("isCommitRevision", () => {
+  it("is the full object name and nothing shorter, longer or non-hex", () => {
+    expect(isCommitRevision("3bad5fe63720eb8e3f7ae33a10de9e7aefb2dc74")).toBe(true)
+    expect(isCommitRevision("3BAD5FE63720EB8E3F7AE33A10DE9E7AEFB2DC74")).toBe(true)
+    expect(isCommitRevision("3bad5fe")).toBe(false)
+    expect(isCommitRevision("3bad5fe63720eb8e3f7ae33a10de9e7aefb2dc7")).toBe(false)
+    expect(isCommitRevision("main")).toBe(false)
+    expect(isCommitRevision("")).toBe(false)
   })
 })

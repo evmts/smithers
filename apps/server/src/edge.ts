@@ -4,7 +4,7 @@ import * as Layer from "effect/Layer"
 import { runRequest } from "./Boundary"
 import { DEFAULT_UPSTREAM_TIMEOUT_MS, discardBody, fetchWithDeadline, TransportLive, transportFrom } from "./Http"
 import type { Transport, TransportShape } from "./Http"
-import { catalogDocumentPath, comingSoonDocumentPath, DEFAULT_APP_DOCUMENT_PATH, isFramePath, isRepositoryPath, repositorySubjectRoot } from "./appDocument"
+import { catalogDocumentPath, DEFAULT_APP_DOCUMENT_PATH, isFramePath, isRepositoryPath, repositorySubjectRoot } from "./appDocument"
 import { withIsolationHeaders } from "./Responses"
 
 // Storage identities survive the authority change. These classes have no product
@@ -84,15 +84,17 @@ export const handleEdgeRequest = (request: Request, configuredOrigin: string | u
     /*
      * A GitHub-shaped subject below a repository root is that repository's
      * page: the same prerendered document, reached by the path the reader
-     * followed. A COMING-SOON repository has no app at all, so nothing below
-     * it can open and its subject paths keep the site's own answer rather than
-     * painting an app that could only say the repository is not available.
+     * followed. EVERY repository root the build prerenders is routed this way,
+     * including the curated coming-soon ones: a catalog row is not an
+     * admission fence, and a maintainer whose GitHub App installation has just
+     * landed must reach the app's own import path rather than a compiled
+     * marketing page (mvp.md M-46). What the repository actually is — bound,
+     * readable, importable, installed — stays the backend's and the app's
+     * answer, which is reached only by serving the app.
      */
-    const subject = repositorySubjectRoot(url.pathname)
-    const subjectRoot = subject !== undefined && comingSoonDocumentPath(subject) === undefined ? subject : undefined
-    const comingSoon = comingSoonDocumentPath(url.pathname)
+    const subjectRoot = repositorySubjectRoot(url.pathname)
     const catalog = catalogDocumentPath(subjectRoot ?? url.pathname)
-    if (comingSoon !== undefined || catalog !== undefined) {
+    if (catalog !== undefined) {
       /*
        * GitHub's OWNER and REPOSITORY names are case-insensitive, and the
        * canonical page is the lowercase one. Nothing below them is: a ref and
@@ -105,12 +107,11 @@ export const handleEdgeRequest = (request: Request, configuredOrigin: string | u
       const normalized = subjectRoot ?? url.pathname
       if (normalized !== normalized.toLowerCase()) {
         url.pathname = subjectRoot === undefined
-          ? (comingSoon ?? catalog)!
+          ? catalog
           : `${subjectRoot.toLowerCase()}${url.pathname.slice(subjectRoot.length)}`
         return Response.redirect(url.toString(), 301)
       }
-      const response = yield* asset(new Request(new URL((comingSoon ?? catalog)!, url), request))
-      return documentHeaders(url, comingSoon === undefined ? withIsolationHeaders(response) : response)
+      return documentHeaders(url, withIsolationHeaders(yield* asset(new Request(new URL(catalog, url), request))))
     }
     if (isFramePath(url.pathname)) {
       return documentHeaders(url, withIsolationHeaders(yield* asset(new Request(new URL(DEFAULT_APP_DOCUMENT_PATH, url), request))))

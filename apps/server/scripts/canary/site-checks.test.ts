@@ -46,7 +46,7 @@ const redirect = (status: number, location: string): Observed => ({ status, head
 
 /** A deployment that answers exactly what the Worker over the site build should. */
 const healthy: Record<string, Observed> = {
-  ...Object.fromEntries(COMING_SOON_REPOS.map((repo) => [`/${repo.name.toLowerCase()}/`, html(200, {}, "Coming soon")])),
+  ...Object.fromEntries(COMING_SOON_REPOS.map((repo) => [`/${repo.name.toLowerCase()}/`, isolated])),
   "/favicon.ico": { status: 200, headers: { "content-type": "image/png" } },
   "/apple-touch-icon.png": { status: 200, headers: { "content-type": "image/png" } },
   "/": html(200),
@@ -232,10 +232,18 @@ describe("the probe's shell helpers", () => {
 })
 
 
-test("the site probe pins every coming-soon page and rejects an app shell in its place", async () => {
+/*
+ * Lane 95: a curated catalog row is not a routing fence. Every curated
+ * repository root must serve the APP document — the maintainer whose GitHub
+ * App installation just landed reaches the app's import path (mvp.md M-46)
+ * only if the app is what the root answers. A prerendered "Coming soon" page
+ * with no isolation headers in its place is the defect, so the probe fails on
+ * it instead of requiring it.
+ */
+test("the site probe requires the app document at every curated repository root", async () => {
   for (const repo of COMING_SOON_REPOS) {
     const path = `/${repo.name.toLowerCase()}/`
-    for (const broken of [html(404), isolated]) {
+    for (const broken of [html(404), html(200, {}, "Coming soon"), html(200, { "cross-origin-opener-policy": "same-origin" }, APP_DOCUMENT_BODY)]) {
       const { fetch, requested } = fakeFetch({ ...healthy, [path]: broken })
       const checks = await runSiteChecks(fetch, { origin: ORIGIN, legacyPaths: [] })
       expect(requested).toContain(path)

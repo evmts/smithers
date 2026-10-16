@@ -152,12 +152,17 @@ const expectAlias = async (fetch: Fetcher, origin: string, path: string): Promis
   return check(path, "200, or a redirect chain ending in 200", false, `${hops.join(", ")} (more than ${REDIRECT_HOP_LIMIT} hops)`)
 }
 
-const expectComingSoon = async (fetch: Fetcher, origin: string, path: string): Promise<SiteCheck> => {
-  const observed = await fetch(`${origin}${path}`)
-  const ok = observed.status === 200 && (header(observed, "content-type") ?? "").includes("text/html") &&
-    /coming soon/i.test(observed.body ?? "") && header(observed, "cross-origin-embedder-policy") === undefined
-  return check(path, "200 coming-soon page", ok, `${describeStatus(observed)} ${ok ? "coming soon" : "missing coming-soon page"}`)
-}
+/*
+ * A curated catalog row is a CATALOG fact, not a routing fence (lane 95).
+ * These roots used to answer a prerendered "Coming soon" page with no
+ * isolation headers, and the Worker also excluded every subject below them
+ * from the app, so a maintainer whose Smithers GitHub App installation had
+ * just landed could not reach the app's import path (mvp.md M-46). Each
+ * curated root is graded as the app document it now is; what the repository
+ * IS stays the backend's answer, which only the app asks for.
+ */
+const expectCuratedRepositoryRoot = async (fetch: Fetcher, origin: string, path: string): Promise<SiteCheck> =>
+  expectAppDocument(path, await fetch(`${origin}${path}`))
 
 const expectIcon = async (fetch: Fetcher, origin: string, path: string): Promise<SiteCheck> => {
   const observed = await fetch(`${origin}${path}`)
@@ -181,7 +186,7 @@ export const runSiteChecks = async (fetch: Fetcher, input: SiteProbeInput): Prom
   const { origin } = input
   const appDocument = await fetch(`${origin}${APP_DOCUMENT_CHECK_PATH}`)
   const fixed = await Promise.all([
-    ...COMING_SOON_REPOS.map((repo) => expectComingSoon(fetch, origin, `/${repo.name.toLowerCase()}/`)),
+    ...COMING_SOON_REPOS.map((repo) => expectCuratedRepositoryRoot(fetch, origin, `/${repo.name.toLowerCase()}/`)),
     expectIcon(fetch, origin, "/favicon.ico"),
     expectIcon(fetch, origin, "/apple-touch-icon.png"),
     expectStatus(fetch, origin, "/", 200),

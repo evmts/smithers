@@ -2572,6 +2572,16 @@ type GetAPIReposOwnerRepoChangesChangeIDOperationsParams struct {
 	Rev *int64
 }
 
+// GetAPIReposOwnerRepoContentsParams is the query of GET /api/repos/{owner}/{repo}/contents.
+type GetAPIReposOwnerRepoContentsParams struct {
+	Ref *string
+}
+
+// GetAPIReposOwnerRepoContentsPathParams is the query of GET /api/repos/{owner}/{repo}/contents/{path}.
+type GetAPIReposOwnerRepoContentsPathParams struct {
+	Ref *string
+}
+
 // GetAPIReposOwnerRepoIssuesParams is the query of GET /api/repos/{owner}/{repo}/issues.
 type GetAPIReposOwnerRepoIssuesParams struct {
 	State  *string
@@ -5399,16 +5409,24 @@ func (c *Client) GetAPIReposOwnerRepoCommitsRefStatuses(ctx context.Context, own
 }
 
 // GetAPIReposOwnerRepoContents calls GET /api/repos/{owner}/{repo}/contents.
-func (c *Client) GetAPIReposOwnerRepoContents(ctx context.Context, owner string, repo string) (AnyJSON, error) {
+func (c *Client) GetAPIReposOwnerRepoContents(ctx context.Context, owner string, repo string, params GetAPIReposOwnerRepoContentsParams) (AnyJSON, error) {
+	query := url.Values{}
+	if params.Ref != nil {
+		query.Set("ref", *params.Ref)
+	}
 	var out AnyJSON
-	err := c.do(ctx, "GET", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/contents", nil, nil, &out)
+	err := c.do(ctx, "GET", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/contents", query, nil, &out)
 	return out, err
 }
 
 // GetAPIReposOwnerRepoContentsPath calls GET /api/repos/{owner}/{repo}/contents/{path}.
-func (c *Client) GetAPIReposOwnerRepoContentsPath(ctx context.Context, owner string, repo string, pathParam string) (AnyJSON, error) {
+func (c *Client) GetAPIReposOwnerRepoContentsPath(ctx context.Context, owner string, repo string, pathParam string, params GetAPIReposOwnerRepoContentsPathParams) (AnyJSON, error) {
+	query := url.Values{}
+	if params.Ref != nil {
+		query.Set("ref", *params.Ref)
+	}
 	var out AnyJSON
-	err := c.do(ctx, "GET", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/contents/"+url.PathEscape(pathParam), nil, nil, &out)
+	err := c.do(ctx, "GET", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/contents/"+url.PathEscape(pathParam), query, nil, &out)
 	return out, err
 }
 

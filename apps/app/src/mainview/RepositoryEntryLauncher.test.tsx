@@ -84,9 +84,14 @@ const stubNews = (answer: () => Promise<Response>) => {
   return asked
 }
 
-const openLauncher = async (news: () => Promise<Response>, signedIn = true) => {
+const openLauncher = async (
+  news: () => Promise<Response>,
+  signedIn = true,
+  retained: ReadonlyArray<Parameters<Awaited<ReturnType<typeof createAppStore>>["dispatch"]>[0]> = []
+) => {
   const asked = stubNews(news)
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  for (const event of retained) await store.dispatch(event).isPersisted.promise
   window.history.replaceState(null, "", "/")
   const http = backend({
     "/api/user": signedIn ? json(200, { id: 1, username: "ada", is_admin: false }) : json(401, { status: "error" }),
@@ -200,4 +205,76 @@ test("a declaration that cannot be read falls back to the tree and says what fai
   expect(view.dataset.home).toBe("error")
   expect(view.textContent).toContain("Homepage unavailable")
   expect(view.querySelector(".repository-home-files")).not.toBeNull()
+})
+
+/*
+ * The SIGNED-IN hosted root (mvp.md M-45, lane 95). #4041 made the launcher
+ * the opening for a signed-out visitor only: `launcherOpening` required
+ * `signed-out`, so a person with an account arrived at `/` with the
+ * transcript's initial read on the Home card BELOW the launcher and the
+ * scroller following the public shelf's and the news's growth to the live
+ * edge. M-45's default home is the launcher for everybody who opens
+ * repositories here, signed in included — the launcher is additive, so the
+ * conversation, the saved cards and the repository already selected all stay
+ * where they were, under it.
+ *
+ * `data-opening` is the transcript's own statement of what it opened on. The
+ * whole-heading-in-the-viewport proof is the served-document one
+ * (apps/app/e2e/site/first-visit-launcher.spec.ts), which a component test
+ * cannot make.
+ */
+const transcript = (host: HTMLElement) => host.querySelector<HTMLElement>("[data-slot=chat-transcript]")!
+
+test("the hosted root opens ON the launcher signed in, with the retained cards below it", async () => {
+  /*
+   * The hosted transcript's conversation is the SHARED one (SharedConversation);
+   * a local message there is private diagnostic output and is filtered out of
+   * it, so what a returning account actually retains on this page is its
+   * cards — and they are what must stay in place under the launcher.
+   */
+  const { host } = await openLauncher(async () => json(200, [RELEASE]), true, [
+    {
+      type: "card.upsert",
+      actor: "user",
+      card: {
+        id: "retained-files", kind: "file-list" as const, title: "Files · ada/widgets", status: "active" as const,
+        createdAt: 1, ordinal: 1,
+        payload: { repo: "ada/widgets", path: "", entries: [{ name: "README.md", kind: "file" as const }] }
+      }
+    }
+  ])
+  const launcher = host.querySelector<HTMLElement>("[data-testid=repository-launcher]")!
+  expect(launcher).not.toBeNull()
+  // The transcript opens on the launcher, not at the live edge of the retained page.
+  expect(transcript(host).dataset.opening).toBe("launcher")
+  expect(transcript(host).hasAttribute("data-login")).toBe(false)
+  // Additive: what the account already had is still on the page, after it.
+  const retained = host.querySelector<HTMLElement>("[data-message-id=retained-files], [data-message-id='card:retained-files']")
+    ?? [...host.querySelectorAll<HTMLElement>("[data-message-id]")].find(row => row.textContent?.includes("README.md"))
+  expect(retained).not.toBeUndefined()
+  expect(launcher.compareDocumentPosition(retained!) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+  expect(retained!.textContent).toContain("README.md")
+})
+
+test("the signed-out root still opens on the launcher, and the Open box is first either way", async () => {
+  for (const signedIn of [false, true]) {
+    const { host } = await openLauncher(async () => json(200, [RELEASE]), signedIn)
+    expect(transcript(host).dataset.opening).toBe("launcher")
+    const launcher = host.querySelector<HTMLElement>("[data-testid=repository-launcher]")!
+    const sections = [...launcher.querySelectorAll<HTMLElement>("[data-section]")].map(node => node.dataset.section)
+    expect(sections[0]).toBe("open-existing")
+    // The box is a usable field in both states, not a signed-out affordance.
+    expect(launcher.querySelector<HTMLInputElement>('[data-section="open-existing"] input')?.disabled ?? true).toBe(false)
+    while (mounted.length > 0) mounted.pop()?.()
+  }
+})
+
+test("an explicitly opened conversation is not the launcher's root, and keeps its own opening", async () => {
+  const { host, controller } = await openLauncher(async () => json(200, [RELEASE]))
+  expect(transcript(host).dataset.opening).toBe("launcher")
+  // A repository route is not `/`: the launcher is not the opening there.
+  window.history.replaceState(null, "", "/ada/widgets/")
+  const remounted = mount(controller)
+  expect(remounted.host.querySelector("[data-testid=repository-launcher]")).toBeNull()
+  expect(transcript(remounted.host).dataset.opening).toBeUndefined()
 })

@@ -31,8 +31,10 @@
  * because a GitHub ref may hold slashes (`release/1.2`) and so may the path
  * below it: which slash divides them is a fact about the repository's refs,
  * not about the URL. Nothing here guesses it. {@link resolveRefLocation}
- * divides the location against a list of refs somebody authoritative read,
- * and a location no ref matches is refused rather than split.
+ * divides the location against a list of refs somebody authoritative read —
+ * plus the one spelling that needs no list, a whole commit object name
+ * ({@link isCommitRevision}) — and a location neither matches is refused
+ * rather than split.
  * @since 1.0.0
  * @category models
  */
@@ -128,6 +130,31 @@ export const repositoryLocation = (segments: ReadonlyArray<string>): string | un
 }
 
 /**
+ * The number of hex characters a whole commit object name carries.
+ * @since 1.0.0
+ * @category constants
+ */
+export const REPOSITORY_COMMIT_ID_LENGTH = 40
+
+/**
+ * True when a location's first segment is a WHOLE commit object name.
+ *
+ * This is the one revision spelling a reader can paste that names a revision
+ * by itself: GitHub's own permalink writes the full object name where a branch
+ * would go, no bookmark list can hold it, and nothing shorter is unambiguous —
+ * an abbreviation is also a legal branch name, so accepting one would be the
+ * guess this grammar exists to refuse. The spelling is kept exactly as the URL
+ * wrote it; the revision is resolved by whoever reads the repository
+ * (`GET /api/repos/{owner}/{repo}/contents/{path}?ref=<revision>`), not here.
+ * @since 1.0.0
+ * @category predicates
+ */
+export const isCommitRevision = (segment: string): boolean => COMMIT_OBJECT_NAME.test(segment)
+
+/** `REPOSITORY_COMMIT_ID_LENGTH` hex characters and nothing else, compiled once. */
+const COMMIT_OBJECT_NAME = new RegExp(`^[0-9a-fA-F]{${REPOSITORY_COMMIT_ID_LENGTH}}$`)
+
+/**
  * A location divided into the ref it names and the path below that ref.
  * @since 1.0.0
  * @category models
@@ -156,9 +183,17 @@ export interface RefLocation {
  * through (a lone `%` is not one) makes the whole location undefined rather
  * than a path with a mangled segment.
  *
- * Undefined is the honest answer when no listed ref matches: a URL names a
- * ref this reader cannot confirm, and dividing it anyway would open some
- * other repository path under some other ref's name.
+ * A first segment that is a whole commit object name ({@link isCommitRevision})
+ * is a revision on its own: the permalink a reader pastes out of a review
+ * names it unambiguously, and no bookmark list can hold it. It competes as a
+ * one-segment candidate under the same longest-match rule, so a READ ref that
+ * reaches further still wins and no link falls through to a shorter division
+ * that would open a different file.
+ *
+ * Undefined is the honest answer when neither matches: a URL names a ref this
+ * reader cannot confirm — an abbreviated object name, a tag (no read here
+ * lists tags) or a branch nobody listed — and dividing it anyway would open
+ * some other repository path under some other ref's name.
  * @since 1.0.0
  * @category parsers
  */
@@ -179,6 +214,10 @@ export const resolveRefLocation = (
   }
   let best: RefLocation | undefined
   let bestSegments = 0
+  if (isCommitRevision(decoded[0]!)) {
+    best = { ref: decoded[0]!, path: decoded.slice(1).join("/") }
+    bestSegments = 1
+  }
   for (const ref of refs) {
     const parts = ref.split("/")
     if (ref === "" || parts.length > decoded.length || parts.length <= bestSegments) continue

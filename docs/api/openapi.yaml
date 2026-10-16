@@ -12842,6 +12842,16 @@ paths:
           required: true
           schema:
             type: string
+        - name: ref
+          in: query
+          required: false
+          description: >-
+            The revision to read at: a bookmark name, a tag, or a commit id.
+            Resolved by the repository host; absent reads the repository head.
+            Honoured for a directory listing as well as a file read.
+          example: 3bad5fe63720eb8e3f7ae33a10de9e7aefb2dc74
+          schema:
+            type: string
       x-smithers-client-contract: multi-v1
       security:
         - tokenAuth: []
@@ -12888,6 +12898,16 @@ paths:
         - name: path
           in: path
           required: true
+          schema:
+            type: string
+        - name: ref
+          in: query
+          required: false
+          description: >-
+            The revision to read at: a bookmark name, a tag, or a commit id.
+            Resolved by the repository host; absent reads the repository head.
+            Honoured for a directory listing as well as a file read.
+          example: 3bad5fe63720eb8e3f7ae33a10de9e7aefb2dc74
           schema:
             type: string
       x-smithers-client-contract: multi-v1
