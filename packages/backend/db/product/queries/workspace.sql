@@ -976,3 +976,8 @@ FOR NO KEY UPDATE;
 -- name: GetBranchMachineOwner :one
 SELECT id FROM users WHERE lower_username = 'smithers-machines'
   AND user_type = 'service' AND prohibit_login AND deleted_at IS NULL;
+
+-- name: GetWorkspaceBillingOwner :one
+-- A retained hosted grant follows repository billing, never the machine owner.
+SELECT r.user_id,r.org_id FROM repositories r JOIN workspaces w ON w.repository_id=r.id
+WHERE w.id=sqlc.arg(workspace_id)::uuid AND w.deleted_at IS NULL;

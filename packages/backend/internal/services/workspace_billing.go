@@ -5,6 +5,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/smithersai/smithers/packages/backend/internal/billingstore"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/sandbox"
@@ -24,15 +25,9 @@ func (s *WorkspaceService) workspaceBillingContext(ctx context.Context, userID, 
 	if err != nil {
 		return nil, sandbox.BillingOwner{}, err
 	}
-	owner := sandbox.BillingOwner{}
-	if repo.UserID.Valid {
-		owner = sandbox.BillingOwner{Type: "user", ID: repo.UserID.Int64}
-	}
-	if repo.OrgID.Valid {
-		owner = sandbox.BillingOwner{Type: "org", ID: repo.OrgID.Int64}
-	}
-	if !owner.Valid() {
-		return nil, owner, pkgerrors.Internal("repository billing owner unavailable")
+	owner, err := billingstore.RepositorySandboxOwner(repo)
+	if err != nil {
+		return nil, owner, err
 	}
 	return sandbox.WithBillingOwner(ctx, owner), owner, nil
 }
