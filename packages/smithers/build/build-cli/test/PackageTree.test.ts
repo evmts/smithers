@@ -2044,3 +2044,24 @@ it("restoring an older live WAL reproduces SQLITE_IOERR_SHORT_READ in an isolate
     db.close()
   }
 })
+
+it("excludes individually ignored runtime logs while retaining ignored source", async () => {
+  ChildProcess.execFileSync("jj", ["git", "init", "--colocate", root], { stdio: "ignore" })
+  await Fs.writeFile(NodePath.join(root, ".gitignore"), "*.log\n")
+  await Fs.mkdir(NodePath.join(root, ".smithers/logs"), { recursive: true })
+  await Fs.writeFile(NodePath.join(root, ".smithers/logs/live.log"), "live")
+
+  await Fs.writeFile(NodePath.join(root, ".smithers/source.log"), "source")
+  await Fs.writeFile(NodePath.join(outside, "target.log"), "outside")
+  await Fs.symlink(NodePath.join(outside, "target.log"), NodePath.join(root, ".smithers/logs/link.log"))
+  const snapshot = await PackageTree.snapshotIgnored(root, ".flows")
+  try {
+    expect(snapshot.entries.has(".smithers/logs/live.log")).toBe(false)
+    expect(snapshot.entries.has(".smithers/source.log")).toBe(true)
+    expect(snapshot.entries.get(".smithers/logs/link.log")?.kind).toBe("link")
+    await Fs.writeFile(NodePath.join(root, ".smithers/logs/live.log"), "later")
+    expect(await PackageTree.changedIgnored(snapshot, ".flows")).toEqual([])
+  } finally {
+    await PackageTree.releaseIgnored(snapshot)
+  }
+})

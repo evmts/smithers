@@ -953,11 +953,12 @@ const recordIgnored = (
 // Only the installation root owns these live runtime paths. Nested migration
 // fixtures are source; similarly named backups and credentials remain guarded.
 // Links at these names remain portals rather than gaining a host-state waiver.
-const runtimeDirectory = (path: string): boolean =>
-  path === ".smithers/executions" || path === ".smithers/logs" || path === ".smithers/runs"
+const runtimeDirectories = [".smithers/executions", ".smithers/logs", ".smithers/runs"]
+const runtimeDirectory = (path: string): boolean => runtimeDirectories.includes(path)
 
 const runtimeFile = (path: string): boolean =>
-  path === "smithers.db" || path === "smithers.db-wal" || path === "smithers.db-shm"
+  path === "smithers.db" || path === "smithers.db-wal" || path === "smithers.db-shm" ||
+  runtimeDirectories.some((directory) => path.startsWith(`${directory}/`))
 
 /**
  * Records every gitignored path under one directory git reported as ignored.
