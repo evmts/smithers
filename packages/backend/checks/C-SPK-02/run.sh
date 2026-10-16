@@ -29,7 +29,7 @@ from verdict import evaluate
 IMAGE = 'node@sha256:71fed097c6e5bae40e1aff698793dda483e2380cc2530d7367a72a9d037c798b'
 stamp = dt.datetime.now(dt.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
 out = Path(sys.argv[1] if len(sys.argv) > 1 else
-           Path.cwd().parents[2] / '.artifacts/checks/C-SPK-02' / stamp).resolve()
+           Path.cwd().parents[3] / '.artifacts/checks/C-SPK-02' / stamp).resolve()
 out.mkdir(parents=True, exist_ok=True)
 if any(out.iterdir()):
     sys.exit(f'Refusing nonempty evidence directory: {out}')
@@ -146,7 +146,7 @@ try:
     result['disk_before'] = sp.check_output(['df', '-h', str(Path.home())], text=True)
     if shutil.disk_usage(Path.home()).free < 8 * 1024**3:
         raise RuntimeError('Less than 8 GiB free; refusing VM disks')
-    temporary = Path.cwd().parents[2] / '.artifacts/spikes'
+    temporary = Path.cwd().parents[3] / '.artifacts/spikes'
     temporary.mkdir(parents=True, exist_ok=True)
     scratch = Path(tempfile.mkdtemp(prefix='mch02-', dir=temporary))
     os.chmod(scratch, 0o700)

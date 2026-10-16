@@ -96,7 +96,7 @@ const isRecorded = (path) =>
  * Modeled accounts, exempt because the home is the subject under test rather
  * than an operator's checkout.
  *
- * - `scripts/spikes/mch-02-virtiofs-homes/` shares member homes over VirtioFS.
+ * - `packages/backend/checks/C-SPK-02/` shares member homes over VirtioFS.
  * - `scripts/spikes/trm-06/` confines terminal sessions to guest accounts.
  *
  * Each creates these accounts inside the VM or namespace it boots, so the path
@@ -104,7 +104,7 @@ const isRecorded = (path) =>
  * any other home in those trees, an operator's included, still fails.
  */
 const modeledAccounts = new Map([
-  ["scripts/spikes/mch-02-virtiofs-homes/", ["alice", "ben", "carol", "member", "root"]],
+  ["packages/backend/checks/C-SPK-02/", ["alice", "ben", "carol", "member", "root"]],
   ["scripts/spikes/trm-06/", ["agent", "ben", "environment", "other", "root"]]
 ])
 // The account a Linux home belongs to. Accounts are named, not spelled as

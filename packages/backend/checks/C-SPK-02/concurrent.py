@@ -167,7 +167,7 @@ def main():
     if locks_only:
         args = args[1:]
     stamp = dt.datetime.now(dt.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
-    workspace = Path(__file__).resolve().parents[3]
+    workspace = Path(__file__).resolve().parents[4]
     out = Path(args[0] if args else workspace / '.artifacts/checks/C-SPK-02' / stamp).resolve()
     out.mkdir(parents=True, exist_ok=True)
     if any(out.iterdir()):
