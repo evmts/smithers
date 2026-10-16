@@ -625,6 +625,17 @@
       "reason": "Container-side directory measurement shared by bash mutation accounting and host workspace observations."
     },
     {
+      "name": "@smthrs/std",
+      "subpath": "./RemoteSearch",
+      "development": "./src/RemoteSearch.ts",
+      "published": {
+        "types": "./dist/esm/RemoteSearch.d.ts",
+        "import": "./dist/esm/RemoteSearch.js",
+        "require": "./dist/cjs/RemoteSearch.js"
+      },
+      "reason": "The two-round-trip search over a tree on another machine, added in 425bbbf974 so a benchmark container behind docker exec answers grep without one process start per file."
+    },
+    {
       "name": "@smthrs/crypto",
       "subpath": "./Identity",
       "development": "./src/Identity.ts",

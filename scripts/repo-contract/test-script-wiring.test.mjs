@@ -132,11 +132,35 @@ describe("backend consumer gate", () => {
   const declaration = readFileSync(join(root, "PACKAGE.ts"), "utf8")
   const start = declaration.indexOf("const backendGo = Smithers.Shell.Test({")
   const target = declaration.slice(start, declaration.indexOf("\n})", start))
-  const literal = target.match(/^\s*shell: ("(?:[^"\\]|\\.)*"),$/m)?.[1] ?? "null"
-  // A TypeScript string can contain escapes that JSON does not permit.
-  const source = ts.createSourceFile("backend-gate.ts", `const shell = ${literal}`, ts.ScriptTarget.Latest, true)
-  const initializer = source.statements[0]?.declarationList?.declarations[0]?.initializer
-  const shell = initializer && ts.isStringLiteral(initializer) ? initializer.text : null
+  // The command joins string constants with `+`, and a TypeScript string can
+  // contain escapes that JSON does not permit, so read it as TypeScript.
+  const source = ts.createSourceFile("PACKAGE.ts", declaration, ts.ScriptTarget.Latest, true)
+  /** @type {Map<string, import("typescript").Expression>} */
+  const constants = new Map()
+  for (const statement of source.statements) {
+    if (!ts.isVariableStatement(statement)) continue
+    for (const { name, initializer } of statement.declarationList.declarations) {
+      if (ts.isIdentifier(name) && initializer) constants.set(name.text, initializer)
+    }
+  }
+  /** @param {import("typescript").Expression | undefined} node @returns {string | null} */
+  const text = (node) => {
+    if (node === undefined) return null
+    if (ts.isStringLiteral(node)) return node.text
+    if (ts.isIdentifier(node)) return text(constants.get(node.text))
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+      const left = text(node.left)
+      const right = text(node.right)
+      return left === null || right === null ? null : left + right
+    }
+    return null
+  }
+  const options = constants.get("backendGo")
+  const argument = options && ts.isCallExpression(options) ? options.arguments[0] : undefined
+  const property = argument && ts.isObjectLiteralExpression(argument)
+    ? argument.properties.find((entry) => ts.isPropertyAssignment(entry) && entry.name.getText(source) === "shell")
+    : undefined
+  const shell = property && ts.isPropertyAssignment(property) ? text(property.initializer) : null
 
   it("compiles the public backend API from an outside module on every backend run", () => {
     assert.ok(start >= 0, "PACKAGE.ts must declare backendGo")
@@ -144,7 +168,7 @@ describe("backend consumer gate", () => {
     const commands = shell.split(/;\s*/)
     const gate = commands.indexOf("sh scripts/test-backend-consumer.sh || exit $?")
     assert.ok(gate >= 0, "backendGo must run the consumer script and stop on its failure")
-    assert.ok(gate < commands.findIndex((command) => command.startsWith("go test -count=1 ")), "the gate runs before the Go suites")
+    assert.ok(gate < commands.findIndex((command) => /^go test (?:-p \d+ )?-count=1 /.test(command)), "the gate runs before the Go suites")
     assert.ok(target.includes('Smithers.file("//scripts/test-backend-consumer.sh")'), "the script is a declared input")
     assert.match(declaration, /pattern: "\/\/:backendGo"/, "a CI job selects backendGo")
   })
@@ -154,7 +178,8 @@ describe("backend consumer gate", () => {
     assert.ok(compile >= 0, "product tests must compile even before the consumer gate")
     assert.ok(compile < shell.indexOf("python3 -B -m unittest"))
     assert.match(shell, /go vet \.\/packages\/backend\/\.\.\./)
-    assert.match(shell, /go test -count=1 -timeout 40m \.\/packages\/backend\/\.\.\./)
+    assert.match(shell, /packages=\$\(go list \.\/packages\/backend\/\.\.\. /)
+    assert.match(shell, /go test (?:-p \d+ )?-count=1 -timeout 40m \$packages /)
   })
 
   it("keeps the consumer script failing on a compile error", () => {

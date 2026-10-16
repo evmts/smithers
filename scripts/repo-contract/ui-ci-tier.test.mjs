@@ -1,8 +1,9 @@
 /**
  * The apps/app required CI tier selects, and actually executes, what it claims.
  *
- * Three claims: the required PR workflow runs the UI typecheck, units and
- * Playwright once each in their own Ubuntu job; the browser target's wrapper
+ * Three claims: the required PR workflow runs the UI typecheck and units once
+ * in their own Ubuntu job and Playwright in three shard jobs (740ea377cb,
+ * #3763); the browser target's wrapper
  * installs its browser, runs Playwright and propagates its failure; and the
  * real scheduler runs the browser typecheck and propagates compiler failures.
  *
@@ -41,7 +42,6 @@ describe("required PR selection", () => {
       `pnpm exec smthrs build '//apps/app:check' ${options}`,
       `pnpm exec smthrs test '//apps/app:unitTests' ${options}`,
       `pnpm exec smthrs test '//apps/app:conformance' ${options}`,
-      `pnpm exec smthrs test '//apps/app:browserE2e' ${options}`,
       // Exclusive, so the job's `ci '//apps/tui/...'` step omits it.
       `pnpm exec smthrs test '//apps/tui:e2eTests' ${options}`
     ])
@@ -56,14 +56,18 @@ describe("required PR selection", () => {
       assert.ok(ui.steps.some((step) => step.with?.tool === tool), `preserve ${tool}`)
     assert.ok(runs("apps-e2e").some((run) => run.includes("'bubblewrap'")))
   })
-  it("the browser job selects the target that executes actual Playwright", () => {
-    assert.match(runs("apps-e2e").join("\n"), /(?:smthrs|smithers-build) test '\/\/apps\/app:browserE2e'/)
-    assert.notEqual(workflow.jobs["apps-e2e"]["continue-on-error"], true)
+  it("the browser shard jobs select the targets that execute actual Playwright", () => {
     const declaration = readFileSync(join(root, "apps/app/PACKAGE.ts"), "utf8")
-    assert.match(declaration, /browserE2e = Smithers\.NodeTest/)
+    for (const shard of ["1", "2", "3"]) {
+      const job = `apps-browser-${shard}`
+      assert.match(runs(job).join("\n"), new RegExp(`(?:smthrs|smithers-build) test '//apps/app:browserE2eShard${shard}'`))
+      assert.notEqual(workflow.jobs[job]["continue-on-error"], true)
+      assert.match(declaration, new RegExp(`browserE2eShard${shard} = browserTier\\("${shard}"\\)`))
+    }
+    assert.match(declaration, /const browserTier = \(shard\?: string\) => Smithers\.NodeTest/)
     assert.match(declaration, /entrypoint\(Smithers\.file\("scripts\/run-pr-e2e\.mjs"\)/)
     const executable = readFileSync(join(root, "apps/app/scripts/run-pr-e2e.mjs"), "utf8")
-    assert.match(executable, /\["exec", "playwright", "test"\]/)
+    assert.match(executable, /\["exec", "playwright", "test", \.\.\.\(shard \? \[`--shard=\$\{shard\}\/3`\] : \[\]\)\]/)
     assert.match(executable, /SMITHERS_CHAT_STUB: "1"/)
   })
 })
