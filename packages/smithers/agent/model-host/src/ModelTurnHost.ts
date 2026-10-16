@@ -258,8 +258,10 @@ export const runModelTurn = <E>(
   const reasoning = new StreamingCredentialCutter(options.credential)
   const tools = new Map<string, PendingToolCall>()
   const held: Array<HeldToolCall> = []
-  let outcome: HeldToolCalls | undefined
-  let settled = false
+  // The terminal is built when the stream ends, not at `settle`: a Chat
+  // Completions provider (api.openai.com, Ollama) sends its counters in a
+  // chunk after `finish_reason`, and the route ends the stream at that chunk.
+  let settled: ModelEvent.Settle | undefined
   let usage: AgentTurnUsage | undefined
   const emit = (frame: AgentTurnFrame): Effect.Effect<void, E> => write(frame)
   const emitDelta = (kind: "text" | "reasoning", value: string): Effect.Effect<void, E> =>
@@ -309,19 +311,13 @@ export const runModelTurn = <E>(
         })
       }
       case "settle":
-        if (settled) {
+        if (settled !== undefined) {
           return Effect.fail(new ModelError({ code: "invalid_provider_output", message: "model settled twice" }))
         }
-        settled = true
+        settled = event
         return Effect.gen(function*() {
           yield* emitDelta("reasoning", reasoning.finish())
           yield* emitDelta("text", text.finish())
-          const total = addUsage(host?.usage, usage)
-          if (host !== undefined && event.stopReason === "tool-calls" && held.length > 0) {
-            outcome = { calls: held, usage: total }
-            return
-          }
-          yield* emit(doneFrame(turn.runId, event, total))
         })
       case "usage":
         usage = mergeUsage(usage, event)
@@ -368,13 +364,18 @@ export const runModelTurn = <E>(
   // it. The capacity and that deadline are one repair: neither holds alone.
   const buffered = Stream.buffer(model.stream(providerRequest(turn, options)), { capacity: "unbounded" })
   return Stream.runForEach(buffered, observe).pipe(
-    Effect.flatMap(() =>
-      settled
-        ? Effect.succeed(outcome)
-        : Effect.fail(
+    Effect.flatMap((): Effect.Effect<HeldToolCalls | undefined, ModelError | E> => {
+      if (settled === undefined) {
+        return Effect.fail(
           new ModelError({ code: "invalid_provider_output", message: "model stream ended without settlement" })
         )
-    ),
-    Effect.ensuring(Effect.sync(() => endStream({ events: consumed, characters, settled })))
+      }
+      const total = addUsage(host?.usage, usage)
+      if (host !== undefined && settled.stopReason === "tool-calls" && held.length > 0) {
+        return Effect.succeed({ calls: held, usage: total })
+      }
+      return Effect.as(emit(doneFrame(turn.runId, settled, total)), undefined)
+    }),
+    Effect.ensuring(Effect.sync(() => endStream({ events: consumed, characters, settled: settled !== undefined })))
   )
 }

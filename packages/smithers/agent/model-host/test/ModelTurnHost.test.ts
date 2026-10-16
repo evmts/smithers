@@ -1,7 +1,10 @@
 import * as Model from "@smthrs/model/Model"
 import type * as ModelEvent from "@smthrs/model/ModelEvent"
+import * as RequestExecutor from "@smthrs/model/RequestExecutor"
+import * as Route from "@smthrs/model/Route"
 import type { AgentTurnFrame, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
-import { Effect, Fiber, Stream } from "effect"
+import { Effect, Fiber, Redacted, Result, Stream } from "effect"
+import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import { describe, expect, test } from "vitest"
 import { providerRequest, runModelTurn, StreamingCredentialCutter } from "../src/ModelTurnHost.ts"
 
@@ -165,6 +168,53 @@ test("omits usage when the provider reports none or only invalid counts", async 
       stopReason: "stop"
     }])
   ).toEqual([{ runId: turn.runId, type: "done", reason: "stop" }])
+})
+
+test("reports a Chat Completions usage chunk sent after finish_reason on the done frame, body left open (#3849)", async () => {
+  // api.openai.com and Ollama send the counters in a choice-less chunk after
+  // the finish_reason chunk; the body stays open, as a proxy may hold it.
+  const wire = [
+    "{\"id\":\"c\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}",
+    "{\"id\":\"c\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}",
+    "{\"id\":\"c\",\"choices\":[],\"usage\":{\"prompt_tokens\":9,\"completion_tokens\":1,\"total_tokens\":10}}"
+  ]
+  const route = Result.getOrThrow(Route.openaiChatCompatible({
+    providerName: "openai",
+    id: "compat",
+    baseUrl: "https://compat.test",
+    apiKey: Redacted.make("secret")
+  }))
+  const executor = RequestExecutor.RequestExecutor.of({
+    execute: (httpRequest) =>
+      Effect.succeed(HttpClientResponse.fromWeb(
+        httpRequest,
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode(wire.map((frame) => `data: ${frame}\n\n`).join("")))
+            }
+          }),
+          { status: 200, headers: { "content-type": "text/event-stream" } }
+        )
+      ))
+  })
+  const frames: Array<AgentTurnFrame> = []
+  await Effect.runPromise(
+    Effect.scoped(
+      Route.toModel(route as Route.Config<unknown, string, unknown, unknown>).pipe(
+        Effect.flatMap((model) =>
+          runModelTurn(model, turn, { modelId: "gpt" }, (frame) => Effect.sync(() => frames.push(frame)))
+        ),
+        Effect.provideService(RequestExecutor.RequestExecutor, executor)
+      )
+    ).pipe(Effect.timeout("2 seconds"))
+  )
+  expect(frames.at(-1)).toEqual({
+    runId: turn.runId,
+    type: "done",
+    reason: "stop",
+    usage: { inputTokens: 9, outputTokens: 1 }
+  })
 })
 
 test("flushes held text and reasoning at settlement and uses accumulated tool arguments", async () => {
