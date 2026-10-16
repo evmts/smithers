@@ -10,7 +10,6 @@
  * Done. Pure: `subagent-view.tsx` draws it and `app.tsx` moves over it.
  */
 import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
-import * as SubagentCard from "@smthrs/rpc/SubagentCard"
 import * as Asks from "./asks.ts"
 import type * as Flows from "./flows.ts"
 import { settled } from "./lifecycle.ts"
@@ -133,7 +132,7 @@ export const rows = (input: {
         ? waited(input.now - ask.askedAt)
         : tab.status === "queued"
         ? ""
-        : SubagentCard.duration(Tabs.elapsed(tab, input.now)),
+        : Tabs.clock(Tabs.elapsed(tab, input.now)),
       ...(ask === undefined ? {} : { ask }),
       ...(group === "needs" ?
         {
@@ -154,7 +153,7 @@ export const rows = (input: {
     status: run.status,
     name: run.flow,
     seat: "",
-    clock: run.status === "queued" ? "" : SubagentCard.duration((run.endedAt ?? input.now) - run.startedAt),
+    clock: run.status === "queued" ? "" : Tabs.clock((run.endedAt ?? input.now) - run.startedAt),
     ...(group === "needs" ? { pending: Number(run.status === "input") + approvalCount(`flow:${run.id}`) } : {})
   })
   const byId = new Map(input.tabs.map((tab) => [tab.id, tab]))
@@ -208,7 +207,7 @@ export const rows = (input: {
       status: "running",
       name: monitor.title,
       seat: "monitor",
-      clock: SubagentCard.duration(Math.max(0, input.now - monitor.createdAt))
+      clock: Tabs.clock(Math.max(0, input.now - monitor.createdAt))
     })
   }
   return ([["needs", needing], ["working", working], ["failed", failed], ["done", done]] as const)

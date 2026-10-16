@@ -75,8 +75,7 @@ export class Settlements {
           Lifecycle.settled(each.status) && each.endedAt !== undefined &&
           !input.visible.has(each.surface) && input.opened !== each.surface
         ) {
-          const ms = Math.max(0, each.endedAt - each.startedAt)
-          const clock = ms < 1000 ? `${ms}ms` : `${Math.floor(ms / 1000)}s`
+          const clock = Tabs.clock(each.endedAt - each.startedAt)
           this.notices.set(each.surface, {
             id: each.surface,
             surface: each.surface,

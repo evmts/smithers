@@ -2,6 +2,7 @@
 import * as SubagentCard from "@smthrs/rpc/SubagentCard"
 import { seatName } from "./models.ts"
 import type * as Panels from "./panels.ts"
+import * as Tabs from "./tabs.ts"
 import type * as Transcript from "./transcript.ts"
 import type { Tab } from "./workspace.ts"
 
@@ -52,7 +53,7 @@ export const panel = (
     const caption = transcript(tab.id).items.filter((item) => item.kind === "cell").at(-1)
     const current = caption?.kind === "cell" ? caption.prose.replace(/\s+/g, " ").slice(0, 48) : ""
     const seat = seatName(tab, [])
-    const clock = tab.launchedAt === undefined ? "—" : SubagentCard.duration((tab.endedAt ?? now) - tab.launchedAt)
+    const clock = tab.launchedAt === undefined ? "—" : Tabs.clock((tab.endedAt ?? now) - tab.launchedAt)
     return {
       id: `tree:${tab.id}`,
       label: `${"  ".repeat(level)}${children.length ? "▾ " : "  "}${

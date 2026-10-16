@@ -29,8 +29,7 @@ export interface Card {
 }
 
 export const duration = (startedAt: number, endedAt: number | undefined, now: number): string => {
-  const ms = Math.max(0, (endedAt ?? now) - startedAt)
-  return ms < 1000 ? `${Math.floor(ms)}ms` : `${Math.floor(ms / 1000)}s`
+  return Tabs.clock((endedAt ?? now) - startedAt)
 }
 
 /** Beneath an answer whose turn ran a program: `ctrl+o program · 11s`, without a time under a second. */

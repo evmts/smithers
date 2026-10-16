@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test"
 import * as Asks from "../src/asks.ts"
 import type * as Flows from "../src/flows.ts"
 import * as Inbox from "../src/inbox.ts"
+import * as TabsView from "../src/tabs-view.tsx"
 import * as Transcript from "../src/transcript.ts"
 import type { Tab } from "../src/workspace.ts"
 
@@ -270,6 +271,13 @@ describe("the overview inbox", () => {
     expect(section!.rows[0]).toMatchObject({ seat: "GPT-6.1 Sol", clock: "1m" })
     expect(section!.rows[0]).not.toHaveProperty("window")
     expect(section!.rows[0]).not.toHaveProperty("cache")
+  })
+
+  it("reads a settled worker's clock the way its tab strip chip does (#3672)", () => {
+    const failed = tab("a", "failed", { startedAt: now - 8, endedAt: now })
+    const [section] = rows([failed])
+    expect(section!.rows[0]!.clock).toBe("8ms")
+    expect(TabsView.chip(failed, now).detail).toBe(section!.rows[0]!.clock)
   })
 
   it("gives a flow run no model label and its form's question as the peek", () => {

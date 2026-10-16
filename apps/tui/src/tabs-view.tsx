@@ -19,7 +19,7 @@ import * as Subagents from "./subagents.ts"
 import * as Tabs from "./tabs.ts"
 import { color } from "./theme.ts"
 import * as Timeline from "./timeline.ts"
-import * as Transcript from "./transcript.ts"
+import type * as Transcript from "./transcript.ts"
 import * as View from "./view.tsx"
 import type { Tab } from "./workspace.ts"
 
@@ -109,7 +109,7 @@ export const chip = (tab: Tab, now: number, ask?: Asks.Ask): Chip => {
     glyph,
     tone,
     detail: ask === undefined
-      ? Transcript.duration(Tabs.elapsed(tab, now))
+      ? Tabs.clock(Tabs.elapsed(tab, now))
       : `waiting ${Inbox.waited(now - ask.askedAt)}`
   }
 }
@@ -145,7 +145,7 @@ function Unchecked(props: { readonly tab: Tab; readonly transcript: Transcript.T
         <span fg={color.success}>✓</span>
         <span fg={color.text}>
           {" "}
-          {props.tab.title} · {SubagentCard.duration(Tabs.elapsed(props.tab, props.tab.endedAt ?? 0))}
+          {props.tab.title} · {Tabs.clock(Tabs.elapsed(props.tab, props.tab.endedAt ?? 0))}
         </span>
         {files.map((file) => (
           <span key={file.path}>
@@ -217,7 +217,7 @@ export function WorkerView(props: {
       : `${tab.harness.vendor}${
         tab.harness.session === undefined ? "" : ` · session ${tab.harness.session.slice(0, 8)}`
       }`,
-    Transcript.duration(Tabs.elapsed(tab, props.now))
+    Tabs.clock(Tabs.elapsed(tab, props.now))
   ].join(" · ")
   const lines = Subagents.lines(
     Timeline.rows(transcript),

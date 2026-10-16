@@ -59,6 +59,10 @@ export const live = WorkerControls.live
 export const elapsed = (tab: Pick<Tab, "startedAt" | "endedAt">, now: number): number =>
   Math.max(0, (tab.endedAt ?? now) - tab.startedAt)
 
+/** A worker or run clock, the same on its card, chip, Summary row and toast: `8ms`, `41s`, `1m 04s`. */
+export const clock = (ms: number): string =>
+  ms < 1000 ? `${Math.floor(Math.max(0, ms))}ms` : SubagentCard.duration(ms)
+
 export type ActionId = "stop" | "retry" | "model" | "wait" | "steer" | "takeover" | "raise"
 
 /** What an action's availability reads: the status, and a failure's own offers. */
