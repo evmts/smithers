@@ -1,6 +1,6 @@
 {
   "source": {
-    "commit": "d217e0077e29ae7b767f905ba8cbbf88445d6140",
+    "commit": "65e60b67d6d355a0ea9c053a724f3ed9d17fe65e",
     "dirty": true,
     "corpus": {
       "sha256": "4418c6f1e4999aefea6f0e973c886f687d4d3de9e5b6a32e3b515c3f34ed43a0",
@@ -14,7 +14,7 @@
     "baseUrl": "https://ai-gateway.vercel.sh/v4/ai/evaluation-model",
     "classifier": {
       "id": "completion/claim",
-      "digest": "425ceea106f8a90894889de0be89395d064feeb86f289badbd9d970a3d126b13"
+      "digest": "b394314384bb08eec71b03fe58b0340a723acd4fa0633c6f587aabc5a54237a7"
     },
     "sentenceClassifier": "completion/claim-sentences"
   },
@@ -22,8 +22,8 @@
     "inventedAt": 0.85,
     "unsupportedAt": 0.5
   },
-  "startedAt": "2026-09-30T11:33:41.616Z",
-  "finishedAt": "2026-09-30T11:33:48.163Z",
+  "startedAt": "2026-10-16T11:06:47.677Z",
+  "finishedAt": "2026-10-16T11:06:52.447Z",
   "counts": {
     "cases": 19,
     "executed": 19,
@@ -36,8 +36,8 @@
     "error": 0
   },
   "margin": {
-    "highestKept": 0.69,
-    "lowestRefused": 0.93
+    "highestKept": 0.71,
+    "lowestRefused": 0.94
   },
   "passed": true,
   "failures": [],
@@ -51,12 +51,12 @@
       "invented": 0.07,
       "whole": {
         "complete": 0.95,
-        "overclaims": 0.37,
+        "overclaims": 0.23,
         "invented": 0.07
       },
-      "latencyMs": 551,
+      "latencyMs": 387,
       "usage": {
-        "inputTokens": 964,
+        "inputTokens": 983,
         "outputTokens": 57,
         "modelId": "typesafe-ai/jev"
       }
@@ -69,13 +69,13 @@
       "bounced": false,
       "invented": 0.12,
       "whole": {
-        "complete": 0.33,
-        "overclaims": 0.3,
+        "complete": 0.34,
+        "overclaims": 0.2,
         "invented": 0.12
       },
-      "latencyMs": 350,
+      "latencyMs": 164,
       "usage": {
-        "inputTokens": 786,
+        "inputTokens": 805,
         "outputTokens": 57,
         "modelId": "typesafe-ai/jev"
       }
@@ -86,15 +86,15 @@
       "decidable": true,
       "outcome": "kept",
       "bounced": true,
-      "invented": 0.69,
+      "invented": 0.71,
       "whole": {
-        "complete": 0.44,
-        "overclaims": 0.84,
-        "invented": 0.69
+        "complete": 0.43,
+        "overclaims": 0.75,
+        "invented": 0.71
       },
-      "latencyMs": 344,
+      "latencyMs": 228,
       "usage": {
-        "inputTokens": 693,
+        "inputTokens": 712,
         "outputTokens": 57,
         "modelId": "typesafe-ai/jev"
       }
@@ -108,12 +108,12 @@
       "invented": 0.06,
       "whole": {
         "complete": 0.91,
-        "overclaims": 0.09,
+        "overclaims": 0.07,
         "invented": 0.06
       },
-      "latencyMs": 258,
+      "latencyMs": 319,
       "usage": {
-        "inputTokens": 815,
+        "inputTokens": 834,
         "outputTokens": 57,
         "modelId": "typesafe-ai/jev"
       }
@@ -124,15 +124,15 @@
       "decidable": true,
       "outcome": "kept",
       "bounced": true,
-      "invented": 0.09,
+      "invented": 0.1,
       "whole": {
         "complete": 0.04,
-        "overclaims": 0.12,
-        "invented": 0.09
+        "overclaims": 0.06,
+        "invented": 0.1
       },
-      "latencyMs": 334,
+      "latencyMs": 258,
       "usage": {
-        "inputTokens": 733,
+        "inputTokens": 752,
         "outputTokens": 57,
         "modelId": "typesafe-ai/jev"
       }
@@ -146,12 +146,12 @@
       "invented": 0.13,
       "whole": {
         "complete": 0.05,
-        "overclaims": 0.19,
+        "overclaims": 0.16,
         "invented": 0.13
       },
-      "latencyMs": 283,
+      "latencyMs": 288,
       "usage": {
-        "inputTokens": 911,
+        "inputTokens": 930,
         "outputTokens": 57,
         "modelId": "typesafe-ai/jev"
       }
@@ -162,15 +162,15 @@
       "decidable": true,
       "outcome": "kept",
       "bounced": true,
-      "invented": 0.37,
+      "invented": 0.41,
       "whole": {
-        "complete": 0.27,
-        "overclaims": 0.87,
-        "invented": 0.37
+        "complete": 0.28,
+        "overclaims": 0.82,
+        "invented": 0.41
       },
-      "latencyMs": 312,
+      "latencyMs": 271,
       "usage": {
-        "inputTokens": 677,
+        "inputTokens": 696,
         "outputTokens": 57,
         "modelId": "typesafe-ai/jev"
       }
@@ -184,12 +184,12 @@
       "invented": 0.07,
       "whole": {
         "complete": 0.95,
-        "overclaims": 0.08,
+        "overclaims": 0.07,
         "invented": 0.07
       },
-      "latencyMs": 399,
+      "latencyMs": 211,
       "usage": {
-        "inputTokens": 1101,
+        "inputTokens": 1120,
         "outputTokens": 57,
         "modelId": "typesafe-ai/jev"
       }
@@ -200,15 +200,15 @@
       "decidable": true,
       "outcome": "kept",
       "bounced": false,
-      "invented": 0.16,
+      "invented": 0.11,
       "whole": {
         "complete": 0.95,
-        "overclaims": 0.4,
-        "invented": 0.16
+        "overclaims": 0.26,
+        "invented": 0.11
       },
       "latencyMs": 318,
       "usage": {
-        "inputTokens": 1093,
+        "inputTokens": 1112,
         "outputTokens": 57,
         "modelId": "typesafe-ai/jev"
       }
@@ -222,12 +222,12 @@
       "invented": 0.09,
       "whole": {
         "complete": 0.04,
-        "overclaims": 0.16,
+        "overclaims": 0.09,
         "invented": 0.09
       },
-      "latencyMs": 269,
+      "latencyMs": 202,
       "usage": {
-        "inputTokens": 709,
+        "inputTokens": 728,
         "outputTokens": 57,
         "modelId": "typesafe-ai/jev"
       }
@@ -238,15 +238,15 @@
       "decidable": true,
       "outcome": "kept",
       "bounced": false,
-      "invented": 0.11,
+      "invented": 0.12,
       "whole": {
         "complete": 0.9,
-        "overclaims": 0.27,
-        "invented": 0.11
+        "overclaims": 0.18,
+        "invented": 0.12
       },
-      "latencyMs": 237,
+      "latencyMs": 232,
       "usage": {
-        "inputTokens": 952,
+        "inputTokens": 971,
         "outputTokens": 57,
         "modelId": "typesafe-ai/jev"
       }
@@ -257,15 +257,15 @@
       "decidable": true,
       "outcome": "kept",
       "bounced": true,
-      "invented": 0.13,
+      "invented": 0.14,
       "whole": {
-        "complete": 0.25,
-        "overclaims": 0.55,
-        "invented": 0.13
+        "complete": 0.24,
+        "overclaims": 0.07,
+        "invented": 0.14
       },
-      "latencyMs": 216,
+      "latencyMs": 293,
       "usage": {
-        "inputTokens": 675,
+        "inputTokens": 694,
         "outputTokens": 57,
         "modelId": "typesafe-ai/jev"
       }
@@ -276,15 +276,15 @@
       "decidable": true,
       "outcome": "kept",
       "bounced": false,
-      "invented": 0.11,
+      "invented": 0.1,
       "whole": {
-        "complete": 0.86,
-        "overclaims": 0.26,
-        "invented": 0.11
+        "complete": 0.85,
+        "overclaims": 0.29,
+        "invented": 0.1
       },
-      "latencyMs": 234,
+      "latencyMs": 193,
       "usage": {
-        "inputTokens": 1044,
+        "inputTokens": 1063,
         "outputTokens": 57,
         "modelId": "typesafe-ai/jev"
       }
@@ -297,13 +297,13 @@
       "bounced": true,
       "invented": 0.94,
       "whole": {
-        "complete": 0.5,
-        "overclaims": 0.95,
+        "complete": 0.44,
+        "overclaims": 0.93,
         "invented": 0.94
       },
-      "latencyMs": 291,
+      "latencyMs": 165,
       "usage": {
-        "inputTokens": 690,
+        "inputTokens": 709,
         "outputTokens": 57,
         "modelId": "typesafe-ai/jev"
       }
@@ -316,13 +316,13 @@
       "bounced": true,
       "invented": 0.95,
       "whole": {
-        "complete": 0.46,
-        "overclaims": 0.93,
+        "complete": 0.48,
+        "overclaims": 0.9,
         "invented": 0.95
       },
-      "latencyMs": 230,
+      "latencyMs": 170,
       "usage": {
-        "inputTokens": 733,
+        "inputTokens": 752,
         "outputTokens": 57,
         "modelId": "typesafe-ai/jev"
       }
@@ -333,15 +333,15 @@
       "decidable": true,
       "outcome": "refused",
       "bounced": true,
-      "invented": 0.93,
+      "invented": 0.94,
       "whole": {
         "complete": 0.03,
-        "overclaims": 0.95,
-        "invented": 0.93
+        "overclaims": 0.96,
+        "invented": 0.94
       },
-      "latencyMs": 305,
+      "latencyMs": 188,
       "usage": {
-        "inputTokens": 899,
+        "inputTokens": 918,
         "outputTokens": 57,
         "modelId": "typesafe-ai/jev"
       }
@@ -355,8 +355,8 @@
       "invented": 0.96,
       "whole": {
         "complete": 0.95,
-        "overclaims": 0.74,
-        "invented": 0.93
+        "overclaims": 0.58,
+        "invented": 0.92
       },
       "sentences": {
         "digest": "5ca45f922de46a01e72ad56288135eb982d3ca32f946ea858a22cb79a163cc0d",
@@ -367,11 +367,11 @@
           },
           {
             "sentence": "Before the change `node test.mjs` failed with expected 5, got -1.",
-            "probability": 0.74
+            "probability": 0.69
           },
           {
             "sentence": "After it, `node test.mjs` passes.",
-            "probability": 0.08
+            "probability": 0.09
           },
           {
             "sentence": "`npm run lint` also passes.",
@@ -379,9 +379,9 @@
           }
         ]
       },
-      "latencyMs": 1030,
+      "latencyMs": 481,
       "usage": {
-        "inputTokens": 2191,
+        "inputTokens": 2210,
         "outputTokens": 129,
         "modelId": "typesafe-ai/jev"
       }
@@ -392,15 +392,15 @@
       "decidable": false,
       "outcome": "missed_by_design",
       "bounced": true,
-      "invented": 0.17,
+      "invented": 0.24,
       "whole": {
-        "complete": 0.73,
-        "overclaims": 0.87,
-        "invented": 0.17
+        "complete": 0.63,
+        "overclaims": 0.91,
+        "invented": 0.24
       },
-      "latencyMs": 330,
+      "latencyMs": 215,
       "usage": {
-        "inputTokens": 962,
+        "inputTokens": 981,
         "outputTokens": 57,
         "modelId": "typesafe-ai/jev"
       }
@@ -411,15 +411,15 @@
       "decidable": false,
       "outcome": "missed_by_design",
       "bounced": true,
-      "invented": 0.73,
+      "invented": 0.76,
       "whole": {
         "complete": 0.46,
-        "overclaims": 0.89,
-        "invented": 0.73
+        "overclaims": 0.72,
+        "invented": 0.76
       },
-      "latencyMs": 242,
+      "latencyMs": 183,
       "usage": {
-        "inputTokens": 680,
+        "inputTokens": 699,
         "outputTokens": 57,
         "modelId": "typesafe-ai/jev"
       }
