@@ -315,7 +315,7 @@ function AppContent() {
       }
       : undefined
     // MOCK SEAM (state/seams/DesignWorld): the mounted seed stands in for the sign-in this host lacks, so the bubble stays out while it is mounted.
-    : identity?.state === "unavailable" && controller.design === undefined
+    : identity?.state === "unavailable" && !controller.design.enabled
     ? {
       id: "auth-state",
       role: "smithers",
