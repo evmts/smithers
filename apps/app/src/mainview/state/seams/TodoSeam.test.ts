@@ -9,6 +9,7 @@ import { memoryStorage, settle, waitFor } from "../TestFixtures"
 import type { SeamContext } from "./SeamContext"
 import { createTodoSeam, todoRequestRefusal, type DraftEntry, type TodoEntry, type TodoReceipt, type TodoTopics, type TodoSeamOptions } from "./TodoSeam"
 import { TODOS_PATH } from "@smthrs/rpc/TodoCommands"
+import { clientErrorBody } from "../ClientErrors"
 import { createOperationalFailureReporter } from "../OperationalFailures"
 import { IssueDraftRefused } from "./IssueTodoDraft"
 import type { TodoCard } from "@smthrs/rpc/TodoCard"
@@ -1020,6 +1021,39 @@ describe("TodoSeam — the TODO list Home reads where no `home` topic is served 
       expect(h.reports[0]!.error).toMatchObject({ _tag: "TodoListInvalid", name: "TodoListInvalid" })
       const message = String(h.reports[0]!.error)
       for (const field of ["name", "avatar_url", "color_index"]) expect(message).toContain(`0.prompt_revisions.0.by.${field}`)
+      expect(message).not.toContain("PRIVATE PROMPT")
+    } finally { leave(); h.close() }
+  })
+
+  test("an attacker-chosen action argument key never reaches the diagnostic or the report posted for it", async () => {
+    // `ActionSchema.args` is `z.record(z.string(), z.string())`: the KEY is the
+    // host's, not the schema's, so a rejected value carries it into the zod
+    // issue's own path. These three are what a hostile host would put there.
+    const sentinels = [
+      "https://attacker.invalid/callback?token=QA_RECORD_KEY_SENTINEL_URL",
+      `QA_RECORD_KEY_SENTINEL_LONG_${"x".repeat(400)}`,
+      "QA_RECORD_KEY_SENTINEL_UNICODE_\u0441\u043b\u0443\u0436\u0431\u0430_\u{1f511}"
+    ]
+    const good = fixtures.needs_you.model
+    const wait = good.waits[0]!
+    const broken = { ...good, waits: [{ ...wait, prompt: "PRIVATE PROMPT", actions: [{ ...wait.actions[0]!, args: Object.fromEntries(sentinels.map(key => [key, 7])) }] }] }
+    const h = await listHarness([() => json([good], 200), () => json([broken], 200)])
+    const leave = h.seam.list.subscribe(() => {})
+    try {
+      await waitFor(() => h.seam.list.get().error === "invalid")
+      // The refusal and the last good list are unchanged by the redaction.
+      expect(h.seam.list.get().todos?.map(todo => todo.n)).toEqual([good.n])
+      expect(h.reports).toHaveLength(1)
+      expect(h.reports[0]!.scope).toBe("todo.list")
+      expect(h.reports[0]!.error).toMatchObject({ _tag: "TodoListInvalid", name: "TodoListInvalid" })
+      const message = String(h.reports[0]!.error)
+      // The crash sink posts the message verbatim, so the serialized body is the boundary that matters.
+      const posted = clientErrorBody("operational", h.reports[0]!.error, new Date("2026-10-16T00:00:00.000Z"), "/")
+      for (const text of [message, posted]) for (const sentinel of sentinels) expect(text).not.toContain(sentinel)
+      for (const text of [message, posted]) expect(text).not.toContain("QA_RECORD_KEY_SENTINEL")
+      // Still identifies the failure: the row, the schema's own field names and the dynamic key's position.
+      // Exact, so nothing else can slip in: three distinct hostile keys collapse to the one position they share.
+      expect(message).toBe("TodoListInvalid: Invalid TODO fields: 0.waits.0.actions.0.args.*")
       expect(message).not.toContain("PRIVATE PROMPT")
     } finally { leave(); h.close() }
   })

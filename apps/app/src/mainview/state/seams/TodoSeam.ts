@@ -3,6 +3,7 @@ import { presentUserFailure } from "@smthrs/rpc/UserFailure"
 import type { IssueDraftRefused } from "./IssueTodoDraft"
 import { resolveTargetRepo } from "../RepoContext"
 import { canonicalize } from "@smthrs/canonical"
+import { declaredIssuePath } from "../SchemaIssuePath"
 import { serviceFailureSentence } from "../ServiceFailureCopy"
 import { todoActors, type ActorContext } from "../ProductActor"
 import { TodoCardSchema, type TodoCard } from "@smthrs/rpc/TodoCard"
@@ -12,6 +13,7 @@ import type { Card } from "@smthrs/rpc/Cards"
 /* The routes and cards the model host's TODO commands share (@smthrs/rpc/TodoCommands). */
 import { draftCard, todoCard, todoPath, TODOS_PATH, type DraftEntry, type TodoEntry } from "@smthrs/rpc/TodoCommands"
 import { Data, Schema } from "effect"
+import type { z } from "zod"
 import { TodoNewInput, TodoAmendInput } from "../../flows/entries/todo"
 import { actorSharedState } from "../ActorBindings"
 import type { SeamContext } from "./SeamContext"
@@ -23,9 +25,9 @@ import { randomUuid } from "../../runtime/RandomUuid"
 
 class TodoTopicMismatch extends Data.TaggedError("TodoTopicMismatch") { readonly message = "TODO topic mismatch" }
 /**
- * Rejected field paths only; the TODO's contents never enter diagnostics. The
- * list is also finite: a host that rejects every row would otherwise write one
- * path per row per field into the diagnostic ring.
+ * Rejected field positions only; the TODO's contents never enter diagnostics.
+ * The list is also finite: a host that rejects every row would otherwise write
+ * one path per row per field into the diagnostic ring.
  */
 class TodoListInvalid extends Data.TaggedError("TodoListInvalid")<{ readonly fields: ReadonlyArray<string>; readonly omitted: number }> {
   override get message() {
@@ -36,9 +38,21 @@ class TodoListInvalid extends Data.TaggedError("TodoListInvalid")<{ readonly fie
 /** At most this many distinct rejected paths are named; the rest are counted. */
 const REPORTED_FIELDS = 24
 
-/** The distinct paths a decode rejected, in the order the decoder found them. */
-const rejectedFields = (issues: ReadonlyArray<{ readonly path: ReadonlyArray<PropertyKey> }>): { readonly fields: ReadonlyArray<string>; readonly omitted: number } => {
-  const paths = [...new Set(issues.map(issue => issue.path.join(".")))]
+/*
+ * The distinct positions a decode rejected, in the order the decoder found
+ * them, spelled with the schema's own words (state/SchemaIssuePath.ts).
+ *
+ * The raw path is not safe to print. `ActionSchema.args` is
+ * `z.record(z.string(), z.string())`, so a wait's action argument KEY is
+ * chosen by the model host and can carry customer text; a rejected argument
+ * VALUE puts that key straight into the zod issue's path, and this diagnostic
+ * is posted to the crash sink as the failure's message (state/ClientErrors.ts
+ * `clientErrorBody`). Bounding the list to 24 entries caps how MUCH of it
+ * travels; it is not redaction. So every segment the schema does not declare
+ * becomes `*`, which still names the position that was rejected.
+ */
+const rejectedFields = (schema: z.ZodType, issues: ReadonlyArray<{ readonly path: ReadonlyArray<PropertyKey> }>): { readonly fields: ReadonlyArray<string>; readonly omitted: number } => {
+  const paths = [...new Set(issues.map(issue => declaredIssuePath(schema, issue.path)))]
   return { fields: paths.slice(0, REPORTED_FIELDS), omitted: Math.max(0, paths.length - REPORTED_FIELDS) }
 }
 /** main's .smithers/machine.json could not be read or decoded for a machine image draft. */
@@ -657,7 +671,7 @@ export const createTodoSeam = (ctx: SeamContext, options: TodoSeamOptions = {}) 
       const response = await ctx.http(`${ctx.baseUrl}${TODOS_PATH}`, { credentials: "include" })
       const body: unknown = response.ok ? await response.json() : undefined
       const parsed = Array.isArray(body) ? TodoCardSchema.array().safeParse(body.map(value => todoActors(value, options.actors?.()))) : undefined
-      if (response.ok && parsed && !parsed.success) ctx.report?.("todo.list", new TodoListInvalid(rejectedFields(parsed.error.issues)))
+      if (response.ok && parsed && !parsed.success) ctx.report?.("todo.list", new TodoListInvalid(rejectedFields(TodoCardSchema, parsed.error.issues)))
       next = response.status === 401 || response.status === 403 ? { error: "forbidden" }
         : response.status === 404 ? { error: "absent" }
         : !response.ok ? { ...shared.list.snapshot, error: "internal" }

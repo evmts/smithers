@@ -13,6 +13,7 @@ import {
 import { canonicalEventValue, canonicalStoredJsonValue, decodeEventValue, encodeEventValue, type EncodedEventValue, type EventJson } from "./EventValue"
 import { validateAppTransition } from "./AppTransitionValidation"
 import { freezeProjectionValue, isImmutableProjectionValue } from "./ImmutableProjection"
+import { declaredIssuePath } from "./SchemaIssuePath"
 
 export const APP_EVENT_FORMAT_VERSION = 1
 /*
@@ -186,40 +187,6 @@ const fail = (reason: AppEventIntegrityError["reason"], detail?: AppEventIntegri
 }
 
 /*
- * A zod issue's path names the schema's own keys — EXCEPT inside a `z.record`,
- * where the segment is a key the SAVED DATA chose (a transcript anchor id, a
- * handoff manifest key, any object key inside an encoded event input). Those
- * are stored values and must never reach a printed message, so a segment is
- * only spelled out when one of this module's own schemas declares it; every
- * other segment becomes `*`. Array positions are the schema's own counting,
- * not saved data, so they stay.
- */
-const declaredKeys = new WeakMap<z.ZodType, ReadonlySet<string>>()
-const schemaKeyNames = (schema: z.ZodType): ReadonlySet<string> => {
-  const cached = declaredKeys.get(schema)
-  if (cached !== undefined) return cached
-  const names = new Set<string>()
-  const seen = new Set<unknown>()
-  const walk = (node: unknown, depth: number): void => {
-    if (typeof node !== "object" || node === null || depth > 64 || seen.has(node)) return
-    seen.add(node)
-    const def = (node as { readonly _zod?: { readonly def?: unknown } })._zod?.def
-    if (typeof def !== "object" || def === null) return
-    const fields = def as Record<string, unknown>
-    if (typeof fields.shape === "object" && fields.shape !== null) {
-      for (const [name, child] of Object.entries(fields.shape)) { names.add(name); walk(child, depth + 1) }
-    }
-    for (const key of ["innerType", "element", "valueType", "keyType", "left", "right", "in", "out"]) walk(fields[key], depth + 1)
-    if (Array.isArray(fields.options)) for (const option of fields.options) walk(option, depth + 1)
-    // A lazy schema is the recursion point; `seen` holds its own node, so this terminates.
-    if (typeof fields.getter === "function") walk((fields.getter as () => unknown)(), depth + 1)
-  }
-  walk(schema, 0)
-  declaredKeys.set(schema, names)
-  return names
-}
-
-/*
  * A saved row's `type` is only `z.string().min(1)`, so a tampered row — or one
  * a build this old never published — can carry arbitrary stored text, and the
  * refusals below read it BEFORE the replay checks it against the published
@@ -233,10 +200,7 @@ const declaredType = (type: string): string =>
 const issueDetail = (schema: z.ZodType, error: z.ZodError): { readonly path: string; readonly code: string } | undefined => {
   const issue = error.issues[0]
   if (issue === undefined) return undefined
-  const names = schemaKeyNames(schema)
-  const path = issue.path
-    .map(part => typeof part === "number" ? String(part) : names.has(String(part)) ? String(part) : "*")
-    .join(".")
+  const path = declaredIssuePath(schema, issue.path)
   return { path: path || "(row)", code: issue.code }
 }
 
