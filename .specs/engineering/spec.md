@@ -261,7 +261,7 @@ Machine states shown in the product: awake, asleep, waking, waiting #n (= reques
 ### 4.3 Flow version
 
 ```
- proposed (open TODO touches flows/<name>/) ── merged on main ──▶ merged-syncing
+ proposed (open TODO touches .smithers/flows/<name>/) ── merged on main ──▶ merged-syncing
  merged-syncing ── load ok ──▶ active (previous → previous)
  merged-syncing ── load fails ──▶ merged-failed (previous stays active)
 ```
@@ -1038,7 +1038,7 @@ Sent merges. Everything but the request happens before the dispatch claim: the d
 
 11.1.1 **System flows** are packaged with the install and never overridable: stack operations (including `stack.propose`), merge, members, settings, secrets, sync, admission, setup, `flow-load` and the summarizer (M-30). They run in the host flow runtime or as Go services exposed as commands, except `flow-load`, which loads repository code and so runs in an ephemeral machine (§11.3.1). Check: C-SEC-02.
 
-11.1.2 **Overridable flows** are `todo`, `learning`, `review`, plus any repository flow at `flows/<name>/flow.ts`. Each has a built-in default version shipped with the install. A repository file of the same name, on `main`, overrides it once Active. Overridable flows always run inside a machine (§1.3).
+11.1.2 **Overridable flows** are `todo`, `learning`, `review`, plus any repository flow at `.smithers/flows/<name>/flow.ts`. Each has a built-in default version shipped with the install. A repository file of the same name, on `main`, overrides it once Active. Overridable flows always run inside a machine (§1.3).
 
 11.1.3 Use only `Flow.make("<name>", {description, payload, success, error?, body, ...})` from `@smthrs/flow`; the ticket touching a flow deletes the duplicate shape in the same change. Check: C-CAT-01.
 
@@ -1058,7 +1058,7 @@ Sent merges. Everything but the request happens before the dispatch claim: the d
 
 11.3.2 Activation: Active is the newest `loaded` `workflow_definitions` row. A `failed` version leaves the previous Active version in place, and the Flow card shows "Merged · not active" with the error (§4.3). Fix `packages/smithers/agent/registry/src/Executable.ts:2037` to keep the previous executable.
 
-11.3.3 The Flow card's "Proposed" version is any open TODO whose change touches `flows/<name>/`.
+11.3.3 The Flow card's "Proposed" version is any open TODO whose change touches `.smithers/flows/<name>/`.
 
 ### 11.4 Pinning
 
@@ -1070,7 +1070,7 @@ Sent merges. Everything but the request happens before the dispatch claim: the d
 
 ### 11.5 Changing the factory (J5)
 
-11.5.1 `/flow.edit <name> <request>` creates an ordinary TODO with the prompt “Change flows/<name>/flow.ts: <request>; start from the built-in composition when no override exists”. Quote the agent’s proposed diff as revision-1 context. The agent derives the change from that request; no seed patch is stored or applied. Check: C-J5-01.
+11.5.1 `/flow.edit <name> <request>` creates an ordinary TODO with the prompt “Change .smithers/flows/<name>/flow.ts: <request>; start from the built-in composition when no override exists”. Quote the agent’s proposed diff as revision-1 context. The agent derives the change from that request; no seed patch is stored or applied. Check: C-J5-01.
 
 11.5b **Source** on the Flow card (`/flow.source`) opens the flow's file in the File card on the branch of the TODO that proposes the change. If none exists yet, it first creates that TODO through `/flow.edit`, with an empty seed.
 
@@ -1281,7 +1281,7 @@ The seam is one zod schema per card in `packages/rpc`, exported through per-modu
 | File | `branch:<id>:files` and the file content route (§6.3); live doc `doc:code:<branch>:<path>` [S3] | S1 | [S1] path, branch, language, digest, content (text; too large, with its text; or binary), github_url? (required for binary and too_large content; supplies the on GitHub link; C-UI-08), mode (read_only or live), last writer, diagnostics, the hover result, reveal (a same-file definition or a cited range). [S2] gone `{deleted, by}` or `{renamed, to, by}`; `outside {version, at}` (the outside version that Compare reads, §9.2.3); editors[] `{actor, line}` from presence. [S3] authors[] with the editor binding's author ranges (ui-components.md § T-UI-19); editors from awareness; saved state; unsaved `{count, text}` ("N edits weren't saved" with Reapply and Copy, §7.4.6) |
 | Diff | `branch:<id>:files` | S1 | Path and branch; against: the previous item's candidate (§12.5.1), a scratch branch's fork revision (§8.5.3b) or one burst's before and after versions (§9.3.4); change and renamed_to; binary sizes; hunks `{old_start, new_start, lines[] {op, text}}`; Restore this file on a burst diff (§9.3.5) |
 | Terminal | terminal stream + `branch:<id>` | S2 | Id, title, branch, owner, the agents working in it (M-34), watchers, running command, viewer_is_owner, frozen ("Rebasing…", §9.4.2) |
-| Flow | `flows` | S1 | Source label (built-in or `flows/<name>/flow.ts`), versions `{state: active|proposed|merged-syncing|merged-failed|previous, todo?, error?, steps[] {id, label, detail?, agent?, added?}}`, and for the TODO flow the trailing merge wait with its signals (clean rebase → check, resolved conflict → implement → check → review, steer → implement); actions Source, Plan, Run, Edit; the agent of each step |
+| Flow | `flows` | S1 | Source label (built-in or `.smithers/flows/<name>/flow.ts`), versions `{state: active|proposed|merged-syncing|merged-failed|previous, todo?, error?, steps[] {id, label, detail?, agent?, added?}}`, and for the TODO flow the trailing merge wait with its signals (clean rebase → check, resolved conflict → implement → check → review, steer → implement); actions Source, Plan, Run, Edit; the agent of each step |
 | Members / Secrets | `members` / `secrets` | S1 / S2 | Login, name, avatar, color_index, role, needs_access (never had write access), suspended (lost it; automatic, §5.1.3), each row's Role and Remove, and the repository's GitHub access URL; secret name, scope (`all_branches` or `main_only`, §8.8), optional bound hosts (set in Add and Replace; no separate Bind door), each row's Replace and Delete |
 | Setup / Settings | `install` | S1 | Address `{listen, bind, origins[]}`; steps[] `{id, state: pending|running|done|blocked|failed, blocked? {line, fix_url}, error? {class, message}, pct?}` for the setup steps in §16.2 order (`address`, `app_manifest`, `sign_in`, `repository`, `models`, `source`, `machine`), with the ids and states T-INS-06 stores (the squash check runs inside `repository` and blocks it with its fix link); "This Mac" (the detected host, its limits and, when capacity is 0, the limiting term and its fix, §8.2.1a); GitHub `{owner?, signed_in, app_installed, squash_allowed?}`; repository, and the choices while it is being chosen; models[] `{role: fast|coding|jev, provider, key: none|validating|saved|failed, error?}` (shown as "Fast model", "Coding model" and "Decisions" with its "AI Gateway key", mvp.md §6.5) and the ChatGPT sign-in flag. Settings adds capacity, [S2] parallel (T-STK-03), existing budgets and todo_daily_admissions (default 12; positive integer; owner may raise it), stored in install_settings and shown beside the budgets (§10.4.1b; T-APP-03; C-STK-06), the laptop-agent lines `smthrs login <origin>`, `notifications_need_https` (§14.6), health `{process, postgres_bytes, disk_free_gb, github {health, cause?, retry_at?, rate_remaining, rate_limit}}` (§20.2) and [S2] the Obsidian folder `{path, last_sync_at?, error?}` (§13.3) |
 | Proposal | `proposals` | S3 | Title, evidence, refs, state, and the TODO it became `{n, title}` |
