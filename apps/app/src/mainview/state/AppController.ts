@@ -510,6 +510,7 @@ export interface AppController extends IssueFlowsController {
   readonly requestIssueCreate: ReturnType<typeof createIssueCreateSeam>["request"]
   readonly createIssue: IssuesSeam["createIssue"]
   readonly setIssueState: IssuesSeam["setIssueState"]
+  readonly transitionIssue: IssuesSeam["transitionIssue"]
   readonly draftIssueComment: IssuesSeam["draftIssueComment"]
   readonly editIssueComment: IssuesSeam["editIssueComment"]
   readonly deleteIssueComment: IssuesSeam["deleteIssueComment"]
@@ -2686,6 +2687,7 @@ export const createAppController = (
     requestIssueCreate: issueCreateSeam.request,
     createIssue: issuesSeam.createIssue,
     setIssueState: issuesSeam.setIssueState,
+    transitionIssue: issuesSeam.transitionIssue,
     commentOnIssue: issuesSeam.commentOnIssue,
     draftIssueComment: issuesSeam.draftIssueComment,
     editIssueComment: issuesSeam.editIssueComment,

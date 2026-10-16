@@ -155,7 +155,10 @@ describe("the generated product API client", () => {
     // POST /api/user/repos and GET /api/user/repos/requests/{id} (#3827), and
     // the repository's own run index, one run and its trace,
     // /api/repos/{owner}/{repo}/monitors… (#4032).
-    expect(expected).toHaveLength(591)
+    // The declared issue transitions (#4027) add two more: the repository's
+    // transition list beside its saved views, and the one door that performs a
+    // declared transition.
+    expect(expected).toHaveLength(593)
     expect(spec.paths["/api/install/ack-delay"]).toHaveProperty("get.operationId", "get_api_install_ack_delay")
     expect(spec.paths["/api/install/ack-delay"]).toHaveProperty("post.operationId", "post_api_install_ack_delay")
     expect(spec.paths["/api/secrets"]).toHaveProperty("post.operationId", "post_api_secrets")

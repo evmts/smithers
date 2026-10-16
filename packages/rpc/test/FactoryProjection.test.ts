@@ -1,7 +1,14 @@
 import * as Fs from "node:fs"
 import * as NodePath from "node:path"
 import { describe, expect, test } from "vitest"
-import { FACTORY_PROJECTION_PATH, FactoryProjectionSchema, featuredFlows, ruleFlows } from "../src/FactoryProjection.ts"
+import {
+  FACTORY_PROJECTION_PATH,
+  FactoryProjectionSchema,
+  featuredFlows,
+  issueTransitionNeedsPerson,
+  issueTransitionOf,
+  ruleFlows
+} from "../src/FactoryProjection.ts"
 
 /*
  * The projection contract the Dispatcher card and the home pane read signed
@@ -120,5 +127,58 @@ describe("the factory projection", () => {
         .success
     )
       .toBe(false)
+  })
+})
+
+/*
+ * The declared issue transitions (M-47): a repository moves an issue through
+ * its own states, proposed to accepted among them, on its EXISTING labels.
+ * The projection is where that declaration is read from — by the app, and by
+ * the server before any label leaves for GitHub — so the names and the
+ * actor default are pinned here against the declaring schema in
+ * @smthrs/targets.
+ */
+describe("declared issue transitions", () => {
+  const base = { on: [] }
+
+  test("a projection without transitions declares none, and nothing is named", () => {
+    const projection = FactoryProjectionSchema.parse(base)
+    expect(projection.issueTransitions).toBeUndefined()
+    expect(issueTransitionOf(projection, "accept")).toBeUndefined()
+  })
+
+  test("a declared transition names the labels it moves between and who may ask", () => {
+    const projection = FactoryProjectionSchema.parse({
+      ...base,
+      issueTransitions: [
+        { id: "accept", title: "Accept the proposal", from: "proposed", to: "accepted" },
+        { id: "propose", title: "Propose it", to: "proposed", actor: "anyone" }
+      ]
+    })
+    expect(issueTransitionOf(projection, "accept")).toEqual({
+      id: "accept",
+      title: "Accept the proposal",
+      from: "proposed",
+      to: "accepted"
+    })
+    // An unnamed actor is a PERSON: declaring a transition is not saying an
+    // agent may make it.
+    expect(issueTransitionNeedsPerson(issueTransitionOf(projection, "accept")!)).toBe(true)
+    expect(issueTransitionNeedsPerson(issueTransitionOf(projection, "propose")!)).toBe(false)
+    // An undeclared id is undefined, which is the whole refusal: nothing is
+    // asked of GitHub for a transition the repository never declared.
+    expect(issueTransitionOf(projection, "merge")).toBeUndefined()
+  })
+
+  test("a malformed transition fails the projection rather than decoding to a weaker one", () => {
+    const refuse = (transition: unknown) =>
+      FactoryProjectionSchema.safeParse({ ...base, issueTransitions: [transition] }).success
+    expect(refuse({ id: "accept", title: "A", to: "accepted" })).toBe(true)
+    expect(refuse({ id: "accept", title: "A" })).toBe(false)
+    expect(refuse({ id: "", title: "A", to: "accepted" })).toBe(false)
+    expect(refuse({ id: "accept", title: "", to: "accepted" })).toBe(false)
+    expect(refuse({ id: "accept", title: "A", to: "" })).toBe(false)
+    expect(refuse({ id: "accept", title: "A", to: "accepted", from: "" })).toBe(false)
+    expect(refuse({ id: "accept", title: "A", to: "accepted", actor: "agent" })).toBe(false)
   })
 })

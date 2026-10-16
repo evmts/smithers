@@ -1549,6 +1549,11 @@ func buildRouter(
 					r.With(writeRepo...).Post("/github/issues/{number}/close", hostedIssues.Close)
 					r.With(writeRepo...).Post("/github/issues/{number}/reopen", hostedIssues.Reopen)
 					r.With(writeRepo...).Patch("/github/issues/comments/{id}", hostedIssues.EditComment)
+					// One declared transition (M-47): the repository's own
+					// committed declaration decides which labels move and
+					// whether a person has to make it. The door carries no
+					// body, so a request can name neither.
+					r.With(writeRepo...).Post("/github/issues/{number}/transitions/{id}", hostedIssues.Transition)
 					r.With(readRepo...).Get("/github/issues/requests/{id}", hostedIssues.Request)
 				}
 				// The mythical stack: its snapshot, and the admin's bootstrap
@@ -2153,6 +2158,10 @@ func buildRouter(
 			// Ticket 12: Issue read routes — gated by feature_flags.issues.
 			r.With(append(readRepo, gateIssues)...).Get("/repos/{owner}/{repo}/issues", issueHandler.ListIssues)
 			r.With(append(readRepo, gateIssues)...).Get("/repos/{owner}/{repo}/issue-views", issueHandler.ListIssueViews)
+			// The transitions the repository declares, beside its saved views
+			// and read with the same authority. Declaring one is not
+			// permission to run it.
+			r.With(append(readRepo, gateIssues)...).Get("/repos/{owner}/{repo}/issue-transitions", issueHandler.ListIssueTransitions)
 			r.With(append(readRepo, gateIssues)...).Get("/repos/{owner}/{repo}/issues/{number}", issueHandler.GetIssue)
 			r.With(append(readRepo, gateIssues)...).Get("/repos/{owner}/{repo}/issues/{number}/comments", issueHandler.ListIssueComments)
 

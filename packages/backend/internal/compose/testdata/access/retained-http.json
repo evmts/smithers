@@ -814,6 +814,10 @@
       "door": "app"
     },
     {
+      "command": "issues.transition",
+      "door": "app"
+    },
+    {
       "command": "issues.view",
       "door": "app"
     },

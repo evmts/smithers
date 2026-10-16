@@ -114,8 +114,14 @@ type RepoSummary struct {
 	NumStars            int64               `json:"num_stars"`
 	DefaultBookmark     string              `json:"default_bookmark"`
 	DefaultBookmarkHead DefaultBookmarkHead `json:"default_bookmark_head"`
-	CreatedAt           time.Time           `json:"created_at"`
-	UpdatedAt           time.Time           `json:"updated_at"`
+	// Which tracker this repository's ordinary issues live in, resolved from
+	// the repository/GitHub binding (IssueTrackerGitHub or
+	// IssueTrackerSmithers). Absent when this server cannot resolve it, so a
+	// reader that predates the field, or one whose store does not answer the
+	// binding, reads exactly what it read before.
+	IssueTracker string    `json:"issue_tracker,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type DefaultBookmarkHead struct {
@@ -352,11 +358,13 @@ func (s *UserService) ListAuthenticatedUserRepos(ctx context.Context, userID int
 	if err != nil {
 		return RepoListResult{}, err
 	}
+	trackers := s.issueTrackersOf(ctx, repos)
 
 	items := make([]RepoSummary, 0, len(repos))
 	for _, repo := range repos {
 		item := mapRepoSummary(repo, user.Username)
 		item.DefaultBookmarkHead = headsByRepoID[repo.ID]
+		item.IssueTracker = trackers[repo.ID]
 		items = append(items, item)
 	}
 
@@ -867,4 +875,50 @@ func textValue(value pgtype.Text) string {
 		return ""
 	}
 	return value.String
+}
+
+// repositoryGitHubSourceReader is the EXISTING canonical answer to "which
+// GitHub repository is this Smithers repository?": the sync registry's
+// current binding, else the latest ready import bound to this exact native
+// repository (db.ListRepositoryGitHubSources). It is read as an optional
+// capability of the querier so a store that does not offer it declares
+// nothing rather than guessing — an unknown source stays unknown.
+type repositoryGitHubSourceReader interface {
+	ListRepositoryGitHubSources(ctx context.Context, id int64) ([]db.ListRepositoryGitHubSourcesRow, error)
+}
+
+// Which tracker a repository's ordinary issues live in, as the inventory
+// reports it. These are the app's own two sources (IssuesSeam IssueSource);
+// the field is OMITTED when this server cannot answer, so an older or
+// unwired store never asserts a tracker it did not resolve.
+const (
+	IssueTrackerGitHub   = "github"
+	IssueTrackerSmithers = "smithers-cloud"
+)
+
+// issueTrackersOf answers the tracker of each repository in repos from the
+// repository/GitHub binding alone. A repository with an authoritative GitHub
+// source addresses GitHub's issues; one without keeps its own Smithers Cloud
+// tracker. Nothing is inferred from a display name, a number or a summary,
+// and a failed read answers no trackers rather than a wrong one.
+func (s *UserService) issueTrackersOf(ctx context.Context, repos []db.Repository) map[int64]string {
+	reader, ok := s.queries.(repositoryGitHubSourceReader)
+	if !ok {
+		return nil
+	}
+	trackers := make(map[int64]string, len(repos))
+	for _, repo := range repos {
+		sources, err := reader.ListRepositoryGitHubSources(ctx, repo.ID)
+		if err != nil {
+			// One unreadable binding says nothing about this repository's
+			// tracker; it is left absent, never defaulted either way.
+			continue
+		}
+		if len(sources) > 0 {
+			trackers[repo.ID] = IssueTrackerGitHub
+			continue
+		}
+		trackers[repo.ID] = IssueTrackerSmithers
+	}
+	return trackers
 }

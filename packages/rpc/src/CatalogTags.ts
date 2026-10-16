@@ -290,6 +290,7 @@ export const CatalogOperationSchema = z.enum([
   "issues.create",
   "issues.list",
   "issues.reopen",
+  "issues.transition",
   "issues.view",
   "labels.create",
   "labels.delete",

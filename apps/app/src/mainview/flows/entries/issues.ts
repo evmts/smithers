@@ -138,6 +138,32 @@ export const issuesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
       source: IssueSource
     }),
     handler: ({ number, text, repo, source }) => actions.commentOnIssue(number, text, repo, undefined, source)
+  }),
+  flow({
+    name: "issues.transition",
+    confirm: "make this transition",
+    ...issueWriteConfirmation(actions),
+    /*
+     * The repository's OWN issue states (M-47): a declared move such as
+     * proposed to accepted, beside GitHub's open and closed. The transitions
+     * are the repository's to declare in `.smithers/FACTORY.ts` and to
+     * change; this door names one by id and nothing else, so a run can
+     * choose neither the labels nor who may make the move. The server reads
+     * the repository's committed declaration and refuses an undeclared
+     * transition, and an agent asking for a move the repository says a
+     * person must make, before anything reaches GitHub.
+     */
+    summary: "Move an issue through one of this repository's declared states",
+    form: { args: payload => line(text(payload, "number"), text(payload, "transition"), text(payload, "repo")) },
+    runtimeAny: ["cloud", "install"],
+    args: "<number> <transition> [owner/repo]",
+    requires: ["repo-read"],
+    input: Schema.Struct({
+      number: Schema.Number,
+      transition: Schema.String,
+      repo: Schema.optional(Schema.String)
+    }),
+    handler: ({ number, transition, repo }) => actions.transitionIssue(number, transition, repo)
   })
 ]
 

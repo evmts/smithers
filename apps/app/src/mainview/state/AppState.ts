@@ -294,6 +294,17 @@ export const CloudRepositorySchema = z.object({
    * inventory, which carries no such sentence.
    */
   summary: z.string().optional(),
+  /*
+   * Which tracker this repository's ordinary issues live in, as the
+   * inventory resolved it from the repository's own GitHub binding
+   * (`issue_tracker`, services/user.go `issueTrackersOf`): an imported
+   * GitHub repository addresses GitHub's issues, a Smithers Cloud
+   * repository its own. Absent when the server could not resolve it, which
+   * is NOT "Smithers Cloud": an unknown source stays unknown, so a write
+   * that needs one asks rather than inventing a tracker (IssuesSeam
+   * `issueWriteTarget`). Never derived from a display name or a number.
+   */
+  issueTracker: z.enum(["github", "smithers-cloud"]).optional(),
   updatedAt: z.number(),
   revision: z.number().int().nonnegative()
 })
@@ -1985,7 +1996,7 @@ type AppTransitionBody =
   | {
     type: "repositories.loaded"
     actor: "system"
-    repositories: ReadonlyArray<Pick<CloudRepository, "id" | "org" | "ownerKind" | "name" | "head" | "catalog" | "summary">>
+    repositories: ReadonlyArray<Pick<CloudRepository, "id" | "org" | "ownerKind" | "name" | "head" | "catalog" | "summary" | "issueTracker">>
   }
   /*
    * One repository row upserted: the catalog row a `/owner/name` request
@@ -1997,7 +2008,7 @@ type AppTransitionBody =
   | {
     type: "repository.upserted"
     actor: "system"
-    repository: Pick<CloudRepository, "id" | "org" | "ownerKind" | "name" | "head" | "catalog" | "summary">
+    repository: Pick<CloudRepository, "id" | "org" | "ownerKind" | "name" | "head" | "catalog" | "summary" | "issueTracker">
   }
   | {
     type: "workingcopies.workspaces.loaded"

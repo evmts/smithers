@@ -2391,6 +2391,15 @@ type GetAPIReposOwnerRepoIssueViewsResponseItem struct {
 	Labels []string `json:"labels,omitempty"`
 }
 
+// GetAPIReposOwnerRepoIssueTransitionsResponseItem is generated from docs/api/openapi.yaml.
+type GetAPIReposOwnerRepoIssueTransitionsResponseItem struct {
+	ID    string  `json:"id"`
+	Title string  `json:"title"`
+	From  *string `json:"from,omitempty"`
+	To    string  `json:"to"`
+	Actor *string `json:"actor,omitempty"`
+}
+
 // GetAPIIssuesParams is the query of GET /api/issues.
 type GetAPIIssuesParams struct {
 	State *string
@@ -2459,6 +2468,15 @@ type PostAPIReposOwnerRepoGithubIssuesNumberCloseResponse struct {
 
 // PostAPIReposOwnerRepoGithubIssuesNumberReopenResponse is generated from docs/api/openapi.yaml.
 type PostAPIReposOwnerRepoGithubIssuesNumberReopenResponse struct {
+	OperationID string    `json:"operationId"`
+	RequestID   string    `json:"requestId"`
+	Kind        string    `json:"kind"`
+	State       string    `json:"state"`
+	AcceptedAt  time.Time `json:"acceptedAt"`
+}
+
+// PostAPIReposOwnerRepoGithubIssuesNumberTransitionsIDResponse is generated from docs/api/openapi.yaml.
+type PostAPIReposOwnerRepoGithubIssuesNumberTransitionsIDResponse struct {
 	OperationID string    `json:"operationId"`
 	RequestID   string    `json:"requestId"`
 	Kind        string    `json:"kind"`
@@ -4191,6 +4209,13 @@ func (c *Client) GetAPIReposOwnerRepoIssueViews(ctx context.Context, owner strin
 	return out, err
 }
 
+// GetAPIReposOwnerRepoIssueTransitions calls GET /api/repos/{owner}/{repo}/issue-transitions.
+func (c *Client) GetAPIReposOwnerRepoIssueTransitions(ctx context.Context, owner string, repo string) ([]GetAPIReposOwnerRepoIssueTransitionsResponseItem, error) {
+	var out []GetAPIReposOwnerRepoIssueTransitionsResponseItem
+	err := c.do(ctx, "GET", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/issue-transitions", nil, nil, &out)
+	return out, err
+}
+
 // GetAPIIssues calls GET /api/issues.
 func (c *Client) GetAPIIssues(ctx context.Context, params GetAPIIssuesParams) ([]InstallIssue, error) {
 	query := url.Values{}
@@ -4279,6 +4304,13 @@ func (c *Client) PostAPIReposOwnerRepoGithubIssuesNumberClose(ctx context.Contex
 func (c *Client) PostAPIReposOwnerRepoGithubIssuesNumberReopen(ctx context.Context, owner string, repo string, number int64, idempotencyKey string) (PostAPIReposOwnerRepoGithubIssuesNumberReopenResponse, error) {
 	var out PostAPIReposOwnerRepoGithubIssuesNumberReopenResponse
 	err := c.withHeader("Idempotency-Key", idempotencyKey).do(ctx, "POST", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/github/issues/"+url.PathEscape(strconv.FormatInt(number, 10))+"/reopen", nil, nil, &out)
+	return out, err
+}
+
+// PostAPIReposOwnerRepoGithubIssuesNumberTransitionsID calls POST /api/repos/{owner}/{repo}/github/issues/{number}/transitions/{id}.
+func (c *Client) PostAPIReposOwnerRepoGithubIssuesNumberTransitionsID(ctx context.Context, owner string, repo string, number int64, id string, idempotencyKey string) (PostAPIReposOwnerRepoGithubIssuesNumberTransitionsIDResponse, error) {
+	var out PostAPIReposOwnerRepoGithubIssuesNumberTransitionsIDResponse
+	err := c.withHeader("Idempotency-Key", idempotencyKey).do(ctx, "POST", "/api/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/github/issues/"+url.PathEscape(strconv.FormatInt(number, 10))+"/transitions/"+url.PathEscape(id), nil, nil, &out)
 	return out, err
 }
 

@@ -21,6 +21,7 @@ type HostedGitHubIssueWriter interface {
 	RequestGitHubIssueClose(ctx context.Context, repository, number int64, key string) (jobs.RequestReceipt, error)
 	RequestGitHubIssueReopen(ctx context.Context, repository, number int64, key string) (jobs.RequestReceipt, error)
 	RequestGitHubIssueCommentEdit(ctx context.Context, repository, comment int64, body, key string) (jobs.RequestReceipt, error)
+	RequestGitHubIssueTransition(ctx context.Context, repository, number int64, transition, key string) (jobs.RequestReceipt, error)
 	GitHubIssueRequestStatus(ctx context.Context, repository int64, id string) (map[string]any, error)
 }
 
@@ -32,6 +33,7 @@ type HostedGitHubIssueWriter interface {
 //	POST   /api/repos/{owner}/{repo}/github/issues/{number}/close
 //	POST   /api/repos/{owner}/{repo}/github/issues/{number}/reopen
 //	PATCH  /api/repos/{owner}/{repo}/github/issues/comments/{id}
+//	POST   /api/repos/{owner}/{repo}/github/issues/{number}/transitions/{id}
 //	GET    /api/repos/{owner}/{repo}/github/issues/requests/{id}
 //
 // These are DISTINCT from /api/repos/{owner}/{repo}/issues, which is Smithers
@@ -157,6 +159,30 @@ func (h *HostedGitHubIssuesHandler) EditComment(w http.ResponseWriter, r *http.R
 		return
 	}
 	receipt, err := h.Service.RequestGitHubIssueCommentEdit(r.Context(), repository, comment, input.Body, r.Header.Get("Idempotency-Key"))
+	accepted(w, receipt, err)
+}
+
+// Transition admits ONE declared issue transition. The transition id is a
+// path segment and the issue number another, so the request carries no body
+// at all: it cannot name a label, a repository or an actor. Which labels the
+// transition moves between, and whether a person has to make it, come from
+// the repository's own committed declaration — read by the service before
+// this returns and re-read on the worker before the write.
+//
+// An undeclared transition, a declaration this server could not read, and an
+// agent asking for a person-only move are all refused here, so no durable
+// operation exists for them and nothing is asked of GitHub.
+func (h *HostedGitHubIssuesHandler) Transition(w http.ResponseWriter, r *http.Request) {
+	repository, ok := h.repository(w, r)
+	if !ok {
+		return
+	}
+	number, ok := h.number(w, r, "number", "invalid_issue_state")
+	if !ok {
+		return
+	}
+	receipt, err := h.Service.RequestGitHubIssueTransition(r.Context(), repository, number,
+		chi.URLParam(r, "id"), r.Header.Get("Idempotency-Key"))
 	accepted(w, receipt, err)
 }
 

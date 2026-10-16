@@ -37,6 +37,7 @@ var formInstructionFields = map[string][]string{
 	"issues.create":       {"title", "repo", "kind", "source"},
 	"issues.list":         {"filter", "kind", "view", "repo"},
 	"issues.reopen":       {"number", "repo", "source"},
+	"issues.transition":   {"number", "transition", "repo"},
 	"issues.view":         {"number", "repo", "source"},
 	"merge":               {"n", "reviewed_head_sha", "idempotencyKey"},
 	"pr":                  {"number", "repo"},

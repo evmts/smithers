@@ -45,6 +45,12 @@ var hostedIssueOperationCommands = map[string]string{
 	HostedIssueCloseOperation:       "issues.close",
 	HostedIssueReopenOperation:      "issues.reopen",
 	HostedIssueCommentEditOperation: "issue.comment",
+	// A declared transition is an issue LABEL write, which the product
+	// already authorizes as labels.create (middleware/auth.go classifies
+	// POST /api/repos/{o}/{r}/issues/{n}/labels as that command). Its
+	// catalog policy is agent "never", actors ["person"], so a declaration
+	// can only narrow who may ask, never widen it.
+	HostedIssueTransitionOperation: issueTransitionCommand,
 }
 
 // IssueWriteOperations is every operation the one shared issue-write worker
@@ -57,6 +63,7 @@ func IssueWriteOperations() []string {
 		InstallIssueReopenOperation, InstallIssueCommentEditOperation,
 		HostedIssueCreateOperation, HostedIssueCommentOperation, HostedIssueCloseOperation,
 		HostedIssueReopenOperation, HostedIssueCommentEditOperation,
+		HostedIssueTransitionOperation,
 	}
 }
 
@@ -74,6 +81,7 @@ var issueWriteActs = map[string]string{
 	HostedIssueReopenOperation:       "reopen",
 	InstallIssueCommentEditOperation: "comment.edit",
 	HostedIssueCommentEditOperation:  "comment.edit",
+	HostedIssueTransitionOperation:   "transition",
 }
 
 // hostedIssueScope is the job scope of one hosted act: the repository is the
@@ -377,6 +385,16 @@ func (s *MythicalService) handleHostedIssueWrite(ctx context.Context, lease *job
 		if actor.ID != job.Requester {
 			return hostedIssuePermission()
 		}
+		/*
+		 * A transition also re-checks the repository's OWN rule here: a
+		 * declaration that became person-only, or a credential that became
+		 * an agent's, stops the act before its next external request.
+		 */
+		if claim.Operation == HostedIssueTransitionOperation {
+			if err = s.lockedIssueTransitionAuthority(current, owner, repo, job.Transition); err != nil {
+				return err
+			}
+		}
 		if err = lease.StartExternal(current, json.RawMessage(`{"state":"sending"}`)); err != nil {
 			return err
 		}
@@ -387,6 +405,9 @@ func (s *MythicalService) handleHostedIssueWrite(ctx context.Context, lease *job
 	}))
 	// The act comes from the operation the lease CLAIMED, exactly as it does
 	// on the install branch: the payload cannot name it.
+	if claim.Operation == HostedIssueTransitionOperation {
+		return s.sendIssueTransition(ctx, bound, lease, gh, job, owner, repo)
+	}
 	return s.sendIssueWriteAct(ctx, bound, lease, gh, job, claim.Operation)
 }
 

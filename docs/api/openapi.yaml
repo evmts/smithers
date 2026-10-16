@@ -5523,6 +5523,82 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '500':
           $ref: '#/components/responses/InternalError'
+  /api/repos/{owner}/{repo}/issue-transitions:
+    get:
+      summary: GET /api/repos/{owner}/{repo}/issue-transitions
+      description: >-
+        The issue transitions the repository's factory declares on its default
+        bookmark (`S.Factory({ issueTransitions })` in `.smithers/FACTORY.ts`),
+        in declaration order. Each one is carried by the repository's existing
+        labels — `to` is the label it applies and `from`, when named, the label
+        it leaves. `actor` is who the repository says may ask; `person` (the
+        default) means a person must, and a declaration can only narrow who may
+        write an issue label, never widen it. Listing a transition is not
+        permission to run it. None declared is an empty list; an unreadable
+        projection is an error.
+      operationId: get_api_repos_owner_repo_issue_transitions
+      tags:
+        - Issue Views
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: false
+                  required:
+                    - id
+                    - title
+                    - to
+                  properties:
+                    id:
+                      type: string
+                      pattern: ^[a-z0-9][a-z0-9-]{0,63}$
+                    title:
+                      type: string
+                    from:
+                      type: string
+                      maxLength: 255
+                    to:
+                      type: string
+                      maxLength: 255
+                    actor:
+                      type: string
+                      enum:
+                        - person
+                        - anyone
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /api/issues:
     get:
       x-composition: install
@@ -6225,6 +6301,97 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         '409':
           description: idempotency_mismatch
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessError'}
+        '503':
+          description: github_unavailable, before admission
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessError'}
+  /api/repos/{owner}/{repo}/github/issues/{number}/transitions/{id}:
+    post:
+      summary: Perform one declared issue transition
+      description: >-
+        Queues one of the issue transitions this repository's factory declares
+        (`S.Factory({ issueTransitions })` in `.smithers/FACTORY.ts`,
+        projected to `.smithers/factory.json`; `GET
+        /api/repos/{owner}/{repo}/issue-transitions` lists them). The move is
+        carried by the repository's existing GitHub labels — the declaration
+        names the label applied and, when it names one, the label left — so no
+        second issue tracker exists. There is NO request body: the declared
+        transition decides the labels, so a request can name neither a label
+        nor an actor. An undeclared transition, a declaration this server
+        could not read, and an agent asking for a move the repository says a
+        person must make are all refused before admission, so nothing is asked
+        of GitHub and the issue's GitHub state is untouched. A completed
+        transition is attributed on the issue to the repository transition and
+        the person who ran it, and only after GitHub has been read back.
+      operationId: post_api_repos_owner_repo_github_issues_number_transitions_id
+      tags:
+        - Issues
+      security:
+        - sessionCookie: []
+        - bearerAuth: []
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema: {type: string}
+        - name: repo
+          in: path
+          required: true
+          schema: {type: string}
+        - name: number
+          in: path
+          required: true
+          schema: {type: integer, minimum: 1}
+        - name: id
+          in: path
+          required: true
+          description: The declared transition's id.
+          schema: {type: string, pattern: '^[a-z0-9][a-z0-9-]{0,63}$'}
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 256}
+      responses:
+        '202':
+          description: Durable background admission
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [operationId, requestId, kind, state, acceptedAt]
+                properties:
+                  operationId: {type: string}
+                  requestId: {type: string}
+                  kind: {type: string}
+                  state: {type: string, enum: [accepted, dispatching, running, waiting, completed, failed, cancelled, uncertain]}
+                  acceptedAt: {type: string, format: date-time}
+        '400':
+          description: Invalid issue
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessError'}
+        '401':
+          description: Sign in again
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessError'}
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '404':
+          description: issue_transition_undeclared, or no such issue
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessError'}
+        '409':
+          description: idempotency_mismatch
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessError'}
+        '422':
+          description: issue_transition_policy_unreadable
           content:
             application/json:
               schema: {$ref: '#/components/schemas/AccessError'}

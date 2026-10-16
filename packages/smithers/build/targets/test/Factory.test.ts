@@ -406,6 +406,67 @@ describe("Smithers.Factory", () => {
     }))).toMatch(/does not have the .smithers\/factory.json shape/)
   })
 
+  it("projects declared issue transitions in order, defaults the actor to a person, and refuses duplicates", () => {
+    const issueTransitions = [
+      { id: "accept", title: "Accept the proposal", from: "proposed", to: "accepted" },
+      { id: "propose", title: "Propose it", to: "proposed", actor: "anyone" as const },
+      { id: "park", title: "Park it", from: "accepted", to: "parked", actor: "person" as const }
+    ]
+    const factory = Factory.Factory({ summary: "S.", on, github, issueTransitions })
+    expect(factory.issueTransitions).toEqual(issueTransitions)
+    expect(Object.isFrozen(factory.issueTransitions)).toBe(true)
+    const projected = Factory.parseProjection(Factory.renderProjection(factory, []))
+    expect(typeof projected === "string" ? projected : projected.issueTransitions).toEqual(issueTransitions)
+    // An empty or absent declaration leaves the key out entirely, so a
+    // projection that predates the field reads exactly as it read before.
+    expect(Factory.renderProjection(Factory.Factory({ summary: "S.", issueTransitions: [] }), []))
+      .not.toContain("issueTransitions")
+    expect(Factory.renderProjection(Factory.Factory({ summary: "S." }), [])).not.toContain("issueTransitions")
+
+    const refuse = (transitions: unknown) => () =>
+      Factory.Factory({ summary: "S.", issueTransitions: transitions as never })
+    expect(refuse([{ id: "a", title: "A", to: "x" }, { id: "a", title: "B", to: "y" }]))
+      .toThrow(/transition "a" twice/)
+    expect(refuse("accept")).toThrow(/must be an array/)
+    expect(refuse([{ id: "Accept", title: "A", to: "x" }])).toThrow(/issueTransitions\[0\]/)
+    expect(refuse([{ id: "a", title: "A" }])).toThrow(/issueTransitions\[0\]/)
+    expect(refuse([{ id: "a", title: "", to: "x" }])).toThrow(/issueTransitions\[0\]/)
+    expect(refuse([{ id: "a", title: "<b>A</b>", to: "x" }])).toThrow(/must not contain HTML/)
+    expect(refuse([{ id: "a", title: "A", to: "x", state: "open" }])).toThrow(/unknown option "state"/)
+    expect(refuse([{ id: "a", title: "A", to: "x", actor: "agent" }])).toThrow(/issueTransitions\[0\]/)
+    // A label is a label: not blank, not padded, not longer than GitHub's own bound.
+    expect(refuse([{ id: "a", title: "A", to: "" }])).toThrow(/issueTransitions\[0\]/)
+    expect(refuse([{ id: "a", title: "A", to: " x" }])).toThrow(/not a label name/)
+    expect(refuse([{ id: "a", title: "A", to: "x".repeat(256) }])).toThrow(/not a label name/)
+    expect(refuse([{ id: "a", title: "A", from: " x", to: "y" }])).toThrow(/not a label name/)
+    // A move from a label to itself is not a move.
+    expect(refuse([{ id: "a", title: "A", from: "Accepted", to: "accepted" }]))
+      .toThrow(/name the same label/)
+    expect(
+      refuse(
+        Array.from({ length: Factory.maximumIssueTransitions + 1 }, (_, i) => ({ id: `t${i}`, title: "T", to: "x" }))
+      )
+    )
+      .toThrow(/more than 32 transitions/)
+    expect(
+      Factory.Factory({
+        summary: "S.",
+        issueTransitions: Array.from(
+          { length: Factory.maximumIssueTransitions },
+          (_, i) => ({ id: `t${i}`, title: "T", to: "x" })
+        )
+      }).issueTransitions
+    ).toHaveLength(32)
+    expect(refuse(["accept"])).toThrow(/must be a plain object/)
+    expect(Factory.parseProjection(JSON.stringify({
+      summary: "S.",
+      flows: [],
+      on: [],
+      github: { mirror: "pull", issues: "read", changes: "send-upstream" },
+      issueTransitions: [{ id: "Bad", title: "B", to: "x" }]
+    }))).toMatch(/does not have the .smithers\/factory.json shape/)
+  })
+
   it("projects declared protected paths", () => {
     const guarded = Factory.Policy({ mirror: "push", issues: "two-way", changes: "land", protectedPaths: ["infra"] })
     const projected = Factory.parseProjection(

@@ -46,6 +46,10 @@ func (w *recordingHostedIssueWriter) RequestGitHubIssueCommentEdit(_ context.Con
 	return w.admit(fmt.Sprintf("edit %d comment:%d %q %s", repository, comment, body, key))
 }
 
+func (w *recordingHostedIssueWriter) RequestGitHubIssueTransition(_ context.Context, repository, number int64, transition, key string) (jobs.RequestReceipt, error) {
+	return w.admit(fmt.Sprintf("transition %d #%d %s %s", repository, number, transition, key))
+}
+
 func (w *recordingHostedIssueWriter) GitHubIssueRequestStatus(_ context.Context, repository int64, id string) (map[string]any, error) {
 	w.admitted = append(w.admitted, fmt.Sprintf("status %d %s", repository, id))
 	return map[string]any{"state": "completed"}, nil
@@ -68,6 +72,7 @@ func hostedIssueRouter(writer HostedGitHubIssueWriter, repository int64) http.Ha
 	router.Post("/api/repos/{owner}/{repo}/github/issues/{number}/close", handler.Close)
 	router.Post("/api/repos/{owner}/{repo}/github/issues/{number}/reopen", handler.Reopen)
 	router.Patch("/api/repos/{owner}/{repo}/github/issues/comments/{id}", handler.EditComment)
+	router.Post("/api/repos/{owner}/{repo}/github/issues/{number}/transitions/{id}", handler.Transition)
 	router.Get("/api/repos/{owner}/{repo}/github/issues/requests/{id}", handler.Request)
 	return router
 }
@@ -93,6 +98,12 @@ func TestHostedGitHubIssueDoorsAdmitOneActForTheRoutesRepository(t *testing.T) {
 		{"close", http.MethodPost, "/api/repos/will/flows/github/issues/6/close", "", `close 77 #6 key-1`},
 		{"reopen", http.MethodPost, "/api/repos/will/flows/github/issues/6/reopen", "", `reopen 77 #6 key-1`},
 		{"comment edit", http.MethodPatch, "/api/repos/will/flows/github/issues/comments/5", `{"body":"shorter"}`, `edit 77 comment:5 "shorter" key-1`},
+		/*
+		 * A transition carries NO body: the door names the issue and the
+		 * declared transition in the path, so a request can name neither a
+		 * label nor an actor nor another repository.
+		 */
+		{"transition", http.MethodPost, "/api/repos/will/flows/github/issues/6/transitions/accept", "", `transition 77 #6 accept key-1`},
 		{"receipt", http.MethodGet, "/api/repos/will/flows/github/issues/requests/op-1", "", `status 77 op-1`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -164,6 +164,11 @@ export const FORM_INSTRUCTION_FIELDS = {
     "repo",
     "source"
   ],
+  "issues.transition": [
+    "number",
+    "transition",
+    "repo"
+  ],
   "issues.view": [
     "number",
     "repo",

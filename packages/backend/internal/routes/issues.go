@@ -165,6 +165,37 @@ func (h *IssueHandler) ListIssueViews(w http.ResponseWriter, r *http.Request) {
 	errors.WriteJSON(w, http.StatusOK, items)
 }
 
+// IssueTransitionRouteService lists the issue transitions a repository's
+// factory declares. It is its OWN interface, not part of
+// IssueViewRouteService: widening that one would silently turn every service
+// implementing only the views half into a service with no views at all.
+type IssueTransitionRouteService interface {
+	ListIssueTransitions(ctx context.Context, viewer *db.User, owner, repo string) ([]services.IssueTransition, error)
+}
+
+// ListIssueTransitions answers the issue transitions the repository's
+// factory declares on its default bookmark, in declaration order. Listing a
+// transition is NOT permission to run it: the write door re-reads the same
+// declaration and applies the actor rules.
+func (h *IssueHandler) ListIssueTransitions(w http.ResponseWriter, r *http.Request) {
+	owner, repo, err := repoOwnerAndName(r)
+	if err != nil {
+		errors.WriteError(w, err.(*errors.APIError))
+		return
+	}
+	declared, ok := h.Service.(IssueTransitionRouteService)
+	if !ok {
+		errors.WriteJSON(w, http.StatusOK, []services.IssueTransition{})
+		return
+	}
+	items, err := declared.ListIssueTransitions(r.Context(), middleware.UserFromContext(r.Context()), owner, repo)
+	if err != nil {
+		writeRouteError(w, r, err)
+		return
+	}
+	errors.WriteJSON(w, http.StatusOK, items)
+}
+
 func (h *IssueHandler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 	actor, err := requireRouteUser(r)
 	if err != nil {

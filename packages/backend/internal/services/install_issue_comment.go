@@ -50,6 +50,12 @@ type installIssueWriteJob struct {
 	// Comment is the GitHub comment id install.issue.comment.edit replaces.
 	// A legacy create or comment job carries none and decodes as before.
 	Comment int64 `json:"comment,omitempty"`
+	// Transition is the id of the declared issue transition
+	// github.issue.transition performs. Only the ID is carried: the worker
+	// re-reads the repository's own declaration for the labels, so an
+	// admitted act can never carry labels the repository stopped declaring.
+	// Every other job carries none and decodes exactly as before.
+	Transition string `json:"transition,omitempty"`
 }
 
 func (s *MythicalService) SetInstallIssueJobs(store *jobs.Store) { s.issueJobs = store }

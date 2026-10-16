@@ -490,6 +490,84 @@ const decodeIssueViews = (value: unknown): ReadonlyArray<IssueView> => {
 }
 
 /**
+ * One issue transition the repository declares (M-47): a named move of an
+ * issue through the repository's OWN states, such as proposed to accepted,
+ * beside GitHub's open and closed.
+ *
+ * A transition is carried by the repository's existing labels and nothing
+ * else — `to` is the label it applies and `from`, when named, the label it
+ * takes off — so no second issue tracker or issue-state database exists.
+ * `actor: "person"` (the default) says a PERSON has to make this move; an
+ * agent asking for it is refused by the server's own actor rules. `actor:
+ * "anyone"` only says the repository does not itself require a person: it
+ * grants nothing, because the server's catalog still decides who may write
+ * an issue label.
+ *
+ * A transition never merges, approves or moves `main` (M-05, M-39) and
+ * grants no access: it is a label write on an issue the actor can already
+ * read and write.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const IssueTransition = Schema.Struct({
+  id: Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9-]{0,63}$/)),
+  title: Home.Title,
+  from: Schema.optionalKey(Schema.String),
+  to: Schema.String,
+  actor: Schema.optionalKey(Schema.Literals(["person", "anyone"]))
+})
+
+/**
+ * One declared issue transition.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type IssueTransition = typeof IssueTransition.Type
+
+/**
+ * The most transitions a factory may declare.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const maximumIssueTransitions = 32
+
+/** One label name a transition names: non-empty, trimmed, at most 255 characters. */
+const issueTransitionLabel = (name: string, field: string, label: unknown): string => {
+  if (typeof label !== "string" || label === "" || label.trim() !== label || label.length > 255) {
+    throw new TypeError(`${name}: ${field} ${JSON.stringify(label)} is not a label name`)
+  }
+  return label
+}
+
+const decodeIssueTransitions = (value: unknown): ReadonlyArray<IssueTransition> => {
+  if (!Array.isArray(value)) throw new TypeError("Factory issueTransitions must be an array of transitions")
+  if (value.length > maximumIssueTransitions) {
+    throw new TypeError(`Factory issueTransitions declares more than ${maximumIssueTransitions} transitions`)
+  }
+  const seen = new Set<string>()
+  return value.map((entry, index) => {
+    const name = `Factory issueTransitions[${index}]`
+    const plain = Home.plainOptions(name, entry, new Set(["id", "title", "from", "to", "actor"]))
+    const transition = Home.decode(name, IssueTransition, plain)
+    if (seen.has(transition.id)) {
+      throw new TypeError(`Factory issueTransitions declares the transition ${JSON.stringify(transition.id)} twice`)
+    }
+    seen.add(transition.id)
+    issueTransitionLabel(name, "to", transition.to)
+    if (transition.from !== undefined) {
+      issueTransitionLabel(name, "from", transition.from)
+      if (transition.from.toLowerCase() === transition.to.toLowerCase()) {
+        throw new TypeError(`${name}: from and to name the same label ${JSON.stringify(transition.to)}`)
+      }
+    }
+    return transition
+  })
+}
+
+/**
  * The factory declaration `.smithers/FACTORY.ts` exports as `factory`.
  *
  * @category schemas
@@ -507,7 +585,9 @@ export const Declaration = Schema.TaggedStruct("FactoryDeclaration", {
   /** The machine the factory's TODO lanes need, when declared. */
   machine: Schema.optionalKey(Machine),
   /** The saved issue views, in declaration order, when declared. */
-  issueViews: Schema.optionalKey(Schema.Array(IssueView))
+  issueViews: Schema.optionalKey(Schema.Array(IssueView)),
+  /** The issue transitions, in declaration order, when declared. */
+  issueTransitions: Schema.optionalKey(Schema.Array(IssueTransition))
 })
 
 /**
@@ -556,6 +636,7 @@ export interface FactoryOptions {
   readonly github?: GithubPolicy | undefined
   readonly machine?: Machine | undefined
   readonly issueViews?: ReadonlyArray<IssueView> | undefined
+  readonly issueTransitions?: ReadonlyArray<IssueTransition> | undefined
 }
 
 /**
@@ -593,7 +674,7 @@ export const Factory = (options: FactoryOptions): Declaration => {
   const plain = Home.plainOptions(
     "Factory",
     options,
-    new Set(["summary", "flows", "on", "github", "machine", "issueViews"])
+    new Set(["summary", "flows", "on", "github", "machine", "issueViews", "issueTransitions"])
   )
   const flows = plain["flows"] ?? []
   if (!Array.isArray(flows)) throw new TypeError("Factory flows must be an array of Smithers.Flow declarations")
@@ -630,6 +711,9 @@ export const Factory = (options: FactoryOptions): Declaration => {
   if (!Schema.is(GithubPolicy)(github)) throw new TypeError("Factory github must be a Smithers.Github.Policy value")
   const machine = plain["machine"] === undefined ? undefined : decodeMachine(plain["machine"])
   const issueViews = plain["issueViews"] === undefined ? undefined : decodeIssueViews(plain["issueViews"])
+  const issueTransitions = plain["issueTransitions"] === undefined
+    ? undefined
+    : decodeIssueTransitions(plain["issueTransitions"])
   return Home.freezeDeep(Home.decode("Factory", Declaration, {
     _tag: "FactoryDeclaration",
     summary: plain["summary"],
@@ -637,7 +721,8 @@ export const Factory = (options: FactoryOptions): Declaration => {
     on,
     github,
     ...(machine === undefined ? {} : { machine }),
-    ...(issueViews === undefined ? {} : { issueViews })
+    ...(issueViews === undefined ? {} : { issueViews }),
+    ...(issueTransitions === undefined ? {} : { issueTransitions })
   }))
 }
 
@@ -718,7 +803,8 @@ export const Projection = Schema.Struct({
   on: Schema.Array(Rule),
   github: GithubProjection,
   machine: Schema.optionalKey(Machine),
-  issueViews: Schema.optionalKey(Schema.Array(IssueView))
+  issueViews: Schema.optionalKey(Schema.Array(IssueView)),
+  issueTransitions: Schema.optionalKey(Schema.Array(IssueTransition))
 })
 
 /**
@@ -766,7 +852,10 @@ export const renderProjection = (declaration: Declaration, catalog: ReadonlyArra
         ...(declaration.machine === undefined ? {} : { machine: declaration.machine }),
         ...(declaration.issueViews === undefined || declaration.issueViews.length === 0 ?
           {}
-          : { issueViews: declaration.issueViews })
+          : { issueViews: declaration.issueViews }),
+        ...(declaration.issueTransitions === undefined || declaration.issueTransitions.length === 0 ?
+          {}
+          : { issueTransitions: declaration.issueTransitions })
       }),
       null,
       2

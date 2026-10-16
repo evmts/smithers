@@ -43,6 +43,13 @@ interface RepoWire {
   readonly ownerType: "user" | "org" | undefined
   readonly defaultBookmark: string | null
   readonly wireHead: { readonly changeId: string | null; readonly commitId: string | null } | undefined
+  /**
+   * Which tracker this repository's ordinary issues live in, as the server
+   * resolved it from the repository's own GitHub binding (`issue_tracker`).
+   * Undefined when the row carries no such field: this server cannot answer,
+   * which is NOT the same as Smithers Cloud.
+   */
+  readonly issueTracker: "github" | "smithers-cloud" | undefined
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -93,11 +100,22 @@ export const parseRepo = (value: unknown): RepoWire | null => {
   const wireHead = isRecord(value.default_bookmark_head)
     ? { changeId: id(value.default_bookmark_head.change_id), commitId: id(value.default_bookmark_head.commit_id) }
     : undefined
+  /*
+   * The tracker is read only as the closed pair the server states. Any other
+   * value — and an absent field — is "not answered", so an unfamiliar word
+   * never becomes a tracker a write would address.
+   */
+  const issueTracker = value.issue_tracker === "github"
+    ? "github" as const
+    : value.issue_tracker === "smithers-cloud"
+    ? "smithers-cloud" as const
+    : undefined
   return {
     id: fullName ?? `${org}/${name}`,
     org,
     name,
     ownerType,
+    issueTracker,
     defaultBookmark: typeof value.default_bookmark === "string" && value.default_bookmark !== "" ? value.default_bookmark : null,
     wireHead
   }
@@ -295,7 +313,9 @@ export const createRepositoriesSeam = (ctx: SeamContext): RepositoriesSeam => {
           org: repo.org,
           ownerKind: repo.ownerType ?? (orgLogins.has(repo.org) ? "org" : "user"),
           name: repo.name,
-          head: heads[index] ?? null
+          head: heads[index] ?? null,
+          /* An unanswered tracker is left off the row, never written as a value. */
+          ...(repo.issueTracker === undefined ? {} : { issueTracker: repo.issueTracker })
         }))
       })
 
@@ -348,7 +368,8 @@ export const createRepositoriesSeam = (ctx: SeamContext): RepositoriesSeam => {
             name: repo.name,
             head: repo.defaultBookmark === null
               ? null
-              : { bookmark: repo.defaultBookmark, changeId: null, commitId: null }
+              : { bookmark: repo.defaultBookmark, changeId: null, commitId: null },
+            ...(repo.issueTracker === undefined ? {} : { issueTracker: repo.issueTracker })
           }
         ]
       }).isPersisted.promise

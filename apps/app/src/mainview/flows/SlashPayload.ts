@@ -737,6 +737,28 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "issues.reopen": (args, known) => trimmed(args).startsWith("{")
     ? carriedPayload("issues.reopen")(args) : numberedIssue(args, "issues.reopen needs an issue number", known),
   "issues.comment": (args, known) => issueComment(args, known),
+  /*
+   * `<number> <transition> [owner/repo]`: the repository's OWN declared
+   * issue states (M-47). A transition id is a slug and holds no whitespace,
+   * so the repository trails it as it does everywhere else, and a line
+   * missing either position opens the form for it rather than guessing.
+   * No `--source`: the declared states are GitHub labels, so a transition is
+   * a GitHub act and naming another tracker would mean nothing.
+   */
+  "issues.transition": (args, known) => {
+    const structured = structuredFields("issues.transition", args, ["number", "transition", "repo"])
+    if (structured !== undefined) return structured
+    const { rest, repo } = splitTrailingRepo(args, tokensOf(args).length > 2 ? undefined : known)
+    const [head, transition, ...tail] = rest.split(/\s+/).filter((token) => token !== "")
+    if (tail.length > 0) return no("issues.transition takes an issue number, a transition and optionally an owner/repo")
+    const number = Number(head)
+    const numbered = Number.isInteger(number) && number > 0
+    return ok({
+      ...(numbered ? { number } : {}),
+      ...(transition === undefined ? {} : { transition }),
+      ...(repo === undefined ? {} : { repo })
+    })
+  },
   "prs.list": (args) => repoOnly("prs.list", args),
   "prs.view": (args, known) => numbered(args, "prs.view needs a pull request number", known),
   "prs.tab": args => {

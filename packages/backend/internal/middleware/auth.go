@@ -451,7 +451,7 @@ var installMemberRoutes = []struct {
 	{http.MethodPost, "public", regexp.MustCompile(`^/api/user/emails/verify-token$`)},
 	// Retained repository aliases use the same literal read command as the
 	// numbered issue door. Execution credentials have no list-all grant.
-	{http.MethodGet, "issue.read", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/(?:issue-views|labels(?:/[^/]+)?|issues(?:/state-events(?:/stream)?|/[0-9]+(?:/comments|/labels|/events)?)?)$`)},
+	{http.MethodGet, "issue.read", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/(?:issue-views|issue-transitions|labels(?:/[^/]+)?|issues(?:/state-events(?:/stream)?|/[0-9]+(?:/comments|/labels|/events)?)?)$`)},
 	{http.MethodGet, "repo.read", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+(?:/home|/topics)?$`)},
 	{http.MethodGet, "repo.read", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/(?:repository-source|github-app-status)$`)},
 	{http.MethodGet, "variables.read", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/variables(?:/[^/]+)?$`)},
@@ -746,6 +746,10 @@ var installMemberRoutes = []struct {
 	{http.MethodPost, "issues.close", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/github/issues/[0-9]+/close$`)},
 	{http.MethodPost, "issues.reopen", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/github/issues/[0-9]+/reopen$`)},
 	{http.MethodPatch, "issue.comment", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/github/issues/comments/[0-9]+$`)},
+	// A declared transition is an issue LABEL write, which this table
+	// already classifies as labels.create below; the repository's own
+	// declaration can only narrow who may ask for it.
+	{http.MethodPost, "labels.create", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/github/issues/[0-9]+/transitions/[a-z0-9][a-z0-9-]*$`)},
 	{http.MethodGet, "issue.read", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/github/issues/requests/[^/]+$`)},
 	{http.MethodPost, "self", regexp.MustCompile(`^/api/model/anthropic/.+$`)},
 	{http.MethodHead, "self", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/build-cache/cas/[^/]+$`)},

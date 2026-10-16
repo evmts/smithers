@@ -60,6 +60,21 @@ export interface IssuesSeam {
   readonly editIssueComment: (number: number, commentId: number, text: string, repo?: string) => Promise<string | void | { readonly value: string }>
   readonly deleteIssueComment: (number: number, commentId: number, repo?: string) => Promise<string | void | { readonly value: string }>
   readonly commentOnIssue: (number: number, text: string, repo?: string, persona?: { username: string; iconEmoji?: string; iconUrl?: string }, source?: IssueSource) => Promise<string | void | { readonly value: string }>
+  /**
+   * Performs one issue transition the REPOSITORY declares (M-47): a move
+   * through its own states, proposed to accepted among them, carried by its
+   * existing GitHub labels. The declaration — which labels move, and whether
+   * a person has to make the move — lives in the repository's committed
+   * `.smithers/factory.json` and is read and enforced by the server, so this
+   * sends the transition's id and nothing else: no label, no actor and no
+   * repository can be named by the client. An undeclared transition and a
+   * person-only move an agent asked for are refused there, before anything
+   * reaches GitHub.
+   *
+   * A transition only ever addresses the repository's GitHub tracker: the
+   * declared states are GitHub labels, so a Smithers Cloud row has none.
+   */
+  readonly transitionIssue: (number: number, transition: string, repo?: string) => Promise<string | void | { readonly value: string }>
 }
 
 const issueMessageWrites = new WeakMap<SeamContext["store"], Set<string>>()
@@ -281,7 +296,7 @@ const reportIssueIndex = (
  * repository, number, title, comment text, URL, header or credential joins
  * them.
  */
-type IssueWriteAct = "create" | "state" | "comment"
+type IssueWriteAct = "create" | "state" | "comment" | "transition"
 
 /** A write that resolved the GitHub source and found no door to send it through. */
 class IssueWriteUnsendable extends Data.TaggedError("IssueWriteUnsendable")<{ readonly act: IssueWriteAct }> {}
@@ -507,6 +522,25 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     const cloud = ctx.store.collections.cloudSessions.get("cloud")
     return identity?.state === "signed-in" ? identity.login : cloud?.state === "signed-in" ? cloud.username : undefined
   }
+  /**
+   * The tracker the repository itself declares, off the authoritative
+   * inventory row (`CloudRepository.issueTracker`, which the server resolves
+   * from the repository's own GitHub binding — the sync registry's current
+   * binding or the ready import bound to this exact repository). It is the
+   * repository's ANSWER, not a guess: nothing here reads a display name, a
+   * number or a summary, and a row that carries no tracker answers undefined
+   * rather than a tracker nobody resolved.
+   *
+   * This is what makes an ordinary act on an imported GitHub repository
+   * address that repository's GitHub issues without `--source github` on
+   * every act, while a Smithers Cloud repository keeps its own tracker.
+   */
+  const repositoryTracker = (repo: string): IssueSource | undefined => {
+    const row = ctx.store.collections.repositories.get(repo) ??
+      [...ctx.store.collections.repositories.values()].find((entry) => entry.id.toLowerCase() === repo.toLowerCase())
+    return row?.issueTracker
+  }
+
   const issuesPath = (repo: string): string => issuesRoute(ctx, repo)
   const githubSourceIssuesPath = (repo: string, filter: "open" | "closed" | "all"): string => githubIssuesRoute(ctx, repo, filter)
 
@@ -554,7 +588,35 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       return { refusal: `${repo} has a GitHub #${number} and a Smithers Cloud #${number}. Add --source github or --source smithers-cloud.` }
     }
     const [recordedSource] = [...sources]
-    return { source: recordedSource ?? (install ? "github" : "smithers-cloud") }
+    if (recordedSource !== undefined) return { source: recordedSource }
+    if (install) return { source: "github" }
+    /*
+     * Nothing recorded at this number: the repository's own declared tracker
+     * decides, so `/issues.close 6` on an imported GitHub repository closes
+     * GitHub's #6 and the same act on a Cloud-native repository closes the
+     * Cloud row. A repository whose tracker this server could not resolve
+     * keeps the Cloud reading it has always had — the one tracker every
+     * origin has — rather than being refused outright.
+     */
+    return { source: repositoryTracker(repo) ?? "smithers-cloud" }
+  }
+
+  /**
+   * Which tracker a READ addresses, on the same recorded-identity rules the
+   * write uses. An install's issues are GitHub's; an asked source wins; a
+   * recorded private conversation at this number is owner-private and stays
+   * in Smithers Cloud whatever the repository declares; otherwise the
+   * repository's own declared tracker decides, and an unresolved one keeps
+   * the Cloud reading.
+   *
+   * `undefined` means Smithers Cloud for the callers below, which is the
+   * shape they already had.
+   */
+  const issueReadSource = (repo: string, number: number, asked?: IssueSource): IssueSource | undefined => {
+    if (install) return "github"
+    if (asked !== undefined) return asked
+    if (mountedIssues(repo, number).some((card) => card.payload.kind === "chat")) return "smithers-cloud"
+    return repositoryTracker(repo)
   }
 
   /**
@@ -1000,11 +1062,17 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     return { id: `issues-${repo}`, title: `Issues · ${repo}`, key: JSON.stringify(["issues", repo, filter, kind, named ?? null]), pane: repo, read: issueListRead(repo, filter, kind, named) }
   })
   const issueView = preparedView(ctx, (number: number, repoArg?: string, asked?: "smithers-cloud" | "github") => {
-    // Every issue on an install is a GitHub issue.
-    const source = install ? "github" : asked
     const target = resolveTargetRepo(ctx.store, repoOf(repoArg))
     if ("error" in target) return target.error
     const repo = target.repo
+    /*
+     * Every issue on an install is a GitHub issue; off an install an asked
+     * source wins, and otherwise the repository's own declared tracker reads
+     * the tracker the number actually belongs to. A recorded private
+     * conversation keeps the Cloud card below (`bound`/`project`), so an
+     * imported repository's tracker never opens one on GitHub.
+     */
+    const source = issueReadSource(repo, number, asked)
     const bound = [...ctx.store.collections.cards.values()].find(card => card.kind === "issue" && card.payload.conversation && card.payload.repo === repo && card.payload.number === number && source !== "github")
     return { id: `issue-${source === "github" ? "github-" : ""}${repo}-${number}`, title: `Issue #${number} · ${repo}`, pane: repo, ...(bound ? { target: bound } : {}),
       project: card => {
@@ -1014,7 +1082,13 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       },
       read: () => install ? readInstallIssue(repo, number) : source === "github" ? readGithubIssue(repo, number) : readIssue(repo, number) }
   })
-  const showIssue = (repo: string, number: number) => issueView(number, repo)
+  /*
+   * Every caller here is on a Smithers Cloud path — the Cloud branch of
+   * `viewIssue`, and the re-reads after a Cloud PATCH/POST — so the tracker
+   * is named rather than resolved again: a refresh always re-reads the
+   * tracker its own mutation addressed.
+   */
+  const showIssue = (repo: string, number: number) => issueView(number, repo, "smithers-cloud")
 
   /** Re-fetch after a successful mutation; a refresh failure still states the mutation happened. */
   const refreshDetail = async (
@@ -1353,8 +1427,14 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
     viewIssue: Object.assign(async (number: number, explicitRepo?: string, source?: "smithers-cloud" | "github") => {
       const target = resolveTargetRepo(ctx.store, repoOf(explicitRepo))
       if ("error" in target) return target.error
-      if (source === "github" || install) return readRepositoryDetail(ctx, target.repo, "issue", number,
-        () => issueView(number, target.repo, "github"), "github")
+      /*
+       * The same resolution the card itself takes, so the metadata read and
+       * the card never address two different trackers for one number.
+       */
+      if (issueReadSource(target.repo, number, source) === "github") {
+        return readRepositoryDetail(ctx, target.repo, "issue", number,
+          () => issueView(number, target.repo, "github"), "github")
+      }
       const shown = await readRepositoryDetail(ctx, target.repo, "issue", number, () => showIssue(target.repo, number), "smithers")
       return shown
     }, { preload: issueView.preload }),
@@ -1465,6 +1545,30 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       // The re-fetch below states the new truth; the PATCH echo is not read.
       await response.body?.cancel()
       return refreshDetail(`Issue #${number} in ${repo} is now ${state}`, repo, number)
+    },
+
+    transitionIssue: async (number, transition, explicitRepo) => {
+      const target = resolveTargetRepo(ctx.store, repoOf(explicitRepo))
+      if ("error" in target) return target.error
+      const { repo } = target
+      if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(transition)) {
+        return `${transition} is not a transition id. Run /issues.transitions ${repo} to see what ${repo} declares.`
+      }
+      /*
+       * The declared states are GitHub labels, so a transition is a GitHub
+       * act whatever the number's other tracker holds. A recorded private
+       * conversation is never GitHub's, and asking to move one is refused
+       * rather than crossed.
+       */
+      const tracker = issueWriteTarget(repo, number, "github")
+      if ("refusal" in tracker) return tracker.refusal
+      return sendGitHubIssueAct(
+        "transition", `Issue #${number}`, repo,
+        `transition:${repo}#${number}:${transition}`,
+        `/${number}/transitions/${encodeURIComponent(transition)}`, "POST",
+        `Moving issue #${number} in ${repo} through ${transition}`,
+        `Could not move issue #${number} in ${repo} through ${transition}`
+      )
     },
 
     editIssueComment: async (number, commentId, text, explicitRepo) => {

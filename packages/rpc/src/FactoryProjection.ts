@@ -107,6 +107,34 @@ export const FactoryGithubSchema = z.object({
 })
 
 /**
+ * One issue transition the repository declares (M-47): a named move of an
+ * issue through the repository's own states, proposed to accepted among
+ * them, carried by the repository's existing labels. `to` is the label the
+ * transition applies and `from`, when named, the label it takes off; no
+ * second issue tracker exists. `actor` is who the REPOSITORY says may ask
+ * for it — `person` (the default) means a person must, and the server's own
+ * actor rules enforce it; `anyone` grants nothing on its own.
+ *
+ * @since 1.0.0
+ * @category schemas
+ */
+export const FactoryIssueTransitionSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  from: z.string().min(1).optional(),
+  to: z.string().min(1),
+  actor: z.enum(["person", "anyone"]).optional()
+})
+
+/**
+ * The decoded value accepted by {@link FactoryIssueTransitionSchema}.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type FactoryIssueTransition = z.infer<typeof FactoryIssueTransitionSchema>
+
+/**
  * The projection the app reads. `summary`, `flows`, and `github` are
  * optional so a projection that carries only the Dispatcher table still
  * decodes.
@@ -118,7 +146,8 @@ export const FactoryProjectionSchema = z.object({
   summary: z.string().optional(),
   flows: z.array(FactoryFlowSchema).optional(),
   on: z.array(FactoryRuleSchema),
-  github: FactoryGithubSchema.optional()
+  github: FactoryGithubSchema.optional(),
+  issueTransitions: z.array(FactoryIssueTransitionSchema).optional()
 })
 
 /**
@@ -149,3 +178,27 @@ export const featuredFlows = (
   projection: FactoryProjection
 ): ReadonlyArray<{ readonly id: string; readonly summary: string | null }> =>
   (projection.flows ?? []).filter((flow) => flow.featured).map((flow) => ({ id: flow.id, summary: flow.summary }))
+
+/**
+ * The transition `id` names, or undefined when the repository declares no
+ * such transition. An UNDECLARED transition is the whole refusal: nothing is
+ * asked of GitHub for one, so the issue is untouched.
+ *
+ * @since 1.0.0
+ * @category accessors
+ */
+export const issueTransitionOf = (
+  projection: FactoryProjection,
+  id: string
+): FactoryIssueTransition | undefined => (projection.issueTransitions ?? []).find((transition) => transition.id === id)
+
+/**
+ * Whether `transition` is one the repository says a PERSON has to make. The
+ * default is a person: a repository that declares a transition without
+ * naming an actor has not said an agent may make it.
+ *
+ * @since 1.0.0
+ * @category accessors
+ */
+export const issueTransitionNeedsPerson = (transition: FactoryIssueTransition): boolean =>
+  (transition.actor ?? "person") === "person"
