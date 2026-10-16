@@ -86,7 +86,7 @@ describe("the chat's own view", () => {
   test("search matches a cell's code only while its program shows", () => {
     const code = { ...Timeline.initial, query: "ctx.call" }
     expect(Timeline.rows(turn, code)).toHaveLength(0)
-    expect(Timeline.rows(turn, code, true).map((row) => row.key)).toEqual(["chat:c"])
+    expect(Timeline.rows(turn, code, { expanded: true, chat: false }).map((row) => row.key)).toEqual(["chat:c"])
     expect(Timeline.rows(turn, { ...Timeline.all, query: "ctx.call" }).map((row) => row.key)).toEqual(["chat:c"])
   })
 })

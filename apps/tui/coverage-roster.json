@@ -10,6 +10,7 @@
   "src/box.ts",
   "src/budget.ts",
   "src/catalog.ts",
+  "src/cell-display.ts",
   "src/changes.ts",
   "src/cli.ts",
   "src/clipboard.ts",

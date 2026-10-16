@@ -11,6 +11,7 @@ import type { UserFailure } from "@smthrs/rpc/UserFailure"
 import { memo, type ReactNode, type RefObject, useState } from "react"
 import stringWidth from "string-width"
 import * as Approvals from "./approvals.ts"
+import * as CellDisplay from "./cell-display.ts"
 import type * as Extension from "./extension.ts"
 import * as Failures from "./failures.ts"
 import * as Keys from "./keys.ts"
@@ -496,35 +497,32 @@ function CellView(props: {
   const open = live || !folded
   const mark = live ? props.tick : open ? "▾" : "▸"
   const result = line === undefined ? "" : Scrubber.outcome(line)
-  const notes = step.notes.filter((note) => props.expanded || (note.tone !== "good" && note.title !== "unmoved"))
+  const display = CellDisplay.cell(cell, props)
+  const notes = display.notes
   // By default a cell is what it did: its agent rows. Ctrl+O, the Cells filter, or selecting it, shows the program.
-  if (!props.expanded && !props.selected && !props.program) {
-    const rows = cell.calls.filter((call) => !plumbing(call.flow))
-    if (cell.status === "rejected" || (rows.length === 0 && cell.error === undefined && notes.length === 0 && !live)) {
-      return null
-    }
+  if (display.compact) {
+    const rows = display.calls
+    if (display.hidden) return null
     // In Chat a read is the coordinator's own look at the code: one that fails is
     // a faint row with its reason, and a step that only read keeps its failure under ctrl+o.
-    const read = (call: Transcript.Call) => props.chat && Transcript.coordinatorFlows.includes(call.flow)
-    const quiet = (call: Transcript.Call) => read(call) && call.status === "failed"
     return (
       <box style={{ paddingLeft: 1, marginBottom: 1 }}>
         {live && rows.length === 0 ? <text fg={color.faint}>{props.tick} working</text> : null}
         {rows.map((call, index) =>
-          quiet(call)
+          display.quiet(call)
             ? (
               <text key={index} fg={color.faint} wrapMode="none">
-                ✗ {call.verb?.failure ?? call.flow} {call.subject.split("\n")[0]}
+                ✗ {CellDisplay.verb(call)} {CellDisplay.subject(call)}
                 {Failures.readReason(call.message) === "" ? "" : ` · ${Failures.readReason(call.message)}`}
               </text>
             )
             : <CallView key={index} call={call} now={props.now} tick={props.tick} expanded={false} timed={false} />
         )}
-        {cell.error === undefined || (rows.length > 0 && rows.every(read))
+        {display.failure === undefined
           ? null
           : (
             <FailureLine
-              failure={Failures.cellFailure("failed", cell.error)}
+              failure={display.failure}
               tone={color.danger}
               expanded={false}
             />
@@ -605,11 +603,11 @@ function CellView(props: {
             <text fg={color.muted}>{printed}</text>
           </box>
         )}
-      {cell.error === undefined
+      {display.failure === undefined
         ? null
         : (
           <FailureLine
-            failure={Failures.cellFailure(cell.status === "rejected" ? "rejected" : "failed", cell.error)}
+            failure={display.failure}
             tone={cell.status === "rejected" ? color.warning : color.danger}
             expanded={props.expanded}
           />
@@ -625,7 +623,8 @@ function FailureLine(
 ) {
   const { failure } = props
   const lead = props.indent === true ? "  " : ""
-  const hidden = failure.fault !== "user" && failure.detail !== ""
+  const detail = CellDisplay.detail(failure)
+  const hidden = detail !== ""
   return (
     <box>
       <text fg={props.tone}>
@@ -633,7 +632,7 @@ function FailureLine(
         {failure.sentence}
         {hidden && !props.expanded ? <span fg={color.faint}>{" "}· ctrl+o</span> : null}
       </text>
-      {hidden && props.expanded ? <text fg={color.faint}>{lead}{failure.detail}</text> : null}
+      {hidden && props.expanded ? <text fg={color.faint}>{lead}{detail}</text> : null}
     </box>
   )
 }
@@ -648,11 +647,6 @@ const icons: Record<string, string> = {
   edit: "←",
   write: "←"
 }
-
-/** Calls that run the program rather than the work; they show only with Ctrl+O. */
-export const plumbing = (flow: string): boolean =>
-  ["agent.delegate", "ui.publish", "tab.read", "tab.list", "smithers.run"].includes(flow) ||
-  flow.startsWith("monitor.")
 
 /**
  * What a settled call's glyph says: a stopped call's `■`, a command's exit
@@ -695,14 +689,8 @@ function CallView(
   const mark = callMark(call)
   // A command reads as itself and its exit status; the verb adds nothing.
   const command = call.exit !== undefined
-  const verb = call.verb === undefined
-    ? call.flow
-    : call.status === "running" || call.status === "stopped"
-    ? call.verb.pending
-    : call.status === "ok"
-    ? call.verb.success
-    : call.verb.failure
-  const subject = call.subject.split("\n")[0]!
+  const verb = CellDisplay.verb(call)
+  const subject = CellDisplay.subject(call)
   const diff = call.change === undefined || call.status === "failed" || call.status === "stopped"
     ? undefined
     : Transcript.unified(call.change)

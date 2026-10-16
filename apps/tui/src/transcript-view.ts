@@ -141,7 +141,34 @@ export const useTranscriptView = (options: {
   const drawsProgram = options.expanded || Timeline.program(filter)
   // A fresh projection on every render would miss the row cache, which keys on identity.
   const projectedChat = useMemo(() => RunCard.chat(transcript, drawsProgram), [transcript, drawsProgram])
-  const rows = chatRows(projectedChat, filter, drawsProgram)
+  const activitySources = [
+    { id: chat, title: "Chat", activity: transcript.activity },
+    ...tabs.map((tab) => ({ id: tab.id, title: tabTitle(tab), activity: worker(tab.id).activity }))
+  ].filter((source): source is Source => source.activity !== undefined && source.activity.records.length > 0)
+  // A new turn or restored session cannot inherit a cursor from an old turn.
+  const pinnedActivity = activitySources.find((source) =>
+    source.id === inspection?.source &&
+    source.activity.records[0] === inspection.first
+  )
+  const monitored = surface === "chat" ?
+    projectedChat.activity === undefined ? undefined : activitySources.find((source) => source.id === chat)
+    : surface.startsWith("tab:") ?
+    activitySources.find((source) => source.id === surface.slice(4))
+    : undefined
+  const showActivity = monitored !== undefined && (panel === undefined || surface.startsWith("tab:"))
+  const activeInspection = showActivity && pinnedActivity === monitored ? inspection : undefined
+  const transcriptOf = (source: string) => source === chat ? transcript : worker(source)
+  /** The transcript item a scrubber position lands on, in the chat or a worker's tab. */
+  const jump = activeInspection === undefined ? undefined : (() => {
+    const id = Scrubber.target(transcriptOf(activeInspection.source), activeInspection.seq)
+    return id === undefined ? undefined : { source: activeInspection.source, id }
+  })()
+  const rows = chatRows(projectedChat, filter, {
+    expanded: options.expanded,
+    chat: true,
+    source: transcript,
+    selected: jump?.source === chat ? jump.id : undefined
+  })
   const lines = Subagents.lines(rows, Subagents.batches(transcript, tabs, undefined, options.runs), earlierOpen())
   const workerTab = surface.startsWith("tab:") ? tabs.find((tab) => `tab:${tab.id}` === surface) : undefined
   const workerEarlier = workerTab === undefined ? undefined : Subagents.lines(
@@ -177,31 +204,9 @@ export const useTranscriptView = (options: {
     ? undefined
     : tabs.find((tab) => Subagents.cardKey(tab.id) === focusedCard)
 
-  const activitySources = [
-    { id: chat, title: "Chat", activity: transcript.activity },
-    ...tabs.map((tab) => ({ id: tab.id, title: tabTitle(tab), activity: worker(tab.id).activity }))
-  ].filter((source): source is Source => source.activity !== undefined && source.activity.records.length > 0)
-  // A new turn or restored session cannot inherit a cursor from an old turn.
-  const pinnedActivity = activitySources.find((source) =>
-    source.id === inspection?.source &&
-    source.activity.records[0] === inspection.first
-  )
-  const monitored = surface === "chat" ?
-    projectedChat.activity === undefined ? undefined : activitySources.find((source) => source.id === chat)
-    : surface.startsWith("tab:") ?
-    activitySources.find((source) => source.id === surface.slice(4))
-    : undefined
-  const showActivity = monitored !== undefined && (panel === undefined || surface.startsWith("tab:"))
-  const activeInspection = showActivity && pinnedActivity === monitored ? inspection : undefined
   useLayoutEffect(() => {
     if (pendingReveal.current?.inspection !== activeInspection) cancelReveal()
   }, [activeInspection, cancelReveal])
-  const transcriptOf = (source: string) => source === chat ? transcript : worker(source)
-  /** The transcript item a scrubber position lands on, in the chat or a worker's tab. */
-  const jump = activeInspection === undefined ? undefined : (() => {
-    const id = Scrubber.target(transcriptOf(activeInspection.source), activeInspection.seq)
-    return id === undefined ? undefined : { source: activeInspection.source, id }
-  })()
   const reveal = (key: string) => {
     const box = scroll.current
     const child = box?.content.findDescendantById(key)
