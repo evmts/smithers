@@ -124,7 +124,12 @@ export const realEngineLayer = (filename: string, hostId: string) => {
     Action.layerCacheEnvironment({ layers: [TimeTravel.key], capabilities: {} })
   ).pipe(Layer.provideMerge(NodeCrypto.layer))
   return Layer.merge(
-    EngineStore.layer({ owner: { hostId }, journalSource: `${hostId}-time-travel-e2e`, isAlive: ownerIsAlive }),
+    EngineStore.layer({
+      owner: { hostId },
+      journalSource: `${hostId}-time-travel-e2e`,
+      declarationRoot: dirname(import.meta.dirname),
+      isAlive: ownerIsAlive
+    }),
     TimeTravel.layer
   ).pipe(Layer.provideMerge(infrastructure)) satisfies Layer.Layer<never, unknown, Scope.Scope>
 }
@@ -156,19 +161,19 @@ const CompensableStep = Action.make("time-travel/e2e/compensable-step", {
 const SealedParked = Flow.make("time-travel/e2e/sealed-parked", {
   payload: {},
   success: Schema.String,
-  body: (payload) =>
+  body: Node.capture({}, (payload) =>
     SealedStep.call(payload).pipe(
-      Node.bindPlanned(() => Flow.park({ reason: "approval", token: "time-travel-e2e-sealed" }))
-    )
+      Node.andThen(Flow.park({ reason: "approval", token: "time-travel-e2e-sealed" }))
+    ))
 })
 
 const CompensableParked = Flow.make("time-travel/e2e/compensable-parked", {
   payload: {},
   success: Schema.String,
-  body: (payload) =>
+  body: Node.capture({}, (payload) =>
     CompensableStep.call(payload).pipe(
-      Node.bindPlanned(() => Flow.park({ reason: "approval", token: "time-travel-e2e-compensable" }))
-    )
+      Node.andThen(Flow.park({ reason: "approval", token: "time-travel-e2e-compensable" }))
+    ))
 })
 
 type StepEffect = Effect.Effect<string>

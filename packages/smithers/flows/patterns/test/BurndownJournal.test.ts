@@ -9,6 +9,7 @@
  * crash replays a recorded landing instead of landing twice.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { FlowEngine } from "@smthrs/engine"
 import { EngineStore, StepBoundary } from "@smthrs/engine-store"
 import * as TestStores from "@smthrs/engine-store/test/TestStores"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
@@ -134,6 +135,61 @@ const isSettled = (step: Step, nodeId: string) =>
   step.eventType === "flows.engine.node-settled" && step.nodeId === nodeId
 
 describe("Burndown journal", () => {
+  it("stops before landing when the runtime refuses its record and releases every claim", async () => {
+    const claimed: Array<string> = []
+    const released: Array<string> = []
+    const landed: Array<string> = []
+    const options: Burndown.RoundOptions<unknown, Issue, string, never, never, string> = {
+      key: "sweep",
+      concurrency: 2,
+      claim: ({ item }: Burndown.ItemArgs<unknown, Issue>) =>
+        Effect.sync(() => {
+          claimed.push(item.id)
+        }),
+      work: () => Effect.succeed("fixed"),
+      land: ({ item }) =>
+        Effect.sync(() => {
+          landed.push(item.id)
+          return "commit"
+        }),
+      release: ({ item }) =>
+        Effect.sync(() => {
+          released.push(item.id)
+        })
+    }
+    const exit = await durable(Effect.gen(function*() {
+      const runtime = yield* EngineStore.make({
+        owner: { hostId: "refused-record" },
+        journalSource: "refused-record"
+      })
+      // Inject the record refusal at the runtime seam. Driving the round
+      // directly isolates its cleanup from the host's action retry policy.
+      return yield* Burndown.round({ input: null, round: 0, items: [{ id: "a" }, { id: "b" }] }, options).pipe(
+        Effect.provideService(FlowRuntime.FlowRuntime, {
+          ...runtime,
+          recordNode: (record) =>
+            record._tag === "NodeScheduled" && record.action === Burndown.LandStep
+              ? Effect.fail(
+                new Interpreter.InterpreterError({
+                  code: "plan_changed",
+                  flow: Round._tag,
+                  node: record.nodeId,
+                  message: "changed landing plan"
+                })
+              )
+              : Effect.void
+        }),
+        Effect.provideService(FlowRuntime.FlowInstance, FlowEngine.makeInstance(Round, "refused-record")),
+        Effect.exit
+      )
+    }))
+    expect(Exit.isFailure(exit)).toBe(true)
+    expect(String(exit)).toContain("changed landing plan")
+    expect(landed).toEqual([])
+    expect(claimed.length).toBeGreaterThan(0)
+    expect(released.sort()).toEqual(claimed.sort())
+  })
+
   it("journals the first item's landing and release before the second item's work finishes", async () => {
     const slow = Deferred.makeUnsafe<void>()
     const landed: Array<string> = []

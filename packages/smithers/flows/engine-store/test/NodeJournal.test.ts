@@ -9,8 +9,9 @@
 import { FlowEngine } from "@smthrs/engine"
 import type { FlowRuntime as FlowRuntimeTypes } from "@smthrs/flow"
 import { Flow, FlowRuntime } from "@smthrs/flow"
-import { Journal } from "@smthrs/journal"
+import { Journal, JournalEvent } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
+import { RunStore } from "@smthrs/run-store"
 import { Cause, Effect, Exit, Layer, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import * as EngineStore from "../src/EngineStore.ts"
@@ -423,4 +424,81 @@ describe("what the summary costs a large value", () => {
     expect(summary.truncated).toBe(true)
     expect(summary.bytes).toBeGreaterThan(NodeJournal.maximumSummarizedBytes)
   })
+})
+
+describe("inherited plan observations", () => {
+  it.each(["absent", "ancestor", "unrelated", "other-sequence", "paged"])(
+    "preserves only attested ancestor metadata: %s",
+    async (scenario) => {
+      const observed = await runPromise(
+        Effect.scoped(Effect.gen(function*() {
+          const runId = "fork-plan"
+          const root = FlowEngine.Lineage.root(runId)
+          const inherited = FlowEngine.Lineage.root("parent-plan")
+          yield* (yield* RunStore.RunStore).create(
+            runId,
+            JSON.stringify({
+              version: 1,
+              flowName: Empty._tag,
+              payload: {},
+              forkKeyRunIds: ["parent-plan"]
+            })
+          )
+          const real = yield* Journal.Journal
+          const record: FlowRuntimeTypes.PlanRecorded = {
+            _tag: "PlanRecorded",
+            sourceId: "plan/0/0",
+            flow: Empty._tag,
+            generation: 0,
+            page: 0,
+            pages: 1,
+            nodeCount: 0,
+            nodes: [],
+            edges: []
+          }
+          const seedScope = {
+            runId,
+            sourceId: "fork-plan",
+            lineageId: scenario === "unrelated" ? "stranger" : inherited
+          }
+          // Ownerless historical fixture admission; re-emission below remains fenced.
+          if (scenario === "paged") {
+            for (let i = 0; i < 256; i++) {
+              yield* real.emitDurableUnfenced(NodeJournal.entry(seedScope, { ...record, sourceId: `plan/older/${i}` }))
+            }
+          }
+          if (scenario !== "absent") {
+            const entry = NodeJournal.entry(seedScope, record)
+            yield* real.emitDurableUnfenced(scenario === "other-sequence" ? { ...entry, sourceSeq: JournalEvent.SourceSeq.make(1) } : entry)
+          }
+          const writes: Array<JournalEvent.Input> = []
+          const journal: Journal.Service = {
+            ...real,
+            emitDurable: (entry) => {
+              writes.push(entry)
+              return Effect.fail(new Journal.JournalError({ code: "read_failed", message: "write refused" }))
+            }
+          }
+          const engine = yield* EngineStore.make({ owner: { hostId: "fork-plan" }, journalSource: "fork-plan" }).pipe(
+            Effect.provideService(Journal.Journal, journal)
+          )
+          const exit = yield* engine.recordNode!(record).pipe(
+            Effect.provideService(FlowRuntime.FlowInstance, FlowEngine.makeInstance(Empty, runId)),
+            Effect.exit
+          )
+          expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true)
+          expect(writes).toHaveLength(1)
+          return { entry: writes[0]!, payload: NodeJournal.entry(seedScope, record).payload, root, inherited }
+        })).pipe(
+          Effect.provide(jj),
+          Effect.provide(StepBoundary.layerTest()),
+          Effect.provide(TestStores.layerAt(":memory:"))
+        )
+      )
+      expect(observed.entry.meta).toEqual({
+        lineageId: scenario === "ancestor" || scenario === "paged" ? observed.inherited : observed.root
+      })
+      expect(observed.entry.payload).toEqual(observed.payload)
+    }
+  )
 })

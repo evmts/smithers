@@ -213,7 +213,17 @@ export const make = <R = never>(options: MakeOptions<R>): LoopFlow<R> => {
   const stall = Stalling.resolve("Loop", options.stall)
   if (stall instanceof PatternError) throw stall
   // A stall policy adds one branch to every iteration that goes round again.
+  const armLimit = declared.until === undefined
+    ? Math.floor((Node.maximumArmDepth + (stall === undefined ? 0 : 1)) / (stall === undefined ? 1 : 2))
+    : Number.POSITIVE_INFINITY
   const invalid = bound(maxIterations) ??
+    (maxIterations > armLimit
+      ? new PatternError({
+        code: "invalid_decorator",
+        message:
+          `Loop maxIterations must be at most ${armLimit} to stay inside the branch construction limit, received ${maxIterations}`
+      })
+      : undefined) ??
     Compose.sequencedBoundRefusal(
       "Loop",
       "maxIterations",

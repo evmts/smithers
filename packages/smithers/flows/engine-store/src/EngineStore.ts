@@ -14,7 +14,7 @@ import type { DurableWriter } from "@smthrs/database/DurableWriter"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { FileBoundary } from "@smthrs/flow/FileBoundary"
-import { Journal } from "@smthrs/journal"
+import { Journal, JournalEvent } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
 import { AttemptStore, RunStore } from "@smthrs/run-store"
 import type { Ownership } from "@smthrs/run-store"
@@ -281,6 +281,34 @@ const makeWithEngineJj = (
       forkOrigins.set(instance, origins)
       return origins
     })
+    // A copied plan keeps the lineage of its original observation. Reuse that
+    // metadata while the journal still compares every byte of its plan content.
+    const planLineage = Effect.fnUntraced(function*(
+      instance: FlowRuntime.FlowInstance["Service"],
+      record: FlowRuntime.NodeRecord
+    ) {
+      const root = FlowEngine.Lineage.root(instance.executionId)
+      if (record._tag !== "PlanRecorded") return root
+      const origins = yield* keyOrigins(instance)
+      if (origins.length === 0) return root
+      const sourceId = `${options.journalSource}/${record.sourceId}`
+      let after: JournalEvent.Seq | undefined
+      while (true) {
+        const page = yield* journal.entries({
+          runId: instance.executionId as JournalEvent.RunId,
+          eventTypes: ["flows.engine.plan-recorded"],
+          limit: 256,
+          ...(after === undefined ? {} : { after })
+        }).pipe(Effect.orDie)
+        const inherited = page.entries.find((entry) => entry.sourceId === sourceId && entry.sourceSeq === 0)
+        if (inherited !== undefined) {
+          const { lineageId } = Schema.decodeUnknownSync(Schema.Struct({ lineageId: Schema.String }))(inherited.meta)
+          return origins.some((origin) => FlowEngine.Lineage.root(origin) === lineageId) ? lineageId : root
+        }
+        if (!page.hasMore) return root
+        after = page.entries[page.entries.length - 1]!.seq
+      }
+    })
     const stepBoundary = yield* StepBoundary.StepBoundary
     /**
      * Both halves of the isolated-execution lane are OPTIONAL and resolved
@@ -500,43 +528,48 @@ const makeWithEngineJj = (
           }, record)),
       recordNode: (record) =>
         Effect.flatMap(FlowRuntime.FlowInstance, (parent) =>
-          journal.emitDurable(
-            NodeJournal.entry({
-              runId: parent.executionId,
-              sourceId: options.journalSource,
-              lineageId: FlowEngine.Lineage.root(parent.executionId),
-              root: declarationRoot,
-              sourceRevision: sourceRevision()
-            }, record),
-            owner
-          ).pipe(
-            Effect.catch((error) =>
-              error.code === "fence_lost" ?
-                Effect.interrupt :
-                error.code === "idempotency_conflict" && record._tag === "PlanRecorded"
-                ? Effect.fail(
-                  new Interpreter.InterpreterError({
-                    code: "plan_changed",
-                    flow: record.flow,
-                    node: "root",
-                    message: "The rebuilt plan differs from the recorded plan; start a new execution"
-                  })
-                )
-                : Effect.die(error)
-            ),
-            Effect.asVoid
-          )),
+          Effect.flatMap(planLineage(parent, record), (lineageId) =>
+            journal.emitDurable(
+              NodeJournal.entry({
+                runId: parent.executionId,
+                sourceId: options.journalSource,
+                lineageId,
+                root: declarationRoot,
+                sourceRevision: sourceRevision()
+              }, record),
+              owner
+            ).pipe(
+              Effect.catch((error) =>
+                error.code === "fence_lost" ?
+                  Effect.interrupt :
+                  error.code === "idempotency_conflict" && record._tag === "PlanRecorded"
+                  ? Effect.fail(
+                    new Interpreter.InterpreterError({
+                      code: "plan_changed",
+                      flow: record.flow,
+                      node: "root",
+                      message: "The rebuilt plan differs from the recorded plan; start a new execution"
+                    })
+                  )
+                  : Effect.die(error)
+              ),
+              Effect.asVoid
+            ))),
       actionReplayKey: Effect.fnUntraced(function*(derive) {
         const instance = yield* FlowRuntime.FlowInstance
         const origins = yield* keyOrigins(instance)
-        if (origins.length === 0) return yield* derive(instance.executionId, false)
+        if (origins.length === 0) {
+          return yield* derive(instance.executionId, false)
+        }
         // Prefer this child's own work on resume, then only ancestor keys
         // backed by attempts copied into this child. Never read parent rows.
         const probed = new Set<string>()
         for (const runId of [instance.executionId, ...origins]) {
           for (const runScoped of [true, false]) {
             const key = yield* derive(runId, runScoped)
-            if (probed.has(key)) continue
+            if (probed.has(key)) {
+              continue
+            }
             probed.add(key)
             const digest = yield* Schema.decodeUnknownEffect(Sha256)(key).pipe(Effect.orDie)
             const found = yield* AttemptProbe.probeAttempts(
@@ -545,7 +578,9 @@ const makeWithEngineJj = (
               instance.executionId,
               digest
             )
-            if (Option.isSome(found)) return key
+            if (Option.isSome(found)) {
+              return key
+            }
           }
         }
         return yield* derive(instance.executionId, true)
@@ -566,7 +601,8 @@ const makeWithEngineJj = (
           parent.executionId,
           yield* Schema.decodeUnknownEffect(Sha256)(input.key).pipe(Effect.orDie)
         )
-        return Option.map(survivors, ({ earliestStartedAtMs }) => earliestStartedAtMs)
+        return Option.map(survivors, ({ earliestStartedAtMs }) =>
+          earliestStartedAtMs)
       }),
       // The durable attempt counter (issue #59): the highest contiguous
       // persisted attempt for the key, so a resumed run replays failed
@@ -584,7 +620,8 @@ const makeWithEngineJj = (
           parent.executionId,
           yield* Schema.decodeUnknownEffect(Sha256)(input.key).pipe(Effect.orDie)
         )
-        return Option.map(survivors, ({ latest }) => latest)
+        return Option.map(survivors, ({ latest }) =>
+          latest)
       }),
       // The durable restore-before-retry handle (issue #1805): the earliest
       // boundary snapshot persisted in the key's surviving attempt rows, so a

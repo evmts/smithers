@@ -196,7 +196,7 @@ const parkedBelow = (
     const human = open.find((row) => row.reason === "approval" && row.runId !== rootId)
     if (human !== undefined) return human
     if (attempts <= 0) return yield* Effect.die(`no execution below ${rootId} parked on a human wait`)
-    yield* Effect.yieldNow
+    yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 2)))
     return yield* parkedBelow(rootId, attempts - 1)
   })
 
@@ -205,7 +205,7 @@ const settled = (runId: string, attempts = 4_000): Effect.Effect<string, unknown
     const store = yield* RunStore.RunStore
     const row = yield* store.get(runId)
     if (!["suspended", "running", "pending"].includes(row.status) || attempts <= 0) return row.status
-    yield* Effect.yieldNow
+    yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 2)))
     return yield* settled(runId, attempts - 1)
   })
 
