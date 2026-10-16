@@ -749,6 +749,7 @@ describe("time travel over an engine-written journal", () => {
         )
         yield* rewindWhenIdle(timeTravel.rewind({ runId: "clock-run", frame }))
         yield* execute
+        yield* TestDatabase.until(state.clock(address).pipe(Effect.map(Option.isSome)))
         expect(yield* state.clock(address)).toMatchObject({
           _tag: "Some",
           value: { dueAtMs: 2000, completedAtMs: null }
