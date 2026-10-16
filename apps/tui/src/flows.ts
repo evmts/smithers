@@ -61,7 +61,7 @@ export interface Card {
 }
 export type Settled =
   | { readonly kind: "done"; readonly answer: string }
-  | { readonly kind: "failed"; readonly message: string }
+  | { readonly kind: "failed"; readonly message: string; readonly error?: unknown }
   | { readonly kind: "cancelled" }
 export interface Watch {
   /** Settles only at a terminal event; a run parked for approval keeps it open. */
@@ -749,7 +749,7 @@ export class FlowRuns {
     if (settled.kind === "done") {
       this.update(id, attempt, { answer: settled.answer, endedAt, message: undefined }, "done")
     } else if (settled.kind === "failed") {
-      const failure = Failures.remoteFlowFailure(settled.message)
+      const failure = Failures.remoteFlowFailure(settled.message, settled.error)
       this.update(id, attempt, { message: settled.message, failure, endedAt }, "fail")
     } else this.update(id, attempt, { endedAt, message: undefined }, "cancel")
   }

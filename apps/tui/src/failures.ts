@@ -14,7 +14,7 @@ import type * as Permission from "@smthrs/capability/Permission"
 import type { Refused as CliRefused } from "@smthrs/cli/CliError"
 import type * as Cell from "@smthrs/harness/Cell"
 import * as Evaluator from "@smthrs/model/Evaluator"
-import type * as FailureCopy from "@smthrs/model/FailureCopy"
+import * as FailureCopy from "@smthrs/model/FailureCopy"
 import type { PlueFault } from "@smthrs/rpc/PlueFailureCodes"
 import {
   presentUserFailure,
@@ -357,8 +357,46 @@ const instructs = (error: unknown): boolean => {
 export const onCard = (error: unknown, described: FailureCopy.Description): FailureCopy.Description =>
   instructs(error) ? { ...described, line: "" } : described
 
-/** Remote diagnostic text stays private; expose only a bounded command exit receipt. */
-export const remoteFlowFailure = (message: string): string => {
+/** Only classification fields enter the shared presenter; remote copy and measurements stay private. */
+const remoteTags = new Set([
+  "flows/engine-store/UnencodableResult",
+  "flows/model/ModelError",
+  "/harness/HarnessError",
+  "FramesExhausted",
+  "/harness/CellTurn/RepeatedFailure",
+  "@smthrs/flow/HumanTaskFailed",
+  "@smthrs/agent/Seat/SeatUnresolved",
+  "@smthrs/agent/Seat/SeatUnrouted",
+  "flows/agent/BudgetExceeded",
+  "flows/model/EvaluatorError",
+  "flows/model/ClassifierError"
+])
+const remoteReasons: ReadonlySet<unknown> = new Set(["no_candidates", "unconfigured", "interrupted"])
+const remoteError = (error: unknown, depth = 0): unknown => {
+  if (depth === 8 || typeof error !== "object" || error === null || Array.isArray(error)) return undefined
+  const value = error as Record<string, unknown>
+  return {
+    _tag: typeof value._tag === "string" && remoteTags.has(value._tag) ? value._tag : undefined,
+    // FailureCopy's harness table uses `in`; inherited names are not codes.
+    code: typeof value.code === "string" && !Object.hasOwn(Object.prototype, value.code) ? value.code : undefined,
+    // A reason only selects copy; the remote string itself never crosses this boundary.
+    reason: remoteReasons.has(value.reason) ? value.reason : undefined,
+    scope: value.scope === "usd" || value.scope === "daily" || value.scope === "latency" ? value.scope : undefined,
+    message: "",
+    cause: remoteError(value.cause, depth + 1)
+  }
+}
+
+// The shared presenter's own sentence for a cause it does not recognize; read
+// from it, so changing that copy cannot silently retire the exit receipts below.
+const unclassified = FailureCopy.describe(undefined).headline
+
+/** Remote diagnostic text stays private; typed causes get host-authored, bounded copy. */
+export const remoteFlowFailure = (message: string, error?: unknown): string => {
+  const safe = remoteError(error) as { readonly _tag?: string } | undefined
+  if (safe?._tag === "flows/engine-store/UnencodableResult") return "Flow result could not be encoded."
+  const described = FailureCopy.describe(safe)
+  if (described.headline !== unclassified) return described.headline.slice(0, 80)
   const exit = /^(Check|Command) exited ([1-9][0-9]{0,2})[.!]?$/.exec(message.trim())
   return exit !== null && Number(exit[2]) <= 255 ? `${exit[1]} exited ${exit[2]}.` : "The flow failed."
 }

@@ -406,6 +406,32 @@ describe("flow runs", () => {
     expect(f.runs.get("r1")?.status).toBe("cancelled")
   })
 
+  it("ignores a late typed failure after retry replaced the remote watch", async () => {
+    const f = setup()
+    f.runs.request({ id: "r1", flow: "review", input: {}, by: "user" })
+    await tick()
+    f.watches[0]!.emit(call("control.run.parked", 1))
+    expect(f.runs.retry("r1")).toEqual({ id: "r1", status: "running" })
+    f.resumes[0]!.resolve({ runId: "run-1" })
+    await tick()
+    f.watches[0]!.done.resolve({
+      kind: "failed",
+      message: "private stale diagnostic",
+      error: { _tag: "flows/model/ModelError", code: "transport", message: "private stale diagnostic" }
+    })
+    f.watches[0]!.emit(call("control.run.parked", 9))
+    await tick()
+    expect(f.runs.get("r1")).toMatchObject({ attempt: 2, status: "running" })
+    expect(f.runs.get("r1")?.message).toBeUndefined()
+    expect(f.runs.get("r1")?.failure).toBeUndefined()
+    expect(f.runs.journal("r1")).toEqual([])
+    f.watches[1]!.done.resolve({ kind: "done", answer: "Recovered" })
+    await tick()
+    expect(f.runs.get("r1")).toMatchObject({ status: "done", answer: "Recovered" })
+    expect(f.runs.get("r1")?.failure).toBeUndefined()
+    await f.runs.dispose()
+  })
+
   it("cancels a queued resume without launching a replacement or losing its watch", async () => {
     const f = setup()
     f.runs.request({ id: "r1", flow: "review", input: {}, by: "user" })

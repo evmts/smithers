@@ -51,6 +51,45 @@ const payloadOf = (event: ControlEvent): Record<string, unknown> =>
 const answerOf = (events: ReadonlyArray<ControlEvent>): string =>
   Diagnosis.resolvedOutput(Diagnosis.digest(events)) ?? ""
 
+const record = (value: unknown): Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
+
+/** The bound root's committed error, never a child's failure or diagnostic prose. */
+const errorOf = (events: ReadonlyArray<ControlEvent>): unknown => {
+  const bindings = events.filter((event) => event.kind === "control.engine.bound")
+  const bound = bindings[0]
+  if (bound === undefined) return undefined
+  const binding = payloadOf(bound)
+  if (
+    binding.version !== 1 || binding.controlRunId !== bound.runId || typeof binding.executionId !== "string" ||
+    bindings.some((event) => payloadOf(event).executionId !== binding.executionId)
+  ) return undefined
+  for (const event of events.toReversed()) {
+    const bridge = payloadOf(event)
+    if (
+      event.kind !== "control.engine.event" || event.runId !== bound.runId || bridge.version !== 1 ||
+      bridge.executionId !== binding.executionId || bridge.eventType !== "flows.engine.run-decision"
+    ) continue
+    const decision = record(bridge.payload)
+    const fact = record(decision.executionFact)
+    const observation = record(fact.observation)
+    const state = record(decision.state)
+    const result = record(state.result)
+    const exit = record(result.exit)
+    if (
+      decision.decision !== "transitioned" || decision.status !== "failed" || state.version !== 1 ||
+      fact.version !== 1 || (fact.baseline !== "created" && fact.baseline !== "legacy") ||
+      observation.executionId !== binding.executionId || observation.status !== "failed" ||
+      observation.flowName !== "agent/run" || state.flowName !== "agent/run" ||
+      record(state.payload).runId !== bound.runId ||
+      result._tag !== "Complete" || exit._tag !== "Failure" || !Array.isArray(exit.cause) || exit.cause.length !== 1
+    ) continue
+    const reason = record(exit.cause[0])
+    return reason._tag === "Fail" ? reason.error : reason._tag === "Die" ? reason.defect : undefined
+  }
+  return undefined
+}
+
 export const make = (options: {
   readonly cwd: string
   readonly environment: Readonly<Record<string, string | undefined>>
@@ -318,7 +357,7 @@ export const make = (options: {
         const payload = payloadOf(event)
         // The cause carries a stack; the tab and the coordinator get its first line.
         const cause = Diagnosis.firstLine(String(payload["cause"] ?? payload["message"] ?? "")).trim()
-        return { kind: "failed", message: Diagnosis.clip(cause === "" ? "Failed" : cause, 200) }
+        return { kind: "failed", message: Diagnosis.clip(cause === "" ? "Failed" : cause, 200), error: errorOf(seen) }
       })
       return {
         done,
