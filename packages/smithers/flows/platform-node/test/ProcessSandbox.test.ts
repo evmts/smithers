@@ -303,6 +303,27 @@ const planned = (
 }
 
 describe("plan", () => {
+  it("keeps Windows drive paths independent of the coordinator's path dialect", () => {
+    const workspaceRoot = "C:\\work\\ws"
+    const facts = host("win32", { docker: "docker" }, [workspaceRoot + "\\src\\a.ts"])
+    const result = ProcessSandbox.plan(
+      {
+        network: "none",
+        mechanism: { _tag: "docker", image: "fixture" },
+        reads: ["src/a.ts", "../secret"],
+        writes: ["dist", "dist/nested", "../outside"]
+      },
+      { workspaceRoot, cwd: workspaceRoot, tmp: workspaceRoot + "\\.tmp" },
+      facts
+    )
+    if (ProcessSandbox.isUnenforceable(result)) throw new Error("expected a plan")
+    expect(result.reads).toEqual([workspaceRoot + "\\src\\a.ts"])
+    expect(result.writes).toEqual([workspaceRoot + "\\dist"])
+    expect(ProcessSandbox.docker(result, ["tool"], {}, facts)).toContain(
+      "type=bind,src=" + workspaceRoot + "\\dist,dst=C:/work/ws/dist"
+    )
+  })
+
   it("anchors paths at the root, drops escapes and missing reads, and opens a file output's directory", () => {
     const plan = planned(linux)
     expect(plan.reads).toEqual(["/work/ws/src/a.ts", "/work/ws/node_modules"])

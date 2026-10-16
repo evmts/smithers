@@ -401,7 +401,12 @@ export const select = (
   )
 }
 
-const toPosix = (path: string): string => path.split(NodePath.sep).join("/")
+// A plan can describe a foreign host. Absolute paths carry their dialect;
+// resolving a POSIX root with win32 would silently add the current drive.
+const pathApi = (path: string): typeof NodePath.posix =>
+  /^(?:[a-z]:[\\/]|\\\\)/i.test(path) ? NodePath.win32 : NodePath.posix
+
+const toPosix = (path: string): string => path.split(pathApi(path).sep).join("/")
 
 /**
  * The path with the symlinks of its existing ancestors resolved. A path that
@@ -411,22 +416,22 @@ const toPosix = (path: string): string => path.split(NodePath.sep).join("/")
 const realized = (path: string): string => {
   let head = path
   const tail: Array<string> = []
-  while (head !== NodePath.dirname(head)) {
+  while (head !== pathApi(head).dirname(head)) {
     try {
       const real = NodeFs.realpathSync(head)
-      return tail.length === 0 ? real : NodePath.join(real, ...tail)
+      return tail.length === 0 ? real : pathApi(real).join(real, ...tail)
     } catch {
-      tail.unshift(NodePath.basename(head))
-      head = NodePath.dirname(head)
+      tail.unshift(pathApi(head).basename(head))
+      head = pathApi(head).dirname(head)
     }
   }
   return path
 }
 
 const insideRoot = (root: string, candidate: string): boolean => {
-  const relative = NodePath.relative(root, candidate)
+  const relative = pathApi(root).relative(root, candidate)
   return relative === "" ||
-    (relative !== ".." && !relative.startsWith(`..${NodePath.sep}`) && !NodePath.isAbsolute(relative))
+    (relative !== ".." && !relative.startsWith(`..${pathApi(root).sep}`) && !pathApi(relative).isAbsolute(relative))
 }
 
 /** Unlike exists/stat, lstat sees dangling links and does not follow them. */
@@ -447,8 +452,8 @@ const safeWrite = (root: string, path: string, hostFacts: Host): boolean => {
     const link = hostFacts.isSymbolicLink ?? isSymbolicLink
     if (realpath(root) !== root) return false
     let current = root
-    for (const component of NodePath.relative(root, path).split(NodePath.sep).filter(Boolean)) {
-      current = NodePath.join(current, component)
+    for (const component of pathApi(root).relative(root, path).split(pathApi(root).sep).filter(Boolean)) {
+      current = pathApi(current).join(current, component)
       if (link(current)) return false
       if (hostFacts.exists(current) && realpath(current) !== current) return false
     }
@@ -507,10 +512,10 @@ const fold = (
   const covered = new Set([...declared, ...alsoCovered])
   const candidates = new Set<string>()
   for (const path of declared) {
-    let current = NodePath.dirname(path)
+    let current = pathApi(path).dirname(path)
     while (insideRoot(root, current) && current !== root && !candidates.has(current)) {
       candidates.add(current)
-      current = NodePath.dirname(current)
+      current = pathApi(current).dirname(current)
     }
   }
   // An undeclared directory on the way down to a covered write or read-only
@@ -520,10 +525,10 @@ const fold = (
   // plan grants a write to.
   const holdsCovered = new Set<string>()
   for (const path of alsoCovered) {
-    let current = NodePath.dirname(path)
+    let current = pathApi(path).dirname(path)
     while (insideRoot(root, current) && current !== root && !holdsCovered.has(current)) {
       holdsCovered.add(current)
-      current = NodePath.dirname(current)
+      current = pathApi(current).dirname(current)
     }
   }
   const deepestFirst = [...candidates].sort((left, right) => right.length - left.length || (left < right ? -1 : 1))
@@ -537,7 +542,7 @@ const fold = (
     let coveredCount = 0
     let partial = false
     for (const child of children) {
-      const path = NodePath.join(directory, child)
+      const path = pathApi(directory).join(directory, child)
       if (covered.has(path)) coveredCount += 1
       else if (candidates.has(path) || holdsCovered.has(path)) partial = true
       else uncovered.push(path)
@@ -558,8 +563,8 @@ const fold = (
  * comparison would then put a sibling between an ancestor and its child.
  */
 const bySubtree = (left: string, right: string): number => {
-  const leftKey = left + NodePath.sep
-  const rightKey = right + NodePath.sep
+  const leftKey = left + pathApi(left).sep
+  const rightKey = right + pathApi(right).sep
   return leftKey < rightKey ? -1 : 1
 }
 
@@ -575,7 +580,7 @@ const collapse = (paths: ReadonlyArray<string>): ReadonlyArray<string> => {
   const kept = new Set<string>()
   let ancestor: string | undefined
   for (const path of [...unique].sort(bySubtree)) {
-    if (ancestor !== undefined && path.startsWith(ancestor + NodePath.sep)) continue
+    if (ancestor !== undefined && path.startsWith(ancestor + pathApi(ancestor).sep)) continue
     kept.add(path)
     ancestor = path
   }
@@ -614,7 +619,7 @@ export const plan = (
     return unsafeWrite(hostFacts.platform, selected._tag, location.workspaceRoot)
   }
   const anchor = (relative: string): string | undefined => {
-    const absolute = NodePath.resolve(root, ...relative.split("/"))
+    const absolute = pathApi(root).resolve(root, ...relative.split("/"))
     return insideRoot(root, absolute) ? absolute : undefined
   }
   const declared: Array<string> = []
@@ -629,7 +634,7 @@ export const plan = (
     if (real !== undefined && real !== absolute && !insideRoot(root, real)) externalReads.push(real)
   }
   for (const path of request.externalReads ?? []) {
-    if (!NodePath.isAbsolute(path) || insideRoot(root, path) || !hostFacts.exists(path)) continue
+    if (!pathApi(path).isAbsolute(path) || insideRoot(root, path) || !hostFacts.exists(path)) continue
     // An alias or link outside the tree can resolve into it; granting that
     // real location would open the workspace past its declared reads.
     const real = hostFacts.realpath?.(path) ?? path
@@ -652,7 +657,7 @@ export const plan = (
     if (absolute === undefined) continue
     if (!safeWrite(root, absolute, hostFacts)) return unsafeWrite(hostFacts.platform, selected._tag, absolute)
     const refusal = add(
-      hostFacts.exists(absolute) && !hostFacts.isDirectory(absolute) ? NodePath.dirname(absolute) : absolute
+      hostFacts.exists(absolute) && !hostFacts.isDirectory(absolute) ? pathApi(absolute).dirname(absolute) : absolute
     )
     if (refusal !== undefined) return refusal
   }
@@ -663,7 +668,7 @@ export const plan = (
     if (absolute === undefined) continue
     if (!safeWrite(root, absolute, hostFacts)) return unsafeWrite(hostFacts.platform, selected._tag, absolute)
     const refusal = add(
-      hostFacts.exists(absolute) && hostFacts.isDirectory(absolute) ? absolute : NodePath.dirname(absolute)
+      hostFacts.exists(absolute) && hostFacts.isDirectory(absolute) ? absolute : pathApi(absolute).dirname(absolute)
     )
     if (refusal !== undefined) return refusal
   }
@@ -709,8 +714,8 @@ const corepackHome = (env: Readonly<Record<string, string | undefined>>, home: s
   const declared = env["COREPACK_HOME"]
   if (declared !== undefined && declared !== "") return declared
   const base = env["XDG_CACHE_HOME"] ?? env["LOCALAPPDATA"] ??
-    NodePath.join(home, process.platform === "win32" ? "AppData/Local" : ".cache")
-  return NodePath.join(base, "node", "corepack")
+    pathApi(home).join(home, process.platform === "win32" ? "AppData/Local" : ".cache")
+  return pathApi(base).join(base, "node", "corepack")
 }
 
 /**
@@ -794,7 +799,7 @@ const runtimeReads = (hostFacts: Host): ReadonlyArray<string> => {
   ) {
     paths.push(developerDirectory)
   }
-  if (hostFacts.home !== undefined) paths.push(NodePath.join(hostFacts.home, ".cache/node/corepack"))
+  if (hostFacts.home !== undefined) paths.push(pathApi(hostFacts.home).join(hostFacts.home, ".cache/node/corepack"))
   for (const name of ["node", "bun"]) {
     const executable = hostFacts.executable(name)
     if (executable !== undefined) {
@@ -803,7 +808,7 @@ const runtimeReads = (hostFacts: Host): ReadonlyArray<string> => {
       paths.push(real)
       // Node distributions keep npm/corepack here; never grant the install
       // prefix itself, which can be the real home for a custom installation.
-      paths.push(NodePath.resolve(NodePath.dirname(real), "../lib/node_modules"))
+      paths.push(pathApi(real).resolve(pathApi(real).dirname(real), "../lib/node_modules"))
     }
   }
   const present = paths.filter((path) => hostFacts.exists(path))
@@ -827,7 +832,7 @@ const credentialPaths = (hostFacts: Host): ReadonlyArray<string> => {
     ".netrc",
     ".git-credentials"
   ].flatMap((relative) => {
-    const path = NodePath.join(home, relative)
+    const path = pathApi(home).join(home, relative)
     return [path, hostFacts.realpath?.(path) ?? path]
   }))
 }
@@ -870,13 +875,13 @@ export const launcher = (
   hostFacts: Host
 ): { readonly program: string; readonly reads: ReadonlyArray<string> } => {
   const unchanged = { program, reads: [] }
-  if (program.includes("/") && !NodePath.isAbsolute(program)) return unchanged
-  const found = NodePath.isAbsolute(program)
+  if (program.includes("/") && !pathApi(program).isAbsolute(program)) return unchanged
+  const found = pathApi(program).isAbsolute(program)
     ? hostFacts.executable(program)
     : searchPath === undefined
     ? hostFacts.executable(program)
-    : searchPath.split(":").filter((entry) => NodePath.isAbsolute(entry))
-      .map((entry) => hostFacts.executable(NodePath.join(entry, program)))
+    : searchPath.split(":").filter((entry) => pathApi(entry).isAbsolute(entry))
+      .map((entry) => hostFacts.executable(pathApi(entry).join(entry, program)))
       .find((candidate) => candidate !== undefined)
   if (found === undefined || granted.some((parent) => insideRoot(parent, found))) return unchanged
   const resolved = hostFacts.realpath?.(found) ?? found
@@ -886,11 +891,13 @@ export const launcher = (
     : hostFacts.realpath?.(named) ?? named
   if ([found, resolved, real].some((path) => insideRoot(workspaceRoot, path))) return unchanged
   if (granted.some((parent) => insideRoot(parent, real))) return { program: real, reads: [] }
-  let directory = NodePath.dirname(real)
+  let directory = pathApi(real).dirname(real)
   for (let level = 0; level < 3; level++) {
-    if (directory === NodePath.dirname(directory) || directory === hostFacts.home) break
-    if (hostFacts.exists(NodePath.join(directory, "package.json"))) return { program: real, reads: [directory] }
-    directory = NodePath.dirname(directory)
+    if (directory === pathApi(directory).dirname(directory) || directory === hostFacts.home) break
+    if (hostFacts.exists(pathApi(directory).join(directory, "package.json"))) {
+      return { program: real, reads: [directory] }
+    }
+    directory = pathApi(directory).dirname(directory)
   }
   return { program: real, reads: [real] }
 }
@@ -956,7 +963,7 @@ export const bubblewrap = (
   for (const read of confinement.reads) out.push("--ro-bind", read, read)
   for (const write of confinement.writes) out.push("--bind", write, write)
   for (const closed of confinement.readOnly) {
-    if (confinement.writes.some((write) => closed === write || closed.startsWith(write + NodePath.sep))) {
+    if (confinement.writes.some((write) => closed === write || closed.startsWith(write + pathApi(write).sep))) {
       out.push("--ro-bind-try", closed, closed)
     }
   }
@@ -1006,11 +1013,11 @@ const sbpl = (value: string): string => `"${value.replaceAll("\\", "\\\\").repla
 const ancestors = (root: string, paths: ReadonlyArray<string>): ReadonlyArray<string> => {
   const found = new Set<string>([root])
   for (const path of paths) {
-    let current = NodePath.dirname(path)
-    while (current.length >= root.length && current !== NodePath.dirname(current)) {
+    let current = pathApi(path).dirname(path)
+    while (current.length >= root.length && current !== pathApi(current).dirname(current)) {
       found.add(current)
       if (current === root) break
-      current = NodePath.dirname(current)
+      current = pathApi(current).dirname(current)
     }
   }
   return [...found].sort()
@@ -1187,7 +1194,7 @@ export const docker = (
   for (const read of confinement.reads) out.push("--mount", bindMount(read, true))
   for (const write of confinement.writes) out.push("--mount", bindMount(write, false))
   for (const closed of confinement.readOnly) {
-    if (confinement.writes.some((write) => closed === write || closed.startsWith(write + NodePath.sep))) {
+    if (confinement.writes.some((write) => closed === write || closed.startsWith(write + pathApi(write).sep))) {
       out.push("--mount", bindMount(closed, true))
     }
   }
@@ -1275,7 +1282,7 @@ export const diagnose = (confinement: Plan, text: string): string | undefined =>
   for (const { pattern, write } of denialPatterns) {
     for (const match of text.matchAll(pattern)) {
       const raw = match[1]!
-      const absolute = NodePath.isAbsolute(raw) ? raw : NodePath.resolve(confinement.cwd, raw)
+      const absolute = pathApi(raw).isAbsolute(raw) ? raw : pathApi(confinement.cwd).resolve(confinement.cwd, raw)
       if (insideRoot(confinement.workspaceRoot, absolute)) named.set(absolute, (named.get(absolute) ?? false) || write)
       if (named.size >= 5) break
     }
@@ -1283,9 +1290,9 @@ export const diagnose = (confinement: Plan, text: string): string | undefined =>
   }
   if (named.size === 0) return undefined
   const covered = (path: string, set: ReadonlyArray<string>): boolean =>
-    set.some((entry) => entry === path || path.startsWith(entry + NodePath.sep))
+    set.some((entry) => entry === path || path.startsWith(entry + pathApi(entry).sep))
   const lines = [...named.entries()].sort(([left], [right]) => (left < right ? -1 : 1)).map(([path, write]) => {
-    const relative = toPosix(NodePath.relative(confinement.workspaceRoot, path))
+    const relative = toPosix(pathApi(confinement.workspaceRoot).relative(confinement.workspaceRoot, path))
     // A path that lexically sits in the workspace can still leave it through
     // a symlink in an existing ancestor; the declaration covers the tree, not
     // wherever a link points.
