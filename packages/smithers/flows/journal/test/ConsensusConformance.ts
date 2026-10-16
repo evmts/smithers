@@ -113,6 +113,26 @@ export const conformance = (
         })))
     }
 
+    for (const claimant of [ownerB, { ...ownerA, nonce: "new-incarnation" }]) {
+      it.effect(`recovers an expired resource lease without same-host death evidence for ${claimant.nonce}`, () =>
+        withStack(Effect.gen(function*() {
+          const consensus = yield* Consensus
+          const now = yield* Clock.currentTimeMillis
+          yield* consensus.claim("expired-resource", ownerA, now)
+          yield* consensus.activate("expired-resource", ownerA, now, now)
+          yield* TestClock.adjust(staleAfterMs + 1)
+          expect(
+            yield* consensus.withPermit(
+              "expired-resource",
+              claimant,
+              () => Effect.succeed(false),
+              Effect.succeed("recovered")
+            )
+          ).toBe("recovered")
+          expect((yield* Effect.flip(consensus.guard("expired-resource", ownerA))).code).toBe("fence_lost")
+        })))
+    }
+
     it.effect("grants one claim at a time and refuses the loser with already_claimed", () =>
       withStack(Effect.gen(function*() {
         const consensus = yield* Consensus
