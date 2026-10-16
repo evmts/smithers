@@ -214,17 +214,14 @@ describe("Loop", () => {
   })
 
   it("builds the deepest bound it accepts and refuses the next one", () => {
-    // Both numbers are computed from `@smthrs/flow`'s exported
-    // `Graph.maximumGraphDepth` (1000), the limit the builder that executes
-    // these declarations actually applies. A ralph iteration nests one level,
-    // so 998 is the deepest bound whose plan still fits; the `until` form nests
-    // two, so its deepest is 498.
-    expect(Graph.nodes(Graph.build(Loop.ralph({ body: shallowBody, maxIterations: 998 }), { input: "seed" })).length)
+    // Ralph arms are built eagerly and use the 512-arm construction bound.
+    // The deferred until form reaches the graph traversal bound at 498.
+    expect(Graph.nodes(Graph.build(Loop.ralph({ body: shallowBody, maxIterations: 512 }), { input: "seed" })).length)
       .toBeGreaterThan(0)
-    expect(() => Loop.ralph({ body, maxIterations: 999 })).toThrow(
+    expect(() => Loop.ralph({ body, maxIterations: 513 })).toThrow(
       new PatternError({
         code: "invalid_decorator",
-        message: "Loop maxIterations must be at most 998 to stay inside the plan depth limit, received 999"
+        message: "Loop maxIterations must be at most 512 to stay inside the branch construction limit, received 513"
       })
     )
     expect(
@@ -241,10 +238,7 @@ describe("Loop", () => {
   })
 
   it("puts the deepest bound it accepts at the builder's own ceiling", () => {
-    // The refusal is the builder's limit rather than a conservative guess: the
-    // plan a 998-iteration ralph loop builds sits at the deepest level
-    // `Graph.build` admits, so one enclosing call over it is `graph_too_deep`
-    // while the same wrapper over 997 iterations still builds.
+    // The deferred until form reaches the graph traversal ceiling.
     const enclosing = (loop: Loop.LoopFlow<never>) =>
       Flow.make("loop/enclosing", {
         payload: { input: Schema.Unknown },
@@ -253,10 +247,18 @@ describe("Loop", () => {
         body: ({ input }) => loop.call({ input })
       })
 
-    expect(() => Graph.build(enclosing(Loop.ralph({ body: shallowBody, maxIterations: 998 })), { input: "seed" }))
+    expect(() =>
+      Graph.build(enclosing(enclosing(Loop.make({ body: shallowBody, until: shallowUntil, maxIterations: 498 }))), {
+        input: "seed"
+      })
+    )
       .toThrow(expect.objectContaining({ code: "graph_too_deep" }))
     expect(
-      Graph.nodes(Graph.build(enclosing(Loop.ralph({ body: shallowBody, maxIterations: 997 })), { input: "seed" }))
+      Graph.nodes(
+        Graph.build(enclosing(enclosing(Loop.make({ body: shallowBody, until: shallowUntil, maxIterations: 497 }))), {
+          input: "seed"
+        })
+      )
         .length
     ).toBeGreaterThan(0)
   })
@@ -595,14 +597,14 @@ describe("Loop stall", () => {
       stall: { rounds: 0 },
       body: () => Effect.succeed(1)
     })))).toMatchObject({ code: "invalid_decorator" })
-    // A stalling ralph iteration nests two levels, so 498 is its deepest bound.
+    // A stalling Ralph iteration eagerly builds two arms except at its bound.
     expect(
       Graph.nodes(
-        Graph.build(Loop.ralph({ body: shallowBody, maxIterations: 498, stall: { rounds: 2 } }), { input: "x" })
+        Graph.build(Loop.ralph({ body: shallowBody, maxIterations: 256, stall: { rounds: 2 } }), { input: "x" })
       )
         .length
     ).toBeGreaterThan(0)
-    expect(() => Loop.ralph({ body, maxIterations: 499, stall: { rounds: 2 } })).toThrow(PatternError)
+    expect(() => Loop.ralph({ body, maxIterations: 257, stall: { rounds: 2 } })).toThrow(PatternError)
   })
 
   it("stops, parks or escalates the operational loop on a repeated signal", async () => {

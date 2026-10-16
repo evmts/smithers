@@ -539,9 +539,14 @@ export const bindPlanned: {
     )
 )
 
-// Arm builders run before the graph walker can enforce its topology bound.
-// Leave native stack headroom to construct the typed refusal and unwind.
-const maximumArmDepth = 512
+/**
+ * Maximum eagerly nested branch arms. Arm construction precedes graph walking;
+ * this bound leaves native stack headroom for a typed refusal.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const maximumArmDepth = 512
 let armDepth = 0
 
 /**
