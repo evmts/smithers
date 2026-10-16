@@ -1,6 +1,7 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    "module": "Node18",
     "noEmit": true,
     "composite": false,
     "declaration": false,

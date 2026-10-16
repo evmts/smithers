@@ -561,7 +561,12 @@ fn share_git_object(repo: &gix::Repository, id: &gix::hash::oid) -> BackendResul
     {
         use std::os::unix::fs::MetadataExt as _;
         let hex = id.to_string();
-        let path = repo.objects.store_ref().path().join(&hex[..2]).join(&hex[2..]);
+        let path = repo
+            .objects
+            .store_ref()
+            .path()
+            .join(&hex[..2])
+            .join(&hex[2..]);
         let Ok(relative) = path.strip_prefix("/workspace") else {
             return Ok(());
         };
@@ -570,7 +575,9 @@ fn share_git_object(repo: &gix::Repository, id: &gix::hash::oid) -> BackendResul
             let fd = match rustix::fs::openat2(
                 &root,
                 relative,
-                rustix::fs::OFlags::RDONLY | rustix::fs::OFlags::NONBLOCK | rustix::fs::OFlags::CLOEXEC,
+                rustix::fs::OFlags::RDONLY
+                    | rustix::fs::OFlags::NONBLOCK
+                    | rustix::fs::OFlags::CLOEXEC,
                 rustix::fs::Mode::empty(),
                 rustix::fs::ResolveFlags::BENEATH | rustix::fs::ResolveFlags::NO_SYMLINKS,
             ) {

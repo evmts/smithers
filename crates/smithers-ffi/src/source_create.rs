@@ -1147,7 +1147,9 @@ pub(crate) mod tests {
         let link = temp.path().join("link.json");
         std::os::unix::fs::symlink(&file, &link).unwrap();
         assert!(read_trusted_process_config::<Binding>(&link).is_err());
-        assert!(read_trusted_process_config::<Binding>(Path::new("workspace-coding.json")).is_err());
+        assert!(
+            read_trusted_process_config::<Binding>(Path::new("workspace-coding.json")).is_err()
+        );
         // An oversized binding is refused before it is parsed.
         std::fs::write(&file, vec![b' '; 16_385]).unwrap();
         assert!(read_trusted_process_config::<Binding>(&file).is_err());

@@ -1,6 +1,7 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    "module": "Node18",
     // The suite reaches the review flow, whose walkthrough renderer
     // sources are typed against DOM, as the modules that own them declare.
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
