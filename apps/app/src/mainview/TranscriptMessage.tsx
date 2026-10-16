@@ -139,7 +139,8 @@ export function TranscriptMessage({ entry, streamingMessageId }: { entry: { kind
         null}
       {!external && entry.kind === "message" && entry.message.role === "smithers" && entry.message.status === "complete" && entry.message.id !== streamingMessageId && !entry.message.action && scrubToolEcho(entry.message.text).trim() ? (() => {
         const bindings = answerActions((name, input) => controller.commands.submit({ name, payload: (input ?? {}) as Record<string, unknown>, actor: "user", ...(name === "wiki.save" ? { display: flowArgs("wiki.save", input as { name?: string; text?: string }) } : {}) }), scrubToolEcho(entry.message.text), controller.commands)
-        return <div className="message-answer-actions">{bindings.actions.map(action => <DiffAction key={action.tag} action={action} onAction={bindings.onAction} />)}</div>
+        // No shortcut this host runs is no footer at all (#4031): never an empty container.
+        return bindings.actions.length === 0 ? null : <div className="message-answer-actions">{bindings.actions.map(action => <DiffAction key={action.tag} action={action} onAction={bindings.onAction} />)}</div>
       })() : null}
 {context ? <ContextContainer {...context} available={controller.contextAvailable()} dispatch={(tag, input) => controller.commands.submit({ name: tag, payload: (input ?? {}) as Record<string, unknown>, actor: "user" })} /> : entry.kind === "message" && entry.message.context !== undefined ? <AnswerContext items={entry.message.context} /> : null}
       {/* The synthetic auth message has no clock time to tell. */}

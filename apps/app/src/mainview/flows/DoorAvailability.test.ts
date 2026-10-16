@@ -4,7 +4,7 @@ import type { AgentPort } from "../runtime/AgentPort"
 import { createAppController } from "../state/AppController"
 import { createAppStore } from "../state/AppStore"
 import { memoryStorage, signupProfileFetch, waitFor } from "../state/TestFixtures"
-import { answerActions } from "./AnswerActions"
+import { answerActions, answerDoorUnavailable, type AnswerDoorTag } from "./AnswerActions"
 import { createDoorLedger, doorFamilyAbsent, doorState } from "./DoorAvailability"
 import { absentDoor, nameOf } from "./registry"
 
@@ -126,9 +126,18 @@ const host = async (capabilities: ReadonlyArray<RuntimeCapability> | undefined, 
 const todoFamily = (controller: Awaited<ReturnType<typeof host>>["controller"]): ReadonlyArray<string> =>
   controller.commands.entries().map(nameOf).filter(name => name === "todo" || name.startsWith("todo."))
 
+/*
+ * What a completed answer actually offers. A withdrawn door is absent from this
+ * list rather than present with its sentence (#4031), and `reason` stays here so
+ * an offered door that ever grew an unavailable-host paragraph fails the test.
+ */
 const doors = (controller: Awaited<ReturnType<typeof host>>["controller"]) =>
   answerActions(() => {}, "# Answer\n\nKeep the queue", controller.commands)
     .actions.map(action => ({ label: action.label, reason: action.disabled?.reason }))
+
+/** The catalog's own sentence for a door, read independently of what the answer renders. */
+const refusal = (controller: Awaited<ReturnType<typeof host>>["controller"], tag: AnswerDoorTag) =>
+  answerDoorUnavailable(controller.commands, tag)
 
 test("on the bootstrap the hosted origin serves, the whole /api/todos family is withdrawn and Make TODO opens no form and writes nothing", async () => {
   const h = await host(HOSTED)
@@ -139,11 +148,18 @@ test("on the bootstrap the hosted origin serves, the whole /api/todos family is 
     expect(h.controller.commands.find("todo.new")).toBeUndefined()
     expect(h.controller.commands.explainAbsent("todo.new"))
       .toEqual({ door: "origin", reason: "/todo.new is not available on this origin yet." })
+    /*
+     * The answer footer offers the Wiki alone. The TODO door is withdrawn, so
+     * it is not a greyed button repeating `/todo.new is not available on this
+     * origin yet.` under every reply (#4031) — and the sentence itself is
+     * unchanged, still read from the catalog by every explicit trigger.
+     */
     expect(doors(h.controller)).toEqual([
-      { label: "Make TODO", reason: "/todo.new is not available on this origin yet." },
       // The Wiki is unknown here, not absent: wiki=true is a real implementation.
       { label: "Save to wiki", reason: undefined }
     ])
+    expect(refusal(h.controller, "todo.new")).toBe("/todo.new is not available on this origin yet.")
+    expect(refusal(h.controller, "wiki.save")).toBeUndefined()
     /*
      * The direct door, which an answer button cannot be the only guard for: a
      * submit is answered `unavailable` with the catalog's sentence, and nothing
@@ -241,9 +257,10 @@ test("a host whose install row promises TODOs but whose router answers 404 withd
     // chi's NotFound is the router's own statement that it never mounted the family.
     await waitFor(() => h.controller.commands.find("todo.new") === undefined, 5_000)
     expect(todoFamily(h.controller)).toEqual([])
-    expect(doors(h.controller)[0]).toEqual({ label: "Make TODO", reason: "/todo.new is not available on this origin yet." })
+    // The withdrawn door leaves the answer; the sentence stays the catalog's to say.
+    expect(refusal(h.controller, "todo.new")).toBe("/todo.new is not available on this origin yet.")
     // The Wiki said nothing here, so its door is untouched by the TODO router's answer.
-    expect(doors(h.controller)[1]).toEqual({ label: "Save to wiki", reason: undefined })
+    expect(doors(h.controller)).toEqual([{ label: "Save to wiki", reason: undefined }])
     const again = await h.controller.submitCommand({ name: "todo.new", actor: "user", payload: { text: "Second try" } })
     expect(again).toMatchObject({ status: "unavailable", reason: "/todo.new is not available on this origin yet." })
     expect(posted().length).toBe(1)
@@ -253,7 +270,7 @@ test("a host whose install row promises TODOs but whose router answers 404 withd
 test("once this origin's Wiki gate has refused a save, Save to wiki is withdrawn everywhere and a second press writes nothing", async () => {
   const h = await host(HOSTED, { wiki: "gate" })
   try {
-    expect(doors(h.controller)[1]).toEqual({ label: "Save to wiki", reason: undefined })
+    expect(doors(h.controller)).toEqual([{ label: "Save to wiki", reason: undefined }])
     await h.controller.submitCommand({ name: "wiki.save", actor: "user", payload: { name: "Overnight verification queue guide", text: "# Answer\n\nKeep the queue" } })
     await waitFor(() => h.store.session().wikiSaves?.[0]?.state === "failed", 5_000)
     expect(h.store.session().wikiSaves?.[0]?.error).toBe("The Wiki is not available on this Smithers host.")
@@ -262,7 +279,13 @@ test("once this origin's Wiki gate has refused a save, Save to wiki is withdrawn
     expect(h.controller.commands.find("wiki.save")).toBeUndefined()
     expect(h.controller.commands.explainAbsent("wiki.save"))
       .toEqual({ door: "origin", reason: "/wiki.save is not available on this origin yet." })
-    expect(doors(h.controller)[1]).toEqual({ label: "Save to wiki", reason: "/wiki.save is not available on this origin yet." })
+    /*
+     * Neither door runs on this origin now, so the completed answer offers
+     * nothing — an empty list here is what keeps the View from rendering an
+     * empty action container (#4031).
+     */
+    expect(doors(h.controller)).toEqual([])
+    expect(refusal(h.controller, "wiki.save")).toBe("/wiki.save is not available on this origin yet.")
     const again = await h.controller.submitCommand({ name: "wiki.save", actor: "user", payload: { name: "Second try", text: "# Answer\n\nKeep the queue" } })
     expect(again).toMatchObject({ status: "unavailable", reason: "/wiki.save is not available on this origin yet." })
     expect(h.calls.filter(call => call.method === "POST" && call.path.endsWith("/wiki")).length).toBe(posted)
@@ -325,6 +348,7 @@ test("a Cloud origin whose Wiki is enabled keeps the door and its save completes
     await waitFor(() => h.store.session().wikiSaves?.[0]?.state === "completed", 5_000)
     expect(h.store.session().wikiSaves?.[0]?.error).toBeUndefined()
     expect(h.controller.commands.find("wiki.save")).toBeDefined()
-    expect(doors(h.controller)[1]).toEqual({ label: "Save to wiki", reason: undefined })
+    expect(doors(h.controller)).toEqual([{ label: "Save to wiki", reason: undefined }])
+    expect(refusal(h.controller, "wiki.save")).toBeUndefined()
   } finally { await h.controller.dispose() }
 })

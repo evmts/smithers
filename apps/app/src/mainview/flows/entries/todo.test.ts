@@ -142,7 +142,7 @@ test("J9 answer actions dispatch its exact text and expose a page-name form", ()
   expect(calls).toEqual([{ tag: "todo.new", input: { text } }, { tag: "wiki.save", input: { name: "Findings", text } }])
 })
 
-test("J9 answer doors the catalog does not enable are shown disabled with the slash door's own refusal, and dispatch nothing", () => {
+test("J9 answer doors the catalog does not enable are left out of the answer, dispatch nothing, and keep the slash door's own refusal", () => {
   const calls: unknown[] = []
   const text = "# Answer\n\nKeep the source"
   const catalog = {
@@ -153,17 +153,33 @@ test("J9 answer doors the catalog does not enable are shown disabled with the sl
   const bindings = answerActions((tag, input) => { calls.push({ tag, input }) }, text, catalog)
   bindings.onAction("todo.new")
   bindings.onAction("wiki.save", { name: "Findings" })
+  /*
+   * #4031: the answer offers what this host runs and says nothing else. The
+   * withdrawn door is not a greyed button beside its reason, so no completed
+   * reply carries that sentence, and no offered door carries one either.
+   */
   expect(bindings.actions.map(action => ({ label: action.label, disabled: action.disabled }))).toEqual([
-    { label: "Make TODO", disabled: undefined },
-    { label: "Save to wiki", disabled: { reason: "/wiki.save is not available on this origin yet." } }
+    { label: "Make TODO", disabled: undefined }
   ])
-  // The disabled door never reaches the command boundary: no form, no write, no toast.
+  expect(bindings.actions.map(action => action.tag)).toEqual(["todo.new"])
+  // The refusal is unchanged and still the sentence every explicit trigger reads.
+  expect(answerDoorUnavailable(catalog, "wiki.save")).toBe("/wiki.save is not available on this origin yet.")
+  expect(answerDoorUnavailable(catalog, "todo.new")).toBeUndefined()
+  // The withdrawn door never reaches the command boundary: no form, no write, no toast.
   expect(calls).toEqual([{ tag: "todo.new", input: { text } }])
 })
 
-test("J9 answer doors fall back to the catalog's origin sentence when it explains no door", () => {
-  const bindings = answerActions(() => {}, "Answer", { find: () => undefined, explainAbsent: () => undefined })
-  expect(bindings.actions.map(action => action.disabled?.reason)).toEqual([
+test("a catalog that enables neither answer door leaves no actions at all, and still answers both with the origin sentence", () => {
+  const catalog = { find: () => undefined, explainAbsent: () => undefined }
+  const calls: unknown[] = []
+  const bindings = answerActions((tag, input) => { calls.push({ tag, input }) }, "Answer", catalog)
+  // Nothing to offer is nothing rendered (#4031), never two disabled buttons and two sentences.
+  expect(bindings.actions).toEqual([])
+  bindings.onAction("todo.new")
+  bindings.onAction("wiki.save", { name: "Findings" })
+  expect(calls).toEqual([])
+  // The fallback sentence stays the catalog's answer, read where a person asks for the flow.
+  expect([answerDoorUnavailable(catalog, "todo.new"), answerDoorUnavailable(catalog, "wiki.save")]).toEqual([
     "/todo.new is not available on this origin yet.",
     "/wiki.save is not available on this origin yet."
   ])
