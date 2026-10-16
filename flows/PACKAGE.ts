@@ -547,11 +547,41 @@ const fixtures = Smithers.NodeTest({
 
 // Security review over the files this package owns. `wiki/` is a nested
 // package with its own review; suites, fixtures and installs are excluded.
+/**
+ * The untrusted-report boundary for issue and pull-request triage.
+ *
+ * The model never receives a GitHub token; this suite holds the deterministic
+ * publisher to an allowlisted schema and proves that a failed model run still
+ * asks the author for the concrete evidence needed to continue. `flow.test.ts`
+ * runs the `triage-publish` flow's real graph and layer over the module.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const triagePublish = Smithers.NodeTest({
+  summary:
+    "GitHub triage publishes only validated labels and mention-free comments to the event's own issue, updating only its own comment.",
+  featured: true,
+  runner: Smithers.testRunner([
+    Smithers.file("//flows/triage-publish/github-triage.test.mjs"),
+    Smithers.file("//flows/triage-publish/flow.test.ts")
+  ]),
+  srcs: [
+    sources,
+    Smithers.file("//flows/triage-publish/github-triage.mjs"),
+    Smithers.file("//scripts/workspace-packages.mjs"),
+    Smithers.file("//flows/issue-triage/flow.mdx"),
+    Smithers.file("//flows/pr-triage/flow.mdx")
+  ],
+  deps: [],
+  cwd
+})
+
 const securityReview = Smithers.SecurityReview({
   cwd,
   include: [
     Smithers.glob("**/*.{ts,mjs,js,mdx}", {
-      exclude: ["wiki/**", "test/**", "node_modules/**", "migrate-smithers-v1/test/**", "**/*.test.ts", "pack.test.mjs"]
+      exclude: ["wiki/**", "test/**", "node_modules/**", "migrate-smithers-v1/test/**", "**/*.test.ts", "**/*.test.mjs"]
     })
   ],
   checks: [
@@ -728,6 +758,20 @@ const securityReview = Smithers.SecurityReview({
         "npm publish, tag push or X post reachable without the release approval step."
       ],
       paths: ["release/**", "release-support/**", "release-content/**", "release-notes/**", "rollout/**"]
+    },
+    {
+      id: "triage-untrusted-report",
+      title: "Issue and PR triage publishes only validated output to the repository the event named",
+      threat:
+        "An issue or PR author steers the triage model or code it runs into labeling, commenting on, or redirecting writes to issues the GitHub token can reach.",
+      lookFor: [
+        "apply() reading repository and number from .triage/context.json, a file the model step or the `pnpm test` it may spawn can rewrite before apply runs.",
+        "A report comment posted with a live @mention: any `@` after a non-alphanumeric character, inside emphasis, or spelled as an HTML entity (&#64;, &#x40;, &commat;) that neutralizeMentions leaves unbroken.",
+        "apply() writing without the issue or PR number passed on its command line, or without refusing an event file that names a different number.",
+        "A label, comment or PATCH target not checked against LABELS, the event's own number, or a comment authored by the triage bot itself.",
+        "GH_TOKEN or GitHub error bodies echoed into the fallback comment or stdout."
+      ],
+      paths: ["triage-publish/**"]
     }
   ]
 })
@@ -760,6 +804,7 @@ export const Package = Smithers.Package({
     issueSweepVm,
     provider,
     wiki,
+    triagePublish,
     ...securityReview
   }
 })

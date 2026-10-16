@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
-// Contract for the CI job that publishes triage:
-//   node scripts/github-triage.mjs prepare <issue|pr>
-//   node scripts/github-triage.mjs apply <issue|pr> <number>
+// The GitHub half of triage, run by the `triage-publish` flow around the
+// issue-triage and pr-triage flows:
+//   smthrs flow start triage-publish --data '{"phase":"prepare","kind":"issue"}'
+//   smthrs flow start triage-publish --data '{"phase":"apply","kind":"issue","number":7}'
 // <number> is baked into the command line by the caller
 // (`${{ github.event.issue.number }}` or `${{ github.event.pull_request.number }}`).
 // Environment: GH_TOKEN, GITHUB_EVENT_PATH, GITHUB_REPOSITORY, and
@@ -11,7 +12,7 @@
 
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import process from "node:process"
-import { isMain } from "./workspace-packages.mjs"
+import { isMain } from "../../scripts/workspace-packages.mjs"
 
 export const LABELS = Object.freeze({
   "kind:bug": ["d73a4a", "A reproducible defect"],

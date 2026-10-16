@@ -7,7 +7,7 @@ import { describe, it } from "node:test"
 import { apply, BOT_LOGIN, botLogin, fallbackReport, neutralizeMentions, prepare, validateReport } from "./github-triage.mjs"
 
 const documentedReports = (kind) => {
-  const source = readFileSync(new URL(`../flows/${kind}-triage/flow.mdx`, import.meta.url), "utf8")
+  const source = readFileSync(new URL(`../${kind}-triage/flow.mdx`, import.meta.url), "utf8")
   const examples = [...source.matchAll(/```json\n([\s\S]*?)```/g)].map((match) => JSON.parse(match[1]))
   assert.ok(examples.length > 0, `flows/${kind}-triage/flow.mdx documents no report example`)
   return examples
@@ -116,10 +116,10 @@ describe("GitHub triage entry point", () => {
     const root = mkdtempSync(join(tmpdir(), "smithers triage "))
     try {
       mkdirSync(join(root, "scripts"))
-      for (const file of ["github-triage.mjs", "workspace-packages.mjs"]) {
-        copyFileSync(new URL(`./${file}`, import.meta.url), join(root, "scripts", file))
-      }
-      const result = spawnSync(process.execPath, [join(root, "scripts", "github-triage.mjs")], { encoding: "utf8", timeout: 30_000 })
+      mkdirSync(join(root, "flows", "triage-publish"), { recursive: true })
+      copyFileSync(new URL("./github-triage.mjs", import.meta.url), join(root, "flows", "triage-publish", "github-triage.mjs"))
+      copyFileSync(new URL("../../scripts/workspace-packages.mjs", import.meta.url), join(root, "scripts", "workspace-packages.mjs"))
+      const result = spawnSync(process.execPath, [join(root, "flows", "triage-publish", "github-triage.mjs")], { encoding: "utf8", timeout: 30_000 })
       assert.equal(result.status, 1)
       assert.match(result.stderr, /usage: github-triage\.mjs/)
     } finally {
