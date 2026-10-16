@@ -1,6 +1,8 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Cause, Clock, Deferred, Effect, Exit, Fiber, Layer } from "effect"
+import * as SqlClient from "effect/sql/SqlClient"
+import type * as Statement from "effect/sql/Statement"
 import { TestClock } from "effect/testing"
 import * as Consensus from "../src/Consensus.ts"
 import * as Migrations from "../src/Migrations.ts"
@@ -129,3 +131,83 @@ for (const [name, layer] of [["local", Consensus.layerLocal], ["SQL", sql]] as c
       }).pipe(Effect.provide(layer)))
   })
 }
+
+it.effect("refuses resource work when consensus is unavailable", () =>
+  Effect.gen(function*() {
+    let ran = false
+    const failure = yield* Effect.flip(
+      Consensus.makeNoop().withPermit(
+        "resource",
+        owner,
+        alive,
+        Effect.sync(() => {
+          ran = true
+        })
+      )
+    )
+    expect(failure.code).toBe("persistence_failed")
+    expect(ran).toBe(false)
+  }))
+
+for (const outcome of ["lost", "failed"] as const) {
+  it.effect(`releases a resource claim when activation ${outcome}`, () =>
+    Effect.gen(function*() {
+      let releases = 0
+      let ran = false
+      const failure = new Consensus.ConsensusError({ code: "persistence_failed", message: "activation failed" })
+      const strategy = Consensus.makeNoop({
+        claim: () => Effect.succeed({ _tag: "Claimed", grantedAtMs: 0 }),
+        activate: () => outcome === "lost" ? Effect.succeed({ _tag: "Lost" }) : Effect.fail(failure),
+        release: () =>
+          Effect.sync(() => {
+            releases++
+          })
+      })
+      const work = Consensus.resourcePermit(
+        strategy,
+        () => Effect.succeed(undefined),
+        "resource",
+        owner,
+        alive,
+        Effect.sync(() => {
+          ran = true
+        })
+      )
+      if (outcome === "failed") {
+        expect(yield* Effect.flip(work)).toBe(failure)
+      } else {
+        const fiber = yield* Effect.forkChild(work)
+        yield* Effect.yieldNow
+        yield* Fiber.interrupt(fiber)
+      }
+      expect(releases).toBe(1)
+      expect(ran).toBe(false)
+    }))
+}
+
+it.effect("retries when the SQL resource owner releases between a rejected claim and the lease read", () =>
+  Effect.gen(function*() {
+    const base = yield* Effect.service(SqlClient.SqlClient)
+    const service = yield* SqlConsensus.make
+    const now = yield* Clock.currentTimeMillis
+    yield* service.claim("vanishing", owner, now)
+    yield* service.activate("vanishing", owner, now, now)
+    let released = false
+    const client = new Proxy(base, {
+      apply(target, receiver, args) {
+        const statement = Reflect.apply(target, receiver, args) as Statement.Statement<unknown>
+        if (released || !statement.compile().at(0)?.includes("SELECT * FROM flows_consensus_leases")) return statement
+        released = true
+        return service.release("vanishing", owner).pipe(Effect.andThen(statement))
+      }
+    }) as SqlClient.SqlClient
+    const contender = yield* SqlConsensus.make.pipe(Effect.provideService(SqlClient.SqlClient, client))
+    const work = yield* Effect.forkChild(contender.withPermit("vanishing", other, alive, Effect.succeed("entered")))
+    for (let turn = 0; turn < 1000 && work.pollUnsafe() === undefined; turn++) {
+      yield* TestClock.adjust("50 millis")
+      yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 5)))
+    }
+    expect(work.pollUnsafe()).toBeDefined()
+    expect(yield* Fiber.join(work)).toBe("entered")
+    expect(released).toBe(true)
+  }).pipe(Effect.provide(Layer.provideMerge(Migrations.layer, TestDatabase.layer))))
