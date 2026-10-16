@@ -59,11 +59,11 @@ export async function run(env = process.env, { persist = true } = {}) {
   const result = { timestamp, check: 'C-PERF-03', status: 'failed', samples: [], clock: 'second Mac: performance.timeOrigin + performance.now()' }
   let browser
   try {
-    result.machineQualification = await requireMachineQualification({ ...env, SMITHERS_PERF_COMMIT: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim() })
+    result.machineQualification = await requireMachineQualification({ ...env, SMITHERS_PERF_COMMIT: execFileSync('jj', ['log', '--no-graph', '-r', '@-', '-T', 'commit_id'], { encoding: 'utf8', timeout: 15000 }).trim() })
     const config = configuration(env)
     result.origin = config.origin
     result.host = await readHost(config.origin, { cookie: env.SMITHERS_PERF_OWNER_COOKIE })
-    result.commit = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+    result.commit = execFileSync('jj', ['log', '--no-graph', '-r', '@-', '-T', 'commit_id'], { encoding: 'utf8', timeout: 15000 }).trim()
     result.installVersion = env.SMITHERS_PERF_INSTALL_VERSION
     const require = createRequire(resolve('apps/app/package.json'))
     const { chromium } = require('@playwright/test')

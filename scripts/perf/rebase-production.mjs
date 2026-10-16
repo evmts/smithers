@@ -58,10 +58,10 @@ export async function run(env = process.env, { persist = false } = {}) {
   const result = { status: 'failed', samples: [] }
   let browser, config
   try {
-    result.machineQualification = await requireMachineQualification({ ...env, SMITHERS_PERF_COMMIT: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim() })
+    result.machineQualification = await requireMachineQualification({ ...env, SMITHERS_PERF_COMMIT: execFileSync('jj', ['log', '--no-graph', '-r', '@-', '-T', 'commit_id'], { encoding: 'utf8', timeout: 15000 }).trim() })
     config = configuration(env)
     result.origin = config.origin
-    result.commit = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+    result.commit = execFileSync('jj', ['log', '--no-graph', '-r', '@-', '-T', 'commit_id'], { encoding: 'utf8', timeout: 15000 }).trim()
     result.installVersion = env.SMITHERS_PERF_INSTALL_VERSION
     result.host = await readHost(config.origin, { cookie: env.SMITHERS_PERF_OWNER_COOKIE })
     const require = createRequire(resolve('apps/app/package.json'))

@@ -40,13 +40,13 @@ export async function run(env = process.env, { persist = true } = {}) {
   const sockets = []
   let browser
   try {
-    result.commit = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+    result.commit = execFileSync('jj', ['log', '--no-graph', '-r', '@-', '-T', 'commit_id'], { encoding: 'utf8', timeout: 15000 }).trim()
     result.installVersion = env.SMITHERS_PERF_INSTALL_VERSION ?? null
     if (process.platform !== 'darwin') throw new Error('C-PERF-02 requires the second Mac on the reference-host network')
     const config = configuration(env)
     result.origin = config.origin
     result.host = await readHost(config.origin, { cookie: env.SMITHERS_PERF_OWNER_COOKIE })
-    result.commit = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+    result.commit = execFileSync('jj', ['log', '--no-graph', '-r', '@-', '-T', 'commit_id'], { encoding: 'utf8', timeout: 15000 }).trim()
     result.installVersion = env.SMITHERS_PERF_INSTALL_VERSION
     const require = createRequire(resolve('packages/smithers/package.json'))
     const WebSocket = require('ws')
