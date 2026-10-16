@@ -745,6 +745,36 @@ describe("RunDriver requestResume", () => {
       }))
   }
 
+  for (const code of ["not_found_row", "persistence_failed"] as const) {
+    it.effect(`handles a ${code} parent lookup when a child settles`, () =>
+      withCrypto(provideJournal(Effect.gen(function*() {
+        const base = yield* RunStore.RunStore
+        yield* base.create("vanishing-parent", stateJson(EdgeFlow._tag))
+        let finished = false
+        let missingReads = 0
+        const observed = RunStore.makeNoop({
+          ...base,
+          get: (runId) => runId === "vanishing-parent" && finished
+            ? Effect.sync(() => { missingReads++ }).pipe(Effect.andThen(Effect.fail(storeError(code, "get"))))
+            : base.get(runId)
+        })
+        const recorded: Array<readonly [string, RunDriver.RequestedResumeReason]> = []
+        const driver = yield* recordingDriver(recorded).pipe(Effect.provideService(RunStore.RunStore, observed))
+        yield* driver.register(EdgeFlow, () => Effect.sync(() => {
+          finished = true
+          return "done"
+        }))
+        const exit = yield* Effect.exit(executeAndDrain(driver, EdgeFlow, {
+          executionId: "settling-under-missing-parent", payload: {}, discard: true,
+          parent: FlowEngine.makeInstance(EdgeFlow, "vanishing-parent")
+        }))
+        expect(missingReads).toBeGreaterThan(0)
+        expect(recorded).toEqual([])
+        expect(Exit.isSuccess(exit)).toBe(true)
+        expect((yield* base.get("settling-under-missing-parent")).status).toBe("completed")
+      }))))
+  }
+
   it.effect("reports nothing for a parent that is still inside its own round", () =>
     Effect.gen(function*() {
       const result = yield* withCrypto(provideJournal(Effect.gen(function*() {
@@ -1019,6 +1049,24 @@ describe("RunDriver stale-owner recovery", () => {
       expect(result.decisions).toContain("stolen-and-activated")
     }))
 
+  it.effect("does not claim or execute a row that disappears after the wake lookup", () =>
+    withCrypto(provideJournal(Effect.gen(function*() {
+      const base = yield* RunStore.RunStore
+      yield* base.create("disappearing-drive", stateJson(EdgeFlow._tag))
+      let reads = 0
+      let executions = 0
+      const disappearing = RunStore.makeNoop({
+        ...base,
+        get: (runId) => ++reads > 2 ? Effect.fail(storeError("not_found_row", "get")) : base.get(runId)
+      })
+      const driver = yield* makeDriver().pipe(Effect.provideService(RunStore.RunStore, disappearing))
+      yield* driver.register(EdgeFlow, () => Effect.sync(() => { executions++; return "never" }))
+      yield* driver.resume(EdgeFlow, "disappearing-drive")
+      expect(reads).toBe(4)
+      expect(executions).toBe(0)
+      expect(yield* base.get("disappearing-drive")).toMatchObject({ status: "pending", owner: null })
+    }))))
+
   it.effect("dies when the drive-time row read fails for a reason other than a missing row", () =>
     Effect.gen(function*() {
       const exit = yield* withCrypto(provideJournal(Effect.gen(function*() {
@@ -1027,8 +1075,8 @@ describe("RunDriver stale-owner recovery", () => {
         let reads = 0
         const brokenOnDrive = RunStore.makeNoop({
           ...base,
-          // The wake-time lookup succeeds; the drive-time lookup does not.
-          get: (runId) => ++reads > 1 ? Effect.fail(storeError("decode_failed", "get")) : base.get(runId)
+          // Authorization and wake lookups succeed; the drive-time lookup does not.
+          get: (runId) => ++reads > 2 ? Effect.fail(storeError("decode_failed", "get")) : base.get(runId)
         })
         const driver = yield* makeDriver().pipe(Effect.provideService(RunStore.RunStore, brokenOnDrive))
         yield* driver.register(EdgeFlow, () => Effect.succeed("never"))
