@@ -1,8 +1,9 @@
 import { expect as baseExpect, test as base } from "./browserTest"
 import { spawn } from "node:child_process"
-import { mkdtemp, readFile, rm } from "node:fs/promises"
+import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { waitForNativeChromiumPort } from "../support/NativeChromiumPort"
 import { installCloudFixture } from "./cloudFixture"
 import { fixtures } from "../../../../packages/rpc/test/fixtures/Todo"
 import { installFixture } from "../../src/mainview/state/seams/InstallFixtures.test-support"
@@ -28,20 +29,15 @@ const test = base.extend({
     const child = spawn(playwright.chromium.executablePath(), [
       "--remote-debugging-port=0", `--user-data-dir=${profile}`, "--no-sandbox", "--disable-dev-shm-usage", "--no-first-run",
       "--use-mock-keychain", "--password-store=basic", ...(headless ? ["--headless=new"] : []), "about:blank"
-    ], { stdio: "ignore" })
+    ], { stdio: ["ignore", "ignore", "pipe"] })
     let browser: Awaited<ReturnType<typeof playwright.chromium.connectOverCDP>> | undefined
     try {
-      let port: string | undefined
-      for (let attempt = 0; attempt < 100; attempt++) {
-        try { port = (await readFile(join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0]; break } catch {}
-        await new Promise(resolve => setTimeout(resolve, 50))
-      }
-      if (!port) throw new Error("Notification test browser did not start")
+      const port = await waitForNativeChromiumPort(child, profile)
       browser = await playwright.chromium.connectOverCDP(`http://127.0.0.1:${port}`, { noDefaults: true })
       await use(browser.contexts()[0]!)
     } finally {
       await browser?.close()
-      if (child.exitCode === null && child.signalCode === null) {
+      if (child.pid !== undefined && child.exitCode === null && child.signalCode === null) {
         const stopped = new Promise(resolve => child.once("exit", resolve))
         child.kill()
         await stopped
