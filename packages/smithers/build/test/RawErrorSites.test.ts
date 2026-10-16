@@ -15,7 +15,7 @@
  * site fails until its count is lowered.
  */
 import { readdirSync, readFileSync } from "node:fs"
-import { join, relative } from "node:path"
+import { join, relative, sep } from "node:path"
 import { describe, expect, it } from "vitest"
 
 const packageRoot = join(import.meta.dirname, "..")
@@ -38,7 +38,7 @@ const sources = (directory: string): ReadonlyArray<string> =>
   })
 
 const lines = sources(sourceRoot).map((path) => ({
-  file: relative(packageRoot, path),
+  file: relative(packageRoot, path).split(sep).join("/"),
   lines: readFileSync(path, "utf8").split("\n")
 }))
 

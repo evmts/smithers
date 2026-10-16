@@ -55,7 +55,7 @@ const makePnpm = (projectRoot: string, executable: string, options: {
   readonly timeoutMs?: number
   readonly storeDirectory?: string
   readonly credentialHosts?: ReadonlyArray<string> | undefined
-} = {}) =>
+} = {}, runtime = runtimeLayer) =>
   Effect.runPromise(
     PackageManager.makePnpm({
       requirement: "11.21.0",
@@ -67,7 +67,7 @@ const makePnpm = (projectRoot: string, executable: string, options: {
       // The fixtures bind credentials to registry.example; tests of the
       // default pass `credentialHosts: undefined` explicitly.
       credentialHosts: "credentialHosts" in options ? options.credentialHosts : ["registry.example"]
-    }).pipe(Effect.provide(ExecutableFixture.layer), Effect.provide(runtimeLayer))
+    }).pipe(Effect.provide(ExecutableFixture.layer), Effect.provide(runtime))
   )
 
 describe("PackageManager.storeRoot", () => {
@@ -471,13 +471,13 @@ describe("PackageManager.storeRoot", () => {
           NPM_TOKEN: "declared-token",
           UNRELATED_SECRET: "must-not-leak"
         }
-      })
+      }, process.platform === "win32" ? windowsRuntimeLayer : runtimeLayer)
       const observed = JSON.parse(await Effect.runPromise(manager.version)) as Record<string, unknown>
       expect(observed.path).toBe(path)
       expect(observed.token).toBe("declared-token")
       expect(observed.secret).toBeUndefined()
       expect(observed.home).toBeUndefined()
-      expect(observed.userconfig).toBe("/dev/null")
+      expect(observed.userconfig).toBe(process.platform === "win32" ? "NUL" : "/dev/null")
     })
   })
 
@@ -1111,9 +1111,28 @@ describe("PackageManager.storeRoot", () => {
   it.each(["fifo", "oversized"])("refuses a %s pnpm.cmd shim without reading it to the end", async (kind) => {
     await withFixture("package-manager-shim-shape", async (root) => {
       const shim = NodePath.join(root, "pnpm.cmd")
-      if (kind === "fifo") execFileSync("mkfifo", [shim], { timeout: 5_000 })
+      if (kind === "fifo" && process.platform !== "win32") execFileSync("mkfifo", [shim], { timeout: 5_000 })
       else await Fs.writeFile(shim, "@node \"%~dp0\\pnpm.mjs\" %*\r\n" + "rem padding\r\n".repeat(200_000))
       await Fs.writeFile(NodePath.join(root, "pnpm.mjs"), "process.stdout.write('11.25.0')")
+      const fs = await Effect.runPromise(FileSystem.FileSystem.pipe(Effect.provide(ExecutableFixture.layer)))
+      // Win32 has no Unix FIFO inode. Exercise the injected filesystem's
+      // NamedPipe refusal there; Unix keeps the real FIFO integration case.
+      let reads = 0
+      const fileSystem = {
+        ...fs,
+        stat: (path: string) =>
+          fs.stat(path).pipe(
+            Effect.map((info) =>
+              kind === "fifo" && process.platform === "win32" && path === `${root}/pnpm.cmd`
+                ? { ...info, type: "NamedPipe" as const }
+                : info
+            )
+          ),
+        readFileString: (path: string) => {
+          if (path === `${root}/pnpm.cmd`) reads++
+          return fs.readFileString(path)
+        }
+      }
       const error = await Effect.runPromise(
         PackageManager.makePnpm({
           requirement: "11.25.0",
@@ -1122,12 +1141,14 @@ describe("PackageManager.storeRoot", () => {
         }).pipe(
           Effect.flatMap((manager) => manager.version),
           Effect.flip,
+          Effect.provideService(FileSystem.FileSystem, fileSystem),
           Effect.provide(ExecutableFixture.layer),
           Effect.provide(windowsRuntimeLayer)
         )
       )
       expect(error.code).toBe("environment_mismatch")
       expect(error.message).toContain(`${root}/pnpm.cmd`)
+      expect(reads).toBe(0)
     })
   }, 10_000)
 
