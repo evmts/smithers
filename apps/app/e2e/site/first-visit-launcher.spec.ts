@@ -101,10 +101,15 @@ test("the default root opens the repository launcher for a fresh signed-out visi
     return launcher !== null && welcome !== null &&
       (launcher.compareDocumentPosition(welcome) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
   })).toBe(true)
-  // What a first visit actually shows: the launcher's own sections, on screen.
+  /*
+   * What a first visit actually shows, whole and from its first heading: the
+   * launcher's own sections. Its reads land after it paints, so a transcript
+   * that followed that growth would scroll the opening off the top.
+   */
   for (const section of ["open", "create", "explore", "updates"]) {
-    await expect(launcher.locator(`[data-section="${section}"]`)).toBeInViewport()
+    await expect(launcher.locator(`[data-section="${section}"]`)).toBeInViewport({ ratio: 1 })
   }
+  expect(await launcher.evaluate(node => node.getBoundingClientRect().top >= 0)).toBe(true)
   // The default root keeps its own address.
   await expect(page).toHaveURL(/\/$/)
 
@@ -224,6 +229,9 @@ test.describe("narrow dark keyboard entry", () => {
     }
     const box = await launcher.boundingBox()
     expect(box!.width).toBeLessThanOrEqual(380)
+    // Narrow, the launcher still opens at its own first heading, not mid-page.
+    await expect(launcher.locator('[data-section="open"]')).toBeInViewport({ ratio: 1 })
+    expect(box!.y).toBeGreaterThanOrEqual(0)
     // Tab from the document reaches the launcher's own doors and rows.
     const reached: Array<string> = []
     for (let press = 0; press < 20 && !reached.includes("row"); press++) {

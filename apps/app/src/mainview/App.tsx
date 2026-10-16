@@ -585,7 +585,14 @@ function AppContent() {
         data-conversation={conversationTabId}
         data-testid="tab-body-main"
       >
-      <MessageScrollerProvider key={transcriptKey} scrollAnchor="bottom"
+      {/*
+        The launcher opening has no live edge to follow: nothing is streaming,
+        and the reads it starts (the public shelf, the news) GROW the page
+        after it paints. Following growth there scrolls the opening out of
+        view — the first thing a first visit sees would be the page's end
+        rather than the launcher it came for (#4041).
+      */}
+      <MessageScrollerProvider key={transcriptKey} scrollAnchor={launcherOpening ? "none" : "bottom"}
             initialMessageId={controller.sharedConversation ? sharedConversation.view?.scroll_anchor : initialReadId}
             readAnchor={controller.sharedConversation && readEntry === undefined && !(latestEntry?.kind === "card" && latestEntry.card.kind === "docs") ? undefined : { messageId: latestReadId ?? "",
               targetId: readTarget?.kind === "card" && readTarget.card.kind === "docs" ? readTarget.card.payload.anchor : undefined,
