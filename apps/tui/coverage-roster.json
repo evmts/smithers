@@ -21,6 +21,7 @@
   "src/credit.ts",
   "src/cursor.ts",
   "src/deadline.ts",
+  "src/debug.ts",
   "src/devtools.ts",
   "src/drag-scroll.ts",
   "src/editor.ts",

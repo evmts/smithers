@@ -20,6 +20,7 @@ import * as Approvals from "./approvals.ts"
 import * as Box from "./box.ts"
 import * as Budget from "./budget.ts"
 import * as Cli from "./cli.ts"
+import * as Debug from "./debug.ts"
 import * as FlowControl from "./flow-control.ts"
 import * as Host from "./host.ts"
 import * as Models from "./models.ts"
@@ -132,6 +133,7 @@ try {
   const renderer = await createCliRenderer({ exitOnCtrlC: false, targetFps: 30 })
   applyColorMode(renderer, colorModeOf(process.env))
   Log.install()
+  Debug.install()
   createRoot(renderer).render(
     createElement(App, {
       host,

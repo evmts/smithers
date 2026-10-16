@@ -13,6 +13,7 @@ import * as Agents from "./agents.ts"
 import * as Asks from "./asks.ts"
 import * as Budget from "./budget.ts"
 import * as Context from "./context.ts"
+import * as Debug from "./debug.ts"
 import type * as Extension from "./extension.ts"
 import * as Failures from "./failures.ts"
 import type * as Host from "./host.ts"
@@ -320,7 +321,9 @@ export class Workspace {
     this.unsubscribeAsks = this.tabs.subscribe(() => this.asks.check())
   }
   subscribe = (listener: () => void): () => void => this.tabs.subscribe(listener)
-  private changed() {
+  /** `source` names a streamed worker event for SMITHERS_DEBUG=true tracing. */
+  private changed(source?: string) {
+    if (Debug.enabled) Debug.logEvent(source ?? "workspace", source === undefined ? "other" : "stream")
     this.tabs.changed()
   }
   has = (id: string): boolean => this.tabs.has(id)
@@ -959,17 +962,18 @@ export class Workspace {
         onCaption: (prose) => {
           writer.append({ type: "caption", prose })
           this.transcripts.set(tab.id, Transcript.caption(this.transcript(tab.id), prose))
-          this.changed()
+          this.changed("worker:caption")
         },
         onPatch: (receipt) => {
           writer.append({ type: "patch", receipt })
           this.transcripts.set(tab.id, Transcript.patched(this.transcript(tab.id), receipt))
-          this.changed()
+          this.changed("worker:patch")
         },
         onEvent: (event) => {
           if (
             this.tabs.get(tab.id)?.file !== writer.file || this.tabs.get(tab.id)?.continuationId !== tab.continuationId
           ) return
+          const began = Debug.enabled ? Debug.startTimer() : 0
           const at = Date.now()
           if (event._tag !== "model-delta" && event._tag !== "aborted") writer.append({ type: "event", at, event })
           if (event._tag !== "aborted") {
@@ -1006,7 +1010,8 @@ export class Workspace {
               })
             }
           }
-          this.changed()
+          if (Debug.enabled) Debug.endSync(`workspace.event:${event._tag}`, began)
+          this.changed(Debug.enabled ? `worker:${event._tag}` : undefined)
         }
       })
       this.handles.set(tab.id, handle)

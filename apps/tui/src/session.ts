@@ -36,6 +36,7 @@ import { StringDecoder } from "node:string_decoder"
 import type * as Activity from "./activity.ts"
 import type * as Changes from "./changes.ts"
 import type * as Context from "./context.ts"
+import * as Debug from "./debug.ts"
 import type * as Extension from "./extension.ts"
 import * as Failures from "./failures.ts"
 import type * as Flows from "./flows.ts"
@@ -182,7 +183,11 @@ const privateFolder = (folder: string): void => {
   mkdirSync(folder, { recursive: true, mode: 0o700 })
   chmodSync(folder, 0o700)
 }
-const append = (file: string, text: string): void => appendFileSync(file, text, { mode: 0o600 })
+const append = (file: string, text: string): void => {
+  const began = Debug.enabled ? Debug.startTimer() : 0
+  appendFileSync(file, text, { mode: 0o600 })
+  if (Debug.enabled) Debug.endSync("session.append", began)
+}
 
 const text = (value: string): string => String(Redaction.redact(value))
 
@@ -456,7 +461,12 @@ const parse = (file: string, text: string): ReadonlyArray<Record> => {
   return records
 }
 
-export const load = (file: string): ReadonlyArray<Record> => parse(file, readFileSync(file, "utf8"))
+export const load = (file: string): ReadonlyArray<Record> => {
+  const began = Debug.enabled ? Debug.startTimer() : 0
+  const records = parse(file, readFileSync(file, "utf8"))
+  if (Debug.enabled) Debug.endSync("session.load", began)
+  return records
+}
 
 /** Moves a file that failed to load out of the listing, beside it as `.damaged`, and says so. */
 export const quarantine = (file: string, error: unknown): string => {

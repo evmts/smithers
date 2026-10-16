@@ -631,6 +631,22 @@ When editing TUI JSX, write rendered edge spaces as `{" "}`. The pinned dprint
 TypeScript plugin drops literal spaces beside expressions such as
 `<span>{mark} </span>`; see [dprint/dprint-plugin-typescript#476](https://github.com/dprint/dprint-plugin-typescript/issues/476).
 
+## Performance tracing
+
+`SMITHERS_DEBUG=true smthrs tui 2>/dev/null` traces the terminal's own performance as JSON lines in
+`$TMPDIR/smthrs-tui-debug.log` (`/tmp` without `TMPDIR`), mirrored to stderr unless
+`SMTHRS_DEBUG_STDERR=false`. Any other `SMITHERS_DEBUG` value leaves tracing off at the cost of one boolean test per call
+site. `src/debug.ts` owns it.
+
+| `type`    | Meaning                                                                                                 |
+| --------- | ------------------------------------------------------------------------------------------------------- |
+| `event`   | A notification asking for a render: its `source`, `kind` (`stream`, `input`, `other`) and `queueDepth`. |
+| `render`  | One App render: `ms`, `bodyMs`, `commitMs`, `cause`, the `triggers` it consumed, `activeStreams`.       |
+| `key`     | A keypress to the next painted frame (`timeToGlyphMs`); the key's text is never recorded.               |
+| `sync`    | A session read or write, or a worker event, that ran longer than 5 ms, with the `origin` stack.         |
+| `blocked` | The event loop was held more than 5 ms past a 20 ms timer.                                              |
+| `summary` | Written on exit: p50/p95/p99 and worst render and time to glyph, renders per second, deepest queue.     |
+
 ## Tests
 
 | Command           | What                                                                      |

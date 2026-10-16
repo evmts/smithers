@@ -17,7 +17,7 @@ import * as FailureCopy from "@smthrs/model/FailureCopy"
 import * as Form from "@smthrs/ui/flow-form"
 import { Schema } from "effect"
 import { basename } from "node:path"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { ActivityView } from "./activity-view.tsx"
 import * as Agents from "./agents.ts"
 import * as AppView from "./app-view.tsx"
@@ -31,6 +31,7 @@ import * as Composer from "./composer.ts"
 import * as Context from "./context.ts"
 import * as Contributions from "./contributions.ts"
 import * as Cursor from "./cursor.ts"
+import * as Debug from "./debug.ts"
 import * as DevTools from "./devtools.ts"
 import * as Editor from "./editor.ts"
 import * as Extension from "./extension.ts"
@@ -120,8 +121,31 @@ const capForm = "cap:"
 /** The follow-up queue an agent tab's composer adds to, or the chat's. */
 const queueScope = (tab: Tab | undefined) => tab === undefined ? "chat" : `tab:${tab.id}`
 
+const noEffect = (): void => {}
+
 export function App(props: AppProps) {
+  const renderStarted = Debug.enabled ? Debug.startTimer() : 0
+  const renderBodyEnded = useRef(0)
   const renderer = useRenderer()
+  // SMITHERS_DEBUG=true: one record per committed render, and each key's time to its painted frame.
+  useLayoutEffect(
+    Debug.enabled
+      ? () =>
+        Debug.logRender(
+          renderStarted,
+          renderBodyEnded.current,
+          (workspaceRef.current?.snapshot().tabs.filter((tab) => tab.status === "running").length ?? 0) +
+            (live.current.turn ? 1 : 0)
+        )
+      : noEffect
+  )
+  useEffect(() => {
+    if (!Debug.enabled) return
+    renderer.on("frame", Debug.frame)
+    return () => {
+      renderer.off("frame", Debug.frame)
+    }
+  }, [renderer])
   const [restored] = useState((): {
     current: ReturnType<typeof Session.restore> | undefined
     file: string | undefined
@@ -269,7 +293,10 @@ export function App(props: AppProps) {
   }, [monitors])
   runsRef.current = runs
   workspaceRef.current = workspace
-  const files = useRef(Files.lister(props.host.cwd, Date.now, () => setRevision((value) => value + 1)))
+  const files = useRef(Files.lister(props.host.cwd, Date.now, () => {
+    if (Debug.enabled) Debug.logEvent("files")
+    setRevision((value) => value + 1)
+  }))
   const {
     composer,
     draft,
@@ -345,8 +372,16 @@ export function App(props: AppProps) {
   }, [surface])
   useEffect(() => workspace.subscribe(() => setRevision((value) => value + 1)), [workspace])
   useEffect(() => () => workspace.dispose(), [workspace])
-  useEffect(() => runs.subscribe(() => setRevision((value) => value + 1)), [runs])
-  useEffect(() => contributions.subscribe(() => setRevision((value) => value + 1)), [contributions])
+  useEffect(() =>
+    runs.subscribe(() => {
+      if (Debug.enabled) Debug.logEvent("flow-runs")
+      setRevision((value) => value + 1)
+    }), [runs])
+  useEffect(() =>
+    contributions.subscribe(() => {
+      if (Debug.enabled) Debug.logEvent("contributions")
+      setRevision((value) => value + 1)
+    }), [contributions])
   useEffect(() => {
     runs.refresh()
     const warm = setTimeout(() => runs.warm(), 0)
@@ -1238,6 +1273,7 @@ export function App(props: AppProps) {
             steered.push(message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join(""))
           }
         }
+        if (Debug.enabled) Debug.logEvent(`chat:${event._tag}`, "stream")
         setTranscript((current) => Transcript.apply(current, event, at))
       }
     })
@@ -2069,6 +2105,7 @@ export function App(props: AppProps) {
     Date.now() - soleAsk.askedAt >= Approvals.armMs
 
   const handleKey = (key: KeyEvent): void => {
+    if (Debug.enabled) Debug.keypress(Debug.keyName(key))
     const { turn: running, shell: shellRunning, picker: open } = live.current
     const { menu: completing, index: completingIndex } = liveMenu()
     const text = composer.current?.plainText ?? ""
@@ -2810,6 +2847,7 @@ export function App(props: AppProps) {
       queueHeight
   )
 
+  if (Debug.enabled) renderBodyEnded.current = Debug.startTimer()
   return (
     <box style={{ width: "100%", height: "100%", alignItems: "center" }} backgroundColor={color.page} {...dragScroll}>
       <box
