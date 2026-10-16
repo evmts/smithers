@@ -93,3 +93,90 @@ it("plans an explicit Filegroup cwd without crossing nested packages or changing
     await Fs.rm(root, { recursive: true, force: true })
   }
 }, 180_000)
+
+it("keys backend access and proof inputs through their owning cwd", async () => {
+  const root = await Fs.mkdtemp(Path.join(Os.tmpdir(), "smithers-cross-package-inputs-"))
+  const files = [
+    "packages/backend/internal/compose/access_test.go",
+    "packages/backend/internal/services/access_test.go",
+    "packages/backend/internal/identity/access_test.go",
+    "packages/backend/internal/middleware/access_test.go",
+    ".specs/product/mvp.md",
+    ".specs/design/mock/src/index.ts"
+  ]
+  try {
+    for (const name of ["package.json", "yarn.lock", "packages/backend/PACKAGE.ts", "apps/app/PACKAGE.ts", ...files]) {
+      await Fs.mkdir(Path.dirname(Path.join(root, name)), { recursive: true })
+      await Fs.writeFile(Path.join(root, name), name === "package.json" ? "{}" : "before")
+    }
+    const backend = [
+      S.Filegroup({
+        cwd: "packages/backend",
+        srcs: ["compose", "services", "identity", "middleware"].map((directory) =>
+          S.glob(`internal/${directory}/*_test.go`)
+        )
+      })
+    ]
+    const product = S.Filegroup({ cwd: ".specs/product", srcs: [S.glob("**/*")] })
+    const mock = S.Filegroup({ cwd: ".specs/design/mock", srcs: [S.glob("src/**/*")] })
+    const packageJson = S.file("//package.json")
+    const workspace = S.Workspace("fixture", {
+      repository: "git+https://example.invalid/fixture.git",
+      cache: S.Cache({ directory: ".flows" }),
+      runtime: S.Runtime.Node({ version: ">=26.4.0" }),
+      packageManager: S.PackageManager.Yarn({ manifest: packageJson, lockfile: S.file("//yarn.lock") }),
+      nodeModules: S.Npm.NodeModules({ packageJson })
+    })
+    const index = PackageIndex.make({
+      root,
+      workspace,
+      factory: undefined,
+      packages: [
+        {
+          file: "PACKAGE.ts",
+          packagePath: "",
+          value: S.Package({
+            targets: {
+              backendAccessTests: S.Shell.Diff({ shell: "true", data: backend, changes: [] }),
+              backendGoAccess: S.Shell.Test({ shell: "true", data: backend })
+            }
+          })
+        },
+        {
+          file: "apps/app/PACKAGE.ts",
+          packagePath: "apps/app",
+          value: S.Package({
+            targets: {
+              proofRecord: S.Shell.Build({ shell: "true", data: [product], outDirs: ["record"] }),
+              proofPage: S.Shell.Build({ shell: "true", data: [product, mock], outDirs: ["page"] })
+            }
+          })
+        },
+        { file: "packages/backend/PACKAGE.ts", packagePath: "packages/backend", value: S.Package({ targets: {} }) }
+      ]
+    })
+    const inspect = () =>
+      plan({
+        index,
+        cacheDirectory: ".flows",
+        verb: "auto",
+        patterns: ["//:backendAccessTests", "//:backendGoAccess", "//apps/app:proofRecord", "//apps/app:proofPage"]
+      })
+    const before = await inspect()
+    for (const file of files) {
+      await Fs.writeFile(Path.join(root, file), "after")
+      const after = await inspect()
+      const affected = file.startsWith("packages/backend") ?
+        ["//:backendAccessTests", "//:backendGoAccess"]
+        : file.startsWith(".specs/product")
+        ? ["//apps/app:proofRecord", "//apps/app:proofPage"]
+        : ["//apps/app:proofPage"]
+      for (const label of affected) {
+        expect(after.nodes.get(label)!.keyPreview, `${label}: ${file}`).not.toBe(before.nodes.get(label)!.keyPreview)
+      }
+      await Fs.writeFile(Path.join(root, file), "before")
+    }
+  } finally {
+    await Fs.rm(root, { recursive: true, force: true })
+  }
+}, 180_000)

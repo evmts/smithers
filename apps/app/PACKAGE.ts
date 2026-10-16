@@ -23,6 +23,7 @@ const crateInputs = Smithers.Filegroup({
   cwd: "crates",
   srcs: [Smithers.glob("**/*"), flowsJjPackage.nativeSources, machinedPackage.buildInputs]
 })
+const proofProductInputs = Smithers.Filegroup({ cwd: ".specs/product", srcs: [Smithers.glob("**/*")] })
 const proofMockInputs = Smithers.Filegroup({ cwd: ".specs/design/mock", srcs: [Smithers.glob("src/**/*")] })
 const docsInputs = Smithers.Filegroup({ cwd, srcs: [Smithers.glob("src/docs/pages/*.md")] })
 
@@ -459,7 +460,7 @@ const journeyTodoStackActions = Smithers.NodeTest({
  */
 const proofRecord = Smithers.Shell.Build({
   shell: "cd apps/app && rm -rf test-results/proof && bunx playwright test --config playwright.proof.config.ts; test -s test-results/proof/results.json || { echo 'proofRecord: the run wrote no test-results/proof/results.json' >&2; exit 1; }",
-  data: [serverBundle, harnessSources, suiteSources, Smithers.glob("//.specs/product/**/*"),
+  data: [serverBundle, harnessSources, suiteSources, proofProductInputs,
     Smithers.file("package.json"), Smithers.file("//pnpm-lock.yaml")],
   outDirs: ["//apps/app/test-results/proof"],
   sandbox: "none",
@@ -469,8 +470,8 @@ const proofRecord = Smithers.Shell.Build({
 /** Regenerates the proof page using SMITHERS_PROOF_FEATURES; fails when the manifest disagrees with the run. */
 const proofPage = Smithers.Shell.Build({
   shell: 'bun apps/app/proof/page.ts --features "${SMITHERS_PROOF_FEATURES:?Set SMITHERS_PROOF_FEATURES to the feature manifest}" --out apps/app/test-results/proof-page',
-  data: [proofSources, Smithers.glob("//.specs/product/**/*"),
-    Smithers.glob("//.specs/design/mock/src/**/*")],
+  data: [proofSources, proofProductInputs,
+    proofMockInputs],
   outDirs: ["//apps/app/test-results/proof-page"],
   sandbox: "none",
   timeout: "10m"
@@ -635,5 +636,5 @@ const securityReview = Smithers.SecurityReview({
 })
 
 export const Package = Smithers.Package({
-  targets: { distributionInputs, crateInputs, proofMockInputs, docsInputs, serverBundle, solidCodegenInputs, check, unitTests, conformance, browserE2e, browserE2eShard1, browserE2eShard2, browserE2eShard3, installE2e, viewStories, journeyJ1Activation, journeyJ1Release, journeyKeyboard, journeyFreshRepository, journeyWikiGeneratedRefresh, journeyWikiCoedit, journeySetup, journeyWikiObsidian, journeyTodoFromIssue, journeyTodoNeedsYou, journeyTodoEvidence, journeyTodoMerge, journeyAskRepository, journeyTodoStackActions, journeyGitHubMerge, journeyGitHubMergeContinuation, journeyGitHubPRShape, journeyFlowSourceRun, journeyWikiDecisionFollow, journeyBranchPresence, journeyDuplicateLaunch, journeyFileCoedit, journeyHome, journeyTodoMergeOrder, journeyTodoPlacement, journeyTodoSteer, journeyFlowActivation, journeyLearning, journeyAgentTerminal, journeyTerminalSignin, journeyFileGone, journeyGitHubSyncHealth, journeyForkAddToStack, journeySshBranch, journeyInstallOrigins, journeyFileIntelligence, journeyForkDropInstall, journeyGitHubForeignPush, journeyGitHubMainMovedRebase, proofRecord, proofPage, webSources, ...securityReview }
+  targets: { distributionInputs, crateInputs, proofProductInputs, proofMockInputs, docsInputs, serverBundle, solidCodegenInputs, check, unitTests, conformance, browserE2e, browserE2eShard1, browserE2eShard2, browserE2eShard3, installE2e, viewStories, journeyJ1Activation, journeyJ1Release, journeyKeyboard, journeyFreshRepository, journeyWikiGeneratedRefresh, journeyWikiCoedit, journeySetup, journeyWikiObsidian, journeyTodoFromIssue, journeyTodoNeedsYou, journeyTodoEvidence, journeyTodoMerge, journeyAskRepository, journeyTodoStackActions, journeyGitHubMerge, journeyGitHubMergeContinuation, journeyGitHubPRShape, journeyFlowSourceRun, journeyWikiDecisionFollow, journeyBranchPresence, journeyDuplicateLaunch, journeyFileCoedit, journeyHome, journeyTodoMergeOrder, journeyTodoPlacement, journeyTodoSteer, journeyFlowActivation, journeyLearning, journeyAgentTerminal, journeyTerminalSignin, journeyFileGone, journeyGitHubSyncHealth, journeyForkAddToStack, journeySshBranch, journeyInstallOrigins, journeyFileIntelligence, journeyForkDropInstall, journeyGitHubForeignPush, journeyGitHubMainMovedRebase, proofRecord, proofPage, webSources, ...securityReview }
 })

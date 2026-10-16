@@ -461,10 +461,11 @@ const backendGo = Smithers.Shell.Test({
 const backendAccessTestSources = [
   Smithers.file("//scripts/backend-access-tests.mjs"),
   Smithers.file("//scripts/backend-access-tests.json"),
-  Smithers.glob("//packages/backend/internal/compose/*_test.go"),
-  Smithers.glob("//packages/backend/internal/services/*_test.go"),
-  Smithers.glob("//packages/backend/internal/identity/*_test.go"),
-  Smithers.glob("//packages/backend/internal/middleware/*_test.go")
+  Smithers.Filegroup({
+    cwd: "packages/backend",
+    srcs: ["compose", "services", "identity", "middleware"].map((directory) =>
+      Smithers.glob(`internal/${directory}/*_test.go`))
+  })
 ]
 
 // Fails when a matching test file or Test func is missing from the committed list.
