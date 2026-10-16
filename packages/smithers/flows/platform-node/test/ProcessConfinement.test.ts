@@ -17,8 +17,8 @@ const assertPrivateFile = (file: string) => {
     expect(NodeFs.statSync(file).mode & 0o777).toBe(0o600)
     return
   }
-  // Get-Acl exposes both explicit and inherited ACEs; do not infer NTFS
-  // privacy from the DOS read-only bit returned by Node's stat.mode.
+  // Inspect explicit and inherited NTFS ACEs through the native .NET API;
+  // stat.mode carries DOS attributes, and PSModulePath may name a different PowerShell.
   execFileSync("powershell.exe", [
     "-NoProfile",
     "-NonInteractive",
@@ -28,7 +28,7 @@ const assertPrivateFile = (file: string) => {
     $sidType = [System.Security.Principal.SecurityIdentifier]
     $current = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
     $trusted = @($current, 'S-1-5-18', 'S-1-5-32-544')
-    $acl = Get-Acl -LiteralPath $env:SMITHERS_TEST_PRIVATE_FILE
+    $acl = [System.IO.File]::GetAccessControl($env:SMITHERS_TEST_PRIVATE_FILE)
     if ($trusted -notcontains $acl.GetOwner($sidType).Value) { throw 'Unexpected file owner' }
     $rules = @($acl.GetAccessRules($true, $true, $sidType) | Where-Object { $_.AccessControlType -eq 'Allow' })
     if ($rules.Count -eq 0) { throw 'Missing private access rules' }
