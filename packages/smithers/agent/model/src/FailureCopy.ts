@@ -34,26 +34,41 @@ export interface Description {
   readonly actions: ReadonlyArray<Action>
 }
 
-type ErrorRecord = {
-  readonly _tag?: unknown
-  readonly code?: unknown
-  readonly reason?: unknown
-  readonly message?: unknown
-  readonly cause?: unknown
-  readonly resetAtEpochMillis?: unknown
-  readonly retryAfterMillis?: unknown
-  readonly quotaScope?: unknown
-  readonly httpStatus?: unknown
-  readonly status?: unknown
-  readonly seat?: unknown
-  readonly route?: unknown
-  readonly budget?: unknown
-  readonly scope?: unknown
-  readonly used?: unknown
-  readonly max?: unknown
+const fields = [
+  "_tag",
+  "code",
+  "reason",
+  "message",
+  "cause",
+  "resetAtEpochMillis",
+  "retryAfterMillis",
+  "quotaScope",
+  "httpStatus",
+  "status",
+  "seat",
+  "route",
+  "budget",
+  "scope",
+  "used",
+  "max"
+] as const
+type ErrorRecord = { readonly [K in typeof fields[number]]?: unknown }
+/** A snapshot of the copy's fields; like Fault.of, a field whose read throws is missing. */
+const record = (value: unknown): ErrorRecord | undefined => {
+  if (typeof value !== "object" || value === null) return undefined
+  const snapshot: Record<string, unknown> = {}
+  for (const field of fields) {
+    try {
+      snapshot[field] = (value as ErrorRecord)[field]
+    } catch {
+      // An unreadable field is absent.
+    }
+  }
+  return snapshot
 }
-const record = (value: unknown): ErrorRecord | undefined =>
-  typeof value === "object" && value !== null ? value : undefined
+/** Own entries only, so an Object.prototype name is an unknown key. */
+const own = <A>(table: Readonly<Record<string, A>>, key: string): A | undefined =>
+  Object.hasOwn(table, key) ? table[key] : undefined
 
 const providers: Readonly<Record<string, string>> = {
   anthropic: "Anthropic",
@@ -175,21 +190,24 @@ export const describe = (error: unknown, seat?: string): Description => {
   let evaluator: ErrorRecord | undefined
   let named: readonly [string, string, ReadonlyArray<Action>] | undefined
   const seen = new Set<unknown>()
-  while (current !== undefined && !seen.has(current)) {
+  // Fault.of's bound: a proxy answering a fresh `cause` on every read defeats the cycle guard.
+  for (let depth = 0; depth < 16 && current !== undefined && !seen.has(current); depth++) {
     seen.add(current)
     const value = record(current)
     if (value === undefined) break
     if (value._tag === "flows/model/ModelError" || value._tag === "/harness/HarnessError") found = value
     // A spent run budget, reported at the refused call or at a later skipped one.
     if (value._tag === "flows/agent/BudgetExceeded") budget = value
-    if (value._tag === "flows/agent/Skipped") budget = record(value.budget)
+    if (value._tag === "flows/agent/Skipped") budget = record(value.budget) ?? budget
     // A seat the host could not resolve: its message is the host's own sign-in instruction.
     if (value._tag === "@smthrs/agent/Seat/SeatUnresolved") unresolved = value
     // An `auto` seat the router could not pick: no model ran, so another one is the way on.
     if (value._tag === "@smthrs/agent/Seat/SeatUnrouted") unrouted = value
     if (value._tag === "flows/model/EvaluatorError" || value._tag === "flows/model/ClassifierError") evaluator = value
-    const key = typeof value.code === "string" ? `${String(value._tag)}/${value.code}` : String(value._tag)
-    named = causes[key] ?? causes[String(value._tag)] ?? named
+    if (typeof value._tag === "string") {
+      const key = typeof value.code === "string" ? `${value._tag}/${value.code}` : value._tag
+      named = own(causes, key) ?? own(causes, value._tag) ?? named
+    }
     current = value.cause
   }
   if (named !== undefined) return { headline: named[0], fault, line: named[1], actions: named[2] }
@@ -293,8 +311,11 @@ export const describe = (error: unknown, seat?: string): Description => {
         actions
     }
   }
-  if (found?._tag === "/harness/HarnessError" && typeof code === "string" && code in harness) {
-    const [headline, line] = harness[code]!
+  const harnessCopy = found?._tag === "/harness/HarnessError" && typeof code === "string"
+    ? own(harness, code)
+    : undefined
+  if (harnessCopy !== undefined) {
+    const [headline, line] = harnessCopy
     return { headline, fault, line, actions: ["resume", "switch-model", "details"] }
   }
   return {

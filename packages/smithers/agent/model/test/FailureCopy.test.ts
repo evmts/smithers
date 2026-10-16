@@ -344,4 +344,55 @@ describe("FailureCopy.describe", () => {
     cycle.cause = cycle
     expect(FailureCopy.describe(cycle).fault).toBe("bug")
   })
+
+  const generic = {
+    headline: "Worker stopped unexpectedly",
+    fault: "bug",
+    line: "The worker stopped before finishing.",
+    actions: ["resume", "switch-model", "details"]
+  }
+
+  it("treats Object.prototype names as unknown tags and codes", () => {
+    for (const name of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+      expect(FailureCopy.describe({ _tag: name })).toEqual(generic)
+      expect(FailureCopy.describe({ _tag: "/harness/HarnessError", code: name })).toEqual(generic)
+    }
+    // An inherited name never shadows a recognized cause further down.
+    expect(FailureCopy.describe({ _tag: "constructor", cause: { _tag: "/harness/HarnessError", code: "constructor" } }))
+      .toEqual(generic)
+  })
+
+  it("formats a failure whose fields throw on read as the generic copy", () => {
+    const throwing = (field: string, rest: object = {}) =>
+      Object.defineProperty({ ...rest }, field, {
+        enumerable: true,
+        get: () => {
+          throw new Error("synthetic getter failure")
+        }
+      })
+    for (const field of ["_tag", "code", "cause"]) expect(FailureCopy.describe(throwing(field))).toEqual(generic)
+    const trap = new Proxy({}, {
+      get: () => {
+        throw new Error("synthetic proxy failure")
+      }
+    })
+    expect(FailureCopy.describe(trap)).toEqual(generic)
+    // A readable recognized cause still wins over an unreadable neighbor.
+    const exceeded = { _tag: "flows/agent/BudgetExceeded", scope: "usd", used: 1, max: 1 }
+    expect(FailureCopy.describe(throwing("code", { _tag: "/harness/HarnessError", cause: exceeded })).headline)
+      .toBe("Spend budget reached")
+    // A proxy answering a fresh cause on every read ends at the walk's depth bound.
+    expect(FailureCopy.describe(new Proxy({}, endlessHandler))).toEqual(generic)
+  })
+
+  it("keeps a recognized budget when a nested Skipped carries none", () => {
+    const exceeded = { _tag: "flows/agent/BudgetExceeded", scope: "usd", used: 1, max: 1 }
+    for (const skipped of [{ _tag: "flows/agent/Skipped" }, { _tag: "flows/agent/Skipped", budget: null }]) {
+      expect(FailureCopy.describe({ ...exceeded, cause: skipped }).headline).toBe("Spend budget reached")
+    }
+  })
 })
+
+const endlessHandler: ProxyHandler<object> = {
+  get: (_, key) => (key === "cause" ? new Proxy({}, endlessHandler) : undefined)
+}
