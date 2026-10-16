@@ -685,22 +685,17 @@ test("every published package packs the markdown inside the source tree it ships
   assert.deepEqual(unpacked, [], "these markdown files sit in a packed source tree and no files glob packs them")
 })
 
-test("the CLI install line needs no dependency workaround", () => {
-  for (const relative of ["README.md"]) {
-    const source = readFileSync(join(repoRoot, relative), "utf8")
-    const installLines = source
-      .split("\n")
-      .filter((line) => /^(pnpm add|npm install|npm i|bun add|yarn add) /.test(line))
-      .filter((line) => /@smthrs\/cli@/.test(line))
-    // While the README installs the CLI from the source checkout it says so
-    // (e312ca0cf); once it drops that sentence it must name @smthrs/cli again.
-    if (!/Install the CLI from the source checkout/.test(source)) {
-      assert.ok(installLines.length > 0, `${relative} must show an install command naming @smthrs/cli`)
-    }
-    assert.ok(installLines.every((line) => !line.includes("@effect/platform-node")))
-    assert.ok(installLines.every((line) => !line.includes("@effect/platform-node-shared")))
-    assert.doesNotMatch(source, /\boverrides\b/, `${relative} must not require dependency overrides`)
+test("the CLI install line uses the published prerelease", () => {
+  const source = readFileSync(join(repoRoot, "README.md"), "utf8")
+  const project = JSON.parse(readFileSync(join(repoRoot, "apps/site/src/data/project.json"), "utf8"))
+  const banner = readFileSync(join(repoRoot, "apps/site/scripts/docs-notice.mjs"), "utf8")
+  assert.equal(project.install.cli, "npm install -g smthrs@next")
+  assert.match(source, /^npm install -g smthrs@next$/m)
+  for (const text of [source, banner]) {
+    assert.doesNotMatch(text, /source checkout|unpublished/)
   }
+  assert.match(banner, /Install from npm/)
+  assert.doesNotMatch(source, /\boverrides\b/, "README must not require dependency overrides")
 })
 
 test("an export with no require condition is the only thing that exempts a module from the CommonJS check", () => {

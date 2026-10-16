@@ -30,15 +30,11 @@ The release candidate's required platform is Linux with Node 26.4.0. See the [su
 ## Install
 
 The libraries install from npm; start with the
-[Flows quickstart](./packages/smithers/flows/docs/quickstart.md). Install the CLI from the source checkout
+[Flows quickstart](./packages/smithers/flows/docs/quickstart.md). Install the CLI from npm
 ([Installation](https://smithers.sh/docs/installation/#install-the-cli)):
 
 ```bash
-git clone https://github.com/smithersai/smithers.git
-cd smithers
-pnpm install
-cargo build --locked --release -p smithers-ffi --bin smithers-jj-export
-export PATH="$PWD/node_modules/.bin:$PATH"
+npm install -g smthrs@next
 ```
 
 ## Get started

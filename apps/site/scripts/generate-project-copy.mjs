@@ -75,7 +75,7 @@ ${supportSection("https://smithers.sh")}
 ## Install
 
 The libraries install from npm; start with the
-[Flows quickstart](./packages/smithers/flows/docs/quickstart.md). Install the CLI from the source checkout
+[Flows quickstart](./packages/smithers/flows/docs/quickstart.md). Install the CLI from npm
 ([Installation](https://smithers.sh/docs/installation/#install-the-cli)):
 
 \`\`\`bash
