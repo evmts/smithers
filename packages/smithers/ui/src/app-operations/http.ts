@@ -86,6 +86,14 @@ export const httpProjections = [
   accountWrite("account.notifications.update", "PUT", "/api/user/settings/notifications", Schema.Struct({ email_notifications_enabled: Schema.optional(Schema.Union([Schema.Boolean, Schema.Null])) })),
   accountWrite("account.connection.delete", "DELETE", "/api/user/connections/{id}", NoInput),
   read("github.account-read", "/api/user/github-repos", "never", "owner"),
+  // A person's own review verdict on an imported pull request (#4038): the
+  // only write among the GitHub account surfaces. agent: "never" and a lone
+  // "person" actor, so an app agent's review analysis can return findings but
+  // can never submit the verdict; the body carries no actor to forge.
+  operation({ name: "github.account-review", input: Schema.Struct({ event: Schema.Literals(["APPROVE", "REQUEST_CHANGES", "COMMENT"]), body: Schema.String, commit_id: Schema.String }),
+    summary: "github.account-review", hidden: true, visibility: "hidden", slash: null, cli: null,
+    http: { method: "POST", path: "/api/user/github-repos/{owner}/{repo}/pulls/{number}/reviews" },
+    minimumRole: "owner", agent: "never", credentialScope: "write:repository", actors: ["person"] }),
   // Values retain the existing write-scope requirement even on reads.
   repositoryAdmin("variables.read", "GET", "/api/repos/{owner}/{repo}/variables", NoInput, "write:repository"),
   repositoryAdmin("variables.set", "POST", "/api/repos/{owner}/{repo}/variables", Schema.Struct({ name: Schema.String, value: Schema.String })),

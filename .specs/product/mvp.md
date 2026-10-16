@@ -870,7 +870,7 @@ Coding agents and external agents can't call these (they have no screen). The ap
 | `change.request`, `change.split`, `change.revert` | Old change doors | – | Cut (TODOs replace request; split is cut; revert is a new TODO) | – |
 | `prs.list`, `prs.view` | Pull requests | P, A, X | Rename → `/pr` | PR |
 | `prs.triage` | Review a change | P, A✓, X | Rename → `/review` | findings |
-| `prs.review` | Approve or request changes in the app | – | Defer (§16): reviews happen on GitHub | – |
+| `prs.review` | Approve or request changes in the app | P | Built for a GitHub-source pull request (#4038): the person's own approve / request-changes / comment goes to the actual GitHub pull request through `github.account-review`, pinned to the head they read and verified by readback. A native landing still gets the native review. Person-only; an agent cannot submit a verdict. Source-green, not production verified. | PR |
 | `prs.create` | Open a PR by hand | – | Cut: PRs come from TODOs | – |
 | `findings.please-fix`, `findings.not-useful` | Act on a review finding | P, A✓ | Keep (please-fix becomes a steer) | findings |
 | `review.request`, `.unrequest`, `.since-mine`, `.done`, `.ack`, `.reopen` | In-app review threads | – | Defer (§16) | – |

@@ -48,6 +48,17 @@ type mockGitHubUserReposRouteService struct {
 	checkRunsErr   error
 	pullFn         func(context.Context, int64, string, string, int64) (services.GitHubRepoMetadataResult, error)
 	pullErr        error
+
+	reviewFn     func(context.Context, int64, string, string, int64, services.GitHubPullReviewInput) (services.GitHubPullReviewResult, error)
+	reviewResult services.GitHubPullReviewResult
+	reviewErr    error
+}
+
+func (m mockGitHubUserReposRouteService) SubmitAuthenticatedUserGitHubPullReview(ctx context.Context, userID int64, owner, repo string, number int64, input services.GitHubPullReviewInput) (services.GitHubPullReviewResult, error) {
+	if m.reviewFn != nil {
+		return m.reviewFn(ctx, userID, owner, repo, number, input)
+	}
+	return m.reviewResult, m.reviewErr
 }
 
 func (m mockGitHubUserReposRouteService) ListAuthenticatedUserGitHubRepos(ctx context.Context, userID int64, query url.Values) (services.GitHubRepoListResult, error) {
@@ -653,4 +664,76 @@ func TestGitHubUserReposHandler_PullTabsForwardTheRequestedPage(t *testing.T) {
 		t, "/api/user/github-repos/acme/widget/pulls/2/commits?page=nope", "acme", "widget", "2"))
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 	assert.Equal(t, "private, no-store", rec.Header().Get("Cache-Control"))
+}
+
+/*
+ * The review door (#4038): the handler resolves the subject from the path,
+ * hands the service the caller's own user id and the typed verdict, and maps
+ * the service's refusals through the shared taxonomy. It carries no actor
+ * field, so there is nothing a caller could set to review as someone else.
+ */
+func TestGitHubUserReposHandler_SubmitsPullReviewForTheSessionPerson(t *testing.T) {
+	t.Parallel()
+	const head = "0d1dc5a1a4f0bd02a9e5ba9a1f86e7f1a3b4c5d6"
+	var gotUser int64
+	var gotOwner, gotRepo string
+	var gotNumber int64
+	var gotInput services.GitHubPullReviewInput
+	service := mockGitHubUserReposRouteService{reviewFn: func(_ context.Context, userID int64, owner, repo string, number int64, input services.GitHubPullReviewInput) (services.GitHubPullReviewResult, error) {
+		gotUser, gotOwner, gotRepo, gotNumber, gotInput = userID, owner, repo, number, input
+		return services.GitHubPullReviewResult{ReviewID: 55, State: "CHANGES_REQUESTED", CommitID: head, Verified: true}, nil
+	}}
+	req := githubPullReviewRequest(t, "17", `{"event":"REQUEST_CHANGES","body":"please rename it","commit_id":"`+head+`"}`)
+	rec := httptest.NewRecorder()
+	(&GitHubUserReposHandler{Service: service}).SubmitGitHubPullReview(rec, req)
+
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	assert.JSONEq(t, `{"review_id":55,"state":"CHANGES_REQUESTED","commit_id":"`+head+`","verified":true}`, rec.Body.String())
+	assert.Equal(t, "private, no-store", rec.Header().Get("Cache-Control"))
+	assert.Equal(t, int64(42), gotUser)
+	assert.Equal(t, "upstream", gotOwner)
+	assert.Equal(t, "project", gotRepo)
+	assert.Equal(t, int64(17), gotNumber)
+	assert.Equal(t, services.GitHubPullReviewInput{Event: "REQUEST_CHANGES", Body: "please rename it", CommitID: head}, gotInput)
+}
+
+func TestGitHubUserReposHandler_TypedPullReviewRefusals(t *testing.T) {
+	t.Parallel()
+	const head = "0d1dc5a1a4f0bd02a9e5ba9a1f86e7f1a3b4c5d6"
+	body := `{"event":"APPROVE","body":"","commit_id":"` + head + `"}`
+	for _, tc := range []struct {
+		name    string
+		number  string
+		payload string
+		service GitHubUserReposRouteService
+		want    int
+	}{
+		{name: "not numeric", number: "abc", payload: body, service: mockGitHubUserReposRouteService{}, want: http.StatusBadRequest},
+		{name: "zero", number: "0", payload: body, service: mockGitHubUserReposRouteService{}, want: http.StatusBadRequest},
+		{name: "unreadable body", number: "17", payload: `{"event":`, service: mockGitHubUserReposRouteService{}, want: http.StatusBadRequest},
+		{name: "no service", number: "17", payload: body, want: http.StatusInternalServerError},
+		{name: "head moved", number: "17", payload: body, service: mockGitHubUserReposRouteService{reviewErr: pkgerrors.Conflict("the pull request moved to a new head commit; re-read it before reviewing")}, want: http.StatusConflict},
+		{name: "github refused", number: "17", payload: body, service: mockGitHubUserReposRouteService{reviewErr: pkgerrors.New(pkgerrors.CodeGitHubPermission, "GitHub access denied")}, want: http.StatusBadGateway},
+		{name: "unacknowledged", number: "17", payload: body, service: mockGitHubUserReposRouteService{reviewErr: pkgerrors.New(pkgerrors.CodeGitHubUnavailable, "GitHub did not confirm the review; re-read the pull request before reviewing it again")}, want: http.StatusBadGateway},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			(&GitHubUserReposHandler{Service: tc.service}).SubmitGitHubPullReview(rec, githubPullReviewRequest(t, tc.number, tc.payload))
+			require.Equal(t, tc.want, rec.Code, rec.Body.String())
+			assert.Equal(t, "private, no-store", rec.Header().Get("Cache-Control"))
+		})
+	}
+}
+
+func githubPullReviewRequest(t *testing.T, number, payload string) *http.Request {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/user/github-repos/upstream/project/pulls/"+number+"/reviews", bytes.NewReader([]byte(payload)))
+	req.Header.Set("Content-Type", "application/json")
+	routeContext := chi.NewRouteContext()
+	routeContext.URLParams.Add("owner", "upstream")
+	routeContext.URLParams.Add("repo", "project")
+	routeContext.URLParams.Add("number", number)
+	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, routeContext)
+	ctx = context.WithValue(ctx, middleware.UserContextKey, &db.User{ID: 42, Username: "octo"})
+	return req.WithContext(ctx)
 }

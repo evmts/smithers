@@ -417,6 +417,9 @@ var installMemberRoutes = []struct {
 	{http.MethodPut, "account.notifications.update", regexp.MustCompile(`^/api/user/settings/notifications$`)},
 	{http.MethodDelete, "account.connection.delete", regexp.MustCompile(`^/api/user/connections/[^/]+$`)},
 	{http.MethodGet, "github.import-read", regexp.MustCompile(`^/api/github/import/[^/]+$`)},
+	// The one person-only write on an imported pull request: a review verdict
+	// submitted to GitHub with the person's own credential (#4038).
+	{http.MethodPost, "github.account-review", regexp.MustCompile(`^/api/user/github-repos/[^/]+/[^/]+/pulls/[0-9]+/reviews$`)},
 	{http.MethodGet, "github.account-read", regexp.MustCompile(`^/api/user/github(?:/repos|-repos(?:/[^/]+/[^/]+(?:/(?:issues(?:/[0-9]+/comments)?|pulls(?:/[0-9]+(?:/(?:diff|commits))?)?|commits/[^/]+/check-runs))?)?|-access/[^/]+/[^/]+|-app/installations(?:/[0-9]+)?)$`)},
 	{http.MethodPost, "branch.archive", regexp.MustCompile(`^/api/branches/[^/]+/archive$`)},
 	{http.MethodPost, "labels.create", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/labels$`)},

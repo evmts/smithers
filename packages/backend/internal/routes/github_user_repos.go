@@ -25,6 +25,7 @@ type GitHubUserReposRouteService interface {
 	ListAuthenticatedUserGitHubPullCommits(ctx context.Context, userID int64, owner, repo string, number int64, query url.Values) (services.GitHubRepoMetadataResult, error)
 	GetAuthenticatedUserGitHubCommitCheckRuns(ctx context.Context, userID int64, owner, repo, ref string, query url.Values) (services.GitHubRepoMetadataResult, error)
 	DiagnoseGitHubAccess(ctx context.Context, userID int64, owner, repo, surface string) (services.GitHubAccessDiagnosis, error)
+	SubmitAuthenticatedUserGitHubPullReview(ctx context.Context, userID int64, owner, repo string, number int64, input services.GitHubPullReviewInput) (services.GitHubPullReviewResult, error)
 }
 
 type GitHubUserReposHandler struct {
@@ -113,6 +114,53 @@ func (h *GitHubUserReposHandler) GetGitHubPull(w http.ResponseWriter, r *http.Re
 		return
 	}
 	h.writeGitHubRepoMetadataResult(w, result)
+}
+
+/*
+ * SubmitGitHubPullReview serves POST
+ * /api/user/github-repos/{owner}/{repo}/pulls/{number}/reviews: one person's
+ * approve, request-changes or comment review on the actual GitHub pull
+ * request, with the person's own GitHub credential.
+ *
+ * `github.account-review` is the catalog command, person-only and
+ * agent: never, so an app agent's analysis cannot arrive here as someone's
+ * verdict — and the request body carries no actor, login or on-behalf-of
+ * field it could forge. `commit_id` is the head the person reviewed; the
+ * service refuses the write if the pull request has since moved.
+ */
+func (h *GitHubUserReposHandler) SubmitGitHubPullReview(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "private, no-store")
+	user, err := requireRouteUser(r)
+	if err != nil {
+		pkgerrors.WriteError(w, err.(*pkgerrors.APIError))
+		return
+	}
+	if h.Service == nil {
+		pkgerrors.WriteError(w, pkgerrors.Internal("github pull review service unavailable"))
+		return
+	}
+	number, err := strconv.ParseInt(chi.URLParam(r, "number"), 10, 64)
+	if err != nil || number <= 0 {
+		writeRouteError(w, r, pkgerrors.BadRequest("invalid github pull request number"))
+		return
+	}
+	var req struct {
+		Event    string `json:"event"`
+		Body     string `json:"body"`
+		CommitID string `json:"commit_id"`
+	}
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	result, svcErr := h.Service.SubmitAuthenticatedUserGitHubPullReview(
+		r.Context(), user.ID, chi.URLParam(r, "owner"), chi.URLParam(r, "repo"), number,
+		services.GitHubPullReviewInput{Event: req.Event, Body: req.Body, CommitID: req.CommitID},
+	)
+	if svcErr != nil {
+		writeRouteError(w, r, svcErr)
+		return
+	}
+	pkgerrors.WriteJSON(w, http.StatusCreated, result)
 }
 
 func (h *GitHubUserReposHandler) listGitHubRepoMetadata(w http.ResponseWriter, r *http.Request, resource string) {

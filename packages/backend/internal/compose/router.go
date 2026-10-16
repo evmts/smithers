@@ -1943,6 +1943,15 @@ func buildRouter(
 					middleware.RejectRepositoryRestrictedToken,
 					middleware.RequireScope(middleware.ScopeReadRepository),
 				}
+				// A write on these surfaces goes to GitHub with that person's own
+				// credential, so it needs write:repository and the same
+				// repository-restricted token refusal the reads apply.
+				githubUserRepoWrite := []func(http.Handler) http.Handler{
+					middleware.PrivateNoStore,
+					middleware.RequireAuth,
+					middleware.RejectRepositoryRestrictedToken,
+					middleware.RequireScope(middleware.ScopeWriteRepository),
+				}
 				r.With(githubUserRepoRead...).Get("/user/github-repos", gitHubUserReposHandler.ListGitHubUserRepos)
 				r.With(githubUserRepoRead...).Get("/user/github-repos/{owner}/{repo}", gitHubUserReposHandler.GetGitHubRepo)
 				r.With(githubUserRepoRead...).Get("/user/github-repos/{owner}/{repo}/issues", gitHubUserReposHandler.ListGitHubRepoIssues)
@@ -1958,6 +1967,11 @@ func buildRouter(
 				// head commit (its Checks tab). Same token, scope and cache
 				// policy as the pull request object; GET only.
 				r.With(githubUserRepoRead...).Get("/user/github-repos/{owner}/{repo}/pulls/{number}/commits", gitHubUserReposHandler.ListGitHubPullCommits)
+				// The one WRITE on an imported pull request: a person's own
+				// review verdict, submitted to GitHub with the person's own
+				// credential and read back before it is reported (#4038).
+				// Write scope, and `github.account-review` is person-only.
+				r.With(githubUserRepoWrite...).Post("/user/github-repos/{owner}/{repo}/pulls/{number}/reviews", gitHubUserReposHandler.SubmitGitHubPullReview)
 				r.With(githubUserRepoRead...).Get("/user/github-repos/{owner}/{repo}/commits/{sha}/check-runs", gitHubUserReposHandler.ListGitHubCommitCheckRuns)
 				// Typed access diagnosis for the surfaces above: WHY a read fails
 				// (app-not-installed / permission-missing / no-org-grant / token-broken
@@ -1971,15 +1985,8 @@ func buildRouter(
 				if !config.IsSingleOwner(cfg.Auth) {
 					// One real repository on the caller's OWN GitHub account.
 					// It writes GitHub with that person's own credential, so it
-					// needs write:repository and the same repository-restricted
-					// token refusal the reads above apply. An install keeps its
+					// takes the write stack declared above. An install keeps its
 					// own Setup door and mounts neither.
-					githubUserRepoWrite := []func(http.Handler) http.Handler{
-						middleware.PrivateNoStore,
-						middleware.RequireAuth,
-						middleware.RejectRepositoryRestrictedToken,
-						middleware.RequireScope(middleware.ScopeWriteRepository),
-					}
 					r.With(githubUserRepoWrite...).Post("/user/github-repos", gitHubUserReposHandler.CreateGitHubUserRepo)
 					// Reading the receipt is a read of the caller's own request.
 					r.With(githubUserRepoRead...).Get("/user/github-repo-requests/{id}", gitHubUserReposHandler.GetGitHubUserRepoCreate)

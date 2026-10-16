@@ -230,6 +230,15 @@ const githubPullsRoot = (ctx: Pick<SeamContext, "baseUrl">, sourceRepo: string):
 const reviewable = (state: string): boolean => !["merged", "closed", "landed"].includes(state.toLowerCase())
 
 /**
+ * GitHub's own review vocabulary for the three verdicts this app offers.
+ * `event` is what the submit names; `state` is what GitHub calls the review
+ * it recorded, so the readback can only confirm the verdict that was asked
+ * for (REST: "Create a review for a pull request").
+ */
+const GITHUB_REVIEW_EVENT = { approve: "APPROVE", request_changes: "REQUEST_CHANGES", comment: "COMMENT" } as const
+const GITHUB_REVIEW_STATE = { approve: "APPROVED", request_changes: "CHANGES_REQUESTED", comment: "COMMENTED" } as const
+
+/**
  * The files of one unified patch, one row per `diff --git` section.
  *
  * GitHub answers a pull request's whole diff as a single patch, and the Files
@@ -960,6 +969,76 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
     }
   }
 
+  /*
+   * The actual GitHub pull request review (#4038).
+   *
+   * A person's verdict on an imported pull request belongs to THAT pull
+   * request on GitHub, pinned to the head it was read at. The door
+   * (POST /api/user/github-repos/{owner}/{repo}/pulls/{number}/reviews) is
+   * person-only and carries the caller's own GitHub credential: there is no
+   * actor field on this wire, so an agent's analysis can never ride in as
+   * someone's approval. The backend fences the head, submits once and reads
+   * the review back from GitHub before it answers; this seam believes only
+   * that verified answer.
+   */
+  const reviewGitHubPull = async (
+    sourceRepo: string,
+    repo: string,
+    number: number,
+    type: "approve" | "request_changes" | "comment",
+    text: string,
+    ownerCurrent: () => boolean,
+    conversation: string | undefined
+  ): Promise<string | void> => {
+    const root = githubPullsRoot(ctx, sourceRepo)
+    let detail: Response
+    try {
+      detail = await ctx.http(`${root}/${number}`)
+    } catch {
+      return `Pull request #${number} on ${sourceRepo} couldn't be read from GitHub before submitting, so nothing was posted.`
+    }
+    if (!detail.ok) return readErrorMessage(detail, `Pull request #${number} on ${sourceRepo} couldn't be read from GitHub before submitting.`)
+    const payload: unknown = await detail.json().catch(() => null)
+    const row = parseLandingRow(payload)
+    // The door answers with the commit it wrote at, normalized; compare like with like.
+    const head = isRecord(payload) && isRecord(payload.head) && typeof payload.head.sha === "string" ? payload.head.sha.toLowerCase() : ""
+    if (row === null || row.number !== number || head === "") {
+      return `Pull request #${number} on ${sourceRepo} is unavailable for review.`
+    }
+    if (!reviewable(row.state)) {
+      return `Pull request #${number} on ${sourceRepo} is ${row.state.toLowerCase()}, so it can no longer be reviewed.`
+    }
+    // The detail read was in flight too; re-check before the one write.
+    if (!ownerCurrent() || conversationTabIdOf(ctx.store.session()) !== conversation) {
+      return `The repository or account changed while the review on #${number} was being submitted, so nothing was posted.`
+    }
+    let response: Response
+    try {
+      response = await ctx.http(`${root}/${number}/reviews`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ event: GITHUB_REVIEW_EVENT[type], body: text, commit_id: head })
+      })
+    } catch {
+      /*
+       * The request left; GitHub's answer did not come back. Whether the
+       * review was recorded is UNKNOWN, and a review carries no idempotency
+       * key, so this is never retried here — the next read of the pull
+       * request is the reconciliation.
+       */
+      return `The review on #${number} wasn't acknowledged by GitHub, so whether it was recorded is unknown. Re-read the pull request before reviewing it again — it may already carry this review.`
+    }
+    if (!response.ok) return readErrorMessage(response, `The review on #${number} couldn't be posted to GitHub.`)
+    const receipt: unknown = await response.json().catch(() => null)
+    if (!isRecord(receipt) || receipt.verified !== true || receipt.commit_id !== head
+      || receipt.state !== GITHUB_REVIEW_STATE[type]) {
+      return `GitHub didn't confirm the review on #${number}. Re-read the pull request before reviewing it again — it may already carry this review.`
+    }
+    const refreshError = await surfaceLanding(repo, number)
+    if (typeof refreshError !== "string") return
+    return `The review on #${number} was posted to ${sourceRepo}, but the pull request couldn't be re-read: ${refreshError}`
+  }
+
   return {
     readLandingContext,
     setTab: async (cardId, tab) => {
@@ -1025,6 +1104,27 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
         // Plue 422s an empty body on these verbs; answer before the wire does.
         const verb = type === "comment" ? "comment" : "request-changes"
         return `A ${verb} review needs text: /prs.review ${number} ${verb} <why>`
+      }
+      /*
+       * Which pull request this verdict is about is the source this
+       * repository reads pull requests from NOW — the same canonical
+       * resolver the detail card read it with (#4036). An import's #2 is
+       * GitHub's pull request and the platform's own #2 is a different one
+       * under the same number, so a review that skips the resolution writes
+       * whichever subject the native door happens to hold (#4038). The
+       * account and the conversation are captured BEFORE the resolution: a
+       * verdict must never be submitted on behalf of a context the person
+       * has already left.
+       */
+      const ownerCurrent = captureCloudOwner(ctx, false)
+      const conversation = conversationTabIdOf(ctx.store.session())
+      const source = await pullSource(ctx, repo)
+      if (!ownerCurrent() || conversationTabIdOf(ctx.store.session()) !== conversation) {
+        return `The repository or account changed while the review on #${number} was being submitted, so nothing was posted.`
+      }
+      if ("error" in source) return source.error
+      if (source.kind === "github") {
+        return reviewGitHubPull(source.repo, repo, number, type, text, ownerCurrent, conversation)
       }
       const tip = await fetchTipCommit(repo, number)
       if ("error" in tip) return tip.error

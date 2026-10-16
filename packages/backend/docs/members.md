@@ -55,6 +55,17 @@ delegated credentials land.
 | `members.list` | Member | `GET /api/members` |
 | `members.write` | Maintainer | `POST /api/members`, `PATCH`, `DELETE /api/members/{login}` |
 | `secrets.write` (person-only) | Maintainer | `POST /api/repos/{o}/{r}/secrets`, `PATCH`, `DELETE /api/repos/{o}/{r}/secrets/{name}` |
+| `github.account-review` (person-only) | Owner | `POST /api/user/github-repos/{owner}/{repo}/pulls/{number}/reviews` |
+
+`github.account-review` is the only write among the GitHub account
+surfaces: one person's own approve, request-changes or comment review,
+submitted to the actual GitHub pull request with that person's own GitHub
+credential, pinned to the head commit they reviewed and read back from
+GitHub before it is reported. The request names no actor, so an agent's
+review analysis can return findings but can never arrive here as somebody's
+verdict. A moved head, another number or a pull request that is no longer
+open is refused, not retargeted, and a lost acknowledgement is reconciled
+by reading GitHub, never by resending.
 
 A person-only command checks the role first, then the credential, and it
 applies to the owner too. Only the person's own browser session acts. A

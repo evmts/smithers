@@ -121,6 +121,10 @@ func (s *stubMetadataStalenessService) ListAuthenticatedUserGitHubRepos(context.
 	return services.GitHubRepoListResult{}, pkgerrors.Internal("unused")
 }
 
+func (s *stubMetadataStalenessService) SubmitAuthenticatedUserGitHubPullReview(context.Context, int64, string, string, int64, services.GitHubPullReviewInput) (services.GitHubPullReviewResult, error) {
+	return services.GitHubPullReviewResult{}, nil
+}
+
 func (s *stubMetadataStalenessService) DiagnoseGitHubAccess(context.Context, int64, string, string, string) (services.GitHubAccessDiagnosis, error) {
 	return services.GitHubAccessDiagnosis{}, pkgerrors.Internal("unused")
 }

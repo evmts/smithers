@@ -6044,6 +6044,54 @@
       }
     },
     {
+      "name": "github.account-review",
+      "slash": null,
+      "cli": null,
+      "journey": [],
+      "group": "",
+      "visibility": "hidden",
+      "actors": [
+        "person"
+      ],
+      "minimumRole": "owner",
+      "credentialScope": "write:repository",
+      "agent": "never",
+      "summary": "github.account-review",
+      "http": {
+        "method": "POST",
+        "path": "/api/user/github-repos/{owner}/{repo}/pulls/{number}/reviews"
+      },
+      "payload": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "event": {
+              "type": "string",
+              "enum": [
+                "APPROVE",
+                "REQUEST_CHANGES",
+                "COMMENT"
+              ]
+            },
+            "body": {
+              "type": "string"
+            },
+            "commit_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "event",
+            "body",
+            "commit_id"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      }
+    },
+    {
       "name": "github.import-read",
       "slash": null,
       "cli": null,

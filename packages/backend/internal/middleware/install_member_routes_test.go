@@ -191,6 +191,12 @@ func TestInstallMemberCommandRoutes(t *testing.T) {
 		{http.MethodGet, "/api/user/github-repos/acme/app/pulls/2/commits", "github.account-read"},
 		{http.MethodGet, "/api/user/github-repos/acme/app/commits/0d1dc5a1a4f0bd02a9e5ba9a1f86e7f1a3b4c5d6/check-runs", "github.account-read"},
 		{http.MethodGet, "/api/user/github-repos/acme/app/issues/1/comments", "github.account-read"},
+		// The one write among these surfaces, under its own person-only
+		// command — never the read command, and never the GETs' sibling (#4038).
+		{http.MethodPost, "/api/user/github-repos/acme/app/pulls/2/reviews", "github.account-review"},
+		{http.MethodGet, "/api/user/github-repos/acme/app/pulls/2/reviews", ""},
+		{http.MethodPost, "/api/user/github-repos/acme/app/pulls/2", ""},
+		{http.MethodPost, "/api/user/github-repos/acme/app/pulls/abc/reviews", ""},
 		{http.MethodGet, "/api/user/github-access/acme/app", "github.account-read"},
 		{http.MethodGet, "/api/user/github-app/installations", "github.account-read"},
 		{http.MethodGet, "/api/user/github-app/installations/349203", "github.account-read"},

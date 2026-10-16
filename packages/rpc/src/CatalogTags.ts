@@ -267,6 +267,7 @@ export const CatalogOperationSchema = z.enum([
   "frame.forward",
   "github",
   "github.account-read",
+  "github.account-review",
   "github.import-read",
   "github.mirror-sync",
   "github.mirror.retry-ref",

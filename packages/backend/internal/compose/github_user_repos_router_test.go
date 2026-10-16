@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -71,6 +72,11 @@ func (s *githubUserReposRouterService) GetAuthenticatedUserGitHubPull(context.Co
 func (s *githubUserReposRouterService) DiagnoseGitHubAccess(context.Context, int64, string, string, string) (services.GitHubAccessDiagnosis, error) {
 	s.calls.Add(1)
 	return services.GitHubAccessDiagnosis{Verdict: services.GitHubAccessVerdictOK, Surface: "issues"}, nil
+}
+
+func (s *githubUserReposRouterService) SubmitAuthenticatedUserGitHubPullReview(context.Context, int64, string, string, int64, services.GitHubPullReviewInput) (services.GitHubPullReviewResult, error) {
+	s.calls.Add(1)
+	return services.GitHubPullReviewResult{ReviewID: 55, State: "APPROVED", CommitID: "0d1dc5a1a4f0bd02a9e5ba9a1f86e7f1a3b4c5d6", Verified: true}, nil
 }
 
 func githubUserReposSecurityRouter(service routes.GitHubUserReposRouteService) http.Handler {
@@ -214,4 +220,82 @@ func TestServerRouter_GitHubAppInstallationsServesSessionUser(t *testing.T) {
 	router.ServeHTTP(unauthenticated, httptest.NewRequest(http.MethodGet, "/api/user/github-app/installations", nil))
 	assert.Equal(t, http.StatusUnauthorized, unauthenticated.Code)
 	assert.Equal(t, int32(2), service.installURLCalls.Load(), "signed-out reads must never load credential metadata")
+}
+
+/*
+ * The review write (#4038) is the one non-GET among these surfaces, so it
+ * carries the write scope — and a read-only or repository-restricted
+ * credential must be refused before any GitHub credential is loaded.
+ */
+func TestServerRouter_GitHubPullReviewRouteRefusesBeforeService(t *testing.T) {
+	const path = "/api/user/github-repos/smithersai/smithers/pulls/7/reviews"
+	body := `{"event":"APPROVE","body":"","commit_id":"0d1dc5a1a4f0bd02a9e5ba9a1f86e7f1a3b4c5d6"}`
+	for name, scopes := range map[string]string{
+		"read-only":             string(middleware.ScopeReadRepository),
+		"repository-restricted": string(middleware.ScopeWriteRepository) + "," + middleware.RepositoryRestrictionScope(99),
+	} {
+		t.Run(name, func(t *testing.T) {
+			service := &githubUserReposRouterService{}
+			router := githubUserReposSecurityRouter(service)
+			req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			req = req.WithContext(middleware.ContextWithAuthInfo(req.Context(), &middleware.AuthInfo{
+				User:        &db.User{ID: 7, Username: "octo", LowerUsername: "octo"},
+				RawScopes:   scopes,
+				Scopes:      middleware.ParseTokenScopes(scopes),
+				IsTokenAuth: true,
+				TokenSource: middleware.TokenSourcePersonalAccessToken,
+			}))
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+			require.Equal(t, http.StatusForbidden, rec.Code)
+			assert.Equal(t, "private, no-store", rec.Header().Get("Cache-Control"))
+			assert.Equal(t, int32(0), service.calls.Load(), "the router must refuse before the review service")
+		})
+	}
+
+	t.Run("signed-out", func(t *testing.T) {
+		service := &githubUserReposRouterService{}
+		router := githubUserReposSecurityRouter(service)
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusUnauthorized, rec.Code)
+		assert.Equal(t, int32(0), service.calls.Load())
+	})
+
+	// A session write still answers to the browser write gate, like every
+	// other non-GET door.
+	t.Run("session without a csrf token", func(t *testing.T) {
+		service := &githubUserReposRouterService{}
+		router := githubUserReposSecurityRouter(service)
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req = req.WithContext(middleware.ContextWithAuthInfo(req.Context(), &middleware.AuthInfo{
+			User: &db.User{ID: 7, Username: "octo", LowerUsername: "octo"}, IsTokenAuth: false,
+		}))
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusForbidden, rec.Code)
+		assert.Equal(t, int32(0), service.calls.Load())
+	})
+
+	t.Run("session person reaches the service", func(t *testing.T) {
+		service := &githubUserReposRouterService{}
+		router := githubUserReposSecurityRouter(service)
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "review-csrf"})
+		req.Header.Set("X-CSRF-Token", "review-csrf")
+		req = req.WithContext(middleware.ContextWithAuthInfo(req.Context(), &middleware.AuthInfo{
+			User:        &db.User{ID: 7, Username: "octo", LowerUsername: "octo"},
+			IsTokenAuth: false,
+		}))
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+		assert.JSONEq(t, `{"review_id":55,"state":"APPROVED","commit_id":"0d1dc5a1a4f0bd02a9e5ba9a1f86e7f1a3b4c5d6","verified":true}`, rec.Body.String())
+		assert.Equal(t, int32(1), service.calls.Load())
+	})
 }

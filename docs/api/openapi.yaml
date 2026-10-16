@@ -24486,6 +24486,124 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '500':
           $ref: '#/components/responses/InternalError'
+  /api/user/github-repos/{owner}/{repo}/pulls/{number}/reviews:
+    post:
+      summary: Submit one review to a GitHub pull request
+      description: >-
+        Requires write:repository and a user credential that is not
+        repository-restricted; a session write also carries the browser CSRF
+        token. The review is submitted to GitHub with the signed-in person's
+        own GitHub credential, so GitHub attributes it to that person. The
+        request names no actor: the catalog command (github.account-review) is
+        person-only and agent never, so an agent's review analysis can return
+        findings but can never submit someone's verdict here. commit_id is the
+        head commit the person reviewed; the request is refused with 409 if the
+        pull request has moved to another head, is no longer open, or is not
+        the named number. The review is read back from GitHub before this door
+        answers, and verified is true only for a review that readback matched
+        at that head. A lost acknowledgement is reconciled by reading, never by
+        resending; when reading cannot settle it the answer is the
+        github_unavailable failure and the pull request may already carry the
+        review.
+      operationId: create_api_user_github_repos_owner_repo_pulls_number_reviews
+      tags:
+        - User
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: number
+          in: path
+          required: true
+          description: Pull request number, a positive integer.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+            maximum: 9007199254740991
+      x-required-token-scope: write:repository
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - event
+                - commit_id
+              properties:
+                event:
+                  type: string
+                  description: The verdict. REQUEST_CHANGES and COMMENT require body text.
+                  enum:
+                    - APPROVE
+                    - REQUEST_CHANGES
+                    - COMMENT
+                body:
+                  type: string
+                  maxLength: 65536
+                commit_id:
+                  type: string
+                  description: The head commit the person reviewed, a 40-character SHA.
+                  pattern: '^[0-9a-fA-F]{40}$'
+      responses:
+        '201':
+          description: The review GitHub recorded, as read back.
+          headers:
+            Cache-Control:
+              description: Always `private, no-store`.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - review_id
+                  - state
+                  - commit_id
+                  - verified
+                properties:
+                  review_id:
+                    type: integer
+                    format: int64
+                  state:
+                    type: string
+                    enum:
+                      - APPROVED
+                      - CHANGES_REQUESTED
+                      - COMMENTED
+                  commit_id:
+                    type: string
+                  verified:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /api/user/github-repos/{owner}/{repo}/pulls/{number}/diff:
     get:
       summary: GET /api/user/github-repos/{owner}/{repo}/pulls/{number}/diff

@@ -3047,6 +3047,21 @@ func (v GetAPIUserGithubReposOwnerRepoPullsNumberResponseBase) MarshalJSON() ([]
 	return joinAdditional(plain(v), v.AdditionalProperties)
 }
 
+// CreateAPIUserGithubReposOwnerRepoPullsNumberReviewsBody is generated from docs/api/openapi.yaml.
+type CreateAPIUserGithubReposOwnerRepoPullsNumberReviewsBody struct {
+	Event    string  `json:"event"`
+	Body     *string `json:"body,omitempty"`
+	CommitID string  `json:"commit_id"`
+}
+
+// CreateAPIUserGithubReposOwnerRepoPullsNumberReviewsResponse is generated from docs/api/openapi.yaml.
+type CreateAPIUserGithubReposOwnerRepoPullsNumberReviewsResponse struct {
+	ReviewID int64  `json:"review_id"`
+	State    string `json:"state"`
+	CommitID string `json:"commit_id"`
+	Verified bool   `json:"verified"`
+}
+
 // ListAPIUserGithubReposOwnerRepoPullsNumberCommitsParams is the query of GET /api/user/github-repos/{owner}/{repo}/pulls/{number}/commits.
 type ListAPIUserGithubReposOwnerRepoPullsNumberCommitsParams struct {
 	PerPage *int64
@@ -7144,6 +7159,13 @@ func (c *Client) GetAPIUserGithubReposOwnerRepoPulls(ctx context.Context, owner 
 func (c *Client) GetAPIUserGithubReposOwnerRepoPullsNumber(ctx context.Context, owner string, repo string, number int64) (GetAPIUserGithubReposOwnerRepoPullsNumberResponse, error) {
 	var out GetAPIUserGithubReposOwnerRepoPullsNumberResponse
 	err := c.do(ctx, "GET", "/api/user/github-repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/pulls/"+url.PathEscape(strconv.FormatInt(number, 10)), nil, nil, &out)
+	return out, err
+}
+
+// CreateAPIUserGithubReposOwnerRepoPullsNumberReviews calls POST /api/user/github-repos/{owner}/{repo}/pulls/{number}/reviews.
+func (c *Client) CreateAPIUserGithubReposOwnerRepoPullsNumberReviews(ctx context.Context, owner string, repo string, number int64, body CreateAPIUserGithubReposOwnerRepoPullsNumberReviewsBody) (CreateAPIUserGithubReposOwnerRepoPullsNumberReviewsResponse, error) {
+	var out CreateAPIUserGithubReposOwnerRepoPullsNumberReviewsResponse
+	err := c.do(ctx, "POST", "/api/user/github-repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo)+"/pulls/"+url.PathEscape(strconv.FormatInt(number, 10))+"/reviews", nil, body, &out)
 	return out, err
 }
 

@@ -7177,6 +7177,28 @@ export interface GetApiUserGithubReposOwnerRepoPullsNumberInput {
 export const getApiUserGithubReposOwnerRepoPullsNumber = (transport: Transport, input: GetApiUserGithubReposOwnerRepoPullsNumberInput): Promise<GetApiUserGithubReposOwnerRepoPullsNumberResponse> =>
   transport.request("GET", `/api/user/github-repos/${segment(input.path.owner)}/${segment(input.path.repo)}/pulls/${segment(input.path.number)}`) as Promise<GetApiUserGithubReposOwnerRepoPullsNumberResponse>
 
+export type CreateApiUserGithubReposOwnerRepoPullsNumberReviewsBody = {
+  event: "APPROVE" | "REQUEST_CHANGES" | "COMMENT"
+  body?: string
+  commit_id: string
+}
+
+export type CreateApiUserGithubReposOwnerRepoPullsNumberReviewsResponse = {
+  review_id: number
+  state: "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED"
+  commit_id: string
+  verified: boolean
+}
+
+export interface CreateApiUserGithubReposOwnerRepoPullsNumberReviewsInput {
+  readonly path: { readonly owner: string; readonly repo: string; readonly number: number }
+  readonly body: CreateApiUserGithubReposOwnerRepoPullsNumberReviewsBody
+}
+
+/** POST /api/user/github-repos/{owner}/{repo}/pulls/{number}/reviews: Submit one review to a GitHub pull request */
+export const createApiUserGithubReposOwnerRepoPullsNumberReviews = (transport: Transport, input: CreateApiUserGithubReposOwnerRepoPullsNumberReviewsInput): Promise<CreateApiUserGithubReposOwnerRepoPullsNumberReviewsResponse> =>
+  transport.request("POST", `/api/user/github-repos/${segment(input.path.owner)}/${segment(input.path.repo)}/pulls/${segment(input.path.number)}/reviews`, input.body) as Promise<CreateApiUserGithubReposOwnerRepoPullsNumberReviewsResponse>
+
 export type GetApiUserGithubReposOwnerRepoPullsNumberDiffResponse = AnyJSON
 
 export interface GetApiUserGithubReposOwnerRepoPullsNumberDiffInput {
