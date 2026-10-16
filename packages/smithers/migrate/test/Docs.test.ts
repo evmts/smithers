@@ -23,7 +23,9 @@ const readme = read("../README.md")
 const flowSource = read("../src/flow/MigrateFlow.ts")
 const manifest = JSON.parse(read("../package.json")) as {
   dependencies: Record<string, string>
+  devDependencies: Record<string, string>
   peerDependencies?: Record<string, string>
+  smthrs: { privateEffectAdapters: ReadonlyArray<string> }
 }
 
 /** Every namespace `src/index.ts` re-exports, in source order. */
@@ -73,28 +75,15 @@ describe("installation contract", () => {
     Object.keys(field).filter((name) => name === "effect" || name.startsWith("@effect/"))
 
   it("names each Effect package under the kind package.json declares it as", () => {
-    // The README opened by calling all three peers while the manifest installs
-    // two of them, so a reader following it would omit a hard dependency.
-    const contract = unwrapped(readme).match(/This package declares (.+?)Keep the application/)?.[1]
-
+    const contract = unwrapped(readme).match(
+      /This package takes `effect` as a `([^`]+)` peer and keeps its Node platform adapters at `([^`]+)`/
+    )
     expect(contract).toBeDefined()
-    const [hard, peer] = (contract as string).split(" dependencies and ")
-    const peers = effectPackages(manifest.peerDependencies ?? {})
-    // The sentence has a peer half exactly when the manifest declares an
-    // Effect peer, and a manifest without one leaves no package called a peer.
-    expect(peer === undefined).toBe(peers.length === 0)
-    if (peers.length === 0) expect(hard).not.toMatch(/\bpeer\b/)
-
-    for (const name of effectPackages(manifest.dependencies)) {
-      expect(hard).toContain(`\`${name}\``)
-      expect(peer ?? "").not.toContain(`\`${name}\``)
-    }
-    for (const name of peers) {
-      expect(peer).toContain(`\`${name}\``)
-      expect(hard).not.toContain(`\`${name}\``)
-    }
-    for (const half of peer === undefined ? [hard] : [hard, peer]) {
-      expect(half).toContain(`\`${manifest.dependencies["effect"]}\``)
+    expect(effectPackages(manifest.dependencies)).toEqual([])
+    expect(effectPackages(manifest.peerDependencies ?? {})).toEqual(["effect"])
+    expect(contract?.[1]).toBe(manifest.peerDependencies?.["effect"])
+    for (const adapter of manifest.smthrs.privateEffectAdapters) {
+      expect(contract?.[2]).toBe(manifest.devDependencies[adapter])
     }
   })
 })

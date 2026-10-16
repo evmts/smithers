@@ -859,8 +859,8 @@ const Napping = Flow.make("e2e/napping", {
   error: Sleep.SleepRequestInvalid,
   body: ({ millis }) =>
     Mark.call({ label: "before" }).pipe(
-      Node.bindPlanned(() => Sleep.action.call({ millis })),
-      Node.bindPlanned(() => Mark.call({ label: "after" }))
+      Node.andThen(Sleep.action.call({ millis })),
+      Node.andThen(Mark.call({ label: "after" }))
     )
 })
 
@@ -870,7 +870,7 @@ const Gated = Flow.make("e2e/gated", {
   error: WaitFor.WaitForRequestInvalid,
   body: ({ name }) =>
     Mark.call({ label: "before" }).pipe(
-      Node.bindPlanned(() => WaitFor.action.call({ name }))
+      Node.andThen(WaitFor.action.call({ name }))
     )
 })
 

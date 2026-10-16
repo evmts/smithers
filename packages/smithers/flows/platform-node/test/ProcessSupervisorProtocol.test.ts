@@ -98,6 +98,17 @@ describe.each(process.platform === "win32" ? ["native" as const] : ["native", "t
         expect(await bounded(control.exited.promise)).toBe(0)
       }))
 
+    it("retains the reported guardian identity alongside the target", () =>
+      session(async (control, socket) => {
+        control.activationSent = true
+        await send(socket, ready, { ...spawned, guardian: 4244 }, exited)
+        await bounded(control.started.promise)
+        expect(control.targetPid).toBe(4243)
+        expect(control.guardianPid).toBe(4244)
+        expect(await bounded(control.exited.promise)).toBe(0)
+        expect(control.fault).toBeUndefined()
+      }))
+
     it("acknowledges cleanup only after consuming the preceding terminal status", () =>
       session(async (control, socket, requests) => {
         let delivered: Promise<void> | undefined
@@ -318,6 +329,12 @@ describe.each(process.platform === "win32" ? ["native" as const] : ["native", "t
         activated: true,
         message: "Invalid target startup"
       },
+      ...[1, 2 ** 53].map((guardian) => ({
+        name: `invalid guardian pid ${guardian}`,
+        values: [{ ...spawned, guardian }],
+        activated: true,
+        message: "Invalid target startup"
+      })),
       {
         name: "duplicate startup",
         values: [ready, spawned, spawned],
