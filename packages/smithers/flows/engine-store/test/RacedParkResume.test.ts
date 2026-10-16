@@ -310,6 +310,28 @@ const dispatchIrreversible = (runId: string, execute: () => Effect.Effect<unknow
   })
 
 describe("an irreversible dispatch that parks", () => {
+  it.effect("keeps a released crossing unknown and refuses an unkeyed second dispatch", () =>
+    provide(Effect.scoped(Effect.gen(function*() {
+      const runId = "boundary-release"
+      const instance = FlowEngine.makeInstance(ParkedIrreversible as never, runId)
+      const released = yield* dispatchIrreversible(runId, () => Effect.interrupt).pipe(
+        Effect.provideService(FlowRuntime.FlowInstance, instance)
+      )
+      expect(Exit.isFailure(released)).toBe(true)
+      expect(yield* boundaryStatuses(runId)).toEqual(["intended", "unknown"])
+      const attempts = yield* AttemptStore.AttemptStore
+      const row = yield* attempts.get({ runId, stepKeyDigest: sha256(`${runId}-key`), attempt: 1 })
+      expect(Option.isSome(row) && row.value.state).toBe("running")
+      let repeated = false
+      const retried = yield* dispatchIrreversible(runId, () => Effect.sync(() => {
+        repeated = true
+        return "charged again"
+      })).pipe(Effect.provideService(FlowRuntime.FlowInstance, instance))
+      expect(Exit.isFailure(retried)).toBe(true)
+      expect(repeated).toBe(false)
+      expect(yield* boundaryStatuses(runId)).toEqual(["intended", "unknown"])
+    }))))
+
   it.effect("leaves its effect boundary open, and closes it when the resumed attempt settles", () =>
     provide(Effect.scoped(Effect.gen(function*() {
       const instance = FlowEngine.makeInstance(ParkedIrreversible as never, "boundary-park")
