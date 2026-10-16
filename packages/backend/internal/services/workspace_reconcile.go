@@ -148,7 +148,9 @@ func (s *WorkspaceService) ReconcileWorkspaceProvisioning(ctx context.Context) e
 		}
 		if ws.Status == "failed" && ws.ProvisioningStage == workspaceStartCleanupPending {
 			if err := s.reconcileFailedWorkspaceStart(ctx, ws); err != nil {
-				slog.Warn("failed workspace cleanup retry failed", "workspace_id", ws.ID, "error", err)
+				// Finite fields, never the error: see workspaceRecoveryRefusal.
+				slog.Warn("failed workspace cleanup retry failed",
+					workspaceRecoveryRefusal(interruptedReleaseStageReapFailedStart, ws.ID, err)...)
 			}
 			continue
 		}
@@ -162,7 +164,9 @@ func (s *WorkspaceService) ReconcileWorkspaceProvisioning(ctx context.Context) e
 		}
 		if ws.Status == "releasing" {
 			if err := s.reconcileWorkspaceRelease(ctx, ws); err != nil {
-				slog.Warn("workspace release recovery failed", "workspace_id", ws.ID, "error", err)
+				// Finite fields, never the error: see workspaceRecoveryRefusal.
+				slog.Warn("workspace release recovery failed",
+					workspaceRecoveryRefusal(interruptedReleaseStageRecoverRelease, ws.ID, err)...)
 			}
 			continue
 		}
@@ -209,11 +213,22 @@ func runWorkspaceProvisioningReconciler(ctx context.Context, interval time.Durat
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					slog.Error("workspace provisioning reconciliation panicked", "panic", r)
+					// A panic value is whatever panicked: an adapter error, a
+					// formatted sentence, a store's own text. Its TYPE is a
+					// name from this program's source, so it says which
+					// failure family this was without publishing anything the
+					// value carries. The row-level records above are where a
+					// per-row refusal is already diagnosed.
+					slog.Error("workspace provisioning reconciliation panicked",
+						"panic_type", fmt.Sprintf("%T", r))
 				}
 			}()
 			if err := reconcile(ctx); err != nil && ctx.Err() == nil {
-				slog.Error("workspace provisioning reconciliation failed", "error", err)
+				// This tick-level error is the listing, the context or an
+				// admission refusal; every per-row refusal is recorded by the
+				// loop itself. The reason is the same finite classification.
+				slog.Error("workspace provisioning reconciliation failed",
+					"reason", string(interruptedReleaseStopReasonFor(err)))
 			}
 		}()
 		select {
@@ -321,6 +336,16 @@ func (s *WorkspaceService) recoverUnregisteredWorkspaceVM(ctx context.Context, w
 // the outcome when the stop returns an error at all. Nothing is deleted, no
 // status moves on a label or an age, and the fenced FailWorkspaceIfUnchanged
 // still refuses to overwrite a newer transition.
+//
+// The attempt is also FINITE. Its three runtime calls each carry a written
+// bound — the opening read and the confirming read
+// workspaceReleaseConfirmTimeout, the stop workspaceReleaseStopTimeout — so a
+// per-row attempt is bounded by their sum, and one unanswering adapter can no
+// longer hold the tick, its provisioning slot and every other row in the
+// listing for the life of the process. The two bounds derived here come from
+// the caller's context, so shutdown still reaches a blocked call: the attempt
+// is abandoned, nothing is recorded, and the row stays 'releasing' for the
+// next process to re-drive.
 func (s *WorkspaceService) reconcileWorkspaceRelease(ctx context.Context, workspace db.Workspace) error {
 	if s.runtime == nil {
 		return errors.New("workspace release runtime unavailable")
@@ -332,17 +357,33 @@ func (s *WorkspaceService) reconcileWorkspaceRelease(ctx context.Context, worksp
 		if err != nil || current.Status != "releasing" {
 			return current, err
 		}
-		operation, err := s.workspaceRuntimeContext(ctx, current, current.UserID, workspaceLifecycleOperation(current, "recover-release"))
-		if err != nil {
-			return current, err
+		// Both runtime calls below are bounded, and bounded from the
+		// CALLER's context rather than detached, for the same reason the
+		// retained-guest stop is: this runs on a reconciler tick that carries
+		// no deadline of its own, re-drives the row every
+		// WorkspaceProvisioningReconcileInterval, and holds a provisioning
+		// slot and the per-row locks while it waits. The runtime port applies
+		// no deadline of its own, so an adapter that never answers would
+		// otherwise hold this tick — and with it every other row in the
+		// listing — for as long as the process lives, which is exactly the
+		// starvation the bounds on the new interrupted/failed branch already
+		// rule out. The existing constants are reused: the opening read is a
+		// read, like the confirming one, and the stop gets the stop's budget.
+		inspect, cancelInspect := context.WithTimeout(ctx, workspaceReleaseConfirmTimeout)
+		operation, err := s.workspaceRuntimeContext(inspect, current, current.UserID, workspaceLifecycleOperation(current, "recover-release"))
+		if err == nil {
+			_, err = s.runtime.InspectWorkspace(operation, current.ID)
 		}
-		_, err = s.runtime.InspectWorkspace(operation, current.ID)
+		cancelInspect()
 		if err != nil && !errors.Is(err, workspaceapi.ErrWorkspaceNotFound) {
 			return current, err
 		}
 		// Idempotent stop discharges a reconstructed admission grant too. Inspecting
 		// a stopped guest alone must not leave the scheduler's slot occupied.
-		if err := s.stopRuntimeWorkspaceLocked(ctx, current, current.UserID, "recover-release"); err != nil {
+		stop, cancelStop := context.WithTimeout(ctx, workspaceReleaseStopTimeout)
+		err = s.stopRuntimeWorkspaceLocked(stop, current, current.UserID, "recover-release")
+		cancelStop()
+		if err != nil {
 			return current, err
 		}
 		if _, err := s.confirmRecoveredReleaseStop(ctx, current); err != nil {
@@ -487,22 +528,86 @@ const workspaceRepositoryAdvertisementStoppedMessage = workspaceRepositoryAdvert
 //     start_cleanup_complete is already reaped).
 //   - a bound vm_id: there is a placement to stop. An unbound row has no
 //     guest and no reservation, so there is nothing to re-drive.
+//
+// The two emptiness tests take the STRICTER of the lister's reading and a
+// trimmed one, in the direction that refuses. The stage is compared exactly,
+// the way the lister compares provisioning_stage to the empty string, so a
+// padded stage is not read as "no reconciler owns this row". The placement is
+// compared trimmed, so a whitespace-only binding is not read as a guest to
+// stop even though the lister's own non-empty test would list it. The
+// registered sentence and code go through workspaceStoredFailureText, which
+// is the writer's own btrim.
 func retainedGuestStopPending(row db.Workspace) (retainedGuestStopDoor, bool) {
 	if row.Status != "failed" ||
-		strings.TrimSpace(row.ProvisioningStage) != "" ||
+		row.ProvisioningStage != "" ||
 		strings.TrimSpace(row.VmID) == "" ||
 		!row.FailureCode.Valid ||
-		strings.TrimSpace(row.FailureCode.String) != string(pkgerrors.CodeConflict) ||
+		workspaceStoredFailureText(row.FailureCode.String) != string(pkgerrors.CodeConflict) ||
 		!row.FailureMessage.Valid {
 		return retainedGuestStopDoor{}, false
 	}
-	reason := strings.TrimSpace(row.FailureMessage.String)
+	reason := workspaceStoredFailureText(row.FailureMessage.String)
 	for _, door := range retainedGuestStopDoors {
 		if reason == door.reason {
 			return door, true
 		}
 	}
 	return retainedGuestStopDoor{}, false
+}
+
+// workspaceStoredFailureText normalizes a stored failure_code or
+// failure_message exactly as far as the writer that stored it does, and no
+// further, so this predicate and the SQL lister read ONE contract.
+//
+// The product's normalize_workspace_failure_details trigger stores
+// btrim(NEW.failure_message), and btrim's default character set is SPACES
+// only. So a space-padded reason cannot reach the column at all — the stored
+// bytes are the bare sentence, which is why trimming spaces here is both
+// harmless and exact — while a TAB- or newline-padded reason IS stored with
+// its padding, and the lister's own `failure_message = '<sentence>'`
+// comparison then does not match it.
+//
+// strings.TrimSpace also trims tabs, newlines, vertical tabs, form feeds,
+// carriage returns and the Unicode spaces, so using it here admitted as a
+// REGISTERED door a stored reason the backlog does not list and this writer
+// could not have produced: one tab in front of the sentence was enough.
+// Trimming exactly what btrim trims makes that fail closed instead.
+func workspaceStoredFailureText(stored string) string {
+	return strings.Trim(stored, " ")
+}
+
+// retainedGuestTransitionUnchanged reports that the row this attempt holds
+// under the advisory lock is still the TRANSITION it was listed for.
+//
+// It exists because every other conjunct can read identical across a real
+// advance. The listing read is taken before the lock, and the cohort's own
+// shape is sticky: a second provisioning attempt that reaches the same door
+// with the same retained placement writes the same status, the same
+// `conflict`, the same registered sentence and the same empty stage over the
+// same vm_id. So "the door is still this door" and "the placement is still
+// this placement" are satisfied by a row that has since been re-driven, and
+// NEITHER of them is a fence on the transition — which is what a stale
+// attempt must not act on, because it would stop a guest and seal a receipt
+// for a start it never observed.
+//
+// The transition is the owner, the repository, the provisioning generation
+// and the recorded updated_at. The generation is the provisioner's own
+// counter; updated_at is set by every writer on this path
+// (FailProvisioningWorkspaceIfCurrent and FailWorkspaceIfUnchanged both write
+// `updated_at = NOW()`); and the owner and repository say the row is still
+// the same ownership this attempt was listed under. Any of them moving means
+// the row belongs to that writer.
+//
+// Refusing is not giving up: the row stays in the cohort, and the NEXT tick
+// lists it again with a fresh snapshot and converges it normally. This is a
+// fence on the generation and the owner, taken BEFORE any physical effect —
+// not the post-stop CAS, which can only decline to record a receipt for a
+// stop that already happened.
+func retainedGuestTransitionUnchanged(listed, current db.Workspace) bool {
+	return current.UserID == listed.UserID &&
+		current.RepositoryID == listed.RepositoryID &&
+		current.ProvisioningGeneration == listed.ProvisioningGeneration &&
+		current.UpdatedAt.Equal(listed.UpdatedAt)
 }
 
 // reconcileInterruptedReleaseStop finishes the release the verdict above
@@ -544,9 +649,12 @@ func retainedGuestStopPending(row db.Workspace) (retainedGuestStopDoor, bool) {
 // constant bounds the whole attempt, and the earlier comment that said
 // workspaceReleaseConfirmTimeout did was wrong about the stop.
 //
-// Every write is fenced on the row this attempt read. A newer owner,
-// placement, status or transition — a resume, a replacement VM, another
-// reconciler — matches nothing, and then this function reports no error and
+// Every write is fenced on the row this attempt read, and so is the physical
+// effect: the door, the placement and the transition are all re-checked under
+// the lock BEFORE the stop, because a CAS can only decline to record a
+// receipt for a guest that is already down. A newer owner, placement, status,
+// generation or transition — a resume, a replacement VM, another reconciler —
+// matches nothing, and then this function reports no error, stops nothing and
 // changes nothing: that transition owns the row.
 //
 // The returned outcome is the attempt's diagnostic; see
@@ -587,6 +695,13 @@ func (s *WorkspaceService) reconcileRetainedGuestStop(ctx context.Context, works
 		// stopping its guest because an older owner's release never finished
 		// would be this reconciler acting on a placement nobody handed it.
 		if current.VmID != workspace.VmID {
+			return current, nil
+		}
+		// ... and the SAME placement under the same door is not evidence that
+		// the row did not move. See retainedGuestTransitionUnchanged: the
+		// listing read happens before the advisory lock, so a transition can
+		// land in between that leaves every conjunct above reading identical.
+		if !retainedGuestTransitionUnchanged(workspace, current) {
 			return current, nil
 		}
 		outcome.stage = interruptedReleaseStageStop
@@ -647,6 +762,11 @@ const workspaceReleaseStopTimeout = 30 * time.Second
 // interruptedReleaseStopStage names the step an attempt did not get past. It
 // is a written, finite vocabulary: nothing an adapter, a store or a request
 // returns can add a value to it.
+//
+// The first four values are the steps of a retained-guest stop. The rest name
+// the other attempts this reconcile loop makes, and the provisioning
+// boundary's, which record their refusals through the same finite shape — see
+// workspaceRecoveryRefusal.
 type interruptedReleaseStopStage string
 
 const (
@@ -660,7 +780,40 @@ const (
 	interruptedReleaseStageConfirm interruptedReleaseStopStage = "confirm_stop"
 	// record_receipt: the fenced write of the stop receipt.
 	interruptedReleaseStageRecord interruptedReleaseStopStage = "record_receipt"
+	// reap_failed_start: the failed-start cleanup contract's own retry
+	// (reconcileFailedWorkspaceStart), which stops AND deletes a row that
+	// already records start_cleanup_pending.
+	interruptedReleaseStageReapFailedStart interruptedReleaseStopStage = "reap_failed_start"
+	// recover_release: the original interrupted-release recovery
+	// (reconcileWorkspaceRelease), the whole attempt. Which of its three
+	// steps refused is not separated here; its reason does distinguish the
+	// unconfirmed stop (service_unavailable, from recordReleaseStopEvidence)
+	// from a read or stop refusal.
+	interruptedReleaseStageRecoverRelease interruptedReleaseStopStage = "recover_release"
+	// provision_async: a detached provisioning attempt that failed, recorded
+	// by the async wrapper before it publishes the terminal verdict.
+	interruptedReleaseStageProvisionAsync interruptedReleaseStopStage = "provision_async"
+	// record_provision_failure: the write of that terminal verdict itself,
+	// when the store refused it.
+	interruptedReleaseStageRecordFailure interruptedReleaseStopStage = "record_provision_failure"
 )
+
+// workspaceRecoveryRefusal renders an attempt that did not finish in the SAME
+// finite shape as a retained-guest stop: the owner row by its stable,
+// non-resolvable correlation token, a written stage, and a reason that is
+// either a REGISTERED pkgerrors code or one of the written labels.
+//
+// The reconcile loop's other two records, and the provisioning boundary's,
+// dumped the owner id and the raw error. All of those paths end in a hosted
+// runtime or store call, so the sentence can carry an endpoint, a bearer
+// credential, a request id, a host name or a customer's own prose — and these
+// sites log unconditionally, the reconcile loop on every tick until the row
+// converges. Nothing useful is dropped: the stage says which attempt refused,
+// the reason says what kind of refusal it was, and the token correlates the
+// repeats of the same row across ticks.
+func workspaceRecoveryRefusal(stage interruptedReleaseStopStage, workspaceID string, err error) []any {
+	return interruptedReleaseStopOutcome{stage: stage, reason: interruptedReleaseStopReasonFor(err)}.logArgs(workspaceID)
+}
 
 // interruptedReleaseStopReason is the finite reason an attempt stopped at its
 // stage. A REGISTERED pkgerrors code is used verbatim, because that registry

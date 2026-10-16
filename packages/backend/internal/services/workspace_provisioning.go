@@ -1441,15 +1441,17 @@ func (s *WorkspaceService) markWorkspaceProvisionFailed(ctx context.Context, wor
 	failure := workspaceFailureDetailsFor(cause)
 	_, transitioned, err := s.failProvisioningWorkspaceIfCurrent(updateCtx, workspace, failure)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		slog.Warn(
-			"failed to mark workspace provisioning failure",
-			"workspace_id",
-			workspace.ID,
-			"error",
-			err,
-			"cause",
-			cause,
-		)
+		// Two finite reasons, kept apart, and neither sentence published: the
+		// store's refusal and the provisioning cause it was trying to record.
+		// Both are arbitrary text — a store error can carry a DSN, a host or a
+		// constraint's recorded values, and the cause comes back from a hosted
+		// runtime over HTTP — and this is the one path where the verdict did
+		// NOT reach the row, so it is also the path most likely to repeat.
+		// The cause's own structured record is written where it is produced
+		// (workspaceRepositoryStepOutcome for the repository doors).
+		slog.Warn("failed to mark workspace provisioning failure",
+			append(workspaceRecoveryRefusal(interruptedReleaseStageRecordFailure, workspace.ID, err),
+				"cause_reason", string(interruptedReleaseStopReasonFor(cause)))...)
 		return
 	}
 	if transitioned {
@@ -1685,7 +1687,11 @@ func (s *WorkspaceService) provisionWorkspaceAsyncWithStart(ctx context.Context,
 				s.deferWorkspaceForFullPool(provisionCtx, workspace)
 				return
 			}
-			slog.Error("async workspace provisioning failed", "workspace_id", workspace.ID, "error", err)
+			// The published verdict is the row's own failure_message, written
+			// immediately below; this record is the finite shape beside it,
+			// never the adapter's sentence. See workspaceRecoveryRefusal.
+			slog.Error("async workspace provisioning failed",
+				workspaceRecoveryRefusal(interruptedReleaseStageProvisionAsync, workspace.ID, err)...)
 			// Drive the row to a TERMINAL 'failed' status. Without this the row
 			// keeps its non-terminal status and pollers (the multi client only
 			// stops on state 'failed'/'error') hang until their own 4-minute

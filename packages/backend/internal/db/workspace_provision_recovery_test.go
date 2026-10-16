@@ -212,3 +212,86 @@ func TestProvisionRecoveryListsOnlyTheInterruptedReleaseItCanFinish(t *testing.T
 		})
 	}
 }
+
+// The REAL normalization contract behind the sentence predicates, read from
+// PostgreSQL rather than assumed.
+//
+// normalize_workspace_failure_details stores btrim(failure_message) for a
+// failed row, and btrim's DEFAULT character set is SPACES only. So the two
+// paddings are not the same fact:
+//
+//   - a space-padded reason never reaches the column padded. The trigger
+//     stores the bare sentence, this lister's `failure_message = '<sentence>'`
+//     matches it, and a space-trimmed reading in Go is therefore exact rather
+//     than lenient.
+//   - a TAB-padded reason IS stored with its tab. This lister does not match
+//     it, so the row is in no backlog — and a Go predicate that trimmed tabs
+//     would still have read it as a registered door, which is a reason the
+//     writer could not have produced reaching a remediation. It must fail
+//     closed on both sides.
+func TestProvisionRecoveryNormalizesAStoredReasonTheWayBtrimDoes(t *testing.T) {
+	if testing.Short() {
+		t.Skip("PostgreSQL integration")
+	}
+	ctx := context.Background()
+	const advertisement = "workspace repository advertisement could not be verified"
+	for _, tc := range []struct {
+		name    string
+		written string
+		stored  string
+		listed  bool
+	}{
+		{
+			name:    "the sentence as the writer records it",
+			written: advertisement, stored: advertisement, listed: true,
+		},
+		{
+			name:    "space padding, which btrim strips before the column sees it",
+			written: "   " + advertisement + "  ", stored: advertisement, listed: true,
+		},
+		{
+			name:    "a tab in front, which btrim keeps",
+			written: "\t" + advertisement, stored: "\t" + advertisement,
+		},
+		{
+			name:    "a newline behind, which btrim keeps",
+			written: advertisement + "\n", stored: advertisement + "\n",
+		},
+		{
+			name:    "a carriage return behind, which btrim keeps",
+			written: advertisement + "\r", stored: advertisement + "\r",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tx, err := sharedPool.BeginTx(ctx, pgx.TxOptions{})
+			require.NoError(t, err)
+			defer func() { _ = tx.Rollback(ctx) }()
+			q := New(tx)
+			user := mustCreateUser(t, tx, uniqueTestUsername(t))
+			repo := mustCreateRepoForUser(t, tx, user, "advertisement-padding")
+			ws, err := q.CreateWorkspace(ctx, CreateWorkspaceParams{RepositoryID: repo, UserID: user, Name: "padded", TargetBookmark: "main", Status: "starting"})
+			require.NoError(t, err)
+			_, err = tx.Exec(ctx, `UPDATE workspaces
+				SET status='failed', failure_code='conflict', failure_message=$2,
+				    provisioning_stage='', vm_id='msb_padded', updated_at=now()
+				WHERE id=$1`, ws.ID, tc.written)
+			require.NoError(t, err)
+
+			stored, err := q.GetWorkspace(ctx, ws.ID)
+			require.NoError(t, err)
+			require.Equal(t, tc.stored, stored.FailureMessage.String,
+				"btrim's default character set is spaces, and nothing else")
+
+			rows, err := q.ListWorkspaceProvisioningRecovery(ctx)
+			require.NoError(t, err)
+			found := false
+			for _, row := range rows {
+				if row.ID == ws.ID {
+					found = true
+				}
+			}
+			require.Equal(t, tc.listed, found,
+				"the backlog lists exactly the stored sentence, so a predicate that trims more than btrim admits a row this query never hands it")
+		})
+	}
+}
