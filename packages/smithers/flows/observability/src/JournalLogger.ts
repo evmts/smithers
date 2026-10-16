@@ -247,7 +247,6 @@ const reserve = (budget: SnapshotBudget, bytes: number): boolean => {
 
 const textBytes = (value: string): number => encoder.encode(JSON.stringify(value)).byteLength
 
-const quoteBytes = 2
 const shortEscapes = new Set([0x08, 0x09, 0x0a, 0x0c, 0x0d])
 
 /** Bytes one non-surrogate code unit occupies inside a JSON string body. */
@@ -314,8 +313,8 @@ const boundedPrefix = (value: string, limit: number): { readonly text: string; r
 const boundedText = (value: string, budget: SnapshotBudget): string => {
   if (value.length <= maximumSnapshotBytes && reserve(budget, textBytes(value))) return value
   const markerBytes = textBytes(truncatedMarker)
-  const prefix = boundedPrefix(value, Math.max(0, budget.bytes - markerBytes - quoteBytes))
-  budget.bytes = Math.max(0, budget.bytes - (prefix.bytes + quoteBytes) - markerBytes)
+  const prefix = boundedPrefix(value, Math.max(0, budget.bytes - markerBytes))
+  budget.bytes = Math.max(0, budget.bytes - prefix.bytes - markerBytes)
   return `${prefix.text}${truncatedMarker}`
 }
 
@@ -488,15 +487,21 @@ const snapshotLog = (options: Logger.Options<unknown>): TelemetryLog => {
   }
   try {
     const span = Option.getOrUndefined(Context.getOption(options.fiber.context, Tracer.ParentSpan))
-    const candidate: TelemetryLog = {
+    let candidate: TelemetryLog = {
       version: 1,
       level: options.logLevel,
-      message: snapshotValue(options.message, budget, new WeakSet()),
+      message: typeof options.message === "string" ? "" : snapshotValue(options.message, budget, new WeakSet()),
       annotations: snapshotAnnotations(options.fiber.getRef(References.CurrentLogAnnotations), budget),
       cause: snapshotCause(options.cause, budget),
       fiberId: options.fiber.id,
       ...(span === undefined ? {} : { traceId: span.traceId, spanId: span.spanId }),
       timestamp: options.date.toISOString()
+    }
+    // A scalar message can spend the whole value budget. Reserve the actual
+    // record envelope first so the final size check does not discard its prefix.
+    if (typeof options.message === "string") {
+      budget.bytes = Math.max(0, maximumSnapshotBytes - encoder.encode(JSON.stringify(candidate)).byteLength + 2)
+      candidate = { ...candidate, message: boundedText(options.message, budget) }
     }
     const redacted = Redaction.redact(candidate, { onTooDeep: "name" }) as TelemetryLog
     // The durable row is only useful if the exported schema decodes it, so an

@@ -819,9 +819,9 @@ describe("JournalLogger", () => {
   it("never lets a truncated key overwrite a member already in the record", async () => {
     const id = runId("key-collision-run")
     // Byte arithmetic: key "a[Truncated]" (14) + "keep" (6) + key "apiKey" (8)
-    // + the filler string (its length + 2) leaves exactly 16 bytes, so the
+    // + the filler string (its length + 2) leaves exactly 14 bytes, so the
     // oversized third key truncates to the prefix "a" and reads "a[Truncated]".
-    const fillerLength = maximumSnapshotBytes - 14 - 6 - 8 - 2 - 16
+    const fillerLength = maximumSnapshotBytes - 14 - 6 - 8 - 2 - 14
     const message = {
       [`a${truncatedMarker}`]: "keep",
       apiKey: "x".repeat(fillerLength),
@@ -846,11 +846,11 @@ describe("JournalLogger", () => {
   it("cuts long plain runs at the exact byte the budget leaves", async () => {
     const id = runId("plain-run-cut-run")
     // Byte arithmetic: key "apiKey" (8) + the filler string (its length + 2)
-    // leaves 143 bytes. The oversized key then spends 13 on the marker and 2
-    // on quotes, so its retained text holds exactly 128 bytes: two 48-byte
+    // leaves 141 bytes. The oversized key spends 13 on the marker and quotes,
+    // so its retained text holds exactly 128 bytes: two 48-byte
     // lines (each newline escapes to two bytes) and 30 letters of the third,
     // a cut that lands inside a run long enough to be matched natively.
-    const fillerLength = maximumSnapshotBytes - 8 - 2 - 143
+    const fillerLength = maximumSnapshotBytes - 8 - 2 - 141
     const line = `${"a".repeat(47)}\n`
     const message = { apiKey: "x".repeat(fillerLength), [line.repeat(30_000)]: "dropped" }
     const payload = await run(
@@ -880,8 +880,8 @@ describe("JournalLogger", () => {
     // Byte arithmetic: message ["failed"] (8), then the standard error fields
     // "E", "m", "s", and "[Undefined]" (22), then key "a[Truncated]" (14) +
     // "keep" (6) + key "apiKey" (8) + the filler string (its length + 2)
-    // leaves exactly 16 bytes, so the oversized last key reads "a[Truncated]".
-    const fillerLength = maximumSnapshotBytes - 8 - 22 - 14 - 6 - 8 - 2 - 16
+    // leaves exactly 14 bytes, so the oversized last key reads "a[Truncated]".
+    const fillerLength = maximumSnapshotBytes - 8 - 22 - 14 - 6 - 8 - 2 - 14
     Object.assign(failure, {
       [`a${truncatedMarker}`]: "keep",
       apiKey: "x".repeat(fillerLength),
@@ -1043,6 +1043,16 @@ describe("JournalLogger", () => {
     for (const payload of payloads) {
       const message = payload.message as string
       expect(message.endsWith(truncatedMarker)).toBe(true)
+      expect(message.length).toBeGreaterThan(truncatedMarker.length)
+      const input = inputs[payloads.indexOf(payload)]!
+      const prefix = message.slice(0, -truncatedMarker.length)
+      expect(input.startsWith(prefix)).toBe(true)
+      const next = String.fromCodePoint(input.codePointAt(prefix.length)!)
+      expect(
+        new TextEncoder().encode(JSON.stringify({ ...payload, message: `${prefix}${next}${truncatedMarker}` }))
+          .byteLength
+      )
+        .toBeGreaterThan(maximumSnapshotBytes)
       expect(new TextEncoder().encode(JSON.stringify(payload)).byteLength).toBeLessThanOrEqual(maximumSnapshotBytes)
     }
     // A cut inside a surrogate pair would leave text this package's own
