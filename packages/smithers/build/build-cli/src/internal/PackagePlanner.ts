@@ -3221,15 +3221,9 @@ const globPresent = async (
   context: PlanContext,
   packagePath: string,
   declaration: Input.Glob,
-  repositoryBoundaries: ReadonlyArray<string>
+  expandGlob: GlobExpansions
 ): Promise<boolean> => {
-  const expand = (pattern: string | Input.Glob) =>
-    Input.expandGlob(context.root, packagePath, pattern, {
-      cacheDirectory: context.cacheDirectory,
-      repositoryBoundaries,
-      packageScoped: false,
-      signal: context.signal
-    })
+  const expand = (pattern: string | Input.Glob) => expandGlob(packagePath, pattern, false)
   if ((await expand(declaration)).length > 0) return true
   for (const alternative of braceExpand(Input.resolvePath(packagePath, declaration.pattern))) {
     const segments = alternative.split("/")
@@ -3249,6 +3243,47 @@ const globPresent = async (
 }
 
 /**
+ * Expands one declared glob with the rules planning applies (cache directory,
+ * child repositories, `.gitignore`, exclusions), given the package boundary
+ * choice.
+ */
+type GlobExpansions = (
+  packagePath: string,
+  pattern: string | Input.Glob,
+  packageScoped: boolean
+) => Promise<ReadonlyArray<string>>
+
+/**
+ * One target-index check expands each distinct glob once. The absence and
+ * package-crossing checks walk the same declarations, and targets in one
+ * package share globs, so without this a `//...` index walked the tree about
+ * 2.5 times per distinct glob (3,545 expansions for 1,414 globs, 34s).
+ */
+const globExpansions = (context: PlanContext): GlobExpansions => {
+  const repositoryBoundaries = Object.values(context.index.workspace.repos ?? {}).map((repo) => repo.path)
+  const expansions = new Map<string, Promise<ReadonlyArray<string>>>()
+  return (packagePath, pattern, packageScoped) => {
+    const key = JSON.stringify([
+      packagePath,
+      typeof pattern === "string" ? pattern : pattern.pattern,
+      typeof pattern === "string" ? [] : pattern.exclude,
+      packageScoped
+    ])
+    let expansion = expansions.get(key)
+    if (expansion === undefined) {
+      expansion = Input.expandGlob(context.root, packagePath, pattern, {
+        cacheDirectory: context.cacheDirectory,
+        repositoryBoundaries,
+        packageScoped,
+        signal: context.signal
+      })
+      expansions.set(key, expansion)
+    }
+    return expansion
+  }
+}
+
+/**
  * The declared inputs of every target a pattern selects that do not exist on
  * disk. A `File` is absent when `Input.digestFile` finds no file; a `Glob` is
  * absent when {@link globPresent} says so, which is a missing static prefix,
@@ -3260,10 +3295,10 @@ const globPresent = async (
 const absentInputsOf = async (
   context: PlanContext,
   pattern: string,
-  listing: TargetIndex.Listing
+  listing: TargetIndex.Listing,
+  expandGlob: GlobExpansions
 ): Promise<ReadonlyArray<MissingInput>> => {
   const generated = new Set(listing.targets.flatMap((row) => row.outputs))
-  const repositoryBoundaries = Object.values(context.index.workspace.repos ?? {}).map((repo) => repo.path)
   const missing: Array<MissingInput> = []
   for (const row of context.index.resolve(pattern)) {
     const metadata = Target.metadata(row.target)
@@ -3283,7 +3318,7 @@ const absentInputsOf = async (
         })
         if (digest === undefined) absent(path)
       } else if (declaration._tag === "Glob") {
-        if (!(await globPresent(context, packagePath, declaration, repositoryBoundaries))) {
+        if (!(await globPresent(context, packagePath, declaration, expandGlob))) {
           absent(Input.resolvePath(packagePath, declaration.pattern))
         }
       }
@@ -3293,18 +3328,20 @@ const absentInputsOf = async (
 }
 
 /** Compare the same declarations with and without the cache-key package boundary. */
-const crossingInputsOf = async (context: PlanContext, pattern: string): Promise<ReadonlyArray<CrossingInput>> => {
+const crossingInputsOf = async (
+  context: PlanContext,
+  pattern: string,
+  expandGlob: GlobExpansions
+): Promise<ReadonlyArray<CrossingInput>> => {
   const crossing = new Map<string, CrossingInput>()
-  const repositoryBoundaries = Object.values(context.index.workspace.repos ?? {}).map((repo) => repo.path)
   const packages = [...context.index.packages()].sort((a, b) => b.length - a.length)
   for (const row of context.index.resolve(pattern)) {
     const metadata = Target.metadata(row.target)
     const packagePath = inputPackage(metadata, row.packagePath)
     for (const declaration of metadata.inputs) {
       if (declaration._tag !== "Glob") continue
-      const options = { cacheDirectory: context.cacheDirectory, repositoryBoundaries, signal: context.signal }
-      if ((await Input.expandGlob(context.root, packagePath, declaration, options)).length > 0) continue
-      const files = await Input.expandGlob(context.root, packagePath, declaration, { ...options, packageScoped: false })
+      if ((await expandGlob(packagePath, declaration, true)).length > 0) continue
+      const files = await expandGlob(packagePath, declaration, false)
       if (files.length === 0) continue
       const path = Input.resolvePath(packagePath, declaration.pattern)
       const sourceFile = metadata.sourceFile === undefined
@@ -3327,8 +3364,12 @@ const reviewedCrossPackageGlobs = Schema.fromJsonString(
 )
 
 /** Exact reviewed membership: new crossings fail, and repaired entries must be removed. */
-const checkCrossPackageGlobs = async (context: PlanContext, pattern: string): Promise<void> => {
-  const crossing = await crossingInputsOf(context, pattern)
+const checkCrossPackageGlobs = async (
+  context: PlanContext,
+  pattern: string,
+  expandGlob: GlobExpansions
+): Promise<void> => {
+  const crossing = await crossingInputsOf(context, pattern, expandGlob)
   const reviewFile = NodePath.join(context.root, "scripts/fixtures/cross-package-globs.json")
   let reviewed: ReadonlyArray<{ readonly label: string; readonly path: string }> = []
   try {
@@ -3388,9 +3429,10 @@ const withTargetIndex = async (
   const pattern = typeof declared === "string" ? declared : "//..."
   const resolver = context.repoResolutions
   const listing = await TargetIndex.build(resolver.index, pattern, resolver.environment, context.signal)
-  const missing = await absentInputsOf(context, pattern, listing)
+  const expandGlob = globExpansions(context)
+  const missing = await absentInputsOf(context, pattern, listing, expandGlob)
   if (missing.length > 0) throw new DeclaredInputMissing(missing)
-  await checkCrossPackageGlobs(context, pattern)
+  await checkCrossPackageGlobs(context, pattern, expandGlob)
   return { ...attrs, targets: listing.targets }
 }
 
