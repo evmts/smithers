@@ -839,3 +839,14 @@ test("Home derives each member's merged count from committed sequences and prese
   h.props.onAction("main.reset-to-github")
   expect(h.calls).toEqual([])
  })
+
+test("Home from GET /api/todos: a paused row says who or what paused it, as its TODO card does (#3496)", () => {
+  const stopped = { ...todoFixtures.paused.model, n: 1, place: 1 }
+  const budget = { ...todoFixtures.paused_by_budget.model, n: 2, place: 2 }
+  const home = homeFromTodos("local-owner/demo", [stopped, budget])
+  expect(HomeCardSchema.parse(home)).toEqual(home)
+  expect(home.items.map(item => item.pause?.reason)).toEqual(["person", "daily_token_budget"])
+  const markup = renderToStaticMarkup(<HomeView {...mount(home).props} />)
+  expect(markup).toContain("<span>Stopped</span>")
+  expect(markup).toContain("daily token budget · Will Cory")
+})

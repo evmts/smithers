@@ -1,5 +1,6 @@
 import { CircleDashed, GitMerge, GitPullRequest, Pause, X } from "lucide-react"
 import type { TodoState } from "@smthrs/rpc/CardPrimitives"
+import type { TodoCard } from "@smthrs/rpc/TodoCard"
 
 export type StateWordProps = { state: TodoState; step?: string }
 export const stateWords: Record<TodoState, string> = {
@@ -18,3 +19,6 @@ export function StateWord({ state, step }: StateWordProps) {
     {label}
   </span>
 }
+/** Why a paused TODO is paused, and by whom: "Stopped" or "daily token budget", then the owner's name. */
+export const pauseWords = (pause: NonNullable<TodoCard["pause"]>) =>
+  `${pause.reason === "person" ? "Stopped" : "daily token budget"}${pause.owner ? ` · ${pause.owner.name}` : ""}`

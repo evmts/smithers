@@ -52,7 +52,7 @@ func HomeModel(repository string, todos []map[string]any, sync *GitHubSyncHealth
 		}
 		item := map[string]any{"n": todo["n"], "title": todo["title"], "state": todo["state"], "owner": todo["owner"], "merge": todo["merge"],
 			"present": todo["present"], "actions": actions, "branch": map[string]any{"id": "", "name": ""}}
-		for _, field := range []string{"place", "queue", "retry", "step", "rebase_pending", "approval_cleared", "lessons"} {
+		for _, field := range []string{"place", "queue", "pause", "retry", "step", "rebase_pending", "approval_cleared", "lessons"} {
 			if value, ok := todo[field]; ok {
 				item[field] = value
 			}

@@ -25,6 +25,7 @@ export const homeFromTodos = (repository: string, todos: ReadonlyArray<TodoCard>
       ...(todo.place === undefined ? {} : { place: todo.place }),
       ...(todo.retry === undefined ? {} : { retry: todo.retry }),
       ...(todo.queue === undefined ? {} : { queue: todo.queue }),
+      ...(todo.pause === undefined ? {} : { pause: todo.pause }),
       ...(todo.step === undefined ? {} : { step: todo.step }),
       ...(todo.rebase_pending === undefined ? {} : { rebase_pending: todo.rebase_pending }),
       ...(todo.approval_cleared === undefined ? {} : { approval_cleared: todo.approval_cleared }),

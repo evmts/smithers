@@ -8,7 +8,7 @@ import type { TodoViewProps } from "../TodoCard";
 
 import { ActorChip, actorName } from "./ActorChip";
 import { LessonsCount } from "./ProposalView";
-import { StateWord } from "./StateWord";
+import { StateWord, pauseWords } from "./StateWord";
 function EvidenceLine({ item }: { item: EvidenceItem }) {
   switch (item.kind) {
     case "diff":
@@ -117,8 +117,7 @@ export function TodoView({ model: todo, actions, onAction, conflictTerminal }: T
       )}
       {todo.pause && (
         <p className="todo-meta">
-          Paused · {todo.pause.reason === "person" ? "Stopped" : "daily token budget"}
-          {todo.pause.owner && ` · ${todo.pause.owner.name}`}
+          Paused · {pauseWords(todo.pause)}
         </p>
       )}
       {todo.rebase_pending && <p className="todo-meta">Rebase pending onto {todo.rebase_pending.onto} ↶ Verify</p>}

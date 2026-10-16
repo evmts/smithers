@@ -22,6 +22,7 @@ export const HomeItemSchema = TodoCardSchema.pick({
   owner: true,
   place: true,
   queue: true,
+  pause: true,
   retry: true,
   step: true,
   rebase_pending: true,
