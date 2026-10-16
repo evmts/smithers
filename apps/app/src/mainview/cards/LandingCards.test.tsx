@@ -267,3 +267,12 @@ test("a whole checks read still concludes all passing, and a refused one conclud
   expect(refused).not.toContain("No checks reported")
   expect(refused).toContain('data-testid="landing-checks-failure"')
 })
+
+test("an unread PR base never invents main, and a reported base is retained (#3831)", () => {
+  const unread = renderTab({ branch: "fix/retry" })
+  expect(unread).not.toContain("main</span>")
+  expect(unread).not.toContain("into ")
+  const reported = renderTab({ branch: "fix/retry", baseBranch: "release" })
+  expect(reported).toContain("release</span>")
+  expect(reported).toContain("fix/retry</span>")
+})

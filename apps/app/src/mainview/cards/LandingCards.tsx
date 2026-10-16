@@ -325,10 +325,10 @@ export const LandingCardBody = ({
           <StatePill display={prDisplay(state, extra.draft)} />
           <span>
             <strong className="ghc-author">{author ?? "Someone"}</strong>
-            {extra.branch !== undefined ?
+            {extra.branch !== undefined && extra.baseBranch !== undefined ?
               <>
                 {` wants to merge ${commitCount !== undefined ? `${commitCount} ${commitCount === 1 ? "commit" : "commits"} ` : ""}into `}
-                <BranchChip name={extra.baseBranch ?? "main"} /> from <BranchChip name={extra.branch} />
+                <BranchChip name={extra.baseBranch} /> from <BranchChip name={extra.branch} />
               </> :
               " opened this pull request"}
             {extra.createdAt != null ? <> <RelativeTime iso={extra.createdAt} /></> : null}
