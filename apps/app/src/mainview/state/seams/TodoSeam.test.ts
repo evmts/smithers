@@ -1017,6 +1017,7 @@ describe("TodoSeam — the TODO list Home reads where no `home` topic is served 
       await waitFor(() => h.seam.list.get().error === "invalid")
       expect(h.reports).toHaveLength(1)
       expect(h.reports[0]!.scope).toBe("todo.list")
+      expect(h.reports[0]!.error).toMatchObject({ _tag: "TodoListInvalid", name: "TodoListInvalid" })
       const message = String(h.reports[0]!.error)
       for (const field of ["name", "avatar_url", "color_index"]) expect(message).toContain(`0.prompt_revisions.0.by.${field}`)
       expect(message).not.toContain("PRIVATE PROMPT")
