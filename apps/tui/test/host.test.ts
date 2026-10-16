@@ -22,6 +22,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readlinkSync,
   realpathSync,
   rmSync,
   symlinkSync,
@@ -1187,6 +1188,61 @@ describe("coordinatorSources", () => {
     // Pinned with the standard catalog, so no relevance reading withholds them.
     expect(Host.coordinatorSources(services, "/repo").map((source) => source.name)).toEqual(["std/filesystem"])
   })
+})
+
+describe("Host.run approval preparation", () => {
+  for (
+    const [flow, input] of [
+      ["write", { path: "loop", content: "must not run" }],
+      ["bash", { mode: "hermetic", reads: ["loop"], writes: [], command: "cat loop" }]
+    ] as const
+  ) {
+    test(`handles a symlink loop in ${flow} as a failed run and remains usable`, async () => {
+      const cwd = mkdtempSync(join(tmpdir(), "tui-approval-boundary-"))
+      roots.push(cwd)
+      symlinkSync("loop", join(cwd, "loop"))
+      writeFileSync(join(cwd, "ordinary.txt"), "ordinary")
+      const before = process.env.SMITHERS_TUI_SESSION_DIR
+      process.env.SMITHERS_TUI_SESSION_DIR = join(cwd, "sessions")
+      const host = Host.make({ cwd, environment: {}, judge: ScriptedJudge.layer, approvals: "ask" })
+      const events: Array<AgentEvent.AgentEvent> = []
+      try {
+        const outcome = await host.run({
+          prompt: "exercise approval failure",
+          role: "worker",
+          seat: `replay:${
+            doneReplay(cwd, `await ctx.call(${JSON.stringify(flow)}, ${JSON.stringify(input)}); ctx.done("wrong")`)
+          }`,
+          history: [],
+          onEvent: (event) => events.push(event)
+        }).done
+        expect(outcome).toMatchObject({
+          _tag: "failed",
+          error: { _tag: "/harness/HarnessError", code: "engine_failed", message: "Too many symlinks" }
+        })
+        expect(events.filter((event) => event._tag === "cell-call-started")).toHaveLength(1)
+        expect(events.filter((event) => event._tag === "cell-call-settled")).toHaveLength(0)
+        expect(readFileSync(Log.path(), "utf8")).toContain("Too many symlinks")
+        expect(await host.approvals!.pending()).toEqual([])
+        expect(readlinkSync(join(cwd, "loop"))).toBe("loop")
+        const after = await host.run({
+          prompt: "read ordinary.txt",
+          role: "coordinator",
+          seat: `replay:${
+            doneReplay(cwd, "const out = await ctx.call(\"read\", {path: \"ordinary.txt\"}); ctx.done(out.content)")
+          }`,
+          history: [],
+          onEvent: () => {}
+        }).done
+        expect(after).toMatchObject({ _tag: "done", answer: "ordinary" })
+        expect(readFileSync(join(cwd, "ordinary.txt"), "utf8")).toBe("ordinary")
+      } finally {
+        await host.dispose()
+        if (before === undefined) delete process.env.SMITHERS_TUI_SESSION_DIR
+        else process.env.SMITHERS_TUI_SESSION_DIR = before
+      }
+    })
+  }
 })
 
 describe("Host.run coordinator reads", () => {

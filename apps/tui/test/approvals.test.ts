@@ -652,6 +652,94 @@ describe("symlinks", () => {
       return pending[0]!
     }).pipe(Effect.provide(Approvals.layer(workspace, "ask")), Effect.scoped, Effect.runPromise)
 
+  for (
+    const [flow, input] of [
+      ["write", { path: "self", content: "x" }],
+      ["write", { path: "a/child", content: "x" }],
+      ["bash", { mode: "hermetic", reads: ["self"], writes: [], command: "cat self" }],
+      ["bash", { mode: "hermetic", reads: ["a/child"], writes: [], command: "cat a/child" }]
+    ] as const
+  ) {
+    it(`returns a typed approval failure for a symlink loop in ${flow} ${JSON.stringify(input)}`, async () => {
+      const { ws } = tree()
+      symlinkSync("self", join(ws, "self"))
+      symlinkSync("b", join(ws, "a"))
+      symlinkSync("a", join(ws, "b"))
+      const call = callOf(flow, input)
+      for (const mode of ["ask", "deny"] as const) {
+        await withStore(mode, (grants) =>
+          Effect.gen(function*() {
+            const authorize = Approvals.authorize(grants, { cwd: ws, source: "chat", memory: new Approvals.Memory() })
+            let authorization: Effect.Effect<void, HarnessError> | undefined
+            expect(() => {
+              authorization = authorize(call)
+            }).not.toThrow()
+            expect(Effect.isEffect(authorization)).toBe(true)
+            let executed = false
+            const exit = yield* Effect.exit(authorization!.pipe(Effect.andThen(Effect.sync(() => {
+              executed = true
+            }))))
+            expect(executed).toBe(false)
+            expect(Exit.isFailure(exit)).toBe(true)
+            if (Exit.isFailure(exit)) {
+              expect(exit.cause.reasons).toHaveLength(1)
+              expect(exit.cause.reasons[0]).toMatchObject({
+                _tag: "Fail",
+                error: { code: "engine_failed", message: "Too many symlinks" }
+              })
+              const reason = exit.cause.reasons[0]!
+              expect("error" in reason && reason.error).toBeInstanceOf(HarnessError)
+            }
+            expect(yield* grants.list).toEqual([])
+            // A failed preparation must neither grant the next write nor poison its queue.
+            const next = yield* Effect.forkChild(authorize(callOf("write", { path: "ordinary", content: "x" })))
+            if (mode === "ask") {
+              const [pending] = yield* settledPending(grants, 1)
+              expect(pending!.subject).toBe("ordinary")
+              yield* Fiber.interrupt(next)
+            } else {
+              expect(Exit.isFailure(yield* Fiber.await(next))).toBe(true)
+            }
+            expect(yield* grants.list).toEqual([])
+          }), ws)
+      }
+    })
+  }
+
+  it("converts a genuine filesystem preparation error into a typed failure with its cause", async () => {
+    const { ws } = tree()
+    const call = callOf("write", { path: "ordinary", content: "x" })
+    await withStore("ask", (grants) =>
+      Effect.sync(() => {
+        const authorize = Approvals.authorize(grants, { cwd: ".", source: "chat" })
+        const before = process.cwd()
+        const removed = mkdtempSync(join(ws, "removed-"))
+        process.chdir(removed)
+        try {
+          rmSync(removed, { recursive: true })
+          let authorization: Effect.Effect<void, HarnessError> | undefined
+          expect(() => {
+            authorization = authorize(call)
+          }).not.toThrow()
+          expect(Effect.isEffect(authorization)).toBe(true)
+          const exit = Effect.runSync(Effect.exit(authorization!))
+          expect(Exit.isFailure(exit)).toBe(true)
+          if (Exit.isFailure(exit)) {
+            expect(exit.cause.reasons).toHaveLength(1)
+            expect(exit.cause.reasons[0]).toMatchObject({
+              _tag: "Fail",
+              error: { code: "engine_failed", message: "Approval preparation failed", cause: { code: "ENOENT" } }
+            })
+            const reason = exit.cause.reasons[0]!
+            expect("error" in reason && reason.error).toBeInstanceOf(HarnessError)
+            expect("error" in reason && reason.error.cause).toBeInstanceOf(Error)
+          }
+        } finally {
+          process.chdir(before)
+        }
+      }), ws)
+  })
+
   it("asks for the real target of a write through a symlink, and offers no a outside the workspace", async () => {
     const { ws, outside } = tree()
     const [request] = Approvals.requests(callOf("write", { path: "link/authorized_keys", content: "k" }), ws, "chat")

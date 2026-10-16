@@ -885,6 +885,12 @@ export class Memory {
  * `Agent.Options.authorize`: waits for every consequential request, in order.
  * `local` is false where the call runs elsewhere (a box), so nothing runs
  * unasked there.
+ *
+ * Naming what a call touches reads the tree, and the tree can refuse: a
+ * looping symlink raises `Too many symlinks` before a single request exists.
+ * The refusal belongs in this effect's error channel, where the engine fails
+ * the call as it fails any other typed one, and never thrown at the caller
+ * that only asked for the effect.
  */
 export const authorize = (
   grants: GrantStore.Service,
@@ -896,7 +902,15 @@ export const authorize = (
   }
 ) =>
 (call: Cell.Call): Effect.Effect<void, HarnessError> =>
-  check(grants, requests(call, options.cwd, options.source), options.memory, options.local)
+  Effect.try({
+    try: () => requests(call, options.cwd, options.source),
+    // A refusal this module raised already says why; anything else the
+    // filesystem raised keeps its cause for the log.
+    catch: (cause) =>
+      cause instanceof HarnessError
+        ? cause
+        : new HarnessError({ code: "engine_failed", message: "Approval preparation failed", cause })
+  }).pipe(Effect.flatMap((requests) => check(grants, requests, options.memory, options.local)))
 
 /** Both worker calls and project launches wait on this same store. */
 export const check = (
