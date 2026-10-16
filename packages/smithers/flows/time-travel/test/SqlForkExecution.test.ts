@@ -11,7 +11,9 @@ import { Jj } from "@smthrs/kernel"
 import { Node } from "@smthrs/plan"
 import { AttemptStore, RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
+import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/sql/SqlClient"
@@ -95,22 +97,35 @@ const requirements = (filename: string, sharedCache: boolean) => {
 
 describe("SQL fork execution", () => {
   it.effect.each([
-    { sharedCache: false, behavior: "run-scoped prefix reuse" },
-    { sharedCache: true, behavior: "shared cache reuse" }
-  ])("drives a fork after restart with $behavior", ({ sharedCache }) =>
+    { sharedCache: false, behavior: "run-scoped prefix reuse", changed: false },
+    { sharedCache: true, behavior: "shared cache reuse", changed: false },
+    { sharedCache: false, behavior: "a changed plan and run-scoped cache", changed: true },
+    { sharedCache: true, behavior: "a changed plan and shared cache", changed: true }
+  ])("drives a fork after restart with $behavior", ({ sharedCache, changed }) =>
     Effect.gen(function*() {
       const directory = yield* Effect.promise(() => mkdtemp(join(tmpdir(), "flows-fork-execution-")))
       const filename = join(directory, "fork.sqlite")
       let dispatches = 0
+      let suffixDispatches = 0
+      const replacement = Flow.make(ForkFlow._tag, {
+        payload: {},
+        success: Schema.String,
+        body: () => ForkSuffix.call({})
+      })
       /** The implementation, plus the body that names it, over one table. */
-      const wiring = (engine: FlowRuntime.FlowRuntime["Service"]) =>
+      const wiring = (engine: FlowRuntime.FlowRuntime["Service"], edited = false) =>
         Layer.mergeAll(
           ForkOnce.toLayer(() =>
             Effect.sync(() => {
               dispatches++
               return "action-result"
             }), { implementationVersion: "fork-once/v1" }),
-          Interpreter.layer(ForkFlow)
+          ForkSuffix.toLayer(() =>
+            Effect.sync(() => {
+              suffixDispatches++
+              return "changed"
+            }), { implementationVersion: "fork-suffix/v1" }),
+          Interpreter.layer(edited ? replacement : ForkFlow)
         ).pipe(
           Layer.provideMerge(Action.layerImplementations),
           Layer.provideMerge(Layer.succeed(FlowRuntime.FlowRuntime, engine))
@@ -195,7 +210,8 @@ describe("SQL fork execution", () => {
                 isAlive: () => Effect.succeed(false)
               })
               const value = yield* ForkFlow.execute({}, { executionId: created.fork.runId }).pipe(
-                Effect.provide(wiring(engine))
+                Effect.provide(wiring(engine, changed)),
+                Effect.exit
               )
               const row = yield* (yield* RunStore.RunStore).get(created.fork.runId)
               return { value, row }
@@ -203,9 +219,18 @@ describe("SQL fork execution", () => {
           )
         )
 
-        expect(restarted.value).toBe("action-result")
-        expect(restarted.row.status).toBe("completed")
+        if (changed) {
+          expect(Exit.isFailure(restarted.value)).toBe(true)
+          expect(Exit.isFailure(restarted.value) && Cause.squash(restarted.value.cause)).toMatchObject({
+            message: "The rebuilt plan differs from the recorded plan; start a new execution"
+          })
+          expect(restarted.row.status).toBe("failed")
+        } else {
+          expect(restarted.value).toMatchObject({ _tag: "Success", value: "action-result" })
+          expect(restarted.row.status).toBe("completed")
+        }
         expect(dispatches).toBe(1)
+        expect(suffixDispatches).toBe(0)
       } finally {
         yield* Effect.promise(() => rm(directory, { recursive: true, force: true }))
       }
@@ -234,8 +259,8 @@ describe("SQL fork execution", () => {
           success: Schema.String,
           body: (payload) =>
             PrefixSealed.call(payload).pipe(
-              Node.bindPlanned(() => middle.call(payload)),
-              Node.bindPlanned(() => ForkSuffix.call(payload))
+              Node.andThen(middle.call(payload)),
+              Node.andThen(ForkSuffix.call(payload))
             )
         })
         const dispatches = { sealed: 0, middle: 0, suffix: 0 }

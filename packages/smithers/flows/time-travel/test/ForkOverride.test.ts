@@ -40,7 +40,7 @@ const Publish = Action.make("fork-override-publish", {
 const Pipeline = Flow.make("TimeTravel/ForkOverride", {
   payload: {},
   success: Schema.String,
-  body: () => Draft.call({}).pipe(Node.bindPlanned((text) => Publish.call({ text })))
+  body: () => Draft.call({}).pipe(Node.bindPlanned(Node.capture({}, (text) => Publish.call({ text }))))
 })
 
 const kernelJj = Jj.make({

@@ -41,12 +41,12 @@ const Publish = Action.make("fork-child-publish", {
 const Inner = Flow.make("TimeTravel/ForkChild/Inner", {
   payload: {},
   success: Schema.String,
-  body: () => Draft.call({}).pipe(Node.bindPlanned((text) => Publish.call({ text })))
+  body: () => Draft.call({}).pipe(Node.bindPlanned(Node.capture({}, (text) => Publish.call({ text }))))
 })
 const Outer = Flow.make("TimeTravel/ForkChild/Outer", {
   payload: {},
   success: Schema.String,
-  body: () => Inner.child({}).pipe(Node.map((value) => `outer: ${value}`))
+  body: () => Inner.child({}).pipe(Node.map(Node.capture({}, (value) => `outer: ${value}`)))
 })
 /** The node id the boundary in `Outer`'s body is recorded under. */
 const boundary = "root.flow.map"
