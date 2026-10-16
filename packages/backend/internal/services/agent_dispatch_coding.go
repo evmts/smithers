@@ -272,8 +272,8 @@ func (dispatch *agentDispatch) cancelCodingTurn(ctx context.Context) {
 }
 
 // ProjectFlowRuntime keeps legacy workflow/session rows as idempotent product
-// projections. It never reads or constructs Flow graph state, and it leaves
-// assistant/model frames to the issue08 durable turn journal.
+// projections. Completed coding replies commit to the existing transcript
+// atomically with terminal status; model/tool frames remain in the turn journal.
 func (service *AgentService) ProjectFlowRuntime(ctx context.Context, update flowdispatch.ProjectionUpdate) error {
 	if service == nil || service.dispatchQ == nil {
 		return errors.New("agent Flow projection store unavailable")
@@ -298,6 +298,10 @@ func (service *AgentService) ProjectFlowRuntime(ctx context.Context, update flow
 	}
 	if err != nil {
 		return fmt.Errorf("load agent Flow projection owner: %w", err)
+	}
+	if update.Scope != agentFlowScope(owner.RepositoryID, owner.UserID) ||
+		update.Checkpoint.Target.BindingKind != "agent-session" || update.Checkpoint.Target.BindingID != projection.SessionID {
+		return errors.New("agent Flow projection does not own the session")
 	}
 	if update.Checkpoint.RunID != "" {
 		workspaceID := ""
@@ -327,15 +331,45 @@ func (service *AgentService) ProjectFlowRuntime(ctx context.Context, update flow
 	case jobs.StateCancelled:
 		finalStatus, lastError = "cancelled", "the canonical Flow run was cancelled"
 	}
-	session, err := service.dispatchQ.UpdateAgentSessionTerminalStatusForFlow(ctx, db.UpdateAgentSessionTerminalStatusForFlowParams{
+	terminal := db.UpdateAgentSessionTerminalStatusForFlowParams{
 		SessionID: projection.SessionID, WorkflowRunID: pgtype.Int8{Int64: projection.WorkflowRunID, Valid: true}, WorkflowTaskID: projection.WorkflowTaskID,
 		Status: finalStatus, FinishedAt: pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
-	})
+	}
+	var session db.AgentSession
+	var replies []AgentMessageResponse
+	if update.State == jobs.StateCompleted {
+		if owner.Status != "active" {
+			return nil // A committed terminal transition already projected this turn.
+		}
+		messages, decodeErr := completedCodingMessages(update, projection)
+		if decodeErr != nil {
+			// The dispatcher collapses every projection error into one
+			// retryable code, so name the refused turn here: a completed run
+			// whose reply cannot be read is retried, never reported as an
+			// empty success.
+			slog.Warn("refused completed coding turn reply",
+				"agent_session_id", projection.SessionID,
+				"workflow_run_id", projection.WorkflowRunID,
+				"host_run_id", update.Checkpoint.RunID,
+				"error", decodeErr)
+			return decodeErr
+		}
+		session, replies, err = service.completeCodingTurn(ctx, update, terminal, messages)
+	} else {
+		session, err = service.dispatchQ.UpdateAgentSessionTerminalStatusForFlow(ctx, terminal)
+	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("project canonical Flow terminal status: %w", err)
+	}
+	// As with ordinary appends, notify after commit and before terminal status.
+	// Delivery is best-effort; oversized text remains available through replay.
+	for _, reply := range replies {
+		if payload, marshalErr := json.Marshal(AgentSessionMessageEvent(reply)); marshalErr == nil && service.q != nil {
+			_ = service.q.NotifyAgentMessage(ctx, db.NotifyAgentMessageParams{SessionID: session.ID, Payload: string(payload)})
+		}
 	}
 	meterSandboxUsage(ctx, service.dispatchQ, session.UserID, "agent", session.ID, false)
 	service.notifyAgentSessionStatus(ctx, session)

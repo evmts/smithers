@@ -81,8 +81,13 @@ workspace provisioning, or a host call. Its stable request ID is
 binding. One `flowhost.Resolver` maps that server-validated target through a
 durable host binding in both deployment modes; only its trusted-process or
 isolated WorkspaceRuntime launcher differs. Existing agent/workflow rows are
-updated only by the idempotent receipt projector; assistant/model frames belong
-to the separate durable turn journal.
+updated only by the idempotent receipt projector. A completed turn's canonical
+reply rows, and only those, commit into the session transcript in the same
+transaction as the session's terminal status, so the terminal transition is
+their exactly-once fence and `GET /api/repos/{owner}/{repo}/agent/sessions/{id}/messages`
+returns them; a completed run whose reply cannot be read is retried, never
+replaced by an empty success. Model and tool frames stay in the separate
+durable turn journal.
 
 Composition constructs one `jobs.Store`, then `flowdispatch.New` with the
 deployment's `flowruntime.Resolver` and `AgentService` as projector, calls

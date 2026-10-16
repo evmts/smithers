@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/flowdispatch"
+	"github.com/smithersai/smithers/packages/backend/flowruntime"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/jobs"
 	"github.com/smithersai/smithers/packages/backend/sandbox"
@@ -334,13 +335,13 @@ func TestProjectFlowRuntimeDoesNotCleanUpAfterOwnerChangesDuringProjection(t *te
 				assert.Equal(t, "session-1", arg.SessionID)
 				assert.Equal(t, pgtype.Int8{Int64: 100, Valid: true}, arg.WorkflowRunID)
 				assert.Equal(t, int64(101), arg.WorkflowTaskID)
-				assert.Equal(t, "completed", arg.Status)
+				assert.Equal(t, "failed", arg.Status)
 				return db.AgentSession{}, pgx.ErrNoRows // run 200 claimed the row after the read
 			},
 		},
 	}
 	require.NoError(t, service.ProjectFlowRuntime(context.Background(), flowdispatch.ProjectionUpdate{
-		State: jobs.StateCompleted, Checkpoint: flowdispatch.RuntimeCheckpoint{Projection: projection},
+		Scope: agentFlowScope(0, 0), State: jobs.StateFailed, Checkpoint: flowdispatch.RuntimeCheckpoint{Projection: projection, Target: flowruntime.Target{BindingKind: "agent-session", BindingID: "session-1"}},
 	}))
 	assert.True(t, terminalCalled)
 	assert.False(t, notified)
