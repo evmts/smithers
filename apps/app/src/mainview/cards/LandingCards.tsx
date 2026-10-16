@@ -313,6 +313,11 @@ export const LandingCardBody = ({
   ]
   const tab = card.payload.tab ?? "conversation"
   const reviewers = [...new Set(reviews.flatMap((review) => review.author !== null ? [review.author] : []))]
+  const branchVerb = ["merged", "landed"].includes(state.toLowerCase())
+    ? "opened this pull request · merged"
+    : state.toLowerCase() === "closed"
+      ? "opened this pull request · closed without merging"
+      : "wants to merge"
   const commitCount = extra.commits?.length
   const retry = flowAction(onRunCommand, "pr", flowArgs("pr", { number, repo }))
   return (
@@ -327,7 +332,7 @@ export const LandingCardBody = ({
             <strong className="ghc-author">{author ?? "Someone"}</strong>
             {extra.branch !== undefined && extra.baseBranch !== undefined ?
               <>
-                {` wants to merge ${commitCount !== undefined ? `${commitCount} ${commitCount === 1 ? "commit" : "commits"} ` : ""}into `}
+                {` ${branchVerb} ${commitCount !== undefined ? `${commitCount} ${commitCount === 1 ? "commit" : "commits"} ` : ""}into `}
                 <BranchChip name={extra.baseBranch} /> from <BranchChip name={extra.branch} />
               </> :
               " opened this pull request"}

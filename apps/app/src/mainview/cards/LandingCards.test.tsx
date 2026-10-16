@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test"
+import { act } from "react"
+import { createRoot } from "./views/testDom"
 import { renderToStaticMarkup } from "react-dom/server"
 import { CardSchema } from "@smthrs/rpc/Cards"
 import { LandingCardBody } from "./LandingCards"
@@ -275,4 +277,25 @@ test("an unread PR base never invents main, and a reported base is retained (#38
   const reported = renderTab({ branch: "fix/retry", baseBranch: "release" })
   expect(reported).toContain("release</span>")
   expect(reported).toContain("fix/retry</span>")
+})
+
+test("PR branch sentences describe open, merged and closed states without attributing the merge", async () => {
+  const host = document.createElement("div")
+  const root = createRoot(host)
+  try {
+    for (const [state, verb] of [["open", "wants to merge"], ["draft", "wants to merge"], ["merged", "opened this pull request · merged"], ["landed", "opened this pull request · merged"], ["closed", "opened this pull request · closed without merging"]]) {
+      for (const count of [undefined, 0, 1, 2]) {
+        const card = CardSchema.parse({ id: "pr", kind: "pr", title: "Fix", status: "active", ordinal: 0, createdAt: 1,
+          payload: { repo: "owner/repo", number: 2, title: "Fix", state, author: "owner", prBody: "", reviews: [], checks: [],
+            branch: "feature", baseBranch: "main", ...(count === undefined ? {} : { commits: Array.from({ length: count }, (_, i) => ({ commitId: String(i), message: "Fix" })) }) } })
+        if (card.kind !== "pr") throw Error("Expected PR")
+        await act(async () => root.render(<LandingCardBody card={card} onRunCommand={() => {}} />))
+        const sentence = host.querySelector(".ghc-detail-sub")!.textContent!.replace(/\s+/g, " ")
+        expect(sentence).toContain(`owner ${verb} ${count === undefined ? "" : `${count} ${count === 1 ? "commit" : "commits"} `}into main from feature`)
+        if (state === "merged" || state === "landed" || state === "closed") expect(sentence).not.toContain("wants to merge")
+      }
+    }
+  } finally {
+    await act(async () => root.unmount())
+  }
 })
