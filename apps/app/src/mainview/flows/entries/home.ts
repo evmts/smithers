@@ -52,6 +52,7 @@ const idGrammar: Grammar = args => {
 
 export const homeFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
   flow({ name: "stack",   slash: "/stack", cli: ["stack"], journey: ["J4"], group: "TODOs and the stack", visibility: "core", actors: ["person","app_agent","external_agent"], minimumRole: "member", http: {"method":"GET","path":"/api/stack"}, summary: STACK_COMMAND.summary, agent: "run", input: NoPayload,
+    requires: ["signed-in"],
     handler: () => actions.design.enabled ? result(openDesignHome(actions.design, actions.design.viewer())) : actions.openBranch?.("main") ?? "Stack unavailable" }),
   flow({ name: "stack.move",   slash: "/stack.move", cli: ["stack","move"], journey: ["J4"], group: "TODOs and the stack", visibility: "core", actors: ["person","app_agent","external_agent"], minimumRole: "member", http: {"method":"POST","path":"/api/todos/{n}",defaults:{op:"move"}}, summary: "Reorder an item", args: "<Tn> <up|down>", hidden: true, grammar: todoGrammar("direction"),
     agent: "run", input: Schema.Struct({ n: N, direction: Schema.Literals(["up", "down"]) }),

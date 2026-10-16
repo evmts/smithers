@@ -1,6 +1,6 @@
-import { useRef, useState } from "react"
 import type { Collection, NonSingleResult } from "@tanstack/db"
 import type { Branch } from "./state/AppState"
+import type { AppController } from "./state/AppController"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Markdown } from "@smthrs/ui"
 import { useController } from "./ControllerContext"
@@ -12,10 +12,11 @@ import { pickKey } from "./state/seams/RepositoryBranchesSeam"
 import { hostedBranchNodes } from "./state/seams/BranchNavigationSeam"
 
 /** The shell's projections read saved state; an archive has no command callbacks. */
-export function BranchNavigation() {
+export function BranchNavigation({ saving, onView }: {
+  readonly saving: boolean
+  readonly onView: (patch: Parameters<AppController["setBranchNavigationView"]>[0]) => void
+}) {
   const controller = useController()
-  const [saving, setSaving] = useState(false)
-  const pending = useRef(0)
   const { data: sessions } = useLiveQuery(controller.store.collections.sessions)
   const { data: identities } = useLiveQuery(controller.store.collections.identitySessions)
   const { data: repositories } = useLiveQuery(controller.store.collections.repositories)
@@ -57,17 +58,10 @@ export function BranchNavigation() {
       ...branch.snapshot!.cards.map(card => ({ id: card.id, ordinal: card.ordinal, content: <article key={card.id} data-archive-card={card.kind}><strong>{card.title}</strong></article> }))
     ].sort((a, b) => a.ordinal - b.ordinal || a.id.localeCompare(b.id)).map(entry => entry.content) }))
   const earlier = { id: "earlier", name: "Earlier", kind: "earlier" as const, archive_count: archives.length, present: [], children: [] }
-  const update = (patch: Partial<typeof view>) => {
-    const request = ++pending.current
-    setSaving(true)
-    void controller.setBranchNavigationView(patch)
-      .catch(() => { /* The store owns persistence failure and recovery. */ })
-      .finally(() => { if (request === pending.current) setSaving(false) })
-  }
   return <div data-branch-navigation aria-busy={saving}>
     <BranchTree nodes={[...nodes, earlier]} view={{ ...view, selected_branch: current }}
       onAction={(tag, args) => { void controller.commands.submit({ name: tag, payload: args ?? {}, actor: "user" }) }}
-      onView={patch => update({ ...patch, ...(patch.selected_branch === "earlier" ? { previous_branch: view.selected_branch } : {}) })} />
-    {view.selected_branch === "earlier" ? <EarlierArchive model={{ node: earlier, archives, read_only: true }} view={view} onView={update} /> : null}
+      onView={patch => onView({ ...patch, ...(patch.selected_branch === "earlier" ? { previous_branch: view.selected_branch } : {}) })} />
+    {view.selected_branch === "earlier" ? <EarlierArchive model={{ node: earlier, archives, read_only: true }} view={view} onView={onView} /> : null}
   </div>
 }

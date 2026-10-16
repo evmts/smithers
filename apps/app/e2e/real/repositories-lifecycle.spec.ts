@@ -76,7 +76,7 @@ authenticatedTest("launcher reads published updates and public repositories thro
   await expect(launcher.getByText("Reading the Smithers releases…", { exact: true })).toHaveCount(0)
   await expect(launcher.getByText("Reading the public repositories…", { exact: true })).toHaveCount(0)
 
-  const newsRead = page.waitForResponse(response => new URL(response.url()).hostname === "api.github.com" &&
+  const newsRead = page.waitForResponse(response => new URL(response.url()).origin === "https://api.github.com" &&
     new URL(response.url()).pathname === "/repos/smithersai/smithers/releases")
   await command(page, "/app.updates")
   const news = await newsRead

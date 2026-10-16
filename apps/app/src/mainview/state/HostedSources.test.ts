@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test"
-import { createAppController } from "./AppController"
+import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
 import { memoryStorage, silentAgent, settled } from "./TestFixtures"
+const createAppController = scopedControllers()
 
 const hosted = async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
