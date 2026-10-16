@@ -71,7 +71,11 @@ describe("filesystem grants on a case-insensitive volume", () => {
             expect(secret).toMatchObject({
               _tag: "Failure",
               failure: {
-                reason: { _tag: "PermissionDenied", pathOrDescriptor: join(root, ".env"), cause: deniedByPolicy }
+                reason: {
+                  _tag: "PermissionDenied",
+                  pathOrDescriptor: JSON.stringify(join(root, ".env")).slice(1, -1),
+                  cause: deniedByPolicy
+                }
               }
             })
           }).pipe(Effect.provide(guarded(root)))
@@ -99,7 +103,7 @@ describe("filesystem grants on a case-insensitive volume", () => {
             failure: {
               reason: {
                 _tag: "PermissionDenied",
-                pathOrDescriptor: join(root, "ReportDir", "missing.txt"),
+                pathOrDescriptor: JSON.stringify(join(root, "ReportDir", "missing.txt")).slice(1, -1),
                 cause: deniedByPolicy
               }
             }

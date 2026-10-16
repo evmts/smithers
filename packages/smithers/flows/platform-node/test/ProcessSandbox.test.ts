@@ -248,7 +248,9 @@ describe("write grant symlink confinement", () => {
         ["true"],
         {}
       )
-      for (const write of result.writes) expect(argv).toContain(`type=bind,src=${write},dst=${write}`)
+      for (const write of result.writes) {
+        expect(argv).toContain(`type=bind,src=${write},dst=${write.split(NodePath.sep).join("/")}`)
+      }
     } finally {
       NodeFs.rmSync(base, { recursive: true, force: true })
     }
@@ -567,8 +569,11 @@ describe("native host read confinement", () => {
           : ProcessSandbox.seatbelt(result, native)
       }
       const closed = render([])
-      const coversCredential = (path: string) =>
-        credential === path || credential.startsWith(path.replace(/\/$/, "") + "/")
+      const coversCredential = (path: string) => {
+        const relative = NodePath.relative(path, credential)
+        return relative === "" ||
+          (relative !== ".." && !relative.startsWith(".." + NodePath.sep) && !NodePath.isAbsolute(relative))
+      }
       if (platform === "linux") {
         // Inspect every bind, so a new broad grant cannot silently reopen the fixture.
         const mounts = [...closed.matchAll(/--(?:ro-bind|bind)(?:-try)? (\S+) (\S+)/g)]
@@ -581,10 +586,10 @@ describe("native host read confinement", () => {
         const grants = [...closed.matchAll(/\(allow file-read\* ((?:\((?:subpath|literal) "[^"]*"\) *)+)\)/g)]
         for (const grant of grants) {
           const subpaths = [...grant[1]!.matchAll(/\(subpath "([^"]*)"\)/g)]
-          expect(subpaths.some((match) => coversCredential(match[1]!))).toBe(false)
+          expect(subpaths.some((match) => coversCredential(JSON.parse(`"${match[1]}"`)))).toBe(false)
         }
-        expect(closed).not.toContain(`(subpath "${outside}")`)
-        expect(render([credential])).toContain(`(allow file-read* (subpath "${credential}"))`)
+        expect(closed).not.toContain(`(subpath ${JSON.stringify(outside)})`)
+        expect(render([credential])).toContain(`(allow file-read* (subpath ${JSON.stringify(credential)}))`)
       }
     } finally {
       NodeFs.rmSync(base, { recursive: true, force: true })
@@ -1328,7 +1333,9 @@ describe("wrap and environment", () => {
 
   it("keeps corepack's binary cache where the host has it, so a shim still finds its package manager", () => {
     const plan = planned(linux)
-    expect(ProcessSandbox.environment(plan, {}, "/home/dev")["COREPACK_HOME"]).toBe("/home/dev/.cache/node/corepack")
+    expect(ProcessSandbox.environment(plan, {}, "/home/dev")["COREPACK_HOME"]).toBe(
+      process.platform === "win32" ? "/home/dev/AppData/Local/node/corepack" : "/home/dev/.cache/node/corepack"
+    )
     expect(ProcessSandbox.environment(plan, { XDG_CACHE_HOME: "/var/cache/dev" }, "/home/dev")["COREPACK_HOME"]).toBe(
       "/var/cache/dev/node/corepack"
     )
@@ -1826,14 +1833,14 @@ describe("sandbox refusal and declaration boundaries", () => {
   it("resolves Windows executable extensions and hosts without POSIX identity probes", () => {
     const { base } = writeFixture()
     const descriptor = Object.getOwnPropertyDescriptor(process, "platform")!
-    const uid = Object.getOwnPropertyDescriptor(process, "getuid")!
-    const gid = Object.getOwnPropertyDescriptor(process, "getgid")!
+    const uid = Object.getOwnPropertyDescriptor(process, "getuid")
+    const gid = Object.getOwnPropertyDescriptor(process, "getgid")
     try {
       const executable = NodePath.join(base, "fixture.EXE")
       NodeFs.writeFileSync(executable, "fixture", { mode: 0o755 })
       Object.defineProperty(process, "platform", { ...descriptor, value: "win32" })
-      Object.defineProperty(process, "getuid", { ...uid, value: undefined })
-      Object.defineProperty(process, "getgid", { ...gid, value: undefined })
+      Object.defineProperty(process, "getuid", { configurable: true, ...uid, value: undefined })
+      Object.defineProperty(process, "getgid", { configurable: true, ...gid, value: undefined })
       const facts = ProcessSandbox.host({ PATH: base })
       expect(facts.executable("fixture")).toBe(executable)
       expect(facts.executable(base)).toBeUndefined()
@@ -1846,8 +1853,8 @@ describe("sandbox refusal and declaration boundaries", () => {
       )
     } finally {
       Object.defineProperty(process, "platform", descriptor)
-      Object.defineProperty(process, "getuid", uid)
-      Object.defineProperty(process, "getgid", gid)
+      uid === undefined ? Reflect.deleteProperty(process, "getuid") : Object.defineProperty(process, "getuid", uid)
+      gid === undefined ? Reflect.deleteProperty(process, "getgid") : Object.defineProperty(process, "getgid", gid)
       NodeFs.rmSync(base, { recursive: true, force: true })
     }
   })

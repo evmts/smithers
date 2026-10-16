@@ -167,7 +167,7 @@ describe("native ProcessConfinement", () => {
         reads: ["../outside", "missing", "readable.txt"]
       })
     )
-    expect(wrapped.args[1]).toContain(NodePath.join(f.workspaceRoot, "readable.txt"))
+    expect(wrapped.args[1]).toContain(JSON.stringify(NodePath.join(f.workspaceRoot, "readable.txt")))
     expect(wrapped.args[1]).not.toContain(NodePath.join(f.base, "outside"))
   })
 
@@ -199,7 +199,7 @@ describe("native ProcessConfinement", () => {
         f.profile
       )
       const home = wrapped.options.env?.["HOME"]!
-      expect(home.startsWith(f.temporaryDirectory + NodePath.sep)).toBe(true)
+      expect(NodeFs.realpathSync(home).startsWith(f.temporaryDirectory + NodePath.sep)).toBe(true)
       expect(wrapped.args[1]).not.toContain(alias)
       expect(NodeFs.statSync(home).isDirectory()).toBe(true)
     }))
@@ -235,7 +235,7 @@ describe("native ProcessConfinement", () => {
       const home = wrapped.options.env?.["HOME"]!
       expect(NodeFs.statSync(home).isDirectory()).toBe(true)
       expect(NodeFs.readdirSync(f.temporaryDirectory)).toHaveLength(1)
-      expect(wrapped.args[1]).toContain(`(subpath "${path}")`)
+      expect(wrapped.args[1]).toContain(`(subpath ${JSON.stringify(path)})`)
     }))
     expect(NodeFs.readdirSync(f.workspaceRoot)).toEqual(["out"])
     expect(NodeFs.readdirSync(f.temporaryDirectory)).toEqual([])
@@ -307,7 +307,7 @@ describe("native ProcessConfinement", () => {
     const mkdir = NodeFs.mkdirSync
     vi.spyOn(NodeFs, "mkdirSync").mockImplementation(
       ((path: NodeFs.PathLike, ...args: Array<unknown>) => {
-        if (String(path).endsWith("/home")) throw new Error("home preparation denied")
+        if (NodePath.basename(String(path)) === "home") throw new Error("home preparation denied")
         return Reflect.apply(mkdir, NodeFs, [path, ...args])
       }) as typeof NodeFs.mkdirSync
     )
