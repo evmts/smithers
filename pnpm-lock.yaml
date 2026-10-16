@@ -1355,9 +1355,6 @@ importers:
       diff:
         specifier: 9.0.0
         version: 9.0.0
-      effect:
-        specifier: 4.0.4
-        version: 4.0.4
       incur:
         specifier: 0.5.1
         version: 0.5.1
@@ -1422,6 +1419,9 @@ importers:
       dprint:
         specifier: 0.57.1
         version: 0.57.1(patch_hash=4d1658d5607d04c4bcb50cc49d97cbbac9f97b6cfae74ce3f1c6be779edf081e)
+      effect:
+        specifier: 4.0.4
+        version: 4.0.4
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
@@ -2716,9 +2716,6 @@ importers:
       '@types/ws':
         specifier: 8.18.2
         version: 8.18.2
-      effect:
-        specifier: 4.0.4
-        version: 4.0.4
       ignore:
         specifier: 7.0.8
         version: 7.0.8
@@ -2771,6 +2768,9 @@ importers:
       dprint:
         specifier: 0.57.1
         version: 0.57.1(patch_hash=4d1658d5607d04c4bcb50cc49d97cbbac9f97b6cfae74ce3f1c6be779edf081e)
+      effect:
+        specifier: 4.0.4
+        version: 4.0.4
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
@@ -5196,9 +5196,6 @@ importers:
       '@types/ws':
         specifier: 8.18.2
         version: 8.18.2
-      effect:
-        specifier: 4.0.4
-        version: 4.0.4
       redis:
         specifier: 6.2.1
         version: 6.2.1(@opentelemetry/api@1.9.1)
@@ -5239,6 +5236,9 @@ importers:
       dprint:
         specifier: 0.57.1
         version: 0.57.1(patch_hash=4d1658d5607d04c4bcb50cc49d97cbbac9f97b6cfae74ce3f1c6be779edf081e)
+      effect:
+        specifier: 4.0.4
+        version: 4.0.4
       esbuild:
         specifier: 0.28.2
         version: 0.28.2

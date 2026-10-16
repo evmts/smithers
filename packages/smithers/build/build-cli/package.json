@@ -704,7 +704,6 @@
     "@smthrs/platform-node": "1.0.0-rc.9",
     "@smthrs/registry": "1.0.0-rc.9",
     "@smthrs/targets": "1.0.0-rc.9",
-    "effect": "4.0.4",
     "ignore": "7.0.8",
     "incur": "0.5.1",
     "jsonc-parser": "3.3.1",
@@ -733,6 +732,10 @@
     "typescript-eslint": "8.69.0",
     "vitest": "5.0.0",
     "@effect/platform-node": "4.0.4",
-    "@effect/platform-node-shared": "4.0.4"
+    "@effect/platform-node-shared": "4.0.4",
+    "effect": "4.0.4"
+  },
+  "peerDependencies": {
+    "effect": "^4.0.4"
   }
 }

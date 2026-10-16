@@ -567,7 +567,6 @@
         "@smthrs/triggers": "1.0.0-rc.9",
         "@types/ws": "8.18.2",
         "diff": "9.0.0",
-        "effect": "4.0.4",
         "incur": "0.5.1",
         "react": "19.2.8",
         "redis": "6.2.1",
@@ -605,7 +604,8 @@
         "vitest": "5.0.0",
       },
       "peerDependencies": {
-        "@effect/sql-pg": "4.0.4",
+        "@effect/sql-pg": "*",
+        "effect": "^4.0.4",
       },
       "optionalPeers": [
         "@effect/sql-pg",
@@ -1181,7 +1181,6 @@
         "@smthrs/registry": "1.0.0-rc.9",
         "@smthrs/targets": "1.0.0-rc.9",
         "@types/ws": "8.18.2",
-        "effect": "4.0.4",
         "ignore": "7.0.8",
         "incur": "0.5.1",
         "jsonc-parser": "3.3.1",
@@ -1201,6 +1200,7 @@
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
+        "effect": "4.0.4",
         "esbuild": "0.28.2",
         "eslint": "9.39.5",
         "eslint-import-resolver-typescript": "4.4.5",
@@ -1210,6 +1210,9 @@
         "madge": "8.0.0",
         "typescript-eslint": "8.69.0",
         "vitest": "5.0.0",
+      },
+      "peerDependencies": {
+        "effect": "^4.0.4",
       },
     },
     "packages/smithers/build/infra": {
@@ -2344,7 +2347,6 @@
       },
       "dependencies": {
         "@types/ws": "8.18.2",
-        "effect": "4.0.4",
         "redis": "6.2.1",
         "typescript": "7.0.2",
         "undici": "8.11.2",
@@ -2384,6 +2386,9 @@
         "@smthrs/plan": "1.0.0-rc.9",
         "@smthrs/platform-node": "1.0.0-rc.9",
         "@smthrs/registry": "1.0.0-rc.9",
+      },
+      "peerDependencies": {
+        "effect": "^4.0.4",
       },
     },
     "packages/smithers/notifications": {

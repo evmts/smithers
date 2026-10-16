@@ -2,9 +2,9 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect`, `@effect/platform-node` and
-`@effect/platform-node-shared` as exact `4.0.4` dependencies. Keep the
-application on that version so all Smithers packages share one Effect runtime.
+This package takes `effect` as a `^4.0.4` peer and keeps its Node platform
+adapters at `4.0.4`. Install one Effect runtime shared by the CLI and the
+application.
 
 **Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/migrate/docs
 

@@ -138,16 +138,16 @@ To load `WORKSPACE.ts` and `PACKAGE.ts`, install the CLI and the declaration
 package in that workspace, then run its local copy:
 
 ```bash
-npm install --save-dev --save-exact @smthrs/cli@next @smthrs/targets@next effect@4.0.4
+npm install --save-dev @smthrs/cli@next @smthrs/targets@next
 npx smthrs init hello
 npx smthrs targets
 ```
 
 The loader and declarations must resolve the same physical Effect and Smithers
-packages. Pin `effect@4.0.4`, the version the CLI depends on exactly: with a
-later `effect` at the top of `node_modules`, the CLI keeps its own nested copy
-and `smthrs targets` stops with `declaration_dependency_mismatch`. A separately
-installed global CLI reports the same error even when versions match. The
+packages. The CLI and authoring packages take `effect` as a `^4.0.4` peer,
+so npm selects one shared runtime without an explicit pin. A separately
+installed global CLI reports `declaration_dependency_mismatch` even when
+versions match. The
 [first-target tutorial](https://github.com/smithersai/smithers/blob/main/packages/smithers/build/docs/getting-started/first-build.md) walks
 through local planning, execution, and cache reuse.
 

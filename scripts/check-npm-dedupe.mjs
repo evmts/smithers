@@ -216,7 +216,7 @@ export function resolveConsumerTree({ keepTmp: keep = false } = {}) {
 }
 
 /** Real physical installs of individual libraries, with no rewritten dependency edges. */
-export async function resolveConsumerProfiles() {
+export async function resolveConsumerProfiles(options = {}) {
   const directory = mkdtempSync(join(tmpdir(), "smithers-k-profile-manifests-"))
   try {
     const entries = workspacePackages().map(({ manifest }) => {
@@ -225,7 +225,8 @@ export async function resolveConsumerProfiles() {
       return { name: manifest.name, version: manifest.version, filename }
     })
     return await runConsumerMatrix(directory, entries, {
-      profiles: [...minimalProfiles(entries), adapterProfiles(entries)[0]]
+      profiles: [...minimalProfiles(entries), adapterProfiles(entries)[0]],
+      ...options
     })
   } finally {
     rmSync(directory, { recursive: true, force: true })

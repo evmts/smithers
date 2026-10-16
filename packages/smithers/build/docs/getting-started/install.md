@@ -23,8 +23,8 @@ import; and [`@smthrs/build-cli`](https://github.com/smithersai/smithers/tree/ma
 ## Add the dependencies
 
 Declare the CLI and the authoring package as devDependencies of your workspace
-root, beside the `effect` version `@smthrs/build-cli` depends on exactly. Both
-packages are on npm under the `next` tag.
+root. Both packages take `effect` as a `^4.0.4` peer and are on npm under the
+`next` tag; npm selects one shared runtime.
 
 ```json
 {

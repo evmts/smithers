@@ -391,7 +391,6 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "effect": "4.0.4",
     "typescript": "7.0.2",
     "undici": "8.11.2",
     "redis": "6.2.1",
@@ -432,5 +431,8 @@
     "@effect/platform-node": "4.0.4",
     "@effect/platform-node-shared": "4.0.4",
     "effect": "4.0.4"
+  },
+  "peerDependencies": {
+    "effect": "^4.0.4"
   }
 }

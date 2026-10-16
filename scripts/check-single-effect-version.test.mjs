@@ -186,9 +186,9 @@ test("every published workspace manifest follows the declaration policy", () => 
   assert.ok(records.length > 100, `${records.length} Effect declarations is too few to be the published set`)
   assert.doesNotThrow(() => assertEffectPins(records))
   const peers = records.filter((record) => record.source.endsWith("(peerDependencies)"))
-  // Every library peers effect itself at the range; the executables peer it not at all.
+  // Libraries and workspace CLIs share the application's Effect peer.
   const effectPeers = peers.filter((record) => record.name === "effect")
-  assert.equal(effectPeers.length, published.size - 4, "the published set less the three executables and the notice")
+  assert.equal(effectPeers.length, published.size - 1, "every published runtime package except the notice")
   assert.ok(effectPeers.every((record) => record.expected === range && record.version === range))
 })
 
