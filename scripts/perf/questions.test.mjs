@@ -224,9 +224,11 @@ import { productionProviders } from './run.mjs'
 
 const rebaseEnv = { SMITHERS_PERF_REPOSITORY: 'team/scratch', SMITHERS_PERF_ORIGIN: 'https://mini.example', SMITHERS_PERF_PAGE: '/', SMITHERS_PERF_OWNER_COOKIE: 'session=secret; __csrf=csrf', SMITHERS_PERF_MEMBER_A: '/private/a.json', SMITHERS_PERF_BRANCH: '11111111-1111-4111-8111-111111111111', SMITHERS_PERF_TODO: '1', SMITHERS_PERF_INSTALL_VERSION: 'test', SMITHERS_PERF_REBASE_LOG: '/private/guest.jsonl', SMITHERS_PERF_SSH_IDENTITY: '/private/key', SMITHERS_PERF_SSH_DESTINATION: 'branch@mini.example' }
 
-test('production rebase provider is bound and refuses before machine workload without qualification', async () => {
+test('production rebase provider is bound and refuses before machine workload without qualification', async t => {
+  const request = t.mock.method(globalThis, 'fetch', () => { throw new Error('unqualified run must not contact the install') })
   assert.equal(typeof productionProviders['C-PERF-06'].measure, 'function')
-  const result = (await rebaseProductionRun(rebaseEnv)).result
+  const result = (await rebaseProductionRun({ ...rebaseEnv, SMITHERS_PERF_OWNER_COOKIE: undefined })).result
+  assert.equal(request.mock.callCount(), 0)
   assert.equal(result.status, 'failed')
   assert.deepEqual(result.samples, [])
   assert.match(result.error, /reference-network Mac required|authenticated lifecycle qualification unavailable/)

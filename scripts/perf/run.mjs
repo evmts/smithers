@@ -152,7 +152,7 @@ export async function runSelected(check = process.argv[2]) {
   try {
     const result = await run({ root: process.env.SMITHERS_PERF_ARTIFACT_ROOT, origin: process.env.SMITHERS_PERF_ORIGIN, token: process.env.SMITHERS_PERF_OWNER_COOKIE ? { cookie: process.env.SMITHERS_PERF_OWNER_COOKIE } : process.env.SMITHERS_PERF_TOKEN,
       installVersion: process.env.SMITHERS_PERF_INSTALL_VERSION, browser: process.env.SMITHERS_PERF_BROWSER,
-      check, commit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim() })
+      check, commit: execFileSync('jj', ['log', '--no-graph', '-r', '@-', '-T', 'commit_id'], { encoding: 'utf8', timeout: 15000 }).trim() })
     console.log(JSON.stringify({ ...result.summary, directory: result.directory }))
     return result.exit
   } catch (error) { console.error(error.message); return 2 }

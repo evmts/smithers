@@ -88,7 +88,7 @@ export async function run(env = process.env, { persist = true } = {}) {
   const result = { version: 1, commit: null, installVersion: env.SMITHERS_PERF_INSTALL_VERSION ?? null, origin: null, host: null, browser: null, models: null, timestamp: new Date().toISOString().replace(/[:.]/g, '-'), check: 'C-PERF-01', status: 'failed', samples: [], clock: 'second Mac browser performance.now()' }
   let browser
   try {
-    result.commit = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+    result.commit = execFileSync('jj', ['log', '--no-graph', '-r', '@-', '-T', 'commit_id'], { encoding: 'utf8', timeout: 15000 }).trim()
     const config = configuration(env)
     if (process.platform !== 'darwin') throw new Error('C-PERF-01 requires the second Mac')
     result.origin = config.origin
