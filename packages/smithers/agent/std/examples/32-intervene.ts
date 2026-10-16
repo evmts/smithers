@@ -65,7 +65,12 @@ export const Report = Schema.Struct({
  * so it is a signature a host implements, and it declares the read flow's
  * capabilities and hermetic read-only envelope as its own.
  */
-const ReadAction = Action.make("read-target", { payload: ReadCall, success: Read.Output, capabilities: Read.capabilities, effects: Read.effects })
+const ReadAction = Action.make("read-target", {
+  payload: ReadCall,
+  success: Read.Output,
+  capabilities: Read.capabilities,
+  effects: Read.effects
+})
 export const ReadTarget = Flow.make("read-target", {
   payload: ReadCall,
   success: Read.Output,
@@ -82,7 +87,12 @@ export const ProposeEdit = Flow.make("propose-edit", {
 })
 
 /** Writes the proposed edit, under the std edit flow's compensable envelope. */
-const EditAction = Action.make("apply-edit", { payload: ApplyCall, success: Edit.Output, capabilities: Edit.capabilities, effects: Edit.effects })
+const EditAction = Action.make("apply-edit", {
+  payload: ApplyCall,
+  success: Edit.Output,
+  capabilities: Edit.capabilities,
+  effects: Edit.effects
+})
 export const ApplyEdit = Flow.make("apply-edit", {
   payload: ApplyCall,
   success: Edit.Output,
@@ -171,8 +181,7 @@ export const intervene = (options: {
         // The declaration named `Read.flow` and `Edit.flow`; execution runs
         // their implementations, `Read.run` and `Edit.run`.
         read: ({ input }) => Read.run({ path: input.path }),
-        propose: ({ input }) =>
-          Effect.succeed({ path: input.path, oldString: input.from, newString: input.to }),
+        propose: ({ input }) => Effect.succeed({ path: input.path, oldString: input.from, newString: input.to }),
         apply: ({ proposal }) => Edit.run(proposal),
         report: ({ applied, dryRun, proposal }) =>
           Effect.succeed({
