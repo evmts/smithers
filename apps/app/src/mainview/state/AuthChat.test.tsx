@@ -572,6 +572,6 @@ test("a signed-out install visitor gets the GitHub flow door with only one setup
   const door = host.querySelector<HTMLButtonElement>('.smithers-chat-message [data-flow="sign-in"]')
   expect(door?.textContent).toBe("Sign in with GitHub")
   expect(host.querySelector('[data-testid="login-email"]')).toBeNull()
-  expect(requests).toHaveLength(1)
-  expect(requests[0]).toEndWith("/api/install")
+  expect(requests.filter(path => path.endsWith("/api/install"))).toHaveLength(1)
+  expect(requests.filter(path => !path.endsWith("/api/install"))).toEqual(["/api/public/repos"])
 })

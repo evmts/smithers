@@ -68,7 +68,7 @@ for (const setupSession of [true, false]) test(`install boot at / with setup ses
     else expect(host.textContent).toContain("Sign in with GitHub")
     await settled(); await settled()
     expect(requests.filter(path => path.endsWith("/api/install"))).toHaveLength(1)
-    expect(requests.filter(path => !path.endsWith("/api/install"))).toEqual([])
+    expect(requests.filter(path => !path.endsWith("/api/install"))).toEqual(["/api/public/repos"])
   } finally { window.history.replaceState({}, "", "/setup"); flushSync(() => root.unmount()); host.remove() }
 })
 

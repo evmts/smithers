@@ -213,15 +213,16 @@ agentTest("asked what it can do here, the agent runs the app's own command list 
   expect(launches).toEqual([])
 })
 
-// #3872: every catalog form has a deployed-agent row; opening never submits it.
-for (const name of Object.keys(FORM_INSTRUCTION_FIELDS)) {
-  agentTest(`the Cloud agent opens /${name}'s form without submitting`, scenario(`agent.acts.form.${name}`, {
-    capabilities: ["agent", "identity", "cloud"],
-    coverage: ["action:chat.send", `action:${name}`, "host:production", "path:success", "door:agent",
-      "dimension:form", "dimension:no-remote-side-effect", "evidence:rendered-form-card"],
-    description: `Ask the deployed Cloud agent to open /${name}'s form, without submitting it.`
-  }), async ({ page }, testInfo) => {
-    await bootWorkspace(page)
+// #3872: one declared scenario exercises every catalog form; opening never submits it.
+agentTest("the Cloud agent opens every catalog form without submitting", scenario("agent.acts.form-catalog", {
+  capabilities: ["agent", "identity", "cloud"],
+  coverage: ["action:chat.send", "host:production", "path:success", "door:agent",
+    "dimension:form", "dimension:no-remote-side-effect", "evidence:rendered-form-card"],
+  description: "Ask the deployed Cloud agent to open each catalog form, without submitting it."
+}), async ({ page }, testInfo) => {
+  await bootWorkspace(page)
+  testInfo.setTimeout(240_000 * Object.keys(FORM_INSTRUCTION_FIELDS).length)
+  for (const name of Object.keys(FORM_INSTRUCTION_FIELDS)) {
     const form = page.locator(`.flow-form[data-flow-name="${name}"]`)
     for (let remaining = await form.count(); remaining > 0; remaining--) {
       await form.first().getByTestId("flow-form-cancel").click()
@@ -236,5 +237,5 @@ for (const name of Object.keys(FORM_INSTRUCTION_FIELDS)) {
         await form.first().getByTestId("flow-form-cancel").click()
       }
     }
-  })
-}
+  }
+})

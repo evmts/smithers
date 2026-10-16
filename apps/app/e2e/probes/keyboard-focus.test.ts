@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { chromium, webkit } from "@playwright/test"
-import { assertKeyboardFocus, recordKeyboardFocus, type KeyboardFocus } from "./keyboardOnly"
+import { assertKeyboardFocus, recordKeyboardFocus, type KeyboardFocus } from "../real/support/keyboardOnly"
 
 // Actual browser observations; supplemental coverage, not a release journey.
 for (const engine of [chromium, webkit]) test(`${engine.name()} focus evidence rejects body, invisible/wrong rings and focus loss after a live replacement`, async () => {

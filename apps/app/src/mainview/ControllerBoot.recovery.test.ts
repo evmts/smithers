@@ -9,6 +9,6 @@ test("a failed recorded store stops boot before repository, identity, or URL-tri
     stdout: "pipe",
     stderr: "pipe"
   })
-  expect(run.exitCode).toBe(0)
+  expect(run.exitCode, new TextDecoder().decode(run.stderr)).toBe(0)
   expect(new TextDecoder().decode(run.stdout)).toContain("recovery boot stopped before repository")
 })
