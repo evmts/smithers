@@ -120,7 +120,21 @@ func openAPIConformanceRouter(cfg *config.Config) chi.Router {
 	cfgCopy := *cfg
 	cfgCopy.Install.QuiesceEnabled = true
 	cfg = &cfgCopy
-	return hostStatusProductionRouter(cfg, db.New(nil), &services.InstallCapacityService{})
+	// The repository's own GitHub issue doors mount when the Mythical
+	// handler's service is also the hosted issue writer (#4030). Every
+	// composition gives that handler the real *services.MythicalService
+	// (main.go builds exactly one and passes it in both modes), so a nil
+	// service here would enumerate six fewer doors than either deployment
+	// serves and read as "documented but not served". The service is only
+	// type-asserted while routes are mounted, never called by a walk, and
+	// the other three defaults are the ones hostStatusProductionRouter sets
+	// for an unsupplied fixture.
+	return hostStatusProductionRouter(cfg, db.New(nil), &services.InstallCapacityService{}, conformanceServices{
+		billing:  &routes.BillingHandler{},
+		jobs:     &routes.RepositoryJobHandler{},
+		live:     &routes.LiveHandler{},
+		mythical: &routes.MythicalHandler{Service: services.NewMythicalService(nil, nil)},
+	})
 }
 
 // Shared production-router fixture: host HTTP tests use real PostgreSQL queries.

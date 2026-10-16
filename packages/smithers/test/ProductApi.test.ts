@@ -147,10 +147,15 @@ describe("the generated product API client", () => {
     // Includes the repository's own GitHub issue acts and their request read,
     // /api/repos/{owner}/{repo}/github/issues… (#4030): six doors on the
     // existing repo-scoped GitHub family, beside Smithers Cloud's own tracker.
-    // The literal stood at 572 while the spec already served 580: the eight
-    // doors added between are counted here too, so the inventory matches the
-    // spec again rather than trailing it.
-    expect(expected).toHaveLength(586)
+    // The literal stood at 572 while the spec already served 577 on `main`:
+    // the doors added between are counted here too, so the inventory matches
+    // the spec again rather than trailing it.
+    // Includes this release foundation's own doors, counted once after the
+    // merge: the account's own repository create and its request read,
+    // POST /api/user/repos and GET /api/user/repos/requests/{id} (#3827), and
+    // the repository's own run index, one run and its trace,
+    // /api/repos/{owner}/{repo}/monitors… (#4032).
+    expect(expected).toHaveLength(591)
     expect(spec.paths["/api/install/ack-delay"]).toHaveProperty("get.operationId", "get_api_install_ack_delay")
     expect(spec.paths["/api/install/ack-delay"]).toHaveProperty("post.operationId", "post_api_install_ack_delay")
     expect(spec.paths["/api/secrets"]).toHaveProperty("post.operationId", "post_api_secrets")

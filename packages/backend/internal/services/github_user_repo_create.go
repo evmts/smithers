@@ -144,8 +144,14 @@ type GitHubRepoCreateStatus struct {
 	// FullName and RepositoryID are GitHub's own, read back after the create.
 	FullName     string `json:"full_name,omitempty"`
 	RepositoryID int64  `json:"repository_id,omitempty"`
-	// ExternalAttempt is how many times a POST was committed. One uncertain
-	// attempt is the reader's cue to look at GitHub, never to press again.
+	// ExternalAttempt is the ORDINAL of the attempt this receipt belongs to,
+	// not a count of POSTs. product_job_dispatches.external_attempt is
+	// `NOT NULL DEFAULT 1 CHECK (> 0)`, so it reads 1 from the moment the
+	// dispatch row exists — before any POST, and so also on a refusal that
+	// happened before one left. It advances only when the dispatch is handed
+	// back to `ready` for another attempt (jobs/claims.go, jobs/background.go).
+	// What says a POST may have landed is the state: one `uncertain` attempt is
+	// the reader's cue to look at GitHub, never to press again.
 	ExternalAttempt int `json:"external_attempt,omitempty"`
 }
 

@@ -138,17 +138,20 @@ export const FORM_INSTRUCTION_FIELDS = {
   ],
   "issues.close": [
     "number",
-    "repo"
+    "repo",
+    "source"
   ],
   "issues.comment": [
     "number",
     "text",
-    "repo"
+    "repo",
+    "source"
   ],
   "issues.create": [
     "title",
     "repo",
-    "kind"
+    "kind",
+    "source"
   ],
   "issues.list": [
     "filter",
@@ -158,7 +161,8 @@ export const FORM_INSTRUCTION_FIELDS = {
   ],
   "issues.reopen": [
     "number",
-    "repo"
+    "repo",
+    "source"
   ],
   "issues.view": [
     "number",

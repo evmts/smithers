@@ -3,9 +3,9 @@
   "producer": null,
   "output": {
     "path": "packages/backend/docs/github-app.md",
-    "digest": "ba9f02f491d5405f5e7574147bc30b5bc0328d898a37c96eade6c4b031a758f2"
+    "digest": "03c34a55d61dac07a922697e18adf4c735636b31ee92a3ef768232e97ad6b0ee"
   },
-  "closure": "3eb8165452521c85df82d42b3608c55f92d34063b1def799d8834fed24d4fb8c",
+  "closure": "c2689d648de9fab123ca22198dedc470145f25d204a2294fb4f1e21642f3332c",
   "inputs": [
     {
       "path": "docs/api/openapi/install.yaml",
@@ -49,7 +49,7 @@
     },
     {
       "path": "packages/backend/internal/compose/main.go",
-      "digest": "352853f993156f7aa72b77277bb933c300cd96b9521b4edcd8372de0798c3de1"
+      "digest": "a7e2ff35b472a02406a1455a20ae0e1d536094a0145f6710954fb5692f9d3241"
     },
     {
       "path": "packages/backend/internal/compose/runtime_helpers.go",
@@ -77,7 +77,7 @@
     },
     {
       "path": "packages/backend/internal/routes/github_app_setup.go",
-      "digest": "628c06898accd1c9541875446312d97bd8dc1419402b26f4d53b88f97c4f7a39"
+      "digest": "7291d038160695e79e1202cd7d5b048c55339703adbf90da73856d01aff5bb61"
     },
     {
       "path": "packages/backend/internal/routes/members.go",
@@ -125,7 +125,7 @@
     },
     {
       "path": "packages/backend/internal/services/github_issue_text_writer.go",
-      "digest": "d8f6171207ecd6cadfc8002e2abc1c8cd5df50de83936a1cc1bf6192e5df59ab"
+      "digest": "cb6b5f7f6a64036400f68126e34729d124ea20eb9b2b72df03f2ffe3dc93b4f1"
     },
     {
       "path": "packages/backend/internal/services/github_main_pull.go",
@@ -157,7 +157,7 @@
     },
     {
       "path": "packages/backend/internal/services/github_sync.go",
-      "digest": "0c3972ade66c7af8eb9db8bbffc8bbe97219dfb0982c8a5672b405d241b46a15"
+      "digest": "742310242b75e78b62eafa8695b1f5658bfc77250def321ee07a6bdf90d32127"
     },
     {
       "path": "packages/backend/internal/services/github_synced_comments.go",
@@ -201,7 +201,7 @@
     },
     {
       "path": "packages/backend/internal/services/github_user_repos.go",
-      "digest": "27a37db2538469605041ff86f8865c25787028881ed082078f7d7156331748a9"
+      "digest": "c391bdd2b84804cf0003cd070a6cf678fe6264183efb0b322f162756889da72d"
     },
     {
       "path": "packages/backend/internal/services/install_machine_ready.go",
@@ -209,7 +209,7 @@
     },
     {
       "path": "packages/backend/internal/services/install_setup.go",
-      "digest": "285789c36a9d4f911db9c24da829ec5be926ba94780aeed78d98a06761b7f779"
+      "digest": "58735559dce4f4de1994acd6f3497d37eb0f3a2912412c6b5d5477947554e760"
     },
     {
       "path": "packages/backend/internal/services/install_setup_session.go",
@@ -221,11 +221,11 @@
     },
     {
       "path": "packages/backend/internal/services/member_poll.go",
-      "digest": "6a7e874e269c4528bb81c3a1e9f2a8ee3378ba03fe04682feedc03f454377a1a"
+      "digest": "5075e39acdcaebe357cd300ce233249493be5b964ba0fb9b3468e6be02868d0d"
     },
     {
       "path": "packages/backend/internal/services/member_recheck.go",
-      "digest": "e019a3fb2d6fad2fad5b3c12afd5166315ba7cd6d1f91cf3f8ce6a2519b30eea"
+      "digest": "9d1bf1529d273d20cbee65d1983334e1f537e86cd43bad520b256015145d2615"
     },
     {
       "path": "packages/backend/internal/services/member_roster.go",
@@ -233,7 +233,7 @@
     },
     {
       "path": "packages/backend/internal/services/members.go",
-      "digest": "4069537aab42d520d64ad79ab38f3218537fa697c7eecc75c9213834afda7027"
+      "digest": "a4cf834d02669e279ace818a533eed50cac606a7127e9333baa1418113fb48e7"
     },
     {
       "path": "packages/backend/internal/services/mythical.go",
@@ -241,7 +241,7 @@
     },
     {
       "path": "packages/backend/internal/services/mythical_github.go",
-      "digest": "0415be7b3cb6c95304fea94bff6beec6c030a39742a0b312f0f70c17bfaa7a26"
+      "digest": "37d5f8329ac63ba7d891af7ad35952e6abfb690493c9ff2621060081a67290b2"
     },
     {
       "path": "packages/backend/internal/services/mythical_github_poll.go",
@@ -253,7 +253,7 @@
     },
     {
       "path": "packages/backend/internal/services/mythical_items.go",
-      "digest": "e3600c7a4da09650f5988b0998f64c11881289b0670ca724c3366f89d50434ad"
+      "digest": "48c77d774673fb0b64e3cb5021386b9c82c46397a642a1e645678c1fee75e295"
     },
     {
       "path": "packages/backend/internal/services/mythical_outbound.go",
@@ -261,11 +261,11 @@
     },
     {
       "path": "packages/backend/internal/services/mythical_pr.go",
-      "digest": "fbf2158b8666410abe77d1bd59b54662ff6439605ee31d4cdc0218b4feb63dda"
+      "digest": "f0e2c3d4af52eee03e993058471949d49581ffa6f49bda3cdb51e9a30551a0f1"
     },
     {
       "path": "packages/backend/internal/services/mythical_todo_read.go",
-      "digest": "c337957f4d99eb7e8c3145b52b250958d534233e3b890523c6d8f73a35793273"
+      "digest": "8d4c0d84337f0c7e294ab65972158ec0e955c3ed0f7de360cd2c1d0782d2f776"
     },
     {
       "path": "packages/backend/internal/services/mythical_todo_state.go",
