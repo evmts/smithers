@@ -754,18 +754,24 @@ describe("RunDriver requestResume", () => {
         let missingReads = 0
         const observed = RunStore.makeNoop({
           ...base,
-          get: (runId) => runId === "vanishing-parent" && finished
-            ? Effect.sync(() => { missingReads++ }).pipe(Effect.andThen(Effect.fail(storeError(code, "get"))))
-            : base.get(runId)
+          get: (runId) =>
+            runId === "vanishing-parent" && finished
+              ? Effect.sync(() => {
+                missingReads++
+              }).pipe(Effect.andThen(Effect.fail(storeError(code, "get"))))
+              : base.get(runId)
         })
         const recorded: Array<readonly [string, RunDriver.RequestedResumeReason]> = []
         const driver = yield* recordingDriver(recorded).pipe(Effect.provideService(RunStore.RunStore, observed))
-        yield* driver.register(EdgeFlow, () => Effect.sync(() => {
-          finished = true
-          return "done"
-        }))
+        yield* driver.register(EdgeFlow, () =>
+          Effect.sync(() => {
+            finished = true
+            return "done"
+          }))
         const exit = yield* Effect.exit(executeAndDrain(driver, EdgeFlow, {
-          executionId: "settling-under-missing-parent", payload: {}, discard: true,
+          executionId: "settling-under-missing-parent",
+          payload: {},
+          discard: true,
           parent: FlowEngine.makeInstance(EdgeFlow, "vanishing-parent")
         }))
         expect(missingReads).toBeGreaterThan(0)
@@ -1063,7 +1069,11 @@ describe("RunDriver stale-owner recovery", () => {
         get: (runId) => ++reads > 2 ? Effect.fail(storeError("not_found_row", "get")) : base.get(runId)
       })
       const driver = yield* makeDriver().pipe(Effect.provideService(RunStore.RunStore, disappearing))
-      yield* driver.register(EdgeFlow, () => Effect.sync(() => { executions++; return "never" }))
+      yield* driver.register(EdgeFlow, () =>
+        Effect.sync(() => {
+          executions++
+          return "never"
+        }))
       yield* driver.resume(EdgeFlow, "disappearing-drive")
       expect(reads).toBe(4)
       expect(executions).toBe(0)
