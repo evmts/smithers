@@ -164,6 +164,12 @@ describe("the staged prompt bodies", () => {
       assert.ok(!rendered.includes("---\ndescription:"), "frontmatter must not reach the model");
     });
 
+    it(`${name} places a project's flows under ${Descriptor.projectFlowsDirectory}/, never a root flows/`, () => {
+      const text = readFileSync(file, "utf8");
+      const retired = text.split("\n").filter((line) => /(^|[^\w./-])flows\//.test(line));
+      assert.deepEqual(retired, [], `${name} names the retired root flows/ (mvp.md M-49)`);
+    });
+
     it(`${name} states the 1.0 authoring model, never the 0.x one`, () => {
       const text = readFileSync(file, "utf8");
       for (const removed of [
@@ -181,6 +187,16 @@ describe("the staged prompt bodies", () => {
       }
     });
   }
+});
+
+describe("the create-flow bodies", () => {
+  it("write the flow where discovery reads it", () => {
+    const entry = `${Descriptor.projectFlowsDirectory}/<`;
+    for (const stage of ["design", "scaffold"]) {
+      const text = readFileSync(join(flowsRoot, "create-flow", stage, "flow.mdx"), "utf8");
+      assert.ok(text.includes(entry), `create-flow/${stage} names ${entry}name>/flow.ts`);
+    }
+  });
 });
 
 describe("the capabilities the staged prompt bodies declare", () => {

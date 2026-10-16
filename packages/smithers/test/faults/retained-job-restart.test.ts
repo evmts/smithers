@@ -63,8 +63,8 @@ for (const edit of [false, true]) {
     `#3367 host SIGKILL automatically rejoins one retained worker${edit ? " using pinned code after edits" : ""}`,
     async () => {
       const root = realpathSync(mkdtempSync(join(tmpdir(), "fault-3367-restart-")))
-      mkdirSync(join(root, "flows", "retained"), { recursive: true })
-      cpSync(join(fixture, "flows", "retained"), join(root, "flows", "retained"), { recursive: true })
+      mkdirSync(join(root, ".smithers", "flows", "retained"), { recursive: true })
+      cpSync(join(fixture, "flows", "retained"), join(root, ".smithers", "flows", "retained"), { recursive: true })
       cpSync(join(fixture, "retained-worker.mjs"), join(root, "retained-worker.mjs"))
       symlinkSync(modules, join(root, "node_modules"), "dir")
       writeFileSync(join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n")
@@ -139,7 +139,7 @@ for (const edit of [false, true]) {
         expect(alive(worker!)).toBe(true)
         if (edit) {
           for (const file of ["flow.ts", "helper.ts"]) {
-            const path = join(root, "flows", "retained", file)
+            const path = join(root, ".smithers", "flows", "retained", file)
             writeFileSync(path, readFileSync(path, "utf8").replaceAll("approved-", "unapproved-"))
           }
         }

@@ -81,6 +81,9 @@ const panes = [
 const tree = [
   { depth: 0, name: ".smithers/", kind: "dir" },
   { depth: 1, name: "WORKSPACE.ts", kind: "file", pane: "workspace", path: ".smithers/WORKSPACE.ts" },
+  { depth: 1, name: "flows/", kind: "dir" },
+  { depth: 2, name: "review/", kind: "dir" },
+  { depth: 3, name: "flow.mdx", kind: "file" },
   { depth: 0, name: "PACKAGE.ts", kind: "file" },
   { depth: 0, name: "packages/", kind: "dir" },
   { depth: 1, name: "engine-store/", kind: "dir" },
@@ -88,9 +91,6 @@ const tree = [
   { depth: 2, name: "src/", kind: "dir" },
   { depth: 1, name: "flow/", kind: "dir" },
   { depth: 2, name: "PACKAGE.ts", kind: "file" },
-  { depth: 0, name: "flows/", kind: "dir" },
-  { depth: 1, name: "review/", kind: "dir" },
-  { depth: 2, name: "flow.mdx", kind: "file" },
   { depth: 0, name: ".flows/", kind: "dir", muted: true },
   { depth: 1, name: "cache/", kind: "dir", muted: true }
 ]

@@ -1,0 +1,193 @@
+{
+  "name": "@smthrs/ui",
+  "version": "1.0.0-rc.0",
+  "smthrs": {
+    "group": "agent"
+  },
+  "private": true,
+  "description": "Shared shadcn-anatomy component library for Smithers UIs. Radix primitives + CVA variant APIs styled with the ui-styleguide theme tokens, shipped as CSS-in-TS strings so components bundle through the gateway's Bun.build and follow light/dark (prefers-color-scheme and data-theme) with zero configuration.",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    "./markdown": {
+      "types": "./src/primitives/markdown.tsx",
+      "default": "./src/primitives/markdown.tsx"
+    },
+    "./button": {
+      "types": "./src/button.tsx",
+      "default": "./src/button.tsx"
+    },
+    "./marker": {
+      "types": "./src/chat/Marker.tsx",
+      "default": "./src/chat/Marker.tsx"
+    },
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./adapters/knowledge-graph": {
+      "types": "./src/adapters/knowledge-graph.ts",
+      "import": "./src/adapters/knowledge-graph.ts",
+      "default": "./src/adapters/knowledge-graph.ts"
+    },
+    "./adapters/chart": {
+      "types": "./src/adapters/chart.tsx",
+      "import": "./src/adapters/chart.tsx",
+      "default": "./src/adapters/chart.tsx"
+    },
+    "./adapters/markdown-editor": {
+      "types": "./src/adapters/markdown-editor/index.ts",
+      "import": "./src/adapters/markdown-editor/index.ts",
+      "default": "./src/adapters/markdown-editor/index.ts"
+    },
+    "./adapters/pierre-diff-view": {
+      "types": "./src/adapters/pierre-diff-view.tsx",
+      "import": "./src/adapters/pierre-diff-view.tsx",
+      "default": "./src/adapters/pierre-diff-view.tsx"
+    },
+    "./adapters/code-view": {
+      "types": "./src/adapters/code-view/index.ts",
+      "import": "./src/adapters/code-view/index.ts",
+      "default": "./src/adapters/code-view/index.ts"
+    },
+    "./adapters/terminal": {
+      "types": "./src/adapters/terminal.tsx",
+      "import": "./src/adapters/terminal.tsx",
+      "default": "./src/adapters/terminal.tsx"
+    },
+    "./status": {
+      "types": "./src/status.ts",
+      "import": "./src/status.ts",
+      "default": "./src/status.ts"
+    },
+    "./time": {
+      "types": "./src/time/index.ts",
+      "import": "./src/time/index.ts",
+      "default": "./src/time/index.ts"
+    },
+    "./calendar": {
+      "types": "./src/calendar/index.ts",
+      "import": "./src/calendar/index.ts",
+      "default": "./src/calendar/index.ts"
+    },
+    "./vault": {
+      "types": "./src/vault/index.ts",
+      "import": "./src/vault/index.ts",
+      "default": "./src/vault/index.ts"
+    },
+    "./flow-form": {
+      "types": "./src/flow-form.ts",
+      "import": "./src/flow-form.ts",
+      "default": "./src/flow-form.ts"
+    },
+    "./diff-paginate": {
+      "types": "./src/diff-paginate.ts",
+      "import": "./src/diff-paginate.ts",
+      "default": "./src/diff-paginate.ts"
+    },
+    "./flow-arguments": {
+      "types": "./src/flow-arguments.ts",
+      "import": "./src/flow-arguments.ts",
+      "default": "./src/flow-arguments.ts"
+    },
+    "./app-operations": {
+      "types": "./src/app-operations/index.ts",
+      "import": "./src/app-operations/index.ts",
+      "default": "./src/app-operations/index.ts"
+    },
+    "./app-operations/wiki": {
+      "types": "./src/app-operations/wiki.ts",
+      "import": "./src/app-operations/wiki.ts",
+      "default": "./src/app-operations/wiki.ts"
+    },
+    "./app-operations/http": {
+      "types": "./src/app-operations/http.ts",
+      "import": "./src/app-operations/http.ts",
+      "default": "./src/app-operations/http.ts"
+    },
+    "./command-line": {
+      "types": "./src/command-line.ts",
+      "import": "./src/command-line.ts",
+      "default": "./src/command-line.ts"
+    },
+    "./run-command": {
+      "types": "./src/run-command.ts",
+      "import": "./src/run-command.ts",
+      "default": "./src/run-command.ts"
+    },
+    "./clock": {
+      "types": "./src/clock.ts",
+      "import": "./src/clock.ts",
+      "default": "./src/clock.ts"
+    },
+    "./notification-policy": {
+      "types": "./src/notification-policy.ts",
+      "import": "./src/notification-policy.ts",
+      "default": "./src/notification-policy.ts"
+    },
+    "./copy": {
+      "types": "./src/copy.ts",
+      "import": "./src/copy.ts",
+      "default": "./src/copy.ts"
+    },
+    "./adapters/code-editor": {
+      "types": "./src/adapters/code-editor/index.tsx",
+      "default": "./src/adapters/code-editor/index.tsx"
+    },
+    "./app-operations/controls": {
+      "types": "./src/app-operations/controls.ts",
+      "default": "./src/app-operations/controls.ts"
+    }
+  },
+  "files": [
+    "src/"
+  ],
+  "scripts": {
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "bun test tests"
+  },
+  "dependencies": {
+    "@milkdown/crepe": "7.22.1",
+    "@milkdown/kit": "7.22.1",
+    "@milkdown/plugin-listener": "7.22.1",
+    "@pierre/diffs": "^1.3.6",
+    "@smthrs/ui-styleguide": "workspace:*",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "d3-force": "3.0.0",
+    "effect": "4.0.4",
+    "radix-ui": "^1.6.7",
+    "recharts": "^3.10.1",
+    "@codemirror/autocomplete": "6.20.3",
+    "@codemirror/commands": "6.11.0",
+    "@codemirror/lang-go": "6.0.1",
+    "@codemirror/lang-javascript": "6.2.5",
+    "@codemirror/lang-python": "6.2.1",
+    "@codemirror/lang-rust": "6.0.2",
+    "@codemirror/language": "6.12.4",
+    "@codemirror/lint": "6.9.7",
+    "@codemirror/state": "6.7.2",
+    "@codemirror/view": "6.43.11",
+    "y-codemirror.next": "0.3.6",
+    "yjs": "13.6.32",
+    "@lezer/highlight": "1.2.3",
+    "y-protocols": "1.0.6"
+  },
+  "peerDependencies": {
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@happy-dom/global-registrator": "^20.13.2",
+    "@types/bun": "latest",
+    "@types/d3-force": "^3.0.10",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "typescript": "~5.9.3"
+  }
+}

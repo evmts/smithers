@@ -134,7 +134,7 @@ describe("current @smthrs/ui migration", () => {
       mkdirSync(join(root, "flows", "simple-workflow"), { recursive: true })
       writeFileSync(
         join(root, "flows", "simple-workflow", "flow.ts"),
-        readFileSync(join(fixture("jsx-single.migrated"), "flows", "simple-workflow", "flow.ts"), "utf8")
+        readFileSync(join(fixture("jsx-single.migrated"), ".smithers", "flows", "simple-workflow", "flow.ts"), "utf8")
       )
       const checkpoint = yield* Checkpoint.take({
         root,

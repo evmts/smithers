@@ -3,10 +3,10 @@ import { systemFlows } from "./fixtures/system-flows.ts"
  * The repository host's catalog, after one of its own runs writes a flow.
  *
  * `flows/coding/host.ts` assembles its catalog itself: the repository's own
- * `flows/` tree with the ordinary verified loader, and the reserved job
- * declarations out of the measured bundle the host shipped as. That catalog
+ * `.smithers/flows/` tree with the ordinary verified loader, and the reserved
+ * job declarations out of the measured bundle the host shipped as. That catalog
  * used to be frozen for the life of the process, so `create-flow` — which
- * this host serves — could write `flows/<id>/flow.ts` and leave a flow the
+ * this host serves — could write `.smithers/flows/<id>/flow.ts` and leave a flow the
  * same host could neither plan nor run until it was restarted.
  *
  * The composition now serves it through `Executable.layerRefreshable`. This
@@ -75,11 +75,11 @@ const workspace = async (t: TestContext) => {
   const temporary = await mkdtemp(join(tmpdir(), "coding-catalog-refresh-"))
   t.after(() => rm(temporary, { recursive: true, force: true }))
   const repositoryPath = join(temporary, "repo"), stateRoot = join(temporary, "state")
-  await mkdir(join(repositoryPath, "flows"), { recursive: true })
+  await mkdir(join(repositoryPath, ".smithers", "flows"), { recursive: true })
   return { repositoryPath, stateRoot }
 }
 
-/** The declaration `create-flow`'s scaffold stage leaves in `flows/<id>/`. */
+/** The declaration `create-flow`'s scaffold stage leaves in `.smithers/flows/<id>/`. */
 const declaration = `---
 description: Written by a run of this host.
 model: flow/author
@@ -93,9 +93,9 @@ Do the thing.
 const host = (repositoryPath: string, stateRoot: string, registered: Array<string>) =>
   Effect.gen(function*() {
     const builtins = yield* provisionBuiltins(stateRoot, policy)
-    const project = yield* Registry.make({
-      sources: [{ root: join(repositoryPath, "flows"), source: "project", naming: "path" }]
-    }).pipe(Effect.provide(Discovery.layer))
+    const project = yield* Registry.make({ sources: [Registry.projectSource({ join }, repositoryPath)] }).pipe(
+      Effect.provide(Discovery.layer)
+    )
     const registry = bindRepositoryRegistry(project, builtins.registry, policy, systemFlows)
     const options = { delegates: [Agent, Project, Reserved] }
     const built = yield* repositoryCatalog(options, builtins.load).pipe(
@@ -125,8 +125,8 @@ test("a project flow written after the catalog was built is planned from the byt
         assert.equal(catalog.executables.some((entry) => entry.descriptor.name === "mine"), false)
 
         yield* Effect.promise(async () => {
-          await mkdir(join(repositoryPath, "flows", "mine"), { recursive: true })
-          await writeFile(join(repositoryPath, "flows", "mine", "flow.mdx"), declaration)
+          await mkdir(join(repositoryPath, ".smithers", "flows", "mine"), { recursive: true })
+          await writeFile(join(repositoryPath, ".smithers", "flows", "mine", "flow.mdx"), declaration)
         })
         const outcome = yield* refresh.flow("mine")
         assert.equal(outcome._tag, "Registered")
@@ -148,6 +148,33 @@ test("a project flow written after the catalog was built is planned from the byt
   assert.ok(observedNames.includes("mine"), "the rebuilt entry must be registered with the runtime")
 })
 
+test("a flow a run writes under the retired root flows/ is never planned", async (t) => {
+  const { repositoryPath, stateRoot } = await workspace(t)
+  const registered: Array<string> = []
+  await Effect.runPromise(Effect.scoped(
+    Effect.gen(function*() {
+      const composed = yield* host(repositoryPath, stateRoot, registered)
+      return yield* Effect.gen(function*() {
+        const catalog = yield* Executable.Catalog
+        const refresh = yield* Executable.Refresh
+        yield* Effect.promise(async () => {
+          await mkdir(join(repositoryPath, "flows", "mine"), { recursive: true })
+          await writeFile(join(repositoryPath, "flows", "mine", "flow.mdx"), declaration)
+        })
+        assert.equal((yield* refresh.flow("mine"))._tag, "Removed")
+        assert.equal(catalog.executables.some((entry) => entry.descriptor.name === "mine"), false)
+        assert.deepEqual(
+          (yield* composed.registry.warnings()).filter((warning) => warning.code === "retired_root").map((warning) =>
+            warning.message
+          ),
+          ["Flows in flows/ are not loaded; move them to .smithers/flows/."]
+        )
+      }).pipe(Effect.provide(composed.layer))
+    }).pipe(Effect.provide(platform))
+  ))
+  assert.equal(registered.includes("mine"), false)
+})
+
 test("a reserved job declaration is held fixed against whatever the working tree says", async (t) => {
   const { repositoryPath, stateRoot } = await workspace(t)
   const registered: Array<string> = []
@@ -166,8 +193,8 @@ test("a reserved job declaration is held fixed against whatever the working tree
         // must not be able to do is make the host rebuild a reserved job's
         // declaration out of what it wrote.
         yield* Effect.promise(async () => {
-          await mkdir(join(repositoryPath, "flows", "repository", "setup"), { recursive: true })
-          await writeFile(join(repositoryPath, "flows", "repository", "setup", "flow.mdx"), declaration)
+          await mkdir(join(repositoryPath, ".smithers", "flows", "repository", "setup"), { recursive: true })
+          await writeFile(join(repositoryPath, ".smithers", "flows", "repository", "setup", "flow.mdx"), declaration)
         })
         assert.equal((yield* refresh.flow("repository/setup"))._tag, "Fixed")
         assert.equal(
@@ -200,7 +227,7 @@ export default Flow.make("merge", { description: "Packaged merge", payload: {}, 
     })
     const make = (root: string, source: string) =>
       Registry.make({ sources: [{ root, source, naming: "path" }] }).pipe(Effect.provide(Discovery.layer))
-    const base = yield* make(join(repositoryPath, "flows"), "project")
+    const base = yield* make(join(repositoryPath, ".smithers", "flows"), "project")
     const defaultsRegistry = yield* make(defaults, "repository-host")
     // A routine service wrapper must retain collision diagnostics.
     const registry = Registry.Registry.of({
@@ -221,7 +248,7 @@ export default Flow.make("merge", { description: "Packaged merge", payload: {}, 
   })
 
 const writeCollision = async (repositoryPath: string) => {
-  const directory = join(repositoryPath, "flows", "merge")
+  const directory = join(repositoryPath, ".smithers", "flows", "merge")
   const marker = join(repositoryPath, "merge-imported")
   await mkdir(directory, { recursive: true })
   await writeFile(
@@ -255,7 +282,7 @@ for (const initiallyPresent of [false, true]) {
           const expected = [{
             flow: "merge",
             code: "reserved_name",
-            path: join(repositoryPath, "flows", "merge", "flow.ts")
+            path: join(repositoryPath, ".smithers", "flows", "merge", "flow.ts")
           }]
           const refusals = () => catalog.refused.map(({ flow, code, path }) => ({ flow, code, path }))
           assert.deepEqual(refusals(), initiallyPresent ? expected : [])
@@ -272,7 +299,7 @@ for (const initiallyPresent of [false, true]) {
           assert.equal(catalog.executables.find((entry) => entry.descriptor.name === "merge"), packaged)
           assert.ok(Graph.build(packaged.flow, { input: {} }).nodes.some((node) => node.payload === "Packaged merge"))
           assert.equal(yield* catalog.load!("merge"), packaged)
-          yield* Effect.promise(() => rm(join(repositoryPath, "flows", "merge"), { recursive: true }))
+          yield* Effect.promise(() => rm(join(repositoryPath, ".smithers", "flows", "merge"), { recursive: true }))
           assert.equal((yield* refresh.flow("merge"))._tag, "Fixed")
           assert.deepEqual(refusals(), [])
           yield* Effect.all([refresh.flow("absent"), refresh.flow("merge")], { concurrency: "unbounded" })
@@ -300,7 +327,7 @@ test("a live reserved collision without a packaged executable remains a typed re
         const result = yield* Effect.result(catalog.load!("merge"))
         assert.equal(result._tag, "Failure")
         if (result._tag === "Failure") assert.equal(result.failure.code, "reserved_name")
-        yield* Effect.promise(() => rm(join(repositoryPath, "flows", "merge"), { recursive: true }))
+        yield* Effect.promise(() => rm(join(repositoryPath, ".smithers", "flows", "merge"), { recursive: true }))
         yield* refresh.flow("merge")
         assert.deepEqual(catalog.refused, [])
       }).pipe(Effect.provide(composed.layer))

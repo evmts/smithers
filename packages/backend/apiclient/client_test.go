@@ -151,7 +151,7 @@ func TestTodoReadsDecodeTheCard(t *testing.T) {
 }
 
 func TestAgentReadSelectsTheCatalogRole(t *testing.T) {
-	const card = `{"agents":[{"id":"reviewer","model":{"id":"review-model"},"source":"owner","instructions":"flows/todo/flow.ts","runs":[]}],"canAssign":false}`
+	const card = `{"agents":[{"id":"reviewer","model":{"id":"review-model"},"source":"owner","instructions":".smithers/flows/todo/flow.ts","runs":[]}],"canAssign":false}`
 	client, requests := server(t, http.StatusOK, "application/json", card)
 	result, err := client.GetAPIAgentsName(context.Background(), "reviewer")
 	require.NoError(t, err)

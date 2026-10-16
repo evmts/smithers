@@ -1,0 +1,96 @@
+---
+title: "Installation"
+description: "Install @smthrs/kernel, its runtime requirements, its public subpaths, and the platform and journal packages a working host composition adds."
+sidebar:
+  order: 1
+---
+
+## Install the package
+
+```bash
+npm install @smthrs/kernel@next effect
+```
+
+The `next` tag carries the 1.0 release candidates.
+
+## Requirements
+
+The package requires Node.js 26.4.0 or later and ships as ESM, CommonJS, and
+TypeScript declarations. Its Smithers dependencies install with it:
+[`@smthrs/capability`](/api/capability), [`@smthrs/jj`](/api/jj), and
+[`@smthrs/journal`](/api/journal). The host supplies the
+`effect@^4.0.4` peer so the library never installs a second runtime.
+
+The root entry point carries no Node built-ins. A package test bundles the
+whole root dependency graph for the browser and asserts that no
+`node:child_process`, `node:fs`, `node:path`, or `node:process` import
+survives, so the kernel itself runs anywhere its host does.
+
+## Import forms
+
+The root entry point re-exports every module as a namespace:
+
+```ts
+import { Capability, CapabilitySet, GrantStore, HostServices, Permission, Workspace } from "@smthrs/kernel"
+```
+
+Each module is also importable from its own subpath, which is the form the
+API reference uses:
+
+```ts
+import * as GrantStore from "@smthrs/kernel/GrantStore"
+import * as HostServices from "@smthrs/kernel/HostServices"
+```
+
+`Capability` and `Permission` are re-exports. Their modules live in
+[`@smthrs/capability`](/api/capability), so their deep import paths are
+`@smthrs/capability/Capability` and `@smthrs/capability/Permission`.
+
+Two subpath shapes are blocked in the export map: `@smthrs/kernel/internal/*`
+and `@smthrs/kernel/*/index`. `@smthrs/kernel/package.json` is exported.
+
+## Test subpaths
+
+Two helpers ship for testing. They are published code, not dev-only files;
+`test/HostContract` is an alias for `test/contract`:
+
+| Subpath                              | What it gives you                                                                 | Platform |
+| ------------------------------------ | --------------------------------------------------------------------------------- | -------- |
+| `@smthrs/kernel/test/TestGrantStore` | `layerAllow`, `layerDeny`, and `layerScripted` grant-store doubles.               | any      |
+| `@smthrs/kernel/test/contract`       | `runHostContract`, the shared behavioral contract every host bundle must satisfy. | Node.js  |
+
+`test/contract` is Node-only because it uses Node process and
+temporary-directory fixtures. The deterministic host bundle is published by
+`@smthrs/testing/TestHost`; keeping it with the other test utilities avoids a
+kernel-to-platform dependency cycle. To use that host, install it as a
+development dependency:
+
+```bash
+npm install --save-dev @smthrs/testing@next
+```
+
+`test/contract` registers Vitest cases, so importing it requires the declared
+peers, `@effect/vitest` at the same version as your `effect` and `vitest@5.0.0`. Both are optional: a
+consumer that imports only the kernel or `test/TestGrantStore` needs neither.
+See [Testing](./testing.md) for what each one covers.
+
+## What a working host adds
+
+The kernel holds no platform implementations. It decorates ports that
+something else provides, so a composition that actually reaches a machine adds
+a platform bundle:
+
+- [`@smthrs/platform-node`](/api/platform-node) implements the five ports on
+  Node, attaches the descriptor-relative filesystem executor the kernel
+  requires, and ships the process reaper that retires orphaned records.
+- [`@smthrs/platform-bun`](/api/platform-bun) and
+  [`@smthrs/platform-browser`](/api/platform-browser) implement the same
+  ports for Bun and for the browser.
+- [`@smthrs/journal`](/api/journal) is already a dependency, but a host only
+  needs a live `Journal` service when it uses `JournalGrantStore` or the
+  durable `ProcessLedger`.
+
+## Next step
+
+Guard a host and watch a call get refused in the
+[Quickstart](./quickstart.md).

@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url"
 import { describe, expect, test } from "bun:test"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import { legacySites, README_URL as SCRIPT_README_URL } from "../../../scripts/package-docs.mjs"
+import { legacySites, README_URL as SCRIPT_README_URL } from "../../../flows/docs-sync/package-docs.mjs"
 import { answerIsUnclaimed, decide, handleDocsRedirect, pageKey, UNCLAIMED_MARKER } from "./docsRedirect"
 import type { DocsRedirectEnv } from "./docsRedirect"
 import { DOCS_PAGES, DOCS_REDIRECTS, README_URL } from "./docsRedirectMap"
@@ -269,7 +269,7 @@ describe("unknown slugs", () => {
 describe("the map, the routes and the package list agree", () => {
   const config = parseWranglerConfig(readFileSync(fileURLToPath(new URL("../wrangler.docs-redirect.jsonc", import.meta.url)), "utf8"))
 
-  // scripts/package-docs-redirect.test.mjs holds docsRedirectMap.ts to a fresh generation:
+  // flows/docs-sync/package-docs-redirect.test.mjs holds docsRedirectMap.ts to a fresh generation:
   // its target declares every docs file the map is built from.
   test("docsRedirectMap.ts carries the generator's README target", () => {
     expect(README_URL).toBe(SCRIPT_README_URL)

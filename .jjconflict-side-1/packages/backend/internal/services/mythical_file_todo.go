@@ -1,0 +1,468 @@
+package services
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"regexp"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/jobs"
+)
+
+// MythicalTodoInput is a TODO a person files through Smithers. Request,
+// when given, names the filing: the same request again answers the TODO it
+// filed instead of opening another issue. Issue, IssueDigest and Fixes come
+// together from Make TODO (/todo.from-issue): the GitHub issue the Draft was
+// made from, the digest of the title and body the member read, and whether
+// the TODO closes the issue when it merges (absent: it does).
+type MythicalTodoInput struct {
+	Prompt      string            `json:"prompt"`
+	Acceptance  []string          `json:"acceptance"`
+	Place       MythicalTodoPlace `json:"place"`
+	Title       string            `json:"title"`
+	Issue       *int64            `json:"issue,omitempty"`
+	IssueDigest string            `json:"issue_digest,omitempty"`
+	Fixes       *bool             `json:"fixes,omitempty"`
+	Request     string            `json:"-"`
+	seed        *branchSeed
+}
+
+// MythicalTodoPlace is where a new TODO goes on the stack: the Draft's place
+// {mode: append|before|amend, n?}. The zero value (no place) appends; before
+// names the TODO n it goes before.
+type MythicalTodoPlace struct {
+	Mode string `json:"mode"`
+	N    *int64 `json:"n,omitempty"`
+}
+
+func invalidTodoPlace(message string) error {
+	return &TodoControlError{400, "invalid_place", "user", message}
+}
+
+// UnmarshalJSON admits only the object {mode, n?}; any other value is
+// invalid_place, never a generic decode failure.
+func (p *MythicalTodoPlace) UnmarshalJSON(data []byte) error {
+	type plain MythicalTodoPlace
+	var value plain
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&value); err != nil || value.Mode == "" {
+		return invalidTodoPlace("place must be {mode, n?}")
+	}
+	*p = MythicalTodoPlace(value)
+	return nil
+}
+
+// FileTodo puts the person's prompt on the existing stack: appended, or
+// before Tn, where it takes Tn's place and Tn and every later item move one
+// place later, so the stack admits it first. No GitHub issue or machine
+// launch is performed in the HTTP transaction. A
+// Draft made from an issue (Make TODO) commits as that issue's TODO:
+// revision 1 is the Draft's text with reason from-issue and the issue's
+// digest, and an issue holds one unmerged TODO. The TODO owes its issue the
+// App's todo label and one "Committed as Tn" comment, which the stack's next
+// pass posts (deliverNotice).
+func (s *MythicalService) FileTodo(ctx context.Context, repositoryID, userID int64, input MythicalTodoInput) (MythicalItemView, error) {
+	if s == nil || s.store == nil {
+		return MythicalItemView{}, issueTodoUnavailable()
+	}
+	command := "todo.new"
+	if input.seed != nil {
+		command = "branch.add-to-stack"
+	}
+	if input.Issue != nil {
+		command = "todo.from-issue"
+	}
+	return s.fileTodoCommand(ctx, repositoryID, userID, input, command)
+}
+
+// fileTodoCommand is also the append implementation of an admitted learning
+// acceptance or repository edit. These consumers retain their concrete decision instead of acquiring
+// a second todo.new decision for the same effect.
+func (s *MythicalService) fileTodoCommand(ctx context.Context, repositoryID, userID int64, input MythicalTodoInput, command string) (MythicalItemView, error) {
+	decision, err := Authorize(ctx, s.queries(), command)
+	if err != nil {
+		return MythicalItemView{}, err
+	}
+	if decision.UserID != userID {
+		return MythicalItemView{}, &AccessError{Status: http.StatusForbidden, Class: "permission", Code: "permission", Message: "Sign in with a browser session"}
+	}
+	info := middleware.AuthInfoFromContext(ctx)
+	creationSession := info.SessionHash
+	if terminalSession, ok := ctx.Value(terminalPersonRequestSessionKey{}).(string); ok && terminalSession != "" {
+		creationSession = terminalSession
+	}
+	// The first revision is the person's own text, by them.
+	person, err := s.queries().GetUserByID(ctx, userID)
+	if err != nil {
+		return MythicalItemView{}, err
+	}
+	input, err = normalizeMythicalTodoInput(input)
+	if err != nil {
+		return MythicalItemView{}, err
+	}
+	canonical, _ := json.Marshal(input)
+	// Make TODO reads the issue once, before the transaction and only for a
+	// new request: a replay answers the TODO it filed, whatever the issue
+	// says now.
+	var issue *db.MythicalTodoIssue
+	link := ""
+	if input.Issue != nil {
+		if _, err = s.queries().GetMythicalRequest(ctx, repositoryID, creationSession, input.Request); errors.Is(err, pgx.ErrNoRows) {
+			if issue, err = s.readTodoIssue(ctx, repositoryID, decision.Role, *input.Issue, input.IssueDigest); err != nil {
+				return MythicalItemView{}, err
+			}
+			issue.Fixes = *input.Fixes
+			if repository, owner, err := s.repository(ctx, repositoryID); err == nil && s.origin() != "" {
+				link = s.origin() + "/" + owner + "/" + repository.Name
+			}
+		} else if err != nil {
+			return MythicalItemView{}, err
+		}
+	}
+	var item db.MythicalItem
+	err = pgx.BeginFunc(ctx, s.store, func(tx pgx.Tx) error {
+		q := db.New(tx)
+		// All TODO writers lock the stack before credentials and the shared
+		// request key. Creation must use that order too when racing feedback.
+		if _, err := tx.Exec(ctx, `SELECT 1 FROM mythical_stacks WHERE repository_id=$1 FOR UPDATE`, repositoryID); err != nil {
+			return err
+		}
+		if err := guardInstallTodoWrite(ctx, tx, repositoryID, userID); err != nil {
+			return err
+		}
+		// The credential fence holds the roster mutation lock. A captured
+		// command grant cannot preserve maintainer-only issue admission after demotion.
+		role, err := InstallRoleOf(ctx, q, userID)
+		if err != nil {
+			return err
+		}
+		if issue != nil && issue.Outsider && role.rank() < InstallMaintainer.rank() {
+			return &AccessError{Status: http.StatusForbidden, Class: "permission", Code: "permission", Message: "Only a maintainer can make a TODO from this issue"}
+		}
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, repositoryID); err != nil {
+			return err
+		}
+		existing, err := q.GetMythicalRequest(ctx, repositoryID, creationSession, input.Request)
+		if err == nil {
+			// The same key may have approved a merge instead: a different request.
+			held := mythicalChecksOf(existing)
+			if held.FiledRequest != input.Request || held.CreationSession != creationSession || held.CreationPayload != string(canonical) {
+				return &TodoControlError{409, "idempotency_mismatch", "conflict", "Idempotency-Key was already used for a different request"}
+			}
+			item = existing
+			return nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		if input.Issue != nil && issue == nil {
+			return &TodoControlError{409, "idempotency_mismatch", "conflict", "Commit the Draft again"}
+		}
+		stack, err := q.GetMythicalStack(ctx, repositoryID)
+		if err != nil || stack.State != "active" {
+			return &TodoControlError{503, "stack_unavailable", "infra", "Repository stack is not ready"}
+		}
+		// Before Tn takes Tn's place: Tn must still be on the stack and not
+		// merging (spec §10.2.2).
+		var before db.MythicalItem
+		if input.Place.Mode == "before" {
+			order, err := q.LockMythicalStackOrder(ctx, repositoryID)
+			if err != nil {
+				return err
+			}
+			at := slices.IndexFunc(order, func(item db.MythicalItem) bool { return item.Number.Int64 == *input.Place.N })
+			if at < 0 {
+				return invalidTodoPlace(fmt.Sprintf("T%d is not on the stack", *input.Place.N))
+			}
+			for _, affected := range order[at:] {
+				if mythicalMergeFenced(affected) {
+					return &TodoControlError{409, "merging", "conflict", fmt.Sprintf("T%d is merging", affected.Number.Int64)}
+				}
+			}
+			before = order[at]
+		}
+		first := map[string]any{"text": input.Prompt, "acceptance": input.Acceptance, "by": map[string]any{"kind": "person", "login": person.Username, "name": person.DisplayName, "avatar_url": todoAvatar(person), "color_index": 0}, "at": s.now().UTC().Format(time.RFC3339Nano)}
+		if issue != nil {
+			first["reason"], first["issue_digest"] = "from-issue", issue.Digest
+		}
+		if input.seed != nil {
+			first["seed"] = input.seed
+			first["reason"] = "add-to-stack"
+		}
+		revision, _ := json.Marshal([]map[string]any{first})
+		checks := mythicalChecks{Todo: true, FiledRequest: input.Request, CreationSession: creationSession, CreationPayload: string(canonical)}
+		if issue != nil {
+			checks.IssueContext = issue.Context
+		}
+		if setting, readErr := q.GetInstallSetting(ctx, todoPreapprovalDefaultKey); readErr == nil {
+			if err := json.Unmarshal(setting.Value, &checks.Preapproval); err != nil {
+				return err
+			}
+			if checks.Preapproval != nil {
+				checks.Automerge = true
+				checks.PreapprovalEvents = []mythicalPreapprovalEvent{{By: checks.Preapproval.By, User: checks.Preapproval.StandingUser, Approved: true, Via: "default", At: s.now().UTC()}}
+			}
+		} else if !errors.Is(readErr, pgx.ErrNoRows) {
+			return readErr
+		}
+		item, err = q.InsertMythicalIssueTodo(ctx, repositoryID, userID, input.Title, input.Prompt, revision, checks.encode(), issue)
+		if issue != nil && errors.Is(err, pgx.ErrNoRows) {
+			held, _ := q.GetActiveMythicalItemByIssue(ctx, repositoryID, issue.Number)
+			return &TodoControlError{409, "issue_has_todo", "conflict", fmt.Sprintf("Issue #%d already has T%d", issue.Number, held.Number.Int64)}
+		}
+		if err != nil {
+			return err
+		}
+		if item, err = reserveTodoBranch(ctx, q, item); err != nil {
+			return err
+		}
+		if before.StackPosition.Valid {
+			// Tn and every later TODO move one place later. Even if the
+			// new TODO has no verified head yet, their dependency order
+			// changed: retire verification and queue the existing rebase path.
+			if err := q.MakeMythicalPlace(ctx, repositoryID, before.StackPosition.Int64, item.ID); err != nil {
+				return err
+			}
+			if item, err = q.PlaceMythicalItem(ctx, item.ID, before.StackPosition.Int64); err != nil {
+				return err
+			}
+			order, err := q.LockMythicalStackOrder(ctx, repositoryID)
+			if err != nil {
+				return err
+			}
+			step := &mythicalItemStep{r: &mythicalRun{row: stack, mainTip: stack.LandedMain}, items: order, now: s.now()}
+			for i, successor := range step.items {
+				if successor.StackPosition.Int64 <= item.StackPosition.Int64 {
+					continue
+				}
+				if successor.CandidateHead != "" && !mythicalOffStack(successor.State) && len(successor.PendingOp) == 0 {
+					saved, err := q.SaveMythicalItem(ctx, *step.invalidatePrefix(successor))
+					if err != nil {
+						return err
+					}
+					step.items[i] = saved
+					s.itemChanged(ctx, q, stack, saved.ID)
+				} else if successor.WorkspaceID != "" && len(successor.PendingOp) == 0 {
+					if pending := step.awaitRebase(successor, step.prefix(successor), step.ontoName(step.prefix(successor))); pending != nil {
+						saved, err := q.SaveMythicalItem(ctx, *pending)
+						if err != nil {
+							return err
+						}
+						step.items[i] = saved
+						s.itemChanged(ctx, q, stack, saved.ID)
+					}
+				} else {
+					s.itemChanged(ctx, q, stack, successor.ID)
+				}
+			}
+		}
+		if issue != nil {
+			committed := mythicalChecksOf(item)
+			notice := mythicalCommittedNotice(item.Number.Int64, link)
+			committed.Notice = &notice
+			item.Checks = committed.encode()
+			if item, err = q.SaveMythicalItem(ctx, item); err != nil {
+				return err
+			}
+		}
+		created := map[string]any{"item": uuidString(item.ID), "n": item.Number.Int64, "attempt": item.Attempt, "from": "draft", "to": "queued", "actor": userID,
+			"place": item.StackPosition.Int64}
+		if before.Number.Valid {
+			created["before"] = before.Number.Int64
+		}
+		if issue != nil {
+			created["issue"] = issue.Number
+		}
+		fact, _ := json.Marshal(created)
+		if _, err = s.recordTodoFact(ctx, tx, item, uuid.NewString(), "todo.created", "queued", fact); err != nil {
+			return err
+		}
+		if _, err = q.RequestMythicalStack(ctx, repositoryID); err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return MythicalItemView{}, err
+	}
+	return mythicalItemView(item), nil
+}
+
+var mythicalDigestPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// mythicalCommittedKeyPrefix keys the notice a Make TODO owes its issue: the
+// App's todo label and one comment per TODO, which a retry edits rather than
+// repeats.
+const mythicalCommittedKeyPrefix = "todo-committed:"
+
+// mythicalCommittedNotice is that notice for TODO number: "Committed as Tn",
+// linking the repository in Smithers when the install has an address.
+func mythicalCommittedNotice(number int64, link string) mythicalNotice {
+	body := fmt.Sprintf("Committed as T%d ↗", number)
+	if link != "" {
+		body = fmt.Sprintf("Committed as [T%d ↗](%s)", number, link)
+	}
+	return mythicalNotice{Key: mythicalCommittedKeyPrefix + strconv.FormatInt(number, 10), Body: body, Label: todoLabel}
+}
+
+// readTodoIssue resolves an authorized read receipt belonging to this person.
+// Commit keeps its exact issue and comments even when GitHub changed since
+// drafting; neither an unknown digest nor another member's read is admitted.
+func (s *MythicalService) readTodoIssue(ctx context.Context, repositoryID int64, role InstallRole, number int64, digest string) (*db.MythicalTodoIssue, error) {
+	unavailable := &TodoControlError{503, "github_unavailable", "infra", fmt.Sprintf("Could not read issue #%d from GitHub", number)}
+	info := middleware.AuthInfoFromContext(ctx)
+	if info == nil || info.User == nil {
+		return nil, unavailable
+	}
+	var raw []byte
+	err := s.store.QueryRow(ctx, `SELECT data FROM product_job_events WHERE tenant_id=$1 AND principal_id=$2 AND event_type='issue.read'
+ AND data->>'digest'=$3 AND data->>'issue'=$4 AND state='completed' AND recorded_at>$5 ORDER BY sequence DESC LIMIT 1`, strconv.FormatInt(repositoryID, 10), fmt.Sprintf("issue-read:%d", info.User.ID), digest, strconv.FormatInt(number, 10), s.now().Add(-todoIssueReceiptTTL)).Scan(&raw)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, &TodoControlError{409, "issue_snapshot_unknown", "conflict", "Open the issue before making a TODO"}
+	}
+	if err != nil {
+		return nil, unavailable
+	}
+	if s.github == nil {
+		return nil, unavailable
+	}
+	var read struct {
+		Thread   InstallIssueThread `json:"thread"`
+		Outsider *bool              `json:"outsider"`
+		ReadAt   time.Time          `json:"read_at"`
+	}
+	if json.Unmarshal(raw, &read) != nil || read.Outsider == nil || read.Thread.Issue.Number != number || todoIssueSnapshotDigest(read.Thread) != digest || read.ReadAt.IsZero() || !read.ReadAt.After(s.now().Add(-todoIssueReceiptTTL)) || read.ReadAt.After(s.now().Add(time.Minute)) {
+		return nil, unavailable
+	}
+	issue := read.Thread.Issue
+	if !strings.EqualFold(issue.State, "open") {
+		return nil, &TodoControlError{409, "issue_closed", "conflict", fmt.Sprintf("Issue #%d is closed", number)}
+	}
+	if *read.Outsider && role.rank() < InstallMaintainer.rank() {
+		return nil, &AccessError{Status: http.StatusForbidden, Class: "permission", Code: "permission", Message: "Only a maintainer can make a TODO from this issue"}
+	}
+	byMaintainer := !*read.Outsider
+
+	body := issue.Body
+	if len(body) > mythicalPromptBytes {
+		body = body[:mythicalPromptBytes]
+	}
+	context, _ := json.Marshal(read.Thread)
+	return &db.MythicalTodoIssue{Context: context, Number: number, Title: issue.Title, Body: body, URL: issue.HTMLURL, Digest: digest, Outsider: !byMaintainer}, nil
+}
+
+func todoOperationScope(item db.MythicalItem) jobs.Scope {
+	return jobs.Scope{TenantID: strconv.FormatInt(item.RepositoryID, 10), PrincipalID: "todo:" + uuidString(item.ID)}
+}
+
+// personGitHubID is the numeric id of the GitHub account the person signed
+// in with (mythicalLinkedGitHub). A login is never trusted from the
+// profile: it can be renamed.
+func (s *MythicalService) personGitHubID(ctx context.Context, userID int64, act string) (int64, error) {
+	accounts, err := s.queries().ListUserOAuthAccounts(ctx, userID)
+	if err != nil {
+		return 0, err
+	}
+	if id, ok := mythicalLinkedGitHub(accounts); ok {
+		return id, nil
+	}
+	return 0, pkgerrors.Forbidden("connect your GitHub account to " + act)
+}
+
+// mythicalLinkedGitHub is the GitHub account id among a person's linked
+// accounts: a "github" account, else the GitHub sign-in's historical
+// "workos" row (resolveUserGitHubAccessToken's order).
+func mythicalLinkedGitHub(accounts []db.OauthAccount) (int64, bool) {
+	for _, provider := range []string{"github", "workos"} {
+		for _, account := range accounts {
+			if !strings.EqualFold(strings.TrimSpace(account.Provider), provider) {
+				continue
+			}
+			if id, err := strconv.ParseInt(strings.TrimSpace(account.ProviderUserID), 10, 64); err == nil && id > 0 {
+				return id, true
+			}
+		}
+	}
+	return 0, false
+}
+
+func (g *mythicalGitHubAPI) Account(ctx context.Context, gh mythicalGitHubRepo, id int64) (gitHubActor, error) {
+	var account gitHubActor
+	status, err := g.api.request(ctx, gh.Token, http.MethodGet, "/user/"+strconv.FormatInt(id, 10), nil, &account)
+	if err != nil {
+		return gitHubActor{}, err
+	}
+	if status != http.StatusOK {
+		return gitHubActor{}, landingGitHubStatusError(status, gh.Owner, gh.Name, "read the account")
+	}
+	return account, nil
+}
+
+func (g *mythicalGitHubAPI) CreateIssue(ctx context.Context, gh mythicalGitHubRepo, title, body string) (mythicalIssue, error) {
+	token, err := g.installationToken(ctx, gh, map[string]string{"issues": "write"})
+	if err != nil {
+		return mythicalIssue{}, err
+	}
+	var created mythicalGitHubIssue
+	err = sendGitHubIssueWrite(ctx, func(sendContext context.Context) error {
+		status, err := g.api.request(sendContext, token, http.MethodPost, landingGitHubRepoPath(gh.Owner, gh.Name)+"/issues", map[string]string{"title": title, "body": body}, &created)
+		if err != nil {
+			return err
+		}
+		if status != http.StatusCreated {
+			return landingGitHubStatusError(status, gh.Owner, gh.Name, "open issues")
+		}
+		return nil
+	})
+	if err != nil {
+		return mythicalIssue{}, err
+	}
+	// The answer is the App's own write: it names no maintainer text.
+	created.TextByMaintainer = false
+	return created.issue(), nil
+}
+
+// normalizeMythicalTodoInput is shared by direct filing and the private
+// confirmation preview; both validate exactly the input the person will file.
+func normalizeMythicalTodoInput(input MythicalTodoInput) (MythicalTodoInput, error) {
+	input.Title = strings.TrimSpace(input.Title)
+	if input.Title == "" || strings.TrimSpace(input.Prompt) == "" || len(input.Title) > 256 || len(input.Prompt) > 64<<10 || input.Request == "" || len(input.Request) > 256 {
+		return input, &TodoControlError{400, "invalid_todo", "user", "Title, prompt and Idempotency-Key are required"}
+	}
+	switch place := input.Place; {
+	case place.Mode == "amend":
+		return input, invalidTodoPlace("Amend arrives with T-STK-06")
+	case place.Mode == "before" && (place.N == nil || *place.N <= 0):
+		return input, invalidTodoPlace("Before needs the TODO it goes before")
+	case place.Mode == "before":
+	case place.N != nil || place.Mode != "" && place.Mode != "append":
+		return input, invalidTodoPlace("place must be {mode, n?}")
+	default:
+		input.Place = MythicalTodoPlace{Mode: "append"}
+	}
+	if input.Acceptance == nil {
+		input.Acceptance = []string{}
+	}
+	if input.Issue == nil && (input.IssueDigest != "" || input.Fixes != nil) ||
+		input.Issue != nil && (*input.Issue <= 0 || !mythicalDigestPattern.MatchString(input.IssueDigest)) {
+		return input, &TodoControlError{400, "invalid_todo", "user", "issue, issue_digest and fixes go together"}
+	}
+	if input.Issue != nil && input.Fixes == nil {
+		fixes := true
+		input.Fixes = &fixes
+	}
+	return input, nil
+}

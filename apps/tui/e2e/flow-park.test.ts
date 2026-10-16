@@ -10,9 +10,9 @@ const app = resolve(import.meta.dir, "..")
 it("shows a real durable park and question without claiming the run is still executing", async () => {
   const root = mkdtempSync(join(tmpdir(), "tui-park-"))
   const project = join(root, "project")
-  mkdirSync(join(project, "flows/ask"), { recursive: true })
+  mkdirSync(join(project, ".smithers/flows/ask"), { recursive: true })
   writeFileSync(
-    join(project, "flows/ask/flow.mdx"),
+    join(project, ".smithers/flows/ask/flow.mdx"),
     // A declared key runs the flow on the control plane; `/flow` would run it as an agent (d6300e6f9b).
     "---\ndescription: Ask a question\nmodel: openai:gpt-6-sol\nmetadata:\n  tui:\n    keys:\n      - key: alt+k\n        label: Ask\n        action: { kind: flow, flow: ask }\n---\nAsk which branch to use.\n"
   )

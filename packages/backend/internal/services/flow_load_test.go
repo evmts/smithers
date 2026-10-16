@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -216,7 +217,7 @@ func TestFlowLoadLoadsEveryMainMoveAndKeepsThePreviousVersionWhenALoadFails(t *t
 	// Main moves with a todo composition: one load, merged-syncing until it
 	// loads, then Active at its digest with the built-in previous.
 	edit := "export default \"todo v2\"\n"
-	m2 := o.commitFile("✨ feat: our todo flow", "flows/todo/flow.ts", edit)
+	m2 := o.commitFile("✨ feat: our todo flow", ".smithers/flows/todo/flow.ts", edit)
 	o.wake()
 	loads = o.flowLoads()
 	require.Len(t, loads, 2)
@@ -224,11 +225,11 @@ func TestFlowLoadLoadsEveryMainMoveAndKeepsThePreviousVersionWhenALoadFails(t *t
 	assert.Equal(t, m2, commit)
 	assert.Equal(t, []string{"active " + d1, "merged-syncing " + sha256Hex(edit)}, states(o.flowCard("todo")))
 	d2 := strings.Repeat("2", 64)
-	o.projectLoad(loads[1], jobs.StateCompleted, "load-2", flowLoadOutput(m2, FlowLoadVersion{Name: "todo", Path: "flows/todo/flow.ts", Digest: d2, Status: "loaded"}))
+	o.projectLoad(loads[1], jobs.StateCompleted, "load-2", flowLoadOutput(m2, FlowLoadVersion{Name: "todo", Path: ".smithers/flows/todo/flow.ts", Digest: d2, Status: "loaded"}))
 	o.wake()
 	card := o.flowCard("todo")
 	assert.Equal(t, []string{"active " + d2, "previous " + d1}, states(card))
-	assert.Equal(t, FlowSource{Path: "flows/todo/flow.ts"}, card.Source)
+	assert.Equal(t, FlowSource{Path: ".smithers/flows/todo/flow.ts"}, card.Source)
 	assert.Equal(t, builtinFlowSteps["todo"], card.Versions[0].Steps)
 	active, err := ActiveFlowDigest(ctx, q, o.repoID, "todo")
 	require.NoError(t, err)
@@ -239,8 +240,8 @@ func TestFlowLoadLoadsEveryMainMoveAndKeepsThePreviousVersionWhenALoadFails(t *t
 	o.wake()
 	loads = o.flowLoads()
 	require.Len(t, loads, 3)
-	assert.Equal(t, []string{"active " + d2, "previous " + d1}, states(o.flowCard("todo")), "nothing in flows/ changed")
-	o.projectLoad(loads[2], jobs.StateCompleted, "load-3", flowLoadOutput(m3, FlowLoadVersion{Name: "todo", Path: "flows/todo/flow.ts", Digest: d2, Status: "loaded"}))
+	assert.Equal(t, []string{"active " + d2, "previous " + d1}, states(o.flowCard("todo")), "nothing in .smithers/flows/ changed")
+	o.projectLoad(loads[2], jobs.StateCompleted, "load-3", flowLoadOutput(m3, FlowLoadVersion{Name: "todo", Path: ".smithers/flows/todo/flow.ts", Digest: d2, Status: "loaded"}))
 	o.wake()
 	versions, err = q.ListFlowVersions(ctx, o.repoID)
 	require.NoError(t, err)
@@ -249,33 +250,33 @@ func TestFlowLoadLoadsEveryMainMoveAndKeepsThePreviousVersionWhenALoadFails(t *t
 
 	// A broken flow writes a failed version; Active stays where it was and
 	// the card shows the error.
-	m4 := o.commitFile("💥 feat: broken todo flow", "flows/todo/flow.ts", "export default (\n")
+	m4 := o.commitFile("💥 feat: broken todo flow", ".smithers/flows/todo/flow.ts", "export default (\n")
 	o.wake()
 	loads = o.flowLoads()
 	require.Len(t, loads, 4)
 	d4 := strings.Repeat("4", 64)
-	o.projectLoad(loads[3], jobs.StateCompleted, "load-4", flowLoadOutput(m4, FlowLoadVersion{Name: "todo", Path: "flows/todo/flow.ts", Digest: d4, Status: "failed",
-		Error: "flows/todo/flow.ts:2: Expression expected"}))
+	o.projectLoad(loads[3], jobs.StateCompleted, "load-4", flowLoadOutput(m4, FlowLoadVersion{Name: "todo", Path: ".smithers/flows/todo/flow.ts", Digest: d4, Status: "failed",
+		Error: ".smithers/flows/todo/flow.ts:2: Expression expected"}))
 	o.wake()
-	assert.Equal(t, []string{"active " + d2, "merged-failed " + d4 + ": flows/todo/flow.ts:2: Expression expected", "previous " + d1}, states(o.flowCard("todo")))
+	assert.Equal(t, []string{"active " + d2, "merged-failed " + d4 + ": .smithers/flows/todo/flow.ts:2: Expression expected", "previous " + d1}, states(o.flowCard("todo")))
 	active, err = ActiveFlowDigest(ctx, q, o.repoID, "todo")
 	require.NoError(t, err)
 	assert.Equal(t, d2, active)
 
 	// Loads coalesce: main moves twice while one runs, and one more load
 	// runs, at the newest commit.
-	m5 := o.commitFile("✨ feat: five", "flows/todo/flow.ts", "export default \"todo v5\"\n")
+	m5 := o.commitFile("✨ feat: five", ".smithers/flows/todo/flow.ts", "export default \"todo v5\"\n")
 	o.wake()
 	loads = o.flowLoads()
 	require.Len(t, loads, 5)
-	o.commitFile("✨ feat: six", "flows/todo/flow.ts", "export default \"todo v6\"\n")
+	o.commitFile("✨ feat: six", ".smithers/flows/todo/flow.ts", "export default \"todo v6\"\n")
 	o.wake()
-	m7 := o.commitFile("✨ feat: seven", "flows/todo/flow.ts", "export default \"todo v7\"\n")
+	m7 := o.commitFile("✨ feat: seven", ".smithers/flows/todo/flow.ts", "export default \"todo v7\"\n")
 	o.wake()
 	require.Len(t, o.flowLoads(), 5, "a running load is not launched twice")
 	// An older generation's late projection changes nothing.
 	o.projectLoad(loads[3], jobs.StateFailed, "load-4", "")
-	o.projectLoad(loads[4], jobs.StateCompleted, "load-5", flowLoadOutput(m5, FlowLoadVersion{Name: "todo", Path: "flows/todo/flow.ts", Digest: strings.Repeat("5", 64), Status: "loaded"}))
+	o.projectLoad(loads[4], jobs.StateCompleted, "load-5", flowLoadOutput(m5, FlowLoadVersion{Name: "todo", Path: ".smithers/flows/todo/flow.ts", Digest: strings.Repeat("5", 64), Status: "loaded"}))
 	o.wake()
 	loads = o.flowLoads()
 	require.Len(t, loads, 6)
@@ -298,11 +299,11 @@ func TestFlowLoadLoadsEveryMainMoveAndKeepsThePreviousVersionWhenALoadFails(t *t
 	require.Len(t, o.flowLoads(), 7)
 
 	// A repository that removes its todo returns to the built-in version.
-	m8 := o.commitFile("🔥 feat: drop the todo override", "flows/todo/flow.ts", "")
-	o.git(o.work, "rm", "-q", "flows/todo/flow.ts")
+	m8 := o.commitFile("🔥 feat: drop the todo override", ".smithers/flows/todo/flow.ts", "")
+	o.git(o.work, "rm", "-q", ".smithers/flows/todo/flow.ts")
 	o.git(o.work, "commit", "-q", "-m", "🔥 drop")
 	m8 = o.publish()
-	o.projectLoad(o.flowLoads()[6], jobs.StateCompleted, "load-7", flowLoadOutput(m7, FlowLoadVersion{Name: "todo", Path: "flows/todo/flow.ts", Digest: strings.Repeat("7", 64), Status: "loaded"}))
+	o.projectLoad(o.flowLoads()[6], jobs.StateCompleted, "load-7", flowLoadOutput(m7, FlowLoadVersion{Name: "todo", Path: ".smithers/flows/todo/flow.ts", Digest: strings.Repeat("7", 64), Status: "loaded"}))
 	o.wake()
 	loads = o.flowLoads()
 	require.Len(t, loads, 8)
@@ -332,23 +333,143 @@ func TestFlowLoadResultIsCheckedBeforeItIsWritten(t *testing.T) {
 		_, err := decodeFlowLoadResult([]byte(output), commit)
 		assert.Error(t, err, name)
 	}
-	result, err := decodeFlowLoadResult([]byte(flowLoadOutput(commit, FlowLoadVersion{Name: "todo", Path: "flows/todo/flow.ts", Digest: digest, Status: "loaded"})), commit)
+	result, err := decodeFlowLoadResult([]byte(flowLoadOutput(commit, FlowLoadVersion{Name: "todo", Path: ".smithers/flows/todo/flow.ts", Digest: digest, Status: "loaded"})), commit)
 	require.NoError(t, err)
 	assert.Len(t, result.Flows, 1)
 }
 
-func TestFlowEntryNameIsTheFlowsDirectory(t *testing.T) {
+func TestFlowEntryNameIsTheSmithersFlowsDirectory(t *testing.T) {
 	for path, want := range map[string]string{
-		"flows/todo/flow.ts":           "todo",
-		"flows/checks/wiki/flow.mdx":   "checks/wiki",
-		"flows/todo/helper.ts":         "",
-		"src/flows/todo/flow.ts":       "",
-		"flows/flow.ts":                "",
-		"flows/review/change/flow.mdx": "review/change",
+		".smithers/flows/todo/flow.ts":           "todo",
+		".smithers/flows/todo/flow.tsx":          "todo",
+		".smithers/flows/checks/wiki/flow.mdx":   "checks/wiki",
+		".smithers/flows/notes/flow.md":          "notes",
+		".smithers/flows/todo/helper.ts":         "",
+		".smithers/flows/flow.ts":                "",
+		".smithers/flows/review/change/flow.mdx": "review/change",
+		"src/.smithers/flows/todo/flow.ts":       "",
+		// A root flows/ is never read as flows (mvp.md M-49).
+		"flows/todo/flow.ts":         "",
+		"flows/checks/wiki/flow.mdx": "",
+		"src/flows/todo/flow.ts":     "",
 	} {
 		name, ok := flowEntryName(path)
 		assert.Equal(t, want, name, path)
 		assert.Equal(t, want != "", ok, path)
+	}
+}
+
+// Flow entries under a root flows/ name the new location once; any other
+// file there, or entries elsewhere, say nothing.
+func TestRootFlowsDiagnosticNamesTheNewLocationOnce(t *testing.T) {
+	const want = retiredRootMessage
+	for _, tree := range []map[string]string{
+		{"flows/todo/flow.ts": "a"},
+		{"flows/todo/flow.ts": "a", "flows/review/flow.mdx": "b", "flows/checks/wiki/flow.md": "c", "flows/x/flow.tsx": "d"},
+		{"flows/todo/flow.ts": "a", ".smithers/flows/todo/flow.ts": "b"},
+	} {
+		assert.Equal(t, want, rootFlowsDiagnostic(tree), tree)
+	}
+	for _, tree := range []map[string]string{
+		{},
+		{".smithers/flows/todo/flow.ts": "a"},
+		{"flows/README.md": "a", "flows/todo/helper.ts": "b", "flows/flow.ts": "c"},
+		{"src/flows/todo/flow.ts": "a", "packages/x/flows/todo/flow.ts": "b"},
+	} {
+		assert.Empty(t, rootFlowsDiagnostic(tree), tree)
+	}
+}
+
+// rootFlowsLogs answers the root-flows diagnostics logged so far.
+func rootFlowsLogs(logs *strings.Builder) []string {
+	diagnostics := []string{}
+	for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
+		var entry map[string]any
+		if json.Unmarshal([]byte(line), &entry) == nil && entry["msg"] == "mythical.flow_load_root_flows" {
+			diagnostics = append(diagnostics, fmt.Sprint(entry["diagnostic"]))
+		}
+	}
+	return diagnostics
+}
+
+// flowLoadOutputWith is a flow-load output that also carries diagnostics.
+func flowLoadOutputWith(commit string, diagnostics ...FlowLoadDiagnostic) string {
+	out, _ := json.Marshal(FlowLoadResult{CommitID: commit, Flows: []FlowLoadVersion{}, Diagnostics: diagnostics})
+	return string(out)
+}
+
+const retiredRootMessage = "Flows in flows/ are not loaded; move them to .smithers/flows/."
+
+var retiredRoot = FlowLoadDiagnostic{Code: "retired_root", Path: "flows", Message: retiredRootMessage}
+
+// A main whose flows sit only under a root flows/ loads none of them: no
+// merged version appears, the built-in stays Active, and each load logs one
+// diagnostic naming .smithers/flows/, even when the machine's result
+// reports the same retired root.
+func TestFlowLoadIgnoresRootFlowsWithOneDiagnosticPerLoad(t *testing.T) {
+	o := newMythicalOrchestration(t)
+	ctx := t.Context()
+	o.lanes.provision = func(id string) {
+		_, err := o.pool.Exec(ctx, `INSERT INTO workspaces(id,repository_id,user_id,name,status) VALUES($1,$2,$3,$4,'running')`, id, o.repoID, o.userID, id)
+		require.NoError(t, err)
+	}
+	var logs strings.Builder
+	o.service.logger = slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	digests, err := builtinFlowDigests()
+	require.NoError(t, err)
+	m1 := o.commitFile("✨ feat: todo flow at the old root", "flows/todo/flow.ts", "export default \"root todo\"\n")
+	o.service.SetFlowLoad(true)
+	o.wake()
+	require.Len(t, o.flowLoads(), 1)
+	assert.Equal(t, []string{"active " + digests["todo"]}, states(o.flowCard("todo")), "a root flows/ entry is not a merged version")
+	row, err := db.New(o.pool).GetFlowLoad(ctx, o.repoID)
+	require.NoError(t, err)
+	assert.JSONEq(t, `[]`, string(row.Syncing))
+	o.projectLoad(o.flowLoads()[0], jobs.StateCompleted, "load-1", flowLoadOutputWith(m1, retiredRoot))
+	o.wake()
+	row, err = db.New(o.pool).GetFlowLoad(ctx, o.repoID)
+	require.NoError(t, err)
+	require.Equal(t, m1, row.LoadedCommit, row.Error)
+	m2 := o.commitFile("✨ feat: another root flow", "flows/review/flow.ts", "export default \"root review\"\n")
+	o.wake()
+	require.Len(t, o.flowLoads(), 2)
+	o.projectLoad(o.flowLoads()[1], jobs.StateCompleted, "load-2", flowLoadOutputWith(m2, retiredRoot))
+	o.wake()
+	assert.Equal(t, []string{"active " + digests["todo"]}, states(o.flowCard("todo")))
+	assert.Equal(t, []string{retiredRootMessage, retiredRootMessage}, rootFlowsLogs(&logs), "exactly one diagnostic per load")
+}
+
+// A diagnostic only the machine found is reported once, when its load settles.
+func TestFlowLoadReportsAMachineOnlyDiagnosticOnce(t *testing.T) {
+	o := newMythicalOrchestration(t)
+	ctx := t.Context()
+	o.lanes.provision = func(id string) {
+		_, err := o.pool.Exec(ctx, `INSERT INTO workspaces(id,repository_id,user_id,name,status) VALUES($1,$2,$3,$4,'running')`, id, o.repoID, o.userID, id)
+		require.NoError(t, err)
+	}
+	var logs strings.Builder
+	o.service.logger = slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	o.service.SetFlowLoad(true)
+	stack := o.wake()
+	require.Len(t, o.flowLoads(), 1)
+	assert.Empty(t, rootFlowsLogs(&logs), "main's tree holds no root flows/")
+	o.projectLoad(o.flowLoads()[0], jobs.StateCompleted, "load-1", flowLoadOutputWith(stack.LandedMain, retiredRoot))
+	o.wake()
+	o.wake()
+	assert.Equal(t, []string{retiredRootMessage}, rootFlowsLogs(&logs))
+}
+
+func TestFlowLoadResultDecodesDiagnostics(t *testing.T) {
+	commit := strings.Repeat("a", 40)
+	result, err := decodeFlowLoadResult([]byte(flowLoadOutputWith(commit, retiredRoot)), commit)
+	require.NoError(t, err)
+	assert.Equal(t, []FlowLoadDiagnostic{retiredRoot}, result.Diagnostics)
+	result, err = decodeFlowLoadResult([]byte(flowLoadOutput(commit)), commit)
+	require.NoError(t, err)
+	assert.Empty(t, result.Diagnostics, "diagnostics are optional")
+	for _, bad := range []FlowLoadDiagnostic{{Path: "flows", Message: retiredRootMessage}, {Code: "retired_root", Path: "flows"}} {
+		_, err = decodeFlowLoadResult([]byte(flowLoadOutputWith(commit, bad)), commit)
+		assert.Error(t, err, bad)
 	}
 }
 
@@ -365,7 +486,7 @@ func TestFlowLoadKeepsForeignAnswersInstallOwned(t *testing.T) {
 	names := []string{"branch.bring-in", "branch.discard-foreign"}
 	versions := []FlowLoadVersion{}
 	for _, name := range names {
-		path := "flows/" + name + "/flow.ts"
+		path := ".smithers/flows/" + name + "/flow.ts"
 		_, err := q.InsertFlowVersion(ctx, repoID, name, path, commit, oldDigest, "loaded", "", json.RawMessage(`{}`))
 		require.NoError(t, err)
 		activated, err := q.ActivateFlowVersion(ctx, repoID, name, oldDigest)
@@ -376,7 +497,7 @@ func TestFlowLoadKeepsForeignAnswersInstallOwned(t *testing.T) {
 		require.Empty(t, digest)
 		versions = append(versions, FlowLoadVersion{Name: name, Path: path, Digest: newDigest, Status: "loaded"})
 		for _, near := range []string{name + "/custom", name + ".custom", strings.ToUpper(name)} {
-			versions = append(versions, FlowLoadVersion{Name: near, Path: "flows/" + near + "/flow.ts", Digest: newDigest, Status: "loaded"})
+			versions = append(versions, FlowLoadVersion{Name: near, Path: ".smithers/flows/" + near + "/flow.ts", Digest: newDigest, Status: "loaded"})
 		}
 	}
 	cards, err := RepositoryFlowCatalog(ctx, q, repoID)
@@ -421,11 +542,11 @@ func TestFlowLoadFailedDigestCannotClearActiveOnReplay(t *testing.T) {
 	ctx := t.Context()
 	commit := strings.Repeat("a", 40)
 	loaded, failed := strings.Repeat("b", 64), strings.Repeat("c", 64)
-	_, err := persistFlowVersions(ctx, q, repo, commit, []FlowLoadVersion{{Name: "todo", Path: "flows/todo/flow.ts", Digest: loaded, Status: "loaded"}})
+	_, err := persistFlowVersions(ctx, q, repo, commit, []FlowLoadVersion{{Name: "todo", Path: ".smithers/flows/todo/flow.ts", Digest: loaded, Status: "loaded"}})
 	require.NoError(t, err)
-	_, err = persistFlowVersions(ctx, q, repo, commit, []FlowLoadVersion{{Name: "todo", Path: "flows/todo/flow.ts", Digest: failed, Status: "failed", Error: "invalid type"}})
+	_, err = persistFlowVersions(ctx, q, repo, commit, []FlowLoadVersion{{Name: "todo", Path: ".smithers/flows/todo/flow.ts", Digest: failed, Status: "failed", Error: "invalid type"}})
 	require.NoError(t, err)
-	moved, err := persistFlowVersions(ctx, q, repo, commit, []FlowLoadVersion{{Name: "todo", Path: "flows/todo/flow.ts", Digest: failed, Status: "loaded"}})
+	moved, err := persistFlowVersions(ctx, q, repo, commit, []FlowLoadVersion{{Name: "todo", Path: ".smithers/flows/todo/flow.ts", Digest: failed, Status: "loaded"}})
 	require.NoError(t, err)
 	require.Empty(t, moved)
 	active, err := ActiveFlowDigest(ctx, q, repo, "todo")
@@ -445,19 +566,19 @@ func TestFlowLoadSyncingTracksImportedHelpersAndLockfiles(t *testing.T) {
 		require.NoError(t, err)
 	}
 	o.commitFile("helper", "lib/todo-steps.ts", "export const step = 1\n")
-	m1 := o.commitFile("flow", "flows/todo/flow.ts", "import {step} from '../../lib/todo-steps.ts'\nexport default step\n")
+	m1 := o.commitFile("flow", ".smithers/flows/todo/flow.ts", "import {step} from '../../../lib/todo-steps.ts'\nexport default step\n")
 	o.service.SetFlowLoad(true)
 	o.wake()
 	require.Len(t, o.flowLoads(), 1)
 	d1 := strings.Repeat("1", 64)
-	o.projectLoad(o.flowLoads()[0], jobs.StateCompleted, "initial", flowLoadOutput(m1, FlowLoadVersion{Name: "todo", Path: "flows/todo/flow.ts", Digest: d1, Status: "loaded", Dependencies: []string{"lib/todo-steps.ts"}}))
+	o.projectLoad(o.flowLoads()[0], jobs.StateCompleted, "initial", flowLoadOutput(m1, FlowLoadVersion{Name: "todo", Path: ".smithers/flows/todo/flow.ts", Digest: d1, Status: "loaded", Dependencies: []string{"lib/todo-steps.ts"}}))
 	o.wake()
 	m2 := o.commitFile("helper changes", "lib/todo-steps.ts", "export const step = 2\n")
 	o.wake()
 	card := o.flowCard("todo")
 	require.Len(t, card.Versions, 3)
 	require.Equal(t, "merged-syncing", card.Versions[1].State)
-	o.projectLoad(o.flowLoads()[1], jobs.StateCompleted, "helper", flowLoadOutput(m2, FlowLoadVersion{Name: "todo", Path: "flows/todo/flow.ts", Digest: strings.Repeat("2", 64), Status: "loaded", Dependencies: []string{"lib/todo-steps.ts"}}))
+	o.projectLoad(o.flowLoads()[1], jobs.StateCompleted, "helper", flowLoadOutput(m2, FlowLoadVersion{Name: "todo", Path: ".smithers/flows/todo/flow.ts", Digest: strings.Repeat("2", 64), Status: "loaded", Dependencies: []string{"lib/todo-steps.ts"}}))
 	o.wake()
 	o.commitFile("lock changes", "pnpm-lock.yaml", "lockfileVersion: 9\n")
 	o.wake()

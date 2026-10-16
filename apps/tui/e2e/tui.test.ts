@@ -1082,10 +1082,12 @@ describe("completion", () => {
    */
   const withAgents = () => {
     const cwd = repository()
-    cpSync(join(app, "examples", "custom-agent", "flows"), join(cwd, "flows"), { recursive: true })
-    mkdirSync(join(cwd, "flows", "reviewer"))
+    cpSync(join(app, "examples", "custom-agent", ".smithers", "flows"), join(cwd, ".smithers", "flows"), {
+      recursive: true
+    })
+    mkdirSync(join(cwd, ".smithers", "flows", "reviewer"))
     writeFileSync(
-      join(cwd, "flows", "reviewer", "flow.mdx"),
+      join(cwd, ".smithers", "flows", "reviewer", "flow.mdx"),
       "---\ndescription: Names a reviewer for the change.\n---\n\nName a reviewer for the change.\n"
     )
     return cwd
@@ -2284,10 +2286,12 @@ describe("flows", () => {
 })
 
 describe("custom agents", () => {
-  /** A scratch repository holding the example agent, `examples/custom-agent/flows/review/flow.mdx`. */
+  /** A scratch repository holding the example agent, `examples/custom-agent/.smithers/flows/review/flow.mdx`. */
   const withAgent = () => {
     const cwd = repository()
-    cpSync(join(app, "examples", "custom-agent", "flows"), join(cwd, "flows"), { recursive: true })
+    cpSync(join(app, "examples", "custom-agent", ".smithers", "flows"), join(cwd, ".smithers", "flows"), {
+      recursive: true
+    })
     return cwd
   }
 
@@ -2344,11 +2348,11 @@ describe("custom agents", () => {
 describe("approvals", () => {
   it("project flows use approval rows without blocking the composer", async () => {
     const cwd = repository()
-    const folder = join(cwd, "flows", "consequential")
+    const folder = join(cwd, ".smithers", "flows", "consequential")
     mkdirSync(folder, { recursive: true })
     writeFileSync(
       join(folder, "flow.ts"),
-      readFileSync(join(app, "test", "fixtures", "flows-project", "flows", "consequential", "flow.ts"))
+      readFileSync(join(app, "test", "fixtures", "flows-project", ".smithers", "flows", "consequential", "flow.ts"))
     )
     symlinkSync(join(app, "..", "..", "node_modules"), join(cwd, "node_modules"))
     const started = await start({ cwd, approve: "ask" })
@@ -2767,7 +2771,7 @@ describe("extensions", () => {
   it("production terminal reloads canonical flow labels and a newly created subtree", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "tui-watch-production-"))
     const sessions = join(cwd, "sessions")
-    const source = join(cwd, "flows", "review", "flow.ts")
+    const source = join(cwd, ".smithers", "flows", "review", "flow.ts")
     const canonical = (tag: string, label: string) =>
       `import { Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
@@ -2779,7 +2783,7 @@ export default Flow.make("${tag}", {
   body: () => Node.succeed("ready")
 })
 `
-    mkdirSync(join(cwd, "flows", "review"), { recursive: true })
+    mkdirSync(join(cwd, ".smithers", "flows", "review"), { recursive: true })
     symlinkSync(join(app, "node_modules"), join(cwd, "node_modules"))
     writeFileSync(source, canonical("review", "Review"))
     try {
@@ -2804,8 +2808,8 @@ export default Flow.make("${tag}", {
       expect(readFileSync(source, "utf8")).toContain("description: \"Recheck\"")
       await tui.until((screen) => screen.includes("Recheck"), 5_000, "production reloaded description")
       expect(tui.screen()).not.toContain("Review")
-      const added = join(cwd, "flows", "ping", "flow.ts")
-      mkdirSync(join(cwd, "flows", "ping"))
+      const added = join(cwd, ".smithers", "flows", "ping", "flow.ts")
+      mkdirSync(join(cwd, ".smithers", "flows", "ping"))
       writeFileSync(added, canonical("ping", "Ping"))
       expect(readFileSync(added, "utf8")).toContain("Flow.make(\"ping\"")
       await tui.until((screen) => screen.includes("ping"), 5_000, "production new subtree row")
@@ -2844,8 +2848,8 @@ export default Flow.make("${tag}", {
   /** A repository holding `reviewFlow`, read by the real registry. */
   const open = async () => {
     const cwd = mkdtempSync(join(tmpdir(), "tui-extensions-"))
-    mkdirSync(join(cwd, "flows", "review"), { recursive: true })
-    const mdx = join(cwd, "flows", "review", "flow.mdx")
+    mkdirSync(join(cwd, ".smithers", "flows", "review"), { recursive: true })
+    const mdx = join(cwd, ".smithers", "flows", "review", "flow.mdx")
     writeFileSync(mdx, reviewFlow)
     tui = await Tui.start({
       cwd,
@@ -2933,9 +2937,9 @@ export default Flow.make("${tag}", {
   it("a metadata.tui key on a markdown flow starts a real durable run that settles", async () => {
     // The real Flows.Port: registry discovery, the control plane's plan, approval, launch and watch.
     const cwd = mkdtempSync(join(tmpdir(), "tui-extensions-real-"))
-    mkdirSync(join(cwd, "flows", "ping"), { recursive: true })
+    mkdirSync(join(cwd, ".smithers", "flows", "ping"), { recursive: true })
     writeFileSync(
-      join(cwd, "flows", "ping", "flow.mdx"),
+      join(cwd, ".smithers", "flows", "ping", "flow.mdx"),
       [
         "---",
         "description: Answers Pong.",

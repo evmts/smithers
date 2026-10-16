@@ -72,15 +72,15 @@ export default showcase({
     await backend.json(`${API}/changes/qupxosqw/diff`, {
       change_id: "qupxosqw",
       file_diffs: [
-        { path: "flows/split/flow.ts", change_type: "modified", patch: PATCH, is_binary: false, additions: 4, deletions: 1 },
-        { path: "flows/split/README.md", change_type: "added", patch: "@@ -0,0 +1 @@\n+# split", is_binary: false, additions: 1, deletions: 0 }
+        { path: ".smithers/flows/split/flow.ts", change_type: "modified", patch: PATCH, is_binary: false, additions: 4, deletions: 1 },
+        { path: ".smithers/flows/split/README.md", change_type: "added", patch: "@@ -0,0 +1 @@\n+# split", is_binary: false, additions: 1, deletions: 0 }
       ]
     })
     await backend.json(`${API}/changes/qupxosqw/findings`, () => ({
       change_id: "qupxosqw", current_seq: 2,
       findings: [
-        { id: 11, seq: 2, commit_id: "a03f5f1111111111", analyzer: "smithers-review", source: "agent", path: "flows/split/flow.ts", line: 6, side: "new", severity: "warning", text: "the payload accepts an empty change id", state: "current", created_at: "2026-09-01T10:06:00Z" },
-        { id: 12, seq: 2, commit_id: "a03f5f1111111111", analyzer: "lint", source: "analyzer", path: "flows/split/README.md", line: 1, side: "new", severity: "info", text: "heading is lowercase", state: "current", created_at: "2026-09-01T10:06:00Z",
+        { id: 11, seq: 2, commit_id: "a03f5f1111111111", analyzer: "smithers-review", source: "agent", path: ".smithers/flows/split/flow.ts", line: 6, side: "new", severity: "warning", text: "the payload accepts an empty change id", state: "current", created_at: "2026-09-01T10:06:00Z" },
+        { id: 12, seq: 2, commit_id: "a03f5f1111111111", analyzer: "lint", source: "analyzer", path: ".smithers/flows/split/README.md", line: 1, side: "new", severity: "info", text: "heading is lowercase", state: "current", created_at: "2026-09-01T10:06:00Z",
           ...(notUseful ? { feedback: { useful: false, by_user_id: 7 }, feedback_counts: { useful: 0, not_useful: 1 } } : {}) }
       ],
       analyzers: [{ name: "smithers-review", state: "finished", seq: 2, started_at: "2026-09-01T10:05:00Z", finished_at: "2026-09-01T10:06:00Z" }]
@@ -103,12 +103,12 @@ export default showcase({
       }]
     }))
     await backend.json(`${API}/landings/42/reviews`, { reviews: [] })
-    await backend.json(`${API}/landings/42/comments`, () => ({ comments: [thread(3, "flows/split/flow.ts", 6, "reject an empty change id", threadState)] }))
+    await backend.json(`${API}/landings/42/comments`, () => ({ comments: [thread(3, ".smithers/flows/split/flow.ts", 6, "reject an empty change id", threadState)] }))
     await backend.route(url => /\/landings\/42\/threads\/3\/(done|ack)$/.test(url.pathname), route => {
       const verb = route.request().url().endsWith("/ack") ? "ack" : "done"
       acts.push(verb)
       threadState = verb === "ack" ? "resolved" : "done"
-      return route.fulfill({ json: thread(3, "flows/split/flow.ts", 6, "reject an empty change id", threadState) })
+      return route.fulfill({ json: thread(3, ".smithers/flows/split/flow.ts", 6, "reject an empty change id", threadState) })
     })
     await backend.route(url => url.pathname.startsWith(`${API}/landings/42/review-requests`), route => {
       if (route.request().method() === "POST") {

@@ -1,0 +1,506 @@
+package services
+
+import (
+	"context"
+	"encoding/json"
+	"math"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/stretchr/testify/require"
+)
+
+func TestTodoOwnerAdmissionRefusesBeforeEffects(t *testing.T) {
+	now := time.Date(2026, 10, 4, 0, 0, 0, 0, time.UTC)
+	for _, state := range []string{"queued", "retrying"} {
+		t.Run(state, func(t *testing.T) {
+			item := db.MythicalItem{Source: "todo", State: state, Attempt: 2, Generation: 3, RequestRunID: "previous", CandidateHead: "previous-candidate", Checks: json.RawMessage(`{"launches":4,"attempts":[{"attempt":1,"revision":"old","items":[]}]}`)}
+			// Nil dependencies panic on any effect. The managed-artifact activation
+			// boundary must remain ahead of placement, retirement and root startup.
+			next, admitted, err := (&mythicalItemStep{now: now}).start(context.Background(), item)
+			require.NoError(t, err)
+			require.False(t, admitted)
+			require.Equal(t, "TODO admission unavailable", next.Reason)
+			require.Equal(t, []map[string]any{{"id": "start", "label": "Start", "state": "waiting"}, {"id": "request", "label": "Plan", "state": "waiting"}}, todoSteps(*next))
+			require.Equal(t, map[string]string{"queued": "queued", "retrying": "retrying"}[state], todoState(*next))
+			next.Reason, next.NextAttemptAt = item.Reason, item.NextAttemptAt
+			require.Equal(t, item, *next, "refusal preserves all attempt history")
+		})
+	}
+}
+
+func TestTodoStepsUseOnlyBoundPhaseFacts(t *testing.T) {
+	require.Empty(t, todoSteps(db.MythicalItem{State: "queued"}))
+	for _, phase := range []string{"request", "vibe", "verify", "review"} {
+		for _, outcome := range []string{"", "success", "failed: literal"} {
+			t.Run(phase+"/"+outcome, func(t *testing.T) {
+				item := db.MythicalItem{Source: "todo", State: "running"}
+				success, label := "", ""
+				switch phase {
+				case "request":
+					success, label = "validated", "Plan"
+				case "vibe":
+					success, label = "submitted", "Code"
+				case "verify":
+					success, label = "passed", "Verify"
+				case "review":
+					success, label = "approve", "Review"
+				}
+				held := outcome
+				if outcome == "success" {
+					held = success
+				}
+				switch phase {
+				case "request":
+					item.RequestOutcome = held
+				case "vibe":
+					item.VibeOutcome = held
+				case "verify":
+					item.VerifyOutcome = held
+				case "review":
+					item.Checks = mythicalChecks{Review: &mythicalReview{Verdict: held}}.encode()
+				}
+				require.Empty(t, todoSteps(item), "an outcome without its run is not a bound phase")
+				switch phase {
+				case "request":
+					item.RequestRunID = "bound"
+				case "vibe":
+					item.VibeRunID = "bound"
+				case "verify":
+					item.VerifyRunID = "bound"
+				case "review":
+					item.Checks = mythicalChecks{Review: &mythicalReview{RunID: "bound", Verdict: held}}.encode()
+				}
+				state := "current"
+				if outcome == "success" {
+					state = "done"
+				}
+				if outcome == "failed: literal" {
+					state = "failed"
+				}
+				require.Equal(t, []map[string]any{{"id": phase, "label": label, "state": state}}, todoSteps(item))
+			})
+		}
+	}
+	for _, state := range []string{"landed", "cancelled", "rejected", "declined"} {
+		require.Empty(t, todoSteps(db.MythicalItem{State: state, RequestRunID: "retained"}))
+	}
+	for _, input := range []struct {
+		item     db.MythicalItem
+		expected string
+	}{
+		{db.MythicalItem{State: "queued", RequestRunID: "bound"}, "waiting"},
+		{db.MythicalItem{State: "blocked", RequestRunID: "bound"}, "waiting"},
+		{db.MythicalItem{State: "running", RequestRunID: "bound", PausedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true}}, "paused"},
+		{db.MythicalItem{State: "running", RequestRunID: "bound", Checks: mythicalChecks{Waits: []TodoWait{{ID: "q", Kind: "question"}}}.encode()}, "waiting"},
+	} {
+		require.Equal(t, input.expected, todoSteps(input.item)[0]["state"])
+	}
+
+}
+
+// A composed TODO's one `todo` run is its Plan step, and it keeps running
+// after delivery until the TODO merges or is dropped (mvp.md B.5). How that
+// run ends is not a Plan failure: real install runs 11 and 13 showed Plan
+// "failed" beside Verify "done" on a merged TODO.
+func TestTodoStepsComposedRunEndingIsNoPlanFailure(t *testing.T) {
+	done := func(ids ...string) []map[string]any {
+		steps := []map[string]any{}
+		for _, id := range ids {
+			steps = append(steps, map[string]any{"id": id, "label": map[string]string{"request": "Plan", "verify": "Verify"}[id], "state": "done"})
+		}
+		return steps
+	}
+	verified := func(state, outcome string) db.MythicalItem {
+		return db.MythicalItem{Source: "todo", State: state, FlowDigest: pgtype.Text{String: "pin", Valid: true},
+			RequestRunID: "todo-run", RequestOutcome: outcome, VerifyRunID: "verify-run", VerifyOutcome: "passed"}
+	}
+	for _, input := range []struct {
+		name string
+		item db.MythicalItem
+		want []map[string]any
+	}{
+		{"merged: Merge cancelled the run", verified("landed", mythicalCancelled), done("request", "verify")},
+		{"merged: the run completed", verified("landed", "completed"), done("request", "verify")},
+		{"merged: an outage after delivery", verified("landed", mythicalOutage+"dependency: coding/NativeCodingError/source_publication_unavailable"), done("request", "verify")},
+		{"in review: the run waits for merge", verified("proposed", ""), done("request", "verify")},
+		{"in review: the run completed", verified("proposed", "completed"), done("request", "verify")},
+		{"merged without a separate verification", db.MythicalItem{Source: "todo", State: "landed", FlowDigest: pgtype.Text{String: "pin", Valid: true}, RequestRunID: "todo-run", RequestOutcome: mythicalCancelled}, done("request")},
+	} {
+		t.Run(input.name, func(t *testing.T) {
+			require.Equal(t, input.want, todoSteps(input.item))
+		})
+	}
+	// The run's own failure before any later step stays a failed Plan, and a
+	// run still planning stays current.
+	failed := db.MythicalItem{Source: "todo", State: "blocked", FlowDigest: pgtype.Text{String: "pin", Valid: true}, RequestRunID: "todo-run", RequestOutcome: "failed: plan"}
+	require.Equal(t, []map[string]any{{"id": "request", "label": "Plan", "state": "failed"}}, todoSteps(failed))
+	planning := db.MythicalItem{Source: "todo", State: "running", FlowDigest: pgtype.Text{String: "pin", Valid: true}, RequestRunID: "todo-run"}
+	require.Equal(t, []map[string]any{{"id": "request", "label": "Plan", "state": "current"}}, todoSteps(planning))
+	// A later step's own failure stays on that step.
+	checks := verified("blocked", "completed")
+	checks.VerifyOutcome = "failed: checks"
+	require.Equal(t, []map[string]any{{"id": "request", "label": "Plan", "state": "done"}, {"id": "verify", "label": "Verify", "state": "failed"}}, todoSteps(checks))
+}
+
+// The pull request head is a fresh commit of the candidate's tree on main,
+// so the review of that head is the candidate's evidence; it stays hidden
+// once the candidate moves.
+func TestTodoEvidenceHoldsTheReviewOfThePublishedHead(t *testing.T) {
+	item := db.MythicalItem{Source: "todo", Attempt: 1, CandidateHead: "candidate", PRHead: "published", Checks: mythicalChecks{
+		Review: &mythicalReview{Head: "published", Candidate: "candidate", Verdict: "approve"},
+	}.encode()}
+	require.Equal(t, []map[string]any{{"kind": "review", "summary": "approve"}}, currentTodoEvidence(item).Items)
+	moved := item
+	moved.CandidateHead = "next"
+	require.Empty(t, currentTodoEvidence(moved).Items, "a review never vouches for another candidate")
+	running := item
+	running.Checks = mythicalChecks{Review: &mythicalReview{Head: "published", Candidate: "candidate"}}.encode()
+	require.Empty(t, currentTodoEvidence(running).Items, "a review still running has no summary")
+}
+
+func TestTodoEvidenceSaysNoChecksFoundForAPlanWithNone(t *testing.T) {
+	pinned := pgtype.Text{String: "pin", Valid: true}
+	none := db.MythicalItem{Source: "todo", Attempt: 1, CandidateHead: "candidate", FlowDigest: pinned, Plan: json.RawMessage(`{"title":"Add greet","checks":null}`)}
+	evidence, _ := mythicalTodoEvidenceText(none)
+	require.Equal(t, "Checks:\n- No checks found\n- flow todo pin", evidence)
+	// A plan that names a check, or no plan yet, never claims there are none.
+	named := none
+	named.Plan = json.RawMessage(`{"title":"Add greet","checks":[{"id":"test"}]}`)
+	evidence, _ = mythicalTodoEvidenceText(named)
+	require.Equal(t, "Checks:\n- flow todo pin", evidence)
+	unplanned := none
+	unplanned.Plan = nil
+	evidence, _ = mythicalTodoEvidenceText(unplanned)
+	require.Equal(t, "Checks:\n- flow todo pin", evidence)
+}
+
+func TestTodoEvidenceKeepsOnlyMatchingCandidateAndAttempt(t *testing.T) {
+	duration := int64(0)
+	item := db.MythicalItem{Source: "todo", Attempt: 1, RequestRunID: "attempt-one-run", CandidateHead: "candidate", FlowDigest: pgtype.Text{String: "pin", Valid: true}, Checks: mythicalChecks{
+		Receipts: &mythicalReceipts{Run: "bound", Checks: []mythicalReceipt{
+			{Check: "parent", Commit: "parent", Status: "failed"}, {Check: "unit", Commit: "candidate", Status: "passed", DurationMs: &duration},
+		}}, Review: &mythicalReview{Head: "old", Verdict: "approve"},
+	}.encode()}
+	evidence := currentTodoEvidence(item)
+	require.Equal(t, "attempt-one-run", evidence.RunID)
+	require.Equal(t, []map[string]any{{"kind": "check", "name": "unit", "state": "passed", "took_s": float64(0)}, {"kind": "flow", "name": "todo", "version": "pin", "source_commit": ""}}, evidence.Items)
+	archived := retainTodoAttemptEvidence(item)
+	first, _ := json.Marshal(mythicalChecksOf(archived).Attempts[0])
+	require.Equal(t, archived, retainTodoAttemptEvidence(archived), "replayed snapshot is identical")
+	// Candidate movement hides stale receipts and review rather than reattributing them.
+	moved := archived
+	moved.CandidateHead = "different"
+	require.Equal(t, []map[string]any{{"kind": "flow", "name": "todo", "version": "pin", "source_commit": ""}}, currentTodoEvidence(moved).Items)
+	checks := mythicalChecksOf(moved)
+	checks.Review = &mythicalReview{Head: "different", Verdict: "request-changes"}
+	moved.Checks = checks.encode()
+	require.Equal(t, map[string]any{"kind": "review", "summary": "request-changes"}, currentTodoEvidence(moved).Items[0])
+	// A later attempt changes only its own evidence. Old bytes remain frozen.
+	moved.Attempt = 2
+	moved.RequestRunID = "attempt-two-run"
+	moved = retainTodoAttemptEvidence(moved)
+	second, _ := json.Marshal(mythicalChecksOf(moved).Attempts[0])
+	require.Equal(t, string(first), string(second))
+	require.Len(t, todoEvidence(moved), 2)
+	require.Equal(t, "attempt-one-run", todoEvidence(moved)[0].RunID)
+	require.Equal(t, "attempt-two-run", todoEvidence(moved)[1].RunID)
+	require.Equal(t, moved, retainTodoAttemptEvidence(moved))
+	for _, attempt := range []int32{0, -1} {
+		empty := db.MythicalItem{Source: "todo", Attempt: attempt}
+		require.Equal(t, empty, retainTodoAttemptEvidence(empty))
+		require.Empty(t, todoEvidence(empty))
+	}
+	legacy := db.MythicalItem{Source: "issue", Attempt: 1, Checks: json.RawMessage(`{"todo":true}`)}
+	require.Equal(t, legacy, retainTodoAttemptEvidence(legacy), "legacy decoding does not acquire new TODO facts")
+}
+
+func TestTodoReopenedAttemptEvidenceKeepsEndedRun(t *testing.T) {
+	item := db.MythicalItem{Source: "todo", Attempt: 1, RequestRunID: "ended-run", CandidateHead: "accepted-head"}
+	item = retainTodoAttemptEvidence(item)
+	item.RequestRunID = ""
+	item = retainTodoAttemptEvidence(item)
+	require.Equal(t, "ended-run", currentTodoEvidence(item).RunID)
+	require.Equal(t, "ended-run", mythicalChecksOf(item).Attempts[0].RunID)
+	// A later attempt must not inherit the ended attempt's identity.
+	item.Attempt = 2
+	require.Empty(t, currentTodoEvidence(item).RunID)
+}
+
+func TestTodoEvidenceRetainsPreviousRevisionWithinAttempt(t *testing.T) {
+	item := db.MythicalItem{Source: "todo", Attempt: 1, CandidateHead: "old", Checks: mythicalChecks{
+		Receipts: &mythicalReceipts{Checks: []mythicalReceipt{{Check: "unit", Commit: "old", Status: "passed", LogDigest: "old-log"}}},
+	}.encode()}
+	item.Number = pgtype.Int8{Int64: 7, Valid: true}
+	item = retainTodoAttemptEvidence(item)
+	item.CandidateHead = "new"
+	// Before another checkpoint arrives, old checks are already Previous,
+	// never evidence for the new candidate and never silently discarded.
+	assertPrevious := func(item db.MythicalItem, currentItems string) {
+		t.Helper()
+		raw, err := json.Marshal(todoEvidence(item))
+		require.NoError(t, err)
+		require.JSONEq(t, `[{"attempt":1,"revision":"new","items":`+currentItems+`,"previous":{"revision":"old","items":[{"kind":"check","name":"unit","state":"passed","log_digest":"old-log","log_url":"/api/todos/7/attempts/1/logs/old-log"}]}}]`, string(raw))
+	}
+	assertPrevious(item, `[]`)
+	item = retainTodoAttemptEvidence(item)
+	assertPrevious(item, `[]`)
+	checks := mythicalChecksOf(item)
+	checks.Receipts = &mythicalReceipts{Checks: []mythicalReceipt{{Check: "unit", Commit: "new", Status: "failed"}}}
+	item.Checks = checks.encode()
+	item = retainTodoAttemptEvidence(item)
+	assertPrevious(item, `[{"kind":"check","name":"unit","state":"failed"}]`)
+	require.Equal(t, item, retainTodoAttemptEvidence(item), "replayed checkpoints preserve both revisions")
+	stored := mythicalChecksOf(item).Attempts[0]
+	require.Equal(t, []LearningFailure{{Signature: "check:unit@check", Text: "Check unit failed."}}, stored.Failures)
+	stored.Failures = nil // Private mining data is omitted from the card contract.
+	retained, err := json.Marshal(stored)
+	require.NoError(t, err)
+	item.Attempt = 2
+	item = retainTodoAttemptEvidence(item)
+	replayed, err := json.Marshal(todoEvidence(item)[0])
+	require.NoError(t, err)
+	require.JSONEq(t, string(retained), string(replayed), "later attempts retain the earlier revision history")
+}
+
+func TestTodoEvidenceKeepsMeasuredPreviousAcrossEmptyCandidate(t *testing.T) {
+	item := db.MythicalItem{Source: "todo", Attempt: 1, FlowDigest: pgtype.Text{String: "pin", Valid: true}}
+	item = retainTodoAttemptEvidence(item)
+	item.CandidateHead = "old"
+	item = retainTodoAttemptEvidence(item)
+	require.Nil(t, todoEvidence(item)[0].Previous, "a flow pin before the first candidate is not a reviewed revision")
+	checks := mythicalChecksOf(item)
+	checks.Receipts = &mythicalReceipts{Checks: []mythicalReceipt{{Check: "unit", Commit: "old", Status: "passed"}}}
+	item.Checks = checks.encode()
+	item = retainTodoAttemptEvidence(item)
+	item.CandidateHead = ""
+	item = retainTodoAttemptEvidence(item)
+	previous := todoEvidence(item)[0].Previous
+	require.NotNil(t, previous)
+	require.Equal(t, "old", previous.Revision)
+	require.Equal(t, "unit", previous.Items[0]["name"])
+	item.CandidateHead = "new"
+	item = retainTodoAttemptEvidence(item)
+	require.Equal(t, previous, todoEvidence(item)[0].Previous, "an intermediate empty candidate must not replace retained check evidence")
+}
+
+// The card must retain the same distinction after a database round trip.
+func TestTodoEvidenceCardRetainsPreviousRevisionPostgres(t *testing.T) {
+	o, session := newTodoAdmission(t)
+	item := o.fileTodo(session, "previous-evidence")
+	item.Attempt = 1
+	item.CandidateHead = "old"
+	checks := mythicalChecksOf(item)
+	checks.Receipts = &mythicalReceipts{Checks: []mythicalReceipt{{Check: "unit", Commit: "old", Status: "passed"}}}
+	checks.Review = &mythicalReview{Head: "old", Verdict: "approve"}
+	item.Checks = checks.encode()
+	item = retainTodoAttemptEvidence(item)
+	item.CandidateHead = "new"
+	_, err := o.service.queries().SaveMythicalItem(context.Background(), retainTodoAttemptEvidence(item))
+	require.NoError(t, err)
+	card := o.todoCard(item.Number.Int64)
+	evidence := card["evidence"].([]any)
+	require.Len(t, evidence, 1)
+	current := evidence[0].(map[string]any)
+	require.Equal(t, "new", current["revision"])
+	for _, entry := range current["items"].([]any) {
+		require.NotContains(t, []string{"check", "review"}, entry.(map[string]any)["kind"], "old results must not vouch for the new candidate")
+	}
+	raw, err := json.Marshal(current["previous"])
+	require.NoError(t, err)
+	require.JSONEq(t, `{"revision":"old","items":[{"kind":"check","name":"unit","state":"passed"},{"kind":"review","summary":"approve"}]}`, string(raw))
+	require.Equal(t, card["evidence"], o.todoCard(item.Number.Int64)["evidence"], "repeated reads retain both revisions")
+}
+
+// Planner evidence is useful while implementation runs, but retained Retry
+// context cannot be presented as a citation by the new attempt.
+func TestTodoWikiEvidenceRequiresCurrentPlannerReceipt(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		receipt *todoRequestReceipt
+		want    bool
+	}{
+		{"absent", nil, false},
+		{"old attempt", &todoRequestReceipt{Attempt: 1, RunID: "plan-run"}, false},
+		{"other run", &todoRequestReceipt{Attempt: 2, RunID: "old-run"}, false},
+		{"empty run", &todoRequestReceipt{Attempt: 2}, false},
+		{"completed planner", &todoRequestReceipt{Attempt: 2, RunID: "plan-run"}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			item := db.MythicalItem{Source: "todo", Attempt: 2, RequestRunID: "plan-run",
+				FlowDigest: pgtype.Text{String: "pinned", Valid: true},
+				Plan:       json.RawMessage(`{"wikiCitations":[{"slug":"retry-policy","pageID":"42","revision":3,"digest":"0314a7d6edf2ad4b7057d059f7dfdf17df0ab800ec24b502f02ecb38c1bbed22"}]}`),
+				Checks:     mythicalChecks{PlanReceipt: tc.receipt}.encode()}
+			var citations []map[string]any
+			for _, evidence := range currentTodoEvidence(item).Items {
+				if evidence["kind"] == "wiki" {
+					citations = append(citations, evidence)
+				}
+			}
+			if tc.want {
+				require.Equal(t, []map[string]any{{"kind": "wiki", "slug": "retry-policy", "pageID": "42", "revision": int64(3), "digest": "0314a7d6edf2ad4b7057d059f7dfdf17df0ab800ec24b502f02ecb38c1bbed22"}}, citations)
+			} else {
+				require.Empty(t, citations)
+			}
+		})
+	}
+}
+
+func TestTodoEvidenceProjectsOnlyItsCandidateDiff(t *testing.T) {
+	item := db.MythicalItem{Source: "todo", Attempt: 1, CandidateBase: "base", CandidateHead: "head", Checks: json.RawMessage(`{"diff":{"base":"base","head":"head","files":2,"added":3,"removed":1}}`)}
+	require.Equal(t, []map[string]any{{"kind": "diff", "files": int64(2), "added": int64(3), "removed": int64(1)}}, currentTodoEvidence(item).Items)
+	archived := retainTodoAttemptEvidence(item)
+	for _, field := range []string{"base", "head"} {
+		moved := item
+		if field == "base" {
+			moved.CandidateBase = "other"
+		} else {
+			moved.CandidateHead = "other"
+		}
+		require.Empty(t, currentTodoEvidence(moved).Items, "a different candidate cannot inherit a diff")
+	}
+	archived = settleTodoAttemptEvidence(archived, "merged")
+	archived.Checks = append([]byte{}, archived.Checks...)
+	before := currentTodoEvidence(archived)
+	archived.CandidateHead = "later"
+	require.Equal(t, before, currentTodoEvidence(archived), "settled evidence is immutable")
+}
+
+func TestTodoDiffEvidenceMeasuresRealCandidateAndKeepsEarlierAttempt(t *testing.T) {
+	f := newMythicalFixture(t)
+	base := f.commit("base", map[string]string{"a.txt": "old\nkeep\n", "old-name": "rename\n", "binary": "\x00old\n"})
+	head := f.commit("candidate", map[string]string{"a.txt": "new\nkeep\nextra\n", "old-name": "", "new-name": "rename\n", "binary": "\x00new\n", "tabs\tand\nnew.txt": "one\ntwo\n"})
+	item := db.MythicalItem{Source: "todo", Attempt: 1, CandidateBase: base, CandidateHead: head}
+	step := mythicalItemStep{r: &mythicalRun{g: f.git}}
+	require.NoError(t, step.retainTodoDiff(context.Background(), &item))
+	require.Equal(t, []map[string]any{{"kind": "diff", "files": int64(4), "added": int64(4), "removed": int64(1)}}, currentTodoEvidence(item).Items)
+	first, err := json.Marshal(mythicalChecksOf(item).Attempts[0])
+	require.NoError(t, err)
+	shape, err := (&mythicalItemStep{s: &MythicalService{prFacts: func(context.Context, db.MythicalItem) (mythicalPRShape, error) { return mythicalPRShape{}, nil }}}).shape(context.Background(), item)
+	require.NoError(t, err)
+	require.Equal(t, "4 files changed, 4 insertions(+), 1 deletions(-)", shape.DiffStat)
+	item.Attempt = 2
+	item.CandidateHead = f.commit("later", map[string]string{"a.txt": "new\nkeep\nextra\nlater\n"})
+	require.NoError(t, step.retainTodoDiff(context.Background(), &item))
+	require.Equal(t, int64(5), currentTodoEvidence(item).Items[0]["added"])
+	after, err := json.Marshal(mythicalChecksOf(item).Attempts[0])
+	require.NoError(t, err)
+	require.Equal(t, string(first), string(after), "a later candidate cannot rewrite attempt 1")
+	item.CandidateHead = strings.Repeat("f", 40)
+	before := item
+	require.Error(t, step.retainTodoDiff(context.Background(), &item))
+	require.Equal(t, before, item, "an unreadable candidate commits no invented evidence")
+}
+
+// Only admission's external providers use the existing fixture stand-ins; this
+// seam uses real Git objects, PostgreSQL version checks and the card reader.
+func TestTodoDiffEvidencePostgres(t *testing.T) {
+	o, session := newTodoAdmission(t)
+	item := o.fileTodo(session, "retain-diff")
+	f := newMythicalFixture(t)
+	base := f.commit("base", map[string]string{"a": "before\n"})
+	head := f.commit("candidate", map[string]string{"a": "after\n"})
+	item.Attempt, item.State = 1, "blocked"
+	item.CandidateBase, item.CandidateHead = base, head
+	step := mythicalItemStep{r: &mythicalRun{g: f.git}}
+	require.NoError(t, step.retainTodoDiff(context.Background(), &item))
+	saved, err := o.service.queries().SaveMythicalItem(context.Background(), item)
+	require.NoError(t, err)
+	first, err := json.Marshal(mythicalChecksOf(saved).Attempts[0])
+	require.NoError(t, err)
+	card := o.todoCard(saved.Number.Int64)
+	entries := card["evidence"].([]any)
+	require.Len(t, entries, 1)
+	require.Equal(t, []any{map[string]any{"kind": "diff", "files": float64(1), "added": float64(1), "removed": float64(1)}}, entries[0].(map[string]any)["items"])
+	saved.Attempt = 2
+	saved.CandidateHead = f.commit("retry", map[string]string{"a": "after\nmore\n"})
+	require.NoError(t, step.retainTodoDiff(context.Background(), &saved))
+	saved, err = o.service.queries().SaveMythicalItem(context.Background(), saved)
+	require.NoError(t, err)
+	after, err := json.Marshal(mythicalChecksOf(saved).Attempts[0])
+	require.NoError(t, err)
+	require.Equal(t, string(first), string(after))
+	card = o.todoCard(saved.Number.Int64)
+	require.Len(t, card["evidence"].([]any), 2)
+}
+
+func TestTodoEvidenceRetainsGitHubChecksOnlyForSameProducer(t *testing.T) {
+	stored := todoAttemptEvidence{Attempt: 1, Generation: 2, RunID: "run", Revision: "candidate", Items: []map[string]any{{"kind": "github_check", "name": "ci", "state": "passed", "required": true, "url": "https://github.com/o/r/pull/1/checks"}}}
+	current := todoAttemptEvidence{Attempt: 1, Generation: 2, RunID: "run", Revision: "candidate", Items: []map[string]any{{"kind": "review", "summary": "approve"}}}
+	require.Len(t, todoEvidenceWithPrevious(current, stored).Items, 2)
+	for _, field := range []string{"generation", "run", "revision", "attempt"} {
+		moved := current
+		switch field {
+		case "generation":
+			moved.Generation++
+		case "run":
+			moved.RunID = "other"
+		case "revision":
+			moved.Revision = "other"
+		case "attempt":
+			moved.Attempt++
+		}
+		require.Len(t, todoEvidenceWithPrevious(moved, stored).Items, 1, field)
+	}
+}
+
+func TestTodoGitHubEvidenceUsesPersistedPublicationOwnership(t *testing.T) {
+	item := db.MythicalItem{Source: "todo", Attempt: 1, Generation: 2, RequestRunID: "root", CandidateHead: "candidate", CandidateVerified: true, PRHead: "published", PRNumber: pgtype.Int8{Int64: 1, Valid: true}}
+	item = retainTodoPublication(item)
+	require.Equal(t, item, retainTodoPublication(item), "publication settlement replays exactly")
+	owner, ok := todoCheckPublication(item, 1, "published")
+	require.True(t, ok)
+	_, ok = todoCheckPublication(item, 2, "published")
+	require.False(t, ok)
+	_, ok = todoCheckPublication(item, 1, "other")
+	require.False(t, ok)
+	item = settleTodoAttemptEvidence(item, "merged")
+	item.Attempt = 2
+	item.Generation = 3
+	item.RequestRunID = "later-root"
+	item.CandidateHead = "later-candidate"
+	checks := todoGitHubCheckEvidence([]mythicalHeadCheck{{Name: "ci", State: mythicalCIGreen, Required: true}}, "https://github.com/o/r/pull/1/checks")
+	item = retainTodoGitHubChecks(item, owner, checks)
+	held := mythicalChecksOf(item)
+	require.Equal(t, checks, held.Attempts[0].Items, "late GitHub checks belong to the first attempt")
+	require.Empty(t, held.Attempts[1].Items)
+	item = retainTodoPublication(item)
+	_, ok = todoCheckPublication(item, 1, "published")
+	require.False(t, ok, "a head reused by another producer has no unambiguous callback owner")
+}
+
+func TestTodoRunUsageIsBoundToItsOpenAttempt(t *testing.T) {
+	item := db.MythicalItem{Source: "todo", Attempt: 1, RequestRunID: "run"}
+	usage := TodoRunEvidence{Tokens: 123, TimeS: 2.5}
+	item = retainTodoRunEvidence(item, "run", usage)
+	require.Equal(t, []map[string]any{{"kind": "usage", "tokens": int64(123), "time_s": 2.5}}, currentTodoEvidence(item).Items)
+	require.Equal(t, item, retainTodoRunEvidence(item, "other", usage))
+	closed := settleTodoAttemptEvidence(item, "merged")
+	require.Equal(t, closed, retainTodoRunEvidence(closed, "run", TodoRunEvidence{Tokens: 999, TimeS: 5}))
+	for _, invalid := range []TodoRunEvidence{{Tokens: -1}, {TimeS: -1}, {TimeS: math.NaN()}, {TimeS: math.Inf(1)}} {
+		require.Equal(t, item, retainTodoRunEvidence(item, "run", invalid))
+	}
+	item.Attempt++
+	item.RequestRunID = "next-run"
+	require.Empty(t, currentTodoEvidence(item).Items, "a successor does not inherit usage")
+}
+
+func TestTodoEvidenceRetainsReviewSummary(t *testing.T) {
+	item := db.MythicalItem{Source: "todo", Attempt: 1, CandidateHead: "candidate", PRHead: "published", Checks: json.RawMessage(`{"review":{"head":"published","candidate":"candidate","verdict":"approve","summary":"approve\n\nReviewed boundary cases."}}`)}
+	require.Equal(t, []map[string]any{{"kind": "review", "summary": "approve\n\nReviewed boundary cases."}}, currentTodoEvidence(item).Items)
+	text, summary := mythicalTodoEvidenceText(item)
+	require.Empty(t, text)
+	require.Equal(t, "Review: approve\n\nReviewed boundary cases.", summary)
+}
+
+func TestTodoEvidenceReviewProjectionKeepsSummary(t *testing.T) {
+	item := db.MythicalItem{Source: "todo", Attempt: 1, CandidateHead: "candidate", PRHead: "published", Checks: mythicalChecks{Review: &mythicalReview{Head: "published", Candidate: "candidate"}}.encode()}
+	output, _ := json.Marshal("approve\n\nReviewed boundary cases.")
+	update := receiptUpdate(string(output))
+	require.True(t, mythicalProjectRun(&item, item, mythicalProjection{Phase: "review"}, update, "review-run", false))
+	require.Equal(t, "approve", mythicalChecksOf(item).Review.Verdict)
+	require.Equal(t, "approve\n\nReviewed boundary cases.", currentTodoEvidence(item).Items[0]["summary"])
+}

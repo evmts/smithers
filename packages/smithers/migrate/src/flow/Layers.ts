@@ -306,7 +306,7 @@ export const rules = (options: {
   return [
     // The root itself, not only what is under it. `write` creates the parent
     // directory of its target first, and the parent of a root-level file is
-    // the root: without this rule the agent can write `flows/x/flow.ts` and
+    // the root: without this rule the agent can write `.smithers/flows/x/flow.ts` and
     // cannot write `package.json`, which is the one file the dependencies and
     // project units exist to rewrite.
     allow("fs:*", root),
@@ -607,7 +607,7 @@ export interface ScannedConfig {
 export const commandsFor = (
   detection: Scan.ScanResult["detection"],
   overrides: Units.CommandOverrides = {},
-  flowsDir = "flows"
+  flowsDir = Units.defaultFlowsDir
 ): Contract.Commands => {
   const derived = Units.verifyCommands(detection, overrides, flowsDir)
   return {
@@ -652,7 +652,7 @@ export const layerNodeScanned = (config: ScannedConfig) => {
         ...(config.seat === undefined ? {} : { seat: config.seat }),
         runStatePaths: Transform.runStatePaths(result),
         ...(config.reportDir === undefined ? {} : { reportDir: config.reportDir }),
-        commands: commandsFor(result.detection, config.commands ?? {}, config.flowsDir ?? "flows")
+        commands: commandsFor(result.detection, config.commands ?? {}, config.flowsDir ?? Units.defaultFlowsDir)
       })
     })
   ).pipe(Layer.provide(NodeServices.layer))
@@ -719,7 +719,7 @@ const preparedRequest = {
  * Everything a migration needs, with every seat resolved to a scripted model.
  *
  * The composition is the production one; only the credentialed half is
- * replaced, exactly as `examples/src/11-agent-step.ts` does it. The guarded
+ * replaced, exactly as `packages/smithers/agent/examples/11-agent-step.ts` does it. The guarded
  * filesystem, the grant store, the capability envelope, and the sandbox budget
  * are all real, so a scripted test still proves the confinement.
  *

@@ -29,7 +29,7 @@ import * as Transform from "../src/flow/Transform.ts"
 import * as Mapping from "../src/Mapping.ts"
 import { fixture } from "./fixtures/helpers.ts"
 
-const module = await import("./fixtures/jsx-single.migrated/flows/simple-workflow/flow.ts")
+const module = await import("./fixtures/jsx-single.migrated/.smithers/flows/simple-workflow/flow.ts")
 
 const platform = Layer.merge(NodeFileSystem.layer, NodePath.layer)
 
@@ -39,7 +39,7 @@ const descriptor = Effect.gen(function*() {
   const path = yield* Path.Path
   const scan = yield* Discovery.make(fs, path).scan({
     source: "project",
-    root: join(fixture("jsx-single.migrated"), "flows"),
+    root: join(fixture("jsx-single.migrated"), ".smithers", "flows"),
     naming: "path"
   })
   expect(scan.warnings).toEqual([])
@@ -99,7 +99,7 @@ describe("the migrated fixture's flow module", () => {
  * emitter does accept.
  */
 const goldenSource = readFileSync(
-  join(fixture("jsx-single.migrated"), "flows", "simple-workflow", "flow.ts"),
+  join(fixture("jsx-single.migrated"), ".smithers", "flows", "simple-workflow", "flow.ts"),
   "utf8"
 )
 

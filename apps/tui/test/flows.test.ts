@@ -29,7 +29,7 @@ const flow = (name: string, description: string, modelInvocable = true): Listed 
   kind: "module",
   flows: [],
   capabilities: [],
-  path: `/repo/flows/${name}/flow.ts`
+  path: `/repo/.smithers/flows/${name}/flow.ts`
 })
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
 
@@ -616,7 +616,7 @@ describe("flow runs", () => {
     let fail = true
     Object.assign(f.port, {
       discover: async () => {
-        if (fail) throw new Error("Registry unreadable: flows/x/flow.ts")
+        if (fail) throw new Error("Registry unreadable: .smithers/flows/x/flow.ts")
         return [{ name: "review", description: "", modelInvocable: true }]
       }
     })
@@ -624,7 +624,7 @@ describe("flow runs", () => {
     await tick()
     expect(f.runs.failure()).toMatchObject({
       _tag: "FlowDiscoveryFailed",
-      cause: new Error("Registry unreadable: flows/x/flow.ts")
+      cause: new Error("Registry unreadable: .smithers/flows/x/flow.ts")
     })
     fail = false
     f.runs.refresh()
@@ -716,7 +716,7 @@ describe("flow runs", () => {
     const agent: Listed = {
       ...flow("review-agent", "Reviews"),
       kind: "markdown",
-      path: "/repo/flows/review-agent/flow.mdx"
+      path: "/repo/.smithers/flows/review-agent/flow.mdx"
     }
     const f = setup({
       listed: [flow("review", "Review a change"), agent],
@@ -1205,7 +1205,7 @@ describe("flows the warm host loaded", () => {
   const agent: Listed = {
     ...flow("review-agent", "Reviews"),
     kind: "markdown",
-    path: "/repo/flows/review-agent/flow.mdx"
+    path: "/repo/.smithers/flows/review-agent/flow.mdx"
   }
 
   it("knows every loaded flow's input after warming, so describing needs no run", async () => {

@@ -26,7 +26,7 @@ import { resolve } from "node:path"
 
 const cli = await Effect.runPromise(
   Effect.gen(function*() {
-    const { routes } = yield* FileRouter.scan({ root: resolve("flows") })
+    const { routes } = yield* FileRouter.scan({ root: resolve(".smithers/flows") })
     return yield* Incur.createCli("flows", routes)
   }).pipe(
     Effect.provide(Layer.succeed(FlowInvoker.FlowInvoker, invoker)),

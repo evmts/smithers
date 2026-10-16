@@ -31,7 +31,7 @@ export const layerRegistry = (root: string): Layer.Layer<
   RegistryError.RegistryFailure
 > =>
   Registry.layer({
-    sources: [{ source: "project", root: join(root, "flows"), naming: "path" }]
+    sources: [{ source: "project", root: join(root, ".smithers", "flows"), naming: "path" }]
   }).pipe(Layer.provide([discovery, platform]))
 ```
 
@@ -48,7 +48,7 @@ sources:
 ```ts
 const sources = [
   { source: "system", root: systemRoot, naming: "path", system: true },
-  { source: "project", root: join(root, "flows"), naming: "path" },
+  { source: "project", root: join(root, ".smithers", "flows"), naming: "path" },
   { source: "skills", root: join(home, ".claude/skills"), naming: "frontmatter" }
 ] as const
 ```
@@ -62,7 +62,7 @@ silently. Two ordinary sources sharing a name resolve first-found and report a
 ## Decide what a missing root means
 
 A required source root that does not exist fails with
-`DiscoveryError { code: "root_missing" }`. For a project's optional `flows/`
+`DiscoveryError { code: "root_missing" }`. For a project's optional `.smithers/flows/`
 directory, use the project constructor:
 
 ```ts
@@ -71,10 +71,11 @@ const registry = Registry.layerProject({ root: process.cwd() }).pipe(
 )
 ```
 
-`Registry.layerProject` keeps the project source configured even when `flows/`
+`Registry.layerProject` keeps the project source configured even when `.smithers/flows/`
 is absent. Every `refresh()` checks it again, so creating the first flow or
 removing and recreating the directory works in the same session. It provides
-`Discovery` internally. Access failures and non-directory roots still fail.
+`Discovery` internally. Access failures and non-directory roots still fail. Flows left in a root `flows/` do not
+load; each scan reports one `retired_root` warning naming that directory.
 
 For custom source lists, set `optionalRoot: true` only on roots whose absence
 means an empty scan. Declared pack roots remain required; a missing pack
@@ -139,7 +140,7 @@ const runAfterEdit = Effect.gen(function*() {
 
 | Constructor                                          | Use it when                                                                          |
 | ---------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `Registry.layerProject({ root, packs? })`            | The host discovers an optional project `flows/` directory and installed packs.       |
+| `Registry.layerProject({ root, packs? })`            | The host discovers an optional project `.smithers/flows/` directory and installed packs.       |
 | `Registry.layer(config)`                             | The host scans real directories.                                                     |
 | `Registry.layerFromPacks(packs, { runtimeVersion })` | The catalog is a set of installed packs. See [Load workflow packs](./load-packs.md). |
 | `Registry.layerFromDescriptors(entries, warnings?)`  | The host already holds descriptors and still wants lazy body loading.                |

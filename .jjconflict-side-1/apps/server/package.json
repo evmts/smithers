@@ -1,0 +1,37 @@
+{
+  "name": "smithers-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Smithers static application edge and transparent shared-backend transport",
+  "exports": {
+    "./package.json": "./package.json",
+    "./*": {
+      "types": "./src/*.ts",
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {
+    "deploy": "bun scripts/deploy.ts",
+    "deploy:dry": "bun scripts/deploy.ts --dry-run",
+    "check": "tsc --noEmit && bun scripts/effect-policy.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test src scripts",
+    "canary:build": "bun scripts/canary/build-probe.ts",
+    "canary:workers": "bun scripts/canary/workers-health.ts",
+    "canary:uptime": "bun scripts/canary/uptime-probe.ts",
+    "canary:rollback": "bun scripts/canary/rollback-probe.ts",
+    "deploy:preflight": "bun scripts/adopt-durable-objects.ts",
+    "check:effect": "bun scripts/effect-policy.ts"
+  },
+  "dependencies": {
+    "@smthrs/rpc": "workspace:*",
+    "effect": "4.0.4",
+    "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.129.0"
+  }
+}

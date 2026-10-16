@@ -6,7 +6,7 @@ export HOME="${HOME:-$(getent passwd "$(id -u)" | cut -d: -f6)}"
 # `drift` runs the cheap per-commit drift gates (formatting, target index,
 # generated API and docs, declaration baseline) so drift surfaces as its own
 # check within minutes instead of inside the full graph. The list mirrors the
-# `driftCi` steps in PACKAGE.ts, which scripts/ci/drift-job.test.mjs enforces.
+# `driftCi` steps in PACKAGE.ts, which packages/repo-targets/contracts/drift-job.test.mjs enforces.
 drift=0
 [ "${1:-}" = drift ] && drift=1
 drift_gates="lint //...:fmt
@@ -17,8 +17,8 @@ lint //:openapiBundle
 lint //:openapiClients
 lint //scripts:docsDrift
 build //scripts:apiBaseline
-lint //scripts:conflictMarkers
-lint //scripts:trackedHygiene
+lint //packages/repo-targets:conflictMarkers
+lint //packages/repo-targets:trackedHygiene
 lint //:driftCi
 lint //:ci"
 if [ "${1:-}" = affected ]; then

@@ -187,12 +187,12 @@ describe("workspace initialization behavior", () => {
     async (workspacePath) => {
       const root = await directory()
       await mkdir(join(root, ".smithers"))
-      await mkdir(join(root, "flows", "example"), { recursive: true })
+      await mkdir(join(root, ".smithers", "flows", "example"), { recursive: true })
       await writeFile(join(root, "package.json"), "{\"packageManager\":\"npm@10.9.0\"}")
       const originals = {
         [workspacePath]: "authored workspace",
         "PACKAGE.ts": "authored targets",
-        "flows/example/flow.mdx": "authored flow"
+        ".smithers/flows/example/flow.mdx": "authored flow"
       }
       for (const [path, body] of Object.entries(originals)) await writeFile(join(root, path), body)
       for (let repeat = 0; repeat < 2; repeat++) {
@@ -249,7 +249,7 @@ describe("workspace initialization behavior", () => {
     await expect(initialize(root, "example", {})).rejects.toBe(failure)
     expect(await readdir(root)).toEqual(["package.json"])
     expect(existsSync(join(root, "PACKAGE.ts"))).toBe(false)
-    expect(existsSync(join(root, "flows"))).toBe(false)
+    expect(existsSync(join(root, ".smithers", "flows"))).toBe(false)
   })
 })
 
@@ -276,10 +276,10 @@ describe("generator command behavior", () => {
     const result = await invoke(["flow", "example", "--root", root], { environment: { OPENAI_API_KEY: "fixture" } })
     expect(result.codes).not.toContain(1)
     expect(JSON.parse(result.stdout)).toMatchObject({ name: "example", created: true })
-    expect(await readFile(join(root, "flows", "example", "flow.ts"), "utf8")).toContain("model: \"openai:gpt-6-sol\"")
-    await writeFile(join(root, "flows", "example", "flow.ts"), "authored flow")
+    expect(await readFile(join(root, ".smithers", "flows", "example", "flow.ts"), "utf8")).toContain("model: \"openai:gpt-6-sol\"")
+    await writeFile(join(root, ".smithers", "flows", "example", "flow.ts"), "authored flow")
     expect(JSON.parse((await invoke(["flow", "example", "--root", root])).stdout)).toMatchObject({ created: false })
-    expect(await readFile(join(root, "flows", "example", "flow.ts"), "utf8")).toBe("authored flow")
+    expect(await readFile(join(root, ".smithers", "flows", "example", "flow.ts"), "utf8")).toBe("authored flow")
     expect(await readFile(join(root, "package.json"), "utf8")).toBe("{\"packageManager\":\"npm@10.9.0\"}")
     expect(existsSync(join(root, "WORKSPACE.ts"))).toBe(false)
   })
@@ -290,7 +290,7 @@ describe("generator command behavior", () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "fixture")
     const result = await invoke(["flow", "example"], { environment: undefined })
     expect(result.codes).not.toContain(1)
-    expect(await readFile(join(root, "flows", "example", "flow.ts"), "utf8")).toContain(
+    expect(await readFile(join(root, ".smithers", "flows", "example", "flow.ts"), "utf8")).toContain(
       "model: \"anthropic:claude-sonnet-4-5\""
     )
   })

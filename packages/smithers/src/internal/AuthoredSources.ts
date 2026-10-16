@@ -20,13 +20,18 @@
  * @private
  */
 
+import * as Descriptor from "@smthrs/registry/Descriptor"
+
 /**
- * A registry entry path, which names its flow by the directory it sits in.
+ * A registry entry path under `Descriptor.projectFlowsDirectory`, which names
+ * its flow by the directory it sits in.
  *
- * Nested directories are part of the name (`flows/coding/request/flow.ts` is
- * `coding/request`), which is why the capture is greedy.
+ * Nested directories are part of the name (`.smithers/flows/coding/request/flow.ts`
+ * is `coding/request`), which is why the capture is greedy.
  */
-const entry = /^flows\/(.+)\/(?:flow\.ts|flow\.mdx|SKILL\.md)$/
+const entry = new RegExp(
+  `^${Descriptor.projectFlowsDirectory.replaceAll(".", "\\.")}/(.+)/(?:flow\\.ts|flow\\.mdx|SKILL\\.md)$`
+)
 
 const record = (value: unknown): Record<string, unknown> | undefined =>
   value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined

@@ -77,9 +77,9 @@ it("lists no flows under Bun for a root without flows/", async () => {
 it("discovers a real Bun flow descriptor without the guarded filesystem helper", async () => {
   const root = await mkdtemp(join(tmpdir(), "bun-control-flow-"))
   try {
-    await mkdir(join(root, "flows", "review"), { recursive: true })
+    await mkdir(join(root, ".smithers", "flows", "review"), { recursive: true })
     await writeFile(
-      join(root, "flows", "review", "SKILL.md"),
+      join(root, ".smithers", "flows", "review", "SKILL.md"),
       [
         "---",
         "description: Reviews the change.",
@@ -109,7 +109,7 @@ it("discovers a real Bun flow descriptor without the guarded filesystem helper",
       name: "review",
       description: "Reviews the change.",
       bodyTag: "Markdown",
-      path: join(root, "flows", "review", "SKILL.md")
+      path: join(root, ".smithers", "flows", "review", "SKILL.md")
     }])
   } finally {
     await rm(root, { recursive: true, force: true })

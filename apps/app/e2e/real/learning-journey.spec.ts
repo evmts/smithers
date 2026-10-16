@@ -78,7 +78,7 @@ test("C-J5-03 learning proposal changes checks only after a member merges", scen
     const pending = f.sql("SELECT id,provenance_json::jsonb AS provenance_json FROM memory_notes WHERE provenance_json::jsonb->>'signature'='check:lint@review' AND status='pending'")
     expect(pending).toHaveLength(1)
     expect(pending[0].provenance_json.signature).toBe("check:lint@review")
-    expect(pending[0].provenance_json.diff).toContain("--- a/flows/todo/flow.ts")
+    expect(pending[0].provenance_json.diff).toContain("--- a/.smithers/flows/todo/flow.ts")
     expect(pending[0].provenance_json.diff).toContain("Require lint as a fast required check")
     const proposals = await f.read("Will", "/api/proposals")
     const proposal = proposals.find((p: any) => p.id === pending[0].id)
@@ -98,7 +98,7 @@ test("C-J5-03 learning proposal changes checks only after a member merges", scen
     const change = await waitReview(6)
     expect(change.flow_version.digest).toBe(before.id)
     const files = await f.github("Will", "GET", `/pulls/${change.pr.number}/files`) as any[]
-    expect(files.find(file => file.filename === "flows/todo/flow.ts")?.patch).toContain("lint")
+    expect(files.find(file => file.filename === ".smithers/flows/todo/flow.ts")?.patch).toContain("lint")
     expect(active(await flow()).id).toBe(before.id)
     const eventsBefore = f.sql("SELECT * FROM product_job_events WHERE data->>'itemId'=(SELECT id::text FROM mythical_items WHERE number=5) ORDER BY tenant_id,principal_id,sequence")
     await merge(6)

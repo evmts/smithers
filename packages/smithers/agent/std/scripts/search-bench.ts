@@ -7,7 +7,9 @@ import * as Grep from "../src/Grep.ts"
 import * as NativeSearch from "../src/NativeSearch.ts"
 import * as PortableSearch from "../src/PortableSearch.ts"
 
-const root = resolve(process.argv[2] ?? "evals/swebench/work/pytest-dev__pytest-6197")
+const root = resolve(
+  process.argv[2] ?? "packages/smithers/agent/harness/benchmarks/swebench/work/pytest-dev__pytest-6197"
+)
 const selected = process.argv[3]
 const peers = [
   ["portable", PortableSearch.layer.pipe(Layer.provide(NodeServices.layer))],

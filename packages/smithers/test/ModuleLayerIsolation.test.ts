@@ -37,8 +37,8 @@ const project = async (flows: Readonly<Record<string, string>>) => {
   const root = await mkdtemp(join(tmpdir(), "smithers-module-isolation-"))
   await symlink(nodeModules, join(root, "node_modules"), "dir")
   for (const [name, text] of Object.entries(flows)) {
-    await mkdir(join(root, "flows", name), { recursive: true })
-    await writeFile(join(root, "flows", name, "flow.ts"), text)
+    await mkdir(join(root, ".smithers", "flows", name), { recursive: true })
+    await writeFile(join(root, ".smithers", "flows", name, "flow.ts"), text)
   }
   return root
 }
@@ -80,7 +80,7 @@ describe("module action isolation", () => {
           const refresh = yield* Executable.Refresh
           const catalog = yield* Executable.Catalog
           yield* Effect.promise(() =>
-            writeFile(join(root, "flows", "refreshed", "flow.ts"), source("refreshed", "second", true))
+            writeFile(join(root, ".smithers", "flows", "refreshed", "flow.ts"), source("refreshed", "second", true))
           )
           const refreshed = yield* refresh.flow("refreshed").pipe(
             Effect.provideService(HostPrefix, "caller"),

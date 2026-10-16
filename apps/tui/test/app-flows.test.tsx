@@ -19,6 +19,7 @@ let previousRoot: string | undefined
 let setup: Awaited<ReturnType<typeof testRender>> | undefined
 let listed: ReadonlyArray<Listed> = []
 let loaded: Loaded | undefined
+let notices: ReadonlyArray<string> = []
 let starts = 0
 const frame = () => setup!.captureCharFrame()
 const records = () => Session.list(cwd).flatMap((summary) => Session.load(summary.file))
@@ -52,7 +53,7 @@ const module = (name: string, description: string): Listed => ({
   modelInvocable: true,
   flows: [],
   capabilities: [],
-  path: join(cwd, `flows/${name}/flow.ts`)
+  path: join(cwd, `.smithers/flows/${name}/flow.ts`)
 })
 const mount = async () => {
   const host: Host.Host = {
@@ -65,6 +66,7 @@ const mount = async () => {
     warm: async () => {},
     loaded: async () => loaded,
     discover: async () => listed,
+    notices: () => notices,
     input: async (flow) => {
       if (flow === "sum") return Schema.Struct({ a: Schema.Number, unit: Schema.Literals(["kg", "lb"]) })
       throw new FlowError("unknown_flow", `Unknown flow ${flow}`, { subject: flow })
@@ -105,6 +107,7 @@ beforeEach(() => {
   previousRoot = process.env.SMITHERS_TUI_SESSION_DIR
   process.env.SMITHERS_TUI_SESSION_DIR = join(root, "sessions")
   starts = 0
+  notices = []
   listed = [
     module("sum", "Add two numbers"),
     { ...module("review", "Reviews the change"), kind: "markdown", tui: { keys: [{ key: "alt+z", label: "Review" }] } }
@@ -135,6 +138,14 @@ test("the home screen lists the repository's declared flows with their keys", as
   expect(lines.find((line) => /^\s+sum\b/.test(line))).toBeDefined()
   expect(lines.find((line) => /^\s+review\s+alt\+z\s*$/.test(line))).toBeDefined()
   expect(frame()).toContain("smithers")
+})
+
+test("discovery names flows left in a retired root flows/ directory", async () => {
+  const notice = "Flows in flows/ are not loaded; move them to .smithers/flows/."
+  notices = [notice]
+  await mount()
+  // The toast wraps at its width; compare the text without layout.
+  await waitFor(() => frame().replace(/[\s┃]/g, "").includes(notice.replace(/\s/g, "")))
 })
 
 test("a directory that declares no flows keeps the quiet home screen", async () => {

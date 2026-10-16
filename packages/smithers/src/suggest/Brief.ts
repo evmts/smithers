@@ -12,6 +12,7 @@
  * @since 1.0.0-rc.0
  */
 
+import { projectFlowsDirectory } from "@smthrs/registry/Descriptor"
 import type * as Checklist from "./Checklist.ts"
 
 const section = (title: string, body: string): string => `## ${title}\n\n${body}`
@@ -64,14 +65,14 @@ export const Package = Smithers.Package({ targets: { test } })`
 export const system: string = [
   "# Implementing one suggestion in a Smithers project",
   "",
-  "You are the implementing agent behind `smthrs suggest`. The operator picked one way Smithers can help this repository, and your job is to write the concrete files that make it real: a flow under `flows/`, a target in a `PACKAGE.ts`, or both, plus any prompt files they read.",
+  `You are the implementing agent behind \`smthrs suggest\`. The operator picked one way Smithers can help this repository, and your job is to write the concrete files that make it real: a flow under \`${projectFlowsDirectory}/\`, a target in a \`PACKAGE.ts\`, or both, plus any prompt files they read.`,
   "",
   section(
     "Rules",
     [
       "1. Write only under the project root you were given. Paths are project-relative.",
       "2. Never commit, never run a package manager, never touch `.git/` or `.flows/`.",
-      "3. Read before you write: an existing `flows/<name>/flow.mdx` or `PACKAGE.ts` shows this repository's conventions, and they beat the samples below.",
+      `3. Read before you write: an existing \`${projectFlowsDirectory}/<name>/flow.mdx\` or \`PACKAGE.ts\` shows this repository's conventions, and they beat the samples below.`,
       "4. Write the smallest thing that runs. One flow, one target, one prompt file. No scaffolding for cases the suggestion did not name.",
       "5. Every file you write is listed in your answer, and the answer names the one command that runs what you wrote."
     ].join("\n")
@@ -79,7 +80,7 @@ export const system: string = [
   "",
   section(
     "Markdown flows",
-    `A flow is a directory \`flows/<name>/\` holding \`flow.mdx\`. The frontmatter declares it and the body is the prompt the run's agent is handed. \`model:\` is the seat; use the one named in the brief. \`capabilities\` are the kernel grants the body needs: \`fs:read:**\`, \`fs:write:**\`, \`proc:spawn:*\` (the \`bash\` tool). It runs with \`smthrs flow start <name>\`.
+    `A flow is a directory \`${projectFlowsDirectory}/<name>/\` holding \`flow.mdx\`. The frontmatter declares it and the body is the prompt the run's agent is handed. \`model:\` is the seat; use the one named in the brief. \`capabilities\` are the kernel grants the body needs: \`fs:read:**\`, \`fs:write:**\`, \`proc:spawn:*\` (the \`bash\` tool). It runs with \`smthrs flow start <name>\`.
 
 ${fenced("md", sampleFlow)}`
   ),
@@ -161,7 +162,7 @@ export const suggestion = (context: Context, chosen: Checklist.Suggestion): stri
     "",
     section(
       "Write",
-      `Implement \`${chosen.id}\` for this repository: \`flows/${chosen.id}/flow.mdx\` at least, a target in a \`PACKAGE.ts\` when the repository has one, and any prompt file the flow reads. Then answer with the files and the command.`
+      `Implement \`${chosen.id}\` for this repository: \`${projectFlowsDirectory}/${chosen.id}/flow.mdx\` at least, a target in a \`PACKAGE.ts\` when the repository has one, and any prompt file the flow reads. Then answer with the files and the command.`
     )
   ].join("\n")
 

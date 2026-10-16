@@ -222,7 +222,7 @@ func TestInstallScorecardLiteralAlphaFixture(t *testing.T) {
 		tx, err := pool.Begin(ctx)
 		require.NoError(t, err)
 		defer tx.Rollback(ctx)
-		inserted, err := db.New(tx).InsertFlowVersion(ctx, repo, "todo", "flows/todo/flow.ts", commit, digest, status, loadError, json.RawMessage(`{"steps":[]}`))
+		inserted, err := db.New(tx).InsertFlowVersion(ctx, repo, "todo", ".smithers/flows/todo/flow.ts", commit, digest, status, loadError, json.RawMessage(`{"steps":[]}`))
 		require.NoError(t, err)
 		require.True(t, inserted)
 		if activate {
@@ -348,7 +348,7 @@ func TestInstallScorecardLiteralAlphaFixture(t *testing.T) {
 		_, err = pool.Exec(ctx, `UPDATE mythical_items SET checks=jsonb_set(checks,'{attempts}',$2::jsonb) WHERE id=$1::uuid`, todos[i].id, attempts)
 		require.NoError(t, err)
 	}
-	note, err := json.Marshal(services.LearningProposalNote{Repository: "alice/app", Run: "alpha-learning-run", LearningProposal: services.LearningProposal{Signature: "check:unit@check", Title: "Run unit checks", Prompt: "Update todo flow", Diff: "flows/todo/flow.ts"}})
+	note, err := json.Marshal(services.LearningProposalNote{Repository: "alice/app", Run: "alpha-learning-run", LearningProposal: services.LearningProposal{Signature: "check:unit@check", Title: "Run unit checks", Prompt: "Update todo flow", Diff: ".smithers/flows/todo/flow.ts"}})
 	require.NoError(t, err)
 	acceptedAt := todos[20].accepted.Add(10 * time.Minute).UnixMilli()
 	_, err = pool.Exec(ctx, `INSERT INTO memory_notes(id,namespace_kind,namespace_id,text,tags_json,provenance_json,status,created_at_ms,status_at_ms,accepted_todo) VALUES('alpha-learning','flow',$1,'Run unit checks','[]',$2,'accepted',$3,$3,$4)`,

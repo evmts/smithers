@@ -15,13 +15,13 @@ import (
 )
 
 // InvokeWorkflowInput is the input for InvokeWorkflow: one durable run of a
-// repository file flow (`flows/<name>/flow.ts`) on the canonical Flow
+// repository file flow (`.smithers/flows/<name>/flow.ts`) on the canonical Flow
 // runtime, hosted on the invoker's box.
 type InvokeWorkflowInput struct {
 	RepositoryID int64
 	// UserID is the person invoking the flow; the run's host runs as them.
 	UserID int64
-	// Identifier is the flow name (`echo`) or its path (`flows/echo/flow.ts`).
+	// Identifier is the flow name (`echo`) or its path (`.smithers/flows/echo/flow.ts`).
 	Identifier string
 	// Input is the flow's payload, persisted as dispatch_inputs.
 	Input map[string]interface{}
@@ -43,13 +43,13 @@ type InvokeWorkflowResult struct {
 // invocation is only ever an invocation (see workflowCachePublisher).
 const InvokeTriggerEvent = "invoke"
 
-// invokeFlowName is a file flow's name: `flows/<name>/flow.ts`.
+// invokeFlowName is a file flow's name: `.smithers/flows/<name>/flow.ts`.
 var invokeFlowName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
 
-// invokeFlowID reads a flow name or its `flows/<name>/flow.ts` path.
+// invokeFlowID reads a flow name or its `.smithers/flows/<name>/flow.ts` path.
 func invokeFlowID(identifier string) (string, bool) {
 	name := strings.TrimSpace(identifier)
-	if inner, ok := strings.CutPrefix(name, "flows/"); ok {
+	if inner, ok := strings.CutPrefix(name, flowdispatch.RepositoryFlowsDir); ok {
 		if name, ok = strings.CutSuffix(inner, "/flow.ts"); !ok {
 			return "", false
 		}
@@ -77,7 +77,7 @@ func (s *workflowAPIService) InvokeWorkflow(ctx context.Context, input InvokeWor
 	}
 	flowID, ok := invokeFlowID(input.Identifier)
 	if !ok {
-		return nil, pkgerrors.BadRequest("flow must name a file flow: flows/<name>/flow.ts")
+		return nil, pkgerrors.BadRequest("flow must name a file flow: " + flowdispatch.RepositoryFlowPath("<name>"))
 	}
 	if input.UserID <= 0 {
 		return nil, pkgerrors.Unauthorized("a person must invoke a flow")

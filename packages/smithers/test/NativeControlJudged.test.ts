@@ -124,9 +124,9 @@ export default ({
 const project = async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "smithers-native-judged-")))
   roots.add(root)
-  await mkdir(join(root, "flows", "survey"), { recursive: true })
+  await mkdir(join(root, ".smithers", "flows", "survey"), { recursive: true })
   await writeFile(
-    join(root, "flows", "survey", "flow.mdx"),
+    join(root, ".smithers", "flows", "survey", "flow.mdx"),
     [
       "---",
       "name: survey",
@@ -138,8 +138,8 @@ const project = async () => {
       ""
     ].join("\n")
   )
-  await mkdir(join(root, "flows", "probe"), { recursive: true })
-  await writeFile(join(root, "flows", "probe", "flow.ts"), probeSource)
+  await mkdir(join(root, ".smithers", "flows", "probe"), { recursive: true })
+  await writeFile(join(root, ".smithers", "flows", "probe", "flow.ts"), probeSource)
   return root
 }
 

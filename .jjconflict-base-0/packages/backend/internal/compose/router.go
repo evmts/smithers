@@ -1,0 +1,2455 @@
+package compose
+
+import (
+	"context"
+	"encoding/json"
+	"log/slog"
+	"net/http"
+	"os"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	chiMiddleware "github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/smithersai/smithers/packages/backend/internal/config"
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/identity"
+	"github.com/smithersai/smithers/packages/backend/internal/lfsauth"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/routes"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
+	"github.com/smithersai/smithers/packages/backend/internal/sse"
+	"github.com/smithersai/smithers/packages/backend/modelproxy"
+	"github.com/smithersai/smithers/packages/backend/ports"
+)
+
+var agentEnvironmentSetupPath = regexp.MustCompile(`^/api/repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/agent-environment$`)
+
+func apiBodyLimit(r *http.Request) int64 {
+	if r.Method == http.MethodPut && agentEnvironmentSetupPath.MatchString(r.URL.EscapedPath()) {
+		// Bound the combined setup document, variables, and secrets.
+		return middleware.MaxAgentEnvironmentBodySize
+	}
+	return middleware.MaxRequestBodySize
+}
+
+type routerExtras struct {
+	Qualification  *services.InstallQualification
+	AckDelay       *routes.InstallAckDelayHandler
+	InstallQuiesce *services.InstallQuiesce
+	FlowRuns       *services.InstallFlowRuns
+	Background     *services.HomeBackground
+	// Confirmations requires the private browser View and qualified consumers.
+	Confirmations       *services.ApprovalsService
+	Members             *routes.MembersHandler
+	InstallScorecard    *routes.InstallScorecardHandler
+	GitHubAppSetup      *routes.GitHubAppSetupHandler
+	CanaryRuns          ports.CanaryRunSource
+	Admission           services.BillingPolicy
+	BillingCapabilities services.BillingCapabilities
+	Recommender         *routes.RecommendationHandler
+	ModelStream         *routes.ModelStreamHandler
+	Catalog             *routes.PublicRepositoryCatalogHandler
+	Mythical            *routes.MythicalHandler
+	UserRefs            *routes.UserRefHandler
+	AdminSystemStatus   *routes.AdminSystemStatusHandler
+	AdminSystemHealth   *routes.AdminSystemHealthHandler
+	AdminGrant          *routes.AdminGrantHandler
+	AdminAnalytics      *routes.AdminAnalyticsHandler
+	AdminAgentSessions  *routes.AdminAgentSessionHandler
+	AdminWorkspaces     *routes.AdminWorkspaceHandler
+	AdminTokens         *routes.AdminTokenHandler
+	// DeploymentAdmin are operator endpoints for deployment-owned resources,
+	// mounted behind the same admin chain as the product's.
+	DeploymentAdmin []ports.AdminRoute
+	// ModelProxy is the metered platform-model proxy; nil when the deployment
+	// offers no platform models.
+	ModelProxy  http.Handler
+	FastGateway *modelproxy.FastGateway
+	// EgressPolicy serves a repository's owner-only egress allowlist.
+	EgressPolicy *routes.RepositoryEgressPolicyHandler
+	// GitHubSync is the install's GitHub sync (GET/POST /api/github/sync);
+	// nil answers unavailable.
+	GitHubSync routes.GitHubSyncRouteService
+	// Live is the install's live channel (GET /api/live); nil serves none.
+	Live *routes.LiveHandler
+	// LanguageServers is the File card's code intelligence on the branch
+	// machine (/api/branches/{b}/lsp); nil serves none.
+	LanguageServers *routes.BranchLSPHandler
+	// WikiSelection is a TODO plan step's shared-selector call over the
+	// install's wiki (T-FLW-10); nil serves none.
+	WikiSelection http.Handler
+}
+
+func buildRouter(
+	cfg *config.Config,
+	queries *db.Queries,
+	pool *pgxpool.Pool,
+	repoHandler *routes.RepoHandler,
+	mirrorSyncHandler *routes.GitMirrorSyncHandler,
+	authHandler *routes.AuthHandler,
+	userHandler *routes.UserHandler,
+	sshKeyHandler *routes.SSHKeyHandler,
+	deployKeyHandler *routes.DeployKeyHandler,
+	labelHandler *routes.LabelHandler,
+
+	orgHandler *routes.OrgHandler,
+	landingHandler *routes.LandingHandler,
+	buildCacheHandler *routes.BuildCacheHandler,
+	stackHandler *routes.StackHandler,
+	searchHandler *routes.SearchHandler,
+	issueHandler *routes.IssueHandler,
+
+	wikiService routes.WikiService,
+	gitHandler *routes.GitSmartHandler,
+	notificationHandler *routes.NotificationHandler,
+
+	adminUserHandler *routes.AdminUserHandler,
+	adminOrgHandler *routes.AdminOrgHandler,
+	adminRepoHandler *routes.AdminRepoHandler,
+	adminGitHubAppHandler *routes.AdminGitHubAppHandler,
+	adminAuditHandler *routes.AdminAuditHandler,
+	webhookHandler *routes.WebhookHandler,
+	secretHandler *routes.SecretHandler,
+	providerConnectionHandler *routes.ProviderConnectionHandler,
+	variableHandler *routes.VariableHandler,
+	billingHandler *routes.BillingHandler,
+	protectedBookmarkHandler *routes.ProtectedBookmarkHandler,
+	commitStatusHandler *routes.CommitStatusHandler,
+	lfsHandler *routes.LFSHandler,
+	jjVCSHandler *routes.JJVCSHandler,
+	agentInternalHandler *routes.AgentInternalHandler,
+	agentSessionHandler *routes.AgentSessionHandler,
+	agentSessionStreamHandler *routes.AgentSessionStreamHandler,
+	approvalsHandler *routes.ApprovalsHandler,
+	pushHookHandler *routes.InternalPushHookHandler,
+	workflowHandler *routes.WorkflowHandler,
+	workflowCacheHandler *routes.WorkflowCacheHandler,
+	workflowArtifactHandler *routes.WorkflowArtifactHandler,
+
+	issueEventHandler *routes.IssueEventHandler,
+	workspaceHandler *routes.WorkspaceHandler,
+	workspaceInternalHandler *routes.WorkspaceInternalHandler,
+	repositoryJobHandler *routes.RepositoryJobHandler,
+	gitHubProxyHandler *routes.GitHubProxyHandler,
+	gitHubRepoListHandler *routes.GitHubRepoListHandler,
+	gitHubUserReposHandler *routes.GitHubUserReposHandler,
+	gitHubSyncedReposHandler *routes.GitHubSyncedReposHandler,
+	gitHubImportHandler *routes.GitHubImportHandler,
+	workspaceTerminalHandler *routes.WorkspaceTerminalHandler,
+	telemetryHandler *routes.TelemetryHandler,
+	featureFlagHandler *routes.FeatureFlagHandler,
+	oauth2Handler *routes.OAuth2Handler,
+	gitHubWebhookHandler *routes.GitHubWebhookHandler,
+	smithersMetrics *routes.SmithersMetrics,
+	routerOptions ...any,
+) *chi.Mux {
+	var extras routerExtras
+	for _, option := range routerOptions {
+		switch value := option.(type) {
+		case routerExtras:
+			extras = value
+		}
+	}
+	confirmations := extras.Confirmations
+	if confirmations == nil && approvalsHandler != nil {
+		confirmations, _ = approvalsHandler.Service.(*services.ApprovalsService)
+		// Use the same service for delegated admission and member decisions.
+		extras.Confirmations = confirmations
+	}
+	if config.IsSingleOwner(cfg.Auth) && confirmations == nil {
+		confirmations = services.NewApprovalsService(queries)
+		if pool != nil {
+			var todos *services.MythicalService
+			if extras.Mythical != nil {
+				todos, _ = extras.Mythical.Service.(*services.MythicalService)
+			}
+			confirmations = services.NewApprovalsService(queries, services.WithConfirmationTodos(pool, todos))
+		}
+	}
+	if config.IsSingleOwner(cfg.Auth) && approvalsHandler != nil {
+		if service, ok := approvalsHandler.Service.(*services.ApprovalsService); ok {
+			if pool != nil {
+				service.ConfigureInstallAuthorization(queries, pool)
+			} else {
+				service.ConfigureInstallAuthorization(queries)
+			}
+		}
+	}
+	if extras.Catalog == nil {
+		extras.Catalog = routes.NewPublicRepositoryCatalog(queries)
+	}
+	r := chi.NewRouter()
+	if workspaceTerminalHandler != nil && workspaceTerminalHandler.TerminalTokenLookup != nil {
+		r.Use(middleware.WithTerminalTokenLookup(workspaceTerminalHandler.TerminalTokenLookup))
+	}
+	// Retired browser builds must fail before any install-authority fallback.
+	// There is no handler, credential issuance or model admission behind these addresses.
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+			if request.URL.Path == "/api/app-timelines" || strings.HasPrefix(request.URL.Path, "/api/app-timelines/") {
+				http.NotFound(w, request)
+				return
+			}
+			if request.Method == http.MethodPost {
+				switch request.URL.Path {
+				case "/api/agent/turn/cancel", "/api/agent/turn/retire", "/api/chat/turn", "/api/chat/cancel":
+					http.NotFound(w, request)
+					return
+				}
+			}
+			if config.IsSingleOwner(cfg.Auth) && strings.HasPrefix(request.URL.Path, "/api/") {
+				path := request.URL.Path
+				if request.URL.RawPath != "" {
+					path = request.URL.RawPath
+				}
+				// An absent door grants no command authority. Resolve existence
+				// without running handlers or mutating the request's route context,
+				// before the owner/token fallback can turn its 404 into a refusal.
+				found := r.Match(chi.NewRouteContext(), request.Method, path)
+				if !found {
+					// Keep the router's method-not-allowed behavior for a real door.
+					for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions, http.MethodTrace, http.MethodConnect} {
+						if r.Match(chi.NewRouteContext(), method, path) {
+							found = true
+							break
+						}
+					}
+				}
+				if !found {
+					pkgerrors.WriteError(w, pkgerrors.NotFound("not found"))
+					return
+				}
+			}
+			next.ServeHTTP(w, request)
+		})
+	})
+	if config.IsSingleOwner(cfg.Auth) {
+		r.Use(middleware.RejectTenantProvisioning)
+		r.Use(middleware.RejectLocalAuth)
+		if extras.BillingCapabilities == (services.BillingCapabilities{}) {
+			r.Use(middleware.RejectDeferredCommerce)
+		}
+	}
+	if !config.IsMultitenant(cfg.Auth) {
+		r.Use(middleware.RejectDeferredRepositoryRoutes)
+	}
+	var ownerBoundary identity.MemberAuthorizer
+	if config.IsSingleOwner(cfg.Auth) {
+		ownerBoundary = identity.NewMemberBoundary(queries)
+	}
+	allowedOrigins := apiAllowedOrigins(cfg)
+	if authHandler != nil {
+		// Credential endpoints and CORS consume the same exact allowlist; an
+		// install's sign-in also accepts the Address its owner saved (M-28).
+		authHandler.Origins = middleware.FixedOrigins(allowedOrigins...)
+		if extras.GitHubAppSetup != nil && extras.GitHubAppSetup.Origins != nil {
+			authHandler.Origins = extras.GitHubAppSetup.Origins
+		}
+	}
+
+	// Ticket 12: feature-flag gates for non-MVP route families. Each gate is a
+	// closure over cfg.FeatureFlags so flipping the flag at config-load time
+	// flips the gate. The gates short-circuit with 403 + Gitea-compatible
+	// APIError JSON ({"message":"feature not available"}) when the flag is
+	// off. Callers wrap a route or sub-router with the gate alongside (not
+	// instead of) the existing auth/scope middleware.
+	// A box that ran outsider-started work reads no live conversation: its
+	// run works from the approved copy in its inputs. Every issue route
+	// carries the check with the issues gate.
+	var outsiderWorkspaces middleware.OutsiderWorkspaces
+	if queries != nil {
+		outsiderWorkspaces = queries
+	}
+	withholdConversation := middleware.WithholdConversation(outsiderWorkspaces)
+	issuesFeature := middleware.FeatureFlagGate(func() bool { return cfg.FeatureFlags.Issues })
+	gateIssues := func(next http.Handler) http.Handler { return issuesFeature(withholdConversation(next)) }
+	gateSearch := middleware.FeatureFlagGate(func() bool { return cfg.FeatureFlags.Search })
+	gateWiki := middleware.FeatureFlagGate(func() bool { return cfg.FeatureFlags.Wiki })
+	gateLabels := middleware.FeatureFlagGate(func() bool { return cfg.FeatureFlags.Labels })
+
+	gateSecrets := middleware.FeatureFlagGate(func() bool { return cfg.FeatureFlags.Secrets })
+	gateNotifications := middleware.FeatureFlagGate(func() bool { return cfg.FeatureFlags.Notifications })
+	// Stored Claude/ChatGPT subscription logins: self-host only, off in the
+	// hosted product. Covers every /provider-connections route and the pool.
+	subscriptionConnectionsFeature := middleware.FeatureFlagGate(func() bool {
+		if config.IsSingleOwner(cfg.Auth) {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			if queries == nil {
+				return false
+			}
+			enabled, err := services.InstallChatGPTEnabled(ctx, queries)
+			return err == nil && enabled
+		}
+		return cfg.FeatureFlags.SubscriptionConnections
+	})
+	gateSubscriptionConnections := subscriptionConnectionsFeature
+
+	gateProtectedBookmarks := middleware.FeatureFlagGate(func() bool { return cfg.FeatureFlags.ProtectedBookmarks })
+	gateWebhooksUser := middleware.FeatureFlagGate(func() bool { return cfg.FeatureFlags.WebhooksUser })
+	gateWorkflows := middleware.FeatureFlagGate(func() bool { return cfg.FeatureFlags.Workflows })
+	gateAgents := middleware.FeatureFlagGate(func() bool { return config.IsSingleOwner(cfg.Auth) || cfg.FeatureFlags.Agents })
+	gateWorkspaces := middleware.FeatureFlagGate(func() bool { return config.IsSingleOwner(cfg.Auth) || cfg.FeatureFlags.Workspaces })
+	gateSandboxes := middleware.FeatureFlagGate(func() bool { return cfg.FeatureFlags.Sandboxes })
+	gateTelemetry := middleware.FeatureFlagGate(func() bool { return cfg.FeatureFlags.ClientErrorReporting })
+	quotaStore := middleware.NewTokenBucketStore()
+	repoAPIQuota := middleware.PerRepoAPIRequests(quotaStore)
+	repoStackQuota := middleware.PerRepoStackSubmits(quotaStore)
+	repoWorkflowQuota := middleware.PerRepoWorkflowRuns(quotaStore)
+	var quotaCounters interface {
+		middleware.ConnectedRepoCounter
+		middleware.ConcurrentWorkflowRunCounter
+		middleware.ConcurrentSandboxCounter
+	}
+	if queries != nil {
+		quotaCounters = queries
+	}
+	userConnectedReposQuota := middleware.PerUserConnectedRepos(quotaCounters, 10)
+	userWorkflowRunsQuota := middleware.PerUserConcurrentWorkflowRuns(quotaCounters, 5)
+	userSandboxesQuota := middleware.PerUserConcurrentSandboxes(quotaCounters, perUserConcurrentSandboxCap, sandboxPlanAdmission(extras.Admission))
+	workflowRunCountHandler := &routes.WorkflowRunCountHandler{Counter: quotaCounters}
+	// Server startup validation requires this secret. Keep construction
+	// defensive for unit routers: a nil manager still fails closed whenever a
+	// caller presents the dedicated LFS scheme, while unrelated auth continues.
+	// The API only verifies bridge credentials, so it must not depend on the
+	// public URL that is needed solely by the SSH issuer.
+	lfsAuthManager, _ := lfsauth.NewManager(cfg.Auth.LFSSigningSecret)
+	var ticketsIssued prometheus.Counter
+	var ticketsValidated *prometheus.CounterVec
+	if smithersMetrics != nil {
+		ticketsIssued = prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "smithers_sse_tickets_issued_total",
+			Help: "Total SSE auth tickets issued.",
+		})
+		ticketsValidated = prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "smithers_sse_tickets_validated_total",
+			Help: "SSE ticket validation outcomes.",
+		}, []string{"result"})
+		smithersMetrics.MustRegister(ticketsIssued, ticketsValidated)
+	}
+	var sseTicketHandler *routes.SSETicketHandler
+	var sseTicketService *services.SSETicketService
+	if queries != nil {
+		sseTicketService = services.NewSSETicketService(queries, services.WithSSETicketInstallMode(config.IsSingleOwner(cfg.Auth)))
+		sseTicketHandler = &routes.SSETicketHandler{
+			Service: sseTicketService,
+		}
+		if ticketsIssued != nil {
+			sseTicketHandler.Metrics = &routes.SSETicketRouteMetrics{TicketsIssued: ticketsIssued}
+		}
+	}
+	sseTicketAuth := func(next http.Handler) http.Handler { return next }
+	if sseTicketHandler != nil {
+		var sseTicketMetrics *middleware.SSETicketMetrics
+		if ticketsValidated != nil {
+			sseTicketMetrics = &middleware.SSETicketMetrics{TicketsValidated: ticketsValidated}
+		}
+		ticketAuth := middleware.SSETicketAuth(
+			sseTicketService,
+			sseTicketMetrics,
+			ownerBoundary,
+		)
+		// Ticket auth installs its principal after authLoader's guard has
+		// already run, so the guard must run again behind it or a ticket's
+		// revoked token or disabled user is never checked.
+		ticketGuard := middleware.RevocationGuard(revocationChecker)
+		sseTicketAuth = func(next http.Handler) http.Handler {
+			return ticketAuth(ticketGuard(next))
+		}
+	}
+
+	// Install socket-peer trust and origin resolution precede authentication.
+	if config.IsSingleOwner(cfg.Auth) {
+		origins := middleware.FixedOrigins(allowedOrigins...)
+		if extras.GitHubAppSetup != nil && extras.GitHubAppSetup.Origins != nil {
+			origins = extras.GitHubAppSetup.Origins
+		}
+		r.Use(middleware.EffectiveOrigin(origins))
+		// Every GitHub OAuth operation, including CLI consent, uses the already
+		// resolved request origin rather than a global callback configuration.
+		r.Use(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if origin, ok := middleware.ResolveEffectiveOrigin(r, nil); ok {
+					r = r.WithContext(services.WithGitHubRedirectURI(r.Context(), origin+"/api/auth/github/callback"))
+				}
+				next.ServeHTTP(w, r)
+			})
+		})
+	}
+	// Middleware stack prefix (spec order)
+	if extras.GitHubAppSetup != nil && extras.GitHubAppSetup.Sessions != nil {
+		r.Use(middleware.SetupSessionBoundary(extras.GitHubAppSetup.Sessions.Validate))
+	}
+	r.Use(chiMiddleware.RequestID)
+	quiesceService := extras.InstallQuiesce
+	if quiesceService == nil {
+		quiesceService = services.NewInstallQuiesce(&services.QuiesceGate{Store: services.InstallQuiesceStore{Pool: pool}, StateDir: cfg.Install.StateDir})
+	}
+	// Persisted freezes remain enforced on installs even when maintenance
+	// execution is unavailable. A configuration flag cannot bypass recovery.
+	quiesceEnabled := cfg.Install.QuiesceEnabled || (config.IsSingleOwner(cfg.Auth) && cfg.Install.StateDir != "")
+	routes.MountInstallQuiesce(r, quiesceEnabled, quiesceService.Gate, nil)
+	// Derive the client IP from X-Forwarded-For using a trusted-hop count
+	// (SMITHERS_SERVER_TRUSTED_PROXY_HOPS: 1 behind GCLB in prod, 0 = keep
+	// the socket address elsewhere). Replaces chi's RealIP, which trusted
+	// the spoofable first XFF entry (rate-limit bypass, audit-log forgery).
+	r.Use(middleware.RealIP(cfg.Server.TrustedProxyHops))
+	r.Use(middleware.RequestIDEcho) // echo X-Request-Id in response for trace correlation
+	// OpenTelemetry HTTP middleware - instruments all incoming requests with trace context
+	r.Use(middleware.HTTPTracing("smithers-server"))
+	r.Use(middleware.InjectLogger(slog.Default()))
+	r.Use(middleware.StructuredLogger(slog.Default()))
+	// Record HTTP request counts + durations. Pass nil explicitly when smithersMetrics is nil
+	// to avoid a non-nil interface wrapping a nil pointer (Go interface nil semantics).
+	if smithersMetrics != nil {
+		r.Use(middleware.HTTPMetrics(smithersMetrics))
+	}
+	// A dependency's own verdict (repo-host holding a repository) answers any
+	// generic server error its refusal caused, whichever route made the call,
+	// a panic's included.
+	r.Use(middleware.DependencyRefusals)
+	// Recovery must complete inside the metrics recorder so a panic's 500 is
+	// counted alongside ordinary responses.
+	r.Use(middleware.JSONRecoverer)
+	if authHandler != nil && authHandler.Service != nil && !config.IsSingleOwner(cfg.Auth) {
+		r.Use(middleware.CanonicalBrowserAuthOrigin(cfg.Auth.GitHubRedirectURL))
+	}
+
+	healthzHandler := routes.NewHealthzHandler(pool, cfg.RepoHost.URL)
+	readyzHandler := routes.NewReadyzHandler(pool, cfg.RepoHost.URL)
+
+	// Public health endpoint
+	r.Get("/health", routes.Health)
+	r.Get("/healthz", healthzHandler.Healthz)
+	r.Get("/readyz", readyzHandler.Readyz)
+	if extras.GitHubAppSetup != nil {
+		r.With(middleware.AuthRateLimit(queries)).Get("/setup", extras.GitHubAppSetup.OpenSetup)
+		r.With(authLoader(queries, cfg.Auth)).Get("/setup/github/callback", extras.GitHubAppSetup.Callback)
+		r.With(authLoader(queries, cfg.Auth)).Get("/setup/github/installed", extras.GitHubAppSetup.Installed)
+	}
+	r.Get("/api/status", (&routes.StatusHandler{CanaryRuns: extras.CanaryRuns}).Status)
+	// Prometheus metrics endpoint (for Kubernetes monitoring / Cloud Monitoring scraping).
+	// The ingress exposes "/" publicly, so network policy alone is not sufficient: the
+	// metrics expose sensitive operational data. Require a shared bearer token. The token
+	// is read from SMITHERS_METRICS_TOKEN (provisioned as a Secret Manager secret + env
+	// binding; the Cloudflare status worker must send it as `Authorization: Bearer <token>`).
+	// RequireSharedBearerToken fails safe (401) when the token is unset.
+	if smithersMetrics != nil {
+		r.Get("/metrics", protectedMetricsHandler(smithersMetrics).ServeHTTP)
+	}
+
+	r.Route("/internal", func(r chi.Router) {
+		var querier middleware.AgentTokenQuerier
+		if queries != nil {
+			querier = queries
+		}
+		// Workspace status callbacks operate purely on IDs from the URL/body
+		// with no per-run ownership scoping, so they must only be reachable with
+		// the shared deployment credential (SMITHERS_AGENT_TOKEN) — never with
+		// per-run agent tokens handed to untrusted sandboxes, which could
+		// otherwise spoof any workspace's status.
+		sharedAgentToken := strings.TrimSpace(os.Getenv("SMITHERS_AGENT_TOKEN"))
+		// The preview gateway rechecks each viewer's grant here, with the
+		// relay token it already shares with the API (unset refuses all).
+		if workspaceHandler != nil && workspaceHandler.PreviewTickets != nil {
+			if authorizer, ok := workspaceHandler.Service.(routes.WorkspacePreviewAuthorizer); ok {
+				previewTickets := &routes.WorkspacePreviewTicketHandler{Service: authorizer, Tickets: workspaceHandler.PreviewTickets}
+				r.With(middleware.RequireSharedBearerToken(cfg.Sandbox.PreviewRelayToken)).
+					Post("/workspace-previews/authorize", previewTickets.Authorize)
+			}
+		}
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireSharedBearerToken(sharedAgentToken))
+			if workspaceInternalHandler != nil {
+				r.Post("/workspace/{id}/status", workspaceInternalHandler.PostWorkspaceStatus)
+				r.Post("/workspace/{id}/head", workspaceInternalHandler.PostWorkspaceHead)
+			}
+		})
+		// Workflow cache and artifact routes also accept a CI job token: the
+		// per-job credential the sandbox scheduler hands each NixOS CI guest.
+		// Agent-session routes below stay per-run-agent-token only.
+		var jobTokens middleware.CIJobTokenQuerier
+		if queries != nil {
+			jobTokens = queries
+		}
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireWorkflowRunCredential(querier, jobTokens))
+			if workflowCacheHandler != nil {
+				r.With(gateWorkflows).Post("/caches/restore", workflowCacheHandler.Restore)
+				r.With(gateWorkflows).Post("/caches/save", workflowCacheHandler.BeginSave)
+				r.With(gateWorkflows).Post("/caches/{cache-id}/finalize", workflowCacheHandler.FinalizeSave)
+				r.With(gateWorkflows).Post("/caches/{cache-id}/abort", workflowCacheHandler.AbortSave)
+			}
+			if workflowArtifactHandler != nil {
+				r.With(gateWorkflows).Post("/runs/{id}/artifacts/upload-url", workflowArtifactHandler.PostInternalUploadURL)
+				r.With(gateWorkflows).Post("/runs/{id}/artifacts/confirm", workflowArtifactHandler.PostInternalConfirm)
+				r.With(gateWorkflows).Get("/runs/{id}/artifacts/{name}/download", workflowArtifactHandler.GetInternalDownloadURL)
+			}
+		})
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireAgentToken(querier))
+			if agentInternalHandler != nil {
+				r.Post("/agent/sessions/{session_id}/events", agentInternalHandler.PostSessionEvent)
+			}
+		})
+		if pushHookHandler != nil {
+			r.With(middleware.RequireSharedBearerToken(cfg.RepoHost.PushHookCallbackToken)).Post("/repo-host/push-events", pushHookHandler.PostPushEvent)
+		}
+	})
+
+	// Git smart HTTP routes are outside /api and intentionally bypass JSON timeout/content-type middleware.
+	if gitHandler != nil {
+		r.Get("/{owner}/{repo}/info/refs", gitHandler.InfoRefs)
+		r.Post("/{owner}/{repo}/git-upload-pack", gitHandler.UploadPack)
+		r.Post("/{owner}/{repo}/git-receive-pack", gitHandler.ReceivePack)
+	}
+
+	// Git LFS derives this endpoint directly from an HTTP Git remote by
+	// appending .git/info/lfs/objects/batch. Keep it outside /api alongside the
+	// smart-HTTP transport, while applying the same bounded JSON and auth
+	// loading used by the API alias. The literal .git suffix is excluded from
+	// chi's {repo} parameter, so repository resolution sees the canonical name.
+	if lfsHandler != nil {
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.JSONAllowContentType("application/json", routes.LFSJSONMediaType))
+			r.Use(middleware.MaxBodySize(middleware.MaxRequestBodySize))
+			r.Use(lfsauth.HTTPMiddleware(lfsAuthManager))
+			r.Use(authLoader(queries, cfg.Auth))
+			r.Use(apiCSRFMiddleware)
+			r.Use(middleware.GlobalAPIRateLimit(queries))
+			r.With(middleware.JSONTimeout(apiJSONTimeout), repoAPIQuota).Post("/{owner}/{repo}.git/info/lfs/objects/batch", lfsHandler.PostBatch)
+		})
+	}
+
+	apiCORS := apiCORSOptions(cfg)
+
+	// Canonical LFS protocol endpoints intentionally resolve authorization in
+	// LFSService rather than LoadRepoContext: a git-lfs-authenticate credential
+	// represents an SSH deploy key as well as a user, and therefore has no
+	// db.User to attach. The dedicated middleware validates its repository and
+	// operation scope; ordinary PAT/session requests retain scope, CSRF, and
+	// service-level repository permission checks.
+	if lfsHandler != nil {
+		r.Group(func(r chi.Router) {
+			r.Use(browserCORS(apiCORS, config.IsSingleOwner(cfg.Auth)))
+			r.Use(middleware.JSONAllowContentType("application/json", routes.LFSJSONMediaType))
+			r.Use(middleware.MaxBodySize(middleware.MaxRequestBodySize))
+			r.Use(lfsauth.HTTPMiddleware(lfsAuthManager))
+			r.Use(authLoader(queries, cfg.Auth))
+			r.Use(apiCSRFMiddleware)
+			r.Use(middleware.GlobalAPIRateLimit(queries))
+			r.With(middleware.JSONTimeout(apiJSONTimeout), repoAPIQuota).Post("/api/repos/{owner}/{repo}/lfs/objects/batch", lfsHandler.PostBatch)
+			r.With(middleware.JSONTimeout(lfsVerifyTimeout(cfg)), repoAPIQuota).Post("/api/repos/{owner}/{repo}/lfs/verify", lfsHandler.PostVerify)
+		})
+	}
+
+	integrationsHandler := routes.NewIntegrationsHandler(routes.IntegrationCatalog(routes.IntegrationCapabilities{
+		GitHubMirror: gitHubSyncedReposHandler != nil,
+	})...)
+
+	// SSE workflow run log stream — registered at the top-level router (outside /api's JSONTimeout
+	// middleware group) so the connection is not subject to the 30s request timeout.
+	// The full path prefix /api/repos/... is used so CORS and routing are consistent with other API paths.
+	// WorkflowRouteService satisfies WorkflowRunRouteService at compile time -- no runtime type assertion needed.
+	if workflowHandler != nil {
+		if config.IsSingleOwner(cfg.Auth) {
+			workflowHandler.InstallQueries = queries
+		}
+		// Reuse the one shared SSE broker (created alongside the agent-session
+		// handler) so workflow-run log streams do not consume a pool slot each.
+		var wrrBroker *sse.Broker
+		if agentSessionStreamHandler != nil {
+			wrrBroker = agentSessionStreamHandler.Broker
+		}
+		wrrHandler := &routes.WorkflowRunHandler{Service: workflowHandler.Service, Broker: wrrBroker, Metrics: smithersMetrics}
+		r.Group(func(r chi.Router) {
+			r.Use(browserCORS(apiCORS, config.IsSingleOwner(cfg.Auth)))
+			r.Use(authLoader(queries, cfg.Auth))
+			r.Use(sseTicketAuth)
+			if config.IsSingleOwner(cfg.Auth) {
+				r.Use(memberCommands(queries))
+			}
+			if queries != nil {
+				r.Use(middleware.LoadRepoContext(queries))
+			}
+			readRepo := []func(http.Handler) http.Handler{
+				middleware.RequireAuth,
+				middleware.RequireScope(middleware.ScopeReadRepository),
+			}
+			if queries != nil {
+				readRepo = append(readRepo, middleware.RequireRepoPermission(middleware.PermissionRead))
+			}
+			readRepo = append(readRepo, repoAPIQuota, gateWorkflows)
+			r.With(readRepo...).Get("/api/repos/{owner}/{repo}/runs/{id}/logs", wrrHandler.WorkflowRunLogsStream)
+			r.With(readRepo...).Get("/api/repos/{owner}/{repo}/workflows/runs/{id}/events", wrrHandler.WorkflowRunLogsStream)
+			// Ticket 0111: canonical SSE route for run events. Aliases the
+			// existing `/workflows/runs/{id}/events` path at the same handler —
+			// no behavior change, just a single canonical naming for clients.
+			r.With(readRepo...).Get("/api/repos/{owner}/{repo}/runs/{id}/events", wrrHandler.WorkflowRunLogsStream)
+			// The run lifecycle stream (queued/running/terminal) — the follow
+			// half of the invocation seam for clients that did not start the run.
+			r.With(readRepo...).Get("/api/repos/{owner}/{repo}/runs/{id}/status/stream", wrrHandler.WorkflowRunStatusStream)
+		})
+	}
+
+	// Wiki collaboration uses the existing shared broker and auth/revocation
+	// infrastructure. The stream must remain outside the JSON timeout group.
+
+	// SSE agent session stream — registered at the top-level router (outside /api's JSONTimeout
+	// middleware group) so the connection is not subject to the 30s request timeout.
+	if agentSessionStreamHandler != nil {
+		r.Group(func(r chi.Router) {
+			r.Use(browserCORS(apiCORS, config.IsSingleOwner(cfg.Auth)))
+			r.Use(authLoader(queries, cfg.Auth))
+			r.Use(sseTicketAuth)
+			if config.IsSingleOwner(cfg.Auth) {
+				r.Use(memberCommands(queries))
+			}
+			if queries != nil {
+				r.Use(middleware.LoadRepoContext(queries))
+			}
+			readAgent := []func(http.Handler) http.Handler{
+				middleware.RequireAuth,
+				middleware.RequireScope(middleware.ScopeReadRepository),
+			}
+			if queries != nil {
+				readAgent = append(readAgent, middleware.RequireRepoPermission(middleware.PermissionRead))
+			}
+			readAgent = append(readAgent, repoAPIQuota)
+			readAgent = append(readAgent, gateAgents)
+			r.With(readAgent...).Get("/api/repos/{owner}/{repo}/agent/sessions/{id}/stream", agentSessionStreamHandler.AgentSessionStream)
+		})
+	}
+
+	// Workspace VM provisioning routes — registered at the top-level router (outside /api's
+	// JSONTimeout middleware group) because Microsandbox VM creation can take minutes.
+	// Uses its own 10-minute timeout instead of the default 30s; the Microsandbox
+	// client times out first so the handler can record failed provisioning state.
+	if workspaceHandler != nil {
+		r.Group(func(r chi.Router) {
+			r.Use(browserCORS(apiCORS, config.IsSingleOwner(cfg.Auth)))
+			r.Use(middleware.JSONTimeout(10 * time.Minute))
+			r.Use(authLoader(queries, cfg.Auth))
+			r.Use(apiCSRFMiddleware)
+			r.Use(middleware.JSONAllowContentType("application/json"))
+			r.Use(middleware.MaxBodySize(middleware.MaxRequestBodySize))
+			if queries != nil {
+				r.Use(middleware.LoadRepoContext(queries))
+			}
+			vmProvision := []func(http.Handler) http.Handler{
+				middleware.RequireAuth,
+				middleware.RequireScope(middleware.ScopeWriteRepository),
+			}
+			if queries != nil {
+				vmProvision = append(vmProvision, middleware.RequireRepoPermission(middleware.PermissionWrite))
+			}
+			vmProvision = append(vmProvision, repoAPIQuota)
+			vmProvision = append(vmProvision, gateWorkspaces)
+			vmProvisionSandbox := append([]func(http.Handler) http.Handler{}, vmProvision...)
+			vmProvisionSandbox = append(vmProvisionSandbox, gateSandboxes, userSandboxesQuota)
+			// Session create deliberately does NOT take userSandboxesQuota on the
+			// no-workspace_id path: the service REUSES the repo's existing primary
+			// workspace (findOrCreatePrimaryWorkspace) and only creates one when
+			// none exists — where enforceWorkspaceQuota already fires (ticket
+			// 0105). Gating the route on the concurrent-sandbox count 429'd every
+			// terminal attach for users whose OTHER VMs (durable gateways, resumed
+			// workspaces) had filled the cap, even though attaching provisions
+			// nothing (2026-07-08 prod outage: all terminals dead with
+			// "concurrent sandboxes limit reached"). A workspace_id targeting a
+			// NON-running workspace, however, resumes a VM, so it must clear the
+			// same stack as /workspaces/{id}/resume (issue #20).
+			var workspaceSessionStore workspaceSessionWorkspaceLoader
+			if queries != nil {
+				workspaceSessionStore = queries
+			}
+			workspaceSessionProvision := append([]func(http.Handler) http.Handler{}, vmProvision...)
+			workspaceSessionProvision = append(
+				workspaceSessionProvision,
+				gateSandboxes,
+				workspaceSessionSandboxQuota(
+					workspaceSessionStore,
+					nil,
+					[]func(http.Handler) http.Handler{userSandboxesQuota},
+				),
+			)
+			workspaceJoin := vmProvisionSandbox
+			if config.IsSingleOwner(cfg.Auth) {
+				// Install branch machines use host admission and the service's
+				// activation providers, not hosted per-user sandbox controls.
+				workspaceJoin = append([]func(http.Handler) http.Handler{}, vmProvision...)
+				workspaceJoin = append(workspaceJoin, memberCommands(queries))
+			}
+			r.With(workspaceJoin...).Post("/api/repos/{owner}/{repo}/workspaces", workspaceHandler.CreateWorkspace)
+			r.With(vmProvisionSandbox...).Post("/api/repos/{owner}/{repo}/workspaces/{id}/resume", workspaceHandler.ResumeWorkspace)
+			workspaceFork := vmProvisionSandbox
+			if config.IsSingleOwner(cfg.Auth) {
+				workspaceFork = append([]func(http.Handler) http.Handler{memberCommands(queries)}, vmProvision...)
+			}
+			r.With(workspaceFork...).Post("/api/repos/{owner}/{repo}/workspaces/{id}/fork", workspaceHandler.ForkWorkspace)
+			r.With(vmProvision...).Delete("/api/repos/{owner}/{repo}/workspaces/{id}", workspaceHandler.DeleteWorkspace)
+			r.With(vmProvision...).Post("/api/repos/{owner}/{repo}/workspaces/{id}/suspend", workspaceHandler.SuspendWorkspace)
+			// RFD-004: guest head reports; a workspace-bound token reaches only this route.
+			headReport := append([]func(http.Handler) http.Handler{}, vmProvision...)
+			if config.IsSingleOwner(cfg.Auth) {
+				// Resolve the install command before generic scope gates so denied
+				// machine credentials receive the install's typed permission verdict.
+				headReport = append([]func(http.Handler) http.Handler{middleware.RequireAuth, memberCommands(queries)}, vmProvision[1:]...)
+			}
+			publisherReport := headReport
+			if config.IsSingleOwner(cfg.Auth) {
+				// ReportWorkspaceHead binds the decoded report and stored publisher
+				// in Authorize, including write scope. A coarse scope gate here
+				// would preempt that single typed decision for children credentials.
+				publisherReport = append([]func(http.Handler) http.Handler{middleware.RequireAuth, memberCommands(queries)}, vmProvision[2:]...)
+			}
+			r.With(publisherReport...).Post("/api/repos/{owner}/{repo}/workspaces/{id}/head", workspaceHandler.ReportWorkspaceHead)
+			if config.IsSingleOwner(cfg.Auth) && extras.Mythical != nil {
+				r.With(headReport...).Post("/api/repos/{owner}/{repo}/workspaces/{id}/stack/{operation}", extras.Mythical.ReservedStackOperation)
+			}
+			r.With(vmProvision...).Post("/api/repos/{owner}/{repo}/workspaces/{id}/snapshot", workspaceHandler.CreateWorkspaceSnapshot)
+			r.With(vmProvision...).Post("/api/repos/{owner}/{repo}/workspaces/{id}/coding/operations", workspaceHandler.ApplyCodingOperation)
+			if jjVCSHandler != nil {
+				r.With(vmProvision...).Get("/api/repos/{owner}/{repo}/workspaces/{id}/operations/{op_id}/undo/preview", jjVCSHandler.PreviewOperationUndo)
+				r.With(vmProvision...).Post("/api/repos/{owner}/{repo}/workspaces/{id}/operations/{op_id}/undo", jjVCSHandler.UndoOperation)
+			}
+			r.With(vmProvision...).Post("/api/repos/{owner}/{repo}/workspace-snapshots", workspaceHandler.CreateWorkspaceSnapshotTemplate)
+			r.With(workspaceSessionProvision...).Post("/api/repos/{owner}/{repo}/workspace/sessions", workspaceHandler.CreateSession)
+			// Destroying the last session suspends and checkpoints a persistent
+			// Microsandbox VM. Disk snapshot export can legitimately exceed the
+			// ordinary 30-second JSON API deadline, just like provisioning.
+			r.With(vmProvision...).Post("/api/repos/{owner}/{repo}/workspace/sessions/{id}/destroy", workspaceHandler.DestroySession)
+		})
+	}
+
+	if repositoryJobHandler != nil {
+		// A box's coding host calls repository jobs back with its flowhost
+		// binding ID (SMITHERS_GATEWAY_ID) and control credential. Keep these
+		// outside repository auth: the binding ID and credential are the auth.
+		r.Group(func(r chi.Router) {
+			r.Use(browserCORS(apiCORS, config.IsSingleOwner(cfg.Auth)))
+			if !config.IsSingleOwner(cfg.Auth) {
+				r.With(gateWorkflows).Put("/api/gateways/{hostID}/repository-jobs/{job}", repositoryJobHandler.PutRepositoryJob)
+			}
+			if config.IsMultitenant(cfg.Auth) {
+				r.With(gateWorkflows).Put("/api/gateways/{hostID}/repository-jobs/{job}/trials/{requestID}", repositoryJobHandler.PutRepositoryJobTrial)
+			}
+			if config.IsMultitenant(cfg.Auth) {
+				r.With(gateWorkflows).Put("/api/gateways/{hostID}/repository-jobs/{job}/comments/{step}", repositoryJobHandler.PutRepositoryJobComment)
+			}
+			if !config.IsSingleOwner(cfg.Auth) {
+				r.With(gateWorkflows).Put("/api/gateways/{hostID}/repository-jobs/{job}/manual/{requestID}", repositoryJobHandler.PutRepositoryJobManual)
+			}
+			if config.IsMultitenant(cfg.Auth) {
+				r.With(gateWorkflows).Put("/api/gateways/{hostID}/repository-jobs/ci/check-receipts/{requestID}", repositoryJobHandler.PutRepositoryCheckReceipt)
+			}
+		})
+	}
+
+	if config.IsSingleOwner(cfg.Auth) && extras.Mythical != nil {
+		reader, _ := extras.Mythical.Service.(routes.LearningEvidenceReader)
+		handler := &routes.LearningEvidenceHandler{Service: reader}
+		r.Get("/api/gateways/{hostID}/learning/{runID}/evidence", handler.Read)
+	}
+
+	if config.IsSingleOwner(cfg.Auth) && workspaceHandler != nil {
+		// Host-authenticated issuance and self-authenticated revocation never
+		// accept browser cookies or the generic file token as host authority.
+		r.Post("/api/gateways/{hostID}/file-write-grants", workspaceHandler.MintCodingFileGrant)
+		r.Delete("/api/gateways/{hostID}/file-write-grants/{tokenID}", workspaceHandler.RevokeCodingFileGrant)
+	}
+
+	// Inbound GitHub App webhook — signature-verified inside the handler, no auth middleware.
+	if gitHubWebhookHandler != nil {
+		r.Post("/webhooks/github", gitHubWebhookHandler.PostGitHubWebhook)
+	}
+
+	// API routes: apply timeout, CORS, then JSON content type enforcement.
+	// Health check at /api/health so the Cloudflare Worker can proxy /api/health.
+	// Registered outside the /api route group to avoid JSON content-type enforcement.
+	r.Get("/api/health", routes.Health)
+	// The failure-code registry, served so a deployment can be asked which
+	// vocabulary it is actually running. Unauthenticated and read-only for the
+	// same reason /api/health is: it is a published contract.
+	r.Get("/api/meta/failure-codes", routes.FailureCodes)
+	if extras.Catalog != nil {
+		r.Get("/api/public/repos", extras.Catalog.ServeHTTP)
+	}
+	if billingHandler != nil && extras.BillingCapabilities.Webhook {
+		r.With(
+			middleware.JSONTimeout(30*time.Second),
+			browserCORS(apiCORS, config.IsSingleOwner(cfg.Auth)),
+			middleware.JSONAllowContentType("application/json"),
+			middleware.MaxBodySize(middleware.MaxRequestBodySize),
+		).Post("/api/billing/webhook", billingHandler.PostStripeWebhook)
+	}
+
+	// /api/internal is the machine-to-machine namespace. Mounting it keeps an
+	// unknown path under it a 404 instead of falling through to the
+	// user-authenticated /api group below.
+	r.Route("/api/internal", func(chi.Router) {})
+
+	// The provider account pool (self-host only, behind
+	// feature_flags.subscription_connections): workspaces' and managed Flow
+	// hosts' Claude and Codex model calls, authenticated by the workspace's
+	// pool credential or the host's model credential. Outside /api: calls
+	// stream for minutes, and workspace-bound credentials are confined away
+	// from the /api surface.
+	if providerConnectionHandler != nil && providerConnectionHandler.Pool != nil {
+		r.Group(func(r chi.Router) {
+			if !config.IsSingleOwner(cfg.Auth) {
+				r.Use(gateSubscriptionConnections)
+			}
+			r.Use(routes.ProviderPoolAuth(func(next http.Handler) http.Handler {
+				return authLoader(queries, cfg.Auth)(middleware.RequireAuth(next))
+			}))
+			if config.IsSingleOwner(cfg.Auth) {
+				r.Use(providerConnectionHandler.Pool.Authorize)
+				r.Use(gateSubscriptionConnections)
+			}
+			r.Get(services.ProviderPoolPath+"/routes", providerConnectionHandler.Pool.ServeHTTP)
+			r.Post(services.ProviderPoolPath+"/*", providerConnectionHandler.Pool.ServeHTTP)
+		})
+	}
+
+	// The metered platform-model proxy: guests reach it at /model-proxy with a
+	// model credential or their run's agent token, and the app's signed-in
+	// calls at /api/model/{provider} with the user's token. Outside /api:
+	// calls stream for minutes, and the handler bounds its own bodies.
+	if extras.FastGateway != nil {
+		mountFastGateway(r, queries, cfg, extras.FastGateway, apiCSRFMiddleware)
+	}
+	if extras.ModelProxy != nil {
+		mountModelProxy(r, queries, cfg, extras.ModelProxy)
+	}
+
+	// Build the rate-limit reject observer once so both the /api route group and
+	// the long-lived SSE/WebSocket groups (mounted outside /api to avoid the 30s
+	// timeout) share the same Prometheus counter instance.
+	rateLimitRejectObserver := buildRateLimitRejectObserver(smithersMetrics)
+
+	// GitHub import status can be requested as SSE, so keep it outside /api's
+	// JSONTimeout group. POST /api/github/import stays in /api because it is a
+	// bounded JSON request.
+	if gitHubImportHandler != nil {
+		r.Group(func(r chi.Router) {
+			r.Use(browserCORS(apiCORS, config.IsSingleOwner(cfg.Auth)))
+			r.Use(authLoader(queries, cfg.Auth))
+			if config.IsSingleOwner(cfg.Auth) {
+				r.Use(memberCommands(queries))
+			}
+			r.Use(middleware.GlobalAPIRateLimit(queries))
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadRepository)).
+				Get("/api/github/import/{id}", gitHubImportHandler.GetImportJob)
+		})
+	}
+
+	// SSE notification stream — mounted at the top-level router (outside /api's
+	// JSONTimeout group) so the long-lived connection is not subject to the 30s
+	// request timeout. CORS is applied explicitly here to match /api behavior.
+	// Ticket 12: gated by feature_flags.notifications.
+	if notificationHandler != nil {
+		r.Group(func(r chi.Router) {
+			r.Use(browserCORS(apiCORS, config.IsSingleOwner(cfg.Auth)))
+			r.Use(authLoader(queries, cfg.Auth))
+			r.Use(sseTicketAuth)
+			if config.IsSingleOwner(cfg.Auth) {
+				r.Use(memberCommands(queries))
+			}
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser), gateNotifications).Get("/api/notifications", notificationHandler.NotificationStream)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser), gateNotifications).Get("/api/notifications/events/stream", notificationHandler.NotificationFactsStream)
+		})
+	}
+
+	// Issue accepted-state replay uses the shared durable broker outside JSONTimeout.
+	if issueEventHandler != nil {
+		r.Group(func(r chi.Router) {
+			r.Use(browserCORS(apiCORS, config.IsSingleOwner(cfg.Auth)))
+			r.Use(authLoader(queries, cfg.Auth))
+			r.Use(sseTicketAuth)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadRepository), gateIssues).
+				Get("/api/repos/{owner}/{repo}/issues/state-events/stream", issueEventHandler.IssueStateFactsStream)
+		})
+	}
+
+	// Change facet events are mounted outside /api's JSONTimeout group. The
+	// stream announces newly available per-revision artifacts such as the
+	// smithers review walkthrough.
+	if jjVCSHandler != nil {
+		r.Group(func(r chi.Router) {
+			r.Use(browserCORS(apiCORS, config.IsSingleOwner(cfg.Auth)))
+			r.Use(authLoader(queries, cfg.Auth))
+			r.Use(sseTicketAuth)
+			if queries != nil {
+				r.Use(middleware.LoadRepoContext(queries))
+			}
+			readRepo := []func(http.Handler) http.Handler{
+				middleware.RequireAuth,
+				middleware.RequireScope(middleware.ScopeReadRepository),
+			}
+			if queries != nil {
+				readRepo = append(readRepo, middleware.RequireRepoPermission(middleware.PermissionRead))
+			}
+			readRepo = append(readRepo, repoAPIQuota)
+			r.With(readRepo...).Get("/api/repos/{owner}/{repo}/changes/events", jjVCSHandler.ChangeStream)
+			if extras.Mythical != nil {
+				r.With(append(readRepo, withholdConversation)...).Get("/api/repos/{owner}/{repo}/mythical/events", extras.Mythical.Events)
+			}
+		})
+	}
+
+	// The smithers build cache: the /ac + /cas protocol the smithers-build CLI
+	// speaks, hosted per repository. Mounted outside the /api JSONTimeout group
+	// because a 16 MiB artifact upload or download must not be cut at 30 s.
+	// BuildCacheAccess classifies the credential (public read token, or normal
+	// auth with repository permission) before any body is read; the write gate
+	// refuses PUT and DELETE on a read credential with the protocol's 403.
+	if buildCacheHandler != nil && queries != nil {
+		r.Group(func(r chi.Router) {
+			r.Use(browserCORS(apiCORS, config.IsSingleOwner(cfg.Auth)))
+			r.Get("/api/build-cache/healthz", buildCacheHandler.Health)
+			r.Head("/api/build-cache/healthz", buildCacheHandler.Health)
+		})
+		r.Route("/api/repos/{owner}/{repo}/build-cache", func(r chi.Router) {
+			r.Use(browserCORS(apiCORS, config.IsSingleOwner(cfg.Auth)))
+			r.Use(authLoader(queries, cfg.Auth))
+			r.Use(apiCSRFMiddleware)
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.BuildCacheAccess(queries, buildCacheHandler.Service))
+				r.Use(middleware.BuildCacheRateLimit(queries, cfg.RateLimit.BuildCachePerMinute, time.Minute))
+				r.Use(middleware.RequireBuildCacheWrite)
+				r.Get("/healthz", buildCacheHandler.Health)
+				r.Head("/healthz", buildCacheHandler.Health)
+				r.Get("/ac/{keyDigest}", buildCacheHandler.ActionCache)
+				r.Put("/ac/{keyDigest}", buildCacheHandler.ActionCache)
+				r.Delete("/ac/{keyDigest}", buildCacheHandler.ActionCache)
+				r.Post("/cas/findMissing", buildCacheHandler.FindMissing)
+				r.Get("/cas/{digest}", buildCacheHandler.Artifact)
+				r.Head("/cas/{digest}", buildCacheHandler.Artifact)
+				r.Put("/cas/{digest}", buildCacheHandler.Artifact)
+			})
+			// Public read tokens are minted and revoked by repository admins
+			// with a first-class credential; the cache routes above never
+			// accept a management call.
+			r.Group(func(r chi.Router) {
+				if config.IsSingleOwner(cfg.Auth) {
+					r.Use(memberCommands(queries))
+				}
+				r.Use(middleware.LoadRepoContext(queries))
+				if !config.IsSingleOwner(cfg.Auth) {
+					r.Use(middleware.RefuseRunCredentials)
+				}
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadRepository), middleware.RequireRepoPermission(middleware.PermissionWrite), repoAPIQuota).Get("/tokens", buildCacheHandler.ListReadTokens)
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteRepository), middleware.RequireRepoPermission(middleware.PermissionWrite), repoAPIQuota).Post("/tokens", buildCacheHandler.CreateReadToken)
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteRepository), middleware.RequireRepoPermission(middleware.PermissionWrite), repoAPIQuota).Delete("/tokens/{id}", buildCacheHandler.RevokeReadToken)
+			})
+		})
+	}
+
+	// SSE workspace/session streams — mounted outside /api's JSONTimeout group
+	// so long-lived connections are not cut at 30 s.
+	if workspaceHandler != nil {
+		r.Group(func(r chi.Router) {
+			r.Use(browserCORS(apiCORS, config.IsSingleOwner(cfg.Auth)))
+			r.Use(authLoader(queries, cfg.Auth))
+			r.Use(sseTicketAuth)
+			if config.IsSingleOwner(cfg.Auth) {
+				r.Use(memberCommands(queries))
+			}
+			if queries != nil {
+				r.Use(middleware.LoadRepoContext(queries))
+			}
+			readWorkspaceSSE := []func(http.Handler) http.Handler{
+				middleware.RequireAuth,
+				middleware.RequireScope(middleware.ScopeReadRepository),
+			}
+			if queries != nil {
+				readWorkspaceSSE = append(readWorkspaceSSE, middleware.RequireRepoPermission(middleware.PermissionRead))
+			}
+			readWorkspaceSSE = append(readWorkspaceSSE, gateWorkspaces, gateSandboxes)
+			r.With(readWorkspaceSSE...).Get("/api/repos/{owner}/{repo}/workspaces/{id}/stream", workspaceHandler.StreamWorkspace)
+			r.With(readWorkspaceSSE...).Get("/api/repos/{owner}/{repo}/workspace/sessions/{id}/stream", workspaceHandler.StreamSession)
+		})
+	}
+
+	// The live channel (spec §7.1) is a WebSocket too: outside the JSON
+	// group's timeout, body and CSRF rules; the auth loader and the member
+	// boundary still admit the person.
+	if config.IsSingleOwner(cfg.Auth) && extras.Live != nil {
+		r.With(authLoader(queries, cfg.Auth)).Get("/api/live", extras.Live.ServeHTTP)
+	}
+	// The File card's language-server socket, outside the JSON group like the
+	// terminal: the handler reruns the code.hover decision and branch.join.
+	if config.IsSingleOwner(cfg.Auth) && extras.LanguageServers != nil {
+		r.Group(func(r chi.Router) {
+			r.Use(browserCORS(apiCORS, true))
+			r.Use(authLoader(queries, cfg.Auth))
+			r.Use(sseTicketAuth)
+			r.Use(routes.WorkspaceSocketRevocations)
+			r.With(middleware.RequireAuth).Get("/api/branches/{b}/lsp/{id}", extras.LanguageServers.Socket)
+		})
+	}
+
+	// WebSocket terminal — mounted outside /api's JSONTimeout group so the
+	// upgrade and subsequent bidirectional stream are not killed after 30 s.
+	if workspaceTerminalHandler != nil {
+		r.Group(func(r chi.Router) {
+			r.Use(browserCORS(apiCORS, config.IsSingleOwner(cfg.Auth)))
+			r.Use(authLoader(queries, cfg.Auth))
+			r.Use(sseTicketAuth)
+			r.Use(routes.WorkspaceSocketRevocations)
+			if queries != nil {
+				r.Use(middleware.LoadRepoContext(queries))
+			}
+			writeTerminal := []func(http.Handler) http.Handler{
+				middleware.RequireAuth,
+				middleware.RequireScope(middleware.ScopeWriteRepository),
+			}
+			if queries != nil {
+				writeTerminal = append(writeTerminal, middleware.RequireRepoPermission(middleware.PermissionWrite))
+			}
+			writeTerminal = append(writeTerminal, gateWorkspaces, gateSandboxes)
+			// Ticket 0132: open-rate limit applied at route registration time.
+			// Active-connection cap is enforced inside the handler (before dialSSH).
+			writeTerminal = append(
+				writeTerminal,
+				middleware.WorkspaceTerminalOpenRateLimitWithObserver(
+					queries,
+					cfg.RateLimit.TerminalOpenPerMin,
+					rateLimitRejectObserver,
+				),
+			)
+			terminalAdmission := writeTerminal
+			if config.IsSingleOwner(cfg.Auth) {
+				terminalAdmission = append(append([]func(http.Handler) http.Handler{}, writeTerminal...), memberCommands(queries))
+			}
+			r.With(terminalAdmission...).Get("/api/repos/{owner}/{repo}/workspace/sessions/{id}/terminal", workspaceTerminalHandler.TerminalWebSocket)
+		})
+	}
+
+	// observe-v2: api-cli
+	// Consent authenticates with its single-use OAuth state and verifier-bound
+	// CSRF token, independently of any existing browser session.
+	r.With(middleware.InteractiveAuthRateLimit(queries)).Get("/api/auth/github/cli/consent", authHandler.GetAdminCLIConsent)
+	r.With(apiCSRFMiddleware, middleware.InteractiveAuthRateLimit(queries)).Post("/api/auth/github/cli/consent", authHandler.PostAdminCLIConsent)
+
+	// Binary wiki uploads retain the API auth/CSRF/quota gates, with their own
+	// bounded body instead of the JSON group's media type and 1 MiB limit.
+	if content, ok := wikiService.(routes.WikiContentService); ok {
+		handler := &routes.WikiContentHandler{Service: content}
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.JSONTimeout(apiJSONTimeout))
+			r.Use(browserCORS(apiCORS, config.IsSingleOwner(cfg.Auth)))
+			r.Use(authLoader(queries, cfg.Auth))
+			r.Use(apiCSRFMiddleware)
+			if config.IsSingleOwner(cfg.Auth) {
+				r.Use(memberCommands(queries, confirmations))
+			}
+			r.Use(middleware.GlobalAPIRateLimit(queries))
+			if queries != nil {
+				r.Use(middleware.LoadRepoContext(queries))
+			}
+			gates := []func(http.Handler) http.Handler{middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteRepository), repoAPIQuota, gateWiki}
+			if queries != nil {
+				gates = append(gates, middleware.RequireRepoPermission(middleware.PermissionWrite))
+			}
+			r.With(gates...).Put("/api/repos/{owner}/{repo}/wiki/attachments/{slug}", handler.PutAttachment)
+		})
+	}
+
+	r.Route("/api", func(r chi.Router) {
+		r.Use(middleware.JSONTimeout(apiJSONTimeout))
+		r.Use(browserCORS(apiCORS, config.IsSingleOwner(cfg.Auth)))
+		r.Use(middleware.JSONAllowContentType("application/json", routes.LFSJSONMediaType))
+		r.Use(middleware.MaxBodySizeForRequest(apiBodyLimit))
+		// Global API rate limit: 5000/hr auth, 600/hr anon. AuthLoader runs first
+		// so user context is available for limit selection. Search routes excluded
+		// (they have their own SearchRateLimit). The worker token-exchange is
+		// excluded too: it is always anonymous at this layer (the shared worker
+		// bearer is not a session), so the 600/hr-capacity anon bucket (10/min
+		// refill per shared CF-egress IP) would starve logins long before its own
+		// SharedBearerAwareAuthRateLimit — which stays strictly 5/min for callers
+		// WITHOUT the valid worker bearer, so no protection is lost by the skip.
+		r.Use(lfsauth.HTTPMiddleware(lfsAuthManager))
+		r.Use(authLoader(queries, cfg.Auth))
+		r.Use(apiCSRFMiddleware)
+		r.Use(middleware.ExcludePaths(middleware.GlobalAPIRateLimit(queries), "/api/search/", "/api/_test/", "/api/telemetry/", "/api/auth/github/token-exchange"))
+		if config.IsSingleOwner(cfg.Auth) {
+			r.Use(memberCommands(queries, confirmations))
+		}
+		if queries != nil {
+			r.Use(delegatedAttribution(services.NewAuditService(queries)))
+		}
+		if config.IsSingleOwner(cfg.Auth) {
+			r.Get("/commands/debug-api", func(w http.ResponseWriter, r *http.Request) {
+				// The shared command boundary has authorized the viewer. This
+				// client-only door grants no execution or reusable authority.
+				w.Header().Set("Cache-Control", "no-store")
+				w.WriteHeader(http.StatusNoContent)
+			})
+		}
+		if config.IsSingleOwner(cfg.Auth) && extras.Live != nil {
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadRepository)).Get("/stack", extras.Live.Stack)
+		}
+		if config.IsSingleOwner(cfg.Auth) && workspaceTerminalHandler != nil {
+			workspaceTerminalHandler.AuthorizeTerminal = routes.InstallBranchAuthorizer(queries)
+			r.With(middleware.RequireAuth, middleware.WorkspaceTerminalOpenRateLimitWithObserver(queries, cfg.RateLimit.TerminalOpenPerMin, rateLimitRejectObserver)).Post("/terminals", workspaceTerminalHandler.OpenTerminal)
+			r.With(middleware.RequireAuth).Post("/terminals/{id}/commands", workspaceTerminalHandler.PersonCommand)
+		}
+		if config.IsSingleOwner(cfg.Auth) && extras.Mythical != nil {
+			service, _ := extras.Mythical.Service.(routes.TodoRouteService)
+			todos := &routes.TodoHandler{Queries: queries, Service: service}
+			if workspaceTerminalHandler != nil {
+				workspaceTerminalHandler.PersonAppend = memberCommands(queries, confirmations)(http.HandlerFunc(todos.Create))
+			}
+			mountTodoReads(r, todos)
+			r.Post("/todos", todos.Create)
+			r.Post("/todos/{n}", todos.Control)
+			r.Patch("/todos/{n}", todos.Amend)
+			r.Post("/todos/{n}/merge", todos.Merge)
+			r.Post("/todos/{n}/preapproval", todos.Preapprove)
+			r.Delete("/todos/{n}/preapproval", todos.Unapprove)
+			r.Post("/todos/{n}/answer", todos.Answer)
+			proposals, _ := extras.Mythical.Service.(routes.LearningProposalRoutes)
+			handler := &routes.LearningProposalsHandler{Queries: queries, Service: proposals}
+			r.Get("/proposals", handler.List)
+			r.Post("/proposals/{id}/accept", handler.Accept)
+			r.Post("/proposals/{id}/dismiss", handler.Dismiss)
+			// The issue list card and the issue card read the install
+			// repository's GitHub issues through the install's App.
+			issueService, _ := extras.Mythical.Service.(routes.InstallIssueRouteService)
+			issues := &routes.InstallIssuesHandler{Queries: queries, Service: issueService}
+			r.Get("/issues", issues.List)
+			r.Post("/issues", issues.Create)
+			r.Get("/issues/requests/{id}", issues.CreateStatus)
+			r.Get("/issues/{n}", issues.Get)
+			r.Post("/issues/{number}/comments", issues.Comment)
+			// The remaining ordinary issue acts, on the same durable writer as
+			// the create and the comment above. Close and reopen are separate
+			// doors so the act a request is authorized for is the act that
+			// reaches GitHub; the comment edit is keyed by comment id, as the
+			// hosted comment door is.
+			r.Post("/issues/{number}/close", issues.Close)
+			r.Post("/issues/{number}/reopen", issues.Reopen)
+			r.Patch("/issues/comments/{id}", issues.EditComment)
+			// One transition the install repository's own committed
+			// declaration names (#4067, M-47). The install client already
+			// addresses this door; it rides the same durable writer and the
+			// same `issues.transition` authority the repo-scoped door uses.
+			r.Post("/issues/{number}/transitions/{id}", issues.Transition)
+			reviewService, _ := extras.Mythical.Service.(routes.InstallReviewRouteService)
+			reviews := &routes.InstallReviewHandler{Queries: queries, Service: reviewService}
+			r.Post("/reviews", reviews.Request)
+			r.Get("/reviews/{id}", reviews.Get)
+		}
+		if config.IsSingleOwner(cfg.Auth) {
+			routes.RegisterConfirmationRoutes(r, &routes.ConfirmationsHandler{Queries: queries, Service: confirmations})
+		}
+		if config.IsSingleOwner(cfg.Auth) && secretHandler != nil {
+			boundSecret := installSecretRepository(queries)
+			r.With(boundSecret, gateSecrets).Get("/secrets", secretHandler.ListSecrets)
+			r.With(boundSecret, gateSecrets).Put("/secrets", secretHandler.SetSecret)
+			r.With(boundSecret, gateSecrets).Post("/secrets", secretHandler.SetSecret)
+			r.With(boundSecret, gateSecrets).Patch("/secrets/{name}", secretHandler.SetSecretScope)
+			r.With(boundSecret, gateSecrets).Delete("/secrets", secretHandler.DeleteSecret)
+			r.With(boundSecret, gateSecrets).Delete("/secrets/{name}", secretHandler.DeleteSecret)
+		}
+		if config.IsSingleOwner(cfg.Auth) && extras.Members != nil {
+			r.Get("/members", extras.Members.List)
+			r.Post("/members", extras.Members.Mutate)
+			r.Patch("/members/{login}", extras.Members.Mutate)
+			r.Delete("/members/{login}", extras.Members.Mutate)
+		}
+		if config.IsSingleOwner(cfg.Auth) {
+			var proposals services.FlowProposalReader
+			var edits routes.RepositoryEditService
+			if extras.Mythical != nil {
+				proposals, _ = extras.Mythical.Service.(services.FlowProposalReader)
+				edits, _ = extras.Mythical.Service.(routes.RepositoryEditService)
+			}
+			mountFlowReads(r, &routes.FlowsHandler{Queries: queries, Proposals: proposals, Runs: extras.FlowRuns, Edits: edits})
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteRepository)).Post("/runs/{id}", (&routes.HomeBackgroundHandler{Queries: queries, Service: extras.Background}).Control)
+			r.With(middleware.RequireAuth).Get("/runs/{id}/background-status", (&routes.HomeBackgroundHandler{Queries: queries, Service: extras.Background}).Status)
+			ackDelay := extras.AckDelay
+			if ackDelay == nil {
+				ackDelay = &routes.InstallAckDelayHandler{Queries: queries}
+			}
+			r.With(middleware.RequireAuth).Get("/install/ack-delay", ackDelay.ServeHTTP)
+			r.With(middleware.RequireAuth).Post("/install/ack-delay", ackDelay.ServeHTTP)
+			if smithersMetrics != nil && queries != nil {
+				h := &routes.InstallMetricsHandler{Metrics: smithersMetrics, Qualification: extras.Qualification}
+				if h.Qualification == nil {
+					h.Qualification = services.NewInstalledQualification(config.PublicOrigin(cfg))
+				}
+				if extras.GitHubAppSetup != nil && extras.GitHubAppSetup.Setup != nil {
+					h.Capacity = extras.GitHubAppSetup.Setup.Capacity
+				}
+				r.With(middleware.RequireAuth).Get("/install/metrics", h.Read)
+			}
+		}
+		// Mounted only with the shared owner-person-session authorizer.
+		if extras.InstallScorecard.Available() {
+			r.Get("/install/scorecard", extras.InstallScorecard.Summary)
+		}
+		if config.IsSingleOwner(cfg.Auth) {
+			// Any signed-in person reads the sync's health and retries it.
+			sync := &routes.GitHubSyncHandler{Service: extras.GitHubSync}
+			resetService, _ := extras.GitHubSync.(routes.MainResetRouteService)
+			reset := &routes.MainResetHandler{Queries: queries, Service: resetService}
+			var orderService routes.TodoRouteService
+			if extras.Mythical != nil {
+				orderService, _ = extras.Mythical.Service.(routes.TodoRouteService)
+			}
+			attention := &routes.StackAttentionHandler{Reset: reset, Order: &routes.TodoHandler{Queries: queries, Service: orderService}}
+			r.With(middleware.RequireAuth).Post("/stack/attention/{id}", attention.Answer)
+			r.With(middleware.RequireAuth).Get("/github/sync", sync.Status)
+			r.With(middleware.RequireAuth).Post("/github/sync", sync.Retry)
+			// The stack supplies the immutable accepted-prefix diff.
+			diff := &routes.BranchDiffHandler{}
+			if extras.Mythical != nil {
+				diff.Reader, _ = extras.Mythical.Service.(routes.BranchDiffReader)
+			}
+			r.Get("/branches/{b}/diff", diff.Diff)
+			// The branch projection and Fork, which the stack service performs.
+			branches := &routes.BranchHandler{Authorize: routes.InstallBranchAuthorizer(queries), Activity: extras.Live}
+			if workspaceHandler != nil {
+				branches.Reads, _ = workspaceHandler.Service.(routes.BranchReadService)
+				branches.Archives, _ = workspaceHandler.Service.(routes.BranchArchiveService)
+				branches.Machines, _ = workspaceHandler.Service.(routes.BranchMachineControl)
+				branches.Files, _ = workspaceHandler.Service.(routes.BranchFileReadService)
+			}
+			if extras.Mythical != nil {
+				branches.Forks, _ = extras.Mythical.Service.(routes.BranchForkService)
+				branches.Answers, _ = extras.Mythical.Service.(routes.BranchAnswerService)
+				branches.Adds, _ = extras.Mythical.Service.(routes.BranchAddService)
+				branches.Rebases, _ = extras.Mythical.Service.(routes.BranchRebaseService)
+			}
+			routes.RegisterBranchRoutes(r, branches)
+			r.Get("/ssh", branches.SSHLine(queries, config.PublicOrigin(cfg)))
+			files := &routes.BranchFileHandler{Branches: branches.Reads, Authorize: routes.InstallBranchAuthorizer(queries)}
+			diff.Authorize = routes.InstallBranchAuthorizer(queries)
+			if workspaceHandler != nil {
+				diff.Bursts, _ = workspaceHandler.Service.(routes.BurstDiffReader)
+			}
+			files.Actor = func(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
+				topics := &liveTopics{presence: &branchPresence{queries: queries}}
+				if extras.Members != nil {
+					topics.presence.members = extras.Members.Service
+				}
+				return topics.changeActorResolver(ctx)(raw)
+			}
+			diff.Actor = files.Actor
+			if workspaceHandler != nil {
+				files.Live, _ = workspaceHandler.Service.(routes.BranchFileContentService)
+			}
+			if repoHandler != nil {
+				if repos, ok := repoHandler.Service.(*services.RepoService); ok {
+					source := services.InstallSource{Pool: pool, Repos: repos, Members: ownerBoundary}
+					files.Source = source
+					branches.Source = &source
+				}
+			}
+			// The install command decision already checks credential scope and the
+			// stored repository. This canonical route has no owner/repo URL params.
+			r.With(middleware.RequireAuth).Get("/branches/{b}/files/*", files.Read)
+			restore := &routes.FileRestoreHandler{Authorize: routes.InstallBranchAuthorizer(queries)}
+			if workspaceHandler != nil {
+				restore.Service, _ = workspaceHandler.Service.(routes.BranchFileRestorer)
+			}
+			r.With(middleware.RequireAuth).Post("/branches/{b}/files/*", restore.Restore)
+			if extras.LanguageServers != nil {
+				r.With(middleware.RequireAuth).Post("/branches/{b}/lsp", extras.LanguageServers.Open)
+			}
+		}
+		if quiesceEnabled {
+			h := &routes.InstallQuiesceHandler{Owners: queries, Service: quiesceService}
+			r.Post("/install/quiesce", h.Handle)
+			r.Delete("/install/quiesce", h.Handle)
+		}
+		if extras.GitHubAppSetup != nil {
+			r.Get("/install", extras.GitHubAppSetup.Status)
+			r.Put("/install", extras.GitHubAppSetup.SetSettings)
+			for _, step := range []string{"address", "app", "sign_in", "repository", "models", "source", "machine"} {
+				r.Post("/install/setup/"+step, extras.GitHubAppSetup.Step)
+			}
+		}
+		if extras.Recommender != nil {
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/commands/select", extras.Recommender.Select)
+		}
+		if extras.ModelStream != nil {
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/model/stream", extras.ModelStream.ServeHTTP)
+		}
+
+		if strings.EqualFold(os.Getenv("SMITHERS_ENABLE_E2E_TEST_ROUTES"), "true") {
+			r.Get("/_test/panic", routes.MiddlewarePanic)
+			r.With(middleware.JSONTimeout(25*time.Millisecond)).Get("/_test/timeout", routes.MiddlewareTimeout)
+			r.With(middleware.JSONTimeout(25*time.Millisecond)).Get("/_test/timeout-ignore-context", routes.MiddlewareTimeoutIgnoreContext)
+			r.Delete("/_test/search-rate-limits", routes.ResetSearchRateLimits(queries))
+			r.Delete("/_test/auth-rate-limits", routes.ResetAuthRateLimits(queries))
+			if notificationHandler != nil {
+				if createService, ok := notificationHandler.Service.(routes.NotificationCreateService); ok {
+					r.Group(func(r chi.Router) {
+						r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).
+							Post("/_test/notifications", routes.CreateTestNotification(createService))
+					})
+				}
+			}
+		}
+
+		// Public telemetry: 10/min per IP; trusted Worker exports: separate 120/min.
+		// Gated on feature_flags.client_error_reporting so operators can disable
+		// ingestion entirely; the gate runs before the rate limiter so a
+		// disabled flag short-circuits before any rate-limit store writes,
+		// logging, or metrics.
+		if telemetryHandler != nil {
+			r.With(gateTelemetry, middleware.SharedBearerAwareTelemetryRateLimit(queries, cfg.Auth.WorkerExchangeToken)).Post("/telemetry/errors", telemetryHandler.PostClientError)
+		}
+
+		// Feature flags endpoint: no auth required, public.
+		if featureFlagHandler != nil {
+			r.Get("/feature-flags", featureFlagHandler.GetFeatureFlags)
+		}
+
+		// Wallet/key auth is an account-provisioning surface. A self-hosted
+		// installation has one persisted owner and must not expose a second
+		// signup path, even when a carried-over config enables key auth.
+		if cfg.Auth.EnableKeyAuth && !config.IsSingleOwner(cfg.Auth) {
+			r.With(middleware.AuthRateLimit(queries)).Get("/auth/key/nonce", authHandler.GetKeyAuthNonce)
+			r.With(middleware.AuthRateLimit(queries)).Post("/auth/key/verify", authHandler.PostKeyAuthVerify)
+			r.With(middleware.AuthRateLimit(queries)).Post("/auth/key/token", authHandler.PostKeyAuthToken)
+		}
+
+		// Direct GitHub App OAuth (browser sign-in / connect + CLI login).
+		// These interactive routes use the looser "auth_interactive" scope
+		// (20/min per IP): one sign-in attempt burns two tokens (start +
+		// callback), so the strict 5/min "auth" scope locked out users who
+		// retried a few times within a minute.
+		if config.IsSingleOwner(cfg.Auth) {
+			r.Get("/auth/session", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Cache-Control", "no-store")
+				if middleware.UserFromContext(r.Context()) == nil {
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write([]byte("null\n"))
+					return
+				}
+				middleware.RequireScope(middleware.ScopeReadUser)(http.HandlerFunc(userHandler.GetAuthenticatedUser)).ServeHTTP(w, r)
+			})
+		}
+		r.With(middleware.InteractiveAuthRateLimit(queries)).Get("/auth/github", authHandler.GetGitHubOAuthStart)
+		r.With(installCredentialIssuer(cfg.Auth, queries, authHandler), middleware.InteractiveAuthRateLimit(queries)).Get("/auth/github/cli", authHandler.GetGitHubOAuthCLIStart)
+		r.With(installCredentialIssuer(cfg.Auth, queries, authHandler), middleware.InteractiveAuthRateLimit(queries)).Get("/auth/github/callback", authHandler.GetGitHubOAuthCallback)
+		r.With(middleware.InteractiveAuthRateLimit(queries)).Get("/auth/auth0/authorize", authHandler.GetAuth0Authorize)
+		r.With(middleware.InteractiveAuthRateLimit(queries)).Get("/auth/auth0/callback", authHandler.GetAuth0Callback)
+		// Worker-only GitHub-token → Plue-token exchange. Guarded by a shared
+		// bearer secret (fails closed when SMITHERS_AUTH_WORKER_EXCHANGE_TOKEN
+		// is unset). CSRF is not a concern: the request is anonymous (no
+		// session cookie → no AuthInfo user), so the CSRF middleware exempts it.
+		// Rate limit is shared-bearer-aware: requests carrying the correct
+		// Worker token get a dedicated generous "auth_worker" bucket (120/min)
+		// — all Worker logins funnel through a few shared CF egress IPs and
+		// were starving in the anonymous 5/min "auth" bucket — while everyone
+		// else stays in the strict "auth" bucket. RequireSharedBearerToken
+		// after it remains the real auth gate.
+		r.With(
+			installCredentialIssuer(cfg.Auth, queries, authHandler),
+			middleware.SharedBearerAwareAuthRateLimit(queries, cfg.Auth.WorkerExchangeToken, 120, time.Minute),
+			middleware.RequireSharedBearerToken(cfg.Auth.WorkerExchangeToken),
+		).Post("/auth/github/token-exchange", authHandler.PostGitHubTokenExchange)
+		issueSSETicket := []func(http.Handler) http.Handler{
+			middleware.RequireAuth,
+			middleware.SSETicketRateLimit(queries),
+		}
+		if sseTicketHandler != nil {
+			r.With(issueSSETicket...).Post("/auth/sse-ticket", sseTicketHandler.PostSSETicket)
+			r.With(issueSSETicket...).Post("/v1/sse/ticket", sseTicketHandler.PostSSETicket)
+		}
+		r.Post("/auth/logout", authHandler.PostLogout)
+
+		// OAuth2 provider endpoints.
+		if oauth2Handler != nil {
+			// Token exchange and revocation are public (client authenticates via client_id/secret).
+			r.With(middleware.AuthRateLimit(queries)).Post("/oauth2/token", oauth2Handler.PostToken)
+			r.With(middleware.AuthRateLimit(queries)).Post("/oauth2/revoke", oauth2Handler.PostRevoke)
+			// Browser-native authorize endpoint (ticket 0106).
+			//
+			// Trust boundary: the endpoint is PUBLIC (no RequireAuth). A
+			// mobile browser / ASWebAuthenticationSession cannot meet a
+			// RequireAuth precondition on the FIRST request — it has no
+			// Smithers session yet. The handler itself:
+			//   1) validates client_id + redirect_uri against the
+			//      registered OAuth2 client (rejecting invalid values
+			//      BEFORE any redirect, per RFC 6749 §4.1.2.1),
+			//   2) enforces PKCE S256 up front (RFC 7636 + RFC 8252 §6),
+			//   3) enforces the state param (anti-CSRF, RFC 8252 §8.9),
+			//   4) detours unauthenticated users through the upstream
+			//      IdP (the GitHub App OAuth flow) to establish a session.
+			// Rate-limited via AuthRateLimit to deter authorize-endpoint
+			// abuse (enumeration of client_ids, PKCE oracle attempts).
+			//
+			// GET renders the CSRF-bound consent page for browser sessions
+			// (and issues codes directly for CSRF-immune token-auth / E2E
+			// dev callers); POST is the consent decision that actually
+			// mints the code for browser sessions.
+			r.With(middleware.AuthRateLimit(queries)).Get("/oauth2/authorize", oauth2Handler.GetAuthorize)
+			r.With(middleware.AuthRateLimit(queries)).Post("/oauth2/authorize", oauth2Handler.PostAuthorizeDecision)
+		}
+
+		r.Group(func(r chi.Router) {
+			if config.IsSingleOwner(cfg.Auth) {
+				r.Use(middleware.RequireAuth)
+			}
+			r.Get("/users/{username}", userHandler.GetUserByUsername)
+			r.Get("/users/{username}/activity", userHandler.GetUserActivityByUsername)
+			r.Get("/users/{username}/repos", userHandler.GetUserReposByUsername)
+		})
+
+		if billingHandler != nil {
+			if extras.BillingCapabilities.Overview {
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser)).Get("/billing/balance", billingHandler.GetUserBalance)
+			}
+			if extras.BillingCapabilities.Overview {
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser)).Get("/billing", billingHandler.GetUserBilling)
+			}
+			if extras.BillingCapabilities.Plans {
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser)).Get("/billing/plans", billingHandler.GetUserPlans)
+			}
+			if extras.BillingCapabilities.Checkout {
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/billing/checkout", billingHandler.PostUserCheckout)
+			}
+			if extras.BillingCapabilities.Portal {
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/billing/portal", billingHandler.PostUserPortal)
+			}
+			if extras.BillingCapabilities.Overview {
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/billing/refresh", billingHandler.PostUserRefresh)
+			}
+			if extras.BillingCapabilities.Overview {
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadOrganization)).Get("/orgs/{org}/billing", billingHandler.GetOrgBilling)
+			}
+			if extras.BillingCapabilities.Checkout {
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteOrganization)).Post("/orgs/{org}/billing/checkout", billingHandler.PostOrgCheckout)
+			}
+			if extras.BillingCapabilities.Portal {
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteOrganization)).Post("/orgs/{org}/billing/portal", billingHandler.PostOrgPortal)
+			}
+			if extras.BillingCapabilities.Overview {
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteOrganization)).Post("/orgs/{org}/billing/refresh", billingHandler.PostOrgRefresh)
+			}
+		}
+
+		r.Route("/integrations", func(r chi.Router) {
+			r.With(middleware.RequireAuth).Get("/mcp", integrationsHandler.GetMCPIntegrations)
+			r.With(middleware.RequireAuth).Get("/skills", integrationsHandler.GetSkills)
+		})
+
+		// Dual-auth write group: accepts both token auth (Authorization: token) and session
+		// auth (smithers_session cookie). The default /api CSRF middleware protects
+		// session-authenticated state-changing requests. RequireAuth + RequireScope
+		// enforce authentication and permission gating.
+		r.Group(func(r chi.Router) {
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteRepository), userConnectedReposQuota).Post("/repo-connection", repoHandler.ConnectRepo)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteRepository)).Delete("/repo-connection", repoHandler.DisconnectRepo)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadRepository)).Get("/repo-connection", repoHandler.RepoConnectionStatus)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadRepository), middleware.LoadRepoContext(queries), middleware.RequireRepoPermission(middleware.PermissionRead)).Get("/repos/{owner}/{repo}/github-app-status", repoHandler.GitHubAppStatus)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser)).Get("/user", userHandler.GetAuthenticatedUser)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Patch("/user", userHandler.PatchAuthenticatedUser)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadRepository)).Get("/user/workflow-runs/active-count", workflowRunCountHandler.GetActiveWorkflowRunCount)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteRepository)).Post("/user/repos", repoHandler.CreateRepo)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteOrganization)).Post("/orgs/{org}/repos", repoHandler.CreateOrgRepo)
+
+			r.Route("/repos/{owner}/{repo}", func(r chi.Router) {
+				// A merge's credential is refused before the repository is
+				// resolved, as the numbered door refuses it.
+				r.Use(routes.MergeCredentialFirst)
+				if queries != nil {
+					r.Use(middleware.LoadRepoContext(queries))
+				}
+
+				readRepo := []func(http.Handler) http.Handler{
+					middleware.RequireAuth,
+					middleware.RequireScope(middleware.ScopeReadRepository),
+				}
+				writeRepo := []func(http.Handler) http.Handler{
+					middleware.RequireAuth,
+					middleware.RequireScope(middleware.ScopeWriteRepository),
+				}
+				adminRepo := []func(http.Handler) http.Handler{
+					middleware.RequireAuth,
+					middleware.RequireScope(middleware.ScopeWriteRepository),
+				}
+				ownerRepo := []func(http.Handler) http.Handler{
+					middleware.RequireAuth,
+					middleware.RequireScope(middleware.ScopeWriteRepository),
+				}
+				if queries != nil {
+					readRepo = append(readRepo, middleware.RequireRepoPermission(middleware.PermissionRead))
+					writeRepo = append(writeRepo, middleware.RequireRepoPermission(middleware.PermissionWrite))
+					adminRepo = append(adminRepo, middleware.RequireRepoPermission(middleware.PermissionAdmin))
+					ownerRepo = append(ownerRepo, middleware.RequireRepoPermission(middleware.PermissionOwner))
+				}
+				// Owner-only policy changes require an unrestricted account token.
+				ownerRepo = append(ownerRepo, middleware.RejectRepositoryRestrictedToken)
+				readRepo = append(readRepo, repoAPIQuota)
+				writeRepo = append(writeRepo, repoAPIQuota)
+				adminRepo = append(adminRepo, repoAPIQuota)
+				ownerRepo = append(ownerRepo, repoAPIQuota)
+
+				// Ticket 0154: mount repo-scoped devtools snapshot HTTP routes.
+				// Keep the route tree static; the handler enforces feature-flag
+				// gating (404 when disabled) via the resolved config flag, which
+				// defaults to false when SMITHERS_DEVTOOLS_SNAPSHOT_ENABLED is unset.
+				if queries != nil {
+					devtoolsSnapshotWriteRepo := append([]func(http.Handler) http.Handler{}, writeRepo...)
+					devtoolsSnapshotWriteRepo = append(
+						devtoolsSnapshotWriteRepo,
+						middleware.DevtoolsSnapshotPostRateLimit(queries, 0),
+					)
+					var installPools []*pgxpool.Pool
+					if config.IsSingleOwner(cfg.Auth) {
+						installPools = []*pgxpool.Pool{pool}
+					}
+					routes.RegisterDevtoolsSnapshotRoutes(r, queries, readRepo, devtoolsSnapshotWriteRepo, cfg.FeatureFlags.DevtoolsSnapshotEnabled, installPools...)
+				}
+
+				r.With(writeRepo...).Patch("/", repoHandler.PatchRepo)
+				r.With(writeRepo...).Put("/topics", repoHandler.ReplaceRepoTopics)
+				r.With(adminRepo...).Delete("/", repoHandler.DeleteRepo)
+				r.With(adminRepo...).Post("/archive", repoHandler.ArchiveRepo)
+				r.With(adminRepo...).Post("/unarchive", repoHandler.UnarchiveRepo)
+
+				// Repo sync routes: registered inside the repo-scoped group so
+				// LoadRepoContext + RequireRepoPermission(write) gate access to the
+				// specific {owner}/{repo}. (Previously these were registered outside
+				// this group, allowing any authenticated user with write scope to
+				// trigger a sync of ANY repo — an IDOR.)
+				r.With(writeRepo...).Post("/sync", repoHandler.SyncRepo)
+				r.With(writeRepo...).Post("/mirror-sync", mirrorSyncHandler.MirrorSync)
+				r.With(readRepo...).Get("/mirror-sync/{run_id}", mirrorSyncHandler.GetMirrorSyncRun)
+				r.With(writeRepo...).Post("/github/reconcile", mirrorSyncHandler.ReconcileGitHub)
+				r.With(writeRepo...).Post("/github/mirror/refs/{ref}/retry", mirrorSyncHandler.RetryMirrorRef)
+				if !config.IsSingleOwner(cfg.Auth) && mirrorSyncHandler != nil && mirrorSyncHandler.MainPull != nil {
+					r.With(writeRepo...).Post("/github/main-pull", mirrorSyncHandler.MainPull.RequestMainPull)
+					r.With(readRepo...).Get("/github/main-pull", mirrorSyncHandler.MainPull.GetMainPull)
+				}
+				// The repository's OWN GitHub issue tracker, written through
+				// the shared durable issue writer. `/issues` beside it stays
+				// Smithers Cloud's own tracker: the two number independently,
+				// so each door names which one it means and no act crosses.
+				// Each write needs the ordinary repository WRITE permission
+				// here AND, on the worker, the actor's own GitHub write
+				// authority over that repository.
+				githubIssueWriter, writesGitHubIssues := routes.HostedGitHubIssueWriter(nil), false
+				if extras.Mythical != nil {
+					githubIssueWriter, writesGitHubIssues = extras.Mythical.Service.(routes.HostedGitHubIssueWriter)
+				}
+				if writesGitHubIssues {
+					hostedIssues := &routes.HostedGitHubIssuesHandler{Service: githubIssueWriter}
+					r.With(writeRepo...).Post("/github/issues", hostedIssues.Create)
+					r.With(writeRepo...).Post("/github/issues/{number}/comments", hostedIssues.Comment)
+					r.With(writeRepo...).Post("/github/issues/{number}/close", hostedIssues.Close)
+					r.With(writeRepo...).Post("/github/issues/{number}/reopen", hostedIssues.Reopen)
+					r.With(writeRepo...).Patch("/github/issues/comments/{id}", hostedIssues.EditComment)
+					// One declared transition (M-47): the repository's own
+					// committed declaration decides which labels move and
+					// whether a person has to make it. The door carries no
+					// body, so a request can name neither.
+					r.With(writeRepo...).Post("/github/issues/{number}/transitions/{id}", hostedIssues.Transition)
+					r.With(readRepo...).Get("/github/issues/requests/{id}", hostedIssues.Request)
+				}
+				// The mythical stack: its snapshot, and the admin's bootstrap
+				// request. The event stream is mounted outside the JSON timeout.
+				if extras.Mythical != nil {
+					r.With(append(readRepo, middleware.ResolveConversationWithheld(outsiderWorkspaces))...).Get("/mythical", extras.Mythical.GetStack)
+					r.With(append(readRepo, withholdConversation)...).Get("/mythical/items/{ref}", extras.Mythical.GetItem)
+					r.With(adminRepo...).Post("/mythical/bootstrap", extras.Mythical.Bootstrap)
+					r.With(writeRepo...).Post("/mythical/items/{id}/merge", extras.Mythical.Merge)
+					r.With(writeRepo...).Put("/mythical/lanes", extras.Mythical.Lanes)
+					r.With(writeRepo...).Post("/mythical/wiki", extras.Mythical.Wiki)
+				}
+
+				// A user's own pushed refs (smithers repo push).
+				if extras.UserRefs != nil {
+					userRefRead := writeRepo
+					if config.IsSingleOwner(cfg.Auth) {
+						userRefRead = readRepo
+					}
+					r.With(userRefRead...).Get("/user-refs", extras.UserRefs.List)
+					r.With(writeRepo...).Post("/user-refs/renew", extras.UserRefs.Renew)
+				}
+
+				// Required checks trust a commit status. The platform's own CI
+				// records its statuses on the server; a run credential cannot
+				// report one, or an agent could pass its own required checks.
+				r.With(append(append([]func(http.Handler) http.Handler{}, writeRepo...), middleware.RefuseRunCredentials)...).Post("/statuses/{sha}", commitStatusHandler.CreateCommitStatus)
+
+				// jj VCS write routes: bookmarks and generated change artifacts.
+				r.With(writeRepo...).Post("/bookmarks", jjVCSHandler.CreateBookmark)
+				r.With(writeRepo...).Delete("/bookmarks/{name}", jjVCSHandler.DeleteBookmark)
+				r.With(writeRepo...).Post("/changes/{change_id}/revert", jjVCSHandler.RevertChange)
+				r.With(writeRepo...).Put("/changes/{change_id}/walkthrough", jjVCSHandler.PutChangeWalkthrough)
+				if stackHandler != nil {
+					r.With(append(writeRepo, repoStackQuota)...).Post("/stacks/active", stackHandler.UpsertActiveStack)
+					r.With(writeRepo...).Delete("/stacks/active", stackHandler.DeleteActiveStack)
+				}
+				if gitHubProxyHandler != nil {
+					r.With(append(writeRepo, middleware.ResolveConversationWithheld(outsiderWorkspaces))...).Post("/github-proxy", gitHubProxyHandler.PostRepoGitHubProxy)
+				}
+
+				r.With(append(writeRepo, repoStackQuota)...).Post("/landings", landingHandler.CreateLandingRequest)
+				r.With(append(writeRepo, repoStackQuota)...).Put("/landings/requests/{request_uuid}", landingHandler.PutLandingRequest)
+				r.With(writeRepo...).Post("/landings/append/prepare", landingHandler.PrepareLandingAppend)
+				r.With(writeRepo...).Patch("/landings/{number}", landingHandler.PatchLandingRequest)
+				if !config.IsSingleOwner(cfg.Auth) {
+					r.With(writeRepo...).Put("/landings/{number}/land", landingHandler.LandLandingRequest)
+				}
+				r.With(writeRepo...).Put("/landings/{number}/land/append", landingHandler.AppendLandingRequest)
+				r.With(writeRepo...).Put("/landings/{number}/github/pull", landingHandler.OpenLandingGitHubPull)
+				r.With(writeRepo...).Post("/landings/{number}/auto-land", landingHandler.SetLandingRequestAutoLand)
+				r.With(writeRepo...).Delete("/landings/{number}/auto-land", landingHandler.ClearLandingRequestAutoLand)
+				r.With(writeRepo...).Post("/landings/{number}/review-requests", landingHandler.RequestLandingReview)
+				r.With(writeRepo...).Delete("/landings/{number}/review-requests/{id}", landingHandler.DeleteLandingReviewRequest)
+				r.With(writeRepo...).Post("/landings/{number}/reviews", landingHandler.PostLandingReview)
+				r.With(writeRepo...).Patch("/landings/{number}/reviews/{review_id}", landingHandler.DismissLandingReview)
+				r.With(writeRepo...).Post("/landings/{number}/comments", landingHandler.PostLandingComment)
+				r.With(writeRepo...).Post("/landings/{number}/threads/{id}/done", landingHandler.MarkLandingThreadDone)
+				r.With(writeRepo...).Post("/landings/{number}/threads/{id}/ack", landingHandler.AckLandingThread)
+				r.With(writeRepo...).Post("/landings/{number}/threads/{id}/reopen", landingHandler.ReopenLandingThread)
+
+				// Ticket 12: Issue routes — gated by feature_flags.issues.
+				r.With(append(writeRepo, gateIssues)...).Post("/issues", issueHandler.CreateIssue)
+				r.With(append(writeRepo, gateIssues)...).Put("/issues/{number}/comments/{comment}/reactions", issueHandler.IssueReaction)
+				r.With(append(readRepo, gateIssues)...).Get("/issues/{number}/comments/{comment}/reactions", issueHandler.IssueReaction)
+
+				r.With(append(writeRepo, gateIssues)...).Patch("/issues/{number}", issueHandler.PatchIssue)
+				r.With(append(writeRepo, gateIssues)...).Post("/issues/{number}/comments", issueHandler.PostIssueComment)
+				r.With(append(writeRepo, gateIssues)...).Patch("/issues/comments/{id}", issueHandler.PatchIssueComment)
+				r.With(append(writeRepo, gateIssues)...).Delete("/issues/comments/{id}", issueHandler.DeleteIssueComment)
+
+				// Ticket 12: Wiki routes — gated by feature_flags.wiki.
+				if wikiService != nil {
+					r.With(append(writeRepo, gateWiki)...).Post("/wiki", routes.CreateWikiPage(wikiService))
+					if collaborative, ok := wikiService.(routes.WikiCollaborationService); ok {
+						handler := &routes.WikiCollaborationHandler{Service: collaborative}
+						r.With(append(readRepo, gateWiki)...).Get("/wiki/{slug}/document", handler.Document)
+					}
+					r.With(append(writeRepo, gateWiki)...).Patch("/wiki/{slug}", routes.UpdateWikiPage(wikiService))
+					r.With(append(writeRepo, gateWiki)...).Delete("/wiki/{slug}", routes.DeleteWikiPage(wikiService))
+				}
+
+				// Ticket 12: Label routes — gated by feature_flags.labels.
+				// /issues/{number}/labels intentionally takes the labels gate
+				// (not the issues gate) so labels can be disabled
+				// independently of issues.
+				r.With(append(writeRepo, gateLabels)...).Post("/labels", labelHandler.PostRepoLabel)
+				r.With(append(writeRepo, gateLabels)...).Patch("/labels/{id}", labelHandler.PatchRepoLabel)
+				r.With(append(writeRepo, gateLabels)...).Delete("/labels/{id}", labelHandler.DeleteRepoLabel)
+				r.With(append(writeRepo, gateLabels)...).Post("/issues/{number}/labels", labelHandler.PostIssueLabels)
+				r.With(append(writeRepo, gateLabels)...).Delete("/issues/{number}/labels/{name}", labelHandler.DeleteIssueLabel)
+
+				if lfsHandler != nil {
+					// LFS batch handles both upload and download. LFSService.Batch
+					// enforces repository and token scope access for each operation.
+					// /objects/batch is the canonical Git LFS Batch API path. Keep
+					// /batch as a compatibility alias for existing direct API users.
+					// Batch itself selects read vs write authorization from the
+					// operation. Keeping it out of readRepo permits anonymous downloads
+					// from public repositories while the service still rejects private
+					// reads and enforces write access for uploads.
+					r.Post("/lfs/batch", lfsHandler.PostBatch)
+					r.With(writeRepo...).Post("/lfs/confirm", lfsHandler.PostConfirm)
+					r.With(writeRepo...).Delete("/lfs/objects/{oid}", lfsHandler.DeleteObject)
+				}
+
+				// A repository's egress allowlist is its owner's alone (#2653).
+				if extras.EgressPolicy != nil {
+					r.With(ownerRepo...).Get("/egress-policy", extras.EgressPolicy.GetEgressPolicy)
+					r.With(ownerRepo...).Patch("/egress-policy", extras.EgressPolicy.PatchEgressPolicy)
+				}
+
+				// Deploy keys: per-repository SSH deploy keys.
+				r.With(readRepo...).Get("/keys", deployKeyHandler.ListDeployKeys)
+				r.With(adminRepo...).Post("/keys", deployKeyHandler.CreateDeployKey)
+				r.With(adminRepo...).Delete("/keys/{id}", deployKeyHandler.DeleteDeployKey)
+
+				// Ticket 12: per-repo webhook management — gated by feature_flags.webhooks_user.
+				if webhookHandler != nil {
+					r.With(append(adminRepo, gateWebhooksUser)...).Get("/hooks", webhookHandler.ListWebhooks)
+					r.With(append(adminRepo, gateWebhooksUser)...).Post("/hooks", webhookHandler.CreateWebhook)
+					r.With(append(adminRepo, gateWebhooksUser)...).Get("/hooks/{id}", webhookHandler.GetWebhook)
+					r.With(append(adminRepo, gateWebhooksUser)...).Patch("/hooks/{id}", webhookHandler.UpdateWebhook)
+					r.With(append(adminRepo, gateWebhooksUser)...).Delete("/hooks/{id}", webhookHandler.DeleteWebhook)
+					r.With(append(adminRepo, gateWebhooksUser)...).Post("/hooks/{id}/tests", webhookHandler.TestWebhook)
+					r.With(append(adminRepo, gateWebhooksUser)...).Get("/hooks/{id}/deliveries", webhookHandler.ListWebhookDeliveries)
+					r.With(append(adminRepo, gateWebhooksUser)...).Post("/hooks/{id}/deliveries/{delivery_id}/redeliver", webhookHandler.RedeliverWebhookDelivery)
+				}
+
+				// Ticket 12: per-repo secrets — gated by feature_flags.secrets.
+				if secretHandler != nil {
+					r.With(append(writeRepo, gateSecrets)...).Get("/secrets", secretHandler.ListSecrets)
+					r.With(append(adminRepo, gateSecrets)...).Post("/secrets", secretHandler.SetSecret)
+					r.With(append(adminRepo, gateSecrets)...).Patch("/secrets/{name}", secretHandler.SetSecretScope)
+					r.With(append(adminRepo, gateSecrets)...).Delete("/secrets/{name}", secretHandler.DeleteSecret)
+					// Agent workspace environment secrets are a distinct setup-only
+					// resource and never enter the long-lived agent environment.
+					r.With(writeRepo...).Get("/agent-environment", secretHandler.GetAgentEnvironment)
+					r.With(adminRepo...).Put("/agent-environment", secretHandler.PutAgentEnvironment)
+					r.With(adminRepo...).Put("/agent-environment/secrets/{name}", secretHandler.PutAgentEnvironmentSecret)
+					r.With(adminRepo...).Delete("/agent-environment/secrets/{name}", secretHandler.DeleteAgentEnvironmentSecret)
+				}
+
+				if variableHandler != nil {
+					r.With(writeRepo...).Get("/variables", variableHandler.ListVariables)
+					r.With(writeRepo...).Get("/variables/{name}", variableHandler.GetVariable)
+					r.With(writeRepo...).Post("/variables", variableHandler.SetVariable)
+					r.With(writeRepo...).Delete("/variables/{name}", variableHandler.DeleteVariable)
+				}
+
+				if protectedBookmarkHandler != nil {
+					r.With(append(adminRepo, gateProtectedBookmarks)...).Get("/protected-bookmarks", protectedBookmarkHandler.ListProtectedBookmarks)
+					r.With(append(adminRepo, gateProtectedBookmarks)...).Post("/protected-bookmarks", protectedBookmarkHandler.UpsertProtectedBookmark)
+					r.With(append(adminRepo, gateProtectedBookmarks)...).Delete("/protected-bookmarks/{pattern:.*}", protectedBookmarkHandler.DeleteProtectedBookmark)
+				}
+
+				// Workflow dispatch (manual trigger) — requires write access.
+				if repositoryJobHandler != nil {
+					r.With(append(append([]func(http.Handler) http.Handler{}, readRepo...), gateWorkflows)...).Get("/repository-source", repositoryJobHandler.GetRepositorySource)
+					r.With(append(append([]func(http.Handler) http.Handler{}, writeRepo...), gateWorkflows)...).Post("/repository-source/retain", repositoryJobHandler.RetainRepositorySource)
+					if !config.IsSingleOwner(cfg.Auth) {
+						r.With(append(append([]func(http.Handler) http.Handler{}, readRepo...), gateWorkflows)...).Get("/repository-jobs", repositoryJobHandler.GetRepositoryJobs)
+						r.With(append(append([]func(http.Handler) http.Handler{}, readRepo...), gateWorkflows)...).Get("/repository-jobs/{job}/dispatches", repositoryJobHandler.GetRepositoryJobDispatches)
+						r.With(append(append([]func(http.Handler) http.Handler{}, writeRepo...), middleware.RefuseRunCredentials, gateWorkflows)...).Post("/repository-jobs/{job}/pause", repositoryJobHandler.PauseRepositoryJob)
+						r.With(append(append([]func(http.Handler) http.Handler{}, readRepo...), middleware.RequireMatchingRepositoryRestriction, gateWorkflows)...).Get("/repository-jobs/{job}/approvals", repositoryJobHandler.GetRepositoryJobApprovals)
+						// No workspace, agent or other system-issued credential may
+						// stamp the human approval whose authority it later consumes.
+						r.With(append(append([]func(http.Handler) http.Handler{}, writeRepo...), middleware.RejectRepositoryRestrictedToken, middleware.RefuseRunCredentials, gateWorkflows)...).Post("/repository-jobs/{job}/approvals", repositoryJobHandler.PostRepositoryJobApproval)
+					}
+				}
+				workflowWriteRepo := append([]func(http.Handler) http.Handler{}, writeRepo...)
+				workflowWriteRepo = append(workflowWriteRepo, gateWorkflows)
+				if workflowHandler != nil {
+					// Ticket 0153: dedicated per-user limiter on manual dispatch
+					// endpoints (both canonical ID and legacy name routes).
+					// Install callers already have the concrete catalog decision.
+					// Plue retains its person-only run controls.
+					workflowPersonRepo := append([]func(http.Handler) http.Handler{}, workflowWriteRepo...)
+					if !config.IsSingleOwner(cfg.Auth) {
+						workflowPersonRepo = append(workflowPersonRepo, middleware.RefuseRunCredentials)
+					}
+					workflowDispatchWriteRepo := append([]func(http.Handler) http.Handler{}, workflowPersonRepo...)
+					workflowDispatchWriteRepo = append(
+						workflowDispatchWriteRepo,
+						repoWorkflowQuota,
+						userWorkflowRunsQuota,
+						middleware.WorkflowDispatchRateLimit(queries, 0),
+					)
+					r.With(workflowDispatchWriteRepo...).Post("/workflows/{name}/dispatch", workflowHandler.DispatchWorkflowByIdentifier)
+					r.With(workflowDispatchWriteRepo...).Post("/workflows/{id}/dispatches", workflowHandler.DispatchWorkflow)
+					// Durable repo-file flow invocation (smithersai/ui#7): one
+					// sandbox-plane run per call, started by a person's
+					// write-scoped session or token.
+					r.With(workflowDispatchWriteRepo...).Post("/invoke", workflowHandler.InvokeWorkflow)
+					r.With(workflowPersonRepo...).Post("/workflows/runs/{id}/cancel", workflowHandler.CancelWorkflowRun)
+					r.With(workflowPersonRepo...).Post("/workflows/runs/{id}/rerun", workflowHandler.RerunWorkflowRun)
+					r.With(workflowPersonRepo...).Post("/workflows/runs/{id}/resume", workflowHandler.ResumeWorkflowRun)
+					r.With(workflowPersonRepo...).Post("/actions/runs/{id}/cancel", workflowHandler.CancelWorkflowRun)
+					r.With(workflowPersonRepo...).Post("/actions/runs/{id}/rerun", workflowHandler.RerunWorkflowRun)
+					// Ticket 0111: canonical `/runs/{id}/...` client surface.
+					// Aliases the existing `/workflows/runs/...` and
+					// `/actions/runs/...` paths at the same handlers — no new
+					// semantics; just one naming clients can standardize on.
+					r.With(workflowPersonRepo...).Post("/runs/{id}/cancel", workflowHandler.CancelWorkflowRun)
+					r.With(workflowPersonRepo...).Post("/runs/{id}/rerun", workflowHandler.RerunWorkflowRun)
+					r.With(workflowPersonRepo...).Post("/runs/{id}/resume", workflowHandler.ResumeWorkflowRun)
+				}
+				if workflowCacheHandler != nil {
+					// Clearing every cache belongs to a person, not a run.
+					r.With(append(append([]func(http.Handler) http.Handler{}, workflowWriteRepo...), middleware.RefuseRunCredentials)...).Delete("/caches", workflowCacheHandler.ClearCaches)
+				}
+
+				// Workflow artifact routes.
+				if workflowArtifactHandler != nil {
+					workflowReadRepo := append([]func(http.Handler) http.Handler{}, readRepo...)
+					workflowReadRepo = append(workflowReadRepo, gateWorkflows)
+					r.With(workflowWriteRepo...).Delete("/actions/runs/{id}/artifacts/{name}", workflowArtifactHandler.DeleteArtifact)
+					r.With(workflowWriteRepo...).Delete("/workflow/runs/{id}/artifacts/{name}", workflowArtifactHandler.DeleteArtifact)
+					r.With(workflowReadRepo...).Get("/actions/runs/{id}/artifacts", workflowArtifactHandler.ListArtifacts)
+					r.With(workflowReadRepo...).Get("/actions/runs/{id}/artifacts/{name}/download", workflowArtifactHandler.GetDownloadURL)
+					r.With(workflowReadRepo...).Get("/workflow/runs/{id}/artifacts", workflowArtifactHandler.ListArtifacts)
+					r.With(workflowReadRepo...).Get("/workflow/runs/{id}/artifacts/{name}", workflowArtifactHandler.GetDownloadURL)
+					// Canonical `/runs/{id}/...` aliases (ticket 0111).
+					r.With(workflowReadRepo...).Get("/runs/{id}/artifacts", workflowArtifactHandler.ListArtifacts)
+					r.With(workflowReadRepo...).Get("/runs/{id}/artifacts/{name}/download", workflowArtifactHandler.GetDownloadURL)
+				}
+
+				// Ticket 12: agent sessions / messages — gated by feature_flags.agents.
+				if agentSessionHandler != nil {
+					// Ticket 0153: dedicated per-user limiter on agent message
+					// append route.
+					agentMessageWriteRepo := append([]func(http.Handler) http.Handler{}, writeRepo...)
+					agentMessageWriteRepo = append(
+						agentMessageWriteRepo,
+						middleware.AgentMessagePostRateLimit(queries, 0),
+					)
+					r.With(append(agentMessageWriteRepo, gateAgents)...).Post("/changes/{change_id}/conflicts/resolve", jjVCSHandler.ResolveChangeConflict)
+					r.With(append(agentMessageWriteRepo, gateAgents)...).Post("/changes/{change_id}/findings/{finding_id}/dispatch", jjVCSHandler.DispatchFinding)
+					r.With(append(writeRepo, gateAgents)...).Post("/agent/sessions", agentSessionHandler.CreateSession)
+					r.With(append(readRepo, gateAgents)...).Get("/agent/sessions", agentSessionHandler.ListSessions)
+					r.With(append(readRepo, gateAgents)...).Get("/agent/sessions/{id}", agentSessionHandler.GetSession)
+					if config.IsMultitenant(cfg.Auth) {
+						r.With(append(readRepo, gateAgents)...).Get("/agent-sessions/{id}/egress", agentSessionHandler.ListEgressAudit)
+					}
+					r.With(append(writeRepo, gateAgents)...).Delete("/agent/sessions/{id}", agentSessionHandler.DeleteSession)
+					r.With(append(readRepo, gateAgents)...).Get("/agent/sessions/{id}/messages", agentSessionHandler.ListMessages)
+					r.With(append(agentMessageWriteRepo, gateAgents)...).Post("/agent/sessions/{id}/messages", agentSessionHandler.PostMessage)
+				}
+				r.With(writeRepo...).Post("/changes/{change_id}/findings/{finding_id}/feedback", jjVCSHandler.SubmitFindingFeedback)
+
+				// Ticket 0110: approvals decide endpoint. The handler itself
+				// enforces the feature flag (returns 404 when disabled), so
+				// the route is always registered; this keeps the wiring
+				// static and avoids route-tree drift between flag states.
+				if approvalsHandler != nil {
+					r.With(readRepo...).
+						Get("/approvals", approvalsHandler.ListApprovals)
+					r.With(readRepo...).
+						Get("/approvals/{id}", approvalsHandler.GetApproval)
+
+					// Ticket 0132: dedicated per-user rate limit on
+					// decide. Idempotency already exists in the service
+					// layer, but the limiter protects audit logs and
+					// downstream notifications from a buggy client.
+					// A decision is a person's: a run credential acts
+					// as its user but is held by an agent.
+					approvalWrite := append([]func(http.Handler) http.Handler{}, writeRepo...)
+					if !config.IsSingleOwner(cfg.Auth) {
+						approvalWrite = append(approvalWrite, middleware.RefuseRunCredentials)
+					}
+					r.With(append(
+						approvalWrite,
+						middleware.ApprovalDecideRateLimitWithObserver(
+							queries,
+							cfg.RateLimit.ApprovalDecidePerMin,
+							rateLimitRejectObserver,
+						),
+					)...).
+						Post("/approvals/{id}/decide", approvalsHandler.Decide)
+				}
+
+				// Workspace routes: scoped to the repository.
+				// VM lifecycle routes (create, resume, fork, suspend, delete, snapshot,
+				// session create/destroy, snapshot template)
+				// are registered at the top-level router with a 10-minute timeout to avoid
+				// the 30s JSONTimeout that applies to /api routes.
+				if workspaceHandler != nil {
+					readWorkspace := []func(http.Handler) http.Handler{
+						middleware.RequireAuth,
+						middleware.RequireScope(middleware.ScopeReadRepository),
+					}
+					writeWorkspace := []func(http.Handler) http.Handler{
+						middleware.RequireAuth,
+						middleware.RequireScope(middleware.ScopeWriteRepository),
+					}
+					if queries != nil {
+						readWorkspace = append(readWorkspace, middleware.RequireRepoPermission(middleware.PermissionRead))
+						writeWorkspace = append(writeWorkspace, middleware.RequireRepoPermission(middleware.PermissionWrite))
+					}
+					readWorkspace = append(readWorkspace, repoAPIQuota)
+					writeWorkspace = append(writeWorkspace, repoAPIQuota)
+					readWorkspace = append(readWorkspace, gateWorkspaces)
+					writeWorkspace = append(writeWorkspace, gateWorkspaces)
+					r.With(readWorkspace...).Get("/workspaces", workspaceHandler.ListWorkspaces)
+					r.With(readWorkspace...).Get("/workspaces/{id}", workspaceHandler.GetWorkspace)
+					r.With(readWorkspace...).Get("/workspaces/{id}/egress", workspaceHandler.ListEgressAudit)
+					r.With(readWorkspace...).Get("/workspaces/{id}/files", workspaceHandler.ListWorkspaceFiles)
+					r.With(readWorkspace...).Get("/workspaces/{id}/coding/revisions", workspaceHandler.ReadCodingRevisions)
+					r.With(readWorkspace...).Get("/workspaces/{id}/files/content", workspaceHandler.ReadWorkspaceFile)
+					fileWrite := writeWorkspace
+					if config.IsSingleOwner(cfg.Auth) {
+						// The service consumes the concrete file command after validating the batch.
+						fileWrite = []func(http.Handler) http.Handler{middleware.RequireAuth, repoAPIQuota, gateWorkspaces}
+					}
+					r.With(fileWrite...).Put("/workspaces/{id}/files/content", workspaceHandler.WriteWorkspaceFile)
+					r.With(readWorkspace...).Get("/workspaces/{id}/services", workspaceHandler.ListWorkspaceServices)
+					r.With(writeWorkspace...).Post("/workspaces/{id}/services/{name}/{action}", workspaceHandler.ManageWorkspaceService)
+					r.With(writeWorkspace...).Delete("/workspaces/{id}", workspaceHandler.DeleteWorkspace)
+					r.With(writeWorkspace...).Post("/workspaces/{id}/suspend", workspaceHandler.SuspendWorkspace)
+					r.With(writeWorkspace...).Post("/workspaces/{id}/lease", workspaceHandler.RenewWorkspaceLease)
+					if extras.UserRefs != nil {
+						r.With(writeWorkspace...).Post("/workspaces/{id}/user-source", extras.UserRefs.StartFrom)
+					}
+					r.With(writeWorkspace...).Get("/workspaces/{id}/ssh", workspaceHandler.GetWorkspaceSSHConnectionInfo)
+					routes.RegisterWorkspaceRuntimeRoutes(r, workspaceHandler, readWorkspace, writeWorkspace)
+					// #2802: a workspace's children take the workspace scope, so its
+					// own children credential reaches them; children never count
+					// against the per-user sandbox cap (the plan's child limit does).
+					readChildren := []func(http.Handler) http.Handler{
+						middleware.RequireAuth,
+						middleware.RequireScope(middleware.ScopeReadWorkspace),
+					}
+					writeChildren := []func(http.Handler) http.Handler{
+						middleware.RequireAuth,
+						middleware.RequireScope(middleware.ScopeWriteWorkspace),
+					}
+					if queries != nil {
+						readChildren = append(readChildren, middleware.RequireRepoPermission(middleware.PermissionRead))
+						writeChildren = append(writeChildren, middleware.RequireRepoPermission(middleware.PermissionWrite))
+					}
+					readChildren = append(readChildren, repoAPIQuota, gateWorkspaces)
+					writeChildren = append(writeChildren, repoAPIQuota, gateWorkspaces, gateSandboxes)
+					routes.RegisterWorkspaceChildrenRoutes(r, workspaceHandler, readChildren, writeChildren)
+
+					if workspaceHandler.EnvironmentImages != nil {
+						// NixOS environment image registry (kind=vm images built
+						// from .smithers/environment.nix by scripts/build-nix-environment.ts).
+						r.With(readWorkspace...).Get("/environment-images", workspaceHandler.EnvironmentImages.ListRepoImages)
+						adminWorkspaceImages := []func(http.Handler) http.Handler{
+							middleware.RequireAuth,
+							middleware.RequireScope(middleware.ScopeWriteRepository),
+						}
+						if queries != nil {
+							adminWorkspaceImages = append(adminWorkspaceImages, middleware.RequireRepoPermission(middleware.PermissionAdmin))
+						}
+						adminWorkspaceImages = append(adminWorkspaceImages, repoAPIQuota, gateWorkspaces)
+						r.With(adminWorkspaceImages...).Post("/environment-images", workspaceHandler.EnvironmentImages.RegisterRepoImage)
+						r.With(adminWorkspaceImages...).Delete("/environment-images/{id}", workspaceHandler.EnvironmentImages.RetireRepoImage)
+					}
+					r.With(readWorkspace...).Get("/workspace-snapshots", workspaceHandler.ListWorkspaceSnapshots)
+					r.With(readWorkspace...).Get("/workspace-snapshots/{id}", workspaceHandler.GetWorkspaceSnapshot)
+					r.With(writeWorkspace...).Delete("/workspace-snapshots/{id}", workspaceHandler.DeleteWorkspaceSnapshot)
+					r.With(readWorkspace...).Get("/workspace/sessions", workspaceHandler.ListSessions)
+					r.With(readWorkspace...).Get("/workspace/sessions/{id}", workspaceHandler.GetSession)
+					r.With(writeWorkspace...).Get("/workspace/sessions/{id}/ssh", workspaceHandler.GetSSHConnectionInfo)
+				}
+
+			})
+
+			if config.IsSingleOwner(cfg.Auth) {
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadRepository)).Get("/user/repos", routes.NewUserReposHandler(queries).ListUserRepos)
+			} else {
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadRepository)).Get("/user/repos", userHandler.GetAuthenticatedUserRepos)
+			}
+			if gitHubRepoListHandler != nil {
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadRepository)).Get("/user/github/repos", gitHubRepoListHandler.ListGitHubRepos)
+			}
+			if gitHubUserReposHandler != nil {
+				// Lists private repos via the full-repo OAuth token, so it must require
+				// read:repository (matching /user/github/repos) — read:user must NOT reach
+				// private-repo enumeration (final-pass security finding). A repo-bound
+				// PAT cannot safely call these user-global routes: no Plue repository
+				// context exists here against which to enforce its repo:<id> binding.
+				githubUserRepoRead := []func(http.Handler) http.Handler{
+					middleware.PrivateNoStore,
+					middleware.RequireAuth,
+					middleware.RejectRepositoryRestrictedToken,
+					middleware.RequireScope(middleware.ScopeReadRepository),
+				}
+				// A write on these surfaces goes to GitHub with that person's own
+				// credential, so it needs write:repository and the same
+				// repository-restricted token refusal the reads apply.
+				githubUserRepoWrite := []func(http.Handler) http.Handler{
+					middleware.PrivateNoStore,
+					middleware.RequireAuth,
+					middleware.RejectRepositoryRestrictedToken,
+					middleware.RequireScope(middleware.ScopeWriteRepository),
+				}
+				r.With(githubUserRepoRead...).Get("/user/github-repos", gitHubUserReposHandler.ListGitHubUserRepos)
+				r.With(githubUserRepoRead...).Get("/user/github-repos/{owner}/{repo}", gitHubUserReposHandler.GetGitHubRepo)
+				r.With(githubUserRepoRead...).Get("/user/github-repos/{owner}/{repo}/issues", gitHubUserReposHandler.ListGitHubRepoIssues)
+				r.With(githubUserRepoRead...).Get("/user/github-repos/{owner}/{repo}/pulls", gitHubUserReposHandler.ListGitHubRepoPulls)
+				r.With(githubUserRepoRead...).Get("/user/github-repos/{owner}/{repo}/pulls/{number}", gitHubUserReposHandler.GetGitHubPull)
+				// Authenticated issue/PR comments (synced store + live fallback)
+				// and the raw PR diff — same token resolution and cache policy
+				// as the metadata surfaces above.
+				r.With(githubUserRepoRead...).Get("/user/github-repos/{owner}/{repo}/issues/{number}/comments", gitHubUserReposHandler.ListGitHubRepoIssueComments)
+				r.With(githubUserRepoRead...).Get("/user/github-repos/{owner}/{repo}/pulls/{number}/diff", gitHubUserReposHandler.GetGitHubPullDiff)
+				// The rest of one pull request's own read-only surfaces: the
+				// commits it carries, and the check runs reported against its
+				// head commit (its Checks tab). Same token, scope and cache
+				// policy as the pull request object; GET only.
+				r.With(githubUserRepoRead...).Get("/user/github-repos/{owner}/{repo}/pulls/{number}/commits", gitHubUserReposHandler.ListGitHubPullCommits)
+				// The one WRITE on an imported pull request: a person's own
+				// review verdict, submitted to GitHub with the person's own
+				// credential and read back before it is reported (#4038).
+				// Write scope, and `github.account-review` is person-only.
+				// It admits a DURABLE operation and answers 202; reading the
+				// receipt is a read of the caller's own request, so a lost
+				// acknowledgment never becomes a second review.
+				r.With(githubUserRepoWrite...).Post("/user/github-repos/{owner}/{repo}/pulls/{number}/reviews", gitHubUserReposHandler.SubmitGitHubPullReview)
+				r.With(githubUserRepoRead...).Get("/user/github-pull-review-requests/{id}", gitHubUserReposHandler.GetGitHubPullReviewRequest)
+				r.With(githubUserRepoRead...).Get("/user/github-repos/{owner}/{repo}/commits/{sha}/check-runs", gitHubUserReposHandler.ListGitHubCommitCheckRuns)
+				// Typed access diagnosis for the surfaces above: WHY a read fails
+				// (app-not-installed / permission-missing / no-org-grant / token-broken
+				// / ok), from the App's own installation lookup.
+				r.With(githubUserRepoRead...).Get("/user/github-access/{owner}/{repo}", gitHubUserReposHandler.GetGitHubAccessDiagnosis)
+				// The caller's repositories the GitHub App verifiably covers, from
+				// the inventory and access diagnosis above, called in process.
+				// The optional id filters; it never grants access.
+				r.With(githubUserRepoRead...).Get("/user/github-app/installations", gitHubUserReposHandler.ListGitHubAppInstallations)
+				r.With(githubUserRepoRead...).Get("/user/github-app/installations/{installationId}", gitHubUserReposHandler.ListGitHubAppInstallations)
+				if !config.IsSingleOwner(cfg.Auth) {
+					// One real repository on the caller's OWN GitHub account.
+					// It writes GitHub with that person's own credential, so it
+					// takes the write stack declared above. An install keeps its
+					// own Setup door and mounts neither.
+					r.With(githubUserRepoWrite...).Post("/user/github-repos", gitHubUserReposHandler.CreateGitHubUserRepo)
+					// Reading the receipt is a read of the caller's own request.
+					r.With(githubUserRepoRead...).Get("/user/github-repo-requests/{id}", gitHubUserReposHandler.GetGitHubUserRepoCreate)
+				}
+			}
+			if gitHubSyncedReposHandler != nil {
+				// Service-to-service feed: github-sync reads the sync registry here
+				// instead of carrying a static repo mapping. It names private repos
+				// across every installation, so it is admin-only — never a
+				// user-facing listing.
+				r.With(
+					middleware.RequireAuth,
+					middleware.RejectRepositoryRestrictedToken,
+					middleware.RequireScope(middleware.ScopeReadRepository),
+					middleware.RequireAdmin,
+				).Get("/github/synced-repos", gitHubSyncedReposHandler.ListSyncedRepos)
+				r.With(
+					middleware.RequireAuth,
+					middleware.RejectRepositoryRestrictedToken,
+					middleware.RequireScope(middleware.ScopeWriteRepository),
+					middleware.RequireAdmin,
+				).Post("/github/synced-repos/{owner}/{repo}/mirror-status", gitHubSyncedReposHandler.RecordMirrorStatus)
+			}
+			if gitHubImportHandler != nil {
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteRepository)).Post("/github/import", gitHubImportHandler.StartImport)
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteRepository)).Post("/github/import/{id}/retry", gitHubImportHandler.RetryImportJob)
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteRepository)).Post("/repos/from-template", gitHubImportHandler.StartTemplateImport)
+			}
+			// Ticket 0135: cross-repo workspace listing + readable-repos discovery
+			// for the recent-first switcher. Both behind ScopeReadRepository so
+			// the same token that drives repo-scoped reads populates the switcher.
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadRepository), gateWorkspaces).Get("/user/workspaces", workspaceHandler.GetUserWorkspaces)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadRepository), gateWorkspaces).Get("/user/readable-repos", userHandler.GetAuthenticatedUserReadableRepos)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser)).Get("/user/orgs", userHandler.GetAuthenticatedUserOrgs)
+
+			// Bring-your-own subscriptions (RFD-003), self-host only behind
+			// feature_flags.subscription_connections. Token auth is allowed so
+			// the CLI can connect with a PAT; connecting needs write:user.
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser), gateSubscriptionConnections).Get("/user/provider-connections", providerConnectionHandler.ListUserConnections)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser), gateSubscriptionConnections).Post("/user/provider-connections", providerConnectionHandler.ConnectUser)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser), gateSubscriptionConnections).Put("/user/provider-connections/order", providerConnectionHandler.ReorderConnections)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser), gateSubscriptionConnections).Post("/user/provider-connections/codex/device", providerConnectionHandler.StartCodexDeviceLogin)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser), gateSubscriptionConnections).Post("/user/provider-connections/codex/device/{id}", providerConnectionHandler.PollCodexDeviceLogin)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser), gateSubscriptionConnections).Get("/user/provider-connections/{id}", providerConnectionHandler.GetConnection)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser), gateSubscriptionConnections).Delete("/user/provider-connections/{id}", providerConnectionHandler.RevokeConnection)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser), gateSubscriptionConnections).Post("/user/provider-connections/{id}/refresh", providerConnectionHandler.RefreshConnection)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser), gateSubscriptionConnections).Post("/user/provider-connections/{id}/grants", providerConnectionHandler.AddGrant)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser), gateSubscriptionConnections).Delete("/user/provider-connections/{id}/grants/{grantID}", providerConnectionHandler.DeleteGrant)
+			r.With(middleware.SearchRateLimit(queries), middleware.RequireAuth, middleware.RequireFirstPartyAuth, middleware.RequireScope(middleware.ScopeReadUser)).Get("/user/tokens", userHandler.GetUserTokens)
+			r.With(installCredentialIssuer(cfg.Auth, queries, authHandler), middleware.SearchRateLimit(queries), middleware.RequireAuth, middleware.RequireFirstPartyAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/user/tokens", userHandler.PostUserToken)
+			r.With(middleware.SearchRateLimit(queries), middleware.RequireAuth, middleware.RequireFirstPartyAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Delete("/user/tokens/{id}", userHandler.DeleteUserToken)
+			r.With(middleware.RequireAuth, middleware.RequireFirstPartyAuth, middleware.RequireScope(middleware.ScopeReadUser)).Get("/user/sessions", userHandler.GetUserSessions)
+			r.With(middleware.RequireAuth, middleware.RequireFirstPartyAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Delete("/user/sessions/{id}", userHandler.DeleteUserSession)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser)).Get("/user/emails", userHandler.GetUserEmails)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/user/emails", userHandler.PostUserEmail)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Delete("/user/emails/{id}", userHandler.DeleteUserEmail)
+			r.With(middleware.EmailVerificationRateLimit(queries), middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/user/emails/{id}/verify", userHandler.PostUserEmailVerify)
+			r.Get("/user/emails/verify-token", userHandler.GetUserEmailVerifyToken)
+			r.Post("/user/emails/verify-token", userHandler.PostUserEmailVerifyToken)
+
+			// Avatar upload
+
+			// Notification preferences
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser)).Get("/user/settings/notifications", userHandler.GetNotificationPreferences)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Put("/user/settings/notifications", userHandler.PutNotificationPreferences)
+			// Signup profile: the account claim and poll answers (#1901).
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser)).Get("/user/settings/signup", userHandler.GetSignupProfile)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Put("/user/settings/signup", userHandler.PutSignupProfile)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/user/devices", userHandler.PostUserDevice)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Delete("/user/devices", userHandler.DeleteUserDevice)
+
+			// Connected accounts (GitHub OAuth link/unlink)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser)).Get("/user/connections", userHandler.GetConnectedAccounts)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Delete("/user/connections/{id}", userHandler.DeleteConnectedAccount)
+
+			r.With(middleware.RequireAuth, middleware.RequireFirstPartyAuth, middleware.RequireScope(middleware.ScopeReadUser)).Get("/user/keys", sshKeyHandler.ListSSHKeys)
+			r.With(middleware.RequireAuth, middleware.RequireFirstPartyAuth, middleware.RequireScope(middleware.ScopeReadUser)).Get("/user/keys/{id}", sshKeyHandler.GetSSHKey)
+			r.With(middleware.RequireAuth, middleware.RequireFirstPartyAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/user/keys", sshKeyHandler.CreateSSHKey)
+			r.With(middleware.RequireAuth, middleware.RequireFirstPartyAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Delete("/user/keys/{id}", sshKeyHandler.DeleteSSHKey)
+			if oauth2Handler != nil {
+				// revoke-all is destructive (deletes every token issued by the
+				// app for this user), so it demands a write-capable scope: a
+				// read:user-only access token must not be able to kill other
+				// live sessions/tokens for the OAuth app.
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/oauth2/revoke-all", oauth2Handler.PostRevokeAll)
+				// /oauth2/authorize is intentionally registered ONLY in the
+				// public block above (ticket 0106 browser-native flow).
+			}
+
+			// Notification REST endpoints (scoped to authenticated user).
+			// Ticket 12: gated by feature_flags.notifications.
+			if notificationHandler != nil {
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser), gateNotifications).Get("/notifications/list", notificationHandler.ListNotifications)
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser), gateNotifications).Get("/notifications/events", notificationHandler.ListNotificationFacts)
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser), gateNotifications).Patch("/notifications/{id}", notificationHandler.MarkNotificationRead)
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser), gateNotifications).Put("/notifications/mark-read", notificationHandler.MarkAllNotificationsRead)
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser), gateNotifications).Get("/notifications/preferences", notificationHandler.GetNotificationPreferences)
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser), gateNotifications).Put("/notifications/preferences", notificationHandler.PutNotificationPreferences)
+			}
+
+		})
+
+		// Mixed-access group: public read routes (no auth required) and session/token
+		// authenticated org/team mutation routes. The default /api CSRF middleware
+		// protects state-changing requests for session-authenticated users.
+		// RequireTokenScope gates public reads for token callers; RequireAuth +
+		// RequireScope gate the mutation routes.
+		r.Group(func(r chi.Router) {
+			readRepo := []func(http.Handler) http.Handler{
+				middleware.RequireTokenScope(middleware.ScopeReadRepository),
+			}
+			if queries != nil {
+				readRepo = append(readRepo, middleware.LoadRepoContext(queries))
+				readRepo = append(readRepo, middleware.RequireRepoPermission(middleware.PermissionRead))
+			}
+			readRepo = append(readRepo, repoAPIQuota)
+			r.With(readRepo...).Get("/repos/{owner}/{repo}", repoHandler.GetRepo)
+			r.With(readRepo...).Get("/repos/{owner}/{repo}/topics", repoHandler.GetRepoTopics)
+
+			r.With(readRepo...).Get("/repos/{owner}/{repo}/contents", repoHandler.GetRepoContents)
+			r.With(readRepo...).Get("/repos/{owner}/{repo}/contents/*", repoHandler.GetRepoContents)
+			r.With(readRepo...).Get("/repos/{owner}/{repo}/home", repoHandler.GetRepositoryHome)
+			r.With(readRepo...).Get("/repos/{owner}/{repo}/git/refs", repoHandler.ListGitRefs)
+			r.With(readRepo...).Get("/repos/{owner}/{repo}/commits/{ref}/statuses", commitStatusHandler.GetCommitStatuses)
+			// jj VCS read routes: bookmarks, changes, operations.
+			r.With(readRepo...).Get("/repos/{owner}/{repo}/bookmarks", jjVCSHandler.ListBookmarks)
+			r.With(readRepo...).Get("/repos/{owner}/{repo}/changes", jjVCSHandler.ListChanges)
+			r.With(readRepo...).Get("/repos/{owner}/{repo}/changes/count", jjVCSHandler.CountChanges)
+			r.With(readRepo...).Get("/repos/{owner}/{repo}/changes/{change_id}/walkthrough", jjVCSHandler.GetChangeWalkthrough)
+			r.With(readRepo...).Get("/repos/{owner}/{repo}/changes/{change_id}", jjVCSHandler.GetChange)
+			r.With(readRepo...).Get("/repos/{owner}/{repo}/changes/{change_id}/findings", jjVCSHandler.GetChangeFindings)
+			r.With(readRepo...).Get("/repos/{owner}/{repo}/changes/{change_id}/diff", jjVCSHandler.GetChangeDiff)
+			r.With(readRepo...).Get("/repos/{owner}/{repo}/changes/{change_id}/files", jjVCSHandler.GetChangeFiles)
+			r.With(readRepo...).Get("/repos/{owner}/{repo}/changes/{change_id}/conflicts", jjVCSHandler.GetChangeConflicts)
+			r.With(readRepo...).Get("/repos/{owner}/{repo}/changes/{change_id}/operations", jjVCSHandler.ListChangeOperations)
+			r.With(readRepo...).Get("/repos/{owner}/{repo}/file/{change_id}/*", jjVCSHandler.GetFileAtChange)
+			r.With(readRepo...).Get("/repos/{owner}/{repo}/operations", jjVCSHandler.ListOperations)
+			r.With(readRepo...).Get("/repos/{owner}/{repo}/status", jjVCSHandler.GetWorkingTreeStatus)
+			if stackHandler != nil {
+				r.With(readRepo...).Get("/repos/{owner}/{repo}/stacks/active", stackHandler.GetActiveStack)
+			}
+			// Ticket 12: Wiki read routes — gated by feature_flags.wiki.
+			if wikiService != nil {
+				// Legacy Gitea-style /wiki/pages and /wiki/page/{pageName} aliases are intentionally
+				// not mounted so slugs like "pages" and "new" remain valid page names.
+				if content, ok := wikiService.(routes.WikiContentService); ok {
+					h := &routes.WikiContentHandler{Service: content}
+					r.With(append(readRepo, gateWiki)...).Get("/repos/{owner}/{repo}/wiki/history/events", h.Events)
+					r.With(append(readRepo, gateWiki)...).Get("/repos/{owner}/{repo}/wiki/history/{pageID}", h.History)
+					r.With(append(readRepo, gateWiki)...).Get("/repos/{owner}/{repo}/wiki/history/{pageID}/{revision}/content", h.Content)
+				}
+				if indexed, ok := wikiService.(routes.WikiIndexService); ok {
+					r.With(append(readRepo, gateWiki)...).Get("/repos/{owner}/{repo}/wiki/navigation/index", routes.WikiIndex(indexed))
+				}
+				r.With(append(readRepo, gateWiki)...).Get("/repos/{owner}/{repo}/wiki", routes.ListWikiPages(wikiService))
+				r.With(append(readRepo, gateWiki)...).Get("/repos/{owner}/{repo}/wiki/search", routes.SearchWikiPages(wikiService))
+				r.With(append(readRepo, gateWiki)...).Get("/repos/{owner}/{repo}/wiki/{slug}", routes.GetWikiPage(wikiService))
+				r.With(append(readRepo, gateWiki)...).Get("/repos/{owner}/{repo}/wiki/{slug}/revisions", routes.ListWikiRevisions(wikiService))
+				if config.IsSingleOwner(cfg.Auth) {
+					// Without a configured selector the route refuses as unavailable.
+					var selection http.Handler = wikiSelection{queries: queries}
+					if extras.WikiSelection != nil {
+						selection = extras.WikiSelection
+					}
+					r.With(append(readRepo, gateWiki)...).Post("/repos/{owner}/{repo}/wiki/selection", selection.ServeHTTP)
+				}
+			}
+			r.With(readRepo...).Get("/repos/{owner}/{repo}/landings", landingHandler.ListLandingRequests)
+			r.With(readRepo...).Get("/repos/{owner}/{repo}/landings/{number}", landingHandler.GetLandingRequest)
+			r.With(readRepo...).Get("/repos/{owner}/{repo}/landings/{number}/land/append", landingHandler.ObserveLandingAppend)
+			r.With(append(readRepo, withholdConversation)...).Get("/repos/{owner}/{repo}/landings/{number}/reviews", landingHandler.ListLandingReviews)
+			r.With(append(readRepo, withholdConversation)...).Get("/repos/{owner}/{repo}/landings/{number}/comments", landingHandler.ListLandingComments)
+			r.With(readRepo...).Get("/repos/{owner}/{repo}/landings/{number}/changes", landingHandler.ListLandingChanges)
+			r.With(readRepo...).Get("/repos/{owner}/{repo}/landings/{number}/diff", landingHandler.GetLandingDiff)
+			r.With(readRepo...).Get("/repos/{owner}/{repo}/landings/{number}/conflicts", landingHandler.GetLandingConflicts)
+			// Ticket 12: Issue read routes — gated by feature_flags.issues.
+			r.With(append(readRepo, gateIssues)...).Get("/repos/{owner}/{repo}/issues", issueHandler.ListIssues)
+			r.With(append(readRepo, gateIssues)...).Get("/repos/{owner}/{repo}/issue-views", issueHandler.ListIssueViews)
+			// The transitions the repository declares, beside its saved views
+			// and read with the same authority. Declaring one is not
+			// permission to run it.
+			r.With(append(readRepo, gateIssues)...).Get("/repos/{owner}/{repo}/issue-transitions", issueHandler.ListIssueTransitions)
+			r.With(append(readRepo, gateIssues)...).Get("/repos/{owner}/{repo}/issues/{number}", issueHandler.GetIssue)
+			r.With(append(readRepo, gateIssues)...).Get("/repos/{owner}/{repo}/issues/{number}/comments", issueHandler.ListIssueComments)
+
+			r.With(append(readRepo, gateIssues)...).Get("/repos/{owner}/{repo}/issues/{number}/events", issueEventHandler.ListIssueEvents)
+			r.With(append(readRepo, middleware.RequireAuth, gateIssues)...).Get("/repos/{owner}/{repo}/issues/state-events", issueEventHandler.ListIssueStateFacts)
+
+			// Ticket 12: Label read routes — gated by feature_flags.labels.
+			r.With(append(readRepo, gateLabels)...).Get("/repos/{owner}/{repo}/labels", labelHandler.GetRepoLabels)
+			r.With(append(readRepo, gateLabels)...).Get("/repos/{owner}/{repo}/labels/{id}", labelHandler.GetRepoLabel)
+			r.With(append(readRepo, gateLabels)...).Get("/repos/{owner}/{repo}/issues/{number}/labels", labelHandler.GetIssueLabels)
+
+			if lfsHandler != nil {
+				r.With(readRepo...).Get("/repos/{owner}/{repo}/lfs/objects", lfsHandler.GetObjects)
+			}
+
+			// Workflow execution read routes.
+			workflowReadRepo := append([]func(http.Handler) http.Handler{}, readRepo...)
+			workflowReadRepo = append(workflowReadRepo, gateWorkflows)
+			if workflowHandler != nil {
+				r.With(workflowReadRepo...).Get("/repos/{owner}/{repo}/workflows/runs", workflowHandler.ListWorkflowRunsV2)
+				r.With(workflowReadRepo...).Get("/repos/{owner}/{repo}/workflows/runs/{id}", workflowHandler.GetWorkflowRunV2)
+				r.With(workflowReadRepo...).Get("/repos/{owner}/{repo}/workflows/runs/{id}/nodes/{nodeId}", workflowHandler.GetWorkflowRunNode)
+				r.With(workflowReadRepo...).Get("/repos/{owner}/{repo}/workflows", workflowHandler.ListWorkflows)
+				r.With(workflowReadRepo...).Get("/repos/{owner}/{repo}/workflows/{id}", workflowHandler.GetWorkflow)
+				r.With(workflowReadRepo...).Get("/repos/{owner}/{repo}/workflows/{id}/runs", workflowHandler.ListWorkflowRuns)
+				r.With(workflowReadRepo...).Get("/repos/{owner}/{repo}/actions/runs", workflowHandler.ListAllWorkflowRuns)
+				r.With(workflowReadRepo...).Get("/repos/{owner}/{repo}/actions/runs/{id}", workflowHandler.GetWorkflowRun)
+				r.With(workflowReadRepo...).Get("/repos/{owner}/{repo}/actions/runs/{id}/steps", workflowHandler.ListWorkflowRunSteps)
+				// Ticket 0111: canonical run inspect routes. Same handlers as
+				// `/actions/runs/...`, just advertised under the canonical
+				// `/runs/{id}` prefix for the client contract.
+				r.With(workflowReadRepo...).Get("/repos/{owner}/{repo}/runs", workflowHandler.ListAllWorkflowRuns)
+				r.With(workflowReadRepo...).Get("/repos/{owner}/{repo}/runs/{id}", workflowHandler.GetWorkflowRun)
+				r.With(workflowReadRepo...).Get("/repos/{owner}/{repo}/runs/{id}/steps", workflowHandler.ListWorkflowRunSteps)
+				// The compact status read half of the invocation seam.
+				r.With(workflowReadRepo...).Get("/repos/{owner}/{repo}/runs/{id}/status", workflowHandler.GetWorkflowRunStatus)
+			}
+			if workflowCacheHandler != nil {
+				r.With(workflowReadRepo...).Get("/repos/{owner}/{repo}/caches", workflowCacheHandler.ListCaches)
+				r.With(workflowReadRepo...).Get("/repos/{owner}/{repo}/caches/stats", workflowCacheHandler.GetStats)
+			}
+
+			// Orgs / teams routes. Organizations are not a feature flag: these
+			// routes are always mounted so org-owned repositories exist on Cloud.
+			orgPublicRead := middleware.PublicReadAsAnonymousWithoutTokenScope(middleware.ScopeReadOrganization)
+			r.With(orgPublicRead).Get("/orgs/{org}", orgHandler.GetOrg)
+			r.With(orgPublicRead).Get("/orgs/{org}/repos", orgHandler.GetOrgRepos)
+
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteOrganization)).Post("/orgs", orgHandler.PostOrg)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteOrganization)).Patch("/orgs/{org}", orgHandler.PatchOrg)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadOrganization)).Get("/orgs/{org}/members", orgHandler.GetOrgMembers)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteOrganization)).Post("/orgs/{org}/members", orgHandler.PostOrgMember)
+			// Organization subscriptions (RFD-003): members list legacy rows so
+			// an owner can revoke them; the service refuses new ones because a
+			// subscription serves only its account holder's own runs.
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser), gateSubscriptionConnections).Get("/orgs/{org}/provider-connections", providerConnectionHandler.ListOrgConnections)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser), gateSubscriptionConnections).Post("/orgs/{org}/provider-connections", providerConnectionHandler.ConnectOrg)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteOrganization)).Delete("/orgs/{org}/members/{username}", orgHandler.DeleteOrgMember)
+			if secretHandler != nil {
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadOrganization), gateSecrets).Get("/orgs/{org}/secrets", secretHandler.ListOrgSecrets)
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteOrganization), gateSecrets).Post("/orgs/{org}/secrets", secretHandler.SetOrgSecret)
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteOrganization), gateSecrets).Delete("/orgs/{org}/secrets/{name}", secretHandler.DeleteOrgSecret)
+			}
+			if variableHandler != nil {
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadOrganization)).Get("/orgs/{org}/variables", variableHandler.ListOrgVariables)
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteOrganization)).Post("/orgs/{org}/variables", variableHandler.SetOrgVariable)
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteOrganization)).Delete("/orgs/{org}/variables/{name}", variableHandler.DeleteOrgVariable)
+			}
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadOrganization)).Get("/orgs/{org}/teams", orgHandler.GetOrgTeams)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteOrganization)).Post("/orgs/{org}/teams", orgHandler.PostOrgTeam)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadOrganization)).Get("/orgs/{org}/teams/{team}", orgHandler.GetOrgTeam)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteOrganization)).Patch("/orgs/{org}/teams/{team}", orgHandler.PatchOrgTeam)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteOrganization)).Delete("/orgs/{org}/teams/{team}", orgHandler.DeleteOrgTeam)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadOrganization)).Get("/orgs/{org}/teams/{team}/members", orgHandler.GetOrgTeamMembers)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteOrganization)).Put("/orgs/{org}/teams/{team}/members/{username}", orgHandler.PutOrgTeamMember)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteOrganization)).Delete("/orgs/{org}/teams/{team}/members/{username}", orgHandler.DeleteOrgTeamMember)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadOrganization)).Get("/orgs/{org}/teams/{team}/repos", orgHandler.GetOrgTeamRepos)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteOrganization)).Put("/orgs/{org}/teams/{team}/repos/{owner}/{repo}", orgHandler.PutOrgTeamRepo)
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteOrganization)).Delete("/orgs/{org}/teams/{team}/repos/{owner}/{repo}", orgHandler.DeleteOrgTeamRepo)
+
+			// Ticket 12: Search sub-router — gated by feature_flags.search.
+			r.Route("/search", func(r chi.Router) {
+				if config.IsSingleOwner(cfg.Auth) {
+					r.Use(middleware.RequireAuth)
+				}
+				r.Use(gateSearch)
+				r.Use(middleware.SearchRateLimit(queries))
+
+				r.With(middleware.RequireTokenScope(middleware.ScopeReadRepository)).Get("/repositories", searchHandler.SearchRepositories)
+				r.With(middleware.RequireTokenScope(middleware.ScopeReadRepository), withholdConversation).Get("/issues", searchHandler.SearchIssues)
+				r.With(middleware.RequireTokenScope(middleware.ScopeReadUser)).Get("/users", searchHandler.SearchUsers)
+				r.With(middleware.RequireTokenScope(middleware.ScopeReadRepository)).Get("/code", searchHandler.SearchCode)
+			})
+
+			if config.IsSingleOwner(cfg.Auth) || config.IsMultitenant(cfg.Auth) {
+				// Admin endpoints: an admin user (is_admin flag) on a person's
+				// credential (#3740): delegated, run, machine and sync tokens are
+				// refused whatever scopes they carry.
+				r.Route("/admin", func(r chi.Router) {
+					readAdmin := []func(http.Handler) http.Handler{
+						middleware.RequireAdmin,
+						middleware.RequireScope(middleware.ScopeReadAdmin),
+						middleware.RequirePersonCredential,
+					}
+					writeAdmin := []func(http.Handler) http.Handler{
+						middleware.RequireAdmin,
+						middleware.RequireScope(middleware.ScopeWriteAdmin),
+						middleware.RequirePersonCredential,
+					}
+					if extras.AdminSystemHealth != nil && (config.IsSingleOwner(cfg.Auth) || config.IsMultitenant(cfg.Auth)) {
+						healthRead := readAdmin
+						if config.IsSingleOwner(cfg.Auth) {
+							// The install owner is a roster role, not a hosted
+							// admin flag. The enclosing command middleware
+							// already bound the person-only install.read act.
+							healthRead = []func(http.Handler) http.Handler{func(next http.Handler) http.Handler {
+								return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+									if middleware.UserFromContext(r.Context()) == nil {
+										pkgerrors.WriteError(w, pkgerrors.New(pkgerrors.CodeUnauthenticated, middleware.UnauthenticatedMessage(r.Context())))
+										return
+									}
+									next.ServeHTTP(w, r)
+								})
+							}}
+						}
+						r.With(healthRead...).Get("/system/health", extras.AdminSystemHealth.SystemHealth)
+					}
+					if config.IsSingleOwner(cfg.Auth) && adminUserHandler != nil {
+						r.With(middleware.RequireAuth).Post("/users/{username}/erase", func(w http.ResponseWriter, r *http.Request) {
+							info := middleware.AuthInfoFromContext(r.Context())
+							role, err := services.InstallRoleOf(r.Context(), queries, info.User.ID)
+							if err != nil {
+								pkgerrors.WriteError(w, pkgerrors.New(pkgerrors.CodeServiceUnavailable, "members unavailable").WithCause(err))
+								return
+							}
+							if role != services.InstallOwner || info.IsTokenAuth || info.IsAgent() || info.SessionHash == "" {
+								pkgerrors.WriteError(w, pkgerrors.Forbidden("install owner session required"))
+								return
+							}
+							adminUserHandler.EraseUser(w, r)
+						})
+					}
+					if config.IsMultitenant(cfg.Auth) {
+						if extras.AdminGrant != nil {
+							r.With(writeAdmin...).Post("/grant", extras.AdminGrant.Grant)
+						}
+						if workspaceHandler != nil && workspaceHandler.EnvironmentImages != nil {
+							// Platform base NixOS images (repository_id NULL) for kind=vm.
+							r.With(readAdmin...).Get("/sandbox/environment-images", workspaceHandler.EnvironmentImages.ListBaseImages)
+							r.With(writeAdmin...).Post("/sandbox/environment-images", workspaceHandler.EnvironmentImages.RegisterBaseImage)
+						}
+						if adminUserHandler != nil {
+							r.With(readAdmin...).Get("/users", adminUserHandler.ListUsers)
+							r.With(writeAdmin...).Post("/users", adminUserHandler.CreateUser)
+							r.With(writeAdmin...).Delete("/users/{username}", adminUserHandler.DeleteUser)
+							r.With(writeAdmin...).Post("/users/{username}/erase", adminUserHandler.EraseUser)
+							r.With(writeAdmin...).Post("/users/{username}/export", adminUserHandler.ExportUser)
+							r.With(writeAdmin...).Patch("/users/{username}", adminUserHandler.PatchUser)
+							r.With(writeAdmin...).Patch("/users/{username}/admin", adminUserHandler.PatchUserAdmin)
+							r.With(writeAdmin...).Post("/users/{username}/tokens", adminUserHandler.PostUserToken)
+							r.With(writeAdmin...).Delete("/users/{username}/tokens/{token_id}", adminUserHandler.DeleteUserToken)
+						}
+						if adminOrgHandler != nil {
+							r.With(readAdmin...).Get("/orgs", adminOrgHandler.ListOrgs)
+						}
+						if adminRepoHandler != nil {
+							r.With(readAdmin...).Get("/repos", adminRepoHandler.ListRepos)
+						}
+						if adminGitHubAppHandler != nil {
+							r.With(writeAdmin...).Post("/github-app/reconcile", adminGitHubAppHandler.Reconcile)
+						}
+						if adminAuditHandler != nil {
+							r.With(readAdmin...).Get("/audit-logs", adminAuditHandler.ListAuditLogs)
+						}
+						if extras.AdminSystemStatus != nil {
+							r.With(readAdmin...).Get("/system/status", extras.AdminSystemStatus.SystemStatus)
+						}
+						if extras.AdminAnalytics != nil {
+							r.With(readAdmin...).Get("/analytics/summary", extras.AdminAnalytics.Summary)
+						}
+						if extras.AdminAgentSessions != nil {
+							r.With(readAdmin...).Get("/agent-sessions", extras.AdminAgentSessions.List)
+							r.With(writeAdmin...).Post("/agent-sessions/{id}/cancel", extras.AdminAgentSessions.Cancel)
+						}
+						if extras.AdminWorkspaces != nil {
+							r.With(readAdmin...).Get("/workspaces", extras.AdminWorkspaces.List)
+							r.With(writeAdmin...).Post("/workspaces/{id}/stop", extras.AdminWorkspaces.Stop)
+							r.With(writeAdmin...).Post("/workspaces/{id}/suspend", extras.AdminWorkspaces.Suspend)
+						}
+						if extras.AdminTokens != nil {
+							r.With(readAdmin...).Get("/tokens", extras.AdminTokens.List)
+						}
+						for _, route := range extras.DeploymentAdmin {
+							scope := readAdmin
+							if route.Write {
+								scope = writeAdmin
+							}
+							r.With(scope...).Method(route.Method, route.Pattern, withAdminAuditActor(route.Handler))
+						}
+					}
+				})
+			}
+		})
+	})
+
+	return r
+}
+
+// revocationChecker is the process-wide view of recent revocations installed
+// by main before the router is built; nil (tests) disables the guard.
+var revocationChecker middleware.RevocationChecker
+
+// authLoader resolves the caller and then refuses a credential revoked since
+// it was issued, so every route group gets both with one middleware.
+func authLoader(queries *db.Queries, cfg config.AuthConfig) func(http.Handler) http.Handler {
+	load := middleware.AuthLoader(queries, cfg)
+	guard := middleware.RevocationGuard(revocationChecker)
+	return func(next http.Handler) http.Handler {
+		return load(guard(next))
+	}
+}
+
+// mountTodoReads mounts the install's TODO read routes. The app agent's
+// host-run commands read through the authenticated public API, as the
+// credential that admitted their turn.
+func mountTodoReads(r chi.Router, todos *routes.TodoHandler) {
+	r.Get("/todos", todos.List)
+	r.Get("/todos/{n}", todos.Get)
+	r.Get("/todos/{n}/events", todos.Events)
+	r.Get("/todos/{n}/attempts/{a}/logs/{digest}", todos.Log)
+}
+
+// mountFlowReads mounts the install's flow catalog, which the Flow card and
+// the app agent's host-run commands read through the public API.
+func mountFlowReads(r chi.Router, flows *routes.FlowsHandler) {
+	r.Post("/flows", flows.Run)
+	r.Post("/flows/{name}/run", flows.Run)
+	r.Get("/flows/runs/{id}", flows.RunStatus)
+	r.Post("/flows/{name}/edit", flows.Edit)
+	r.Post("/agents/{role}/edit", flows.Edit)
+	r.Get("/flows", flows.List)
+	r.Get("/flows/{name}", flows.Show)
+}
+
+// mountModelProxy serves the metered model proxy at /model-proxy and, for the
+// app's signed-in calls, at /api/model/{provider}.
+func mountModelProxy(r chi.Router, queries *db.Queries, cfg *config.Config, handler http.Handler) {
+	r.Group(func(r chi.Router) {
+		r.Use(routes.ModelProxyAuth(middleware.RequireAgentToken(queries), func(next http.Handler) http.Handler {
+			return authLoader(queries, cfg.Auth)(middleware.RequireAuth(next))
+		}))
+		r.Post(modelproxy.Path+"/*", handler.ServeHTTP)
+		r.Get(modelproxy.Path+"/factory-seat", handler.ServeHTTP)
+		r.Get(modelproxy.Path+"/input-fence", handler.ServeHTTP)
+		for _, seat := range modelproxy.Seats {
+			r.Post(modelproxy.APIPath+"/"+seat.Provider+"/*", handler.ServeHTTP)
+		}
+	})
+}
+
+// withAdminAuditActor attributes a deployment operator request to the acting
+// admin so its AdminOperations records name them.
+func withAdminAuditActor(next http.HandlerFunc) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next(w, r.WithContext(routes.AdminUserAuditContext(r)))
+	})
+}
+
+// Install requests are same-origin; hosted compositions retain their CORS policy.
+func browserCORS(options cors.Options, install bool) func(http.Handler) http.Handler {
+	if install {
+		return func(next http.Handler) http.Handler { return next }
+	}
+	return cors.Handler(options)
+}

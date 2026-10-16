@@ -1,0 +1,99 @@
+#!/bin/bash
+# Bootstrap for kind=vm / kind=desktop workspaces (NixOS guests built from
+# nix/modules/base.nix). The closure already ships node, npm, bun, jj, git and
+# the language servers, so this only stages what is per-workspace: the
+# developer's ~/.local links, the npm CLI and Claude Code. Every step is best-effort: a transient
+# network failure must not fail workspace provisioning.
+set -euo pipefail
+group="$(id -gn {{.User}})"
+install -d -o {{.User}} -g "$group" -m 700 {{.Home}}/.smithers
+install -d -o {{.User}} -g "$group" -m 755 {{.LocalDir}}
+install -d -o {{.User}} -g "$group" -m 755 {{.LocalBinDir}}
+# Container workspaces download node into ~/.local/node; NixOS guests link the
+# closure's tools into the same ~/.local/bin paths the product contract names.
+for tool in node npm npx bun jj; do
+  if resolved="$(command -v "$tool" 2>/dev/null)"; then
+    ln -sfn "$resolved" {{.LocalBinDir}}/"$tool"
+  fi
+done
+
+# The configured coding host is separate from the interactive/general CLI.
+# Failure leaves the workspace usable; a bound gateway preflight refuses it.
+if [ -s {{printf "%q" .CodingHostB64Path}}.part00000000 ]; then
+  if ! cat {{printf "%q" .CodingHostB64Path}}.part* | base64 -d | gzip -dc > {{printf "%q" .CodingHostPath}}.tmp; then
+    echo "smithers workspace bootstrap: coding host payload decode failed" >&2
+    rm -f {{printf "%q" .CodingHostPath}}.tmp {{printf "%q" .CodingHostPath}}
+  elif [ ! -s {{printf "%q" .CodingHostPath}}.tmp ]; then
+    echo "smithers workspace bootstrap: coding host payload is empty" >&2
+    rm -f {{printf "%q" .CodingHostPath}}.tmp {{printf "%q" .CodingHostPath}}
+  else
+    install -m 755 {{printf "%q" .CodingHostPath}}.tmp {{printf "%q" .CodingHostPath}}
+    rm -f {{printf "%q" .CodingHostPath}}.tmp
+    # Same contract as the jj export helper below: diagnostic only, inherited
+    # environment (nix-ld reads NIX_LD), and never delete a staged binary
+    # because it could not be exec'd during the pre-activation window.
+    if ! runuser -u {{.User}} -- env HOME={{.Home}} USER={{.User}} LOGNAME={{.User}} PATH={{.LocalBinDir}}:/run/current-system/sw/bin:/usr/local/bin:/usr/bin:/bin {{printf "%q" .CodingHostPath}} --help >/tmp/smithers-workspace-coding-host-smoke.log 2>&1; then
+      echo "smithers workspace bootstrap: coding host runtime smoke failed; keeping the staged binary" >&2
+      sed -e "s|^|smithers workspace bootstrap: coding host smoke: |" /tmp/smithers-workspace-coding-host-smoke.log >&2 || true
+    fi
+  fi
+fi
+# End configured coding host staging.
+# The native jj helper the coding host's flows exec for their --eligible
+# preflight and tree export. The bootstrap unit runs as root, so `install`
+# lands a root-owned 0755 binary the developer user can only execute. Failure
+# leaves the workspace usable; the coding flow refuses instead of corrupting.
+if [ -s {{printf "%q" .JJExportB64Path}}.part00000000 ]; then
+  if ! cat {{printf "%q" .JJExportB64Path}}.part* | base64 -d | gzip -dc > {{printf "%q" .JJExportPath}}.tmp; then
+    echo "smithers workspace bootstrap: jj export helper payload decode failed" >&2
+    rm -f {{printf "%q" .JJExportPath}}.tmp {{printf "%q" .JJExportPath}}
+  elif [ ! -s {{printf "%q" .JJExportPath}}.tmp ]; then
+    echo "smithers workspace bootstrap: jj export helper payload is empty" >&2
+    rm -f {{printf "%q" .JJExportPath}}.tmp {{printf "%q" .JJExportPath}}
+  else
+    install -m 0755 {{printf "%q" .JJExportPath}}.tmp {{printf "%q" .JJExportPath}}
+    rm -f {{printf "%q" .JJExportPath}}.tmp
+    # The smoke run is a diagnostic, never a gate. It keeps the inherited
+    # environment (env -i drops NIX_LD/NIX_LD_LIBRARY_PATH, which nix-ld needs)
+    # and never deletes the helper: this unit can run before NixOS activation
+    # creates /lib64/ld-linux-x86-64.so.2, so a helper that is not yet
+    # executable is still far better than no helper at all. Deleting it
+    # strands every coding flow on the guest with no way back (prod
+    # 2026-09-15 19:31Z: "jj export helper runtime smoke failed" on a kind=vm
+    # guest whose nix-ld loader link appeared 2.2s AFTER the bootstrap ran).
+    if ! runuser -u {{.User}} -- env HOME={{.Home}} USER={{.User}} LOGNAME={{.User}} PATH={{.LocalBinDir}}:/run/current-system/sw/bin:/usr/local/bin:/usr/bin:/bin {{printf "%q" .JJExportPath}} --version >/tmp/smithers-workspace-jj-export-smoke.log 2>&1; then
+      echo "smithers workspace bootstrap: jj export helper runtime smoke failed; keeping the staged binary" >&2
+      sed -e "s|^|smithers workspace bootstrap: jj export smoke: |" /tmp/smithers-workspace-jj-export-smoke.log >&2 || true
+    else
+      echo "smithers workspace bootstrap: installed jj export helper" >&2
+    fi
+  fi
+else
+  echo "smithers workspace bootstrap: jj export helper payload absent" >&2
+fi
+# End configured jj export staging.
+
+# Install the deployed npm package without a registry or a second CLI binary.
+if [ -s {{printf "%q" .CLIPackageB64Path}}.part00000000 ]; then
+  mkdir -p {{printf "%q" .CLIPackageDir}}
+  if cat {{printf "%q" .CLIPackageB64Path}}.part* | base64 -d | tar -xzf - -C {{printf "%q" .CLIPackageDir}}; then
+    ln -sfn {{printf "%q" (printf "%s/node_modules/@smthrs/cli/bin/smithers.mjs" .CLIPackageDir)}} {{.LocalBinDir}}/smithers
+    ln -sfn smithers {{.LocalBinDir}}/smthrs
+    PATH={{.LocalBinDir}}:$PATH {{.LocalBinDir}}/smithers --help >/tmp/smithers-workspace-cli-help.log 2>&1 || \
+      echo "smithers workspace bootstrap: npm CLI smoke failed; see /tmp/smithers-workspace-cli-help.log" >&2
+  else
+    echo "smithers workspace bootstrap: npm CLI package extraction failed" >&2
+  fi
+else
+  echo "smithers workspace bootstrap: npm CLI package absent" >&2
+fi
+if [ -x {{printf "%q" (printf "%s/claude" .LocalBinDir)}} ] || command -v claude >/dev/null 2>&1; then
+  chown -R {{.User}}:"$group" {{.LocalDir}} {{.Home}}/.smithers
+  exit 0
+fi
+if command -v runuser >/dev/null 2>&1; then
+  runuser -u {{.User}} -- env -i HOME={{.Home}} USER={{.User}} LOGNAME={{.User}} PATH={{.LocalBinDir}}:/run/current-system/sw/bin:/usr/local/bin:/usr/bin:/bin bash -lc {{printf "%q" .ClaudeInstallScript}} || exit 0
+else
+  su - {{.User}} -c {{printf "%q" .ClaudeInstallScript}} || exit 0
+fi
+chown -R {{.User}}:"$group" {{.LocalDir}} {{.Home}}/.smithers

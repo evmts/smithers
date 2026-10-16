@@ -138,11 +138,11 @@ test("an affected check without its check host's written paths refuses instead o
   assert.deepEqual(calls, [])
 })
 
-// The driftCi steps in PACKAGE.ts, in order (scripts/ci/drift-job.test.mjs pins that list).
+// The driftCi steps in PACKAGE.ts, in order (packages/repo-targets/contracts/drift-job.test.mjs pins that list).
 const driftGates = [
   ["lint", "//...:fmt"], ["lint", "//:targetIndex"], ["lint", "//:factoryProjection"], ["lint", "//:backendAccessTests"],
   ["lint", "//:openapiBundle"], ["lint", "//:openapiClients"], ["lint", "//scripts:docsDrift"],
-  ["build", "//scripts:apiBaseline"], ["lint", "//scripts:conflictMarkers"], ["lint", "//scripts:trackedHygiene"],
+  ["build", "//scripts:apiBaseline"], ["lint", "//packages/repo-targets:conflictMarkers"], ["lint", "//packages/repo-targets:trackedHygiene"],
   ["lint", "//:driftCi"], ["lint", "//:ci"]
 ]
 const driftRun = (failing) => {

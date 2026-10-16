@@ -2,7 +2,7 @@ import type { ContextLineCard } from "../../src/ContextLineCard.ts"
 import { type Story, story } from "./_story.ts"
 
 const items: ContextLineCard["items"] = [
-  { kind: "file", label: "flow.ts", ref: "flows/todo/flow.ts", revision: "head" },
+  { kind: "file", label: "flow.ts", ref: ".smithers/flows/todo/flow.ts", revision: "head" },
   { kind: "page", label: "Factory decisions", ref: "wiki/factory-decisions" },
   { kind: "issue", label: "#3474", ref: "https://github.com/smithersai/smithers/issues/3474" },
   { kind: "todo", label: "T12", ref: "12" },
@@ -10,7 +10,7 @@ const items: ContextLineCard["items"] = [
 ]
 const actionableItems: ContextLineCard["items"] = items.map((item, index) =>
   index === 0
-    ? { ...item, action: { tag: "file", label: "flow.ts", args: { path: "flows/todo/flow.ts" } } }
+    ? { ...item, action: { tag: "file", label: "flow.ts", args: { path: ".smithers/flows/todo/flow.ts" } } }
     : item
 )
 const actions: ContextLineCard["actions"] = [

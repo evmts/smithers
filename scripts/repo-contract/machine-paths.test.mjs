@@ -1,7 +1,7 @@
 /**
  * No operator rig may name one machine's home directory.
  *
- * `evals/swebench` is operator-run tooling that arrived from another checkout,
+ * `packages/smithers/agent/harness/benchmarks/swebench` is operator-run tooling that arrived from another checkout,
  * and it arrived carrying that checkout's absolute directory — `/Users`, an
  * operator's name, `flows/flows` — in a committed measurement record. A path
  * like that is invisible until somebody else runs the rig: it resolves to
@@ -12,7 +12,8 @@
  * out is what tripped it the first time it ran over `scripts/`.
  *
  * So the gate is a class, not one file. Every tracked file under `evals/`,
- * `scripts/` and every package's `test/faults` tree is read, and any absolute
+ * `scripts/`, every eval suite and benchmark rig (each lives in the package it
+ * measures) and every package's `test/faults` tree is read, and any absolute
  * home-directory path in it fails. The local VCS supplies the file list, because the
  * untracked working files a wave leaves behind — pinned subjects, extracted
  * testbeds, virtualenvs — legitimately hold absolute paths and are gitignored
@@ -60,7 +61,14 @@ export const homePath = /(?:\/Users|\/home)\/[A-Za-z0-9_][A-Za-z0-9._-]*|(?<=^|[
 // its package sits at. Packages nest — a granular package lives inside the
 // product package it belongs to — and a depth-bound spelling would silently
 // stop reading most of the matrix.
-const scanned = ["evals", "scripts", "packages/*/test/faults/*"]
+/** Eval suites and benchmark rigs, each colocated with the package it measures. */
+const suites = [
+  "packages/smithers/agent/regression",
+  "packages/smithers/agent/harness/benchmarks",
+  "flows/review/seeded-bugs",
+  "packages/backend/modelhost/recommend-eval"
+]
+const scanned = ["evals", "scripts", ...suites, "packages/*/test/faults/*"]
 
 /** Every tracked file under {@link scanned}, as repository-relative paths. */
 const tracked = (repositoryRoot = root, run = spawnSync) => {
@@ -72,7 +80,8 @@ const tracked = (repositoryRoot = root, run = spawnSync) => {
   const result = run(command, args, { cwd: repositoryRoot, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 })
   assert.equal(result.status, 0, `${command} inventory failed: ${result.error?.message ?? result.stderr}`)
   return result.stdout.split("\n").filter((path) =>
-    path.startsWith("evals/") || path.startsWith("scripts/") || /^packages\/.+\/test\/faults\/.+/.test(path)
+    path.startsWith("evals/") || path.startsWith("scripts/") || suites.some((suite) => path.startsWith(`${suite}/`))
+    || /^packages\/.+\/test\/faults\/.+/.test(path)
   )
 }
 
@@ -80,7 +89,7 @@ const tracked = (repositoryRoot = root, run = spawnSync) => {
  * Recorded material, exempt because rewriting it would falsify a record rather
  * than fix a path.
  *
- * - `evals/swebench/reports/` and `evals/swebench/archive/` are wave write-ups.
+ * - `packages/smithers/agent/harness/benchmarks/swebench/reports/` and `packages/smithers/agent/harness/benchmarks/swebench/archive/` are wave write-ups.
  *   They quote the commands an operator ran on the machine that ran them, and
  *   they are read by people, never by the rig.
  * - `evals/authoring/data/` is a captured supervised-fine-tuning corpus. Its
@@ -88,24 +97,24 @@ const tracked = (repositoryRoot = root, run = spawnSync) => {
  *   what a model was shown.
  */
 const isRecorded = (path) =>
-  path.startsWith("evals/swebench/reports/")
-  || path.startsWith("evals/swebench/archive/")
+  path.startsWith("packages/smithers/agent/harness/benchmarks/swebench/reports/")
+  || path.startsWith("packages/smithers/agent/harness/benchmarks/swebench/archive/")
   || path.startsWith("evals/authoring/data/")
 
 /**
  * Modeled accounts, exempt because the home is the subject under test rather
  * than an operator's checkout.
  *
- * - `scripts/spikes/mch-02-virtiofs-homes/` shares member homes over VirtioFS.
- * - `scripts/spikes/trm-06/` confines terminal sessions to guest accounts.
+ * - `packages/backend/checks/C-SPK-02/` shares member homes over VirtioFS.
+ * - `packages/smithers-machined/checks/C-SPK-08/` confines terminal sessions to guest accounts.
  *
  * Each creates these accounts inside the VM or namespace it boots, so the path
  * resolves on every machine that runs it. Only the named accounts are exempt:
  * any other home in those trees, an operator's included, still fails.
  */
 const modeledAccounts = new Map([
-  ["scripts/spikes/mch-02-virtiofs-homes/", ["alice", "ben", "carol", "member", "root"]],
-  ["scripts/spikes/trm-06/", ["agent", "ben", "environment", "other", "root"]]
+  ["packages/backend/checks/C-SPK-02/", ["alice", "ben", "carol", "member", "root"]],
+  ["packages/smithers-machined/checks/C-SPK-08/", ["agent", "ben", "environment", "other", "root"]]
 ])
 // The account a Linux home belongs to. Accounts are named, not spelled as
 // paths, so this gate's own source names no home either.

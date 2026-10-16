@@ -153,7 +153,7 @@ describe("the Agents card", () => {
 
 
 test("the install projection shows instructions and source; only the owner gets assignment controls", () => {
- const agent = { ...orchestrator, id: "reviewer", label: "Reviewer agent", source: "owner" as const, instructions: "flows/todo/flow.ts", binding: { protocol: "openai-responses", modelId: "model-a", credential: "OPENAI_API_KEY" } }
+ const agent = { ...orchestrator, id: "reviewer", label: "Reviewer agent", source: "owner" as const, instructions: ".smithers/flows/todo/flow.ts", binding: { protocol: "openai-responses", modelId: "model-a", credential: "OPENAI_API_KEY" } }
  const recorded = recorder()
  const owner = mount(<AgentsCardBody card={agentsCard({ native: false, canAssign: true, agents: [agent] })} onRunCommand={recorded.onRunCommand} />)
  expect(owner.querySelector('[data-testid="agent-source-reviewer"]')?.textContent).toBe("owner")
@@ -161,7 +161,7 @@ test("the install projection shows instructions and source; only the owner gets 
  expect(recorded.calls[0]).toEqual(["model.assign", '{"role":"reviewer"}'])
  click(owner, '[data-flow="file"]')
  expect(recorded.calls[1]?.[0]).toBe("file")
- expect(recorded.calls[1]?.[1]).toContain("flows/todo/flow.ts")
+ expect(recorded.calls[1]?.[1]).toContain(".smithers/flows/todo/flow.ts")
  const member = mount(<AgentsCardBody card={agentsCard({ native: false, canAssign: false, agents: [agent] })} onRunCommand={recorded.onRunCommand} />)
  expect(member.querySelector('[data-flow="model.assign"]')).toBeNull()
  expect(member.querySelector('[data-flow="file"]')).not.toBeNull()

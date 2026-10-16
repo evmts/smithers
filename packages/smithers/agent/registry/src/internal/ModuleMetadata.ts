@@ -1147,7 +1147,7 @@ export const parse = (source: string): Metadata => {
   return {
     description: stringLiteral(properties.get("description")),
     // Two declarations name the same two schemas. `@smthrs/core` calls them
-    // `input` and `output`; `@smthrs/flow`, which a `flows/<name>/flow.ts`
+    // `input` and `output`; `@smthrs/flow`, which a `.smithers/flows/<name>/flow.ts`
     // default-exports, calls them `payload` and `success`. Discovery reads the
     // file without importing it, so it reads both spellings rather than
     // reporting a flow that declares a payload as one that takes no input.

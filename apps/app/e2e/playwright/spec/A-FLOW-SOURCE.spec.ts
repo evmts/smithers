@@ -8,7 +8,7 @@ test("A-FLOW-SOURCE: durable command scenario", async ({ page }) => {
   await page.goto("/")
   // Live seed: C-J11-02 proposed TODO branch; File card saves on the machine.
   await say(page, "/flow.source todo")
-  await expect(page.getByText("flows/todo/flow.ts", { exact: true }).last()).toBeVisible()
+  await expect(page.getByText(".smithers/flows/todo/flow.ts", { exact: true }).last()).toBeVisible()
   const source = page.getByRole("textbox", { name: /flow.ts/ }).last()
   const original = await source.inputValue()
   expect(original).toContain("yield* check()")
@@ -28,7 +28,7 @@ test("A-FLOW-SOURCE: mounted command projection", async ({ page }) => {
   await owner(page)
   await page.goto("/")
   await say(page, "/flow.source todo")
-  await expect(page.getByText("flows/todo/flow.ts", { exact: true }).last()).toBeVisible()
+  await expect(page.getByText(".smithers/flows/todo/flow.ts", { exact: true }).last()).toBeVisible()
   await expect(page.getByText("Saved to the machine", { exact: true })).toHaveCount(0)
   await expect(page.getByTestId("composer-input")).toBeEditable()
 })

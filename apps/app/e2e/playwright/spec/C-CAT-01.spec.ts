@@ -10,7 +10,7 @@ test("C-CAT-01: Commands show MVP doors and hide retired commands", async ({ pag
   await page.route("**/contents/.smithers/factory.json", route => route.fulfill({ json: {
     path: ".smithers/factory.json", encoding: "base64", content: Buffer.from(JSON.stringify({
       flows: [{ id: "release-notes", description: "Write release notes", summary: "Write release notes", featured: true,
-        kind: "mdx", path: "flows/release-notes/flow.mdx", capabilities: [], model: null, modelInvocable: true }], on: []
+        kind: "mdx", path: ".smithers/flows/release-notes/flow.mdx", capabilities: [], model: null, modelInvocable: true }], on: []
     })).toString("base64")
   } }))
   await page.goto("/")

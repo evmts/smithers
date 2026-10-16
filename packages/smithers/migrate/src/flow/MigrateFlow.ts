@@ -1580,7 +1580,7 @@ export const outlines = (
   const flowsDir = Options.flowsDir(options)
   const writesFlows = (unit: Units.UnitPlan): boolean =>
     unit.targets.some((target) => target === flowsDir || target.startsWith(`${flowsDir}/`))
-  // A project with no workflow never grows a `flows/` directory, and the unit
+  // A project with no workflow never grows a `.smithers/flows/` directory, and the unit
   // that only adds packages runs before the one that does. Demanding registry
   // discovery of either would fail a unit for doing exactly what it was asked.
   const anyFlows = result.units.some(writesFlows)

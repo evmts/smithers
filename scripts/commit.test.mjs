@@ -15,8 +15,8 @@ const copyHygiene = (directory) => {
   writeFileSync(join(gateBin, "smthrs"), `#!/bin/sh
 exec "${process.execPath}" "${resolve(import.meta.dirname, "../packages/smithers/build/build-cli/src/main.ts")}" "$@"
 `, { mode: 0o755 })
-  mkdirSync(join(directory, "scripts"), { recursive: true })
-  copyFileSync(resolve(import.meta.dirname, "check-tracked-hygiene.mjs"), join(directory, "scripts/check-tracked-hygiene.mjs"))
+  mkdirSync(join(directory, "packages/repo-targets/contracts"), { recursive: true })
+  copyFileSync(resolve(import.meta.dirname, "../packages/repo-targets/contracts/check-tracked-hygiene.mjs"), join(directory, "packages/repo-targets/contracts/check-tracked-hygiene.mjs"))
   rmSync(join(directory, "node_modules"), { recursive: true, force: true })
   rmSync(join(directory, "WORKSPACE.ts"), { force: true })
   symlinkSync(resolve(import.meta.dirname, "../node_modules"), join(directory, "node_modules"), "dir")
@@ -40,10 +40,10 @@ const workflow = (output) => S.GithubCiGen({ workflowName: "Fixture", output, mo
   jobs: [{ id: "check", runsOn: "ubuntu-latest", toolchain: S.CiToolchain.Needs({ install: true }), steps: [{ verb: S.Verb.Lint, pattern: "//:targetIndex" }] }] })
 export const Package = S.Package({ targets: { driftCi: workflow(".github/workflows/drift.yml"), targetIndex: S.TargetIndex({}), ci: workflow(".github/workflows/ci.yml") } })
 `)
-  writeFileSync(join(directory, "scripts/PACKAGE.ts"), `import { Smithers as S } from "@smthrs/targets"
+  writeFileSync(join(directory, "packages/repo-targets/PACKAGE.ts"), `import { Smithers as S } from "@smthrs/targets"
 export const Package = S.Package({ targets: {
-  trackedHygiene: S.Shell.Diff({ shell: "node scripts/check-tracked-hygiene.mjs --projected-tree", sandbox: "none", changes: [] }),
-  conflictMarkers: S.Shell.Diff({ shell: "! git grep --no-index -n '^<<<<<<< ' -- . ':!scripts/PACKAGE.ts' ':!node_modules'", sandbox: "none", changes: [] }),
+  trackedHygiene: S.Shell.Diff({ shell: "node packages/repo-targets/contracts/check-tracked-hygiene.mjs --projected-tree", sandbox: "none", changes: [] }),
+  conflictMarkers: S.Shell.Diff({ shell: "! git grep --no-index -n '^<<<<<<< ' -- . ':!packages/repo-targets/PACKAGE.ts' ':!node_modules'", sandbox: "none", changes: [] }),
 } })
 `)
   mkdirSync(join(directory, ".github/workflows"), { recursive: true })
@@ -291,7 +291,7 @@ for (const vcs of ["git", "jj"]) {
           // Exercise the actual label separately: the early hygiene preflight must
           // not substitute for a passing trackedHygiene target contract.
           const label = gate === "workflowInput" ? "//:targetIndex" :
-            ["trackedHygiene", "conflictMarkers"].includes(gate) ? `//scripts:${gate}` : `//:${gate}`
+            ["trackedHygiene", "conflictMarkers"].includes(gate) ? `//packages/repo-targets:${gate}` : `//:${gate}`
           const checked = command(directory, process.execPath, [resolve(import.meta.dirname, "../packages/smithers/build/build-cli/src/main.ts"), "lint", label])
           assert.notEqual(checked.status, 0, checked.stdout + checked.stderr)
           const result = command(directory, process.execPath, [script, "--push", ...(mode === "test" ? ["--test", "true"] : ["--no-test", "manual recovery"])])

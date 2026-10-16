@@ -1,0 +1,1428 @@
+import { captureCloudOwner } from "./SeamContext"
+import { renderPlanLimit } from "./HostedBilling"
+import { Effect, Fiber, FiberMap, Layer, ManagedRuntime, Schedule, Scope } from "effect"
+import { preparedView, type ViewAction } from "../PreparedView"
+import { refuseCloudSignIn, SIGN_OUT_REFUSAL } from "./CloudSignIn"
+import { actorSharedState } from "../ActorBindings"
+/* Retained workspace inventory and recovery. Every opened machine now uses
+ * the Branch card; its topic providers own machine, activity and terminal facts. */
+import {
+  CloudWorkspaceRowSchema,
+  parseRepoSelection,
+  WORKSPACE_STATUSES
+} from "../AppState"
+import type {
+  Card,
+  CloudWorkspaceInput,
+  CloudWorkspaceRow,
+  EnvironmentImageRow,
+  WorkspaceEnvironment,
+  WorkspaceFileEntry,
+  WorkspaceHead,
+  WorkspaceService,
+  WorkspaceRecovery
+} from "../AppState"
+import { canonicalStoredJsonValue } from "../EventValue"
+import { CARD_CONTENT_CAP, fileValue } from "@smthrs/rpc/FileRead"
+import { listingValue } from "@smthrs/rpc/FileList"
+import { resolveTargetRepo } from "../RepoContext"
+import { loadEgressPage, workspaceEgressPath } from "./EgressSeam"
+import { cloudUnreachable, createCloudClient } from "./CloudClient"
+import type { Refusal } from "@smthrs/rpc/Refusal"
+import { refusalSentence } from "@smthrs/rpc/RefusalCopy"
+import type { SeamContext } from "./SeamContext"
+import { randomUuid } from "../../runtime/RandomUuid"
+
+export const DEGRADED_WORKSPACE_REFUSAL =
+  "This Smithers Cloud sign-in can't use boxes — sign in again to enable them."
+
+
+/*
+ * plue's contract code for a worker that could not start the per-sandbox
+ * egress proxy and refused to boot the computer without its credential
+ * boundary (internal/microsandbox/worker/server.go). The card says the code
+ * itself: a paraphrase would hide which boundary failed.
+ */
+export const EGRESS_PROXY_UNAVAILABLE = "egress_proxy_unavailable"
+
+export type WorkspaceFacet = "terminal" | "files" | "services" | "egress"
+
+export interface WorkspaceSeam {
+  /** `box.list [owner/repo]`: refresh the collection and the tree; a bare call lists the per-user inventory. */
+  readonly listWorkspaces: (repo?: string) => Promise<string | void | { readonly value: string }>
+  /** The silent refresh (sign-in, boot): the collection and tree, no transcript line. */
+  readonly refreshWorkspaces: (repo?: string) => Promise<string | void>
+  /**
+   * `box.open [bookmark] [owner/repo] [--kind container|vm]`:
+   * create-or-reuse, render the card, watch until it settles. ADR 0002 — the
+   * kind IS the choice; a call that names none leaves plue's own default
+   * (`container`) to stand rather than asserting one.
+   */
+  readonly openWorkspace: (
+    bookmark?: string,
+    repo?: string,
+    kind?: WorkspaceKind,
+    snapshot?: string,
+    recoveryOf?: string
+  ) => Promise<string | void | { readonly value: string }>
+  /** `box.view <id>`: re-read one workspace and render its card. */
+  readonly viewWorkspace: (workspaceId: string) => Promise<string | void | { readonly value: string }>
+  readonly suspendWorkspace: (workspaceId?: string) => Promise<string | void | { readonly value: string }>
+  readonly resumeWorkspace: (workspaceId?: string) => Promise<string | void | { readonly value: string }>
+  readonly destroySession: (sessionId: string, workspaceId?: string) => Promise<string | void | { readonly value: string }>
+  /** `box.delete <id> <name>`: the workspace's name typed back is the gate — a mismatch refuses, whoever invoked. */
+  readonly deleteWorkspace: (workspaceId: string, confirmName: string) => Promise<string | void | { readonly value: string }>
+  /** The card's body tab; hidden, card-button scoped. */
+  readonly setFacet: ViewAction<[workspaceId: string, facet: WorkspaceFacet]>
+  /** `box.files [path] [workspaceId]`: the Files facet at one directory (`""` is the root). */
+  readonly listFiles: (path?: string, workspaceId?: string) => Promise<string | void | { readonly value: string }>
+  /** `box.file <path> [workspaceId]`: read one file out of the workspace and render the file card. */
+  readonly readFile: (path: string, workspaceId?: string) => Promise<string | void | { readonly value: string }>
+  /** `box.services [workspaceId]`: the Services facet's rows. */
+  readonly listServices: (workspaceId?: string) => Promise<string | void | { readonly value: string }>
+  /**
+   * `box.egress [workspaceId] [cursor]`: one page of the egress audit.
+   * Without a cursor it replaces the facet's rows; with one it appends the
+   * older page the card's "Load older" asked for.
+   */
+  readonly listEgress: (workspaceId?: string, cursor?: string) => Promise<string | void | { readonly value: string }>
+  /** `box.images [owner/repo]`: the environment images a repository has built. */
+  readonly listEnvironmentImages: (repo?: string) => Promise<string | void | { readonly value: string }>
+  /** Stop owned reads, polls and waits, and cancel pending reads. */
+  readonly dispose: () => void
+}
+
+/** The three sandbox kinds ADR 0002 names; the option surface offers exactly these. */
+export const WORKSPACE_KINDS = ["container", "vm"] as const
+export type WorkspaceKind = (typeof WORKSPACE_KINDS)[number]
+
+export interface WorkspaceSeamDeps {
+  /** The watch and session-settle poll interval; tests inject ~0. */
+  readonly pollMs?: number
+  /** The one-command open's readiness poll interval; tests inject 0. */
+}
+
+const UNSETTLED: ReadonlySet<string> = new Set(["pending", "starting"])
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value)
+
+/** The list a route answers: plue's bare array, its `{ items, next_cursor }` cursor envelope, or one under a named key. */
+const arrayOf = (body: unknown, key: string): ReadonlyArray<unknown> => {
+  if (Array.isArray(body)) return body
+  if (isRecord(body) && Array.isArray(body[key])) return body[key]
+  if (isRecord(body) && Array.isArray(body.items)) return body.items
+  return []
+}
+
+/** Both list routes page at 30 by default and cap at 100 (plue routes/pagination.go, routes/workspace.go). */
+const LIST_PAGE_LIMIT = 100
+/** 100 rows × 50 pages is far past plue's per-user active-workspace cap; the loop never runs unbounded. */
+const MAX_LIST_PAGES = 50
+
+/**
+ * The `rel="next"` target of a Link header, or null on the last page. plue
+ * writes its list links in the legacy `page`/`per_page` form
+ * (setLegacyPaginationHeaders); the per-user route's own parser reads only
+ * `cursor`/`limit`, so a next link is re-issued in cursor form — the offset
+ * `(page - 1) × per_page` — which both list routes accept.
+ */
+const nextPageOf = (link: string | null, path: string): string | null => {
+  if (link === null) return null
+  // The seam's paths omit the `/api` the proxy adds; plue's links carry it.
+  const upstreamPath = `/api${path}`
+  for (const part of link.split(",")) {
+    const match = /<([^>]+)>\s*;\s*rel="?next"?/.exec(part.trim())
+    if (match === null || match[1] === undefined) continue
+    let next: URL
+    try {
+      next = new URL(match[1], "https://cloud.invalid")
+    } catch {
+      return null
+    }
+    // A link that leaves the route it paginates is not followed.
+    if (next.pathname !== upstreamPath) return null
+    const cursor = next.searchParams.get("cursor")
+    if (cursor !== null && cursor !== "") return `${path}?limit=${LIST_PAGE_LIMIT}&cursor=${encodeURIComponent(cursor)}`
+    const page = Number(next.searchParams.get("page"))
+    const perPage = Number(next.searchParams.get("per_page") ?? next.searchParams.get("limit"))
+    if (!Number.isInteger(page) || page < 2 || !Number.isInteger(perPage) || perPage <= 0) return null
+    return `${path}?limit=${LIST_PAGE_LIMIT}&cursor=${(page - 1) * perPage}`
+  }
+  return null
+}
+
+const str = (value: unknown): string | null => (typeof value === "string" && value !== "" ? value : null)
+
+const textOrNull = (value: unknown): string | null => (typeof value === "string" && value !== "" ? value : null)
+
+const isWorkspaceStatus = (value: unknown): value is CloudWorkspaceInput["status"] =>
+  typeof value === "string" && (WORKSPACE_STATUSES as ReadonlyArray<string>).includes(value)
+
+/**
+ * The DTO's `head` (plue#446): the workspace's OWN head as the guest last
+ * reported it. plue writes empty strings when it has reported none, and an
+ * empty head is absent, not a head of "".
+ */
+const parseHead = (value: unknown): WorkspaceHead | null => {
+  if (!isRecord(value)) return null
+  const changeId = textOrNull(value.change_id)
+  const commitId = textOrNull(value.commit_id)
+  return changeId === null && commitId === null ? null : { changeId, commitId }
+}
+
+/**
+ * The DTO's `environment`: the Nix expression the computer was built from and
+ * — lane L3b — the registry `image` a vm workspace actually booted.
+ * `image` is empty for a container, and an empty string is absence.
+ */
+const parseEnvironment = (value: unknown): WorkspaceEnvironment | null => {
+  if (!isRecord(value)) return null
+  const source = textOrNull(value.source)
+  if (source === null) return null
+  return {
+    source,
+    revision: textOrNull(value.revision),
+    closureHash: textOrNull(value.closure_hash),
+    image: textOrNull(value.image)
+  }
+}
+
+/**
+ * One row of `GET /api/repos/{o}/{r}/environment-images` (lane L3b). plue's
+ * `repository_id 0` is the platform base image; an empty `golden_snapshot_id`
+ * means the first boot of that closure is a cold registry pull.
+ */
+const parseEnvironmentImage = (value: unknown): EnvironmentImageRow | null => {
+  if (!isRecord(value)) return null
+  const rawId = value.id
+  const id = typeof rawId === "number" && Number.isInteger(rawId) ? String(rawId) : str(rawId)
+  const kind = str(value.kind)
+  const source = str(value.source)
+  const status = str(value.status)
+  if (id === null || kind === null || source === null || status === null) return null
+  return {
+    id,
+    kind,
+    source,
+    sourceRevision: textOrNull(value.source_revision),
+    closureHash: textOrNull(value.closure_hash),
+    image: textOrNull(value.image),
+    status,
+    platformBase: value.repository_id === 0,
+    coldPull: textOrNull(value.golden_snapshot_id) === null
+  }
+}
+
+/** A wire count that must be a whole number to be stated at all. */
+const countOrNull = (value: unknown): number | null =>
+  typeof value === "number" && Number.isInteger(value) ? value : null
+
+/**
+ * The DTO's `lsp.languages` (plue #505): the languages the workspace relays a
+ * language server for. A DTO with no `lsp` object is null — unknown, never
+ * an empty list; an `lsp` object with no readable languages is `[]`.
+ */
+const parseLspLanguages = (value: unknown): Array<string> | null => {
+  if (!isRecord(value)) return null
+  const languages = value.languages
+  if (!Array.isArray(languages)) return []
+  return languages.flatMap((entry) => (typeof entry === "string" && entry !== "" ? [entry] : []))
+}
+
+/** One workspace row off the wire; malformed rows drop. */
+const parseWorkspaceWire = (value: unknown, fallbackRepo?: string): CloudWorkspaceInput | null => {
+  if (!isRecord(value)) return null
+  const id = str(value.id)
+  const repoId = str(value.repo_full_name) ?? fallbackRepo ?? null
+  const name = str(value.name) ?? str(value.slug) ?? id
+  if (id === null || repoId === null || name === null || !isWorkspaceStatus(value.status)) return null
+  return {
+    id,
+    repoId,
+    name,
+    sourceSnapshotId: textOrNull(value.snapshot_id),
+    targetBookmark: textOrNull(value.target_bookmark),
+    status: value.status,
+    /* plue#482: why a failed workspace failed, in the provider's own words. */
+    failureCode: textOrNull(value.failure_code),
+    failureMessage: textOrNull(value.failure_message),
+    provisioningStage: textOrNull(value.provisioning_stage),
+    suspendedAt: textOrNull(value.suspended_at),
+    createdAt: textOrNull(value.created_at),
+    kind: textOrNull(value.kind),
+    /* RFD-004: the agent session that drove this computer, on a `kind: "agent"` workspace. */
+    agentSessionId: textOrNull(value.agent_session_id),
+    head: parseHead(value.head),
+    ahead: countOrNull(value.ahead),
+    behind: countOrNull(value.behind),
+    startedAt: textOrNull(value.started_at),
+    environment: parseEnvironment(value.environment),
+    persistence: textOrNull(value.persistence),
+    sshHost: textOrNull(value.ssh_host),
+    lspLanguages: parseLspLanguages(value.lsp)
+  }
+}
+
+/** One row of the workspace file listing (plue#449); a row missing a name drops. */
+const parseFileEntry = (value: unknown): WorkspaceFileEntry | null => {
+  if (!isRecord(value)) return null
+  const name = str(value.name)
+  const type = str(value.type)
+  if (name === null || type === null) return null
+  const size = value.size
+  return {
+    name,
+    // plue always writes `path`; a row without one is still nameable under the directory the facet asked for.
+    path: str(value.path) ?? name,
+    type,
+    size: typeof size === "number" && Number.isInteger(size) && size >= 0 ? size : null
+  }
+}
+
+/**
+ * One managed-service row (plue#449, and #483's `port` / `url`). Both are
+ * `omitempty` on the wire, so a service that publishes neither carries
+ * neither and the row states a name and a state alone — an absent port is
+ * absence, never a zero.
+ */
+const parseService = (value: unknown): WorkspaceService | null => {
+  if (!isRecord(value)) return null
+  const name = str(value.name)
+  const state = str(value.state)
+  if (name === null || state === null) return null
+  const port = value.port
+  return {
+    name,
+    state,
+    port: typeof port === "number" && Number.isInteger(port) && port > 0 ? port : null,
+    url: str(value.url)
+  }
+}
+
+/*
+ * One row of GET /api/user/workspaces: plue's UserWorkspaceRow
+ * (internal/services/workspace.go — workspace_id, repository_owner,
+ * repository_name, workspace_title, state), a switcher row that carries no
+ * bookmark, stage, or suspension time. Those stay whatever the collection
+ * already knows (the caller merges); they are never invented here.
+ */
+const parseUserWorkspaceWire = (value: unknown): CloudWorkspaceInput | null => {
+  if (!isRecord(value)) return null
+  const id = str(value.workspace_id)
+  const owner = str(value.repository_owner)
+  const repoName = str(value.repository_name)
+  const name = str(value.workspace_title) ?? id
+  if (id === null || owner === null || repoName === null || name === null || !isWorkspaceStatus(value.state)) return null
+  return {
+    id,
+    repoId: `${owner}/${repoName}`,
+    name,
+    targetBookmark: null,
+    status: value.state,
+    /* plue#482: the switcher row states the failure too, so a failed row explains itself in the list. */
+    failureCode: textOrNull(value.failure_code),
+    failureMessage: textOrNull(value.failure_message),
+    provisioningStage: null,
+    suspendedAt: null,
+    createdAt: textOrNull(value.created_at),
+    /*
+     * The switcher row carries none of plue#446's header facts — no kind, no
+     * head, no ahead/behind, no environment, no persistence, no ssh host, no
+     * start time. They are null HERE and the caller restores whatever the
+     * collection already knows; nothing is read out of the per-repo DTO's
+     * shape, because this route does not answer that shape.
+     */
+    kind: null,
+    agentSessionId: null,
+    head: null,
+    ahead: null,
+    behind: null,
+    startedAt: null,
+    environment: null,
+    persistence: null,
+    sshHost: null,
+    lspLanguages: null
+  }
+}
+
+const cardIdOf = (workspaceId: string): string => `branch:${workspaceId}`
+
+const splitRepo = (repoId: string): { readonly owner: string; readonly name: string } => {
+  const [owner = "", name = ""] = repoId.split("/")
+  return { owner, name }
+}
+
+const WorkspaceObservationSchema = CloudWorkspaceRowSchema.omit({ updatedAt: true, revision: true, recovery: true })
+
+export const createWorkspaceSeam = (ctx: SeamContext, deps: WorkspaceSeamDeps = {}): WorkspaceSeam => {
+  const pollMs = deps.pollMs ?? 5_000
+  const repoPath = (repoId: string, rest: string): string => {
+    const { owner, name } = splitRepo(repoId)
+    return `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}${rest}`
+  }
+
+  const { runtime, watching, lifecycle, workspaceEpochs, recoveryFlights, unlistedProbes } = actorSharedState(ctx, "workspace", () => {
+    const runtime = ManagedRuntime.make(Layer.empty)
+    const watching = Effect.runSync(FiberMap.make<string, void>().pipe(Scope.provide(runtime.scope)))
+    return {
+      runtime, watching,
+      lifecycle: { disposed: false },
+      recoveryFlights: new Map<string, Promise<unknown>>(),
+      workspaceEpochs: new Map<string, number>(),
+      /** `<account>:<box id>`: an orphaned card's id is asked of this account's repositories once. */
+      unlistedProbes: new Set<string>()
+    }
+  })
+  const { get, send: sendJson } = createCloudClient(ctx)
+  const read = (path: string, label?: string) => Effect.tryPromise({
+    try: (signal) => get(path, label, signal), catch: cloudUnreachable
+  }).pipe(Effect.catch((failure) => Effect.succeed(failure)))
+  const getJson = (path: string, label?: string) => runtime.runPromise(read(path, label)).catch(cloudUnreachable)
+
+  /** The lifetime and authorization captured before an await must still own its answer. */
+  const currentOperation = (workspaceId?: string): (() => boolean) => {
+    const owner = captureCloudOwner(ctx)
+    const epoch = workspaceId === undefined ? undefined : workspaceEpochs.get(workspaceId)
+    return () => !lifecycle.disposed && owner()
+      && (workspaceId === undefined || (
+        ctx.store.collections.cloudWorkspaces.has(workspaceId)
+        && workspaceEpochs.get(workspaceId) === epoch
+      ))
+  }
+
+  /** 5s cadence × 120 = ten minutes, the provisioning ceiling the workspaces spec names. */
+  const MAX_WATCH_POLLS = 120
+
+  const dispose = (): void => {
+    if (lifecycle.disposed) return
+    lifecycle.disposed = true
+    void runtime.dispose()
+  }
+
+  /*
+   * The two gates every workspace act passes: a definitive signed-in answer,
+   * and the scope set — the legacy (degraded) token reads but never acts.
+   */
+  const gate = (): string | void => {
+    if (lifecycle.disposed || ctx.isDisposed?.()) return "The workspace controller is disposed."
+    const session = ctx.store.collections.cloudSessions.get("cloud")
+    if (session?.state !== "signed-in") return refuseCloudSignIn(ctx)
+    if (session.scopes === "degraded") return refuseCloudSignIn(ctx, DEGRADED_WORKSPACE_REFUSAL)
+  }
+
+  /*
+   * The workspace a bare act means: an explicit id (looked up locally — the
+   * id alone cannot route without its repository), else the active working
+   * copy when it is a workspace, else the single loaded workspace. Never a
+   * guess.
+   */
+  const resolveWorkspace = (
+    workspaceId?: string
+  ): { readonly workspace: CloudWorkspaceRow } | { readonly error: string } => {
+    const { cloudWorkspaces, workingCopies } = ctx.store.collections
+    if (workspaceId !== undefined && workspaceId !== "") {
+      const row = cloudWorkspaces.get(workspaceId)
+      return row === undefined
+        ? { error: `Box ${workspaceId} is not loaded — /box.list refreshes the inventory` }
+        : { workspace: row }
+    }
+    const key = ctx.store.session().activeRepoKey ?? null
+    const selection = key === null ? null : parseRepoSelection(key)
+    if (selection !== null && selection.copyId !== undefined) {
+      const copy = workingCopies.get(selection.copyId)
+      if (copy?.kind === "workspace" && copy.workspaceId !== undefined) {
+        const row = cloudWorkspaces.get(copy.workspaceId)
+        if (row !== undefined) return { workspace: row }
+      }
+    }
+    const all = [...cloudWorkspaces.values()]
+    if (all.length === 1) return { workspace: all[0]! }
+    if (all.length === 0) {
+      return { error: "Branch unavailable" }
+    }
+    return { error: `Several boxes are loaded (${all.map((row) => row.id).join(", ")}) — name a box id` }
+  }
+
+  /* The repository a snapshot or session act routes through. */
+  const resolveRepo = (
+    workspaceId?: string
+  ): { readonly repo: string; readonly workspaceId?: string } | { readonly error: string } => {
+    const resolved = resolveWorkspace(workspaceId)
+    if ("error" in resolved) return resolved
+    return { repo: resolved.workspace.repoId, workspaceId: resolved.workspace.id }
+  }
+
+  /* ---- the auxiliaries: absent answers, never inventions ---- */
+
+  const workspacePath = (repoId: string, workspaceId: string, rest: string): string =>
+    repoPath(repoId, `/workspaces/${encodeURIComponent(workspaceId)}${rest}`)
+
+  /** One directory inside the working copy (plue#449); the server's own error when it refuses. */
+  const loadFiles = async (
+    repoId: string,
+    workspaceId: string,
+    path: string
+  ): Promise<ReadonlyArray<WorkspaceFileEntry> | { readonly error: string }> => {
+    const answer = await getJson(`${workspacePath(repoId, workspaceId, "/files")}?path=${encodeURIComponent(path)}`)
+    if ("error" in answer) return { error: answer.error }
+    return arrayOf(answer.body, "entries").flatMap((entry) => {
+      const parsed = parseFileEntry(entry)
+      return parsed === null ? [] : [parsed]
+    })
+  }
+
+  /** The workspace's managed services (plue#449). */
+  const loadServices = async (
+    repoId: string,
+    workspaceId: string
+  ): Promise<ReadonlyArray<WorkspaceService> | { readonly error: string }> => {
+    const answer = await getJson(workspacePath(repoId, workspaceId, "/services"))
+    if ("error" in answer) return { error: answer.error }
+    return arrayOf(answer.body, "services").flatMap((entry) => {
+      const parsed = parseService(entry)
+      return parsed === null ? [] : [parsed]
+    })
+  }
+
+  const workspaceCard = (workspace: CloudWorkspaceInput): Card => {
+    const id = `branch:${workspace.id}`
+    const existing = ctx.store.collections.cards.get(id)
+    return { id, kind: "branch", title: workspace.name, status: "active",
+      createdAt: existing?.createdAt ?? Date.now(), ordinal: existing?.ordinal ?? ctx.nextOrdinal(),
+      payload: { id: workspace.id } }
+  }
+  const renderWorkspace = (workspace: CloudWorkspaceInput): void => {
+    ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card: workspaceCard(workspace) })
+  }
+
+  /*
+   * The failure side of an act: the refusal rides the card too, so it stays
+   * visible. A refusal plue coded `egress_proxy_unavailable` names that code
+   * as well as the message — the worker refused to boot the computer without
+   * its credential boundary, and "service unavailable" alone would hide which
+   * boundary failed.
+   */
+  const recoveryOwner = (): Pick<WorkspaceRecovery, "owner" | "ownerRevision" | "identityOwnerRevision"> | undefined => {
+    const cloud = ctx.store.collections.cloudSessions.get("cloud")
+    if (cloud?.state !== "signed-in" || cloud.username === null) return undefined
+    const identity = ctx.store.collections.identitySessions.get("identity")
+    const identityOwnerRevision = identity?.ownerRevision ?? identity?.revision
+    return { owner: cloud.username, ownerRevision: cloud.ownerRevision ?? cloud.revision,
+      ...(identityOwnerRevision === undefined ? {} : { identityOwnerRevision }) }
+  }
+  const ownsRecovery = (recovery: WorkspaceRecovery): boolean => {
+    const owner = recoveryOwner()
+    return owner !== undefined && owner.owner === recovery.owner && owner.ownerRevision === recovery.ownerRevision
+      && owner.identityOwnerRevision === recovery.identityOwnerRevision
+  }
+  const writeRecovery = async (oldId: string, recovery: WorkspaceRecovery): Promise<void> => {
+    const row = ctx.store.collections.cloudWorkspaces.get(oldId)
+    if (row === undefined || !ownsRecovery(recovery) || lifecycle.disposed) return
+    await ctx.dispatch({ type: "workspace.updated", actor: "system",
+      workspace: { ...row, recovery } }).isPersisted.promise
+  }
+
+  const failOnCard = (
+    workspace: CloudWorkspaceInput,
+    refusal: string | { readonly error: string; readonly code: string | null; readonly refusal?: Refusal; readonly details?: unknown }
+  ): string | Promise<string> => {
+    if (typeof refusal !== "string" && refusal.refusal?.rawCode === "plan_limit_exceeded") {
+      return renderPlanLimit(ctx.store, refusal.refusal, ctx.checkout ?? false, ctx.actor())
+    }
+    const error = typeof refusal === "string" ? refusal : refusal.error
+    if (typeof refusal !== "string" && refusal.code === "workspace_vm_missing" && isRecord(refusal.details)
+      && refusal.details.workspace_id === workspace.id && refusal.details.create_fresh === true) {
+      const owner = recoveryOwner()
+      if (owner !== undefined) {
+        const existing = ctx.store.collections.cloudWorkspaces.get(workspace.id)?.recovery
+        ctx.dispatch({ type: "workspace.updated", actor: "system", workspace: {
+          ...workspace, recovery: { ...owner, createFresh: true,
+            ...(typeof refusal.details.snapshot_id === "string" && refusal.details.snapshot_id !== ""
+              ? { snapshotId: refusal.details.snapshot_id } : {}),
+            ...(existing !== undefined && ownsRecovery(existing) && existing.request !== undefined ? { request: existing.request } : {}) }
+        } })
+      }
+    }
+    renderWorkspace(workspace)
+    /*
+     * The line that goes back to the transcript, the toast and the model: the
+     * code first (the anchor the agent boundary reads), then plue's own words,
+     * then the one sentence saying whose fault it was. A bare string caller
+     * has no refusal to classify and keeps its sentence unchanged.
+     */
+    const classified = typeof refusal === "string" ? undefined : refusal.refusal
+    return classified === undefined ? error : refusalSentence(classified)
+  }
+
+  /* ---- the list load (listWorkspaces, delete's aftermath, a 404 mid-watch) ---- */
+
+  /** A box id plue minted: only a UUID names a box the detail route can be asked about. */
+  const BOX_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  /** One read per box the list left out, and only the first page of them. */
+  const MAX_UNLISTED_CONFIRMS = 25
+  /** An orphaned card names no repository, so the account's own repositories are asked, newest selection first. */
+  const MAX_ID_PROBE_REPOS = 12
+
+  /** The exact box, in its own repository: the only read that can prove a box absent. */
+  const askBox = (repoId: string, workspaceId: string) =>
+    read(repoPath(repoId, `/workspaces/${encodeURIComponent(workspaceId)}`))
+
+  /** The row as a load writes it: the collection's own facts, minus the reducer's bookkeeping. */
+  const heldInput = (row: CloudWorkspaceRow): CloudWorkspaceInput => {
+    const { updatedAt: _updatedAt, revision: _revision, ...input } = row
+    return input
+  }
+
+  /*
+   * Both inventory lists are OWNER-scoped on the wire — plue's
+   * `ListUserWorkspacesAcrossRepos` and `ListWorkspacesByRepo` both filter
+   * `workspaces.user_id = <the signed-in user>` — while
+   * `GET /api/repos/{owner}/{repo}/workspaces/{id}` is REPOSITORY-read
+   * scoped. So a list's silence is not a box's absence: a box in this
+   * person's repository that another identity owns (on the hosted deployment
+   * every box is owned by the machine account) is readable by its exact id
+   * and named by no list this person can run.
+   *
+   * Deleting the row on that silence took the box's state, its repository
+   * binding and the app's only way to ask again, and left the card saying
+   * "This box is not available." about a box that was provisioning
+   * ([#3882](https://github.com/smithersai/smithers/issues/3882):
+   * `a8eb95e2-4c78-4568-88cc-79b2dfd934be` on `roninjin10/e2e-verify`, which
+   * the product worker had at `no_capacity` / `waiting_for_machine` while the
+   * card above it claimed the box was gone. The two routes' scopes above are
+   * read from this repository's own source; no capture of the live list
+   * responses for that box was kept, so this comment claims the mechanism and
+   * the observed card, not a header value nobody recorded).
+   *
+   * So every box the list did not name is ASKED, by its exact id, before the
+   * list is allowed to speak for it: a box the host still serves joins the
+   * load with its own fresh facts, a 404 is a real absence and the prune
+   * stands, and a refusal proves nothing — the row is kept as it stands and
+   * the code is reported. Every read is the box's exact id under the
+   * repository the row itself is bound to; no box is matched by name, and the
+   * orphan probe below, which has no row to read a repository from, asks only
+   * repositories this account's own inventory holds.
+   */
+  const confirmUnlisted = (
+    listed: ReadonlySet<string>,
+    repo: string | undefined,
+    current: () => boolean
+  ): Effect.Effect<ReadonlyArray<CloudWorkspaceInput>> => Effect.gen(function*() {
+    const keep: Array<CloudWorkspaceInput> = []
+    /*
+     * WHICH rows the window reaches is not left to the collection's order
+     * (which is its keys', so the id decides). For a box that has not settled
+     * the detail read IS its state refresh — a queued box's
+     * `waiting_for_machine` reaches its card on no other read — so those rows
+     * are asked first, and the most recently observed of them before the
+     * rest. A settled row has nothing moving to miss (#3882).
+     */
+    const unlisted = [...ctx.store.collections.cloudWorkspaces.values()]
+      .filter((row) => (repo === undefined || row.repoId === repo) && !listed.has(row.id))
+      .sort((left, right) =>
+        (UNSETTLED.has(left.status) ? 0 : 1) - (UNSETTLED.has(right.status) ? 0 : 1) ||
+        right.revision - left.revision)
+    /*
+     * The window bounds the READS, not the inventory. A row it never reached
+     * was never asked, and an unasked box is not an absent one — on the
+     * hosted deployment every branch machine is unlisted, so pruning the
+     * overflow would delete real boxes in bulk on the same bad evidence this
+     * confirmation exists to refuse.
+     */
+    for (const row of unlisted.slice(MAX_UNLISTED_CONFIRMS)) keep.push(heldInput(row))
+    for (const row of unlisted.slice(0, MAX_UNLISTED_CONFIRMS)) {
+      if (!current()) return keep
+      const answer = yield* askBox(row.repoId, row.id)
+      if (!("error" in answer)) {
+        keep.push(parseWorkspaceWire(answer.body, row.repoId) ?? heldInput(row))
+        continue
+      }
+      /* Gone is the one answer that lets the list's silence stand. */
+      if (answer.status === 404) continue
+      ctx.report?.(`box.unlisted.${answer.code ?? answer.status ?? "unreachable"}`, answer.error)
+      keep.push(heldInput(row))
+    }
+    if (repo !== undefined) return keep
+    /*
+     * A card whose row an earlier load already deleted holds no repository to
+     * ask, so its exact id is asked of the repositories this account holds —
+     * the active selection's first — until one answers. Once per box per
+     * signed-in account: a box that answered 404 everywhere is absent and the
+     * card's own word already says so.
+     */
+    const account = ctx.store.collections.cloudSessions.get("cloud")?.username ?? ""
+    const active = ctx.store.session().activeRepoKey?.split("#")[0]
+    const repositories = [...ctx.store.collections.repositories.keys()]
+      .sort((left, right) => (left === active ? -1 : right === active ? 1 : 0))
+      .slice(0, MAX_ID_PROBE_REPOS)
+    /*
+     * An inventory holding no repositories has answered nothing, so there is
+     * no id to retire against it. `loadRepositories` and this refresh are
+     * started together on sign-in, so the repositories are routinely still in
+     * flight when the first list completes — retiring an orphaned id there
+     * retired it with no read at all, and the card kept "This box is not
+     * available." for the rest of the session on exactly the silence this
+     * probe exists to refuse (#3882).
+     */
+    if (repositories.length === 0) return keep
+    const orphans = [...ctx.store.collections.cards.values()].flatMap((card) =>
+      card.kind === "branch" && BOX_ID.test(card.payload.id) && !listed.has(card.payload.id) &&
+      !ctx.store.collections.cloudWorkspaces.has(card.payload.id) &&
+      !unlistedProbes.has(`${account}:${card.payload.id}`) ? [card.payload.id] : [])
+    for (const id of orphans) {
+      if (!current()) return keep
+      const probe = `${account}:${id}`
+      /*
+       * Only a repository that ANSWERED has spoken, and only `404` is an
+       * answer about this box: one repository has to have declined it, and
+       * none of them may have been unreachable, before the id is retired.
+       */
+      let declined = false
+      let unreachable = false
+      let found: CloudWorkspaceInput | null = null
+      for (const repoId of repositories) {
+        /*
+         * The id is recorded only where the reads below REACHED an answer for
+         * it. A probe this one left unfinished — the account signed out, a
+         * newer list superseded it, the seam was disposed — recorded nothing,
+         * so the id is as open as one a repository could not answer; marking
+         * it before the reads retired it on a lifetime event instead of on
+         * evidence. The cost is that two overlapping lists can each read the
+         * same id once; the reads are idempotent GETs and bounded per list.
+         */
+        if (!current()) return keep
+        const answer = yield* askBox(repoId, id)
+        if ("error" in answer) {
+          /*
+           * Only 404 says this repository does not hold the box: plue keys the
+           * detail read on (id, repository_id) and answers `NotFound` before
+           * any access check, so a 403 is reachable only once the row HAS been
+           * found and `requireWorkspaceAccess` declined it. Reading the one
+           * answer that proves the box exists as an absence would retire the
+           * id for the rest of the session.
+           */
+          if (answer.status === 404) { declined = true; continue }
+          unreachable = true
+          ctx.report?.(`box.orphan.${answer.code ?? answer.status ?? "unreachable"}`, answer.error)
+          continue
+        }
+        found = parseWorkspaceWire(answer.body, repoId)
+        if (found !== null) break
+      }
+      if (found !== null) keep.push(found)
+      /* Served, or declined by every repository that answered: both are answers, and both retire the id. */
+      if (found !== null || (declined && !unreachable)) unlistedProbes.add(probe)
+    }
+    return keep
+  })
+
+
+  /** One page of a list route: its body and the next page's seam path (cursor form), or the honest error. */
+  const getListPage = (
+    pagePath: string,
+    routePath: string
+  ): Effect.Effect<{ readonly body: unknown; readonly next: string | null; readonly total: number | null } | { readonly error: string }> => Effect.gen(function*() {
+    const answer = yield* read(pagePath, routePath)
+    if ("error" in answer) return answer
+    const { response } = answer
+    const totalHeader = response.headers.get("x-total-count")
+    const total = Number(totalHeader)
+    return {
+      body: answer.body,
+      next: nextPageOf(response.headers.get("link"), routePath),
+      total: totalHeader !== null && Number.isInteger(total) && total >= 0 ? total : null
+    }
+  })
+
+  /*
+   * The whole list, every page: `?limit=100` and the Link header's next page
+   * until it is exhausted. A body that answered rows Smithers could not read
+   * is an error, never an empty scope replace that would drop every loaded
+   * workspace and its tree row.
+   */
+  const loadListEffect = (
+    repo?: string,
+    current = currentOperation()
+  ): Effect.Effect<ReadonlyArray<CloudWorkspaceInput> | string> => Effect.gen(function*() {
+    if (!current()) return SIGN_OUT_REFUSAL
+    const scope = repo === undefined ? {} : { repoId: repo }
+    const requestId = randomUuid()
+    ctx.dispatch({ type: "workspaces.list.started", actor: "system", requestId, ...scope })
+    const latest = (): boolean => {
+      const observations = ctx.store.collections.cloudSessions.get("cloud")?.workspaceLists ?? []
+      const active = observations.find(row => row.scope === (repo ?? "*"))
+      return active?.requestId === requestId && !observations.some(row =>
+        row.revision > active.revision && (repo === undefined || row.scope === "*" || row.scope === repo))
+    }
+    const fail = (error: string): string => {
+      if (current()) ctx.dispatch({ type: "workspaces.list.failed", actor: "system", requestId, ...scope, error })
+      return error
+    }
+    const path = repo === undefined ? "/user/workspaces" : repoPath(repo, "/workspaces")
+    const raw: Array<unknown> = []
+    let next: string | null = `${path}?limit=${LIST_PAGE_LIMIT}`
+    const seen = new Set<string>()
+    for (let page = 0; next !== null && page < MAX_LIST_PAGES; page += 1) {
+      if (seen.has(next)) break
+      seen.add(next)
+      if (!current()) return SIGN_OUT_REFUSAL
+      if (!latest()) return fail("A newer box list was requested. Try again.")
+      const answer: Effect.Success<ReturnType<typeof getListPage>> = yield* getListPage(next, path)
+      if (!current()) return SIGN_OUT_REFUSAL
+      if (!latest()) return fail("A newer box list was requested. Try again.")
+      if ("error" in answer) return fail(answer.error)
+      const rows = arrayOf(answer.body, "workspaces")
+      raw.push(...rows)
+      if (rows.length === 0 || (answer.total !== null && raw.length >= answer.total)) break
+      next = answer.next
+    }
+    const parsed = raw.flatMap((entry) => {
+      const row = repo === undefined
+        ? parseUserWorkspaceWire(entry) ?? parseWorkspaceWire(entry)
+        : parseWorkspaceWire(entry, repo)
+      return row === null ? [] : [row]
+    })
+    if (raw.length > 0 && parsed.length === 0) {
+      return fail(`Smithers Cloud answered ${raw.length} box row${raw.length === 1 ? "" : "s"} in a shape Smithers can't read — the loaded boxes were kept.`)
+    }
+    /*
+     * The per-user row is a switcher row: no bookmark, no stage, no
+     * suspension time. What the collection already holds for a workspace
+     * stands where the row is silent; a status that moved on drops the
+     * fields that only made sense in the old one.
+     */
+    const workspaces = repo === undefined
+      ? parsed.map((row) => {
+        const known = ctx.store.collections.cloudWorkspaces.get(row.id)
+        if (known === undefined) return row
+        return {
+          ...row,
+          targetBookmark: known.targetBookmark,
+          provisioningStage: UNSETTLED.has(row.status) ? known.provisioningStage : null,
+          suspendedAt: row.status === "suspended" ? known.suspendedAt : null,
+          createdAt: row.createdAt ?? known.createdAt,
+          /*
+           * plue#446's header facts are not in the switcher row. What the
+           * per-repo DTO already taught the collection stands — except
+           * `startedAt`, which only describes a running VM: a status that
+           * left "running" drops it rather than reporting an uptime for a
+           * computer that is no longer up.
+           */
+          kind: known.kind ?? null,
+          agentSessionId: known.agentSessionId ?? null,
+          head: known.head ?? null,
+          ahead: known.ahead ?? null,
+          behind: known.behind ?? null,
+          startedAt: row.status === "running" ? known.startedAt ?? null : null,
+          environment: known.environment ?? null,
+          persistence: known.persistence ?? null,
+          sshHost: known.sshHost ?? null,
+          lspLanguages: known.lspLanguages ?? null
+        }
+      })
+      : parsed
+    /*
+     * The list's silence is checked against the boxes themselves before it
+     * replaces the inventory, so an owner-scoped list cannot delete a box the
+     * host still serves (#3882).
+     */
+    const confirmed = yield* confirmUnlisted(new Set(workspaces.map((row) => row.id)), repo, current)
+    if (!current()) return SIGN_OUT_REFUSAL
+    if (!latest()) return fail("A newer box list was requested. Try again.")
+    const loaded = confirmed.length === 0 ? workspaces : [...workspaces, ...confirmed]
+    ctx.dispatch({
+      type: "workspaces.loaded",
+      actor: "system",
+      requestId,
+      workspaces: loaded,
+      ...(repo === undefined ? {} : { repoId: repo })
+    })
+    return loaded
+  })
+  const loadList = (...args: Parameters<typeof loadListEffect>) => runtime.runPromise(loadListEffect(...args)).catch((cause) => {
+    if (lifecycle.disposed) return SIGN_OUT_REFUSAL
+    throw cause
+  })
+
+  /** Polls compare durable facts, excluding local observation timestamps and revisions. */
+  const persistWorkspaceObservation = async (workspace: CloudWorkspaceInput): Promise<void> => {
+    const committed = ctx.store.committedWorkspace(workspace.id)
+    const current = ctx.store.collections.cloudWorkspaces.get(workspace.id)
+    const value = canonicalStoredJsonValue(WorkspaceObservationSchema.parse(workspace))
+    if (committed !== undefined && current !== undefined &&
+      canonicalStoredJsonValue(WorkspaceObservationSchema.parse(committed)) === value &&
+      canonicalStoredJsonValue(WorkspaceObservationSchema.parse(current)) === value) return
+    await ctx.dispatch({ type: "workspace.updated", actor: "system", workspace }).isPersisted.promise
+  }
+
+  /* ---- the settle watch ---- */
+
+  /*
+   * Poll one settling workspace until it leaves pending/starting (or is
+   * gone). A failed poll is not a fact — the watch simply tries again; a 404
+   * IS a fact, and the honest answer is to re-read the repository's list.
+   */
+  const poll = (workspaceId: string, current: () => boolean) => Effect.gen(function*() {
+    const row = ctx.store.collections.cloudWorkspaces.get(workspaceId)
+    if (row === undefined || !current()) return false
+    const answer = yield* read(repoPath(row.repoId, `/workspaces/${encodeURIComponent(workspaceId)}`))
+    if (!current()) return false
+    if (answer.status === 404) {
+      yield* loadListEffect(row.repoId, current)
+      return false
+    }
+    if (!("error" in answer)) {
+      const parsed = parseWorkspaceWire(answer.body, row.repoId)
+      if (parsed !== null) {
+        yield* Effect.promise(() => persistWorkspaceObservation(parsed))
+        if (!current()) return false
+        if (!UNSETTLED.has(parsed.status)) return false
+      }
+    }
+    return true
+  }).pipe(
+    Effect.repeat({ times: MAX_WATCH_POLLS - 1, while: (pending) => pending, schedule: Schedule.spaced(pollMs) }),
+    Effect.asVoid
+  )
+
+  const watch = (workspaceId: string): void => {
+    if (lifecycle.disposed) return
+    runtime.runFork(FiberMap.run(watching, workspaceId, poll(workspaceId, currentOperation(workspaceId)), { onlyIfMissing: true }))
+  }
+
+  /* ---- the acts ---- */
+
+  const refreshWorkspaces: WorkspaceSeam["refreshWorkspaces"] = async (repo) => {
+    const session = ctx.store.collections.cloudSessions.get("cloud")
+    if (session?.state !== "signed-in") return
+    const current = currentOperation()
+    const loaded = await loadList(repo === undefined || repo === "" ? undefined : repo, current)
+    if (!current()) return SIGN_OUT_REFUSAL
+    if (typeof loaded !== "string") reconnectRecovery()
+    return typeof loaded === "string" ? loaded : undefined
+  }
+
+  const listWorkspaces: WorkspaceSeam["listWorkspaces"] = async (repo) => {
+    const refusal = gate()
+    if (refusal !== undefined) return refusal
+    const target = repo === undefined || repo === "" ? undefined : resolveTargetRepo(ctx.store, repo)
+    if (target !== undefined && "error" in target) return target.error
+    const scope = target !== undefined && "repo" in target ? target.repo : undefined
+    const current = currentOperation()
+    const loaded = await loadList(scope, current)
+    if (!current()) return SIGN_OUT_REFUSAL
+    if (typeof loaded === "string") return loaded
+    reconnectRecovery()
+    const listing = loaded.length === 0
+      ? scope === undefined
+        ? "No boxes."
+        : `No boxes on ${scope}.`
+      : loaded
+        .map((workspace) =>
+          `${workspace.name} (${workspace.id}) · ${workspace.status} · ${workspace.repoId}${
+            workspace.targetBookmark === null ? "" : `@${workspace.targetBookmark}`
+          }`)
+        .join("\n")
+    ctx.dispatch({ type: "message.appended", actor: "system", text: listing })
+    return { value: listing }
+  }
+
+  const openWorkspaceNow = async (bookmark?: string, repo?: string, kind?: WorkspaceKind, snapshot?: string,
+    recovery?: { readonly oldId: string; readonly facts: WorkspaceRecovery }): Promise<string | void | { readonly value: string }> => {
+    const refusal = gate()
+    if (refusal !== undefined) return refusal
+    const accountCurrent = currentOperation()
+    const requestedSelection = ctx.store.session().activeRepoKey
+    const target = resolveTargetRepo(ctx.store, repo)
+    if ("error" in target) return target.error
+    /*
+     * The source bookmark: the explicit one, else the repository's head
+     * bookmark (the same default the create route applies). An unnamed
+     * source is omitted, never invented.
+     */
+    const repoRow = ctx.store.collections.repositories.get(target.repo)
+    const source = recovery === undefined
+      ? bookmark === undefined || bookmark === "" ? repoRow?.head?.bookmark ?? undefined : bookmark
+      : recovery.facts.request!.bookmark ?? undefined
+    /*
+     * ADR 0002: three sandbox kinds share one option surface and the kind IS
+     * the choice. A call that named one sends it; a call that named none
+     * sends none, so plue's own default (`container`) applies rather than the
+     * app asserting a kind the human never picked. There is no environment or
+     * image field — that default stands.
+     */
+    const created = await sendJson("POST", repoPath(target.repo, "/workspaces"), {
+      ...(source === undefined ? {} : { source_bookmark: source }),
+      ...(kind === undefined ? {} : { kind }),
+      ...(snapshot === undefined ? {} : { snapshot_id: snapshot }),
+      ...(recovery === undefined ? {} : { name: recovery.facts.request!.name })
+    })
+    /*
+     * The code travels in the answer itself: a creation refused for the
+     * missing egress proxy names `egress_proxy_unavailable`, exactly, beside
+     * the server's own message.
+     *
+     * The refusal ALSO lands, verbatim, on the card whose create affordance
+     * was pressed. That affordance only exists on a FAILED workspace's card
+     * (the three-kind row), so the refusal goes to exactly those cards on this
+     * repository and nowhere else — a running workspace's card said nothing
+     * about this create and must not start now. plue's 409 for a kind whose
+     * base image is still registering ("no NixOS environment image is
+     * registered for kind vm") is the honest state of the system, so it
+     * reads as plue wrote it.
+     */
+    if (!accountCurrent()) return SIGN_OUT_REFUSAL
+    if ("error" in created) {
+      if (recovery !== undefined) {
+        const facts = recovery.facts
+        await writeRecovery(recovery.oldId, { ...facts,
+          ...(created.code === "snapshot_not_found" ? { snapshotId: undefined } : {}),
+          request: { ...facts.request!, state: created.status === null || created.status >= 500 ? "requested" : "failed", error: created.error } })
+      }
+      if (created.refusal.rawCode === "plan_limit_exceeded") return renderPlanLimit(ctx.store, created.refusal, ctx.checkout ?? false, ctx.actor())
+      for (const row of ctx.store.collections.cloudWorkspaces.values()) {
+        if (row.repoId !== target.repo || row.status !== "failed") continue
+        if (ctx.store.collections.cards.get(cardIdOf(row.id)) === undefined) continue
+        renderWorkspace(row)
+      }
+      /* One sentence for every refusal: the code, plue's own words, then whose fault it was. */
+      return refusalSentence(created.refusal)
+    }
+    const workspace = parseWorkspaceWire(created.body, target.repo)
+    if (workspace === null) {
+      if (recovery !== undefined) await writeRecovery(recovery.oldId, { ...recovery.facts,
+        request: { ...recovery.facts.request!, error: "Creation not confirmed." } })
+      return `Smithers Cloud's answer for the new box on ${target.repo} was malformed.`
+    }
+    ctx.dispatch({ type: "workspace.updated", actor: "system", workspace })
+    // Opening a computer also makes it the target of subsequent coding runs.
+    // A slow create must not pull the user back after they chose another repo.
+    if (ctx.store.session().activeRepoKey === requestedSelection) {
+      ctx.dispatch({ type: "repo.selected", actor: ctx.actor(), id: `${workspace.repoId}#workspace:${workspace.id}` })
+    }
+    if (recovery !== undefined) {
+      await writeRecovery(recovery.oldId, { ...recovery.facts,
+        request: { ...recovery.facts.request!, state: "running", workspaceId: workspace.id } })
+      renderWorkspace(workspace)
+      return finishRecovery(recovery.oldId, workspace.id, accountCurrent)
+    }
+    if (UNSETTLED.has(workspace.status)) watch(workspace.id)
+    if (!accountCurrent()) return SIGN_OUT_REFUSAL
+    renderWorkspace(workspace)
+    return {
+      value: `Box "${workspace.name}" (${workspace.id}) is ${workspace.status} on ${workspace.repoId}${
+        workspace.targetBookmark === null ? "" : `@${workspace.targetBookmark}`
+      } — the card tracks it.`
+    }
+  }
+
+  const recoverySourceMatches = (row: CloudWorkspaceInput, request: NonNullable<WorkspaceRecovery["request"]>): boolean =>
+    // null records an omitted source: the backend selects its repository default.
+    (request.bookmark === null || row.targetBookmark === request.bookmark)
+      && (request.kind === undefined || row.kind === request.kind)
+      && (request.snapshotId === undefined ? row.sourceSnapshotId === null : row.sourceSnapshotId === request.snapshotId)
+  const finishRecovery = async (oldId: string, newId: string, current: () => boolean): Promise<string | { readonly value: string }> => {
+    if (!current()) return SIGN_OUT_REFUSAL
+    const row = ctx.store.collections.cloudWorkspaces.get(newId)
+    const initialFacts = ctx.store.collections.cloudWorkspaces.get(oldId)?.recovery
+    if (row !== undefined && initialFacts?.request !== undefined && ownsRecovery(initialFacts)
+      && !recoverySourceMatches(row, initialFacts.request)) {
+      await writeRecovery(oldId, { ...initialFacts, request: { ...initialFacts.request, error: "Creation source changed." } })
+      return "Creation source changed."
+    }
+    if (row !== undefined && UNSETTLED.has(row.status)) {
+      await runtime.runPromise(Effect.flatMap(FiberMap.run(watching, newId, poll(newId, current), { onlyIfMissing: true }), Fiber.join))
+    }
+    if (!current()) return SIGN_OUT_REFUSAL
+    const facts = ctx.store.collections.cloudWorkspaces.get(oldId)?.recovery
+    const settled = ctx.store.collections.cloudWorkspaces.get(newId)
+    if (facts?.request === undefined || facts.request.workspaceId !== newId || !ownsRecovery(facts)) return SIGN_OUT_REFUSAL
+    if (settled !== undefined && !recoverySourceMatches(settled, facts.request)) {
+      await writeRecovery(oldId, { ...facts, request: { ...facts.request, error: "Creation source changed." } })
+      return "Creation source changed."
+    }
+    const error = settled?.status === "running" ? undefined : settled?.failureMessage ?? "Creation not confirmed."
+    await writeRecovery(oldId, { ...facts,
+      ...(settled?.failureCode === "snapshot_not_found" ? { snapshotId: undefined } : {}),
+      request: { ...facts.request, state: error === undefined ? "completed" : settled === undefined || UNSETTLED.has(settled.status) ? "running" : "failed", ...(error === undefined ? {} : { error }) } })
+    if (settled !== undefined) renderWorkspace(settled)
+    return error === undefined ? { value: "Box ready." } : error
+  }
+  const launchRecovery = (oldId: string, work: () => Promise<unknown>, current: () => boolean): void => {
+    if (recoveryFlights.has(oldId)) return
+    const flight = (ctx.withToast === undefined ? Promise.resolve().then(work)
+      : ctx.withToast(`box.recreate:${oldId}`, "Creating box…", "Box ready", work, false, current, cardIdOf(oldId)))
+      .catch(error => { ctx.report?.("workspace recreation", error) })
+      .finally(() => { if (recoveryFlights.get(oldId) === flight) recoveryFlights.delete(oldId) })
+    recoveryFlights.set(oldId, flight)
+  }
+  const reconnectRecovery = (): void => {
+    for (const old of ctx.store.collections.cloudWorkspaces.values()) {
+      const facts = old.recovery
+      const request = facts?.request
+      if (facts === undefined || request === undefined || !ownsRecovery(facts)
+        || !["requested", "running"].includes(request.state) || recoveryFlights.has(old.id)) continue
+      // An uncertain POST is never repeated. Reconcile its retained identity
+      // against the owner-scoped list, then join the ordinary completion watch.
+      const candidate = request.workspaceId === undefined
+        ? [...ctx.store.collections.cloudWorkspaces.values()].find(row => row.id !== old.id && row.repoId === old.repoId
+          && row.name === request.name)
+        : ctx.store.collections.cloudWorkspaces.get(request.workspaceId)
+      if (candidate === undefined) continue
+      const current = currentOperation(old.id)
+      launchRecovery(old.id, async () => {
+        let confirmed: CloudWorkspaceInput = candidate
+        if (request.workspaceId === undefined && candidate.sourceSnapshotId === undefined) {
+          const answer = await getJson(repoPath(old.repoId, `/workspaces/${encodeURIComponent(candidate.id)}`))
+          if (!current()) return SIGN_OUT_REFUSAL
+          const parsed = "error" in answer ? null : parseWorkspaceWire(answer.body, old.repoId)
+          if (parsed === null || parsed.id !== candidate.id || parsed.name !== request.name || !recoverySourceMatches(parsed, request)) {
+            await writeRecovery(old.id, { ...facts, request: { ...request, error: "Creation not confirmed." } })
+            return "Creation not confirmed."
+          }
+          confirmed = parsed
+          await persistWorkspaceObservation(parsed)
+        }
+        if (!current()) return SIGN_OUT_REFUSAL
+        if (!recoverySourceMatches(confirmed, request)) {
+          await writeRecovery(old.id, { ...facts, request: { ...request, error: "Creation source changed." } })
+          return "Creation source changed."
+        }
+        await writeRecovery(old.id, { ...facts, request: { ...request, state: "running", workspaceId: confirmed.id } })
+        renderWorkspace(confirmed)
+        return finishRecovery(old.id, confirmed.id, current)
+      }, current)
+    }
+  }
+  const openWorkspace: WorkspaceSeam["openWorkspace"] = async (bookmark, repo, kind, snapshot, recoveryOf) => {
+    if (recoveryOf === undefined) return openWorkspaceNow(bookmark, repo, kind, snapshot)
+    const refusal = gate()
+    if (refusal !== undefined) return refusal
+    const old = ctx.store.collections.cloudWorkspaces.get(recoveryOf)
+    const facts = old?.recovery
+    if (old === undefined || facts === undefined || !ownsRecovery(facts) || old.repoId !== repo
+      || (snapshot === undefined ? !facts.createFresh : facts.snapshotId !== snapshot)) return "Recovery is unavailable. Refresh this box."
+    if (facts.request !== undefined && ["requested", "running"].includes(facts.request.state)) {
+      reconnectRecovery()
+      return { value: "Creation requested." }
+    }
+    const id = randomUuid()
+    const request: NonNullable<WorkspaceRecovery["request"]> = { id, name: `recovery-${id}`, actor: ctx.actor(),
+      bookmark: old.targetBookmark ?? ctx.store.collections.repositories.get(old.repoId)?.head?.bookmark ?? null,
+      ...(kind === undefined ? {} : { kind }), state: "requested", ...(snapshot === undefined ? {} : { snapshotId: snapshot }) }
+    const next = { ...facts, request }
+    const persisted = ctx.dispatch({ type: "workspace.updated", actor: "system", workspace: { ...old, recovery: next } }).isPersisted.promise
+    const current = currentOperation(old.id)
+    launchRecovery(old.id, async () => {
+      await persisted
+      if (!current()) return SIGN_OUT_REFUSAL
+      return openWorkspaceNow(request.bookmark ?? undefined, old.repoId, kind, request.snapshotId, { oldId: old.id, facts: next })
+    }, current)
+    return { value: "Creation requested." }
+  }
+
+  const viewWorkspace: WorkspaceSeam["viewWorkspace"] = async (workspaceId) => {
+    const refusal = gate()
+    if (refusal !== undefined) return refusal
+    const resolved = resolveWorkspace(workspaceId)
+    if ("error" in resolved) return resolved.error
+    const { workspace } = resolved
+    const current = currentOperation(workspace.id)
+    const answer = await getJson(repoPath(workspace.repoId, `/workspaces/${encodeURIComponent(workspace.id)}`))
+    if (!current()) return SIGN_OUT_REFUSAL
+    if ("error" in answer) return failOnCard(workspace, answer)
+    const fresh = parseWorkspaceWire(answer.body, workspace.repoId)
+    if (fresh === null) return `Smithers Cloud's answer for box ${workspace.id} was malformed.`
+    ctx.dispatch({ type: "workspace.updated", actor: "system", workspace: fresh })
+    if (UNSETTLED.has(fresh.status)) watch(fresh.id)
+    if (!current()) return SIGN_OUT_REFUSAL
+    renderWorkspace(fresh)
+    return { value: `Box "${fresh.name}" (${fresh.id}) is ${fresh.status} — the card is current.` }
+  }
+
+  /* Suspend and resume share everything but the verb. */
+  const transitionWorkspace = async (
+    verb: "suspend" | "resume",
+    workspaceId?: string
+  ): Promise<string | void | { readonly value: string }> => {
+    const refusal = gate()
+    if (refusal !== undefined) return refusal
+    const accountCurrent = currentOperation()
+    const resolved = resolveWorkspace(workspaceId)
+    if ("error" in resolved) return resolved.error
+    const { workspace } = resolved
+    const answer = await sendJson("POST", repoPath(workspace.repoId, `/workspaces/${encodeURIComponent(workspace.id)}/${verb}`))
+    if (!accountCurrent()) return SIGN_OUT_REFUSAL
+    if ("error" in answer) return failOnCard(workspace, answer)
+    /*
+     * The act's body is the updated workspace when plue writes one; when it
+     * does not, the truth is a re-read, never an assumed status.
+     */
+    let fresh = parseWorkspaceWire(answer.body, workspace.repoId)
+    if (fresh === null) {
+      const reread = await getJson(repoPath(workspace.repoId, `/workspaces/${encodeURIComponent(workspace.id)}`))
+      if (!accountCurrent()) return SIGN_OUT_REFUSAL
+      if ("error" in reread) {
+        await loadList(workspace.repoId, accountCurrent)
+        if (!accountCurrent()) return SIGN_OUT_REFUSAL
+        return `Box "${workspace.name}" (${workspace.id}) ${verb}ed, but its new state could not be read — the list was refreshed.`
+      }
+      fresh = parseWorkspaceWire(reread.body, workspace.repoId)
+      if (fresh === null) {
+        await loadList(workspace.repoId, accountCurrent)
+        if (!accountCurrent()) return SIGN_OUT_REFUSAL
+        return `Box "${workspace.name}" (${workspace.id}) ${verb}ed, but its answer was malformed — the list was refreshed.`
+      }
+    }
+    if (!accountCurrent()) return SIGN_OUT_REFUSAL
+    ctx.dispatch({ type: "workspace.updated", actor: "system", workspace: fresh })
+    if (UNSETTLED.has(fresh.status)) watch(fresh.id)
+    renderWorkspace(fresh)
+    return { value: `Box "${fresh.name}" (${fresh.id}) is ${fresh.status}.` }
+  }
+
+  const destroySession: WorkspaceSeam["destroySession"] = async (sessionId, workspaceId) => {
+    const refusal = gate()
+    if (refusal !== undefined) return refusal
+    const resolved = resolveRepo(workspaceId)
+    if ("error" in resolved) return resolved.error
+    const current = currentOperation(resolved.workspaceId)
+    const destroyed = await sendJson(
+      "POST",
+      repoPath(resolved.repo, `/workspace/sessions/${encodeURIComponent(sessionId)}/destroy`)
+    )
+    if (!current()) return SIGN_OUT_REFUSAL
+    if ("error" in destroyed) return destroyed.error
+    /*
+     * Destroyed is a fact the tab and the card learn together: the terminal
+     * tab attached to the session closes and the card stops pointing at it
+     * in one transaction (the facet re-offers to open one rather than claim
+     * a dead attachment); the session lists refresh after.
+     */
+    ctx.dispatch({ type: "workspace.session.destroyed", actor: ctx.actor(), sessionId })
+    return { value: `Session ${sessionId} is destroyed.` }
+  }
+
+  const deleteWorkspace: WorkspaceSeam["deleteWorkspace"] = async (workspaceId, confirmName) => {
+    const refusal = gate()
+    if (refusal !== undefined) return refusal
+    const resolved = resolveWorkspace(workspaceId)
+    if ("error" in resolved) return resolved.error
+    const { workspace } = resolved
+    /*
+     * The typed-name gate lives HERE, not only in the card's chrome: a slash,
+     * an agent's confirmed invocation, and the card's button all arrive with
+     * the name the invoker typed, and only the workspace's own name deletes.
+     */
+    if (confirmName.trim() !== workspace.name) {
+      return `Deleting "${workspace.name}" (${workspace.id}) needs its name typed back exactly — /box.delete ${workspace.id} ${workspace.name}.`
+    }
+    const current = currentOperation(workspace.id)
+    const deleted = await sendJson("DELETE", repoPath(workspace.repoId, `/workspaces/${encodeURIComponent(workspace.id)}`))
+    if (!current()) return SIGN_OUT_REFUSAL
+    if ("error" in deleted) return failOnCard(workspace, deleted)
+    /*
+     * Gone is a fact: the card, the collection row, its tree copy, and its
+     * terminal tabs leave in one transaction; the list refresh after it
+     * re-reads the repository's truth.
+     */
+    /* Invalidate reads before removing the workspace. */
+    workspaceEpochs.set(workspace.id, (workspaceEpochs.get(workspace.id) ?? 0) + 1)
+    runtime.runFork(FiberMap.remove(watching, workspace.id))
+    ctx.dispatch({ type: "workspace.deleted", actor: ctx.actor(), workspaceId: workspace.id })
+    const owner = captureCloudOwner(ctx)
+    const loaded = await loadList(workspace.repoId, owner)
+    if (!owner()) return SIGN_OUT_REFUSAL
+    if (typeof loaded === "string") return loaded
+    return { value: `Box "${workspace.name}" (${workspace.id}) is deleted.` }
+  }
+
+  /*
+   * The Files facet at one directory (plue#449). The listing REPLACES what
+   * the card held for the old path — a stale listing under a new path would
+   * describe a directory that was never read.
+   */
+  const setFacet = preparedView(ctx, (workspaceId: string, facet: WorkspaceFacet) => {
+    const refusal = gate()
+    if (refusal !== undefined) return refusal
+    const current = currentOperation(workspaceId)
+    const row = ctx.store.collections.cloudWorkspaces.get(workspaceId)
+    if (row === undefined) return "Branch unavailable"
+    const card = workspaceCard(row)
+    const tab = facet === "files" ? "files" : facet === "terminal" ? "terminals" : "activity"
+    const placeholder: Card = { id: card.id, kind: "branch", title: card.title, status: card.status, createdAt: card.createdAt, ordinal: card.ordinal, payload: { id: workspaceId, tab } }
+    return { id: card.id, title: card.title, pane: workspaceId, placeholder,
+      key: JSON.stringify([card.id, tab]), read: async () => current() ? ({ card: placeholder }) : SIGN_OUT_REFUSAL }
+  })
+
+  const listFiles: WorkspaceSeam["listFiles"] = async (path, workspaceId) => {
+    const refusal = gate()
+    if (refusal !== undefined) return refusal
+    const resolved = resolveWorkspace(workspaceId)
+    if ("error" in resolved) return resolved.error
+    const { workspace } = resolved
+    // `/` is how a human spells the working copy's root; plue's own spelling is the empty path.
+    const at = path === undefined || path === "/" ? "" : path
+    const current = currentOperation(workspace.id)
+    const files = await loadFiles(workspace.repoId, workspace.id, at)
+    if (!current()) return SIGN_OUT_REFUSAL
+    renderWorkspace(workspace)
+    if ("error" in files) return files.error
+    return {
+      value: listingValue(`"${workspace.name}" (${workspace.id})`, at, files.map((file) => ({
+        name: file.name,
+        kind: file.type === "dir" ? "dir" : "file"
+      })))
+    }
+  }
+
+  const readFile: WorkspaceSeam["readFile"] = async (path, workspaceId) => {
+    const refusal = gate()
+    if (refusal !== undefined) return refusal
+    const resolved = resolveWorkspace(workspaceId)
+    if ("error" in resolved) return resolved.error
+    const { workspace } = resolved
+    const current = currentOperation(workspace.id)
+    const answer = await getJson(
+      `${workspacePath(workspace.repoId, workspace.id, "/files/content")}?path=${encodeURIComponent(path)}`
+    )
+    if (!current()) return SIGN_OUT_REFUSAL
+    if ("error" in answer) return failOnCard(workspace, answer)
+    const body = isRecord(answer.body) ? answer.body : null
+    const content = body === null || typeof body.content !== "string" ? null : body.content
+    if (content === null) return `Smithers Cloud's answer for ${path} in ${workspace.id} was malformed.`
+    /*
+     * plue answers `encoding: "base64"` when the bytes are not UTF-8. The
+     * file card states that instead of printing them — the same contract the
+     * repository file card follows.
+     */
+    const binary = body?.encoding === "base64"
+    const text = binary ? "" : content.slice(0, CARD_CONTENT_CAP)
+    const truncated = !binary && (body?.truncated === true || content.length > CARD_CONTENT_CAP)
+    const id = `workspace-file-${workspace.id}-${path}`
+    const existing = ctx.store.collections.cards.get(id)
+    ctx.dispatch({
+      type: "card.upsert",
+      actor: ctx.actor(),
+      card: {
+        id,
+        kind: "file",
+        title: `${path} · ${workspace.name}`,
+        status: "active",
+        createdAt: existing?.createdAt ?? Date.now(),
+        ordinal: existing?.ordinal ?? ctx.nextOrdinal(),
+        payload: {
+          repo: workspace.repoId,
+          workspaceId: workspace.id,
+          path,
+          content: text,
+          truncated,
+          binary,
+          /* The address names the computer the bytes came from: this is not the repository's copy. */
+          address: `${workspace.repoId} · ${workspace.name} · ${path}`
+        }
+      }
+    })
+    return { value: fileValue(`"${workspace.name}" (${workspace.id})`, path, { content: text, truncated, binary }) }
+  }
+
+  const listServices: WorkspaceSeam["listServices"] = async (workspaceId) => {
+    const refusal = gate()
+    if (refusal !== undefined) return refusal
+    const resolved = resolveWorkspace(workspaceId)
+    if ("error" in resolved) return resolved.error
+    const { workspace } = resolved
+    const current = currentOperation(workspace.id)
+    const services = await loadServices(workspace.repoId, workspace.id)
+    if (!current()) return SIGN_OUT_REFUSAL
+    renderWorkspace(workspace)
+    if ("error" in services) return services.error
+    return {
+      value: services.length === 0
+        ? `"${workspace.name}" (${workspace.id}) declares no services.`
+        : `"${workspace.name}" (${workspace.id}) services: ${
+          services.map((service) => `${service.name} (${service.state})`).join(", ")
+        }.`
+    }
+  }
+
+  const listEgress: WorkspaceSeam["listEgress"] = async (workspaceId, cursor) => {
+    const refusal = gate()
+    if (refusal !== undefined) return refusal
+    const resolved = resolveWorkspace(workspaceId)
+    if ("error" in resolved) return resolved.error
+    const { workspace } = resolved
+    const current = currentOperation(workspace.id)
+    const page = await loadEgressPage(ctx, workspaceEgressPath(workspace.repoId, workspace.id), cursor)
+    if (!current()) return SIGN_OUT_REFUSAL
+    renderWorkspace(workspace)
+    if ("error" in page) return page.error
+    const rows = page.rows
+    return {
+      value: rows.length === 0
+        ? `"${workspace.name}" (${workspace.id}) made no recorded calls.`
+        : `${rows.length} recorded call${rows.length === 1 ? "" : "s"} from "${workspace.name}" (${workspace.id}) — the card lists them.`
+    }
+  }
+
+  /*
+   * The environment images a repository has built (ADR 0002: the environment
+   * is stated, never chosen). A refused listing is the server's own message —
+   * an empty catalogue would read as "this repository has built nothing",
+   * which is a different fact.
+   */
+
+  const listEnvironmentImages: WorkspaceSeam["listEnvironmentImages"] = async (repo) => {
+    const refusal = gate()
+    if (refusal !== undefined) return refusal
+    const target = resolveTargetRepo(ctx.store, repo)
+    if ("error" in target) return target.error
+    const current = currentOperation()
+    const answer = await getJson(repoPath(target.repo, "/environment-images"))
+    if (!current()) return SIGN_OUT_REFUSAL
+    if ("error" in answer) return answer.error
+    const images = arrayOf(answer.body, "images").flatMap((entry) => {
+      const parsed = parseEnvironmentImage(entry)
+      return parsed === null ? [] : [parsed]
+    })
+    const id = `environment-images-${target.repo}`
+    const existing = ctx.store.collections.cards.get(id)
+    ctx.dispatch({
+      type: "card.upsert",
+      actor: ctx.actor(),
+      card: {
+        id,
+        kind: "environment-images",
+        title: `Environment images · ${target.repo}`,
+        status: "active",
+        createdAt: existing?.createdAt ?? Date.now(),
+        ordinal: existing?.ordinal ?? ctx.nextOrdinal(),
+        payload: { repo: target.repo, images }
+      }
+    })
+    return {
+      value: images.length === 0
+        ? `${target.repo} has built no environment images.`
+        : `${images.length} environment image${images.length === 1 ? "" : "s"} on ${target.repo} — the card lists them.`
+    }
+  }
+
+  return {
+    listWorkspaces,
+    refreshWorkspaces,
+    openWorkspace,
+    viewWorkspace,
+    suspendWorkspace: (workspaceId) => transitionWorkspace("suspend", workspaceId),
+    resumeWorkspace: (workspaceId) => transitionWorkspace("resume", workspaceId),
+    destroySession,
+    deleteWorkspace,
+    setFacet,
+    listFiles,
+    readFile,
+    listServices,
+    listEgress,
+    listEnvironmentImages,
+    dispose
+  }
+}

@@ -1,0 +1,220 @@
+{
+  "name": "@smthrs/platform-node",
+  "type": "module",
+  "version": "1.0.0-rc.12",
+  "license": "MIT",
+  "smthrs": {
+    "group": "engine",
+    "privateEffectAdapters": [
+      "@effect/platform-node",
+      "@effect/platform-node-shared"
+    ]
+  },
+  "description": "Node.js Host bundle for flows: Effect's Node platform services composed into the closed Host surface",
+  "homepage": "https://github.com/smithersai/smithers",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/smithers/flows/platform-node"
+  },
+  "bugs": {
+    "url": "https://github.com/smithersai/smithers/issues"
+  },
+  "tags": [
+    "typescript",
+    "effect",
+    "node",
+    "platform"
+  ],
+  "keywords": [
+    "typescript",
+    "effect",
+    "node",
+    "platform"
+  ],
+  "engines": {
+    "node": ">=26.4.0"
+  },
+  "sideEffects": [],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null,
+    "./*/index": null,
+    "./AtomicFileSystem": "./src/AtomicFileSystem.ts",
+    "./EgressHttpClient": "./src/EgressHttpClient.ts",
+    "./HostLiveness": "./src/HostLiveness.ts",
+    "./NodeHost": "./src/NodeHost.ts",
+    "./ProcessReaper": "./src/ProcessReaper.ts",
+    "./index": "./src/index.ts",
+    "./ScopedProcess": "./src/ScopedProcess.ts",
+    "./ProcessConfinement": "./src/ProcessConfinement.ts",
+    "./ProcessSandbox": "./src/ProcessSandbox.ts"
+  },
+  "files": [
+    "bin/**",
+    "src/**/*.ts",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/package.json",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "dist/vendor/**",
+    "docs/"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next",
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./internal/*": null,
+      "./*/index": null,
+      "./AtomicFileSystem": {
+        "import": {
+          "types": "./dist/esm/AtomicFileSystem.d.ts",
+          "default": "./dist/esm/AtomicFileSystem.js"
+        },
+        "require": {
+          "types": "./dist/cjs/AtomicFileSystem.d.ts",
+          "default": "./dist/cjs/AtomicFileSystem.js"
+        }
+      },
+      "./EgressHttpClient": {
+        "import": {
+          "types": "./dist/esm/EgressHttpClient.d.ts",
+          "default": "./dist/esm/EgressHttpClient.js"
+        },
+        "require": {
+          "types": "./dist/cjs/EgressHttpClient.d.ts",
+          "default": "./dist/cjs/EgressHttpClient.js"
+        }
+      },
+      "./HostLiveness": {
+        "import": {
+          "types": "./dist/esm/HostLiveness.d.ts",
+          "default": "./dist/esm/HostLiveness.js"
+        },
+        "require": {
+          "types": "./dist/cjs/HostLiveness.d.ts",
+          "default": "./dist/cjs/HostLiveness.js"
+        }
+      },
+      "./NodeHost": {
+        "import": {
+          "types": "./dist/esm/NodeHost.d.ts",
+          "default": "./dist/esm/NodeHost.js"
+        },
+        "require": {
+          "types": "./dist/cjs/NodeHost.d.ts",
+          "default": "./dist/cjs/NodeHost.js"
+        }
+      },
+      "./ProcessReaper": {
+        "import": {
+          "types": "./dist/esm/ProcessReaper.d.ts",
+          "default": "./dist/esm/ProcessReaper.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ProcessReaper.d.ts",
+          "default": "./dist/cjs/ProcessReaper.js"
+        }
+      },
+      "./index": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./ScopedProcess": {
+        "import": {
+          "types": "./dist/esm/ScopedProcess.d.ts",
+          "default": "./dist/esm/ScopedProcess.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ScopedProcess.d.ts",
+          "default": "./dist/cjs/ScopedProcess.js"
+        }
+      },
+      "./ProcessConfinement": {
+        "import": {
+          "types": "./dist/esm/ProcessConfinement.d.ts",
+          "default": "./dist/esm/ProcessConfinement.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ProcessConfinement.d.ts",
+          "default": "./dist/cjs/ProcessConfinement.js"
+        }
+      },
+      "./ProcessSandbox": {
+        "import": {
+          "types": "./dist/esm/ProcessSandbox.d.ts",
+          "default": "./dist/esm/ProcessSandbox.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ProcessSandbox.d.ts",
+          "default": "./dist/cjs/ProcessSandbox.js"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint src --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "circular": "node scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "vitest --coverage"
+  },
+  "dependencies": {
+    "@smthrs/jj": "1.0.0-rc.12",
+    "@smthrs/kernel": "1.0.0-rc.12",
+    "undici": "8.11.2",
+    "redis": "6.2.1",
+    "@types/ws": "8.18.2",
+    "ws": "8.22.0"
+  },
+  "peerDependencies": {
+    "effect": "^4.0.4"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@effect/platform-node": "4.0.4",
+    "@effect/platform-node-shared": "4.0.4",
+    "@effect/vitest": "4.0.4",
+    "@eslint/js": "9.39.5",
+    "@smthrs/journal": "1.0.0-rc.12",
+    "@types/node": "26.4.1",
+    "@vitest/coverage-v8": "5.0.0",
+    "dprint": "0.57.1",
+    "effect": "4.0.4",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "madge": "8.0.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0"
+  }
+}

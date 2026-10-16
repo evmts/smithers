@@ -40,7 +40,7 @@ path-named source, `channels` and `connections` are skipped too, because those
 are the host's own directories rather than flows.
 
 Nothing stops a directory from holding both an entry file and further
-subdirectories: `flows/review/flow.mdx` and `flows/review/read-pr/flow.ts` are
+subdirectories: `.smithers/flows/review/flow.mdx` and `.smithers/flows/review/read-pr/flow.ts` are
 two flows, `review` and `review/read-pr`.
 
 Module metadata accepts line and block comments inside the `Flow.make` object
@@ -54,7 +54,7 @@ source line, such as `flow.ts:5`; `smthrs flow plan` carries the warning and
 
 `naming: "path"` derives the name from the directory segments below the root,
 joined with `/`. This is the mode a project uses, and it makes the name a fact
-about the tree rather than about a file's contents: `flows/deploy/status/flow.ts`
+about the tree rather than about a file's contents: `.smithers/flows/deploy/status/flow.ts`
 is the flow `deploy/status`. A `name` key in the file is ignored, and the scan
 says so with `name_field_ignored` rather than letting an author believe the key
 took effect. An entry file directly in the root has no segments to name it, so
@@ -131,7 +131,7 @@ Two more ceilings bound what one file can cost:
 
 | Ceiling                    | Value  | What it bounds                                                                                                                                                                                                        |
 | -------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Discovery.entrySizeLimit` | 4 MiB  | The size of an entry file discovery admits. A larger file is skipped with `entry_too_large` and contributes no descriptor, so a stray build artifact under `flows/` cannot exhaust the process at layer construction. |
+| `Discovery.entrySizeLimit` | 4 MiB  | The size of an entry file discovery admits. A larger file is skipped with `entry_too_large` and contributes no descriptor, so a stray build artifact under `.smithers/flows/` cannot exhaust the process at layer construction. |
 | The metadata parse ceiling | 64 KiB | How much of an admitted file is decoded and parsed looking for frontmatter or module metadata. It bounds parsing only.                                                                                                |
 
 The size ceiling is checked twice, because the first check trusts the host. A

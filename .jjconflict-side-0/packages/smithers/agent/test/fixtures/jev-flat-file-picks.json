@@ -1,0 +1,875 @@
+{
+  "source": "SWE-bench Pro paired run of 2026-10-14 (why-more-output.md section 4): file picks whose questions shared one instruction keyed by path and whose state held paths, not code. recorded is what Jev answered then; gold is the candidates the dataset patch or test patch touches. #3992",
+  "calls": [
+    {
+      "instance": "instance_tutao__tutanota-f373ac3808deefce8183dad8d16729839cc330c1-v2939aa9f4356f0dc9f523ee5ce19d09e08ab979b",
+      "frame": 4,
+      "state": {
+        "additional": [
+          "src/api/worker/facades/lazy/MailFacade.ts",
+          "src/api/worker/search/MailIndexer.ts"
+        ],
+        "files": [
+          "src/api/worker/rest/EntityRestClient.ts",
+          "src/api/worker/rest/DefaultEntityRestCache.ts",
+          "src/api/common/EntityClient.ts",
+          "src/api/worker/crypto/CryptoFacade.ts",
+          "src/mail/model/InboxRuleHandler.ts"
+        ],
+        "task": "Fix owner-encrypted session key forwarding and eliminate CryptoFacade session key cache according to PR"
+      },
+      "questions": {
+        "src/api/common/EntityClient.ts": {
+          "instructions": "Does this file need changes to implement the required loading, forwarding, or removal of cached session keys?",
+          "type": "boolean"
+        },
+        "src/api/worker/crypto/CryptoFacade.ts": {
+          "instructions": "Does this file need changes to implement the required loading, forwarding, or removal of cached session keys?",
+          "type": "boolean"
+        },
+        "src/api/worker/facades/lazy/MailFacade.ts": {
+          "instructions": "Does this file need changes to implement the required loading, forwarding, or removal of cached session keys?",
+          "type": "boolean"
+        },
+        "src/api/worker/rest/DefaultEntityRestCache.ts": {
+          "instructions": "Does this file need changes to implement the required loading, forwarding, or removal of cached session keys?",
+          "type": "boolean"
+        },
+        "src/api/worker/rest/EntityRestClient.ts": {
+          "instructions": "Does this file need changes to implement the required loading, forwarding, or removal of cached session keys?",
+          "type": "boolean"
+        },
+        "src/api/worker/search/MailIndexer.ts": {
+          "instructions": "Does this file need changes to implement the required loading, forwarding, or removal of cached session keys?",
+          "type": "boolean"
+        },
+        "src/mail/model/InboxRuleHandler.ts": {
+          "instructions": "Does this file need changes to implement the required loading, forwarding, or removal of cached session keys?",
+          "type": "boolean"
+        }
+      },
+      "recorded": {
+        "src/api/common/EntityClient.ts": 0.73,
+        "src/api/worker/crypto/CryptoFacade.ts": 0.73,
+        "src/api/worker/facades/lazy/MailFacade.ts": 0.73,
+        "src/api/worker/rest/DefaultEntityRestCache.ts": 0.73,
+        "src/api/worker/rest/EntityRestClient.ts": 0.74,
+        "src/api/worker/search/MailIndexer.ts": 0.73,
+        "src/mail/model/InboxRuleHandler.ts": 0.74
+      },
+      "gold": [
+        "src/api/common/EntityClient.ts",
+        "src/api/worker/crypto/CryptoFacade.ts",
+        "src/api/worker/facades/lazy/MailFacade.ts",
+        "src/api/worker/rest/DefaultEntityRestCache.ts",
+        "src/api/worker/rest/EntityRestClient.ts",
+        "src/api/worker/search/MailIndexer.ts",
+        "src/mail/model/InboxRuleHandler.ts"
+      ]
+    },
+    {
+      "instance": "instance_flipt-io__flipt-02e21636c58e86c51119b63e0fb5ca7b813b07b1",
+      "frame": 2,
+      "state": {
+        "items": [
+          "internal/config/cache.go",
+          "internal/cmd/grpc.go",
+          "internal/cache/redis/client.go",
+          "config/flipt.schema.cue",
+          "config/flipt.schema.json"
+        ],
+        "task": "Implement Redis TLS configuration, reusable NewClient, validation, and published schema support. Existing inline client in internal/cmd/grpc.go. The schema has both CUE and JSON; configuration is RedisCacheConfig in internal/config/cache.go. Do not create YAML fixtures in cache testdata."
+      },
+      "questions": {
+        "config/flipt.schema.cue": {
+          "instructions": "Should this path be created or modified to implement the task consistently?",
+          "type": "boolean"
+        },
+        "config/flipt.schema.json": {
+          "instructions": "Should this path be created or modified to implement the task consistently?",
+          "type": "boolean"
+        },
+        "internal/cache/redis/client.go": {
+          "instructions": "Should this path be created or modified to implement the task consistently?",
+          "type": "boolean"
+        },
+        "internal/cmd/grpc.go": {
+          "instructions": "Should this path be created or modified to implement the task consistently?",
+          "type": "boolean"
+        },
+        "internal/config/cache.go": {
+          "instructions": "Should this path be created or modified to implement the task consistently?",
+          "type": "boolean"
+        }
+      },
+      "recorded": {
+        "config/flipt.schema.cue": 0.76,
+        "config/flipt.schema.json": 0.78,
+        "internal/cache/redis/client.go": 0.76,
+        "internal/cmd/grpc.go": 0.76,
+        "internal/config/cache.go": 0.77
+      },
+      "gold": [
+        "config/flipt.schema.cue",
+        "config/flipt.schema.json",
+        "internal/cache/redis/client.go",
+        "internal/cmd/grpc.go",
+        "internal/config/cache.go"
+      ]
+    },
+    {
+      "instance": "instance_flipt-io__flipt-0b119520afca1cf25c470ff4288c464d4510b944",
+      "frame": 2,
+      "state": {
+        "candidates": [
+          "internal/cmd/http_test.go",
+          "internal/cmd/grpc_test.go",
+          "internal/config/analytics_test.go",
+          "internal/config/database_linux_test.go",
+          "internal/config/database_test.go",
+          "internal/config/config_test.go",
+          "internal/cleanup/cleanup_test.go",
+          "internal/cleanup/cleanup.go"
+        ],
+        "task": "Fix database requirement per authentication method; add regression coverage to configuration, authenticationGRPC startup, and cleanup"
+      },
+      "questions": {
+        "internal/cleanup/cleanup.go": {
+          "instructions": "Is this file a directly relevant implementation or focused test file to inspect for this task?",
+          "type": "boolean"
+        },
+        "internal/cleanup/cleanup_test.go": {
+          "instructions": "Is this file a directly relevant implementation or focused test file to inspect for this task?",
+          "type": "boolean"
+        },
+        "internal/cmd/grpc_test.go": {
+          "instructions": "Is this file a directly relevant implementation or focused test file to inspect for this task?",
+          "type": "boolean"
+        },
+        "internal/cmd/http_test.go": {
+          "instructions": "Is this file a directly relevant implementation or focused test file to inspect for this task?",
+          "type": "boolean"
+        },
+        "internal/config/analytics_test.go": {
+          "instructions": "Is this file a directly relevant implementation or focused test file to inspect for this task?",
+          "type": "boolean"
+        },
+        "internal/config/config_test.go": {
+          "instructions": "Is this file a directly relevant implementation or focused test file to inspect for this task?",
+          "type": "boolean"
+        },
+        "internal/config/database_linux_test.go": {
+          "instructions": "Is this file a directly relevant implementation or focused test file to inspect for this task?",
+          "type": "boolean"
+        },
+        "internal/config/database_test.go": {
+          "instructions": "Is this file a directly relevant implementation or focused test file to inspect for this task?",
+          "type": "boolean"
+        }
+      },
+      "recorded": {
+        "internal/cleanup/cleanup.go": 0.67,
+        "internal/cleanup/cleanup_test.go": 0.67,
+        "internal/cmd/grpc_test.go": 0.67,
+        "internal/cmd/http_test.go": 0.68,
+        "internal/config/analytics_test.go": 0.66,
+        "internal/config/config_test.go": 0.66,
+        "internal/config/database_linux_test.go": 0.67,
+        "internal/config/database_test.go": 0.67
+      },
+      "gold": [
+        "internal/cleanup/cleanup.go",
+        "internal/cleanup/cleanup_test.go"
+      ]
+    },
+    {
+      "instance": "instance_flipt-io__flipt-5aef5a14890aa145c22d864a834694bae3a6f112",
+      "frame": 3,
+      "state": {
+        "candidates": [
+          "internal/storage/fs/git/source.go",
+          "internal/config/storage.go",
+          "internal/cmd/grpc.go",
+          "config/flipt.schema.cue",
+          "config/flipt.schema.json",
+          "config/default.yml"
+        ],
+        "task": "Implement configurable insecure_skip_tls bool default false and Git source WithInsecureTLS and WithCABundle. Source clone and fetch need settings; config is decoded by Viper, CLI builds Source options, CUE and JSON files define allowed configuration. default.yml currently has no git example according to grep."
+      },
+      "questions": {
+        "config/default.yml": {
+          "instructions": "Should this file be modified to implement and expose this change, considering the evidence in state?",
+          "type": "boolean"
+        },
+        "config/flipt.schema.cue": {
+          "instructions": "Should this file be modified to implement and expose this change, considering the evidence in state?",
+          "type": "boolean"
+        },
+        "config/flipt.schema.json": {
+          "instructions": "Should this file be modified to implement and expose this change, considering the evidence in state?",
+          "type": "boolean"
+        },
+        "internal/cmd/grpc.go": {
+          "instructions": "Should this file be modified to implement and expose this change, considering the evidence in state?",
+          "type": "boolean"
+        },
+        "internal/config/storage.go": {
+          "instructions": "Should this file be modified to implement and expose this change, considering the evidence in state?",
+          "type": "boolean"
+        },
+        "internal/storage/fs/git/source.go": {
+          "instructions": "Should this file be modified to implement and expose this change, considering the evidence in state?",
+          "type": "boolean"
+        }
+      },
+      "recorded": {
+        "config/default.yml": 0.71,
+        "config/flipt.schema.cue": 0.72,
+        "config/flipt.schema.json": 0.72,
+        "internal/cmd/grpc.go": 0.71,
+        "internal/config/storage.go": 0.7,
+        "internal/storage/fs/git/source.go": 0.71
+      },
+      "gold": [
+        "config/flipt.schema.cue",
+        "config/flipt.schema.json",
+        "internal/cmd/grpc.go",
+        "internal/config/storage.go",
+        "internal/storage/fs/git/source.go"
+      ]
+    },
+    {
+      "instance": "instance_NodeBB__NodeBB-b398321a5eb913666f903a794219833926881a8f-vd59a5728dfc977f44533186ace531248c2917516",
+      "frame": 1,
+      "state": {
+        "files": [
+          "src/messaging/create.js",
+          "src/messaging/data.js",
+          "src/messaging/delete.js",
+          "src/messaging/edit.js",
+          "src/messaging/index.js",
+          "src/messaging/notifications.js",
+          "src/messaging/pins.js",
+          "src/messaging/rooms.js",
+          "src/messaging/unread.js",
+          "src/middleware/admin.js",
+          "src/middleware/assert.js",
+          "src/middleware/csrf.js",
+          "src/middleware/expose.js",
+          "src/middleware/header.js",
+          "src/middleware/headers.js",
+          "src/middleware/helpers.js",
+          "src/middleware/index.js",
+          "src/middleware/maintenance.js",
+          "src/middleware/ratelimit.js",
+          "src/middleware/render.js",
+          "src/middleware/uploads.js",
+          "src/middleware/user.js",
+          "src/privileges/admin.js",
+          "src/privileges/categories.js",
+          "src/privileges/global.js",
+          "src/privileges/helpers.js",
+          "src/privileges/index.js",
+          "src/privileges/posts.js",
+          "src/privileges/topics.js",
+          "src/privileges/users.js",
+          "test/api.js",
+          "test/authentication.js",
+          "test/batch.js",
+          "test/blacklist.js",
+          "test/build.js",
+          "test/categories.js",
+          "test/controllers-admin.js",
+          "test/controllers.js",
+          "test/coverPhoto.js",
+          "test/database.js",
+          "test/database/hash.js",
+          "test/database/keys.js",
+          "test/database/list.js",
+          "test/database/sets.js",
+          "test/database/sorted.js",
+          "test/defer-logger.js",
+          "test/emailer.js",
+          "test/feeds.js",
+          "test/file.js",
+          "test/files/1.js",
+          "test/files/2.js",
+          "test/flags.js",
+          "test/groups.js",
+          "test/helpers/index.js",
+          "test/i18n.js",
+          "test/image.js",
+          "test/locale-detect.js",
+          "test/messaging.js",
+          "test/meta.js",
+          "test/middleware.js",
+          "test/mocks/databasemock.js",
+          "test/notifications.js",
+          "test/package-install.js",
+          "test/pagination.js",
+          "test/password.js",
+          "test/plugins-installed.js",
+          "test/plugins.js",
+          "test/posts.js",
+          "test/posts/uploads.js",
+          "test/pubsub.js",
+          "test/rewards.js",
+          "test/search-admin.js",
+          "test/search.js",
+          "test/settings.js",
+          "test/socket.io.js",
+          "test/template-helpers.js",
+          "test/tokens.js",
+          "test/topics.js",
+          "test/topics/events.js",
+          "test/topics/thumbs.js",
+          "test/translator.js",
+          "test/upgrade.js",
+          "test/uploads.js",
+          "test/user.js",
+          "test/user/emails.js",
+          "test/user/reset.js",
+          "test/user/uploads.js",
+          "test/utils.js"
+        ],
+        "task": "Implement global chat:privileged privilege array checks, messaging canMessageUser & invitations, chat middleware, profile canChat and tests. Select files likely needing inspection/edit."
+      },
+      "questions": {
+        "src/messaging/create.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "src/messaging/data.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "src/messaging/delete.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "src/messaging/edit.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "src/messaging/index.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "src/messaging/notifications.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "src/messaging/pins.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "src/messaging/rooms.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "src/messaging/unread.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "src/middleware/admin.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "src/middleware/assert.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "src/middleware/csrf.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "src/middleware/expose.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "src/middleware/header.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "src/middleware/headers.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "src/middleware/helpers.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "src/middleware/index.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "src/middleware/maintenance.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "src/middleware/ratelimit.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "src/middleware/render.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "src/middleware/uploads.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "src/middleware/user.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "src/privileges/admin.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "src/privileges/categories.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "src/privileges/global.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "src/privileges/helpers.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "src/privileges/index.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "src/privileges/posts.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "src/privileges/topics.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "src/privileges/users.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/api.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/authentication.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/batch.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/blacklist.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/build.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/categories.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/controllers-admin.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/controllers.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/coverPhoto.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/database.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/database/hash.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/database/keys.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/database/list.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/database/sets.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/database/sorted.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/defer-logger.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/emailer.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/feeds.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/file.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/files/1.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/files/2.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/flags.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/groups.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/helpers/index.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/i18n.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/image.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/locale-detect.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/messaging.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/meta.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/middleware.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/mocks/databasemock.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/notifications.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/package-install.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/pagination.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/password.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/plugins-installed.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/plugins.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/posts.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/posts/uploads.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/pubsub.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/rewards.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/search-admin.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/search.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/settings.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/socket.io.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/template-helpers.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/tokens.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/topics.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/topics/events.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/topics/thumbs.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/translator.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/upgrade.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/uploads.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/user.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/user/emails.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/user/reset.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/user/uploads.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        },
+        "test/utils.js": {
+          "instructions": "Is this file likely relevant to implementing or testing the changes in the task?",
+          "type": "boolean"
+        }
+      },
+      "recorded": {
+        "src/messaging/create.js": 0.69,
+        "src/messaging/data.js": 0.68,
+        "src/messaging/delete.js": 0.68,
+        "src/messaging/edit.js": 0.68,
+        "src/messaging/index.js": 0.71,
+        "src/messaging/notifications.js": 0.69,
+        "src/messaging/pins.js": 0.71,
+        "src/messaging/rooms.js": 0.69,
+        "src/messaging/unread.js": 0.69,
+        "src/middleware/admin.js": 0.69,
+        "src/middleware/assert.js": 0.69,
+        "src/middleware/csrf.js": 0.68,
+        "src/middleware/expose.js": 0.68,
+        "src/middleware/header.js": 0.7,
+        "src/middleware/headers.js": 0.69,
+        "src/middleware/helpers.js": 0.69,
+        "src/middleware/index.js": 0.67,
+        "src/middleware/maintenance.js": 0.68,
+        "src/middleware/ratelimit.js": 0.69,
+        "src/middleware/render.js": 0.69,
+        "src/middleware/uploads.js": 0.69,
+        "src/middleware/user.js": 0.68,
+        "src/privileges/admin.js": 0.7,
+        "src/privileges/categories.js": 0.7,
+        "src/privileges/global.js": 0.69,
+        "src/privileges/helpers.js": 0.69,
+        "src/privileges/index.js": 0.7,
+        "src/privileges/posts.js": 0.71,
+        "src/privileges/topics.js": 0.7,
+        "src/privileges/users.js": 0.69,
+        "test/api.js": 0.69,
+        "test/authentication.js": 0.68,
+        "test/batch.js": 0.7,
+        "test/blacklist.js": 0.69,
+        "test/build.js": 0.69,
+        "test/categories.js": 0.68,
+        "test/controllers-admin.js": 0.7,
+        "test/controllers.js": 0.7,
+        "test/coverPhoto.js": 0.7,
+        "test/database.js": 0.68,
+        "test/database/hash.js": 0.69,
+        "test/database/keys.js": 0.69,
+        "test/database/list.js": 0.69,
+        "test/database/sets.js": 0.68,
+        "test/database/sorted.js": 0.69,
+        "test/defer-logger.js": 0.69,
+        "test/emailer.js": 0.69,
+        "test/feeds.js": 0.68,
+        "test/file.js": 0.69,
+        "test/files/1.js": 0.69,
+        "test/files/2.js": 0.69,
+        "test/flags.js": 0.71,
+        "test/groups.js": 0.71,
+        "test/helpers/index.js": 0.68,
+        "test/i18n.js": 0.69,
+        "test/image.js": 0.69,
+        "test/locale-detect.js": 0.69,
+        "test/messaging.js": 0.69,
+        "test/meta.js": 0.69,
+        "test/middleware.js": 0.69,
+        "test/mocks/databasemock.js": 0.69,
+        "test/notifications.js": 0.68,
+        "test/package-install.js": 0.7,
+        "test/pagination.js": 0.69,
+        "test/password.js": 0.69,
+        "test/plugins-installed.js": 0.69,
+        "test/plugins.js": 0.68,
+        "test/posts.js": 0.68,
+        "test/posts/uploads.js": 0.69,
+        "test/pubsub.js": 0.68,
+        "test/rewards.js": 0.69,
+        "test/search-admin.js": 0.67,
+        "test/search.js": 0.68,
+        "test/settings.js": 0.67,
+        "test/socket.io.js": 0.71,
+        "test/template-helpers.js": 0.7,
+        "test/tokens.js": 0.69,
+        "test/topics.js": 0.69,
+        "test/topics/events.js": 0.7,
+        "test/topics/thumbs.js": 0.69,
+        "test/translator.js": 0.69,
+        "test/upgrade.js": 0.69,
+        "test/uploads.js": 0.69,
+        "test/user.js": 0.7,
+        "test/user/emails.js": 0.68,
+        "test/user/reset.js": 0.69,
+        "test/user/uploads.js": 0.71,
+        "test/utils.js": 0.67
+      },
+      "gold": [
+        "src/messaging/edit.js",
+        "src/messaging/index.js",
+        "src/messaging/rooms.js",
+        "src/middleware/headers.js",
+        "src/middleware/user.js",
+        "src/privileges/global.js",
+        "test/categories.js",
+        "test/messaging.js",
+        "test/middleware.js"
+      ]
+    },
+    {
+      "instance": "instance_NodeBB__NodeBB-da0211b1a001d45d73b4c84c6417a4f1b0312575-vf2cf3cbd463b7ad942381f1c6d077626485a1e9e",
+      "frame": 1,
+      "state": {
+        "targets": [
+          {
+            "path": "src/controllers/well-known.js",
+            "purpose": "WebFinger controller"
+          },
+          {
+            "path": "src/controllers/activitypub/actors.js",
+            "purpose": "Application actor implementation"
+          },
+          {
+            "path": "test/activitypub.js",
+            "purpose": "ActivityPub and WebFinger regression tests"
+          },
+          {
+            "path": "test/controllers.js",
+            "purpose": "Controller WebFinger tests"
+          },
+          {
+            "path": "test/helpers.js",
+            "purpose": "Test setup"
+          },
+          {
+            "path": ".mocharc.yml",
+            "purpose": "Test runner configuration"
+          },
+          {
+            "path": ".eslintrc",
+            "purpose": "Lint configuration"
+          }
+        ],
+        "task": "Implement and test instance actor WebFinger and preferredUsername/name requirements"
+      },
+      "questions": {
+        ".eslintrc": {
+          "instructions": "Should this file be inspected to implement or verify the task?",
+          "type": "boolean"
+        },
+        ".mocharc.yml": {
+          "instructions": "Should this file be inspected to implement or verify the task?",
+          "type": "boolean"
+        },
+        "src/controllers/activitypub/actors.js": {
+          "instructions": "Should this file be inspected to implement or verify the task?",
+          "type": "boolean"
+        },
+        "src/controllers/well-known.js": {
+          "instructions": "Should this file be inspected to implement or verify the task?",
+          "type": "boolean"
+        },
+        "test/activitypub.js": {
+          "instructions": "Should this file be inspected to implement or verify the task?",
+          "type": "boolean"
+        },
+        "test/controllers.js": {
+          "instructions": "Should this file be inspected to implement or verify the task?",
+          "type": "boolean"
+        },
+        "test/helpers.js": {
+          "instructions": "Should this file be inspected to implement or verify the task?",
+          "type": "boolean"
+        }
+      },
+      "recorded": {
+        ".eslintrc": 0.63,
+        ".mocharc.yml": 0.64,
+        "src/controllers/activitypub/actors.js": 0.64,
+        "src/controllers/well-known.js": 0.63,
+        "test/activitypub.js": 0.64,
+        "test/controllers.js": 0.62,
+        "test/helpers.js": 0.63
+      },
+      "gold": [
+        "src/controllers/activitypub/actors.js",
+        "src/controllers/well-known.js",
+        "test/activitypub.js"
+      ]
+    }
+  ]
+}

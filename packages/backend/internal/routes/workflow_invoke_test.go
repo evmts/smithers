@@ -35,7 +35,7 @@ func TestWorkflowHandler_InvokeWorkflow_Created(t *testing.T) {
 				Definition: db.WorkflowDefinition{
 					ID:   11,
 					Name: "echo",
-					Path: "flows/echo/flow.ts",
+					Path: ".smithers/flows/echo/flow.ts",
 				},
 			}, nil
 		},
@@ -61,7 +61,7 @@ func TestWorkflowHandler_InvokeWorkflow_Created(t *testing.T) {
 	assert.Equal(t, int64(42), body.ID)
 	assert.Equal(t, "queued", body.Status)
 	assert.Equal(t, "echo", body.Flow)
-	assert.Equal(t, "flows/echo/flow.ts", body.Path)
+	assert.Equal(t, ".smithers/flows/echo/flow.ts", body.Path)
 }
 
 func TestWorkflowHandler_InvokeWorkflow_UnknownFlowIsNotFound(t *testing.T) {
@@ -80,7 +80,7 @@ func TestWorkflowHandler_InvokeReviewRefusesBeforeWorkingCopyDispatch(t *testing
 	// Use the production service with no store or runtime: review must refuse
 	// before either is consulted, even through the retained generic HTTP door.
 	h := WorkflowHandler{Service: services.NewWorkflowAPIService(nil, nil)}
-	for _, flow := range []string{"review", "flows/review/flow.ts"} {
+	for _, flow := range []string{"review", ".smithers/flows/review/flow.ts"} {
 		req := httptest.NewRequest(http.MethodPost, "/api/repos/alice/demo/invoke",
 			strings.NewReader(`{"flow":"`+flow+`","input":{"pr":50}}`))
 		req = withRepoContextAndBookmark(req, "alice", "demo", "main")

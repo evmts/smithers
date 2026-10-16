@@ -34,7 +34,7 @@ func TestTodoPauseOverrideInspectionInstallHTTP(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			_, err := h.pool.Exec(ctx, `DELETE FROM workflow_definitions WHERE repository_id=$1`, h.item.RepositoryID)
 			require.NoError(t, err)
-			_, err = h.pool.Exec(ctx, `INSERT INTO workflow_definitions(repository_id,name,path,config,is_active,source_commit,digest,status) VALUES($1,'todo','flows/todo/flow.ts',$2,false,$3,$4,$5)`, h.item.RepositoryID, c.config, c.source, c.digest, c.status)
+			_, err = h.pool.Exec(ctx, `INSERT INTO workflow_definitions(repository_id,name,path,config,is_active,source_commit,digest,status) VALUES($1,'todo','.smithers/flows/todo/flow.ts',$2,false,$3,$4,$5)`, h.item.RepositoryID, c.config, c.source, c.digest, c.status)
 			require.NoError(t, err)
 			checks, _ := json.Marshal(map[string]any{"todo": true, "run_launched": true, "run_attached": true, "flowSource": source})
 			_, err = h.pool.Exec(ctx, `UPDATE mythical_items SET state='running',checks=$2,attempt=1,request_run_id='run-1',request_outcome='',workspace_id='11111111-1111-4111-8111-111111111111',flow_digest=$3,paused_at=NULL WHERE id=$1`, h.item.ID, checks, digest)

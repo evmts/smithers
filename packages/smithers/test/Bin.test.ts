@@ -409,21 +409,21 @@ describe("smithers executable", processBudget, () => {
 
   /**
    * `--version` and `--help` are documents, not work. They resolved a project
-   * root, scanned its `flows/` tree, and opened both SQLite databases before
+   * root, scanned its `.smithers/flows/` tree, and opened both SQLite databases before
    * `effect/cli` decided the invocation only wanted a document. In
    * the release validation that cost more than ten minutes: the invocation
    * directory held no project marker, the walk climbed to `$HOME`, and
    * discovery scanned the whole home tree.
    *
    * The staged tree below is that shape in miniature: an ancestor holding
-   * `.flows/` (so the walk anchors there) and a `flows/` directory with
+   * `.flows/` (so the walk anchors there) and a `.smithers/flows/` directory with
    * enough entries that a scan is unmistakably slower than the budget.
    */
   const stageHomeProject = (entries: number): string => {
     const home = realpathSync(mkdtempSync(temporaryDirectoryPrefix))
     mkdirSync(join(home, ".flows"), { recursive: true })
     for (let index = 0; index < entries; index++) {
-      const directory = join(home, "flows", `pkg${index}`, "sub")
+      const directory = join(home, ".smithers", "flows", `pkg${index}`, "sub")
       mkdirSync(directory, { recursive: true })
       writeFileSync(join(directory, "README.md"), "x")
     }
@@ -1123,6 +1123,21 @@ describe("flow start outside a repository", processBudget, () => {
       expect(result.stdout).toContain(`No flows found in ${cwd}`)
       expect(result.stderr).toBe("")
     }))
+
+  it("refuses a project whose only flows sit in the retired root flows/", () =>
+    inEmptyDirectory((cwd) => {
+      mkdirSync(join(cwd, "flows", "missing"), { recursive: true })
+      writeFileSync(join(cwd, "flows", "missing", "flow.mdx"), "---\ndescription: Old.\n---\nOld.\n")
+      const result = spawnSync(process.execPath, ["--no-warnings", executable, "flow", "start", "missing"], {
+        cwd,
+        encoding: "utf8",
+        timeout: 10_000,
+        env: { ...process.env, HOME: cwd, NODE_OPTIONS: "" }
+      })
+      expect(result.status).not.toBe(0)
+      expect(result.stdout).toContain("code: no_flows")
+      expect(existsSync(join(cwd, ".flows"))).toBe(false)
+    }))
 })
 
 describe("the signal exit codes", processBudget, () => {
@@ -1682,9 +1697,9 @@ describe("the migrate verb's target", processBudget, () => {
 /** A project whose one flow's seat resolves and whose turns cannot. */
 const stageUnservableSeat = (): string => {
   const cwd = realpathSync(mkdtempSync(temporaryDirectoryPrefix))
-  mkdirSync(join(cwd, "flows", "failing"), { recursive: true })
+  mkdirSync(join(cwd, ".smithers", "flows", "failing"), { recursive: true })
   writeFileSync(
-    join(cwd, "flows", "failing", "flow.mdx"),
+    join(cwd, ".smithers", "flows", "failing", "flow.mdx"),
     [
       "---",
       "name: failing",
@@ -1720,9 +1735,9 @@ const stageUnservableSeat = (): string => {
  */
 const stageCanonicalUnservableSeat = (): string => {
   const cwd = stageUnservableSeat()
-  rmSync(join(cwd, "flows", "failing", "flow.mdx"))
+  rmSync(join(cwd, ".smithers", "flows", "failing", "flow.mdx"))
   writeFileSync(
-    join(cwd, "flows", "failing", "flow.ts"),
+    join(cwd, ".smithers", "flows", "failing", "flow.ts"),
     [
       "import * as AgentAction from \"@smthrs/agent/AgentAction\"",
       "import { Flow } from \"@smthrs/flow\"",
@@ -1771,9 +1786,9 @@ const launch = (cwd: string, args: ReadonlyArray<string>) =>
 describe("an attached launch's exit status", processBudget, () => {
   it("the installed bin door preserves up failure and terminal cancel status", () => {
     const cwd = stageUnservableSeat()
-    rmSync(join(cwd, "flows", "failing", "flow.mdx"))
+    rmSync(join(cwd, ".smithers", "flows", "failing", "flow.mdx"))
     writeFileSync(
-      join(cwd, "flows", "failing", "flow.ts"),
+      join(cwd, ".smithers", "flows", "failing", "flow.ts"),
       readFileSync(new URL("./fixtures/bin-failing/flow.ts", import.meta.url))
     )
     symlinkSync(join(packageRoot, "node_modules"), join(cwd, "node_modules"), "dir")
@@ -2224,7 +2239,8 @@ describe("the smthrs init scaffold, launched as written", processBudget, () => {
       try {
         const environment = { ...withoutSeats(), SMITHERS_HOME: home }
         // A flows root that is a file cannot be scanned.
-        writeFileSync(join(cwd, "flows"), "not a directory\n")
+        mkdirSync(join(cwd, ".smithers"))
+        writeFileSync(join(cwd, ".smithers", "flows"), "not a directory\n")
         // Observing verbs open the host only over an existing store.
         mkdirSync(join(cwd, ".flows"), { recursive: true })
         new DatabaseSync(join(cwd, ".flows", "control.db")).close()
@@ -2246,7 +2262,7 @@ describe("the smthrs init scaffold, launched as written", processBudget, () => {
 
       expect(smithers(cwd, ["init", "hello", "--json"], environment).status).toBe(0)
 
-      const flow = readFileSync(join(cwd, "flows", "hello", "flow.ts"), "utf8")
+      const flow = readFileSync(join(cwd, ".smithers", "flows", "hello", "flow.ts"), "utf8")
       expect(flow).toContain("model: \"openai:gpt-6-sol\"")
       expect(flow).toContain("Credentials stay in the environment.")
       expect(flow).not.toContain(environment.OPENAI_API_KEY)
@@ -2262,7 +2278,7 @@ describe("the smthrs init scaffold, launched as written", processBudget, () => {
       const environment = withoutSeats()
       const initialized = smithers(cwd, ["init", "hello", "--json"], environment)
       expect(initialized.status).toBe(0)
-      expect(readFileSync(join(cwd, "flows", "hello", "flow.ts"), "utf8"))
+      expect(readFileSync(join(cwd, ".smithers", "flows", "hello", "flow.ts"), "utf8"))
         .toContain("model: \"anthropic:claude-sonnet-4-5\"")
 
       const launched = smithers(cwd, ["up", "hello", "--json"], environment)

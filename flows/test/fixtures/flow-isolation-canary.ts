@@ -36,7 +36,7 @@ export default Flow.make("merge", {
     const registryAt = (directory: string, source: string) => Registry.make({
       sources: [{ root: directory, source, naming: "path" }]
     }).pipe(Effect.provide(Discovery.layer))
-    const project = yield* registryAt(join(root, "flows"), "project")
+    const project = yield* registryAt(join(root, ".smithers", "flows"), "project")
     const packaged = yield* registryAt(packagedRoot, "repository-host")
     const registry = bindRepositoryRegistry(project, packaged, "a".repeat(64), systemFlows)
     const catalog = yield* repositoryCatalog({ delegates: [] }, () => Effect.succeed({

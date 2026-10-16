@@ -674,61 +674,6 @@ importers:
         specifier: 8.69.0
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
 
-  evals/agent:
-    dependencies:
-      '@effect/platform-node':
-        specifier: 4.0.4
-        version: 4.0.4(effect@4.0.4)(redis@6.2.1(@opentelemetry/api@1.9.1))
-      '@smthrs/agent':
-        specifier: workspace:*
-        version: link:../../packages/smithers/agent
-      '@smthrs/core':
-        specifier: workspace:*
-        version: link:../../packages/smithers/flows/core
-      '@smthrs/engine':
-        specifier: workspace:*
-        version: link:../../packages/smithers/flows/engine
-      '@smthrs/evals':
-        specifier: workspace:*
-        version: link:../../packages/smithers/agent/evals
-      '@smthrs/flow':
-        specifier: workspace:*
-        version: link:../../packages/smithers/flows/flow
-      '@smthrs/harness':
-        specifier: workspace:*
-        version: link:../../packages/smithers/agent/harness
-      '@smthrs/model':
-        specifier: workspace:*
-        version: link:../../packages/smithers/agent/model
-      '@smthrs/plan':
-        specifier: workspace:*
-        version: link:../../packages/smithers/flows/plan
-      '@smthrs/registry':
-        specifier: workspace:*
-        version: link:../../packages/smithers/agent/registry
-      '@smthrs/scorers':
-        specifier: workspace:*
-        version: link:../../packages/smithers/agent/scorers
-      effect:
-        specifier: 4.0.4
-        version: 4.0.4
-      yaml:
-        specifier: 2.9.0
-        version: 2.9.0
-    devDependencies:
-      '@smthrs/targets':
-        specifier: workspace:*
-        version: link:../../packages/smithers/build/targets
-      '@types/node':
-        specifier: 26.4.1
-        version: 26.4.1
-      bun-types:
-        specifier: ^1.4.0
-        version: 1.4.2
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
-
   evals/authoring:
     devDependencies:
       '@smthrs/targets':
@@ -740,247 +685,6 @@ importers:
       typescript:
         specifier: 5.9.3
         version: 5.9.3
-
-  evals/recommend:
-    dependencies:
-      '@smthrs/core':
-        specifier: workspace:*
-        version: link:../../packages/smithers/flows/core
-      '@smthrs/evals':
-        specifier: workspace:*
-        version: link:../../packages/smithers/agent/evals
-      '@smthrs/scorers':
-        specifier: workspace:*
-        version: link:../../packages/smithers/agent/scorers
-      effect:
-        specifier: 4.0.4
-        version: 4.0.4
-    devDependencies:
-      '@smthrs/targets':
-        specifier: workspace:*
-        version: link:../../packages/smithers/build/targets
-      '@types/node':
-        specifier: 26.4.1
-        version: 26.4.1
-      bun-types:
-        specifier: ^1.4.0
-        version: 1.4.0
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
-
-  evals/review-seeded-bugs:
-    dependencies:
-      '@effect/platform-node':
-        specifier: 4.0.4
-        version: 4.0.4(effect@4.0.4)(redis@6.2.1(@opentelemetry/api@1.9.1))
-      '@smthrs/agent':
-        specifier: workspace:*
-        version: link:../../packages/smithers/agent
-      '@smthrs/cli':
-        specifier: workspace:*
-        version: link:../../packages/smithers
-      '@smthrs/core':
-        specifier: workspace:*
-        version: link:../../packages/smithers/flows/core
-      '@smthrs/engine':
-        specifier: workspace:*
-        version: link:../../packages/smithers/flows/engine
-      '@smthrs/evals':
-        specifier: workspace:*
-        version: link:../../packages/smithers/agent/evals
-      '@smthrs/flow':
-        specifier: workspace:*
-        version: link:../../packages/smithers/flows/flow
-      '@smthrs/flows':
-        specifier: workspace:*
-        version: link:../../packages/smithers/flows
-      '@smthrs/model':
-        specifier: workspace:*
-        version: link:../../packages/smithers/agent/model
-      '@smthrs/registry':
-        specifier: workspace:*
-        version: link:../../packages/smithers/agent/registry
-      '@smthrs/scorers':
-        specifier: workspace:*
-        version: link:../../packages/smithers/agent/scorers
-      effect:
-        specifier: 4.0.4
-        version: 4.0.4
-    devDependencies:
-      '@smthrs/targets':
-        specifier: workspace:*
-        version: link:../../packages/smithers/build/targets
-      '@types/node':
-        specifier: 26.4.1
-        version: 26.4.1
-      bun-types:
-        specifier: ^1.4.0
-        version: 1.4.0
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
-
-  evals/swebench:
-    dependencies:
-      '@smthrs/cli':
-        specifier: workspace:*
-        version: link:../../packages/smithers
-      '@smthrs/control':
-        specifier: workspace:*
-        version: link:../../packages/smithers/control
-      '@smthrs/harness':
-        specifier: workspace:*
-        version: link:../../packages/smithers/agent/harness
-    devDependencies:
-      '@eslint/js':
-        specifier: 9.39.5
-        version: 9.39.5
-      '@smthrs/targets':
-        specifier: workspace:*
-        version: link:../../packages/smithers/build/targets
-      '@types/node':
-        specifier: 26.4.1
-        version: 26.4.1
-      dprint:
-        specifier: 0.57.1
-        version: 0.57.1(patch_hash=4d1658d5607d04c4bcb50cc49d97cbbac9f97b6cfae74ce3f1c6be779edf081e)
-      eslint:
-        specifier: 9.39.5
-        version: 9.39.5(jiti@2.7.0)(supports-color@10.2.2)
-      eslint-import-resolver-typescript:
-        specifier: 4.4.5
-        version: 4.4.5(eslint-plugin-import@2.32.0)(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
-      eslint-plugin-import:
-        specifier: 2.32.0
-        version: 2.32.0(@typescript-eslint/parser@8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2))(eslint-import-resolver-typescript@4.4.5)(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
-      eslint-plugin-unicorn:
-        specifier: 65.0.0
-        version: 65.0.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
-      typescript-eslint:
-        specifier: 8.69.0
-        version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
-
-  examples:
-    dependencies:
-      '@smthrs/agent':
-        specifier: workspace:*
-        version: link:../packages/smithers/agent
-      '@smthrs/capability':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/capability
-      '@smthrs/control':
-        specifier: workspace:*
-        version: link:../packages/smithers/control
-      '@smthrs/core':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/core
-      '@smthrs/database':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/database
-      '@smthrs/engine':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/engine
-      '@smthrs/engine-store':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/engine-store
-      '@smthrs/flow':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/flow
-      '@smthrs/flows':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows
-      '@smthrs/harness':
-        specifier: workspace:*
-        version: link:../packages/smithers/agent/harness
-      '@smthrs/journal':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/journal
-      '@smthrs/kernel':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/kernel
-      '@smthrs/keys':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/keys
-      '@smthrs/mcp':
-        specifier: workspace:*
-        version: link:../packages/smithers/mcp
-      '@smthrs/memory':
-        specifier: workspace:*
-        version: link:../packages/smithers/agent/memory
-      '@smthrs/model':
-        specifier: workspace:*
-        version: link:../packages/smithers/agent/model
-      '@smthrs/notifications':
-        specifier: workspace:*
-        version: link:../packages/smithers/notifications
-      '@smthrs/observability':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/observability
-      '@smthrs/patterns':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/patterns
-      '@smthrs/plan':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/plan
-      '@smthrs/platform-node':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/platform-node
-      '@smthrs/registry':
-        specifier: workspace:*
-        version: link:../packages/smithers/agent/registry
-      '@smthrs/run-store':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/run-store
-      '@smthrs/sandbox':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/sandbox
-      '@smthrs/std':
-        specifier: workspace:*
-        version: link:../packages/smithers/agent/std
-      '@smthrs/step-cache':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/step-cache
-      '@smthrs/sync':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/sync
-      '@smthrs/targets':
-        specifier: workspace:*
-        version: link:../packages/smithers/build/targets
-      '@smthrs/time-travel':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/time-travel
-      effect:
-        specifier: 4.0.4
-        version: 4.0.4
-    devDependencies:
-      '@effect/platform-node':
-        specifier: 4.0.4
-        version: 4.0.4(effect@4.0.4)(redis@6.2.1(@opentelemetry/api@1.9.1))
-      '@effect/vitest':
-        specifier: 4.0.4
-        version: 4.0.4(effect@4.0.4)(vitest@5.0.0)
-      '@smthrs/jj':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/jj
-      '@smthrs/testing':
-        specifier: workspace:*
-        version: link:../packages/testing
-      '@types/node':
-        specifier: 26.4.1
-        version: 26.4.1
-      esbuild:
-        specifier: 0.28.2
-        version: 0.28.2
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: 5.0.0
-        version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
 
   flows:
     dependencies:
@@ -1116,6 +820,86 @@ importers:
         version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
 
   flows/coding: {}
+
+  flows/review/seeded-bugs:
+    dependencies:
+      '@effect/platform-node':
+        specifier: 4.0.4
+        version: 4.0.4(effect@4.0.4)(redis@6.2.1(@opentelemetry/api@1.9.1))
+      '@smthrs/agent':
+        specifier: workspace:*
+        version: link:../../../packages/smithers/agent
+      '@smthrs/cli':
+        specifier: workspace:*
+        version: link:../../../packages/smithers
+      '@smthrs/core':
+        specifier: workspace:*
+        version: link:../../../packages/smithers/flows/core
+      '@smthrs/engine':
+        specifier: workspace:*
+        version: link:../../../packages/smithers/flows/engine
+      '@smthrs/evals':
+        specifier: workspace:*
+        version: link:../../../packages/smithers/agent/evals
+      '@smthrs/flow':
+        specifier: workspace:*
+        version: link:../../../packages/smithers/flows/flow
+      '@smthrs/flows':
+        specifier: workspace:*
+        version: link:../../../packages/smithers/flows
+      '@smthrs/model':
+        specifier: workspace:*
+        version: link:../../../packages/smithers/agent/model
+      '@smthrs/registry':
+        specifier: workspace:*
+        version: link:../../../packages/smithers/agent/registry
+      '@smthrs/scorers':
+        specifier: workspace:*
+        version: link:../../../packages/smithers/agent/scorers
+      effect:
+        specifier: 4.0.4
+        version: 4.0.4
+    devDependencies:
+      '@smthrs/targets':
+        specifier: workspace:*
+        version: link:../../../packages/smithers/build/targets
+      '@types/node':
+        specifier: 26.4.1
+        version: 26.4.1
+      bun-types:
+        specifier: ^1.4.0
+        version: 1.4.3
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
+  packages/backend/modelhost/recommend-eval:
+    dependencies:
+      '@smthrs/core':
+        specifier: workspace:*
+        version: link:../../../smithers/flows/core
+      '@smthrs/evals':
+        specifier: workspace:*
+        version: link:../../../smithers/agent/evals
+      '@smthrs/scorers':
+        specifier: workspace:*
+        version: link:../../../smithers/agent/scorers
+      effect:
+        specifier: 4.0.4
+        version: 4.0.4
+    devDependencies:
+      '@smthrs/targets':
+        specifier: workspace:*
+        version: link:../../../smithers/build/targets
+      '@types/node':
+        specifier: 26.4.1
+        version: 26.4.1
+      bun-types:
+        specifier: ^1.4.0
+        version: 1.4.3
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
 
   packages/errors:
     devDependencies:
@@ -1534,6 +1318,9 @@ importers:
       '@smthrs/jj':
         specifier: 1.0.0-rc.12
         version: link:../flows/jj
+      '@smthrs/patterns':
+        specifier: 1.0.0-rc.12
+        version: link:../flows/patterns
       '@smthrs/platform-node':
         specifier: 1.0.0-rc.12
         version: link:../flows/platform-node
@@ -1948,6 +1735,49 @@ importers:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
 
+  packages/smithers/agent/harness/benchmarks/swebench:
+    dependencies:
+      '@smthrs/cli':
+        specifier: workspace:*
+        version: link:../../../..
+      '@smthrs/control':
+        specifier: workspace:*
+        version: link:../../../../control
+      '@smthrs/harness':
+        specifier: workspace:*
+        version: link:../..
+    devDependencies:
+      '@eslint/js':
+        specifier: 9.39.5
+        version: 9.39.5
+      '@smthrs/targets':
+        specifier: workspace:*
+        version: link:../../../../build/targets
+      '@types/node':
+        specifier: 26.4.1
+        version: 26.4.1
+      dprint:
+        specifier: 0.57.1
+        version: 0.57.1(patch_hash=4d1658d5607d04c4bcb50cc49d97cbbac9f97b6cfae74ce3f1c6be779edf081e)
+      eslint:
+        specifier: 9.39.5
+        version: 9.39.5(jiti@2.7.0)(supports-color@10.2.2)
+      eslint-import-resolver-typescript:
+        specifier: 4.4.5
+        version: 4.4.5(eslint-plugin-import@2.32.0)(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
+      eslint-plugin-import:
+        specifier: 2.32.0
+        version: 2.32.0(@typescript-eslint/parser@8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2))(eslint-import-resolver-typescript@4.4.5)(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
+      eslint-plugin-unicorn:
+        specifier: 65.0.0
+        version: 65.0.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      typescript-eslint:
+        specifier: 8.69.0
+        version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
+
   packages/smithers/agent/integrations:
     dependencies:
       '@smthrs/canonical':
@@ -2136,6 +1966,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/platform-node':
+        specifier: 1.0.0-rc.12
+        version: link:../../flows/platform-node
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -2401,6 +2234,61 @@ importers:
         specifier: 5.0.0
         version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
 
+  packages/smithers/agent/regression:
+    dependencies:
+      '@effect/platform-node':
+        specifier: 4.0.4
+        version: 4.0.4(effect@4.0.4)(redis@6.2.1(@opentelemetry/api@1.9.1))
+      '@smthrs/agent':
+        specifier: workspace:*
+        version: link:..
+      '@smthrs/core':
+        specifier: workspace:*
+        version: link:../../flows/core
+      '@smthrs/engine':
+        specifier: workspace:*
+        version: link:../../flows/engine
+      '@smthrs/evals':
+        specifier: workspace:*
+        version: link:../evals
+      '@smthrs/flow':
+        specifier: workspace:*
+        version: link:../../flows/flow
+      '@smthrs/harness':
+        specifier: workspace:*
+        version: link:../harness
+      '@smthrs/model':
+        specifier: workspace:*
+        version: link:../model
+      '@smthrs/plan':
+        specifier: workspace:*
+        version: link:../../flows/plan
+      '@smthrs/registry':
+        specifier: workspace:*
+        version: link:../registry
+      '@smthrs/scorers':
+        specifier: workspace:*
+        version: link:../scorers
+      effect:
+        specifier: 4.0.4
+        version: 4.0.4
+      yaml:
+        specifier: 2.9.0
+        version: 2.9.0
+    devDependencies:
+      '@smthrs/targets':
+        specifier: workspace:*
+        version: link:../../build/targets
+      '@types/node':
+        specifier: 26.4.1
+        version: 26.4.1
+      bun-types:
+        specifier: ^1.4.0
+        version: 1.4.3
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
   packages/smithers/agent/scorers:
     dependencies:
       '@smthrs/core':
@@ -2507,6 +2395,15 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/flow':
+        specifier: 1.0.0-rc.12
+        version: link:../../flows/flow
+      '@smthrs/patterns':
+        specifier: 1.0.0-rc.12
+        version: link:../../flows/patterns
+      '@smthrs/plan':
+        specifier: 1.0.0-rc.12
+        version: link:../../flows/plan
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -3129,18 +3026,27 @@ importers:
       '@smthrs/control':
         specifier: 1.0.0-rc.12
         version: link:../control
+      '@smthrs/core':
+        specifier: 1.0.0-rc.12
+        version: link:core
       '@smthrs/model':
         specifier: 1.0.0-rc.12
         version: link:../agent/model
       '@smthrs/notifications':
         specifier: 1.0.0-rc.12
         version: link:../notifications
+      '@smthrs/patterns':
+        specifier: 1.0.0-rc.12
+        version: link:patterns
       '@smthrs/platform-bun':
         specifier: 1.0.0-rc.12
         version: link:platform-bun
       '@smthrs/registry':
         specifier: 1.0.0-rc.12
         version: link:../agent/registry
+      '@smthrs/targets':
+        specifier: 1.0.0-rc.12
+        version: link:../build/targets
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -4209,6 +4115,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/core':
+        specifier: 1.0.0-rc.12
+        version: link:../core
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -5145,6 +5054,15 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/agent':
+        specifier: 1.0.0-rc.12
+        version: link:../agent
+      '@smthrs/flow':
+        specifier: 1.0.0-rc.12
+        version: link:../flows/flow
+      '@smthrs/flows':
+        specifier: 1.0.0-rc.12
+        version: link:../flows
       '@smthrs/model':
         specifier: 1.0.0-rc.12
         version: link:../agent/model
@@ -5586,6 +5504,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/platform-node':
+        specifier: 1.0.0-rc.12
+        version: link:../smithers/flows/platform-node
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1

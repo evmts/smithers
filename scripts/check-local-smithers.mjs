@@ -47,7 +47,6 @@ export const SCANNED_PATHS = [
   "scripts",
   "flows",
   "evals",
-  "examples",
 ]
 
 /** Extensions worth scanning; everything else in those trees is prose or data. */

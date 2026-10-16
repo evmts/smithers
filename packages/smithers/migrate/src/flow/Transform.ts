@@ -119,7 +119,7 @@ export const UnitOutline = Schema.Struct({
   /**
    * Whether a flow is supposed to exist by the time this unit verifies. It is
    * cross-unit knowledge — the dependency unit writes no flow, and a project
-   * with no workflow at all never gets a `flows/` directory — so it is decided
+   * with no workflow at all never gets a `.smithers/flows/` directory — so it is decided
    * where every unit is visible rather than inside one.
    */
   expectFlows: Schema.Boolean

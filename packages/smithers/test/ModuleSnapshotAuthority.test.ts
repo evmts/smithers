@@ -37,8 +37,8 @@ describe("module snapshot authority", () => {
       let verifiedAtFirst = 0
       let verifiedAfterChildren = 0
       try {
-        await mkdir(join(root, "flows", "snapshot"), { recursive: true })
-        const filename = join(root, "flows", "snapshot", "flow.ts")
+        await mkdir(join(root, ".smithers", "flows", "snapshot"), { recursive: true })
+        const filename = join(root, ".smithers", "flows", "snapshot", "flow.ts")
         await writeFile(filename, source)
         const Probe = Action.make("snapshot/Probe", { payload: { index: Schema.Number }, success: Schema.Number })
         const Child = Flow.make("snapshot/Child", {

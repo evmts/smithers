@@ -5,6 +5,7 @@
  * (/api/runs/<id>) and topic `flows` (/api/flows) once those land.
  */
 import type { FlowCard } from "@smthrs/rpc/FlowCard"
+import { flowFile } from "@smthrs/rpc/FlowEdit"
 import type { MonitorCard } from "@smthrs/rpc/MonitorCard"
 import type { PhaseTone } from "@smthrs/rpc/CardPrimitives"
 import { designActor } from "./shell"
@@ -160,7 +161,7 @@ export const flowCardOf = (world: DesignWorldRows, name: string): FlowCard | und
   const system = versions.some(each => each.system === true)
   return {
     name,
-    source: system ? { builtin: true } : { path: `flows/${name}/flow.ts` },
+    source: system ? { builtin: true } : { path: flowFile(name) },
     system,
     versions: versions.map(version => {
       const todo = version.todo === undefined ? undefined : refNumber(todoOf(world, version.todo)?.ref)

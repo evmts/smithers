@@ -43,7 +43,8 @@ declare const __SMITHERS_CODING_ARTIFACT_DIGEST__: string | undefined
  */
 declare const __SMITHERS_CREATE_FLOW_PACK__: Readonly<Record<string, string>> | undefined
 /**
- * Exact packaged default bytes, keyed by their path under `flows/` (each
+ * Exact packaged default bytes, keyed by their path relative to the flows
+ * directory (each
  * default's entry and the modules beside it), carried inside the measured host
  * bundle. Undefined means "running from source", where {@link shippedDefaults}
  * reads the same files from disk.
@@ -145,7 +146,8 @@ export const authoringBodies: Effect.Effect<ReadonlyMap<string, string>, Error, 
 )
 
 /**
- * The packaged defaults' files, keyed by their POSIX path under `flows/`: the
+ * The packaged defaults' files, keyed by their POSIX path relative to the flows
+ * directory: the
  * constant compiled into the bundle, else this checkout's own files.
  */
 export const shippedDefaults: Effect.Effect<Readonly<Record<string, string>>, Error, FileSystem.FileSystem> = Effect
@@ -168,7 +170,7 @@ export const shippedDefaults: Effect.Effect<Readonly<Record<string, string>>, Er
 /**
  * The optional coding routes a configured host serves (`configuredCodingRoutes`).
  * They ship as built-ins like `coding/implementation`, so a repository with
- * `.smithers/coding-project.json` and no `flows/coding/` tree still serves them
+ * `.smithers/coding-project.json` and no `.smithers/flows/coding/` tree still serves them
  * and never vendors coding bundles. The backend catalog decides which names
  * require the packaged implementation.
  */
@@ -358,8 +360,9 @@ export const provisionBuiltins = (
      * The authoring pack, written beside the module built-ins as ordinary
      * prompt bodies.
      *
-     * A workspace's catalog is its repository's own `flows/` tree plus what is
-     * written here, and a freshly imported repository has no `flows/` tree. So
+     * A workspace's catalog is its repository's own `.smithers/flows/` tree plus
+     * what is written here, and a freshly imported repository has no
+     * `.smithers/flows/` tree. So
      * before this, every workspace carried nine flows and all nine were module
      * flows — no prompt body existed anywhere in production, which is both why
      * `/flow.create` had nothing to launch and why no run could show a person an
@@ -447,7 +450,7 @@ export const repositoryCatalog = (options: Executable.Options, load: NonNullable
  *
  * Everything the catalog holds is registered, and the catalog itself is served
  * rebuildable one entry at a time so a run of this host can author
- * `flows/<id>/flow.ts` and have the next plan draw it. `refreshableEntry`
+ * `.smithers/flows/<id>/flow.ts` and have the next plan draw it. `refreshableEntry`
  * decides which half may be rebuilt.
  *
  * It is one function rather than a composition spelled out at the host's call
@@ -507,7 +510,7 @@ export const repositoryRegistration = <ROut, E, RIn>(
  * A run this host serves can write anything into that tree, so the reserved
  * declarations that came from the measured bundle are never rebuilt out of it:
  * their bytes are the image this host shipped as. Everything the repository
- * owns is, which is what lets `create-flow` write `flows/<id>/flow.ts` and have
+ * owns is, which is what lets `create-flow` write `.smithers/flows/<id>/flow.ts` and have
  * the next plan draw it.
  */
 export const refreshableEntry = (descriptor: Descriptor.FlowDescriptor): boolean =>

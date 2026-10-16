@@ -35,9 +35,10 @@ For another repository, commit its own factory and the flows it runs there.
 Reuse public engineering instructions through versioned local source; never
 load a private operations checkout, its credentials, or an unpinned remote
 profile into a public build. A new executable file flow uses a tagged
-`Flow.make` default export at `flows/<name>/flow.ts` and must be installed in
-the host's executable catalog. The prompt-rule reconciler does not execute
-TypeScript flows merely because their names appear in the projection.
+`Flow.make` default export at `.smithers/flows/<name>/flow.ts` and must be
+installed in the host's executable catalog. Smithers never loads flows from a
+root `flows/` folder. The prompt-rule reconciler does not execute TypeScript
+flows merely because their names appear in the projection.
 
 ## Give a schedule its payload
 

@@ -21,7 +21,7 @@ func TestCodingCatalogArchiveKeepsAuthorizedSourceThroughInstall(t *testing.T) {
 	t.Setenv("SMITHERS_FEATURE_FLAGS_FLOW_LOAD", "true")
 	r := newRehearsal(t, "SMITHERS_CODING_REGISTRY_REHEARSAL", "C-DUR-01", "registry-source-", 25)
 	require.True(t, r.install("Install through Machine ready"))
-	_, err := r.pushGitHubMain("Publish an ordinary registry probe", map[string]string{"flows/probe/flow.ts": `import { Flow } from "@smthrs/flow"
+	_, err := r.pushGitHubMain("Publish an ordinary registry probe", map[string]string{".smithers/flows/probe/flow.ts": `import { Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Schema } from "effect"
 export default Flow.make("probe", { description: "Archive source control", capabilities: [], payload: {}, success: Schema.String,

@@ -13,9 +13,9 @@ test("C-J11-03: the owner switches the reviewer model immediately", async ({ pag
  await page.route("**/api/install", route => route.fulfill({ json: installFixture() }))
  let model = "model-a"
  const snapshot = () => ({ native: false, canAssign: true, agents: [
-  { id: "planner", label: "Planner agent", purpose: "", model: { id: "model-a", label: "model-a", provider: "openai-responses" }, builtin: true, available: false, account: "", reason: "", source: "owner", instructions: "flows/todo/flow.ts" },
-  { id: "implementer", label: "Implementer agent", purpose: "", model: { id: "model-a", label: "model-a", provider: "openai-responses" }, builtin: true, available: false, account: "", reason: "", source: "owner", instructions: "flows/todo/flow.ts" },
-  { id: "reviewer", label: "Reviewer agent", purpose: "", model: { id: model, label: model, provider: "openai-responses" }, binding: { protocol: "openai-responses", modelId: model, credential: "OPENAI_API_KEY" }, builtin: true, available: false, account: "", reason: "", source: "owner", instructions: "flows/todo/flow.ts" },
+  { id: "planner", label: "Planner agent", purpose: "", model: { id: "model-a", label: "model-a", provider: "openai-responses" }, builtin: true, available: false, account: "", reason: "", source: "owner", instructions: ".smithers/flows/todo/flow.ts" },
+  { id: "implementer", label: "Implementer agent", purpose: "", model: { id: "model-a", label: "model-a", provider: "openai-responses" }, builtin: true, available: false, account: "", reason: "", source: "owner", instructions: ".smithers/flows/todo/flow.ts" },
+  { id: "reviewer", label: "Reviewer agent", purpose: "", model: { id: model, label: model, provider: "openai-responses" }, binding: { protocol: "openai-responses", modelId: model, credential: "OPENAI_API_KEY" }, builtin: true, available: false, account: "", reason: "", source: "owner", instructions: ".smithers/flows/todo/flow.ts" },
   { id: "app", label: "App agent", purpose: "", runs: [{ id: "turn-before-switch", model: "model-old" }, { id: "turn-after-switch", model: "model-f" }], model: { id: "model-f", label: "model-f", provider: "openai-chat" }, builtin: true, available: false, account: "", reason: "", source: "owner", instructions: ".smithers/instructions/app.md" }
  ] })
  let holdRefresh = false
@@ -155,7 +155,7 @@ test("C-J11-03: a member reads agent models and instructions without assignment 
   return route.fulfill({ status: 403, json: { class: "permission" } })
  })
  await page.route("**/api/agents", route => route.fulfill({ json: { native: false, canAssign: false, agents: [
-  { id: "reviewer", label: "Reviewer agent", purpose: "", model: { id: "model-b", label: "model-b", provider: "openai-responses" }, binding: { protocol: "openai-responses", modelId: "model-b", credential: "OPENAI_API_KEY" }, builtin: true, available: false, account: "", reason: "", source: "owner", instructions: "flows/todo/flow.ts", runs: [{ id: "review-1", model: "model-b" }] }
+  { id: "reviewer", label: "Reviewer agent", purpose: "", model: { id: "model-b", label: "model-b", provider: "openai-responses" }, binding: { protocol: "openai-responses", modelId: "model-b", credential: "OPENAI_API_KEY" }, builtin: true, available: false, account: "", reason: "", source: "owner", instructions: ".smithers/flows/todo/flow.ts", runs: [{ id: "review-1", model: "model-b" }] }
  ] } }))
  await page.goto("/smithersai/smithers")
  await say(page, "/agents")
@@ -259,7 +259,7 @@ test("C-J11-03: a refused owner switch keeps the model and retries through the s
  await page.route("**/api/install", route => route.fulfill({ json: installFixture() }))
  let model = "model-a"
  const snapshot = () => ({ native: false, canAssign: true, agents: [
-  { id: "reviewer", label: "Reviewer agent", purpose: "", model: { id: model, label: model, provider: "openai-responses" }, binding: { protocol: "openai-responses", modelId: model, credential: "OPENAI_API_KEY" }, builtin: true, available: false, account: "", reason: "", source: "owner", instructions: "flows/todo/flow.ts", runs: [] }
+  { id: "reviewer", label: "Reviewer agent", purpose: "", model: { id: model, label: model, provider: "openai-responses" }, binding: { protocol: "openai-responses", modelId: model, credential: "OPENAI_API_KEY" }, builtin: true, available: false, account: "", reason: "", source: "owner", instructions: ".smithers/flows/todo/flow.ts", runs: [] }
  ] })
  await page.route("**/api/agents", route => route.fulfill({ json: snapshot() }))
  const requests: unknown[] = []

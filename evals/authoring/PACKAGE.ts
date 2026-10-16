@@ -33,7 +33,6 @@ const dataset = Smithers.file("//evals/authoring/data/pilot-sft.jsonl")
 const workspaceManifests = [
   Smithers.file("//package.json"),
   Smithers.pnpmWorkspace("//pnpm-workspace.yaml"),
-  Smithers.file("//examples/package.json"),
   Smithers.file("//flows/package.json")
 ]
 

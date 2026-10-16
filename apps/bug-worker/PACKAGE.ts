@@ -58,6 +58,22 @@ const unitTests = Smithers.NodeTest({
   cwd
 })
 
+/**
+ * The `deploy` script refuses to publish outside a qualified Cloud rollout:
+ * it exits nonzero, never reaches `alchemy`, and says why.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const workerDeployQualification = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//apps/bug-worker/deploy-qualification.test.mjs")]),
+  srcs: [
+    Smithers.file("//flows/rollout/refuse-unqualified.mjs"),
+    Smithers.file("//apps/bug-worker/package.json")
+  ],
+  deps: []
+})
+
 /** Security review of anonymous intake and authenticated report retrieval. */
 const securityReview = Smithers.SecurityReview({
   cwd,
@@ -106,5 +122,5 @@ const securityReview = Smithers.SecurityReview({
 })
 
 export const Package = Smithers.Package({
-  targets: { check, unitTests, ...securityReview }
+  targets: { check, unitTests, workerDeployQualification, ...securityReview }
 })

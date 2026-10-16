@@ -18,6 +18,7 @@
  */
 
 import * as Fault from "@smthrs/flow/Fault"
+import { projectFlowsDirectory } from "@smthrs/registry/Descriptor"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -85,7 +86,7 @@ const error = (code: FlowStoreErrorCode, message: string, cause?: unknown): Flow
  * The flow ids a router can route.
  *
  * One directory name, lowercase, and no separators: a saved flow is discovered
- * as `flows/<id>/flow.ts`, so an id is exactly what may stand between those two
+ * as `.smithers/flows/<id>/flow.ts`, so an id is exactly what may stand between those two
  * slashes.
  *
  * @category models
@@ -161,13 +162,21 @@ export interface Service {
  */
 export class FlowStore extends Context.Service<FlowStore, Service>()("@smthrs/agent/FlowStore") {}
 
-/** Groups written paths into one entry per `flows/<id>/` prefix. */
+/** The segments every saved file path starts with: `Descriptor.projectFlowsDirectory`. */
+const flowsSegments: ReadonlyArray<string> = projectFlowsDirectory.split("/")
+
+/** The flow id a path's segments name below {@link flowsSegments}, when they name a file there. */
+const idOf = (segments: ReadonlyArray<string>): string | undefined =>
+  segments.length >= flowsSegments.length + 2 && flowsSegments.every((segment, index) => segments[index] === segment)
+    ? segments[flowsSegments.length]
+    : undefined
+
+/** Groups written paths into one entry per `.smithers/flows/<id>/` prefix. */
 const listPaths = (paths: Iterable<string>): ReadonlyArray<SavedFlow> => {
   const byId = new Map<string, Array<string>>()
   for (const path of paths) {
-    const parts = path.split("/")
-    if (parts.length < 3 || parts[0] !== "flows" || !idPattern.test(parts[1]!)) continue
-    const id = parts[1]!
+    const id = idOf(path.split("/"))
+    if (id === undefined || !idPattern.test(id)) continue
     const held = byId.get(id)
     if (held === undefined) byId.set(id, [path])
     else held.push(path)
@@ -176,14 +185,14 @@ const listPaths = (paths: Iterable<string>): ReadonlyArray<SavedFlow> => {
 }
 
 /**
- * Refuses a map key that is not a clean file path under `flows/<id>/`.
+ * Refuses a map key that is not a clean file path under `.smithers/flows/<id>/`.
  *
  * The in-memory store has no filesystem to resolve a path against, so the key
  * is the whole address: one that names another flow's directory, or a `.` or
  * `..` segment, would land beside the flow being saved rather than in it.
  */
 const validateMemoryPath = (id: string, key: string): Effect.Effect<void, FlowStoreError> => {
-  const prefix = `flows/${id}/`
+  const prefix = `${projectFlowsDirectory}/${id}/`
   const rest = key.startsWith(prefix) ? key.slice(prefix.length).split("/") : []
   return rest.length > 0 && rest.every((segment) => segment !== "" && segment !== "." && segment !== "..")
     ? Effect.void
@@ -197,7 +206,7 @@ const validateMemoryPath = (id: string, key: string): Effect.Effect<void, FlowSt
  * bytes back without a filesystem. The listing is derived from the keys rather
  * than tracked separately, which is what lets a host hand in a map it populated
  * itself and still have the flows in it be listable. Every key must be a file
- * path under `flows/<id>/`; the whole write is refused before any key is stored
+ * path under `.smithers/flows/<id>/`; the whole write is refused before any key is stored
  * otherwise.
  *
  * @category constructors
@@ -224,7 +233,7 @@ const segmentsOf = (path: Path.Path, relative: string): ReadonlyArray<string> =>
 
 /**
  * Resolves a file path using the host's semantics before any filesystem
- * mutation, and refuses one that is not a file under `flows/<id>/`: a save
+ * mutation, and refuses one that is not a file under `.smithers/flows/<id>/`: a save
  * names one flow, so a key beside it, such as another flow's source or a
  * package file, is no more writable here than it is in {@link makeMemory}.
  */
@@ -239,8 +248,8 @@ const validatePath = (
     return Effect.fail(error("invalid_path", `"${relative}" is not a file path inside the flows root.`))
   }
   const segments = segmentsOf(path, confined)
-  return segments.length < 3 || segments[0] !== "flows" || segments[1] !== id
-    ? Effect.fail(error("invalid_path", `"${relative}" is not a file path inside flows/${id}/.`))
+  return idOf(segments) !== id
+    ? Effect.fail(error("invalid_path", `"${relative}" is not a file path inside ${projectFlowsDirectory}/${id}/.`))
     : Effect.succeed(confined)
 }
 
@@ -414,7 +423,7 @@ const serializeWrite = <A, E>(root: string, write: Effect.Effect<A, E>): Effect.
  * Constructs a store over a directory on the host filesystem.
  *
  * Validates every path with the injected Path semantics, refuses one that is
- * not a file under `flows/<id>/`, and rejects symbolic links below the root
+ * not a file under `.smithers/flows/<id>/`, and rejects symbolic links below the root
  * before staging. Writes to the same resolved root are
  * serialized within this process, including across store instances.
  * The entire file set and backups are staged inside the root before targets
@@ -463,10 +472,10 @@ export const makeFileSystem = (
       ),
     list: () =>
       Effect.gen(function*() {
-        const directory = path.join(root, "flows")
+        const directory = path.join(root, ...flowsSegments)
         // A directory that cannot be listed contributes nothing, which is the
         // same reading `WorkspaceObservation` takes of the same question. A
-        // root that has never saved a flow has no `flows` directory at all, and
+        // root that has never saved a flow has no `.smithers/flows` directory, and
         // that is the state every host starts in rather than a failure.
         const entries = yield* fs.readDirectory(directory).pipe(Effect.orElseSucceed(() => []))
         const paths: Array<string> = []
@@ -483,7 +492,7 @@ export const makeFileSystem = (
               // one, and reporting it would name a path nothing can read.
               Effect.orElseSucceed(() => "Unknown" as const)
             )
-            if (info === "File") paths.push(`flows/${id}/${relative.split(path.sep).join("/")}`)
+            if (info === "File") paths.push(`${projectFlowsDirectory}/${id}/${relative.split(path.sep).join("/")}`)
           }
         }
         return listPaths(paths)

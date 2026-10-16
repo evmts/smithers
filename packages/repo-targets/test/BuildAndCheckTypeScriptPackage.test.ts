@@ -428,7 +428,7 @@ describe("BuildAndCheckTypeScriptPackage option propagation", () => {
       Input.file("//packages/repo-targets/scripts/private-effect-adapters.mjs"),
       Input.file("//packages/repo-targets/package.json"),
       Input.file("//packages/smithers/scripts/compile-commonjs.mjs"),
-      Input.file("//scripts/check-single-effect-version.mjs")
+      Input.file("//packages/repo-targets/contracts/check-single-effect-version.mjs")
     ])
     expect(attrsOf<Typecheck.Attrs>(relocated.check).srcs).toEqual([
       moved,

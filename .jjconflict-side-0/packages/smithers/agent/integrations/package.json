@@ -1,0 +1,487 @@
+{
+  "name": "@smthrs/integrations",
+  "type": "module",
+  "version": "1.0.0-rc.12",
+  "license": "MIT",
+  "smthrs": {
+    "group": "agent"
+  },
+  "description": "GitHub adapters over the Smithers control plane",
+  "homepage": "https://github.com/smithersai/smithers",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/smithers/agent/integrations"
+  },
+  "bugs": {
+    "url": "https://github.com/smithersai/smithers/issues"
+  },
+  "tags": [
+    "typescript",
+    "effect",
+    "github",
+    "webhooks"
+  ],
+  "keywords": [
+    "typescript",
+    "effect",
+    "github",
+    "webhooks"
+  ],
+  "engines": {
+    "node": ">=26.4.0"
+  },
+  "sideEffects": [],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null,
+    "./*/index": null,
+    "./Environment": "./src/Environment.ts",
+    "./core": "./src/core.ts",
+    "./core/AccessToken": "./src/core/AccessToken.ts",
+    "./core/ActionFailure": "./src/core/ActionFailure.ts",
+    "./core/AuthorizationUrl": "./src/core/AuthorizationUrl.ts",
+    "./core/Channel": "./src/core/Channel.ts",
+    "./core/Connection": "./src/core/Connection.ts",
+    "./core/CursorStore": "./src/core/CursorStore.ts",
+    "./core/ExternalEvent": "./src/core/ExternalEvent.ts",
+    "./core/IntegrationError": "./src/core/IntegrationError.ts",
+    "./core/JsonPath": "./src/core/JsonPath.ts",
+    "./core/OAuthToken": "./src/core/OAuthToken.ts",
+    "./core/Pkce": "./src/core/Pkce.ts",
+    "./core/SignalName": "./src/core/SignalName.ts",
+    "./core/Signature": "./src/core/Signature.ts",
+    "./core/Source": "./src/core/Source.ts",
+    "./core/SourceRecord": "./src/core/SourceRecord.ts",
+    "./core/SourceStore": "./src/core/SourceStore.ts",
+    "./core/Sync": "./src/core/Sync.ts",
+    "./github": "./src/github.ts",
+    "./github/Actions": "./src/github/Actions.ts",
+    "./github/Config": "./src/github/Config.ts",
+    "./github/GitHubClient": "./src/github/GitHubClient.ts",
+    "./github/Payload": "./src/github/Payload.ts",
+    "./github/Proxy": "./src/github/Proxy.ts",
+    "./github/RateLimit": "./src/github/RateLimit.ts",
+    "./github/Repository": "./src/github/Repository.ts",
+    "./github/Sync": "./src/github/Sync.ts",
+    "./index": "./src/index.ts",
+    "./core/migrations/0001_integration_cursors": null,
+    "./github/Webhook": null,
+    "./github/ListenerRegistry": null,
+    "./core/IssueSync": "./src/core/IssueSync.ts",
+    "./linear": null,
+    "./linear/Actions": null,
+    "./linear/Config": null,
+    "./linear/LinearClient": null,
+    "./linear/Payload": null,
+    "./linear/Webhook": null,
+    "./telegram": null,
+    "./telegram/Actions": null,
+    "./telegram/Approval": null,
+    "./telegram/Chunk": null,
+    "./telegram/Config": null,
+    "./telegram/InitData": null,
+    "./telegram/Markdown": null,
+    "./telegram/Payload": null,
+    "./telegram/Source": null,
+    "./telegram/TelegramClient": null
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next",
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./internal/*": null,
+      "./*/index": null,
+      "./Environment": {
+        "import": {
+          "types": "./dist/esm/Environment.d.ts",
+          "default": "./dist/esm/Environment.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Environment.d.ts",
+          "default": "./dist/cjs/Environment.js"
+        }
+      },
+      "./core": {
+        "import": {
+          "types": "./dist/esm/core.d.ts",
+          "default": "./dist/esm/core.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core.d.ts",
+          "default": "./dist/cjs/core.js"
+        }
+      },
+      "./core/AccessToken": {
+        "import": {
+          "types": "./dist/esm/core/AccessToken.d.ts",
+          "default": "./dist/esm/core/AccessToken.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/AccessToken.d.ts",
+          "default": "./dist/cjs/core/AccessToken.js"
+        }
+      },
+      "./core/ActionFailure": {
+        "import": {
+          "types": "./dist/esm/core/ActionFailure.d.ts",
+          "default": "./dist/esm/core/ActionFailure.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/ActionFailure.d.ts",
+          "default": "./dist/cjs/core/ActionFailure.js"
+        }
+      },
+      "./core/AuthorizationUrl": {
+        "import": {
+          "types": "./dist/esm/core/AuthorizationUrl.d.ts",
+          "default": "./dist/esm/core/AuthorizationUrl.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/AuthorizationUrl.d.ts",
+          "default": "./dist/cjs/core/AuthorizationUrl.js"
+        }
+      },
+      "./core/Channel": {
+        "import": {
+          "types": "./dist/esm/core/Channel.d.ts",
+          "default": "./dist/esm/core/Channel.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/Channel.d.ts",
+          "default": "./dist/cjs/core/Channel.js"
+        }
+      },
+      "./core/Connection": {
+        "import": {
+          "types": "./dist/esm/core/Connection.d.ts",
+          "default": "./dist/esm/core/Connection.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/Connection.d.ts",
+          "default": "./dist/cjs/core/Connection.js"
+        }
+      },
+      "./core/CursorStore": {
+        "import": {
+          "types": "./dist/esm/core/CursorStore.d.ts",
+          "default": "./dist/esm/core/CursorStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/CursorStore.d.ts",
+          "default": "./dist/cjs/core/CursorStore.js"
+        }
+      },
+      "./core/ExternalEvent": {
+        "import": {
+          "types": "./dist/esm/core/ExternalEvent.d.ts",
+          "default": "./dist/esm/core/ExternalEvent.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/ExternalEvent.d.ts",
+          "default": "./dist/cjs/core/ExternalEvent.js"
+        }
+      },
+      "./core/IntegrationError": {
+        "import": {
+          "types": "./dist/esm/core/IntegrationError.d.ts",
+          "default": "./dist/esm/core/IntegrationError.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/IntegrationError.d.ts",
+          "default": "./dist/cjs/core/IntegrationError.js"
+        }
+      },
+      "./core/JsonPath": {
+        "import": {
+          "types": "./dist/esm/core/JsonPath.d.ts",
+          "default": "./dist/esm/core/JsonPath.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/JsonPath.d.ts",
+          "default": "./dist/cjs/core/JsonPath.js"
+        }
+      },
+      "./core/OAuthToken": {
+        "import": {
+          "types": "./dist/esm/core/OAuthToken.d.ts",
+          "default": "./dist/esm/core/OAuthToken.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/OAuthToken.d.ts",
+          "default": "./dist/cjs/core/OAuthToken.js"
+        }
+      },
+      "./core/Pkce": {
+        "import": {
+          "types": "./dist/esm/core/Pkce.d.ts",
+          "default": "./dist/esm/core/Pkce.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/Pkce.d.ts",
+          "default": "./dist/cjs/core/Pkce.js"
+        }
+      },
+      "./core/SignalName": {
+        "import": {
+          "types": "./dist/esm/core/SignalName.d.ts",
+          "default": "./dist/esm/core/SignalName.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/SignalName.d.ts",
+          "default": "./dist/cjs/core/SignalName.js"
+        }
+      },
+      "./core/Signature": {
+        "import": {
+          "types": "./dist/esm/core/Signature.d.ts",
+          "default": "./dist/esm/core/Signature.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/Signature.d.ts",
+          "default": "./dist/cjs/core/Signature.js"
+        }
+      },
+      "./core/Source": {
+        "import": {
+          "types": "./dist/esm/core/Source.d.ts",
+          "default": "./dist/esm/core/Source.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/Source.d.ts",
+          "default": "./dist/cjs/core/Source.js"
+        }
+      },
+      "./core/SourceRecord": {
+        "import": {
+          "types": "./dist/esm/core/SourceRecord.d.ts",
+          "default": "./dist/esm/core/SourceRecord.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/SourceRecord.d.ts",
+          "default": "./dist/cjs/core/SourceRecord.js"
+        }
+      },
+      "./core/SourceStore": {
+        "import": {
+          "types": "./dist/esm/core/SourceStore.d.ts",
+          "default": "./dist/esm/core/SourceStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/SourceStore.d.ts",
+          "default": "./dist/cjs/core/SourceStore.js"
+        }
+      },
+      "./core/Sync": {
+        "import": {
+          "types": "./dist/esm/core/Sync.d.ts",
+          "default": "./dist/esm/core/Sync.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/Sync.d.ts",
+          "default": "./dist/cjs/core/Sync.js"
+        }
+      },
+      "./github": {
+        "import": {
+          "types": "./dist/esm/github.d.ts",
+          "default": "./dist/esm/github.js"
+        },
+        "require": {
+          "types": "./dist/cjs/github.d.ts",
+          "default": "./dist/cjs/github.js"
+        }
+      },
+      "./github/Actions": {
+        "import": {
+          "types": "./dist/esm/github/Actions.d.ts",
+          "default": "./dist/esm/github/Actions.js"
+        },
+        "require": {
+          "types": "./dist/cjs/github/Actions.d.ts",
+          "default": "./dist/cjs/github/Actions.js"
+        }
+      },
+      "./github/Config": {
+        "import": {
+          "types": "./dist/esm/github/Config.d.ts",
+          "default": "./dist/esm/github/Config.js"
+        },
+        "require": {
+          "types": "./dist/cjs/github/Config.d.ts",
+          "default": "./dist/cjs/github/Config.js"
+        }
+      },
+      "./github/GitHubClient": {
+        "import": {
+          "types": "./dist/esm/github/GitHubClient.d.ts",
+          "default": "./dist/esm/github/GitHubClient.js"
+        },
+        "require": {
+          "types": "./dist/cjs/github/GitHubClient.d.ts",
+          "default": "./dist/cjs/github/GitHubClient.js"
+        }
+      },
+      "./github/Payload": {
+        "import": {
+          "types": "./dist/esm/github/Payload.d.ts",
+          "default": "./dist/esm/github/Payload.js"
+        },
+        "require": {
+          "types": "./dist/cjs/github/Payload.d.ts",
+          "default": "./dist/cjs/github/Payload.js"
+        }
+      },
+      "./github/Proxy": {
+        "import": {
+          "types": "./dist/esm/github/Proxy.d.ts",
+          "default": "./dist/esm/github/Proxy.js"
+        },
+        "require": {
+          "types": "./dist/cjs/github/Proxy.d.ts",
+          "default": "./dist/cjs/github/Proxy.js"
+        }
+      },
+      "./github/RateLimit": {
+        "import": {
+          "types": "./dist/esm/github/RateLimit.d.ts",
+          "default": "./dist/esm/github/RateLimit.js"
+        },
+        "require": {
+          "types": "./dist/cjs/github/RateLimit.d.ts",
+          "default": "./dist/cjs/github/RateLimit.js"
+        }
+      },
+      "./github/Repository": {
+        "import": {
+          "types": "./dist/esm/github/Repository.d.ts",
+          "default": "./dist/esm/github/Repository.js"
+        },
+        "require": {
+          "types": "./dist/cjs/github/Repository.d.ts",
+          "default": "./dist/cjs/github/Repository.js"
+        }
+      },
+      "./github/Sync": {
+        "import": {
+          "types": "./dist/esm/github/Sync.d.ts",
+          "default": "./dist/esm/github/Sync.js"
+        },
+        "require": {
+          "types": "./dist/cjs/github/Sync.d.ts",
+          "default": "./dist/cjs/github/Sync.js"
+        }
+      },
+      "./index": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./core/migrations/0001_integration_cursors": null,
+      "./github/Webhook": null,
+      "./github/ListenerRegistry": null,
+      "./core/IssueSync": {
+        "import": {
+          "types": "./dist/esm/core/IssueSync.d.ts",
+          "default": "./dist/esm/core/IssueSync.js"
+        },
+        "require": {
+          "types": "./dist/cjs/core/IssueSync.d.ts",
+          "default": "./dist/cjs/core/IssueSync.js"
+        }
+      },
+      "./linear": null,
+      "./linear/Actions": null,
+      "./linear/Config": null,
+      "./linear/LinearClient": null,
+      "./linear/Payload": null,
+      "./linear/Webhook": null,
+      "./telegram": null,
+      "./telegram/Actions": null,
+      "./telegram/Approval": null,
+      "./telegram/Chunk": null,
+      "./telegram/Config": null,
+      "./telegram/InitData": null,
+      "./telegram/Markdown": null,
+      "./telegram/Payload": null,
+      "./telegram/Source": null,
+      "./telegram/TelegramClient": null
+    }
+  },
+  "files": [
+    "src/**/*.ts",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/package.json",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/"
+  ],
+  "scripts": {
+    "lint": "eslint src examples --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "circular": "node scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "node ../../flows/database/scripts/test-matrix.mjs",
+    "test:matrix": "node ../../flows/database/scripts/test-matrix.mjs"
+  },
+  "dependencies": {
+    "@smthrs/control": "1.0.0-rc.12",
+    "@smthrs/database": "1.0.0-rc.12",
+    "@smthrs/errors": "1.0.0-rc.12",
+    "@smthrs/flow": "1.0.0-rc.12",
+    "@smthrs/notifications": "1.0.0-rc.12",
+    "@smthrs/canonical": "1.0.0-rc.12",
+    "@smthrs/plan": "1.0.0-rc.12"
+  },
+  "peerDependencies": {
+    "effect": "^4.0.4"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@effect/platform-node": "4.0.4",
+    "@effect/vitest": "4.0.4",
+    "@eslint/js": "9.39.5",
+    "@smthrs/engine": "1.0.0-rc.12",
+    "@smthrs/flows": "1.0.0-rc.12",
+    "@smthrs/platform-bun": "1.0.0-rc.12",
+    "@smthrs/platform-node": "1.0.0-rc.12",
+    "@types/node": "26.4.1",
+    "@vitest/coverage-v8": "5.0.0",
+    "dprint": "0.57.1",
+    "effect": "4.0.4",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "madge": "8.0.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0"
+  }
+}

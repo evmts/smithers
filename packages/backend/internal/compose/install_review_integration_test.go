@@ -261,7 +261,7 @@ func testInstallReviewHTTPAdmission(t *testing.T, successfulTerminal bool) {
 	require.NoError(t, err)
 	// No flow-load has settled, so no commit holds the built-in version yet.
 	requestReview(503, "active_flow_unavailable")
-	_, err = q.InsertFlowVersion(ctx, repo.ID, "review", "flows/review/flow.ts", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", strings.Repeat("c", 64), "loaded", "", []byte(`{}`))
+	_, err = q.InsertFlowVersion(ctx, repo.ID, "review", ".smithers/flows/review/flow.ts", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", strings.Repeat("c", 64), "loaded", "", []byte(`{}`))
 	require.NoError(t, err)
 	active, err := q.ActivateFlowVersion(ctx, repo.ID, "review", strings.Repeat("c", 64))
 	require.NoError(t, err)
@@ -426,7 +426,7 @@ func testInstallReviewHTTPAdmission(t *testing.T, successfulTerminal bool) {
 		require.Equal(t, strings.Repeat("c", 64), selected.Pin.ExecutionDigest)
 		require.Empty(t, machine.runs, "HTTP acceptance never calls a machine")
 		upstream.UpdatePull("review-owner/app", 50, func(p *githubfake.Pull) { p.Head.SHA = strings.Repeat("d", 40) })
-		_, err = q.InsertFlowVersion(ctx, repo.ID, "review", "flows/review/flow.ts", strings.Repeat("e", 40), strings.Repeat("f", 64), "loaded", "", []byte(`{}`))
+		_, err = q.InsertFlowVersion(ctx, repo.ID, "review", ".smithers/flows/review/flow.ts", strings.Repeat("e", 40), strings.Repeat("f", 64), "loaded", "", []byte(`{}`))
 		require.NoError(t, err)
 		_, err = q.ActivateFlowVersion(ctx, repo.ID, "review", strings.Repeat("f", 64))
 		require.NoError(t, err)
