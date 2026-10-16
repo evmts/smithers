@@ -44,7 +44,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import * as NodeControl from "../src/NodeControl.ts"
 
-const root = resolve(process.argv[2] ?? "evals/swebench/work/django__django-16612")
+const root = resolve(process.argv[2] ?? "packages/smithers/agent/harness/benchmarks/swebench/work/django__django-16612")
 const maxPaths = Number(process.argv[3] ?? 50_000)
 const which = process.argv[4] ?? "both"
 

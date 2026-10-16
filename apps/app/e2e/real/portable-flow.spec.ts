@@ -31,7 +31,7 @@ authenticatedTest("an owned repository runs a declared Flow on its box and expos
 }), async ({ page, request }) => {
   await withProductRepository(page, request, async (repo) => {
     const marker = randomUUID()
-    await pushMainFiles(page, request, repo, { "flows/proof/flow.mdx": proofFlow(marker) })
+    await pushMainFiles(page, request, repo, { ".smithers/flows/proof/flow.mdx": proofFlow(marker) })
     await runningWorkspace(page, request, repo, async (workspaceId) => {
       const procedures: Array<string> = []
       page.on("request", (sent) => {

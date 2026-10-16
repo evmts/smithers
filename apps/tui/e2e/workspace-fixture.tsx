@@ -89,7 +89,7 @@ const flows: Flows.Port = {
       kind: "module",
       flows: [],
       capabilities: [],
-      path: "flows/review/flow.ts"
+      path: ".smithers/flows/review/flow.ts"
     }
   ],
   body: async (flow) => {

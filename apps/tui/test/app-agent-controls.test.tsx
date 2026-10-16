@@ -63,7 +63,7 @@ const waitFor = async (condition: () => boolean) => {
 const body = (text = "Review the named file only."): Body => ({
   descriptor: listed[0]!,
   text,
-  baseDirectory: join(cwd, "flows/review"),
+  baseDirectory: join(cwd, ".smithers/flows/review"),
   digest: "b".repeat(64),
   capabilities: ["fs:read:**"]
 })
@@ -109,7 +109,7 @@ beforeEach(async () => {
       effort: "high",
       flows: ["read"],
       capabilities: ["*"],
-      path: join(cwd, "flows/review/flow.mdx")
+      path: join(cwd, ".smithers/flows/review/flow.mdx")
     },
     {
       name: "manual",
@@ -118,7 +118,7 @@ beforeEach(async () => {
       kind: "markdown",
       flows: [],
       capabilities: [],
-      path: join(cwd, "flows/manual/flow.mdx")
+      path: join(cwd, ".smithers/flows/manual/flow.mdx")
     },
     {
       name: "module",
@@ -127,7 +127,7 @@ beforeEach(async () => {
       kind: "module",
       flows: [],
       capabilities: [],
-      path: join(cwd, "flows/module/flow.ts")
+      path: join(cwd, ".smithers/flows/module/flow.ts")
     }
   ]
   flows = {
@@ -694,7 +694,7 @@ test("a dispatch admission refusal persists its failed outcome before retiring d
     setup!.renderer.destroy()
   })
   flows = { ...flows, warm: async () => {}, loaded: async () => ({ flows: [], refused: [] }) }
-  mkdirSync(join(cwd, "flows"), { recursive: true })
+  mkdirSync(join(cwd, ".smithers", "flows"), { recursive: true })
   await mount(undefined, 80, 24)
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 50))

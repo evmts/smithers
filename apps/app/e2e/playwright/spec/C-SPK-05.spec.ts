@@ -15,7 +15,7 @@ test("C-SPK-05: Memory calibration retains both host profiles", async ({ page })
   const terminal = page.getByRole("region", { name: / output$/ }).last()
   await expect(terminal).toBeVisible()
   await terminal.click()
-  await page.keyboard.type("scripts/spikes/mch-01-memory/run.sh")
+  await page.keyboard.type("packages/backend/checks/C-SPK-05/run.sh")
   await page.keyboard.press("Enter")
   await expect(terminal).toContainText("reserve")
   // Retain output beside the composer so qualification failures remain readable.

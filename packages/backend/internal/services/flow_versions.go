@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/smithersai/smithers/packages/backend/flowdispatch"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
@@ -309,7 +310,7 @@ func RepositoryFlowCatalog(ctx context.Context, q *db.Queries, repositoryID int6
 		}
 		card.Versions = append(card.Versions, proposals[name]...)
 		if card.Source == (FlowSource{}) && len(proposals[name]) > 0 {
-			card.Source = FlowSource{Path: "flows/" + name + "/flow.ts"}
+			card.Source = FlowSource{Path: flowdispatch.RepositoryFlowPath(name)}
 		}
 		if len(card.Versions) == 0 {
 			continue

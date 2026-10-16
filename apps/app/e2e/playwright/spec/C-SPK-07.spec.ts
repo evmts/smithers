@@ -15,7 +15,7 @@ test("C-SPK-07: Co-editing qualification retains convergence and latency samples
   const terminal = page.getByRole("region", { name: / output$/ }).last()
   await expect(terminal).toBeVisible()
   await terminal.click()
-  await page.keyboard.type("scripts/spikes/col-01/run.sh keystrokes")
+  await page.keyboard.type("apps/backend/checks/C-SPK-03-07/run.sh keystrokes")
   await page.keyboard.press("Enter")
   await expect(terminal).toContainText("p95")
   // Retain output beside the composer so qualification failures remain readable.

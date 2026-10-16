@@ -6,7 +6,17 @@ import { ambientAuthority, invariants, swallowedCause, uninstalledSafety } from 
 
 export default tseslint.config(
   {
-    ignores: ["**/dist", "**/build", "**/coverage", "**/fixtures/**", "test/**", "**/*.test.ts"]
+    // The review seeded-bug suite is its own workspace member; its corpus is
+    // deliberately defective input whose exact text is what it measures.
+    ignores: [
+      "**/dist",
+      "**/build",
+      "**/coverage",
+      "**/fixtures/**",
+      "test/**",
+      "**/*.test.ts",
+      "review/seeded-bugs/**"
+    ]
   },
   js.configs.recommended,
   importPlugin.flatConfigs.recommended,

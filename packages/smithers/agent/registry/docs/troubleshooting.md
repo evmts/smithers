@@ -33,7 +33,7 @@ host error when one was raised.
 **What happened.** The source root does not exist.
 
 **What to change.** Use `Registry.layerProject` for a project's optional
-`flows/` directory, or set `optionalRoot: true` on that source. A missing root
+`.smithers/flows/` directory, or set `optionalRoot: true` on that source. A missing root
 then produces an empty scan on construction and refresh, so flows added later
 remain discoverable. Access errors still fail, and declared pack roots stay
 required. See [Discover a project's flows](./guides/discover-a-project.md).
@@ -72,7 +72,7 @@ is no file to name.
 does not hold.
 
 **What to change.** Check the name against `list()`. A path-named source names
-a flow by its directory path below the root, so `flows/deploy/status/flow.ts`
+a flow by its directory path below the root, so `.smithers/flows/deploy/status/flow.ts`
 is `deploy/status`, not `status`. If the file was added after the registry was
 built, call `refresh()`. Use `getOption` where absence is an ordinary answer
 rather than a failure.
@@ -253,7 +253,7 @@ metadata parses can still fail this check.
 ## The catalog reports instead of raising
 
 `Executable.catalog` and `Executable.layer` collect every `ExecutableError`
-into `Catalog.refused` rather than failing. `flows/` is a directory a person
+into `Catalog.refused` rather than failing. `.smithers/flows/` is a directory a person
 edits, so one file in it is routinely mid-edit or wrong, and failing the
 catalog would take every command that touches the catalog down with it,
 including the ones that only list flows.

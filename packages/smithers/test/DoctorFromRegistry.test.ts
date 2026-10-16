@@ -98,7 +98,7 @@ describe("local diagnostics off the registry snapshot", () => {
   it("carries each discovery warning into its own check", async () => {
     const root = project()
     const report = await run(root, [descriptor("review", "Review the working copy")], [
-      warning("flows/broken/flow.mdx", "missing_description", "A flow needs a description")
+      warning(".smithers/flows/broken/flow.mdx", "missing_description", "A flow needs a description")
     ])
     expect(check(report, "registry flows/broken/flow.mdx")).toMatchObject({
       level: "warn",

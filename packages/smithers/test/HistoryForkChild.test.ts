@@ -61,8 +61,8 @@ const parkedProject = async () => {
   execFileSync("jj", ["git", "init", root], { stdio: "ignore" })
   symlinkSync(resolve("node_modules"), join(root, "node_modules"), "dir")
   writeFileSync(join(root, ".gitignore"), ".flows/\nnode_modules\n")
-  mkdirSync(join(root, "flows", "steps"), { recursive: true })
-  writeFileSync(join(root, "flows", "steps", "flow.ts"), moduleSource)
+  mkdirSync(join(root, ".smithers", "flows", "steps"), { recursive: true })
+  writeFileSync(join(root, ".smithers", "flows", "steps", "flow.ts"), moduleSource)
   const registry = NodeControl.layerRegistry(root)
   const engine = NodeControl.engineDurable(root, registry)
   const runId = await Effect.runPromise(

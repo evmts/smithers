@@ -1,0 +1,197 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
+import * as WorkspaceSandbox from "@smthrs/engine-store/WorkspaceSandbox"
+import { Action, DurableDeferred, Flow, FlowRuntime } from "@smthrs/flow"
+import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import * as Cell from "@smthrs/harness/Cell"
+import { HarnessError } from "@smthrs/harness/HarnessError"
+import * as Jj from "@smthrs/jj"
+import * as Model from "@smthrs/model/Model"
+import { Node } from "@smthrs/plan"
+import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
+import { RunStore } from "@smthrs/run-store"
+import { Effect, Exit, Layer, Option, Schema, Scope, Stream } from "effect"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
+import { expect, it } from "vitest"
+import * as FlowEngineLike from "../src/FlowEngineLike.ts"
+import materialApproval from "./fixtures/cell-call-material-approval-required.json" with { type: "json" }
+import materialV1 from "./fixtures/cell-call-material-effect-rc115.json" with { type: "json" }
+import * as V1 from "./fixtures/CellCallV1.ts"
+import { HarnessErrorBeforeApproval } from "./fixtures/HarnessErrorBeforeApproval.ts"
+import * as Safety from "./Safety.ts"
+
+// Replay requires the same declaration as well as the same Effect lock.
+// Retained prior declarations replay their old key; the current approval-aware
+// declaration replays its own key through the current public agent port.
+const flow = Flow.make("agent/test/cell-call-v1-reopen", {
+  payload: {},
+  success: Schema.Json,
+  error: Schema.Unknown,
+  body: () => Node.succeed(null)
+})
+const proceed = DurableDeferred.make("agent/test/cell-call-v1-proceed", { success: Schema.Void })
+
+const reopenDeclaration = async (declaration: "retained-prior" | "current"): Promise<void> => {
+  const material = declaration === "retained-prior" ? materialV1 : materialApproval
+  const expectedKey = declaration === "retained-prior" ? V1.effect115Key : V1.approvalRequiredKey
+  const wireError = declaration === "retained-prior" ? HarnessErrorBeforeApproval : HarnessError
+  const directory = mkdtempSync(join(tmpdir(), "smithers-m1-cell-key-"))
+  const filename = join(directory, "engine.sqlite")
+  const dispatched: Array<string> = []
+  let entered = 0
+  const result = { written: "historical fixture" }
+  const host = (historical: boolean) => {
+    const registration = Layer.effectDiscard(Effect.gen(function*() {
+      const engine = yield* FlowRuntime.FlowRuntime
+      const scope = yield* Effect.scope
+      yield* engine.register(flow, () =>
+        Effect.gen(function*() {
+          entered++
+          const settled = historical || declaration === "retained-prior"
+            ? yield* Action.make({
+              name: material.input.action,
+              success: V1.CallResult,
+              error: wireError,
+              tier: "sealed",
+              idempotencyKey: material.input.idempotencyKey,
+              metadata: { boundaryMode: "hard", readSet: [], writeSet: [] },
+              execute: Effect.map(Action.CurrentInvocationKey, (key) => {
+                dispatched.push(key!)
+                return new V1.CallResult({ outcome: "success", value: result })
+              })
+            }).pipe(Effect.provideService(Action.CurrentCacheEnvironment, material.environment))
+            : yield* Effect.gen(function*() {
+              const port = yield* FlowEngineLike.make({
+                model: Model.make({ stream: () => Stream.empty }),
+                route: { prepare: () => Effect.die("no model request expected") },
+                layers: ["golden-host-layer"],
+                capabilities: {},
+                calls: {
+                  run: () =>
+                    Effect.map(Action.CurrentInvocationKey, (key) => {
+                      dispatched.push(key!)
+                      return new Cell.CallResult({ outcome: "success", value: { written: "unexpected redispatch" } })
+                    })
+                }
+              })
+              return yield* port.call(
+                new Cell.Call({
+                  flowName: "fs/write",
+                  input: { path: "out.txt", text: "done" },
+                  capabilities: [],
+                  effects: { reads: [], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" },
+                  placement: Option.none(),
+                  identity: new Cell.CallIdentity({
+                    session: "golden-session",
+                    frame: 0,
+                    cell: "golden-cell-digest",
+                    ordinal: 0,
+                    declaration: "golden-declaration-digest",
+                    layers: []
+                  })
+                })
+              )
+            })
+          yield* DurableDeferred.await(proceed)
+          return settled.value
+        })).pipe(Scope.provide(scope))
+    })).pipe(Layer.provide(Safety.layer))
+    return NodeRuntime.layer(
+      {
+        filename,
+        workspaceRoot: directory,
+        owner: { hostId: historical ? "fixture-writer" : "fixture-reader" },
+        // Incarnations are sequential and the preceding scope is closed.
+        isAlive: () => Effect.succeed(false)
+      },
+      StepBoundary.layer,
+      WorkspaceSandbox.layerFileSystem(),
+      registration
+    ).pipe(
+      Layer.provide([
+        NodeCrypto.layer,
+        AtomicFileSystem.layer,
+        Jj.layerNoop({ snapshot: () => Effect.die("sealed calls take no snapshot") })
+      ])
+    )
+  }
+  try {
+    const first = await Effect.gen(function*() {
+      const engine = yield* FlowRuntime.FlowRuntime
+      yield* engine.execute(flow, { executionId: "persisted-v1", payload: {}, discard: true })
+      const store = yield* RunStore.RunStore
+      let row = yield* store.get("persisted-v1")
+      for (let attempt = 0; attempt < 2_000 && row.status !== "suspended"; attempt++) {
+        yield* Effect.yieldNow
+        row = yield* store.get("persisted-v1")
+      }
+      return row
+    }).pipe(Effect.provide(host(true)), Effect.scoped, Effect.runPromise)
+    expect(first.status).toBe("suspended")
+    expect(dispatched).toEqual([expectedKey])
+
+    // Read with an independent connection after the writer and its pool close.
+    const database = new DatabaseSync(filename)
+    try {
+      expect(database.prepare("SELECT status FROM flows_runs WHERE run_id = ?").get("persisted-v1"))
+        .toEqual({ status: "suspended" })
+      expect(
+        database.prepare("SELECT step_key_digest, state FROM flows_attempts WHERE run_id = ?")
+          .all("persisted-v1")
+      ).toEqual([{
+        // AttemptStore indexes SHA-256 of the complete key, including key1_.
+        // The prior vector and current approval-aware vector have distinct rows.
+        // The prior `V1.effect115Key` moved when `HarnessErrorCode`
+        // gained `completion_unjudged` and again when it gained
+        // `claim_unproven`, and moved when CallFailureCode gained
+        // flow_withheld (#1929) and when `HarnessError.cause` gained
+        // the typed `EvaluatorError` member (#2807), and when that member
+        // carried what a failed reading paid (#3010), and when
+        // `HarnessErrorCode` gained `completion_incomplete` (#3009).
+        step_key_digest: declaration === "retained-prior"
+          ? "324184457f5da0916c2970fdd8d1894ee48713c8042adada8f7620dbfe543a12"
+          : "4d57bd555b001d364c1c33844519654a7132fbacc13291cea7d0136f8b1653d0",
+        state: "succeeded"
+      }])
+    } finally {
+      database.close()
+    }
+
+    const resumed = await Effect.gen(function*() {
+      const engine = yield* FlowRuntime.FlowRuntime
+      yield* engine.deferredDone(proceed, {
+        flowName: flow._tag,
+        executionId: "persisted-v1",
+        deferredName: proceed.name,
+        exit: Exit.succeed(undefined)
+      })
+      return yield* engine.execute(flow, { executionId: "persisted-v1", payload: {} })
+    }).pipe(Effect.provide(host(false)), Effect.scoped, Effect.runPromise)
+    expect(resumed).toEqual(result)
+    expect(entered).toBeGreaterThanOrEqual(2)
+    expect(dispatched).toEqual([expectedKey])
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+}
+
+it("keeps the approval error outside the retained prior declaration", () => {
+  const prior = Schema.encodeSync(HarnessErrorBeforeApproval)(
+    new HarnessErrorBeforeApproval({ code: "assembly_failed", message: "prior failure" })
+  )
+  expect(Schema.decodeUnknownResult(HarnessErrorBeforeApproval)(prior)._tag).toBe("Success")
+  expect(Schema.decodeUnknownResult(HarnessError)(prior)._tag).toBe("Success")
+  const approval = Schema.encodeSync(HarnessError)(
+    new HarnessError({ code: "approval_unavailable", message: "no approval channel" })
+  )
+  expect(Schema.decodeUnknownResult(HarnessError)(approval)._tag).toBe("Success")
+  expect(Schema.decodeUnknownResult(HarnessErrorBeforeApproval)(approval)._tag).toBe("Failure")
+})
+
+it.each(["retained-prior", "current"] as const)(
+  "resumes the %s declaration from reopened SQLite without redispatch",
+  reopenDeclaration
+)

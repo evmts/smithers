@@ -1,0 +1,70 @@
+//! Guest machine components and the shared ADR 0004 contract.
+//! Admission and trusted startup remain required before privileged composition.
+pub mod broker;
+pub mod burst;
+pub mod conn;
+pub mod credit;
+pub mod doc;
+pub mod freeze;
+pub mod hooks;
+pub mod local_stream;
+pub mod lock;
+pub mod moved_off;
+pub mod msg;
+pub mod outbox_store;
+pub mod rpc;
+pub mod session_stream;
+pub mod stream;
+pub mod transcript;
+
+pub mod attrib;
+pub mod events;
+pub mod ignore;
+#[cfg(target_os = "linux")]
+pub mod resync;
+pub mod session;
+pub mod versions;
+#[cfg(target_os = "linux")]
+pub mod watch;
+
+pub mod document_payload;
+
+pub mod boot;
+pub mod capture;
+#[cfg(target_os = "linux")]
+pub mod confine;
+pub mod event_service;
+pub mod git;
+pub mod incoming;
+pub mod link;
+pub mod objects;
+pub mod oplog;
+pub mod outbox;
+pub mod reconcile;
+pub mod rewrite_journal;
+
+pub mod agent_run;
+pub mod client;
+pub mod daemon;
+#[cfg(target_os = "linux")]
+pub mod files;
+#[cfg(target_os = "linux")]
+pub mod local;
+
+pub mod native;
+pub mod wiring;
+
+pub mod watcher_store;
+
+#[cfg(target_os = "linux")]
+pub mod installed;
+pub mod native_core;
+pub mod session_environment;
+
+mod wake_journal;
+
+mod rebase_observer;
+
+// document_core is shared by path with the FFI crate and uses this decoder.
+#[path = "../../smithers-ffi/src/live_document_decode.rs"]
+mod live_document_decode;

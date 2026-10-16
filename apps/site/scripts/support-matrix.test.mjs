@@ -143,7 +143,7 @@ test("operator docs describe the PR evidence upload and factory operator", () =>
   const removed = JSON.parse(read("apps/site/src/data/removed-commands.json"))
   const removedVerbs = new Set(JSON.stringify(removed).match(/"workflows?"/g)?.map((verb) => JSON.parse(verb)) ?? [])
   assert.ok(removedVerbs.has("workflow"), "the workflow verb is recorded as removed")
-  for (const readme of ["factory/README.md", "factory/queue/README.md"]) {
+  for (const readme of ["CONTRIBUTING.md", "docs/cloud-workspace.md"]) {
     const text = read(readme)
     assert.doesNotMatch(text, /smithers workflow run/, `${readme}: retired verb`)
     assert.doesNotMatch(text, /\.smithers\/workflows\/queue-driver/, `${readme}: untracked workflow path`)

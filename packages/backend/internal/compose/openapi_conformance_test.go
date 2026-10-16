@@ -38,10 +38,10 @@ import (
 )
 
 // openAPIPath is the published product API every client is generated from.
-// scripts/openapi-bundle.mjs bundles it from the per-tag sources.
+// packages/backend/scripts/openapi-bundle.mjs bundles it from the per-tag sources.
 const openAPIPath = "../../../../docs/api/openapi.yaml"
 
-// openAPISources holds one source file per tag; see scripts/openapi-bundle.mjs.
+// openAPISources holds one source file per tag; see packages/backend/scripts/openapi-bundle.mjs.
 const openAPISources = "../../../../docs/api/openapi"
 
 // openAPIUpdateEnv, when "1", appends a skeleton operation for every served
@@ -382,7 +382,7 @@ func TestOpenAPIDescribesBootstrap(t *testing.T) {
 
 var operationIDUnsafe = regexp.MustCompile(`[^a-z0-9]+`)
 
-// openAPITagFile is the source file owning tag; scripts/openapi-bundle.mjs
+// openAPITagFile is the source file owning tag; packages/backend/scripts/openapi-bundle.mjs
 // derives the same name.
 func openAPITagFile(tag string) string {
 	return strings.Trim(operationIDUnsafe.ReplaceAllString(strings.ToLower(tag), "-"), "-") + ".yaml"

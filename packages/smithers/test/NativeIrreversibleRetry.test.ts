@@ -36,10 +36,10 @@ it.each(["Unknown", "Never"] as const)(
   "retains the unkeyed retry refusal after a host dies (error schema %s)",
   async (errorSchema) => {
     const root = await mkdtemp(join(tmpdir(), "smithers-unsafe-retry-"))
-    await mkdir(join(root, "flows", "peer"), { recursive: true })
+    await mkdir(join(root, ".smithers", "flows", "peer"), { recursive: true })
     await symlink(resolve("node_modules"), join(root, "node_modules"), "dir")
     await writeFile(
-      join(root, "flows", "peer", "flow.ts"),
+      join(root, ".smithers", "flows", "peer", "flow.ts"),
       source(root, false).replaceAll("error: Schema.Unknown", `error: Schema.${errorSchema}`)
     )
     const original = spawn(process.execPath, ["--experimental-strip-types", fixture, "peer-original", root], {

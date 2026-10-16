@@ -24,6 +24,6 @@ test("C-REL-01: Docs expose only Quickstart and Flows reference", async ({ page 
   await expect(page.getByText("never a .partial- directory", { exact: false })).toBeVisible()
   await expect(page.getByText("Stop the destination install too before running restore", { exact: false })).toBeVisible()
   await page.getByRole("navigation", { name: "Docs pages" }).getByRole("link", { name: "Flows reference", exact: true }).press("Enter")
-  await expect(page.getByText("flows/<name>/flow.ts", { exact: false })).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByText(".smithers/flows/<name>/flow.ts", { exact: false })).toBeVisible({ timeout: 20_000 })
   await expect(page.getByText("/flow.edit", { exact: false })).toBeVisible()
 })

@@ -42,7 +42,7 @@ export const withProductionRegistries = async <A>(
   await mkdir(artifactRoot, { recursive: true })
   const temporary = await mkdtemp(resolve(artifactRoot, "catalog-registry-"))
   const repositoryPath = resolve(temporary, "repo")
-  await mkdir(resolve(repositoryPath, "flows"), { recursive: true })
+  await mkdir(resolve(repositoryPath, ".smithers", "flows"), { recursive: true })
   const helperPath = resolve(temporary, "native-read")
   const operationId = "a".repeat(128)
   const head = { kind: "resolved", changeId: "z".repeat(32), commitId: "b".repeat(40), treeId: "c".repeat(40), operationId, parentCommitIds: [] }

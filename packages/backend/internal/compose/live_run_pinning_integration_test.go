@@ -64,7 +64,7 @@ func TestLiveRunPublishesAdmittedVersion(t *testing.T) {
 			if name == "pinned" {
 				require.JSONEq(t, `{"flow_name":"todo","source_commit":"`+strings.Repeat("a", 40)+`","digest":"`+strings.Repeat("b", 64)+`"}`, string(data["flow_version"]))
 				require.NotContains(t, data, "version")
-				_, err = f.pool.Exec(t.Context(), `INSERT INTO workflow_definitions(repository_id,name,path,config,is_active,source_commit,digest,status) VALUES($1,'todo','flows/todo/flow.ts','{}',true,$2,$3,'loaded')`, f.row.RepositoryID, strings.Repeat("c", 40), strings.Repeat("d", 64))
+				_, err = f.pool.Exec(t.Context(), `INSERT INTO workflow_definitions(repository_id,name,path,config,is_active,source_commit,digest,status) VALUES($1,'todo','.smithers/flows/todo/flow.ts','{}',true,$2,$3,'loaded')`, f.row.RepositoryID, strings.Repeat("c", 40), strings.Repeat("d", 64))
 				require.NoError(t, err)
 				other := f.dial(t)
 				sendPresenceFrame(t, other, `{"t":"sub","id":1,"topic":"run:fixture-run"}`)

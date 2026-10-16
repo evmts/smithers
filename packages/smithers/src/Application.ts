@@ -116,7 +116,7 @@ export interface Config {
    *
    * OFF by default, and that default is a trust statement. The host's module
    * loader is a plain `import()` in the serving process: top-level code in an
-   * agent-written `flows/<id>/flow.ts` runs with the host's own credentials,
+   * agent-written `.smithers/flows/<id>/flow.ts` runs with the host's own credentials,
    * its filesystem and its network, and nothing approves that import. With
    * this off, a flow a run authored is discovered the next time the host
    * starts — which is an operator's decision — and until then the plan door
@@ -148,9 +148,9 @@ export interface Config {
   readonly sandboxProviders?: SandboxProviders | undefined
   /**
    * The project root every durable layer is built over: the `.flows/`
-   * directory, the `flows/` registry sources, and the detached run logs all
-   * hang off it. Resolved from `--root` or the nearest ancestor holding
-   * `.flows/` or `flows/`, before any command handler runs.
+   * directory, the `.smithers/flows/` registry sources, and the detached run
+   * logs all hang off it. Resolved from `--root` or the nearest ancestor
+   * holding `.flows/` or `.smithers/flows/`, before any command handler runs.
    */
   readonly root?: string | undefined
   /**

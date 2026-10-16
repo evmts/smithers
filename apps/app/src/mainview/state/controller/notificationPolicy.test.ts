@@ -43,7 +43,7 @@ const projectionFor = (answer: Answer) => ({
     ? [{ event: NOTIFICATION_POLICY_EVENT, flow: "who" }, { event: NOTIFICATION_POLICY_EVENT, flow: "other" }]
     : [{ event: NOTIFICATION_POLICY_EVENT, flow: "who-is-told", description: "Choose who is told" }],
   flows: [{ id: "who-is-told", description: "Choose who is told", summary: null, featured: false,
-    kind: "ts" as const, path: "flows/who-is-told/flow.ts", capabilities: [], model: null, modelInvocable: false }]
+    kind: "ts" as const, path: ".smithers/flows/who-is-told/flow.ts", capabilities: [], model: null, modelInvocable: false }]
 })
 
 /** The workspace double: the real relay envelope, one scripted policy run. */

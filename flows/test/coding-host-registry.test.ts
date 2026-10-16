@@ -22,8 +22,8 @@ test("host execution snapshots stay outside source and restore the prior closure
   const temporary = await mkdtemp(join(parent, ".host-registry-"))
   const root = join(temporary, "source"), state = join(temporary, "state")
   try {
-    await mkdir(join(root, "flows", "probe"), { recursive: true })
-    const entry = join(root, "flows", "probe", "flow.ts")
+    await mkdir(join(root, ".smithers", "flows", "probe"), { recursive: true })
+    const entry = join(root, ".smithers", "flows", "probe", "flow.ts")
     await writeFile(entry, source)
     const publish = Effect.gen(function*() {
       const registry = yield* Registry.Registry

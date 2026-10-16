@@ -3,10 +3,11 @@
  * scan; reconciliation also observes edits dropped before the watcher is ready.
  * Only a changed tree refreshes the metadata registry, once per burst.
  */
+import { projectFlowsDirectory } from "@smthrs/registry/Descriptor"
 import { createHash } from "node:crypto"
 import { type BigIntStats, type FSWatcher, lstatSync, readdirSync, statSync, watch } from "node:fs"
 import { lstat, readdir, stat as targetStat } from "node:fs/promises"
-import { join } from "node:path"
+import { basename, dirname, join } from "node:path"
 import * as Failures from "./failures.ts"
 import { FlowDiscoveryFailed } from "./flows.ts"
 import * as Log from "./log.ts"
@@ -67,9 +68,9 @@ const initial = (directory: string): Snapshot => {
   return { digest: hash.digest("hex"), root, failures }
 }
 
-/** Calls `refresh` once per burst of changes under `<cwd>/flows`, including its creation. */
+/** Calls `refresh` once per burst of changes under `<cwd>/.smithers/flows`, including its creation. */
 export const flows = (cwd: string, refresh: () => void, debounce = debounceMs): Watcher => {
-  const directory = join(cwd, "flows")
+  const directory = join(cwd, projectFlowsDirectory)
   let timer: ReturnType<typeof setTimeout> | undefined
   let tree: FSWatcher | undefined
   let parent: FSWatcher | undefined
@@ -223,9 +224,10 @@ export const flows = (cwd: string, refresh: () => void, debounce = debounceMs): 
     Log.write("flow.watch", error)
   }
   try {
-    // `flows/` itself appearing or disappearing.
-    parent = watch(cwd, (_, name) => {
-      if (name === "flows") reconcile()
+    // `.smithers/flows/` itself appearing or disappearing; reconciliation
+    // observes it when `.smithers/` does not exist yet.
+    parent = watch(dirname(directory), (_, name) => {
+      if (name === basename(directory)) reconcile()
     })
     parent.on("error", (error) => {
       parent?.close()

@@ -3,7 +3,8 @@
 `microsandbox.Runtime` implements the common workspace contract
 (`packages/backend/workspace`) with one local Microsandbox microVM per
 workspace. `apps/backend` composes it when `SMITHERS_WORKSPACE_ISOLATION=microvm`;
-setup is in [distribution/README.md](../../../distribution/README.md#microvm-isolation).
+the Mac bundle ships the pinned `msb` and its base image
+([bundle assembly](../../../apps/app/scripts/README.md#server-bundle)).
 
 ## Boundary
 

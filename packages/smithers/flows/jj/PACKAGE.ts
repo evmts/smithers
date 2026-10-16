@@ -42,9 +42,48 @@ const reviewDocsAgainstCode = ReviewDocsAgainstCode({
 /** Changed public exports against their own JSDoc. */
 const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd: "packages/smithers/flows/jj" })
 
+/**
+ * Keeps the attribution inventory in the published wasm package current.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const thirdPartyNotices = Smithers.NodeTest({
+  runner: Smithers.entrypoint(Smithers.file("scripts/generate-third-party-notices.mjs"), ["--check"]),
+  srcs: [
+    Smithers.file("scripts/generate-third-party-notices.mjs"),
+    Smithers.file("scripts/third-party-notices.template.md"),
+    Smithers.file("//scripts/workspace-packages.mjs"),
+    Smithers.file("//Cargo.toml"),
+    Smithers.file("//Cargo.lock"),
+    Smithers.file("//packages/smithers/flows/jj-wasm/Cargo.toml"),
+    Smithers.file("//rust-toolchain.toml"),
+    Smithers.file("THIRD_PARTY_NOTICES.md")
+  ],
+  deps: []
+})
+
+/**
+ * Exercises generation and drift detection against a real Cargo workspace.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const thirdPartyNoticesUnit = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("scripts/generate-third-party-notices.test.mjs")]),
+  srcs: [
+    Smithers.file("scripts/generate-third-party-notices.mjs"),
+    Smithers.file("scripts/third-party-notices.template.md"),
+    Smithers.file("//scripts/workspace-packages.mjs"),
+    Smithers.file("//scripts/release-rehearsal.mjs"),
+    Smithers.file("//.github/workflows/ci.yml")
+  ],
+  deps: []
+})
+
 const securityReview = Smithers.SecurityReview({
   cwd: "packages/smithers/flows/jj",
-  include: ["src/**"],
+  include: ["src/**", "scripts/generate-third-party-notices.mjs"],
   checks: [
     {
       id: "jj-argv-option-injection",
@@ -172,6 +211,8 @@ export const Package = Smithers.Package({
     reviewDocsAgainstCode,
     reviewJsdocAgainstCode,
     test,
+    thirdPartyNotices,
+    thirdPartyNoticesUnit,
     ...securityReview
   }
 })

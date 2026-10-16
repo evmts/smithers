@@ -15,7 +15,7 @@ test("C-SPK-08: Remote session qualification retains revocation and cleanup resu
   const terminal = page.getByRole("region", { name: / output$/ }).last()
   await expect(terminal).toBeVisible()
   await terminal.click()
-  await page.keyboard.type("scripts/spikes/trm-06/run.sh")
+  await page.keyboard.type("packages/smithers-machined/checks/C-SPK-08/run.sh")
   await page.keyboard.press("Enter")
   await expect(terminal).toContainText("populated 0")
   // Retain output beside the composer so qualification failures remain readable.

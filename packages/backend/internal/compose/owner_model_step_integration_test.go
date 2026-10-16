@@ -28,7 +28,7 @@ func TestOwnerModelProxyRecordsAuthenticatedStepPostgres(t *testing.T) {
 	var user, repo, definition, run, step, otherRun, otherStep int64
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO users(username,lower_username) VALUES('owner','owner') RETURNING id`).Scan(&user))
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO repositories(user_id,name,lower_name) VALUES($1,'repo','repo') RETURNING id`, user).Scan(&repo))
-	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO workflow_definitions(repository_id,name,path,config) VALUES($1,'todo','flows/todo/flow.ts','{}') RETURNING id`, repo).Scan(&definition))
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO workflow_definitions(repository_id,name,path,config) VALUES($1,'todo','.smithers/flows/todo/flow.ts','{}') RETURNING id`, repo).Scan(&definition))
 	token := "smithers_agent_" + strings.Repeat("c", 40)
 	hash := sha256.Sum256([]byte(token))
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO workflow_runs(repository_id,workflow_definition_id,status,trigger_event,agent_token_hash,agent_token_expires_at) VALUES($1,$2,'running','agent',$3,now()+interval '1 hour') RETURNING id`, repo, definition, hex.EncodeToString(hash[:])).Scan(&run))

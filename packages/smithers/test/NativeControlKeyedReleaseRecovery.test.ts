@@ -86,8 +86,8 @@ it(
   "automatically retries a released keyed module beneath a released public root with one retained job and collection",
   async () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), "smithers-keyed-release-")))
-    mkdirSync(join(root, "flows", "keyed-release"), { recursive: true })
-    copyFileSync(join(fixtures, "flow.ts"), join(root, "flows", "keyed-release", "flow.ts"))
+    mkdirSync(join(root, ".smithers", "flows", "keyed-release"), { recursive: true })
+    copyFileSync(join(fixtures, "flow.ts"), join(root, ".smithers", "flows", "keyed-release", "flow.ts"))
     copyFileSync(join(fixtures, "worker.mjs"), join(root, "worker.mjs"))
     symlinkSync(modules, join(root, "node_modules"), "dir")
     writeFileSync(join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n")

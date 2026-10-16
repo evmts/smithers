@@ -28,7 +28,7 @@ on `@smthrs/fs`, so the imports below resolve.
 ## Create a flow
 
 A route's name comes from its directory path, not from the flow's `name`
-field. Create `flows/review/flow.ts`:
+field. Create `.smithers/flows/review/flow.ts`:
 
 ```ts
 import { Schema } from "effect"
@@ -60,7 +60,7 @@ import { resolve } from "node:path"
 const platform = Layer.merge(NodeFileSystem.layer, NodePath.layer)
 
 const scanned = Effect.gen(function*() {
-  const { routes } = yield* FileRouter.scan({ root: resolve("flows") })
+  const { routes } = yield* FileRouter.scan({ root: resolve(".smithers/flows") })
   return routes.map((route) => route.name)
 }).pipe(Effect.provide(platform))
 
@@ -97,7 +97,7 @@ const invoker = FlowInvoker.make({
 })
 
 const program = Effect.gen(function*() {
-  const { routes } = yield* FileRouter.scan({ root: resolve("flows") })
+  const { routes } = yield* FileRouter.scan({ root: resolve(".smithers/flows") })
   const commands = yield* Command.make(routes)
   console.log(commands.list())
   return yield* commands.execute("review --number 42")
@@ -129,7 +129,7 @@ import { Incur } from "@smthrs/fs"
 
 const cli = await Effect.runPromise(
   Effect.gen(function*() {
-    const { routes } = yield* FileRouter.scan({ root: resolve("flows") })
+    const { routes } = yield* FileRouter.scan({ root: resolve(".smithers/flows") })
     return yield* Incur.createCli("flows", routes)
   }).pipe(
     Effect.provide(Layer.succeed(FlowInvoker.FlowInvoker, invoker)),

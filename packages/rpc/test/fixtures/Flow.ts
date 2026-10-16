@@ -26,11 +26,11 @@ export const fixtures = {
     "A repository flow without a merge wait",
     {
       name: "checks",
-      source: { path: "flows/checks/flow.ts" },
+      source: { path: ".smithers/flows/checks/flow.ts" },
       system: false,
       versions: [{ id: "v1", state: "active", steps: [{ id: "run", label: "Run checks" }] }]
     },
-    { actions: buttons("checks"), expect: ["flows/checks/flow.ts", "Run checks"] }
+    { actions: buttons("checks"), expect: [".smithers/flows/checks/flow.ts", "Run checks"] }
   ),
   proposed: story(
     "An edit proposed by T12",

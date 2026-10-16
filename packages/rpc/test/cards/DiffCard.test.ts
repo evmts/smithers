@@ -56,7 +56,7 @@ describe("Diff behavior", () => {
     }
   })
   test("renamed_to belongs to a rename", () => {
-    expect(DiffCardSchema.parse(fixtures.renamed.model).renamed_to).toBe("flows/todo-next/flow.ts")
+    expect(DiffCardSchema.parse(fixtures.renamed.model).renamed_to).toBe(".smithers/flows/todo-next/flow.ts")
     expect(DiffCardSchema.safeParse({ ...base(), renamed_to: "elsewhere.ts" }).success).toBe(false)
   })
   test("hunk starts allow 0 for an added or deleted side and refuse negatives", () => {
@@ -91,8 +91,8 @@ describe("Diff as a unified patch", () => {
   test("a modified file", () => {
     expect(unifiedPatch(DiffCardSchema.parse(fixtures.item_base.model))).toBe(
       [
-        "--- a/flows/todo/flow.ts",
-        "+++ b/flows/todo/flow.ts",
+        "--- a/.smithers/flows/todo/flow.ts",
+        "+++ b/.smithers/flows/todo/flow.ts",
         "@@ -2,2 +2,2 @@",
         " export default Flow.make(\"todo\", {",
         "-  description: \"Build\",",
@@ -102,10 +102,10 @@ describe("Diff as a unified patch", () => {
   })
   test("an added and a deleted file use /dev/null and a zero start", () => {
     expect(unifiedPatch(DiffCardSchema.parse(fixtures.fork.model))).toBe(
-      ["--- /dev/null", "+++ b/flows/todo/flow.ts", "@@ -0,0 +1,1 @@", "+export const repro = true"].join("\n") + "\n"
+      ["--- /dev/null", "+++ b/.smithers/flows/todo/flow.ts", "@@ -0,0 +1,1 @@", "+export const repro = true"].join("\n") + "\n"
     )
     expect(unifiedPatch(DiffCardSchema.parse(fixtures.deleted.model))).toBe(
-      ["--- a/flows/todo/flow.ts", "+++ /dev/null", "@@ -1,1 +0,0 @@", "-export const legacy = true"].join("\n") + "\n"
+      ["--- a/.smithers/flows/todo/flow.ts", "+++ /dev/null", "@@ -1,1 +0,0 @@", "-export const legacy = true"].join("\n") + "\n"
     )
   })
 })

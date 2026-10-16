@@ -46,9 +46,9 @@ describe("NodeControl native modules", () => {
       const owners: Array<{ readonly rootId: string; readonly flowId: string }> = []
       let admittedRoot: string | undefined
       try {
-        await mkdir(join(root, "flows", "native"), { recursive: true })
+        await mkdir(join(root, ".smithers", "flows", "native"), { recursive: true })
         await writeFile(
-          join(root, "flows", "native", "flow.ts"),
+          join(root, ".smithers", "flows", "native", "flow.ts"),
           `
 import * as Flow from "@smthrs/core/Flow"
 import { Schema } from "effect"
@@ -121,7 +121,7 @@ export default ({
               observed.push({ value, groups: authority.groups, usage, verdict: verdict._tag })
               if (drift && value.endsWith("/first")) {
                 yield* Effect.promise(() =>
-                  writeFile(join(root, "flows", "native", "flow.ts"), "// changed after approval\n")
+                  writeFile(join(root, ".smithers", "flows", "native", "flow.ts"), "// changed after approval\n")
                 )
               }
               return usage.tokens

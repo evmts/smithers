@@ -405,7 +405,7 @@ below is `Mapping.rows` rendered, so it cannot fall behind the code.
 | `delegationV2Schemas`                    | none                                                                                         | none                                                                            | unsafe    |
 | `denyNode`                               | `Control.deny`                                                                               | `@smthrs/control/Control`                                                       | guided    |
 | `devPreviewKindSchema`                   | none                                                                                         | none                                                                            | unsafe    |
-| `docs`                                   | `Text pointing at flows/, smthrs flow start, and report.md`                                  | none                                                                            | guided    |
+| `docs`                                   | `Text pointing at .smithers/flows/, smthrs flow start, and report.md`                         | none                                                                            | guided    |
 | `dryRun`                                 | `@smthrs/testing`                                                                            | `@smthrs/testing`                                                               | guided    |
 | `e2eHarness`                             | `@smthrs/testing`                                                                            | `@smthrs/testing`                                                               | guided    |
 | `edit`                                   | `The std flows bound through StandardFlows`                                                  | `@smthrs/std, @smthrs/agent/StandardFlows`                                      | automatic |
@@ -456,7 +456,7 @@ below is `Mapping.rows` rendered, so it cannot fall behind the code.
 | `makeHarness`                            | `@smthrs/testing`                                                                            | `@smthrs/testing`                                                               | guided    |
 | `makeReplayBundle`                       | `@smthrs/testing`                                                                            | `@smthrs/testing`                                                               | guided    |
 | `markdownComponents`                     | none                                                                                         | none                                                                            | automatic |
-| `mdx-prompt`                             | `prompt: (payload) => string, or flows/<name>/flow.mdx`                                      | `@smthrs/agent/AgentAction, @smthrs/registry/MarkdownFlow`                      | automatic |
+| `mdx-prompt`                             | `prompt: (payload) => string, or .smithers/flows/<name>/flow.mdx`                             | `@smthrs/agent/AgentAction, @smthrs/registry/MarkdownFlow`                      | automatic |
 | `mdxPlugin`                              | none                                                                                         | none                                                                            | automatic |
 | `memoryFactReads`                        | `@smthrs/memory`                                                                             | `@smthrs/memory`                                                                | guided    |
 | `memoryFactWrites`                       | `@smthrs/memory`                                                                             | `@smthrs/memory`                                                                | guided    |
@@ -973,7 +973,7 @@ the same way `Detect.scan` did.
 
 `Units.flowName(path)` gives a workflow its registry name:
 `.smithers/workflows/pipelines/ci-fast.tsx` becomes `pipelines/ci-fast` and
-lands at `flows/pipelines/ci-fast/flow.ts`.
+lands at `.smithers/flows/pipelines/ci-fast/flow.ts`.
 
 `Units.verifyCommands(detection, overrides?, flowsDir?)` derives the commands
 that verify a unit: install from the lockfile or `packageManager` (`bun`,

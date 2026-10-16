@@ -87,9 +87,9 @@ test("learning returns cited decisions and evidence; identical inputs have the s
       evidence: ["3 of the last 5 failed check:lint@review"],
       todos: [3, 5, 7],
       prompt:
-        "Change flows/todo/flow.ts to require lint as a fast required check for every planned change before review; start from the built-in composition when no override exists.",
+        "Change .smithers/flows/todo/flow.ts to require lint as a fast required check for every planned change before review; start from the built-in composition when no override exists.",
       diff:
-        "--- a/flows/todo/flow.ts\n+++ b/flows/todo/flow.ts\n@@ -34,1 +34,4 @@\n-      Node.andThen(Request.call(input)),\n+      Node.andThen(Request.call({\n+        ...input,\n+        prompt: `${input.prompt}\\nRequire lint as a fast required check for every planned change before review.`\n+      })),"
+        "--- a/.smithers/flows/todo/flow.ts\n+++ b/.smithers/flows/todo/flow.ts\n@@ -34,1 +34,4 @@\n-      Node.andThen(Request.call(input)),\n+      Node.andThen(Request.call({\n+        ...input,\n+        prompt: `${input.prompt}\\nRequire lint as a fast required check for every planned change before review.`\n+      })),"
     }]
   })
   assert.deepEqual(await Effect.runPromise(learn(snapshot).pipe(Effect.provide(evaluator))), output)

@@ -1,0 +1,566 @@
+paths:
+  /api/model/catalog:
+    get:
+      summary: GET /api/model/catalog
+      operationId: get_api_model_catalog
+      tags:
+        - Model
+      parameters: []
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/model/credential/receipt:
+    get:
+      summary: GET /api/model/credential/receipt
+      operationId: get_api_model_credential_receipt
+      tags:
+        - Model
+      parameters: []
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/model/default:
+    get:
+      summary: GET /api/model/default
+      operationId: get_api_model_default
+      tags:
+        - Model
+      parameters: []
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    put:
+      summary: PUT /api/model/default
+      operationId: put_api_model_default
+      tags:
+        - Model
+      parameters: []
+      x-smithers-opaque-body: true
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnyJSON'
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/model/anthropic/{path}:
+    post:
+      summary: POST /api/model/anthropic/{path}
+      operationId: post_api_model_anthropic_path
+      tags:
+        - Model
+      parameters:
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+      x-smithers-opaque-body: true
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnyJSON'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/model/cerebras/{path}:
+    post:
+      summary: POST /api/model/cerebras/{path}
+      operationId: post_api_model_cerebras_path
+      tags:
+        - Model
+      parameters:
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+      x-smithers-opaque-body: true
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnyJSON'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/model/credential:
+    post:
+      summary: POST /api/model/credential
+      operationId: post_api_model_credential
+      tags:
+        - Model
+      parameters: []
+      x-smithers-opaque-body: true
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnyJSON'
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/model/openai/{path}:
+    post:
+      summary: POST /api/model/openai/{path}
+      operationId: post_api_model_openai_path
+      tags:
+        - Model
+      parameters:
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+      x-smithers-opaque-body: true
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnyJSON'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/model/openrouter/{path}:
+    post:
+      summary: POST /api/model/openrouter/{path}
+      operationId: post_api_model_openrouter_path
+      tags:
+        - Model
+      parameters:
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+      x-smithers-opaque-body: true
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnyJSON'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/model/stream:
+    post:
+      summary: POST /api/model/stream
+      operationId: post_api_model_stream
+      tags:
+        - Model
+      parameters: []
+      x-smithers-opaque-body: true
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnyJSON'
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/model/test:
+    post:
+      summary: POST /api/model/test
+      operationId: post_api_model_test
+      tags:
+        - Model
+      parameters: []
+      x-smithers-opaque-body: true
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnyJSON'
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '202':
+          description: Persisted probe request; use the receipt route until terminal
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/model/test/receipt:
+    get:
+      summary: Read a durable owner model probe
+      operationId: get_api_model_test_receipt
+      tags:
+        - Model
+      parameters:
+        - name: requestId
+          in: query
+          required: true
+          schema:
+            type: string
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Current state and terminal model test result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          description: Storage unavailable
+  /api/model/vercel/{path}:
+    post:
+      summary: POST /api/model/vercel/{path}
+      operationId: post_api_model_vercel_path
+      tags:
+        - Model
+      parameters:
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+      x-smithers-opaque-body: true
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnyJSON'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/model/fast:
+    x-composition: install
+    delete:
+      summary: Sign out of the Smithers fast model
+      operationId: delete_api_model_fast
+      tags:
+        - Model
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FastModelSignOut'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /api/model/fast/sign-in:
+    x-composition: install
+    post:
+      summary: Smithers fast-model sign-in
+      operationId: post_api_model_fast_sign_in
+      tags:
+        - Model
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FastModelSignInURL'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /api/model/fast/return:
+    x-composition: install
+    get:
+      summary: Smithers fast-model sign-in
+      operationId: get_api_model_fast_return
+      tags:
+        - Model
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '303':
+          description: Browser redirect
+          headers:
+            Location:
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'

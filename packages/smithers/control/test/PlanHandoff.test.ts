@@ -204,7 +204,7 @@ describe("the typed edges beside the plan", () => {
  * of a plan card can open the node's code; an approval still binds to the
  * digest it bound to before.
  */
-const declaredAt = { path: "flows/review/pull-request.ts", line: 12 } as const
+const declaredAt = { path: ".smithers/flows/review/pull-request.ts", line: 12 } as const
 
 const withDeclarations = (value: Graph.Graph): MemoryFlow => ({
   ...flow(value),

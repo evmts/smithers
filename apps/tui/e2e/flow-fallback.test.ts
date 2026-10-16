@@ -8,9 +8,9 @@ import { drawn, Tui } from "./tmux.ts"
 it("runs the next declared model after context overflow", async () => {
   const root = mkdtempSync(join(tmpdir(), "tui-fallback-"))
   const project = join(root, "project")
-  mkdirSync(join(project, "flows/fallback"), { recursive: true })
+  mkdirSync(join(project, ".smithers/flows/fallback"), { recursive: true })
   writeFileSync(
-    join(project, "flows/fallback/flow.mdx"),
+    join(project, ".smithers/flows/fallback/flow.mdx"),
     // A key whose action is the flow starts a durable run on the control plane, which runs the prompt itself.
     "---\ndescription: Test fallback\nmodel: [openai:first, openai:second]\nmetadata:\n  tui:\n    keys:\n      - key: alt+p\n        label: Fallback\n        action: { kind: flow, flow: fallback }\n---\nAnswer Pong.\n"
   )

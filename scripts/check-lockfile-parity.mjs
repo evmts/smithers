@@ -4,7 +4,7 @@
  * The repository requires a manifest change to refresh both lockfiles, but
  * nothing enforced it: every CI job installs with pnpm, so `pnpm-lock.yaml` is
  * proved by `--frozen-lockfile` on every run while `bun.lock` is never read.
- * Bun still runs `apps/*`, the `ci/legacy declaration` matrix, and `evals/agent`, so a
+ * Bun still runs `apps/*`, the `ci/legacy declaration` matrix, and `packages/smithers/agent/regression`, so a
  * stale entry there resolves a real package at the wrong version, and it does
  * so only on the Bun surfaces. `packages/smithers/agent/fs` reached rc.0 still asking for
  * `@smthrs/core@0.1.0` that way.
@@ -55,7 +55,7 @@ if (isMain(import.meta)) {
   // package that moves — a granular package nesting inside the product package
   // it belongs to — is still compared. A glob written here would answer for one
   // directory depth and silently stop covering the moved package. Every member
-  // is compared, not only `packages/` and `apps/`: `evals/agent` runs on Bun, and
+  // is compared, not only `packages/` and `apps/`: `packages/smithers/agent/regression` runs on Bun, and
   // a filter here once hid its `bun-types` devDependency from this check.
   const packageEntries = workspacePackages(root)
   const manifests = packageEntries.map((entry) => `${entry.dir}/package.json`)

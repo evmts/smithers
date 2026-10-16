@@ -68,7 +68,7 @@ export const agentProfileOf = (flow: RepositoryFlow): AgentProfileRow | undefine
  * answered them.
  *
  * The rows are its flow catalog rows that declare a model
- * (`flows/<name>/flow.mdx` with `model`), in catalog order, off the catalog
+ * (`.smithers/flows/<name>/flow.mdx` with `model`), in catalog order, off the catalog
  * the slash leaves and the homepage read (seams/RepositoryFlowsSeam.ts). That
  * catalog is this host's ONLY agent source when it holds no `install` row: the
  * factory inventory lives behind `GET /api/agents`, which

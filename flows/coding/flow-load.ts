@@ -1,7 +1,8 @@
 /**
  * flow-load (engineering spec §11.3.1): the system flow the stack service runs
  * on an ephemeral machine at each new `main` commit. It stands on that commit,
- * discovers every overridable flow the repository declares under `flows/`,
+ * discovers every overridable flow the repository declares under
+ * `.smithers/flows/` (mvp.md M-49),
  * loads each one with this host's own loader (the repository's `todo`
  * composition included: only flow-load reads it, the host's registry keeps it
  * dark), and answers one version per flow: its digest and whether it loaded.
@@ -59,10 +60,25 @@ export const FlowVersion = Schema.Struct({
 })
 export type FlowVersion = typeof FlowVersion.Type
 
+/**
+ * One repository-wide problem flow-load found beside the versions: today only
+ * `retired_root`, a root `flows/` that still holds flow entries. None of those
+ * entries load; the message names the new location.
+ */
+export const FlowLoadDiagnostic = Schema.Struct({
+  code: Schema.Literal("retired_root"),
+  /** The directory, relative to the repository root. */
+  path: Schema.String,
+  message: Schema.String
+})
+export type FlowLoadDiagnostic = typeof FlowLoadDiagnostic.Type
+
 export const FlowLoadInput = Schema.Struct({ base: StackBase })
 export const FlowLoadResult = Schema.Struct({
   commitId: Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/)),
-  flows: Schema.Array(FlowVersion)
+  flows: Schema.Array(FlowVersion),
+  /** Absent when there is nothing to report. */
+  diagnostics: Schema.optionalKey(Schema.Array(FlowLoadDiagnostic))
 })
 export type FlowLoadResult = typeof FlowLoadResult.Type
 
@@ -92,8 +108,10 @@ const loadError = (failure: Executable.ExecutableError, relative: string): strin
 }
 
 /**
- * Loads every overridable flow under `<repositoryPath>/flows` and answers its
- * version, sorted by name. A repository without `flows/` declares none.
+ * Loads every overridable flow under `<repositoryPath>/.smithers/flows` and
+ * answers its version, sorted by name, with the repository's diagnostics. A
+ * repository without `.smithers/flows/` declares none. Entries under a root
+ * `flows/` never load; they produce one `retired_root` diagnostic.
  */
 export const loadRepositoryFlows = (
   repositoryPath: string,
@@ -102,14 +120,22 @@ export const loadRepositoryFlows = (
 ) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem, path = yield* Path.Path
-    const root = path.join(repositoryPath, "flows")
-    if (!(yield* fs.exists(root))) return []
+    const source = Registry.projectSource(path, repositoryPath)
     const system = new Set(systemFlows)
-    const discovered = yield* Registry.make({
-      sources: [{ root, source: "project", naming: "path", lockfileRoot: repositoryPath }]
-    }).pipe(
-      Effect.provide(Discovery.layer)
-    )
+    const discovered = yield* Registry.make({ sources: [source] }).pipe(Effect.provide(Discovery.layer))
+    const scanned = yield* discovered.warnings()
+    const diagnostics: Array<FlowLoadDiagnostic> = scanned.filter((warning) => warning.code === "retired_root").map((
+      warning
+    ) => ({
+      code: "retired_root",
+      path: path.relative(repositoryPath, warning.path).split(path.sep).join("/"),
+      message: warning.message
+    }))
+    const answer = (flows: ReadonlyArray<FlowVersion>) => ({
+      flows,
+      ...(diagnostics.length === 0 ? {} : { diagnostics })
+    })
+    if (!(yield* fs.exists(source.root))) return answer([])
     const discoveredDescriptors = yield* discovered.list()
     const descriptors = discoveredDescriptors.filter((entry) => !system.has(entry.name))
     const only = Registry.Registry.of({ ...discovered, list: () => Effect.succeed(descriptors) })
@@ -159,7 +185,7 @@ export const loadRepositoryFlows = (
     // Discovery refusals are still declarations, not removals. Omitting one
     // would make settlement retire its previous Active version.
     const declared = new Set(discoveredDescriptors.map((entry) => entry.name))
-    for (const warning of yield* discovered.warnings()) {
+    for (const warning of scanned.filter((entry) => entry.code !== "retired_root")) {
       const name = warning.name
       if (name === undefined) {
         // A scan/confinement refusal cannot prove which entries disappeared.
@@ -168,12 +194,12 @@ export const loadRepositoryFlows = (
       }
       if (declared.has(name)) continue
       const relative = path.relative(repositoryPath, warning.path).split(path.sep).join("/")
-      if (!relative.startsWith("flows/") || relative.split("/").includes("..")) continue
-      const source = yield* fs.readFileString(warning.path)
+      if (!relative.startsWith(`${Descriptor.projectFlowsDirectory}/`) || relative.split("/").includes("..")) continue
+      const text = yield* fs.readFileString(warning.path)
       versions.push({
         name,
         path: relative,
-        digest: Digest.digest(JSON.stringify({ source, lockfileDigest })),
+        digest: Digest.digest(JSON.stringify({ source: text, lockfileDigest })),
         status: "failed",
         error: `${relative}: ${system.has(name) ? "reserved_name" : warning.message}`.replace(/\s+/g, " ").slice(
           0,
@@ -239,7 +265,7 @@ export const loadRepositoryFlows = (
           }
       )
     }
-    return versions.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
+    return answer(versions.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
   })
 
 /**
@@ -255,11 +281,11 @@ export const loadFlowsLayer = (
     const fs = yield* FileSystem.FileSystem, path = yield* Path.Path
     return LoadFlows.toLayer(({ base }) =>
       Effect.gen(function*() {
-        const flows = yield* loadRepositoryFlows(repositoryPath, systemFlows, environment).pipe(
+        const loaded = yield* loadRepositoryFlows(repositoryPath, systemFlows, environment).pipe(
           Effect.provideService(FileSystem.FileSystem, fs),
           Effect.provideService(Path.Path, path)
         )
-        return { commitId: base.commitId, flows }
+        return { commitId: base.commitId, ...loaded }
       }).pipe(Effect.mapError((cause) =>
         new CodingError({
           code: "source_unavailable",

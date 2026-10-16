@@ -46,8 +46,8 @@ describe("detached child of a completed control root", () => {
     const root = await realpath(await mkdtemp(join(tmpdir(), "smithers-detached-child-")))
     const ran: Array<string> = []
     try {
-      await mkdir(join(root, "flows", "detached"), { recursive: true })
-      await writeFile(join(root, "flows", "detached", "flow.ts"), source)
+      await mkdir(join(root, ".smithers", "flows", "detached"), { recursive: true })
+      await writeFile(join(root, ".smithers", "flows", "detached", "flow.ts"), source)
       const entered = await Effect.runPromise(Deferred.make<void>())
       const rootCompleted = await Effect.runPromise(Deferred.make<void>())
 

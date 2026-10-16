@@ -156,9 +156,9 @@ func TestFlowCatalogRefusesABuiltinWithoutADigest(t *testing.T) {
 
 func TestBuiltinFlowDefaultsNameOnlyOverridableFlows(t *testing.T) {
 	want := map[string]string{
-		"todo":     "flows/todo/flow.ts",
-		"learning": "flows/learning/flow.ts",
-		"review":   "flows/review/flow.ts",
+		"todo":     ".smithers/flows/todo/flow.ts",
+		"learning": ".smithers/flows/learning/flow.ts",
+		"review":   ".smithers/flows/review/flow.ts",
 	}
 	if len(BuiltinFlowDefaults) != len(want) {
 		t.Fatalf("builtin catalog has %d entries, want %d", len(BuiltinFlowDefaults), len(want))
@@ -195,9 +195,11 @@ func TestFlowCatalogRefusesInvalidDefaultDeclarations(t *testing.T) {
 	saved := BuiltinFlowDefaults
 	t.Cleanup(func() { BuiltinFlowDefaults = saved })
 	for _, defaults := range []map[string]string{
-		{"todo": "flows/wrong/flow.ts"},
-		{"merge": "flows/merge/flow.ts", "todo": "flows/todo/flow.ts"},
-		{"review": "flows/review/flow.ts"},
+		{"todo": ".smithers/flows/wrong/flow.ts"},
+		{"merge": ".smithers/flows/merge/flow.ts", "todo": ".smithers/flows/todo/flow.ts"},
+		{"review": ".smithers/flows/review/flow.ts"},
+		// A root flows/ path is not where a repository keeps flows (M-49).
+		{"todo": "flows/todo/flow.ts", "learning": ".smithers/flows/learning/flow.ts", "review": ".smithers/flows/review/flow.ts"},
 	} {
 		BuiltinFlowDefaults = defaults
 		if _, err := FlowCatalog(); err == nil {

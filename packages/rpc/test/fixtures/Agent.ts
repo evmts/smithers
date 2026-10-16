@@ -5,7 +5,7 @@ import { type Story, story } from "./_story.ts"
 
 const base: AgentCard = {
   name: "implementer",
-  instructions_path: "flows/todo/instructions/implementer.md",
+  instructions_path: ".smithers/flows/todo/instructions/implementer.md",
   role: "coding",
   model: "gpt-6.1-sol",
   provider: "OpenAI",
@@ -44,7 +44,7 @@ const fast: AgentCard = {
 const jev: AgentCard = {
   ...base,
   name: "reviewer",
-  instructions_path: "flows/todo/instructions/reviewer.md",
+  instructions_path: ".smithers/flows/todo/instructions/reviewer.md",
   role: "jev",
   model: "typesafe-ai/jev",
   provider: "AI Gateway",
@@ -62,10 +62,10 @@ export const fixtures = {
   }),
   jev: story("The Decisions model's agent", jev, { actions: [change(jev)], expect: ["AI Gateway"] }),
   member_view: story("The coding agent, as a member", { ...base, owner: false }, {
-    expect: ["implementer", "flows/todo/instructions/implementer.md"]
+    expect: ["implementer", ".smithers/flows/todo/instructions/implementer.md"]
   }),
   idle: story("An agent with no runs yet", { ...base, runs: [] }, {
     actions: [change(base)],
-    expect: ["flows/todo/instructions/implementer.md"]
+    expect: [".smithers/flows/todo/instructions/implementer.md"]
   })
 } satisfies Record<string, Story<AgentCard>>

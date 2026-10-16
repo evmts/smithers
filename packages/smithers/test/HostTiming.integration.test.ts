@@ -126,7 +126,7 @@ beforeAll(async () => {
   const home = join(scratch, "codex-home")
   const bin = join(scratch, "bin")
   const root = join(scratch, "workspace")
-  for (const directory of [home, bin, join(root, "flows", "survey")]) mkdirSync(directory, { recursive: true })
+  for (const directory of [home, bin, join(root, ".smithers", "flows", "survey")]) mkdirSync(directory, { recursive: true })
   writeFileSync(
     join(home, "auth.json"),
     JSON.stringify({
@@ -143,7 +143,7 @@ beforeAll(async () => {
     { mode: 0o755 }
   )
   writeFileSync(
-    join(root, "flows", "survey", "flow.mdx"),
+    join(root, ".smithers", "flows", "survey", "flow.mdx"),
     "---\nname: survey\ndescription: Lists the task's files.\nmodel: codex:sol\n---\n\nList the files.\n"
   )
   // A transport process is found on this process's own PATH.
@@ -370,9 +370,9 @@ describe("a run's journal on a sealed host with a subscription seat", () => {
 describe("a process that sends no model request", { timeout: 240_000 }, () => {
   it("journals its own start, the stages it reached and its close", async () => {
     const root = join(scratch, "planned")
-    mkdirSync(join(root, "flows", "survey"), { recursive: true })
+    mkdirSync(join(root, ".smithers", "flows", "survey"), { recursive: true })
     writeFileSync(
-      join(root, "flows", "survey", "flow.mdx"),
+      join(root, ".smithers", "flows", "survey", "flow.mdx"),
       "---\nname: survey\ndescription: Lists the task's files.\nmodel: openai:gpt-4o-mini\n---\n\nList the files.\n"
     )
     const before = Date.now()

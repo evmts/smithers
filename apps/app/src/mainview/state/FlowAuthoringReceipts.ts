@@ -1,4 +1,8 @@
+import { projectFlowsDirectory } from "@smthrs/rpc/FlowEdit"
 import type { JournalRecord } from "../cards/RunTrace"
+
+/** A flow entry file under the repository's flows directory; group 1 is the flow id. */
+const flowEntry = new RegExp(`^${projectFlowsDirectory.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/(.+)/(?:flow\\.ts|flow\\.mdx|SKILL\\.md)$`)
 
 export interface AuthoredSource {
   readonly receipt: string
@@ -14,8 +18,8 @@ export const authoredSources = (events: ReadonlyArray<JournalRecord>): ReadonlyA
   const add = (receipt: string, paths: ReadonlyArray<unknown>, occurredAt?: number) => {
     for (const path of paths) {
       if (typeof path !== "string" || /[\\\u0000-\u001f]/.test(path) || path.split("/").some(part => part === "." || part === ".." || part === "")) continue
-      // Registry discovery names flows by their directory, including nested flows.
-      const match = /^flows\/(.+)\/(?:flow\.ts|flow\.mdx|SKILL\.md)$/.exec(path)
+      // Registry discovery names flows by their directory under `projectFlowsDirectory`, including nested flows (M-49).
+      const match = flowEntry.exec(path)
       if (match) sources.set(JSON.stringify([receipt, path]), { receipt, path, flowId: match[1]!,
         ...(typeof occurredAt === "number" && Number.isFinite(occurredAt) ? { occurredAt } : {}) })
     }

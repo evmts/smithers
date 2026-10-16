@@ -158,7 +158,7 @@ const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd })
  */
 const securityReview = Smithers.SecurityReview({
   cwd,
-  include: ["src/**"],
+  include: ["src/**", "scripts/public-export-map.mjs"],
   checks: [
     {
       id: "child-process-argv",

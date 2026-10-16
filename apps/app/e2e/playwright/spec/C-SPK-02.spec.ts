@@ -15,7 +15,7 @@ test("C-SPK-02: Rejected shared homes retain a NO decision", async ({ page }) =>
   const terminal = page.getByRole("region", { name: / output$/ }).last()
   await expect(terminal).toBeVisible()
   await terminal.click()
-  await page.keyboard.type("scripts/spikes/mch-02-virtiofs-homes/run.sh --decision-evidence .artifacts/checks/C-SPK-02")
+  await page.keyboard.type("packages/backend/checks/C-SPK-02/run.sh --decision-evidence .artifacts/checks/C-SPK-02")
   await page.keyboard.press("Enter")
   await expect(terminal).toContainText("NO")
   // Retain output beside the composer so qualification failures remain readable.

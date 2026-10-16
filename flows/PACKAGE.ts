@@ -1,6 +1,8 @@
 /** Repository flows, release workflows, and the retained migration fixtures. */
 import { Smithers } from "@smthrs/targets"
+import { existsSync, readdirSync } from "node:fs"
 import codingProject from "../.smithers/coding-project.json" with { type: "json" }
+import { libraryPackages, repoRoot } from "../scripts/workspace-packages.mjs"
 
 const pack = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//flows/pack.test.mjs")]),
@@ -457,6 +459,50 @@ const egress = Smithers.NodeTest({
 // rest ran under bare `pnpm test`, which no workflow invokes.
 //
 // Legacy Plue adapter fixtures were removed with the Python adapter.
+/** Explicit cross-package inputs; declaration-scoped globs do not cross child packages. */
+const packageDocInputs = libraryPackages().flatMap(({ dir }) => {
+  const docs = `${repoRoot}/${dir}/docs`
+  const walk = (path: string): Array<string> =>
+    readdirSync(path, { withFileTypes: true }).flatMap((entry) =>
+      entry.isDirectory() ? walk(`${path}/${entry.name}`) : [`${path}/${entry.name}`]
+    )
+  return [
+    Smithers.file(`//${dir}/package.json`),
+    ...(existsSync(`${repoRoot}/${dir}/README.md`) ? [Smithers.file(`//${dir}/README.md`)] : []),
+    ...(existsSync(docs) ? walk(docs).map((path) => Smithers.file(`//${path.slice(repoRoot.length + 1)}`)) : [])
+  ]
+})
+
+/**
+ * The `docs-sync` flow and the modules it runs. `flow.test.ts` drives the
+ * real graph over `check` on this checkout, which packs every published
+ * package (`package-docs.test.mjs`); `package-docs-redirect.test.mjs` holds the
+ * Worker's generated page map to the docs it is built from.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const packageDocs = Smithers.NodeTest({
+  runner: Smithers.testRunner([
+    Smithers.file("//flows/docs-sync/package-docs-redirect.test.mjs"),
+    Smithers.file("//flows/docs-sync/flow.test.ts")
+  ]),
+  timeout: "30m",
+  cache: false,
+  srcs: [
+    sources,
+    Smithers.file("//flows/docs-sync/package-docs.mjs"),
+    Smithers.file("//flows/docs-sync/package-docs.d.mts"),
+    Smithers.file("//flows/docs-sync/package-docs.test.mjs"),
+    Smithers.file("//scripts/workspace-packages.mjs"),
+    Smithers.file("//pnpm-workspace.yaml"),
+    Smithers.file("//apps/server/src/docsRedirectMap.ts"),
+    ...packageDocInputs
+  ],
+  deps: [],
+  cwd
+})
+
 const fixture = (name: string) => Smithers.file(`//flows/test/${name}`)
 const repositoryFixtures = [
   "apply-proof",
@@ -758,6 +804,7 @@ export const Package = Smithers.Package({
     recording,
     issueSweep,
     issueSweepVm,
+    packageDocs,
     provider,
     wiki,
     ...securityReview

@@ -98,14 +98,13 @@ describe("test-file ownership", () => {
   const declarations = ["PACKAGE.ts", "scripts/PACKAGE.ts", "scripts/repo-contract/PACKAGE.ts"]
     .map((path) => readFileSync(join(root, path), "utf8"))
     .join("\n")
-  const suites = [...testFiles("scripts", ".mjs"), ...testFiles("factory", ".ts")]
+  const suites = testFiles("scripts", ".mjs")
 
-  it("finds the script and factory suites", () => {
+  it("finds the script suites", () => {
     assert.ok(suites.includes("scripts/pack-release.test.mjs"))
-    assert.ok(suites.includes("factory/flows/harness.test.ts"))
   })
 
-  it("names every script and factory suite in a target's test runner", () => {
+  it("names every script suite in a target's test runner", () => {
     const orphans = suites.filter((path) => !unownedTests.has(path) && !declarations.includes(`Smithers.file("//${path}")`))
     assert.deepEqual(orphans, [], "each suite needs a Smithers.testRunner entry or a reasoned unownedTests entry")
   })
@@ -114,17 +113,13 @@ describe("test-file ownership", () => {
     for (const path of unownedTests.keys()) assert.ok(suites.includes(path) && !declarations.includes(`//${path}"`), path)
   })
 
-  it("selects script and factory targets in their required jobs", () => {
+  it("selects script targets in their required jobs", () => {
     const workflow = parseWorkflow(readFileSync(join(root, ".github/workflows/ci.yml"), "utf8"))
     assert.notEqual(workflow.jobs.test["continue-on-error"], true)
-    const main = workflow.jobs.test.steps.flatMap((step) => step.run ? [step.run] : []).join("\n")
     assert.notEqual(workflow.jobs.scripts["continue-on-error"], true)
     const scripts = workflow.jobs.scripts.steps.flatMap((step) => step.run ? [step.run] : []).join("\n")
     assert.match(scripts, /smthrs test '\/\/scripts\/\.\.\.'/)
     assert.notEqual(workflow.jobs.repository["continue-on-error"], true)
-    const repository = workflow.jobs.repository.steps.flatMap((step) => step.run ? [step.run] : []).join("\n")
-    assert.doesNotMatch(main, /smthrs test '\/\/:factoryHarness'/)
-    assert.match(repository, /smthrs test '\/\/:factoryHarness'/)
   })
 })
 
@@ -166,10 +161,10 @@ describe("backend consumer gate", () => {
     assert.ok(start >= 0, "PACKAGE.ts must declare backendGo")
     assert.equal(typeof shell, "string", "backendGo must run a shell command")
     const commands = shell.split(/;\s*/)
-    const gate = commands.indexOf("sh scripts/test-backend-consumer.sh || exit $?")
+    const gate = commands.indexOf("sh packages/backend/scripts/test-backend-consumer.sh || exit $?")
     assert.ok(gate >= 0, "backendGo must run the consumer script and stop on its failure")
     assert.ok(gate < commands.findIndex((command) => /^go test (?:-p \d+ )?-count=1 /.test(command)), "the gate runs before the Go suites")
-    assert.ok(target.includes('Smithers.file("//scripts/test-backend-consumer.sh")'), "the script is a declared input")
+    assert.ok(target.includes('Smithers.file("//packages/backend/scripts/test-backend-consumer.sh")'), "the script is a declared input")
     assert.match(declaration, /pattern: "\/\/:backendGo"/, "a CI job selects backendGo")
   })
 
@@ -183,7 +178,7 @@ describe("backend consumer gate", () => {
   })
 
   it("keeps the consumer script failing on a compile error", () => {
-    const script = readFileSync(join(root, "scripts/test-backend-consumer.sh"), "utf8")
+    const script = readFileSync(join(root, "packages/backend/scripts/test-backend-consumer.sh"), "utf8")
     assert.match(script, /^set -eu$/m)
     assert.match(script, /^GOWORK=off go build \.\/\.\.\.$/m)
   })

@@ -11,13 +11,13 @@ You are the scaffolder. Turn the approved design appended below into real files
 on disk. You have file and shell tools. Write the files, then report exactly
 what you wrote.
 
-The appended arguments carry the design and the project's `flows/` directory.
+The appended arguments carry the design and the project's `.smithers/flows/` directory.
 
 ## What to write
 
 ### 1. The flow entry file
 
-`flows/<flowName>/flow.ts`. It `export default`s one `@smthrs/flow` flow, and
+`.smithers/flows/<flowName>/flow.ts`. It `export default`s one `@smthrs/flow` flow, and
 that flow is the whole entry: its body is what runs, so nothing else has to be
 registered for `smthrs up <flowName>` to work.
 
@@ -26,7 +26,7 @@ The whole shape is
 payload, success, error?, body })`. It must state its metadata literally,
 because discovery parses the file without importing it. The tag is the first
 argument and is required: `Flow.make` takes it positionally, so a flow can
-never be anonymous, and the tag a `flows/<name>/flow.ts` declares is the name
+never be anonymous, and the tag a `.smithers/flows/<name>/flow.ts` declares is the name
 its path derives.
 
 ```ts

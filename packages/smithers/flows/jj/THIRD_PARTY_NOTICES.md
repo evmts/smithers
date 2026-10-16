@@ -246,9 +246,11 @@ give recipients a copy of the License; the full text is reproduced below.
    limitations under the License.
 ```
 
-Generated inventory: run `node scripts/generate-third-party-notices.mjs` after
+Generated inventory: run
+`node packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs` after
 changing Cargo dependencies. CI checks it with `--check`. Attribution prose and
-license text are maintained in `scripts/third-party-notices.template.md`.
+license text are maintained in
+`packages/smithers/flows/jj/scripts/third-party-notices.template.md`.
 
 ## All statically linked crates, by license
 

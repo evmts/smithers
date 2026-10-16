@@ -968,7 +968,7 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
               Effect.andThen(repositoryCatalog(executableOptions, builtins.load)),
               Effect.provideService(FileSystem.FileSystem, fs),
               // The catalog this host serves is rebuildable one entry at a time, which
-              // is what lets a run of this host author `flows/<id>/flow.ts` and have
+              // is what lets a run of this host author `.smithers/flows/<id>/flow.ts` and have
               // the next plan draw it. A reserved job declaration is held fixed: its
               // bytes are the measured bundle this host shipped as, and rebuilding one
               // from the working tree would replace an admitted declaration with

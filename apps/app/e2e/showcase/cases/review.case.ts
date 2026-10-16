@@ -64,8 +64,8 @@ export default showcase({
     })
     await backend.json(`${API}/landings/12/changes`, CHANGES.slice(0, 2))
     await backend.json(`${API}/landings/12/diff`, { landing_number: 12, changes: [
-      { change_id: BASE, file_diffs: [{ path: "flows/split/walk.ts", change_type: "added", additions: 18, deletions: 0, patch: "@@ -0,0 +1 @@\n+export const walk = () => []" }] },
-      { change_id: TIP, file_diffs: [{ path: "flows/split/flow.ts", change_type: "modified", additions: 3, deletions: 1, patch: PATCH }] }
+      { change_id: BASE, file_diffs: [{ path: ".smithers/flows/split/walk.ts", change_type: "added", additions: 18, deletions: 0, patch: "@@ -0,0 +1 @@\n+export const walk = () => []" }] },
+      { change_id: TIP, file_diffs: [{ path: ".smithers/flows/split/flow.ts", change_type: "modified", additions: 3, deletions: 1, patch: PATCH }] }
     ] })
     await backend.json(`${API}/landings/9/changes`, [])
     await backend.json(`${API}/landings/9/diff`, { landing_number: 9, changes: [] })
@@ -86,7 +86,7 @@ export default showcase({
     await app.beat(1500)
 
     await app.click(card.getByRole("tab", { name: /Files changed/ }))
-    await expect(card).toContainText("flows/split/flow.ts")
+    await expect(card).toContainText(".smithers/flows/split/flow.ts")
     await app.beat(2000)
     await app.click(card.getByRole("tab", { name: /Conversation/ }))
 

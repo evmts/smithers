@@ -1,0 +1,140 @@
+package services
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+)
+
+// Members retains the singleton owner; the roster extension uses this seam.
+// Credentials sign the installation lookup, Minter is the one installation
+// token minter (§12.1.3), and Budget accounts every GitHub request the roster
+// makes against the install's shared rate budget.
+type Members struct {
+	Pool           *pgxpool.Pool
+	Credentials    GitHubAppCredentialReader
+	Minter         GitHubInstallationTokenMinter
+	Budget         *BudgetTracker
+	permissionPoll *memberPermissionPoll
+}
+
+// gitHubMemberPermissions is everything a roster check needs: GitHub lists
+// GET /repos/{o}/{r}/collaborators/{login}/permission under Metadata (read),
+// and GET /users/{login} needs no permission.
+var gitHubMemberPermissions = map[string]string{"metadata": "read"}
+
+// memberToken mints the roster's installation token. The install records the
+// repository by name and Smithers id only, never GitHub's id, so the token
+// spans the installation's repositories at metadata:read.
+func (m *Members) memberToken(ctx context.Context, installationID int64) (string, error) {
+	if m.Minter == nil {
+		return "", ErrGitHubAppNotConfigured
+	}
+	token, err := m.Minter.CreateGitHubInstallationToken(ctx, installationID, GitHubTokenScope{AllRepositories: true, Permissions: gitHubMemberPermissions})
+	if err != nil {
+		return "", err
+	}
+	if token.Token == "" || token.InstallationID != installationID {
+		return "", GitHubRequestFailure(ctx, "GitHub installation token unavailable")
+	}
+	return token.Token, nil
+}
+
+// VerifyOwner discovers the installation using the App JWT, then checks push
+// permission with an installation token. Caller-supplied installation ids never enter.
+func (m *Members) VerifyOwner(ctx context.Context, user db.User) error {
+	q := db.New(m.Pool)
+	owner, err := q.GetSelfHostOwner(ctx)
+	if err != nil {
+		return err
+	}
+	if owner.ID != user.ID {
+		return pkgerrors.Forbidden("not a member")
+	}
+	repo, err := q.ReadInstallRepositoryBinding(ctx)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !gitHubAppComponent.MatchString(repo.Owner) || !gitHubAppComponent.MatchString(repo.Name) {
+		return pkgerrors.BadRequest("invalid GitHub repository")
+	}
+	if m.Credentials == nil || m.Minter == nil {
+		return ErrGitHubAppNotConfigured
+	}
+	jwt, err := m.Credentials.AppJWT(ctx)
+	if err != nil {
+		return err
+	}
+	api := m.api(30 * time.Second)
+	var installation struct {
+		ID int64 `json:"id"`
+	}
+	status, err := api.request(ctx, jwt, http.MethodGet, landingGitHubRepoPath(repo.Owner, repo.Name)+"/installation", nil, &installation)
+	if err != nil {
+		return err
+	}
+	if status != 200 || installation.ID <= 0 {
+		return pkgerrors.Forbidden("GitHub App is not installed on the repository")
+	}
+	token, err := m.memberToken(ctx, installation.ID)
+	if err != nil {
+		return pkgerrors.Forbidden("GitHub installation token unavailable")
+	}
+	permission, role, err := api.repositoryPermission(ctx, token, repo.Owner, repo.Name, user.Username)
+	if err != nil {
+		return err
+	}
+	if permission != "write" && permission != "admin" && role != "maintain" {
+		return pkgerrors.Forbidden("needs access on GitHub ↗")
+	}
+	tx, err := m.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	// Use the exact configured product repository; never grant on unrelated repos.
+	if repo.ID > 0 {
+		if _, err = tx.Exec(ctx, `INSERT INTO collaborators(repository_id,user_id,permission) VALUES($1,$2,'admin') ON CONFLICT(repository_id,user_id) WHERE user_id IS NOT NULL DO UPDATE SET permission='admin'`, repo.ID, user.ID); err != nil {
+			return err
+		}
+	}
+	if err = allocateRosterLogins(ctx, tx); err != nil {
+		return err
+	}
+	value, _ := json.Marshal(map[string]any{"last_access_check_at": time.Now().UTC(), "installation_id": installation.ID, "repository_id": repo.ID, "owner_login": repo.Owner, "repository_name": repo.Name})
+	if err = db.New(tx).UpsertInstallSetting(ctx, db.UpsertInstallSettingParams{Key: "owner.access", Value: value}); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// BindRepository fences the previous verification before checking a new selection.
+func (m *Members) BindRepository(ctx context.Context, user db.User, owner, name string, repositoryID int64) error {
+	value, _ := json.Marshal(map[string]any{"owner_login": owner, "repository_name": name, "repository_id": repositoryID})
+	if err := db.New(m.Pool).UpsertInstallSetting(ctx, db.UpsertInstallSettingParams{Key: "github.repository", Value: value}); err != nil {
+		return err
+	}
+	if err := m.VerifyOwner(ctx, user); err != nil {
+		return err
+	}
+	if repositoryID <= 0 {
+		return nil
+	}
+	if m.permissionPoll != nil && m.permissionPoll.synced != nil {
+		// Coalesce with an in-flight sweep and reset the scheduler's binding
+		// before publishing the new repository's permission receipt.
+		m.requestPermissionRecheck()
+		return m.PollPermissions(ctx)
+	}
+	return m.Recheck(ctx)
+}

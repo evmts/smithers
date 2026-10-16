@@ -117,7 +117,7 @@ describe("unified CLI", { timeout: 240_000 }, () => {
     const generated = await run(root, ["generate", "flow", "hello", "--root", root, "--json"])
     expect(generated.code, generated.stdout + generated.stderr).toBe(0)
     expect(await readFile(join(root, "package.json"), "utf8")).toBe(original)
-    await access(join(root, "flows/hello/flow.ts"))
+    await access(join(root, ".smithers/flows/hello/flow.ts"))
   })
 
   it("initializes one workspace and preserves existing declarations on repeat", async () => {
@@ -133,7 +133,7 @@ describe("unified CLI", { timeout: 240_000 }, () => {
     const targets = await serve(["targets", "--root", root, "--json"])
     expect(targets.code, targets.output).toBe(0)
     expect(targets.output).toContain("//:sources")
-    await access(join(root, "flows", "hello", "flow.ts"))
+    await access(join(root, ".smithers", "flows", "hello", "flow.ts"))
   })
 
   it("reads the actual flow catalog and preserves usage failures at the command bridge", async () => {

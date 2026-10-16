@@ -117,6 +117,10 @@ func (s *MythicalService) launchFlowLoad(ctx context.Context, r *mythicalRun, ro
 	if err != nil {
 		return err
 	}
+	if diagnostic := rootFlowsDiagnostic(tree); diagnostic != "" {
+		s.logger.Warn("mythical.flow_load_root_flows", "repository_id", r.row.RepositoryID, "commit", main,
+			"generation", saved.Generation, "diagnostic", diagnostic)
+	}
 	s.notify(ctx, q, r.row.RepositoryID, r.row.Generation, "flows", "")
 	repository, owner, err := s.repository(ctx, r.row.RepositoryID)
 	if err != nil {
@@ -192,13 +196,13 @@ func (s *MythicalService) flowLoadTree(ctx context.Context, r *mythicalRun, comm
 	}
 	var before map[string]string
 	_ = json.Unmarshal(loaded, &before)
-	// Each flow owns its entry's directory: flows/<name>/ in either tree.
+	// Each flow owns its entry's directory: .smithers/flows/<name>/ in either tree.
 	dirs := map[string]string{}
 	entries := map[string]string{} // flow name -> entry path at commit
 	for _, files := range []map[string]string{before, tree} {
 		for path := range files {
 			if name, ok := flowEntryName(path); ok {
-				dirs["flows/"+name+"/"] = name
+				dirs[flowdispatch.RepositoryFlowsDir+name+"/"] = name
 			}
 		}
 	}
@@ -258,14 +262,37 @@ func (s *MythicalService) flowLoadTree(ctx context.Context, r *mythicalRun, comm
 	return tree, encoded, nil
 }
 
-// flowEntryName answers the flow a path declares: flows/<name>/flow.ts (or .mdx).
+// flowEntryName answers the flow a path declares:
+// .smithers/flows/<name>/flow.ts (or .tsx, .mdx, .md).
 func flowEntryName(path string) (string, bool) {
+	return flowEntryUnder(flowdispatch.RepositoryFlowsDir, path)
+}
+
+func flowEntryUnder(dir, path string) (string, bool) {
+	inner, ok := strings.CutPrefix(path, dir)
+	if !ok {
+		return "", false
+	}
 	for _, suffix := range []string{"/flow.ts", "/flow.tsx", "/flow.mdx", "/flow.md"} {
-		if name, ok := strings.CutSuffix(strings.TrimPrefix(path, "flows/"), suffix); ok && strings.HasPrefix(path, "flows/") && name != "" {
+		if name, ok := strings.CutSuffix(inner, suffix); ok && name != "" {
 			return name, true
 		}
 	}
 	return "", false
+}
+
+// rootFlowsDir is where repositories kept flows before M-49. Nothing there loads.
+const rootFlowsDir = "flows/"
+
+// rootFlowsDiagnostic is the one diagnostic a load gives a tree that still
+// keeps flow entries under a root flows/, or "" when it keeps none.
+func rootFlowsDiagnostic(tree map[string]string) string {
+	for path := range tree {
+		if _, ok := flowEntryUnder(rootFlowsDir, path); ok {
+			return "Flows in " + rootFlowsDir + " are not loaded; move them to " + flowdispatch.RepositoryFlowsDir + "."
+		}
+	}
+	return ""
 }
 
 func unionKeys(a, b map[string]string) map[string]bool {

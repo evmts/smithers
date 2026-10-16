@@ -240,7 +240,7 @@ func TestInstallAPIHostUsesPublicRouterAndRevokesBearer(t *testing.T) {
 	require.NotContains(t, frames, `"kind": "draft"`)
 	var proposal string
 	require.NoError(t, local.pool.QueryRow(local.ctx, `SELECT payload::text FROM approvals WHERE repository_id=$1 AND member_id=$2 AND command='todo.new' AND state='pending' AND payload::text LIKE '%+pnpm test%'`, local.repoID, local.ownerID).Scan(&proposal))
-	require.Contains(t, proposal, "Change flows/todo/flow.ts: Run tests; start from the built-in composition when no override exists")
+	require.Contains(t, proposal, "Change .smithers/flows/todo/flow.ts: Run tests; start from the built-in composition when no override exists")
 	require.Contains(t, proposal, "Proposed diff (untrusted context):")
 	require.Contains(t, proposal, "> +pnpm test")
 	require.NotContains(t, frames, token)

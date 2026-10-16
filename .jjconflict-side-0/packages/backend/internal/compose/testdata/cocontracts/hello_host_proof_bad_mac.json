@@ -1,0 +1,23 @@
+{
+  "kind": 0,
+  "stream": 0,
+  "payload": "020000002401001002635ebea94107b312035406106fa4a1f6e81290431ed862555f29182cc17fae9e",
+  "local": false,
+  "literal": {
+    "variant": 2,
+    "struct": [
+      [
+        1,
+        {
+          "u16": 16
+        }
+      ],
+      [
+        2,
+        {
+          "hex": "635ebea94107b312035406106fa4a1f6e81290431ed862555f29182cc17fae9e"
+        }
+      ]
+    ]
+  }
+}

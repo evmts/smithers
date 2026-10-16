@@ -1,0 +1,640 @@
+/**
+ * Targets for the UI application: typecheck, unit suite and browser tier.
+ *
+ * Playwright T1 exercises the browser application; see
+ * docs/LOCAL-APP.md "Test tiers".
+ *
+ * The unit suite uses the declared Bun runtime. Typecheck
+ * uses the workspace's Node runtime and package manager.
+ */
+import { Smithers } from "@smthrs/targets"
+import { Package as backendPackage } from "../../packages/backend/PACKAGE.ts"
+import { Package as flowsJjPackage } from "../../crates/flows-jj/PACKAGE.ts"
+import { Package as machinedPackage } from "../../crates/smithers-machined/PACKAGE.ts"
+import { Package as rpcPackage } from "../../packages/rpc/PACKAGE.ts"
+import { Package as harnessDetectPackage } from "../../packages/smithers/agent/harness-detect/PACKAGE.ts"
+import { Package as gatewayPackage } from "../../packages/smithers/gateway/PACKAGE.ts"
+import { Package as componentPackage } from "../../packages/smithers/ui/PACKAGE.ts"
+
+const cwd = "apps/app"
+
+const distributionInputs = Smithers.Filegroup({ cwd: "distribution", srcs: [Smithers.glob("**/*")] })
+const crateInputs = Smithers.Filegroup({
+  cwd: "crates",
+  srcs: [Smithers.glob("**/*"), flowsJjPackage.nativeSources, machinedPackage.buildInputs]
+})
+const proofProductInputs = Smithers.Filegroup({ cwd: ".specs/product", srcs: [Smithers.glob("**/*")] })
+const proofMockInputs = Smithers.Filegroup({ cwd: ".specs/design/mock", srcs: [Smithers.glob("src/**/*")] })
+const docsInputs = Smithers.Filegroup({ cwd, srcs: [Smithers.glob("src/docs/pages/*.md")] })
+
+/**
+ * Uncached release assembly: external toolchains and registry inputs are validated by the assembler,
+ * which cross-builds the Linux arm64 guest helper from the same commit.
+ */
+const serverBundle = Smithers.Shell.Build({
+  cache: false,
+  shell: 'SMITHERS_BUILD_SHA="$(git rev-parse HEAD)" bun apps/app/scripts/build-native.ts',
+  data: [Smithers.glob("//apps/app/scripts/**/*"), Smithers.glob("//apps/app/src/**/*"),
+    Smithers.file("//packages/smithers/src/internal/backend/HostService.ts"), distributionInputs, crateInputs,
+    backendPackage.buildInputs, Smithers.file("//packages/backend/scripts/build-backend.sh"),
+    Smithers.file("//package.json"), Smithers.file("//pnpm-lock.yaml"), Smithers.file("//rust-toolchain.toml")],
+  outDirs: ["//apps/app/.native", "//apps/app/.native-archive"],
+  sandbox: "none",
+  timeout: "120m"
+})
+
+/** The application sources every suite drives. */
+const sources = Smithers.glob("//apps/app/src/**/*.ts")
+
+/** The React components, part of the typecheck's and unit suite's key material. */
+const componentSources = Smithers.glob("//apps/app/src/**/*.tsx")
+
+/** The stylesheets the SPA bundles; a CSS-only change must invalidate the unit cache too. */
+const styleSources = Smithers.glob("//apps/app/src/**/*.css")
+
+/** The build/runtime configs the bundler reads. */
+const buildConfigs = [
+  Smithers.file("vite.config.ts"),
+  Smithers.file("tailwind.config.js"),
+  Smithers.file("postcss.config.js")
+]
+
+/**
+ * The harness and suite sources outside `src/`. The tsconfig compiles them, so
+ * the typecheck measures them and its key has to carry them too.
+ */
+const harnessSources = Smithers.glob("//apps/app/scripts/**/*")
+
+/** The lint sources outside `src/`: the literal pin and the vocabularies it derives. */
+const lintSources = Smithers.glob("//apps/app/lint/**/*")
+const suiteSources = Smithers.glob("//apps/app/e2e/**/*")
+
+/** The proof page generator, its tests and the fixture run they read. */
+const proofSources = Smithers.glob("//apps/app/proof/**/*")
+
+/** The assertion contracts the e2e tiers share; pure, so the unit suite gates them. */
+const contractSources = Smithers.glob("//apps/app/e2e/contracts/**/*.ts")
+
+/** The TODO coding run's scripted answers the model stand-in serves, shared with the J1 rehearsal's fake, and their types. */
+const todoTurns = [Smithers.file("//distribution/fake-todo-turns.mjs"), Smithers.file("//distribution/fake-todo-turns.d.mts")]
+
+/**
+ * Checks the application against its own tsconfig.
+ *
+ * @since 0.1.0
+ * @category build
+ */
+const check = Smithers.Typecheck({
+  /*
+   * Everything this tsconfig includes: `scripts`, `e2e`, `lint`, and the
+   * bundler and Playwright configs are compiled by this target, so a key made of `src`
+   * alone would serve a green cache entry over an edit that breaks the
+   * typecheck.
+   */
+  srcs: [
+    sources,
+    componentSources,
+    harnessSources,
+    suiteSources,
+    proofSources,
+    ...todoTurns,
+    lintSources,
+    ...buildConfigs,
+    Smithers.file("playwright.config.ts"),
+    Smithers.file("playwright.showcase.config.ts")
+  ],
+  deps: [],
+  tsconfig: Smithers.file("tsconfig.json"),
+  buildMode: false,
+  incremental: false,
+  cwd
+})
+
+/**
+ * The unit suite: everything under `src/`, the e2e assertion contracts under
+ * `e2e/contracts/` and the script contracts under `scripts/`, hermetic, with no
+ * server and no browser.
+ *
+ * @since 0.1.0
+ * @category test
+ */
+// Coverage policy: assertion-only for Bun UI units, with required offline
+// Playwright in browserE2e. No source coverage percentage is claimed; see
+// scripts/repo-contract/README.md for the denominator exception.
+const unitTests = Smithers.NodeTest({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  // Isolate files that mutate process globals until #3696 removes that pollution.
+  runner: Smithers.testSuite(["src", "./proof", "e2e/contracts", "e2e/support", "e2e/real/coverage", "e2e/real/support", "e2e/real/auth-permissions/profile.test.ts", "e2e/real/chat-tools/shared-traffic.test.ts", "scripts"], { isolate: true }),
+  // 6,740 tests across 520 files took 813s on a clean 2026-09-29 checkout;
+  // the shared 600s default killed CI while Bun was still running tests.
+  // By 2026-10-08 the suite ran ~17k tests in 652-1,078s on ubuntu-latest, and
+  // two runs (37606224809, 37853835782) were killed at 20m mid-suite in
+  // different files, not on one hung test; 30m restores the headroom.
+  timeout: "30m",
+  srcs: [
+    sources,
+    componentSources,
+    styleSources,
+    Smithers.glob("//apps/app/src/docs/pages/*.md"),
+    contractSources,
+    harnessSources,
+    suiteSources,
+    proofSources,
+    ...todoTurns,
+    ...buildConfigs,
+    Smithers.glob("//apps/app/*.ts"),
+    Smithers.file("tsconfig.json"),
+    Smithers.file("package.json"),
+    Smithers.file("bunfig.toml"),
+    Smithers.file("//package.json"),
+    Smithers.file("//pnpm-lock.yaml"),
+    Smithers.file("//scripts/require-toolchain.mjs"),
+    Smithers.file("//packages/backend/internal/compose/bootstrap.go"),
+    Smithers.file("//packages/rpc/fixtures/force/graph.json"),
+    Smithers.file("//packages/rpc/fixtures/force/plan-typeCheck.json")
+  ],
+  // Globs cannot cross PACKAGE.ts boundaries; dependency keys carry these sources.
+  deps: [rpcPackage.check, componentPackage.check, gatewayPackage.check, harnessDetectPackage.check],
+  cwd
+})
+
+/**
+ * The conformance lint: the literal pin under `lint/conformance/`.
+ *
+ * It is a lint, not a unit suite. It derives the app's vocabularies — flow
+ * names, card kinds, card-id prefixes, emitted `data-*` attributes — from
+ * product source and the running store, then refuses any literal the e2e
+ * suites and the `scripts/` runners assert against that no longer resolves.
+ * Because it reads harnesses, configuration and workspace vocabularies by
+ * path, its key carries every tree it scans; discovery paths alone do not
+ * contribute to a target's input identity.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const conformance = Smithers.NodeTest({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  runner: Smithers.testSuite(["lint/conformance"]),
+  srcs: [
+    sources,
+    componentSources,
+    styleSources,
+    contractSources,
+    harnessSources,
+    suiteSources,
+    lintSources,
+    ...buildConfigs,
+    Smithers.glob("//apps/app/*.ts"),
+    Smithers.file("tsconfig.json"),
+    Smithers.file("package.json"),
+    Smithers.file("bunfig.toml"),
+    Smithers.file("//package.json"),
+    Smithers.file("//pnpm-lock.yaml"),
+    Smithers.file("//scripts/require-toolchain.mjs")
+  ],
+  // Globs cannot cross PACKAGE.ts boundaries; dependency keys carry these sources.
+  deps: [rpcPackage.check, componentPackage.check, gatewayPackage.check, harnessDetectPackage.check],
+  cwd
+})
+
+/**
+ * Runs pinned Playwright and Bun browser OAuth tests, with no live provider
+ * calls, the built smithers.sh landing and its AppIsland (e2e/site), and the
+ * flow-graph tier: the app over a real control plane and a real engine on
+ * localhost, with nothing intercepted (e2e/graph/README.md). The steps run
+ * serially (scripts/run-pr-e2e.mjs says why). On ubuntu-latest, apps-deploy
+ * run 37987394687 (2026-10-09) had T1 at ~530 of 585 tests, all green, when
+ * the old 30m limit killed it: T1 alone is ~33 min there (13.4 min on a
+ * 16-core Mac), so the whole run is ~40 min. 45m is what fits beside the
+ * ~20 min of earlier gate steps and the server and site steps inside
+ * apps-deploy.yml's 75-minute job.
+ *
+ * Exclusive: wildcard `test` and `ci` selections omit these tiers. CI names
+ * three shard targets; the unsharded target remains the local rehearsal.
+ */
+const browserTier = (shard?: string) => Smithers.NodeTest({
+  runner: Smithers.entrypoint(Smithers.file("scripts/run-pr-e2e.mjs"), shard ? [shard] : []),
+  timeout: "45m",
+  srcs: [sources, componentSources, styleSources, harnessSources, suiteSources, ...buildConfigs,
+    Smithers.file("playwright.config.ts"), Smithers.file("playwright.site.config.ts"), Smithers.file("playwright.graph.config.ts"),
+    Smithers.file("playwright.showcase.config.ts"), Smithers.file("package.json"), Smithers.file("//pnpm-lock.yaml"),
+    // `bun test` steps preload the toolchain floor.
+    Smithers.file("bunfig.toml"), Smithers.file("//package.json"), Smithers.file("//scripts/require-toolchain.mjs")],
+  deps: [],
+  env: { SMITHERS_CHAT_STUB: "1" },
+  exclusive: true,
+  cwd
+})
+
+const browserE2e = browserTier()
+const browserE2eShard1 = browserTier("1")
+const browserE2eShard2 = browserTier("2")
+const browserE2eShard3 = browserTier("3")
+
+/**
+ * Install tier: the Playwright tests tagged @install, which start a real
+ * install. It needs Go at the root go.mod's version, PostgreSQL 18,
+ * SMITHERS_TEST_DATABASE_URL and the native smithers-ffi;
+ * scripts/run-install-e2e.ts refuses without them. T1 (browserE2e) excludes
+ * these tests. Omitted from wildcard selections, like the journeys.
+ */
+const installE2e = Smithers.NodeTest({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  runner: Smithers.entrypoint(Smithers.file("scripts/run-install-e2e.ts")),
+  timeout: "240m",
+  srcs: [sources, componentSources, styleSources, harnessSources, suiteSources, ...buildConfigs,
+    Smithers.file("playwright.config.ts"), Smithers.file("playwright.install.config.ts"), Smithers.file("package.json"),
+    Smithers.file("//pnpm-lock.yaml"), Smithers.file("//go.mod")],
+  deps: [],
+  // The executor passes no host database URL, so the target names the same
+  // test server the backend Go suite uses (root PACKAGE.ts backendGo). A lane
+  // host with another server runs scripts/run-install-e2e.ts directly.
+  env: { SMITHERS_CHAT_STUB: "1", SMITHERS_TEST_DATABASE_URL: "postgres://smithers:smithers-backend-test@127.0.0.1:55435/postgres?sslmode=disable" },
+  exclusive: true,
+  cache: false,
+  cwd
+})
+
+/** Explicit View acceptance tier; ordinary browser selections keep it disabled. */
+const viewStories = Smithers.NodeTest({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  runner: Smithers.entrypoint(Smithers.file("scripts/run-view-stories.ts")),
+  timeout: "30m",
+  srcs: [sources, componentSources, styleSources, harnessSources, suiteSources, ...buildConfigs,
+    Smithers.file("playwright.config.ts"), Smithers.file("package.json"), Smithers.file("//pnpm-lock.yaml")],
+  deps: [],
+  env: { SMITHERS_VIEW_STORIES: "1", SMITHERS_CHAT_STUB: "1", SMITHERS_E2E_BROWSER: "chromium", SMITHERS_VIEW_STORY_FILTER: "" },
+  exclusive: true, cache: false, cwd
+})
+
+/** Reference-install activation; omitted from wildcard test/ci selections. */
+const journeyJ1Activation = Smithers.NodeTest({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  runner: Smithers.entrypoint(Smithers.file("scripts/run-real-e2e.ts"), ["j1-activation.spec.ts"]),
+  timeout: "60m",
+  env: { SMITHERS_JOURNEY: "j1-activation.spec.ts", SMITHERS_CHAT_STUB: "0" },
+  cache: false,
+  srcs: [harnessSources, suiteSources, Smithers.file("playwright.real.config.ts"),
+    Smithers.file("package.json"), Smithers.file("//pnpm-lock.yaml")],
+  deps: [],
+  exclusive: true,
+  cwd
+})
+
+/** Reference-install qualification; ordinary real-E2E runs exclude this journey. */
+const journeySetup = Smithers.NodeTest({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  runner: Smithers.entrypoint(Smithers.file("scripts/run-real-e2e.ts"), ["setup.spec.ts"]),
+  timeout: "60m",
+  env: { SMITHERS_JOURNEY: "setup.spec.ts", SMITHERS_CHAT_STUB: "0" },
+  cache: false,
+  srcs: [harnessSources, suiteSources, Smithers.file("playwright.real.config.ts"),
+    Smithers.file("package.json"), Smithers.file("//pnpm-lock.yaml")],
+  deps: [], exclusive: true, cwd
+})
+
+/** Reference-install qualification; ordinary real-E2E runs exclude this journey. */
+const journeyWikiObsidian = Smithers.NodeTest({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  runner: Smithers.entrypoint(Smithers.file("scripts/run-real-e2e.ts"), ["wiki-obsidian.spec.ts"]),
+  timeout: "60m",
+  env: { SMITHERS_JOURNEY: "wiki-obsidian.spec.ts", SMITHERS_REAL_E2E_HOST: "local", SMITHERS_CHAT_STUB: "0" },
+  cache: false,
+  srcs: [harnessSources, suiteSources, Smithers.file("playwright.real.config.ts"),
+    Smithers.file("package.json"), Smithers.file("//pnpm-lock.yaml")],
+  deps: [], exclusive: true, cwd
+})
+
+/** Reference-install qualification; omitted from wildcard test/ci selections. */
+const journeyJ1Release = Smithers.NodeTest({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  runner: Smithers.entrypoint(Smithers.file("scripts/run-real-e2e.ts"), ["j1.spec.ts"]),
+  timeout: "60m",
+  env: { SMITHERS_JOURNEY: "j1.spec.ts", SMITHERS_CHAT_STUB: "0" },
+  cache: false,
+  srcs: [harnessSources, suiteSources, Smithers.file("playwright.real.config.ts"),
+    Smithers.file("package.json"), Smithers.file("//pnpm-lock.yaml")],
+  deps: [], exclusive: true, cwd
+})
+
+/** Reference-install qualification; omitted from wildcard test/ci selections. */
+const journeyKeyboard = Smithers.NodeTest({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  runner: Smithers.entrypoint(Smithers.file("scripts/run-real-e2e.ts"), ["keyboard-journeys.spec.ts"]),
+  timeout: "60m",
+  env: { SMITHERS_JOURNEY: "keyboard-journeys.spec.ts", SMITHERS_CHAT_STUB: "0" },
+  cache: false,
+  srcs: [harnessSources, suiteSources, Smithers.file("playwright.real.config.ts"),
+    Smithers.file("package.json"), Smithers.file("//pnpm-lock.yaml")],
+  deps: [], exclusive: true, cwd
+})
+
+/** Reference-install qualification; omitted from wildcard test/ci selections. */
+const journeyFreshRepository = Smithers.NodeTest({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  runner: Smithers.entrypoint(Smithers.file("scripts/run-real-e2e.ts"), ["fresh-repository.spec.ts"]),
+  timeout: "60m",
+  env: { SMITHERS_JOURNEY: "fresh-repository.spec.ts", SMITHERS_REAL_E2E_HOST: "local", SMITHERS_CHAT_STUB: "0" },
+  cache: false,
+  srcs: [harnessSources, suiteSources, Smithers.file("playwright.real.config.ts"),
+    Smithers.file("package.json"), Smithers.file("//pnpm-lock.yaml")],
+  deps: [], exclusive: true, cwd
+})
+
+/** Reference-install qualification; omitted from wildcard test/ci selections. */
+const journeyWikiGeneratedRefresh = Smithers.NodeTest({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  runner: Smithers.entrypoint(Smithers.file("scripts/run-real-e2e.ts"), ["wiki-generated-refresh.spec.ts"]),
+  timeout: "60m",
+  env: { SMITHERS_JOURNEY: "wiki-generated-refresh.spec.ts", SMITHERS_REAL_E2E_HOST: "local", SMITHERS_CHAT_STUB: "0" },
+  cache: false,
+  srcs: [harnessSources, suiteSources, Smithers.file("playwright.real.config.ts"),
+    Smithers.file("package.json"), Smithers.file("//pnpm-lock.yaml")],
+  deps: [], exclusive: true, cwd
+})
+
+/** Reference-install qualification; omitted from wildcard test/ci selections. */
+const journeyWikiCoedit = Smithers.NodeTest({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  runner: Smithers.entrypoint(Smithers.file("scripts/run-real-e2e.ts"), ["wiki-coedit.spec.ts"]),
+  timeout: "60m",
+  env: { SMITHERS_JOURNEY: "wiki-coedit.spec.ts", SMITHERS_REAL_E2E_HOST: "local", SMITHERS_CHAT_STUB: "0" },
+  cache: false,
+  srcs: [harnessSources, suiteSources, Smithers.file("playwright.real.config.ts"),
+    Smithers.file("package.json"), Smithers.file("//pnpm-lock.yaml")],
+  deps: [], exclusive: true, cwd
+})
+
+/** Each reference-host journey selects one spec; wildcard runs omit qualification. */
+const referenceJourney = (spec: string) => Smithers.NodeTest({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  runner: Smithers.entrypoint(Smithers.file("scripts/run-real-e2e.ts"), [spec]),
+  timeout: "60m",
+  env: { SMITHERS_JOURNEY: spec, SMITHERS_CHAT_STUB: "0" },
+  cache: false,
+  srcs: [harnessSources, suiteSources, Smithers.file("playwright.real.config.ts"),
+    Smithers.file("package.json"), Smithers.file("//pnpm-lock.yaml")],
+  deps: [], exclusive: true, cwd
+})
+const journeyGitHubMerge = referenceJourney("github-j10/merge-on-github.spec.ts")
+const journeyGitHubMergeContinuation = referenceJourney("github-j10/merge-on-github-continuation.spec.ts")
+const journeyGitHubPRShape = referenceJourney("github-j10/pr-shape.spec.ts")
+/** Reference-host journeys excluded by journeys.ts from ordinary real-E2E. */
+const journeyFlowSourceRun = referenceJourney("flow-source-run.spec.ts")
+const journeyWikiDecisionFollow = referenceJourney("wiki-decision-follow.spec.ts")
+const journeyBranchPresence = referenceJourney("branch-presence.spec.ts")
+const journeyDuplicateLaunch = referenceJourney("duplicate-launch.spec.ts")
+const journeyFileCoedit = referenceJourney("file-coedit.spec.ts")
+const journeyHome = referenceJourney("home.spec.ts")
+const journeyTodoMergeOrder = referenceJourney("todo-merge-order.spec.ts")
+const journeyTodoPlacement = referenceJourney("todo-placement.spec.ts")
+const journeyTodoSteer = referenceJourney("todo-steer.spec.ts")
+const journeyFlowActivation = referenceJourney("flow-activation.spec.ts")
+const journeyLearning = referenceJourney("learning-journey.spec.ts")
+const journeyAgentTerminal = referenceJourney("agent-terminal.spec.ts")
+const journeyTerminalSignin = referenceJourney("terminal-signin.spec.ts")
+const journeyFileGone = referenceJourney("file-gone.spec.ts")
+const journeyGitHubSyncHealth = referenceJourney("github-j10/sync-health.spec.ts")
+const journeyForkAddToStack = referenceJourney("fork-add-to-stack.spec.ts")
+const journeySshBranch = referenceJourney("ssh-branch.spec.ts")
+const journeyInstallOrigins = referenceJourney("install-origins.spec.ts")
+const journeyFileIntelligence = referenceJourney("file-intelligence.spec.ts")
+const journeyForkDropInstall = referenceJourney("fork-drop-install.spec.ts")
+const journeyGitHubForeignPush = referenceJourney("github-j10/foreign-push.spec.ts")
+const journeyGitHubMainMovedRebase = referenceJourney("github-j10/main-moved-rebase.spec.ts")
+
+
+/** Dark reference-host journeys; wildcard selections omit these gates. */
+const journeyTodoFromIssue = Smithers.NodeTest({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  runner: Smithers.entrypoint(Smithers.file("scripts/run-journey-j2.ts"), ["todo-from-issue"]),
+  srcs: [suiteSources, harnessSources, Smithers.file("playwright.real.config.ts")],
+  deps: [], exclusive: true, cache: false, timeout: "7m", cwd
+})
+const journeyTodoNeedsYou = Smithers.NodeTest({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  runner: Smithers.entrypoint(Smithers.file("scripts/run-journey-j2.ts"), ["todo-needs-you"]),
+  srcs: [suiteSources, harnessSources, Smithers.file("playwright.real.config.ts")],
+  deps: [], exclusive: true, cache: false, timeout: "17m", cwd
+})
+const journeyTodoEvidence = Smithers.NodeTest({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  runner: Smithers.entrypoint(Smithers.file("scripts/run-journey-j2.ts"), ["todo-evidence"]),
+  srcs: [suiteSources, harnessSources, Smithers.file("playwright.real.config.ts"), Smithers.file("//scripts/check-evidence.mjs")],
+  deps: [], exclusive: true, cache: false, timeout: "16m", cwd
+})
+
+const journeyTodoMerge = Smithers.NodeTest({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  runner: Smithers.entrypoint(Smithers.file("scripts/run-journey-j2.ts"), ["todo-merge"]),
+  srcs: [suiteSources, harnessSources, Smithers.file("playwright.real.config.ts")],
+  deps: [], exclusive: true, cache: false, timeout: "17m", cwd
+})
+
+const journeyAskRepository = Smithers.NodeTest({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  runner: Smithers.entrypoint(Smithers.file("scripts/run-journey-j2.ts"), ["ask-repository"]),
+  srcs: [suiteSources, harnessSources, Smithers.file("playwright.real.config.ts")],
+  deps: [], exclusive: true, cache: false, timeout: "7m", cwd
+})
+
+/** C-J4-02 on the reference install; the composed install runs its Move step from packages/backend. */
+const journeyTodoStackActions = Smithers.NodeTest({
+  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
+  runner: Smithers.entrypoint(Smithers.file("scripts/run-journey-j2.ts"), ["todo-stack-actions"]),
+  srcs: [suiteSources, harnessSources, Smithers.file("playwright.real.config.ts")],
+  deps: [], exclusive: true, cache: false, timeout: "45m", cwd
+})
+
+/**
+ * The evidence flow (EVIDENCE-CONTRACT.md): proofRecord drives the real bundle
+ * through every journey's proof spec (e2e/proof) with real models and records
+ * screenshots, videos and Playwright JSON under test-results/proof; proofPage
+ * turns that run, an explicit feature manifest and the mock's captions into one
+ * self-contained page that plays like the design mock.
+ *
+ * proofRecord is never cached (Shell.Build replays nothing): it mutates an
+ * install, calls real models and the network, and binds ports. It succeeds
+ * when the run wrote its results; failing proof steps are the page's verdicts,
+ * not a broken recording.
+ */
+const proofRecord = Smithers.Shell.Build({
+  shell: "cd apps/app && rm -rf test-results/proof && bunx playwright test --config playwright.proof.config.ts; test -s test-results/proof/results.json || { echo 'proofRecord: the run wrote no test-results/proof/results.json' >&2; exit 1; }",
+  data: [serverBundle, harnessSources, suiteSources, proofProductInputs,
+    Smithers.file("package.json"), Smithers.file("//pnpm-lock.yaml")],
+  outDirs: ["//apps/app/test-results/proof"],
+  sandbox: "none",
+  timeout: "120m"
+})
+
+/** Regenerates the proof page using SMITHERS_PROOF_FEATURES; fails when the manifest disagrees with the run. */
+const proofPage = Smithers.Shell.Build({
+  shell: 'bun apps/app/proof/page.ts --features "${SMITHERS_PROOF_FEATURES:?Set SMITHERS_PROOF_FEATURES to the feature manifest}" --out apps/app/test-results/proof-page',
+  data: [proofSources, proofProductInputs,
+    proofMockInputs],
+  outDirs: ["//apps/app/test-results/proof-page"],
+  sandbox: "none",
+  timeout: "10m"
+})
+
+/**
+ * Everything a web host needs to bundle the app as a React island: the
+ * mainview tree (AppIsland.tsx and the CSS it imports), the Tailwind config
+ * index.css names, the build stamp both builds share, and package.json for
+ * the pinned react version. apps/site's build target lists it as an input so
+ * the site rebuilds when the app changes.
+ *
+ * @since 1.0.0
+ * @category build
+ */
+const webSources = Smithers.Filegroup({
+  srcs: [
+    Smithers.glob("src/mainview/**/*"),
+    Smithers.glob("src/debugApi/**/*"),
+    Smithers.file("scripts/openapi-chunk.ts"),
+    Smithers.file("//docs/api/openapi.yaml"),
+    Smithers.file("tailwind.config.js"),
+    Smithers.file("scripts/build-stamp.ts"),
+    Smithers.file("package.json")
+  ],
+  cwd
+})
+
+/** Complete React source input for the reproducible Solid projection. */
+const solidCodegenInputs = Smithers.Filegroup({
+  srcs: [Smithers.glob("src/**/*"), Smithers.file("package.json")],
+  cwd
+})
+
+/**
+ * Security review of browser hosts, the renderer and build scripts.
+ * `security` reviews the diff against origin/main; `securityAudit` reviews all
+ * of `include`. The e2e tree (with its nested fixture packages) is left out.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const securityReview = Smithers.SecurityReview({
+  cwd,
+  include: ["src/**", "scripts/**"],
+  checks: [
+    {
+      id: "loopback-origin-gate",
+      title: "Every loopback server refuses foreign Host and Origin before relaying or acting",
+      threat: "A web page the user visits (cross-origin or via DNS rebinding) drives the local app's API with the user's session cookie, bearer or cloud token.",
+      lookFor: [
+        "A Bun.serve handler that relays /api/* without comparing the Host header to its own 127.0.0.1:<port>.",
+        "A state-changing /api/* route that runs without the local session header or an Origin match.",
+        "A renderer relay that exposes a readable __csrf cookie to any origin that reaches the port.",
+        "A WebSocket upgrade accepted when Origin is absent or differs from the served origin."
+      ],
+      paths: ["src/bun/server.ts", "src/bun/CloudAuth.ts"]
+    },
+    {
+      id: "relay-credential-scope",
+      title: "Relayed requests carry only the selected backend's credential to that backend",
+      threat: "A renderer path or a switched backend target receives another backend's bearer, cookie jar or CSRF token.",
+      lookFor: [
+        "A proxied request whose target URL can leave the selected upstream origin (dot segments, encoded slashes, absolute paths).",
+        "An Authorization, Cookie or x-csrf-token header forwarded without being rebuilt for the current target.",
+        "A cookie jar, bearer or in-flight stream that survives setTarget or a backend generation change.",
+        "A redirect followed by fetch that resends the bearer to another origin."
+      ],
+      paths: ["src/bun/server.ts"]
+    },
+    {
+      id: "cloud-login-callback",
+      title: "The CLI sign-in callback accepts exactly one credential bound to its callback_state",
+      threat: "A local process or web page injects its own Smithers Cloud token so the user's work lands in an attacker account, or steals the token.",
+      lookFor: [
+        "A /callback POST accepted without a timing-safe callback_state match or with a foreign Origin.",
+        "A second callback able to replace the first accepted token.",
+        "The token written to logs, argv of `security`, or the renderer session answer.",
+        "A keychain command built by string interpolation of an unchecked service or account."
+      ],
+      paths: ["src/bun/CloudAuth.ts"]
+    },
+    {
+      id: "backend-child-env",
+      title: "The owned backend child gets an allowlisted environment and verified binaries",
+      threat: "A shell's provider keys or cloud tokens leak into the backend and its agents, or a swapped binary runs with the owner's bootstrap token.",
+      lookFor: [
+        "A spawn env built from Bun.env or process.env instead of LAUNCHER_PASSTHROUGH plus explicit keys.",
+        "An executable path taken from an env override that skips the checksum check.",
+        "The bootstrap-token secrets file read when it is group/world readable or not a regular file.",
+        "Isolation not forced to microvm or runtime paths taken from the shell.",
+        "An address, origin, PATH or machine sizing value taken from the process environment instead of explicit owner host flags."
+      ],
+      paths: ["src/bun/NativeBackendProcess.ts", "src/bun/serve.ts", "scripts/bundle-postgres.ts", "scripts/validate-git-bundle.ts"]
+    },
+    {
+      id: "browser-fetch-ssrf",
+      title: "Agent browser fetches reach only public https destinations pinned after the check",
+      threat: "A prompt-injected agent turn reads loopback services, cloud metadata or the LAN through the host's fetch route.",
+      lookFor: [
+        "A fetch whose socket address is not the address the shared guard validated (DNS rebinding between check and connect).",
+        "A redirect or decompression path with no size or destination bound.",
+        "A browser.* flow that sends a non-http(s) or loopback URL to the host route instead of refusing it."
+      ],
+      paths: ["src/bun/BrowserFetch.ts", "src/mainview/state/controller/presentation.ts"]
+    },
+    {
+      id: "agent-command-authority",
+      title: "A model tool call executes only model-invocable commands with validated arguments",
+      threat: "A prompt-injected model turn signs the user in or out, resets state, sends chat, or launches runs and writes on the user's repositories without a human gesture.",
+      lookFor: [
+        "A tool_call name dispatched through a path that skips the modelInvocable check in executeForAgent or the registry.",
+        "A user-only flow (auth.sign-in, cloud.sign-in, admin.reset, chat.send) reachable by an alias, canonicalized name or slash payload from the agent invoker.",
+        "Tool-call arguments parsed with JSON.parse and passed on without the flow's argument schema.",
+        "A tool result that returns secrets, tokens or unredacted flow output to the model."
+      ],
+      paths: ["src/mainview/flows/agentTools.ts", "src/mainview/flows/Commands.ts", "src/mainview/flows/registry.ts", "src/mainview/state/controller/turns.ts", "src/mainview/state/HttpTurn.ts"]
+    },
+    {
+      id: "upstream-card-frames",
+      title: "Card frames from the chat upstream cannot replace owned cards or embed the app origin",
+      threat: "A compromised or prompt-injected chat upstream overwrites approval or runtime cards, or plants a browser card whose frame runs script in the app origin.",
+      lookFor: [
+        "A card or card.update frame that upserts over an existing card id the upstream did not create.",
+        "A browser card whose url or finalUrl is relative, same-origin or non-http(s) and still renders as an iframe with allow-scripts allow-same-origin.",
+        "A card.update patch that changes a browser card's url or frameable flag after the host's fetch set them."
+      ],
+      paths: ["src/bun/CloudAgent.ts", "src/mainview/state/controller/turns.ts", "src/mainview/cards/ConversationCards.tsx"]
+    },
+    {
+      id: "renderer-untrusted-markup",
+      title: "Repository, wiki, issue and model content never becomes script or a navigable dangerous URL",
+      threat: "A repository author, issue commenter or model output runs script in the app origin and steals the local session capability or cloud session.",
+      lookFor: [
+        "dangerouslySetInnerHTML or innerHTML fed by anything other than a static constant.",
+        "href, src or window.open taking a repo, wiki, issue or card URL without an http(s) scheme check.",
+        "A markdown renderer configured to pass raw HTML through."
+      ],
+      paths: ["src/mainview/**/*.tsx", "src/mainview/wiki/**", "src/mainview/state/seams/**"]
+    },
+    {
+      id: "static-path-containment",
+      title: "Static file serving stays inside the dist directory",
+      threat: "A local page or process reads arbitrary files from the user's disk through the loopback server.",
+      lookFor: [
+        "A decoded path joined to distDir without a resolve plus prefix check against distDir + '/'.",
+        "A symlink inside dist followed out of it."
+      ],
+      paths: ["src/bun/server.ts"]
+    },
+    {
+      id: "journal-and-log-redaction",
+      title: "Turn journals, client-error ingest and logs never persist tokens",
+      threat: "Anyone with read access to the state directory or logs recovers the user's cloud or model credentials.",
+      lookFor: [
+        "A log line or journal record that writes a request header, env value or error text without the redactor.",
+        "Journal files created without owner-only permissions."
+      ],
+      paths: ["src/bun/server.ts", "src/bun/NativeBackendProcess.ts"]
+    }
+  ]
+})
+
+export const Package = Smithers.Package({
+  targets: { distributionInputs, crateInputs, proofProductInputs, proofMockInputs, docsInputs, serverBundle, solidCodegenInputs, check, unitTests, conformance, browserE2e, browserE2eShard1, browserE2eShard2, browserE2eShard3, installE2e, viewStories, journeyJ1Activation, journeyJ1Release, journeyKeyboard, journeyFreshRepository, journeyWikiGeneratedRefresh, journeyWikiCoedit, journeySetup, journeyWikiObsidian, journeyTodoFromIssue, journeyTodoNeedsYou, journeyTodoEvidence, journeyTodoMerge, journeyAskRepository, journeyTodoStackActions, journeyGitHubMerge, journeyGitHubMergeContinuation, journeyGitHubPRShape, journeyFlowSourceRun, journeyWikiDecisionFollow, journeyBranchPresence, journeyDuplicateLaunch, journeyFileCoedit, journeyHome, journeyTodoMergeOrder, journeyTodoPlacement, journeyTodoSteer, journeyFlowActivation, journeyLearning, journeyAgentTerminal, journeyTerminalSignin, journeyFileGone, journeyGitHubSyncHealth, journeyForkAddToStack, journeySshBranch, journeyInstallOrigins, journeyFileIntelligence, journeyForkDropInstall, journeyGitHubForeignPush, journeyGitHubMainMovedRebase, proofRecord, proofPage, webSources, ...securityReview }
+})

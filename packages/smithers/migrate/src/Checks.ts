@@ -20,7 +20,7 @@ import * as Detect from "./Detect.ts"
 import * as Fs from "./internal/Fs.ts"
 import * as Ts from "./internal/Ts.ts"
 import { io, type MigrateError } from "./MigrateError.ts"
-import type { UnitPlan } from "./Units.ts"
+import { defaultFlowsDir, type UnitPlan } from "./Units.ts"
 
 /**
  * One check's verdict.
@@ -581,7 +581,7 @@ export const runState = (
  */
 export const discovery = (
   root: string,
-  flowsDir = "flows"
+  flowsDir = defaultFlowsDir
 ): Effect.Effect<CheckResult, MigrateError, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem

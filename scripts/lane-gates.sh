@@ -152,7 +152,7 @@ fi
 
 # 1. The gates scripts/commit.mjs requires before any push to main.
 check migration-gate "go test -run 'TestMigrationGate|TestMigrationRegistry' ./packages/backend/db/product/"
-[ -f scripts/check-sqlc-drift.sh ] && check sqlc-drift "bash scripts/check-sqlc-drift.sh"
+[ -f packages/backend/scripts/check-sqlc-drift.sh ] && check sqlc-drift "bash packages/backend/scripts/check-sqlc-drift.sh"
 check lane-gates "node --test scripts/lane-gates.test.mjs scripts/lane-prerequisites.test.mjs"
 check tracked-hygiene "node scripts/check-tracked-hygiene.mjs"
 # A here-string, not a pipe: a piped function runs in a subshell and its newreds would be lost.
