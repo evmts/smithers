@@ -6,7 +6,7 @@ import { resolve } from "node:path"
 import * as Node from "@smthrs/plan/Node"
 import { baseFlows, adminFlows, type CommandActions } from "smithers-app/mainview/flows/Flows"
 import { httpProjections } from "@smthrs/ui/app-operations/http"
-import { nameOf } from "smithers-app/mainview/flows/registry"
+import { nameOf, visible } from "smithers-app/mainview/flows/registry"
 import { doorFamilyAbsent } from "smithers-app/mainview/flows/DoorAvailability"
 import { formFieldsFor } from "@smthrs/ui/flow-form"
 import { UI_INSTRUCTION_FIELDS } from "@smthrs/rpc/UiInstruction"
@@ -42,7 +42,7 @@ export const generateFormInstructions = async (): Promise<Readonly<Record<string
   for (const entry of [...baseFlows(accountActions), ...adminFlows(accountActions)]) {
     const name = nameOf(entry), m = entry.metadata
     // Existing screen/data commands retain their doors. Host refusals precede forms just as in Commands.settle.
-    if (!m.actors?.includes("app_agent") || !m.actors.includes("person") || m.visibility === "hidden" || m.hidden === true || name === "docs" ||
+    if (!m.actors?.includes("app_agent") || !m.actors.includes("person") || m.visibility === "hidden" || (m.hidden === true && visible([{ ...m, name }]).length === 0) || name === "docs" ||
       (m.agent !== "run" && m.agent !== "confirm") || Object.hasOwn(UI_INSTRUCTION_FIELDS, name) ||
       doorFamilyAbsent(m.door, { bootstrap }) || await entry.unavailable?.("agent") !== undefined) continue
     const fields = formFieldsFor(entry.input, m.form).filter(field => field.kind !== "write-only")

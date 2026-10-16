@@ -26,6 +26,29 @@ export const FORM_INSTRUCTION_FIELDS = {
     "workspaceId",
     "branch"
   ],
+  "branch": [
+    "name"
+  ],
+  "branch.add-to-stack": [
+    "branch",
+    "text",
+    "title",
+    "acceptance",
+    "after",
+    "before"
+  ],
+  "branch.archive": [
+    "branch"
+  ],
+  "branch.fork": [
+    "from",
+    "name"
+  ],
+  "branch.rebase": [
+    "branch",
+    "conflict_change",
+    "onto_revision"
+  ],
   "branch.rebase-now": [
     "branch"
   ],
@@ -203,6 +226,13 @@ export const FORM_INSTRUCTION_FIELDS = {
   ],
   "search.secrets": [
     "query"
+  ],
+  "stack.move": [
+    "n",
+    "direction"
+  ],
+  "terminal": [
+    "branch"
   ],
   "wiki.cloud": [
     "repo",

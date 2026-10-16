@@ -88,6 +88,7 @@ test("account form projection follows the real app catalog and preserves actor f
   expect(forms).toEqual(FORM_INSTRUCTION_FIELDS)
   expect(forms["flow.new"]).toEqual(["description", "repo"])
   expect(forms["flow.edit"]).toContain("request")
+  expect(forms["branch"]).toContain("name")
   expect(forms["flow.run"]).toContain("name")
   for (const name of ["issue.new", "todo.new", "todo.drop", "form.submit", "palette.open", "chat.retry", "toString", ...Object.keys(UI_INSTRUCTION_FIELDS)]) {
     expect(Object.hasOwn(forms, name)).toBe(false)
