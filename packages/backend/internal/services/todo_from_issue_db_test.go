@@ -255,6 +255,11 @@ func TestTodoIssueReceiptRejectsIncompleteOrForgedSnapshot(t *testing.T) {
 		{"changed body", `jsonb_set(data,'{thread,issue,body}','"forged"')`, "completed"},
 		{"wrong state", `data`, "failed"},
 		{"expired", `jsonb_set(data,'{read_at}','"2000-01-01T00:00:00Z"')`, "completed"},
+		// ReadInstallIssueThread always records read_at. A receipt without
+		// one has no age, so the expiry fence above cannot judge it and the
+		// read is refused rather than admitted unaged.
+		{"missing read_at", `data - 'read_at'`, "completed"},
+		{"future read_at", `jsonb_set(data,'{read_at}','"2999-01-01T00:00:00Z"')`, "completed"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := pool.Exec(ctx, `DELETE FROM product_job_events WHERE event_type='issue.read'`)

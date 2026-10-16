@@ -959,10 +959,14 @@ func TestTodoAdmissionStartsAnIssueTodoFromItsDraft(t *testing.T) {
 	o.github.issues = append(o.github.issues, issue)
 	o.github.mu.Unlock()
 	// Make TODO consumes the issue card's person-bound read receipt, not
-	// an arbitrary digest of whatever GitHub happens to return now.
+	// an arbitrary digest of whatever GitHub happens to return now. The
+	// receipt carries the instant the card read the issue, exactly as
+	// ReadInstallIssueThread records it: the admission fence expires a stale
+	// snapshot, so a receipt without one is not a receipt
+	// (TestTodoIssueReceiptRejectsIncompleteOrForgedSnapshot).
 	thread := InstallIssueThread{Issue: InstallIssue{Number: 7, Title: issue.Title, Body: issue.Body, HTMLURL: issue.URL, State: "open"}}
 	digest := todoIssueSnapshotDigest(thread)
-	read, err := json.Marshal(map[string]any{"issue": 7, "digest": digest, "thread": thread, "outsider": false})
+	read, err := json.Marshal(map[string]any{"issue": 7, "digest": digest, "thread": thread, "outsider": false, "read_at": o.service.now().UTC()})
 	require.NoError(t, err)
 	tx, err := o.pool.Begin(session)
 	require.NoError(t, err)
