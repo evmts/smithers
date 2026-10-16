@@ -126,6 +126,7 @@ worktrees/
 # Repository-owned factory configuration and CI workflow source.
 !/.smithers/coding-project.json
 !/.smithers/wiki/
+!/.smithers/cross-package-globs.json
 !/.smithers/workflows/
 /.smithers/workflows/*
 !/.smithers/workflows/ci.tsx
