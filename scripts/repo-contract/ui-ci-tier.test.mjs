@@ -87,7 +87,7 @@ it("the selected browser executable installs its matching browser, runs every ti
     const fake = join(temporary, "pnpm")
     writeFileSync(fake, '#!/bin/sh\nprintf "%s\\n" "$*" >> "$BROWSER_TEST_CALLS"\ncase "$*" in *"$BROWSER_TEST_FAIL"*) exit 23;; *"$BROWSER_TEST_LATER_FAIL"*) exit 7;; esac\n')
     chmodSync(fake, 0o755)
-    const tiers = ["exec playwright install --with-deps chromium", "run test:e2e:auth", "run test:e2e:probes", "run test:e2e:graph-lifecycle", "exec playwright test",
+    const tiers = ["exec playwright install --with-deps chromium webkit", "run test:e2e:auth", "run test:e2e:probes", "run test:e2e:graph-lifecycle", "exec playwright test",
       "exec playwright test --config playwright.showcase.config.ts", "exec playwright test --config playwright.site.config.ts", "exec playwright test --config playwright.graph.config.ts"]
     assert.deepEqual(run("test:e2e:auth"), { status: 23, calls: tiers }, "a red tier must not hide the later tiers")
     assert.deepEqual(run("test:e2e:auth", "playwright.site.config.ts"), { status: 23, calls: tiers }, "the first red's code wins")
