@@ -598,6 +598,11 @@ var installMemberRoutes = []struct {
 	{http.MethodPost, "repo.unarchive", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/unarchive$`)},
 	{http.MethodPut, "repo.topics.update", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/topics$`)},
 	{http.MethodGet, "monitor", regexp.MustCompile(`^/api/runs(?:/[^/]+(?:/trace)?)?$`)},
+	// The repository's own run index, one run and one run's trace are the
+	// same monitor read the install door above serves (#4032), so they run
+	// the same `monitor` command: an install judges its roster and catalog
+	// policy here too, beside the repository's read permission.
+	{http.MethodGet, "monitor", regexp.MustCompile(`^/api/repos/[^/]+/[^/]+/monitors(?:/[^/]+(?:/trace)?)?$`)},
 	{http.MethodPost, "background.retry", regexp.MustCompile(`^/api/runs/(?:[0-9]+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$`)},
 	{http.MethodGet, "flows.read", regexp.MustCompile(`^/api/runs/(?:[0-9]+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/background-status$`)},
 	{http.MethodPost, "agent.edit", regexp.MustCompile(`^/api/agents/[^/]+/edit$`)},

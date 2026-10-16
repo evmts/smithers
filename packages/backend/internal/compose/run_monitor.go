@@ -426,7 +426,11 @@ func mountRunMonitors(router chi.Router, cfg *config.Config, q *db.Queries, m *r
 // the route takes it from, and the actor is judged against that repository by
 // the same middleware every other repository read uses: a read scope, the
 // loaded repo context and `read` permission on it (owner, org owner, team,
-// collaborator, or a public repository). No install roster, no viewer role.
+// collaborator, or a public repository). No viewer role, no fabricated
+// binding. On an INSTALL that repository permission is not the whole
+// decision: the install's own `monitor` command policy runs first through the
+// existing member-command hook, so the roster, the credential's scope and the
+// catalog's actors decide this read exactly as they decide `/api/runs`.
 //
 // `monitors`, not `runs`: `GET /api/repos/{owner}/{repo}/runs` is already the
 // workflow-run list (`ListAllWorkflowRuns`, numeric CI run IDs). This index is
@@ -441,11 +445,20 @@ func mountRunMonitors(router chi.Router, cfg *config.Config, q *db.Queries, m *r
 // discover whether a run exists, and a run whose live host cannot be reached
 // keeps its row from its admission's last observation.
 func mountRepositoryRunMonitors(router chi.Router, cfg *config.Config, q *db.Queries, m *runMonitors) {
-	access := []func(http.Handler) http.Handler{
-		authLoader(q, cfg.Auth),
-		middleware.RequireAuth,
-		middleware.RequireScope(middleware.ScopeReadRepository),
+	access := []func(http.Handler) http.Handler{authLoader(q, cfg.Auth)}
+	if config.IsSingleOwner(cfg.Auth) {
+		// An install has a roster and a command catalog beside the
+		// repository's ACL, and this is the SAME `monitor` read its
+		// `/api/runs` door serves, so the same command policy decides it:
+		// the existing member-command hook, the existing authorizer, one
+		// decision. Reading a repository one may read is not on its own
+		// authority to read an install's runs. A multi-user deployment has
+		// no roster, so there the repository permission below is the whole
+		// decision (this hook is exactly where every other door mounted
+		// beside buildRouter puts it, e.g. mountBrowserFlow).
+		access = append(access, memberCommands(q))
 	}
+	access = append(access, middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadRepository))
 	if q != nil {
 		access = append(access, middleware.LoadRepoContext(q), middleware.RequireRepoPermission(middleware.PermissionRead))
 	}
