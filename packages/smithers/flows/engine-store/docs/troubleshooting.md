@@ -256,6 +256,7 @@ not one of these: the run continues and the report says `failed`.
 
 | Code                   | Meaning                                                                   |
 | ---------------------- | ------------------------------------------------------------------------- |
+| `plan_changed`         | The plan ID already records different content. Start a new plan. |
 | `invalid_plan`         | Plan content, graph annotations, or approval digests failed verification. |
 | `boundary_unavailable` | The boundary could not be measured for a dispatch.                        |
 | `key_uncomputable`     | The dispatch key could not be derived.                                    |

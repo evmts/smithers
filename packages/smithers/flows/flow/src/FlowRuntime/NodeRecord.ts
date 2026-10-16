@@ -89,6 +89,8 @@ export type NodeOutcome = "built" | "clean" | "failed" | "skipped"
  */
 export interface PlanRecorded {
   readonly _tag: "PlanRecorded"
+  /** Whole-graph identity; absent only on records from older producers. */
+  readonly digest?: string | undefined
   readonly sourceId: string
   readonly flow: string
   readonly generation: number

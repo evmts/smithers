@@ -1764,6 +1764,35 @@ describe("PlanScheduler reconciliation", () => {
 })
 
 describe("PlanScheduler elaboration", () => {
+  it("refuses a conflicting recorded plan before dispatch and preserves the original", async () => {
+    const before = await runPromise(compile([draft("root", { body: { version: 1 } })], "plan-conflict"))
+    const after = await runPromise(compile([draft("root", { body: { version: 2 } })], "plan-conflict"))
+    let dispatched = 0
+    const executor: PlanScheduler.Executor = {
+      execute: () =>
+        Effect.sync(() => {
+          dispatched++
+          return "ran"
+        })
+    }
+    const observed = await runPromise(
+      Effect.gen(function*() {
+        yield* activate("run-plan-conflict")
+        const service = scheduler({ runId: "run-plan-conflict", executor })
+        yield* service.record(before)
+        const exit = yield* service.record(after).pipe(Effect.andThen(service.run(after)), Effect.exit)
+        const plans = yield* PlanStore.PlanStore
+        return { exit, stored: yield* plans.get(before.planId) }
+      }).pipe(
+        Effect.provide(harness({ runId: "run-plan-conflict", executor })),
+        Effect.provide(TestStores.layerAt(":memory:"))
+      )
+    )
+    expect(observed.exit).toMatchObject({ _tag: "Failure", cause: { reasons: [{ error: { code: "plan_changed" } }] } })
+    expect(Option.getOrThrow(observed.stored).digest).toBe(before.digest)
+    expect(dispatched).toBe(0)
+  })
+
   it("rolls a recorded plan back when its durable lifecycle event refuses", async () => {
     const plan = await runPromise(compile([draft("root")], "plan-atomic-record"))
     const executor: PlanScheduler.Executor = { execute: () => Effect.succeed("unused") }

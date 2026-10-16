@@ -22,6 +22,16 @@ process-local callback policy permits inspection but does not promise the same
 plan across processes. Stable node addresses alone do not prove unchanged
 behavior.
 
+The durable interpreter records the whole graph's digest before dispatch. A
+resume that rebuilds a different digest fails with `plan_changed`; it does not
+run the edited steps. Use `Node.capture` for every callback in a resumable flow:
+process-local callback identities can change even without a source edit. Runs
+recorded before graph digests were introduced also require a new execution.
+Action implementation changes must advance their declared implementation
+version; a digest cannot inspect imported code behind an unchanged version.
+`Flow.execute` does not approve a plan or accept an approved digest. Approval
+and execution by digest are not supported by this API.
+
 ## What a body may not do
 
 The body's source digest enters the flow's content identity, so the body must not

@@ -75,7 +75,8 @@ describe("the records a driven graph makes, as journal entries", () => {
       "host/node/read/1",
       "host/node/read/1/settled"
     ])
-    expect(entries.every((entry) => entry.sourceSeq === 0 && entry.dedupe === "identity")).toBe(true)
+    expect(entries.every((entry) => entry.sourceSeq === 0)).toBe(true)
+    expect(entries.map((entry) => entry.dedupe)).toEqual(["content", "identity", "identity", "identity"])
     expect(entries.map((entry) => entry.eventType)).toEqual([
       "flows.engine.plan-recorded",
       "flows.engine.subgraph-appended",

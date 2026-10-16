@@ -94,7 +94,8 @@ import * as WaitFor from "./WaitFor.ts"
  * `implementation_version_mismatch` names a declaration and registry that
  * disagree. Both are preflight failures, before action dispatch.
  * `join_mismatch` names a race, any, or quorum whose journaled decision this
- * plan's members can no longer reproduce.
+ * plan's members can no longer reproduce. `plan_changed` refuses a durable
+ * resume whose rebuilt graph differs from its first recorded plan.
  *
  * @category errors
  * @since 0.1.0
@@ -112,6 +113,7 @@ export class InterpreterError extends Schema.TaggedError<InterpreterError>()(
       "unsupported_call",
       "missing_operation",
       "node_record_too_large",
+      "plan_changed",
       "join_mismatch"
     ]),
     flow: Schema.String,
@@ -266,9 +268,22 @@ const planPages = (
 ): Effect.Effect<
   ReadonlyArray<NodeRecord.PlanRecorded | NodeRecord.SubgraphAppended>,
   InterpreterError,
-  FlowInstance
+  FlowInstance | Crypto.Crypto
 > =>
   Effect.gen(function*() {
+    const identity = yield* StepKey.content({
+      body: { flow, nodes: Graph.drafts(graph), edges: Graph.edges(graph) },
+      inputs: {},
+      layers: [],
+      capabilities: {}
+    }).pipe(Effect.mapError((cause) =>
+      new InterpreterError({
+        code: "incomplete_graph",
+        flow,
+        node: "root",
+        message: `Cannot identify recorded plan: ${String(cause)}`
+      })
+    ))
     const incoming = new Map<string, Array<NodeRecord.EdgeSummary>>()
     let edgeCount = 0
     for (const edge of Graph.edges(graph)) {
@@ -288,7 +303,7 @@ const planPages = (
       count: number
     ): NodeRecord.PlanRecorded | NodeRecord.SubgraphAppended => ({
       ...(index === 0
-        ? { _tag: "PlanRecorded" as const, nodeCount: graphNodes.length }
+        ? { _tag: "PlanRecorded" as const, nodeCount: graphNodes.length, digest: identity }
         : { _tag: "SubgraphAppended" as const }),
       sourceId: `plan/0/${index}`,
       flow,

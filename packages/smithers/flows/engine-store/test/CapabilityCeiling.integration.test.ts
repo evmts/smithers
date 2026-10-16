@@ -330,7 +330,8 @@ describe("declared capability ceilings at the guarded host boundary", () => {
         payload: { name: Schema.String },
         success: Schema.Boolean,
         capabilities: [],
-        body: ({ name }) => Wait.call({}).pipe(Node.bindPlanned(() => Write.call({ name })))
+        body: ({ name }) =>
+          Wait.call({}).pipe(Node.bindPlanned(Node.capture({ name, write: Write.name }, () => Write.call({ name }))))
       })
       const layer = Layer.mergeAll(
         Wait.toLayer(() => DurableDeferred.await(gate)),
@@ -376,7 +377,7 @@ describe("declared capability ceilings at the guarded host boundary", () => {
     it(
       legacy
         ? "fails closed when a reopened legacy SQLite row lacks capabilityCeilings"
-        : "retains the admitted ceiling after SQLite restart and wider re-registration",
+        : "refuses a widened plan after SQLite restart before dispatch",
       async () => {
         const root = await mkdtemp(join(tmpdir(), "smithers-capability-restart-"))
         try {
@@ -514,8 +515,10 @@ describe("declared capability ceilings at the guarded host boundary", () => {
             )
             expect(status).toBe("failed")
           } else {
-            expect(await Effect.runPromise(phase("ceiling-after-restart", true))).toBe(false)
-            expect(dispatches).toBeGreaterThan(beforeResume)
+            const exit = await Effect.runPromiseExit(phase("ceiling-after-restart", true))
+            expect(Exit.isFailure(exit)).toBe(true)
+            expect(String(exit)).toContain("The rebuilt plan differs")
+            expect(dispatches).toBe(beforeResume)
           }
           expect(existsSync(join(root, "restarted.txt"))).toBe(false)
         } finally {

@@ -12,7 +12,7 @@ import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
 import { Sha256 } from "@smthrs/crypto"
 import type { DurableWriter } from "@smthrs/database/DurableWriter"
 import { FlowEngine } from "@smthrs/engine"
-import { Action, Flow, FlowRuntime } from "@smthrs/flow"
+import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { FileBoundary } from "@smthrs/flow/FileBoundary"
 import { Journal } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
@@ -510,7 +510,20 @@ const makeWithEngineJj = (
             }, record),
             owner
           ).pipe(
-            Effect.catch((error) => error.code === "fence_lost" ? Effect.interrupt : Effect.die(error)),
+            Effect.catch((error) =>
+              error.code === "fence_lost" ?
+                Effect.interrupt :
+                error.code === "idempotency_conflict" && record._tag === "PlanRecorded"
+                ? Effect.fail(
+                  new Interpreter.InterpreterError({
+                    code: "plan_changed",
+                    flow: record.flow,
+                    node: "root",
+                    message: "The rebuilt plan differs from the recorded plan; start a new execution"
+                  })
+                )
+                : Effect.die(error)
+            ),
             Effect.asVoid
           )),
       actionReplayKey: Effect.fnUntraced(function*(derive) {

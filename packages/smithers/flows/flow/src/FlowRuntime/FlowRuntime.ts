@@ -33,6 +33,7 @@ import type * as Action from "../Action/index.ts"
 import type { DurableClock } from "../DurableClock.ts"
 import type * as DurableDeferred from "../DurableDeferred.ts"
 import type * as Flow from "../Flow/index.ts"
+import type { InterpreterError } from "../Interpreter.ts"
 import type * as RetryPolicy from "../RetryPolicy.ts"
 import type { CancelRequestFailed } from "./CancelRequestFailed.ts"
 import type { FlowCycleDetected } from "./FlowCycleDetected.ts"
@@ -312,7 +313,7 @@ export class FlowRuntime extends Context.Service<
      * first walk wrote instead of doubling every node.
      */
     readonly recordNode?:
-      | ((record: NodeRecord.NodeRecord) => Effect.Effect<void, never, FlowInstance>)
+      | ((record: NodeRecord.NodeRecord) => Effect.Effect<void, InterpreterError, FlowInstance>)
       | undefined
 
     /**

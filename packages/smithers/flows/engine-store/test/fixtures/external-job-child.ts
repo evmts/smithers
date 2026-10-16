@@ -27,13 +27,13 @@ const Caller = Flow.make("ExternalJob/Caller", {
   payload: {},
   success: Schema.String,
   error: Job.errorSchema,
-  body: () => Job.call({})
+  body: Node.capture({ job: Job._tag }, () => Job.call({}))
 })
 const Parent = Flow.make("ExternalJob/Parent", {
   payload: {},
   success: Schema.Struct({ first: Schema.String, second: Schema.String }),
   error: Job.errorSchema,
-  body: () => Node.all({ first: Job.call({}), second: Job.call({}) })
+  body: Node.capture({ job: Job._tag }, () => Node.all({ first: Job.call({}), second: Job.call({}) }))
 })
 const log = (kind: string, key: string) =>
   Effect.promise(() => appendFile(join(directory, "calls"), `${kind}:${key}\n`))

@@ -940,10 +940,18 @@ describe("HumanTask gives up", () => {
             if (Exit.isFailure(result.exit)) {
               expect(result.exit.cause.reasons[0]).toMatchObject({
                 error: {
-                  _tag: "@smthrs/flow/HumanTaskFailed",
-                  code: "request_invalid",
-                  task: "release",
-                  attempts: 0
+                  ...(Number.isFinite(timeoutMs) ?
+                    {
+                      _tag: "@smthrs/flow/HumanTaskFailed",
+                      code: "request_invalid",
+                      task: "release",
+                      attempts: 0
+                    } :
+                    {
+                      _tag: "@smthrs/flow/InterpreterError",
+                      code: "incomplete_graph",
+                      message: expect.stringContaining("Cannot identify recorded plan")
+                    })
                 }
               })
             }

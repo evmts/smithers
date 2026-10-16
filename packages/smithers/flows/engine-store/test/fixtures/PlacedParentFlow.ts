@@ -13,5 +13,9 @@ import { RemoteWrite } from "./RemoteCeilingFlow.ts"
 export const PlacedParent = Flow.make("cross-host-recovery/parent", {
   payload: { name: Schema.String, waitMs: Schema.Number },
   success: Schema.String,
-  body: (payload) => RemoteWrite.child(payload).pipe(Node.map((result) => `parent saw ${result}`))
+  body: Node.capture(
+    { remote: RemoteWrite._tag },
+    (payload: { readonly name: string; readonly waitMs: number }) =>
+      RemoteWrite.child(payload).pipe(Node.map(Node.capture({}, (result: string) => `parent saw ${result}`)))
+  )
 })

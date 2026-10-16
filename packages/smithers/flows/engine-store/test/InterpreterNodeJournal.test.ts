@@ -11,7 +11,7 @@ import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Action, DurableDeferred, Flow, FlowRuntime, Graph, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
-import { Node } from "@smthrs/plan"
+import { Node, Planned } from "@smthrs/plan"
 import { RunStore } from "@smthrs/run-store"
 import { Effect, Exit, Layer, Schema, Scope } from "effect"
 import { TestClock } from "effect/testing"
@@ -50,8 +50,10 @@ const Chain = Flow.make("node-journal/chain", {
   success: Schema.Number,
   body: ({ path }) =>
     Read.call({ path }).pipe(
-      Node.bindPlanned((value) => Double.call({ value })),
-      Node.map((value) => value + 1)
+      Node.bindPlanned(
+        Node.capture({ doubleVersion: "1" }, (value: Planned.Planned<number>) => Double.call({ value }))
+      ),
+      Node.map(Node.capture({}, (value: number) => value + 1))
     )
 })
 
@@ -67,8 +69,10 @@ const Parking = Flow.make("node-journal/parking", {
   success: Schema.Number,
   body: () =>
     Ask.call({}).pipe(
-      Node.bindPlanned((value) => Double.call({ value })),
-      Node.map((value) => value + 1)
+      Node.bindPlanned(
+        Node.capture({ doubleVersion: "1" }, (value: Planned.Planned<number>) => Double.call({ value }))
+      ),
+      Node.map(Node.capture({}, (value: number) => value + 1))
     )
 })
 
@@ -451,7 +455,12 @@ const Beside = Flow.make("node-journal/beside", {
   success: Schema.Number,
   body: ({ path }) =>
     Node.all({ ready: Read.call({ path }), parked: Ask.call({}) }).pipe(
-      Node.map((members: { readonly ready: number; readonly parked: number }) => members.ready + members.parked)
+      Node.map(
+        Node.capture(
+          {},
+          (members: { readonly ready: number; readonly parked: number }) => members.ready + members.parked
+        )
+      )
     )
 })
 
@@ -538,7 +547,12 @@ it("keeps every Unicode plan page within the encoded entry budget exactly once a
         members[`界😀${"語".repeat(12)}-${index}`] = Node.succeed(index)
       }
       return Node.all({ values: Node.all(members), gate: Ask.call({}) }).pipe(
-        Node.map(({ values }) => Object.keys(values).length)
+        Node.map(
+          Node.capture(
+            {},
+            ({ values }: { readonly values: Readonly<Record<string, number>> }) => Object.keys(values).length
+          )
+        )
       )
     }
   })
@@ -634,7 +648,12 @@ it("pages a thousand-way fan-in through the durable envelope, once across resume
       const members: Record<string, Node.Node<number>> = {}
       for (let index = 0; index < 1000; index++) members[`page-of-a-caller-sized-list-${index}`] = Node.succeed(index)
       return Node.all({ values: Node.all(members), gate: Ask.call({}) }).pipe(
-        Node.map(({ values }) => Object.keys(values).length)
+        Node.map(
+          Node.capture(
+            {},
+            ({ values }: { readonly values: Readonly<Record<string, number>> }) => Object.keys(values).length
+          )
+        )
       )
     }
   })
@@ -852,3 +871,87 @@ const waitForStatus = (runId: string, status: RunStore.RunStatus) =>
     RunStore.RunStore,
     (runs) => TestDatabase.until(Effect.map(runs.get(runId), (row) => row.status === status))
   )
+
+it.each(["edited", "unchanged", "legacy"])(
+  "checks %s plan identity after reopening SQLite before resumed dispatch",
+  async (scenario) => {
+    const root = await mkdtemp(join(tmpdir(), "smithers-changed-plan-"))
+    const db = join(root, "state.sqlite")
+    let dispatched = 0
+    const original = (changed = false) => {
+      const mapper = changed
+        ? Node.capture({}, (value: number) => value + 2)
+        : Node.capture({}, (value: number) => value + 1)
+      return Flow.make("node-journal/edited", {
+        payload: {},
+        success: Schema.Number,
+        body: Node.capture(
+          { ask: Ask.name, mapper: Node.functionIdentity(mapper) },
+          () => Ask.call({}).pipe(Node.map(mapper))
+        )
+      })
+    }
+    const edited = original(true)
+    const drive = (flow: ReturnType<typeof original>, first: boolean) =>
+      Effect.scoped(Effect.gen(function*() {
+        const journal = yield* Journal.Journal
+        const recording = first && scenario === "legacy" ?
+          {
+            ...journal,
+            emitDurable: (event: JournalEvent.Input, owner: Parameters<typeof journal.emitDurable>[1]) => {
+              if (event.eventType !== "flows.engine.plan-recorded") return journal.emitDurable(event, owner)
+              const legacy = JSON.parse(JSON.stringify(event)) as JournalEvent.Input
+              delete (legacy.payload as Record<string, unknown>)["digest"]
+              return journal.emitDurable(legacy, owner)
+            }
+          } :
+          journal
+        const engine = yield* EngineStore.make({
+          owner: { hostId: "changed-plan" },
+          journalSource: "changed-plan",
+          isAlive: () => Effect.succeed(false)
+        }).pipe(Effect.provideService(Journal.Journal, recording))
+        const layer = Layer.mergeAll(
+          Ask.toLayer(() =>
+            Effect.sync(() => {
+              dispatched++
+            }).pipe(Effect.andThen(DurableDeferred.await(gate)))
+          ),
+          Interpreter.layer(flow)
+        ).pipe(
+          Layer.provideMerge(Action.layerImplementations),
+          Layer.provideMerge(Layer.succeed(FlowRuntime.FlowRuntime, engine))
+        )
+        return yield* Effect.gen(function*() {
+          if (first) {
+            yield* flow.execute({}, { executionId: "edited-run", discard: true })
+            yield* waitForStatus("edited-run", "suspended")
+          } else {
+            yield* engine.deferredDone(gate, {
+              flowName: flow._tag,
+              executionId: "edited-run",
+              deferredName: gate.name,
+              exit: Exit.succeed(4)
+            })
+            const runs = yield* RunStore.RunStore
+            const settled = yield* settledRun(runs, "edited-run")
+            expect(settled.status).toBe(scenario === "unchanged" ? "completed" : "failed")
+            const rows = yield* nodeRows("edited-run")
+            expect(rows.filter((row) => row.eventType === "flows.engine.plan-recorded")).toHaveLength(1)
+          }
+        }).pipe(Effect.provide(layer))
+      })).pipe(
+        Effect.provide(jj),
+        Effect.provide(StepBoundary.layerTest()),
+        Effect.provide(TestStores.layerAt(db))
+      )
+    try {
+      await runPromise(drive(original(), true))
+      const before = dispatched
+      await runPromise(drive(scenario === "edited" ? edited : original(), false))
+      expect(dispatched).toBe(before + (scenario === "unchanged" ? 1 : 0))
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  }
+)

@@ -231,19 +231,21 @@ export const make = <
     success: Schema.Never,
     error: ExternalJobTimedOut
   })
-  const launched = (job: State | Action.PlannedPayload<State>) =>
-    Start.call(job as Action.PlannedPayload<State>).pipe(
-      Node.bindPlanned((handle) =>
-        observe.to({
-          input: job.input,
-          origin: job.origin,
-          startedAt: job.startedAt,
-          generation: job.generation,
-          probe: job.probe,
-          handle
-        })
+  const launched = Node.capture(
+    captures,
+    (job: State | Action.PlannedPayload<State>) =>
+      Start.call(job as Action.PlannedPayload<State>).pipe(
+        Node.bindPlanned(Node.capture(captures, (handle: Action.PlannedPayload<H["Type"]>) =>
+          observe.to({
+            input: job.input,
+            origin: job.origin,
+            startedAt: job.startedAt,
+            generation: job.generation,
+            probe: job.probe,
+            handle
+          })))
       )
-    )
+  )
   // Pin the declared union through recursive bodies: cross-package inference
   // otherwise narrows the error schema to the provider-only generic E.
   const launch: Flow.Flow<string, typeof state, A, typeof failure, Action.Requirement<string>> = Flow.make<
@@ -294,26 +296,29 @@ export const make = <
       body: Node.capture(
         captures,
         (job) =>
-          Probe.call(job).pipe(Node.bindPlanned((result) =>
-            Node.succeed(result).pipe(Node.branch({
-              if: Node.capture(captures, (value) => value.timedOut),
-              then: () => Cancel.call(job).pipe(Node.andThen(Fail.call({ job, timedOut: true }))),
-              else: () =>
-                Node.succeed(result.status).pipe(Node.branch({
-                  if: Node.capture(captures, (status) => status._tag === "Running"),
-                  then: () => Sleep.action.call({ until: result.wakeAt }).pipe(Node.andThen(observe.to(result.next))),
-                  else: (status) =>
-                    Node.succeed(status).pipe(Node.branch({
-                      if: Node.capture(captures, (value) => value._tag === "Lost"),
-                      then: () => recover(job, result),
-                      else: (exited) =>
-                        Collect.call({ job, exited: exited as unknown as Exited }).pipe(
-                          Node.catch({ error: Again, onFailure: () => recover(job, result) })
-                        )
-                    }))
-                }))
-            }))
-          ))
+          Probe.call(job).pipe(
+            Node.bindPlanned(Node.capture(captures, (result: Action.PlannedPayload<typeof Probe.successSchema.Type>) =>
+              Node.succeed(result).pipe(Node.branch({
+                if: Node.capture(captures, (value) =>
+                  value.timedOut),
+                then: () =>
+                  Cancel.call(job).pipe(Node.andThen(Fail.call({ job, timedOut: true }))),
+                else: () =>
+                  Node.succeed(result.status).pipe(Node.branch({
+                    if: Node.capture(captures, (status) => status._tag === "Running"),
+                    then: () => Sleep.action.call({ until: result.wakeAt }).pipe(Node.andThen(observe.to(result.next))),
+                    else: (status) =>
+                      Node.succeed(status).pipe(Node.branch({
+                        if: Node.capture(captures, (value) => value._tag === "Lost"),
+                        then: () => recover(job, result),
+                        else: (exited) =>
+                          Collect.call({ job, exited: exited as unknown as Exited }).pipe(
+                            Node.catch({ error: Schema.Struct(Again.fields), onFailure: () => recover(job, result) })
+                          )
+                      }))
+                  }))
+              }))))
+          )
       )
     }
   )

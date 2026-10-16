@@ -275,8 +275,10 @@ export const entry = (scope: Scope, record: FlowRuntime.NodeRecord): JournalEven
   }
   switch (record._tag) {
     case "PlanRecorded":
-      return JournalRecords.planRecorded(options, {
+      // A plan pins identity; unlike settlement observations, its content cannot change.
+      return JournalRecords.planRecorded({ ...options, dedupe: "content" }, {
         flow: record.flow,
+        ...(record.digest === undefined ? {} : { digest: record.digest }),
         generation: record.generation,
         // The node COUNT of the whole graph, which is what this field has
         // always meant; the node LIST rides beside it as `graph`.

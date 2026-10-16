@@ -375,9 +375,17 @@ describe("Sleep refusals", () => {
       for (const millis of [Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NaN, -1]) {
         expect(yield* refusal(Sleep.action.call({ millis }))).toMatchObject({
           error: {
-            _tag: "@smthrs/flow/SleepRequestInvalid",
-            code: "invalid_deadline",
-            message: expect.stringContaining(`millis ${millis}`)
+            ...(Number.isFinite(millis) ?
+              {
+                _tag: "@smthrs/flow/SleepRequestInvalid",
+                code: "invalid_deadline",
+                message: expect.stringContaining(`millis ${millis}`)
+              } :
+              {
+                _tag: "@smthrs/flow/InterpreterError",
+                code: "incomplete_graph",
+                message: expect.stringContaining("Cannot identify recorded plan")
+              })
           }
         })
       }
@@ -388,9 +396,9 @@ describe("Sleep refusals", () => {
       for (const until of [Number.NaN, Number.POSITIVE_INFINITY]) {
         expect(yield* refusal(Sleep.action.call({ until }))).toMatchObject({
           error: {
-            _tag: "@smthrs/flow/SleepRequestInvalid",
-            code: "invalid_deadline",
-            message: expect.stringContaining(`until ${until}`)
+            _tag: "@smthrs/flow/InterpreterError",
+            code: "incomplete_graph",
+            message: expect.stringContaining("Cannot identify recorded plan")
           }
         })
       }

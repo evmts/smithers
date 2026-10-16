@@ -309,6 +309,7 @@ export type Requirements =
 export class SchedulerError extends Schema.TaggedError<SchedulerError>()("@smthrs/engine-store/SchedulerError", {
   code: Schema.Literals([
     "invalid_plan",
+    "plan_changed",
     "boundary_unavailable",
     "key_uncomputable",
     "elaboration_failed",
@@ -546,6 +547,14 @@ export const make = (options: Options): Service => {
           const recorded = yield* store.record(plan, now).pipe(
             Effect.mapError(storeFailure("could not record the plan"))
           )
+          if (recorded._tag === "Conflict") {
+            return yield* Effect.fail(
+              new SchedulerError({
+                code: "plan_changed",
+                message: "The plan ID already records a different plan; start a new plan"
+              })
+            )
+          }
           yield* emit(JournalRecords.planRecorded(source(`plan/${plan.planId}`), {
             planId: plan.planId,
             flow: plan.flow,

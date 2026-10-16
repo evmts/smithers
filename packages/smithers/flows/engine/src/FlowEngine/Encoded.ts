@@ -24,7 +24,7 @@
  * @since 0.1.0
  */
 
-import type { Action, DurableClock, DurableDeferred, Flow, FlowRuntime } from "@smthrs/flow"
+import type { Action, DurableClock, DurableDeferred, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import type * as Crypto from "effect/Crypto"
 import type * as Effect from "effect/Effect"
 import type * as Exit from "effect/Exit"
@@ -323,7 +323,7 @@ export interface Encoded {
    * observation.
    */
   readonly recordNode?:
-    | ((record: FlowRuntime.NodeRecord) => Effect.Effect<void, never, FlowRuntime.FlowInstance>)
+    | ((record: FlowRuntime.NodeRecord) => Effect.Effect<void, Interpreter.InterpreterError, FlowRuntime.FlowInstance>)
     | undefined
   /** Deterministic UTF-8 upper bound including the store's journal envelope. */
   readonly nodeRecordBytes?:
