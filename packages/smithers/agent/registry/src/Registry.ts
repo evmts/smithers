@@ -17,6 +17,8 @@ import {
   type FlowBody,
   FlowBodyModule,
   FlowDescriptor,
+  projectFlowsDirectory,
+  retiredProjectFlowsDirectory,
   type Source
 } from "./Descriptor.ts"
 import { Discovery, layer as discoveryLayer } from "./Discovery.ts"
@@ -561,23 +563,47 @@ export const layer = (
  */
 export interface ProjectOptions {
   readonly snapshots?: ExecutionSnapshot.Service | undefined
-  /** The project root. `<root>/flows` is scanned for `flow.ts` and `flow.mdx`. */
+  /** The project root. `<root>/.smithers/flows` is scanned for `flow.ts`, `flow.mdx` and `SKILL.md`. */
   readonly root: string
   /** Installed packs, scanned after project flows and checked against `runtimeVersion`. */
   readonly packs?: PackConfig | undefined
 }
 
 /**
+ * The registry source for a project's own flows: `<root>/.smithers/flows`,
+ * path-named and optional, with the retired `<root>/flows` probed for the one
+ * `retired_root` warning. Every host that discovers a project's flows builds
+ * its source here.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const projectSource = (
+  path: { readonly join: (...segments: ReadonlyArray<string>) => string },
+  root: string
+): Source => ({
+  source: "project",
+  root: path.join(root, projectFlowsDirectory),
+  naming: "path",
+  optionalRoot: true,
+  lockfileRoot: root,
+  retiredRoot: path.join(root, retiredProjectFlowsDirectory)
+})
+
+/**
  * Provides a project's refreshable registry using portable discovery.
  *
- * Scans `<root>/flows` first, then installed packs with their provenance,
- * compatibility checks, and local-pack precedence. Project flows shadow pack
- * flows of the same name. Every refresh rescans both sources and packs.
+ * Scans `<root>/.smithers/flows` first, then installed packs with their
+ * provenance, compatibility checks, and local-pack precedence. Project flows
+ * shadow pack flows of the same name. Every refresh rescans both sources and
+ * packs. Flows left in a root `flows/` never load; the scan reports one
+ * `retired_root` warning instead.
  *
- * The project source remains configured when `flows/` is absent. Each scan
- * treats that absence as empty, so creating the first flow or removing and
- * recreating the directory is reflected on refresh. Access errors still fail,
- * and a missing declared pack directory remains an `invalid_pack` failure.
+ * The project source remains configured when `.smithers/flows/` is absent.
+ * Each scan treats that absence as empty, so creating the first flow or
+ * removing and recreating the directory is reflected on refresh. Access errors
+ * still fail, and a missing declared pack directory remains an `invalid_pack`
+ * failure.
  *
  * @category layers
  * @since 1.0.0-rc.0
@@ -590,13 +616,7 @@ export const layerProject = (
       const path = yield* Path.Path
       return layer({
         snapshots: options.snapshots,
-        sources: [{
-          source: "project",
-          root: path.join(options.root, "flows"),
-          naming: "path",
-          optionalRoot: true,
-          lockfileRoot: options.root
-        }],
+        sources: [projectSource(path, options.root)],
         ...(options.packs === undefined ? {} : { packs: options.packs })
       }).pipe(Layer.provide(discoveryLayer))
     })

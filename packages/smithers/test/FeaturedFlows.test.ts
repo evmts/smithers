@@ -99,7 +99,20 @@ describe("FeaturedFlows.human", () => {
         "  alpha   Describes alpha.\n" +
         "  lint    Describes lint.\n"
     )
-    expect(FeaturedFlows.human([])).toBe("No flows discovered under flows/.\n")
+    expect(FeaturedFlows.human([])).toBe("No flows discovered under .smithers/flows/.\n")
+  })
+
+  it("prints the retired-root warning after the flows and leaves the rest to doctor", () => {
+    const warnings = [
+      { code: "missing_description", path: "/repo/.smithers/flows/a/flow.mdx", message: "Needs a description." },
+      { code: "retired_root", path: "/repo/flows", message: "Flows in flows/ are not loaded." }
+    ]
+    expect(FeaturedFlows.human([], [], warnings)).toBe(
+      "No flows discovered under .smithers/flows/.\nFlows in flows/ are not loaded.\n"
+    )
+    expect(FeaturedFlows.warningsOf({ _tag: "flows", items: [], warnings })).toEqual(warnings)
+    expect(FeaturedFlows.warningsOf({ _tag: "flows", items: [], warnings: [{ code: 1 }] })).toEqual([])
+    expect(FeaturedFlows.warningsOf({ _tag: "flows", items: [] })).toEqual([])
   })
 
   it("recognizes only a flow page whose items carry an id and a description", () => {
@@ -149,7 +162,7 @@ describe("FeaturedFlows.apps", () => {
     )
     expect(FeaturedFlows.human(items, [])).toBe(FeaturedFlows.human(items))
     expect(FeaturedFlows.human([], apps)).toBe(
-      "No flows discovered under flows/.\napps:\n  Fix an issue  todo.from-issue\n  Review a PR   review\n"
+      "No flows discovered under .smithers/flows/.\napps:\n  Fix an issue  todo.from-issue\n  Review a PR   review\n"
     )
   })
 })

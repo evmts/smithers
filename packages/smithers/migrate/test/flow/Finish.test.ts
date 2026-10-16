@@ -25,7 +25,7 @@ import { join } from "node:path"
 import { copyFixture, fixture, hashTree } from "../fixtures/helpers.ts"
 
 const golden = readFileSync(
-  join(fixture("jsx-single.migrated"), "flows", "simple-workflow", "flow.ts"),
+  join(fixture("jsx-single.migrated"), ".smithers", "flows", "simple-workflow", "flow.ts"),
   "utf8"
 )
 
@@ -104,8 +104,8 @@ describe("MigrateFlow.postconditions", () => {
       const missing = yield* MigrateFlow.postconditions(root, outline)
       expect(missing.find((check) => check.name === "the unit wrote the flow it was planned for")?.ok).toBe(false)
 
-      mkdirSync(join(root, "flows", "simple-workflow"), { recursive: true })
-      writeFileSync(join(root, "flows", "simple-workflow", "flow.ts"), "export default 1\n")
+      mkdirSync(join(root, ".smithers", "flows", "simple-workflow"), { recursive: true })
+      writeFileSync(join(root, ".smithers", "flows", "simple-workflow", "flow.ts"), "export default 1\n")
 
       const written = yield* MigrateFlow.postconditions(root, outline)
       expect(written.every((check) => check.ok)).toBe(true)
@@ -254,11 +254,11 @@ describe("MigrateFlow.finish", () => {
           allowNoVcs: true,
           treeExclude: [".smithers-migrate"]
         })
-        const target = join(root, "flows", "simple-workflow", "flow.ts")
-        mkdirSync(join(root, "flows", "simple-workflow"), { recursive: true })
+        const target = join(root, ".smithers", "flows", "simple-workflow", "flow.ts")
+        mkdirSync(join(root, ".smithers", "flows", "simple-workflow"), { recursive: true })
         writeFileSync(target, generated)
 
-        const verification = yield* Verify.run({ root, commands: { typecheck: [], flowsDir: "flows" } })
+        const verification = yield* Verify.run({ root, commands: { typecheck: [], flowsDir: ".smithers/flows" } })
         expect(verification.typecheck).toEqual([])
         expect(Verify.verdict(verification)).toBe("pass")
         const outcome = yield* MigrateFlow.finish({
@@ -266,7 +266,7 @@ describe("MigrateFlow.finish", () => {
           outline,
           checkpoint,
           runStateRoots: [],
-          result: answered(outline.id, ["flows/simple-workflow/flow.ts"]),
+          result: answered(outline.id, [".smithers/flows/simple-workflow/flow.ts"]),
           verification,
           repairRounds: 0
         })
@@ -277,7 +277,7 @@ describe("MigrateFlow.finish", () => {
             entry.construct === "every flow module's descriptor describes the flow it declares"
           )
         )
-          .toMatchObject({ file: "flows/simple-workflow/flow.ts", reason: expect.stringContaining(reason) })
+          .toMatchObject({ file: ".smithers/flows/simple-workflow/flow.ts", reason: expect.stringContaining(reason) })
         expect(readFileSync(source, "utf8")).toBe(original)
         expect(existsSync(target)).toBe(false)
         expect(existsSync(join(root, ".smithers-migrate", "archive", "simple-workflow.jsx"))).toBe(false)
@@ -300,18 +300,18 @@ describe("MigrateFlow.finish", () => {
         allowNoVcs: true,
         treeExclude: [".smithers-migrate"]
       })
-      const target = join(root, "flows", "simple-workflow", "flow.ts")
-      mkdirSync(join(root, "flows", "simple-workflow"), { recursive: true })
+      const target = join(root, ".smithers", "flows", "simple-workflow", "flow.ts")
+      mkdirSync(join(root, ".smithers", "flows", "simple-workflow"), { recursive: true })
       writeFileSync(target, golden)
 
-      const verification = yield* Verify.run({ root, commands: { typecheck: [], flowsDir: "flows" } })
+      const verification = yield* Verify.run({ root, commands: { typecheck: [], flowsDir: ".smithers/flows" } })
       expect(Verify.verdict(verification)).toBe("pass")
       const outcome = yield* MigrateFlow.finish({
         options: chosen,
         outline,
         checkpoint,
         runStateRoots: [],
-        result: answered(outline.id, ["flows/simple-workflow/flow.ts"]),
+        result: answered(outline.id, [".smithers/flows/simple-workflow/flow.ts"]),
         verification,
         repairRounds: 0
       })
@@ -390,15 +390,15 @@ describe("MigrateFlow.finish", () => {
         runStateRoots,
         treeExclude: [".smithers-migrate", ".flows"]
       })
-      mkdirSync(join(root, "flows", "simple-workflow"), { recursive: true })
-      writeFileSync(join(root, "flows", "simple-workflow", "flow.ts"), golden)
+      mkdirSync(join(root, ".smithers", "flows", "simple-workflow"), { recursive: true })
+      writeFileSync(join(root, ".smithers", "flows", "simple-workflow", "flow.ts"), golden)
 
       const outcome = yield* MigrateFlow.finish({
         options: chosen,
         outline,
         checkpoint,
         runStateRoots,
-        result: answered(outline.id, ["flows/simple-workflow/flow.ts"]),
+        result: answered(outline.id, [".smithers/flows/simple-workflow/flow.ts"]),
         verification: passing,
         repairRounds: 0
       })
@@ -422,8 +422,8 @@ describe("MigrateFlow.finish", () => {
         allowNoVcs: true,
         treeExclude: [".smithers-migrate"]
       }).pipe(Effect.provide(platform))
-      mkdirSync(join(root, "flows", "simple-workflow"), { recursive: true })
-      writeFileSync(join(root, "flows", "simple-workflow", "flow.ts"), golden)
+      mkdirSync(join(root, ".smithers", "flows", "simple-workflow"), { recursive: true })
+      writeFileSync(join(root, ".smithers", "flows", "simple-workflow", "flow.ts"), golden)
       writeFileSync(join(root, "tests", "simple-workflow.test.ts"), "changed outside the unit\n")
       mkdirSync(join(root, "scratch"), { recursive: true })
       writeFileSync(join(root, "scratch", "operator-note.md"), "created while migration ran\n")
@@ -433,7 +433,7 @@ describe("MigrateFlow.finish", () => {
         outline,
         checkpoint,
         runStateRoots: [],
-        result: answered(outline.id, ["flows/simple-workflow/flow.ts"]),
+        result: answered(outline.id, [".smithers/flows/simple-workflow/flow.ts"]),
         verification: {
           ...passing,
           tests: { command: "test", exitCode: 1, durationMs: 1, stdoutTail: "", stderrTail: "failed" }
@@ -470,8 +470,8 @@ describe("MigrateFlow.finish", () => {
 
       // The rewrite the unit was asked for: the committed 1.0 output, which
       // passes every deterministic check, so the archive is what fails.
-      mkdirSync(join(root, "flows", "simple-workflow"), { recursive: true })
-      writeFileSync(join(root, "flows", "simple-workflow", "flow.ts"), golden)
+      mkdirSync(join(root, ".smithers", "flows", "simple-workflow"), { recursive: true })
+      writeFileSync(join(root, ".smithers", "flows", "simple-workflow", "flow.ts"), golden)
       // And the archive directory, occupied by a file, so the first copy the
       // archive tries to write cannot create its parent.
       mkdirSync(join(root, ".smithers-migrate"), { recursive: true })
@@ -483,7 +483,7 @@ describe("MigrateFlow.finish", () => {
           outline,
           checkpoint,
           runStateRoots: [],
-          result: answered(outline.id, ["flows/simple-workflow/flow.ts"]),
+          result: answered(outline.id, [".smithers/flows/simple-workflow/flow.ts"]),
           verification: passing,
           repairRounds: 0
         }).pipe(Effect.provide(platform))
@@ -494,7 +494,7 @@ describe("MigrateFlow.finish", () => {
       // project as the checkpoint found it.
       const after = hashTree(root)
       for (const file of outline.sources) expect([file, after.get(file)]).toEqual([file, before.get(file)])
-      expect(existsSync(join(root, "flows", "simple-workflow", "flow.ts"))).toBe(false)
+      expect(existsSync(join(root, ".smithers", "flows", "simple-workflow", "flow.ts"))).toBe(false)
     }))
 
   it.effect("measures the unit's own time, from its checkpoint", () =>
@@ -557,15 +557,15 @@ describe("MigrateFlow.finish verifies the tree it leaves behind", () => {
       const outline = yield* outlineOf(root, chosen, "workflow:simple-workflow")
       const checkpoint = yield* checkpointed(root, outline)
       const before = hashTree(root)
-      mkdirSync(join(root, "flows", "simple-workflow"), { recursive: true })
-      writeFileSync(join(root, "flows", "simple-workflow", "flow.ts"), golden)
+      mkdirSync(join(root, ".smithers", "flows", "simple-workflow"), { recursive: true })
+      writeFileSync(join(root, ".smithers", "flows", "simple-workflow", "flow.ts"), golden)
 
       const outcome = yield* MigrateFlow.finish({
         options: chosen,
         outline,
         checkpoint,
         runStateRoots: [],
-        result: answered(outline.id, ["flows/simple-workflow/flow.ts"]),
+        result: answered(outline.id, [".smithers/flows/simple-workflow/flow.ts"]),
         verification: passing,
         repairRounds: 0
       }).pipe(Effect.provide(platform))
@@ -591,15 +591,15 @@ describe("MigrateFlow.finish verifies the tree it leaves behind", () => {
       })
       const outline = yield* outlineOf(root, chosen, "workflow:simple-workflow")
       const checkpoint = yield* checkpointed(root, outline)
-      mkdirSync(join(root, "flows", "simple-workflow"), { recursive: true })
-      writeFileSync(join(root, "flows", "simple-workflow", "flow.ts"), golden)
+      mkdirSync(join(root, ".smithers", "flows", "simple-workflow"), { recursive: true })
+      writeFileSync(join(root, ".smithers", "flows", "simple-workflow", "flow.ts"), golden)
 
       const outcome = yield* MigrateFlow.finish({
         options: chosen,
         outline,
         checkpoint,
         runStateRoots: [],
-        result: answered(outline.id, ["flows/simple-workflow/flow.ts"]),
+        result: answered(outline.id, [".smithers/flows/simple-workflow/flow.ts"]),
         verification: {
           ...passing,
           tests: { command: "stale", exitCode: 0, durationMs: 0, stdoutTail: "before", stderrTail: "" }
@@ -629,15 +629,15 @@ describe("MigrateFlow.finish verifies the tree it leaves behind", () => {
       const outline = yield* outlineOf(root, chosen, "workflow:simple-workflow")
       const checkpoint = yield* checkpointed(root, outline)
       const before = hashTree(root)
-      mkdirSync(join(root, "flows", "simple-workflow"), { recursive: true })
-      writeFileSync(join(root, "flows", "simple-workflow", "flow.ts"), golden)
+      mkdirSync(join(root, ".smithers", "flows", "simple-workflow"), { recursive: true })
+      writeFileSync(join(root, ".smithers", "flows", "simple-workflow", "flow.ts"), golden)
 
       const outcome = yield* MigrateFlow.finish({
         options: chosen,
         outline,
         checkpoint,
         runStateRoots: [],
-        result: answered(outline.id, ["flows/simple-workflow/flow.ts"]),
+        result: answered(outline.id, [".smithers/flows/simple-workflow/flow.ts"]),
         verification: passing,
         repairRounds: 0
       }).pipe(Effect.provide(platform))
@@ -672,15 +672,15 @@ describe("MigrateFlow.finish verifies the tree it leaves behind", () => {
         const outline = MigrateFlow.outlines(scanned, chosen).find((entry) => entry.id === "workflow:simple-workflow")!
         expect(MigrateFlow.runStateRoots(scanned)).toContain(".smithers/executions")
         const checkpoint = yield* checkpointed(root, outline, MigrateFlow.runStateRoots(scanned))
-        mkdirSync(join(root, "flows", "simple-workflow"), { recursive: true })
-        writeFileSync(join(root, "flows", "simple-workflow", "flow.ts"), golden)
+        mkdirSync(join(root, ".smithers", "flows", "simple-workflow"), { recursive: true })
+        writeFileSync(join(root, ".smithers", "flows", "simple-workflow", "flow.ts"), golden)
 
         const outcome = yield* MigrateFlow.finish({
           options: chosen,
           outline,
           checkpoint,
           runStateRoots: MigrateFlow.runStateRoots(scanned),
-          result: answered(outline.id, ["flows/simple-workflow/flow.ts"]),
+          result: answered(outline.id, [".smithers/flows/simple-workflow/flow.ts"]),
           verification: passing,
           repairRounds: 0
         }).pipe(Effect.provide(platform))
@@ -760,8 +760,8 @@ describe("MigrateFlow.finish, after the archive has moved the tree", () => {
         .toEqual(["smthrs"])
       expect(scanned.detection.imports.some((entry) => entry.specifier === "@smthrs/ui")).toBe(false)
       const outline = MigrateFlow.outlines(scanned, chosen).find((entry) => entry.id === "project")!
-      mkdirSync(join(root, "flows", "simple-workflow"), { recursive: true })
-      writeFileSync(join(root, "flows", "simple-workflow", "flow.ts"), golden)
+      mkdirSync(join(root, ".smithers", "flows", "simple-workflow"), { recursive: true })
+      writeFileSync(join(root, ".smithers", "flows", "simple-workflow", "flow.ts"), golden)
       const checkpoint = yield* Checkpoint.take({
         root,
         unit: outline.id,
@@ -822,8 +822,8 @@ describe("MigrateFlow.finish, after the archive has moved the tree", () => {
       expect(outline.specifiers.localFacade).toBe(true)
       // The project unit verifies the final tree, discovery included, so the
       // flow the workflow unit would have written is already there.
-      mkdirSync(join(root, "flows", "simple-workflow"), { recursive: true })
-      writeFileSync(join(root, "flows", "simple-workflow", "flow.ts"), golden)
+      mkdirSync(join(root, ".smithers", "flows", "simple-workflow"), { recursive: true })
+      writeFileSync(join(root, ".smithers", "flows", "simple-workflow", "flow.ts"), golden)
       const checkpoint = yield* Checkpoint.take({
         root,
         unit: outline.id,

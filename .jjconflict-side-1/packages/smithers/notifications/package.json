@@ -1,0 +1,199 @@
+{
+  "name": "@smthrs/notifications",
+  "type": "module",
+  "version": "1.0.0-rc.12",
+  "license": "MIT",
+  "smthrs": {
+    "group": "agent"
+  },
+  "description": "Durable notification queue, admission policy, and journal projection for flows",
+  "homepage": "https://github.com/smithersai/smithers",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/smithers/notifications"
+  },
+  "bugs": {
+    "url": "https://github.com/smithersai/smithers/issues"
+  },
+  "tags": [
+    "typescript",
+    "effect",
+    "journal",
+    "durability"
+  ],
+  "keywords": [
+    "typescript",
+    "effect",
+    "journal",
+    "durability"
+  ],
+  "engines": {
+    "node": ">=26.4.0"
+  },
+  "sideEffects": [],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null,
+    "./*/index": null,
+    "./Alerts": "./src/Alerts.ts",
+    "./Notification": "./src/Notification.ts",
+    "./NotificationEvent": "./src/NotificationEvent.ts",
+    "./NotificationQueue": "./src/NotificationQueue.ts",
+    "./NotificationState": "./src/NotificationState.ts",
+    "./Projection": "./src/Projection.ts",
+    "./SteerPayload": "./src/SteerPayload.ts",
+    "./index": "./src/index.ts"
+  },
+  "files": [
+    "src/**/*.ts",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/package.json",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next",
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./internal/*": null,
+      "./*/index": null,
+      "./Alerts": {
+        "import": {
+          "types": "./dist/esm/Alerts.d.ts",
+          "default": "./dist/esm/Alerts.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Alerts.d.ts",
+          "default": "./dist/cjs/Alerts.js"
+        }
+      },
+      "./Notification": {
+        "import": {
+          "types": "./dist/esm/Notification.d.ts",
+          "default": "./dist/esm/Notification.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Notification.d.ts",
+          "default": "./dist/cjs/Notification.js"
+        }
+      },
+      "./NotificationEvent": {
+        "import": {
+          "types": "./dist/esm/NotificationEvent.d.ts",
+          "default": "./dist/esm/NotificationEvent.js"
+        },
+        "require": {
+          "types": "./dist/cjs/NotificationEvent.d.ts",
+          "default": "./dist/cjs/NotificationEvent.js"
+        }
+      },
+      "./NotificationQueue": {
+        "import": {
+          "types": "./dist/esm/NotificationQueue.d.ts",
+          "default": "./dist/esm/NotificationQueue.js"
+        },
+        "require": {
+          "types": "./dist/cjs/NotificationQueue.d.ts",
+          "default": "./dist/cjs/NotificationQueue.js"
+        }
+      },
+      "./NotificationState": {
+        "import": {
+          "types": "./dist/esm/NotificationState.d.ts",
+          "default": "./dist/esm/NotificationState.js"
+        },
+        "require": {
+          "types": "./dist/cjs/NotificationState.d.ts",
+          "default": "./dist/cjs/NotificationState.js"
+        }
+      },
+      "./Projection": {
+        "import": {
+          "types": "./dist/esm/Projection.d.ts",
+          "default": "./dist/esm/Projection.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Projection.d.ts",
+          "default": "./dist/cjs/Projection.js"
+        }
+      },
+      "./SteerPayload": {
+        "import": {
+          "types": "./dist/esm/SteerPayload.d.ts",
+          "default": "./dist/esm/SteerPayload.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SteerPayload.d.ts",
+          "default": "./dist/cjs/SteerPayload.js"
+        }
+      },
+      "./index": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint src --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "circular": "node scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "vitest --coverage"
+  },
+  "dependencies": {
+    "@smthrs/canonical": "1.0.0-rc.12",
+    "@smthrs/crypto": "1.0.0-rc.12",
+    "@smthrs/journal": "1.0.0-rc.12"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@effect/vitest": "4.0.4",
+    "@eslint/js": "9.39.5",
+    "@smthrs/database": "1.0.0-rc.12",
+    "@types/node": "26.4.1",
+    "@vitest/coverage-v8": "5.0.0",
+    "dprint": "0.57.1",
+    "effect": "4.0.4",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "madge": "8.0.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0",
+    "fast-check": "4.9.0"
+  },
+  "peerDependencies": {
+    "effect": "^4.0.4"
+  }
+}

@@ -26,7 +26,7 @@ describe("a module's exported implementation layer", () => {
   it("starts a real CLI flow, writes via a real child, and reports completed output", async () => {
     const root = await realpath(await mkdtemp(join(tmpdir(), "smithers-cli-module-layer-")))
     try {
-      await cp(fixture, join(root, "flows"), { recursive: true })
+      await cp(fixture, join(root, ".smithers", "flows"), { recursive: true })
       await mkdir(join(root, ".flows"))
       await symlink(nodeModules, join(root, "node_modules"), "dir")
       const output = join(root, "result.txt")

@@ -1,0 +1,480 @@
+{
+  "name": "@smthrs/engine-store",
+  "type": "module",
+  "version": "1.0.0-rc.12",
+  "license": "MIT",
+  "smthrs": {
+    "group": "engine"
+  },
+  "description": "Effect services for durable engine action persistence and replay boundaries",
+  "homepage": "https://github.com/smithersai/smithers",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/smithers/flows/engine-store"
+  },
+  "bugs": {
+    "url": "https://github.com/smithersai/smithers/issues"
+  },
+  "tags": [
+    "typescript",
+    "effect",
+    "journal",
+    "durability"
+  ],
+  "keywords": [
+    "typescript",
+    "effect",
+    "journal",
+    "durability"
+  ],
+  "engines": {
+    "node": ">=26.4.0"
+  },
+  "sideEffects": [],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null,
+    "./migrations/*": null,
+    "./*/index": null,
+    "./ArtifactGc": "./src/ArtifactGc.ts",
+    "./ArtifactSync": "./src/ArtifactSync.ts",
+    "./CacheSync": "./src/CacheSync.ts",
+    "./DisasterRecovery": "./src/DisasterRecovery.ts",
+    "./DurableEngineState": "./src/DurableEngineState.ts",
+    "./EngineStore": "./src/EngineStore.ts",
+    "./EngineStoreMetrics": "./src/EngineStoreMetrics.ts",
+    "./Errors": "./src/Errors.ts",
+    "./ExecutionSnapshot": "./src/ExecutionSnapshot.ts",
+    "./RunChangeFeed": "./src/RunChangeFeed.ts",
+    "./Inconsistency": "./src/Inconsistency.ts",
+    "./Migrations": "./src/Migrations.ts",
+    "./OwnerIdentity": "./src/OwnerIdentity.ts",
+    "./PlanScheduler": "./src/PlanScheduler.ts",
+    "./PlanInputStore": "./src/PlanInputStore.ts",
+    "./PlanMergeStore": "./src/PlanMergeStore.ts",
+    "./Reconciliation": "./src/Reconciliation.ts",
+    "./ReplayOnly": "./src/ReplayOnly.ts",
+    "./Retention": "./src/Retention.ts",
+    "./RunCatalogRead": "./src/RunCatalogRead.ts",
+    "./RunState": "./src/RunState.ts",
+    "./Selection": "./src/Selection.ts",
+    "./SelectionStore": "./src/SelectionStore.ts",
+    "./StepBoundary": "./src/StepBoundary.ts",
+    "./DeferredClockFold": "./src/DeferredClockFold.ts",
+    "./StepCacheFold": "./src/StepCacheFold.ts",
+    "./StepSandbox": "./src/StepSandbox.ts",
+    "./WakeBus": "./src/WakeBus.ts",
+    "./WorkspaceSandbox": "./src/WorkspaceSandbox.ts",
+    "./index": "./src/index.ts",
+    "./test/TestStores": "./src/test/TestStores.ts",
+    "./EventTypes": "./src/EventTypes.ts"
+  },
+  "files": [
+    "src/**/*.ts",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/package.json",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next",
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./internal/*": null,
+      "./migrations/*": null,
+      "./*/index": null,
+      "./ArtifactGc": {
+        "import": {
+          "types": "./dist/esm/ArtifactGc.d.ts",
+          "default": "./dist/esm/ArtifactGc.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ArtifactGc.d.ts",
+          "default": "./dist/cjs/ArtifactGc.js"
+        }
+      },
+      "./ArtifactSync": {
+        "import": {
+          "types": "./dist/esm/ArtifactSync.d.ts",
+          "default": "./dist/esm/ArtifactSync.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ArtifactSync.d.ts",
+          "default": "./dist/cjs/ArtifactSync.js"
+        }
+      },
+      "./CacheSync": {
+        "import": {
+          "types": "./dist/esm/CacheSync.d.ts",
+          "default": "./dist/esm/CacheSync.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CacheSync.d.ts",
+          "default": "./dist/cjs/CacheSync.js"
+        }
+      },
+      "./DisasterRecovery": {
+        "import": {
+          "types": "./dist/esm/DisasterRecovery.d.ts",
+          "default": "./dist/esm/DisasterRecovery.js"
+        },
+        "require": {
+          "types": "./dist/cjs/DisasterRecovery.d.ts",
+          "default": "./dist/cjs/DisasterRecovery.js"
+        }
+      },
+      "./DurableEngineState": {
+        "import": {
+          "types": "./dist/esm/DurableEngineState.d.ts",
+          "default": "./dist/esm/DurableEngineState.js"
+        },
+        "require": {
+          "types": "./dist/cjs/DurableEngineState.d.ts",
+          "default": "./dist/cjs/DurableEngineState.js"
+        }
+      },
+      "./EngineStore": {
+        "import": {
+          "types": "./dist/esm/EngineStore.d.ts",
+          "default": "./dist/esm/EngineStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/EngineStore.d.ts",
+          "default": "./dist/cjs/EngineStore.js"
+        }
+      },
+      "./EngineStoreMetrics": {
+        "import": {
+          "types": "./dist/esm/EngineStoreMetrics.d.ts",
+          "default": "./dist/esm/EngineStoreMetrics.js"
+        },
+        "require": {
+          "types": "./dist/cjs/EngineStoreMetrics.d.ts",
+          "default": "./dist/cjs/EngineStoreMetrics.js"
+        }
+      },
+      "./Errors": {
+        "import": {
+          "types": "./dist/esm/Errors.d.ts",
+          "default": "./dist/esm/Errors.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Errors.d.ts",
+          "default": "./dist/cjs/Errors.js"
+        }
+      },
+      "./ExecutionSnapshot": {
+        "import": {
+          "types": "./dist/esm/ExecutionSnapshot.d.ts",
+          "default": "./dist/esm/ExecutionSnapshot.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ExecutionSnapshot.d.ts",
+          "default": "./dist/cjs/ExecutionSnapshot.js"
+        }
+      },
+      "./RunChangeFeed": {
+        "import": {
+          "types": "./dist/esm/RunChangeFeed.d.ts",
+          "default": "./dist/esm/RunChangeFeed.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RunChangeFeed.d.ts",
+          "default": "./dist/cjs/RunChangeFeed.js"
+        }
+      },
+      "./Inconsistency": {
+        "import": {
+          "types": "./dist/esm/Inconsistency.d.ts",
+          "default": "./dist/esm/Inconsistency.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Inconsistency.d.ts",
+          "default": "./dist/cjs/Inconsistency.js"
+        }
+      },
+      "./Migrations": {
+        "import": {
+          "types": "./dist/esm/Migrations.d.ts",
+          "default": "./dist/esm/Migrations.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Migrations.d.ts",
+          "default": "./dist/cjs/Migrations.js"
+        }
+      },
+      "./OwnerIdentity": {
+        "import": {
+          "types": "./dist/esm/OwnerIdentity.d.ts",
+          "default": "./dist/esm/OwnerIdentity.js"
+        },
+        "require": {
+          "types": "./dist/cjs/OwnerIdentity.d.ts",
+          "default": "./dist/cjs/OwnerIdentity.js"
+        }
+      },
+      "./PlanScheduler": {
+        "import": {
+          "types": "./dist/esm/PlanScheduler.d.ts",
+          "default": "./dist/esm/PlanScheduler.js"
+        },
+        "require": {
+          "types": "./dist/cjs/PlanScheduler.d.ts",
+          "default": "./dist/cjs/PlanScheduler.js"
+        }
+      },
+      "./PlanInputStore": {
+        "import": {
+          "types": "./dist/esm/PlanInputStore.d.ts",
+          "default": "./dist/esm/PlanInputStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/PlanInputStore.d.ts",
+          "default": "./dist/cjs/PlanInputStore.js"
+        }
+      },
+      "./PlanMergeStore": {
+        "import": {
+          "types": "./dist/esm/PlanMergeStore.d.ts",
+          "default": "./dist/esm/PlanMergeStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/PlanMergeStore.d.ts",
+          "default": "./dist/cjs/PlanMergeStore.js"
+        }
+      },
+      "./ReplayOnly": {
+        "import": {
+          "types": "./dist/esm/ReplayOnly.d.ts",
+          "default": "./dist/esm/ReplayOnly.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ReplayOnly.d.ts",
+          "default": "./dist/cjs/ReplayOnly.js"
+        }
+      },
+      "./Reconciliation": {
+        "import": {
+          "types": "./dist/esm/Reconciliation.d.ts",
+          "default": "./dist/esm/Reconciliation.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Reconciliation.d.ts",
+          "default": "./dist/cjs/Reconciliation.js"
+        }
+      },
+      "./Retention": {
+        "import": {
+          "types": "./dist/esm/Retention.d.ts",
+          "default": "./dist/esm/Retention.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Retention.d.ts",
+          "default": "./dist/cjs/Retention.js"
+        }
+      },
+      "./RunCatalogRead": {
+        "import": {
+          "types": "./dist/esm/RunCatalogRead.d.ts",
+          "default": "./dist/esm/RunCatalogRead.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RunCatalogRead.d.ts",
+          "default": "./dist/cjs/RunCatalogRead.js"
+        }
+      },
+      "./RunState": {
+        "import": {
+          "types": "./dist/esm/RunState.d.ts",
+          "default": "./dist/esm/RunState.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RunState.d.ts",
+          "default": "./dist/cjs/RunState.js"
+        }
+      },
+      "./Selection": {
+        "import": {
+          "types": "./dist/esm/Selection.d.ts",
+          "default": "./dist/esm/Selection.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Selection.d.ts",
+          "default": "./dist/cjs/Selection.js"
+        }
+      },
+      "./SelectionStore": {
+        "import": {
+          "types": "./dist/esm/SelectionStore.d.ts",
+          "default": "./dist/esm/SelectionStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SelectionStore.d.ts",
+          "default": "./dist/cjs/SelectionStore.js"
+        }
+      },
+      "./StepBoundary": {
+        "import": {
+          "types": "./dist/esm/StepBoundary.d.ts",
+          "default": "./dist/esm/StepBoundary.js"
+        },
+        "require": {
+          "types": "./dist/cjs/StepBoundary.d.ts",
+          "default": "./dist/cjs/StepBoundary.js"
+        }
+      },
+      "./DeferredClockFold": {
+        "import": {
+          "types": "./dist/esm/DeferredClockFold.d.ts",
+          "default": "./dist/esm/DeferredClockFold.js"
+        },
+        "require": {
+          "types": "./dist/cjs/DeferredClockFold.d.ts",
+          "default": "./dist/cjs/DeferredClockFold.js"
+        }
+      },
+      "./StepCacheFold": {
+        "import": {
+          "types": "./dist/esm/StepCacheFold.d.ts",
+          "default": "./dist/esm/StepCacheFold.js"
+        },
+        "require": {
+          "types": "./dist/cjs/StepCacheFold.d.ts",
+          "default": "./dist/cjs/StepCacheFold.js"
+        }
+      },
+      "./StepSandbox": {
+        "import": {
+          "types": "./dist/esm/StepSandbox.d.ts",
+          "default": "./dist/esm/StepSandbox.js"
+        },
+        "require": {
+          "types": "./dist/cjs/StepSandbox.d.ts",
+          "default": "./dist/cjs/StepSandbox.js"
+        }
+      },
+      "./WakeBus": {
+        "import": {
+          "types": "./dist/esm/WakeBus.d.ts",
+          "default": "./dist/esm/WakeBus.js"
+        },
+        "require": {
+          "types": "./dist/cjs/WakeBus.d.ts",
+          "default": "./dist/cjs/WakeBus.js"
+        }
+      },
+      "./WorkspaceSandbox": {
+        "import": {
+          "types": "./dist/esm/WorkspaceSandbox.d.ts",
+          "default": "./dist/esm/WorkspaceSandbox.js"
+        },
+        "require": {
+          "types": "./dist/cjs/WorkspaceSandbox.d.ts",
+          "default": "./dist/cjs/WorkspaceSandbox.js"
+        }
+      },
+      "./index": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./test/TestStores": {
+        "import": {
+          "types": "./dist/esm/test/TestStores.d.ts",
+          "default": "./dist/esm/test/TestStores.js"
+        },
+        "require": {
+          "types": "./dist/cjs/test/TestStores.d.ts",
+          "default": "./dist/cjs/test/TestStores.js"
+        }
+      },
+      "./EventTypes": {
+        "import": {
+          "types": "./dist/esm/EventTypes.d.ts",
+          "default": "./dist/esm/EventTypes.js"
+        },
+        "require": {
+          "types": "./dist/cjs/EventTypes.d.ts",
+          "default": "./dist/cjs/EventTypes.js"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint src --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "circular": "node scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "node ../database/scripts/test-matrix.mjs",
+    "test:matrix": "node ../database/scripts/test-matrix.mjs"
+  },
+  "dependencies": {
+    "@smthrs/artifacts": "1.0.0-rc.12",
+    "@smthrs/canonical": "1.0.0-rc.12",
+    "@smthrs/crypto": "1.0.0-rc.12",
+    "@smthrs/database": "1.0.0-rc.12",
+    "@smthrs/engine": "1.0.0-rc.12",
+    "@smthrs/flow": "1.0.0-rc.12",
+    "@smthrs/journal": "1.0.0-rc.12",
+    "@smthrs/kernel": "1.0.0-rc.12",
+    "@smthrs/keys": "1.0.0-rc.12",
+    "@smthrs/plan": "1.0.0-rc.12",
+    "@smthrs/plan-store": "1.0.0-rc.12",
+    "@smthrs/run-store": "1.0.0-rc.12",
+    "@smthrs/step-cache": "1.0.0-rc.12",
+    "@smthrs/capability": "1.0.0-rc.12"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@effect/platform-node": "4.0.4",
+    "@effect/vitest": "4.0.4",
+    "@eslint/js": "9.39.5",
+    "@smthrs/core": "1.0.0-rc.12",
+    "@smthrs/patterns": "1.0.0-rc.12",
+    "@smthrs/platform-node": "1.0.0-rc.12",
+    "@types/node": "26.4.1",
+    "@vitest/coverage-v8": "5.0.0",
+    "dprint": "0.57.1",
+    "effect": "4.0.4",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "fast-check": "4.9.0",
+    "madge": "8.0.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0"
+  },
+  "peerDependencies": {
+    "effect": "^4.0.4"
+  }
+}

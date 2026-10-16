@@ -1,0 +1,1198 @@
+import { addImagePackage, MACHINE_JSON_PATH, type MachineJsonRejected } from "@smthrs/rpc/MachineJson"
+import { presentUserFailure } from "@smthrs/rpc/UserFailure"
+import type { IssueDraftRefused } from "./IssueTodoDraft"
+import { resolveTargetRepo } from "../RepoContext"
+import { canonicalize } from "@smthrs/canonical"
+import { declaredIssuePath } from "../SchemaIssuePath"
+import { serviceFailureSentence } from "../ServiceFailureCopy"
+import { todoActors, type ActorContext } from "../ProductActor"
+import { TodoCardSchema, type TodoCard } from "@smthrs/rpc/TodoCard"
+import type { MemberConfirmation } from "@smthrs/rpc/ConfirmCard"
+import { DraftCardSchema, type DraftCard } from "@smthrs/rpc/DraftCard"
+import type { Card } from "@smthrs/rpc/Cards"
+/* The routes and cards the model host's TODO commands share (@smthrs/rpc/TodoCommands). */
+import { draftCard, todoCard, todoPath, TODOS_PATH, type DraftEntry, type TodoEntry } from "@smthrs/rpc/TodoCommands"
+import { Data, Schema } from "effect"
+import type { z } from "zod"
+import { TodoNewInput, TodoAmendInput } from "../../flows/entries/todo"
+import { actorSharedState } from "../ActorBindings"
+import type { SeamContext } from "./SeamContext"
+import { isFeatureGateRefusal, readResult, unreachableSentence } from "./SeamContext"
+import { refusalOf } from "@smthrs/rpc/Refusal"
+import { refusalLine } from "@smthrs/rpc/RefusalCopy"
+import { notifies, notificationPolicyRecord, type NotificationPolicyEvent, type NotificationPolicyStamp } from "@smthrs/rpc/NotificationPolicy"
+import type { NotificationPolicyRoute } from "../controller/notificationPolicy"
+import { actorName } from "../../cards/views/actorName"
+import { randomUuid } from "../../runtime/RandomUuid"
+
+class TodoTopicMismatch extends Data.TaggedError("TodoTopicMismatch") { readonly message = "TODO topic mismatch" }
+/**
+ * Rejected field positions only; the TODO's contents never enter diagnostics.
+ * The list is also finite: a host that rejects every row would otherwise write
+ * one path per row per field into the diagnostic ring.
+ */
+class TodoListInvalid extends Data.TaggedError("TodoListInvalid")<{ readonly fields: ReadonlyArray<string>; readonly omitted: number }> {
+  override get message() {
+    return `Invalid TODO fields: ${this.fields.join(", ")}${this.omitted > 0 ? ` and ${this.omitted} more` : ""}`
+  }
+}
+
+/** At most this many distinct rejected paths are named; the rest are counted. */
+const REPORTED_FIELDS = 24
+
+/*
+ * The distinct positions a decode rejected, in the order the decoder found
+ * them, spelled with the schema's own words (state/SchemaIssuePath.ts).
+ *
+ * The raw path is not safe to print. `ActionSchema.args` is
+ * `z.record(z.string(), z.string())`, so a wait's action argument KEY is
+ * chosen by the model host and can carry customer text; a rejected argument
+ * VALUE puts that key straight into the zod issue's path, and this diagnostic
+ * is posted to the crash sink as the failure's message (state/ClientErrors.ts
+ * `clientErrorBody`). Bounding the list to 24 entries caps how MUCH of it
+ * travels; it is not redaction. So every segment the schema does not declare
+ * becomes `*`, which still names the position that was rejected.
+ */
+const rejectedFields = (schema: z.ZodType, issues: ReadonlyArray<{ readonly path: ReadonlyArray<PropertyKey> }>): { readonly fields: ReadonlyArray<string>; readonly omitted: number } => {
+  const paths = [...new Set(issues.map(issue => declaredIssuePath(schema, issue.path)))]
+  return { fields: paths.slice(0, REPORTED_FIELDS), omitted: Math.max(0, paths.length - REPORTED_FIELDS) }
+}
+/** main's .smithers/machine.json could not be read or decoded for a machine image draft. */
+class MachineJsonUnreadable extends Data.TaggedError("MachineJsonUnreadable") {
+  readonly sentence = "Could not read machine.json."
+  override get message() { return this.sentence }
+}
+/** The issue read answered with a failure sentence instead of the issue. */
+class IssueReadRefused extends Data.TaggedError("IssueReadRefused")<{ readonly sentence: string }> {
+  override get message() { return this.sentence }
+}
+/**
+ * A TODO-family request this app had to classify itself, as a tagged failure
+ * rather than raw text.
+ *
+ * Tagged for two reasons. The diagnostic sink posts a thrown value's NAME
+ * beside its message (state/ClientErrors.ts `errorDetail`), so a tag tells the
+ * next reader of the crash route which classification they are looking at
+ * where a bare `Error` could only say `Error`. And the seams' own guard
+ * refuses raw failure text outright (mainview/RawErrorSites.test.ts), the
+ * guard being lexical down to this comment: an untagged `Error` carries no
+ * `_tag`, so `presentUserFailure` could only ever call it unknown, and the
+ * rule exists so no such value can reach a person by accident. Nothing reads
+ * this one: `todoRequestRefusal` writes the sentence a person sees, and this
+ * travels to the diagnostic ring alone.
+ */
+class TodoRequestUnexplained extends Data.TaggedError("TodoRequestUnexplained")<{ readonly message: string }> {}
+
+/**
+ * A failed image or issue preparation: a refusal reads its own sentence (MachineJson's
+ * rejections are authored copy), and anything else reads the step's line and is reported.
+ */
+const preparationLine = (error: unknown, line: string, report: (error: unknown) => void): string =>
+  presentUserFailure<MachineJsonUnreadable | MachineJsonRejected | IssueDraftRefused | IssueReadRefused>({
+    MachineJsonUnreadable: unreadable => ({ fault: "infra", sentence: unreadable.sentence, actions: [] }),
+    MachineJsonRejected: rejected => ({ fault: "user", sentence: rejected.message, actions: [] }),
+    IssueDraftRefused: refused => ({ fault: "infra", sentence: refused.sentence, actions: [] }),
+    IssueReadRefused: refused => ({ fault: "user", sentence: refused.sentence, actions: [] })
+  }, error, { unknown: { fault: "infra", sentence: line, actions: [] }, onUnknown: report }).sentence
+
+/* A projection's failure line is the server's authored sentence (mythical_failure.go, mythical_todo_pause.go), never thrown text. */
+const projectedLine = (line: { readonly message: string }): string => line.message
+
+/**
+ * The code and sentence a refused TODO request earns, from what the host
+ * actually answered.
+ *
+ * Three different events used to reach a person as one sentence, "TODO request
+ * failed.", which names no cause and leaves no fact to diagnose from:
+ *
+ * - The route family is not mounted at all. A mounted TODO route always writes
+ *   an APIError body (`routes/todos.go`), so a refusal carrying no `message`
+ *   came from the router instead: `404 page not found` as `text/plain`, which
+ *   is plumbing with no contract with this product (§28.5). It is the one case
+ *   no input and no retry can fix — this host serves no TODOs.
+ * - The route-family gate refused it (`isFeatureGateRefusal`, matched on plue's
+ *   own verdict): the host serves TODOs, but its feature policy has the family
+ *   switched off.
+ * - Anything else that answered without words of its own, which keeps the
+ *   shared verdict for its status and now also names the route and status.
+ *
+ * `code` is the app's own classification, reported for diagnostics beside the
+ * request's idempotency key; it is never shown to a person and never confused
+ * with a code the wire stated — `stated` and `verdict` are the wire's own
+ * `message` and `code`.
+ */
+export const todoRequestRefusal = (
+  method: string,
+  route: string,
+  status: number,
+  stated: string | undefined,
+  /*
+   * Required, not optional: the gate is told apart by the verdict, so a call
+   * that could forget it would silently classify plue's gate as an ordinary
+   * refusal — the misclassification this function exists to remove.
+   */
+  verdict: string | null
+): { readonly code: "todo_route_absent" | "feature_not_available" | "todo_refused"; readonly sentence: string } => {
+  const wire = `${method} ${route} answered ${status}`
+  /*
+   * Three of these requests do not go to the TODO routes at all — a terminal's
+   * append door and a branch's foreign-change doors — so the sentence names
+   * the family the route belongs to rather than claiming TODOs every time.
+   */
+  const family = route.startsWith(TODOS_PATH) ? "TODOs" : undefined
+  if (isFeatureGateRefusal(status, stated, verdict)) {
+    return {
+      code: "feature_not_available",
+      sentence: family === undefined
+        ? `This Smithers host does not serve that door (${wire}).`
+        : `${family} are not available on this Smithers host (${wire}).`
+    }
+  }
+  if (stated !== undefined) return { code: "todo_refused", sentence: stated }
+  if (status === 404) {
+    return {
+      code: "todo_route_absent",
+      sentence: family === undefined
+        ? `This Smithers host does not serve that door (${wire}).`
+        : `${family} are not a door on this Smithers host (${wire}).`
+    }
+  }
+  return {
+    code: "todo_refused",
+    sentence: refusalLine(refusalOf({ body: null, status, message: "" }), `The TODO request failed (${wire}).`)
+  }
+}
+
+export type { DraftEntry, TodoEntry }
+type Request = TodoEntry["payload"]["requests"][number]
+export interface TodoReceipt {
+  readonly key: string
+  /** Server transaction receipt, never inferred from HTTP admission. */
+  readonly committed?: { readonly n: number; readonly rev: number }
+  readonly outcome?: { readonly status: "ok" | "failed"; readonly detail: string }
+}
+/** What Make TODO drafts from: one GitHub issue and its discussion, as its issue card read them. */
+export type { IssueDraftSource } from "@smthrs/cli/IssueTodoDraft"
+import type { IssueDraftSource } from "@smthrs/cli/IssueTodoDraft"
+/** The Draft's prompt: the issue's body, then each comment quoted under its author. */
+const issuePrompt = (source: IssueDraftSource): string => [source.body.trim(), ...source.comments.flatMap(comment => comment.body.trim()
+  ? [`@${comment.author ?? "someone"}:\n${comment.body.trim().split("\n").map(line => `> ${line}`).join("\n")}`] : [])]
+  .filter(Boolean).join("\n\n") || source.title
+/** T-APP-08 binds the shared live transport; the payload is the todo:<n> projection. */
+export interface TodoTopics {
+  readonly subscribe: (topic: `todo:${number}`, receive: (model: unknown, receipts?: readonly TodoReceipt[]) => void) => () => void
+}
+export interface TodoSeamOptions {
+  readonly readIssue?: (number: number, repo: string) => Promise<IssueDraftSource | string>
+
+  readonly draftIssue?: (source: IssueDraftSource, signal: AbortSignal) => Promise<{ title: string; prompt: string; acceptance: string[] }>
+
+  readonly sourceAvailable?: (path: string) => Promise<boolean>
+  readonly openSource?: (n: number, path: string, live: () => boolean) => Promise<boolean>
+  readonly actors?: () => ActorContext
+  readonly topics?: TodoTopics
+  readonly debounceMs?: number
+  /** How often an open Home reads GET /api/todos again; 2 s by default. */
+  readonly listPollMs?: number
+  /**
+   * The repository's own notification policy (M-47, #4026), when a repository
+   * declares one: it decides who is told about each notice below, among the
+   * people who already can read the work. Absent, the built-in §6.4 audience
+   * decides exactly as it always has and no policy runs.
+   */
+  readonly notificationPolicy?: NotificationPolicyRoute
+  readonly onDispose?: (stop: () => void) => void
+}
+/** GET /api/todos as Home reads it where this host serves no `home` topic (T-APP-01): every TODO card, or why the read failed. */
+export interface TodoListSnapshot {
+  readonly todos?: ReadonlyArray<TodoCard>
+  /** `forbidden` drops the list, as does `absent` (a 404: this host serves no TODOs); `internal`, `invalid` and `unreachable` keep the last list read. */
+  readonly error?: "forbidden" | "absent" | "internal" | "invalid" | "unreachable"
+}
+export interface TodoListSnapshots {
+  readonly get: () => TodoListSnapshot
+  /** The first reader starts the reads: one at once, then one every `listPollMs` until the last reader leaves. */
+  readonly subscribe: (listener: () => void) => () => void
+}
+export const createTodoSeam = (ctx: SeamContext, options: TodoSeamOptions = {}) => {
+  const shared = actorSharedState(ctx, "todo", () => ({
+    todoWrites: new Map<number, Promise<unknown>>(), mergedNotices: new Set<string>(), notableModels: new Map<number, TodoCard>(), notableLive: new Set<number>(), opening: new Set<string>(), sending: new Set<string>(), aborts: new Map<string, AbortController>(), watches: new Map<number, () => void>(),
+    timers: new Map<string, ReturnType<typeof setTimeout>>(), epoch: ctx.store.collections.identitySessions.get("identity")?.ownerRevision ?? ctx.store.collections.identitySessions.get("identity")?.revision,
+    list: { snapshot: {} as TodoListSnapshot, listeners: new Set<() => void>(), timer: undefined as ReturnType<typeof setTimeout> | undefined, reading: false, disposed: false }
+  }))
+  // Card requests and source snapshots share one persistence order. Each
+  // operation reads the card only after earlier writes have committed, so a
+  // snapshot cannot erase a request admitted alongside it.
+  const withTodo = <A,>(n: number, body: () => Promise<A>): Promise<A> => {
+    const previous = shared.todoWrites.get(n) ?? Promise.resolve()
+    const next = previous.catch(() => {}).then(body)
+    shared.todoWrites.set(n, next)
+    void next.finally(() => { if (shared.todoWrites.get(n) === next) shared.todoWrites.delete(n) }).catch(() => {})
+    return next
+  }
+  const owner = () => ctx.store.collections.identitySessions.get("identity")?.login
+  const identity = () => ctx.store.collections.identitySessions.get("identity")
+  const current = (login: string | null | undefined, revision: number | undefined) =>
+    !ctx.isDisposed?.() && identity()?.state === "signed-in" && owner() === login
+    && (identity()?.ownerRevision ?? identity()?.revision) === revision
+  const entry = (n: number): TodoEntry | undefined => {
+    const row = ctx.store.collections.cards.get(`todo:${n}`)
+    return row?.kind === "todo" ? row : undefined
+  }
+  const draft = (id: string): DraftEntry | undefined => {
+    const row = ctx.store.collections.cards.get(id)
+    return row?.kind === "draft" ? row : undefined
+  }
+  const write = async (card: Card, actor: "user" | "smithers" | "system" = ctx.actor()) => {
+    await ctx.dispatch({ type: "card.upsert", actor, card }).isPersisted.promise
+  }
+  const blank = (n: number): TodoEntry => todoCard(n, undefined, ctx.nextOrdinal(), Date.now())
+  const noticeKey = (key: string) => `todo.request.${key}`
+  const needsYouKey = (n: number, wait: string) => `todo.needs-you.${n}.${wait}`
+  const showNotice = (request: Request, title: string) => {
+    if (shared.timers.has(request.key)) return
+    const timer = setTimeout(() => {
+      shared.timers.delete(request.key)
+      if (!ctx.isDisposed?.() && owner() === request.owner && identity()?.state === "signed-in") ctx.dispatch({ type: "toast.shown", actor: "system", key: noticeKey(request.key), title })
+    }, options.debounceMs ?? 300)
+    shared.timers.set(request.key, timer)
+  }
+  const finishNotice = (key: string, title: string, outcome: NonNullable<TodoReceipt["outcome"]>) => {
+    const timer = shared.timers.get(key)
+    if (timer) clearTimeout(timer)
+    shared.timers.delete(key)
+    if (!ctx.store.collections.toasts.has(`toast-${noticeKey(key)}`)) {
+      ctx.dispatch({ type: "toast.shown", actor: "system", key: noticeKey(key), title })
+    }
+    ctx.resolveToast?.(noticeKey(key), outcome)
+  }
+  const signedIn = (): string | undefined => identity()?.state === "signed-in" && owner() ? undefined : "Sign in to work on TODOs."
+  const needsSource = (n: number) => [...ctx.store.collections.cards.values()].some(row => row.kind === "draft"
+    && (row.payload.committed?.n === n || row.payload.request?.n === n) && row.payload.source?.owner === owner() && !row.payload.source?.opened)
+  const watch = (n: number) => {
+    if (shared.watches.has(n)) return
+    const login = owner(), revision = identity()?.ownerRevision ?? identity()?.revision
+    let active = true, published = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const unsubscribe = options.topics?.subscribe(`todo:${n}`, (value, receipts = []) => {
+      if (!active || !current(login, revision)) return
+      let model: TodoCard
+      // Only a publication that validates replaces the REST refresh; malformed live data leaves recovery running.
+      try { model = projection(n, value) } catch (error) { ctx.report?.("todo.projection", error); return }
+      published = true
+      const live = () => active && current(login, revision)
+      if (entry(n)) void applyModel(n, model, receipts, live).catch(error => ctx.report?.("todo.projection", error))
+      else routeNotable(model, live)
+    })
+    // Until this host publishes the topic, refresh persisted source facts through its read route.
+    const refresh = async () => {
+      if (!active || published && !needsSource(n) || !current(login, revision)) return
+      try {
+        const response = await ctx.http(`${ctx.baseUrl}${todoPath(n)}`, { credentials: "include" })
+        if (response.ok && active && (!published || needsSource(n)) && current(login, revision)) {
+          await applyProjection(n, await response.json(), [], () => active && (!published || needsSource(n)) && current(login, revision))
+        }
+      } catch (error) { ctx.report?.("todo.refresh", error) }
+      if (active && (!published || needsSource(n)) && current(login, revision)) timer = setTimeout(() => { void refresh() }, 1000)
+    }
+    timer = setTimeout(() => { void refresh() }, 1000)
+    shared.watches.set(n, () => { active = false; shared.notableLive.delete(n); if (timer) clearTimeout(timer); unsubscribe?.() })
+  }
+  /** The todo:<n> model a payload carries; a payload for another TODO is a mismatch. */
+  const projection = (n: number, value: unknown): TodoCard => {
+    const model = TodoCardSchema.parse(todoActors(value, options.actors?.()))
+    if (model.n !== n) throw new TodoTopicMismatch()
+    return model
+  }
+  const applyProjection = async (n: number, value: unknown, receipts: readonly TodoReceipt[] = [], stillCurrent?: () => boolean) => {
+    const login = owner(), revision = identity()?.ownerRevision ?? identity()?.revision
+    const live = stillCurrent ?? (() => current(login, revision))
+    if (!live()) return
+    await applyModel(n, projection(n, value), receipts, live)
+  }
+  // The continuation is Draft data: reloads retain it, and only its requester opens the file.
+  const continueSource = async (n: number, live: () => boolean) => {
+    if (!options.openSource) return
+    for (const row of ctx.store.collections.cards.values()) {
+      if (row.kind !== "draft" || row.payload.committed?.n !== n || !row.payload.source
+        || row.payload.source.owner !== owner() || row.payload.source.opened || shared.opening.has(row.id)) continue
+      shared.opening.add(row.id)
+      try {
+        if (!live() || !await options.openSource(n, row.payload.source.path, live) || !live()) continue
+        const latest = draft(row.id)
+        if (latest?.payload.source) await write({ ...latest, payload: { ...latest.payload,
+          source: { ...latest.payload.source, opened: true } } }, "system")
+      } catch (error) { ctx.report?.("flow.source", error) }
+      finally { shared.opening.delete(row.id) }
+    }
+  }
+  /**
+   * Who can already read a TODO: its owner and the people on its branch
+   * (M-08, §6.4). A notification policy chooses among these and no one else,
+   * so no decision can tell someone about work they cannot open.
+   */
+  const todoReaders = (model: TodoCard): ReadonlyArray<string> =>
+    [...new Set([model.owner.login, ...model.present.flatMap(actor => actor.kind === "person" ? [actor.login] : [])])]
+  /**
+   * Put one notice on the stack, once its recipients are known.
+   *
+   * With no repository policy declared the notice is dispatched here and now,
+   * on exactly the audience §6.4 names. With one, the decision is the
+   * repository's: the policy runs, the answer is fenced against this account
+   * and identity revision (`live`) and against the member this notice belongs
+   * to, and only a selected recipient is told. The notice records which policy
+   * decided, and a fallback records its one closed reason.
+   */
+  const deliverNotice = (
+    notice: {
+      readonly key: string
+      readonly title: string
+      readonly sourceCard: string
+      readonly todo: number
+      readonly audience: NotificationPolicyEvent & { readonly member: string; readonly actorLabel: string
+        readonly target: { readonly flow: "todo"; readonly n: number } | { readonly flow: "branch"; readonly branch: string } }
+      readonly action?: { readonly flow: "todo" | "branch"; readonly args: string; readonly label: string }
+      /**
+       * Whether the event this notice names is STILL the card's own state. A
+       * policy decides while the work moves: a wait can be answered and a
+       * state can be superseded before the answer lands, and a decision
+       * about an event that is over must not raise it again.
+       */
+      readonly stillAsked?: () => boolean
+    },
+    people: { readonly owner: string; readonly candidates: ReadonlyArray<string>; readonly defaults: ReadonlyArray<string> },
+    live: () => boolean,
+    settled?: () => void
+  ): void => {
+    const { kind, entryId, member, actorLabel, target } = notice.audience
+    const show = (policy?: NotificationPolicyStamp, quiet = false) => {
+      if (!live() || !(notice.stillAsked?.() ?? true)) return
+      ctx.dispatch({ type: "toast.shown", actor: "system", key: notice.key, title: notice.title, sourceCard: notice.sourceCard,
+        audience: { member, entryId, kind, actorLabel, target, ...(policy === undefined ? {} : { policy }), ...(quiet ? { quiet: true } : {}) },
+        ...(notice.action === undefined ? {} : { action: notice.action }) })
+      settled?.()
+    }
+    const route = options.notificationPolicy
+    // No policy declared anywhere in this session: the built-in §6.4 audience
+    // decides here and now, synchronously, exactly as it did before #4026.
+    if (route === undefined) {
+      if (people.defaults.includes(member)) show()
+      return
+    }
+    void route({ kind, entryId, todo: notice.todo }, people, live).then(
+      // `handling.quiet` is the repository asking for the record without the
+      // raised notice: it is kept here and read by the surfaces that raise one.
+      outcome => { if (live() && owner() === member && notifies(outcome, member)) show(notificationPolicyRecord(outcome), outcome.quiet) },
+      error => {
+        /*
+         * The router answers every refusal itself, so a throw is this app's
+         * bug — and a bug may not widen an audience. The person still gets
+         * the notice the DEFAULT policy owes them, which for an owner-only
+         * §6.4 kind is nobody but its owner: a branch reader the default
+         * never tells is not told by a failure either.
+         */
+        ctx.report?.("notification.policy", error)
+        if (owner() === member && people.defaults.includes(member)) show({ source: "default", reason: "policy-failed" })
+      }
+    )
+  }
+  // Both the whole-stack read and a card's live topic enter this one audience router.
+  const routeNotable = (model: TodoCard, live: () => boolean) => {
+    const n = model.n, previous = shared.notableModels.get(n)
+    if (!live()) return
+    shared.notableModels.set(n, model)
+    // Needs you (M-14): waits notify the owner and branch viewers, and
+    // settle only when the served wait disappears.
+    const asked = (value: TodoCard | undefined) => new Set((value?.waits ?? []).map(wait => wait.id))
+    const before = asked(previous), after = asked(model)
+    const sourceActor = model.present.find(actor => actor.kind === "agent")
+    const actorLabel = sourceActor ? actorName(sourceActor) : "Smithers"
+    const readers = todoReaders(model)
+    // Access first: a viewer who cannot read this TODO is never a candidate,
+    // so no policy is asked about them and none can select them.
+    const toasted = readers.includes(owner() ?? "")
+    for (const id of after) {
+      const wait = model.waits.find(wait => wait.id === id)!
+      const kind = wait.kind === "question" ? "needs_you" : wait.kind === "approval" ? "approval" : "conflict"
+      if (toasted && !before.has(id) && live()) deliverNotice({
+        key: needsYouKey(n, id), title: `T${n} needs you`, sourceCard: `todo:${n}`, todo: n,
+        audience: { member: owner()!, entryId: needsYouKey(n, id), kind,
+          actorLabel: wait.by ? actorName(wait.by) : actorLabel,
+          target: wait.kind === "moved_off" ? { flow: "branch", branch: `T${n}` } : { flow: "todo", n } },
+        action: { flow: wait.kind === "moved_off" ? "branch" : "todo", args: `T${n}`, label: wait.kind === "moved_off" ? "Resolve" : wait.kind === "question" ? "Answer" : "Open" },
+        // An answered wait is settled below; a policy decision that lands
+        // after it must not resurrect the Needs You it already dismissed.
+        stillAsked: () => shared.notableModels.get(n)?.waits.some(open => open.id === id) === true
+      // A wait's built-in audience is the owner and everyone on the branch.
+      }, { owner: model.owner.login, candidates: readers, defaults: readers }, live)
+    }
+    // The served owner and attempt identify these events; ordinary work receipts are not audience facts.
+    if (toasted && live() && (model.state === "in_review" || model.state === "failed")
+      && (previous?.state !== model.state || previous?.run?.id !== model.run?.id
+        || previous?.run?.attempt !== model.run?.attempt)) {
+      const key = `todo.${model.state}.${n}.${model.run?.id ?? "no-run"}.${model.run?.attempt ?? 0}`
+      deliverNotice({ key, title: model.title, sourceCard: `todo:${n}`, todo: n,
+        audience: { member: owner()!, entryId: key, kind: model.state, actorLabel, target: { flow: "todo", n } },
+        action: { flow: "todo", args: `T${n}`, label: model.state === "in_review" ? "Review" : "Open" },
+        // A newer state is a newer event with its own notice; the decision
+        // this one was still waiting for no longer describes the work.
+        stillAsked: () => shared.notableModels.get(n)?.state === model.state
+      // A review or a failure is the owner's by default; presence does not subscribe to it.
+      }, { owner: model.owner.login, candidates: readers, defaults: [model.owner.login] }, live)
+    }
+    // A historical merged item is not a new event. Only the served terminal
+    // transition notifies its owner; presence does not subscribe to others' merges.
+    const mergeKey = `todo.merged.${n}.${model.run?.id ?? "no-run"}.${model.run?.attempt ?? 0}`
+    if (previous && previous.state !== "merged" && model.state === "merged" && toasted && live() && !shared.mergedNotices.has(mergeKey)) {
+      // A late REST snapshot can precede the same terminal event again. Hide
+      // must survive that replay; the run/attempt identifies one merge notice.
+      // Claimed before the decision, so a policy that withholds this merge is
+      // not asked again by the next snapshot of the same merge.
+      shared.mergedNotices.add(mergeKey)
+      const key = mergeKey
+      deliverNotice({ key, title: model.title, sourceCard: `todo:${n}`, todo: n,
+        audience: { member: owner()!, entryId: key, kind: "merged", actorLabel, target: { flow: "todo", n } },
+        stillAsked: () => shared.notableModels.get(n)?.state === "merged"
+      }, { owner: model.owner.login, candidates: readers, defaults: [model.owner.login] }, live,
+        () => ctx.resolveToast?.(key, { status: "ok", detail: "Merged" }))
+    }
+    for (const id of before) if (!after.has(id) && live()) ctx.resolveToast?.(needsYouKey(n, id), { status: "ok", detail: previous?.waits.find(wait => wait.id === id)?.kind === "question" ? "Answered" : "" })
+  }
+  const applyModel = (n: number, model: TodoCard, receipts: readonly TodoReceipt[], live: () => boolean) => withTodo(n, async () => {
+    if (!live()) return
+    const card = entry(n) ?? blank(n)
+    // REST snapshots are durable source facts too: admission alone never clears a Draft or a toast.
+    // A reload can land between clearing the TODO request and committing its Draft.
+    // Recover from both persisted cards so the same server receipt still settles the Draft.
+    const pending = [...new Map([...card.payload.requests, ...[...ctx.store.collections.cards.values()].flatMap(row =>
+      row.kind === "draft" && row.payload.request?.n === n && row.payload.request.owner === owner()
+        ? [row.payload.request] : [])].map(request => [request.key, request])).values()]
+    const observed: TodoReceipt[] = pending.flatMap<TodoReceipt>(request => {
+      if (request.state !== "accepted" || receipts.some(receipt => receipt.key === request.key)) return []
+      if (request.operation === "preapprove" || request.operation === "unapprove") return Boolean(model.preapproval) === (request.operation === "preapprove")
+        ? [{ key: request.key, outcome: { status: "ok" as const, detail: request.operation === "preapprove" ? "Pre-approved" : "Pre-approval removed" } }] : []
+      if (request.operation === "merge") return model.state === "merged"
+        ? [{ key: request.key, outcome: { status: "ok" as const, detail: "Merged" } }] : []
+      if (request.operation === "amend") {
+        const changed = request.revision === undefined ? undefined : model.prompt_revisions[request.revision - 1]
+        return changed !== undefined && changed.text === request.body.prompt && (request.body.acceptance === undefined || canonicalize(changed.acceptance) === canonicalize(request.body.acceptance))
+          ? [{ key: request.key, committed: { n, rev: request.revision! }, outcome: { status: "ok" as const, detail: "Amended" } }] : []
+      }
+      // An accepted answer is done once its question is no longer open.
+      if (request.operation === "answer") return model.waits.some(wait => wait.id === request.body.wait)
+        ? [] : [{ key: request.key, outcome: { status: "ok" as const, detail: "Answered" } }]
+      if (request.operation === "discard-foreign" || request.operation === "bring-in") return model.waits.some(wait => wait.id === request.body.id)
+        ? [] : [{ key: request.key, outcome: { status: "ok" as const, detail: request.operation === "bring-in" ? "Brought in" : "Discarded" } }]
+      if (request.operation === "takeover") return model.owner.login === request.owner
+        ? [{ key: request.key, outcome: { status: "ok" as const, detail: "Taken over" } }] : []
+      if (request.operation === "return-to-item") {
+        const wait = model.waits.find(wait => wait.id === request.body.id)
+        return wait?.return_error ? [{ key: request.key, outcome: { status: "failed" as const, detail: wait.return_error } }]
+          : wait ? [] : [{ key: request.key, outcome: { status: "ok" as const, detail: "Returned" } }]
+      }
+      if (request.operation === "keep-moved") return model.waits.some(wait => wait.id === request.body.id && wait.answer === "keep-moved" && wait.answered_by === request.owner)
+        ? [{ key: request.key, outcome: { status: "ok" as const, detail: "Kept" } }] : []
+      // Admission is not a pause receipt. Branch waits rank above Paused, so
+      // the durable pause projection, rather than only the state word, settles Stop.
+      if (request.operation === "stop" || request.operation === "resume") {
+        if (["failed", "dropped", "merged"].includes(model.state)) return [{ key: request.key,
+          outcome: { status: "failed" as const, detail: model.failure ? projectedLine(model.failure) : model.state === "merged" ? "Merged" : model.state === "failed" ? "Failed" : "Dropped" } }]
+        if (request.attempt === undefined || model.run?.attempt !== request.attempt) return []
+        if (model.control_failure?.op === request.operation) return [{ key: request.key,
+          outcome: { status: "failed" as const, detail: projectedLine(model.control_failure) } }]
+        const completed = request.operation === "stop" ? model.pause?.reason === "person"
+          : model.pause === undefined && model.state !== "paused"
+        return completed ? [{ key: request.key, outcome: { status: "ok" as const,
+          detail: request.operation === "stop" ? "Paused" : "Resumed" } }] : []
+      }
+      // A drop settles once the TODO is dropped.
+      if (request.operation === "drop") return model.state === "dropped"
+        ? [{ key: request.key, outcome: { status: "ok" as const, detail: "Dropped" } }] : []
+      // A retry settles once the attempt its receipt named runs: Working or past it, or failed again.
+      if (request.operation === "retry" || request.operation === "retry-current-flow") {
+        if (model.state === "dropped") return [{ key: request.key, outcome: { status: "failed" as const, detail: "Dropped" } }]
+        if (request.attempt === undefined || (model.run?.attempt ?? 0) < request.attempt || ["queued", "starting"].includes(model.state)) return []
+        return [{ key: request.key, outcome: model.state === "failed"
+          ? { status: "failed" as const, detail: model.failure ? serviceFailureSentence(model.failure) : "Failed" } : { status: "ok" as const, detail: "Working" } }]
+      }
+      // A move settles once the card shows the place its receipt named, or the TODO has left the stack.
+      if (request.operation === "move") return model.place === undefined || model.place === request.place
+        ? [{ key: request.key, outcome: { status: "ok" as const, detail: "Moved" } }] : []
+      if (request.operation !== "create" || model.title !== request.body.title || model.prompt_revisions[0]?.text !== request.body.prompt) return []
+      const terminal = ["in_review", "merged", "failed", "dropped"].includes(model.state)
+      return [{ key: request.key, committed: { n, rev: 1 }, ...(terminal ? {
+        outcome: model.state === "failed" || model.state === "dropped"
+          ? { status: "failed" as const, detail: model.failure ? serviceFailureSentence(model.failure) : "Dropped" }
+          : { status: "ok" as const, detail: model.state === "merged" ? "Merged" : "In review" }
+      } : {}) }]
+    })
+    receipts = [...receipts, ...observed]
+    await write({ ...card, title: model.title, payload: { ...card.payload, model,
+      requests: card.payload.requests.flatMap(request => {
+        const receipt = receipts.find(receipt => receipt.key === request.key && receipt.outcome)
+        if (!receipt) return [request]
+        // Retain the winning Return key for a retry. A new key would be a second
+        // answer to the same durable choice, which the host correctly refuses.
+        return request.operation === "return-to-item" && receipt.outcome?.status === "failed"
+          ? [{ ...request, state: "failed" as const, error: receipt.outcome.detail }] : []
+      }),
+      ...(receipts.some(receipt => receipt.outcome?.status === "ok" && card.payload.requests.some(request => request.key === receipt.key && request.operation === "steer"))
+        ? { answerDraft: undefined, answeredBy: undefined } : {})
+    } }, "system")
+    routeNotable(model, live)
+    for (const receipt of receipts) {
+      if (!live()) return
+      const original = pending.find(request => request.key === receipt.key)
+      for (const row of ctx.store.collections.cards.values()) {
+        if (row.kind !== "draft" || row.payload.request?.key !== receipt.key) continue
+        if (receipt.committed) {
+          await write({ ...row, audience_member_id: null, payload: { ...row.payload, private: false,
+            committed: receipt.committed, request: receipt.outcome ? undefined : row.payload.request } }, "system")
+        } else if (receipt.outcome?.status === "ok") {
+          await write({ ...row, payload: { ...row.payload, request: undefined } }, "system")
+        } else if (receipt.outcome?.status === "failed") {
+          await write({ ...row, payload: { ...row.payload, request: { ...row.payload.request, state: "failed", error: receipt.outcome.detail } } }, "system")
+        }
+      }
+      if (live() && original && receipt.outcome) finishNotice(receipt.key, model.title, receipt.outcome)
+    }
+    if (model.branch && live()) await continueSource(n, live)
+  })
+  const updateRequestUnlocked = async (cardId: string, request: Request) => {
+    const row = ctx.store.collections.cards.get(cardId)
+    if (row?.kind === "draft") await write({ ...row, payload: { ...row.payload, request } })
+    if (row?.kind === "todo") await write({ ...row, payload: { ...row.payload,
+      requests: [...row.payload.requests.filter(old => old.key !== request.key), request] } })
+  }
+  const updateRequest = (cardId: string, request: Request) => {
+    const card = ctx.store.collections.cards.get(cardId)
+    return card?.kind === "todo" ? withTodo(card.payload.n, () => updateRequestUnlocked(cardId, request)) : updateRequestUnlocked(cardId, request)
+  }
+  const send = (cardId: string, request: Request): void => {
+    if (shared.sending.has(request.key) || request.owner !== owner() || signedIn()) return
+    // A durable admission already names its TODO; recover its receipt through GET, never POST again.
+    if (request.state === "accepted" && request.n) {
+      showNotice(request, ctx.store.collections.cards.get(cardId)?.title ?? "TODO")
+      watch(request.n)
+      return
+    }
+    shared.sending.add(request.key)
+    const abort = new AbortController()
+    shared.aborts.set(request.key, abort)
+    const login = owner(), revision = identity()?.ownerRevision ?? identity()?.revision
+    const row = ctx.store.collections.cards.get(cardId)
+    const title = row?.title ?? "TODO"
+    showNotice(request, title)
+    // An answer has its own route (POST /api/todos/{n}/answer); the other controls share the TODO's.
+    const control = ["steer", "stop", "resume", "retry", "retry-current-flow", "drop", "move", "takeover", "keep-moved", "return-to-item"].includes(request.operation)
+    const route = ["discard-foreign", "bring-in"].includes(request.operation) ? `/api/branches/${encodeURIComponent(String(request.body.branch))}`
+      : request.operation === "create" ? (typeof request.body.terminal_session === "string" ? `/api/terminals/${encodeURIComponent(request.body.terminal_session)}/commands` : TODOS_PATH)
+      : ["preapprove", "unapprove"].includes(request.operation) ? `${todoPath(request.n!)}/preapproval`
+      : `${todoPath(request.n!)}${request.operation === "amend" || control ? "" : `/${request.operation}`}`
+    // Named here, not inside the fetch: a refusal with no words of its own
+    // names the method it used, and the two must be the same string.
+    const method = request.operation === "unapprove" ? "DELETE" : request.operation === "amend" ? "PATCH" : "POST"
+    void (async () => {
+      let response: Response
+      try {
+        // A slash can address a TODO before its card has loaded. Bind its
+        // attempt in the background before sending the mutation, keeping the
+        // persisted request and immediate acknowledgment intact.
+        if (["stop", "resume"].includes(request.operation) && request.attempt === undefined) {
+          const snapshot = await ctx.http(`${ctx.baseUrl}${todoPath(request.n!)}`, { credentials: "include", signal: abort.signal })
+          if (!current(login, revision)) return
+          const parsed = TodoCardSchema.safeParse(snapshot.ok ? await snapshot.json().catch(() => null) : null)
+          if (!current(login, revision)) return
+          if (!parsed.success || parsed.data.n !== request.n || !parsed.data.run) { await fail("Could not open the TODO."); return }
+          request = { ...request, attempt: parsed.data.run.attempt }
+          await updateRequest(cardId, request)
+        }
+        if (["keep-moved", "return-to-item"].includes(request.operation) && request.body.id === undefined) {
+          const snapshot = await ctx.http(`${ctx.baseUrl}${todoPath(request.n!)}`, { credentials: "include", signal: abort.signal })
+          if (!current(login, revision)) return
+          const parsed = TodoCardSchema.safeParse(snapshot.ok ? await snapshot.json().catch(() => null) : null)
+          if (!current(login, revision)) return
+          const wait = parsed.success && parsed.data.n === request.n ? parsed.data.waits.find(wait => wait.kind === "moved_off" && (!wait.answered_by || wait.return_error !== undefined)) : undefined
+          if (!wait) { await fail("Wait is settled."); return }
+          request = { ...request, body: { ...request.body, id: wait.id } }
+          await updateRequest(cardId, request)
+        }
+        // Drafts (including restored requests) also retain creation metadata.
+        // PATCH changes only the existing TODO's prompt and acceptance.
+        const body = request.operation === "amend"
+          ? { prompt: request.body.prompt, ...(request.body.acceptance === undefined ? {} : { acceptance: request.body.acceptance }) }
+          : ["discard-foreign", "bring-in"].includes(request.operation) ? { op: request.operation, id: request.body.id, revision: request.body.revision }
+          : request.operation === "steer" ? { steer: request.body.steer ?? request.body.text }
+          : control ? { op: request.operation, ...request.body } : request.body
+        response = await ctx.http(`${ctx.baseUrl}${route}`, {
+          method, credentials: "include", signal: abort.signal,
+          headers: { "Content-Type": "application/json", "Idempotency-Key": request.key, ...(ctx.actor() === "smithers" ? { "Smithers-Via": "smithers" } : {}) }, body: JSON.stringify(request.operation === "create" && typeof request.body.terminal_session === "string"
+            ? { command: "todo.new", payload: Object.fromEntries(Object.entries(body).filter(([key]) => key !== "terminal_session")) } : body)
+        })
+      } catch (error) {
+        if (current(login, revision)) await fail(unreachableSentence("TODOs", error))
+        return
+      }
+      if (!current(login, revision)) return
+      const body: unknown = await response.json().catch(() => null)
+      if (!current(login, revision)) return
+      const result = body && typeof body === "object" ? body as Record<string, unknown> : {}
+      if (!response.ok) {
+        if (response.status === 409 && request.operation === "answer" && typeof result.answered_by === "string") {
+          const todo = entry(request.n!)
+          if (todo) await write({ ...todo, payload: { ...todo.payload, answerDraft: String(request.body.answer), answeredBy: result.answered_by } })
+        }
+        const stated = typeof result.message === "string" && result.message.trim() !== "" ? result.message : undefined
+        const verdict = typeof result.code === "string" ? result.code : null
+        const refusal = todoRequestRefusal(method, route, response.status, stated, verdict)
+        const fault = refusal.code === "todo_refused" && stated !== undefined &&
+            (result.class === "infra" || result.class === "capacity")
+          ? `${refusal.sentence} Not your fault.`
+          : refusal.sentence
+        /*
+         * A refusal this app had to classify ITSELF — the router's, the gate's,
+         * or an answer with no words at all — leaves the correlation the next
+         * reader needs, and nothing a person reads: the classification, the
+         * route, the status and the request's own idempotency key. A refusal
+         * plue authored a sentence for is already explained and is not reported.
+         *
+         * The wire facts are part of the SUBJECT, not only of the message: the
+         * failure ring keys its 60-second deduplication on `[seam, lost,
+         * subject]` (state/OperationalFailures.ts), so a classification alone
+         * would fold a refused `POST /api/todos` and a refused
+         * `POST /api/branches/<branch>` into one record and keep only the
+         * first one's route. Two different doors are two different records.
+         */
+        /*
+         * The two classifications that are the HOST's own statement about the
+         * family — the router never mounted it, or its gate refused it — are
+         * recorded so no trigger offers that door again on this page
+         * (flows/DoorAvailability.ts). Only a `/api/todos*` route states it:
+         * the terminal append and branch foreign-change doors travel through
+         * here too, and their refusals say nothing about TODOs.
+         */
+        if (route.startsWith(TODOS_PATH) &&
+          (refusal.code === "todo_route_absent" || refusal.code === "feature_not_available")) ctx.recordAbsentDoor?.("todo")
+        if (stated === undefined || refusal.code === "feature_not_available") {
+          ctx.report?.(
+            `todo.request.${refusal.code} ${method} ${route} ${response.status}`,
+            new TodoRequestUnexplained({
+              message: `${method} ${route} answered ${response.status} (${request.operation}, key ${request.key})`
+            })
+          )
+        }
+        await fail(fault)
+        // A later push can race the displayed answer. Keep the refusal visible,
+        // but reload its bound wait instead of waiting for a live notification.
+        if (response.status === 409 && ["discard-foreign", "bring-in"].includes(request.operation) && current(login, revision)) await showTodo(request.n!)
+        return
+      }
+      if (result.state !== "requested" && result.state !== "accepted") {
+        await fail("TODO admission was not confirmed.")
+        return
+      }
+      const n = request.n ?? (typeof result.n === "number" && Number.isInteger(result.n) && result.n > 0 ? result.n : undefined)
+      const latest = ctx.store.collections.cards.get(cardId)
+      // A live receipt may have beaten the HTTP response; do not resurrect completed work.
+      const held = latest?.kind === "todo" ? latest.payload.requests.find(r => r.key === request.key)
+        : latest?.kind === "draft" ? latest.payload.request : undefined
+      if (held?.key !== request.key || latest?.kind === "draft" && latest.payload.committed) return
+      const attempt = typeof result.attempt === "number" && Number.isInteger(result.attempt) && result.attempt > 0 ? result.attempt : undefined
+      const place = typeof result.place === "number" && Number.isInteger(result.place) && result.place > 0 ? result.place : undefined
+      const amendmentRevision = typeof result.rev === "number" && Number.isInteger(result.rev) && result.rev > 0 ? result.rev : undefined
+      const accepted: Request = { ...request, n, state: result.state, ...(attempt === undefined ? {} : { attempt }), ...(place === undefined ? {} : { place }), ...(amendmentRevision === undefined ? {} : { revision: amendmentRevision }) }
+      await updateRequest(cardId, accepted)
+      if (n) {
+        if (cardId !== `todo:${n}`) {
+          const todo = entry(n) ?? blank(n)
+          await write({ ...todo, payload: { ...todo.payload, requests: [...todo.payload.requests.filter(r => r.key !== request.key), accepted] } })
+        }
+        watch(n)
+        // A source fact can arrive before the acknowledgement. Reuse it after
+        // recording acceptance: an idle topic will not publish it again merely
+        // because the request now has its attempt or position receipt.
+        const committed = shared.notableModels.get(n)
+        if ((request.operation === "create" || request.operation === "move") && committed && current(login, revision)) {
+          await applyModel(n, committed, [], () => current(login, revision))
+        }
+      } else await fail("TODO admission did not name a TODO.")
+    })().catch(error => ctx.report?.("todo.request", error)).finally(() => { shared.sending.delete(request.key); shared.aborts.delete(request.key) })
+    async function fail(message: string) {
+      await updateRequest(cardId, { ...request, state: "failed", error: message })
+      finishNotice(request.key, title, { status: "failed", detail: message })
+    }
+  }
+  const request = (n: number, operation: Request["operation"], body: Record<string, unknown>, key?: string) => {
+    const matches = (old: Request) => old.owner === owner() && old.operation === operation && canonicalize(old.body) === canonicalize(body)
+    const referenced = entry(n)?.payload.requests.find(matches)
+    return withTodo(n, async () => {
+      const refusal = signedIn(); if (refusal) return refusal
+      const row = entry(n) ?? blank(n)
+      const existing = row.payload.requests.find(matches)
+      // A duplicate was addressed to the pending operation even if its receipt
+      // completed while this write waited behind a source snapshot.
+      if (referenced && !existing) return { value: "Requested" }
+      const pending = existing ?? { key: key ?? randomUuid(), owner: owner()!, operation, n, body, state: "requested" as const,
+        ...(["stop", "resume"].includes(operation) && row.payload.model?.run ? { attempt: row.payload.model.run.attempt } : {}) }
+      await updateOrCreate(row, pending)
+      watch(n)
+      if (pending.state !== "accepted" || !shared.sending.has(pending.key)) send(row.id, pending)
+      return { value: "Requested" }
+    })
+  }
+  const updateOrCreate = async (row: TodoEntry, pending: Request) => write({ ...row, payload: { ...row.payload,
+    requests: [...row.payload.requests.filter(old => old.key !== pending.key), pending] } })
+  const showTodo = async (n: number) => {
+    const refusal = signedIn(); if (refusal) return refusal
+    const login = owner(), revision = identity()?.ownerRevision ?? identity()?.revision
+    try {
+      const response = await ctx.http(`${ctx.baseUrl}${todoPath(n)}`, { credentials: "include" })
+      if (!current(login, revision)) return
+      if (!response.ok) return "Could not open the TODO."
+      const model = TodoCardSchema.parse(todoActors(await response.json(), options.actors?.()))
+      await applyProjection(n, model)
+      watch(n)
+      return readResult(JSON.stringify(model))
+    } catch (error) { return unreachableSentence("TODOs", error) }
+  }
+  const publishList = (snapshot: TodoListSnapshot) => {
+    shared.list.snapshot = snapshot
+    for (const listener of shared.list.listeners) listener()
+  }
+  /** One read of every TODO; an answer for an earlier sign-in is dropped. */
+  const readList = async () => {
+    if (signedIn()) return
+    const login = owner(), revision = identity()?.ownerRevision ?? identity()?.revision
+    let next: TodoListSnapshot
+    try {
+      const response = await ctx.http(`${ctx.baseUrl}${TODOS_PATH}`, { credentials: "include" })
+      const body: unknown = response.ok ? await response.json() : undefined
+      const parsed = Array.isArray(body) ? TodoCardSchema.array().safeParse(body.map(value => todoActors(value, options.actors?.()))) : undefined
+      if (response.ok && parsed && !parsed.success) ctx.report?.("todo.list", new TodoListInvalid(rejectedFields(TodoCardSchema, parsed.error.issues)))
+      next = response.status === 401 || response.status === 403 ? { error: "forbidden" }
+        : response.status === 404 ? { error: "absent" }
+        : !response.ok ? { ...shared.list.snapshot, error: "internal" }
+        : parsed?.success ? { todos: parsed.data } : { ...shared.list.snapshot, error: "invalid" }
+    } catch { next = { ...shared.list.snapshot, error: "unreachable" } }
+    if (current(login, revision)) {
+      const followed = new Set<number>()
+      for (const model of next.todos ?? []) {
+        if (!shared.notableLive.has(model.n)) routeNotable(model, () => current(login, revision))
+        if (options.topics && (model.owner.login === login || model.present.some(actor => actor.kind === "person" && actor.login === login))) {
+          followed.add(model.n)
+          watch(model.n)
+        }
+      }
+      for (const [n, release] of shared.watches) if (!entry(n) && !followed.has(n)) { release(); shared.watches.delete(n) }
+      publishList(next)
+    }
+  }
+  const pollList = () => {
+    const list = shared.list
+    if (list.disposed || list.reading || list.timer !== undefined || list.listeners.size === 0) return
+    list.reading = true
+    void readList().catch(error => ctx.report?.("todo.list", error)).finally(() => {
+      list.reading = false
+      if (!list.disposed && list.listeners.size > 0) list.timer = setTimeout(() => { list.timer = undefined; pollList() }, options.listPollMs ?? 2000)
+    })
+  }
+  const list: TodoListSnapshots = {
+    get: () => shared.list.snapshot,
+    subscribe: listener => {
+      shared.list.listeners.add(listener)
+      pollList()
+      return () => {
+        shared.list.listeners.delete(listener)
+        if (shared.list.listeners.size === 0) {
+          if (shared.list.timer !== undefined) { clearTimeout(shared.list.timer); shared.list.timer = undefined }
+          for (const [n, release] of shared.watches) if (!entry(n)) { release(); shared.watches.delete(n) }
+        }
+      }
+    }
+  }
+  /** Review & merge (T-APP-04): the person's private Confirm card for Tn in review, read live from the TODO card. */
+  const reviewMerge = async (n: number) => {
+    const shown = await showTodo(n)
+    const model = entry(n)?.payload.model
+    if (model === undefined) return typeof shown === "string" ? shown : `No TODO T${n}`
+    if (model.state === "merged") return `T${n} already merged`
+    if (model.state !== "in_review" || !model.pr) return "Not in review yet"
+    const id = `confirm:merge:todo:${n}`, existing = ctx.store.collections.cards.get(id), title = `Merge T${n} into main?`
+    await write({ id, kind: "confirm", audience_member_id: owner()!, title, status: "active", createdAt: existing?.createdAt ?? Date.now(),
+      ordinal: existing?.ordinal ?? ctx.nextOrdinal(), payload: { id: `merge:todo:${n}` } })
+    return { value: `Opened ${title}` }
+  }
+  const loadDraftPlaces = (id: string) => {
+    const login = owner(), revision = identity()?.ownerRevision ?? identity()?.revision
+    void (async () => {
+      let options: DraftCard["place"]["options"] | undefined, failure: string | undefined
+      try {
+        const response = await ctx.http(`${ctx.baseUrl}${TODOS_PATH}`, { credentials: "include" })
+        if (!response.ok) failure = "Could not load TODO placement."
+        else options = TodoCardSchema.array().parse(await response.json()).filter((model): model is typeof model & { state: DraftCard["place"]["options"][number]["state"] } => model.state !== "merged" && model.state !== "dropped")
+          .map(model => ({ n: model.n, title: model.title, state: model.state }))
+      } catch { failure = "Could not load TODO placement." }
+      if (!current(login, revision)) return
+      const latest = draft(id)
+      if (!latest || latest.payload.committed) return
+      await write({ ...latest, payload: { ...latest.payload, optionsFailure: failure,
+        place: { ...latest.payload.place, options: options ?? latest.payload.place.options } } })
+    })().catch(error => ctx.report?.("todo.placement", error))
+  }
+  const placeOptions = (): DraftCard["place"]["options"] => [...ctx.store.collections.cards.values()]
+    .flatMap(row => row.kind === "todo" && row.payload.model && row.payload.model.state !== "merged" && row.payload.model.state !== "dropped"
+      ? [{ n: row.payload.n, title: row.title, state: row.payload.model.state }] : [])
+  const newTodo = async (input: Schema.Schema.Type<typeof TodoNewInput>, sourcePath?: string) => {
+    const refusal = signedIn(); if (refusal) return refusal
+    if (!input.cardId) {
+      const id = `draft:${randomUuid()}`
+      const card = draftCard({ id, author: owner()!, text: input.text ?? "", title: input.title, acceptance: input.acceptance, before: input.before,
+        options: placeOptions(), idempotencyKey: randomUuid() }, ctx.nextOrdinal(), Date.now())
+      await write(sourcePath ? { ...card, payload: { ...card.payload, source: { path: sourcePath, owner: owner()!, opened: false } } } : card)
+      loadDraftPlaces(id)
+      return { value: "Drafted" }
+    }
+    return commitDraft(input.cardId)
+  }
+  const prepareImageDraft = (id: string): void => {
+    const row = draft(id), preparation = row?.payload.imagePreparation
+    if (!row || !preparation || preparation.state !== "requested" || row.audience_member_id !== owner() || shared.sending.has(id)) return
+    shared.sending.add(id)
+    const login = owner(), revision = identity()?.ownerRevision ?? identity()?.revision
+    const abort = new AbortController()
+    shared.aborts.set(id, abort)
+    const live = () => current(login, revision) && draft(id)?.payload.imagePreparation?.state === "requested"
+    const notice: Request = { key: id, owner: login!, operation: "create", body: {}, state: "requested" }
+    showNotice(notice, row.title)
+    void (async () => {
+      try {
+      const repo = preparation.repo.split("/").map(encodeURIComponent).join("/")
+      const response = await ctx.http(`${ctx.baseUrl}/api/repos/${repo}/contents/.smithers/machine.json?ref=main`, { credentials: "include", signal: abort.signal })
+      if (!live()) return
+      let content: string | undefined
+      if (response.status !== 404) {
+        if (!response.ok) throw new MachineJsonUnreadable()
+        const file: unknown = await response.json()
+        if (!file || typeof file !== "object" || !("content" in file) || typeof file.content !== "string") throw new MachineJsonUnreadable()
+        const encoding = "encoding" in file ? file.encoding : undefined
+        if (encoding !== "base64" && encoding !== "utf-8" && encoding !== "utf8" && encoding !== undefined) throw new MachineJsonUnreadable()
+        content = encoding === "base64" ? new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(atob(file.content.replace(/\s/g, "")), char => char.charCodeAt(0))) : file.content
+      }
+      const proposal = addImagePackage(content, preparation.name)
+        if (!live()) return
+        const latest = draft(id)!
+        const name = preparation.name
+        await write({ ...latest, payload: { ...latest.payload,
+          prompt: `Add ${name} to ${MACHINE_JSON_PATH}. Change only that file. Preserve package order.\n\n${proposal.diff}`,
+          acceptance: [`${MACHINE_JSON_PATH} contains ${name}`, "Only .smithers/machine.json changes"],
+          seed: { files: [MACHINE_JSON_PATH], diff: proposal.diff }, imagePreparation: { ...preparation, state: "ready" } } })
+        finishNotice(id, row.title, { status: "ok", detail: "Drafted" })
+        loadDraftPlaces(id)
+      } catch (error) {
+        if (!live()) return
+        const message = preparationLine(error, "Could not draft machine image change.", unknown => ctx.report?.("image.add", unknown))
+        const latest = draft(id)!
+        await write({ ...latest, payload: { ...latest.payload, imagePreparation: { ...preparation, state: "failed", error: message } } })
+        finishNotice(id, row.title, { status: "failed", detail: message })
+      }
+    })().catch(error => ctx.report?.("image.add", error)).finally(() => { shared.sending.delete(id); shared.aborts.delete(id) })
+  }
+  const draftImagePackage = async (name: string) => {
+    const refusal = signedIn(); if (refusal) return refusal
+    try { addImagePackage(undefined, name) } catch { return "Invalid Debian package name" }
+    const target = resolveTargetRepo(ctx.store, undefined)
+    if ("error" in target) return target.error
+    const match = [...ctx.store.collections.cards.values()].find(card => card.kind === "draft"
+      && card.audience_member_id === owner() && !card.payload.committed && card.payload.imagePreparation?.name === name && card.payload.imagePreparation.repo === target.repo)
+    const prior = match?.kind === "draft" ? match : undefined
+    const id = prior?.id ?? `draft:${randomUuid()}`
+    if (!prior) {
+      const card = draftCard({ id, author: owner()!, title: `Add ${name} to the machine image`, text: "", options: [], idempotencyKey: randomUuid() }, ctx.nextOrdinal(), Date.now())
+      await write({ ...card, payload: { ...card.payload, seed: { files: [MACHINE_JSON_PATH] }, imagePreparation: { name, repo: target.repo, state: "requested" } } })
+    } else if (prior.payload.imagePreparation?.state === "failed") {
+      await write({ ...prior, payload: { ...prior.payload, imagePreparation: { name, repo: target.repo, state: "requested" } } })
+    }
+    prepareImageDraft(id)
+    return { value: "Requested" }
+  }
+  const prepareIssueDraft = (id: string): void => {
+    const row = draft(id), preparation = row?.payload.issuePreparation
+    if (!options.draftIssue || !row || !preparation || preparation.state !== "requested" || row.audience_member_id !== owner() || shared.sending.has(id)) return
+    shared.sending.add(id)
+    const login = owner(), revision = identity()?.ownerRevision ?? identity()?.revision
+    const abort = new AbortController()
+    shared.aborts.set(id, abort)
+    const live = () => current(login, revision) && draft(id)?.payload.issuePreparation?.state === "requested"
+    showNotice({ key: id, owner: login!, operation: "create", body: {}, state: "requested" }, row.title)
+    void (async () => {
+      try {
+        const result = await options.draftIssue!(preparation.source, abort.signal)
+        if (!live()) return
+        const latest = draft(id)!
+        await write({ ...latest, payload: { ...latest.payload, ...result, issuePreparation: { ...preparation, state: "ready" } } })
+        finishNotice(id, row.title, { status: "ok", detail: "Drafted" })
+        loadDraftPlaces(id)
+      } catch (error) {
+        if (!live()) return
+        const message = preparationLine(error, "Could not draft this issue.", unknown => ctx.report?.("todo.from-issue", unknown))
+        const latest = draft(id)!
+        await write({ ...latest, payload: { ...latest.payload, issuePreparation: { ...preparation, state: "failed", error: message } } })
+        finishNotice(id, row.title, { status: "failed", detail: message })
+      }
+    })().catch(error => ctx.report?.("todo.from-issue", error)).finally(() => { shared.sending.delete(id); shared.aborts.delete(id) })
+  }
+  /** One authorized snapshot stays browser-local through preparation, edits and Commit. */
+  const draftFromIssue = async (source: IssueDraftSource, requestedId?: string) => {
+    const refusal = signedIn(); if (refusal) return refusal
+    if (!source.digest || !/^[0-9a-f]{64}$/.test(source.digest)) return "Open the issue again before making a TODO."
+    const prior = [...ctx.store.collections.cards.values()].find(row => row.kind === "draft" && row.audience_member_id === owner()
+      && !row.payload.committed && row.payload.issue?.url === source.url)
+    if (prior?.kind === "draft") {
+      if (prior.payload.issuePreparation?.state === "failed") {
+        await write({ ...prior, payload: { ...prior.payload, issuePreparation: { ...prior.payload.issuePreparation, state: "requested", error: undefined } } })
+        prepareIssueDraft(prior.id)
+      }
+      return { value: prior.payload.issuePreparation && prior.payload.issuePreparation.state !== "ready" ? "Requested" : "Drafted" }
+    }
+    const digest = source.digest
+    const id = requestedId ?? `draft:${randomUuid()}`
+    const card = draftCard({ id, author: owner()!, text: options.draftIssue ? "" : issuePrompt(source), title: source.title, options: placeOptions(),
+      issue: { number: source.number, title: source.title, url: source.url, fixes: true }, issueDigest: digest,
+      idempotencyKey: randomUuid() }, ctx.nextOrdinal(), Date.now())
+    await write(options.draftIssue ? { ...card, payload: { ...card.payload, issuePreparation: { source: { ...source, comments: [...source.comments] }, state: "requested" } } } : card)
+    if (options.draftIssue) prepareIssueDraft(id)
+    else loadDraftPlaces(id)
+    return { value: options.draftIssue ? "Requested" : "Drafted" }
+  }
+  type IssueReadRequest = NonNullable<ReturnType<typeof ctx.store.session>["issueTodoRequests"]>[number]
+  const issueRequests = () => ctx.store.session().issueTodoRequests ?? []
+  const saveIssueRequest = async (request: IssueReadRequest) => {
+    await ctx.dispatch({ type: "issue.todo.requests.changed", actor: ctx.actor(), requests: [...issueRequests().filter(row => row.id !== request.id), request] }).isPersisted.promise
+  }
+  const readIssueDraft = (request: IssueReadRequest): void => {
+    if (!options.readIssue || request.owner !== owner() || request.state !== "requested" || shared.sending.has(request.id)) return
+    shared.sending.add(request.id)
+    const login = owner(), revision = identity()?.ownerRevision ?? identity()?.revision
+    const live = () => current(login, revision) && issueRequests().some(row => row.id === request.id && row.state === "requested")
+    const title = `Issue #${request.number}`
+    showNotice({ key: request.id, owner: login!, operation: "create", body: {}, state: "requested" }, title)
+    void (async () => {
+      try {
+        const source = await options.readIssue!(request.number, request.repo)
+        if (!live()) return
+        if (typeof source === "string") throw new IssueReadRefused({ sentence: source })
+        // Retire only this read's in-flight marker before the same identity
+        // becomes the model preparation. The model keeps its toast running.
+        shared.sending.delete(request.id)
+        await draftFromIssue(source, request.id)
+        if (!live()) return
+        await saveIssueRequest({ ...request, state: "completed", error: undefined })
+        if (!options.draftIssue) finishNotice(request.id, title, { status: "ok", detail: "Drafted" })
+      } catch (error) {
+        if (!live()) return
+        const message = preparationLine(error, "Could not read this issue.", unknown => ctx.report?.("todo.from-issue", unknown))
+        await saveIssueRequest({ ...request, state: "failed", error: message })
+        finishNotice(request.id, title, { status: "failed", detail: message })
+      }
+    })().catch(error => ctx.report?.("todo.from-issue", error)).finally(() => {
+      // The model preparation now owns the marker when a Draft exists.
+      if (!draft(request.id)?.payload.issuePreparation || draft(request.id)?.payload.issuePreparation?.state !== "requested") shared.sending.delete(request.id)
+    })
+  }
+  const draftIssueNumber = async (number: number, repo: string) => {
+    const refusal = signedIn(); if (refusal) return refusal
+    if (!options.readIssue) return `Open GitHub issue #${number} before making a TODO.`
+    const completed = issueRequests().find(row => row.owner === owner() && row.repo === repo && row.number === number && row.state === "completed" && draft(row.id) && !draft(row.id)?.payload.committed)
+    if (completed) {
+      const row = draft(completed.id)!
+      return row.payload.issuePreparation ? draftFromIssue(row.payload.issuePreparation.source) : { value: "Drafted" }
+    }
+    const prior = issueRequests().find(row => row.owner === owner() && row.repo === repo && row.number === number && row.state !== "completed")
+    const request: IssueReadRequest = { id: prior?.id ?? `draft:${randomUuid()}`, owner: owner()!, repo, number, state: "requested" }
+    if (prior?.state !== "requested") await saveIssueRequest(request)
+    readIssueDraft(request)
+    return { value: "Requested" }
+  }
+  const commitDraft = async (cardId: string, terminalSession?: string) => {
+    const refusal = signedIn(); if (refusal) return refusal
+    const row = draft(cardId)
+    if (!row || row.audience_member_id !== owner() && !row.payload.committed) return "This draft belongs to its author."
+    if (row.payload.issuePreparation && row.payload.issuePreparation.state !== "ready") return "Issue draft is not ready."
+    if (row.payload.imagePreparation && row.payload.imagePreparation.state !== "ready") return "Machine image draft is not ready."
+    if (row.payload.committed) return { value: `Committed T${row.payload.committed.n}` }
+    if (row.payload.request?.state === "accepted") return { value: "Requested" }
+    const parsed = DraftCardSchema.safeParse(row.payload)
+    if (!parsed.success) return "Invalid draft value."
+    const model = { ...row.payload, ...parsed.data }
+    const place = model.place
+    if (!model.title.trim() || !model.prompt.trim()) return "A TODO needs a title and prompt."
+    if (place.mode !== "append" && !place.options.some(option => option.n === place.n && !["merged", "dropped"].includes(option.state))) return "Choose an unmerged TODO."
+    const pending = model.request ?? { key: model.idempotencyKey, owner: owner()!, operation: place.mode === "amend" ? "amend" as const : "create" as const,
+      n: place.mode === "amend" ? place.n : undefined, state: "requested" as const,
+      body: { title: model.title, prompt: model.prompt, acceptance: model.acceptance,
+        ...(terminalSession ? { terminal_session: terminalSession } : {}),
+        ...(place.mode === "amend" ? {} : { place: { mode: place.mode, ...(place.mode !== "append" ? { n: place.n } : {}) } }),
+        ...(model.issue ? { issue: model.issue.number, fixes: model.issue.fixes, ...(model.issueDigest ? { issue_digest: model.issueDigest } : {}) } : {}) } }
+    const retry: Request = { ...pending, state: "requested", error: undefined }
+    await updateRequest(cardId, retry)
+    send(cardId, retry)
+    return { value: "Requested" }
+  }
+  const terminalNewTodo = async (session: string, input: { title: string; prompt: string }) => {
+    const refusal = signedIn(); if (refusal) return refusal
+    const prior = [...ctx.store.collections.cards.values()].find(row => row.kind === "draft"
+      && row.audience_member_id === owner() && row.payload.request?.body.terminal_session === session
+      && row.payload.title === input.title && row.payload.prompt === input.prompt)
+    if (prior?.kind === "draft") return commitDraft(prior.id, session)
+    const id = `draft:${randomUuid()}`
+    await write(draftCard({ id, author: owner()!, title: input.title, text: input.prompt, options: [], idempotencyKey: randomUuid() }, ctx.nextOrdinal(), Date.now()))
+    return commitDraft(id, session)
+  }
+  const setTodoFormField = async (cardId: string, field: string, value: string): Promise<string | void> => {
+    const row = draft(cardId)
+    if (!row || row.audience_member_id !== owner() || row.payload.committed) return "This draft belongs to its author."
+    if (row.payload.issuePreparation && row.payload.issuePreparation.state !== "ready") return "Issue draft is not ready."
+    if (row.payload.imagePreparation && row.payload.imagePreparation.state !== "ready") return "Machine image draft is not ready."
+    if (row.payload.request) return "Commit is pending."
+    if (row.payload.request) return "Retry the pending commit before editing."
+    let patch: Partial<DraftCard>
+    try {
+      switch (field) {
+        case "title": case "prompt": patch = { [field]: value }; break
+        case "acceptance": {
+          const lines: unknown = value.trim().startsWith("[") ? JSON.parse(value) : value.split("\n").filter(Boolean)
+          if (!Array.isArray(lines) || lines.some(line => typeof line !== "string")) return "Invalid draft value."
+          patch = { acceptance: lines }; break
+        }
+        case "place": {
+          const place: unknown = JSON.parse(value)
+          if (!place || typeof place !== "object" || Array.isArray(place)) return "Invalid draft value."
+          const input = place as Record<string, unknown>
+          if (Object.keys(input).some(key => key !== "mode" && key !== "n") || input.mode === "append" && "n" in input) return "Invalid draft value."
+          patch = { place: { ...input, options: row.payload.place.options } as DraftCard["place"] }; break
+        }
+        case "fixes": if (value !== "true" && value !== "false") return "Invalid draft value."; patch = { issue: row.payload.issue ? { ...row.payload.issue, fixes: value === "true" } : undefined }; break
+        default: return "Unknown draft field."
+      }
+      const model = DraftCardSchema.parse({ ...row.payload, ...patch })
+      const place = model.place
+      if (place.mode !== "append" && !place.options.some(option => option.n === place.n && !["merged", "dropped"].includes(option.state))) return "Choose an unmerged TODO."
+      await write({ ...row, title: model.title, payload: { ...row.payload, ...model } })
+    } catch { return "Invalid draft value." }
+  }
+  const dismissTodoDraft = (cardId: string): string | void => {
+    const row = draft(cardId)
+    if (!row || row.audience_member_id !== owner()) return "This draft belongs to its author."
+    if (row.payload.committed) return "This draft was committed."
+    if (row.payload.request) return "Commit was requested."
+    ctx.dispatch({ type: "card.removed", actor: ctx.actor(), id: cardId })
+  }
+  const amendTodo = (input: Schema.Schema.Type<typeof TodoAmendInput>) => input.cardId
+    ? commitDraft(input.cardId) : request(input.n, "amend", { prompt: input.text, ...(input.acceptance === undefined ? {} : { acceptance: input.acceptance }) }, input.idempotencyKey)
+  const resumeTodos = () => {
+    const epoch = identity()?.ownerRevision ?? identity()?.revision
+    if (epoch !== shared.epoch) { stop(); shared.epoch = epoch; publishList({}) }
+    if (signedIn()) return
+    pollList()
+    for (const request of issueRequests()) readIssueDraft(request)
+    for (const row of ctx.store.collections.cards.values()) {
+      if (row.kind === "todo") {
+        // Follow only TODOs this seam fetched or requested; a row without either is the design seed's (MOCK SEAM).
+        if (row.payload.model || row.payload.requests.length > 0) watch(row.payload.n)
+        for (const pending of row.payload.requests) {
+          if (pending.owner === owner() && pending.state !== "failed") { showNotice(pending, row.title); send(row.id, pending) }
+        }
+      }
+      if (row.kind === "draft" && row.payload.source?.owner === owner() && row.payload.committed && !row.payload.source?.opened) watch(row.payload.committed.n)
+      if (row.kind === "draft" && row.audience_member_id === owner()) {
+        prepareImageDraft(row.id)
+        prepareIssueDraft(row.id)
+        if (row.payload.request) send(row.id, row.payload.request)
+        if (!row.payload.request) loadDraftPlaces(row.id)
+      }
+    }
+  }
+  const stop = () => {
+    for (const abort of shared.aborts.values()) abort.abort()
+    shared.aborts.clear()
+    for (const unsubscribe of shared.watches.values()) unsubscribe()
+    shared.watches.clear()
+    shared.mergedNotices.clear()
+    shared.notableModels.clear()
+    shared.notableLive.clear()
+    for (const timer of shared.timers.values()) clearTimeout(timer)
+    shared.timers.clear()
+    if (shared.list.timer !== undefined) { clearTimeout(shared.list.timer); shared.list.timer = undefined }
+  }
+  const subscription = ctx.store.collections.identitySessions.subscribeChanges(() => queueMicrotask(resumeTodos))
+  options.onDispose?.(() => { subscription.unsubscribe(); shared.list.disposed = true; stop() })
+  const observingConfirmations = new Set<string>()
+  const observeConfirmation = async (confirmation: MemberConfirmation): Promise<void> => {
+    const effect = confirmation.payload.effect
+    if (confirmation.command === "merge" && confirmation.state === "pending" && !effect && (confirmation.payload.merge_attempt ?? 0) > 0 && ctx.actor() === "user" && !signedIn()) {
+      const key = `confirmation:${confirmation.id}`
+      for (const row of ctx.store.collections.cards.values()) {
+        if (row.kind === "todo" && row.payload.requests.some(request => request.key === key)) await write({ ...row, payload: { ...row.payload, requests: row.payload.requests.filter(request => request.key !== key) } }, "system")
+      }
+      return
+    }
+    const observedId = confirmation.command === "merge" ? `${confirmation.id}:${confirmation.payload.merge_attempt ?? 0}` : confirmation.id
+    if (ctx.actor() !== "user" || signedIn() || (confirmation.state !== "approved" && !(confirmation.command === "merge" && confirmation.state === "pending")) || !effect || effect.todo === undefined ||
+      !["todo.new", "todo.from-issue", "flow.edit", "agent.edit", "todo.drop", "todo.amend", "branch.bring-in", "branch.discard-foreign", "merge"].includes(confirmation.command) || observingConfirmations.has(confirmation.id)) return
+    const row = entry(effect.todo) ?? blank(effect.todo)
+    if (row.payload.observedConfirmations?.includes(observedId)) return
+    observingConfirmations.add(confirmation.id)
+    const login = owner()!, revision = identity()?.ownerRevision ?? identity()?.revision
+    try {
+      const request: Request = { key: effect.request, owner: login,
+        operation: confirmation.command === "merge" ? "merge" : confirmation.command === "branch.bring-in" ? "bring-in" : confirmation.command === "branch.discard-foreign" ? "discard-foreign" : ["todo.new", "todo.from-issue", "flow.edit", "agent.edit"].includes(confirmation.command) ? "create" : confirmation.command === "todo.amend" ? "amend" : "drop",
+        ...(effect.revision === undefined ? {} : { revision: effect.revision }),
+        body: ["branch.bring-in", "branch.discard-foreign"].includes(confirmation.command) ? { ...confirmation.payload.input as object, branch: confirmation.payload.card.subject.ref } : confirmation.payload.input, n: effect.todo, state: "accepted" }
+      await write({ ...row, title: confirmation.payload.card.summary, payload: { ...row.payload,
+        observedConfirmations: [...row.payload.observedConfirmations ?? [], observedId],
+        requests: [...row.payload.requests.filter(old => old.key !== request.key), request] } }, "system")
+      if (current(login, revision)) { showNotice(request, row.title); watch(effect.todo) }
+    } finally { observingConfirmations.delete(confirmation.id) }
+  }
+  const answerForeign = async (operation: "bring-in" | "discard-foreign", branch: string, id: string, revision: string) => {
+    const refusal = signedIn(); if (refusal) return refusal
+    // Resolve only served projections already on this screen or in the stack.
+    // Persist the request before network admission; the route rechecks authority
+    // and the exact displayed wait/head before changing anything.
+    const models = new Map((shared.list.snapshot.todos ?? []).map(model => [model.n, model]))
+    for (const row of ctx.store.collections.cards.values()) {
+      if (row.kind === "todo" && row.payload.model) models.set(row.payload.n, row.payload.model)
+    }
+    const matches = [...models.values()].filter(model => model.branch?.name === branch)
+    if (matches.length !== 1) return "Could not open the TODO."
+    return request(matches[0]!.n, operation, { branch, id, revision })
+  }
+  return { list, observeConfirmation, preapproveTodo: (n: number, approved: boolean) => request(n, approved ? "preapprove" : "unapprove", {}),
+    bringIn: (branch: string, id: string, revision: string) => answerForeign("bring-in", branch, id, revision),
+    discardForeign: (branch: string, id: string, revision: string) => answerForeign("discard-foreign", branch, id, revision), mergeTodo: (n: number, head: string) => request(n, "merge", { reviewed_head_sha: head }), reviewMerge, showTodo, newTodo, terminalNewTodo, newFlowSourceTodo: async (input: Schema.Schema.Type<typeof TodoNewInput>, path: string) => {
+      const refusal = signedIn(); if (refusal) return refusal
+      const login = owner(), revision = identity()?.ownerRevision ?? identity()?.revision
+      if (!options.openSource || options.sourceAvailable && !await options.sourceAvailable(path)) return "Branch files are unavailable."
+      if (!current(login, revision)) return "Sign in to work on TODOs."
+      return newTodo(input, path)
+    }, draftImagePackage, draftFromIssue, draftIssueNumber: options.readIssue ? draftIssueNumber : undefined, amendTodo, setTodoFormField, dismissTodoDraft, resumeTodos, applyTodoProjection: applyProjection,
+    answerTodo: (n: number, answer: string, wait?: string) => {
+      const model = entry(n)?.payload.model ?? shared.list.snapshot.todos?.find(todo => todo.n === n)
+      const waits = model?.waits.filter(row => row.actions.some(action => action.tag === "todo.answer")) ?? []
+      const id = wait ?? (waits.length === 1 ? waits[0]!.id : undefined)
+      if (!id || !waits.some(row => row.id === id)) return Promise.resolve("Choose an open wait.")
+      return request(n, "answer", { answer, wait: id })
+    },
+    steerTodo: (n: number, text: string) => request(n, "steer", { text }),
+    controlTodo: (n: number, operation: "stop" | "resume" | "retry" | "retry-current-flow" | "drop" | "takeover" | "keep-moved" | "return-to-item", text?: string, waitId?: string) => {
+      if (operation === "keep-moved" || operation === "return-to-item") {
+        const wait = entry(n)?.payload.model?.waits.find(wait => wait.kind === "moved_off" && (!wait.answered_by || wait.return_error !== undefined))
+        return request(n, operation, waitId ? { id: waitId } : wait ? { id: wait.id } : {})
+      }
+      return request(n, operation, text ? { steer: text } : {})
+    },
+    /** Move up or Move down (POST /api/todos/{n} {op: move, direction}); a press while the last is pending is that press. */
+    moveTodo: (n: number, direction: "up" | "down") => request(n, "move", { direction }),
+    disposeTodos: stop }
+}
+export type TodoSeam = ReturnType<typeof createTodoSeam>

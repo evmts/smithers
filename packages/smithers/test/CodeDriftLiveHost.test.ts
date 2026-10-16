@@ -28,7 +28,7 @@ import { expect, it } from "vitest"
 import * as NodeControl from "../src/NodeControl.ts"
 
 const writeFlow = (root: string, prompt: string) => {
-  const directory = join(root, "flows", "review")
+  const directory = join(root, ".smithers", "flows", "review")
   mkdirSync(directory, { recursive: true })
   writeFileSync(
     join(directory, "flow.mdx"),
@@ -83,7 +83,7 @@ it("refuses a flow edited on disk while the host stayed up", async () => {
 })
 
 it("refuses a flow deleted from disk while the host stayed up", async () => {
-  const { card, drift, after } = await afterEdit((root) => rmSync(join(root, "flows", "review"), { recursive: true }))
+  const { card, drift, after } = await afterEdit((root) => rmSync(join(root, ".smithers", "flows", "review"), { recursive: true }))
   expect(drift).toEqual(new CodeDrift({ runId: after.runId, flowId: "review", recorded: card.executionDigest }))
   expect(after.status).toBe("parked")
 })
@@ -117,9 +117,9 @@ it.skipIf(process.getuid?.() === 0)("reads drift without replacing the catalog a
         yield* runtime.writeStatus(runId, yield* runtime.claimFence(runId), "parked")
 
         // Unreadable on the first read: the same typed refusal a failed rescan gives.
-        chmodSync(join(root, "flows"), 0o000)
+        chmodSync(join(root, ".smithers", "flows"), 0o000)
         const unreadable = yield* Effect.flip(runtime.codeDrift(runId)).pipe(
-          Effect.ensuring(Effect.sync(() => chmodSync(join(root, "flows"), 0o700)))
+          Effect.ensuring(Effect.sync(() => chmodSync(join(root, ".smithers", "flows"), 0o700)))
         )
         // Readable again, the next read is not stuck on that refusal.
         const unchanged = yield* runtime.codeDrift(runId)
@@ -160,9 +160,9 @@ it("reads drift again once a flows directory missing on the first read returns",
         const runId: RunId = launched.run.runId
         yield* runtime.writeStatus(runId, yield* runtime.claimFence(runId), "parked")
 
-        renameSync(join(root, "flows"), join(root, "flows-away"))
+        renameSync(join(root, ".smithers", "flows"), join(root, "flows-away"))
         const missing = yield* runtime.codeDrift(runId)
-        renameSync(join(root, "flows-away"), join(root, "flows"))
+        renameSync(join(root, "flows-away"), join(root, ".smithers", "flows"))
         const returned = yield* runtime.codeDrift(runId)
         return { card, runId, missing, returned }
       }).pipe(Effect.provide(engine.runtime), Effect.scoped)
@@ -208,9 +208,9 @@ export default Flow.make("native", {
 
 /** A real file module and loader retain completed work across code adoption. */
 const moduleHost = (root: string) => {
-  mkdirSync(join(root, "flows", "native"), { recursive: true })
+  mkdirSync(join(root, ".smithers", "flows", "native"), { recursive: true })
   symlinkSync(resolve("node_modules"), join(root, "node_modules"), "dir")
-  writeFileSync(join(root, "flows", "native", "flow.ts"), moduleSource(root))
+  writeFileSync(join(root, ".smithers", "flows", "native", "flow.ts"), moduleSource(root))
   return moduleLayer(root)
 }
 
@@ -289,7 +289,7 @@ it("resume --allow-code-drift on an edited module flow runs it", async () => {
       const control = yield* Control.Control
       const { card, runId, parked } = yield* launchParked()
       yield* Effect.sync(() =>
-        writeFileSync(join(root, "flows", "native", "flow.ts"), `${moduleSource(root)}// adopted\n`)
+        writeFileSync(join(root, ".smithers", "flows", "native", "flow.ts"), `${moduleSource(root)}// adopted\n`)
       )
       const current = yield* onDisk
       const receipt = yield* control.resume({ runId, idempotencyKey: "resume", allowCodeDrift: true })
@@ -322,7 +322,7 @@ it("resumes a retained module after source deletion but refuses adopting absent 
       const control = yield* Control.Control
       const runtime = yield* ControlRuntime.ControlRuntime
       const { card, runId, parked } = yield* launchParked()
-      yield* Effect.sync(() => rmSync(join(root, "flows", "native"), { recursive: true }))
+      yield* Effect.sync(() => rmSync(join(root, ".smithers", "flows", "native"), { recursive: true }))
       const drift = yield* runtime.codeDrift(runId)
       const plain = yield* control.resume({ runId, idempotencyKey: "plain" })
       yield* settled(runId, parked.updatedAt)
@@ -347,7 +347,7 @@ it("a round of a run that adopted drift runs the adopted code the check admitted
       const runtime = yield* ControlRuntime.ControlRuntime
       const { runId, parked } = yield* launchParked()
       yield* Effect.sync(() =>
-        writeFileSync(join(root, "flows", "native", "flow.ts"), `${moduleSource(root)}// adopted\n`)
+        writeFileSync(join(root, ".smithers", "flows", "native", "flow.ts"), `${moduleSource(root)}// adopted\n`)
       )
       yield* control.resume({ runId, idempotencyKey: "resume", allowCodeDrift: true })
       const adopted = yield* settled(runId, parked.updatedAt)
@@ -387,7 +387,7 @@ it("an allowed drift to code this host cannot load leaves the run parked", async
       const { card, runId } = yield* launchParked()
       yield* Effect.sync(() =>
         writeFileSync(
-          join(root, "flows", "native", "flow.ts"),
+          join(root, ".smithers", "flows", "native", "flow.ts"),
           `${moduleSource(root)}throw new Error("the entry does not load")\n`
         )
       )
@@ -409,7 +409,7 @@ it("keeps adopted and newly planned modules replayable after the host restarts",
       Effect.gen(function*() {
         const control = yield* Control.Control
         const first = yield* launchParked()
-        writeFileSync(join(root, "flows", "native", "flow.ts"), `${moduleSource(root)}// adopted\n`)
+        writeFileSync(join(root, ".smithers", "flows", "native", "flow.ts"), `${moduleSource(root)}// adopted\n`)
         yield* control.resume({ runId: first.runId, idempotencyKey: "adopt", allowCodeDrift: true })
         const adopted = yield* settled(first.runId, first.parked.updatedAt)
         expect(adopted.status).toBe("parked")

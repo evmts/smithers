@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/smithersai/smithers/packages/backend/flowdispatch"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
@@ -35,8 +36,18 @@ type FlowLoadVersion struct {
 // FlowLoadResult is a flow-load run's output (FlowLoadResult in
 // flows/coding/flow-load.ts).
 type FlowLoadResult struct {
-	CommitID string            `json:"commitId"`
-	Flows    []FlowLoadVersion `json:"flows"`
+	CommitID    string               `json:"commitId"`
+	Flows       []FlowLoadVersion    `json:"flows"`
+	Diagnostics []FlowLoadDiagnostic `json:"diagnostics,omitempty"`
+}
+
+// FlowLoadDiagnostic is one repository-wide problem a load found beside its
+// versions (FlowLoadDiagnostic in flows/coding/flow-load.ts). Today the only
+// code is retired_root: a root flows/ that still holds flow entries.
+type FlowLoadDiagnostic struct {
+	Code    string `json:"code"`
+	Path    string `json:"path"`
+	Message string `json:"message"`
 }
 
 // flowSyncing is a flow whose files changed on main since the last load: the
@@ -64,6 +75,11 @@ func decodeFlowLoadResult(raw []byte, commit string) (FlowLoadResult, error) {
 			return result, fmt.Errorf("flow-load answered an invalid version of %q", flow.Name)
 		}
 		seen[flow.Name] = true
+	}
+	for _, diagnostic := range result.Diagnostics {
+		if diagnostic.Code == "" || diagnostic.Message == "" {
+			return result, errors.New("flow-load answered a diagnostic without a code or message")
+		}
 	}
 	return result, nil
 }
@@ -309,7 +325,7 @@ func RepositoryFlowCatalog(ctx context.Context, q *db.Queries, repositoryID int6
 		}
 		card.Versions = append(card.Versions, proposals[name]...)
 		if card.Source == (FlowSource{}) && len(proposals[name]) > 0 {
-			card.Source = FlowSource{Path: "flows/" + name + "/flow.ts"}
+			card.Source = FlowSource{Path: flowdispatch.RepositoryFlowPath(name)}
 		}
 		if len(card.Versions) == 0 {
 			continue

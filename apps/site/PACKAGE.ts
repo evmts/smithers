@@ -14,7 +14,6 @@
  */
 import { Smithers } from "@smthrs/targets"
 import { Package as scriptPackage } from "../../scripts/PACKAGE.ts"
-import { Package as examplesPackage } from "../../examples/PACKAGE.ts"
 import { Package as errorsPackage } from "../../packages/errors/PACKAGE.ts"
 import { Package as chainPackage } from "../../packages/smithers/agent/chain/PACKAGE.ts"
 import { Package as evalsPackage } from "../../packages/smithers/agent/evals/PACKAGE.ts"
@@ -102,7 +101,7 @@ const appSources = uiPackage.webSources
 /** Package metadata used by documentation projections. */
 const docsKit = Smithers.Filegroup({
   srcs: [
-    Smithers.file("//scripts/package-docs.mjs"),
+    Smithers.file("//flows/docs-sync/package-docs.mjs"),
     Smithers.file("//scripts/workspace-packages.mjs"),
     Smithers.file("//pnpm-workspace.yaml"),
     ...workspacePackages().map(({ dir }) => Smithers.file(`//${dir}/package.json`))
@@ -269,11 +268,15 @@ const llms = Smithers.Generate({
 
 /**
  * Checks documentation text extraction, install guidance, public CLI page
- * selection, and built release URLs, including redirects and migration anchors.
+ * selection, and built release URLs, including redirects and migration anchors,
+ * and where site copy says a repository's flows live (M-49).
  */
 const docsTextTest = Smithers.Shell.Test({
-  shell: "node --test --test-concurrency=1 apps/site/scripts/docs-text.test.mjs apps/site/scripts/built-site.test.mjs apps/site/scripts/gen-cli-data.test.mjs",
+  shell: "node --test --test-concurrency=1 apps/site/scripts/docs-text.test.mjs apps/site/scripts/built-site.test.mjs apps/site/scripts/gen-cli-data.test.mjs apps/site/scripts/flows-location.test.mjs",
   data: [
+    Smithers.file("scripts/flows-location.test.mjs"),
+    Smithers.file("src/data/migration-paths.json"),
+    Smithers.file("src/components/HeroStage.astro"),
     Smithers.file("scripts/docs-text.mjs"),
     Smithers.file("scripts/docs-text.test.mjs"),
     Smithers.file("src/content/docs/docs/reference/http-api.mdx"),
@@ -423,6 +426,27 @@ const siteTypecheckTest = Smithers.Shell.Test({
   ]
 })
 
+/**
+ * The collector and resolver behind `//scripts/repo-contract:smithersLinks`:
+ * which smithers.sh URLs a published package ships, and whether the page a URL
+ * lands on is about the URL's own path. Fixtures only, so it needs no site
+ * build; the contract gate runs the same rules over the real build.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const publishedLinksUnit = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//apps/site/scripts/published-links.test.mjs")]),
+  srcs: [
+    ...sources,
+    Smithers.file("//scripts/pack-release.mjs"),
+    Smithers.file("//scripts/workspace-packages.mjs"),
+    Smithers.file("//pnpm-workspace.yaml")
+  ],
+  deps: [],
+  cwd
+})
+
 /** Verify the support claims against the release workflow and complete workspace inventory. */
 const supportMatrixTest = Smithers.Shell.Test({
   shell: "node --test --test-concurrency=1 apps/site/scripts/support-matrix.test.mjs",
@@ -458,7 +482,6 @@ const docsRuntimeTests = Smithers.Shell.Test({
     Smithers.file("//apps/server/scripts/canary/workers-manifest.ts"),
     Smithers.file("//apps/bug-worker/README.md"),
     Smithers.file("//apps/bug-worker/package.json"),
-    examplesPackage.docs,
     cliPackage.docsSources,
     flowPackage.docsSources,
     enginePackage.docsSources,
@@ -618,6 +641,7 @@ export const Package = Smithers.Package({
     installPageTest,
     recordTapeTest,
     supportMatrixTest,
+    publishedLinksUnit,
     catalogPublicationTest,
     siteTypecheckTest,
     sameOriginUrlTest,

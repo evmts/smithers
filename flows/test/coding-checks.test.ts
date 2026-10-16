@@ -49,8 +49,8 @@ test("native command checks read immutable source during edits and replay exact 
   jj("config", "set", "--repo", "user.name", "Check Acceptance")
   jj("config", "set", "--repo", "user.email", "check@example.com")
   await writeFile(join(root, ".gitignore"), ".flows/\n")
-  const definition = join(root, "flows", "checks", "schema", "flow.mdx")
-  await mkdir(join(root, "flows", "checks", "schema"), { recursive: true })
+  const definition = join(root, ".smithers", "flows", "checks", "schema", "flow.mdx")
+  await mkdir(join(root, ".smithers", "flows", "checks", "schema"), { recursive: true })
   const declare = (mode: string, infraExitCodes?: unknown) =>
     writeFile(
       definition,
@@ -104,7 +104,7 @@ process.exit(mode==='fail'?7:value==='old source'?0:9);
       Effect.gen(function*() {
         const found = yield* (yield* Discovery.Discovery).scan({
           source: "project",
-          root: join(root, "flows"),
+          root: join(root, ".smithers", "flows"),
           naming: "path"
         })
         assert.equal(found.entries.length, 1)

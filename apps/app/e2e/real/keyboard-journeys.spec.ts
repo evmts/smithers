@@ -125,7 +125,7 @@ referenceTest("C-UI-01 prepared install branch, stack, flow and run keyboard doo
     const flow = page.locator('.smithers-card[data-kind="flow"]').last()
     await expect(flow).toContainText("Active")
     await journeyActivate(flow.getByRole("button", { name: "Source", exact: true }))
-    await expect(page.getByRole("textbox", { name: "Prompt", exact: true }).last()).toHaveValue(/Change flows\/todo\/flow.ts: Edit the source/)
+    await expect(page.getByRole("textbox", { name: "Prompt", exact: true }).last()).toHaveValue(/Change \.smithers\/flows\/todo\/flow.ts: Edit the source/)
     await expect.poll(async () => (await f.read("Ben", `/api/todos/${n}`)).run?.id, { timeout: 660_000 }).toEqual(expect.any(String))
     const attempt = (await f.read("Ben", `/api/todos/${n}`)).run.id
     await runSlash(page, `/todo ${n}`)

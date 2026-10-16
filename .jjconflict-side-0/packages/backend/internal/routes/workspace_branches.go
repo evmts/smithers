@@ -1,0 +1,633 @@
+package routes
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/live"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
+	"github.com/smithersai/smithers/packages/backend/jobs"
+)
+
+// BranchReadService is the workspace service's branch projection.
+type BranchReadService interface {
+	ListBranches(context.Context, int64, int64, int, int) ([]services.BranchMachineResponse, int64, error)
+	GetBranch(context.Context, string, int64, int64) (services.BranchMachineResponse, error)
+}
+
+// BranchForkService is the stack service's Fork.
+type BranchForkService interface {
+	ForkBranch(context.Context, int64, int64, services.BranchForkInput) (services.BranchMachineResponse, error)
+}
+
+type BranchArchiveService interface {
+	ArchiveScratchBranch(context.Context, string, int64, int64) (services.BranchMachineResponse, error)
+}
+
+type BranchAddService interface {
+	AddBranchToStack(context.Context, int64, int64, string, services.BranchAddInput) (services.MythicalItemView, error)
+}
+
+type BranchAnswerService interface {
+	AnswerBranch(context.Context, string, services.TodoControlInput) (services.TodoControlReceipt, error)
+}
+
+type BranchRebaseService interface {
+	RebaseBranch(context.Context, int64, int64, string, services.BranchRebaseInput) (services.TodoControlReceipt, error)
+}
+
+type BranchMachineControl interface {
+	RequestBranchMachine(context.Context, string, int64, int64, string, string) (jobs.RequestReceipt, error)
+}
+
+// BranchHandler serves the install's branches (spec §6.3 /api/branches):
+// reads of the workspace projection and Fork, which the stack service
+// performs. Authorize decides the command for the request's person and
+// resolves the install's repository; a caller never names either.
+type BranchHandler struct {
+	Authorize func(r *http.Request, command string) (repositoryID, userID int64, err error)
+	Reads     BranchReadService
+	Forks     BranchForkService
+	Files     BranchFileReadService
+	Source    *services.InstallSource
+	Answers   BranchAnswerService
+	Archives  BranchArchiveService
+	Adds      BranchAddService
+	Rebases   BranchRebaseService
+	Machines  BranchMachineControl
+	Activity  *LiveHandler
+}
+
+// RegisterBranchRoutes mounts /branches under the install's /api router;
+// the legacy hosted composition never calls it. A route whose service the
+// composition lacks answers 503.
+func RegisterBranchRoutes(r chi.Router, h *BranchHandler) {
+	if h == nil {
+		return
+	}
+	r.Get("/branches", h.ListBranches)
+	r.Get("/branches/{b}", h.GetBranch)
+	r.Post("/branches", h.Fork)
+	r.Post("/branches/{b}/add-to-stack", h.AddToStack)
+	r.Post("/branches/{b}/archive", h.Archive)
+	r.Post("/branches/{b}", h.Answer)
+	r.Get("/branches/{b}/files", h.ListFiles)
+	r.Get("/branches/{b}/activity", h.GetActivity)
+}
+
+// GetActivity reads exactly the retained projection used by branch:<id>:activity.
+// Authorization resolves the branch before the shared topic's own access check.
+func (h *BranchHandler) GetActivity(w http.ResponseWriter, r *http.Request) {
+	repository, user, err := h.authorize(r, "branch.read", h.Reads != nil && h.Activity != nil && h.Activity.Topics != nil)
+	if err != nil {
+		writeBranchError(w, r, err)
+		return
+	}
+	branch, err := url.PathUnescape(chi.URLParam(r, "b"))
+	if err != nil {
+		writeBranchError(w, r, pkgerrors.BadRequest("Invalid branch"))
+		return
+	}
+	row, err := h.Reads.GetBranch(r.Context(), branch, repository, user)
+	if err != nil {
+		writeBranchError(w, r, err)
+		return
+	}
+	resolve, bound := h.Activity.Topics(r)
+	if resolve == nil || bound != repository {
+		writeBranchError(w, r, pkgerrors.New(pkgerrors.CodeServiceUnavailable, "Branch activity unavailable"))
+		return
+	}
+	source, refusal := resolve(r.Context(), "branch:"+row.Machine.ID+":activity")
+	if refusal == live.Forbidden {
+		writeBranchError(w, r, pkgerrors.Forbidden("access denied"))
+		return
+	}
+	if refusal != "" || source.Log == nil || source.Log.Page == nil {
+		writeBranchError(w, r, pkgerrors.New(pkgerrors.CodeServiceUnavailable, "Branch activity unavailable"))
+		return
+	}
+	page, err := source.Log.Page(r.Context(), nil)
+	if err != nil {
+		writeBranchError(w, r, err)
+		return
+	}
+	pkgerrors.WriteJSON(w, http.StatusOK, page.Data)
+}
+
+func (h *BranchHandler) Answer(w http.ResponseWriter, r *http.Request) {
+	body, command, err := DecodeBranchCommand(http.MaxBytesReader(w, r.Body, 64<<10))
+	if err != nil {
+		writeBranchError(w, r, err)
+		return
+	}
+	if body.Op == "sleep" || body.Op == "wake" {
+		repository, user, err := h.authorize(r, command, h.Machines != nil)
+		if err != nil {
+			writeBranchError(w, r, err)
+			return
+		}
+		branch, err := url.PathUnescape(chi.URLParam(r, "b"))
+		if err != nil {
+			writeBranchError(w, r, pkgerrors.BadRequest("Invalid branch request"))
+			return
+		}
+		receipt, err := h.Machines.RequestBranchMachine(r.Context(), branch, repository, user, body.Op, r.Header.Get("Idempotency-Key"))
+		if err != nil {
+			writeBranchError(w, r, err)
+			return
+		}
+		pkgerrors.WriteJSON(w, http.StatusAccepted, receipt)
+		return
+	}
+	if command == "branch.rebase" || command == "branch.rebase-now" {
+		input := services.BranchRebaseInput{Rebase: body.rebaseNow(), ConflictChange: body.ConflictChange, OntoRevision: body.OntoRevision, Request: r.Header.Get("Idempotency-Key")}
+		if err := input.Validate(); err != nil {
+			writeBranchError(w, r, err)
+			return
+		}
+		repository, user, err := h.authorize(r, command, h.Rebases != nil)
+		if err != nil {
+			writeBranchError(w, r, err)
+			return
+		}
+		branch, err := url.PathUnescape(chi.URLParam(r, "b"))
+		if err != nil {
+			writeBranchError(w, r, pkgerrors.BadRequest("Invalid branch"))
+			return
+		}
+		receipt, err := h.Rebases.RebaseBranch(r.Context(), repository, user, branch, input)
+		if err != nil {
+			writeBranchError(w, r, err)
+			return
+		}
+		pkgerrors.WriteJSON(w, http.StatusAccepted, receipt)
+		return
+	}
+	repository, user, err := h.authorize(r, "branch."+body.Op, h.Answers != nil)
+	if err != nil {
+		writeBranchError(w, r, err)
+		return
+	}
+	branch, err := url.PathUnescape(chi.URLParam(r, "b"))
+	if err != nil {
+		writeBranchError(w, r, pkgerrors.BadRequest("Invalid branch"))
+		return
+	}
+	receipt, err := h.Answers.AnswerBranch(r.Context(), branch, services.TodoControlInput{
+		Op: body.Op, Wait: body.ID, Revision: body.Revision,
+		Repository: repository, Actor: user, Request: r.Header.Get("Idempotency-Key"),
+	})
+	if err != nil {
+		todoRouteError(w, err)
+		return
+	}
+	pkgerrors.WriteJSON(w, http.StatusAccepted, receipt)
+}
+
+// BranchCommandInput and DecodeBranchCommand are shared by the install's
+// admission middleware and handler, so body-dependent authority cannot drift.
+type BranchCommandInput struct {
+	Op             string `json:"op"`
+	ID             string `json:"id"`
+	Revision       string `json:"revision"`
+	Rebase         bool   `json:"rebase"`
+	ConflictChange string `json:"conflict_change"`
+	OntoRevision   string `json:"onto_revision"`
+}
+
+// The catalog's op selects the shared command; retained bindings select Done.
+// An explicit rebase:true remains a new-rebase request and rejects bindings.
+func (body BranchCommandInput) rebaseNow() bool {
+	return body.Rebase || (body.Op == "rebase" && body.ConflictChange == "" && body.OntoRevision == "")
+}
+
+func DecodeBranchCommand(reader io.Reader) (BranchCommandInput, string, error) {
+	var body BranchCommandInput
+	decoder := json.NewDecoder(reader)
+	decoder.DisallowUnknownFields()
+	invalid := func() (BranchCommandInput, string, error) {
+		return body, "", pkgerrors.BadRequest("Invalid branch answer")
+	}
+	// Preserve field presence: empty/null Done bindings must never select a
+	// new rebase merely because decoding them produced empty Go strings.
+	encoded := struct {
+		*BranchCommandInput
+		ConflictChange json.RawMessage `json:"conflict_change"`
+		OntoRevision   json.RawMessage `json:"onto_revision"`
+	}{BranchCommandInput: &body}
+	if decodeSingleJSONDocument(decoder, &encoded) != nil {
+		return invalid()
+	}
+	if encoded.ConflictChange != nil || encoded.OntoRevision != nil {
+		if json.Unmarshal(encoded.ConflictChange, &body.ConflictChange) != nil ||
+			json.Unmarshal(encoded.OntoRevision, &body.OntoRevision) != nil ||
+			body.ConflictChange == "" || body.OntoRevision == "" {
+			return invalid()
+		}
+	}
+	if body.Rebase || body.ConflictChange != "" || body.OntoRevision != "" || body.Op == "rebase" {
+		input := services.BranchRebaseInput{Rebase: body.rebaseNow(), ConflictChange: body.ConflictChange, OntoRevision: body.OntoRevision}
+		if (body.Op != "" && body.Op != "rebase") || body.ID != "" || body.Revision != "" {
+			return invalid()
+		}
+		if err := input.Validate(); err != nil {
+			return body, "", err
+		}
+		if input.Rebase {
+			return body, "branch.rebase-now", nil
+		}
+		return body, "branch.rebase", nil
+	}
+	if body.Op == "sleep" || body.Op == "wake" {
+		if body.ID != "" || body.Revision != "" {
+			return invalid()
+		}
+		return body, "branch." + body.Op, nil
+	}
+	if body.Op != "bring-in" && body.Op != "discard-foreign" {
+		return invalid()
+	}
+	return body, "branch." + body.Op, nil
+}
+
+// authorize decides command once the route's service is composed.
+func (h *BranchHandler) authorize(r *http.Request, command string, composed bool) (int64, int64, error) {
+	if h.Authorize == nil || !composed {
+		return 0, 0, pkgerrors.New(pkgerrors.CodeServiceUnavailable, "branches unavailable")
+	}
+	return h.Authorize(r, command)
+}
+
+// InstallBranchAuthorizer decides a branch command for the request's person
+// (services.Authorize, by roster role) and resolves the install's repository.
+func InstallBranchAuthorizer(queries *db.Queries) func(*http.Request, string) (int64, int64, error) {
+	return func(r *http.Request, command string) (int64, int64, error) {
+		if queries == nil {
+			return 0, 0, pkgerrors.New(pkgerrors.CodeServiceUnavailable, "branches unavailable")
+		}
+		subject := services.InstallSubject{}
+		if command == "file.restore" || command == "file.restore-deleted" {
+			raw, err := io.ReadAll(io.LimitReader(r.Body, MaxFileRestoreRequestBytes+1))
+			if err != nil || len(raw) > MaxFileRestoreRequestBytes {
+				return 0, 0, pkgerrors.BadRequest("invalid restore request")
+			}
+			input, resolved, err := DecodeFileRestore(bytes.NewReader(raw))
+			r.Body = io.NopCloser(bytes.NewReader(raw))
+			if err != nil {
+				return 0, 0, err
+			}
+			if resolved != command {
+				return 0, 0, &services.AccessError{Status: 403, Class: "permission", Code: "permission", Message: "Not available"}
+			}
+			branch, err := url.PathUnescape(chi.URLParam(r, "b"))
+			if err != nil {
+				return 0, 0, pkgerrors.BadRequest("invalid branch")
+			}
+			path, err := url.PathUnescape(chi.URLParam(r, "*"))
+			if err != nil {
+				return 0, 0, pkgerrors.BadRequest("invalid file path")
+			}
+			repository, err := services.InstallRepositoryID(r.Context(), queries)
+			if err != nil {
+				return 0, 0, err
+			}
+			subject, _, err = services.InstallFileRestoreSubject(r.Context(), queries, repository, branch, path, input.Version, input.Base, input.Action == "restore-deleted", input.Text)
+			if err != nil {
+				return 0, 0, err
+			}
+		}
+
+		if command == "branch.archive" {
+			repository, err := services.InstallRepositoryID(r.Context(), queries)
+			if err != nil {
+				return 0, 0, err
+			}
+			selector, err := url.PathUnescape(chi.URLParam(r, "b"))
+			if err != nil {
+				return 0, 0, pkgerrors.BadRequest("invalid branch")
+			}
+			var lookup error
+			subject, _, lookup = services.InstallScratchArchiveSubject(r.Context(), queries, repository, selector)
+			if lookup != nil {
+				return 0, 0, lookup
+			}
+		}
+		if command == "branch.fork" {
+			refuse := func(err error) (int64, int64, error) {
+				if _, denied := services.Authorize(r.Context(), queries, command); denied != nil {
+					return 0, 0, denied
+				}
+				return 0, 0, err
+			}
+			raw, err := io.ReadAll(io.LimitReader(r.Body, (64<<10)+1))
+			if err != nil || len(raw) > 64<<10 {
+				return refuse(pkgerrors.BadRequest("Invalid fork request"))
+			}
+
+			r.Body = io.NopCloser(bytes.NewReader(raw))
+			if r.URL.Path == "/api/branches" {
+				input, err := DecodeBranchFork(bytes.NewReader(raw))
+				if err != nil {
+					return refuse(err)
+				}
+				repository, err := services.InstallRepositoryID(r.Context(), queries)
+				if err != nil {
+					return 0, 0, err
+				}
+				subject = services.InstallBranchForkSubject(r.Context(), repository, input)
+			} else {
+				var input forkWorkspaceRequest
+				if err := decodeSingleJSONDocument(json.NewDecoder(bytes.NewReader(raw)), &input); err != nil {
+					return refuse(pkgerrors.BadRequest("invalid request body"))
+				}
+				parts := strings.Split(strings.Trim(r.URL.EscapedPath(), "/"), "/")
+				if len(parts) != 7 {
+					return refuse(pkgerrors.BadRequest("invalid fork request"))
+				}
+				owner, e1 := url.PathUnescape(parts[2])
+				name, e2 := url.PathUnescape(parts[3])
+				workspace, e3 := url.PathUnescape(parts[5])
+				if e1 != nil || e2 != nil || e3 != nil {
+					return refuse(pkgerrors.BadRequest("invalid fork request"))
+				}
+				repository, err := queries.GetRepoByOwnerAndLowerName(r.Context(), db.GetRepoByOwnerAndLowerNameParams{Owner: strings.ToLower(owner), LowerName: strings.ToLower(name)})
+				if errors.Is(err, pgx.ErrNoRows) {
+					return refuse(pkgerrors.NotFound("repository not found"))
+				}
+				if err != nil {
+					return refuse(err)
+				}
+				var lookup error
+				subject, lookup = services.InstallWorkspaceForkSubject(r.Context(), queries, services.ForkWorkspaceInput{RepositoryID: repository.ID, WorkspaceID: workspace, Name: input.Name, Request: r.Header.Get("Idempotency-Key")})
+				if lookup != nil {
+					return refuse(lookup)
+				}
+			}
+		}
+		if command == "branch.read" && services.InstallExecutionCredential(r.Context()) {
+			var err error
+			subject, err = InstallBranchReadSubject(r, queries)
+			if err != nil {
+				return 0, 0, err
+			}
+		}
+
+		decision, err := services.Authorize(r.Context(), queries, command, subject)
+		if err != nil {
+			return 0, 0, err
+		}
+		repository, err := services.InstallRepositoryID(r.Context(), queries)
+		if err != nil {
+			return 0, 0, err
+		}
+		if command == "branch.fork" || command == "file.restore" || command == "file.restore-deleted" || command == "branch.archive" {
+			*r = *r.WithContext(services.WithInstallAuthorization(r.Context(), command, decision, subject))
+		}
+		return repository, decision.UserID, nil
+	}
+}
+
+func (h *BranchHandler) ListBranches(w http.ResponseWriter, r *http.Request) {
+	repository, user, err := h.authorize(r, "branches.read", h.Reads != nil)
+	if err != nil {
+		writeBranchError(w, r, err)
+		return
+	}
+	cursor, limit, err := parseOffsetPagination(r)
+	if err != nil {
+		writeBranchError(w, r, err)
+		return
+	}
+	page := cursorToPage(cursor, limit)
+	rows, total, err := h.Reads.ListBranches(r.Context(), repository, user, page, limit)
+	if err != nil {
+		writeBranchError(w, r, err)
+		return
+	}
+	setOffsetCursorPaginationHeaders(w, r, page, limit, len(rows), total)
+	pkgerrors.WriteJSON(w, http.StatusOK, rows)
+}
+
+func (h *BranchHandler) GetBranch(w http.ResponseWriter, r *http.Request) {
+	repository, user, err := h.authorize(r, "branch.read", h.Reads != nil)
+	if err != nil {
+		writeBranchError(w, r, err)
+		return
+	}
+	branch, err := url.PathUnescape(chi.URLParam(r, "b"))
+	if err != nil {
+		writeBranchError(w, r, pkgerrors.BadRequest("invalid branch name"))
+		return
+	}
+	row, err := h.Reads.GetBranch(r.Context(), branch, repository, user)
+	if err != nil {
+		writeBranchError(w, r, err)
+		return
+	}
+	if key := r.URL.Query().Get("rebase_request"); key != "" {
+		receipts, ok := h.Rebases.(interface {
+			ScratchRebaseExecution(context.Context, int64, int64, string, string) (services.BranchRebaseExecution, error)
+		})
+		if !ok {
+			writeBranchError(w, r, pkgerrors.New(pkgerrors.CodeServiceUnavailable, "Rebase receipt unavailable"))
+			return
+		}
+		execution, err := receipts.ScratchRebaseExecution(r.Context(), repository, user, branch, key)
+		if err != nil {
+			writeBranchError(w, r, err)
+			return
+		}
+		row.RebaseExecution = &execution
+	}
+	pkgerrors.WriteJSON(w, http.StatusOK, row)
+}
+
+// Fork is POST /api/branches fork{from, name?}: 201 with the new scratch
+// branch, forked_from and its head.
+func (h *BranchHandler) Fork(w http.ResponseWriter, r *http.Request) {
+	repository, user, err := h.authorize(r, "branch.fork", h.Forks != nil)
+	if err != nil {
+		writeBranchError(w, r, err)
+		return
+	}
+	input, err := DecodeBranchFork(http.MaxBytesReader(w, r.Body, 64<<10))
+	if err != nil {
+		writeBranchError(w, r, err)
+		return
+	}
+	input.Request = r.Header.Get("Idempotency-Key")
+	if len(input.Request) > 256 {
+		writeBranchError(w, r, pkgerrors.BadRequest("invalid fork request"))
+		return
+	}
+	branch, err := h.Forks.ForkBranch(r.Context(), repository, user, input)
+	if err != nil {
+		writeBranchError(w, r, err)
+		return
+	}
+	pkgerrors.WriteJSON(w, http.StatusCreated, branch)
+}
+
+// writeBranchError keeps the resource's errors on the §6.2.3 wire contract
+// while the legacy workspace endpoints retain their existing error decoder.
+// WriteBranchCommandError shares the handler's envelope with command admission.
+func WriteBranchCommandError(w http.ResponseWriter, r *http.Request, err error) {
+	writeBranchError(w, r, err)
+}
+
+func writeBranchError(w http.ResponseWriter, r *http.Request, err error) {
+	var refused *services.BranchError
+	if errors.As(err, &refused) {
+		pkgerrors.WriteJSON(w, refused.Status, refused)
+		return
+	}
+	var control *services.TodoControlError
+	if errors.As(err, &control) {
+		pkgerrors.WriteJSON(w, control.Status, control)
+		return
+	}
+	var access *services.AccessError
+	if errors.As(err, &access) {
+		pkgerrors.WriteJSON(w, access.Status, access)
+		return
+	}
+	status, code, class, message := 503, "branch_machine_unavailable", "infra", "Branch unavailable"
+	var e *pkgerrors.APIError
+	if errors.As(err, &e) {
+		switch e.Status {
+		case 401:
+			status, code, class, message = 401, "unauthenticated", "permission", middleware.UnauthenticatedMessage(r.Context())
+		case 403:
+			status, code, class, message = 403, "permission", "permission", "Access denied"
+		case 400, 404:
+			status, code, class, message = e.Status, string(e.Code), "user", e.Message
+		case 409:
+			status, code, class, message = 409, string(e.Code), "conflict", e.Message
+		}
+	}
+	pkgerrors.WriteJSON(w, status, map[string]string{"code": code, "class": class, "message": message})
+}
+
+// DecodeBranchFork shares the body contract between admission and dispatch.
+func DecodeBranchFork(reader io.Reader) (services.BranchForkInput, error) {
+	var input services.BranchForkInput
+	decoder := json.NewDecoder(reader)
+	decoder.DisallowUnknownFields()
+	if err := decodeSingleJSONDocument(decoder, &input); err != nil || strings.TrimSpace(input.From) == "" {
+		return input, pkgerrors.BadRequest("invalid fork request")
+	}
+	return input, nil
+}
+
+func (h *BranchHandler) AddToStack(w http.ResponseWriter, r *http.Request) {
+	var input services.BranchAddInput
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10))
+	decoder.DisallowUnknownFields()
+	if err := decodeSingleJSONDocument(decoder, &input); err != nil {
+		writeBranchError(w, r, pkgerrors.BadRequest("Invalid Add to stack request"))
+		return
+	}
+	branch, err := url.PathUnescape(chi.URLParam(r, "b"))
+	if err != nil {
+		writeBranchError(w, r, pkgerrors.BadRequest("Invalid branch"))
+		return
+	}
+	input.Request = r.Header.Get("Idempotency-Key")
+	repository, user, err := h.authorize(r, "branch.add-to-stack", h.Adds != nil)
+	if err != nil {
+		writeBranchError(w, r, err)
+		return
+	}
+	item, err := h.Adds.AddBranchToStack(r.Context(), repository, user, branch, input)
+	if err != nil {
+		writeBranchError(w, r, err)
+		return
+	}
+	pkgerrors.WriteJSON(w, 202, map[string]any{"state": "accepted", "n": item.Number, "rev": 1})
+}
+
+// InstallBranchReadSubject binds both file-route spellings to the same stored
+// execution workspace. Other branch reads and historical selectors have no
+// execution grant. Resolve it before the one command decision in either entry.
+func InstallBranchReadSubject(r *http.Request, q *db.Queries) (services.InstallSubject, error) {
+	if q == nil {
+		return services.InstallSubject{}, pkgerrors.New(pkgerrors.CodeServiceUnavailable, "branches unavailable")
+	}
+	if !services.InstallExecutionCredential(r.Context()) {
+		return services.InstallSubject{}, nil
+	}
+	parts := strings.Split(strings.Trim(r.URL.EscapedPath(), "/"), "/")
+	if (len(parts) == 7 || len(parts) == 8 && parts[7] == "content") && parts[1] == "repos" && parts[4] == "workspaces" && parts[6] == "files" {
+		owner, ownerErr := url.PathUnescape(parts[2])
+		repo, repoErr := url.PathUnescape(parts[3])
+		workspace, workspaceErr := url.PathUnescape(parts[5])
+		if ownerErr != nil || repoErr != nil || workspaceErr != nil {
+			return services.InstallSubject{}, nil
+		}
+		row, err := q.GetRepoByOwnerAndLowerName(r.Context(), db.GetRepoByOwnerAndLowerNameParams{Owner: strings.ToLower(owner), LowerName: strings.ToLower(repo)})
+		if errors.Is(err, pgx.ErrNoRows) {
+			return services.InstallSubject{}, nil
+		}
+		if err != nil {
+			return services.InstallSubject{}, err
+		}
+		return services.InstallExecutionFileSubject(r.Context(), q, row.ID, workspace)
+	}
+	if len(parts) < 4 || parts[1] != "branches" || (parts[3] != "files" && (parts[3] != "diff" || len(parts) != 4)) {
+		return services.InstallSubject{}, nil
+	}
+	query := r.URL.Query()
+	if query.Has("at") || query.Has("digest") || query.Has("compare") {
+		return services.InstallSubject{}, nil
+	}
+	branch, err := url.PathUnescape(parts[2])
+	if err != nil || branch == "main" {
+		return services.InstallSubject{}, nil
+	}
+	repository, err := services.InstallRepositoryID(r.Context(), q)
+	if err != nil {
+		return services.InstallSubject{}, err
+	}
+	resource := "files"
+	if parts[3] == "diff" {
+		resource = "diff"
+	}
+	return services.InstallExecutionBranchReadSubject(r.Context(), q, repository, branch, resource)
+}
+
+// Archive records the member's decision; runtime cleanup remains background
+// work on the existing five-minute cleaner, after its four safety checks.
+func (h *BranchHandler) Archive(w http.ResponseWriter, r *http.Request) {
+	repositoryID, userID, err := h.authorize(r, "branch.archive", h.Archives != nil)
+	if err != nil {
+		writeBranchError(w, r, err)
+		return
+	}
+	if h.Archives == nil {
+		writeBranchError(w, r, pkgerrors.New(pkgerrors.CodeServiceUnavailable, "branch archive unavailable"))
+		return
+	}
+	selector, err := url.PathUnescape(chi.URLParam(r, "b"))
+	if err != nil {
+		writeBranchError(w, r, pkgerrors.BadRequest("invalid branch"))
+		return
+	}
+	branch, err := h.Archives.ArchiveScratchBranch(r.Context(), selector, repositoryID, userID)
+	if err != nil {
+		writeBranchError(w, r, err)
+		return
+	}
+	pkgerrors.WriteJSON(w, http.StatusOK, branch)
+}

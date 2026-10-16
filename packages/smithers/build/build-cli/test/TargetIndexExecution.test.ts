@@ -91,7 +91,7 @@ export const Package = S.Package({ targets: {} })
     )
     await write(
       root,
-      "scripts/fixtures/cross-package-globs.json",
+      ".smithers/cross-package-globs.json",
       "[{\"label\":\"//:notes\",\"path\":\"child/src/**/*.ts\"}]\n"
     )
     const reviewed = await serve(root, ["target", "//:targetIndex", "--write"])
@@ -103,18 +103,18 @@ export const Package = S.Package({ targets: {} })
     expect(stale.exitCode).toBe(1)
     expect(stale.logs + stale.output).toContain("cross_package_glob_review_stale: remove repaired entries")
     expect(stale.logs + stale.output).toContain("child/src/**/*.ts declared by //:notes")
-    await write(root, "scripts/fixtures/cross-package-globs.json", "[]\n")
+    await write(root, ".smithers/cross-package-globs.json", "[]\n")
     const own = await serve(root, ["target", "//:targetIndex", "--write"])
     expect(own.exitCode, own.logs + own.output).toBe(0)
   })
 
   it("refuses malformed reviewed crossing data", async () => {
     const root = await fixture()
-    await write(root, "scripts/fixtures/cross-package-globs.json", "[{\"label\":1}]\n")
+    await write(root, ".smithers/cross-package-globs.json", "[{\"label\":1}]\n")
     const invalid = await serve(root, ["target", "//:targetIndex", "--write"])
     expect(invalid.exitCode).toBe(1)
     expect(invalid.logs + invalid.output).toContain(
-      "cross_package_glob_review_invalid: cannot read scripts/fixtures/cross-package-globs.json"
+      "cross_package_glob_review_invalid: cannot read .smithers/cross-package-globs.json"
     )
   })
 

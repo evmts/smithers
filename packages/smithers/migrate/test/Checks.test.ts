@@ -13,11 +13,11 @@ import * as RunState from "../src/RunState.ts"
 import * as Scan from "../src/Scan.ts"
 import * as Units from "../src/Units.ts"
 import { copyFixture, fixture, nodeLayer } from "./fixtures/helpers.ts"
-import golden from "./fixtures/jsx-single.migrated/flows/simple-workflow/flow.ts"
+import golden from "./fixtures/jsx-single.migrated/.smithers/flows/simple-workflow/flow.ts"
 
 const emptyCheckpoint: Checks.CheckpointFiles = { sources: new Map(), digests: new Map() }
 
-const unit = (flowsDir = "flows", specifiers: Detect.SpecifierContext = { localFacade: true }): Units.UnitPlan => ({
+const unit = (flowsDir = ".smithers/flows", specifiers: Detect.SpecifierContext = { localFacade: true }): Units.UnitPlan => ({
   id: "workflow:simple-workflow",
   kind: "workflow",
   sources: ["simple-workflow.jsx"],
@@ -48,7 +48,7 @@ const run = (
 const named = (results: ReadonlyArray<Checks.CheckResult>, name: string): Checks.CheckResult =>
   results.find((result) => result.name === name)!
 
-const writeFlow = (root: string, body: string, file = "flows/simple-workflow/flow.ts"): string => {
+const writeFlow = (root: string, body: string, file = ".smithers/flows/simple-workflow/flow.ts"): string => {
   mkdirSync(join(root, ...file.split("/").slice(0, -1)), { recursive: true })
   writeFileSync(join(root, ...file.split("/")), body)
   return file
@@ -83,7 +83,7 @@ describe("Checks.run over the migrated fixture", () => {
   it.effect("passes every check", () =>
     Effect.gen(function*() {
       const root = copyFixture("jsx-single.migrated")
-      const results = yield* run(root, ["flows/simple-workflow/flow.ts"], checkpointOf("simple-workflow.jsx"))
+      const results = yield* run(root, [".smithers/flows/simple-workflow/flow.ts"], checkpointOf("simple-workflow.jsx"))
 
       expect(results.filter((result) => !result.ok)).toEqual([])
       expect(Checks.ok(results)).toBe(true)
@@ -92,7 +92,7 @@ describe("Checks.run over the migrated fixture", () => {
   it.effect("fails when a seat names a model the source never named", () =>
     Effect.gen(function*() {
       const root = copyFixture("jsx-single.migrated")
-      const file = "flows/simple-workflow/flow.ts"
+      const file = ".smithers/flows/simple-workflow/flow.ts"
       const target = join(root, ...file.split("/"))
       writeFileSync(target, readFileSync(target, "utf8").replace(/claude-sonnet-5/g, "claude-sonnet-4-5"))
       const results = yield* run(root, [file], checkpointOf("simple-workflow.jsx"))
@@ -107,7 +107,7 @@ describe("Checks.run over the migrated fixture", () => {
       // `openai:gpt` is not justified by the word "gpt" in a comment. The model
       // has to be a string the source actually wrote.
       const root = copyFixture("jsx-single.migrated")
-      const file = writeFlow(root, "export const step = { seat: \"openai:gpt\" }\n", "flows/bad/flow.ts")
+      const file = writeFlow(root, "export const step = { seat: \"openai:gpt\" }\n", ".smithers/flows/bad/flow.ts")
       const results = yield* run(root, [file], {
         sources: new Map([["old.jsx", "// we talked about gpt and agentgpt in review\n"]]),
         digests: new Map()
@@ -119,7 +119,7 @@ describe("Checks.run over the migrated fixture", () => {
   it.effect("accepts a seat the operator chose in a decision", () =>
     Effect.gen(function*() {
       const root = copyFixture("jsx-single.migrated")
-      const file = "flows/simple-workflow/flow.ts"
+      const file = ".smithers/flows/simple-workflow/flow.ts"
       const target = join(root, ...file.split("/"))
       writeFileSync(target, readFileSync(target, "utf8").replace(/claude-sonnet-5/g, "claude-sonnet-4-5"))
       const results = yield* Checks.run(
@@ -142,7 +142,7 @@ describe("Checks.run finds each defect on its own", () => {
       const file = writeFlow(
         root,
         "import { Task } from \"smithers-orchestrator\"\nexport const description = \"x\"\n",
-        "flows/bad/flow.ts"
+        ".smithers/flows/bad/flow.ts"
       )
       const results = yield* run(root, [file])
 
@@ -164,7 +164,7 @@ describe("Checks.run finds each defect on its own", () => {
       const root = copyFixture("jsx-single.migrated")
 
       for (const [title, text] of forms) {
-        const file = writeFlow(root, text, "flows/bad/flow.ts")
+        const file = writeFlow(root, text, ".smithers/flows/bad/flow.ts")
         const results = yield* run(root, [file])
 
         expect(named(results, "no old import remains").ok, title).toBe(false)
@@ -177,17 +177,17 @@ describe("Checks.run finds each defect on its own", () => {
       const file = writeFlow(
         root,
         "import { run } from \"@smthrs/engine\"\nexport const go = run\n",
-        "flows/bad/flow.ts"
+        ".smithers/flows/bad/flow.ts"
       )
 
-      const current = yield* Checks.run(root, unit("flows", { localFacade: false }), [file], emptyCheckpoint).pipe(
+      const current = yield* Checks.run(root, unit(".smithers/flows", { localFacade: false }), [file], emptyCheckpoint).pipe(
         Effect.provide(nodeLayer)
       )
       expect(named(current, "no old import remains").ok).toBe(true)
 
       const old = yield* Checks.run(
         root,
-        unit("flows", { localFacade: false, oldScoped: ["engine"] }),
+        unit(".smithers/flows", { localFacade: false, oldScoped: ["engine"] }),
         [file],
         emptyCheckpoint
       ).pipe(Effect.provide(nodeLayer))
@@ -200,7 +200,7 @@ describe("Checks.run finds each defect on its own", () => {
       const file = writeFlow(
         root,
         "/** @jsxImportSource smthrs */\nexport const description = \"x\"\n",
-        "flows/bad/flow.ts"
+        ".smithers/flows/bad/flow.ts"
       )
       const results = yield* run(root, [file])
 
@@ -213,7 +213,7 @@ describe("Checks.run finds each defect on its own", () => {
       const file = writeFlow(
         root,
         "import { useState } from \"react\"\nconst description = \"x\"\n",
-        "flows/bad/flow.ts"
+        ".smithers/flows/bad/flow.ts"
       )
       const results = yield* run(root, [file])
 
@@ -225,7 +225,7 @@ describe("Checks.run finds each defect on its own", () => {
       const root = copyFixture("jsx-single.migrated")
       const before = "const a = value as any\n"
       const after = "const a = value as any\nconst b = other as unknown as string\n"
-      const file = writeFlow(root, after, "flows/bad/flow.ts")
+      const file = writeFlow(root, after, ".smithers/flows/bad/flow.ts")
 
       const introduced = yield* run(root, [file])
       expect(named(introduced, "no escape hatch introduced").ok).toBe(false)
@@ -241,7 +241,7 @@ describe("Checks.run finds each defect on its own", () => {
     Effect.gen(function*() {
       // The aggregate count is unchanged, and the contract is still broken.
       const root = copyFixture("jsx-single.migrated")
-      const file = writeFlow(root, "// @ts-ignore\nconst a = value\n", "flows/bad/flow.ts")
+      const file = writeFlow(root, "// @ts-ignore\nconst a = value\n", ".smithers/flows/bad/flow.ts")
       const results = yield* run(root, [file], {
         sources: new Map([[file, "const a = value as any\n"]]),
         digests: new Map()
@@ -257,7 +257,7 @@ describe("Checks.run finds each defect on its own", () => {
       const file = writeFlow(
         root,
         "const description = \"x\"\nsetInterval(() => poll(), 1000)\nwhile (true) { await status() }\n",
-        "flows/bad/flow.ts"
+        ".smithers/flows/bad/flow.ts"
       )
       const results = yield* run(root, [file])
 
@@ -270,7 +270,7 @@ describe("Checks.run finds each defect on its own", () => {
       const file = writeFlow(
         root,
         "import { DatabaseSync } from \"node:sqlite\"\nconst db = new Database(\"smithers.db\")\nconst description = \"x\"\n",
-        "flows/bad/flow.ts"
+        ".smithers/flows/bad/flow.ts"
       )
       const results = yield* run(root, [file])
 
@@ -280,7 +280,7 @@ describe("Checks.run finds each defect on its own", () => {
   it.effect("fails when a flow module has no description", () =>
     Effect.gen(function*() {
       const root = copyFixture("jsx-single.migrated")
-      const file = writeFlow(root, "export default {}\n", "flows/bad/flow.ts")
+      const file = writeFlow(root, "export default {}\n", ".smithers/flows/bad/flow.ts")
       const results = yield* run(root, [file])
 
       expect(named(results, "every flow module declares a description").ok).toBe(false)
@@ -306,13 +306,13 @@ describe("Checks.run finds each defect on its own", () => {
       ]
 
       for (const [title, body] of bodies) {
-        const file = writeFlow(root, body, "flows/bad/flow.ts")
+        const file = writeFlow(root, body, ".smithers/flows/bad/flow.ts")
         const results = yield* run(root, [file])
 
         expect(named(results, "every flow module declares a description").ok, title).toBe(false)
       }
 
-      const good = writeFlow(root, "export default Flow.make({ description: \"Real.\" })\n", "flows/bad/flow.ts")
+      const good = writeFlow(root, "export default Flow.make({ description: \"Real.\" })\n", ".smithers/flows/bad/flow.ts")
       expect(named(yield* run(root, [good]), "every flow module declares a description").ok).toBe(true)
     }))
 
@@ -322,7 +322,7 @@ describe("Checks.run finds each defect on its own", () => {
       const file = writeFlow(
         root,
         `const description = "x"\n// ${Checks.marker}: Worktree\n`,
-        "flows/bad/flow.ts"
+        ".smithers/flows/bad/flow.ts"
       )
 
       const unreported = yield* run(root, [file])
@@ -486,7 +486,7 @@ describe("Checks.run ties the default export to the flow that runs", () => {
   it.effect("passes on the golden, which default-exports the flow it runs", () =>
     Effect.gen(function*() {
       const root = copyFixture("jsx-single.migrated")
-      const results = yield* run(root, ["flows/simple-workflow/flow.ts"], checkpointOf("simple-workflow.jsx"))
+      const results = yield* run(root, [".smithers/flows/simple-workflow/flow.ts"], checkpointOf("simple-workflow.jsx"))
 
       expect(named(results, CHECK).ok).toBe(true)
     }))
@@ -497,7 +497,7 @@ describe("Checks.run ties the default export to the flow that runs", () => {
       const file = writeFlow(
         root,
         `${declared}\nexport default Flow.make("bad", { description: "Real.", payload: Schema.Void, success: Schema.Unknown, body: () => Node.succeed(1) })\n`,
-        "flows/bad/flow.ts"
+        ".smithers/flows/bad/flow.ts"
       )
       const results = yield* run(root, [file])
 
@@ -511,7 +511,7 @@ describe("Checks.run ties the default export to the flow that runs", () => {
       const file = writeFlow(
         root,
         "export default Flow.make(\"bad\", { description: \"Real.\", payload: {} })\n",
-        "flows/bad/flow.ts"
+        ".smithers/flows/bad/flow.ts"
       )
       const results = yield* run(root, [file])
 
@@ -525,14 +525,14 @@ describe("Checks.run ties the default export to the flow that runs", () => {
       const delegating = writeFlow(
         root,
         `${declared}\nexport default Flow.make("bad", { description: "Real.", payload: {}, body: (input) => SimpleExample.call(input) })\n`,
-        "flows/bad/flow.ts"
+        ".smithers/flows/bad/flow.ts"
       )
       expect(named(yield* run(root, [delegating]), CHECK).ok).toBe(true)
 
       const elsewhere = writeFlow(
         root,
         `${declared}\nexport default Flow.make("bad", { description: "Real.", payload: {}, body: (input) => Other.call(input) })\n`,
-        "flows/bad/flow.ts"
+        ".smithers/flows/bad/flow.ts"
       )
       const results = yield* run(root, [elsewhere], emptyCheckpoint)
       expect(named(results, CHECK).ok).toBe(false)
@@ -550,7 +550,7 @@ describe("Checks.run ties the default export to the flow that runs", () => {
       ]
 
       for (const body of bodies) {
-        const file = writeFlow(root, body, "flows/bad/flow.ts")
+        const file = writeFlow(root, body, ".smithers/flows/bad/flow.ts")
 
         expect(named(yield* run(root, [file]), CHECK).ok, body).toBe(true)
       }
@@ -618,7 +618,7 @@ describe("Checks.run ties the default export to the flow that runs", () => {
       ]
 
       for (const [title, body, message] of cases) {
-        const file = writeFlow(root, body, "flows/bad/flow.ts")
+        const file = writeFlow(root, body, ".smithers/flows/bad/flow.ts")
         const result = named(yield* run(root, [file]), CHECK)
         expect(result.ok, title).toBe(false)
         expect(result.findings[0]?.message, title).toContain(message)
@@ -663,7 +663,7 @@ describe("the module the emitter writes passes these checks", () => {
   it.effect("passes every check, description and binding included", () =>
     Effect.gen(function*() {
       const root = copyFixture("jsx-single.migrated")
-      const file = writeFlow(root, module(emitted()), "flows/greeting/flow.ts")
+      const file = writeFlow(root, module(emitted()), ".smithers/flows/greeting/flow.ts")
       const results = yield* run(root, [file], { sources: new Map([["greeting.tsx", greeting]]), digests: new Map() })
 
       expect(results.filter((result) => !result.ok)).toEqual([])
@@ -677,7 +677,7 @@ describe("the module the emitter writes passes these checks", () => {
       // export and never a named one, so this is a flow nobody can list.
       const named_ = emitted().replace("export default Flow.make(", "export const Greeting = Flow.make(")
 
-      const dropped = yield* run(root, [writeFlow(root, module(named_), "flows/greeting/flow.ts")], checkpoint)
+      const dropped = yield* run(root, [writeFlow(root, module(named_), ".smithers/flows/greeting/flow.ts")], checkpoint)
       expect(named(dropped, "every flow module declares a description").ok).toBe(false)
       // The descriptor check stays quiet here on purpose: a module with no
       // default export is already named once, and saying it twice hides which
@@ -687,7 +687,7 @@ describe("the module the emitter writes passes these checks", () => {
       // A body-less descriptor beside the flow, admitting something else.
       const drifted =
         `${named_}\nexport default Flow.make("greeting", { description: "Greets.", payload: Schema.Void })\n`
-      const results = yield* run(root, [writeFlow(root, module(drifted), "flows/greeting/flow.ts")], checkpoint)
+      const results = yield* run(root, [writeFlow(root, module(drifted), ".smithers/flows/greeting/flow.ts")], checkpoint)
       expect(named(results, "every flow module declares a description").ok).toBe(true)
       expect(named(results, "every flow module's descriptor describes the flow it declares").ok).toBe(false)
     }))
@@ -695,8 +695,8 @@ describe("the module the emitter writes passes these checks", () => {
   it.effect("is discovered by the registry the CLI runs", () =>
     Effect.gen(function*() {
       const root = copyFixture("jsx-single.migrated")
-      writeFlow(root, module(emitted()), "flows/greeting/flow.ts")
-      const result = yield* Checks.discovery(root, "flows").pipe(Effect.provide(nodeLayer))
+      writeFlow(root, module(emitted()), ".smithers/flows/greeting/flow.ts")
+      const result = yield* Checks.discovery(root).pipe(Effect.provide(nodeLayer))
 
       expect(result.findings).toEqual([])
       expect(result.ok).toBe(true)
@@ -724,7 +724,7 @@ describe("Checks.discovery", () => {
   it.effect("lists the migrated flow with no warnings", () =>
     Effect.gen(function*() {
       const root = copyFixture("jsx-single.migrated")
-      const result = yield* Checks.discovery(root, "flows").pipe(Effect.provide(nodeLayer))
+      const result = yield* Checks.discovery(root).pipe(Effect.provide(nodeLayer))
 
       expect(result.findings).toEqual([])
       expect(result.ok).toBe(true)
@@ -733,8 +733,8 @@ describe("Checks.discovery", () => {
   it.effect("fails when a flow module carries no description", () =>
     Effect.gen(function*() {
       const root = copyFixture("jsx-single.migrated")
-      writeFlow(root, "export default Flow.make({\n  input: Schema.String\n})\n", "flows/nameless/flow.ts")
-      const result = yield* Checks.discovery(root, "flows").pipe(Effect.provide(nodeLayer))
+      writeFlow(root, "export default Flow.make({\n  input: Schema.String\n})\n", ".smithers/flows/nameless/flow.ts")
+      const result = yield* Checks.discovery(root).pipe(Effect.provide(nodeLayer))
 
       expect(result.ok).toBe(false)
       expect(result.findings.some((finding) => finding.message.startsWith("missing_description"))).toBe(true)
@@ -743,7 +743,7 @@ describe("Checks.discovery", () => {
   it.effect("fails when the flows directory does not exist", () =>
     Effect.gen(function*() {
       const root = copyFixture("jsx-single")
-      const result = yield* Checks.discovery(root, "flows").pipe(Effect.provide(nodeLayer))
+      const result = yield* Checks.discovery(root).pipe(Effect.provide(nodeLayer))
 
       expect(result.ok).toBe(false)
       expect(result.findings[0]?.message).toContain("does not exist")

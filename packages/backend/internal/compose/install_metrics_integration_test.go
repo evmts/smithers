@@ -111,7 +111,7 @@ func TestInstallMetricsOwnerBoundary(t *testing.T) {
 	t.Run("authenticated lifecycle qualification consumer refuses unqualified install", func(t *testing.T) {
 		server := httptest.NewServer(router)
 		defer server.Close()
-		module, err := filepath.Abs("../../../../scripts/perf/lib/qualification.mjs")
+		module, err := filepath.Abs("../../../../flows/perf/lib/qualification.mjs")
 		require.NoError(t, err)
 		source := `import {requireMachineQualification} from ` + strconv.Quote("file://"+module) + `;
         Object.defineProperty(process,"platform",{value:"darwin"});
@@ -268,7 +268,7 @@ func TestInstallMetricsOwnerBoundary(t *testing.T) {
 
 		server := httptest.NewServer(handler)
 		defer server.Close()
-		module, e := filepath.Abs("../../../../scripts/perf/lib/qualification.mjs")
+		module, e := filepath.Abs("../../../../flows/perf/lib/qualification.mjs")
 		require.NoError(t, e)
 		source := `import {requireMachineQualification} from ` + strconv.Quote("file://"+module) + `;
 Object.defineProperty(process,"platform",{value:"darwin"});
@@ -379,7 +379,7 @@ if(result.receipts.length!==9||result.status!=="qualified")throw new Error("publ
 		require.NoError(t, err)
 		for i, credential := range []string{"session=" + cookies[0], "session=" + cookies[1], ""} {
 			command := exec.CommandContext(t.Context(), "node", "--input-type=module", "-e", `
-import { authenticatedSSHKey } from './scripts/perf/lib/ssh-member.mjs'
+import { authenticatedSSHKey } from './flows/perf/lib/ssh-member.mjs'
 const context = { request: { get: async (url, options) => {
   const response = await fetch(url, { headers: { Cookie: process.env.PERF_FIXTURE_COOKIE }, redirect: 'manual', signal: AbortSignal.timeout(options.timeout) })
   return { status: () => response.status, json: () => response.json() }
@@ -434,7 +434,7 @@ catch (error) { console.log(error.message); process.exitCode = 1 }
 		for _, program := range []string{"run", "keystroke", "disk-write", "warm-wake", "rebase-hold"} {
 			for _, credential := range []string{"session=" + cookies[0], "session=" + cookies[1]} {
 				output := t.TempDir()
-				command := exec.CommandContext(t.Context(), "node", "scripts/perf/"+program+".mjs")
+				command := exec.CommandContext(t.Context(), "node", "flows/perf/"+program+".mjs")
 				command.Dir = root
 				command.Env = append(os.Environ(), "SMITHERS_PERF_ORIGIN="+server.URL,
 					"SMITHERS_PERF_OWNER_COOKIE="+credential, "SMITHERS_PERF_TOKEN=",

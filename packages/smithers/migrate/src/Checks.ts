@@ -20,7 +20,7 @@ import * as Detect from "./Detect.ts"
 import * as Fs from "./internal/Fs.ts"
 import * as Ts from "./internal/Ts.ts"
 import { io, type MigrateError } from "./MigrateError.ts"
-import type { UnitPlan } from "./Units.ts"
+import { defaultFlowsDir, type UnitPlan } from "./Units.ts"
 
 /**
  * One check's verdict.
@@ -62,6 +62,12 @@ export interface CheckpointFiles {
    * ways.
    */
   readonly runStateRoots?: ReadonlyArray<string> | undefined
+  /**
+   * The project-relative directory carved out of the run-state roots: the 1.0
+   * flows directory, which 0.x never wrote. A file appearing there is the
+   * unit's output, not a write to run state (`Checkpoint.carveRoots`).
+   */
+  readonly carve?: string | undefined
   /**
    * The unit's own declared sources and targets.
    *
@@ -549,7 +555,10 @@ export const runState = (
     for (const runStateRoot of checkpointFiles.runStateRoots ?? []) {
       for (const file of yield* Fs.walkAll(absolute(runStateRoot))) {
         const relative = `${runStateRoot}/${file}`
-        if (checkpointFiles.digests.has(relative) || owned.has(relative)) continue
+        // The flows directory is carved out of the run-state roots it sits in.
+        const carved = checkpointFiles.carve !== undefined &&
+          (relative === checkpointFiles.carve || relative.startsWith(`${checkpointFiles.carve}/`))
+        if (checkpointFiles.digests.has(relative) || owned.has(relative) || carved) continue
         findings.push({
           file: relative,
           line: 1,
@@ -581,7 +590,7 @@ export const runState = (
  */
 export const discovery = (
   root: string,
-  flowsDir = "flows"
+  flowsDir = defaultFlowsDir
 ): Effect.Effect<CheckResult, MigrateError, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem

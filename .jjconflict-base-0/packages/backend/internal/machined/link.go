@@ -1,0 +1,564 @@
+package machined
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/binary"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/smithersai/smithers/packages/backend/internal/machined/wire"
+)
+
+// BootAuthority is host-generated data for the protected boot file. It must
+// never be logged or sourced from a branch checkout.
+type BootAuthority struct {
+	ID         [16]byte
+	Secret     [32]byte
+	Credential string
+}
+
+// ItemBinding is read from the host workspace/lane binding, never from guest
+// requests. Zero explicitly names a scratch workspace; omission is unknown.
+type ItemBinding struct {
+	Number        uint64
+	Change        string
+	PreMoveCommit string
+}
+
+func (a BootAuthority) FileForItem(bridgePort uint16, item ItemBinding) ([]byte, error) {
+	if item.Number == 0 {
+		if item.Change != "" || item.PreMoveCommit != "" {
+			return nil, ErrUnauthorized
+		}
+		return append(a.File(bridgePort), []byte("item_number=0\n")...), nil
+	}
+	if len(item.Change) != 32 {
+		return nil, ErrNotReady
+	}
+	for _, c := range item.Change {
+		if c < 'k' || c > 'z' {
+			return nil, ErrNotReady
+		}
+	}
+	file := append(a.File(bridgePort), []byte(fmt.Sprintf("item_number=%d\nitem_change=%s\n", item.Number, item.Change))...)
+	if item.PreMoveCommit != "" {
+		if len(item.PreMoveCommit) != 40 {
+			return nil, ErrNotReady
+		}
+		for _, c := range item.PreMoveCommit {
+			if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+				return nil, ErrNotReady
+			}
+		}
+		file = append(file, []byte("moved_off="+item.PreMoveCommit+"\n")...)
+	}
+	return file, nil
+}
+
+// MintBoot fences the previous boot before returning data to the installer.
+func (r *Registry) MintBoot(branch, machine string) (BootAuthority, error) {
+	var a BootAuthority
+	var credential [32]byte
+	for _, bytes := range [][]byte{a.ID[:], a.Secret[:], credential[:]} {
+		if _, err := rand.Read(bytes); err != nil {
+			return BootAuthority{}, err
+		}
+	}
+	a.Credential = hex.EncodeToString(credential[:])
+	if err := r.RegisterBoot(branch, machine, a); err != nil {
+		return BootAuthority{}, err
+	}
+	return a, nil
+}
+
+// RegisterBoot registers host-owned boot authority after a host process restart.
+// The caller supplies protected host state, never a daemon's claimed identity.
+// A live registry still rejects reuse and fences the previous branch boot.
+func (r *Registry) RegisterBoot(branch, machine string, a BootAuthority) error {
+	credential, err := hex.DecodeString(a.Credential)
+	if err != nil || len(credential) != 32 || a.Secret == ([32]byte{}) {
+		return ErrUnauthorized
+	}
+	return r.bindBoot(branch, machine, a.ID, []byte(a.Credential), a.Secret)
+}
+
+// File is consumed by W1's strict boot parser. The installer owns location,
+// no-follow checks, machined ownership and mode 0400, never this payload.
+func (a BootAuthority) File(bridgePort uint16) []byte {
+	topology := "topology=relay\n"
+	if bridgePort != 0 {
+		topology = fmt.Sprintf("topology=bridge\nbridge_port=%d\n", bridgePort)
+	}
+	return []byte(fmt.Sprintf("boot_id=%x\nrelay_secret=%x\ncredential=%s\n%s", a.ID, a.Secret, a.Credential, topology))
+}
+
+// goodbye tells the peer why the handshake ended (ADR 0004: the side that
+// detects errors 1-4 or 13-16 sends Goodbye{code} if it can, then closes).
+func goodbye(stream io.Writer, code wire.ProtocolError) {
+	_ = wire.Write(stream, wire.Frame{Kind: wire.Hello, Payload: wire.Union(5, wire.Field(1, []byte{byte(code)}))})
+}
+
+// Connect authenticates the daemon reached through the runtime's existing byte
+// stream. The expected branch comes from the host binding, never the handshake.
+// Invalid newcomers do not close the current lease. No RPC is ready on return.
+func (r *Registry) Connect(ctx context.Context, branch string, stream net.Conn) (*Link, error) {
+	admitted := false
+	defer func() {
+		if !admitted {
+			_ = stream.Close()
+		}
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+		deadline = d
+	}
+	if err := stream.SetDeadline(deadline); err != nil {
+		return nil, err
+	}
+	stop := context.AfterFunc(ctx, func() { _ = stream.Close() })
+	defer stop()
+	challenge, err := wire.Read(stream)
+	if err != nil {
+		if err == wire.VersionMismatch {
+			_ = wire.Write(stream, wire.Frame{Kind: wire.Hello, Payload: wire.Union(5, wire.Field(1, []byte{byte(wire.VersionMismatch)}))})
+		}
+		return nil, err
+	}
+	if challenge.Kind != wire.Hello || challenge.Payload[0] != 1 {
+		goodbye(stream, wire.HandshakeOrder)
+		return nil, wire.HandshakeOrder
+	}
+	fields, err := wire.Fields("challenge", challenge.Payload[1:])
+	if err != nil {
+		return nil, err
+	}
+	// Host and daemon ship together. Historical decoders do not grant an
+	// older live connection permission to execute any operation.
+	if binary.BigEndian.Uint16(fields[2]) != wire.Protocol {
+		_ = wire.Write(stream, wire.Frame{Kind: wire.Hello, Payload: wire.Union(5, wire.Field(1, []byte{byte(wire.VersionMismatch)}))})
+		return nil, wire.VersionMismatch
+	}
+	var id [16]byte
+	copy(id[:], fields[3])
+	r.mu.Lock()
+	b := r.boots[id]
+	valid := b != nil && b.branch == branch && r.branches[branch] == b && b.secret != ([32]byte{})
+	var secret [32]byte
+	if valid {
+		secret = b.secret
+	}
+	r.mu.Unlock()
+	if !valid {
+		return nil, ErrUnauthorized
+	}
+	proof := wire.HostMAC(secret[:], wire.Protocol, id[:], fields[4])
+	if err := wire.Write(stream, wire.Frame{Kind: wire.Hello, Payload: wire.Union(2, wire.Field(1, fields[2]), wire.Field(2, proof[:]))}); err != nil {
+		return nil, err
+	}
+	hello, err := wire.Read(stream)
+	if err != nil {
+		return nil, err
+	}
+	if hello.Kind != wire.Hello || hello.Payload[0] != 3 {
+		goodbye(stream, wire.HandshakeOrder)
+		return nil, wire.HandshakeOrder
+	}
+	values, err := wire.Fields("hello", hello.Payload[1:])
+	if err != nil {
+		return nil, err
+	}
+	lease, err := r.Admit(id, values[1][4:], stream)
+	if err != nil {
+		return nil, err
+	}
+	if err := wire.Write(stream, wire.Frame{Kind: wire.Hello, Payload: wire.Union(4)}); err != nil {
+		_ = lease.Close()
+		return nil, err
+	}
+	if err := stream.SetDeadline(time.Time{}); err != nil {
+		_ = lease.Close()
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		_ = lease.Close()
+		return nil, err
+	}
+	l := &Link{Connection: lease, stream: stream, pending: make(map[uint32]chan wire.Frame), events: make(chan Event, 64), presence: make(chan wire.Frame, 1), done: make(chan struct{}), next: 1, protocol: binary.BigEndian.Uint16(fields[2]), documents: make(map[uint32]*documentQueue), sessions: make(map[uint32]*SessionStream)}
+	r.mu.Lock()
+	if !lease.current() {
+		r.mu.Unlock()
+		_ = l.Close()
+		return nil, ErrUnauthorized
+	}
+	lease.boot.link = l
+	l.objectImporter = r.objects
+	l.objectExporter = r.objectExporter
+	// Register before releasing admission's lock, so consumer shutdown cannot
+	// miss a connection admitted concurrently with its final worker snapshot.
+	r.eventsMu.Lock()
+	if r.eventsClosing || (r.events != nil && !r.events.start(l)) {
+		r.eventsMu.Unlock()
+		r.mu.Unlock()
+		_ = l.Close()
+		return nil, ErrNotReady
+	}
+	r.eventsMu.Unlock()
+	l.identities = r.identities
+	r.mu.Unlock()
+	admitted = true
+	if l.objectImporter != nil {
+		l.objectQueue = make(chan struct{}, 1)
+		go l.importObjects()
+	}
+	l.heard.Store(time.Now().UnixNano())
+	go l.read()
+	return l, nil
+}
+
+// Link multiplexes control replies and durable events. Event admission runs
+// independently of Capture's reply, which may wait for outbox acknowledgement.
+// A stalled consumer closes the link and lets the durable guest outbox replay.
+type Link struct {
+	identities    SessionIdentities
+	sessionCallMu sync.Mutex
+	sessions      map[uint32]*SessionStream
+	*Connection
+	stream           net.Conn
+	writeMu          sync.Mutex
+	mu               sync.Mutex
+	pending          map[uint32]chan wire.Frame
+	rebases          map[uint32]struct{}
+	frozen           atomic.Uint32
+	terminalCommands map[uint32]string
+	documents        map[uint32]*documentQueue
+	openingDocuments int
+	protocol         uint16
+	next             uint32
+	events           chan Event
+	presence         chan wire.Frame
+	done             chan struct{}
+	once             sync.Once
+	objectQueue      chan struct{}
+	objectData       []byte
+	objectImporter   ObjectImporter
+	objectExporter   ObjectExporter
+	objectSend       *objectSend
+	objectStream     uint32
+	objectPending    int
+	objectEOF        bool
+	objectSeen       map[uint32]bool
+	// heard is when the daemon last sent any frame (Unix nanoseconds).
+	heard atomic.Int64
+}
+
+// linkSilenceLimit is how long a daemon may answer nothing before a request
+// that times out ends its link. The guest relay can end without ending its
+// host transport, so a link would otherwise outlive its daemon (#3385).
+var linkSilenceLimit = 30 * time.Second
+
+// Done closes when this exact authenticated connection ends.
+func (l *Link) Done() <-chan struct{} { return l.done }
+
+// Rebasing observes admitted RPCs on this exact boot. Caller cancellation does
+// not cancel a daemon mutation; only its reply or connection retirement ends
+// this observation. It is not evidence that the broker has frozen terminals.
+func (l *Link) Rebasing(branch string) bool {
+	if l.RequireReady(branch) != nil {
+		return false
+	}
+	select {
+	case <-l.done:
+		return false
+	default:
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.rebases) != 0
+}
+
+// TerminalsFrozen is a current-boot broker observation, never an RPC guess.
+// No observation is fail-closed until a successful thaw is received.
+func (l *Link) TerminalsFrozen(branch string) bool {
+	return l.RequireReady(branch) != nil || l.frozen.Load() != 1
+}
+
+func (l *Link) Close() error {
+	l.once.Do(func() { close(l.done); _ = l.Connection.Close() })
+	return nil
+}
+func (l *Link) send(f wire.Frame) error {
+	l.writeMu.Lock()
+	defer l.writeMu.Unlock()
+	if err := l.stream.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		return err
+	}
+	return wire.Write(l.stream, f)
+}
+
+// A blocked pipe writer must observe caller cancellation as well as its bounded
+// transport deadline. Closing this link leaves unacknowledged guest work queued
+// for replay; it never cancels a different boot's connection.
+func (l *Link) sendContext(ctx context.Context, frame wire.Frame) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	stop := context.AfterFunc(ctx, func() { _ = l.Close() })
+	defer stop()
+	err := l.send(frame)
+	if cancelled := ctx.Err(); cancelled != nil {
+		return cancelled
+	}
+	return err
+}
+
+func (l *Link) read() {
+	defer l.Close()
+	for {
+		f, err := wire.Read(l.stream)
+		if err != nil {
+			return
+		}
+		l.heard.Store(time.Now().UnixNano())
+		switch f.Kind {
+		case wire.Control:
+			if f.Payload[0] != 2 {
+				return
+			}
+			fields, err := wire.Fields("response", f.Payload[1:])
+			if err != nil {
+				return
+			}
+			id := binary.BigEndian.Uint32(fields[1])
+			l.mu.Lock()
+			reply := l.pending[id]
+			delete(l.pending, id)
+			delete(l.rebases, id)
+			l.mu.Unlock()
+			if reply != nil {
+				value := fields[2]
+				if value[0] == byte(wire.OpenSession) || value[0] == byte(wire.TCPConnect) {
+					result, e := wire.Fields(fmt.Sprintf("result%d", value[0]), value[1:])
+					if e != nil {
+						return
+					}
+					session := binary.BigEndian.Uint32(result[1])
+					if !validSession(session) {
+						return
+					}
+					l.mu.Lock()
+					if l.sessions[session] != nil || len(l.sessions) >= 512 {
+						l.mu.Unlock()
+						return
+					}
+					l.sessions[session] = newSessionStream(l, session)
+					l.mu.Unlock()
+				}
+				reply <- f
+			}
+		case wire.Events:
+			l.registry.observeEvent(l.boot.branch, f.Payload)
+			var event Event
+			switch f.Payload[0] {
+			case 1:
+				fields, err := wire.Fields("durable", f.Payload[1:])
+				if err != nil {
+					return
+				}
+				event.Payload = append([]byte(nil), fields[3]...)
+				event.Seq = binary.BigEndian.Uint64(fields[1])
+				copy(event.EventID[:], fields[2])
+				if event.Seq == 0 || event.EventID == ([16]byte{}) {
+					return
+				}
+			case 2:
+				fields, err := wire.Fields("hint_wrapper", f.Payload[1:])
+				if err != nil {
+					return
+				}
+				event.Payload = append([]byte(nil), fields[1]...)
+			default:
+				return
+			}
+			select {
+			case l.events <- event:
+			default:
+				return
+			}
+		case wire.Presence:
+			if f.Payload[0] == 2 {
+				fields, err := wire.Fields("freeze_state", f.Payload[1:])
+				if err != nil {
+					return
+				}
+				if fields[1][0] == 1 {
+					l.frozen.Store(2)
+				} else {
+					l.frozen.Store(1)
+				}
+				continue
+			}
+			locations, err := f.PresenceSnapshot()
+			if err != nil {
+				return
+			}
+			commands := make(map[uint32]string)
+			for _, location := range locations {
+				if location.Participant == ([16]byte{}) && location.Command != "" {
+					commands[location.Session] = location.Command
+				}
+			}
+			l.mu.Lock()
+			l.terminalCommands = commands
+			l.mu.Unlock()
+			// Snapshots are complete and ephemeral. Retain the latest without
+			// blocking control replies or the durable outbox on a slow consumer.
+			select {
+			case <-l.presence:
+			default:
+			}
+			l.presence <- f
+		case wire.Documents:
+			l.mu.Lock()
+			queue := l.documents[f.Stream]
+			if queue == nil && l.openingDocuments > 0 && len(l.documents) < MaxOpenDocuments {
+				queue = newDocumentQueue()
+				l.documents[f.Stream] = queue
+			}
+			l.mu.Unlock()
+			if queue == nil {
+				return
+			}
+			// A slow subscriber gaps only its own stream (spec §7.1.1).
+			queue.push(append([]byte(nil), f.Payload...))
+		case wire.Sessions:
+			if !l.receiveSession(f) {
+				return
+			}
+		case wire.Objects:
+			if f.Stream >= 0x80000000 {
+				if !l.receiveObjectReceipt(f) {
+					return
+				}
+				continue
+			}
+			if !l.receiveObject(f) {
+				return
+			}
+		default:
+			return // unsupported streams never grant successful admission
+		}
+	}
+}
+
+// Request dispatches a canonical call fenced to this boot. Admission methods
+// remain available before ready; all other methods require reconciliation.
+func (l *Link) Request(ctx context.Context, branch string, method wire.Method, args ...[]byte) (wire.Frame, error) {
+	if err := ctx.Err(); err != nil {
+		return wire.Frame{}, err
+	}
+	if method == wire.WakeReconcile || method == wire.SetRoster || method == wire.Status ||
+		method == wire.InspectConflict && ctx.Value(retainedAdmissionKey{}) == branch {
+		l.registry.mu.Lock()
+		valid := branch == l.boot.branch && l.current()
+		l.registry.mu.Unlock()
+		if !valid {
+			return wire.Frame{}, ErrUnauthorized
+		}
+	} else if err := l.RequireReady(branch); err != nil {
+		return wire.Frame{}, err
+	}
+	l.mu.Lock()
+	id := l.next
+	if id == 0 {
+		l.mu.Unlock()
+		_ = l.Close()
+		return wire.Frame{}, io.ErrClosedPipe
+	}
+	l.next++
+	reply := make(chan wire.Frame, 1)
+	l.pending[id] = reply
+	l.mu.Unlock()
+	defer func() { l.mu.Lock(); delete(l.pending, id); l.mu.Unlock() }()
+	frame, err := wire.RequestFrame(id, method, args...)
+	if err != nil {
+		return wire.Frame{}, err
+	}
+	if method == wire.Rebase {
+		l.mu.Lock()
+		if l.rebases == nil {
+			l.rebases = make(map[uint32]struct{})
+		}
+		l.rebases[id] = struct{}{}
+		l.mu.Unlock()
+	}
+	if err = l.sendContext(ctx, frame); err != nil {
+		_ = l.Close()
+		return wire.Frame{}, err
+	}
+	select {
+	case <-ctx.Done():
+		// A caller's deadline, not its cancellation, is evidence. A daemon
+		// silent this long is gone or wedged: end the link so the reconnect
+		// watcher redials it.
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) &&
+			time.Since(time.Unix(0, l.heard.Load())) >= linkSilenceLimit {
+			_ = l.Close()
+		}
+		return wire.Frame{}, ctx.Err()
+	case <-l.done:
+		return wire.Frame{}, io.ErrClosedPipe
+	case result := <-reply:
+		l.registry.mu.Lock()
+		valid := branch == l.boot.branch && l.current()
+		l.registry.mu.Unlock()
+		if !valid {
+			return wire.Frame{}, ErrUnauthorized
+		}
+		return result, nil
+	}
+}
+func (l *Link) Receive(ctx context.Context) (Event, error) {
+	select {
+	case <-ctx.Done():
+		return Event{}, ctx.Err()
+	case <-l.done:
+		return Event{}, io.ErrClosedPipe
+	case event := <-l.events:
+		l.registry.mu.Lock()
+		valid := l.current()
+		l.registry.mu.Unlock()
+		if !valid {
+			return Event{}, ErrUnauthorized
+		}
+		return event, nil
+	}
+}
+
+// ReceivePresence returns the latest complete daemon snapshot, fenced to the
+// admitted boot. Identity resolution remains the host consumer's responsibility.
+func (l *Link) ReceivePresence(ctx context.Context, branch string) (wire.Frame, error) {
+	if err := ctx.Err(); err != nil {
+		return wire.Frame{}, err
+	}
+	if err := l.RequireReady(branch); err != nil {
+		return wire.Frame{}, err
+	}
+	select {
+	case <-ctx.Done():
+		return wire.Frame{}, ctx.Err()
+	case <-l.done:
+		return wire.Frame{}, io.ErrClosedPipe
+	case frame := <-l.presence:
+		if err := l.RequireReady(branch); err != nil {
+			return wire.Frame{}, err
+		}
+		return frame, nil
+	}
+}

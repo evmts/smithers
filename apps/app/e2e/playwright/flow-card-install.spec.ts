@@ -61,7 +61,7 @@ test("Source without a proposal continues after Commit and reload on the served 
   let body: { title: string; prompt: string } | undefined
   let creates = 0
   let fileReady = false
-  await page.route("**/api/branches/main/files/flows/todo/flow.ts", route => route.fulfill({ status: 404, json: { class: "conflict", code: "not_found" } }))
+  await page.route("**/api/branches/main/files/.smithers/flows/todo/flow.ts", route => route.fulfill({ status: 404, json: { class: "conflict", code: "not_found" } }))
   await page.route("**/api/todos", async route => {
     if (route.request().method() !== "POST") return route.fulfill({ json: [] })
     body = route.request().postDataJSON()
@@ -72,14 +72,14 @@ test("Source without a proposal continues after Commit and reload on the served 
     title: body?.title ?? "Change the TODO flow: Edit the source",
     prompt_revisions: [{ ...fixtures.in_review.model.prompt_revisions[0], text: body?.prompt ?? "", acceptance: [] }],
     branch: { id: "branch-43", name: "flow-source-43", machine: { state: "awake" } } } }))
-  await page.route("**/api/branches/branch-43/files/flows/todo/flow.ts", route => fileReady
-    ? route.fulfill({ json: { branch: "branch-43", path: "flows/todo/flow.ts", language: "typescript", digest: "file-43",
+  await page.route("**/api/branches/branch-43/files/.smithers/flows/todo/flow.ts", route => fileReady
+    ? route.fulfill({ json: { branch: "branch-43", path: ".smithers/flows/todo/flow.ts", language: "typescript", digest: "file-43",
       content: { kind: "text", text: "export default derivedComposition\n" }, mode: "read_only", diagnostics: [], authors: [], editors: [] } })
     : route.fulfill({ status: 404, json: { class: "conflict", code: "not_found" } }))
   await page.goto("/")
   await say(page, "/flow.source todo")
   const prompt = page.getByRole("textbox", { name: "Prompt", exact: true }).last()
-  await expect(prompt).toHaveValue("Change flows/todo/flow.ts: Edit the source; start from the built-in composition when no override exists")
+  await expect(prompt).toHaveValue("Change .smithers/flows/todo/flow.ts: Edit the source; start from the built-in composition when no override exists")
   expect(creates).toBe(0)
   await page.getByRole("button", { name: "Commit", exact: true }).last().press("Enter")
   await expect.poll(() => creates).toBe(1)
@@ -108,9 +108,9 @@ test("Source opens the proposing TODO branch without another Draft or TODO", asy
   })
   await page.route("**/api/todos/42", route => route.fulfill({ json: { ...fixtures.in_review.model, n: 42,
     branch: { id: "branch-42", name: "flow-edit-42", machine: { state: "awake" } } } }))
-  await page.route("**/api/branches/branch-42/files/flows/todo/flow.ts", route => {
+  await page.route("**/api/branches/branch-42/files/.smithers/flows/todo/flow.ts", route => {
     branchReads++
-    return route.fulfill({ json: { branch: "branch-42", path: "flows/todo/flow.ts", language: "typescript", digest: "file-42",
+    return route.fulfill({ json: { branch: "branch-42", path: ".smithers/flows/todo/flow.ts", language: "typescript", digest: "file-42",
       content: { kind: "text", text: "export default pinnedComposition\n" }, mode: "read_only", diagnostics: [], authors: [], editors: [] } })
   })
   await page.goto("/")
@@ -137,7 +137,7 @@ test("proposed built-in edit displays literal diff before one ordinary TODO appe
   await page.route("**/api/flows", route => route.fulfill({ json: [{ name: "todo", source: { builtin: true }, system: false,
     versions: [{ id: "d1", state: "active", steps: [] }] }] }))
   const writes: unknown[] = []
-  const prompt = "Change flows/todo/flow.ts: Run pnpm test; start from the built-in composition when no override exists\n\nProposed diff (untrusted context):\n> diff --git a/flows/todo/flow.ts b/flows/todo/flow.ts\n> +pnpm test\n> +```\n> +<script>untrusted</script>"
+  const prompt = "Change .smithers/flows/todo/flow.ts: Run pnpm test; start from the built-in composition when no override exists\n\nProposed diff (untrusted context):\n> diff --git a/.smithers/flows/todo/flow.ts b/.smithers/flows/todo/flow.ts\n> +pnpm test\n> +```\n> +<script>untrusted</script>"
   await page.route("**/api/todos", async route => {
     if (route.request().method() !== "POST") return route.fulfill({ json: [] })
     writes.push(route.request().postDataJSON())
@@ -147,8 +147,8 @@ test("proposed built-in edit displays literal diff before one ordinary TODO appe
     title: "Change the TODO flow: Run pnpm test",
     prompt_revisions: [{ ...fixtures.in_review.model.prompt_revisions[0], text: prompt, acceptance: [] }] } }))
   await page.goto("/")
-  await say(page, '/flow.edit {"name":"todo","request":"Run pnpm test","diff":"diff --git a/flows/todo/flow.ts b/flows/todo/flow.ts\\n+pnpm test\\n+```\\n+<script>untrusted</script>"}')
-  await expect(page.locator(".flow-proposal pre").last()).toHaveText("diff --git a/flows/todo/flow.ts b/flows/todo/flow.ts\n+pnpm test\n+```\n+<script>untrusted</script>")
+  await say(page, '/flow.edit {"name":"todo","request":"Run pnpm test","diff":"diff --git a/.smithers/flows/todo/flow.ts b/.smithers/flows/todo/flow.ts\\n+pnpm test\\n+```\\n+<script>untrusted</script>"}')
+  await expect(page.locator(".flow-proposal pre").last()).toHaveText("diff --git a/.smithers/flows/todo/flow.ts b/.smithers/flows/todo/flow.ts\n+pnpm test\n+```\n+<script>untrusted</script>")
   expect(writes).toEqual([])
   await page.getByRole("button", { name: "Make TODO", exact: true }).last().press("Enter")
   await expect(page.getByRole("textbox", { name: "Prompt", exact: true }).last()).toHaveValue(prompt)
@@ -173,7 +173,7 @@ test("install Flow card follows live activation and preserves Active on a failed
   let reads = 0
   await page.route("**/api/flows", route => {
     reads++
-    return route.fulfill({ json: [{ name: "todo", source: { path: "flows/todo/flow.ts" }, system: false, versions: [
+    return route.fulfill({ json: [{ name: "todo", source: { path: ".smithers/flows/todo/flow.ts" }, system: false, versions: [
       { id: "d1", state: state === "active" ? "previous" : "active", steps: [{ id: "implement", label: "Implement" }] },
       { id: "d2", state, todo: 42, ...(state === "merged-failed" ? { error: "Unknown reviewer" } : {}),
         steps: [{ id: "implement", label: "Implement" }, { id: "check", label: "Run pnpm test" }] }

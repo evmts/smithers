@@ -419,7 +419,7 @@ describe("the node the run's graph has open", () => {
 })
 
 describe("the Code tab", () => {
-  const DECLARED = { path: "flows/graph-fixture/flow.ts", line: 42 }
+  const DECLARED = { path: ".smithers/flows/graph-fixture/flow.ts", line: 42 }
 
   test("opens the declaration the engine recorded, anchored at its line", () => {
     const rows = withProvenance(STEADY, DECLARED)
@@ -436,7 +436,7 @@ describe("the Code tab", () => {
       />
     )
     expect(tabs(host)).toContain("code")
-    expect(host.querySelector(".flow-graph-code-path")?.textContent).toBe("flows/graph-fixture/flow.ts:42")
+    expect(host.querySelector(".flow-graph-code-path")?.textContent).toBe(".smithers/flows/graph-fixture/flow.ts:42")
     /* The plan node id, as the AST path it is: `root › flow › then › map …`. */
     expect([...host.querySelectorAll(".flow-graph-code-crumbs li")].map((crumb) => crumb.textContent))
       .toEqual(["root", "flow", "then", "map", "all", "steady"])
@@ -507,7 +507,7 @@ describe("the Code tab", () => {
         tab="code"
         doors={DOORS}
         sourceRevision={REVISION}
-        codeError={{ path: DECLARED.path, message: "Path not found: flows/graph-fixture/flow.ts in o/r" }}
+        codeError={{ path: DECLARED.path, message: "Path not found: .smithers/flows/graph-fixture/flow.ts in o/r" }}
         records={rows}
         onRunCommand={(name, args) => ran.push([name, args])}
       />
@@ -516,7 +516,7 @@ describe("the Code tab", () => {
     /* The reader's words are detail: the sentence is the product's, the text waits behind Details. */
     expect(notice.querySelector("p")?.textContent).toBe("Smithers could not read this file. Not your fault.")
     expect(notice.querySelector("p")?.textContent).not.toContain("Path not found")
-    expect(notice.querySelector("details:not([open]) pre")?.textContent).toBe("Path not found: flows/graph-fixture/flow.ts in o/r")
+    expect(notice.querySelector("details:not([open]) pre")?.textContent).toBe("Path not found: .smithers/flows/graph-fixture/flow.ts in o/r")
     expect(notice.dataset.failure).toBe("FlowGraphCodeReadFailed")
     expect(notice.dataset.fault).toBe("infra")
     expect(notice.querySelectorAll("button")).toHaveLength(0)
@@ -534,7 +534,7 @@ describe("the Code tab", () => {
         tab="code"
         doors={DOORS}
         sourceRevision={REVISION}
-        codeError={{ path: "flows/other/flow.ts", message: "Path not found" }}
+        codeError={{ path: ".smithers/flows/other/flow.ts", message: "Path not found" }}
         records={rows}
         onRunCommand={() => {}}
       />
@@ -841,7 +841,7 @@ describe("the node a plan has open", () => {
   test("opens the code of a node the plan says where it was declared", () => {
     const host = render(
       <FlowGraphDrawer
-        node={planDrawerNode(node(), { path: "flows/review/flow.ts", line: 12 })}
+        node={planDrawerNode(node(), { path: ".smithers/flows/review/flow.ts", line: 12 })}
         tab="code"
         doors={PLAN_DOORS}
         sourceRevision={REVISION}
@@ -849,7 +849,7 @@ describe("the node a plan has open", () => {
       />
     )
     expect(tabs(host)).toContain("code")
-    expect(host.querySelector(".flow-graph-code-path")?.textContent).toBe("flows/review/flow.ts:12")
+    expect(host.querySelector(".flow-graph-code-path")?.textContent).toBe(".smithers/flows/review/flow.ts:12")
   })
 
   /*
@@ -860,7 +860,7 @@ describe("the node a plan has open", () => {
   test("shows no code for a site the plan named no revision for", () => {
     const host = render(
       <FlowGraphDrawer
-        node={planDrawerNode(node(), { path: "flows/review/flow.ts", line: 12 })}
+        node={planDrawerNode(node(), { path: ".smithers/flows/review/flow.ts", line: 12 })}
         tab="code"
         doors={PLAN_DOORS}
         onRunCommand={() => {}}
@@ -937,20 +937,20 @@ describe("the plan canvas drills in", () => {
         nodes={NODES}
         graph={{
           edges: [{ from: "a", to: "b", reason: "value" }],
-          nodes: [{ id: "a", declaredAt: { path: "flows/review/flow.ts", line: 12 } }],
+          nodes: [{ id: "a", declaredAt: { path: ".smithers/flows/review/flow.ts", line: 12 } }],
           sourceRevision: REVISION
         }}
         drill={drill({ selected: "a", tab: "code", sourceRevision: REVISION })}
       />
     )
-    expect(host.querySelector(".flow-graph-code-path")?.textContent).toBe("flows/review/flow.ts:12")
+    expect(host.querySelector(".flow-graph-code-path")?.textContent).toBe(".smithers/flows/review/flow.ts:12")
     /* A node the plan named no site for has no Code tab at all (D-035). */
     const other = render(
       <FlowGraphSurface
         nodes={NODES}
         graph={{
           edges: [{ from: "a", to: "b", reason: "value" }],
-          nodes: [{ id: "a", declaredAt: { path: "flows/review/flow.ts", line: 12 } }],
+          nodes: [{ id: "a", declaredAt: { path: ".smithers/flows/review/flow.ts", line: 12 } }],
           sourceRevision: REVISION
         }}
         drill={drill({ selected: "b", tab: "code", sourceRevision: REVISION })}
@@ -963,7 +963,7 @@ describe("the plan canvas drills in", () => {
         nodes={NODES}
         graph={{
           edges: [{ from: "a", to: "b", reason: "value" }],
-          nodes: [{ id: "a", declaredAt: { path: "flows/review/flow.ts", line: 12 } }]
+          nodes: [{ id: "a", declaredAt: { path: ".smithers/flows/review/flow.ts", line: 12 } }]
         }}
         drill={drill({ selected: "a", tab: "code" })}
       />

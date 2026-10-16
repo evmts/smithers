@@ -43,13 +43,13 @@ const ambiguous = {
   on: [{ event: NOTIFICATION_POLICY_EVENT, flow: "who-is-told", description: "Choose who is told" },
     { event: NOTIFICATION_POLICY_EVENT, flow: "someone-else", description: "Also choose" }],
   flows: [{ id: "who-is-told", description: "Choose who is told", summary: null, featured: false,
-    kind: "ts" as const, path: "flows/who-is-told/flow.ts", capabilities: [], model: null, modelInvocable: false }]
+    kind: "ts" as const, path: ".smithers/flows/who-is-told/flow.ts", capabilities: [], model: null, modelInvocable: false }]
 }
 
 const projection = {
   on: [{ event: NOTIFICATION_POLICY_EVENT, flow: "who-is-told", description: "Choose who is told" }],
   flows: [{ id: "who-is-told", description: "Choose who is told", summary: null, featured: false,
-    kind: "ts" as const, path: "flows/who-is-told/flow.ts", capabilities: [], model: null, modelInvocable: false }]
+    kind: "ts" as const, path: ".smithers/flows/who-is-told/flow.ts", capabilities: [], model: null, modelInvocable: false }]
 }
 
 const summaryRow = (output: string, status = "completed") => ({

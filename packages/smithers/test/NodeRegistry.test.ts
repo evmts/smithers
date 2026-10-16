@@ -17,9 +17,9 @@ let root = ""
 
 beforeAll(async () => {
   root = await mkdtemp(join(tmpdir(), "flows-cli-registry-"))
-  await mkdir(join(root, "flows", "review"), { recursive: true })
+  await mkdir(join(root, ".smithers", "flows", "review"), { recursive: true })
   await writeFile(
-    join(root, "flows", "review", "SKILL.md"),
+    join(root, ".smithers", "flows", "review", "SKILL.md"),
     [
       "---",
       "description: Reviews a proposed change and reports concrete risks.",
@@ -38,9 +38,16 @@ afterAll(async () => {
 })
 
 describe("NodeControl.projectSources", () => {
-  it("points at the project flows directory", () => {
+  it("points at the project flows directory and probes the retired one", () => {
     expect(NodeControl.projectSources("/work")).toEqual([
-      { source: "project", root: join("/work", "flows"), naming: "path", optionalRoot: true, lockfileRoot: "/work" }
+      {
+        source: "project",
+        root: join("/work", ".smithers", "flows"),
+        naming: "path",
+        optionalRoot: true,
+        lockfileRoot: "/work",
+        retiredRoot: join("/work", "flows")
+      }
     ])
   })
 })
@@ -62,7 +69,7 @@ describe("NodeControl.layerRegistry", () => {
           name: "review",
           description: "Reviews a proposed change and reports concrete risks.",
           body: expect.objectContaining({ _tag: "Markdown" }),
-          path: join(root, "flows", "review", "SKILL.md")
+          path: join(root, ".smithers", "flows", "review", "SKILL.md")
         })
       ])
       expect(result.bodyFailure).toMatchObject({ code: "body_unavailable", method: "loadBody" })

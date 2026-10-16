@@ -15,6 +15,24 @@ const quoteDiff = (diff: string | undefined): string =>
     : `\n\nProposed diff (untrusted context):\n${diff.split(lineBreak).map((line) => `> ${line}`).join("\n")}`
 
 /**
+ * Where a repository keeps its flows, relative to its root (mvp.md M-49). The
+ * browser-safe copy of `@smthrs/registry`'s `Descriptor.projectFlowsDirectory`;
+ * a `@smthrs/cli` test pins the two equal.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const projectFlowsDirectory = ".smithers/flows"
+
+/**
+ * A flow's TypeScript entry file, relative to the repository root.
+ *
+ * @since 1.0.0
+ * @category constructors
+ */
+export const flowFile = (name: string): string => `${projectFlowsDirectory}/${name}/flow.ts`
+
+/**
  * The display title of a flow: `todo` is "TODO flow", `merge` is "Merge flow",
  * and any other name is shown as "<name> flow".
  *
@@ -30,7 +48,7 @@ export const flowTitle = (name: string): string =>
  * @category constructors
  */
 export const flowEditPrompt = (name: string, request: string, diff?: string): string =>
-  `Change flows/${name}/flow.ts: ${request}; start from the built-in composition when no override exists` +
+  `Change ${flowFile(name)}: ${request}; start from the built-in composition when no override exists` +
   quoteDiff(diff)
 
 /**
@@ -52,7 +70,7 @@ export const agentEditTodoInput = (name: string, request: string, diff?: string)
   const path = name === "app"
     ? ".smithers/instructions/app.md"
     : ["planner", "implementer", "reviewer"].includes(name)
-    ? "flows/todo/flow.ts"
+    ? flowFile("todo")
     : undefined
   if (!path) return undefined
   const title = `${name[0]!.toUpperCase()}${name.slice(1)} agent`

@@ -10,7 +10,7 @@ import { expect, it } from "vitest"
 import * as NodeControl from "../src/NodeControl.ts"
 
 const writeFlow = (root: string, name: string, prompt: string, capability = "fs:read:before/**") => {
-  const directory = join(root, "flows", name)
+  const directory = join(root, ".smithers", "flows", name)
   mkdirSync(directory, { recursive: true })
   writeFileSync(
     join(directory, "flow.mdx"),
@@ -69,7 +69,7 @@ it("lists and plans newly discovered flows and stops offering removed flows", ()
 
       yield* Effect.sync(() => {
         writeFlow(root, "added", "Newly discovered")
-        rmSync(join(root, "flows", "review"), { recursive: true })
+        rmSync(join(root, ".smithers", "flows", "review"), { recursive: true })
       })
       yield* registry.refresh()
 

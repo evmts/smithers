@@ -106,7 +106,7 @@ export const knowledge = {
     {
       name: "File flow",
       about:
-        "flows/<name>/flow.ts default-exports Flow.make(\"<name>\", { description, capabilities, effects, payload, success, error?, body }) from @smthrs/flow. The tag is required and matches the path."
+        ".smithers/flows/<name>/flow.ts default-exports Flow.make(\"<name>\", { description, capabilities, effects, payload, success, error?, body }) from @smthrs/flow. The tag is required and matches the path."
     },
     {
       name: "Body",
@@ -120,7 +120,7 @@ export const knowledge = {
     },
     {
       name: "Markdown flow",
-      about: "flows/<name>/flow.mdx: frontmatter declares description and capabilities; the prompt is the body."
+      about: ".smithers/flows/<name>/flow.mdx: frontmatter declares description and capabilities; the prompt is the body."
     },
     { name: "Agent step", about: "AgentAction.make from @smthrs/agent runs a typed model step inside a flow." },
     { name: "Run", about: "npx smthrs flow start <name> --data '{...}' --detached, then smthrs runs show <run>." },
@@ -155,7 +155,7 @@ export type Topic = typeof Topic.Type
  * @since 1.0.0-rc.1
  */
 export const brief = [
-  "You work with Smithers: durable flows for long-running coding agents. Flows are TypeScript (flows/<name>/flow.ts, Flow.make from @smthrs/flow) or Markdown (flow.mdx).",
+  "You work with Smithers: durable flows for long-running coding agents. Flows are TypeScript (.smithers/flows/<name>/flow.ts, Flow.make from @smthrs/flow) or Markdown (flow.mdx).",
   `Key packages: ${knowledge.packages.map((fact) => fact.name).join(", ")}.`,
   "The CLI is `npx smthrs <verb>`: flow list|show|plan|start, runs list|show|logs|output|cancel|resume, generate flow, test, docs, tui.",
   "For package facts, CLI flags, and the authoring recipe call ctx.call(\"smithers.guide\", { topic }) with packages, cli, authoring, or all."

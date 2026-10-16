@@ -1016,7 +1016,7 @@ func testBranchRebaseNative(t *testing.T, people bool, point string, options ...
 		// Revalidate real guest and owner HTTP receipts through the same module
 		// used by the live driver and artifact verdict. No marker is invented:
 		// live-document activation still requires the owner's review.
-		module, err := filepath.Abs("../../../../scripts/perf/lib/rebase-receipts.mjs")
+		module, err := filepath.Abs("../../../../flows/perf/lib/rebase-receipts.mjs")
 		require.NoError(t, err)
 		source := `import {verifyHeldObservation,verifyCaptureDelay,verifyDrain} from ` + strconv.Quote((&url.URL{Scheme: "file", Path: module}).String()) + `;
         const {rows,ack,branch}=JSON.parse(process.argv[1]);

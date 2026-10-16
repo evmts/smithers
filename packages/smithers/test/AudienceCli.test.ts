@@ -1,6 +1,6 @@
 import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as Audience from "@smthrs/build-cli/Audience"
-import { mkdtemp, readdir, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
@@ -81,10 +81,30 @@ describe("audience-aware public CLI", { timeout: 90_000 }, () => {
     })
     expect(result.code, result.stderr + result.stdout).toBe(0)
     expect(result.stdout).toContain("flow list")
-    expect(result.stdout).toContain("No flows discovered under flows/.")
+    expect(result.stdout).toContain("No flows discovered under .smithers/flows/.")
     expect(result.stdout).toContain("Next:")
     expect(result.stdout).not.toContain("cta:")
     expect(result.stderr).toBe("")
+  })
+  it("names .smithers/flows/ once when flows remain in a root flows/, and loads none of them", async () => {
+    const root = await fixture()
+    await mkdir(join(root, "flows", "review"), { recursive: true })
+    await writeFile(join(root, "flows", "review", "flow.mdx"), "---\ndescription: Old review.\n---\nReview.\n")
+    const human = await invoke(["flow", "list", "--root", root, "--audience", "human", "--silent"], {
+      CLAUDECODE: "1"
+    })
+    expect(human.code, human.stderr + human.stdout).toBe(0)
+    expect(human.stdout).toContain("No flows discovered under .smithers/flows/.")
+    expect(human.stdout.split("Flows in flows/ are not loaded; move them to .smithers/flows/.")).toHaveLength(2)
+    const json = await invoke(["flow", "list", "--root", root, "--json"], {})
+    expect(json.code, json.stderr).toBe(0)
+    const page = JSON.parse(json.stdout)
+    expect(page.items).toEqual([])
+    expect(page.warnings).toEqual([{
+      code: "retired_root",
+      path: join(root, "flows"),
+      message: "Flows in flows/ are not loaded; move them to .smithers/flows/."
+    }])
   })
   it("keeps explicit JSON machine-readable for humans and leaves help inert", async () => {
     const root = await fixture()

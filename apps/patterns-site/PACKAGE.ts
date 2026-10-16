@@ -4,7 +4,7 @@
  * The page is one static file, `site/index.html`, served by the `patterns-site`
  * Worker (`wrangler.jsonc`). Its cards link into the whole repository, so the
  * link check reads files across packages and runs uncached, like
- * `//scripts:packageDocs`.
+ * `//flows:packageDocs`.
  */
 import { Smithers } from "@smthrs/targets"
 

@@ -105,7 +105,7 @@ the concept to rewrite against.
 
 | Removed from `smthrs`                                                       | Replacement in 1.0                                                                                                                             |
 | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `smthrs/jsx-runtime`, `smthrs/jsx-dev-runtime`, `jsxImportSource: "smthrs"` | No JSX authoring API. Author a flow in TypeScript with `Flow` and `Action` from `@smthrs/flow`, or in Markdown as `flows/<name>/flow.mdx`.     |
+| `smthrs/jsx-runtime`, `smthrs/jsx-dev-runtime`, `jsxImportSource: "smthrs"` | No JSX authoring API. Author a flow in TypeScript with `Flow` and `Action` from `@smthrs/flow`, or in Markdown as `.smithers/flows/<name>/flow.mdx`. |
 | `Workflow` and `Task` components                                            | `Flow.make` and `Action.make` (`@smthrs/flow`). A model-backed step is `AgentAction.make` (`@smthrs/agent`).                                   |
 | `Sequence`, `Parallel`, `Branch` components                                 | `Node.andThen`, `Node.all`, and `Node.branch` (`@smthrs/plan`).                                                                                |
 | `Loop`, `Ralph`, `ReviewLoop` components                                    | `ReviewLoop.run`, or `Recursion.recurse` with an explicit fuel, depth, and fanout envelope (`@smthrs/patterns`).                               |

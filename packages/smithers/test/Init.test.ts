@@ -25,7 +25,7 @@ import { execFileSync } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
-import { basename, join } from "node:path"
+import { basename, dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, it } from "vitest"
 import * as Init from "../src/Init.ts"
@@ -96,13 +96,14 @@ describe("the ignore rule", () => {
 })
 
 describe("the scaffold", () => {
-  it("writes flows/<name>/flow.ts and ignores .flows/", () => {
+  it("writes .smithers/flows/<name>/flow.ts and ignores .flows/", () => {
     const root = directory(".git")
 
     const result = Init.scaffold(root, "review", {})
 
     expect(result).toMatchObject({ name: "review", created: true, gitignore: "created" })
-    expect(result.flowFile).toBe(join(root, "flows", "review", "flow.ts"))
+    expect(result.flowFile).toBe(join(root, ".smithers", "flows", "review", "flow.ts"))
+    expect(existsSync(join(root, "flows"))).toBe(false)
     const body = readFileSync(result.flowFile, "utf8")
     expect(body).not.toContain("\nname:")
     expect(body).toContain("export default Flow.make(\"review\", {")
@@ -119,7 +120,7 @@ describe("the scaffold", () => {
 
   it.each(["flow.ts", "flow.mdx", "SKILL.md"])("retains an authored %s without creating another entry", (entry) => {
     const root = directory(".git")
-    const folder = join(root, "flows", "review")
+    const folder = join(root, ".smithers", "flows", "review")
     mkdirSync(folder, { recursive: true })
     const file = join(folder, entry)
     writeFileSync(file, "mine\n")
@@ -136,7 +137,7 @@ describe("the scaffold", () => {
     "refuses duplicate entries %s and %s before writing state",
     (first, second) => {
       const root = directory(".git")
-      const folder = join(root, "flows", "review")
+      const folder = join(root, ".smithers", "flows", "review")
       mkdirSync(folder, { recursive: true })
       for (const entry of [first, second]) writeFileSync(join(folder, entry), entry)
       expect(() => Init.scaffold(root, "review", {})).toThrow(expect.objectContaining({ code: "flow_conflict" }))
@@ -146,13 +147,12 @@ describe("the scaffold", () => {
     }
   )
 
-  it.each(["flows", "flows/review", ".flows", ".gitignore"])(
+  it.each([".smithers", ".smithers/flows", ".smithers/flows/review", ".flows", ".gitignore"])(
     "refuses a symlink at %s without writing outside the project",
     (path) => {
       const root = directory(".git")
       const outside = directory()
-      mkdirSync(join(root, "flows"), { recursive: true })
-      if (path === "flows") rmSync(join(root, "flows"), { recursive: true })
+      mkdirSync(join(root, dirname(path)), { recursive: true })
       symlinkSync(outside, join(root, path))
       expect(() => Init.scaffold(root, "review", {})).toThrow(expect.objectContaining({ code: "unsafe_scaffold_path" }))
       expect(existsSync(join(outside, "flow.ts"))).toBe(false)
@@ -162,7 +162,7 @@ describe("the scaffold", () => {
 
   it("retains a dangling entry symlink without replacing it", () => {
     const root = directory()
-    const folder = join(root, "flows", "review")
+    const folder = join(root, ".smithers", "flows", "review")
     mkdirSync(folder, { recursive: true })
     symlinkSync(join(root, "missing"), join(folder, "flow.mdx"))
     expect(Init.scaffold(root, "review", {}).created).toBe(false)
@@ -209,7 +209,7 @@ describe("the scaffold", () => {
       expect.objectContaining({ _tag: "/cli/UsageError", message: reason })
     )
     expect(Init.isValidName(name)).toBe(false)
-    expect(existsSync(join(root, "flows"))).toBe(false)
+    expect(existsSync(join(root, ".smithers"))).toBe(false)
     expect(existsSync(join(root, "outside"))).toBe(false)
     expect(existsSync(join(root, ".flows"))).toBe(false)
     expect(existsSync(join(root, ".gitignore"))).toBe(false)
@@ -359,7 +359,7 @@ describe("generated TypeScript through the public registry and runtime", () => {
         expect(descriptors.map((entry) => entry.name)).toEqual([name])
         expect(descriptors[0]!.capabilities).toEqual(["fs:read:**", "fs:write:**", "proc:spawn:*", "model:call:*"])
         expect(yield* registry.warnings()).toEqual([])
-        expect(scaffolded.flowFile).toBe(join(root, "flows", name, "flow.ts"))
+        expect(scaffolded.flowFile).toBe(join(root, ".smithers", "flows", name, "flow.ts"))
         const executable = yield* Executable.fromDescriptor(yield* registry.get(name), { delegates: [] })
         const input = { args: "Inspect the generated starter." }
         const graph = Graph.build(executable.flow, { input }, { callbackIdentity: "stable" })
@@ -387,7 +387,7 @@ describe("generated TypeScript through the public registry and runtime", () => {
 describe("retained legacy entry loading", () => {
   it.each(["flow.mdx", "SKILL.md"])("keeps %s discoverable and lazily loadable", async (entry) => {
     const root = directory()
-    const folder = join(root, "flows", "legacy")
+    const folder = join(root, ".smithers", "flows", "legacy")
     mkdirSync(folder, { recursive: true })
     const text =
       "---\ndescription: An authored legacy flow.\ncapabilities: []\nmodel: openai:gpt-6-sol\n---\n\nKeep these instructions.\n"
@@ -416,7 +416,7 @@ it("typechecks the generated flow and rejects wrong imported prompt props with i
   const result = Init.scaffold(root, "review", {})
   symlinkSync(fileURLToPath(new URL("../node_modules", import.meta.url)), join(root, "node_modules"), "dir")
   const tsc = createRequire(import.meta.url).resolve("typescript/bin/tsc")
-  const config = join(root, "flows/review/tsconfig.json")
+  const config = join(root, ".smithers/flows/review/tsconfig.json")
   expect(() => execFileSync(process.execPath, [tsc, "-p", config], { cwd: root, encoding: "utf8" })).not.toThrow()
   writeFileSync(result.flowFile, "import Instructions from \"./prompt.mdx\"; Instructions({ args: 42 });")
   let diagnostics = ""
@@ -431,7 +431,7 @@ it("typechecks the generated flow and rejects wrong imported prompt props with i
 
 it.each(["tsconfig.json", "prompt.mdx", "prompt.d.mdx.ts"])("preserves an authored %s beside a new flow", (entry) => {
   const root = directory()
-  const folder = join(root, "flows/review")
+  const folder = join(root, ".smithers/flows/review")
   mkdirSync(folder, { recursive: true })
   writeFileSync(join(folder, entry), "authored\n")
   Init.scaffold(root, "review", {})
@@ -443,11 +443,11 @@ it.each(["tsconfig.json", "prompt.mdx", "prompt.d.mdx.ts"])("preserves an author
 it("refuses a symlinked compiler config without touching its target", () => {
   const root = directory()
   const outside = directory()
-  mkdirSync(join(root, "flows/review"), { recursive: true })
+  mkdirSync(join(root, ".smithers/flows/review"), { recursive: true })
   const config = join(outside, "tsconfig.json")
   writeFileSync(config, "authored\n")
-  symlinkSync(config, join(root, "flows/review/tsconfig.json"))
+  symlinkSync(config, join(root, ".smithers/flows/review/tsconfig.json"))
   expect(() => Init.scaffold(root, "review", {})).toThrow(expect.objectContaining({ code: "unsafe_scaffold_path" }))
   expect(readFileSync(config, "utf8")).toBe("authored\n")
-  expect(existsSync(join(root, "flows/review/flow.ts"))).toBe(false)
+  expect(existsSync(join(root, ".smithers/flows/review/flow.ts"))).toBe(false)
 })

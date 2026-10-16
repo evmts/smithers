@@ -405,7 +405,7 @@ below is `Mapping.rows` rendered, so it cannot fall behind the code.
 | `delegationV2Schemas`                    | none                                                                                         | none                                                                            | unsafe    |
 | `denyNode`                               | `Control.deny`                                                                               | `@smthrs/control/Control`                                                       | guided    |
 | `devPreviewKindSchema`                   | none                                                                                         | none                                                                            | unsafe    |
-| `docs`                                   | `Text pointing at flows/, smthrs flow start, and report.md`                                  | none                                                                            | guided    |
+| `docs`                                   | `Text pointing at .smithers/flows/, smthrs flow start, and report.md`                         | none                                                                            | guided    |
 | `dryRun`                                 | `@smthrs/testing`                                                                            | `@smthrs/testing`                                                               | guided    |
 | `e2eHarness`                             | `@smthrs/testing`                                                                            | `@smthrs/testing`                                                               | guided    |
 | `edit`                                   | `The std flows bound through StandardFlows`                                                  | `@smthrs/std, @smthrs/agent/StandardFlows`                                      | automatic |
@@ -456,7 +456,7 @@ below is `Mapping.rows` rendered, so it cannot fall behind the code.
 | `makeHarness`                            | `@smthrs/testing`                                                                            | `@smthrs/testing`                                                               | guided    |
 | `makeReplayBundle`                       | `@smthrs/testing`                                                                            | `@smthrs/testing`                                                               | guided    |
 | `markdownComponents`                     | none                                                                                         | none                                                                            | automatic |
-| `mdx-prompt`                             | `prompt: (payload) => string, or flows/<name>/flow.mdx`                                      | `@smthrs/agent/AgentAction, @smthrs/registry/MarkdownFlow`                      | automatic |
+| `mdx-prompt`                             | `prompt: (payload) => string, or .smithers/flows/<name>/flow.mdx`                             | `@smthrs/agent/AgentAction, @smthrs/registry/MarkdownFlow`                      | automatic |
 | `mdxPlugin`                              | none                                                                                         | none                                                                            | automatic |
 | `memoryFactReads`                        | `@smthrs/memory`                                                                             | `@smthrs/memory`                                                                | guided    |
 | `memoryFactWrites`                       | `@smthrs/memory`                                                                             | `@smthrs/memory`                                                                | guided    |
@@ -935,6 +935,7 @@ component is `jsx`, and the agent decides what it becomes.
 | `CommandOverrides`    | `interface`                                                                                      | The four operator-supplied verification commands.                                                          |
 | `VerifyCommands`      | `interface`                                                                                      | The install, format, typecheck, test, and discovery commands, plus the notes.                              |
 | `verifyCommands`      | `(detection: Detection, overrides?: CommandOverrides, flowsDir?: string) => VerifyCommands`      | The derivation itself.                                                                                     |
+| `defaultFlowsDir`     | `".smithers/flows"`                                                                              | Where migrated flows go: the registry's `Descriptor.projectFlowsDirectory`.                                |
 | `orderWorkflows`      | `<A extends { path: string }>(workflows, imports) => { ordered: ReadonlyArray<A>; cycles: ... }` | Dependency order, with cycles broken lexically and reported.                                               |
 | `flowName`            | `(path: string) => string`                                                                       | The registry name a workflow file becomes.                                                                 |
 | `duplicateIds`        | `(units: ReadonlyArray<UnitPlan>) => ReadonlyArray<{ ... }>`                                     | Two units that would share one id.                                                                         |
@@ -973,7 +974,7 @@ the same way `Detect.scan` did.
 
 `Units.flowName(path)` gives a workflow its registry name:
 `.smithers/workflows/pipelines/ci-fast.tsx` becomes `pipelines/ci-fast` and
-lands at `flows/pipelines/ci-fast/flow.ts`.
+lands at `.smithers/flows/pipelines/ci-fast/flow.ts`.
 
 `Units.verifyCommands(detection, overrides?, flowsDir?)` derives the commands
 that verify a unit: install from the lockfile or `packageManager` (`bun`,
@@ -1238,7 +1239,7 @@ always pass: they report the blockage instead of refusing on it. See
 | `flowsDir`               | `(options: MigrateOptions) => string`                                         | The flows directory, defaulted.                                                                    |
 | `maxRepairRounds`        | `(options: MigrateOptions) => number`                                         | The repair rounds, defaulted.                                                                      |
 | `defaultReportDir`       | `".smithers-migrate"`                                                         | The default report directory.                                                                      |
-| `defaultFlowsDir`        | `"flows"`                                                                     | The default flows directory.                                                                       |
+| `defaultFlowsDir`        | `".smithers/flows"`                                                           | The default flows directory, `Units.defaultFlowsDir`.                                              |
 | `defaultMaxRepairRounds` | `3`                                                                           | The default repair rounds.                                                                         |
 | `reservedDirectories`    | `[".flows", ".git", ".jj", "node_modules"]`                                   | Directory names no segment of a layout path may be, at any depth.                                  |
 | `reportDirEntries`       | `ReadonlyArray<string>`                                                       | Everything the tool itself writes at the top of the report directory.                              |

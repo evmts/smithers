@@ -283,11 +283,11 @@ func TestAccessConfirmationProfilesComposedInstallPostgres(t *testing.T) {
 			continue
 		}
 		for _, door := range []struct{ command, name, path, title, prompt string }{
-			{"flow.edit", "todo", "/api/flows/todo/edit", "Change the TODO flow: ", "Change flows/todo/flow.ts: "},
+			{"flow.edit", "todo", "/api/flows/todo/edit", "Change the TODO flow: ", "Change .smithers/flows/todo/flow.ts: "},
 			{"agent.edit", "app", "/api/agents/app/edit", "Change the App agent: ", "Change instructions for the App agent in .smithers/instructions/app.md: "},
-			{"agent.edit", "planner", "/api/agents/planner/edit", "Change the Planner agent: ", "Change instructions for the Planner agent in flows/todo/flow.ts: "},
-			{"agent.edit", "implementer", "/api/agents/implementer/edit", "Change the Implementer agent: ", "Change instructions for the Implementer agent in flows/todo/flow.ts: "},
-			{"agent.edit", "reviewer", "/api/agents/reviewer/edit", "Change the Reviewer agent: ", "Change instructions for the Reviewer agent in flows/todo/flow.ts: "},
+			{"agent.edit", "planner", "/api/agents/planner/edit", "Change the Planner agent: ", "Change instructions for the Planner agent in .smithers/flows/todo/flow.ts: "},
+			{"agent.edit", "implementer", "/api/agents/implementer/edit", "Change the Implementer agent: ", "Change instructions for the Implementer agent in .smithers/flows/todo/flow.ts: "},
+			{"agent.edit", "reviewer", "/api/agents/reviewer/edit", "Change the Reviewer agent: ", "Change instructions for the Reviewer agent in .smithers/flows/todo/flow.ts: "},
 		} {
 			t.Run("app-edit/"+door.name+"/"+a.name, func(t *testing.T) {
 				request := "[HOLD access-card-edits] " + a.name + " " + door.name

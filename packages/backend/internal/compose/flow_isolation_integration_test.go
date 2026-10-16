@@ -43,7 +43,7 @@ func TestCSEC02TrustedProcessRefusesRepositoryFlowsBeforeComposition(t *testing.
 	require.NoError(t, err)
 	port := listener.Addr().(*net.TCPAddr).Port
 	for _, name := range []string{"todo", "learning", "review", "release-notes", "merge"} {
-		path := filepath.Join(observed.Root, "flows", name, "flow.ts")
+		path := filepath.Join(observed.Root, ".smithers", "flows", name, "flow.ts")
 		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0755))
 		body := fmt.Sprintf(`import { writeFileSync } from "node:fs"
 import { connect } from "node:net"
@@ -365,7 +365,7 @@ canaryMark("import")
   }))`
 	source = []byte(probe + strings.Replace(string(source), original, body, 1))
 	seed := filepath.Join(r.gitRoot, "seed")
-	path := filepath.Join(seed, "flows/learning/flow.ts")
+	path := filepath.Join(seed, ".smithers/flows/learning/flow.ts")
 	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0700))
 	require.NoError(t, os.WriteFile(path, source, 0600))
 	git := func(args ...string) string {
@@ -376,7 +376,7 @@ canaryMark("import")
 		require.NoError(t, err, string(output))
 		return strings.TrimSpace(string(output))
 	}
-	git("add", "flows/learning/flow.ts")
+	git("add", ".smithers/flows/learning/flow.ts")
 	git("-c", "user.name=Isolation", "-c", "user.email=owner@example.test", "commit", "-m", "Learning isolation canary")
 	r.mainCommit = git("rev-parse", "HEAD")
 	git("push", filepath.Join(r.gitRoot, "rehearsal-owner/app.git"), "HEAD:refs/heads/main")

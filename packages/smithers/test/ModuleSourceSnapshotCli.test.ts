@@ -19,7 +19,7 @@ type Command = (args: ReadonlyArray<string>) => Promise<Result>
 const withHost = async (test: (root: string, command: Command) => Promise<void>) => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "smithers-cli-module-snapshot-")))
   try {
-    await cp(fixture, join(root, "flows"), { recursive: true })
+    await cp(fixture, join(root, ".smithers", "flows"), { recursive: true })
     await mkdir(join(root, ".flows"))
     await symlink(nodeModules, join(root, "node_modules"), "dir")
     const command: Command = (args) =>
@@ -83,7 +83,7 @@ describe("the approved module source snapshot", () => {
             .toBe(`approved-entry/approved-helper/approved-layer/${index}`)
         }
         for (const file of ["flow.ts", "helper.ts", "layer.ts"]) {
-          expect(await readFile(join(root, "flows", "snapshot", file), "utf8"))
+          expect(await readFile(join(root, ".smithers", "flows", "snapshot", file), "utf8"))
             .toContain(edit || early ? "unapproved-" : "approved-")
         }
         const listed = JSON.parse((await command(["runs", "list", "--flow", "snapshot", "--json"])).stdout) as {
@@ -261,7 +261,7 @@ describe("the approved module source snapshot", () => {
         children[0]!.child.kill("SIGKILL")
         await children[0]!.exited
         for (const file of ["flow.ts", "helper.ts", "layer.ts"]) {
-          const filename = join(root, "flows", "snapshot", file)
+          const filename = join(root, ".smithers", "flows", "snapshot", file)
           await writeFile(filename, (await readFile(filename, "utf8")).replaceAll("approved-", "unapproved-"))
         }
         const adoptionArguments = ["runs", "resume", "run-1", "--allow-code-drift", "--json"]

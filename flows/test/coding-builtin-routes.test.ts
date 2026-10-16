@@ -1,9 +1,9 @@
 /**
- * A repository that ships `.smithers/coding-project.json` and no `flows/coding/`
+ * A repository that ships `.smithers/coding-project.json` and no `.smithers/flows/coding/`
  * tree must still pass the coding host's required-executable check
  * (smithersai/smithers#2764, smithersai/plue#700). Before the configured routes
  * shipped as built-ins, such a repository could only start the host by vendoring
- * minified coding bundles into its own `flows/coding/*`.
+ * minified coding bundles into its own `.smithers/flows/coding/*`.
  *
  * The catalog here is the host's own composition: `provisionHostBuiltins`,
  * `bindRepositoryRegistry`, `repositoryCatalog` and `missingCodingExecutables`
@@ -66,12 +66,12 @@ const project = {
   }]
 }
 
-/** A repository with only a coding project file, a README and an empty `flows/`. */
+/** A repository with only a coding project file, a README and an empty `.smithers/flows/`. */
 const workspace = async (t: TestContext) => {
   const temporary = await mkdtemp(join(tmpdir(), "coding-builtin-routes-"))
   t.after(() => rm(temporary, { recursive: true, force: true }))
   const repositoryPath = join(temporary, "repo"), stateRoot = join(temporary, "state")
-  await mkdir(join(repositoryPath, "flows"), { recursive: true })
+  await mkdir(join(repositoryPath, ".smithers", "flows"), { recursive: true })
   await mkdir(join(repositoryPath, ".smithers"), { recursive: true })
   await writeFile(join(repositoryPath, "README.md"), "# fixture\n")
   await writeFile(join(repositoryPath, ".smithers", "coding-project.json"), `${JSON.stringify(project, null, 2)}\n`)
@@ -88,7 +88,7 @@ const startup = (repositoryPath: string, stateRoot: string, provision: "host" | 
       ? yield* provisionHostBuiltins(stateRoot, policy, options)
       : yield* provisionBuiltins(stateRoot, policy)
     const project = yield* Registry.make({
-      sources: [{ root: join(repositoryPath, "flows"), source: "project", naming: "path" }]
+      sources: [{ root: join(repositoryPath, ".smithers", "flows"), source: "project", naming: "path" }]
     }).pipe(Effect.provide(Discovery.layer))
     const registry = bindRepositoryRegistry(project, builtins.registry, policy, systemFlows)
     const built = yield* repositoryCatalog({ delegates: [RunSetup, RunJob, RunTrigger] }, builtins.load).pipe(
@@ -98,7 +98,7 @@ const startup = (repositoryPath: string, stateRoot: string, provision: "host" | 
     return { missing: missingCodingExecutables(built, options), listed }
   }).pipe(Effect.provide(platform), Effect.runPromise)
 
-test("a coding project with no flows/coding tree serves every configured coding route", async (t) => {
+test("a coding project with no .smithers/flows/coding tree serves every configured coding route", async (t) => {
   const { repositoryPath, stateRoot } = await workspace(t)
   assert.deepEqual((await startup(repositoryPath, stateRoot, "host")).missing, [])
 })
@@ -244,7 +244,7 @@ export default ({ name: "repository-jobs/ci", description: "Run the reviewed ci 
 
 test("a repository with no flows of its own serves the stack's review on the coding/review role", async (t) => {
   // The stack launches review/change on every open TODO pull request
-  // (mythicalReviewFlow); a customer's repository carries no flows/review.
+  // (mythicalReviewFlow); a customer's repository carries no .smithers/flows/review.
   const { repositoryPath, stateRoot } = await workspace(t)
   for (const provision of ["host", "defaults"] as const) {
     assert.ok((await startup(repositoryPath, stateRoot, provision)).listed.includes("review/change"), provision)
@@ -252,7 +252,7 @@ test("a repository with no flows of its own serves the stack's review on the cod
   const review = await Effect.gen(function*() {
     const builtins = yield* provisionBuiltins(stateRoot, policy)
     const project = yield* Registry.make({
-      sources: [{ root: join(repositoryPath, "flows"), source: "project", naming: "path" }]
+      sources: [{ root: join(repositoryPath, ".smithers", "flows"), source: "project", naming: "path" }]
     }).pipe(Effect.provide(Discovery.layer))
     return yield* bindRepositoryRegistry(project, builtins.registry, policy, systemFlows).get("review/change")
   }).pipe(Effect.provide(platform), Effect.runPromise)
@@ -293,11 +293,11 @@ test("retired routes stay absent with or without a landing binding", async (t) =
 // repository failed the same way.
 test("a stale repository request entry cannot restore the retired route", async (t) => {
   const { repositoryPath, stateRoot } = await workspace(t)
-  await mkdir(join(repositoryPath, "flows", "coding", "request"), { recursive: true })
+  await mkdir(join(repositoryPath, ".smithers", "flows", "coding", "request"), { recursive: true })
   // Discovered, then refused at load (a prompt body needs the "agent"
   // delegate this host does not register), as the production copies were.
   await writeFile(
-    join(repositoryPath, "flows", "coding", "request", "flow.mdx"),
+    join(repositoryPath, ".smithers", "flows", "coding", "request", "flow.mdx"),
     "---\ndescription: A stale repository copy of the request route.\n---\n\nPlan the request.\n"
   )
   const started = await startup(repositoryPath, stateRoot, "host")
@@ -335,7 +335,7 @@ const boundary = async (
       const make = (root: string, source: string) =>
         Registry.make({ sources: [{ root, source, naming: "path" }] })
           .pipe(Effect.provide(Discovery.layer))
-      const base = yield* make(join(repositoryPath, "flows"), "project")
+      const base = yield* make(join(repositoryPath, ".smithers", "flows"), "project")
       const packaged = yield* make(defaults, "repository-host")
       const registry = bindRepositoryRegistry(base, packaged, policy, names)
       const built = yield* repositoryCatalog({ delegates: [] }, (file) => {
@@ -351,8 +351,8 @@ const boundary = async (
       return { built, registry }
     }).pipe(Effect.provide(platform), Effect.runPromise)
   const write = async (name: string, topLevel = "") => {
-    await mkdir(join(repositoryPath, "flows", name), { recursive: true })
-    await writeFile(join(repositoryPath, "flows", name, "flow.ts"), moduleSource(name, `Repository ${name}`, topLevel))
+    await mkdir(join(repositoryPath, ".smithers", "flows", name), { recursive: true })
+    await writeFile(join(repositoryPath, ".smithers", "flows", name, "flow.ts"), moduleSource(name, `Repository ${name}`, topLevel))
   }
   return { catalog, write, repositoryPath }
 }
@@ -527,16 +527,16 @@ const todoDescriptor = (flowsRoot: string) =>
 const closure = (descriptor: Descriptor.FlowDescriptor) =>
   descriptor.body._tag === "Module" ? descriptor.body.imports ?? [] : undefined
 
-// A repository overrides `todo` by copying only flows/todo/flow.ts (spec
+// A repository overrides `todo` by copying only .smithers/flows/todo/flow.ts (spec
 // §10.4.1a); the steps it imports come from the coding host the install ships
-// (§11.3.0). The copy needs no flows/coding tree and no installed packages:
+// (§11.3.0). The copy needs no .smithers/flows/coding tree and no installed packages:
 // the packaged host loads it with the host's own step flows.
 test("a repository copy of the TODO composition loads on the packaged host with the host's steps", {
   timeout: 300_000
 }, async (t) => {
   const temporary = await mkdtemp(join(tmpdir(), "coding-todo-copy-"))
   t.after(() => rm(temporary, { recursive: true, force: true }))
-  const repository = join(temporary, "repository"), flows = join(repository, "flows")
+  const repository = join(temporary, "repository"), flows = join(repository, ".smithers", "flows")
   await mkdir(join(flows, "todo"), { recursive: true })
   await copyFile(fileURLToPath(new URL("../todo/flow.ts", import.meta.url)), join(flows, "todo", "flow.ts"))
   const probe = join(repository, "steps.mjs")
@@ -612,7 +612,7 @@ test("an admitted pin loads the packaged default TODO without a repository overr
     const builtins = yield* provisionBuiltins(stateRoot, policy)
     const project = yield* Registry.make({
       sources: [{
-        root: join(repositoryPath, "flows"),
+        root: join(repositoryPath, ".smithers", "flows"),
         source: "project",
         naming: "path",
         lockfileRoot: repositoryPath
@@ -633,7 +633,7 @@ test("an admitted pin loads the packaged default TODO without a repository overr
   }).pipe(Effect.provide(platform), Effect.runPromise)
 })
 
-// A repository without flows/review runs the install's review (C-J10-09
+// A repository without .smithers/flows/review runs the install's review (C-J10-09
 // setup): the entry and every module beside it are the shipped bytes, and the
 // value is the module the host compiled from them, its layer included.
 test("a repository without its own review runs the packaged default with its modules and layer", async (t) => {
@@ -663,7 +663,7 @@ test("a repository without its own review runs the packaged default with its mod
   const result = await Effect.gen(function*() {
     const builtins = yield* provisionBuiltins(stateRoot, policy)
     const project = yield* Registry.make({
-      sources: [{ root: join(repositoryPath, "flows"), source: "project", naming: "path" }]
+      sources: [{ root: join(repositoryPath, ".smithers", "flows"), source: "project", naming: "path" }]
     }).pipe(Effect.provide(Discovery.layer))
     const registry = bindRepositoryRegistry(project, builtins.registry, policy, systemFlows)
     const descriptor = yield* registry.get("review")

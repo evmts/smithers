@@ -138,9 +138,9 @@ func TestPerfGuestHeldMarkerComposedInstall(t *testing.T) {
 	}
 	// The live adapter folds the actual guest log, then the independent verdict
 	// verifies its interval and the actual authenticated attribution response.
-	adapter, err := filepath.Abs("../../../../scripts/perf/rebase-production.mjs")
+	adapter, err := filepath.Abs("../../../../flows/perf/rebase-production.mjs")
 	require.NoError(t, err)
-	verifier, err := filepath.Abs("../../../../scripts/perf/lib/rebase-receipts.mjs")
+	verifier, err := filepath.Abs("../../../../flows/perf/lib/rebase-receipts.mjs")
 	require.NoError(t, err)
 	source := `import {observations} from ` + strconv.Quote("file://"+adapter) + `;
     import {verifyHeldMarker} from ` + strconv.Quote("file://"+verifier) + `;

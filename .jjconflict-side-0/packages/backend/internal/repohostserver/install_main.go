@@ -1,0 +1,213 @@
+package repohostserver
+
+import (
+	"context"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"sort"
+	"strings"
+
+	"github.com/smithersai/smithers/packages/backend/hostexec"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	"github.com/smithersai/smithers/packages/backend/internal/repohost"
+)
+
+// An install's repository host reserves main and the default bookmark for
+// the GitHub sync (Config.InstallMainMirror, repohost.InstallMainRef). The
+// sync writes them only by receive-pack; every JSON route that sets or
+// deletes a bookmark is refused for them here, under the repository lock.
+
+// installMainRefusal is the §6.2.3 permission envelope of every refusal.
+func installMainRefusal(message string) *appError {
+	return &appError{StatusCode: http.StatusForbidden, Code: "permission", Class: "permission", Message: message}
+}
+
+// refuseInstallMainBookmark refuses a JSON write of bookmark name on an
+// install when name is main or the default bookmark. A bookmark, landing or
+// repair route carries no credential kind, so no caller is the sync. A
+// default that cannot be read refuses every bookmark write.
+func (s *Server) refuseInstallMainBookmark(ctx context.Context, repoID, name string) error {
+	if !s.config.InstallMainMirror {
+		return nil
+	}
+	owner, repo, err := parseRepoID(repoID)
+	if err != nil {
+		return err
+	}
+	gitDir := s.config.GitBackendPath(owner, repo)
+	if _, err := os.Stat(gitDir); errors.Is(err, os.ErrNotExist) {
+		return nil // no repository: the write itself reports it
+	}
+	defaultBookmark, err := gitDefaultBookmark(ctx, gitDir)
+	if err != nil {
+		return installMainRefusal("the bookmark write is refused: the default bookmark cannot be read")
+	}
+	if err := repohost.RequireInstallMainMirror(true, "", "refs/heads/"+strings.TrimSpace(name), defaultBookmark); err != nil {
+		return installMainRefusal(err.Error())
+	}
+	return nil
+}
+
+// refuseInstallMainPush applies repohost.RequireInstallMainMirror to every
+// command of a push on an install, for every credential kind, and refuses a
+// command that names an existing symbolic ref: git receive-pack writes
+// through it, and nothing on an install pushes one. It runs under the
+// repository's write lock, before git reads the pack.
+func (s *Server) refuseInstallMainPush(ctx context.Context, gitDir string, kind middleware.CredentialKind, commands []repohost.ReceivePackCommand) error {
+	if !s.config.InstallMainMirror || len(commands) == 0 {
+		return nil
+	}
+	symbolic, err := listSymbolicRefs(ctx, gitDir)
+	if err != nil {
+		return internalError("failed to list symbolic refs", err)
+	}
+	// RefKey matches git's lookup on a case-insensitive filesystem, where a
+	// command naming refs/heads/ALIAS opens the file of refs/heads/alias.
+	aliases := make(map[string]struct{}, len(symbolic))
+	for name := range symbolic {
+		aliases[repohost.RefKey(name)] = struct{}{}
+	}
+	needsDefault := false
+	for _, command := range commands {
+		if _, alias := aliases[repohost.RefKey(command.RefName)]; alias {
+			return installMainRefusal("the push is refused: " + command.RefName + " is a symbolic ref")
+		}
+		if err := repohost.RequireInstallMainMirror(true, kind, command.RefName, ""); err != nil {
+			return installMainRefusal(err.Error())
+		}
+		needsDefault = needsDefault || strings.HasPrefix(repohost.RefKey(command.RefName), "refs/heads/")
+	}
+	// The sync may write main and the default; only the names above refuse it.
+	if !needsDefault || kind == middleware.CredentialSync {
+		return nil
+	}
+	defaultBookmark, err := gitDefaultBookmark(ctx, gitDir)
+	if err != nil {
+		return installMainRefusal("the push is refused: the default bookmark cannot be read")
+	}
+	for _, command := range commands {
+		if err := repohost.RequireInstallMainMirror(true, kind, command.RefName, defaultBookmark); err != nil {
+			return installMainRefusal(err.Error())
+		}
+	}
+	return nil
+}
+
+// refuseInstallStagedImport applies the install predicate to a fresh
+// import's staged push. The import is the sync's first write, so it may
+// create main; like every receive it may not carry refs/replace/*.
+func (s *Server) refuseInstallStagedImport(commands []repohost.ReceivePackCommand) error {
+	for _, command := range commands {
+		if err := repohost.RequireInstallMainMirror(s.config.InstallMainMirror, middleware.CredentialSync, command.RefName, ""); err != nil {
+			return installMainRefusal(err.Error())
+		}
+	}
+	return nil
+}
+
+// reportInstallReplaceRefs logs the replacement refs an install's repository
+// already holds, from an import or from before the install refused them.
+// Every ancestry decision ignores them (gitutil.IsAncestor), and the native
+// reader does not apply them; the owner removes them.
+func (s *Server) reportInstallReplaceRefs(owner, repo string, refs map[string]string) {
+	if !s.config.InstallMainMirror || s.logger == nil {
+		return
+	}
+	var replaced []string
+	for ref := range refs {
+		if repohost.ReplaceRef(ref) {
+			replaced = append(replaced, ref)
+		}
+	}
+	if len(replaced) > 0 {
+		sort.Strings(replaced)
+		s.logger.Warn("install replacement refs are ignored", "owner", owner, "repo", repo, "refs", replaced)
+	}
+}
+
+// listSymbolicRefs maps each symbolic ref under refs/ to the ref it names.
+// Like every for-each-ref listing it omits one whose target does not exist.
+func listSymbolicRefs(ctx context.Context, gitDir string) (map[string]string, error) {
+	cmdCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	cmd := hostexec.Git(cmdCtx, "--git-dir", gitDir, "for-each-ref",
+		"--format=%(if)%(symref)%(then)%(refname)%00%(symref)%(end)")
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("list symbolic refs: %w", err)
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("list symbolic refs: %w", err)
+	}
+	output, readErr := io.ReadAll(io.LimitReader(stdout, maxRefListingBytes+1))
+	tooLarge := int64(len(output)) > maxRefListingBytes
+	if tooLarge {
+		cancel()
+	}
+	_, _ = io.Copy(io.Discard, stdout)
+	waitErr := cmd.Wait()
+	switch {
+	case tooLarge:
+		return nil, fmt.Errorf("list symbolic refs: %w", errRefListingTooLarge)
+	case readErr != nil:
+		return nil, fmt.Errorf("list symbolic refs: %w", readErr)
+	case waitErr != nil:
+		return nil, fmt.Errorf("list symbolic refs: %w", waitErr)
+	}
+	symbolic := map[string]string{}
+	for _, line := range strings.Split(string(output), "\n") {
+		name, target, ok := strings.Cut(line, "\x00")
+		if ok && name != "" && target != "" {
+			symbolic[name] = target
+		}
+	}
+	return symbolic, nil
+}
+
+// refuseInstallMainRepair leaves to the owner, on an install, every planned
+// collision whose canonical ref is main or the default bookmark: a repair
+// that renames a variant into main, or removes one beside it, is a write of
+// main that is not the sync's. Without a readable default nothing is repaired.
+func refuseInstallMainRepair(collisions []repohost.RefCaseCollision, defaultBookmark string, defaultReadable bool) {
+	for i := range collisions {
+		collision := &collisions[i]
+		if collision.Action == repohost.RefCaseCollisionReported {
+			continue
+		}
+		if !defaultReadable || repohost.InstallMainRef(collision.Canonical, defaultBookmark) {
+			collision.Action, collision.Variants = repohost.RefCaseCollisionReported, nil
+		}
+	}
+}
+
+// A reset is a single expected-old command from the sync bridge, after its
+// journal verifier acquired this write lock. No ordinary sync push carries it.
+func (s *Server) mainResetBinding(r *http.Request, commands []repohost.ReceivePackCommand) (*repohost.MainResetBinding, error) {
+	raw := r.Header.Get(repohost.MainResetHeader)
+	if raw == "" {
+		return nil, nil
+	}
+	var binding repohost.MainResetBinding
+	validOID := func(value string) bool {
+		if len(value) != 40 || value == strings.Repeat("0", 40) {
+			return false
+		}
+		_, err := hex.DecodeString(value)
+		return err == nil
+	}
+	if len(raw) > 512 || json.Unmarshal([]byte(raw), &binding) != nil || !s.config.InstallMainMirror ||
+		r.Header.Get(repohost.PusherCredentialHeader) != string(middleware.CredentialSync) || r.Header.Get(repohost.StartedHeader) != "1" ||
+		binding.ID == "" || len(binding.ID) > 128 || !validOID(binding.Old) || !validOID(binding.New) || binding.Old == binding.New || len(commands) != 1 {
+		return nil, installMainRefusal("invalid main reset binding")
+	}
+	command := commands[0]
+	if command.RefName != "refs/heads/main" || command.OldOID != binding.Old || command.NewOID != binding.New {
+		return nil, installMainRefusal("main reset binding changed")
+	}
+	return &binding, nil
+}

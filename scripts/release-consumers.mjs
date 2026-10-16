@@ -15,7 +15,7 @@ import {
   EXPECTED_EFFECT_VERSION,
   SUPPORTED_EFFECT_RANGE,
   UNSUPPORTED_EFFECT_VERSION
-} from "./check-single-effect-version.mjs"
+} from "../packages/repo-targets/contracts/check-single-effect-version.mjs"
 import { assertEffectFamilyAccepts, assertEffectFamilyInstalled, mcpInitialize } from "./release-mcp-handshake.mjs"
 import { captureProcess } from "./release-process.mjs"
 import { releaseRegistry } from "./release-registry.mjs"

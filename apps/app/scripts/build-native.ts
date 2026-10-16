@@ -251,7 +251,7 @@ cpSync(installedJj, join(nativeDir, "bin", "jj"))
 rmSync(jjInstallRoot, { recursive: true, force: true })
 await run(
   "Go backend",
-  ["sh", "scripts/build-backend.sh", join(nativeDir, "bin", "smithers-backend"), revision]
+  ["sh", "packages/backend/scripts/build-backend.sh", join(nativeDir, "bin", "smithers-backend"), revision]
 )
 signHardenedBackend(join(nativeDir, "bin", "smithers-backend"))
 await run("Node buildchain", [nodeBinary, "--version"], root, nodeEnvironment)
@@ -284,7 +284,7 @@ await run(
   "Flow host manifest",
   [
     nodeBinary,
-    "distribution/flow-host-manifest.mjs",
+    "apps/app/scripts/flow-host-manifest.mts",
     join(nativeDir, "bin", "flow-hosts.json"),
     codingHost,
     packagedLinuxHelper
@@ -299,8 +299,8 @@ await run(
 const hostRuntime = join(nativeDir, "bin", "node")
 cpSync(nodeBinary, hostRuntime)
 cpSync(nodeLicense, join(nativeDir, "licenses", "node-LICENSE"))
-cpSync(join(root, "distribution", "licenses", "jj-LICENSE"), join(nativeDir, "licenses", "jj-LICENSE"))
-cpSync(join(root, "distribution", "licenses", "git-COPYING"), join(nativeDir, "licenses", "git-COPYING"))
+cpSync(join(root, "apps", "app", "licenses", "jj-LICENSE"), join(nativeDir, "licenses", "jj-LICENSE"))
+cpSync(join(root, "apps", "app", "licenses", "git-COPYING"), join(nativeDir, "licenses", "git-COPYING"))
 await run("packaged coding host", [hostRuntime, codingHost, "--help"])
 await run("packaged model host", [hostRuntime, modelHost, "--help"])
 

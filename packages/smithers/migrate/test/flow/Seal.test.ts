@@ -24,7 +24,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { copyFixture, fixture, hashTree, nativeHelperAvailable, nodeLayer } from "../fixtures/helpers.ts"
 
-const golden = readFileSync(join(fixture("jsx-single.migrated"), "flows", "simple-workflow", "flow.ts"), "utf8")
+const golden = readFileSync(join(fixture("jsx-single.migrated"), ".smithers", "flows", "simple-workflow", "flow.ts"), "utf8")
 
 const committed = (root: string): void => {
   const git = (...args: ReadonlyArray<string>): void => {
@@ -56,8 +56,8 @@ const script: Layers.Script = (asked) => {
   const result = { unit, changedFiles: [] as Array<string>, decisions: [], unresolved: [], unsupported: [], notes: "" }
   if (unit !== "workflow:simple-workflow") return Layers.done(result)
   return [
-    `await ctx.call("write", { path: "flows/simple-workflow/flow.ts", content: ${JSON.stringify(golden)} })`,
-    Layers.done({ ...result, changedFiles: ["flows/simple-workflow/flow.ts"] })
+    `await ctx.call("write", { path: ".smithers/flows/simple-workflow/flow.ts", content: ${JSON.stringify(golden)} })`,
+    Layers.done({ ...result, changedFiles: [".smithers/flows/simple-workflow/flow.ts"] })
   ].join("\n")
 }
 
@@ -91,7 +91,7 @@ describe("MigrateFlow.planSeal", () => {
     Effect.gen(function*() {
       const root = copyFixture("jsx-single")
       const chosen = options(root)
-      const scanned = yield* Scan.scan(root, { flowsDir: "flows" })
+      const scanned = yield* Scan.scan(root, { flowsDir: ".smithers/flows" })
 
       const first = yield* MigrateFlow.planSeal(scanned, chosen)
       const again = yield* MigrateFlow.planSeal(scanned, chosen)
@@ -100,8 +100,8 @@ describe("MigrateFlow.planSeal", () => {
       // Every source and every target the units name, present ones digested
       // and absent ones recorded as absent.
       expect(first.files.find((file) => file.path === "simple-workflow.jsx")?.state).toBe("file")
-      expect(first.files.find((file) => file.path === "flows/simple-workflow/flow.ts")).toEqual({
-        path: "flows/simple-workflow/flow.ts",
+      expect(first.files.find((file) => file.path === ".smithers/flows/simple-workflow/flow.ts")).toEqual({
+        path: ".smithers/flows/simple-workflow/flow.ts",
         state: "absent"
       })
 
@@ -109,7 +109,7 @@ describe("MigrateFlow.planSeal", () => {
         join(root, "simple-workflow.jsx"),
         `${readFileSync(join(root, "simple-workflow.jsx"), "utf8")}// edited\n`
       )
-      const edited = yield* MigrateFlow.planSeal(yield* Scan.scan(root, { flowsDir: "flows" }), chosen)
+      const edited = yield* MigrateFlow.planSeal(yield* Scan.scan(root, { flowsDir: ".smithers/flows" }), chosen)
       expect(edited.digest).not.toBe(first.digest)
       expect(MigrateFlow.sealDifferences(first, edited)).toEqual(["simple-workflow.jsx: content changed"])
 
@@ -128,7 +128,7 @@ describe("MigrateFlow.planSeal", () => {
       files: [
         { path: "a.jsx", state: "file", digest: "1" },
         { path: "b.jsx", state: "file", digest: "2" },
-        { path: "flows/a/flow.ts", state: "absent" },
+        { path: ".smithers/flows/a/flow.ts", state: "absent" },
         { path: "gone.jsx", state: "file", digest: "3" }
       ]
     }
@@ -137,13 +137,13 @@ describe("MigrateFlow.planSeal", () => {
       files: [
         { path: "a.jsx", state: "file", digest: "1" },
         { path: "b.jsx", state: "file", digest: "9" },
-        { path: "flows/a/flow.ts", state: "file", digest: "4" },
+        { path: ".smithers/flows/a/flow.ts", state: "file", digest: "4" },
         { path: "new.jsx", state: "file", digest: "5" }
       ]
     }
     expect(MigrateFlow.sealDifferences(planned, current)).toEqual([
       "b.jsx: content changed",
-      "flows/a/flow.ts: was absent, is now file",
+      ".smithers/flows/a/flow.ts: was absent, is now file",
       "gone.jsx: no longer part of the plan",
       "new.jsx: newly part of the plan"
     ])
@@ -168,7 +168,7 @@ describe("the seal step", () => {
       expect(failure.code).toBe("stale-plan")
       expect(failure.details).toContain("simple-workflow.jsx: content changed")
       expect(hashTree(root)).toEqual(before)
-      expect(existsSync(join(root, "flows"))).toBe(false)
+      expect(existsSync(join(root, ".smithers", "flows"))).toBe(false)
     }))
 
   it.effect("refuses when a target appeared after the survey", () =>
@@ -176,13 +176,13 @@ describe("the seal step", () => {
       const root = copyFixture("jsx-single")
       committed(root)
       const surveyed = yield* survey(root)
-      mkdirSync(join(root, "flows", "simple-workflow"), { recursive: true })
-      writeFileSync(join(root, "flows", "simple-workflow", "flow.ts"), "export const theirs = 1\n")
+      mkdirSync(join(root, ".smithers", "flows", "simple-workflow"), { recursive: true })
+      writeFileSync(join(root, ".smithers", "flows", "simple-workflow", "flow.ts"), "export const theirs = 1\n")
 
       const failure = migrateError(yield* Effect.flip(launch(root, surveyed)))
 
       expect(failure.code).toBe("stale-plan")
-      expect(failure.details).toContain("flows/simple-workflow/flow.ts: was absent, is now file")
+      expect(failure.details).toContain(".smithers/flows/simple-workflow/flow.ts: was absent, is now file")
     }))
 
   guarded(
@@ -262,7 +262,7 @@ describe("unit artifacts", () => {
     Effect.gen(function*() {
       const root = copyFixture("jsx-single")
       const here = options(root)
-      const scanned = yield* Scan.scan(root, { flowsDir: "flows" })
+      const scanned = yield* Scan.scan(root, { flowsDir: ".smithers/flows" })
       const planned = Scan.toReport(scanned, "apply", "2026-09-01T00:00:00.000Z")
 
       const report = yield* MigrateFlow.writeReport({

@@ -7,7 +7,7 @@ const layerVersion = "approved-layer"
 const changeSource = (root: string) => Effect.gen(function*() {
   const fs = yield* FileSystem.FileSystem
   for (const file of ["flow.ts", "helper.ts", "layer.ts"]) {
-    const path = `${root}/flows/snapshot/${file}`
+    const path = `${root}/.smithers/flows/snapshot/${file}`
     const original = yield* fs.readFileString(path)
     yield* fs.writeFileString(path, original.replaceAll("approved-", "unapproved-"))
   }

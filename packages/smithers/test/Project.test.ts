@@ -63,6 +63,22 @@ it("distinguishes current build definitions from legacy run state without hiding
   expect(Project.legacyState(root, exists)).toEqual([join(root, ".smithers")])
 })
 
+it("reads a .smithers/flows/ directory as 1.0 state, alone or beside current files", () => {
+  const flowsOnly = project(".smithers/flows/review/")
+  writeFileSync(join(flowsOnly, ".smithers", "flows", "review", "flow.ts"), "")
+  expect(Project.legacyState(flowsOnly)).toEqual([])
+  const configured = project(".smithers/flows/", ".smithers/WORKSPACE.ts", ".smithers/FACTORY.ts", ".smithers/home.json")
+  expect(Project.legacyState(configured)).toEqual([])
+  const served = project(".smithers/flows/", ".smithers/opencode.sqlite")
+  expect(Project.legacyState(served)).toEqual([])
+  // Another subdirectory, 0.x's workflows/ among them, still reads as 0.x.
+  mkdirSync(join(configured, ".smithers", "workflows"))
+  expect(Project.legacyState(configured)).toEqual([join(configured, ".smithers")])
+  // So does an unknown file beside flows/ with no build definitions.
+  writeFileSync(join(flowsOnly, ".smithers", "smithers.db"), "")
+  expect(Project.legacyState(flowsOnly)).toEqual([join(flowsOnly, ".smithers")])
+})
+
 describe("the project root", () => {
   it("resolves an explicit --root against the invocation directory", () => {
     expect(Project.root("sub/dir", "/a/b")).toBe(resolve("/a/b", "sub/dir"))
@@ -70,8 +86,8 @@ describe("the project root", () => {
     expect(Project.root("", "/a/b")).toBe(resolve("/a/b"))
   })
 
-  it("anchors on the nearest ancestor holding .flows/ or flows/", () => {
-    const root = project("flows/")
+  it("anchors on the nearest ancestor holding .flows/ or .smithers/flows/", () => {
+    const root = project(".smithers/flows/")
     const nested = join(root, "packages", "app")
     mkdirSync(nested, { recursive: true })
 
@@ -99,13 +115,34 @@ describe("the project root", () => {
     expect(Project.root(undefined, nested)).toBe(nested)
   })
 
-  it("anchors on a flows/ directory that sits beside a package manifest", () => {
-    const root = project("flows/", "package.json")
+  it("anchors on a .smithers/flows/ directory that sits beside a package manifest", () => {
+    const root = project(".smithers/flows/", "package.json")
     rmSync(join(root, ".git"), { recursive: true, force: true })
     const nested = join(root, "src", "deep")
     mkdirSync(nested, { recursive: true })
 
     expect(Project.root(undefined, nested)).toBe(root)
+  })
+
+  it("does not anchor on a retired root flows/ directory", () => {
+    const root = project("flows/", "package.json")
+    rmSync(join(root, ".git"), { recursive: true, force: true })
+    const nested = join(root, "src", "deep")
+    mkdirSync(nested, { recursive: true })
+
+    expect(Project.root(undefined, nested)).toBe(nested)
+  })
+
+  it("does not anchor on .smithers/flows/ without a project marker beside it", () => {
+    const outer = project()
+    const inner = join(outer, "tools")
+    mkdirSync(join(inner, ".smithers", "flows"), { recursive: true })
+    const nested = join(inner, "src")
+    mkdirSync(nested, { recursive: true })
+
+    expect(Project.root(undefined, nested)).toBe(nested)
+    writeFileSync(join(inner, "package.json"), "{}")
+    expect(Project.root(undefined, nested)).toBe(inner)
   })
 
   it("falls back to the invocation directory when nothing anchors", () => {
@@ -116,11 +153,11 @@ describe("the project root", () => {
   it("stops at the repository root rather than climbing into the home directory", () => {
     const outer = mkdtempSync(join(tmpdir(), "smithers-outer-"))
     staged.push(outer)
-    mkdirSync(join(outer, "flows"), { recursive: true })
+    mkdirSync(join(outer, ".smithers", "flows"), { recursive: true })
     const inner = join(outer, "checkout")
     mkdirSync(join(inner, ".git"), { recursive: true })
 
-    // `outer` has a `flows/` directory, but a checkout is its own project: a
+    // `outer` has a `.smithers/flows/` directory, but a checkout is its own project: a
     // root resolved past the repository boundary would put one repository's
     // run state inside another's.
     expect(Project.root(undefined, inner)).toBe(inner)
@@ -155,7 +192,7 @@ describe("the project root", () => {
     expect(Project.stateDirectory("/work")).toBe(join("/work", ".flows"))
     expect(Project.logDirectory("/work")).toBe(join("/work", ".flows", "logs"))
     expect(Project.logFile("/work", "run-1")).toBe(join("/work", ".flows", "logs", "run-1.log"))
-    expect(Project.flowsDirectory("/work")).toBe(join("/work", "flows"))
+    expect(Project.flowsDirectory("/work")).toBe(join("/work", ".smithers", "flows"))
   })
 
   it("supplies ambient defaults when no project layer is installed", () => {

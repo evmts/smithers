@@ -6,7 +6,7 @@
  * terminal status, so a `create-flow` that wrote the flow in its first minute
  * and kept working for another ten showed nothing until it ended. What a
  * reader can be shown is decided by the journal, not by the summary: a
- * `copy-back-settled` row naming `flows/<id>/flow.*` is a source that exists
+ * `copy-back-settled` row naming `.smithers/flows/<id>/flow.*` is a source that exists
  * on the workspace, and it is planned as soon as it lands.
  *
  * The run below NEVER settles — its summary answers `running` for as long as
@@ -50,7 +50,7 @@ const engineRow = (sequence: number, eventType: string, payload: unknown) => ({
 /** The pair that says a flow file reached the workspace: the bundle, then the copy-back. */
 const attempt = { runId: "author", stepKeyDigest: "a".repeat(64), attempt: 1, bundleIdentity: "bundle-1" }
 const WROTE_THE_FLOW = [
-  engineRow(1, "flows.engine.diff-bundle-captured", { ...attempt, changedPaths: [`flows/${AUTHORED}/flow.ts`] }),
+  engineRow(1, "flows.engine.diff-bundle-captured", { ...attempt, changedPaths: [`.smithers/flows/${AUTHORED}/flow.ts`] }),
   engineRow(2, "flows.engine.copy-back-settled", { ...attempt, rebases: 0, queued: [], dispatched: [] })
 ]
 
@@ -180,7 +180,7 @@ test("a flow file written mid-run is planned before the authoring run settles", 
     await settle(5)
     expect(served.plans).not.toContain(AUTHORED)
 
-    /* The next journal page carries the copy-back for `flows/review/flow.ts`. */
+    /* The next journal page carries the copy-back for `.smithers/flows/review/flow.ts`. */
     served.write(WROTE_THE_FLOW)
     await waitFor(() => served.plans.includes(AUTHORED))
 

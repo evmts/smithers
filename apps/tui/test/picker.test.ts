@@ -25,7 +25,7 @@ const flows: ReadonlyArray<Extension.Descriptor> = [
     modelInvocable: true,
     flows: [],
     capabilities: [],
-    path: "flows/build/flow.ts"
+    path: ".smithers/flows/build/flow.ts"
   },
   {
     name: "writer",
@@ -35,7 +35,7 @@ const flows: ReadonlyArray<Extension.Descriptor> = [
     modelInvocable: true,
     flows: [],
     capabilities: [],
-    path: "flows/writer/flow.mdx"
+    path: ".smithers/flows/writer/flow.mdx"
   },
   {
     name: "research",
@@ -45,7 +45,7 @@ const flows: ReadonlyArray<Extension.Descriptor> = [
     modelInvocable: false,
     flows: [],
     capabilities: [],
-    path: "flows/research/flow.mdx"
+    path: ".smithers/flows/research/flow.mdx"
   },
   {
     name: "review",
@@ -54,7 +54,7 @@ const flows: ReadonlyArray<Extension.Descriptor> = [
     modelInvocable: true,
     flows: [],
     capabilities: [],
-    path: "flows/review/flow.mdx"
+    path: ".smithers/flows/review/flow.mdx"
   }
 ]
 const catalog = Catalog.entries({

@@ -46,7 +46,7 @@ import { mkdtemp, readdir, readFile, realpath, rm, stat, writeFile } from "node:
 import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { EXPECTED_EFFECT_VERSION } from "./check-single-effect-version.mjs"
+import { EXPECTED_EFFECT_VERSION } from "../packages/repo-targets/contracts/check-single-effect-version.mjs"
 import { recordSmokeSuccess, verifyLocalCandidate } from "./publish-release.mjs"
 import {
   adapterProfiles,

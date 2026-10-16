@@ -25,7 +25,7 @@ import (
 // launcher records admission only: this is supplemental, not C-SEC-02 proof.
 func TestFlowLoadProductionPollKeepsPreviousAndCoalesces(t *testing.T) {
 	h := newMergeHarness(t)
-	require.NoError(t, os.MkdirAll(filepath.Join(h.work, "flows/todo"), 0700))
+	require.NoError(t, os.MkdirAll(filepath.Join(h.work, ".smithers/flows/todo"), 0700))
 	ctx := context.Background()
 	launcher, lanes := &fakeMythicalLauncher{}, &fakeMythicalLanes{}
 	lanes.provision = func(id string) {
@@ -54,14 +54,14 @@ func TestFlowLoadProductionPollKeepsPreviousAndCoalesces(t *testing.T) {
 		require.NoError(t, h.service.PollOnce(ctx))
 	}
 	settle := func(request flowdispatch.LaunchRequest, commit, digest, status, loadError string) {
-		output := flowLoadOutput(commit, FlowLoadVersion{Name: "todo", Path: "flows/todo/flow.ts", Digest: digest, Status: status, Error: loadError, Steps: []FlowStep{{ID: "changelog", Label: "Changelog"}}})
+		output := flowLoadOutput(commit, FlowLoadVersion{Name: "todo", Path: ".smithers/flows/todo/flow.ts", Digest: digest, Status: status, Error: loadError, Steps: []FlowStep{{ID: "changelog", Label: "Changelog"}}})
 		require.NoError(t, NewFlowLoadRuntime(h.service).ProjectFlowRuntime(ctx, flowdispatch.ProjectionUpdate{State: jobs.StateCompleted,
 			Checkpoint: flowdispatch.RuntimeCheckpoint{Projection: request.Projection, RunID: commit, Run: &flowruntime.FlowRuntimeRun{RunID: commit, FinalOutput: &output}}}))
 		require.NoError(t, h.service.PollOnce(ctx))
 	}
 	move := func(text string) string {
 		h.git(h.work, "checkout", "-q", "main")
-		head := h.commit("flow edit", "flows/todo/flow.ts", text)
+		head := h.commit("flow edit", ".smithers/flows/todo/flow.ts", text)
 		h.git(h.work, "push", "-q", h.github, "main:refs/heads/main")
 		poll()
 		require.Equal(t, head, h.hostRef("refs/heads/main"), "only the poll sync brings main into the install")
@@ -85,7 +85,7 @@ func TestFlowLoadProductionPollKeepsPreviousAndCoalesces(t *testing.T) {
 	instructionRevision(m1)
 	m2 := move("const prompt: string = 123\nexport default prompt\n")
 	require.Len(t, loads(), 2)
-	settle(loads()[1], m2, strings.Repeat("2", 64), "failed", "flows/todo/flow.ts:29: Type 'number' is not assignable to type 'string'.")
+	settle(loads()[1], m2, strings.Repeat("2", 64), "failed", ".smithers/flows/todo/flow.ts:29: Type 'number' is not assignable to type 'string'.")
 	active, err = ActiveFlowDigest(ctx, h.q, h.repoID, "todo")
 	require.NoError(t, err)
 	require.Equal(t, d1, active)
@@ -104,7 +104,7 @@ func TestFlowLoadProductionPollKeepsPreviousAndCoalesces(t *testing.T) {
 	}
 	card := todoCard()
 	require.Equal(t, []FlowStep{{ID: "changelog", Label: "Changelog"}}, card.Versions[0].Steps)
-	require.Contains(t, states(card), "merged-failed "+strings.Repeat("2", 64)+": flows/todo/flow.ts:29: Type 'number' is not assignable to type 'string'.")
+	require.Contains(t, states(card), "merged-failed "+strings.Repeat("2", 64)+": .smithers/flows/todo/flow.ts:29: Type 'number' is not assignable to type 'string'.")
 	m3 := move("export default 'three'\n")
 	require.Len(t, loads(), 3)
 	move("export default 'four'\n")
@@ -128,14 +128,14 @@ func TestFlowLoadProductionPollKeepsPreviousAndCoalesces(t *testing.T) {
 	m6 := move("export default {}\n")
 	require.Len(t, loads(), 5)
 	d6 := strings.Repeat("6", 64)
-	settle(loads()[4], m6, d6, "failed", "flows/todo/flow.ts: Module flows require a literal description in the default Flow.make value")
+	settle(loads()[4], m6, d6, "failed", ".smithers/flows/todo/flow.ts: Module flows require a literal description in the default Flow.make value")
 	active, err = ActiveFlowDigest(ctx, h.q, h.repoID, "todo")
 	require.NoError(t, err)
 	require.Equal(t, strings.Repeat("5", 64), active)
 	instructionRevision(m5)
 	card = todoCard()
 	require.Equal(t, []FlowStep{{ID: "changelog", Label: "Changelog"}}, card.Versions[0].Steps)
-	require.Contains(t, states(card), "merged-failed "+d6+": flows/todo/flow.ts: Module flows require a literal description in the default Flow.make value")
+	require.Contains(t, states(card), "merged-failed "+d6+": .smithers/flows/todo/flow.ts: Module flows require a literal description in the default Flow.make value")
 	rows, err = h.q.ListFlowVersions(ctx, h.repoID)
 	require.NoError(t, err)
 	require.Len(t, rows, 5)
@@ -159,7 +159,7 @@ func TestFlowLoadProductionPollKeepsPreviousAndCoalesces(t *testing.T) {
 		require.NotEqual(t, -1, index)
 		card := projection.Card[index]
 		versions := states(card)
-		if slices.Contains(versions, "merged-failed "+strings.Repeat("2", 64)+": flows/todo/flow.ts:29: Type 'number' is not assignable to type 'string'.") && card.Versions[0].ID == d1 {
+		if slices.Contains(versions, "merged-failed "+strings.Repeat("2", 64)+": .smithers/flows/todo/flow.ts:29: Type 'number' is not assignable to type 'string'.") && card.Versions[0].ID == d1 {
 			sawFirstFailure = true
 		}
 		if card.Versions[0].ID == strings.Repeat("5", 64) {
@@ -172,15 +172,15 @@ func TestFlowLoadProductionPollKeepsPreviousAndCoalesces(t *testing.T) {
 
 func TestFlowLoadProposalsUseCandidateDiffNotWorkingCopy(t *testing.T) {
 	h := newMergeHarness(t)
-	require.NoError(t, os.MkdirAll(filepath.Join(h.work, "flows/todo"), 0700))
-	item := h.todo("Change flow", "Change the TODO flow", h.main, "flows/todo/flow.ts", "export default 'candidate'\n")
+	require.NoError(t, os.MkdirAll(filepath.Join(h.work, ".smithers/flows/todo"), 0700))
+	item := h.todo("Change flow", "Change the TODO flow", h.main, ".smithers/flows/todo/flow.ts", "export default 'candidate'\n")
 	proposals, err := h.service.FlowProposals(t.Context(), h.repoID)
 	require.NoError(t, err)
 	require.Len(t, proposals["todo"], 1)
 	require.Equal(t, "proposed", proposals["todo"][0].State)
 	require.Equal(t, item.Number.Int64, proposals["todo"][0].Todo)
 	// Mutable local bytes cannot change the recorded candidate's identity.
-	h.commit("unaccepted", "flows/todo/flow.ts", "export default 'not accepted'\n")
+	h.commit("unaccepted", ".smithers/flows/todo/flow.ts", "export default 'not accepted'\n")
 	again, err := h.service.FlowProposals(t.Context(), h.repoID)
 	require.NoError(t, err)
 	require.Equal(t, proposals, again)
@@ -190,11 +190,22 @@ func TestFlowLoadProposalsUseCandidateDiffNotWorkingCopy(t *testing.T) {
 	require.Empty(t, proposals)
 	// A prompt/helper inside the flow directory also proposes a version;
 	// the entry itself need not change.
-	helper := h.todo("Change flow prompt", "Change its prompt", item.CandidateHead, "flows/todo/prompt.md", "New prompt\n")
+	helper := h.todo("Change flow prompt", "Change its prompt", item.CandidateHead, ".smithers/flows/todo/prompt.md", "New prompt\n")
 	proposals, err = h.service.FlowProposals(t.Context(), h.repoID)
 	require.NoError(t, err)
 	require.Len(t, proposals["todo"], 1)
 	require.Equal(t, helper.Number.Int64, proposals["todo"][0].Todo)
+}
+
+// A candidate that changes a flow under a root flows/ proposes no flow
+// version: Smithers never reads a root flows/ as flows (M-49).
+func TestFlowLoadProposalsIgnoreRootFlows(t *testing.T) {
+	h := newMergeHarness(t)
+	require.NoError(t, os.MkdirAll(filepath.Join(h.work, "flows/todo"), 0700))
+	h.todo("Change root flow", "Change the root TODO flow", h.main, "flows/todo/flow.ts", "export default 'root'\n")
+	proposals, err := h.service.FlowProposals(t.Context(), h.repoID)
+	require.NoError(t, err)
+	require.Empty(t, proposals)
 }
 
 func TestFlowLoadProjectionRollsBackWithActivation(t *testing.T) {
@@ -209,7 +220,7 @@ func TestFlowLoadProjectionRollsBackWithActivation(t *testing.T) {
 	tx, err := h.pool.Begin(ctx)
 	require.NoError(t, err)
 	digest := strings.Repeat("a", 64)
-	_, err = persistFlowVersions(ctx, db.New(tx), h.repoID, strings.Repeat("1", 40), []FlowLoadVersion{{Name: "todo", Path: "flows/todo/flow.ts", Digest: digest, Status: "loaded"}})
+	_, err = persistFlowVersions(ctx, db.New(tx), h.repoID, strings.Repeat("1", 40), []FlowLoadVersion{{Name: "todo", Path: ".smithers/flows/todo/flow.ts", Digest: digest, Status: "loaded"}})
 	require.NoError(t, err)
 	require.NoError(t, h.service.recordFlowFact(ctx, tx, h.repoID))
 	require.NoError(t, tx.Rollback(ctx))
@@ -224,9 +235,9 @@ func TestFlowLoadProjectionRollsBackWithActivation(t *testing.T) {
 
 func TestFlowLoadProposalFactsReplayAndDeduplicate(t *testing.T) {
 	h := newMergeHarness(t)
-	require.NoError(t, os.MkdirAll(filepath.Join(h.work, "flows/todo"), 0700))
+	require.NoError(t, os.MkdirAll(filepath.Join(h.work, ".smithers/flows/todo"), 0700))
 	ctx := t.Context()
-	item := h.todo("Change flow", "Change the TODO flow", h.main, "flows/todo/flow.ts", "export default 'candidate'\n")
+	item := h.todo("Change flow", "Change the TODO flow", h.main, ".smithers/flows/todo/flow.ts", "export default 'candidate'\n")
 	store, err := jobs.NewStore(h.pool.(*pgxpool.Pool))
 	require.NoError(t, err)
 	before, err := store.Head(ctx, FlowLiveScope(h.repoID))

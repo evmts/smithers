@@ -14,7 +14,7 @@ export const GRAPH_FLOW = "gateway/GraphFixture"
 
 /**
  * The flow the authoring run writes, named the way discovery names one: after
- * the directory its entry file sits in, `flows/authoring-demo/flow.ts`.
+ * the directory its entry file sits in, `.smithers/flows/authoring-demo/flow.ts`.
  *
  * Nothing on the box holds it until a run writes that file, which is what the
  * listing before and after the run says

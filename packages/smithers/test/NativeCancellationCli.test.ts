@@ -93,9 +93,9 @@ describe("native CLI cancellation", { timeout: 120_000 }, () => {
       let qualified = false
       let heartbeatAtRelease: number | undefined
       try {
-        await mkdir(join(root, "flows", "hold"), { recursive: true })
+        await mkdir(join(root, ".smithers", "flows", "hold"), { recursive: true })
         await symlink(nodeModules, join(root, "node_modules"), "dir")
-        await writeFile(join(root, "flows", "hold", "flow.ts"), source)
+        await writeFile(join(root, ".smithers", "flows", "hold", "flow.ts"), source)
         const marker = join(root, "executing")
         runner = command(root, ["flow", "start", "hold", "--data", JSON.stringify({ marker }), "--wait"])
         const runId = await until(() => {

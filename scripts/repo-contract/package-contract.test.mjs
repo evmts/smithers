@@ -18,7 +18,7 @@ import { describe, it } from "node:test"
 import {
   EXPECTED_EFFECT_VERSION as effectVersion,
   SUPPORTED_EFFECT_RANGE as effectRange
-} from "../check-single-effect-version.mjs"
+} from "../../packages/repo-targets/contracts/check-single-effect-version.mjs"
 import { retarget } from "../set-release-version.mjs"
 import { libraryPackages } from "../workspace-packages.mjs"
 import { repoRoot as root } from "../workspace-packages.mjs"

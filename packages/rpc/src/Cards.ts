@@ -2125,7 +2125,7 @@ const CurrentCardSchema = z.discriminatedUnion("kind", [
         }).optional(),
         agents: z.array(
           z.object({
-            /** A built-in role id, or the flow id of a repository agent flow (`flows/<id>/flow.mdx` with a model). */
+            /** A built-in role id, or the flow id of a repository agent flow (`.smithers/flows/<id>/flow.mdx` with a model). */
             id: z.string().min(1),
             label: z.string(),
             purpose: z.string(),

@@ -3370,7 +3370,7 @@ const checkCrossPackageGlobs = async (
   expandGlob: GlobExpansions
 ): Promise<void> => {
   const crossing = await crossingInputsOf(context, pattern, expandGlob)
-  const reviewFile = NodePath.join(context.root, "scripts/fixtures/cross-package-globs.json")
+  const reviewFile = NodePath.join(context.root, ".smithers/cross-package-globs.json")
   let reviewed: ReadonlyArray<{ readonly label: string; readonly path: string }> = []
   try {
     const text = await Fs.readFile(reviewFile, "utf8")
@@ -3381,7 +3381,7 @@ const checkCrossPackageGlobs = async (
         reason: "unreadable",
         entries: [],
         cause,
-        message: "cross_package_glob_review_invalid: cannot read scripts/fixtures/cross-package-globs.json"
+        message: "cross_package_glob_review_invalid: cannot read .smithers/cross-package-globs.json"
       })
     }
   }

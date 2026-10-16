@@ -35,7 +35,7 @@ export interface Options {
    * Called with each discovered flow whose registry entry file a settled
    * copy-back applied, as the observation copies that record across.
    *
-   * This is the host's one notice that its own `flows/` directory changed
+   * This is the host's one notice that its own `.smithers/flows/` directory changed
    * under it. A native host's executable catalog is built once at startup, so
    * without it a flow an agent authors mid-run has a descriptor and no
    * executable: `flow.plan` answers `FlowNotFound` or a plan with no nodes

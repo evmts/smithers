@@ -49,7 +49,7 @@ export const authoredFlowId = "authoring-demo"
  * @since 1.0.0
  * @category constants
  */
-export const authoredPath = `flows/${authoredFlowId}/flow.ts`
+export const authoredPath = `.smithers/flows/${authoredFlowId}/flow.ts`
 
 /** The step the first version dispatches. The host implements it by name. */
 const Read = Action.make("authoring/Read", { payload: {}, success: Schema.String })
@@ -145,7 +145,7 @@ export const ScriptedAuthor = Flow.make("create-flow", {
  * @category constructors
  */
 export const makeAuthoringFixture = (root: string) => {
-  mkdirSync(join(root, "flows"), { recursive: true })
+  mkdirSync(join(root, ".smithers", "flows"), { recursive: true })
   writeFileSync(join(root, "package.json"), "{\"type\":\"module\"}\n")
   // So the authored entry's bare `@smthrs/flow` and `effect` specifiers resolve
   // into the host's own installed code, which is the one thing a flow file may
@@ -182,7 +182,7 @@ export const makeAuthoringFixture = (root: string) => {
    * empty project rather than refusing a missing root.
    */
   const registry = Registry.layer({
-    sources: [{ source: "project", root: join(root, "flows"), naming: "path" }]
+    sources: [{ source: "project", root: join(root, ".smithers", "flows"), naming: "path" }]
   }).pipe(Layer.provide([Discovery.layer.pipe(Layer.provide(host)), host]), Layer.orDie)
   /**
    * What `@smthrs/registry` `Executable` reads and writes with: the host's own

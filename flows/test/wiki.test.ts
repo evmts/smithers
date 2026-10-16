@@ -196,6 +196,7 @@ test("private files are refused at any depth, in any case and behind an in-root 
     ".agents/skills/x/SKILL.md",
     ".smithers/WORKSPACE.ts",
     ".smithers/workflows/ci.tsx",
+    ".smithers/wiki/pages/start-here.md",
     "pkg/.smithers/agents.ts",
     "pkg/.gitignore"
   ]

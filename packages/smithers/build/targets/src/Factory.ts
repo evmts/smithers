@@ -990,8 +990,13 @@ export const FactoryProjectionAction = Action.make("smithers-build/factory-proje
  * @since 1.0.0
  */
 export const Attrs = Schema.Struct({
-  /** The workspace-relative directory discovery walks. @default "flows" */
-  root: Schema.NonEmptyString.pipe(Schema.withConstructorDefault(Effect.succeed("flows"))),
+  /**
+   * The workspace-relative directory discovery walks: the project flows
+   * directory, `@smthrs/registry`'s `Descriptor.projectFlowsDirectory` (mvp.md
+   * M-49). This package does not depend on the registry, so build-cli's tests
+   * pin the two equal. @default ".smithers/flows"
+   */
+  root: Schema.NonEmptyString.pipe(Schema.withConstructorDefault(Effect.succeed(".smithers/flows"))),
   /** Explicit entry files when discovery spans packages; otherwise entries are package-scoped globs. */
   entries: Schema.optional(Schema.Array(Input.File)),
   /** The workspace-relative declaration file the check is keyed on. @default ".smithers/FACTORY.ts" */

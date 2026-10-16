@@ -118,7 +118,7 @@ describe("the scan surface's dependency boundary", () => {
 
   it("pins the standalone scanner runtime to the consuming project's Effect family", async () => {
     const { EXPECTED_EFFECT_VERSION } = await import(
-      new URL("../../../../scripts/check-single-effect-version.mjs", import.meta.url).href
+      new URL("../../../repo-targets/contracts/check-single-effect-version.mjs", import.meta.url).href
     )
     const { privateEffectAdapters } = await import(
       new URL("../../../repo-targets/scripts/private-effect-adapters.mjs", import.meta.url).href

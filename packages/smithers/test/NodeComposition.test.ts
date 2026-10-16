@@ -510,9 +510,9 @@ describe("NodeControl.engineDurable with a registry", () => {
   it("knows every discovered project flow as well as the reserved catalog", async () => {
     const project = await mkdtemp(join(tmpdir(), "flows-cli-discovered-"))
     try {
-      await mkdir(join(project, "flows", "review"), { recursive: true })
+      await mkdir(join(project, ".smithers", "flows", "review"), { recursive: true })
       await writeFile(
-        join(project, "flows", "review", "SKILL.md"),
+        join(project, ".smithers", "flows", "review", "SKILL.md"),
         ["---", "description: Reviews a proposed change.", "---", "", "# Review", ""].join("\n")
       )
       const registry = NodeControl.layerRegistry(project)

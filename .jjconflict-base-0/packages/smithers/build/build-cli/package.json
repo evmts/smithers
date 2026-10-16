@@ -1,0 +1,741 @@
+{
+  "name": "@smthrs/build-cli",
+  "type": "module",
+  "version": "1.0.0-rc.12",
+  "license": "MIT",
+  "smthrs": {
+    "group": "tooling",
+    "privateEffectAdapters": [
+      "@effect/platform-node",
+      "@effect/platform-node-shared"
+    ]
+  },
+  "description": "Executes PACKAGE.ts target graphs with content-addressed caching",
+  "homepage": "https://github.com/smithersai/smithers",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/smithers/build/build-cli"
+  },
+  "bugs": {
+    "url": "https://github.com/smithersai/smithers/issues"
+  },
+  "tags": [
+    "typescript",
+    "effect",
+    "build",
+    "cli"
+  ],
+  "keywords": [
+    "typescript",
+    "effect",
+    "build",
+    "cli"
+  ],
+  "engines": {
+    "node": ">=26.4.0"
+  },
+  "sideEffects": [
+    "./src/main.js",
+    "./src/Workspace.ts",
+    "./src/PackageLoader.ts"
+  ],
+  "bin": {
+    "smithers-build": "./src/main.js"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./effect-resolution": "./src/effect-resolution.js",
+    "./internal/*": null,
+    "./index": null,
+    "./Affected": "./src/Affected.ts",
+    "./AgentFake": "./src/AgentFake.ts",
+    "./AgentSession": "./src/AgentSession.ts",
+    "./Ansi": "./src/Ansi.ts",
+    "./AnvilExec": "./src/AnvilExec.ts",
+    "./Audience": "./src/Audience.ts",
+    "./Cache": "./src/Cache.ts",
+    "./CacheAdmin": "./src/CacheAdmin.ts",
+    "./Cli": "./src/Cli.ts",
+    "./Diagnostic": "./src/Diagnostic.ts",
+    "./DockerExec": "./src/DockerExec.ts",
+    "./Entry": "./src/Entry.ts",
+    "./Environment": "./src/Environment.ts",
+    "./Executor": "./src/Executor.ts",
+    "./FetchExec": "./src/FetchExec.ts",
+    "./FoundryExec": "./src/FoundryExec.ts",
+    "./GitCommit": "./src/GitCommit.ts",
+    "./GitHooks": "./src/GitHooks.ts",
+    "./GitSubmoduleExec": "./src/GitSubmoduleExec.ts",
+    "./GithubRender": "./src/GithubRender.ts",
+    "./GoExec": "./src/GoExec.ts",
+    "./GraphOutput": "./src/GraphOutput.ts",
+    "./KnownRed": "./src/KnownRed.ts",
+    "./Label": "./src/Label.ts",
+    "./MarkdownCodeBlocks": "./src/MarkdownCodeBlocks.ts",
+    "./MemoryBackend": "./src/MemoryBackend.ts",
+    "./NixExec": "./src/NixExec.ts",
+    "./OutputStream": "./src/OutputStream.ts",
+    "./OverlayExec": "./src/OverlayExec.ts",
+    "./Owners": "./src/Owners.ts",
+    "./PackageDiscovery": "./src/PackageDiscovery.ts",
+    "./PackageError": "./src/PackageError.ts",
+    "./PackageExec": "./src/PackageExec.ts",
+    "./PackageIndex": "./src/PackageIndex.ts",
+    "./PackageLoader": "./src/PackageLoader.ts",
+    "./PackageTree": "./src/PackageTree.ts",
+    "./Planner": "./src/Planner.ts",
+    "./Positionals": "./src/Positionals.ts",
+    "./Query": "./src/Query.ts",
+    "./RepoResolution": "./src/RepoResolution.ts",
+    "./Reporter": "./src/Reporter.ts",
+    "./Resolver": "./src/Resolver.ts",
+    "./RspackRunner": "./src/RspackRunner.ts",
+    "./ServiceSupervisor": "./src/ServiceSupervisor.ts",
+    "./StampExec": "./src/StampExec.ts",
+    "./TargetExecution": "./src/TargetExecution.ts",
+    "./TargetIndex": "./src/TargetIndex.ts",
+    "./Watch": "./src/Watch.ts",
+    "./Workspace": "./src/Workspace.ts",
+    "./WorkspaceLoader": "./src/WorkspaceLoader.ts",
+    "./WorkspaceToolchain": "./src/WorkspaceToolchain.ts",
+    "./effect-resolution.d": null,
+    "./engine": "./src/engine.ts",
+    "./main": "./src/main.ts",
+    "./CreateApp": null
+  },
+  "files": [
+    "src/**/*.js",
+    "src/**/*.ts",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/package.json",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "dist/vendor/**",
+    "docs/"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next",
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./effect-resolution": {
+        "import": {
+          "types": "./dist/esm/effect-resolution.d.ts",
+          "default": "./dist/esm/effect-resolution.js"
+        },
+        "require": {
+          "types": "./dist/cjs/effect-resolution.d.ts",
+          "default": "./dist/cjs/effect-resolution.js"
+        }
+      },
+      "./internal/*": null,
+      "./index": null,
+      "./Affected": {
+        "import": {
+          "types": "./dist/esm/Affected.d.ts",
+          "default": "./dist/esm/Affected.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Affected.d.ts",
+          "default": "./dist/cjs/Affected.js"
+        }
+      },
+      "./AgentFake": {
+        "import": {
+          "types": "./dist/esm/AgentFake.d.ts",
+          "default": "./dist/esm/AgentFake.js"
+        },
+        "require": {
+          "types": "./dist/cjs/AgentFake.d.ts",
+          "default": "./dist/cjs/AgentFake.js"
+        }
+      },
+      "./AgentSession": {
+        "import": {
+          "types": "./dist/esm/AgentSession.d.ts",
+          "default": "./dist/esm/AgentSession.js"
+        },
+        "require": {
+          "types": "./dist/cjs/AgentSession.d.ts",
+          "default": "./dist/cjs/AgentSession.js"
+        }
+      },
+      "./Ansi": {
+        "import": {
+          "types": "./dist/esm/Ansi.d.ts",
+          "default": "./dist/esm/Ansi.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Ansi.d.ts",
+          "default": "./dist/cjs/Ansi.js"
+        }
+      },
+      "./AnvilExec": {
+        "import": {
+          "types": "./dist/esm/AnvilExec.d.ts",
+          "default": "./dist/esm/AnvilExec.js"
+        },
+        "require": {
+          "types": "./dist/cjs/AnvilExec.d.ts",
+          "default": "./dist/cjs/AnvilExec.js"
+        }
+      },
+      "./Audience": {
+        "import": {
+          "types": "./dist/esm/Audience.d.ts",
+          "default": "./dist/esm/Audience.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Audience.d.ts",
+          "default": "./dist/cjs/Audience.js"
+        }
+      },
+      "./Cache": {
+        "import": {
+          "types": "./dist/esm/Cache.d.ts",
+          "default": "./dist/esm/Cache.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Cache.d.ts",
+          "default": "./dist/cjs/Cache.js"
+        }
+      },
+      "./CacheAdmin": {
+        "import": {
+          "types": "./dist/esm/CacheAdmin.d.ts",
+          "default": "./dist/esm/CacheAdmin.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CacheAdmin.d.ts",
+          "default": "./dist/cjs/CacheAdmin.js"
+        }
+      },
+      "./Cli": {
+        "import": {
+          "types": "./dist/esm/Cli.d.ts",
+          "default": "./dist/esm/Cli.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Cli.d.ts",
+          "default": "./dist/cjs/Cli.js"
+        }
+      },
+      "./Diagnostic": {
+        "import": {
+          "types": "./dist/esm/Diagnostic.d.ts",
+          "default": "./dist/esm/Diagnostic.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Diagnostic.d.ts",
+          "default": "./dist/cjs/Diagnostic.js"
+        }
+      },
+      "./DockerExec": {
+        "import": {
+          "types": "./dist/esm/DockerExec.d.ts",
+          "default": "./dist/esm/DockerExec.js"
+        },
+        "require": {
+          "types": "./dist/cjs/DockerExec.d.ts",
+          "default": "./dist/cjs/DockerExec.js"
+        }
+      },
+      "./Entry": {
+        "import": {
+          "types": "./dist/esm/Entry.d.ts",
+          "default": "./dist/esm/Entry.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Entry.d.ts",
+          "default": "./dist/cjs/Entry.js"
+        }
+      },
+      "./Environment": {
+        "import": {
+          "types": "./dist/esm/Environment.d.ts",
+          "default": "./dist/esm/Environment.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Environment.d.ts",
+          "default": "./dist/cjs/Environment.js"
+        }
+      },
+      "./Executor": {
+        "import": {
+          "types": "./dist/esm/Executor.d.ts",
+          "default": "./dist/esm/Executor.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Executor.d.ts",
+          "default": "./dist/cjs/Executor.js"
+        }
+      },
+      "./FetchExec": {
+        "import": {
+          "types": "./dist/esm/FetchExec.d.ts",
+          "default": "./dist/esm/FetchExec.js"
+        },
+        "require": {
+          "types": "./dist/cjs/FetchExec.d.ts",
+          "default": "./dist/cjs/FetchExec.js"
+        }
+      },
+      "./FoundryExec": {
+        "import": {
+          "types": "./dist/esm/FoundryExec.d.ts",
+          "default": "./dist/esm/FoundryExec.js"
+        },
+        "require": {
+          "types": "./dist/cjs/FoundryExec.d.ts",
+          "default": "./dist/cjs/FoundryExec.js"
+        }
+      },
+      "./GitCommit": {
+        "import": {
+          "types": "./dist/esm/GitCommit.d.ts",
+          "default": "./dist/esm/GitCommit.js"
+        },
+        "require": {
+          "types": "./dist/cjs/GitCommit.d.ts",
+          "default": "./dist/cjs/GitCommit.js"
+        }
+      },
+      "./GitHooks": {
+        "import": {
+          "types": "./dist/esm/GitHooks.d.ts",
+          "default": "./dist/esm/GitHooks.js"
+        },
+        "require": {
+          "types": "./dist/cjs/GitHooks.d.ts",
+          "default": "./dist/cjs/GitHooks.js"
+        }
+      },
+      "./GitSubmoduleExec": {
+        "import": {
+          "types": "./dist/esm/GitSubmoduleExec.d.ts",
+          "default": "./dist/esm/GitSubmoduleExec.js"
+        },
+        "require": {
+          "types": "./dist/cjs/GitSubmoduleExec.d.ts",
+          "default": "./dist/cjs/GitSubmoduleExec.js"
+        }
+      },
+      "./GithubRender": {
+        "import": {
+          "types": "./dist/esm/GithubRender.d.ts",
+          "default": "./dist/esm/GithubRender.js"
+        },
+        "require": {
+          "types": "./dist/cjs/GithubRender.d.ts",
+          "default": "./dist/cjs/GithubRender.js"
+        }
+      },
+      "./GoExec": {
+        "import": {
+          "types": "./dist/esm/GoExec.d.ts",
+          "default": "./dist/esm/GoExec.js"
+        },
+        "require": {
+          "types": "./dist/cjs/GoExec.d.ts",
+          "default": "./dist/cjs/GoExec.js"
+        }
+      },
+      "./GraphOutput": {
+        "import": {
+          "types": "./dist/esm/GraphOutput.d.ts",
+          "default": "./dist/esm/GraphOutput.js"
+        },
+        "require": {
+          "types": "./dist/cjs/GraphOutput.d.ts",
+          "default": "./dist/cjs/GraphOutput.js"
+        }
+      },
+      "./KnownRed": {
+        "import": {
+          "types": "./dist/esm/KnownRed.d.ts",
+          "default": "./dist/esm/KnownRed.js"
+        },
+        "require": {
+          "types": "./dist/cjs/KnownRed.d.ts",
+          "default": "./dist/cjs/KnownRed.js"
+        }
+      },
+      "./Label": {
+        "import": {
+          "types": "./dist/esm/Label.d.ts",
+          "default": "./dist/esm/Label.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Label.d.ts",
+          "default": "./dist/cjs/Label.js"
+        }
+      },
+      "./MarkdownCodeBlocks": {
+        "import": {
+          "types": "./dist/esm/MarkdownCodeBlocks.d.ts",
+          "default": "./dist/esm/MarkdownCodeBlocks.js"
+        },
+        "require": {
+          "types": "./dist/cjs/MarkdownCodeBlocks.d.ts",
+          "default": "./dist/cjs/MarkdownCodeBlocks.js"
+        }
+      },
+      "./MemoryBackend": {
+        "import": {
+          "types": "./dist/esm/MemoryBackend.d.ts",
+          "default": "./dist/esm/MemoryBackend.js"
+        },
+        "require": {
+          "types": "./dist/cjs/MemoryBackend.d.ts",
+          "default": "./dist/cjs/MemoryBackend.js"
+        }
+      },
+      "./NixExec": {
+        "import": {
+          "types": "./dist/esm/NixExec.d.ts",
+          "default": "./dist/esm/NixExec.js"
+        },
+        "require": {
+          "types": "./dist/cjs/NixExec.d.ts",
+          "default": "./dist/cjs/NixExec.js"
+        }
+      },
+      "./OutputStream": {
+        "import": {
+          "types": "./dist/esm/OutputStream.d.ts",
+          "default": "./dist/esm/OutputStream.js"
+        },
+        "require": {
+          "types": "./dist/cjs/OutputStream.d.ts",
+          "default": "./dist/cjs/OutputStream.js"
+        }
+      },
+      "./OverlayExec": {
+        "import": {
+          "types": "./dist/esm/OverlayExec.d.ts",
+          "default": "./dist/esm/OverlayExec.js"
+        },
+        "require": {
+          "types": "./dist/cjs/OverlayExec.d.ts",
+          "default": "./dist/cjs/OverlayExec.js"
+        }
+      },
+      "./Owners": {
+        "import": {
+          "types": "./dist/esm/Owners.d.ts",
+          "default": "./dist/esm/Owners.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Owners.d.ts",
+          "default": "./dist/cjs/Owners.js"
+        }
+      },
+      "./PackageDiscovery": {
+        "import": {
+          "types": "./dist/esm/PackageDiscovery.d.ts",
+          "default": "./dist/esm/PackageDiscovery.js"
+        },
+        "require": {
+          "types": "./dist/cjs/PackageDiscovery.d.ts",
+          "default": "./dist/cjs/PackageDiscovery.js"
+        }
+      },
+      "./PackageError": {
+        "import": {
+          "types": "./dist/esm/PackageError.d.ts",
+          "default": "./dist/esm/PackageError.js"
+        },
+        "require": {
+          "types": "./dist/cjs/PackageError.d.ts",
+          "default": "./dist/cjs/PackageError.js"
+        }
+      },
+      "./PackageExec": {
+        "import": {
+          "types": "./dist/esm/PackageExec.d.ts",
+          "default": "./dist/esm/PackageExec.js"
+        },
+        "require": {
+          "types": "./dist/cjs/PackageExec.d.ts",
+          "default": "./dist/cjs/PackageExec.js"
+        }
+      },
+      "./PackageIndex": {
+        "import": {
+          "types": "./dist/esm/PackageIndex.d.ts",
+          "default": "./dist/esm/PackageIndex.js"
+        },
+        "require": {
+          "types": "./dist/cjs/PackageIndex.d.ts",
+          "default": "./dist/cjs/PackageIndex.js"
+        }
+      },
+      "./PackageLoader": {
+        "import": {
+          "types": "./dist/esm/PackageLoader.d.ts",
+          "default": "./dist/esm/PackageLoader.js"
+        },
+        "require": {
+          "types": "./dist/cjs/PackageLoader.d.ts",
+          "default": "./dist/cjs/PackageLoader.js"
+        }
+      },
+      "./PackageTree": {
+        "import": {
+          "types": "./dist/esm/PackageTree.d.ts",
+          "default": "./dist/esm/PackageTree.js"
+        },
+        "require": {
+          "types": "./dist/cjs/PackageTree.d.ts",
+          "default": "./dist/cjs/PackageTree.js"
+        }
+      },
+      "./Planner": {
+        "import": {
+          "types": "./dist/esm/Planner.d.ts",
+          "default": "./dist/esm/Planner.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Planner.d.ts",
+          "default": "./dist/cjs/Planner.js"
+        }
+      },
+      "./Positionals": {
+        "import": {
+          "types": "./dist/esm/Positionals.d.ts",
+          "default": "./dist/esm/Positionals.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Positionals.d.ts",
+          "default": "./dist/cjs/Positionals.js"
+        }
+      },
+      "./Query": {
+        "import": {
+          "types": "./dist/esm/Query.d.ts",
+          "default": "./dist/esm/Query.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Query.d.ts",
+          "default": "./dist/cjs/Query.js"
+        }
+      },
+      "./RepoResolution": {
+        "import": {
+          "types": "./dist/esm/RepoResolution.d.ts",
+          "default": "./dist/esm/RepoResolution.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RepoResolution.d.ts",
+          "default": "./dist/cjs/RepoResolution.js"
+        }
+      },
+      "./Reporter": {
+        "import": {
+          "types": "./dist/esm/Reporter.d.ts",
+          "default": "./dist/esm/Reporter.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Reporter.d.ts",
+          "default": "./dist/cjs/Reporter.js"
+        }
+      },
+      "./Resolver": {
+        "import": {
+          "types": "./dist/esm/Resolver.d.ts",
+          "default": "./dist/esm/Resolver.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Resolver.d.ts",
+          "default": "./dist/cjs/Resolver.js"
+        }
+      },
+      "./RspackRunner": {
+        "import": {
+          "types": "./dist/esm/RspackRunner.d.ts",
+          "default": "./dist/esm/RspackRunner.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RspackRunner.d.ts",
+          "default": "./dist/cjs/RspackRunner.js"
+        }
+      },
+      "./ServiceSupervisor": {
+        "import": {
+          "types": "./dist/esm/ServiceSupervisor.d.ts",
+          "default": "./dist/esm/ServiceSupervisor.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ServiceSupervisor.d.ts",
+          "default": "./dist/cjs/ServiceSupervisor.js"
+        }
+      },
+      "./StampExec": {
+        "import": {
+          "types": "./dist/esm/StampExec.d.ts",
+          "default": "./dist/esm/StampExec.js"
+        },
+        "require": {
+          "types": "./dist/cjs/StampExec.d.ts",
+          "default": "./dist/cjs/StampExec.js"
+        }
+      },
+      "./TargetExecution": {
+        "import": {
+          "types": "./dist/esm/TargetExecution.d.ts",
+          "default": "./dist/esm/TargetExecution.js"
+        },
+        "require": {
+          "types": "./dist/cjs/TargetExecution.d.ts",
+          "default": "./dist/cjs/TargetExecution.js"
+        }
+      },
+      "./TargetIndex": {
+        "import": {
+          "types": "./dist/esm/TargetIndex.d.ts",
+          "default": "./dist/esm/TargetIndex.js"
+        },
+        "require": {
+          "types": "./dist/cjs/TargetIndex.d.ts",
+          "default": "./dist/cjs/TargetIndex.js"
+        }
+      },
+      "./Watch": {
+        "import": {
+          "types": "./dist/esm/Watch.d.ts",
+          "default": "./dist/esm/Watch.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Watch.d.ts",
+          "default": "./dist/cjs/Watch.js"
+        }
+      },
+      "./Workspace": {
+        "import": {
+          "types": "./dist/esm/Workspace.d.ts",
+          "default": "./dist/esm/Workspace.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Workspace.d.ts",
+          "default": "./dist/cjs/Workspace.js"
+        }
+      },
+      "./WorkspaceLoader": {
+        "import": {
+          "types": "./dist/esm/WorkspaceLoader.d.ts",
+          "default": "./dist/esm/WorkspaceLoader.js"
+        },
+        "require": {
+          "types": "./dist/cjs/WorkspaceLoader.d.ts",
+          "default": "./dist/cjs/WorkspaceLoader.js"
+        }
+      },
+      "./WorkspaceToolchain": {
+        "import": {
+          "types": "./dist/esm/WorkspaceToolchain.d.ts",
+          "default": "./dist/esm/WorkspaceToolchain.js"
+        },
+        "require": {
+          "types": "./dist/cjs/WorkspaceToolchain.d.ts",
+          "default": "./dist/cjs/WorkspaceToolchain.js"
+        }
+      },
+      "./effect-resolution.d": null,
+      "./engine": {
+        "import": {
+          "types": "./dist/esm/engine.d.ts",
+          "default": "./dist/esm/engine.js"
+        },
+        "require": {
+          "types": "./dist/cjs/engine.d.ts",
+          "default": "./dist/cjs/engine.js"
+        }
+      },
+      "./main": {
+        "import": {
+          "types": "./dist/esm/main.d.ts",
+          "default": "./dist/esm/main.js"
+        },
+        "require": {
+          "types": "./dist/cjs/main.d.ts",
+          "default": "./dist/cjs/main.js"
+        }
+      },
+      "./CreateApp": null
+    }
+  },
+  "scripts": {
+    "lint": "eslint src --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "circular": "node scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "vitest --coverage"
+  },
+  "dependencies": {
+    "@clack/prompts": "1.7.0",
+    "@smthrs/build": "1.0.0-rc.12",
+    "@smthrs/canonical": "1.0.0-rc.12",
+    "@smthrs/core": "1.0.0-rc.12",
+    "@smthrs/crypto": "1.0.0-rc.12",
+    "@smthrs/engine": "1.0.0-rc.12",
+    "@smthrs/flow": "1.0.0-rc.12",
+    "@smthrs/journal": "1.0.0-rc.12",
+    "@smthrs/keys": "1.0.0-rc.12",
+    "@smthrs/plan": "1.0.0-rc.12",
+    "@smthrs/platform-node": "1.0.0-rc.12",
+    "@smthrs/registry": "1.0.0-rc.12",
+    "@smthrs/targets": "1.0.0-rc.12",
+    "ignore": "7.0.8",
+    "incur": "0.5.1",
+    "jsonc-parser": "3.3.1",
+    "minimatch": "10.2.6",
+    "tsx": "4.23.13",
+    "typescript": "7.0.2",
+    "undici": "8.11.2",
+    "redis": "6.2.1",
+    "@types/ws": "8.18.2",
+    "ws": "8.22.0"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@eslint/js": "9.39.5",
+    "@rsbuild/core": "2.2.3",
+    "@types/node": "26.4.1",
+    "@vitest/coverage-v8": "5.0.0",
+    "dprint": "0.57.1",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "madge": "8.0.0",
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0",
+    "@effect/platform-node": "4.0.4",
+    "@effect/platform-node-shared": "4.0.4",
+    "effect": "4.0.4"
+  },
+  "peerDependencies": {
+    "effect": "4.0.4"
+  }
+}

@@ -49,7 +49,7 @@ it("lists a markdown flow as an agent with its seat and TUI manifest", async () 
 it("reads an agent's body and refuses a module's", async () => {
   const body = await port.body("review")
   expect(body.text.trim()).toBe("Review the change.")
-  expect(body.baseDirectory).toBe(join(root, "flows", "review"))
+  expect(body.baseDirectory).toBe(join(root, ".smithers", "flows", "review"))
   expect(body.digest).toMatch(/^[0-9a-f]{64}$/)
   const refused = await port.body("echo").catch((error: unknown) => error)
   expect(refused).toBeInstanceOf(FlowError)
@@ -60,7 +60,7 @@ it("reads an agent's body and refuses a module's", async () => {
 
 it("loads an edited agent's body and settings together from the real registry", async () => {
   const project = mkdtempSync(join(tmpdir(), "tui-agent-edit-"))
-  const directory = join(project, "flows", "review")
+  const directory = join(project, ".smithers", "flows", "review")
   const file = join(directory, "flow.mdx")
   mkdirSync(directory, { recursive: true })
   const markdown = (settings: string, prompt: string) => `---\ndescription: Review\n${settings}\n---\n\n${prompt}\n`
@@ -136,7 +136,7 @@ it("rejects an unknown flow with a typed error", async () => {
 
 it("keeps the actionable import failure and its original cause", async () => {
   const project = mkdtempSync(join(tmpdir(), "tui-broken-flow-"))
-  const folder = join(project, "flows/broken")
+  const folder = join(project, ".smithers/flows/broken")
   mkdirSync(folder, { recursive: true })
   symlinkSync(join(import.meta.dir, "../node_modules"), join(project, "node_modules"), "dir")
   writeFileSync(
@@ -168,9 +168,9 @@ it("names a module flow added after the host opened as needing a restart", async
   const project = mkdtempSync(join(tmpdir(), "tui-late-flow-"))
   symlinkSync(join(import.meta.dir, "../node_modules"), join(project, "node_modules"), "dir")
   const write = (name: string) => {
-    mkdirSync(join(project, "flows", name), { recursive: true })
+    mkdirSync(join(project, ".smithers", "flows", name), { recursive: true })
     writeFileSync(
-      join(project, "flows", name, "flow.ts"),
+      join(project, ".smithers", "flows", name, "flow.ts"),
       `import { Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Schema } from "effect"
@@ -370,13 +370,13 @@ it("stops a running run through the control plane", async () => {
   expect((error as FlowError).code).toBe("control")
 }, 60_000)
 
-/** A scratch project over this package's dependencies, holding the given `flows/<name>/flow.ts` sources. */
+/** A scratch project over this package's dependencies, holding the given `.smithers/flows/<name>/flow.ts` sources. */
 const project = (prefix: string, flows: Readonly<Record<string, string>>): string => {
   const directory = mkdtempSync(join(tmpdir(), prefix))
   symlinkSync(join(import.meta.dir, "../node_modules"), join(directory, "node_modules"), "dir")
   for (const [name, source] of Object.entries(flows)) {
-    mkdirSync(join(directory, "flows", name), { recursive: true })
-    writeFileSync(join(directory, "flows", name, "flow.ts"), source)
+    mkdirSync(join(directory, ".smithers", "flows", name), { recursive: true })
+    writeFileSync(join(directory, ".smithers", "flows", name, "flow.ts"), source)
   }
   return directory
 }
@@ -447,8 +447,8 @@ it("knows a module flow added after the host loaded: it is listed, refused as Re
     while (runs.fields("pipeline") === undefined && Date.now() < deadline) await new Promise((ok) => setTimeout(ok, 50))
     // The warm host's catalog gives every loaded flow's input names without a run.
     expect(runs.fields("pipeline")).toEqual(["n", "unit"])
-    mkdirSync(join(directory, "flows", "late"))
-    writeFileSync(join(directory, "flows", "late", "flow.ts"), pipeline.replaceAll("\"pipeline", "\"late"))
+    mkdirSync(join(directory, ".smithers", "flows", "late"))
+    writeFileSync(join(directory, ".smithers", "flows", "late", "flow.ts"), pipeline.replaceAll("\"pipeline", "\"late"))
     await runs.listing()
     expect(runs.listed().map((flow) => flow.name).sort()).toEqual(["late", "pipeline"])
     expect(runs.unloaded("late")).toBe(true)
@@ -469,3 +469,23 @@ it("knows a module flow added after the host loaded: it is listed, refused as Re
     rmSync(directory, { recursive: true, force: true })
   }
 }, 120_000)
+
+it("loads only .smithers/flows and names flows left in a retired root flows/ directory", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "tui-retired-root-"))
+  const agent = (description: string) => `---\ndescription: ${description}\n---\n\nReview the change.\n`
+  mkdirSync(join(directory, "flows", "legacy"), { recursive: true })
+  writeFileSync(join(directory, "flows", "legacy", "flow.mdx"), agent("Legacy"))
+  const local = FlowControl.make({ cwd: directory, environment: {}, approvals: host.approvals! })
+  try {
+    expect(await local.discover()).toEqual([])
+    expect(local.notices!()).toEqual(["Flows in flows/ are not loaded; move them to .smithers/flows/."])
+    mkdirSync(join(directory, ".smithers", "flows", "review"), { recursive: true })
+    writeFileSync(join(directory, ".smithers", "flows", "review", "flow.mdx"), agent("Review"))
+    rmSync(join(directory, "flows"), { recursive: true })
+    expect((await local.discover()).map((flow) => flow.name)).toEqual(["review"])
+    expect(local.notices!()).toEqual([])
+  } finally {
+    await local.dispose()
+    rmSync(directory, { recursive: true, force: true })
+  }
+}, 60_000)

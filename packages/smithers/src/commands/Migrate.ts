@@ -2,7 +2,7 @@
  * `smthrs migrate`: one implementation behind both parsers.
  *
  * The flow ships inside `@smthrs/migrate`, which is where a 0.x project can
- * reach it: such a project has no `flows/` directory by definition. This is
+ * reach it: such a project has no `.smithers/flows/` directory by definition. This is
  * the same entry `smithers-migrate` runs, so the two spellings are one
  * implementation.
  *

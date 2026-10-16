@@ -13,7 +13,7 @@ test("C-J5-01: flow edits activate after merge while existing TODOs keep their p
   await expect(page.getByText('v1', { exact: true }).last()).toBeVisible()
   await say(page, 'Every TODO must run pnpm test and update the changelog.')
   await expect(page.getByRole('region', { name: 'TODO flow', exact: true }).last()).toBeVisible()
-  await expect(page.getByText('flows/todo/flow.ts', { exact: true }).last()).toBeVisible()
+  await expect(page.getByText('.smithers/flows/todo/flow.ts', { exact: true }).last()).toBeVisible()
   await page.getByRole('button', { name: 'Make TODO', exact: true }).last().press('Enter')
   await say(page, '/todo T2')
   await expect(page.getByText('In review', { exact: true }).last()).toBeVisible()

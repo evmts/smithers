@@ -37,7 +37,8 @@ jobs:
       - name: Measure cold, warmup and repeated warm fixtures without result-cache reuse
         env:
           SMITHERS_BENCH_ARTIFACT_DIR: ${{ github.workspace }}/reliability-artifacts/bench
-        run: node --expose-gc scripts/bench/gate.mjs --measure
+        run: |
+          pnpm exec smthrs flow start bench/gate --data '{"measure":true,"exposeGc":true}' --wait
       - name: Preserve benchmark observations and failures
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -83,7 +84,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p reliability-artifacts/sync
-          node scripts/check-soak-campaign.mjs "$SMITHERS_SOAK_ARTIFACT" 2>&1 | tee reliability-artifacts/sync/verifier.log
+          pnpm exec smthrs flow start bench/soak-campaign --data "{\"artifact\":\"$SMITHERS_SOAK_ARTIFACT\"}" --wait 2>&1 | tee reliability-artifacts/sync/verifier.log
       - name: Preserve soak checkpoints, cleanup and failure evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -122,7 +123,8 @@ jobs:
           SMITHERS_FUZZ_ARTIFACT_DIR: ${{ github.workspace }}/reliability-artifacts
         run: pnpm --filter @smthrs/control exec vitest run test/SignalInboxModel.test.ts --coverage.enabled=false --reporter=default --reporter=json --outputFile=reliability-results.json
       - name: Verify complete campaign evidence
-        run: node scripts/check-signal-campaign.mjs reliability-artifacts
+        run: |
+          pnpm exec smthrs flow start bench/signal-campaign --data '{"directory":"reliability-artifacts"}' --wait
       - name: Prove signal transition mutation sensitivity
         env:
           SMITHERS_MUTATION_ARTIFACT_DIR: ${{ github.workspace }}/reliability-artifacts/signal-mutations
@@ -207,11 +209,9 @@ jobs:
           SMITHERS_ABI_STEPS: '32'
           SMITHERS_ABI_ARTIFACT_DIR: ${{ github.workspace }}/reliability-artifacts/jj-abi
         run: |
-          node --input-type=module <<'JS'
-          import { campaignConfiguration, runCampaign } from './scripts/run-jj-abi-campaign.mjs'
-          const seed = process.env.REQUESTED_SEED || String(Math.floor(Date.now() / 86400000))
-          await runCampaign(campaignConfiguration({ ...process.env, SMITHERS_ABI_SEED: seed }))
-          JS
+          seed="${REQUESTED_SEED:-$(( $(date -u +%s) / 86400 ))}"
+          case "$seed" in ''|*[!0-9]*) echo 'seed must be an unsigned 32-bit integer' >&2; exit 1 ;; esac
+          pnpm exec smthrs flow start bench/jj-abi-campaign --data "{\"seed\":$seed}" --wait
       - name: Install pinned nightly for parser AddressSanitizer
         run: rustup toolchain install nightly-2025-08-08 --profile minimal --component rust-src
       - name: Execute parser corpus under AddressSanitizer
@@ -231,11 +231,7 @@ jobs:
           cargo +nightly-2025-08-08 test -p flows-jj --locked \
             -Zbuild-std --target x86_64-unknown-linux-gnu --test test_abi_parser \
             -- --nocapture 2>&1 | tee "$SMITHERS_ABI_ARTIFACT_DIR/asan.log"
-          node --input-type=module <<'JS'
-          import { readFileSync } from 'node:fs'
-          import { campaignConfiguration, verifyParser } from './scripts/run-jj-abi-campaign.mjs'
-          verifyParser(JSON.parse(readFileSync(`${process.env.SMITHERS_ABI_ARTIFACT_DIR}/parser.json`)), campaignConfiguration())
-          JS
+          pnpm exec smthrs flow start bench/jj-abi-campaign --data '{"phase":"verify-parser"}' --wait
       - name: Preserve native and WASM corpus, results and allocation evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

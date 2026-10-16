@@ -69,9 +69,9 @@ const hostFlow = async (gatewayKey: boolean): Promise<Hosted> => {
     expect(spawnSync("git", args, { cwd: root, env }).status, `git ${args.join(" ")}`).toBe(0)
   try {
     git(["init", "--quiet"])
-    mkdirSync(join(root, "flows", "hello"), { recursive: true })
+    mkdirSync(join(root, ".smithers", "flows", "hello"), { recursive: true })
     writeFileSync(
-      join(root, "flows", "hello", "flow.mdx"),
+      join(root, ".smithers", "flows", "hello", "flow.mdx"),
       `---
 description: Claude Code prompt proof.
 model: ${seat}

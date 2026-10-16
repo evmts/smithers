@@ -82,7 +82,7 @@ func TestTodoPinnedVersionComposedInstall(t *testing.T) {
 	// A newer successfully loaded Active version must not become the source
 	// of an ordinary Retry, even when its source differs from mirrored main.
 	activeSource, activeDigest := strings.Repeat("d", 40), strings.Repeat("e", 64)
-	_, err = pool.Exec(ctx, `INSERT INTO workflow_definitions(repository_id,name,path,config,is_active,source_commit,digest,status) VALUES($1,'todo','flows/todo/flow.ts','{}',true,$2,$3,'loaded')`, repo.ID, activeSource, activeDigest)
+	_, err = pool.Exec(ctx, `INSERT INTO workflow_definitions(repository_id,name,path,config,is_active,source_commit,digest,status) VALUES($1,'todo','.smithers/flows/todo/flow.ts','{}',true,$2,$3,'loaded')`, repo.ID, activeSource, activeDigest)
 	require.NoError(t, err)
 	activeReads := 0
 	service.SetTodoFlow(func(ctx context.Context, repositoryID int64, sourceCommit string) (string, error) {

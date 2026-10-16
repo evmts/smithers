@@ -3,7 +3,7 @@
  *
  * Coding checks run each revision of a rebased stack in a fresh export at a
  * new absolute path. Keys therefore must not carry the checkout path, commit
- * or change ids, or history: only declared content. `scripts/bench/rebase-cache.mjs`
+ * or change ids, or history: only declared content. `flows/bench/rebase-cache/rebase-cache.mjs`
  * measures the same property on this repository's graph.
  *
  * @since 1.0.0

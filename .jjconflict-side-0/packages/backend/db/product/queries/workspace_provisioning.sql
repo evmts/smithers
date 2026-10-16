@@ -1,0 +1,55 @@
+-- name: TryLockWorkspaceProvisioning :one
+-- Transaction-scoped ownership is released on an API crash, not on row age.
+SELECT pg_try_advisory_xact_lock(hashtextextended('workspace-provision:' || sqlc.arg(workspace_id)::text, 0))::boolean AS acquired;
+
+-- name: ListWorkspaceProvisioningRecovery :many
+SELECT w.id, w.repository_id, w.user_id, w.target_bookmark,
+       COALESCE(u.username, o.name, '')::text AS repository_owner,
+       r.name AS repository_name
+FROM workspaces w
+JOIN repositories r ON r.id = w.repository_id
+LEFT JOIN users u ON u.id = r.user_id
+LEFT JOIN organizations o ON o.id = r.org_id
+WHERE w.deleted_at IS NULL AND (w.status IN ('pending','starting','releasing') OR (w.status='failed' AND w.provisioning_stage='start_cleanup_pending')
+ -- A release this API's predecessor could not confirm published a terminal
+ -- 'failed' with no cleanup stage, which was in no backlog, while deliberately
+ -- retaining vm_id for the disk and the unfinished capture -- so its guest kept
+ -- running and kept its compute reservation with nothing left to look at it.
+ -- This disjunct lists exactly that writer's rows, identified by the sentence
+ -- it records, so reconcileInterruptedReleaseStop can finish the stop the
+ -- release intended. It is NOT a failed-workspace sweep: any other failure
+ -- reason, any recorded cleanup stage and any unbound placement are excluded,
+ -- and the row leaves this backlog for good once the stop is confirmed.
+ OR (w.status='failed' AND w.provisioning_stage='' AND w.vm_id<>''
+     AND w.failure_code='conflict'
+     AND w.failure_message='workspace release interrupted by host restart')
+ -- The repository-advertisement door, proved for the same shape. The
+ -- authenticated ref advertisement runs INSIDE the start, after the guest is
+ -- already up and reported running; its refusal is a 'conflict', so
+ -- markWorkspaceProvisionFailed published a terminal 'failed' with NO cleanup
+ -- stage over a live guest and reaped nothing -- the row was in no backlog and
+ -- the placement kept its compute reservation with nothing left to look at it.
+ -- These rows carry user work (repository materialization is the subject), so
+ -- they are listed here for a STOP and deliberately NOT routed into the
+ -- failed-start cleanup backlog, which deletes. Same exclusions as above: any
+ -- other failure reason, any recorded cleanup stage and any unbound placement
+ -- are out, and the row leaves this backlog for good once the stop is confirmed.
+ OR (w.status='failed' AND w.provisioning_stage='' AND w.vm_id<>''
+     AND w.failure_code='conflict'
+     AND w.failure_message='workspace repository advertisement could not be verified')
+ OR (w.status='running' AND EXISTS (SELECT 1 FROM workspace_sessions s WHERE s.workspace_id=w.id AND s.status IN ('pending','starting'))))
+-- Older API replicas do not hold ownership locks. Allow their bounded
+-- ten-minute attempt to finish during the first rolling upgrade.
+AND (w.status IN ('running','releasing','failed') OR w.updated_at < now()-interval '10 minutes')
+-- A child workspace boots only through its batch, never a credentialed recovery.
+AND NOT EXISTS (SELECT 1 FROM workspace_children c WHERE c.workspace_id=w.id)
+ORDER BY w.updated_at, w.id
+LIMIT 100;
+
+-- name: CompletePendingWorkspaceSessions :many
+UPDATE workspace_sessions s SET status='running', updated_at=now()
+FROM workspaces w
+WHERE s.workspace_id=w.id AND w.id=sqlc.arg(workspace_id)::uuid
+  AND w.status='running' AND w.deleted_at IS NULL
+  AND s.status IN ('pending','starting')
+RETURNING s.id;

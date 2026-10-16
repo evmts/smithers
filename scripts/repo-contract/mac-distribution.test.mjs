@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { existsSync, lstatSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { spawnSync } from "node:child_process"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -46,19 +46,36 @@ test("retired lifecycle scripts are absent and no active consumer runs them", ()
   assert.deepEqual(found, [], found.join("\n"))
 })
 test("the surviving build test and command executor remain", () => {
-  assert.ok(existsSync(`${root}/distribution/backend_build_test.go`))
+  assert.ok(existsSync(`${root}/packages/backend/internal/compose/build_backend_script_test.go`))
   assert.ok(existsSync(`${root}/apps/app/scripts/mode-matrix/command-execution.ts`))
+})
+test("distribution files live beside their callers and model fakes stay gone", () => {
+  // The Mac bundle's manifest writer and licenses sit with the bundle build;
+  // the CLI release installer with the release scripts (#4086).
+  for (const file of ["apps/app/scripts/flow-host-manifest.mts", "apps/app/licenses/jj-LICENSE",
+    "apps/app/licenses/git-COPYING", "scripts/release/build-cli.mjs", "scripts/release/install-cli.mjs"]) {
+    assert.ok(existsSync(`${root}/${file}`), file)
+  }
+  // A recorded model replaces each hand-written one: @smthrs/testing's
+  // smthrs-model-server. Only the TODO script remains until its journeys are
+  // recorded (#4086); nothing new joins it.
+  assert.deepEqual(readdirSync(`${root}/distribution`).sort(),
+    ["fake-todo-provider.mjs", "fake-todo-turns.d.mts", "fake-todo-turns.mjs", "fake-todo-turns.test.mjs"])
+  const patterns = ["distribution/" + "fake-coding-provider", "distribution/" + "flow-host-manifest", "distribution/" + "licenses",
+    "distribution/" + "install-cli", "distribution/" + "build-cli", "distribution/" + "backend_build_test"]
+  const found = references(root, [".github", "scripts", "apps", "packages", "flows", "PACKAGE.ts"], patterns)
+  assert.deepEqual(found, [], found.join("\n"))
 })
 
 test("distribution checks run without an external search executable", () => {
   // A fresh test runner must not inherit the parent's child-runner context.
   const env = { ...process.env, PATH: "" }
   delete env.NODE_TEST_CONTEXT
-  const result = spawnSync(process.execPath, ["--test", "--test-reporter=tap", "--test-name-pattern=^(removed image files|active consumers|retired lifecycle scripts|the surviving build test)", fileURLToPath(import.meta.url)], {
+  const result = spawnSync(process.execPath, ["--test", "--test-reporter=tap", "--test-name-pattern=^(removed image files|active consumers|retired lifecycle scripts|the surviving build test|distribution files live)", fileURLToPath(import.meta.url)], {
     cwd: root, env, encoding: "utf8", timeout: 30_000
   })
   assert.equal(result.error, undefined, result.error?.message)
-  assert.match(result.stdout, /^# tests 4$/m, "the child must execute all four distribution checks")
+  assert.match(result.stdout, /^# tests 5$/m, "the child must execute all five distribution checks")
   assert.equal(result.status, 0, `${result.stdout ?? ""}${result.stderr ?? ""}`)
 })
 

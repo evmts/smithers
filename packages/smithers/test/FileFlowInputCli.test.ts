@@ -17,10 +17,10 @@ describe("file-flow payload admission", () => {
   let root: string
   beforeEach(async () => {
     root = await realpath(await mkdtemp(join(tmpdir(), "smithers-file-input-cli-")))
-    await mkdir(join(root, "flows", "echo"), { recursive: true })
+    await mkdir(join(root, ".smithers", "flows", "echo"), { recursive: true })
     await symlink(modules, join(root, "node_modules"), "dir")
     await writeFile(
-      join(root, "flows", "echo", "flow.ts"),
+      join(root, ".smithers", "flows", "echo", "flow.ts"),
       `
 import { Action, Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
@@ -113,7 +113,7 @@ export default Flow.make("echo", {
   )
 
   it("enforces refined input without executing it during discovery", async () => {
-    const file = join(root, "flows", "echo", "flow.ts")
+    const file = join(root, ".smithers", "flows", "echo", "flow.ts")
     const original = await readFile(file, "utf8")
     await writeFile(
       file,

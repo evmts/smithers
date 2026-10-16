@@ -1,0 +1,21 @@
+{
+  "name": "smithers-model-host",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test test/model-test.test.mjs"
+  },
+  "dependencies": {
+    "@smthrs/model-host": "workspace:*",
+    "@smthrs/rpc": "workspace:*",
+    "effect": "4.0.4",
+    "@smthrs/harness": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "26.4.1",
+    "esbuild": "0.28.2",
+    "typescript": "5.9.3"
+  }
+}

@@ -27,9 +27,9 @@ describe("layout admission IO failures are typed, read-only and retryable", () =
           const root = mkdtempSync(join(tmpdir(), "migrate-layout-io-"))
           try {
             const report = join(root, "audit")
-            const flows = join(root, "flows")
+            const flows = join(root, ".smithers", "flows")
             mkdirSync(report)
-            mkdirSync(flows)
+            mkdirSync(flows, { recursive: true })
             writeFileSync(join(report, "report.md"), "previous migration report\n")
             writeFileSync(join(flows, "keep.txt"), "operator source\n")
             const before = hashTree(root)

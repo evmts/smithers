@@ -62,12 +62,12 @@ try {
   if (push) {
     // Mandatory even with --no-test; shared by both publication paths.
     run("go", ["test", "-run", "TestMigrationGate|TestMigrationRegistry", "./packages/backend/db/product/"], false, gateEnvironment)
-    if (!existsSync(join(root, "scripts/check-sqlc-drift.sh"))) throw new Error("Required sqlc drift gate is unavailable")
-    run("bash", ["scripts/check-sqlc-drift.sh"], false, gateEnvironment)
+    if (!existsSync(join(root, "packages/backend/scripts/check-sqlc-drift.sh"))) throw new Error("Required sqlc drift gate is unavailable")
+    run("bash", ["packages/backend/scripts/check-sqlc-drift.sh"], false, gateEnvironment)
   }
-  run(process.execPath, ["scripts/check-tracked-hygiene.mjs", "--include-untracked"], true, gateEnvironment)
+  run(process.execPath, ["packages/repo-targets/contracts/check-tracked-hygiene.mjs", "--include-untracked"], true, gateEnvironment)
   if (push) {
-    const result = spawnSync("smthrs", ["lint", "//:driftCi", "//:targetIndex", "//:ci", "//scripts:trackedHygiene", "//scripts:conflictMarkers"], {
+    const result = spawnSync("smthrs", ["lint", "//:driftCi", "//:targetIndex", "//:ci", "//packages/repo-targets:trackedHygiene", "//packages/repo-targets:conflictMarkers"], {
       cwd: root, stdio: "inherit", env: gateEnvironment
     })
     if (result.error || result.status !== 0) throw new Error(`Mandatory drift gates failed (${result.error?.message ?? result.status})`)

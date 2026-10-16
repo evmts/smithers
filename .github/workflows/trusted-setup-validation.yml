@@ -6,7 +6,7 @@ on:
       - .github/actions/trusted-ci-setup/**
       - .github/actions/trusted-ci-setup-campaign/**
       - .github/workflows/trusted-setup-validation.yml
-      - scripts/ci/drift-job.test.mjs
+      - packages/repo-targets/contracts/drift-job.test.mjs
       - packages/smithers/build/targets/src/GithubCiGen.ts
       - PACKAGE.ts
   workflow_dispatch:

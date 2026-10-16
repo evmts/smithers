@@ -108,7 +108,7 @@ func TestLoadRejectsTheRetiredLibrarianHost(t *testing.T) {
 }
 
 // nativeManifest adds the Linux arm64 workspace helper exactly as
-// distribution/flow-host-manifest.mjs writes it for native bundles (#2273).
+// apps/app/scripts/flow-host-manifest.mts writes it for native bundles (#2273).
 func nativeManifest(t *testing.T) (string, map[string]rawHost) {
 	t.Helper()
 	path, hosts := bundledManifest(t)
