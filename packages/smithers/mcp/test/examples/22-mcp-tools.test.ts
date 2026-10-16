@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process"
 import { mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { main, serverName, serverProgram } from "../src/22-mcp-tools.ts"
+import { main, serverName, serverProgram } from "../../examples/22-mcp-tools.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "flows-examples-"))
 
@@ -55,7 +55,7 @@ it.live("pins what an undeclarable authority does at the cell boundary", () =>
   }), { timeout: 60_000 })
 
 it("keeps the granting commentary on the declaration the adapter actually makes", () => {
-  const source = readFileSync(new URL("../src/22-mcp-tools.ts", import.meta.url), "utf8")
+  const source = readFileSync(new URL("../../examples/22-mcp-tools.ts", import.meta.url), "utf8")
   const opened = source.indexOf("/**\n * Re-declares a source's flows")
   const commentary = source.slice(opened, source.indexOf("export const granting", opened))
 

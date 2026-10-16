@@ -9,21 +9,21 @@
  * adapter cannot infer the safety of opaque tool code. The companion
  * `22-mcp-server.ts` implements the stdio protocol without importing Smithers.
  */
-import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import { NodeServices } from "@effect/platform-node"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as Agent from "@smthrs/agent/Agent"
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import * as Budget from "@smthrs/agent/Budget"
 import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import * as Capability from "@smthrs/capability/Capability"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
-import * as FlowBinding from "@smthrs/harness/FlowBinding"
+import { durableEngine } from "@smthrs/flows/test/TestNodeRuntime"
+import type * as FlowBinding from "@smthrs/harness/FlowBinding"
 import * as McpClient from "@smthrs/mcp/McpClient"
 import * as McpFlows from "@smthrs/mcp/McpFlows"
-import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
@@ -36,7 +36,6 @@ import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { durableEngine } from "./durable-layer.ts"
 
 /** The name this session is known by. Every tool flow is scoped under it. */
 export const serverName = "fixtures"
@@ -249,7 +248,6 @@ export const main = (filename: string): Effect.Effect<Summary> =>
               ),
               // The scripted seat has no provider quota to classify, and the
               // standalone example has no approved envelope to derive a cap.
-              // eslint-disable-next-line no-restricted-syntax -- this offline example has no approved envelope
               Layer.provideMerge(Layer.mergeAll(QuotaPolicy.layerUnclassified(), Budget.layerUnbounded())),
               Layer.provideMerge(Agent.layerDefaults),
               // The completion brake judges every claim, and never falls back to the

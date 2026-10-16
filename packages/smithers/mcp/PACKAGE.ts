@@ -22,8 +22,26 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = standard
  */
 const securityReview = Smithers.SecurityReview({
   cwd,
-  include: ["src/**", "docs/**", "README.md"],
+  include: ["src/**", "docs/**", "README.md", "examples/**", "test/examples/**"],
   checks: [
+    {
+      id: "example-mcp-tool-grants",
+      title: "The MCP tools example grants only the connected server's own authority",
+      threat:
+        "A copied example grants an agent process spawn on the host, or an MCP server command built from caller text.",
+      lookFor: [
+        "An MCP tool re-declared under a host grant wider than proc:spawn:mcp/<serverName>, or an MCP server command built from payload text.",
+        "A child spawned with a shell string built from payload or argv values."
+      ],
+      paths: ["examples/22-mcp-tools.ts", "test/examples/22-mcp-tools.test.ts"]
+    },
+    {
+      id: "example-mcp-server-input",
+      title: "The example MCP server survives malformed input",
+      threat: "One malformed request line crashes the example server mid-session.",
+      lookFor: ["JSON.parse on request input with no try/catch in a line handler."],
+      paths: ["examples/22-mcp-server.ts"]
+    },
     {
       id: "child-env-allowlist",
       title: "A spawned MCP server receives only the bootstrap allowlist plus its declared env",
