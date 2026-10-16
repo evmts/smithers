@@ -53,15 +53,22 @@ import type { GatewaySeam, GatewayWorkspaceBinding } from "./gateway"
  * bounded by this loop — `controller/gateway.ts` sets no fetch deadline, and it
  * re-reads a provisioning snapshot for up to 180 s PER call. So the wait is
  * bounded by the clock as well as by the count, and whichever ends first ends
- * the wait. Past the deadline nobody is still polling and the default is told
- * exactly once, so a hung policy can delay a notification but never suppress
- * it and never deliver it twice.
+ * the wait.
+ *
+ * END TO END means the clock starts before the FIRST awaited stage and covers
+ * every stage that can hold delivery: the declaration read, the launch, and
+ * the run-summary poll. The declaration read is the one every notice crosses,
+ * declared policy or not, so leaving it outside would let a parked mirror
+ * suppress an ordinary no-policy notification rather than delay it. Past the
+ * deadline nobody is still polling, nothing continues into a new effect, and
+ * the default is told exactly once: a hung policy can delay a notification
+ * but never suppress it and never deliver it twice.
  */
 const DEFAULT_ATTEMPTS = 40
 
 const DEFAULT_POLL_MS = 250
 
-/** The end-to-end wait, launch included: ten seconds, as #4026 states. */
+/** The end-to-end wait: ten seconds from before the declaration read, as #4026 states. */
 const DEFAULT_DEADLINE_MS = 10_000
 
 /** The wait ended before the work did. */
@@ -117,7 +124,7 @@ export interface NotificationPolicyRouterOptions {
   readonly repoFor?: () => string | undefined
   readonly pollMs?: number
   readonly attempts?: number
-  /** The whole wait for one decision, launch included; ten seconds by default. */
+  /** The whole wait for one decision, declaration read included; ten seconds by default. */
   readonly deadlineMs?: number
   readonly now?: () => number
 }
@@ -226,12 +233,39 @@ export const createNotificationPolicyRouter = (
     const now = options.now ?? Date.now
     const until = now() + (options.deadlineMs ?? DEFAULT_DEADLINE_MS)
     const beyond = () => now() >= until
+    /** What is left of the end-to-end wait, for the next stage that awaits. */
+    const remaining = () => until - now()
     if (!fenced()) return notificationPolicySuperseded()
-    const declaration = await readDeclaration(request.repo)
-    if (declaration === undefined) return notificationPolicyDefault(request, "policy-unavailable")
+    /*
+     * Inside the bound, and the stage the bound starts before: a mirror that
+     * parks on the contents route must delay a notification, never suppress
+     * one. An abandoned read still finishes into `declared`, so the next
+     * notice inherits an answered read rather than asking again.
+     */
+    const declaration = await withinDeadline(readDeclaration(request.repo), remaining())
+    /*
+     * The fence is re-asked HERE, before the three refusals below return. An
+     * absent declaration is the common case, and a default told under the
+     * repository the person moved to while the read was in flight is the same
+     * cross-repository delivery the declared path already fences.
+     */
+    if (!fenced()) return notificationPolicySuperseded()
+    /*
+     * The declaration could not be read — a refused read, or one the bound
+     * ended. Either way nothing is known about what the repository declares,
+     * which is `policy-unavailable`; `policy-failed` stays the run's own
+     * reason for a decision that started and did not land.
+     */
+    if (declaration === EXPIRED || declaration === undefined) return notificationPolicyDefault(request, "policy-unavailable")
     if (declaration.kind === "ambiguous") return notificationPolicyDefault(request, "policy-ambiguous")
+    /*
+     * Rule 2, unchanged by the bound: a repository that declares nothing gets
+     * the existing default with no record at all. It is told here whether the
+     * read was quick or slow, because the read ANSWERED — "no policy" is
+     * knowledge, not a refusal, and stamping it would misreport the
+     * repository.
+     */
     if (declaration.kind === "none") return notificationPolicyDefault(request)
-    if (!fenced()) return notificationPolicySuperseded()
     const binding = options.bindingFor(request.repo)
     if ("error" in binding) return notificationPolicyDefault(request, "policy-unavailable")
     /*
@@ -241,11 +275,23 @@ export const createNotificationPolicyRouter = (
      */
     const launched = await withinDeadline(options.gateway.launch(request.repo, declaration.flowId, request, binding, {
       idempotencyKey: `notification-policy:${request.repo}:${request.event.kind}:${request.event.entryId}`,
-      stillCurrent: fenced
-    }), until - now())
+      /*
+       * The only guard the relay consults between Plan, Approval.Submit and
+       * Run, so it has to know the decision already fell back: a Plan the
+       * workspace answers late must not grant an approval and start a run for
+       * an answer nobody will believe. The deadline is part of being current.
+       *
+       * This is also what keeps the bound from needing a clock check of its
+       * own at each stage: `withinDeadline` can only end a stage it is still
+       * racing, but the relay asks this before `Plan` as well as between the
+       * three calls, so a declaration that answers just as the deadline
+       * passes starts nothing either.
+       */
+      stillCurrent: () => fenced() && !beyond()
+    }), remaining())
     if (!fenced()) return notificationPolicySuperseded()
     if (launched === EXPIRED || launched.status !== "ok") return notificationPolicyDefault(request, "policy-failed")
-    const answer = await withinDeadline(decisionOf(request.repo, launched.value.runId, binding, fenced, beyond), until - now())
+    const answer = await withinDeadline(decisionOf(request.repo, launched.value.runId, binding, fenced, beyond), remaining())
     // A late answer belongs to work this session no longer owns: it decides
     // nothing and nobody is told from it.
     if (!fenced()) return notificationPolicySuperseded()
@@ -265,6 +311,18 @@ export const createNotificationPolicyRouter = (
        * like any other, so the default audience is told with one closed
        * reason. Nothing of the throw is part of that record, and the caller
        * never has to own a rejection to keep its notifications working.
+       *
+       * This fallback deliberately does NOT re-ask the scope. It cannot
+       * revive one, because no stage between a fence and the next one throws:
+       * every stage that awaits is total — `readFactoryProjection` answers
+       * `{ error }` for a refused read, and the gateway catches its own fetch
+       * and decodes every row through `Schema.decodeUnknownOption`, so no
+       * relay answer and no transport failure leaves it as a throw. The one
+       * throwing stage a caller can supply, `bindingFor`, is synchronous and
+       * runs immediately after the fence above, so a repository or account
+       * that moved is already answered as `policy-superseded` before it is
+       * called. An origin recheck here was written, tested and ablated: with
+       * the fence above in place nothing reached it (lane 81).
        */
       return { recipients: defaults, stamp: { source: "default", reason: "policy-unavailable" }, withheld: [], quiet: false }
     }
