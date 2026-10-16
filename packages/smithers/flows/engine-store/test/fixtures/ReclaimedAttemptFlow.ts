@@ -27,6 +27,7 @@ export const Plan = Action.withCache(
     payload: { issue: Schema.String },
     success: Schema.String,
     idempotencyKey: ({ issue }: { readonly issue: string }) => `plan:${issue}`,
+    implementationVersion: "plan/v1",
     fileBoundary: { readSet: [], writeSet: [], boundaryMode: "hard" }
   }),
   { scope: "shared" }
@@ -37,6 +38,7 @@ export const Test = Action.withCache(
     payload: { plan: Schema.String },
     success: Schema.String,
     idempotencyKey: ({ plan }: { readonly plan: string }) => `test:${plan}`,
+    implementationVersion: "test/v1",
     fileBoundary: { readSet: [], writeSet: [], boundaryMode: "hard" }
   }),
   { scope: "shared" }
@@ -57,8 +59,8 @@ export interface Bodies {
 /** The flow registered on `engine`, with the bodies attached and the cache environment declared. */
 export const layer = (engine: FlowRuntime.FlowRuntime["Service"], bodies: Bodies) =>
   Interpreter.layer(Fix).pipe(
-    Layer.provideMerge(Plan.toLayer(({ issue }) => bodies.plan(issue))),
-    Layer.provideMerge(Test.toLayer(({ plan }) => bodies.test(plan))),
+    Layer.provideMerge(Plan.toLayer(({ issue }) => bodies.plan(issue), { implementationVersion: "plan/v1" })),
+    Layer.provideMerge(Test.toLayer(({ plan }) => bodies.test(plan), { implementationVersion: "test/v1" })),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(Action.layerCacheEnvironment({ layers: ["reclaimed-attempt@1"], capabilities: {} })),
     Layer.provideMerge(Layer.succeed(FlowRuntime.FlowRuntime, engine))
