@@ -22,6 +22,8 @@ The worker trusts only the scope it claimed: it parses the repository out of the
 
 An account's own repository create (`POST /api/user/repos`, read back through `GET /api/user/repos/requests/{id}`) is the person's OAuth credential, not the App's. Its scope and authorization context are compared against the job before any credential lookup. A create GitHub has already answered settles `uncertain` with the existing `readback_mismatch` reason rather than `failed`, so it is joined and read instead of posted a second time, and a generation reopens only for a refusal whose own receipt proves nothing was created. A receipt names a repository only when the created and read-back ids are both positive and equal, both full names match the admitted name under the viewer's login, and both owner ids are the viewer's own.
 
+The same durable account-write worker handles a person’s pull request review in both hosted and self-hosted compositions. Each composition that runs background jobs uses the shared job store; review writes do not run inline in an HTTP request. Repository creation remains a hosted-only door.
+
 ## Pushes from outside
 
 TODO branch publication is held while the current GitHub facts, own-push reconciliation and independent wait providers are unavailable. With an open PR, a previously observed foreign head remains held even if a later poll reports the recorded Smithers head or a PR behind main. Polling does not answer a person's wait. Both proposal preparation and the
