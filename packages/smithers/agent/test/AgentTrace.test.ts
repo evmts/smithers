@@ -18,7 +18,7 @@ import * as CanonicalJson from "@smthrs/model/CanonicalJson"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
-import { Effect, Option, Result, type Schema } from "effect"
+import { Effect, Option, Result, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Frame from "../harness/src/internal/frame.ts"
 import * as AgentSession from "../src/AgentSession.ts"
@@ -129,21 +129,23 @@ describe("capacity event trace", () => {
 
 describe("durable call identity", () => {
   it("preserves declared verification without inventing it for legacy calls", () => {
+    const record = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Unknown))
     for (const declared of [undefined, false, true]) {
       const event = new AgentEvent.CellCallStarted({
         eventType: "flows.harness.cell-call-started.v1",
         call,
         ...(declared === undefined ? {} : { declared })
       })
-      expect((AgentSession.trace(event)?.payload as Record<string, unknown>).declared).toBe(declared)
+      const payload = record(AgentSession.trace(event)!.payload)
+      expect(payload.declared).toBe(declared)
       const legacy = AgentSession.trace(
         new AgentEvent.CellCallStarted({
           eventType: "flows.harness.cell-call-started.v1",
           call
         })
       )!
-      expect(AgentSession.traceIdentity(4, 2, cell.digest, legacy.eventType, AgentSession.trace(event)!.payload))
-        .toBe(AgentSession.traceIdentity(4, 2, cell.digest, legacy.eventType, legacy.payload))
+      expect(AgentSession.traceIdentity(4, 2, cell.digest, legacy.eventType, payload))
+        .toBe(AgentSession.traceIdentity(4, 2, cell.digest, legacy.eventType, record(legacy.payload)))
     }
   })
 
