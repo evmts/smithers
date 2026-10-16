@@ -395,7 +395,7 @@ const machinedWire = Smithers.Shell.Test({
 // on PATH (`postgres` in the go-backend job, pkgs.postgresql_18 on the Cloud
 // machine); without them the suite fails instead of skipping them.
 const backendGo = Smithers.Shell.Test({
-  shell: rehearsalNativeEnv + "export PATH=\"$PWD/.backend-sqlc:$PATH\"; if [ -z \"${SMITHERS_POSTGRES_TEST_BIN:-}\" ]; then pg_ctl_path=$(command -v pg_ctl) || { echo 'PostgreSQL 18 programs (pg_ctl, initdb, pg_dump, psql) must be on PATH for the backend backup and restore tests' >&2; exit 1; }; export SMITHERS_POSTGRES_TEST_BIN=\"${pg_ctl_path%/*}\"; fi; export SMITHERS_FFI_LIBRARY_PATH=\"$PWD/.native-ffi/target/debug/libsmithers_ffi.so\"; export SMITHERS_WIKI_TEST_FFI=\"$SMITHERS_FFI_LIBRARY_PATH\"; export GOMODCACHE=\"$PWD/.backend-go-modcache\"; bash scripts/check-sqlc-drift.sh || exit $?; go test -run '^$' ./packages/backend/db/product || exit $?; python3 -B -m unittest scripts/test_check_go_boundaries.py packages/backend/db/product/test_adopt_unit.py || exit $?; bash scripts/check-public-backend-boundary.sh || exit $?; sh scripts/test-backend-consumer.sh || exit $?; unformatted=$(gofmt -l packages/backend apps/backend distribution docs/api) || exit $?; test -z \"$unformatted\" || { printf 'gofmt -w needed:\\n%s\\n' \"$unformatted\"; exit 1; }; go build ./packages/backend/... ./apps/backend/... ./distribution/... ./docs/api/... || exit $?; go vet ./packages/backend/... ./apps/backend/... ./distribution/... ./docs/api/... || exit $?; log=$(mktemp) || exit $?; packages=$(go list ./packages/backend/... ./apps/backend/... ./distribution/... ./docs/api/...) || exit $?; packages=$(printf '%s\\n' \"$packages\" | grep -v '/internal/compose$') || exit $?; go test -p 4 -count=1 -timeout 40m $packages >\"$log\" 2>&1; status=$?; node scripts/backend-compose-tests.mjs >>\"$log\" 2>&1 || status=1; cat \"$log\"; if [ $status -ne 0 ]; then printf 'go test failures:\\n' >&2; grep -E -A30 '^[[:space:]]*--- FAIL|^panic:|^FAIL' \"$log\" | head -n 400 >&2; printf 'go test summary:\\n' >&2; grep -E '^(ok|FAIL)[[:space:]]|^[[:space:]]*--- FAIL|^panic: test timed out|^[[:space:]]+running tests:|^[[:space:]]+Test[^[:space:]]+ \([0-9]' \"$log\" >&2; fi; rm -f \"$log\"; exit $status",
+  shell: rehearsalNativeEnv + "export PATH=\"$PWD/.backend-sqlc:$PATH\"; if [ -z \"${SMITHERS_POSTGRES_TEST_BIN:-}\" ]; then pg_ctl_path=$(command -v pg_ctl) || { echo 'PostgreSQL 18 programs (pg_ctl, initdb, pg_dump, psql) must be on PATH for the backend backup and restore tests' >&2; exit 1; }; export SMITHERS_POSTGRES_TEST_BIN=\"${pg_ctl_path%/*}\"; fi; export SMITHERS_FFI_LIBRARY_PATH=\"$PWD/.native-ffi/target/debug/libsmithers_ffi.so\"; export SMITHERS_WIKI_TEST_FFI=\"$SMITHERS_FFI_LIBRARY_PATH\"; export GOMODCACHE=\"$PWD/.backend-go-modcache\"; bash scripts/check-sqlc-drift.sh || exit $?; go test -run '^$' ./packages/backend/db/product || exit $?; python3 -B -m unittest scripts/test_check_go_boundaries.py packages/backend/db/product/test_adopt_unit.py || exit $?; bash scripts/check-public-backend-boundary.sh || exit $?; sh scripts/test-backend-consumer.sh || exit $?; unformatted=$(gofmt -l packages/backend apps/backend docs/api) || exit $?; test -z \"$unformatted\" || { printf 'gofmt -w needed:\\n%s\\n' \"$unformatted\"; exit 1; }; go build ./packages/backend/... ./apps/backend/... ./docs/api/... || exit $?; go vet ./packages/backend/... ./apps/backend/... ./docs/api/... || exit $?; log=$(mktemp) || exit $?; packages=$(go list ./packages/backend/... ./apps/backend/... ./docs/api/...) || exit $?; packages=$(printf '%s\\n' \"$packages\" | grep -v '/internal/compose$') || exit $?; go test -p 4 -count=1 -timeout 40m $packages >\"$log\" 2>&1; status=$?; node scripts/backend-compose-tests.mjs >>\"$log\" 2>&1 || status=1; cat \"$log\"; if [ $status -ne 0 ]; then printf 'go test failures:\\n' >&2; grep -E -A30 '^[[:space:]]*--- FAIL|^panic:|^FAIL' \"$log\" | head -n 400 >&2; printf 'go test summary:\\n' >&2; grep -E '^(ok|FAIL)[[:space:]]|^[[:space:]]*--- FAIL|^panic: test timed out|^[[:space:]]+running tests:|^[[:space:]]+Test[^[:space:]]+ \([0-9]' \"$log\" >&2; fi; rm -f \"$log\"; exit $status",
   env: {
     GOFLAGS: "-buildvcs=false -mod=readonly",
     GOMAXPROCS: "2",
@@ -1197,8 +1197,7 @@ export const packageDefaults = Smithers.PackageDefaults({
 })
 
 // Security review of the files the root owns and no nested PACKAGE.ts does:
-// the GitHub workflows, the self-host distribution image, the native FFI
-// crate, install-time hooks and patches, and the public
+// the GitHub workflows, the native FFI crate, install-time hooks and patches, and the public
 // `.smithers` projections. `packages/smithers/flows/jj-wasm`, `scripts`, `flows`, `examples`,
 // `apps`, `evals`, and `packages` have their own reviewers.
 const securityReview = Smithers.SecurityReview({
@@ -1215,7 +1214,6 @@ const securityReview = Smithers.SecurityReview({
     ".smithers/*.ts",
     ".smithers/*.json",
     ...flowEntries.filter((input) => /\/flow\.(ts|mdx)$/.test(input.path)).map((input) => input.path),
-    "distribution/*",
     "packages/smithers-ffi/Cargo.toml",
     "packages/smithers-ffi/src/*.rs"
   ],
@@ -1256,20 +1254,6 @@ const securityReview = Smithers.SecurityReview({
         "npm-dist-tag.yml moving a tag of a name outside @smthrs/, to a version it has not confirmed is on npm, or moving a 0.x `latest` without replaceZeroLatest."
       ],
       paths: [".github/workflows/release.yml", ".github/workflows/release-auth.yml", ".github/workflows/npm-dist-tag.yml"]
-    },
-    {
-      id: "distribution-image-hardening",
-      title: "The self-host image runs unprivileged and verifies what it downloads",
-      threat:
-        "A network attacker or a crafted backup gives code execution or file overwrite inside a self-hoster's Smithers container and its PostgreSQL data.",
-      lookFor: [
-        "A Dockerfile download (curl, cargo install --git, go mod download) without a pinned digest, SHA, or --locked, or a final stage that does not end with `USER smithers`.",
-        "restore.sh extracting files.tar where a symlink entry followed by a path through it can write outside SMITHERS_DATA_ROOT, since verify_backup only rejects absolute and `..` names.",
-        "SMITHERS_DATABASE_URL, which carries the database password, passed on a command line (pg_dump, psql --dbname) or printed in a `die` message.",
-        "A FROM base image (rust, debian, node, golang, postgres, oven/bun) pinned by tag rather than by @sha256 digest.",
-        "SMITHERS_AUTH_MODE, SMITHERS_LIB, or SMITHERS_RELEASE_FILE taken from the environment in a way that disables selfhost auth or sources an attacker-chosen script."
-      ],
-      paths: ["distribution/*"]
     },
     {
       id: "ffi-path-confinement",

@@ -4,15 +4,28 @@ import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path
 import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises"
 import { pathToFileURL } from "node:url"
 
-const sha256 = async (path) =>
+/** One Flow host executable in a native bundle, by its path relative to the manifest. */
+export interface FlowHost {
+  readonly executable: string
+  readonly sha256: string
+  readonly flows: ReadonlyArray<string>
+}
+
+/** `flow-hosts.json`, which packages/backend/flowmanifest reads (#2273). */
+export interface FlowHostManifest {
+  readonly version: 1
+  readonly hosts: { readonly coding: FlowHost; readonly jjExport?: FlowHost }
+}
+
+const sha256 = async (path: string): Promise<string> =>
   createHash("sha256").update(await readFile(path)).digest("hex")
 
-const inside = (root, path) => {
+const inside = (root: string, path: string): boolean => {
   const child = relative(root, path)
   return child !== "" && child !== ".." && !child.startsWith(`..${sep}`) && !isAbsolute(child)
 }
 
-const host = async (root, path, flows) => {
+const host = async (root: string, path: string, flows: ReadonlyArray<string>): Promise<FlowHost> => {
   const absolute = resolve(path)
   if (!inside(root, absolute)) throw new Error(`Flow host escapes its bundle: ${absolute}`)
   const info = await stat(absolute)
@@ -25,11 +38,13 @@ const host = async (root, path, flows) => {
   }
 }
 
-export const writeFlowHostManifest = async ({ output, coding, jjExport }) => {
+export const writeFlowHostManifest = async (
+  { output, coding, jjExport }: { readonly output: string; readonly coding: string; readonly jjExport?: string | undefined }
+): Promise<FlowHostManifest> => {
   const manifestPath = resolve(output)
   const root = dirname(manifestPath)
   await mkdir(root, { recursive: true })
-  const hosts = {
+  const hosts: FlowHostManifest["hosts"] = {
     coding: await host(root, coding, ["coding/dispatch"]),
     ...(jjExport === undefined ? {} : {
       jjExport: {
@@ -53,7 +68,7 @@ export const writeFlowHostManifest = async ({ output, coding, jjExport }) => {
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const [output, coding, jjExport] = process.argv.slice(2)
   if (output === undefined || coding === undefined) {
-    throw new Error("usage: flow-host-manifest.mjs OUTPUT CODING_HOST [LINUX_ARM64_JJ_EXPORT]")
+    throw new Error("usage: flow-host-manifest.mts OUTPUT CODING_HOST [LINUX_ARM64_JJ_EXPORT]")
   }
   await writeFlowHostManifest({ output, coding, jjExport })
 }

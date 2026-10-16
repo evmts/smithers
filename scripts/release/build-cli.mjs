@@ -3,9 +3,9 @@ import { spawnSync } from "node:child_process"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { buildRelease } from "../scripts/build-release.mjs"
-import { readWorkspaceManifests, stagePackage, workspaceDependencies } from "../scripts/pack-release.mjs"
-import { repoRoot } from "../scripts/workspace-packages.mjs"
+import { buildRelease } from "../build-release.mjs"
+import { readWorkspaceManifests, stagePackage, workspaceDependencies } from "../pack-release.mjs"
+import { repoRoot } from "../workspace-packages.mjs"
 import { installCLI } from "./install-cli.mjs"
 
 const destination = resolve(process.argv[2] ?? "/out/cli")

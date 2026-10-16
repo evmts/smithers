@@ -202,7 +202,7 @@ export const startLocalOwn = async (rootDir: string, revision: string, outputDir
     await run("build rehearsal daemon", ["cargo", "build", "--locked", "-p", "smithers-machined", "--example", "rehearsal_daemon", "--target-dir", daemonTarget])
     await run("build coding host", ["node", "--input-type=module", "-e", `import { bundle } from "./flows/coding/build.mjs"; await bundle("flows/test/rehearsal-host.ts", ${JSON.stringify(join(hostDir, "smithers-coding-host"))})`])
     await run("build model host", ["node", "apps/model-host/build.mjs", join(hostDir, "smithers-model-host")])
-    await run("write Flow host manifest", ["node", "distribution/flow-host-manifest.mjs", manifest, join(hostDir, "smithers-coding-host")])
+    await run("write Flow host manifest", ["node", "apps/app/scripts/flow-host-manifest.mts", manifest, join(hostDir, "smithers-coding-host")])
 
     // GitHub and every model provider are the install's loopback fakes, as in the no-GitHub walk.
     const owner = `matrix${randomUUID().replaceAll("-", "").slice(0, 12)}`

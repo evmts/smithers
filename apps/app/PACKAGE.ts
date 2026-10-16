@@ -18,7 +18,6 @@ import { Package as componentPackage } from "../../packages/smithers/ui/PACKAGE.
 
 const cwd = "apps/app"
 
-const distributionInputs = Smithers.Filegroup({ cwd: "distribution", srcs: [Smithers.glob("**/*")] })
 const crateInputs = Smithers.Filegroup({
   cwd: "packages/smithers/flows/jj-wasm",
   srcs: [Smithers.glob("**/*"), flowsJjPackage.nativeSources, machinedPackage.buildInputs, machinedPackage.ffiInputs]
@@ -35,7 +34,7 @@ const serverBundle = Smithers.Shell.Build({
   cache: false,
   shell: 'SMITHERS_BUILD_SHA="$(git rev-parse HEAD)" bun apps/app/scripts/build-native.ts',
   data: [Smithers.glob("//apps/app/scripts/**/*"), Smithers.glob("//apps/app/src/**/*"),
-    Smithers.file("//packages/smithers/src/internal/backend/HostService.ts"), distributionInputs, crateInputs,
+    Smithers.file("//packages/smithers/src/internal/backend/HostService.ts"), Smithers.glob("//apps/app/licenses/*"), crateInputs,
     backendPackage.buildInputs, Smithers.file("//scripts/build-backend.sh"),
     Smithers.file("//package.json"), Smithers.file("//pnpm-lock.yaml"), Smithers.file("//rust-toolchain.toml")],
   outDirs: ["//apps/app/.native", "//apps/app/.native-archive"],
@@ -636,5 +635,5 @@ const securityReview = Smithers.SecurityReview({
 })
 
 export const Package = Smithers.Package({
-  targets: { distributionInputs, crateInputs, proofProductInputs, proofMockInputs, docsInputs, serverBundle, solidCodegenInputs, check, unitTests, conformance, browserE2e, browserE2eShard1, browserE2eShard2, browserE2eShard3, installE2e, viewStories, journeyJ1Activation, journeyJ1Release, journeyKeyboard, journeyFreshRepository, journeyWikiGeneratedRefresh, journeyWikiCoedit, journeySetup, journeyWikiObsidian, journeyTodoFromIssue, journeyTodoNeedsYou, journeyTodoEvidence, journeyTodoMerge, journeyAskRepository, journeyTodoStackActions, journeyGitHubMerge, journeyGitHubMergeContinuation, journeyGitHubPRShape, journeyFlowSourceRun, journeyWikiDecisionFollow, journeyBranchPresence, journeyDuplicateLaunch, journeyFileCoedit, journeyHome, journeyTodoMergeOrder, journeyTodoPlacement, journeyTodoSteer, journeyFlowActivation, journeyLearning, journeyAgentTerminal, journeyTerminalSignin, journeyFileGone, journeyGitHubSyncHealth, journeyForkAddToStack, journeySshBranch, journeyInstallOrigins, journeyFileIntelligence, journeyForkDropInstall, journeyGitHubForeignPush, journeyGitHubMainMovedRebase, proofRecord, proofPage, webSources, ...securityReview }
+  targets: { crateInputs, proofProductInputs, proofMockInputs, docsInputs, serverBundle, solidCodegenInputs, check, unitTests, conformance, browserE2e, browserE2eShard1, browserE2eShard2, browserE2eShard3, installE2e, viewStories, journeyJ1Activation, journeyJ1Release, journeyKeyboard, journeyFreshRepository, journeyWikiGeneratedRefresh, journeyWikiCoedit, journeySetup, journeyWikiObsidian, journeyTodoFromIssue, journeyTodoNeedsYou, journeyTodoEvidence, journeyTodoMerge, journeyAskRepository, journeyTodoStackActions, journeyGitHubMerge, journeyGitHubMergeContinuation, journeyGitHubPRShape, journeyFlowSourceRun, journeyWikiDecisionFollow, journeyBranchPresence, journeyDuplicateLaunch, journeyFileCoedit, journeyHome, journeyTodoMergeOrder, journeyTodoPlacement, journeyTodoSteer, journeyFlowActivation, journeyLearning, journeyAgentTerminal, journeyTerminalSignin, journeyFileGone, journeyGitHubSyncHealth, journeyForkAddToStack, journeySshBranch, journeyInstallOrigins, journeyFileIntelligence, journeyForkDropInstall, journeyGitHubForeignPush, journeyGitHubMainMovedRebase, proofRecord, proofPage, webSources, ...securityReview }
 })

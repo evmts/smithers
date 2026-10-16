@@ -625,7 +625,7 @@ jobs:
         run: bash .github/scripts/install-postgres-18.sh
       - name: Real PostgreSQL backup and restore
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
-        run: go test -p 1 ./distribution -run 'TestRealBackupRestorePostgreSQL|TestRealFailedUpgradeRecoveryPostgreSQL|TestFailedUpgradeReportsRecovery|TestIncompleteUpgrade' -count=1 -v
+        run: go test -p 1 ./packages/backend/native -run 'TestRealBackupRestorePostgreSQL|TestRealFailedUpgradeRecoveryPostgreSQL|TestFailedUpgradeReportsRecovery|TestIncompleteUpgrade' -count=1 -v
         env:
           SMITHERS_POSTGRES_TEST_BIN: /usr/lib/postgresql/18/bin
           SMITHERS_POSTGRES_TEST_MAJOR: "18"

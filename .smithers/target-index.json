@@ -27416,7 +27416,6 @@
           "flows/todo/flow.ts",
           "flows/wiki/flow.ts",
           "flows/wrapped/flow.ts",
-          "distribution/*",
           "crates/smithers-ffi/Cargo.toml",
           "crates/smithers-ffi/src/*.rs"
         ]
@@ -27676,11 +27675,6 @@
       {
         "kind": "file",
         "path": "flows/wrapped/flow.ts"
-      },
-      {
-        "kind": "glob",
-        "pattern": "distribution/*",
-        "exclude": []
       },
       {
         "kind": "file",
@@ -27777,7 +27771,6 @@
           "flows/todo/flow.ts",
           "flows/wiki/flow.ts",
           "flows/wrapped/flow.ts",
-          "distribution/*",
           "crates/smithers-ffi/Cargo.toml",
           "crates/smithers-ffi/src/*.rs"
         ]
@@ -28037,11 +28030,6 @@
       {
         "kind": "file",
         "path": "flows/wrapped/flow.ts"
-      },
-      {
-        "kind": "glob",
-        "pattern": "distribution/*",
-        "exclude": []
       },
       {
         "kind": "file",
@@ -28714,26 +28702,6 @@
       "//crates/flows-jj:nativeSources",
       "//crates/smithers-machined:buildInputs"
     ],
-    "source": {
-      "file": "apps/app/PACKAGE.ts"
-    }
-  },
-  {
-    "label": "//apps/app:distributionInputs",
-    "package": "apps/app",
-    "name": "distributionInputs",
-    "rule": "Filegroup",
-    "kinds": [],
-    "cacheable": true,
-    "inputs": [
-      {
-        "kind": "glob",
-        "pattern": "distribution/**/*",
-        "exclude": []
-      }
-    ],
-    "outputs": [],
-    "dependencies": [],
     "source": {
       "file": "apps/app/PACKAGE.ts"
     }
@@ -30711,6 +30679,11 @@
         "path": "packages/smithers/src/internal/backend/HostService.ts"
       },
       {
+        "kind": "glob",
+        "pattern": "apps/app/licenses/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "scripts/build-backend.sh"
       },
@@ -30730,7 +30703,6 @@
     "outputs": [],
     "dependencies": [
       "//apps/app:crateInputs",
-      "//apps/app:distributionInputs",
       "//packages/backend:buildInputs"
     ],
     "source": {
@@ -69996,7 +69968,7 @@
       },
       {
         "kind": "file",
-        "path": "distribution/install-cli.test.mjs"
+        "path": "scripts/release/install-cli.test.mjs"
       },
       {
         "kind": "glob",
@@ -70015,15 +69987,15 @@
       },
       {
         "kind": "file",
-        "path": "distribution/build-cli.mjs"
+        "path": "scripts/release/build-cli.mjs"
       },
       {
         "kind": "file",
-        "path": "distribution/install-cli.mjs"
+        "path": "scripts/release/install-cli.mjs"
       },
       {
         "kind": "file",
-        "path": "distribution/install-cli.test.mjs"
+        "path": "scripts/release/install-cli.test.mjs"
       },
       {
         "kind": "file",

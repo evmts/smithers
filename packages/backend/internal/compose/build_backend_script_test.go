@@ -1,4 +1,4 @@
-package distribution_test
+package compose
 
 import (
 	"os"
@@ -10,13 +10,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func executable(t *testing.T, path, body string) {
+// fakeExecutable writes a shell script at path that runs body.
+func fakeExecutable(t *testing.T, path, body string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte("#!/bin/sh\nset -eu\n"+body+"\n"), 0755); err != nil {
 		t.Fatal(err)
 	}
 }
 
+// The release build stamps the backend with the commit and the CLI package's
+// version, through the ldflags that set BuildSHA and BuildVersion.
 func TestBackendReleaseBuildStampsCLIVersion(t *testing.T) {
 	root := t.TempDir()
 	manifest := filepath.Join(root, "packages", "smithers", "package.json")
@@ -24,9 +27,9 @@ func TestBackendReleaseBuildStampsCLIVersion(t *testing.T) {
 	require.NoError(t, os.WriteFile(manifest, []byte("{\n  \"name\": \"@smthrs/cli\",\n  \"version\": \"2.3.4-rc.5\"\n}\n"), 0644))
 	bin := filepath.Join(root, "bin")
 	require.NoError(t, os.Mkdir(bin, 0755))
-	executable(t, filepath.Join(bin, "go"), `printf '%s\n' "$@" > "$GO_ARGS_FILE"`)
+	fakeExecutable(t, filepath.Join(bin, "go"), `printf '%s\n' "$@" > "$GO_ARGS_FILE"`)
 	argsFile := filepath.Join(root, "go-args")
-	script, err := filepath.Abs("../scripts/build-backend.sh")
+	script, err := filepath.Abs("../../../../scripts/build-backend.sh")
 	require.NoError(t, err)
 	cmd := exec.Command("sh", script, filepath.Join(root, "backend"), strings.Repeat("a", 40))
 	cmd.Dir = root
@@ -40,5 +43,4 @@ func TestBackendReleaseBuildStampsCLIVersion(t *testing.T) {
 		"-ldflags=-s -w -X github.com/smithersai/smithers/packages/backend/internal/compose.BuildSHA=" + strings.Repeat("a", 40) + " -X github.com/smithersai/smithers/packages/backend/internal/compose.BuildVersion=2.3.4-rc.5",
 		"-o", filepath.Join(root, "backend"), "./apps/backend",
 	}, strings.Split(strings.TrimSpace(string(args)), "\n"))
-
 }
