@@ -28,12 +28,14 @@ const secretControl = (operation: SecretOperation, definition: CardActionDefinit
   ...(definition.resolve_input ? { resolve_input: input => secretInput(operation, definition.resolve_input!(input) ?? {}) } : {})
 })
 
-export const SecretsCardBody = ({ card, dispatch, role = "member", access = "ready", View = SecretsView, confirm = message => window.confirm(message) }: {
+export const SecretsCardBody = ({ card, dispatch, role = "member", access = "ready", listed = true, View = SecretsView, confirm = message => window.confirm(message) }: {
   readonly card: StoredSecrets
   readonly dispatch: CardCommandDispatch
   readonly role?: "owner" | "maintainer" | "member"
   /** What is known about this repository's authority. Only "ready" may offer a write. */
   readonly access?: "ready" | "loading" | "unreadable"
+  /** False when the metadata read failed: the card lists nothing because it read nothing. */
+  readonly listed?: boolean
   readonly View?: ComponentType<SecretsViewProps>
   readonly confirm?: (message: string) => boolean
 }) => {
@@ -67,13 +69,15 @@ export const SecretsCardBody = ({ card, dispatch, role = "member", access = "rea
     return dispatch(tag, input)
   }, definitions)
   /*
-   * An empty card has to say which empty it is. A list nobody may add to, an
-   * authority still being read and an authority that could not be read are
-   * three different answers, and a heading over nothing is none of them.
+   * An empty card has to say which empty it is. An authority still being
+   * read, an authority that could not be read, a list that could not be read
+   * and a list nobody may add to are four different answers, and a heading
+   * over nothing is none of them.
    */
   const note = access === "loading" ? "Checking access\u2026"
     : access === "unreadable" ? "Access unknown."
-    : definitions.length === 0 && card.payload.secrets.length === 0 ? "No secrets; only a maintainer can add one."
+    : !listed ? "Secrets couldn't be read."
+    : definitions.length === 0 && card.payload.secrets.length === 0 ? "No secrets; read only."
     : undefined
   return <>
     <View model={{ secrets: card.payload.secrets.map(secret => ({ name: secret.name,
@@ -91,13 +95,6 @@ const SecretsBody = ({ card }: { card: StoredSecrets }) => {
   const providers = controller.secretsProviders
   const topic = useTopic(install && secretsReadAvailable(providers) ? "secrets" : undefined, providers?.live ?? controller.live)
   const parsed = (install ? providers?.decoder : SecretsCardSchema)?.safeParse(topic?.data)
-  if (install && !secretsReadAvailable(providers)) return null
-  const unavailable = install && !secretsWriteAvailable(providers)
-  const projected = topic?.error || (topic?.data !== undefined && !parsed?.success) ? { ...card, payload: { ...card.payload, secrets: [] } }
-    : parsed?.success ? { ...card, payload: { ...card.payload, secrets: parsed.data.secrets.map(secret => ({
-      name: secret.name, mainOnly: secret.scope === "main_only", hosts: secret.hosts ?? [], matchHeaders: [], updatedAt: null,
-      ...(secret.path ? { path: secret.path } : {})
-    })) } } : card
   /*
    * Hosted secrets: the repository's own authority, not the seeded roster.
    * `membersRole` still answers off a hosted repository, where the seeded
@@ -110,21 +107,31 @@ const SecretsBody = ({ card }: { card: StoredSecrets }) => {
     useCallback((notify: () => void) => {
       if (authority === undefined) return () => {}
       const stop = authority.subscribe(notify)
-      authority.refresh(repo)
+      authority.ensure(repo)
       return stop
     }, [authority, repo]),
     () => authority?.state(repo) ?? UNSCOPED,
     () => authority?.state(repo) ?? UNSCOPED
   )
+  /* Every hook is held above this line: the install's secrets provider arrives after its catalog does. */
+  if (install && !secretsReadAvailable(providers)) return null
+  const unavailable = install && !secretsWriteAvailable(providers)
+  /* The read failed, so the card holds no list — which is not the same as a repository holding no secrets. */
+  const unread = topic?.error !== undefined || (topic?.data !== undefined && !parsed?.success)
+  const projected = unread ? { ...card, payload: { ...card.payload, secrets: [] } }
+    : parsed?.success ? { ...card, payload: { ...card.payload, secrets: parsed.data.secrets.map(secret => ({
+      name: secret.name, mainOnly: secret.scope === "main_only", hosts: secret.hosts ?? [], matchHeaders: [], updatedAt: null,
+      ...(secret.path ? { path: secret.path } : {})
+    })) } } : card
   const access = authority === undefined || scoped.phase === "ready" || scoped.phase === "refused" || scoped.phase === "unscoped"
     ? "ready" as const : scoped.phase === "loading" ? "loading" as const : "unreadable" as const
   const role = install ? providers?.authority?.() ?? "member"
     : authority !== undefined ? (scoped.phase === "ready" ? scoped.role : "member")
     : controller.membersRole()
   return <SecretsCardBody card={projected} View={install ? providers?.View : SecretsView} role={unavailable ? "member" : role}
-    access={access} dispatch={(name, input) => {
-    /* A re-read of the card is a re-read of who the person is on it. */
-    if (authority !== undefined && name === "secrets" && (input as { operation?: string } | undefined)?.operation === undefined) authority.refresh(repo)
+    access={access} listed={!unread} dispatch={(name, input) => {
+    /* Re-listing the card also asks for an authority nobody could read; a settled one stands. */
+    if (authority !== undefined && name === "secrets" && (input as { operation?: string } | undefined)?.operation === undefined) authority.ensure(repo)
     const payload: Record<string, unknown> = { ...(input ?? {}), repo: card.payload.repo || undefined }
     const gesture = name === "secrets" && payload.operation === "set" ? writeOnlyGesture(name, { value: String(payload.value ?? "") }) : undefined
     Object.assign(payload, secretsBinding(name, payload))

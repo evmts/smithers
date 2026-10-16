@@ -42,7 +42,7 @@ test("an answer with no permission is unreadable, not an empty grant", async () 
 test("a refusal settles with no authority and no retry; an outage asks again", async () => {
   const refused = seam(() => new Response("", { status: 403 }))
   expect(await refused.authority.read("ada/site")).toEqual({ phase: "refused", repo: "ada/site" })
-  refused.authority.refresh("ada/site")
+  refused.authority.ensure("ada/site")
   expect(refused.urls).toHaveLength(1)
 
   let status = 503
@@ -50,9 +50,32 @@ test("a refusal settles with no authority and no retry; an outage asks again", a
   const first = await broken.authority.read("ada/site")
   expect(first.phase).toBe("unreadable")
   status = 200
-  broken.authority.refresh("ada/site")
+  broken.authority.ensure("ada/site")
   await Promise.resolve()
   expect(broken.urls).toHaveLength(2)
+})
+
+test("a failed read is never the answer to the next ask", async () => {
+  let status = 503
+  const { authority, urls } = seam(() => status === 200 ? Response.json({ permission: "owner" }) : new Response("", { status }))
+  expect((await authority.read("ada/site")).phase).toBe("unreadable")
+  status = 200
+  // The second ask reads again instead of repeating the outage as a verdict.
+  expect(await authority.read("ada/site")).toEqual({ phase: "ready", repo: "ada/site", permission: "owner", role: "owner" })
+  expect(urls).toHaveLength(2)
+})
+
+test("ensure is render-safe: a settled answer is never read twice", async () => {
+  for (const answer of [Response.json({ permission: "owner" }), new Response("", { status: 404 })]) {
+    const { authority, urls } = seam(() => answer.clone())
+    authority.ensure("ada/site")
+    authority.ensure("ada/site")
+    expect(urls).toHaveLength(1)
+    await authority.read("ada/site")
+    for (let render = 0; render < 5; render += 1) authority.ensure("ada/site")
+    await Promise.resolve()
+    expect(urls).toHaveLength(1)
+  }
 })
 
 test("a thrown request is unreadable, never a role", async () => {
@@ -89,7 +112,7 @@ test("a changed identity retires the answer the previous one earned", async () =
 test("a guest never wakes a repository authority read", async () => {
   const { authority, urls } = seam(() => Response.json({ permission: "owner" }), null)
   expect(await authority.read("ada/site")).toEqual({ phase: "unscoped" })
-  authority.refresh("ada/site")
+  authority.ensure("ada/site")
   expect(urls).toEqual([])
 })
 

@@ -48,16 +48,34 @@ export type RepositoryAuthority =
 
 const UNSCOPED: RepositoryAuthority = { phase: "unscoped" }
 
+/*
+ * The two answers that stand: the platform said what this identity reaches,
+ * or said it reaches nothing. "loading" is not one yet, and "unreadable" is
+ * not one at all — nobody read it, so the next ask reads again rather than
+ * repeating a failure as though it were a verdict.
+ */
+const settled = (answer: RepositoryAuthority | undefined): answer is RepositoryAuthority =>
+  answer?.phase === "ready" || answer?.phase === "refused"
+
 export interface RepositoryAuthoritySeam {
   readonly subscribe: (listener: () => void) => () => void
   /** Changes whenever any answer, failure or account change replaced a state. */
   readonly version: () => number
   /** This identity's authority on `repo`, without asking for it. */
   readonly state: (repo: string | undefined) => RepositoryAuthority
-  /** Read `repo`'s authority once; a read already in flight is joined. */
+  /**
+   * This identity's authority on `repo`, reading it unless a settled one is
+   * in hand. A read already in flight is joined; a failed read is not an
+   * answer, so the next ask tries again.
+   */
   readonly read: (repo: string | undefined) => Promise<RepositoryAuthority>
-  /** Read `repo`'s authority again, discarding what an earlier read answered. */
-  readonly refresh: (repo: string | undefined) => void
+  /**
+   * The same read, without waiting for it — what a render may call, because
+   * a settled answer makes it a no-op and a running one is joined, so it
+   * cannot loop. It is not a re-read: a settled `ready` or `refused` answer
+   * stands until this identity changes.
+   */
+  readonly ensure: (repo: string | undefined) => void
   /** Retire every answer the signed-in identity changed; readers hear it. */
   readonly identityChanged: () => void
   readonly dispose: () => void
@@ -139,29 +157,21 @@ export const createRepositoryAuthoritySeam = (ctx: SeamContext, options: { reado
     changed()
     return flight
   }
+  const read: RepositoryAuthoritySeam["read"] = async repo => {
+    scoped()
+    const named = target(repo)
+    if (named === undefined) return UNSCOPED
+    const known = answers.get(key(named))
+    if (settled(known)) return known
+    return start(named)
+  }
   return {
     subscribe: listener => { listeners.add(listener); return () => { listeners.delete(listener) } },
     version: () => version,
     state,
-    read: async repo => {
-      scoped()
-      const named = target(repo)
-      if (named === undefined) return UNSCOPED
-      const known = answers.get(key(named))
-      if (known !== undefined && known.phase !== "loading") return known
-      return start(named)
-    },
+    read,
     identityChanged: () => { if (!scoped()) changed() },
-    refresh: repo => {
-      scoped()
-      const named = target(repo)
-      if (named === undefined) return
-      const at = key(named)
-      const settled = answers.get(at)?.phase
-      if (flights.has(at) || settled === "ready" || settled === "refused") return
-      answers.delete(at)
-      void start(named)
-    },
+    ensure: repo => { void read(repo) },
     dispose: () => { listeners.clear(); answers.clear(); flights.clear() }
   }
 }
