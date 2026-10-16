@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/smithersai/smithers/packages/backend/internal/cleanup"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/stretchr/testify/require"
@@ -459,4 +460,192 @@ func TestPermissionPollRestartProjectsPersistedHealthPostgres(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, streams[0].LastSuccessAt)
 	require.True(t, streams[0].Background)
+}
+
+func TestPermissionPollRetriesTransientFailureBeforeHourlyDeadlinePostgres(t *testing.T) {
+	var calls atomic.Int32
+	f := newPermissionPollFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			w.WriteHeader(500)
+			return
+		}
+		fmt.Fprint(w, `{"user":{"id":77},"permission":"read"}`)
+	})
+	require.Error(t, f.m.PollPermissions(t.Context()))
+	f.assertRoster(t, false, 1)
+	f.clock.Add(1)
+	require.NoError(t, f.m.PollPermissions(t.Context()))
+	require.EqualValues(t, 1, calls.Load(), "failure retries must back off")
+	f.clock.Add(59)
+	require.NoError(t, f.m.PollPermissions(t.Context()))
+	require.EqualValues(t, 2, calls.Load(), "retry must precede hourly deadline")
+	f.assertRoster(t, true, 0)
+	f.clock.Add(1)
+	require.NoError(t, f.m.PollPermissions(t.Context()))
+	require.EqualValues(t, 2, calls.Load(), "successful retry resumes hourly cadence")
+}
+
+func TestPermissionPollBindingRunsWithoutHourlyWaitPostgres(t *testing.T) {
+	var calls atomic.Int32
+	f := newPermissionPollFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		fmt.Fprint(w, `{"user":{"id":77},"permission":"write"}`)
+	})
+	ctx := t.Context()
+	_, err := f.m.Pool.Exec(ctx, `DELETE FROM install_settings WHERE key='github.repository'`)
+	require.NoError(t, err)
+	require.Error(t, f.m.PollPermissions(ctx))
+	var repo int64
+	require.NoError(t, f.m.Pool.QueryRow(ctx, `SELECT repository_id FROM collaborators WHERE id=$1`, f.memberID).Scan(&repo))
+	raw, err := json.Marshal(memberRepository{Owner: "factory", Name: "app", ID: repo})
+	require.NoError(t, err)
+	require.NoError(t, db.New(f.m.Pool).UpsertInstallSetting(ctx, db.UpsertInstallSettingParams{Key: "github.repository", Value: raw}))
+	require.NoError(t, f.m.PollPermissions(ctx))
+	require.EqualValues(t, 1, calls.Load())
+	streams, err := f.m.RequiredStreams(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, streams[0].LastSuccessAt)
+}
+
+func TestPermissionBindingRefreshesHealthPostgres(t *testing.T) {
+	var calls atomic.Int32
+	f := newPermissionPollFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		fmt.Fprint(w, `{"user":{"id":77},"permission":"write"}`)
+	}, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/repos/factory/app/collaborators/owner/permission" {
+			fmt.Fprint(w, `{"permission":"admin"}`)
+			return
+		}
+		t.Errorf("unexpected request %s", r.URL.Path)
+		w.WriteHeader(500)
+	})
+	ctx := t.Context()
+	q := db.New(f.m.Pool)
+	owner, err := q.GetSelfHostOwner(ctx)
+	require.NoError(t, err)
+	var repo int64
+	require.NoError(t, f.m.Pool.QueryRow(ctx, `SELECT repository_id FROM collaborators WHERE id=$1`, f.memberID).Scan(&repo))
+	_, err = f.m.Pool.Exec(ctx, `DELETE FROM install_settings WHERE key='github.repository'`)
+	require.NoError(t, err)
+	require.Error(t, f.m.Recheck(ctx))
+	require.NoError(t, f.m.BindRepository(ctx, owner, "factory", "app", repo))
+	require.EqualValues(t, 1, calls.Load(), "binding must refresh permissions without waiting for a timer")
+	setting, err := q.GetInstallSetting(ctx, "github.permissions.health")
+	require.NoError(t, err)
+	var stream GitHubSyncStream
+	require.NoError(t, json.Unmarshal(setting.Value, &stream))
+	require.NotNil(t, stream.LastSuccessAt)
+}
+
+// Drive the production periodic worker and scheduler, including a failed hourly
+// read, rather than calling Recheck directly for the credential matrix.
+func TestPermissionPollScheduledRetryRevokesAllCredentialsPostgres(t *testing.T) {
+	var mode, calls atomic.Int32
+	f := newPermissionPollFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		switch mode.Load() {
+		case 1:
+			w.WriteHeader(500)
+		case 2:
+			fmt.Fprint(w, `{"user":{"id":77},"permission":"read"}`)
+		default:
+			fmt.Fprint(w, `{"user":{"id":77},"permission":"write"}`)
+		}
+	})
+	ctx := t.Context()
+	pool := f.m.Pool
+	var repo, owner, app int64
+	require.NoError(t, pool.QueryRow(ctx, `SELECT c.repository_id,o.user_id FROM collaborators c CROSS JOIN self_host_owners o WHERE c.id=$1`, f.memberID).Scan(&repo, &owner))
+	for _, credential := range []struct {
+		name   string
+		issued bool
+	}{{"pat", false}, {"run", true}, {"delegated", true}} {
+		_, err := pool.Exec(ctx, `INSERT INTO access_tokens(user_id,name,token_hash,system_issued) VALUES($1,$2,$2,$3)`, f.userID, credential.name, credential.issued)
+		require.NoError(t, err)
+	}
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO oauth2_applications(client_id,client_secret_hash,name,owner_id) VALUES('client','hash','retained grant',$1) RETURNING id`, owner).Scan(&app))
+	for _, statement := range []string{
+		`INSERT INTO oauth2_authorization_codes(code_hash,app_id,user_id,redirect_uri,expires_at) VALUES('code',$1,$2,'https://localhost/callback',now()+interval '1 hour')`,
+		`INSERT INTO oauth2_refresh_tokens(token_hash,app_id,user_id,expires_at) VALUES('refresh',$1,$2,now()+interval '1 hour')`,
+		`INSERT INTO oauth2_access_tokens(token_hash,app_id,user_id,expires_at) VALUES('access',$1,$2,now()+interval '1 hour')`,
+	} {
+		_, err := pool.Exec(ctx, statement, app, f.userID)
+		require.NoError(t, err)
+	}
+	var workspace string
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO workspaces(repository_id,user_id,name) VALUES($1,$2,'scheduled-revocation') RETURNING id::text`, repo, owner).Scan(&workspace))
+	_, err := pool.Exec(ctx, `INSERT INTO workspace_shares(workspace_id,owner_user_id,grantee_user_id,level) VALUES($1::uuid,$2,$3,'write')`, workspace, owner, f.userID)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `INSERT INTO workspace_sessions(workspace_id,repository_id,user_id,kind,language) VALUES($1::uuid,$2,$3,'terminal',''),($1::uuid,$2,$3,'lsp','go')`, workspace, repo, f.userID)
+	require.NoError(t, err)
+	tables := []string{"auth_sessions", "access_tokens", "oauth2_authorization_codes", "oauth2_refresh_tokens", "oauth2_access_tokens", "workspace_sessions"}
+	assertCredentials := func(present bool) {
+		t.Helper()
+		for _, table := range tables {
+			var count int
+			require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM `+table+` WHERE user_id=$1`, f.userID).Scan(&count))
+			if present {
+				require.Positive(t, count, table)
+			} else {
+				require.Zero(t, count, table)
+			}
+		}
+	}
+	worker := cleanup.NewPeriodic("member-retry-regression", MemberRecheckTick, MemberRecheckTick)
+	f.m.UseInstallPermissionPolling(f.s, worker.Trigger)
+	worker.Start(ctx, f.m.PollPermissions)
+	defer func() { worker.Stop(); worker.Wait() }()
+	worker.Trigger()
+	require.Eventually(t, func() bool { return calls.Load() == 1 }, 5*time.Second, 10*time.Millisecond)
+	// Completion, rather than receipt of the HTTP request, is the barrier.
+	require.Eventually(t, func() bool {
+		f.m.permissionPoll.mu.Lock()
+		defer f.m.permissionPoll.mu.Unlock()
+		return !f.m.permissionPoll.running
+	}, 5*time.Second, 10*time.Millisecond)
+	assertCredentials(true)
+	mode.Store(1)
+	f.clock.Add(3600)
+	worker.Trigger()
+	require.Eventually(t, func() bool {
+		f.m.permissionPoll.mu.Lock()
+		defer f.m.permissionPoll.mu.Unlock()
+		return f.m.permissionPoll.state.lastError != nil
+	}, 5*time.Second, 10*time.Millisecond)
+	require.EqualValues(t, 2, calls.Load())
+	assertCredentials(true)
+	f.clock.Add(59)
+	worker.Trigger()
+	time.Sleep(2 * MemberRecheckTick)
+	require.EqualValues(t, 2, calls.Load(), "failed reads back off")
+	mode.Store(2)
+	f.clock.Add(1)
+	worker.Trigger()
+	require.Eventually(t, func() bool {
+		var prohibited bool
+		return pool.QueryRow(ctx, `SELECT prohibit_login FROM users WHERE id=$1`, f.userID).Scan(&prohibited) == nil && prohibited
+	}, 5*time.Second, 10*time.Millisecond)
+	assertCredentials(false)
+	var shares, events int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM workspace_shares WHERE grantee_user_id=$1`, f.userID).Scan(&shares))
+	require.Zero(t, shares)
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM revocation_events WHERE user_id=$1 AND kind='collaborator_removed'`, f.userID).Scan(&events))
+	require.Equal(t, 1, events)
+}
+
+func TestGitHubSyncHealthNamedMemberDefects(t *testing.T) {
+	now := time.Now().UTC()
+	old := now.Add(-30 * time.Minute)
+	core := &syncStreamFixture{streams: []GitHubSyncStream{{LastSuccessAt: &now}}}
+	for _, cause := range []string{"member_missing_github_id", "member_login_conflict"} {
+		t.Run(cause, func(t *testing.T) {
+			permissions := &syncStreamFixture{streams: []GitHubSyncStream{{LastSuccessAt: &old, Cause: cause, Background: true}}}
+			observations, err := (requiredGitHubSyncStreams{core, core, core, core, permissions}).RequiredStreams(t.Context())
+			require.NoError(t, err)
+			health := aggregateGitHubSyncHealth(observations, now)
+			require.Equal(t, "refused", health.State)
+			require.Equal(t, cause, health.Cause)
+		})
+	}
 }

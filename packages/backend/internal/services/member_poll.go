@@ -204,6 +204,9 @@ func (m *Members) PollPermissions(ctx context.Context) error {
 	if p.binding == binding {
 		p.state.lastError = err
 		p.state.retryAt = m.permissionPause(row)
+		if retry := p.synced.now().Add(time.Minute); err != nil && p.state.retryAt.Before(retry) {
+			p.state.retryAt = retry
+		}
 		if err == nil {
 			p.state.lastSuccess = p.synced.now()
 			p.healthReset = false

@@ -247,7 +247,7 @@ func (g requiredGitHubSyncStreams) RequiredStreams(ctx context.Context) ([]GitHu
 		// a successful roster read must not expire the faster sync streams.
 		if index == 4 {
 			for _, observation := range observations {
-				if observation.LastSuccessAt == nil || observation.Cause == "permission" || observation.Cause == "not_installed" || observation.RetryAt != nil {
+				if observation.LastSuccessAt == nil || observation.Cause != "" || observation.RetryAt != nil {
 					result = append(result, observation)
 				}
 			}
@@ -379,6 +379,11 @@ func aggregateGitHubSyncHealth(streams []GitHubSyncStream, now time.Time) GitHub
 		} else if stream.Cause == "permission" {
 			if health.Cause != "not_installed" {
 				health.Cause = "permission"
+			}
+			refused = true
+		} else if stream.Cause == "member_missing_github_id" || stream.Cause == "member_login_conflict" {
+			if health.Cause == "" || (health.Cause != "not_installed" && health.Cause != "permission" && stream.Cause < health.Cause) {
+				health.Cause = stream.Cause
 			}
 			refused = true
 		}

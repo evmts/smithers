@@ -124,5 +124,17 @@ func (m *Members) BindRepository(ctx context.Context, user db.User, owner, name 
 	if err := db.New(m.Pool).UpsertInstallSetting(ctx, db.UpsertInstallSettingParams{Key: "github.repository", Value: value}); err != nil {
 		return err
 	}
-	return m.VerifyOwner(ctx, user)
+	if err := m.VerifyOwner(ctx, user); err != nil {
+		return err
+	}
+	if repositoryID <= 0 {
+		return nil
+	}
+	if m.permissionPoll != nil && m.permissionPoll.synced != nil {
+		// Coalesce with an in-flight sweep and reset the scheduler's binding
+		// before publishing the new repository's permission receipt.
+		m.requestPermissionRecheck()
+		return m.PollPermissions(ctx)
+	}
+	return m.Recheck(ctx)
 }

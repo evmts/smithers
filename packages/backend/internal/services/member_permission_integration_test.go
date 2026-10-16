@@ -195,6 +195,13 @@ func TestMemberPermissionIdentityBindingPostgres(t *testing.T) {
 			err = m.Recheck(ctx)
 			if tc.nilID {
 				require.ErrorContains(t, err, "github_id")
+				setting, healthErr := q.GetInstallSetting(ctx, "github.permissions.health")
+				require.NoError(t, healthErr)
+				var stream GitHubSyncStream
+				require.NoError(t, json.Unmarshal(setting.Value, &stream))
+				health := aggregateGitHubSyncHealth([]GitHubSyncStream{stream}, time.Now())
+				require.Equal(t, "refused", health.State)
+				require.Equal(t, "member_missing_github_id", health.Cause)
 			} else {
 				require.NoError(t, err)
 			}
@@ -403,4 +410,64 @@ func TestMemberPermissionRoundTwoIsolationPostgres(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMemberPermissionLoginSwapPostgres(t *testing.T) {
+	f := newPermissionPollFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"user":{"id":77},"permission":"write"}`)
+	}, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/user/78":
+			fmt.Fprint(w, `{"id":78,"login":"old-writer"}`)
+		case "/repos/factory/app/collaborators/old-writer/permission":
+			fmt.Fprint(w, `{"user":{"id":78},"permission":"read"}`)
+		default:
+			t.Errorf("unexpected request %s", r.URL.Path)
+			w.WriteHeader(500)
+		}
+	})
+	ctx := t.Context()
+	_, err := f.m.Pool.Exec(ctx, `UPDATE collaborators SET github_login='old-writer' WHERE id=$1`, f.memberID)
+	require.NoError(t, err)
+	_, err = f.m.Pool.Exec(ctx, `INSERT INTO collaborators(repository_id,github_id,github_login,permission) SELECT repository_id,78,'writer','write' FROM collaborators WHERE id=$1`, f.memberID)
+	require.NoError(t, err)
+	require.NoError(t, f.m.PollPermissions(ctx))
+	var login string
+	require.NoError(t, f.m.Pool.QueryRow(ctx, `SELECT github_login FROM collaborators WHERE id=$1`, f.memberID).Scan(&login))
+	require.Equal(t, "writer", login)
+	var suspended bool
+	require.NoError(t, f.m.Pool.QueryRow(ctx, `SELECT github_login,suspended_at IS NOT NULL FROM collaborators WHERE github_id=78`).Scan(&login, &suspended))
+	require.Equal(t, "old-writer", login)
+	require.True(t, suspended)
+	f.assertRoster(t, false, 1)
+}
+
+func TestMemberPermissionLoginConflictHealthPostgres(t *testing.T) {
+	f := newPermissionPollFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"user":{"id":77},"permission":"write"}`)
+	}, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/user/78" {
+			w.WriteHeader(500)
+			return
+		}
+		t.Errorf("unexpected request %s", r.URL.Path)
+		w.WriteHeader(500)
+	})
+	ctx := t.Context()
+	_, err := f.m.Pool.Exec(ctx, `UPDATE collaborators SET github_login='old-writer' WHERE id=$1`, f.memberID)
+	require.NoError(t, err)
+	_, err = f.m.Pool.Exec(ctx, `INSERT INTO collaborators(repository_id,github_id,github_login,permission) SELECT repository_id,78,'writer','write' FROM collaborators WHERE id=$1`, f.memberID)
+	require.NoError(t, err)
+	require.Error(t, f.m.Recheck(ctx))
+	setting, err := db.New(f.m.Pool).GetInstallSetting(ctx, "github.permissions.health")
+	require.NoError(t, err)
+	var stream GitHubSyncStream
+	require.NoError(t, json.Unmarshal(setting.Value, &stream))
+	health := aggregateGitHubSyncHealth([]GitHubSyncStream{stream}, time.Now())
+	require.Equal(t, "refused", health.State)
+	require.Equal(t, "member_login_conflict", health.Cause)
+	var login string
+	require.NoError(t, f.m.Pool.QueryRow(ctx, `SELECT github_login FROM collaborators WHERE github_id=78`).Scan(&login))
+	require.Equal(t, "writer", login, "conflict rolls back all roster writes")
+	f.assertRoster(t, false, 1)
 }

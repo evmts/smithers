@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
@@ -19,6 +20,14 @@ const MemberRecheckInterval = time.Hour
 
 // MemberRecheckFailures counts skipped member reads, without member labels.
 var MemberRecheckFailures = prometheus.NewCounter(prometheus.CounterOpts{Name: "smithers_member_recheck_failures_total", Help: "Member permission rechecks skipped because identity or permission could not be resolved."})
+
+type memberRecheckRow struct {
+	id       int64
+	githubID *int64
+	login    string
+	role     string
+	resolved bool
+}
 
 // Recheck asks GitHub for every roster member's permission now. A member
 // GitHub confirms below write is suspended: in one transaction the row is
@@ -43,20 +52,13 @@ func (m *Members) Recheck(ctx context.Context) (result error) {
 	if err = m.confirmInstallationRepository(ctx, token, repo); err != nil {
 		return err
 	}
-	type row struct {
-		id       int64
-		githubID *int64
-		login    string
-		role     string
-		resolved bool
-	}
 	rows, err := m.Pool.Query(ctx, `SELECT c.id,c.github_id
  FROM collaborators c CROSS JOIN self_host_owners o WHERE c.repository_id=$1 AND c.user_id IS DISTINCT FROM o.user_id ORDER BY c.id`, repo.ID)
 	if err != nil {
 		return err
 	}
-	members, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (row, error) {
-		var out row
+	members, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (memberRecheckRow, error) {
+		var out memberRecheckRow
 		err := r.Scan(&out.id, &out.githubID)
 		return out, err
 	})
@@ -69,7 +71,7 @@ func (m *Members) Recheck(ctx context.Context) (result error) {
 	for i := range members {
 		member := &members[i]
 		if member.githubID == nil || *member.githubID <= 0 {
-			err = fmt.Errorf("member %d data defect: missing github_id", member.id)
+			err = &memberDataDefect{cause: "member_missing_github_id"}
 		} else {
 			member.login, err = m.memberAccount(ctx, token, repo, *member.githubID)
 			if err == nil && member.login != "" {
@@ -88,17 +90,8 @@ func (m *Members) Recheck(ctx context.Context) (result error) {
 			member.resolved = true
 		}
 	}
-	for _, member := range members {
-		if !member.resolved {
-			continue
-		}
-		changed, err := m.applyMemberRecheck(ctx, repo.ID, member.id, *member.githubID, member.login, member.role == "")
-		if err != nil {
-			return err
-		}
-		if changed {
-			slog.InfoContext(ctx, "members.recheck", "login", member.login, "suspended", member.role == "")
-		}
+	if err := m.applyMemberRechecks(ctx, repo.ID, members); err != nil {
+		return err
 	}
 	if len(failed) == 0 {
 		m.syncActivePermissionKeys(ctx, repo.ID)
@@ -121,7 +114,13 @@ func (m *Members) recordPermissionHealth(ctx context.Context, err error) error {
 	}
 	stream.Target = MemberRecheckInterval
 	var refusal *memberInstallationRefusal
-	if errors.As(err, &refusal) {
+	var defect *memberDataDefect
+	var databaseError *pgconn.PgError
+	if errors.As(err, &defect) {
+		stream.Cause = defect.cause
+	} else if errors.As(err, &databaseError) && databaseError.ConstraintName == "collaborators_login_unique" {
+		stream.Cause = "member_login_conflict"
+	} else if errors.As(err, &refusal) {
 		stream.Cause = refusal.cause
 	} else if err == nil {
 		now := time.Now().UTC()
@@ -136,16 +135,54 @@ func (m *Members) recordPermissionHealth(ctx context.Context, err error) error {
 	return q.UpsertInstallSetting(ctx, db.UpsertInstallSettingParams{Key: "github.permissions.health", Value: value})
 }
 
-// applyMemberRecheck fences a remote permission result to the original roster
+type memberDataDefect struct{ cause string }
+
+func (e *memberDataDefect) Error() string { return "member data defect: missing github_id" }
+
+// Clear only resolved logins under the roster lock, then install their new
+// names in the same transaction so swaps never collide or publish null names.
+func (m *Members) applyMemberRechecks(ctx context.Context, repositoryID int64, members []memberRecheckRow) error {
+	tx, err := m.lockRoster(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	for _, member := range members {
+		if !member.resolved || member.login == "" {
+			continue
+		}
+		if _, err = tx.Exec(ctx, `UPDATE collaborators SET github_login=NULL WHERE id=$1 AND repository_id=$2 AND github_id=$3 AND github_login IS DISTINCT FROM $4`, member.id, repositoryID, *member.githubID, member.login); err != nil {
+			return err
+		}
+	}
+	var changedMembers []memberRecheckRow
+	for _, member := range members {
+		if !member.resolved {
+			continue
+		}
+		changed, err := applyMemberRecheckInTx(ctx, tx, repositoryID, member.id, *member.githubID, member.login, member.role == "")
+		if err != nil {
+			return err
+		}
+		if changed {
+			changedMembers = append(changedMembers, member)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	for _, member := range changedMembers {
+		slog.InfoContext(ctx, "members.recheck", "login", member.login, "suspended", member.role == "")
+	}
+	return nil
+}
+
+// applyMemberRecheckInTx fences a remote permission result to the original roster
 // row and immutable GitHub account. The owner lock orders it with removal and
 // sign-in; the row lock also orders LinkGitHub's account binding. Read the local
 // user here, since a first sign-in may have completed during the GitHub request.
-func (m *Members) applyMemberRecheck(ctx context.Context, repositoryID, id, githubID int64, login string, suspend bool) (bool, error) {
-	tx, err := m.lockRoster(ctx)
-	if err != nil {
-		return false, err
-	}
-	defer tx.Rollback(ctx)
+func applyMemberRecheckInTx(ctx context.Context, tx pgx.Tx, repositoryID, id, githubID int64, login string, suspend bool) (bool, error) {
+	var err error
 	var user *int64
 	var suspended bool
 	err = tx.QueryRow(ctx, `SELECT user_id,suspended_at IS NOT NULL FROM collaborators
@@ -175,5 +212,5 @@ func (m *Members) applyMemberRecheck(ctx context.Context, repositoryID, id, gith
 			return false, err
 		}
 	}
-	return changed, tx.Commit(ctx)
+	return changed, nil
 }
