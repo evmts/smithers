@@ -251,6 +251,11 @@ export const plan = async (
     prefix = await sshArgs(client, endpoint, options.terminal)
   } else {
     prefix = [
+      "-q",
+      "-o",
+      "ConnectTimeout=15",
+      "-o",
+      "ConnectionAttempts=1",
       "-o",
       "BatchMode=yes",
       "-o",
@@ -375,6 +380,11 @@ export const run = async (
       // dropping the timer, even when the parent has already exited.
       if (interrupted && grouped) kill("SIGKILL")
       cleanup()
+      if (!interrupted && profile.transport === "ssh" && code === 255) {
+        // OpenSSH reserves 255 for transport failures; a remote command may
+        // also return it. Never reflect provider diagnostics or credentials.
+        process.stderr.write("SSH session failed (exit 255). Check connectivity, known_hosts and SSH access.\n")
+      }
       resolve(interrupted ? 130 : code ?? (128 + constants.signals[signal!]))
     })
     options.signal?.addEventListener("abort", interrupt, { once: true })

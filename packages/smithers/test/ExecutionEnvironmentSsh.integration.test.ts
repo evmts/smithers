@@ -1,6 +1,6 @@
 import { type ChildProcess, execFileSync, spawn } from "node:child_process"
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises"
-import { connect, createServer, type Server } from "node:net"
+import { connect, createServer, type Server, type Socket } from "node:net"
 import { tmpdir, userInfo } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -174,6 +174,101 @@ describe.skipIf(process.platform === "win32")("execution environments over real 
     )
     expect(await Environments.run({ ...profile, destination: "disconnected" }, ["true"], source)).not.toBe(0)
     expect(await Environments.run(profile, ["sh", "-c", "kill -KILL $PPID; sleep 1"], source)).not.toBe(0)
+  })
+  const silentPeer = async () => {
+    const sockets = new Set<Socket>()
+    let accepted!: () => void
+    const connected = new Promise<void>((resolve) => {
+      accepted = resolve
+    })
+    const peer = createServer((socket) => {
+      sockets.add(socket)
+      socket.write("synthetic-private-provider-detail token=do-not-print\r\n")
+      socket.on("data", () => {})
+      socket.on("error", (error: NodeJS.ErrnoException) => {
+        if (error.code !== "ECONNRESET") throw error
+      })
+      socket.once("close", () => sockets.delete(socket))
+      accepted()
+    })
+    await new Promise<void>((resolve) => peer.listen(0, "127.0.0.1", resolve))
+    const port = (peer.address() as { port: number }).port
+    const destination = `silent-${port}`
+    await writeFile(
+      config,
+      `${await readFile(
+        config,
+        "utf8"
+      )}\nHost ${destination}\nHostName 127.0.0.1\nPort ${port}\nConnectTimeout none\nConnectionAttempts 10\n`
+    )
+    return {
+      destination,
+      connected,
+      sockets,
+      close: async () => {
+        for (const socket of sockets) socket.destroy()
+        await new Promise<void>((resolve) => peer.close(() => resolve()))
+      }
+    }
+  }
+  it("bounds a silent SSH handshake and emits only a fixed actionable transport diagnostic", async () => {
+    const peer = await silentPeer()
+    const saved = { ...profile, name: peer.destination, destination: peer.destination }
+    await Environments.add(saved, source)
+    const cli = fileURLToPath(new URL("../bin/smithers.mjs", import.meta.url))
+    const child = spawn(process.execPath, [cli, "environment", "exec", saved.name, "--", "true"], {
+      env: { ...process.env, ...source },
+      stdio: ["ignore", "pipe", "pipe"]
+    })
+    children.push(child)
+    let stderr = "", stdout = ""
+    child.stderr!.on("data", (data) => {
+      stderr += data
+    })
+    child.stdout!.on("data", (data) => {
+      stdout += data
+    })
+    const exited = new Promise<number | null>((resolve) => child.once("close", resolve))
+    const watchdog = setTimeout(() => child.kill("SIGTERM"), 23_000)
+    try {
+      await peer.connected
+      expect(await exited).toBe(255)
+      expect(stderr.trim()).toBe("SSH session failed (exit 255). Check connectivity, known_hosts and SSH access.")
+      expect(stdout).toBe("")
+      for (let i = 0; i < 100 && peer.sockets.size; i++) await pause()
+      expect(peer.sockets.size).toBe(0)
+    } finally {
+      clearTimeout(watchdog)
+      child.kill("SIGKILL")
+      await peer.close()
+    }
+  }, 30_000)
+  it("cancels a silent handshake and closes its socket", async () => {
+    const peer = await silentPeer()
+    const controller = new AbortController()
+    const pending = Environments.run({ ...profile, destination: peer.destination }, ["true"], source, {
+      signal: controller.signal
+    })
+    try {
+      await peer.connected
+      controller.abort()
+      expect(await pending).toBe(130)
+      for (let i = 0; i < 100 && peer.sockets.size; i++) await pause()
+      expect(peer.sockets.size).toBe(0)
+    } finally {
+      controller.abort()
+      await pending
+      await peer.close()
+    }
+  })
+  it("lets a connected remote command outlive the connection deadline and preserves its exit status", async () => {
+    expect(
+      await Promise.all(
+        [false, true].map((terminal) =>
+          Environments.run(profile, ["sh", "-c", "sleep 16; exit 37"], source, { terminal })
+        )
+      )
+    ).toEqual([37, 37])
   })
   it("forwards a real local socket through the SSH server", async () => {
     const echo: Server = createServer((socket) => socket.pipe(socket))
