@@ -236,7 +236,7 @@ Closed without a change: 2, a queued "Refresh wiki" row with no button. spec.md 
 - Its gates report red and do not block a prerelease: workspace targets, script gates, repository flows and their lint, public export JSDoc, script lint, UI unit tests and conformance, the TUI suites, the mode matrix, server, site, factory projection drift, native FFI, the fault matrix, the flows_jj.wasm rebuild, the shared backend suite, and the API baseline for `@smthrs/cli`. Run 37843714479 lists them.
 - The gates take more than 330 minutes on a hosted runner, the job's limit. Since aab381def5 the gates lane ends its gates at 290 minutes and reports the rest as failed. Step timeouts or parallel gates come after the prerelease.
 - The smoke found a product bug: `smithers-build` (`@smthrs/build-cli`) could not start in any installed project since #3093. Fixed in 06209aa7b1.
-- Fault tests case03 and case31 read a process ID from inside a PID namespace, as the smoke fixture did before 5e83665567. They cannot pass on Linux until changed the same way.
+- Linux fault fixtures: case03 recovery passes 4/4 and case31 containment passes 4/4 on nyc-01 with the native helper. Engine kill/resume passes after 8382dd0c78 fixes callback identity. Full nightly and approved-reference-host qualification remain unverified (#2290, #3459).
 
 ## 4. Unverified
 

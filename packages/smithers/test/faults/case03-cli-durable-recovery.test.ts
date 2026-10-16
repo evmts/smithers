@@ -22,9 +22,8 @@ const recover = async (mode: "approval" | "timer" | "checkpoint") => {
   Object.assign(environment, {
     NODE_OPTIONS: `--import=${preload}`,
     SMITHERS_TEST_RECORDING: recording,
-    // The agent runs on the ChatGPT seat and its completion judge on Jev, both
-    // behind the recorded model proxy. Without a gateway key the host has no
-    // judge, and a run cannot complete.
+    // Keep both recorded seats available: the default claim brake stays off
+    // even when the host can configure a completion judge.
     SMITHERS_OPENAI_AUTH: "chatgpt",
     SMITHERS_MODEL_PROXY_URL: "https://model-proxy.recorded.invalid",
     OPENAI_API_KEY: "recorded-fixture-not-a-real-key",
@@ -224,13 +223,7 @@ const recover = async (mode: "approval" | "timer" | "checkpoint") => {
     expect(engineRow()).toMatchObject({ status: "completed", waiting_reason: null, cancel_requested_at_ms: null })
     expect(json("run", "--resume", receipt.runId)).toMatchObject({ _tag: "Terminal", status: "completed" })
     expect(readFileSync(join(recording, "requests.jsonl"), "utf8").trim().split("\n")).toHaveLength(1)
-    expect(
-      readFileSync(join(recording, "evaluations.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line))
-    )
-      .toEqual([{
-        pid: expect.any(Number),
-        questions: { complete: "boolean", overclaims: "boolean", invented: "boolean" }
-      }])
+    expect(existsSync(join(recording, "evaluations.jsonl"))).toBe(false)
     const settled = json("logs", receipt.runId)
     const resolved = settled.filter((event: { kind: string }) => event.kind === "control.agent.resolved")
     expect(resolved).toHaveLength(1)
