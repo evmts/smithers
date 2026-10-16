@@ -1,3 +1,4 @@
+import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import { quickstart } from "../examples/quickstart.ts"
 
@@ -7,8 +8,8 @@ describe("examples", () => {
 
     expect(catalog).toEqual([{ name: "review", tier: "sealed", invocable: true }])
     expect(warnings).toEqual([
-      { code: "missing_description", path: `${root}/flows/draft/flow.mdx` },
-      { code: "name_field_ignored", path: `${root}/flows/draft/flow.mdx` }
+      { code: "missing_description", path: join(root, "flows/draft/flow.mdx") },
+      { code: "name_field_ignored", path: join(root, "flows/draft/flow.mdx") }
     ])
     expect(xml).toBe([
       "<available_skills>",

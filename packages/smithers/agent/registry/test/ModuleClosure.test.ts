@@ -15,6 +15,7 @@ import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Path from "effect/Path"
+import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import * as ModuleClosure from "../src/internal/ModuleClosure.ts"
 import { tokenize } from "../src/internal/ModuleMetadata.ts"
@@ -67,7 +68,7 @@ const fs = require("node:fs"); const sdk = () => import("microsandbox");`
       })
       const fs = yield* FileSystem.FileSystem
       const path = yield* Path.Path
-      const entryPath = `${root}/flow.ts`
+      const entryPath = join(root, "flow.ts")
       const source = yield* fs.readFileString(entryPath)
       const cold = yield* ModuleClosure.analyze(fs, path, entryPath, source)
       const memo = ModuleClosure.cache()
@@ -77,8 +78,8 @@ const fs = require("node:fs"); const sdk = () => import("microsandbox");`
       expect(first).toEqual(cold)
       expect(second).toEqual(first)
       expect(first.imports).toEqual([
-        { path: "addon.node", contentDigest: Digest.digest(yield* fs.readFile(`${root}/addon.node`)) },
-        { path: "vm.ts", contentDigest: Digest.digest(yield* fs.readFile(`${root}/vm.ts`)) }
+        { path: "addon.node", contentDigest: Digest.digest(yield* fs.readFile(join(root, "addon.node"))) },
+        { path: "vm.ts", contentDigest: Digest.digest(yield* fs.readFile(join(root, "vm.ts"))) }
       ])
     }).pipe(Effect.scoped, Effect.provide(platform)))
 })
@@ -411,18 +412,18 @@ describe("resolving a specifier to a file", () => {
         ...fs,
         stat: (requested) =>
           Effect.gen(function*() {
-            if (requested === `${root}/both.ts`) yield* Deferred.await(laterCompleted)
+            if (requested === join(root, "both.ts")) yield* Deferred.await(laterCompleted)
             const result = yield* fs.stat(requested)
-            if (requested === `${root}/both.ts` || requested === `${root}/both.tsx`) {
+            if (requested === join(root, "both.ts") || requested === join(root, "both.tsx")) {
               completed.push(requested)
             }
-            if (requested === `${root}/both.tsx`) yield* Deferred.succeed(laterCompleted, undefined)
+            if (requested === join(root, "both.tsx")) yield* Deferred.succeed(laterCompleted, undefined)
             return result
           })
       })
 
       const found = yield* Effect.provideService(walk(root, "flow.ts"), FileSystem.FileSystem, racing)
-      expect(completed).toEqual([`${root}/both.tsx`, `${root}/both.ts`])
+      expect(completed).toEqual([join(root, "both.tsx"), join(root, "both.ts")])
       expect(found.map(({ path }) => path)).toEqual(["both.ts"])
     }).pipe(Effect.scoped, Effect.provide(platform)))
 
@@ -497,7 +498,7 @@ describe("bare specifiers a loader maps onto project files", () => {
 
       // The edit an approval must not survive.
       const fs = yield* FileSystem.FileSystem
-      yield* fs.writeFileString(`${root}/impl.ts`, `export const suffix = "edited"`)
+      yield* fs.writeFileString(join(root, "impl.ts"), `export const suffix = "edited"`)
       const after = yield* walk(root, "flow.ts")
       expect(after.find((entry) => entry.path === "impl.ts")!.contentDigest)
         .not.toBe(before.find((entry) => entry.path === "impl.ts")!.contentDigest)
@@ -660,9 +661,9 @@ describe("the walk", () => {
         "shared.ts",
         `the entry imports "./missing.ts", which resolves to no file`
       ])
-      expect(probes.get(`${root}/shared.ts`)).toBe(1)
-      expect(probes.get(`${root}/leaf.ts`)).toBe(1)
-      expect(probes.get(`${root}/missing.ts`)).toBe(1)
+      expect(probes.get(join(root, "shared.ts"))).toBe(1)
+      expect(probes.get(join(root, "leaf.ts"))).toBe(1)
+      expect(probes.get(join(root, "missing.ts"))).toBe(1)
       expect([...probes.values()].every((count) => count === 1)).toBe(true)
     }).pipe(Effect.scoped, Effect.provide(platform)))
 
@@ -690,7 +691,7 @@ describe("the walk", () => {
       expect(second).toEqual(yield* walk(root, "two/flow.ts"))
       expect(first.map(({ path }) => path)).toEqual(["../shared.ts"])
       expect(second.map(({ path }) => path)).toEqual(["../shared.ts"])
-      expect(probes.get(`${root}/shared.ts`)).toBe(1)
+      expect(probes.get(join(root, "shared.ts"))).toBe(1)
     }).pipe(Effect.scoped, Effect.provide(platform)))
 
   it.effect("probes wildcard path aliases once across importer directories", () =>
@@ -726,9 +727,9 @@ describe("the walk", () => {
       expect(second).toEqual(yield* walk(root, "two/flow.ts"))
       expect(first.map(({ path }) => path)).toEqual(["../shared.ts"])
       expect(second.map(({ path }) => path)).toEqual(["../shared.ts"])
-      expect(probes.get(`${root}/effect/Effect`)).toBe(1)
-      expect(probes.get(`${root}/@smthrs/flow`)).toBe(1)
-      expect(probes.get(`${root}/shared.ts`)).toBe(1)
+      expect(probes.get(join(root, "effect/Effect"))).toBe(1)
+      expect(probes.get(join(root, "@smthrs/flow"))).toBe(1)
+      expect(probes.get(join(root, "shared.ts"))).toBe(1)
       expect([...probes.values()].every((count) => count === 1)).toBe(true)
     }).pipe(Effect.scoped, Effect.provide(platform)))
 
@@ -745,8 +746,8 @@ describe("the walk", () => {
       const before = yield* walk(root, "two.ts", firstScan)
       expect(before.some(({ path }) => path.includes("missing.ts") && path.includes("no file"))).toBe(true)
 
-      yield* fs.writeFileString(`${root}/missing.ts`, "export const added = 1")
-      yield* fs.writeFileString(`${root}/shared.ts`, "export const shared = 2")
+      yield* fs.writeFileString(join(root, "missing.ts"), "export const added = 1")
+      yield* fs.writeFileString(join(root, "shared.ts"), "export const shared = 2")
       const after = yield* walk(root, "two.ts", ModuleClosure.cache())
       expect(after.map(({ path }) => path)).toEqual(["missing.ts", "shared.ts"])
       expect(after.find(({ path }) => path === "shared.ts")?.contentDigest)
@@ -884,8 +885,10 @@ describe("the measured closure a loader evaluates", () => {
 
   /** Each link of `file`, as the specifier text it replaces and the target's path under `root`. */
   const linksOf = (root: string, closure: ReadonlyMap<string, ModuleClosure.Module>, file: string) => {
-    const module = closure.get(`${root}/${file}`)!
-    return module.links.map((link) => [module.source.slice(link.start, link.end), link.target.slice(root.length + 1)])
+    const module = closure.get(join(root, file))!
+    return module.links.map((
+      link
+    ) => [module.source.slice(link.start, link.end), link.target.slice(root.length + 1).replaceAll("\\", "/")])
   }
 
   it.effect("links each static specifier naming a closure module, and no call or package", () =>
@@ -916,7 +919,7 @@ describe("the measured closure a loader evaluates", () => {
         "\"flow.ts\" loads \"./late.ts\" through import() or require()",
         "\"flow.ts\" uses mapped specifier \"#either\" without one coherent static target"
       ])
-      expect([...modules.keys()].map((file) => file.slice(root.length + 1)).sort()).toEqual([
+      expect([...modules.keys()].map((file) => file.slice(root.length + 1).replaceAll("\\", "/")).sort()).toEqual([
         "a.ts",
         "b.ts",
         "flow.ts",
@@ -939,7 +942,7 @@ describe("the measured closure a loader evaluates", () => {
       // The records are the walk's own, over the very bytes kept for loading.
       expect(imports).toEqual(yield* walk(root, "flow.ts"))
       for (const record of imports) {
-        expect(Digest.digest(modules.get(`${root}/${record.path}`)!.bytes)).toBe(record.contentDigest)
+        expect(Digest.digest(modules.get(join(root, record.path))!.bytes)).toBe(record.contentDigest)
       }
     }).pipe(Effect.scoped, Effect.provide(platform)))
 
@@ -948,8 +951,8 @@ describe("the measured closure a loader evaluates", () => {
       const root = yield* tree({ "flow.ts": `import "./helper.ts"`, "helper.ts": `export const v = 7` })
       const { imports, modules } = yield* snapshot(root, "flow.ts")
       const fs = yield* FileSystem.FileSystem
-      yield* fs.writeFileString(`${root}/helper.ts`, `export const v = 9`)
-      expect(new TextDecoder().decode(modules.get(`${root}/helper.ts`)!.bytes)).toBe(`export const v = 7`)
+      yield* fs.writeFileString(join(root, "helper.ts"), `export const v = 9`)
+      expect(new TextDecoder().decode(modules.get(join(root, "helper.ts"))!.bytes)).toBe(`export const v = 7`)
       expect(imports[0]!.contentDigest).toBe(Digest.digest(new TextEncoder().encode(`export const v = 7`)))
     }).pipe(Effect.scoped, Effect.provide(platform)))
 
