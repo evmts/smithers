@@ -16,18 +16,18 @@ import (
 func (s *MythicalService) refreshInstallIssueProjection(ctx context.Context, gh mythicalGitHubRepo, comments bool) (db.GithubSyncedRepo, error) {
 	synced := s.installGitHubSync
 	if synced == nil || synced.install == nil {
-		return db.GithubSyncedRepo{}, issuesUnavailable()
+		return db.GithubSyncedRepo{}, s.issuesClosed(issuesClosedNoSync)
 	}
 	row, err := synced.store.GetGitHubSyncedRepo(ctx, db.GetGitHubSyncedRepoParams{OwnerLogin: gh.Owner, RepoName: gh.Name})
 	if err != nil {
-		return row, issuesUnavailable()
+		return row, s.issuesClosed(issuesClosedNoSyncedRepo)
 	}
 	if err = synced.authorizeFetched(ctx, row); err != nil {
 		return row, err
 	}
 	fetch := synced.preferredFetcher(row, nil)
 	if fetch == nil && !synced.hasConditionalFetcher() {
-		return row, issuesUnavailable()
+		return row, s.issuesClosed(issuesClosedNoFetcher)
 	}
 	resources := []string{GitHubRepoMetadataIssues}
 	if comments {
@@ -35,7 +35,7 @@ func (s *MythicalService) refreshInstallIssueProjection(ctx context.Context, gh 
 	}
 	for _, resource := range resources {
 		if at := synced.budget.StreamRetryAt(row.InstallationID.Int64, metadataBudgetStream(resource)); at.After(synced.now()) {
-			return row, issuesUnavailable()
+			return row, s.issuesClosed(issuesClosedBudgetPaused)
 		}
 		if err = synced.backfillResource(ctx, row, resource, fetch); err != nil {
 			return row, err

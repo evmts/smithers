@@ -85,10 +85,38 @@ func gitHubFetchUnavailable() error {
 }
 
 func (s *GitHubSyncedRepoService) authorizeFetched(ctx context.Context, row db.GithubSyncedRepo) error {
-	if s.install == nil || s.install.authorize == nil || row.ID <= 0 || !row.InstallationID.Valid || row.InstallationID.Int64 <= 0 || !row.GithubRepositoryID.Valid || row.GithubRepositoryID.Int64 <= 0 || !row.SyncMetadata || row.SyncState == "disabled" || row.SyncState == "failed" {
+	// Eight preconditions answer one fixed refusal, so a read that stops here
+	// cannot say which one it was: a composed install answered GET /api/issues
+	// with "Could not read issues from GitHub" and left no record of the
+	// cause. The refusal is unchanged; the record names the unmet
+	// precondition from a closed set and carries no id, token or payload.
+	if fence := gitHubFetchedFence(s, row); fence != "" {
+		slog.WarnContext(ctx, "github.fetched_state_closed", "fence", fence)
 		return gitHubFetchUnavailable()
 	}
 	return s.install.authorize(ctx, row)
+}
+
+// gitHubFetchedFence names the precondition an authorized fetched-state read
+// does not meet, or "" when every one of them holds.
+func gitHubFetchedFence(s *GitHubSyncedRepoService, row db.GithubSyncedRepo) string {
+	switch {
+	case s.install == nil:
+		return "no_install_sync"
+	case s.install.authorize == nil:
+		return "no_install_authority"
+	case row.ID <= 0:
+		return "no_synced_repository_row"
+	case !row.InstallationID.Valid || row.InstallationID.Int64 <= 0:
+		return "no_installation"
+	case !row.GithubRepositoryID.Valid || row.GithubRepositoryID.Int64 <= 0:
+		return "no_github_repository"
+	case !row.SyncMetadata:
+		return "metadata_sync_off"
+	case row.SyncState == "disabled" || row.SyncState == "failed":
+		return "sync_state_" + row.SyncState
+	}
+	return ""
 }
 
 func (s *GitHubSyncedRepoService) requestInstallFetch(ctx context.Context, githubRepoID int64, resources ...string) error {

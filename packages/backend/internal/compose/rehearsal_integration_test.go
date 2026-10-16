@@ -1562,9 +1562,50 @@ func (r *rehearsal) waitHeld(key string, within time.Duration) error {
 			return err
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("no coding turn held on [HOLD %s] after %s (held: %v)", key, within, keys)
+			return fmt.Errorf("no coding turn held on [HOLD %s] after %s (held: %v); %s", key, within, keys, r.codingAdmission())
 		}
 	}
+}
+
+// codingAdmission says how far each admitted TODO reached before a coding
+// turn was expected, so a rehearsal that never reaches one names the stage it
+// stopped at instead of only an empty hold list. It reads the item's own
+// recorded stage, attempt, generation and typed outcome, and reports the run
+// and lane only as whether the engine recorded them: a TODO's title, its
+// text, a model payload, a credential, a header and a URL are all outside
+// these columns, and the reason column is the product's typed sentence, never
+// an error's text (internal/services/mythical_failure.go).
+func (r *rehearsal) codingAdmission() string {
+	rows, err := r.pool.Query(r.ctx, `SELECT coalesce(number,0),state,attempt,generation,
+ request_run_id<>'',workspace_id<>'',request_outcome,reason
+ FROM mythical_items ORDER BY coalesce(number,0)`)
+	if err != nil {
+		return "coding admission unreadable"
+	}
+	defer rows.Close()
+	stages := make([]string, 0, 4)
+	for rows.Next() {
+		var number, generation int64
+		var attempt int32
+		var state, outcome, reason string
+		var run, lane bool
+		if err := rows.Scan(&number, &state, &attempt, &generation, &run, &lane, &outcome, &reason); err != nil {
+			return "coding admission unreadable"
+		}
+		stages = append(stages, fmt.Sprintf("#%d stage=%s attempt=%d generation=%d run=%t lane=%t outcome=%q reason=%q",
+			number, state, attempt, generation, run, lane, outcome, reason))
+	}
+	if err := rows.Err(); err != nil {
+		return "coding admission unreadable"
+	}
+	admission := "coding admission: no TODO admitted"
+	if len(stages) > 0 {
+		admission = "coding admission: " + strings.Join(stages, "; ")
+	}
+	if r.coder.url == "" {
+		return admission
+	}
+	return admission + "; scripted model turns: " + r.coder.turns()
 }
 
 // member adds login to the roster with permission on GitHub and signs them

@@ -168,20 +168,44 @@ func issuesUnavailable() error {
 	return &TodoControlError{http.StatusServiceUnavailable, "github_unavailable", "infra", "Could not read issues from GitHub"}
 }
 
+// The fences that refuse an install issues read before GitHub is reached.
+// They are a closed set of names, never a message, a credential, a payload, a
+// URL or an upstream status.
+const (
+	issuesClosedNoService     = "no_issue_service"
+	issuesClosedNoReader      = "reader_is_not_an_issue_reader"
+	issuesClosedNoDestination = "no_stack_github_destination"
+	issuesClosedNoSync        = "no_install_sync"
+	issuesClosedNoSyncedRepo  = "no_synced_repository_row"
+	issuesClosedNoFetcher     = "no_fetcher"
+	issuesClosedBudgetPaused  = "metadata_budget_paused"
+)
+
+// issuesClosed answers the unchanged refusal and records which fence produced
+// it. Every branch below used to return the same opaque 503, several of them
+// with no record at all, so an install that could not list its issues was
+// indistinguishable from six other installs that could not either.
+func (s *MythicalService) issuesClosed(fence string) error {
+	if s != nil && s.logger != nil {
+		s.logger.Warn("install.issues_closed", "fence", fence)
+	}
+	return issuesUnavailable()
+}
+
 // installIssueReader resolves the repository's GitHub destination as the
 // stack's actor and the reader that reads it.
 func (s *MythicalService) installIssueReader(ctx context.Context, repositoryID int64) (mythicalIssueReader, mythicalGitHubRepo, error) {
 	if s == nil || s.store == nil || s.github == nil {
-		return nil, mythicalGitHubRepo{}, issuesUnavailable()
+		return nil, mythicalGitHubRepo{}, s.issuesClosed(issuesClosedNoService)
 	}
 	reader, ok := s.github.(mythicalIssueReader)
 	if !ok {
-		return nil, mythicalGitHubRepo{}, issuesUnavailable()
+		return nil, mythicalGitHubRepo{}, s.issuesClosed(issuesClosedNoReader)
 	}
 	gh, err := s.stackGitHub(ctx, repositoryID)
 	if err != nil {
 		s.logger.Warn("install.issues_unavailable", "repository_id", repositoryID, "error", err)
-		return nil, mythicalGitHubRepo{}, issuesUnavailable()
+		return nil, mythicalGitHubRepo{}, s.issuesClosed(issuesClosedNoDestination)
 	}
 	return reader, gh, nil
 }
