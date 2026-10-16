@@ -355,6 +355,11 @@ test("served wait rail actions retain the TODO and the actual branch through cat
   const calls: unknown[] = []
   timelineActions([answerLine], (tag, input) => calls.push([tag, input])).onAction("todo.answer", answerLine.action!.args)
   expect(calls).toEqual([["todo.answer", { n: 24, answer: "", wait: "ask-24" }]])
+  const pushModel = { ...model, waits: [{ id: "push-24", kind: "foreign_push" as const, prompt: "Someone pushed", since: "2026-10-06T00:00:00Z", sha: "a".repeat(40), actions: [{ tag: "branch.bring-in" as const, label: "Bring in" }] }] }
+  const pushLine = railLines([{ kind: "card", card: { ...entry, payload: { ...entry.payload, model: pushModel } } }])[0]!
+  expect(pushLine.action).toEqual({ tag: "todo", label: "Review", primary: true, args: { n: "24" } })
+  timelineActions([pushLine], (tag, input) => calls.push([tag, input])).onAction("todo", pushLine.action!.args)
+  expect(calls.at(-1)).toEqual(["todo", { n: 24 }])
 })
  test("edge toasts retain the shared primary action and Resume dispatch", () => {
   const lines = railLines([{ kind: "entry", id: "pause", facts: { n: 3 }, entry: { kind: "card", title: "Paused", author: { kind: "system", color_index: 7 }, tone: "attention", state: "paused" } }, { kind: "entry", id: "band", entry: { kind: "card", title: "Band", author: { kind: "system", color_index: 7 }, tone: "quiet" } }])

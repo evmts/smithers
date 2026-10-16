@@ -71,9 +71,9 @@ export const railLines = (entries: ReadonlyArray<RailEntry>, viewer: Parameters<
       const candidate = actionFor({ ...model, first_in_order: model.place === 1,
         ...(wait ? { needs_you: { kind: wait.kind } } : {}) }, viewer)
       // A state label alone cannot grant a command: the mounted TODO's provider
-      // must offer that command too (retryability, branch and merge readiness).
+      // must offer that command too (retryability, branch and merge readiness). Opening the TODO is a read.
       const definition = candidate && todoActionDefinitions(model, viewer.role).find(action => action.tag === candidate.tag && !action.disabled)
-      const action = definition ? { ...candidate!, args: { ...candidate!.args, ...definition.args, ...(definition.tag === "branch" ? { name: ("name" in definition.command_input ? definition.command_input.name : undefined) } : {}) } } : undefined
+      const action = candidate?.tag === "todo" ? candidate : definition ?{ ...candidate!, args: { ...candidate!.args, ...definition.args, ...(definition.tag === "branch" ? { name: ("name" in definition.command_input ? definition.command_input.name : undefined) } : {}) } } : undefined
       const tone: TimelineLine["tone"] = model.state === "needs_you" ? "attention" : model.state === "failed" ? "failed"
         : model.state === "starting" || model.state === "working" ? "live" : model.state === "merged" || model.state === "dropped" ? "done" : "quiet"
       return [{ entry_id: entry.card.id, kind: "card", title: model.title, tone, glyph: { state: model.state }, ...(action ? { action } : {}) }]
