@@ -1255,14 +1255,13 @@ mod tests {
         run(&remove, 1024, 1024).unwrap();
         assert!(!wide.exists());
         let deep = root.join("deep");
-        let handles = chain(&deep, 400);
+        drop(chain(&deep, 400));
         let mut remove = request(&root, "remove", &deep);
         remove["options"] = json!({"recursive":true});
         run(&remove, 1024, 1024).unwrap();
         assert!(!deep.exists());
-        drop(handles);
         let beyond = root.join("beyond");
-        let handles = chain(&beyond, 600);
+        drop(chain(&beyond, 600));
         let mut remove = request(&root, "remove", &beyond);
         remove["options"] = json!({"recursive":true});
         assert_eq!(
@@ -1270,25 +1269,6 @@ mod tests {
             Some(libc::EFBIG)
         );
         assert!(beyond.exists());
-        let leaf = CString::new("leaf").unwrap();
-        assert_eq!(
-            unsafe { libc::unlinkat(handles.last().unwrap().as_raw_fd(), leaf.as_ptr(), 0) },
-            0
-        );
-        let name = CString::new("d").unwrap();
-        for index in (1..handles.len()).rev() {
-            assert_eq!(
-                unsafe {
-                    libc::unlinkat(
-                        handles[index - 1].as_raw_fd(),
-                        name.as_ptr(),
-                        libc::AT_REMOVEDIR,
-                    )
-                },
-                0
-            );
-        }
-        drop(handles);
-        fs::remove_dir(beyond).unwrap();
+        fs::remove_dir_all(beyond).unwrap();
     }
 }
