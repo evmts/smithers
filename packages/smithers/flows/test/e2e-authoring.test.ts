@@ -913,7 +913,7 @@ describe("the system wait actions park and wake durably", { timeout: 120_000 }, 
       expect(Option.isSome(observed.waiting) && observed.waiting.value.reason).toBe("timer")
       expect(observed.clocks).toHaveLength(1)
       expect(Option.isSome(observed.waiting) && observed.waiting.value.wakeAt).toBe(observed.clocks[0]?.dueAtMs)
-      expect(observed.woken.status).toBe("completed")
+      console.log(JSON.stringify(observed.woken)); expect(observed.woken.status).toBe("completed")
       expect(completedValue(observed.result)).toBe("after")
       // The step before the wait was journaled on the first pass: the resumed
       // round replayed its recorded outcome instead of running it again.
@@ -960,7 +960,7 @@ describe("the system wait actions park and wake durably", { timeout: 120_000 }, 
       expect(observed.parked.status).toBe("suspended")
       expect(Option.isSome(observed.waiting) && observed.waiting.value.reason).toBe("event")
       expect(Option.isSome(observed.waiting) && observed.waiting.value.token).toBe(token)
-      expect(observed.woken.status).toBe("completed")
+      console.log(JSON.stringify(observed.woken)); expect(observed.woken.status).toBe("completed")
       // The node settles with the value that resolved the wait, and the step
       // before it replayed its recorded outcome rather than running again.
       expect(completedValue(observed.result)).toEqual({ approved: true })

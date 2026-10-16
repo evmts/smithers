@@ -131,7 +131,7 @@ const run = (options: {
       yield* TestDatabase.until(
         TestClock.adjust("1 second").pipe(Effect.map(() => fiber.pollUnsafe() !== undefined))
       )
-      yield* Fiber.await(fiber)
+      yield* Fiber.join(fiber)
     })).pipe(Effect.provideService(FlowEngine.SnapshotBoundary, recordingBoundary(second, handleFor)))
 
     const store = yield* RunStore.RunStore

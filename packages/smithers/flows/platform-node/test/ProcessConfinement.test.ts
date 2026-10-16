@@ -118,7 +118,7 @@ describe("native ProcessConfinement", () => {
       const wrapped = yield* ProcessConfinement.make(f).confine(ChildProcess.make("fixture"), f.profile)
       expect(wrapped.options.extendEnv).toBe(false)
       expect(wrapped.options.env?.["SMITHERS_ENV_TEST"]).toBeUndefined()
-      const script = wrapped.args.find((arg) => arg.endsWith("/environment.sh"))!
+      const script = wrapped.args.find((arg) => NodePath.basename(arg) === "environment.sh")!
       const lines = NodeFs.readFileSync(script, "utf8").split("\n")
       expect(lines.some((line) => line === "export SMITHERS_ENV_TEST='inherited fixture'")).toBe(true)
     }))
@@ -525,7 +525,7 @@ describe("target environment isolation", () => {
         ChildProcess.make("fixture", [], { env, extendEnv }),
         f.profile
       )
-      const script = wrapped.args.find((arg) => arg.endsWith("/environment.sh"))!
+      const script = wrapped.args.find((arg) => NodePath.basename(arg) === "environment.sh")!
       const contents = NodeFs.readFileSync(script, "utf8")
       expect(contents.includes("export SMITHERS_HOST_SECRET='inherited private fixture'")).toBe(inherits)
       expect(contents.includes("export CALLER='named value'")).toBe(env !== undefined)
@@ -541,7 +541,7 @@ describe("target environment isolation", () => {
         ChildProcess.make("fixture", [], { env: { SMITHERS_ENV_TEST: undefined }, extendEnv: true }),
         f.profile
       )
-      const script = wrapped.args.find((arg) => arg.endsWith("/environment.sh"))!
+      const script = wrapped.args.find((arg) => NodePath.basename(arg) === "environment.sh")!
       expect(NodeFs.readFileSync(script, "utf8")).not.toContain("export SMITHERS_ENV_TEST=")
     }))
   })
@@ -552,7 +552,7 @@ describe("target environment isolation", () => {
     vi.stubEnv("SMITHERS_ENV_TEST", "ordinary inherited value")
     await run(Effect.gen(function*() {
       const wrapped = yield* ProcessConfinement.make(f).confine(ChildProcess.make("fixture"), f.profile)
-      const script = wrapped.args.find((arg) => arg.endsWith("/environment.sh"))!
+      const script = wrapped.args.find((arg) => NodePath.basename(arg) === "environment.sh")!
       const contents = NodeFs.readFileSync(script, "utf8")
       expect(contents).not.toContain("BASH_FUNC_which")
       expect(contents).toContain("export SMITHERS_ENV_TEST='ordinary inherited value'")
@@ -579,7 +579,7 @@ describe("target environment isolation", () => {
         expect(wrapped.options.env?.[name]).toBeUndefined()
         expect(wrapped.args.some((arg) => arg.includes(value))).toBe(false)
       }
-      const script = wrapped.args.find((arg) => arg.endsWith("/environment.sh"))!
+      const script = wrapped.args.find((arg) => NodePath.basename(arg) === "environment.sh")!
       expect(NodeFs.statSync(script).mode & 0o777).toBe(0o600)
       const contents = NodeFs.readFileSync(script, "utf8")
       expect(contents).toContain("export LD_PRELOAD='/synthetic/fixture.so'")
