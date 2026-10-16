@@ -631,7 +631,7 @@ describe("target environment isolation", () => {
       expect(contents).toContain("export LD_PRELOAD='/synthetic/fixture.so'")
       expect(contents).toContain("export KEEP='quoted '\\'' value")
       expect(contents).toContain("exec \"$@\"")
-      expect(wrapped.args[1]).toContain(script)
+      expect(wrapped.args[1]).toContain(JSON.stringify(script))
     }))
     expect(NodeFs.readdirSync(f.temporaryDirectory)).toEqual([])
   })
