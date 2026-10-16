@@ -94,6 +94,7 @@ import { pendingRecoveryScope,sameRecoveryScope } from "./PendingRecovery"
 import { initialSignup, legacySignupForOwner } from "./LegacySignup"
 import { RepositoryContextSchema } from "./RepositoryContext"
 import { NotificationReadReceiptSchema,RepositoryNotificationSchema,notificationReadVersion,notificationReceiptKey,type RepositoryNotification } from "./RepositoryNotifications"
+import { NoticeDismissalSchema,noticeDismissalKey,noticeWasDismissed } from "./NoticeDismissals"
 import { impossibleAskOf,runLaunchCommandOf,toolResultLaunchedRun } from "./RunClaims"
 import type { RuntimeApproval } from "./RuntimeProjection"
 import {
@@ -128,6 +129,7 @@ export const APP_PROJECTION_SCHEMAS = {
   repositoryContexts: RepositoryContextSchema,
   repositoryNotifications: RepositoryNotificationSchema,
   notificationReceipts: NotificationReadReceiptSchema,
+  noticeDismissals: NoticeDismissalSchema,
   cardHistories: CardHistorySchema,
   approvalRequests: CardSchema,
   transitions: TransitionRecordSchema,
@@ -727,6 +729,7 @@ const forgetAccountState = (collections: ProjectionCollections, createdAt: numbe
       collections.repositoryContexts,
       collections.repositoryNotifications,
       collections.notificationReceipts,
+      collections.noticeDismissals,
       collections.approvalRequests,
       collections.toasts,
       collections.toolCalls,
@@ -2896,6 +2899,11 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
 
         case "toast.shown": {
           const id = `toast-${transition.key}`
+          // Hide is durable (#4034): this member already hid this entry
+          // occurrence, so raising it again — a seam re-reading the same
+          // persisted failure after a reload — states nothing new. The
+          // transition is inert, so it is never journaled either.
+          if (noticeWasDismissed(collections.noticeDismissals, transition.audience)) return
           const existing = collections.toasts.get(id)
           const toast: Toast = {
             id,
@@ -2946,10 +2954,25 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           break
         }
 
-        case "toast.dismissed":
-          if (collections.toasts.get(transition.id) === undefined) return
+        case "toast.dismissed": {
+          const dismissed = collections.toasts.get(transition.id)
+          if (dismissed === undefined) return
+          /*
+           * The person's own Hide on a member-routed notice is a durable fact
+           * about THIS occurrence (#4034). A system dismissal is not: the ok
+           * toast leaving on its timer, boot reconciliation clearing the stack,
+           * and a seam settling a wait all have to let the next occurrence
+           * speak. The failure, its card and its journal are untouched.
+           */
+          const audience = transition.actor === "user" ? dismissed.audience : undefined
+          if (audience !== undefined && !noticeWasDismissed(collections.noticeDismissals, audience)) {
+            collections.noticeDismissals.insert({
+              id: noticeDismissalKey(audience.member, audience.entryId), member: audience.member, entryId: audience.entryId
+            })
+          }
           collections.toasts.delete(transition.id)
           break
+        }
 
         case "card.removed": {
           if (collections.cards.get(transition.id) === undefined) return

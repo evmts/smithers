@@ -33,7 +33,11 @@ Missing positions, conflicting identities, unsupported versions or broken
 hashes refuse recovery; cached rows cannot replace damaged event authority.
 The two per-launch caches are cleared by a recorded boot projection.
 
-The event format remains version 1; `APP_PROJECTOR_VERSION` is 32. Account-scoped saved conversation replay adds
+The event format remains version 1; `APP_PROJECTOR_VERSION` is 37. Hiding a
+member-routed notice records a durable `noticeDismissals` receipt — one per
+member and notice occurrence (`ToastAudience.entryId`) — and a dismissed
+occurrence is no longer raised again, at 37 (smithersai/smithers#4034).
+Account-scoped saved conversation replay adds
 `conversation.restored` at 32. The terminal and harness tabs and their `pty.*`
 transitions retired at 23 (smithersai/smithers#2229); an older store's stale tab
 rows fail `TabSchema`, are quarantined, and the surviving rows seed the fresh

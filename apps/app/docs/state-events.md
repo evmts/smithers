@@ -238,6 +238,21 @@ library implementation.
 
 ## Read-time decorations
 
+Hiding a member-routed notice has one receipt collection, `noticeDismissals`,
+keyed by the JSON pair `[member, entryId]`. Toast rows are session chrome — the
+recorded boot projection drops every one — so a notice the person hid came back
+on the next launch as soon as its seam re-read the same persisted failure
+(smithersai/smithers#4034). Only a `toast.dismissed` event whose actor is the
+person, on a toast carrying a `ToastAudience`, records a receipt; the projector
+then refuses to raise that member's entry occurrence again, which makes the
+re-raise inert and seals no further event. A system dismissal records nothing,
+so an ok toast's timer, boot reconciliation and a settled wait all leave the
+next occurrence free to speak. Occurrence ids carry the run and the attempt, so
+a new failure notifies under the same title and the same flow, and another
+member's notices are never suppressed. The failure itself keeps its card, its
+transcript and its journal. Receipts leave with the account that wrote them
+(`forgetAccountState`).
+
 Notification reads have one receipt collection, `notificationReceipts`, keyed
 by the JSON pair `[notificationId, version]`. A `notifications.read` event
 records only a currently observed matching version; a stale detail request

@@ -125,6 +125,7 @@ import { OpfsOpenTimeout, storageOpenDiagnostic, storageOpenFault } from "./Stor
 import { admitsPendingRecovery,pendingRecoveryScope,sameRecoveryScope,type PendingRecoveryAuthority,type PendingRecoveryBoundary } from "./PendingRecovery"
 import { RepositoryContextSchema } from "./RepositoryContext"
 import { NotificationReadReceiptSchema,RepositoryNotificationSchema } from "./RepositoryNotifications"
+import { NoticeDismissalSchema } from "./NoticeDismissals"
 import { RuntimeApprovalSchema,RuntimeRunSchema,type RuntimeApproval,type RuntimeRun } from "./RuntimeProjection"
 import { HeldBrowserStorageError, StorageWriteFailedError } from "./StorageRecoveryContract"
 import { WIKI_RECOVERY_STORAGE_KEY,clearWikiRecovery,readWikiRecovery,writeWikiRecovery } from "./WikiRecovery"
@@ -914,6 +915,7 @@ const COLLECTION_DEFINITIONS = {
   repositoryContexts: persistedCollection("app-repository-contexts", RepositoryContextSchema, byId),
   repositoryNotifications: persistedCollection("app-repository-notifications", RepositoryNotificationSchema, byId),
   notificationReceipts: persistedCollection("app-notification-receipts", NotificationReadReceiptSchema, byId),
+  noticeDismissals: persistedCollection("app-notice-dismissals", NoticeDismissalSchema, byId),
   cardHistories: persistedCollection("app-card-histories", CardHistorySchema, byId),
   approvalRequests: persistedCollection("app-approval-requests", CardSchema, byId),
   transitions: persistedCollection("app-transitions", TransitionRecordSchema, byId),

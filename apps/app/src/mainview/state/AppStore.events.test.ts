@@ -672,15 +672,75 @@ describe("the live store's authoritative event path", () => {
      * out. Changing this list owes a bump and an upgrade test like the ones
      * below.
      */
-    expect({ version: APP_PROJECTOR_VERSION, roster: [...APP_PROJECTION_COLLECTION_NAMES].sort() }).toEqual({ version: 36, roster: [
+    expect({ version: APP_PROJECTOR_VERSION, roster: [...APP_PROJECTION_COLLECTION_NAMES].sort() }).toEqual({ version: 37, roster: [
       "agents", "approvalRequests", "billingAccounts", "branches", "cardHistories", "cards", "changes",
       "cloudSessions", "cloudWorkspaces", "commandIntents", "connectorOperations", "connectors", "flowDurations", "frames",
       "githubAppStatuses", "httpTurnLegs", "httpTurns", "identitySessions", "messages", "models",
-      "notificationReceipts", "recommendations", "repoTree", "repositories",
+      "noticeDismissals", "notificationReceipts", "recommendations", "repoTree", "repositories",
       "repositoryContexts", "repositoryFlows", "repositoryJobObservations", "repositoryNotifications", "runtimeApprovals",
       "runtimeRuns", "seats", "sessions", "starredTargets", "tabs", "toasts", "toolCalls", "transitions", "workingCopies",
       "workspaces", "worldDocuments"
     ] })
+  })
+
+  test("version 36 upgrade keeps a saved hide-less stream and records the next hide once", async () => {
+    /*
+     * Version 37 (#4034) added `noticeDismissals` AND moved the projector: a
+     * user `toast.dismissed` on a member-routed notice now writes a receipt,
+     * so an already-sealed one reprojects to a state its hash does not name.
+     * A pre-37 store therefore rotates from its materialized rows, keeping its
+     * conversation and its notice — it never invents a receipt nobody wrote —
+     * and the hide the person presses after the upgrade records exactly one.
+     */
+    const storage = memoryStorage(), store = await open(storage)
+    await store.dispatch({ type: "composer.changed", actor: "user", draft: "kept" }).isPersisted.promise
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ben",
+      admin: false, scopesPlain: null }).isPersisted.promise
+    await store.compactEvents()
+    const old = await store.eventHistory()
+    expect(old.checkpoint.snapshot.noticeDismissals).toEqual([])
+    const audience = { member: "ben", entryId: "todo.failed.12.run-42.2", kind: "failed" as const,
+      actorLabel: "Coding agent for Ben", target: { flow: "todo" as const, n: 12 } }
+    const notice = { id: "toast-todo.failed.12.run-42.2", key: audience.entryId, audience,
+      title: "Card model contracts", status: "failed", detail: "Home rejected the limited state", createdAt: 1, updatedAt: 1 }
+    const { noticeDismissals: _retired, ...withoutReceipts } = structuredClone(old.checkpoint.snapshot)
+    const snapshot = { ...withoutReceipts, toasts: [...old.checkpoint.snapshot.toasts!, notice] }
+    const head = { ...old.head, projectorVersion: 36 }
+    const { hash: _, ...body } = { ...old.checkpoint, projectorVersion: 36, snapshot }
+    const checkpoint = { ...body, hash: digest("smithers-app/checkpoint/v1:" + canonicalEventValue(body)) }
+    await store.dispose?.(); opened.splice(opened.indexOf(store), 1)
+    editEnvelope(storage, entries => {
+      for (const [id, data] of [["app-event-heads", head], ["app-event-checkpoints", checkpoint]] as const) {
+        entries[`smithers-mvp.${id}`] = JSON.stringify({ "s:current": { versionKey: "fixture", data } })
+      }
+      const toasts = JSON.parse(entries["smithers-mvp.app-toasts"] ?? "{}")
+      toasts[`s:${notice.id}`] = { versionKey: "fixture", data: notice }
+      entries["smithers-mvp.app-toasts"] = JSON.stringify(toasts)
+      delete entries["smithers-mvp.app-notice-dismissals"]
+    })
+    const restored = await open(storage)
+    expect((await restored.eventHistory()).checkpoint.reason).toBe("projector-upgrade")
+    expect((await restored.eventHistory()).head.projectorVersion).toBe(APP_PROJECTOR_VERSION)
+    expect((await restored.verifyState()).valid).toBe(true)
+    expect(restored.session().draft).toBe("kept")
+    expect(restored.collections.identitySessions.get("identity")?.login).toBe("ben")
+    // A notice nobody hid is not retroactively hidden, and no receipt is invented.
+    expect(restored.collections.noticeDismissals.size).toBe(0)
+    await restored.dispatch({ type: "toast.shown", actor: "system", key: audience.entryId, title: notice.title, audience }).isPersisted.promise
+    expect(restored.collections.toasts.has(notice.id)).toBe(true)
+    // The first hide after the upgrade records once; repeating it writes nothing more.
+    const sequence = (await restored.eventHistory()).head.sequence
+    await restored.dispatch({ type: "toast.dismissed", actor: "user", id: notice.id }).isPersisted.promise
+    await restored.dispatch({ type: "toast.dismissed", actor: "user", id: notice.id }).isPersisted.promise
+    expect([...restored.collections.noticeDismissals.values()].map(row => row.entryId)).toEqual([audience.entryId])
+    expect((await restored.eventHistory()).head.sequence).toBe(sequence + 1)
+    expect((await restored.verifyState()).valid).toBe(true)
+    // The receipt is durable: the next launch reads it and the notice stays hidden.
+    await restored.dispose?.(); opened.splice(opened.indexOf(restored), 1)
+    const reopened = await open(storage)
+    expect([...reopened.collections.noticeDismissals.values()].map(row => row.member)).toEqual(["ben"])
+    await reopened.dispatch({ type: "toast.shown", actor: "system", key: audience.entryId, title: notice.title, audience }).isPersisted.promise
+    expect(reopened.collections.toasts.has(notice.id)).toBe(false)
   })
 
   test("version 19 upgrade drops a saved toast whose action names a renamed workspace.* flow", async () => {

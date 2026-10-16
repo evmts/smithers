@@ -108,6 +108,8 @@ export const PERSISTED_COLLECTION_IDS: ReadonlyArray<string> = [
   "app-card-histories",
   "app-repository-notifications",
   "app-notification-receipts",
+  /* Hide on a member-routed notice (#4034): one receipt per hidden occurrence. */
+  "app-notice-dismissals",
   "app-repository-contexts",
   "app-approval-requests",
   "app-transitions",

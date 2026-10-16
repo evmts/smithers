@@ -57,7 +57,14 @@ export const APP_EVENT_FORMAT_VERSION = 1
  * name, and replay refused the saved stream at startup (#3906). An added
  * optional field is only free when nothing writes it to an old row's bytes.
  */
-export const APP_PROJECTOR_VERSION = 36
+/*
+ * 37: Hide on a member-routed notice writes a durable `noticeDismissals`
+ * receipt and a dismissed occurrence no longer re-raises (#4034). The roster
+ * grew AND the projector moved: an already-persisted user `toast.dismissed`
+ * reprojects to a state its sealed hash does not name, so saved streams rotate
+ * from their materialized rows instead of replaying old bytes.
+ */
+export const APP_PROJECTOR_VERSION = 37
 
 const JsonSchema: z.ZodType<EventJson> = z.lazy(() => z.union([
   z.null(), z.boolean(), z.number().finite(), z.string(), z.array(JsonSchema), z.record(z.string(), JsonSchema)

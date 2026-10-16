@@ -84,7 +84,8 @@ describe("pure app event projection", () => {
 
   test("owns exactly the domain roster and its stable keys", () => {
     // 40: verified repository job observations add one domain collection (#2536).
-    expect(APP_PROJECTION_COLLECTION_NAMES).toHaveLength(40)
+    // 41: hidden-notice receipts add one durable collection (#4034).
+    expect(APP_PROJECTION_COLLECTION_NAMES).toHaveLength(41)
     expect(Object.keys(emptyAppProjection())).toEqual(Object.keys(APP_PROJECTION_SCHEMAS))
     expect(APP_PROJECTION_COLLECTION_NAMES).not.toContain("appEvents")
     expect(appProjectionKey("githubAppStatuses", { repo: "org/repo" })).toBe("org/repo")
