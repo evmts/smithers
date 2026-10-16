@@ -754,9 +754,10 @@ describe("CodexLogin.cliRefresh", () => {
   })
 
   it("bounds a CLI that never answers and leaves no process behind", async () => {
-    const bin = fakeCodex(
-      "require('node:fs').writeFileSync(require('node:path').join(require('node:path').dirname(process.argv[1]), 'pid'), String(process.pid)); process.stdin.resume(); setInterval(() => {}, 1000)\n"
-    )
+    // A shell stub records its pid within milliseconds of the spawn; a Node
+    // stub under a loaded machine can miss the deadline before its first line.
+    const bin = scratch()
+    writeFileSync(join(bin, "codex"), "#!/bin/sh\necho $$ > \"${0%/*}/pid\"\nexec /bin/sleep 600\n", { mode: 0o755 })
     const file = loginFile(authJson({ access_token: expiredJwt(), refresh_token: "fake-refresh-0" }))
 
     const error = await signError(file, CodexLogin.cliRefresh({ environment: { PATH: bin }, timeoutMs: 500 }))
