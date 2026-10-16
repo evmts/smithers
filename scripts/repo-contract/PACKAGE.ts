@@ -44,7 +44,7 @@ const publicExportMaps = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//scripts/repo-contract/public-export-maps.test.mjs")]),
   srcs: [
     sources,
-    Smithers.file("//scripts/public-export-map.mjs"),
+    Smithers.file("//packages/smithers/build/build-cli/scripts/public-export-map.mjs"),
     Smithers.file("//scripts/fixtures/public-export-surface.json"),
     Smithers.file("//scripts/workspace-packages.mjs"),
     Smithers.file("//pnpm-workspace.yaml")
