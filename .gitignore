@@ -141,6 +141,10 @@ worktrees/
 # registration file as its own module, and the test removes each one; a killed
 # run must not leave the checkout dirty with one.
 packages/smithers/test/fixtures/.catalog-refresh/
+# Scratch flow roots the registry tests create under their fixtures, so their
+# modules resolve this package's dependencies, and remove after each case. A
+# concurrent graph evaluation must not read one as a declared input (#3979).
+packages/smithers/agent/registry/test/fixtures/**/.*/
 # Module load siblings. The registry evaluates each flow module from a copy
 # beside its original, `.smithers-<digest>-<sequence>-<stamp><ext>`
 # (`packages/smithers/agent/registry/src/Executable.ts`), and removes it once
