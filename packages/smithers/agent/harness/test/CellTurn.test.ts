@@ -5371,6 +5371,7 @@ describe("CellTurn unanswered failure", () => {
     )
 
     const demanded = of(events, "unresolved-demanded")
+    expect(of(events, "cell-call-started").map((event) => event.declared)).toEqual([false, true, false, false])
     expect(demanded).toEqual([
       expect.objectContaining({ flow: "bash", currentDigest: "a.py=fixed", nextFrame: 3 })
     ])

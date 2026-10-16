@@ -2376,7 +2376,13 @@ const callHandler = (
         CanonicalJson.stringify([tree.chain ?? null, signatureOf(invocation.flow, invocation.input, at)])
       )
     }
-    yield* emit(new AgentEvent.CellCallStarted({ eventType: eventType.cellCallStarted, call }))
+    yield* emit(
+      new AgentEvent.CellCallStarted({
+        eventType: eventType.cellCallStarted,
+        call,
+        declared: invocation.declared === true
+      })
+    )
     const issuedAt = yield* Clock.currentTimeMillis
     // What kind of failure the flow's handler met, when its binding says.
     let kind: Cell.FailureKind = {}

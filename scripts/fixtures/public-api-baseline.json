@@ -5057,7 +5057,7 @@
         }
       },
       "declarations": {
-        "AgentEvent.d.ts": "b6a8d8042bea256efd493233c8ec8e2e08e07304c2fbe4bffc1a0a8037b5dcb7",
+        "AgentEvent.d.ts": "7dc4eb1d41d70ac04480333d098b803ac8e2405f0163c7f7ffb7aa34d4eb7c93",
         "CallLedger.d.ts": "f30d3c944bc13658a0637aba81e37630741baf0e1ce24455c0a8243d274220eb",
         "Cell.d.ts": "9516d6c67aa3e1f81b73b9a0e6b28869ce0d3d64781bb593da48c2dbe3ff941a",
         "CellCalls.d.ts": "07f58160539baf6a0b6f87d716e2a54935f82bed0d3064c97ba17e19afe69468",

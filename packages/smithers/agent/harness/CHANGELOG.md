@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `CellCallStarted.declared` optionally records whether a call was the run's
+  declared verification. Journal projections and benchmark replay preserve it;
+  older events still decode without it and retain their resume identities.
+  Replay never infers a declaration from an ordinary read (#4052).
+
 ### Changed
 
 - Only the check a run declared can hold its completion. A call the cell makes
