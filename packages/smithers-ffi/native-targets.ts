@@ -1,7 +1,7 @@
 import { Smithers } from "@smthrs/targets"
-import { Package as flowsJjPackage } from "../packages/smithers/flows/jj-wasm/PACKAGE.ts"
-import { Package as machinedPackage } from "../packages/smithers-machined/PACKAGE.ts"
-import { Package as backendPackage } from "../packages/backend/PACKAGE.ts"
+import { Package as flowsJjPackage } from "../smithers/flows/jj-wasm/PACKAGE.ts"
+import { Package as machinedPackage } from "../smithers-machined/PACKAGE.ts"
+import { Package as backendPackage } from "../backend/PACKAGE.ts"
 
 export const nativeFfiInputs = [
   Smithers.file("//Cargo.toml"),

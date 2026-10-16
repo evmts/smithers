@@ -1,5 +1,5 @@
 import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
-import { nativeFfiLib, rehearsalNative } from "../../scripts/native-targets.ts"
+import { nativeFfiLib, rehearsalNative } from "../smithers-ffi/native-targets.ts"
 /** Standard package targets plus package-owned documentation generation. */
 import { Smithers } from "@smthrs/targets"
 import { Package as flowsJjPackage } from "../../packages/smithers/flows/jj-wasm/PACKAGE.ts"
@@ -353,7 +353,7 @@ const faultsLong = Smithers.FaultSuite({
 const faultsReference = Smithers.Shell.Test({
   exclusive: true,
   shell:
-    "node scripts/fault-reference-host.mjs && cd packages/smithers && pnpm exec vitest run --config vitest.faults.config.ts && pnpm exec vitest run --config vitest.faults-long.config.ts",
+    "node packages/smithers/scripts/fault-reference-host.mjs && cd packages/smithers && pnpm exec vitest run --config vitest.faults.config.ts && pnpm exec vitest run --config vitest.faults-long.config.ts",
   data: [
     faultNative,
     faultPostgresPrograms,
@@ -362,7 +362,7 @@ const faultsReference = Smithers.Shell.Test({
     Smithers.glob("test/faults/**"),
     Smithers.file("vitest.faults-long.config.ts"),
     Smithers.file("vitest.faults.config.ts"),
-    Smithers.file("//scripts/fault-reference-host.mjs"),
+    Smithers.file("scripts/fault-reference-host.mjs"),
     Smithers.file("//scripts/reference-host/hosts.json")
   ],
   env: {
@@ -400,6 +400,32 @@ const docsSources = Smithers.Filegroup({
     Smithers.glob("docs/*.md")
   ],
   cwd: "packages/smithers"
+})
+
+/**
+ * The reference-fault host guard admits only the approved reference Mac with
+ * its installed bundle, and refuses a Linux host before a fault starts.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const faultReferenceHost = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//packages/smithers/scripts/fault-reference-host.test.mjs")]),
+  srcs: [Smithers.file("//packages/smithers/scripts/fault-reference-host.mjs")],
+  deps: []
+})
+
+/**
+ * C-SEC-02's host-process sampler: process-tree and open-file sampling with
+ * real `ps`/`lsof` positive controls, and injected launchd resolution.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const hostProcessSampler = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//packages/smithers/scripts/host-process-sampler.test.mjs")]),
+  srcs: [Smithers.file("//packages/smithers/scripts/host-process-sampler.mjs")],
+  deps: []
 })
 
 /**
@@ -561,7 +587,9 @@ export const Package = Smithers.Package({
     faults,
     faultsLong,
     faultsReference,
+    faultReferenceHost,
     fmt,
+    hostProcessSampler,
     lib,
     lint,
     nativeSources,

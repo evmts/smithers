@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -578,10 +578,10 @@ test('CI check runs for a different SHA refuse closure with commit and no writes
   } finally { f.cleanup() }
 })
 
-test('scripts/checks retains only the host sampler and no duplicate runner', () => {
-  const dir = new URL('./checks/', import.meta.url)
-  assert.deepEqual(readdirSync(dir).sort(), ['host-process-sampler.mjs', 'host-process-sampler.test.mjs'])
-  for (const name of readdirSync(dir)) assert.doesNotMatch(readFileSync(new URL(name, dir), 'utf8'), /check-run|check-evidence|check-commands|host-profile|ops-health-line/)
+test('the host sampler lives with packages/smithers and no duplicate check runner remains', () => {
+  assert.equal(existsSync(new URL('./checks/', import.meta.url)), false)
+  const sampler = new URL('../packages/smithers/scripts/host-process-sampler.mjs', import.meta.url)
+  assert.doesNotMatch(readFileSync(sampler, 'utf8'), /check-run|check-evidence|check-commands|host-profile|ops-health-line/)
 })
 
 

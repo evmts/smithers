@@ -1,4 +1,4 @@
-import { nativeFfiInputs, nativeFfiLib, rehearsalNative } from "./scripts/native-targets.ts"
+import { nativeFfiInputs, nativeFfiLib, rehearsalNative } from "./packages/smithers-ffi/native-targets.ts"
 import { backendSQLC } from "./scripts/backend-sqlc.ts"
 import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
 import { ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
@@ -1215,7 +1215,8 @@ const securityReview = Smithers.SecurityReview({
     ".smithers/*.json",
     ...flowEntries.filter((input) => /\/flow\.(ts|mdx)$/.test(input.path)).map((input) => input.path),
     "packages/smithers-ffi/Cargo.toml",
-    "packages/smithers-ffi/src/*.rs"
+    "packages/smithers-ffi/src/*.rs",
+    "packages/smithers-ffi/native-targets.ts"
   ],
   checks: [
     {
