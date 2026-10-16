@@ -12,7 +12,13 @@ interface ViewPlan {
   readonly id: string
   readonly title: string
   readonly placeholder?: Card
-  readonly project?: (card: Card) => Card
+  /**
+   * The read's card, and the card this activation replaces — the one the
+   * person was looking at, before the loading placeholder covered it. A
+   * projection carries forward what they chose on it; the replaced card is
+   * the pane's, whose id is not always `plan.id` (EmbeddedHistory.paneTarget).
+   */
+  readonly project?: (card: Card, replaced: Card | undefined) => Card
   /** Include every input that changes the read, including filters and revisions. */
   readonly key?: string
   readonly pane?: string
@@ -111,7 +117,7 @@ export function preparedView<A extends unknown[]>(ctx: SeamContext, resolve: (..
         return current() ? result : undefined
       }
       const navigation = ctx.store.collections.cards.get(id)?.navigation
-      const card = plan.project?.(result.card) ?? result.card
+      const card = plan.project?.(result.card, previous) ?? result.card
       await ctx.dispatch({ type: "card.view.loaded", actor, card: { ...card, body: card.body, ...common, title: card.title, navigation, loading: false } }).isPersisted.promise
       if (!current()) return
       await plan.after?.()

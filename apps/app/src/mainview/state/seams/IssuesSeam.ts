@@ -1143,7 +1143,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       if ("error" in target) return target.error
       if (source === "github" || install) return readRepositoryDetail(ctx, target.repo, "issue", number,
         () => issueView(number, target.repo, "github"), "github")
-      const shown = await readRepositoryDetail(ctx, target.repo, "issue", number, () => showIssue(target.repo, number))
+      const shown = await readRepositoryDetail(ctx, target.repo, "issue", number, () => showIssue(target.repo, number), "smithers")
       return shown
     }, { preload: issueView.preload }),
 

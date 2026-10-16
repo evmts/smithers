@@ -155,13 +155,13 @@ test("read receipts stay isolated by repository, account, and source", async () 
     Response.json(url.includes("/issues?state=open") || url.includes("github-repos/") ? [issueResponse("2026-09-13T00:00:00Z")] : []))
   await actions.showRepoOverview("org/repo")
   await actions.showRepoOverview("else/repo")
-  await readRepositoryDetail(ctx, "org/repo", "issue", 3, async () => ({ value: "Loaded Smithers detail" }))
+  await readRepositoryDetail(ctx, "org/repo", "issue", 3, async () => ({ value: "Loaded Smithers detail" }), "smithers")
   const rows = [...store.collections.repositoryNotifications.values()]
   expect(rows.filter(row => row.readVersion === row.version).map(row => [row.repo, row.source])).toEqual([["org/repo", "smithers"]])
   await readRepositoryDetail(ctx, "else/repo", "issue", 3, async () => {
     await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "another-user", admin: false, scopesPlain: null }).isPersisted.promise
     return { value: "Loaded before account change" }
-  })
+  }, "smithers")
   expect([...store.collections.repositoryNotifications.values()].filter(row => row.repo === "else/repo").every(row => row.readVersion === undefined)).toBe(true)
 })
 
@@ -237,3 +237,39 @@ for (const origin of ["github", "smithers"] as const) for (const scenario of ["s
     await store.dispose?.()
   })
 }
+
+/*
+ * The account is not the only context a source read outlives. `pullSource` is
+ * one more await before the read is prepared, and the person can leave the
+ * conversation it was asked in during it. The seam reads the conversation
+ * through `ctx.store.session()`, so this test moves it there, between the
+ * request for the repository's source and its answer.
+ */
+test("PR read receipts use repository authority: conversation left while the source resolves", async () => {
+  let started!: () => void
+  const resolving = new Promise<void>(resolve => { started = resolve })
+  let answer!: () => void
+  const held = new Promise<void>(resolve => { answer = resolve })
+  const read: string[] = []
+  const { store, ctx } = await setup(memoryStorage(), async url => {
+    if (url === "/api/repos/owner/repo") { started(); await held; return Response.json({ full_name: REPO }) }
+    read.push(url)
+    return Response.json([])
+  })
+  await store.dispatch({ type: "repo.update.observed", actor: "system",
+    context: { id: "test", scope: "anonymous", data: { repo: REPO, checkedAt: 0, openIssues: 0, openPrs: 1, problems: [], items: [], truncated: false } },
+    notifications: [{ id: "smithers", source: "smithers", scope: "anonymous", repo: REPO, sourceId: "6", kind: "pr",
+      number: 6, title: "PR", state: "open", updatedAt: null, version: "v1", tags: [], processedAt: 0 }] }).isPersisted.promise
+  let turnTabId = "tab-asked-in"
+  const inConversation = { ...store, session: () => ({ ...store.session(), phase: "responding" as const, turnTabId }) }
+  const viewing = createLandingsSeam({ ...ctx, store: inConversation }).viewLanding(6, REPO)
+  await resolving
+  turnTabId = "tab-moved-to"
+  answer()
+  expect(await viewing).toBe("The repository or account changed while its pull request was loading.")
+  expect(read).toEqual([])
+  expect([...store.collections.notificationReceipts.values()]).toEqual([])
+  expect(store.collections.repositoryNotifications.get("smithers")?.readVersion).toBeUndefined()
+  expect([...store.collections.cards.values()].filter(card => card.kind === "pr")).toEqual([])
+  await store.dispose?.()
+})

@@ -2,11 +2,18 @@ import { conversationTabIdOf } from "./AppState"
 import { repositoryScope } from "./RepositoryContext"
 import type { SeamContext } from "./seams/SeamContext"
 
-/** Capture the versions before loading; a later update must remain unread. */
+/**
+ * Capture the versions before loading; a later update must remain unread.
+ *
+ * `origin` is the source the caller actually read, and it is named rather
+ * than defaulted: one number can be a notification from two sources at once
+ * (a GitHub import's pull request and the platform's own landing), and a
+ * default would acknowledge whichever one it guessed.
+ */
 export async function readRepositoryDetail(
   ctx: SeamContext, repo: string, kind: "issue" | "pr", number: number,
   read: () => Promise<string | void | { readonly value: string }>,
-  origin: "smithers" | "github" = "smithers"
+  origin: "smithers" | "github"
 ): Promise<string | void | { readonly value: string }> {
   const scope = repositoryScope(ctx.store, repo)
   const conversation = conversationTabIdOf(ctx.store.session())

@@ -400,6 +400,33 @@ export const readLandingOptions = async (
     .map((row) => ({ value: String(row.number), label: `#${row.number} ${row.title}` })) }
 }
 
+/*
+ * The tab someone is reading survives re-reading the SAME pull request — a
+ * refresh after a review, or the Retry a refused tab offers. The card that
+ * carries the choice is the one on screen, and the repository pane reuses ONE
+ * card id for every location it shows (state/EmbeddedHistory.ts `paneTarget`),
+ * so a pull request opened from the Activity card lives under the pane's id,
+ * not under `pr-<repo>-<number>`. Reading the fixed id found no card there
+ * and every Retry dropped the person back on Conversation.
+ *
+ * `live` is the card as it stands when the read publishes, so a tab clicked
+ * WHILE the read was in flight is the newer choice and wins. `replaced` is
+ * the card from before the loading placeholder covered it, which is all a
+ * retried failed read has left. Neither inherits across entities: another
+ * number or repository is another pull request, and the same number on a
+ * GitHub import and on a native landing are two different ones.
+ */
+const carrySelectedTab = (card: Card, live: Card | undefined, replaced: Card | undefined): Card => {
+  if (card.kind !== "pr") return card
+  const sameLanding = (other: Card | undefined): PrPayload["tab"] =>
+    other?.kind === "pr" && other.payload.repo === card.payload.repo && other.payload.number === card.payload.number
+      && other.payload.sourceRepo === card.payload.sourceRepo
+      ? other.payload.tab
+      : undefined
+  const tab = sameLanding(live) ?? sameLanding(replaced)
+  return tab === undefined ? card : { ...card, payload: { ...card.payload, tab } }
+}
+
 export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: RepositoryForm): LandingsSeam => {
   const landingsUrl = (repo: string): string => `${ctx.baseUrl}${repoApiRoot(repo)}/landings`
 
@@ -751,6 +778,9 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
     stateOverride?: string,
     resolvedSource?: Exclude<PullSource, { readonly error: string }>
   ): Promise<ViewResult> => {
+    /* The caller that already resolved the source hands it over: the read and
+     * the notification it acknowledges then name the SAME fact, and the
+     * repository is asked for its source once per navigation, not twice. */
     const source = resolvedSource ?? await pullSource(ctx, repo)
     if ("error" in source) return source.error
     let response: Response
@@ -785,7 +815,6 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
         fetchChecks(repo, landing.changeIds.at(-1)),
         fetchStack(repo, number)
       ])
-    const current = ctx.store.collections.cards.get(`pr-${repo}-${number}`)
     const payload: PrPayload = {
       repo,
       number,
@@ -796,7 +825,6 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
       prBody: landing.body,
       reviews: [...reviews],
       checks: [...checks],
-      ...(current?.kind === "pr" && current.payload.tab !== undefined ? { tab: current.payload.tab } : {}),
       ...(landing.targetBookmark !== null ? { baseBranch: landing.targetBookmark } : {}),
       ...(landing.createdAt !== null ? { createdAt: landing.createdAt } : {}),
       ...stack
@@ -871,8 +899,11 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
     const target = resolveTargetRepo(ctx.store, repoArg)
     if ("error" in target) return target.error
     const repo = target.repo
-    return { id: `pr-${repo}-${number}`, title: `Pull request #${number} · ${repo}`, pane: repo,
-      key: JSON.stringify(["pr", repo, number, stateOverride, source]), read: () => readLanding(repo, number, stateOverride, source) }
+    const id = `pr-${repo}-${number}`
+    return { id, title: `Pull request #${number} · ${repo}`, pane: repo,
+      key: JSON.stringify(["pr", repo, number, stateOverride, source]),
+      project: (card, replaced) => carrySelectedTab(card, ctx.store.collections.cards.get(replaced?.id ?? id), replaced),
+      read: () => readLanding(repo, number, stateOverride, source) }
   })
   const surfaceLanding = (repo: string, number: number, stateOverride?: string) => {
     invalidatePreparedViews(ctx.store)
@@ -941,6 +972,17 @@ export const createLandingsSeam = (ctx: SeamContext, renderRepositoryForm?: Repo
     viewLanding: Object.assign(async (number: number, repoArg?: string) => {
       const target = resolveTargetRepo(ctx.store, repoArg)
       if ("error" in target) return target.error
+      /*
+       * Which notification this read answers is the source this repository
+       * reads pull requests from NOW: an import's #2 is GitHub's pull
+       * request, and the platform's own #2 is a different one under the same
+       * number. The source is resolved once, by the one canonical resolver,
+       * before the versions are captured, so the read and the receipt name
+       * the same fact. The account and the conversation it was resolved for
+       * are captured first: the source read is in flight, and its answer must
+       * not open a card, read, or acknowledge anything in a context the
+       * person has already left.
+       */
       const ownerCurrent = captureCloudOwner(ctx, false)
       const conversation = conversationTabIdOf(ctx.store.session())
       const source = await pullSource(ctx, target.repo)
