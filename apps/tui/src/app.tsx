@@ -1654,6 +1654,14 @@ export function App(props: AppProps) {
           setStatus("Stop running work first", "warning")
         } else newSession()
         return true
+      case "clear":
+        if (occupied()) {
+          setStatus("Stop running work first", "warning")
+        } else {
+          adopt(Session.create(props.host.cwd), [])
+          setStatus("Conversation cleared")
+        }
+        return true
       case "resume":
         setPicker({ kind: "resume", query: "", selected: 0, sessions: Session.list(props.host.cwd) })
         return true

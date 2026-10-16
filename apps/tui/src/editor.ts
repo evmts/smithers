@@ -59,6 +59,7 @@ export interface Command {
 export const commands: ReadonlyArray<Command> = [
   { name: "model", args: "[query]", description: "Pick a model" },
   { name: "new", description: "Start a new conversation" },
+  { name: "clear", description: "Clear the conversation" },
   { name: "resume", description: "Resume a conversation" },
   { name: "conversation", description: "Show the conversation file and tokens" },
   { name: "compact", description: "Drop the oldest context" },

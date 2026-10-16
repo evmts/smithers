@@ -49,6 +49,15 @@ describe("unknown commands", () => {
     for (const name of ["hotkeys", "tabs", "stop", "ui", "flwo", "retry", ""]) expect(Editor.known(name)).toBe(false)
   })
 
+  it("lists /clear, knows it, and does not mistake it for an unknown command", () => {
+    const clear = Editor.commands.find((command) => command.name === "clear")
+    expect(clear?.description).toBe("Clear the conversation")
+    expect(Editor.known("clear")).toBe(true)
+    expect(Editor.nearest("clear")?.name).toBe("clear")
+    expect(Editor.nearest("clera")?.name).toBe("clear")
+    expect(Composer.route("/clear", false)).toEqual({ _tag: "command" })
+  })
+
   it("no longer lists the removed commands", () => {
     const names = Editor.commands.map((command) => command.name)
     for (const removed of ["hotkeys", "tabs", "claude", "codex", "stop", "ui", "theme"]) {
