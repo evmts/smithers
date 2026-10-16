@@ -8,8 +8,16 @@
  * who to notify would make a notification nondeterministic and would need the
  * work's words to ask with.
  *
- * The wire shape is the app's own contract
- * (`packages/rpc/src/NotificationPolicy.ts`): the request carries identity
+ * COPYABLE ON PURPOSE: everything this file needs is `@smthrs/flow` and
+ * `effect`, both published, so dropping the directory into another repository
+ * and naming it on `notification.route` compiles there. It deliberately does
+ * NOT import `packages/rpc/src/NotificationPolicy.ts` — `@smthrs/rpc` is
+ * private to this monorepo, so a copy that reached into it would not resolve
+ * in the repository that copied it. The three values restated below are the
+ * app's, and `flows/test/repository-notification-policy.test.ts` fails if
+ * either side moves.
+ *
+ * The wire shape is the app's own contract: the request carries identity
  * only — repository, notice kind, entry id, TODO number, the login the work
  * belongs to, and the people who already can read it — and the answer carries
  * bounded typed recipient ids. The app checks access again after this
@@ -18,11 +26,15 @@
  */
 import { Action } from "@smthrs/flow"
 import { Effect, Schema } from "effect"
-import {
-  NOTIFICATION_POLICY_DECIDE_ACTION,
-  NOTIFICATION_POLICY_KINDS,
-  NOTIFICATION_RECIPIENT_LIMIT
-} from "../../../packages/rpc/src/NotificationPolicy.ts"
+
+/** The deciding action's tag, the app's `NOTIFICATION_POLICY_DECIDE_ACTION`. */
+export const NOTIFICATION_POLICY_DECIDE_ACTION = "notification-policy/decide"
+
+/** The routable notices, the app's `NOTIFICATION_POLICY_KINDS`. */
+export const NOTIFICATION_POLICY_KINDS = ["needs_you", "approval", "conflict", "in_review", "failed", "merged"] as const
+
+/** How many recipients one decision may name, the app's `NOTIFICATION_RECIPIENT_LIMIT`. */
+export const NOTIFICATION_RECIPIENT_LIMIT = 50
 
 /** A GitHub login, the same bound the app's contract puts on a recipient. */
 const Recipient = Schema.String.check(Schema.isPattern(/^[a-zA-Z\d](?:[a-zA-Z\d]|-(?=[a-zA-Z\d])){0,38}$/))

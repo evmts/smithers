@@ -14,13 +14,21 @@ import {
   NOTIFICATION_POLICY_EVENT,
   NOTIFICATION_POLICY_FLOW_TAG,
   NOTIFICATION_POLICY_KINDS,
+  NOTIFICATION_RECIPIENT_LIMIT,
   NotificationPolicyDecisionSchema,
   notificationPolicyDeclaration,
   NotificationPolicyRequestSchema,
   notificationPolicyResult
 } from "../../packages/rpc/src/NotificationPolicy.ts"
 import NotificationPolicy from "../notification-policy/flow.ts"
-import { decide, Decision, Request } from "../notification-policy/src/policy.ts"
+import {
+  decide,
+  Decision,
+  NOTIFICATION_POLICY_DECIDE_ACTION as FLOW_DECIDE_ACTION,
+  NOTIFICATION_POLICY_KINDS as FLOW_KINDS,
+  NOTIFICATION_RECIPIENT_LIMIT as FLOW_RECIPIENT_LIMIT,
+  Request
+} from "../notification-policy/src/policy.ts"
 
 const request = {
   repo: "maya/app",
@@ -169,5 +177,30 @@ test("the declaration a repository writes for this flow is the one the app reads
   assert.deepEqual(
     notificationPolicyDeclaration({ on: [{ event: NOTIFICATION_POLICY_EVENT, flow: ["a", "b"] }] }),
     { kind: "ambiguous" }
+  )
+})
+
+test("the copyable flow restates the app's three constants and never reaches into @smthrs/rpc", async () => {
+  // `@smthrs/rpc` is private to this monorepo. A maintainer copies
+  // `flows/notification-policy/` into their own repository, where that path
+  // does not resolve, so the example depends on `@smthrs/flow` and `effect`
+  // alone and restates what it borrows. These assertions are the drift guard
+  // that restating costs: the app owns the values, this file only repeats them.
+  assert.equal(FLOW_DECIDE_ACTION, NOTIFICATION_POLICY_DECIDE_ACTION)
+  assert.deepEqual([...FLOW_KINDS], [...NOTIFICATION_POLICY_KINDS])
+  assert.equal(FLOW_RECIPIENT_LIMIT, NOTIFICATION_RECIPIENT_LIMIT)
+  const source = await readFile(new URL("../notification-policy/src/policy.ts", import.meta.url), "utf8")
+  const imports = [...source.matchAll(/^import\s[\s\S]*?from\s+"([^"]+)"/gm)].map((match) => match[1])
+  assert.deepEqual(imports, ["@smthrs/flow", "effect"])
+})
+
+test("the app resolves a declaration naming a repository's own flow, not only this one's", () => {
+  // The consumer proof in lane 86's receipts projects exactly this row from
+  // an ordinary repository's `.smithers/FACTORY.ts` with the published SDK.
+  assert.deepEqual(
+    notificationPolicyDeclaration({
+      on: [{ event: NOTIFICATION_POLICY_EVENT, flow: "team-notification-policy", description: "Choose who is told" }]
+    }),
+    { kind: "flow", flowId: "team-notification-policy" }
   )
 })
