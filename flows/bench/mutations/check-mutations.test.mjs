@@ -4,8 +4,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
 import { runMutations, verifyOutcome } from "./check-mutations.mjs"
-import { mutants } from "./mutations/manifest.mjs"
-import { repoRoot } from "./workspace-packages.mjs"
+import { mutants } from "./manifest.mjs"
+import { repoRoot } from "../../../scripts/workspace-packages.mjs"
 
 test("mutation evidence refuses surviving, unloaded, empty, interrupted and infrastructure failures", () => {
   const mutant = { id: "fixture", test: "behavior oracle" }

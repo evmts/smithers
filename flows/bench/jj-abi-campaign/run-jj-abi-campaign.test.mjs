@@ -16,11 +16,12 @@ const configuration = { seed: 0, cases: 1, steps: 1 }
 // The executable derives its root from this helper. Copy both so these
 // process tests reach the isolated campaign rather than failing at import.
 const copyCampaign = async (root) => {
+  const campaign = join(root, "flows/bench/jj-abi-campaign")
+  await mkdir(campaign, { recursive: true })
   await mkdir(join(root, "scripts"))
-  for (const file of ["run-jj-abi-campaign.mjs", "workspace-packages.mjs"]) {
-    await copyFile(new URL(file, import.meta.url), join(root, "scripts", file))
-  }
-  return join(root, "scripts", "run-jj-abi-campaign.mjs")
+  await copyFile(new URL("run-jj-abi-campaign.mjs", import.meta.url), join(campaign, "run-jj-abi-campaign.mjs"))
+  await copyFile(new URL("../../../scripts/workspace-packages.mjs", import.meta.url), join(root, "scripts", "workspace-packages.mjs"))
+  return join(campaign, "run-jj-abi-campaign.mjs")
 }
 
 const fixture = () => {

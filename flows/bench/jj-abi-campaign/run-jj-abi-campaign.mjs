@@ -6,8 +6,9 @@ import { createWriteStream } from "node:fs"
 import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
+import { parseArgs } from "node:util"
 
-import { isMain, repoRoot as root } from "./workspace-packages.mjs"
+import { isMain, repoRoot as root } from "../../../scripts/workspace-packages.mjs"
 
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex")
 const fileHash = (text) => createHash("blake2b512").update(text).digest("hex").slice(0, 10)
@@ -218,10 +219,22 @@ export const runCampaign = async (configuration = campaignConfiguration(), artif
   return report
 }
 
+// `--seed <n>` replays that seed in place of SMITHERS_ABI_SEED. `--verify-parser`
+// runs no tier: it checks the parser report a separate run, the AddressSanitizer
+// replay, wrote to SMITHERS_ABI_ARTIFACT_DIR under the same configuration.
 if (isMain(import.meta)) {
-  try { await runCampaign() }
-  catch (error) {
-    console.error(error)
-    process.exitCode = error.code === "campaign_interrupted" ? error.signal === "SIGINT" ? 130 : 143 : 1
+  const { values } = parseArgs({ options: { seed: { type: "string" }, "verify-parser": { type: "boolean", default: false } } })
+  const env = values.seed === undefined ? process.env : { ...process.env, SMITHERS_ABI_SEED: values.seed }
+  if (values["verify-parser"]) {
+    const directory = process.env.SMITHERS_ABI_ARTIFACT_DIR
+    if (!directory) throw new Error("SMITHERS_ABI_ARTIFACT_DIR must name the parser evidence directory")
+    verifyParser(JSON.parse(await readFile(join(directory, "parser.json"), "utf8")), campaignConfiguration(env))
+    console.log(`Verified parser evidence: ${JSON.stringify(campaignConfiguration(env))}`)
+  } else {
+    try { await runCampaign(campaignConfiguration(env)) }
+    catch (error) {
+      console.error(error)
+      process.exitCode = error.code === "campaign_interrupted" ? error.signal === "SIGINT" ? 130 : 143 : 1
+    }
   }
 }

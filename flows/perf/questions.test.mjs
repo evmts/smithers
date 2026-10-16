@@ -120,10 +120,11 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 test('first-token CLI refusal retains commit and explicit unknown metadata without launching a model', async () => {
  const root = await mkdtemp(join(tmpdir(), 'perf-agent-refusal-'))
  try {
-  const output = spawnSync(process.execPath, ['scripts/perf/agent-first-token.mjs'], { encoding: 'utf8', env: { ...process.env, SMITHERS_PERF_ORIGIN: '', SMITHERS_PERF_ARTIFACT_ROOT: root, SMITHERS_PERF_INSTALL_VERSION: 'fixture' } })
+  const output = spawnSync(process.execPath, [fileURLToPath(new URL('./agent-first-token.mjs', import.meta.url))], { encoding: 'utf8', env: { ...process.env, SMITHERS_PERF_ORIGIN: '', SMITHERS_PERF_ARTIFACT_ROOT: root, SMITHERS_PERF_INSTALL_VERSION: 'fixture' } })
   assert.equal(output.status, 1, output.stderr)
   const receipt = JSON.parse(output.stdout)
   assert.equal(receipt.status, 'failed')
@@ -139,7 +140,7 @@ test('first-token CLI refusal retains commit and explicit unknown metadata witho
 test('projection CLI refusal copies failed evidence into its check directory', async () => {
   const root = await mkdtemp(join(tmpdir(), 'projection-refusal-'))
   try {
-    const output = spawnSync(process.execPath, ['scripts/perf/projection-delta.mjs'], { cwd: process.cwd(), env: { ...process.env, SMITHERS_PERF_ARTIFACT_ROOT: root, SMITHERS_PERF_ORIGIN: '' }, encoding: 'utf8' })
+    const output = spawnSync(process.execPath, [fileURLToPath(new URL('./projection-delta.mjs', import.meta.url))], { cwd: process.cwd(), env: { ...process.env, SMITHERS_PERF_ARTIFACT_ROOT: root, SMITHERS_PERF_ORIGIN: '' }, encoding: 'utf8' })
     assert.equal(output.status, 1)
     const result = JSON.parse(output.stdout)
     const saved = JSON.parse(await readFile(join(result.directory, 'projection-delta.json'), 'utf8'))

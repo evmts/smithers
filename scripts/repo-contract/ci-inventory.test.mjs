@@ -199,7 +199,8 @@ test("required CI resolves package, app, script and evaluation suites to real ru
     ["//evals/review-seeded-bugs:suite", "repository"], ["//evals/review-seeded-bugs:test", "repository"],
     ["//evals/review-seeded-bugs:check", "repository"],
     ["//evals/recommend:suite", "repository"], ["//evals/recommend:test", "repository"], ["//evals/recommend:check", "repository"],
-    ["//scripts/repo-contract:ciInventory", "scripts"], ["//scripts:mutationGate", "scripts"], ["//scripts:benchmarkGate", "scripts"],
+    ["//scripts/repo-contract:ciInventory", "scripts"], ["//flows:mutationGate", "scripts"], ["//flows:benchmarkGate", "scripts"],
+    ["//flows:campaignVerifiers", "scripts"], ["//flows:signalCampaign", "scripts"], ["//flows:perfUnit", "scripts"],
     ["//scripts:tierContracts", "scripts"],
     ["//scripts:webBundleContract", "browser"],
     ["//packages/smithers/gateway:test", "test"], ["//packages/smithers/flows/jj:test", "packages"]

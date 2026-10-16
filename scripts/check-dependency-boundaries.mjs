@@ -238,7 +238,7 @@ export function packageNameForSpecifier(specifier) {
  * The workspace package whose `src/` a relative specifier resolves into, or
  * null when it stays outside every package source tree.
  *
- * `../../packages/smithers/flows/plan/src/Plan.ts` from `scripts/bench/corpus.mjs`
+ * `../../../packages/smithers/flows/plan/src/Plan.ts` from `flows/bench/gate/corpus.mjs`
  * names `packages/smithers/flows/plan`; `../plan/PACKAGE.ts` from a sibling
  * build-graph declaration names nothing, because declarations are root-owned
  * and sit outside `src/`; `./src/index.ts` from `packages/repo-targets/PACKAGE.ts`

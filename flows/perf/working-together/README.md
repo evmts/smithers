@@ -68,7 +68,6 @@ held-inode base keeps the live edit and reports the outside version. This is
 Linux boundary evidence, not the installed broker/cgroup, microVM, browser,
 reference-host latency or complete C-COL-04/C-DUR-04 acceptance.
 
-
 `node scripts/working-together/faults.mjs --host-only` executes K4 and K4b's
 production authenticated host dispatcher with real PostgreSQL and a bare Git
 object store. The untracked `.artifacts/working-together-host.json` needs only
@@ -126,7 +125,6 @@ database exports and capture heads; K4b also records actual outage duration
 and the unchanged host PID. This is portable watcher/host evidence. Populated
 member cgroups, guest init and real VM force-stop still require the approved
 reference campaigns; the summary remains `incomplete`.
-
 
 On the reference Mac, `node scripts/working-together/faults.mjs --session-only`
 runs K1–K3b and K5a–c against the composed approved microVM install, ten times

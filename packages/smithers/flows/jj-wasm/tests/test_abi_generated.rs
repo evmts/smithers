@@ -1,5 +1,5 @@
 //! Reproducible hostile parser/ABI inputs and operations confined to a TempDir.
-//! Run `node scripts/run-jj-abi-campaign.mjs` to replay these exact bytes in WASM.
+//! Run `smthrs flow start bench/jj-abi-campaign` to replay these exact bytes in WASM.
 use std::fs;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::Path;

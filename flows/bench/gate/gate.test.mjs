@@ -3,8 +3,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { benchmark, compare } from "./bench/gate.mjs"
-import { latencyReport } from "./bench/corpus.mjs"
+import { benchmark, compare } from "./gate.mjs"
+import { latencyReport } from "./corpus.mjs"
 
 test("cost gate rejects more work, less useful output, missing metrics and reduced fixtures", () => {
   const row = { id: "fixture", size: 10, outputDigest: "independent-output", validated: true, counts: { queries: 100 } }

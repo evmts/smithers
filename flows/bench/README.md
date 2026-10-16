@@ -128,10 +128,10 @@ Results from 2026-09-25 (macOS arm64, Node 26.4.0, 650 `ci` roots, 204
 cacheable), in `rebase-cache/`. The stack touched `agent/memory`,
 `flows/journal`, `apps/site` and `build/targets`:
 
-| Inserted change | Rebased roots hit / cacheable | Misses | Coding gates (6) |
-| --------------- | ----------------------------- | ------ | ---------------- |
-| `apps/app` (outside the coding gate inputs) | 816 / 816 | 0 | hit in all 4 rebased changes |
-| `smithers/notifications` (inside them) | 798 / 816 | 18: the 6 coding gates in 3 changes; the fourth matched an earlier check | miss where the content is new |
+| Inserted change                             | Rebased roots hit / cacheable | Misses                                                                   | Coding gates (6)              |
+| ------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------ | ----------------------------- |
+| `apps/app` (outside the coding gate inputs) | 816 / 816                     | 0                                                                        | hit in all 4 rebased changes  |
+| `smithers/notifications` (inside them)      | 798 / 816                     | 18: the 6 coding gates in 3 changes; the fourth matched an earlier check | miss where the content is new |
 
 Both runs had zero unexpected misses or hits and zero executor disagreements.
 `//flows:codingPolicy` measured 2.6-4.7 s ran (11 runs) and 1.7-2.0 s hit (6 of 7

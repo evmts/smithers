@@ -1,6 +1,7 @@
 /** Repository flows, release workflows, and the retained migration fixtures. */
 import { Smithers } from "@smthrs/targets"
 import codingProject from "../.smithers/coding-project.json" with { type: "json" }
+import { Package as backendPackage } from "../packages/backend/PACKAGE.ts"
 
 const pack = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//flows/pack.test.mjs")]),
@@ -577,6 +578,189 @@ const triagePublish = Smithers.NodeTest({
   cwd
 })
 
+// Benchmarks, reliability campaign verifiers and installed-product performance
+// checks. Each runnable entry is a flow under `bench/` or `perf/`; the gates
+// below run the same modules from the checkout root, where their evidence
+// directories resolve, and the suites run each flow's graph over its module.
+const runModuleSource = Smithers.file("//flows/automation/run-module.ts")
+const benchSources = [
+  Smithers.glob("//flows/bench/**/*"),
+  runModuleSource,
+  Smithers.file("//scripts/workspace-packages.mjs")
+]
+const perfSources = [Smithers.glob("//flows/perf/**/*"), runModuleSource]
+const gatewaySources = Smithers.Filegroup({
+  cwd: "packages/smithers/gateway",
+  srcs: [Smithers.glob("src/**/*.ts"), Smithers.glob("test/**/*.ts")]
+})
+const machineSources = Smithers.Filegroup({ cwd: "packages/smithers-machined", srcs: [Smithers.glob("**/*")] })
+const ffiSources = Smithers.Filegroup({ cwd: "packages/smithers-ffi", srcs: [Smithers.glob("src/**")] })
+
+/** Required fast behavioral mutation tier, including both exact-byte guards. */
+const mutationGate = Smithers.NodeTest({
+  runner: Smithers.entrypoint(Smithers.file("//flows/bench/mutations/check-mutations.mjs")),
+  srcs: benchSources,
+  deps: [gatewaySources]
+})
+
+/** Deterministic scheduler and journal cost regressions, after output validation. */
+const benchmarkGate = Smithers.NodeTest({
+  runner: Smithers.entrypoint(Smithers.file("//flows/bench/gate/gate.mjs")),
+  srcs: benchSources,
+  deps: []
+})
+
+/**
+ * The scheduled signal campaign's evidence check refuses a missing case, a
+ * truncated history, a wrong seed and a failed result.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const signalCampaign = Smithers.NodeTest({
+  runner: Smithers.testRunner([
+    Smithers.file("//flows/bench/signal-campaign/check-signal-campaign.test.mjs"),
+    Smithers.file("//flows/bench/signal-campaign/flow.test.ts")
+  ]),
+  srcs: [sources, ...benchSources],
+  deps: [],
+  cwd
+})
+
+/** Fail-closed benchmark and campaign-verifier regressions, and each bench flow over its module. */
+const campaignVerifiers = Smithers.NodeTest({
+  runner: Smithers.testRunner([
+    Smithers.file("//flows/bench/mutations/check-mutations.test.mjs"),
+    Smithers.file("//flows/bench/mutations/flow.test.ts"),
+    Smithers.file("//flows/bench/soak-campaign/check-soak-campaign.test.mjs"),
+    Smithers.file("//flows/bench/soak-campaign/flow.test.ts"),
+    Smithers.file("//flows/bench/gate/gate.test.mjs"),
+    Smithers.file("//flows/bench/gate/flow.test.ts"),
+    Smithers.file("//flows/bench/jj-abi-campaign/run-jj-abi-campaign.test.mjs"),
+    Smithers.file("//flows/bench/jj-abi-campaign/flow.test.ts"),
+    Smithers.file("//flows/bench/rebase-cache/flow.test.ts")
+  ]),
+  srcs: [
+    sources,
+    ...benchSources,
+    Smithers.file("//scripts/release-rehearsal.mjs"),
+    Smithers.file("//.github/workflows/reliability.yml")
+  ],
+  deps: [],
+  cwd
+})
+
+/** Installed-product measurements are opt-in; the library counter gate cannot serve. */
+const perf = Smithers.NodeTest({
+  runner: Smithers.entrypoint(Smithers.file("//flows/perf/run.mjs")),
+  srcs: perfSources,
+  deps: [],
+  exclusive: true,
+  timeout: "24h"
+})
+
+/** Installed two-member keystroke workload; never substitutes for a receipt. */
+const perfKeystroke = Smithers.NodeTest({
+  runner: Smithers.entrypoint(Smithers.file("//flows/perf/keystroke.mjs")),
+  srcs: perfSources,
+  deps: [],
+  exclusive: true,
+  timeout: "1h"
+})
+
+/** Persistent member SSH writes observed through the installed File card. */
+const perfDiskWrite = Smithers.NodeTest({
+  runner: Smithers.entrypoint(Smithers.file("//flows/perf/disk-write.mjs")),
+  srcs: perfSources,
+  deps: [],
+  exclusive: true,
+  timeout: "1h"
+})
+
+/** Per-budget availability reports retain honest incomplete evidence. */
+const perfProjection = Smithers.NodeTest({
+  runner: Smithers.entrypoint(Smithers.file("//flows/perf/run.mjs"), ["C-PERF-02"]),
+  srcs: perfSources,
+  deps: [],
+  exclusive: true,
+  timeout: "1h"
+})
+const perfWarmWake = Smithers.NodeTest({
+  runner: Smithers.entrypoint(Smithers.file("//flows/perf/run.mjs"), ["C-PERF-05"]),
+  srcs: perfSources,
+  deps: [],
+  exclusive: true,
+  timeout: "1h"
+})
+const perfRebaseHold = Smithers.NodeTest({
+  runner: Smithers.entrypoint(Smithers.file("//flows/perf/run.mjs"), ["C-PERF-06"]),
+  srcs: perfSources,
+  deps: [],
+  exclusive: true,
+  timeout: "1h"
+})
+
+/** Performance and working-together drivers, their verifiers, and each perf flow over its module. */
+const perfUnit = Smithers.NodeTest({
+  runner: Smithers.testRunner([
+    Smithers.file("//flows/perf/working-together/faults.test.mjs"),
+    Smithers.file("//flows/perf/working-together/flow.test.ts"),
+    Smithers.file("//flows/perf/keystroke.test.mjs"),
+    Smithers.file("//flows/perf/disk-write.test.mjs"),
+    Smithers.file("//flows/perf/github-freshness/github-freshness.test.mjs"),
+    Smithers.file("//flows/perf/github-freshness/flow.test.ts"),
+    Smithers.file("//flows/perf/projection-delta.test.mjs"),
+    Smithers.file("//flows/perf/questions.test.mjs"),
+    Smithers.file("//flows/perf/warm-wake.test.mjs"),
+    Smithers.file("//flows/perf/lib/ssh-member.test.mjs"),
+    Smithers.file("//flows/perf/lib/stats.test.mjs"),
+    Smithers.file("//flows/perf/lib/artifact.test.mjs"),
+    Smithers.file("//flows/perf/flow.test.ts")
+  ]),
+  srcs: [sources, ...perfSources],
+  deps: [],
+  cwd
+})
+
+/** K1–K8 campaign keeps component evidence distinct from integrated proof. */
+const workingTogetherFaults = Smithers.Shell.Test({
+  shell: "node flows/perf/working-together/faults.mjs",
+  data: [...perfSources, machineSources, ffiSources, Smithers.file("//Cargo.toml"), Smithers.file("//Cargo.lock")],
+  exclusive: true,
+  timeout: "1h"
+})
+const workingTogetherComponents = Smithers.Shell.Test({
+  shell: "node flows/perf/working-together/faults.mjs --components-only",
+  data: [...perfSources, machineSources, ffiSources, Smithers.file("//Cargo.toml"), Smithers.file("//Cargo.lock")],
+  exclusive: true,
+  timeout: "1h"
+})
+
+// The composed host suites build the backend; these are the inputs they read.
+const composedHostInputs = [
+  backendPackage.buildInputs,
+  Smithers.file("//go.mod"),
+  Smithers.file("//go.sum"),
+  Smithers.file("//apps/app/package.json"),
+  Smithers.file("//pnpm-lock.yaml")
+]
+
+/** K8 through the composed wiki host, real native state and PostgreSQL. */
+const workingTogetherWikiFaults = Smithers.Shell.Test({
+  shell: "node flows/perf/working-together/faults.mjs --wiki-only",
+  data: [...perfSources, ...composedHostInputs],
+  exclusive: true,
+  timeout: "1h"
+})
+
+/** Code mirror recovery through composed HTTP/live with a scripted daemon peer. */
+const workingTogetherCodeFaults = Smithers.Shell.Test({
+  shell: "node flows/perf/working-together/faults.mjs --code-only",
+  data: [...perfSources, ...composedHostInputs],
+  exclusive: true,
+  timeout: "1h"
+})
+
 const securityReview = Smithers.SecurityReview({
   cwd,
   include: [
@@ -772,6 +956,40 @@ const securityReview = Smithers.SecurityReview({
         "GH_TOKEN or GitHub error bodies echoed into the fallback comment or stdout."
       ],
       paths: ["triage-publish/**"]
+    },
+    {
+      id: "bench-subprocess-args",
+      title: "Benchmarks and campaigns spawn processes with argument vectors, never shell strings built from inputs",
+      threat:
+        "A crafted CLI flag, environment value, commit message or git ref makes a benchmark or campaign run arbitrary shell commands on a maintainer or CI host.",
+      lookFor: [
+        "exec, execSync or spawn with shell:true, or sh -c, interpolating argv, environment variables, file contents or git output.",
+        "A string option split on spaces and executed, like rebase-cache --install."
+      ],
+      paths: ["bench/**"]
+    },
+    {
+      id: "bench-check-cache-poisoning",
+      title: "The rebase cache benchmark cannot carry forged verdicts or escape its scratch root",
+      threat:
+        "Code under check in one revision plants passing target results or links that a later revision's check replays as green, or that overwrite host files.",
+      lookFor: [
+        "copyMissing following a symlink or special file, or writing outside the partition or the export's .flows/cache.",
+        "An existing valid entry replaced by a check's own output.",
+        "SMITHERS_CHECK_CACHE_DIR or the partition marker accepted when relative or pointing outside the cache root."
+      ],
+      paths: ["bench/rebase-cache/**"]
+    },
+    {
+      id: "bench-credential-scrubbing",
+      title: "Cache and registry tokens never reach benchmark child processes that do not need them",
+      threat:
+        "A benchmark subprocess inherits SMITHERS_CACHE_* or registry tokens and leaks them into logs or untrusted package code.",
+      lookFor: [
+        "A spawn passing { ...process.env } to package installs or repository code without deleting SMITHERS_CACHE_TOKEN, SMITHERS_CACHE_READ_TOKEN, SMITHERS_CACHE_WRITE_TOKEN, NPM_TOKEN or GH_TOKEN.",
+        "Environment dumps or error messages that print token-bearing variables."
+      ],
+      paths: ["bench/**"]
     }
   ]
 })
@@ -805,6 +1023,21 @@ export const Package = Smithers.Package({
     provider,
     wiki,
     triagePublish,
+    mutationGate,
+    benchmarkGate,
+    signalCampaign,
+    campaignVerifiers,
+    perf,
+    perfUnit,
+    perfKeystroke,
+    perfDiskWrite,
+    perfProjection,
+    perfWarmWake,
+    perfRebaseHold,
+    workingTogetherFaults,
+    workingTogetherComponents,
+    workingTogetherWikiFaults,
+    workingTogetherCodeFaults,
     ...securityReview
   }
 })

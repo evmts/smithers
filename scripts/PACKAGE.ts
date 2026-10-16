@@ -57,7 +57,6 @@ const engineeringScriptRegressions = Smithers.NodeTest({
     Smithers.file("//scripts/homebrew-release.test.mjs"),
     Smithers.file("//scripts/journeys/release-install.test.mjs"),
     Smithers.file("//scripts/migration-landing.test.mjs"),
-    Smithers.file("//scripts/perf/questions.test.mjs"),
     Smithers.file("//scripts/release/host-maintenance-evidence.test.mjs"),
     Smithers.file("//scripts/spikes/col-01/result.test.mjs")
   ]),
@@ -218,19 +217,6 @@ const releaseVersion = Smithers.NodeTest({
 const testPinRegister = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//scripts/check-test-pins.test.mjs")]),
   srcs: [...sources, Smithers.file("//scripts/test-pins.md")],
-  deps: []
-})
-
-/**
- * The scheduled signal campaign's evidence check refuses a missing case, a
- * truncated history, a wrong seed and a failed result.
- *
- * @since 1.0.0
- * @category test
- */
-const signalCampaign = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//scripts/check-signal-campaign.test.mjs")]),
-  srcs: [...sources],
   deps: []
 })
 
@@ -709,111 +695,13 @@ const releaseIntegrity = Smithers.NodeTest({
   deps: []
 })
 
-/** Required fast behavioral mutation tier, including both exact-byte guards. */
-const mutationGate = Smithers.NodeTest({
-  runner: Smithers.entrypoint(Smithers.file("//scripts/check-mutations.mjs")),
-  srcs: [
-    ...sources,
-  ],
-  deps: [gatewaySources]
-})
-
-/** Deterministic scheduler and journal cost regressions, after output validation. */
-const benchmarkGate = Smithers.NodeTest({
-  runner: Smithers.entrypoint(Smithers.file("//scripts/bench/gate.mjs")),
-  srcs: [...sources, Smithers.file("//scripts/bench/baseline.json")],
-  deps: []
-})
-
-/** Installed-product measurements are opt-in; the library counter gate cannot serve. */
-const perf = Smithers.NodeTest({
-  runner: Smithers.entrypoint(Smithers.file("//scripts/perf/run.mjs")),
-  srcs: sources,
-  deps: [],
-  exclusive: true,
-  timeout: "24h"
-})
-
-/** Installed two-member keystroke workload; never substitutes for a receipt. */
-const perfKeystroke = Smithers.NodeTest({
-  runner: Smithers.entrypoint(Smithers.file("//scripts/perf/keystroke.mjs")),
-  srcs: sources, deps: [], exclusive: true, timeout: "1h"
-})
-
-/** Persistent member SSH writes observed through the installed File card. */
-const perfDiskWrite = Smithers.NodeTest({
-  runner: Smithers.entrypoint(Smithers.file("//scripts/perf/disk-write.mjs")),
-  srcs: sources, deps: [], exclusive: true, timeout: "1h"
-})
-
-/** K1–K8 campaign keeps component evidence distinct from integrated proof. */
-const workingTogetherFaults = Smithers.Shell.Test({
-  shell: "node scripts/working-together/faults.mjs",
-  data: [...sources, machineSources, ffiSources, Smithers.file("//Cargo.toml"), Smithers.file("//Cargo.lock")],
-  exclusive: true, timeout: "1h"
-})
-const workingTogetherComponents = Smithers.Shell.Test({
-  shell: "node scripts/working-together/faults.mjs --components-only",
-  data: [...sources, machineSources, ffiSources, Smithers.file("//Cargo.toml"), Smithers.file("//Cargo.lock")],
-  exclusive: true, timeout: "1h"
-})
-
-/** K8 through the composed wiki host, real native state and PostgreSQL. */
-const workingTogetherWikiFaults = Smithers.Shell.Test({
-  shell: "node scripts/working-together/faults.mjs --wiki-only",
-  data: [...sources, backendPackage.buildInputs, Smithers.file("//go.mod"), Smithers.file("//go.sum"), Smithers.file("//apps/app/package.json"), Smithers.file("//pnpm-lock.yaml")],
-  exclusive: true, timeout: "1h"
-})
-
-/** Code mirror recovery through composed HTTP/live with a scripted daemon peer. */
-const workingTogetherCodeFaults = Smithers.Shell.Test({
-  shell: "node scripts/working-together/faults.mjs --code-only",
-  data: [...sources, backendPackage.buildInputs, Smithers.file("//go.mod"), Smithers.file("//go.sum"), Smithers.file("//apps/app/package.json"), Smithers.file("//pnpm-lock.yaml")],
-  exclusive: true, timeout: "1h"
-})
-
-/** Per-budget availability reports retain honest incomplete evidence. */
-const perfProjection = Smithers.NodeTest({
-  runner: Smithers.entrypoint(Smithers.file("//scripts/perf/run.mjs"), ["C-PERF-02"]),
-  srcs: sources, deps: [], exclusive: true, timeout: "1h"
-})
-const perfWarmWake = Smithers.NodeTest({
-  runner: Smithers.entrypoint(Smithers.file("//scripts/perf/run.mjs"), ["C-PERF-05"]),
-  srcs: sources, deps: [], exclusive: true, timeout: "1h"
-})
-const perfRebaseHold = Smithers.NodeTest({
-  runner: Smithers.entrypoint(Smithers.file("//scripts/perf/run.mjs"), ["C-PERF-06"]),
-  srcs: sources, deps: [], exclusive: true, timeout: "1h"
-})
-
-const perfUnit = Smithers.NodeTest({
-  runner: Smithers.testRunner([
-    Smithers.file("//scripts/working-together/faults.test.mjs"),
-    Smithers.file("//scripts/perf/keystroke.test.mjs"),
-    Smithers.file("//scripts/perf/disk-write.test.mjs"),
-    Smithers.file("//scripts/perf/github-freshness.test.mjs"),
-    Smithers.file("//scripts/perf/projection-delta.test.mjs"),
-    Smithers.file("//scripts/perf/questions.test.mjs"),
-    Smithers.file("//scripts/perf/warm-wake.test.mjs"),
-    Smithers.file("//scripts/perf/lib/ssh-member.test.mjs"),
-    Smithers.file("//scripts/perf/lib/stats.test.mjs"),
-    Smithers.file("//scripts/perf/lib/artifact.test.mjs")
-  ]),
-  srcs: sources,
-  deps: []
-})
-
-/** Real-runner sentinels and fail-closed campaign-verifier regressions. */
+/** Real-runner sentinels and fail-closed gate regressions. */
 const tierContracts = Smithers.NodeTest({
   runner: Smithers.testRunner([
     Smithers.file("//scripts/runner-contract.test.mjs"),
     Smithers.file("//scripts/ci/coding-check.test.mjs"),
     Smithers.file("//scripts/ci/check-cache.test.mjs"),
-    Smithers.file("//scripts/ci/check-known-red-coverage.test.mjs"),
-    Smithers.file("//scripts/check-mutations.test.mjs"),
-    Smithers.file("//scripts/check-soak-campaign.test.mjs"),
-    Smithers.file("//scripts/benchmark-gate.test.mjs"),
-    Smithers.file("//scripts/run-jj-abi-campaign.test.mjs")
+    Smithers.file("//scripts/ci/check-known-red-coverage.test.mjs")
   ]),
   srcs: [
     ...sources,
@@ -987,7 +875,7 @@ const securityReview = Smithers.SecurityReview({
         "An existing valid entry replaced by a check's own output.",
         "SMITHERS_CHECK_CACHE_DIR or the partition marker accepted when relative or pointing outside the cache root."
       ],
-      paths: ["ci/check-cache.mjs", "bench/rebase-cache.mjs"]
+      paths: ["ci/check-cache.mjs"]
     },
     {
       id: "script-subprocess-args",
@@ -1002,12 +890,9 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "commit.mjs",
         "ci/check-known-red-coverage.mjs",
-        "bench/**",
         "build-backend.sh",
         "test-backend-consumer.sh",
         "generate-changelog.mjs",
-        "run-jj-abi-campaign.mjs",
-        "check-mutations.mjs",
         "bun-coverage/**"
       ]
     },
@@ -1020,7 +905,7 @@ const securityReview = Smithers.SecurityReview({
         "A spawn passing { ...process.env } to package installs or repository code without deleting SMITHERS_CACHE_TOKEN, SMITHERS_CACHE_READ_TOKEN, SMITHERS_CACHE_WRITE_TOKEN, NPM_TOKEN or GH_TOKEN.",
         "Environment dumps or error messages that print token-bearing variables."
       ],
-      paths: ["ci-planner.mjs", "ci-inventory.mjs", "release-consumers.mjs", "smoke-release.mjs", "bench/**"]
+      paths: ["ci-planner.mjs", "ci-inventory.mjs", "release-consumers.mjs", "smoke-release.mjs"]
     }
   ]
 })
@@ -1083,20 +968,7 @@ export const Package = Smithers.Package({
     commit,
     conformanceCheck,
     repositoryConformance,
-    mutationGate,
     mvpDocs,
-    benchmarkGate,
-    perf,
-    perfUnit,
-    perfKeystroke,
-    perfDiskWrite,
-    perfProjection,
-    perfWarmWake,
-    perfRebaseHold,
-    workingTogetherFaults,
-    workingTogetherComponents,
-    workingTogetherWikiFaults,
-    workingTogetherCodeFaults,
     tierContracts,
     releaseIntegrity,
     webBundleContract,
@@ -1118,7 +990,6 @@ export const Package = Smithers.Package({
     releaseRehearsal,
     releaseSmoke,
     releaseVersion,
-    signalCampaign,
     testPinRegister,
     toolchainPins,
     ...securityReview

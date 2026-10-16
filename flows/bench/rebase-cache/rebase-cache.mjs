@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Rebase cache benchmark: does a rebased stack replay every target whose
-// inputs did not change? See scripts/bench/README.md ("Rebase cache reuse").
+// inputs did not change? See flows/bench/README.md ("Rebase cache reuse").
 //
 // Builds an N-change stack on --base (each change appends a comment to one
 // tracked source file of a distinct package), then inserts a change touching
@@ -245,7 +245,7 @@ for (const [index, change] of order.entries()) {
 }
 
 const result = {
-  method: "scripts/bench/rebase-cache.mjs",
+  method: "flows/bench/rebase-cache/rebase-cache.mjs",
   repository: path.resolve(values.repo), base, verb: values.verb, pattern: values.pattern,
   stack: original.map(({ file }) => file), inserted: insertedFile,
   host: { node: process.version, platform: `${process.platform}-${process.arch}` },

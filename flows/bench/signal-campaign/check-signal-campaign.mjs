@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises"
 import { join } from "node:path"
 
-import { isMain } from "./workspace-packages.mjs"
+import { isMain } from "../../../scripts/workspace-packages.mjs"
 
 export const verifySignalCampaign = async (directory, { seed, cases, steps }) => {
   if (!Number.isInteger(seed) || seed < 0 || seed > 0xffff_ffff || !Number.isSafeInteger(cases) || cases < 1 || !Number.isSafeInteger(steps) || steps < 1) throw new Error("Invalid signal campaign configuration")
@@ -15,7 +15,7 @@ export const verifySignalCampaign = async (directory, { seed, cases, steps }) =>
 }
 
 if (isMain(import.meta)) {
-  if (!process.argv[2]) throw new Error("usage: node scripts/check-signal-campaign.mjs <artifact-directory>")
+  if (!process.argv[2]) throw new Error("usage: node flows/bench/signal-campaign/check-signal-campaign.mjs <artifact-directory>")
   const configuration = await verifySignalCampaign(process.argv[2], {
     seed: Number(process.env.SMITHERS_FUZZ_SEED),
     cases: Number(process.env.SMITHERS_FUZZ_CASES),

@@ -93,7 +93,7 @@ test("blanking a source with tens of thousands of literals stays linear in the f
 test("a relative specifier into another workspace package's src/ names that package", () => {
   const dirs = ["packages/smithers", "packages/smithers/flows/plan", "packages/smithers/build/targets", "flows"]
   assert.equal(
-    packageSourceReachedBy("scripts/bench/corpus.mjs", "../../packages/smithers/flows/plan/src/Plan.ts", dirs),
+    packageSourceReachedBy("flows/bench/gate/corpus.mjs", "../../../packages/smithers/flows/plan/src/Plan.ts", dirs),
     "packages/smithers/flows/plan",
   )
   // The deepest package owns the file: `packages/smithers` also contains it.

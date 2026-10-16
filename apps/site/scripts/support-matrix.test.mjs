@@ -135,7 +135,7 @@ test("operator docs describe the PR evidence upload and factory operator", () =>
     assert.equal(matching.length, 1, `one ${name} step`)
     assert.equal(matching[0].if, "always()")
   }
-  const bench = read("scripts/bench/README.md")
+  const bench = read("flows/bench/README.md")
   assert.doesNotMatch(bench, /collects\s+evidence only after successful steps/, "stale success-only claim")
   assert.match(bench, /`if: always\(\)`/, "the bench guide states the always() upload")
   assert.match(bench, /if-no-files-found: ignore/, "the bench guide keeps the missing-files caveat")

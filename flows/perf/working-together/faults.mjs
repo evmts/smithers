@@ -210,7 +210,7 @@ export function linuxCommand(config, mode, commit) {
       typeof config.root !== 'string' || !config.root.startsWith('/') || config.root.includes('\n') ||
       !['watcherOnly', 'watcherHostOnly'].includes(mode) || !/^[a-f0-9]{40}$/.test(commit)) throw new Error('invalid S2 Linux host')
   const flag = mode === 'watcherOnly' ? '--watcher-only' : '--watcher-host-only'
-  return ['--', config.host, `cd ${shellQuote(config.root)} && test "$(git rev-parse HEAD)" = ${shellQuote(commit)} && node scripts/working-together/faults.mjs ${flag} --receipt`]
+  return ['--', config.host, `cd ${shellQuote(config.root)} && test "$(git rev-parse HEAD)" = ${shellQuote(commit)} && node flows/perf/working-together/faults.mjs ${flag} --receipt`]
 }
 const execute = (command, args, cwd) => new Promise(resolve => {
   let logs = ''

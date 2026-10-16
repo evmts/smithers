@@ -87,7 +87,7 @@ func TestPerfProjectionCommittedMoveBoundaries(t *testing.T) {
 	command := exec.CommandContext(t.Context(), "node", "--input-type=module", "-e", `
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
-import { acceptMove, stableSnapshot } from './scripts/perf/projection-delta.mjs'
+import { acceptMove, stableSnapshot } from './flows/perf/projection-delta.mjs'
 const require = createRequire(new URL('./packages/smithers/package.json', import.meta.url))
 const Socket = require('ws')
 const origin = process.env.PERF_ORIGIN

@@ -2,7 +2,7 @@
  * `verifySignalCampaign` accepts only a complete, passing, correctly seeded
  * campaign.
  *
- * Run it with `node --test scripts/check-signal-campaign.test.mjs`.
+ * Run it with `node --test flows/bench/signal-campaign/check-signal-campaign.test.mjs`.
  */
 import assert from "node:assert/strict"
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
 import { verifySoak } from "./check-soak-campaign.mjs"
-import { parseWorkflow } from "./release-rehearsal.mjs"
+import { parseWorkflow } from "../../../scripts/release-rehearsal.mjs"
 
 const artifact = () => ({ schemaVersion: 1, status: "complete",
   runtime: { node: "v26.10.0", platform: "linux", arch: "x64" },
@@ -58,7 +58,7 @@ test("the soak CLI refuses absent and truncated JSON artifacts", () => {
 })
 
 test("scheduled soak executes the scaled producer, verifies even on failure and retains artifacts", () => {
-  const workflow = parseWorkflow(readFileSync(new URL("../.github/workflows/reliability.yml", import.meta.url), "utf8"))
+  const workflow = parseWorkflow(readFileSync(new URL("../../../.github/workflows/reliability.yml", import.meta.url), "utf8"))
   assert.ok(workflow.on.schedule.length > 0)
   const job = workflow.jobs["sync-long-soak"]
   assert.deepEqual(job.strategy.matrix.node, ["26.4.0", "26.10.0"])
@@ -71,7 +71,7 @@ test("scheduled soak executes the scaled producer, verifies even on failure and 
     /vitest run test\/ServerLongSoak\.test\.ts --coverage.enabled=false --maxWorkers=1/)
   const verification = job.steps.find((step) => step.name === "Require completed soak artifact")
   assert.equal(verification.if, "always()")
-  assert.match(verification.run, /check-soak-campaign\.mjs/)
+  assert.match(verification.run, /smthrs flow start bench\/soak-campaign --data /)
   for (const [name, log] of [["Execute env-scaled sync soak directly", "workload.log"], ["Require completed soak artifact", "verifier.log"]]) {
     const step = job.steps.find((entry) => entry.name === name)
     assert.equal(step.shell, "bash")

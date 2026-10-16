@@ -2,7 +2,7 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 
-import { isMain } from "./workspace-packages.mjs"
+import { isMain } from "../../../scripts/workspace-packages.mjs"
 
 export function slope(samples, field) {
   const xs = samples.map((sample) => sample.elapsedMs / 60_000)
@@ -64,7 +64,7 @@ export function verifySoak(artifact, { minutes, seed, node } = {}) {
 
 if (isMain(import.meta)) {
   const path = process.argv[2]
-  assert.ok(path, "usage: node scripts/check-soak-campaign.mjs <artifact.json>")
+  assert.ok(path, "usage: node flows/bench/soak-campaign/check-soak-campaign.mjs <artifact.json>")
   console.log(JSON.stringify(verifySoak(JSON.parse(readFileSync(path, "utf8")), {
     minutes: process.env.SMITHERS_SOAK_MINUTES === undefined ? undefined : Number(process.env.SMITHERS_SOAK_MINUTES),
     seed: process.env.SMITHERS_SOAK_SEED === undefined ? undefined : Number(process.env.SMITHERS_SOAK_SEED),
