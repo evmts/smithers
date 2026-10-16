@@ -66,3 +66,9 @@ func CheckSessionAdmission(ctx context.Context, branch string) error {
 	}
 	return nil
 }
+
+// WithoutSessionAdmissionTransaction removes request-scoped admission before
+// work outlives the transaction that granted it.
+func WithoutSessionAdmissionTransaction(ctx context.Context) context.Context {
+	return context.WithValue(ctx, sessionAdmissionTransactionKey{}, sessionAdmissionTransaction{})
+}

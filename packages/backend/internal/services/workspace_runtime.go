@@ -20,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/machined"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/microsandbox"
@@ -102,7 +103,11 @@ func (s *WorkspaceService) lockRuntimeWorkspace(workspaceID string) func() {
 }
 
 func detachedRuntimeContext(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.WithoutCancel(parent), timeout)
+	// Admission belongs to the request transaction, not to detached cleanup.
+	detached := context.WithValue(context.WithoutCancel(parent), workspaceMutationAuthorityKey{}, workspaceMutationAuthority{})
+	detached = context.WithValue(detached, workspaceMutationTransactionKey{}, workspaceMutationTransaction{})
+	detached = machined.WithoutSessionAdmissionTransaction(detached)
+	return context.WithTimeout(detached, timeout)
 }
 
 func (s *WorkspaceService) hasWorkspaceRuntime() bool {
@@ -110,6 +115,11 @@ func (s *WorkspaceService) hasWorkspaceRuntime() bool {
 }
 
 func (s *WorkspaceService) workspaceRuntimeContext(ctx context.Context, row db.Workspace, requesterID int64, operationID string) (context.Context, error) {
+	billingCtx, _, err := s.workspaceBillingContext(ctx, row.UserID, row.RepositoryID)
+	if err != nil {
+		return nil, err
+	}
+	ctx = billingCtx
 	operation := workspaceapi.Operation{
 		TenantID:    strconv.FormatInt(row.UserID, 10),
 		PrincipalID: strconv.FormatInt(requesterID, 10),
@@ -149,8 +159,12 @@ func (s *WorkspaceService) workspaceStartContext(ctx context.Context, row db.Wor
 	intent := &machineStartIntent{acquire: func(ctx context.Context) (context.Context, error) {
 		return s.admitWorkspaceOperation(ctx, row, requesterID)
 	}}
-	policyCtx := context.WithValue(ctx, machineStartIntentKey{}, intent)
-	if err := s.billing.AuthorizeSandboxStart(policyCtx, requesterID); err != nil {
+	billingCtx, payer, err := s.workspaceBillingContext(ctx, row.UserID, row.RepositoryID)
+	if err != nil {
+		return nil, err
+	}
+	policyCtx := context.WithValue(billingCtx, machineStartIntentKey{}, intent)
+	if err := s.billing.AuthorizeSandboxStart(policyCtx, payer.ID); err != nil {
 		return nil, err
 	}
 	if intent.granted == nil {
@@ -784,7 +798,7 @@ func (s *WorkspaceService) forkRuntimeWorkspace(ctx context.Context, input ForkW
 		}
 		// The fork is the requesting person's sandbox; the machine service
 		// that owns every branch machine is exempt from the person cap.
-		if err := s.enforceWorkspaceQuota(ctx, input.UserID); err != nil {
+		if err := s.enforceWorkspaceQuota(ctx, input.UserID, input.RepositoryID); err != nil {
 			return err
 		}
 		if s.revisionFork == nil {

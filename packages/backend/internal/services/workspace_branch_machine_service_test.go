@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/machined"
 	processruntime "github.com/smithersai/smithers/packages/backend/process"
 	workspaceapi "github.com/smithersai/smithers/packages/backend/workspace"
 	"github.com/stretchr/testify/require"
@@ -111,12 +112,15 @@ func TestBranchMachineServiceCannotStartHostWorkspace(t *testing.T) {
 func TestBranchMachineAdmissionUsesTransactionConnection(t *testing.T) {
 	pool := newProductTestPool(t)
 	person, repo := setupTestUserAndRepo(t, pool)
+	installBranchOwner(t, pool, person)
+	providers := branchMachineTestProviders()
+	providers.Membership = installBranchMembership
 	cfg := pool.Config().Copy()
 	cfg.MaxConns, cfg.MinConns = 1, 0
 	single, err := pgxpool.NewWithConfig(t.Context(), cfg)
 	require.NoError(t, err)
 	t.Cleanup(single.Close)
-	svc := NewWorkspaceService(db.New(single), WithWorkspaceTransactions(single), WithBranchMachineProviders(branchMachineTestProviders()))
+	svc := NewWorkspaceService(db.New(single), WithWorkspaceTransactions(single), WithBranchMachineProviders(providers))
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	row, err := svc.createWorkspaceRow(ctx, db.CreateWorkspaceParams{RepositoryID: repo, UserID: person,
@@ -135,7 +139,7 @@ func TestBranchMachineAdmissionUsesTransactionConnection(t *testing.T) {
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO users(username,lower_username) VALUES('not-a-joiner','not-a-joiner') RETURNING id`).Scan(&outsider))
 	// A separate pool lets negative controls attempt their own authorization
 	// while the outer mutation retains the original single connection.
-	otherService := NewWorkspaceService(db.New(pool), WithWorkspaceTransactions(pool), WithBranchMachineProviders(branchMachineTestProviders()))
+	otherService := NewWorkspaceService(db.New(pool), WithWorkspaceTransactions(pool), WithBranchMachineProviders(providers))
 	calls := 0
 	err = svc.withWorkspaceMutationAuthority(ctx, row, person, func(held context.Context) error {
 		for _, denied := range []struct {
@@ -147,6 +151,9 @@ func TestBranchMachineAdmissionUsesTransactionConnection(t *testing.T) {
 				return nil
 			})
 			requireBranchStatus(t, err, 403)
+			if denied.actor == outsider {
+				require.ErrorContains(t, err, "not a member of this install")
+			}
 		}
 		calls++
 		return svc.withWorkspaceMutationAuthority(held, row, person, func(context.Context) error {
@@ -209,4 +216,40 @@ func TestBackgroundMachineRefusalReadsTheHeldTransaction(t *testing.T) {
 	defer pool.Exec(context.WithoutCancel(ctx), `ALTER TABLE unavailable_background_classification RENAME TO workflow_run_flow_invocations`)
 	_, err = svc.AuthorizeTerminalBranch(ctx, row.ID, repo, person)
 	require.Error(t, err, "an unreadable classification must fail closed")
+}
+
+// A completed request cannot lend its expired lock or transaction to later work.
+func TestDetachedRuntimeRechecksRevokedAuthority(t *testing.T) {
+	pool := newProductTestPool(t)
+	person, repo := setupTestUserAndRepo(t, pool)
+	svc := NewWorkspaceService(db.New(pool), WithWorkspaceTransactions(pool), WithBranchMachineProviders(branchMachineTestProviders()))
+	row, err := svc.createWorkspaceRow(t.Context(), db.CreateWorkspaceParams{RepositoryID: repo, UserID: person, TargetBookmark: "scratch/detached-authority", Kind: "container", Status: "starting"})
+	require.NoError(t, err)
+	type requestValue struct{}
+	parent, cancelParent := context.WithCancel(context.WithValue(t.Context(), requestValue{}, "retained"))
+	defer cancelParent()
+	var detached context.Context
+	var cancelDetached context.CancelFunc
+	err = svc.withWorkspaceMutationAuthority(parent, row, person, func(held context.Context) error {
+		require.NotNil(t, heldWorkspaceMutationTransaction(held, row.ID, person))
+		require.NotNil(t, machined.SessionAdmissionTransaction(held, row.ID))
+		detached, cancelDetached = detachedRuntimeContext(held, time.Minute)
+		return nil
+	})
+	require.NoError(t, err)
+	defer cancelDetached()
+	cancelParent()
+	require.NoError(t, detached.Err())
+	require.Equal(t, "retained", detached.Value(requestValue{}))
+	_, err = pool.Exec(t.Context(), `DELETE FROM workspace_shares WHERE workspace_id=$1 AND grantee_user_id=$2`, row.ID, person)
+	require.NoError(t, err)
+	called := false
+	err = svc.withWorkspaceMutationAuthority(detached, row, person, func(context.Context) error { called = true; return nil })
+	requireBranchStatus(t, err, 403)
+	require.False(t, called, "detached work must obtain fresh authority after revocation")
+	require.Nil(t, heldWorkspaceMutationTransaction(detached, row.ID, person))
+	require.Nil(t, machined.SessionAdmissionTransaction(detached, row.ID))
+	require.False(t, machined.RecheckBeforeAdmissionCommit(detached, row.ID, nil))
+	cancelDetached()
+	require.ErrorIs(t, detached.Err(), context.Canceled)
 }
