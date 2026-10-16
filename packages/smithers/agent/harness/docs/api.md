@@ -632,7 +632,7 @@ planned run. Existing approvals and recorded keys remain bound to their
 original bytes; no decoder translates identities. Intermediate builds that
 added the `success-without-failure-code/v1` filter to the encoded schema derived
 different keys. Finish their executions on the same build before upgrading.
-See the agent's [persisted cell-call identity](../../docs/concepts/engine-port.md#persisted-cell-call-identity)
+See the agent's [persisted cell-call identity](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/docs/concepts/engine-port.md#persisted-cell-call-identity)
 for the retained algorithm and composition versions.
 
 **Checkpoints.** `Cell.baseCheckpoint` is `"base"`, the id naming the tree a

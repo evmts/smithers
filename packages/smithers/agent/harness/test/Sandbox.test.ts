@@ -477,7 +477,7 @@ describe("Sandbox", () => {
     )
     expect((outcome as Cell.Settled).transition).toMatchObject({
       _tag: "complete",
-      output: "base,call,checkpoint,done,flows,justify,park|fs/list"
+      output: "base,call,checkpoint,done,flows,justify,park,task|fs/list"
     })
   })
 
