@@ -54,7 +54,7 @@ Out:
 - [C-SEC-02](../checks/C-SEC-02.md): machine-only load evaluation, root-input validation and approved packaged artifacts, through the production microVM paths. Process-mode tests do not satisfy this gate.
 
 ## Risks and notes
-- Resolved: every `main` move loads (§11.3.1), so a change outside `flows/**` can't leave a stale version Active.
+- Resolved: every `main` move loads (§11.3.1), so a change outside `.smithers/flows/**` can't leave a stale version Active.
 - Risk: a load on every `main` move costs one ephemeral machine per load. Confirmed when loads queue behind TODO machines on the scorecard. Coalescing bounds it to one load at a time; escalate before narrowing the trigger.
 - Risk: a dependency environment with native addons built for another platform. Confirmed when a restored closure fails to load a `.node` file on a branch machine. Load machines and branch machines boot the same pinned base image, so a mismatch is a load failure, not a fallback.
 - Risk: a `flow-load` machine competes with TODO machines in S1 under today's fixed runtime cap (`packages/backend/microsandbox/runtime.go:542-548`). Observed as a `capacity` refusal during load. T-MCH-06's admission and the spare machine of the default `parallel` (S2, §10.3.1) resolve it.

@@ -468,7 +468,7 @@ type MembersModel = { members: { login: string; name: string; avatar_url: string
 
 ```ts
 type FlowModel = {
-  name: string; source: { builtin: true } | { path: string }   // "flows/<name>/flow.ts"
+  name: string; source: { builtin: true } | { path: string }   // ".smithers/flows/<name>/flow.ts"
   versions: { id: string; state: "active" | "proposed" | "merged-syncing" | "merged-failed" | "previous"
               todo?: number; error?: string
               steps: ( { id: string; label: string; detail?: string; agent?: string; added?: boolean }

@@ -13,7 +13,7 @@ In: /flow.edit, Make TODO and /flow.source through existing catalog and TODO pat
 Out: patch storage/application, seed_patch columns or blobs, confinement validator, second proposal service, new TODO/context/confirmation stores, new flow loader or pinning service, direct main writes, merge/activation implementation, scratch Plan/Run, S2 terminal editing, S3 File-card co-editing, CLI/skill implementation, UI View implementation and root provisioning changes.
 
 ## Changes
-- Reshape `apps/app/src/mainview/flows/entries/flow.ts:18` with the missing edit/source descriptors; reuse `entries/todo.ts:40` and its `todo.new` path, rather than adding a proposal service. Template /todo.new: Change flows/<name>/flow.ts: <request>; start from the built-in composition when no override exists.
+- Reshape `apps/app/src/mainview/flows/entries/flow.ts:18` with the missing edit/source descriptors; reuse `entries/todo.ts:40` and its `todo.new` path, rather than adding a proposal service. Template /todo.new: Change .smithers/flows/<name>/flow.ts: <request>; start from the built-in composition when no override exists.
 - Extend `apps/app/src/mainview/cards/FlowContainer.tsx:23` through `cardActions` → `flowAction`, with `onAction(action.tag)` and `data-flow` in the supplied View (§14.2.1). Reuse `packages/rpc/src/FlowCard.ts` and T-APP-05's Flow projection contract; smithers-06 owns any required View change. Reuse T-STK-02's reshape of `packages/backend/internal/routes/mythical.go:293` and `services/mythical_file_todo.go:45`; do not add a second TODO writer. No new table, patch store or executable patch input.
 - Quote the agent’s proposed diff in the prompt context. Keep ordinary placement and confirmation rules.
 - /flow.source opens the proposing TODO’s file through T-APP-15 on that TODO’s branch; when no proposing TODO exists, use the same /flow.edit request path with no proposed diff. Preserve ordinary confirmation and placement rules. S1 is read-only; later editing remains with its phase owners.
@@ -25,7 +25,7 @@ Out: patch storage/application, seed_patch columns or blobs, confinement validat
 - Through registered /flow.source, an existing proposing TODO opens its branch/file without creating another TODO. With none, the ordinary confirmed create path creates one TODO with no diff, then opens its File card. Use literal branch IDs and file paths. This S1 case is separate from C-J11-02's S2/S3 editing, Plan and Run journey.
 - Repeated idempotency key returns the same TODO; changed payload refuses; another person cannot approve.
 - Change the source before execution: the agent derives from the request and records the resulting change; no stored patch is applied.
-- With no override, the machine creates flows/<name>/flow.ts from the built-in composition. No repository code executes on the host.
+- With no override, the machine creates .smithers/flows/<name>/flow.ts from the built-in composition. No repository code executes on the host.
 
 ## Acceptance
 - [C-J5-01](../checks/C-J5-01.md): proposed diff → ordinary TODO → merge → Active.

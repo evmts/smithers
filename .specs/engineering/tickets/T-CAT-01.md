@@ -93,7 +93,7 @@ Pass when:
   - S = P = the Appendix A set, with no `in-card` row;
   - T = every row that lists `app_agent` with `agent ≠ never`, `in-card` rows included;
   - X = the Appendix A rows that list `external_agent`, with no UI-only or `in-card` row.
-- Step 5: each of S′, P′, H′ and T′ gains exactly `/release-notes` and `/lint-fix`, one per `flows/<name>/flow.ts`, and both are `run` in T′ (`flow.run` is **A**).
+- Step 5: each of S′, P′, H′ and T′ gains exactly `/release-notes` and `/lint-fix`, one per `.smithers/flows/<name>/flow.ts`, and both are `run` in T′ (`flow.run` is **A**).
 - Step 6: zero mismatches in actors, minimum role and `agent`. For example, `/todo.amend` is `confirm` (B.2), and `branch.discard-foreign` lists `app_agent`, is `confirm` and has minimum role `maintainer` (B.4). Person-only rows, `/sign-in` and `/sign-out` list `person` alone, are `never`, and are absent from T and X.
 - Step 7: zero ids or commands absent from B.1, B.2, B.4 or B.6, and zero registered ids marked Cut there. The groups B.6 cuts from MVP docs (`admin`, `org`, …) are `hidden`, not failures. `smthrs host start|stop|status|upgrade|backup|restore` match B.6.
 - Step 8: every tag has an Appendix C row; none is marked Cut, and none is marked Replaced once T-FLW-11 has landed. The host flow runtime registers only Install rows, and the coding host only Machine rows. Defer and Internal ops rows pass.
@@ -104,7 +104,7 @@ Fail when:
 - A renamed command survives under its old name as an alias (`history.todo` alongside `todo.new`).
 - An **A✓** command is `run`, so the agent executes it without the author's press, or an **A** command is `confirm` (§15.1.5).
 - `discloseToAgent` leaks a hidden entry to T.
-- A repository flow fails the Appendix A equality, or a `flows/<name>/flow.ts` yields no door or two.
+- A repository flow fails the Appendix A equality, or a `.smithers/flows/<name>/flow.ts` yields no door or two.
 - An `in-card` row appears in S, P, H or X, or a UI-only row appears in X.
 - A Machine tag registers in the host flow runtime, or `coding/Request`, `coding/Vibe`, `coding/Verify` or `review/change` is still registered after T-FLW-11.
 - A descriptor changes without regenerating `catalog.mvp.json`.
