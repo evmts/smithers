@@ -770,7 +770,10 @@ describe("RunDriver requestResume", () => {
         }))
         expect(missingReads).toBeGreaterThan(0)
         expect(recorded).toEqual([])
-        expect(Exit.isSuccess(exit)).toBe(true)
+        // The child committed before publishing its parent wake. A follower
+        // may observe that durable result before or after publication fails.
+        if (code === "not_found_row") expect(Exit.isSuccess(exit)).toBe(true)
+        else if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toMatchObject({ code })
         expect((yield* base.get("settling-under-missing-parent")).status).toBe("completed")
       }))))
   }
