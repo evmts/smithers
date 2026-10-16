@@ -167,7 +167,14 @@ try {
     openedOn: "aaaa",
     frames: [
       {
-        calls: [{ flow: "bash", input: { command: "check tests/a.py" }, ok: true, mutates: false, exit: 1, declared: true }],
+        calls: [{
+          flow: "bash",
+          input: { command: "check tests/a.py" },
+          ok: true,
+          mutates: false,
+          exit: 1,
+          declared: true
+        }],
         basis: "observed",
         digest: "aaaa",
         mutated: false,
