@@ -4,12 +4,12 @@
  * @since 1.0.0
  */
 
+// dprint-ignore
 /**
  * Form drafts the account agent may request.
  * @since 1.0.0
  * @category constants
  */
-// dprint-ignore
 export const FORM_INSTRUCTION_FIELDS = {
   "agent": [
     "name"

@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process"
 import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, test } from "vitest"
@@ -27,4 +28,21 @@ describe("the exports in this package", () => {
     })
     expect(missing).toEqual([])
   })
+})
+
+test("generated form instructions retain their formatting", () => {
+  const path = "src/FormInstructions.generated.ts"
+  const source = readFileSync(join(packageRoot, path), "utf8")
+  const format = (input: string) =>
+    execFileSync(join(packageRoot, "node_modules/.bin/dprint"), ["fmt", "--stdin", path], {
+      cwd: packageRoot,
+      input,
+      encoding: "utf8"
+    })
+  expect(format(source)).toBe(source)
+  // Probe the directive with spacing the formatter would otherwise normalize.
+  const probe = source.replace("export const FORM", "export const  FORM")
+  expect(format(probe)).toBe(probe)
+  const unprotected = probe.replace("// dprint-ignore\n", "")
+  expect(format(unprotected)).not.toBe(unprotected)
 })
