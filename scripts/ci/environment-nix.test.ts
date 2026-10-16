@@ -191,6 +191,8 @@ const provided: Record<string, RegExp> = {
   sshd: /pkgs\.openssh\b[\s\S]*L\+ \/usr\/sbin\/sshd/,
   docker: /virtualisation\.docker = \{\s*enable = true;[\s\S]*containerd-snapshotter = true;/,
   rg: /^\s*# ripgrep|ripgrep/m,
+  // The FHS ELF loader a prebuilt glibc executable names; nix-ld serves it.
+  "ld-linux": /^\s*programs\.nix-ld\.enable = true;$/m,
 }
 
 /** The tools each target-index rule needs; a new rule fails until it is listed. */
@@ -198,7 +200,8 @@ const ruleTools: Record<string, string[]> = {
   "Agent.Diff": [], Filegroup: [], LlmLint: [], NewPackage: [], FactoryProjection: [],
   "Docs.Check": [], "Environment.Toolchain": [], TargetIndex: [], Lockfile: [], Tsconfig: [], GithubCiGen: [],
   "Markdown.CodeBlocks": ["node"], DepsLint: ["node"], DocsParity: ["node", "pnpm"],
-  Dprint: ["node", "pnpm"], EsLint: ["node", "pnpm"], Vitest: ["node", "pnpm"],
+  // `pnpm exec dprint` execs the npm package's prebuilt glibc build.
+  Dprint: ["node", "pnpm", "ld-linux"], EsLint: ["node", "pnpm"], Vitest: ["node", "pnpm"],
   Typecheck: ["node", "pnpm"], TsBuild: ["node", "pnpm"], NodeTest: ["node", "pnpm"],
   NodeBinary: ["node", "pnpm"], Generate: ["node", "pnpm"], ToolRun: ["node", "pnpm"],
   ToolBuild: ["node", "pnpm"], Install: ["node", "pnpm"],
@@ -220,6 +223,7 @@ describe("the Cloud machine carries every tool the checks execute", () => {
     const missing = [...needed].filter((tool) => !(provided[tool]?.test(environment) ?? false))
     expect(missing).toEqual([])
     expect(needed.has("docker")).toBe(true)
+    expect(needed.has("ld-linux")).toBe(true)
     // The image store PACKAGE.ts declares is the one the daemon is set to.
     expect(only(rootPackage, /CiToolchain\.Docker\(\{\s*imageStore: "([^"]+)"/, "Docker in PACKAGE.ts")).toBe(
       "containerd"
