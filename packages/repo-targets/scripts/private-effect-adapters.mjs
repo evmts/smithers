@@ -30,7 +30,7 @@ const digest = (bytes) => createHash("sha256").update(bytes).digest("hex")
 /**
  * The exact Effect release an owner builds its private adapters from.
  *
- * An executable installs `effect` itself, at one exact release. A library
+ * An executable selects `effect` at one exact release through its peer. A library
  * takes `effect` from its application as a ranged peer and develops against
  * one exact release, so its development dependency is the build input. A
  * vendored adapter keeps the requirement the upstream package states, `effect`
@@ -43,7 +43,8 @@ const adapterEffectVersion = (manifest) => {
   if (typeof version !== "string" || !/^\d+\.\d+\.\d+(?:-[\w.-]+)?$/.test(version)) {
     throw new Error("Private adapters require exact Effect identity")
   }
-  if (installed === undefined && manifest.peerDependencies?.effect !== "^" + version) {
+  const peer = manifest.bin === undefined ? "^" + version : version
+  if (installed === undefined && manifest.peerDependencies?.effect !== peer) {
     throw new Error("Private adapters require an Effect peer that starts at their build release")
   }
   return version

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
 import { createHash } from "node:crypto"
+import { readFileSync } from "node:fs"
 import { once } from "node:events"
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises"
 import { createRequire } from "node:module"
@@ -17,7 +18,7 @@ import {
 const root = resolve(import.meta.dirname, "..")
 const sourceRequire = createRequire(join(root, "packages/smithers/package.json"))
 const sourceManifest = JSON.parse(await readFile(join(root, "packages/smithers/package.json"), "utf8"))
-const version = sourceManifest.dependencies.effect
+const version = sourceManifest.devDependencies.effect
 const adapters = ["@effect/platform-bun", "@effect/platform-node", "@effect/platform-node-shared"]
 // What the bundled adapters import besides Effect, at the versions the CLI
 // manifest installs. Read from that manifest, so the real-adapter test below
@@ -77,6 +78,16 @@ test("private adapter declarations reject incomplete, mutable, and consumer reso
     assert.throws(() => privateEffectAdapters(input), /exact Effect/)
   }
   assert.deepEqual(privateEffectAdapters(library()), adapters)
+  const peerExecutable = library()
+  peerExecutable.bin = { cli: "bin.js" }
+  peerExecutable.peerDependencies.effect = version
+  assert.deepEqual(privateEffectAdapters(peerExecutable), adapters)
+  peerExecutable.peerDependencies.effect = "^" + version
+  assert.throws(() => privateEffectAdapters(peerExecutable), /Effect peer that starts at their build release/)
+  for (const name of ["packages/smithers", "packages/smithers/build/build-cli", "packages/smithers/migrate"]) {
+    const published = JSON.parse(readFileSync(join(root, name, "package.json"), "utf8"))
+    assert.deepEqual(privateEffectAdapters(published), published.smthrs.privateEffectAdapters, name)
+  }
   // A library builds from the exact release it develops against, never from
   // the range its peer accepts.
   for (const value of [undefined, "^" + version, "~" + version, "workspace:*"]) {
