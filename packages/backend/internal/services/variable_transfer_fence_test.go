@@ -153,13 +153,13 @@ func (g *pausedVariableGuard) pause(ctx context.Context) error {
 	}
 }
 
-func (g *pausedVariableGuard) WithRepoOwnershipShared(ctx context.Context, snapshot db.Repository, write func() error) error {
+func (g *pausedVariableGuard) WithRepoOwnershipShared(ctx context.Context, snapshot db.Repository, write func(context.Context) error) error {
 	if g.inside {
-		return g.delegate.WithRepoOwnershipShared(ctx, snapshot, func() error {
-			if err := g.pause(ctx); err != nil {
+		return g.delegate.WithRepoOwnershipShared(ctx, snapshot, func(held context.Context) error {
+			if err := g.pause(held); err != nil {
 				return err
 			}
-			return write()
+			return write(held)
 		})
 	}
 	if err := g.pause(ctx); err != nil {

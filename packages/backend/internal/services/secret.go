@@ -238,7 +238,7 @@ func (s *SecretService) SetSecret(ctx context.Context, actor *db.User, owner, re
 	}
 
 	var created db.RepositorySecret
-	if err := s.guardedSecretWrite(ctx, repository, actor.ID, func(queries SecretQuerier) error {
+	if err := s.guardedSecretWrite(ctx, repository, actor.ID, func(ctx context.Context, queries SecretQuerier) error {
 		var werr error
 		params := db.CreateOrUpdateSecretParams{
 			RepositoryID:   repository.ID,
@@ -323,7 +323,7 @@ func (s *SecretService) UpdateSecret(ctx context.Context, actor *db.User, owner,
 	}
 	params.RepositoryID = repository.ID
 	var updated db.RepositorySecret
-	if err := s.guardedSecretWrite(ctx, repository, actor.ID, func(queries SecretQuerier) error {
+	if err := s.guardedSecretWrite(ctx, repository, actor.ID, func(ctx context.Context, queries SecretQuerier) error {
 		var werr error
 		updated, werr = queries.UpdateSecretSettings(ctx, params)
 		if stdErrors.Is(werr, pgx.ErrNoRows) {
@@ -422,7 +422,7 @@ func (s *SecretService) DeleteSecret(ctx context.Context, actor *db.User, owner,
 		return err
 	}
 
-	return s.guardedSecretWrite(ctx, repository, actor.ID, func(queries SecretQuerier) error {
+	return s.guardedSecretWrite(ctx, repository, actor.ID, func(ctx context.Context, queries SecretQuerier) error {
 		if err := queries.DeleteSecret(ctx, db.DeleteSecretParams{
 			RepositoryID: repository.ID,
 			Name:         trimmedName,
@@ -646,10 +646,19 @@ func (s *SecretService) requireOrgOwner(ctx context.Context, actor *db.User, org
 // guardedSecretWrite orders install writes with roster transitions and
 // session revocation. It checks liveness, not the minimum role again: an
 // ordinary downgrade does not replace the request's bound decision.
-func (s *SecretService) guardedSecretWrite(ctx context.Context, repository db.Repository, actorID int64, write func(SecretQuerier) error) error {
-	return guardedRepoWrite(ctx, s.ownershipGuard, repository, func() error {
+//
+// THE CALLBACK TAKES THE GUARDED CONTEXT, and every caller's mutation runs on
+// it. The ownership fence bounds the context it hands this function, but a
+// callback that only receives a querier closes over whatever context its
+// enclosing method happened to hold — the request's or, on a background
+// caller, the process's. The secret write then ran unbounded while the
+// ownership guard was holding a core-pool connection and the repository's
+// ownership lock, which is the same capture the provisioning claim had: a
+// context created and not passed into the captured closure bounds nothing.
+func (s *SecretService) guardedSecretWrite(ctx context.Context, repository db.Repository, actorID int64, write func(context.Context, SecretQuerier) error) error {
+	return guardedRepoWrite(ctx, s.ownershipGuard, repository, func(ctx context.Context) error {
 		if !s.installAuthorization {
-			return write(s.queries)
+			return write(ctx, s.queries)
 		}
 		if s.installPool == nil {
 			return &AccessError{Status: 503, Class: "infra", Code: "unavailable", Message: "Members unavailable"}
@@ -677,7 +686,7 @@ func (s *SecretService) guardedSecretWrite(ctx context.Context, repository db.Re
 		if current != repository.ID {
 			return &AccessError{Status: 403, Class: "permission", Code: "permission", Message: "Not available"}
 		}
-		if err = write(queries); err != nil {
+		if err = write(ctx, queries); err != nil {
 			return err
 		}
 		return tx.Commit(ctx)

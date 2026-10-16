@@ -464,7 +464,7 @@ func (s *IssueService) CreateIssue(ctx context.Context, actor *db.User, owner, r
 	}
 	replayed := false
 	var created db.Issue
-	if err := guardedRepoWrite(ctx, s.ownershipGuard, repository, func() error {
+	if err := guardedRepoWrite(ctx, s.ownershipGuard, repository, func(ctx context.Context) error {
 		return s.withIssueWriteTx(ctx, func(tx issueWriteTx) error {
 			if req.IdempotencyKey != "" {
 				if finder, ok := tx.(interface {

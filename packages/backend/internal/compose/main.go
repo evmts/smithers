@@ -828,7 +828,11 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 	repositoryStorageReconciler := services.NewRepositoryStorageOperationReconciler(pool, repoHostClient)
 	repositoryProvisioningReconciler := services.NewRepositoryProvisioningReconciler(options.RepositoryProvisioning, repoHostClient)
-	repoOwnershipFence := services.NewRepoOwnershipFence(pool)
+	// The ownership fence holds a core-pool connection and the repository's
+	// ownership lock across its caller's write, so the duty holding them has
+	// to be nameable when the pool is full.
+	repoOwnershipFence := services.NewRepoOwnershipFence(pool,
+		services.WithRepoOwnershipCorePoolObserver(smithersMetrics))
 	sshKeyService := services.NewSSHKeyService(queries)
 	deployKeyService := services.NewDeployKeyService(queries)
 	if config.IsSingleOwner(cfg.Auth) {
@@ -2807,7 +2811,11 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		launchWorker(func() {
 			repoConnectionService.StartGitHubAppInstallationReconciler(
 				workerCtx,
-				services.NewPgGitHubAppReconcileLocker(pool),
+				services.NewPgGitHubAppReconcileLocker(pool,
+					// The election transaction is a core-pool connection, so
+					// the duty that holds it has to be nameable when the pool
+					// is full: smithers_db_connections_active cannot say who.
+					services.WithGitHubAppReconcileCorePoolObserver(smithersMetrics)),
 				services.GitHubAppInstallationReconcileInterval,
 			)
 		})

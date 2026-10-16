@@ -43,8 +43,8 @@ func (s *WorkspaceService) ensureServiceWorkspaceRunning(ctx context.Context, ro
 	if err != nil {
 		return row, err
 	}
-	return s.withWorkspaceProvisionLock(ctx, authority.row, func(current db.Workspace) (db.Workspace, error) {
-		return s.ensureWorkspaceRunningWithRuntimeStart(ctx, current, input, func(ctx context.Context, row db.Workspace, requesterID int64) (db.Workspace, error) {
+	return s.withWorkspaceProvisionLock(ctx, authority.row, func(claim context.Context, current db.Workspace) (db.Workspace, error) {
+		return s.ensureWorkspaceRunningWithRuntimeStart(claim, current, input, func(ctx context.Context, row db.Workspace, requesterID int64) (db.Workspace, error) {
 			return s.ensureRuntimeWorkspaceRunningWithMutation(ctx, row, requesterID, func(fn func(context.Context) error) error {
 				return s.withServiceMachineMutation(ctx, authority, fn)
 			})

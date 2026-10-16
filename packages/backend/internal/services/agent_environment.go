@@ -246,7 +246,7 @@ func (s *AgentEnvironmentService) PutAgentEnvironment(ctx context.Context, actor
 		return AgentEnvironmentResponse{}, pkgerrors.Internal("failed to load agent environment").WithCause(err)
 	}
 	storedToken := err == nil && agentEnvironmentHoldsSubscriptionToken(s.subscriptionTokens, stored)
-	err = guardedRepoWrite(ctx, s.ownershipGuard, repository, func() error {
+	err = guardedRepoWrite(ctx, s.ownershipGuard, repository, func(ctx context.Context) error {
 		if _, err := s.queries.UpsertRepositoryAgentEnvironment(ctx, db.UpsertRepositoryAgentEnvironmentParams{
 			RepositoryID:         repository.ID,
 			SetupScript:          input.SetupScript,
@@ -341,7 +341,7 @@ func (s *AgentEnvironmentService) PutAgentEnvironmentSecret(ctx context.Context,
 	}
 
 	var saved db.UpsertRepositoryAgentEnvironmentSecretRow
-	err = guardedRepoWrite(ctx, s.ownershipGuard, repository, func() error {
+	err = guardedRepoWrite(ctx, s.ownershipGuard, repository, func(ctx context.Context) error {
 		var writeErr error
 		saved, writeErr = s.queries.UpsertRepositoryAgentEnvironmentSecret(ctx, db.UpsertRepositoryAgentEnvironmentSecretParams{
 			RepositoryID:   repository.ID,
@@ -418,7 +418,7 @@ func (s *AgentEnvironmentService) DeleteAgentEnvironmentSecret(ctx context.Conte
 	if !agentEnvironmentNamePattern.MatchString(name) || len(name) > 255 {
 		return pkgerrors.BadRequest("invalid agent environment secret name")
 	}
-	return guardedRepoWrite(ctx, s.ownershipGuard, repository, func() error {
+	return guardedRepoWrite(ctx, s.ownershipGuard, repository, func(ctx context.Context) error {
 		if err := s.queries.DeleteRepositoryAgentEnvironmentSecret(ctx, db.DeleteRepositoryAgentEnvironmentSecretParams{
 			RepositoryID: repository.ID,
 			Name:         name,

@@ -129,7 +129,7 @@ func (s *VariableService) SetVariable(ctx context.Context, actor *db.User, owner
 	}
 
 	var created db.RepositoryVariable
-	err = guardedRepoWrite(ctx, s.ownershipGuard, repository, func() error {
+	err = guardedRepoWrite(ctx, s.ownershipGuard, repository, func(ctx context.Context) error {
 		if err := s.requireWriteAccess(ctx, repository, actor); err != nil {
 			return err
 		}
@@ -234,7 +234,7 @@ func (s *VariableService) DeleteVariable(ctx context.Context, actor *db.User, ow
 		return err
 	}
 
-	return guardedRepoWrite(ctx, s.ownershipGuard, repository, func() error {
+	return guardedRepoWrite(ctx, s.ownershipGuard, repository, func(ctx context.Context) error {
 		if err := s.requireWriteAccess(ctx, repository, actor); err != nil {
 			return err
 		}

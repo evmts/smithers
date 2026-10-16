@@ -659,8 +659,8 @@ func (s *WorkspaceService) ensureWorkspaceRunning(ctx context.Context, workspace
 		input.UserID = workspace.UserID
 	}
 	provision := func(ctx context.Context) (db.Workspace, error) {
-		return s.withWorkspaceProvisionLock(ctx, workspace, func(current db.Workspace) (db.Workspace, error) {
-			return s.ensureWorkspaceRunningOwned(ctx, current, input)
+		return s.withWorkspaceProvisionLock(ctx, workspace, func(claim context.Context, current db.Workspace) (db.Workspace, error) {
+			return s.ensureWorkspaceRunningOwned(claim, current, input)
 		})
 	}
 	owned, err := s.branchMachineOwned(ctx, workspace.UserID)

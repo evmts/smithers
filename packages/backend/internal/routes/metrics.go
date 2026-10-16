@@ -645,6 +645,33 @@ func (m *SmithersMetrics) ObserveWorkspaceLifecycle(action, result string) {
 	m.HTTP.WorkspaceLifecycleTotal.WithLabelValues(action, result).Inc()
 }
 
+// SetWorkspaceProvisionClaimBudget records how many concurrent provisioning
+// claims this process admits, derived from its database pool's real size.
+func (m *SmithersMetrics) SetWorkspaceProvisionClaimBudget(claims float64) {
+	if m == nil {
+		return
+	}
+	m.HTTP.WorkspaceProvisionClaimBudget.Set(claims)
+}
+
+// AddCorePoolDutyHeld moves the core-pool connections one serving background
+// duty is holding. duty is a closed source constant.
+func (m *SmithersMetrics) AddCorePoolDutyHeld(duty string, delta float64) {
+	if m == nil {
+		return
+	}
+	m.HTTP.CorePoolDutyConnectionsHeld.WithLabelValues(duty).Add(delta)
+}
+
+// ObserveCorePoolDutyStall records a core-pool bound that refused. duty and
+// stage are closed source constants.
+func (m *SmithersMetrics) ObserveCorePoolDutyStall(duty, stage string) {
+	if m == nil {
+		return
+	}
+	m.HTTP.CorePoolDutyStallsTotal.WithLabelValues(duty, stage).Inc()
+}
+
 func (m *SmithersMetrics) ObserveMirrorAttempt(result string) {
 	if m == nil {
 		return

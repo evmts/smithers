@@ -58,6 +58,18 @@ type HTTPMetrics struct {
 
 	// WorkspaceLifecycleTotal counts workspace lifecycle events by action and result.
 	WorkspaceLifecycleTotal *prometheus.CounterVec
+
+	// WorkspaceProvisionClaimBudget tracks how many provisioning claims this
+	// process admits at once, derived from its database pool's real size.
+	WorkspaceProvisionClaimBudget prometheus.Gauge
+
+	// CorePoolDutyConnectionsHeld tracks how many core-pool connections each
+	// serving background duty is holding right now.
+	CorePoolDutyConnectionsHeld *prometheus.GaugeVec
+
+	// CorePoolDutyStallsTotal counts the core-pool bounds that refused, by
+	// duty and by the stage the bound belongs to.
+	CorePoolDutyStallsTotal *prometheus.CounterVec
 }
 
 // NewHTTPMetrics creates a new HTTPMetrics instance and registers all metrics
@@ -176,6 +188,35 @@ func NewHTTPMetrics(reg prometheus.Registerer) *HTTPMetrics {
 			},
 			[]string{"action", "result"},
 		),
+		// smithers_db_connections_active over _max says the pool is full. It
+		// cannot say WHO filled it: it reads 4 of 4 for a worker that is
+		// working and for one whose background duties are each holding a
+		// connection while reaching for a second, and it names no duty at all.
+		// That blind spot is why fifteen minutes of a stopped reconciler
+		// produced no operable signal. These three answer the three questions
+		// it cannot: how many claims this process admits, which duty is
+		// holding core-pool connections right now, and which written bound
+		// refused. Both label sets are closed source constants (see
+		// services/core_pool_duty.go): no identifier, error text, SQL or
+		// customer value can reach them.
+		WorkspaceProvisionClaimBudget: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "smithers_workspace_provision_claim_budget",
+			Help: "Concurrent workspace provisioning claims this process admits, derived from its database pool size.",
+		}),
+		CorePoolDutyConnectionsHeld: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "smithers_core_pool_duty_connections_held",
+				Help: "Core-pool database connections held right now by each serving background duty.",
+			},
+			[]string{"duty"},
+		),
+		CorePoolDutyStallsTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "smithers_core_pool_duty_stalls_total",
+				Help: "Total core-pool acquire or hold bounds that refused, labeled by background duty and stage.",
+			},
+			[]string{"duty", "stage"},
+		),
 	}
 
 	if reg != nil {
@@ -198,6 +239,9 @@ func NewHTTPMetrics(reg prometheus.Registerer) *HTTPMetrics {
 			m.CodeSearchBacklogOldestAgeSeconds,
 			m.AuthOperationsTotal,
 			m.WorkspaceLifecycleTotal,
+			m.WorkspaceProvisionClaimBudget,
+			m.CorePoolDutyConnectionsHeld,
+			m.CorePoolDutyStallsTotal,
 		)
 	}
 

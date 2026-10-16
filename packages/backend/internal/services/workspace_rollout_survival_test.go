@@ -257,8 +257,8 @@ func TestWorkspaceProvisionLockPostgresOwnership(t *testing.T) {
 	owner := newWorkspaceServiceForTests(q, WithWorkspaceTransactions(pool))
 	other := newWorkspaceServiceForTests(q, WithWorkspaceTransactions(pool))
 	ctx := context.Background()
-	_, err := owner.withWorkspaceProvisionLock(ctx, ws, func(current db.Workspace) (db.Workspace, error) {
-		_, contended := other.withWorkspaceProvisionLock(ctx, ws, func(db.Workspace) (db.Workspace, error) {
+	_, err := owner.withWorkspaceProvisionLock(ctx, ws, func(_ context.Context, current db.Workspace) (db.Workspace, error) {
+		_, contended := other.withWorkspaceProvisionLock(ctx, ws, func(context.Context, db.Workspace) (db.Workspace, error) {
 			t.Error("two processes owned one workspace's provisioning")
 			return ws, nil
 		})
@@ -268,7 +268,7 @@ func TestWorkspaceProvisionLockPostgresOwnership(t *testing.T) {
 	})
 	require.NoError(t, err)
 	ran := false
-	_, err = other.withWorkspaceProvisionLock(ctx, ws, func(current db.Workspace) (db.Workspace, error) {
+	_, err = other.withWorkspaceProvisionLock(ctx, ws, func(_ context.Context, current db.Workspace) (db.Workspace, error) {
 		ran = true
 		return current, nil
 	})

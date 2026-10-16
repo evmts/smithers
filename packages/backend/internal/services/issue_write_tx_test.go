@@ -111,8 +111,8 @@ type orderingOwnershipGuard struct {
 	committedWhenWritten bool
 }
 
-func (g *orderingOwnershipGuard) WithRepoOwnershipShared(_ context.Context, _ db.Repository, write func() error) error {
-	err := write()
+func (g *orderingOwnershipGuard) WithRepoOwnershipShared(ctx context.Context, _ db.Repository, write func(context.Context) error) error {
+	err := write(ctx)
 	g.committedWhenWritten = g.tx.committed == 1
 	return err
 }

@@ -621,12 +621,12 @@ type fakeOwnershipGuard struct {
 	calls int
 }
 
-func (g *fakeOwnershipGuard) WithRepoOwnershipShared(_ context.Context, _ db.Repository, write func() error) error {
+func (g *fakeOwnershipGuard) WithRepoOwnershipShared(ctx context.Context, _ db.Repository, write func(context.Context) error) error {
 	g.calls++
 	if g.err != nil {
 		return g.err
 	}
-	return write()
+	return write(ctx)
 }
 
 func guardedTestRepo() db.Repository {

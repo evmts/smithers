@@ -41,9 +41,39 @@ const (
 // ownership changes: the write runs while the per-repository ownership lock is
 // held in shared mode, after re-validating that the repository still has the
 // owner/name the caller authorized against.
+// The write receives the context it must do its own database work under.
+// That parameter is the whole point: the guard holds a core-pool connection
+// and the repository's ownership lock in shared mode for as long as the write
+// runs, and every statement the write makes is a SECOND acquire on the SAME
+// pool. A callback that closes over its caller's context instead — on a
+// background sweep, the process's — parks there forever while holding both,
+// which is the shape the closed production wait aggregate recorded as a
+// GetRepoByID transaction holding repository_ownership in ShareLock mode for
+// 6847 seconds. A bound the callback never receives bounds nothing, so the
+// callback receives one: see repoOwnershipGuardHoldBudget and
+// core_pool_duty.go.
 type RepoOwnershipGuard interface {
-	WithRepoOwnershipShared(ctx context.Context, snapshot db.Repository, write func() error) error
+	WithRepoOwnershipShared(ctx context.Context, snapshot db.Repository, write func(context.Context) error) error
 }
+
+// repoOwnershipGuardHoldBudget bounds ONE guarded write's hold: the core-pool
+// connection its guard transaction sits on, plus the repository's ownership
+// lock in shared mode.
+//
+// Thirty seconds, because every guarded write in this program is a small,
+// bounded set of row writes on this same pool — a webhook row, an agent
+// environment and its secrets, one secret, one variable, one issue
+// transaction — and none of them does physical work, boots anything, or calls
+// a third party while the lock is held. A guarded write that cannot finish a
+// handful of row writes in thirty seconds is not slow; its pool has nothing
+// left to give it, and then the ownership lock and the connection are worth
+// more to the process than this one write, which refuses and is retried by
+// its own caller.
+//
+// The lock's PURPOSE is untouched: the write still runs with ownership held
+// shared, still re-validates the snapshot first, and still serializes against
+// transfers, deletes and settings updates. Only the hold is finite.
+const repoOwnershipGuardHoldBudget = 30 * time.Second
 
 // RepoOwnershipFence is the pgxpool-backed RepoOwnershipGuard used in
 // production. It shares the advisory-lock key space with RepoService's
@@ -51,6 +81,24 @@ type RepoOwnershipGuard interface {
 // and settings updates.
 type RepoOwnershipFence struct {
 	pool *pgxpool.Pool
+	hold time.Duration
+	duty CorePoolDutyObserver
+}
+
+// RepoOwnershipFenceOption configures the fence.
+type RepoOwnershipFenceOption func(*RepoOwnershipFence)
+
+// WithRepoOwnershipCorePoolObserver attributes this fence's core-pool hold and
+// its refusals, so a full pool names the duty sitting on it rather than
+// reading 4 of 4 and naming nobody.
+func WithRepoOwnershipCorePoolObserver(observer CorePoolDutyObserver) RepoOwnershipFenceOption {
+	return func(f *RepoOwnershipFence) { f.duty = observer }
+}
+
+// withRepoOwnershipHoldBudget shortens the hold for tests that have to prove
+// the bound ends a hold rather than waiting out the production one.
+func withRepoOwnershipHoldBudget(hold time.Duration) RepoOwnershipFenceOption {
+	return func(f *RepoOwnershipFence) { f.hold = hold }
 }
 
 type repoOwnershipTransactionKey struct{}
@@ -66,36 +114,72 @@ func withRepoOwnershipTransaction(ctx context.Context, pool *pgxpool.Pool, tx pg
 }
 
 // NewRepoOwnershipFence returns a fence backed by pool, or nil when pool is nil.
-func NewRepoOwnershipFence(pool *pgxpool.Pool) *RepoOwnershipFence {
+func NewRepoOwnershipFence(pool *pgxpool.Pool, opts ...RepoOwnershipFenceOption) *RepoOwnershipFence {
 	if pool == nil {
 		return nil
 	}
-	return &RepoOwnershipFence{pool: pool}
+	fence := &RepoOwnershipFence{pool: pool, hold: repoOwnershipGuardHoldBudget}
+	for _, opt := range opts {
+		opt(fence)
+	}
+	return fence
 }
 
-func (f *RepoOwnershipFence) WithRepoOwnershipShared(ctx context.Context, snapshot db.Repository, write func() error) error {
+func (f *RepoOwnershipFence) WithRepoOwnershipShared(ctx context.Context, snapshot db.Repository, write func(context.Context) error) error {
 	if f == nil || f.pool == nil {
-		return write()
+		return write(ctx)
 	}
+	// Everything from here to the deferred rollback runs under a written
+	// bound, INCLUDING write: write is called synchronously on this
+	// goroutine, so the guard transaction's connection is never returned
+	// while the write is still using it, and the bound reaches the write's
+	// own acquires rather than only this frame.
+	hold := f.hold
+	if hold <= 0 {
+		hold = repoOwnershipGuardHoldBudget
+	}
+	held, endHold := context.WithTimeout(ctx, hold)
+	defer endHold()
+
 	var tx pgx.Tx
 	if shared, ok := ctx.Value(repoOwnershipTransactionKey{}).(repoOwnershipTransaction); ok && shared.pool == f.pool && shared.tx != nil {
+		// A borrowed transaction: the connection is the install service's, and
+		// it is the one that gives it back. Only the hold is bounded here.
 		tx = shared.tx
 	} else {
 		var err error
-		tx, err = f.pool.Begin(ctx)
+		tx, err = f.pool.Begin(held)
 		if err != nil {
+			// Nothing is held yet, so this is the pool refusing to fence the
+			// write at all, which must not read as a write that ran and
+			// failed.
+			if held.Err() != nil && ctx.Err() == nil {
+				corePoolDutyStall(f.duty, corePoolDutyRepositoryOwnershipGuard, corePoolStageAcquireConnection)
+			}
 			slog.Error("failed to begin repository ownership guard transaction", "repo_id", snapshot.ID, "error", err)
 			return pkgerrors.Internal("failed to serialize repository write").WithCause(err)
 		}
-		defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+		// Detached, because a cancelled caller must still release the
+		// ownership lock, and finite, because an unbounded release keeps the
+		// very connection it was called to give back. The rollback still runs
+		// AFTER write returns: the ownership fence covers the whole write.
+		releaseHeld := corePoolDutyHold(f.duty, corePoolDutyRepositoryOwnershipGuard)
+		defer func() {
+			release, cancel := corePoolRelease(ctx)
+			defer cancel()
+			_ = tx.Rollback(release)
+			// After the rollback, never before it: until it returns, this duty
+			// is still holding the connection and the lock.
+			releaseHeld()
+		}()
 	}
 
-	if _, err := tx.Exec(ctx, repoOwnershipSharedLockSQL, snapshot.ID); err != nil {
+	if _, err := tx.Exec(held, repoOwnershipSharedLockSQL, snapshot.ID); err != nil {
 		slog.Error("failed to acquire repository ownership shared lock", "repo_id", snapshot.ID, "error", err)
 		return pkgerrors.Internal("failed to serialize repository write").WithCause(err)
 	}
 
-	fresh, err := db.New(tx).GetRepoByID(ctx, snapshot.ID)
+	fresh, err := db.New(tx).GetRepoByID(held, snapshot.ID)
 	if err != nil {
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.NotFound("repository not found")
@@ -107,14 +191,21 @@ func (f *RepoOwnershipFence) WithRepoOwnershipShared(ctx context.Context, snapsh
 		return pkgerrors.Conflict("repository ownership changed concurrently")
 	}
 
-	return write()
+	err = write(held)
+	if err != nil && held.Err() != nil && ctx.Err() == nil {
+		// The write held the connection and the ownership lock and could not
+		// finish inside the budget. Both are released by the deferred
+		// rollback above; the stage says which bound refused.
+		corePoolDutyStall(f.duty, corePoolDutyRepositoryOwnershipGuard, corePoolStageLockedCallback)
+	}
+	return err
 }
 
 // guardedRepoWrite runs write under g's shared ownership fence when g is
 // non-nil, otherwise directly (unit tests without a pool).
-func guardedRepoWrite(ctx context.Context, g RepoOwnershipGuard, repository db.Repository, write func() error) error {
+func guardedRepoWrite(ctx context.Context, g RepoOwnershipGuard, repository db.Repository, write func(context.Context) error) error {
 	if g == nil {
-		return write()
+		return write(ctx)
 	}
 	return g.WithRepoOwnershipShared(ctx, repository, write)
 }

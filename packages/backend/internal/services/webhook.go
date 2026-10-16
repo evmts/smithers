@@ -224,7 +224,7 @@ func (s *WebhookService) CreateWebhook(ctx context.Context, actor *db.User, owne
 	}
 
 	var created db.Webhook
-	if err := guardedRepoWrite(ctx, s.ownershipGuard, repository, func() error {
+	if err := guardedRepoWrite(ctx, s.ownershipGuard, repository, func(ctx context.Context) error {
 		var werr error
 		created, werr = s.queries.CreateWebhook(ctx, db.CreateWebhookParams{
 			RepositoryID: repository.ID,
@@ -673,7 +673,7 @@ func (s *WebhookService) EnsureSystemWebhook(ctx context.Context, owner, repo, u
 		hook    db.Webhook
 		created bool
 	)
-	if err := guardedRepoWrite(ctx, s.ownershipGuard, repository, func() error {
+	if err := guardedRepoWrite(ctx, s.ownershipGuard, repository, func(ctx context.Context) error {
 		var werr error
 		hook, created, werr = s.queries.EnsureWebhookAtURL(ctx, db.CreateWebhookParams{
 			RepositoryID: repository.ID,

@@ -42,12 +42,290 @@ func workspaceProvisionInProgress(cause error) error {
 
 type workspaceProvisionTasks struct {
 	slots  chan struct{}
+	limit  int
 	wg     sync.WaitGroup
 	active sync.Map
+
+	// mu guards reserved, and is held ACROSS the pool measurement that
+	// justifies a reservation: see reserve.
+	mu sync.Mutex
+	// reserved is how many core-pool connections this process's admitted
+	// claims still need and have not acquired yet. It is the difference
+	// between a check and a reservation.
+	reserved int
 }
 
 func newWorkspaceProvisionTasks() *workspaceProvisionTasks {
-	return &workspaceProvisionTasks{slots: make(chan struct{}, 4)}
+	return &workspaceProvisionTasks{slots: make(chan struct{}, workspaceProvisionMaxClaims), limit: workspaceProvisionMaxClaims}
+}
+
+// THE CONNECTION BUDGET, written down, because the gate in front of these
+// claims used to be a bare constant that did not know the pool's size.
+//
+// One claim needs TWO core-pool connections at the same time and holds the
+// first while it waits for the second: withWorkspaceProvisionLock begins a
+// transaction (connection one), takes the provisioning advisory lock on it,
+// and then every read and fenced write inside the callback goes through s.q,
+// which is the SAME pool (compose/main.go hands one pool to both). Holding a
+// connection while acquiring another is only safe while the pool can serve
+// both, and pgxpool.Acquire waits until its context is done — a reconciler
+// tick carries no deadline — so past that point the claim parks forever with
+// its transaction, and its advisory lock, still open. That is the core-pool
+// invariant in core_pool_duty.go, and this is one of the duties that has to
+// satisfy it.
+//
+// What this file does NOT claim: that a provisioning claim is what absorbed
+// the serving worker. The closed wait aggregate named the long-held operations
+// and none of them was this one — no TryLockWorkspaceProvisioning row appears
+// in it at all, and its four interesting connections are a server-wide census
+// that attributes nothing to one process or one pool. What is proved here is a
+// general hazard in this claim path, reproduced against real PostgreSQL at the
+// shipped pool size, and that a pool filled by ANY other duty used to park
+// this reconciler silently. The duties the aggregate did name are bounded
+// where this process owns them: see GitHubAppInstallationReconcileHoldBudget.
+const (
+	// workspaceProvisionConnectionsPerClaim is how many core-pool connections
+	// one admitted claim can need at once: the transaction holding the
+	// advisory lock, plus the deepest query the callback makes through the
+	// store while that transaction is still open.
+	workspaceProvisionConnectionsPerClaim = 2
+
+	// workspaceProvisionMaxClaims is the ceiling the gate keeps when the pool
+	// is large enough to serve more. It is the value the gate used
+	// unconditionally before, so a well-sized pool behaves exactly as it did.
+	workspaceProvisionMaxClaims = 4
+)
+
+// workspaceProvisionAcquireTimeout bounds each core-pool acquire a claim
+// makes, and each one the reconcile loop makes before any claim exists. It is
+// the difference between a slow pool and an absorbing one: with no bound, an
+// exhausted pool parks the goroutine in Acquire while whatever it already
+// holds stays held, nothing is ever released, the reconcile loop never
+// completes another iteration, and no fence is ever reached that could record
+// a reason — which is exactly why fifteen minutes of production stall produced
+// no log line at all. With it, exhaustion is a finite, classified refusal, any
+// transaction and advisory lock are released, and the next tick re-drives.
+const workspaceProvisionAcquireTimeout = 15 * time.Second
+
+// workspaceProvisionClaimBudget is the gate's ceiling for a pool of maxConns:
+// the most claims that pool could serve if nothing else in the process used
+// it. It is arithmetic over the source's own requirement — two connections per
+// claim — and nothing else. It deliberately does NOT subtract a guess at what
+// other duties hold: how many connections flowhost's binding lease, the
+// journal session locks, the listeners and the election transactions are
+// sitting on is not a constant this package can know, and asserting one from a
+// server-wide census would be inventing a number. That question is answered by
+// measuring instead, at admission, against the pool itself: see
+// corePoolHeadroom and admitProvisionClaim.
+//
+// The floor is one: one claim at a time still converges a backlog, and
+// refusing every claim would strand it.
+func workspaceProvisionClaimBudget(maxConns int32) int {
+	servable := int(maxConns) / workspaceProvisionConnectionsPerClaim
+	if servable > workspaceProvisionMaxClaims {
+		return workspaceProvisionMaxClaims
+	}
+	if servable < 1 {
+		return 1
+	}
+	return servable
+}
+
+// RESERVING IS NOT CHECKING, and a check is what this used to be.
+//
+// admitProvisionClaim read corePoolHeadroom and returned. Two of this
+// process's own claimants could therefore both observe the same two free
+// connections, both pass, both begin a transaction, both take one of those
+// two, and then both wait for a second connection that the other one is
+// holding. The written bounds make that finite — neither parks forever — but
+// two claimants that refuse together and are re-driven together by the same
+// ticker is a cycle that converges only by luck. A stall with a timer on it is
+// still a stall.
+//
+// So admission is a RESERVATION taken under the same lock as the measurement
+// that justifies it. The second claimant is refused BEFORE it holds anything,
+// the first one runs to completion, and the next tick admits the second: the
+// backlog converges one claim at a time instead of two claimants trading
+// deadlines. Nothing is enlarged and no bound is relaxed; what changes is that
+// the decision and the commitment are one step.
+//
+// reserveProvisionClaim returns the reservation to release when the claim ends.
+// A source that cannot report its capacity is admitted on the gate alone, as
+// it always was; only a real pool can be measured.
+func (s *WorkspaceService) reserveProvisionClaim() (*provisionClaimReservation, bool) {
+	if s.provisionTasks == nil {
+		return nil, true
+	}
+	if !s.provisionTasks.reserve(workspaceProvisionConnectionsPerClaim, func() (int, bool) {
+		return corePoolHeadroom(s.transactions)
+	}) {
+		return nil, false
+	}
+	return &provisionClaimReservation{
+		tasks: s.provisionTasks, outstanding: workspaceProvisionConnectionsPerClaim}, true
+}
+
+// reserve admits need connections only if the pool, measured right now, can
+// serve them ALONGSIDE every connection already reserved by an admitted
+// claim. The measurement runs under the lock, so no two claimants can be
+// admitted against the same free connections.
+func (t *workspaceProvisionTasks) reserve(need int, measure func() (headroom int, measured bool)) bool {
+	if t == nil {
+		return true
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	headroom, measured := measure()
+	if measured && headroom-t.reserved < need {
+		return false
+	}
+	t.reserved += need
+	return true
+}
+
+func (t *workspaceProvisionTasks) releaseReserved(connections int) {
+	if t == nil || connections <= 0 {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.reserved -= connections
+	if t.reserved < 0 {
+		t.reserved = 0
+	}
+}
+
+// reservedConnections is what admitted claims still need. It exists so a
+// regression can state the reservation rather than infer it.
+func (t *workspaceProvisionTasks) reservedConnections() int {
+	if t == nil {
+		return 0
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.reserved
+}
+
+// provisionClaimReservation is one admitted claim's core-pool connections that
+// it has not acquired yet.
+//
+// Each acquire the claim actually makes converts one reserved connection into
+// a measured one: from then on the pool's own AcquiredConns counts it, so
+// counting it here as well would refuse the next claimant a connection the
+// pool can serve. acquired() is that conversion, and release() gives back
+// whatever the claim never took.
+type provisionClaimReservation struct {
+	tasks       *workspaceProvisionTasks
+	outstanding int
+}
+
+func (r *provisionClaimReservation) acquired() {
+	if r == nil || r.outstanding <= 0 {
+		return
+	}
+	r.tasks.releaseReserved(1)
+	r.outstanding--
+}
+
+func (r *provisionClaimReservation) release() {
+	if r == nil || r.outstanding <= 0 {
+		return
+	}
+	r.tasks.releaseReserved(r.outstanding)
+	r.outstanding = 0
+}
+
+// resize sets the gate to the budget the composed pool can actually serve. It
+// runs while the service is being constructed, before any claim exists.
+func (t *workspaceProvisionTasks) resize(limit int) {
+	if t == nil || limit < 1 || limit == t.limit {
+		return
+	}
+	t.slots, t.limit = make(chan struct{}, limit), limit
+}
+
+// WorkspaceProvisionClaimMetricsObserver publishes the gate's budget. The
+// claims held against it and the refusals they stall on are published per
+// duty, through CorePoolDutyObserver, because the question production could
+// not answer was never how many claims this process admits: it was which duty
+// is sitting on the pool. smithers_db_connections_active over _max reads 4 of
+// 4 for a worker that is working and for one that is absorbed, and names
+// nobody, which is why fifteen minutes of a stopped reconciler produced no
+// operable signal.
+type WorkspaceProvisionClaimMetricsObserver interface {
+	SetWorkspaceProvisionClaimBudget(claims float64)
+}
+
+func (s *WorkspaceService) provisionClaimMetrics() WorkspaceProvisionClaimMetricsObserver {
+	metrics, ok := s.sandboxMetrics.(WorkspaceProvisionClaimMetricsObserver)
+	if !ok {
+		return nil
+	}
+	return metrics
+}
+
+// corePoolDuties attributes this service's core-pool holds and refusals. It is
+// the same recorder the sandbox metrics arrive on; absent it, the bounds still
+// apply and only the attribution is missing.
+func (s *WorkspaceService) corePoolDuties() CorePoolDutyObserver {
+	observer, ok := s.sandboxMetrics.(CorePoolDutyObserver)
+	if !ok {
+		return nil
+	}
+	return observer
+}
+
+func (s *WorkspaceService) observeProvisionClaimStall(duty corePoolDuty, stage corePoolStage) {
+	corePoolDutyStall(s.corePoolDuties(), duty, stage)
+}
+
+// workspaceProvisionClaimStall is a step of a claim that did not finish inside
+// workspaceProvisionAcquireTimeout. It carries the sub-stage so the refusal
+// names which step stalled, because "claim_owner_row" covered the slot wait,
+// the connection acquire, the advisory lock and the fenced re-read alike — and
+// a pool stall and a contended lock are different operator actions. The cause
+// is wrapped, never rendered: see interruptedReleaseStopOutcome.
+//
+// THE STAGE IS NOT THE EVIDENCE, and this type carries only the stage.
+//
+// A bound that refused says only that a step did not finish inside it. It does
+// NOT say the core pool had nothing to give. Three separate reasons why:
+//
+//   - A step that already holds its connection — the advisory lock statement,
+//     or any statement on the claim's own transaction — asks the pool for
+//     nothing at all.
+//   - pgxpool.Begin is an Acquire AND a BEGIN on the connection it got, and a
+//     query through the pool is an Acquire AND a round trip, so an opaque
+//     deadline over either cannot say which half did not finish.
+//   - Reading the pool's own Stat AFTER a deadline is a coincidence, not a
+//     cause: a query that acquired at once and then blocked on a row lock
+//     while other duties filled the rest of the pool measures zero headroom
+//     at refusal, and the pool is not why it waited.
+//
+// So this package claims core_pool_exhausted in exactly ONE place: the
+// measured-headroom refusal, which IS a pool measurement taken BEFORE
+// anything is held and which refuses rather than waits. It travels as the
+// errCorePoolHeadroom cause, so the evidence cannot be set by hand. Every
+// other bounded refusal keeps its real stage and the ordinary deadline reason.
+type workspaceProvisionClaimStall struct {
+	stage interruptedReleaseStopStage
+	cause error
+}
+
+func (e workspaceProvisionClaimStall) Error() string {
+	return "workspace provisioning claim stalled at " + string(e.stage)
+}
+
+func (e workspaceProvisionClaimStall) Unwrap() error { return e.cause }
+
+// workspaceProvisionClaimStage refines a refusal's stage when the claim named
+// the step it stalled in.
+func workspaceProvisionClaimStage(err error) (interruptedReleaseStopStage, bool) {
+	var stall workspaceProvisionClaimStall
+	if errors.As(err, &stall) {
+		return stall.stage, true
+	}
+	return "", false
 }
 
 // trackProvision registers a detached provisioning goroutine so shutdown can
@@ -89,42 +367,194 @@ func (s *WorkspaceService) WaitForProvisioning(ctx context.Context) error {
 // WithWorkspaceTransactions lets the service hold a workspace's provisioning
 // lock across processes. Without it provisioning is serialized per process.
 func WithWorkspaceTransactions(transactions RepositoryJobTransactions) WorkspaceServiceOption {
-	return func(s *WorkspaceService) { s.transactions = transactions }
+	return func(s *WorkspaceService) {
+		s.transactions = transactions
+		// The gate in front of the claims has to know the pool it will be
+		// acquiring from; this is where that pool arrives.
+		if pool, ok := transactions.(corePoolCapacityReporter); ok {
+			s.provisionTasks.resize(workspaceProvisionClaimBudget(pool.Stat().MaxConns()))
+		}
+	}
 }
 
 // Ownership is a database connection's advisory transaction lock, so an API
 // crash releases it immediately. Row age is never evidence of failure.
-func (s *WorkspaceService) withWorkspaceProvisionLock(ctx context.Context, workspace db.Workspace, fn func(db.Workspace) (db.Workspace, error)) (db.Workspace, error) {
+func (s *WorkspaceService) withWorkspaceProvisionLock(ctx context.Context, workspace db.Workspace, fn func(claim context.Context, current db.Workspace) (db.Workspace, error)) (db.Workspace, error) {
 	if s.transactions == nil || s.provisionTasks == nil {
-		return fn(workspace)
+		return fn(ctx, workspace)
 	}
-	// Keep ownership connections below the pool's query budget.
+	// Keep admitted claims inside the pool's real query budget, and bound
+	// every acquire they make: see workspaceProvisionClaimBudget and
+	// workspaceProvisionAcquireTimeout for why an unbounded acquire here is an
+	// absorbing state rather than a slow one.
+	gate, cancelGate := context.WithTimeout(ctx, workspaceProvisionAcquireTimeout)
+	defer cancelGate()
 	select {
 	case s.provisionTasks.slots <- struct{}{}:
 		defer func() { <-s.provisionTasks.slots }()
 	case <-ctx.Done():
 		return workspace, ctx.Err()
+	case <-gate.Done():
+		// The gate is derived from ctx, so a cancelled caller closes both and
+		// this branch can win the race. Shutdown is shutdown: reporting it as
+		// a pool stall would put an operator on the wrong trail and inflate
+		// the stall counter on every deploy.
+		if ctx.Err() != nil {
+			return workspace, ctx.Err()
+		}
+		s.observeProvisionClaimStall(corePoolDutyWorkspaceProvisionClaim, corePoolStageAwaitClaimSlot)
+		// The gate was full, so the pool was never asked: this is the
+		// process's own claim budget, not an exhausted pool. The stage says
+		// so, and the reason stays an ordinary deadline.
+		return workspace, workspaceProvisionInProgress(workspaceProvisionClaimStall{
+			stage: interruptedReleaseStageAwaitClaimSlot, cause: gate.Err()})
 	}
-	tx, err := s.transactions.Begin(ctx)
+	// Measured, not assumed: a claim the pool cannot serve WHOLE is refused
+	// before it begins a transaction, so it never holds one connection and an
+	// advisory lock while waiting for a second that other duties are sitting
+	// on. See admitProvisionClaim.
+	reservation, admitted := s.reserveProvisionClaim()
+	if !admitted {
+		s.observeProvisionClaimStall(corePoolDutyWorkspaceProvisionClaim, corePoolStagePoolHeadroom)
+		// This refusal IS a pool measurement, taken before anything is held
+		// and committed under the same lock. It is the one place in this
+		// package that claims core_pool_exhausted, and errCorePoolHeadroom is
+		// the evidence it travels on.
+		return workspace, workspaceProvisionInProgress(workspaceProvisionClaimStall{
+			stage: interruptedReleaseStageAcquireConnection, cause: errCorePoolHeadroom})
+	}
+	defer reservation.release()
+	tx, err := s.transactions.Begin(gate)
 	if err != nil {
+		if gate.Err() != nil && ctx.Err() == nil {
+			s.observeProvisionClaimStall(corePoolDutyWorkspaceProvisionClaim, corePoolStageAcquireConnection)
+			// Begin is an acquire followed by a BEGIN on the connection it
+			// got, so an opaque deadline over it cannot say which half did
+			// not finish. The stage names the step; the reason stays the
+			// ordinary deadline.
+			err = workspaceProvisionClaimStall{stage: interruptedReleaseStageAcquireConnection, cause: err}
+		}
 		return workspace, workspaceProvisionInProgress(err)
 	}
-	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
-	acquired, err := db.New(tx).TryLockWorkspaceProvisioning(ctx, workspace.ID)
+	// One reserved connection is now a real one, counted by the pool itself.
+	reservation.acquired()
+	releaseHeld := corePoolDutyHold(s.corePoolDuties(), corePoolDutyWorkspaceProvisionClaim)
+	defer releaseHeld()
+	defer func() {
+		// Detached, because a cancelled caller must still release the lock,
+		// and finite, because an unbounded release keeps the very connection
+		// it was called to give back.
+		release, cancel := corePoolRelease(ctx)
+		defer cancel()
+		_ = tx.Rollback(release)
+	}()
+	// The lock statement runs on the connection this transaction already
+	// holds, so it asks the pool for nothing — but it still waits on the
+	// network under a context that, on a reconciler tick, is the process's.
+	// It gets the claim's written budget like every other step.
+	claimLock, cancelClaimLock := context.WithTimeout(ctx, workspaceProvisionAcquireTimeout)
+	defer cancelClaimLock()
+	acquired, err := db.New(tx).TryLockWorkspaceProvisioning(claimLock, workspace.ID)
 	if err != nil {
+		if claimLock.Err() != nil && ctx.Err() == nil {
+			// THIS STEP ASKS THE POOL FOR NOTHING. It runs on the connection
+			// the transaction above already holds, so its deadline is a
+			// network or lock wait and never an exhausted pool. Reporting it
+			// as acquire_connection/core_pool_exhausted sent an operator to
+			// the pool gauges for a claim that already had its connection.
+			s.observeProvisionClaimStall(corePoolDutyWorkspaceProvisionClaim, corePoolStageClaimLock)
+			err = workspaceProvisionInProgress(workspaceProvisionClaimStall{
+				stage: interruptedReleaseStageClaimLock, cause: err})
+		}
 		return workspace, err
 	}
 	if !acquired {
 		return workspace, workspaceProvisionInProgress(nil)
 	}
-	current, err := s.q.GetWorkspace(ctx, workspace.ID)
+	// The fenced re-read is the claim's SECOND core-pool acquire, made while
+	// this transaction still holds the first one and the advisory lock. It is
+	// bounded on its own budget rather than the gate's remainder, so a slot
+	// that waited does not shorten the read that actually fences the row.
+	read, cancelRead := context.WithTimeout(ctx, workspaceProvisionAcquireTimeout)
+	defer cancelRead()
+	current, err := s.q.GetWorkspace(read, workspace.ID)
 	if err != nil {
+		if read.Err() != nil && ctx.Err() == nil {
+			// A whole query, not an acquire: it may have had its connection
+			// at once and then waited on SQL or a row lock.
+			s.observeProvisionClaimStall(corePoolDutyWorkspaceProvisionClaim, corePoolStageClaimRowRead)
+			err = workspaceProvisionInProgress(workspaceProvisionClaimStall{
+				stage: interruptedReleaseStageClaimRowRead, cause: err})
+		}
 		return workspace, err
 	}
 	if current.DeletedAt.Valid {
 		return current, pgx.ErrNoRows
 	}
-	return fn(current)
+	// THE CLAIM CONTEXT IS HANDED TO THE CALLBACK, not kept here.
+	//
+	// Everything above this line is bounded, and everything below it used to
+	// be a closure over whatever context its enclosing function happened to
+	// hold — on a reconciler tick, the process's. The claim's transaction, its
+	// connection and its advisory lock are all still open while fn runs, so an
+	// unbounded database acquire inside fn parks exactly like the one before
+	// Begin did, except now it parks while HOLDING. A timeout created here and
+	// not passed to fn would bound nothing at all, which is why fn receives
+	// the claim context and bounds each of its own steps on it: see
+	// insideClaim.
+	//
+	// The claim context carries no single whole-callback deadline, and must
+	// not: fn is also the provisioning path, which boots a guest under its own
+	// workspaceProvisionTimeout, and the recovery path, whose physical stop
+	// and confirming read keep their own separate written budgets. One
+	// deadline over all of them would either break provisioning or silently
+	// shorten a physical stop.
+	return fn(ctx, current)
+}
+
+// insideClaim runs ONE database step of a claim that is ALREADY holding a
+// core-pool connection and an advisory lock, on the claim's own written
+// acquire bound.
+//
+// It is the bound the claim path was missing. The gate, the headroom
+// measurement and the fenced re-read all protect a claim that has not started;
+// this protects the steps a started claim makes, which are the ones that park
+// while holding. A refusal here releases the transaction, the connection and
+// the advisory lock, names the duty and the stage, and leaves the row for the
+// next tick — including when the physical effect has already happened and only
+// its receipt is missing, which is a state the next tick re-confirms rather
+// than re-decides.
+// The refusal names the STEP, not an acquire. A bound over a whole query
+// cannot tell an acquire that never completed from a query that acquired at
+// once and then waited on SQL, a row lock or the network, so the stage is the
+// step's own name and core_pool_exhausted is reported only when the pool is
+// measured to have had nothing left.
+func (s *WorkspaceService) insideClaim(claim context.Context, stage corePoolStage, step func(context.Context) error) error {
+	bounded, cancel := context.WithTimeout(claim, workspaceProvisionAcquireTimeout)
+	defer cancel()
+	err := step(bounded)
+	if err != nil && bounded.Err() != nil && claim.Err() == nil {
+		s.observeProvisionClaimStall(corePoolDutyWorkspaceProvisionClaim, stage)
+		return workspaceProvisionClaimStall{stage: insideClaimRefusalStage(stage), cause: err}
+	}
+	return err
+}
+
+// insideClaimRefusalStage maps a step's metric stage onto the recovery's own
+// finite log stage, so the series and the record name the same step. Both sets
+// are written constants; an unmapped stage keeps the general claim stage
+// rather than inventing a label.
+func insideClaimRefusalStage(stage corePoolStage) interruptedReleaseStopStage {
+	switch stage {
+	case corePoolStageClaimRowRead:
+		return interruptedReleaseStageClaimRowRead
+	case corePoolStageClaimReceiptWrite:
+		return interruptedReleaseStageClaimReceiptWrite
+	case corePoolStageClaimLock:
+		return interruptedReleaseStageClaimLock
+	default:
+		return interruptedReleaseStageClaim
+	}
 }
 
 // ReconcileWorkspaceProvisioning re-drives workspaces left pending or starting
@@ -134,15 +564,38 @@ func (s *WorkspaceService) ReconcileWorkspaceProvisioning(ctx context.Context) e
 	if !ok {
 		return nil
 	}
-	rows, err := q.ListWorkspaceProvisioningRecovery(ctx)
+	// THE LOOP'S OWN ACQUIRES, bounded before any claim exists.
+	//
+	// These two reads hold nothing, which is why they were easy to leave
+	// unbounded — and why leaving them unbounded was the part that made a full
+	// pool silent. They are the FIRST core-pool acquires a tick makes, so when
+	// the pool is already held by other duties the tick parks here, before the
+	// claim gate, before any advisory lock, and before any fence that could
+	// record a reason. RunProvisioningReconciler reads its ticker only after
+	// reconcile RETURNS, so a tick parked here is not a slow loop: it is the
+	// last iteration the loop ever runs. Fifteen elapsed minutes were never
+	// 180 completed ticks.
+	//
+	// Bounded, they refuse finitely and the tick-level log names the stage,
+	// which is the difference between an operable signal and fifteen minutes
+	// of nothing at all.
+	list, cancelList := context.WithTimeout(ctx, workspaceProvisionAcquireTimeout)
+	defer cancelList()
+	rows, err := q.ListWorkspaceProvisioningRecovery(list)
 	if err != nil {
+		if list.Err() != nil && ctx.Err() == nil {
+			s.observeProvisionClaimStall(corePoolDutyWorkspaceProvisionBacklog, corePoolStageListBacklog)
+			// The loop's own listing read, named as itself: an opaque query
+			// deadline is not evidence about the pool.
+			return workspaceProvisionClaimStall{stage: interruptedReleaseStageListBacklog, cause: err}
+		}
 		return err
 	}
 	for _, row := range rows {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		ws, err := s.q.GetWorkspace(ctx, row.ID)
+		ws, err := s.readProvisioningBacklogRow(ctx, row.ID)
 		if err != nil {
 			continue
 		}
@@ -180,6 +633,20 @@ func (s *WorkspaceService) ReconcileWorkspaceProvisioning(ctx context.Context) e
 	return nil
 }
 
+// readProvisioningBacklogRow re-reads one listed row on the loop's own written
+// acquire bound. It holds nothing, so a refusal here costs only this row: the
+// tick continues to the next one and the loop keeps ticking, which is what a
+// pool held by other duties used to make impossible.
+func (s *WorkspaceService) readProvisioningBacklogRow(ctx context.Context, id string) (db.Workspace, error) {
+	read, cancel := context.WithTimeout(ctx, workspaceProvisionAcquireTimeout)
+	defer cancel()
+	ws, err := s.q.GetWorkspace(read, id)
+	if err != nil && read.Err() != nil && ctx.Err() == nil {
+		s.observeProvisionClaimStall(corePoolDutyWorkspaceProvisionBacklog, corePoolStageReadBacklogRow)
+	}
+	return ws, err
+}
+
 // hostOwnedMachineWaits reports a machine whose owner (a /review or learning
 // job) is waiting for it in its own background admission request. Its row is
 // starting only because the queue is full, not because an API stopped. A
@@ -203,6 +670,14 @@ func (s *WorkspaceService) hostOwnedMachineWaits(id string) bool {
 // RunProvisioningReconciler reconciles now and then every
 // WorkspaceProvisioningReconcileInterval until ctx is done.
 func (s *WorkspaceService) RunProvisioningReconciler(ctx context.Context) {
+	// Published here rather than where the budget is computed: the pool
+	// arrives with WithWorkspaceTransactions and the metrics with
+	// WithWorkspaceSandboxMetrics, in no guaranteed order, and this runs once
+	// the service is whole. It is a constant for the life of the process, so
+	// one write is the whole story.
+	if metrics := s.provisionClaimMetrics(); metrics != nil && s.provisionTasks != nil {
+		metrics.SetWorkspaceProvisionClaimBudget(float64(s.provisionTasks.limit))
+	}
 	runWorkspaceProvisioningReconciler(ctx, WorkspaceProvisioningReconcileInterval, s.ReconcileWorkspaceProvisioning)
 }
 
@@ -350,12 +825,20 @@ func (s *WorkspaceService) reconcileWorkspaceRelease(ctx context.Context, worksp
 	if s.runtime == nil {
 		return errors.New("workspace release runtime unavailable")
 	}
-	_, err := s.withWorkspaceProvisionLock(ctx, workspace, func(current db.Workspace) (db.Workspace, error) {
+	_, err := s.withWorkspaceProvisionLock(ctx, workspace, func(claim context.Context, current db.Workspace) (db.Workspace, error) {
 		unlock := s.lockRuntimeWorkspace(current.ID)
 		defer unlock()
-		current, err := s.q.GetWorkspace(ctx, current.ID)
-		if err != nil || current.Status != "releasing" {
+		// Bounded on the claim this read is nested INSIDE: the transaction,
+		// the connection and the advisory lock are all held while it runs.
+		if err := s.insideClaim(claim, corePoolStageClaimRowRead, func(read context.Context) error {
+			var err error
+			current, err = s.q.GetWorkspace(read, current.ID)
+			return err
+		}); err != nil {
 			return current, err
+		}
+		if current.Status != "releasing" {
+			return current, nil
 		}
 		// Both runtime calls below are bounded, and bounded from the
 		// CALLER's context rather than detached, for the same reason the
@@ -369,7 +852,7 @@ func (s *WorkspaceService) reconcileWorkspaceRelease(ctx context.Context, worksp
 		// starvation the bounds on the new interrupted/failed branch already
 		// rule out. The existing constants are reused: the opening read is a
 		// read, like the confirming one, and the stop gets the stop's budget.
-		inspect, cancelInspect := context.WithTimeout(ctx, workspaceReleaseConfirmTimeout)
+		inspect, cancelInspect := context.WithTimeout(claim, workspaceReleaseConfirmTimeout)
 		operation, err := s.workspaceRuntimeContext(inspect, current, current.UserID, workspaceLifecycleOperation(current, "recover-release"))
 		if err == nil {
 			_, err = s.runtime.InspectWorkspace(operation, current.ID)
@@ -380,16 +863,28 @@ func (s *WorkspaceService) reconcileWorkspaceRelease(ctx context.Context, worksp
 		}
 		// Idempotent stop discharges a reconstructed admission grant too. Inspecting
 		// a stopped guest alone must not leave the scheduler's slot occupied.
-		stop, cancelStop := context.WithTimeout(ctx, workspaceReleaseStopTimeout)
+		stop, cancelStop := context.WithTimeout(claim, workspaceReleaseStopTimeout)
 		err = s.stopRuntimeWorkspaceLocked(stop, current, current.UserID, "recover-release")
 		cancelStop()
 		if err != nil {
 			return current, err
 		}
-		if _, err := s.confirmRecoveredReleaseStop(ctx, current); err != nil {
+		if _, err := s.confirmRecoveredReleaseStop(claim, current); err != nil {
 			return current, err
 		}
-		return s.failWorkspace(ctx, current, pkgerrors.Conflict(workspaceReleaseInterruptedMessage))
+		// The verdict is this attempt's RECEIPT: the stop above already
+		// happened, so a write that parks here strands a stopped guest with no
+		// record of it. Bounded, the next tick re-drives the row and
+		// re-confirms it instead.
+		verdict := current
+		if err := s.insideClaim(claim, corePoolStageClaimReceiptWrite, func(write context.Context) error {
+			var err error
+			verdict, err = s.failWorkspace(write, current, pkgerrors.Conflict(workspaceReleaseInterruptedMessage))
+			return err
+		}); err != nil {
+			return current, err
+		}
+		return verdict, nil
 	})
 	return err
 }
@@ -676,11 +1171,18 @@ func (s *WorkspaceService) reconcileRetainedGuestStop(ctx context.Context, works
 		// an unrecorded stop would be re-driven on every tick.
 		return outcome, nil
 	}
-	_, err := s.withWorkspaceProvisionLock(ctx, workspace, func(current db.Workspace) (db.Workspace, error) {
+	_, err := s.withWorkspaceProvisionLock(ctx, workspace, func(claim context.Context, current db.Workspace) (db.Workspace, error) {
 		unlock := s.lockRuntimeWorkspace(current.ID)
 		defer unlock()
-		current, err := s.q.GetWorkspace(ctx, current.ID)
-		if err != nil {
+		// The row this attempt fences on, read INSIDE the claim it already
+		// holds. Unbounded, this is where a claim parked forever with its
+		// transaction and advisory lock open, after the pool had been filled
+		// by other duties between the gate and here.
+		if err := s.insideClaim(claim, corePoolStageClaimRowRead, func(read context.Context) error {
+			var err error
+			current, err = s.q.GetWorkspace(read, current.ID)
+			return err
+		}); err != nil {
 			return current, err
 		}
 		// The door is re-derived from the row this attempt holds, and must
@@ -705,31 +1207,47 @@ func (s *WorkspaceService) reconcileRetainedGuestStop(ctx context.Context, works
 			return current, nil
 		}
 		outcome.stage = interruptedReleaseStageStop
-		stop, cancelStop := context.WithTimeout(ctx, workspaceReleaseStopTimeout)
-		err = s.stopRuntimeWorkspaceLocked(stop, current, current.UserID, door.action)
+		stop, cancelStop := context.WithTimeout(claim, workspaceReleaseStopTimeout)
+		err := s.stopRuntimeWorkspaceLocked(stop, current, current.UserID, door.action)
 		cancelStop()
 		if err != nil {
 			return current, err
 		}
 		outcome.stage = interruptedReleaseStageConfirm
-		if outcome.evidence, err = s.confirmRecoveredReleaseStop(ctx, current); err != nil {
+		if outcome.evidence, err = s.confirmRecoveredReleaseStop(claim, current); err != nil {
 			return current, err
 		}
 		outcome.stage = interruptedReleaseStageRecord
 		// The recorded code is reused, never re-derived: this attempt confirms
 		// a stop, it does not re-decide why the release failed.
-		updated, err := conditional.FailWorkspaceIfUnchanged(ctx, db.FailWorkspaceIfUnchangedParams{
-			FailureCode:       strings.TrimSpace(current.FailureCode.String),
-			FailureMessage:    door.confirmed,
-			ID:                current.ID,
-			ExpectedStatus:    current.Status,
-			ExpectedVmID:      current.VmID,
-			ExpectedUpdatedAt: current.UpdatedAt,
+		// THE RECEIPT, bounded. The guest is already down at this point, so a
+		// write that parks here leaves a stopped guest with no record that it
+		// stopped — and leaves the claim holding its connection and advisory
+		// lock while it waits. Bounded, the compute stays back, the row stays
+		// in the cohort, and the next tick re-confirms and records it.
+		var updated db.Workspace
+		err = s.insideClaim(claim, corePoolStageClaimReceiptWrite, func(write context.Context) error {
+			var err error
+			updated, err = conditional.FailWorkspaceIfUnchanged(write, db.FailWorkspaceIfUnchangedParams{
+				FailureCode:       strings.TrimSpace(current.FailureCode.String),
+				FailureMessage:    door.confirmed,
+				ID:                current.ID,
+				ExpectedStatus:    current.Status,
+				ExpectedVmID:      current.VmID,
+				ExpectedUpdatedAt: current.UpdatedAt,
+			})
+			return err
 		})
 		if errors.Is(err, pgx.ErrNoRows) {
 			return current, nil
 		}
 		if err != nil {
+			// A pool refusal is already a classified diagnostic — stage
+			// record_receipt, reason pool_exhausted — and wrapping it as an
+			// internal store failure would lose which bound actually refused.
+			if _, pool := workspaceProvisionClaimStage(err); pool {
+				return current, err
+			}
 			// WithCause, not string concatenation: the store's own sentence
 			// can carry a DSN, a host or a constraint's recorded values, and
 			// this verdict's Message is published.
@@ -773,6 +1291,45 @@ const (
 	// claim_owner_row: the advisory lock, the re-read inside it, or the
 	// placement fence. Nothing was asked of the runtime yet.
 	interruptedReleaseStageClaim interruptedReleaseStopStage = "claim_owner_row"
+	// await_claim_slot: the claim never entered. The process already has
+	// workspaceProvisionClaimBudget claims admitted, and this one aged out of
+	// the gate waiting for one of them to release a core-pool connection.
+	// Distinct from acquire_connection: the pool was never asked.
+	interruptedReleaseStageAwaitClaimSlot interruptedReleaseStopStage = "await_claim_slot"
+	// acquire_connection: the core pool itself could not serve this claim
+	// inside workspaceProvisionAcquireTimeout, either for the transaction that
+	// holds the advisory lock or for the fenced re-read nested inside it.
+	//
+	// This is the stage the serving worker's stall had no name for. Its whole
+	// census was connections acquired by THIS process and never returned, and
+	// smithers_db_connections_active 4 of max 4 cannot say whether a claim is
+	// working, queued, or parked in Acquire behind a lease that will not end.
+	//
+	// It is used for the two steps whose FIRST act is an acquire: the
+	// measured-headroom refusal and the transaction that holds the advisory
+	// lock. A step that already has its connection gets its own stage below.
+	interruptedReleaseStageAcquireConnection interruptedReleaseStopStage = "acquire_connection"
+	// claim_lock: the advisory lock statement itself. It runs on the
+	// connection the claim's transaction already holds, so it asks the pool
+	// for nothing and its refusal is a network or lock wait — never an
+	// exhausted pool.
+	interruptedReleaseStageClaimLock interruptedReleaseStopStage = "claim_lock"
+	// claim_row_read: a read the claim made INSIDE its own hold, with its
+	// transaction and advisory lock still open. Distinct from
+	// acquire_connection because the hold already existed, and distinct from
+	// the pool's own refusal because a read can acquire at once and then wait
+	// on SQL or a row lock.
+	interruptedReleaseStageClaimRowRead interruptedReleaseStopStage = "claim_row_read"
+	// list_backlog: the reconcile loop's own listing read, made before any
+	// claim exists and holding nothing. A refusal here means the tick reached
+	// no row at all.
+	interruptedReleaseStageListBacklog interruptedReleaseStopStage = "list_backlog"
+	// claim_receipt_write: the fenced write that records what the claim
+	// already did. The physical effect has landed by then, so a refusal here
+	// means the next tick re-confirms and re-records it. A contended row and
+	// an exhausted pool are different operator actions, which is why the
+	// reason is measured rather than assumed.
+	interruptedReleaseStageClaimReceiptWrite interruptedReleaseStopStage = "claim_receipt_write"
 	// stop_guest: the runtime's stop call itself.
 	interruptedReleaseStageStop interruptedReleaseStopStage = "stop_guest"
 	// confirm_stop: the confirming read. This is the stage that carries an
@@ -833,12 +1390,37 @@ const (
 	interruptedReleaseReasonRowAbsent    interruptedReleaseStopReason = "owner_row_absent"
 	interruptedReleaseReasonUnregistered interruptedReleaseStopReason = "unregistered_code"
 	interruptedReleaseReasonUnclassified interruptedReleaseStopReason = "unclassified"
+	// core_pool_exhausted: the process's own database pool had no connection
+	// to give this attempt inside its written acquire budget. It is reported
+	// separately from deadline_exceeded, which the caller's context produces,
+	// because the operator action differs: one is this process holding its own
+	// connections, the other is the work being abandoned.
+	interruptedReleaseReasonPoolExhausted interruptedReleaseStopReason = "core_pool_exhausted"
 )
 
 func interruptedReleaseStopReasonFor(err error) interruptedReleaseStopReason {
-	switch {
-	case err == nil:
+	if err == nil {
 		return ""
+	}
+	// Checked before the context cases below, because a claim the pool is
+	// MEASURED to have been unable to serve is classified by what it ran out
+	// of rather than by the deadline underneath it: that deadline is this
+	// package's own acquire budget, never the caller's.
+	//
+	// Only the measured-headroom refusal gets here, and it is identified by
+	// its own cause rather than by a flag any caller could set. A bounded step
+	// that refused without that evidence — the advisory lock on a connection
+	// already held, an opaque Begin, a read or a fenced write that waited on
+	// SQL, a row lock or the network, the gate that was full while the pool
+	// was never asked — falls through to deadline_exceeded and is told apart
+	// by its stage. Classifying all of them as an exhausted pool sent an
+	// operator to the pool gauges for a contended row, and reading the pool's
+	// Stat after the deadline would only have made the coincidence look like
+	// evidence.
+	if errors.Is(err, errCorePoolHeadroom) {
+		return interruptedReleaseReasonPoolExhausted
+	}
+	switch {
 	case errors.Is(err, context.Canceled):
 		return interruptedReleaseReasonCanceled
 	case errors.Is(err, context.DeadlineExceeded):
@@ -876,6 +1458,12 @@ type interruptedReleaseStopOutcome struct {
 
 func (o interruptedReleaseStopOutcome) failed(err error) (interruptedReleaseStopOutcome, error) {
 	o.reason = interruptedReleaseStopReasonFor(err)
+	// A claim that stalled on an acquire names the acquire, not the whole
+	// claim: claim_owner_row covered the slot wait, the connection, the
+	// advisory lock and the re-read alike.
+	if stage, ok := workspaceProvisionClaimStage(err); ok && o.stage == interruptedReleaseStageClaim {
+		o.stage = stage
+	}
 	return o, err
 }
 
@@ -1032,14 +1620,23 @@ func (s *WorkspaceService) reconcileFailedWorkspaceStart(ctx context.Context, wo
 	if s.runtime == nil {
 		return errors.New("workspace cleanup runtime unavailable")
 	}
-	_, err := s.withWorkspaceProvisionLock(ctx, workspace, func(current db.Workspace) (db.Workspace, error) {
+	_, err := s.withWorkspaceProvisionLock(ctx, workspace, func(claim context.Context, current db.Workspace) (db.Workspace, error) {
 		unlock := s.lockRuntimeWorkspace(current.ID)
 		defer unlock()
-		current, err := s.q.GetWorkspace(ctx, current.ID)
-		if err != nil || current.Status != "failed" || current.ProvisioningStage != workspaceStartCleanupPending {
+		// Nested inside the claim this attempt holds, so bounded like every
+		// other step a holder makes. The cleanup itself keeps its own
+		// lifetime: it is physical work, not an acquire.
+		if err := s.insideClaim(claim, corePoolStageClaimRowRead, func(read context.Context) error {
+			var err error
+			current, err = s.q.GetWorkspace(read, current.ID)
+			return err
+		}); err != nil {
 			return current, err
 		}
-		return current, s.reapFailedRuntimeWorkspaceLocked(ctx, current, current.UserID)
+		if current.Status != "failed" || current.ProvisioningStage != workspaceStartCleanupPending {
+			return current, nil
+		}
+		return current, s.reapFailedRuntimeWorkspaceLocked(claim, current, current.UserID)
 	})
 	return err
 }

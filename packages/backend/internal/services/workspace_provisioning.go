@@ -1713,11 +1713,11 @@ func (s *WorkspaceService) provisionSnapshotWorkspaceAsync(ctx context.Context, 
 		defer s.recoverAsyncProvision(ctx, workspace, "async-snapshot")
 		provisionCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), workspaceProvisionTimeout)
 		defer cancel()
-		_, err := s.withWorkspaceProvisionLock(provisionCtx, workspace, func(current db.Workspace) (db.Workspace, error) {
+		_, err := s.withWorkspaceProvisionLock(provisionCtx, workspace, func(claim context.Context, current db.Workspace) (db.Workspace, error) {
 			if s.runtime != nil {
-				return s.restoreRuntimeWorkspaceSnapshot(provisionCtx, current, snapshot, current.UserID)
+				return s.restoreRuntimeWorkspaceSnapshot(claim, current, snapshot, current.UserID)
 			}
-			return s.createWorkspaceVMFromSnapshot(provisionCtx, current, snapshot)
+			return s.createWorkspaceVMFromSnapshot(claim, current, snapshot)
 		})
 		if errors.Is(err, errWorkspaceProvisionInProgress) {
 			return
