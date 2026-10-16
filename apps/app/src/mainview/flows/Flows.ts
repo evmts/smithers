@@ -62,7 +62,7 @@ import { helpFlows } from "./entries/help"
 import { paletteFlows } from "./entries/palette"
 import { prsFlows } from "./entries/prs"
 import { repoFlows, tutorialRepositoryFlows } from "./entries/repo"
-import { reposImportFlows, reposImportRetryFlows } from "./entries/repos"
+import { reposCreateFlows, reposExploreFlows, reposImportFlows, reposImportRetryFlows } from "./entries/repos"
 import { reviewFlows } from "./entries/review"
 import { runsFlows } from "./entries/runs"
 import { searchFlows } from "./entries/search"
@@ -143,6 +143,8 @@ export const baseFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   ...billingBalanceFlows(actions),
   ...billingPlanFlows(actions),
   ...reposImportFlows(actions),
+  ...reposCreateFlows(actions),
+  ...reposExploreFlows(actions),
   ...issuesFlows(actions),
   ...settingsFlows(actions),
   ...membersFlows(actions),

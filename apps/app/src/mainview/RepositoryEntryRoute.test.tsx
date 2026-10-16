@@ -94,7 +94,7 @@ test("a covered repository the person has access to offers the import that exist
   expect(notice?.textContent).toContain(`Smithers doesn't have ${REPO} yet.`)
   const act = notice!.querySelector<HTMLButtonElement>('[data-flow="repos.import"]')
   expect(act).not.toBeNull()
-  expect(act?.textContent).toBe(`Import ${REPO}`)
+  expect(act?.textContent).toBe("Import")
   expect(act?.disabled).toBe(false)
   // Nothing claims the import happened, and no other repository is presented as this one.
   expect(host.textContent).not.toContain("imported")
@@ -116,11 +116,14 @@ test("a repository the App does not cover offers its installation page and no im
   expect(notice?.textContent).not.toContain("private")
 })
 
-test("an unreadable coverage door says so and offers nothing", async () => {
+test("an unreadable coverage door says so and its one act re-reads it", async () => {
   const { host } = await openOnMissingRepository(json(403, { code: "forbidden", message: "feature not available" }))
   const notice = host.querySelector('[data-message-id="repository-entry"]')
-  expect(notice?.textContent).toContain("couldn't read whether the Smithers GitHub App covers it")
-  expect(notice?.querySelector(".message-cta")).toBeNull()
+  expect(notice?.textContent).toContain("couldn't check whether it can import it")
+  // Nothing was learnt, so nothing is claimed; the only act re-reads the door that refused.
+  expect(notice?.querySelector('[data-flow="repos.import"]')).toBeNull()
+  const retry = notice?.querySelector<HTMLButtonElement>('[data-flow="github"]')
+  expect(retry?.textContent).toBe("Retry")
   expect(notice?.textContent).not.toContain("forbidden")
   expect(notice?.textContent).not.toContain("feature not available")
 })

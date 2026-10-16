@@ -17,16 +17,20 @@ const workspaceCopy = (workspace: CloudWorkspaceRow): WorkingCopy => ({
 })
 
 /*
- * The shared copy of a public repository (factory design session ruling,
- * lane plan B2: read-only users share one virtual box over the public
- * mirror; no VM, no terminal; factory spec 04 §2 keeps one box per branch
- * per signed-in person).
- * One per catalog row, derived and never stored: it exists exactly while
- * the public catalog (GET /api/public/repos) lists the repository and no
- * box of the visitor's own stands on it (a person with a box is not a
- * read-only user of that repository). Its bookmark is the row's head
- * bookmark when a seam supplied one; the catalog itself carries no head, so
- * the label does not invent it.
+ * The shared read-only copy of a repository (factory design session ruling,
+ * lane plan B2: read-only users share one virtual box over the mirror; no
+ * VM, no terminal; factory spec 04 §2 keeps one box per branch per signed-in
+ * person).
+ * One per repository row, derived and never stored: it exists exactly while
+ * a repository row stands (the public catalog's, GET /api/public/repos, or
+ * the signed-in account's own inventory) and no box of the visitor's own
+ * stands on it (a person with a box is not a read-only user of that
+ * repository). Reading files is a read, so browsing a repository must not
+ * require choosing or waking a box (M-45): the copy reads the mirror's
+ * contents route, which is scoped to repositories the caller may read, and a
+ * repository the caller cannot read answers the route's own refusal.
+ * Its bookmark is the row's head bookmark when a seam supplied one; the
+ * catalog itself carries no head, so the label does not invent it.
  */
 export const sharedCopyOf = (repository: Pick<CloudRepository, "id" | "head" | "updatedAt" | "revision">): WorkingCopy => ({
   id: sharedCopyIdOf(repository.id),
@@ -161,7 +165,7 @@ export const createWorkspaceViews = (
               },
               ({ repository, boxCopy }) => eq(repository.id, boxCopy.repoId)
             )
-            .where(({ repository, box, boxCopy }) => and(eq(repository.catalog, true), isUndefined(box.id), isUndefined(boxCopy.id)))
+            .where(({ box, boxCopy }) => and(isUndefined(box.id), isUndefined(boxCopy.id)))
             .fn.select(({ repository }) => sharedCopyOf(repository))
         )
     })

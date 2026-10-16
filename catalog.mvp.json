@@ -983,6 +983,32 @@
       }
     },
     {
+      "name": "app.updates",
+      "slash": null,
+      "cli": null,
+      "journey": [],
+      "group": "",
+      "visibility": "hidden",
+      "actors": [
+        "person",
+        "app_agent"
+      ],
+      "minimumRole": "member",
+      "credentialScope": "write:repository",
+      "agent": "run",
+      "summary": "Read Smithers' published updates again",
+      "http": null,
+      "payload": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "not": {
+            "type": "null"
+          }
+        },
+        "definitions": {}
+      }
+    },
+    {
       "name": "approval.approve",
       "slash": null,
       "cli": null,
@@ -8976,6 +9002,64 @@
             }
           },
           "additionalProperties": true
+        },
+        "definitions": {}
+      }
+    },
+    {
+      "name": "repos.create",
+      "slash": null,
+      "cli": null,
+      "journey": [],
+      "group": "",
+      "visibility": "hidden",
+      "actors": [
+        "person"
+      ],
+      "minimumRole": "member",
+      "credentialScope": "write:repository",
+      "agent": "never",
+      "summary": "Create a GitHub repository in Smithers Cloud",
+      "http": null,
+      "payload": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      }
+    },
+    {
+      "name": "repos.explore",
+      "slash": null,
+      "cli": null,
+      "journey": [],
+      "group": "",
+      "visibility": "hidden",
+      "actors": [
+        "person",
+        "app_agent"
+      ],
+      "minimumRole": "member",
+      "credentialScope": "write:repository",
+      "agent": "run",
+      "summary": "Read the public repository catalog again",
+      "http": null,
+      "payload": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "not": {
+            "type": "null"
+          }
         },
         "definitions": {}
       }

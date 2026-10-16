@@ -3,6 +3,7 @@ import {
 beginRepositoryEntry,
 catalogRepositories,
 catalogRepository,
+loadPublicCatalog,
 openRequestedRepo,
 paramRepo,
 pathRepo,
@@ -292,7 +293,7 @@ describe("openRequestedRepo", () => {
       if (String(input) === "/api/public/repos") return jsonResponse(catalog)
       started.resolve()
       return reply.promise
-    }, "smithersai/smithers", undefined, 320, { isCurrent: () => owned })
+    }, "smithersai/smithers", undefined, { isCurrent: () => owned })
     try {
       await started.promise
       expect(store.session().repositoryEntry?.phase).toBe("ready")
@@ -501,7 +502,12 @@ describe("openRequestedRepo", () => {
 })
 
 
-test("a signed-in repository URL waits for the user's inventory and selects its row without publishing it", async () => {
+/*
+ * M-45: a repository opens on its file tree, and the account's OWN
+ * repositories are repositories. The old build opened the tree only for a
+ * public catalog row and returned from the inventory branch before it.
+ */
+test("a signed-in repository URL waits for the user's inventory, selects its row without publishing it, and opens its tree", async () => {
   const { store, controller, ran } = await fixture()
   store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "codeplanesmithers", admin: false, scopesPlain: null })
   let loaded = false
@@ -514,7 +520,7 @@ test("a signed-in repository URL waits for the user's inventory and selects its 
   expect(loaded).toBe(true)
   expect(store.session().activeRepoKey).toBe("codeplanesmithers/canary-sandbox")
   expect(store.collections.repositories.get("codeplanesmithers/canary-sandbox")?.catalog).not.toBe(true)
-  expect(ran).toEqual([])
+  expect(ran).toEqual(['files {"operation":"tree","copy":"shared:codeplanesmithers/canary-sandbox"}'])
 })
 
 test("a signed-in catalog visitor keeps the shared tree without waiting on private inventory", async () => {
@@ -556,14 +562,19 @@ for (const search of ["?tutorial", "?tutorial=", "?repo=a/b&tutorial&tab=issues"
   })
 }
 
-test("mobile repository entry selects the requested repo without opening an obstructing tree drawer", async () => {
+/*
+ * M-45: the file tree is the repository's default view, so a narrow reader
+ * who followed a repository URL gets it too. The old build gated the tree
+ * behind a 600px viewport and left a phone on the transcript.
+ */
+test("a narrow repository entry opens the file tree, the repository's default view", async () => {
   const { controller, store, ran } = await fixture()
   try {
-    const refusal = await openRequestedRepo(controller, async () => jsonResponse(catalog), "smithersai/smithers", undefined, 320)
+    const refusal = await openRequestedRepo(controller, async () => jsonResponse(catalog), "smithersai/smithers")
     expect(refusal).toBeUndefined()
     expect(store.session().activeRepoKey).toBe("smithersai/smithers")
     expect(store.session().repositoryEntry?.phase).toBe("ready")
-    expect(ran).toEqual([])
+    expect(ran).toEqual([`files ${JSON.stringify({ operation: "tree", copy: "shared:smithersai/smithers" })}`])
   } finally { await store.dispose?.() }
 })
 
@@ -658,9 +669,67 @@ describe("the App coverage a signed-in URL miss records", () => {
     const { store, controller } = await signedIn()
     const asked: Array<string> = []
     try {
-      await openRequestedRepo(controller, route(jsonResponse({ repos: [] }), asked), "ada/widgets", undefined, 1200, { scope: "command" })
+      await openRequestedRepo(controller, route(jsonResponse({ repos: [] }), asked), "ada/widgets", undefined, { scope: "command" })
       expect(asked).toEqual(["/api/public/repos"])
       expect(store.collections.githubAppStatuses.size).toBe(0)
+    } finally { await store.dispose?.() }
+  })
+})
+
+/*
+ * The launcher's explore shelf (M-45). Being listed publicly says nothing
+ * about who the reader is, so the catalog read must not reclassify a
+ * repository this account already has: the launcher splits its shelves on
+ * exactly that flag, and promoting the row moved an account's own public
+ * repository out of "your repositories".
+ */
+describe("the public catalog the launcher explores", () => {
+  const CATALOG = { repos: [{ name: "smithersai/smithers", summary: "A durable workflow framework." }, { name: "will/public" }] }
+
+  test("joins repositories this account does not have, as catalog rows", async () => {
+    const { store, controller } = await fixture()
+    try {
+      expect(await loadPublicCatalog(controller, async () => jsonResponse(CATALOG))).toBe(true)
+      expect([...store.collections.repositories.values()].map(row => [row.id, row.catalog])).toEqual([
+        ["smithersai/smithers", true],
+        ["will/public", true]
+      ])
+    } finally { await store.dispose?.() }
+  })
+
+  test("an account's OWN public repository stays the account's, and keeps its facts and its selection", async () => {
+    const { store, controller } = await fixture()
+    try {
+      await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [
+        { id: "will/public", org: "will", ownerKind: "user", name: "public", head: { bookmark: "main", changeId: "q", commitId: "c" } }
+      ] }).isPersisted.promise
+      await controller.selectRepo("will/public")
+      expect(await loadPublicCatalog(controller, async () => jsonResponse(CATALOG))).toBe(true)
+      const own = store.collections.repositories.get("will/public")!
+      expect(own.catalog).not.toBe(true)
+      expect(own.head).toEqual({ bookmark: "main", changeId: "q", commitId: "c" })
+      // The shelf still gains the repository this account does not have.
+      expect(store.collections.repositories.get("smithersai/smithers")?.catalog).toBe(true)
+      // Nothing about the reader's selection moved.
+      expect(store.session().activeRepoKey).toBe("will/public")
+    } finally { await store.dispose?.() }
+  })
+
+  test("a read that lands after the account changed writes nothing", async () => {
+    const { store, controller } = await fixture()
+    try {
+      expect(await loadPublicCatalog(controller, async () => jsonResponse(CATALOG), () => false)).toBe(false)
+      expect(store.collections.repositories.size).toBe(0)
+    } finally { await store.dispose?.() }
+  })
+
+  test("a refused or unreadable catalog writes nothing and says the read failed", async () => {
+    const { store, controller } = await fixture()
+    try {
+      expect(await loadPublicCatalog(controller, async () => jsonResponse({}, 503))).toBe(false)
+      expect(await loadPublicCatalog(controller, async () => jsonResponse({ repos: "unavailable" }))).toBe(false)
+      expect(await loadPublicCatalog(controller, async () => { throw new TypeError("ECONNRESET socket-detail") })).toBe(false)
+      expect(store.collections.repositories.size).toBe(0)
     } finally { await store.dispose?.() }
   })
 })

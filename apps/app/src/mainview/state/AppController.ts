@@ -29,7 +29,7 @@ import { createDebugApiSeam, debugApiFailureCopy, presentDebugApiFailure, type D
 import { confirmCancelRefusal } from "@smthrs/rpc/ConfirmCard"
 import { refusalOf, type Refusal } from "@smthrs/rpc/Refusal"
 import { refusalLine } from "@smthrs/rpc/RefusalCopy"
-import { openRequestedRepo } from "../RepoLink"
+import { loadPublicCatalog, openRequestedRepo } from "../RepoLink"
 import { createRepositoryReadiness } from "./controller/repositoryAdmission"
 
 import { createConversationHistoryController } from "./controller/conversationHistory"
@@ -148,8 +148,9 @@ import { createRepoImportSeam } from "./seams/RepoImportSeam"
 import { createRepoTreeSeam } from "./seams/RepoTreeSeam"
 import type { RepositoriesSeam } from "./seams/RepositoriesSeam"
 import { createRepositoriesSeam } from "./seams/RepositoriesSeam"
+import { createLauncherSeam, type LauncherSeam } from "./seams/LauncherSeam"
 import { createRepositoryFlowsSeam } from "./seams/RepositoryFlowsSeam"
-import { refusalWords, type SeamContext } from "./seams/SeamContext"
+import { captureCloudOwner, refusalWords, type SeamContext } from "./seams/SeamContext"
 import type { DoorFamily } from "../flows/DoorAvailability"
 import type { PaletteAnswer,SearchSeam } from "./seams/SearchSeam"
 import { createSearchSeam } from "./seams/SearchSeam"
@@ -679,6 +680,9 @@ export interface AppController extends IssueFlowsController {
   readonly signInCloud: CloudSeam["signIn"]
   readonly signOutCloud: CloudSeam["signOut"]
   readonly loadRepositories: RepositoriesSeam["loadRepositories"]
+  readonly createRepository: RepositoriesSeam["createRepository"]
+  /** The launcher's two public reads at `/`: the explore shelf and Smithers update news (M-45). */
+  readonly launcher: LauncherSeam | undefined
   /*
    * Lane citc (ADR 0002): the persistent cloud computers behind the
    * `/api/cloud/*` proxy (state/seams/WorkspaceSeam.ts).
@@ -1552,6 +1556,20 @@ export const createAppController = (
   /* The services that sync with conversations, issues and the wiki (smithers-ui-DESIGN.md §3.6). */
   const landingsSeam = actors.pair(seamCtx, (context, select) => createLandingsSeam(context, request => select(renderFlowForm)(request)))
   const repositoriesSeam = actors.pair(seamCtx, (context) => createRepositoriesSeam(context))
+  /*
+   * The launcher's reads (M-45). Both are public: the explore shelf is the
+   * existing `GET /api/public/repos`, and the news is a credential-free read
+   * of Smithers' own published releases. They start when the launcher
+   * subscribes, so a page that never shows it asks for neither.
+   */
+  const launcherSeam = createLauncherSeam({
+    loadCatalog: () => {
+      // The shelf belongs to the account that asked for it: a read landing after a sign-in or sign-out writes nothing.
+      const current = captureCloudOwner(seamCtx, false)
+      return loadPublicCatalog({ store }, ctx.http, current)
+    }
+  })
+  ctx.onDispose(launcherSeam.dispose)
   const billingSeam = actors.pair(seamCtx, context => createBillingSeam(context, {
     overview: services.bootstrap?.capabilities.includes("billing.overview") ?? false,
     plans: services.bootstrap?.capabilities.includes("billing.plans") ?? false,
@@ -2010,7 +2028,7 @@ export const createAppController = (
   }
   const repositoryReadiness = createRepositoryReadiness(ctx, surfaceCommandFailure, (repo, requestId, isCurrent, scope) =>
     openRequestedRepo({ store, selectRepo, loadRepositories: repositoriesSeam.loadRepositories, runCommand: (name, args) => runCommand(name, args) },
-      ctx.http, repo, requestId, 0, { activate: false, isCurrent, scope }))
+      ctx.http, repo, requestId, { activate: false, isCurrent, scope }))
   const deferCommand = (name: string, args: string | null, requirement: string): void => {
     store.dispatch({ type: "command.deferred", actor: "user", name, args, requirement })
     // The fulfilling prompt owns the answer. Parking survives OAuth silently.
@@ -2703,6 +2721,8 @@ export const createAppController = (
     signInCloud,
     signOutCloud: cloudSeam.signOut,
     loadRepositories: repositoriesSeam.loadRepositories,
+    createRepository: repositoriesSeam.createRepository,
+    launcher: launcherSeam,
     listWorkspaces: workspaceSeam.listWorkspaces,
     openWorkspace: workspaceSeam.openWorkspace,
     viewWorkspace: workspaceSeam.viewWorkspace,

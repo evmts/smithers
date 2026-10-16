@@ -440,7 +440,7 @@ for (const answer of ["private", "invalid", "offline"] as const) {
     try {
       await h.controller.commands.run("file", `README.md ${repo}`)
       const http: FetchLike = async () => { if (answer === "offline") throw new Error("offline"); return json(200, answer === "private" ? { repos: [] } : { wrong: [] }) }
-      await openRequestedRepo(h.controller, http, repo, h.store.session().repositoryEntry!.requestId, 320)
+      await openRequestedRepo(h.controller, http, repo, h.store.session().repositoryEntry!.requestId)
       await until(() => h.store.session().pendingCommand?.requirement !== "repository-ready")
       if (answer === "private") {
         await until(() => h.store.session().pendingCommand?.requirement === "repo-source")

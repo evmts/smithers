@@ -47,9 +47,22 @@ describe("readAppCoverage", () => {
     expect(await readAppCoverage(async () => { throw new TypeError("ECONNRESET secret-socket-detail") }, "acme/widgets")).toBeNull()
   })
 
-  test("a malformed row never becomes a repository identity", async () => {
-    const http = async () => jsonResponse({ repos: [null, { fullName: "../secret" }, { fullName: 7 }, { fullName: "acme/widgets/extra" }] })
-    expect(await readAppCoverage(http, "acme/widgets")).toEqual({ covered: false, installationId: null, installUrl: null })
+  /*
+   * "Not covered" is a verdict about a WHOLE list. A row this client cannot
+   * read makes the list partial, and a partial list proves nothing: the
+   * answer is unknown, never "the App does not cover it".
+   */
+  test("a malformed row makes the whole answer unknown, never not-covered", async () => {
+    for (const row of [null, { fullName: "../secret" }, { fullName: 7 }, { fullName: "acme/widgets/extra" }]) {
+      expect(await readAppCoverage(async () => jsonResponse({ repos: [row] }), "acme/widgets")).toBeNull()
+    }
+    // One unreadable row beside the match still answers nothing learnt.
+    expect(await readAppCoverage(async () => jsonResponse({ repos: [{ fullName: "acme/widgets", installationId: 42 }, null] }), "acme/widgets")).toBeNull()
+  })
+
+  test("a row without an installation id is still that repository, with no id invented", async () => {
+    const http = async () => jsonResponse({ repos: [{ fullName: "acme/widgets", installationId: "42" }] })
+    expect(await readAppCoverage(http, "acme/widgets")).toEqual({ covered: true, installationId: null, installUrl: null })
   })
 })
 
@@ -68,35 +81,55 @@ describe("missingRepositoryOffer", () => {
   test("a covered repository is offered the existing import flow, by name", () => {
     const offer = missingRepositoryOffer("acme/widgets", { installed: true, configured: true, installUrl: null })
     expect(offer.kind).toBe("import")
-    expect(offer.text).toBe("Smithers doesn't have acme/widgets yet. The Smithers GitHub App covers it for your account, so you can import it.")
-    expect(offer.action).toEqual({ flow: "repos.import", args: "acme/widgets", label: "Import acme/widgets" })
+    expect(offer.text).toBe("Smithers doesn't have acme/widgets yet. The Smithers GitHub App covers it for your account.")
+    expect(offer.action).toEqual({ flow: "repos.import", args: "acme/widgets", label: "Import" })
   })
 
   test("an uncovered repository gets the App's installation page and no import", () => {
     const offer = missingRepositoryOffer("acme/widgets", { installed: false, configured: false, installUrl: INSTALL_URL })
     expect(offer.kind).toBe("install")
     expect(offer.action).toBeUndefined()
-    expect(offer.text).toContain(`[Install the Smithers GitHub App](${INSTALL_URL})`)
-    // Absent on GitHub and withheld by GitHub are the same 404 upstream: neither is claimed.
-    expect(offer.text).toContain("GitHub may not have it, may not show it to you, or the App may not be installed on it")
+    expect(offer.text).toBe(
+      "Smithers doesn't have acme/widgets, and the Smithers GitHub App doesn't cover it for your account."
+      + "\n\nIt may not exist on GitHub, or may not be accessible to this account."
+      + `\n\n[Install the Smithers GitHub App](${INSTALL_URL})`
+    )
+    // Absent on GitHub and withheld by GitHub are the same 404 upstream: BOTH are named, neither is claimed.
     expect(offer.text).not.toContain("private")
+    expect(offer.text).not.toContain("no such repository")
     expect(offer.text).not.toContain("does not exist")
   })
 
-  test("an install page that is not github.com is never linked", () => {
-    for (const url of ["http://github.com/apps/smithers", "https://github.com.evil.example/apps", "javascript:alert(1)", "not a url"]) {
-      const offer = missingRepositoryOffer("acme/widgets", { installed: false, configured: false, installUrl: url })
-      expect(offer.text).not.toContain(url)
-      expect(offer.text).toContain("no GitHub App installation page")
-      expect(offer.action).toBeUndefined()
+  /* M-48: the notice states the reader's situation, never this deployment's wiring. */
+  test("the offer never explains the deployment to the reader", () => {
+    for (const status of [
+      { installed: true, configured: true, installUrl: null },
+      { installed: false, configured: false, installUrl: INSTALL_URL },
+      { installed: false, configured: false, installUrl: null },
+      undefined
+    ]) {
+      const { text } = missingRepositoryOffer("acme/widgets", status)
+      for (const word of ["deployment", "catalog", "endpoint", "backend", "route"]) expect(text).not.toContain(word)
+      expect(text.split("\n")[0]!.length).toBeLessThanOrEqual(120)
     }
   })
 
-  test("an unread coverage door says that, and invents no act", () => {
+  test("an install page that is not github.com is never linked, and Retry stands in its place", () => {
+    for (const url of ["http://github.com/apps/smithers", "https://github.com.evil.example/apps", "javascript:alert(1)", "not a url"]) {
+      const offer = missingRepositoryOffer("acme/widgets", { installed: false, configured: false, installUrl: url })
+      expect(offer.text).not.toContain(url)
+      expect(offer.text).toBe("Smithers doesn't have acme/widgets, and the Smithers GitHub App doesn't cover it for your account."
+        + "\n\nIt may not exist on GitHub, or may not be accessible to this account.")
+      expect(offer.action).toEqual({ flow: "github", args: JSON.stringify({ operation: "app-status", repo: "acme/widgets" }), label: "Retry" })
+    }
+  })
+
+  /* `app-status` is the one `github` operation with no owner preflight, so an ordinary reader can run the retry offered. */
+  test("an unread coverage door says that, and its one act re-reads the door", () => {
     const offer = missingRepositoryOffer("acme/widgets", undefined)
     expect(offer.kind).toBe("unknown")
-    expect(offer.text).toBe("Smithers doesn't have acme/widgets, and couldn't read whether the Smithers GitHub App covers it for your account.")
-    expect(offer.action).toBeUndefined()
+    expect(offer.text).toBe("Smithers doesn't have acme/widgets, and couldn't check whether it can import it.")
+    expect(offer.action).toEqual({ flow: "github", args: JSON.stringify({ operation: "app-status", repo: "acme/widgets" }), label: "Retry" })
   })
 
   test("an installed App whose configuration is incomplete is not an import offer", () => {

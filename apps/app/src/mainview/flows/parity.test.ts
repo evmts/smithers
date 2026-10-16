@@ -1348,6 +1348,8 @@ describe("launch-law parity: every affordance is a command", () => {
       "../cards/ApprovalCard.tsx": 2,
       "../cards/CodingVibeCard.tsx": 1,
       "../cards/RepositoryChoiceCard.tsx": 2,
+      "../cards/RepositoryHomeView.tsx": 4,
+      "../cards/RepositoryLauncher.tsx": 5,
       "../cards/RepositoryUpdateCard.tsx": 2,
       /*
        * The Library (the `plugins` surface and the guided introduction share

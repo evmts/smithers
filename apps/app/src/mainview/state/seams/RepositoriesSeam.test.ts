@@ -94,7 +94,15 @@ const backend = (path: string): Response => {
 }
 
 const repos = (store: AppStore) => [...store.collections.repositories.values()].sort((a, b) => a.id.localeCompare(b.id))
-const copies = (store: AppStore) => [...store.collections.workingCopies.values()].sort((a, b) => a.id.localeCompare(b.id))
+/*
+ * The BOXES the inventory loaded. Beside them, every repository with no box
+ * derives one shared read-only copy for browsing its files (M-45,
+ * WorkspaceViews.ts); `sharedCopies` reads those.
+ */
+const copies = (store: AppStore) =>
+  [...store.collections.workingCopies.values()].filter((copy) => copy.kind !== "shared").sort((a, b) => a.id.localeCompare(b.id))
+const sharedCopies = (store: AppStore) =>
+  [...store.collections.workingCopies.values()].filter((copy) => copy.kind === "shared").map((copy) => copy.id).sort()
 const bookmarkCalls = (requests: ReadonlyArray<string>) =>
   requests.filter((request) => request.includes("/bookmarks")).map((request) => request.slice(1))
 
@@ -128,6 +136,8 @@ describe("repositories seam", () => {
     expect(JSON.stringify(repos(store))).not.toContain("mirror")
 
     // Workspaces: both rows land; the one without a status carries no state.
+    // A repository with a box is not a read-only reader of it: no shared copy stands beside the boxes.
+    expect(sharedCopies(store)).not.toContain("shared:will/smithers")
     expect(copies(store)).toEqual([
       expect.objectContaining({
         id: "workspace:ws-1",
@@ -419,6 +429,8 @@ describe("repositories seam", () => {
     expect(refusal).toBeUndefined()
     expect(repos(store)).toHaveLength(3)
     expect(copies(store)).toEqual([])
+    // No box anywhere, so every repository is browsable through its own read-only copy.
+    expect(sharedCopies(store)).toEqual(repos(store).map((repo) => `shared:${repo.id}`).sort())
   })
 
   test("plue#445's wire fields replace the per-repo bookmarks call", async () => {

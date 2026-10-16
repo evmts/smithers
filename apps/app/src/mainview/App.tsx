@@ -33,8 +33,10 @@ import { dynamicFlowAction, flowProps } from "./flows/FlowAction"
 import { InputModeMenu } from "./InputModeMenu"
 import type { InitMessage } from "./HostOpening"
 import { cloudWebHost, initMessage } from "./HostOpening"
+import { LAUNCHER_ENTRY_ID, RepositoryLauncherCard } from "./cards/RepositoryLauncher"
+import { REPOSITORY_HOME_ENTRY_ID, RepositoryHomeView } from "./cards/RepositoryHomeView"
 import { SHORTCUT_KEYS,ShortcutButton } from "./ShortcutButton"
-import { pathRepo } from "./RepoLink"
+import { pathRepo, treeCopyOf } from "./RepoLink"
 import { missingRepositoryOffer } from "./RepositoryEntryOffer"
 import type { Card,Message } from "./state/AppState"
 import { conversationTabIdOf,diagnosticVisible,inConversation,readScopeOf } from "./state/AppState"
@@ -114,6 +116,7 @@ function AppContent() {
   const { data: identityRows } = useLiveQuery(collections.identitySessions)
   const { data: connectorRows } = useLiveQuery(collections.connectors)
   const { data: repositoryRows } = useLiveQuery(collections.repositories)
+  const { data: repositoryFlowRows } = useLiveQuery(collections.repositoryFlows)
   /* The GitHub App's coverage of the URL's repository, when the entry read it. */
   const { data: appStatusRows } = useLiveQuery(collections.githubAppStatuses)
   /* The composer wrap: Cmd+K focuses the textarea inside it (the palette opens on the composer). */
@@ -359,6 +362,31 @@ function AppContent() {
   // A new conversation opens empty; the host's opening read belongs to main alone.
   // The host read is a diagnostic: local hosts show it; a cloud visitor never needs it.
   const cloudWeb = cloudWebHost(controller.bootstrap)
+  /*
+   * The launcher at `/` (mvp.md M-45): open a repository Smithers already
+   * has, create one, explore the others, read genuine Smithers update news.
+   * It replaces the host diagnostic that used to be the first thing a
+   * first-time reader met here, and it is additive — the conversation, the
+   * saved cards and the repository a returning person already selected all
+   * stay exactly where they were, below it.
+   *
+   * Only the hosted web app's root path: an install's `/` is its stack, and
+   * `/owner/repo` is the repository's own route.
+   */
+  const launcherPath = useMemo(() => typeof window !== "undefined" && window.location.pathname === "/", [])
+  const showLauncher = cloudWeb && launcherPath && conversationTabId === undefined && !earlier
+  /*
+   * The repository's own default view at `/owner/repo` (M-45): the file tree
+   * unless the repository declares a homepage, which the existing
+   * repository-flows row carries (state/seams/RepositoryFlowsSeam.ts reads
+   * GET /api/repos/{o}/{r}/home into it). Absent, unreadable, invalid or
+   * still loading all leave the tree as the view; only an outright read
+   * failure says so, and the Files act keeps the tree one press away.
+   */
+  const repositoryHome = bootRepository === null || conversationTabId !== undefined || earlier
+    ? undefined
+    : repositoryFlowRows.find(row => row.id.toLowerCase() === bootRepository.toLowerCase())?.home
+  const homeTreeCopy = bootRepository === null ? undefined : treeCopyOf(controller.store, bootRepository)
   const openingMessage: InitMessage | undefined = gatedByAuth || cloudWeb || repositoryOpening || conversationTabId !== undefined || home ? undefined : initMessage({
     bootstrap: controller.bootstrap,
     flowCount: flows.length,
@@ -592,6 +620,14 @@ function AppContent() {
             <MessageScrollerContent className="sui-chat-messages">
             {loginScreen && <MessageScrollerItem messageId="login" style={{ contentVisibility: "visible" }}>
               <LoginScreen onRunCommand={controller.runCommand} />
+            </MessageScrollerItem>}
+            {/* The login screen keeps its own doors; the launcher's public shelf and news sit under them. */}
+            {showLauncher && <MessageScrollerItem messageId={LAUNCHER_ENTRY_ID} style={{ contentVisibility: "visible" }}>
+              <RepositoryLauncherCard repositories={repositoryRows} signedIn={identity?.state === "signed-in"} />
+            </MessageScrollerItem>}
+            {repositoryHome !== undefined && !missingRepositoryScope && <MessageScrollerItem messageId={REPOSITORY_HOME_ENTRY_ID} style={{ contentVisibility: "visible" }}>
+              <RepositoryHomeView repo={bootRepository!} home={repositoryHome} treeCopyId={homeTreeCopy}
+                onRunCommand={(flow, args) => controller.runCommand(flow, args)} />
             </MessageScrollerItem>}
             {!earlier && !repositoryNotice && home && <MessageScrollerItem messageId={HOME_ENTRY_ID}>{homeCard}</MessageScrollerItem>}
             {!loginScreen && !repositoryNotice && <BranchNavigation />}

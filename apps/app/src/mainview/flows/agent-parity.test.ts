@@ -81,6 +81,7 @@ const USER_ONLY_ALLOWLIST: Readonly<Record<string, string>> = {
   "cloud.sign-out": "dropping the human's Smithers Cloud credential is theirs alone",
   "toast.dismiss": "dismissing a toast is the human's gesture",
   "repo.select": "which pinned repository is active is the human's selection",
+  "repos.create": "creating a repository on the person's GitHub account is the person's act",
   "chat.open": "opening Chat is the human's focus gesture",
   "palette.open": PALETTE_OPEN_REASON,
   "palette.actions": PALETTE_ACTIONS_REASON,

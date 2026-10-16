@@ -148,7 +148,13 @@ describe("the shared read-only copy of a catalog repository", () => {
       actor: "system",
       repositories: [
         catalogRow({ bookmark: "main", changeId: null, commitId: null }),
-        // The signed-in inventory's row is not a catalog row: no shared copy.
+        /*
+         * The signed-in inventory's own row gets one too (M-45): browsing a
+         * repository's files is a read, so it must not require choosing or
+         * waking a box. The old build gave a shared copy only to a catalog
+         * row, so `/owner/repo` for a person's OWN repository had no copy and
+         * opened no tree.
+         */
         { id: "will/flows", org: "will", ownerKind: "user", name: "flows", head: { bookmark: "main", changeId: "q", commitId: "c" } }
       ]
     }).isPersisted.promise
@@ -164,8 +170,9 @@ describe("the shared read-only copy of a catalog repository", () => {
     expect(shared?.workspaceId).toBeUndefined()
     expect(workingCopyLabel(shared!)).toBe("main · shared · read-only")
     expect(isReadOnlyCopy(shared!)).toBe(true)
-    expect(store.collections.workingCopies.get(sharedCopyIdOf("will/flows"))).toBeUndefined()
-    expect(store.collections.workingCopies.size).toBe(1)
+    const own = store.collections.workingCopies.get(sharedCopyIdOf("will/flows"))
+    expect(own).toMatchObject({ id: "shared:will/flows", repoId: "will/flows", kind: "shared", access: "read", bookmark: "main" })
+    expect(store.collections.workingCopies.size).toBe(2)
     // Derived, never persisted: nothing under the shared id reaches the storage.
     expect([...data.values()].some((value) => value.includes("shared:smithersai/smithers"))).toBe(false)
     await store.dispose?.()

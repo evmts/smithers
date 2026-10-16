@@ -14,4 +14,13 @@ export const namespace: Namespace = { id: "app", label: "App", summary: "The Smi
 /** The `app` flows registered as one aggregator block. */
 export const appFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
   flow({ name: "app.hint.dismiss", hidden: true, summary: "Dismiss a hint", args: "<id>", input: Schema.Struct({ id: Schema.String }), handler: ({ id }) => actions.dismissHint(id) }),
+  /*
+   * The launcher's news read, again (M-45). A source that could not be read
+   * offers exactly this and nothing else: the entries stay absent until a
+   * read answers, and no entry is ever written here. The read is public and
+   * carries no credential (state/seams/LauncherSeam.ts).
+   */
+  flow({ name: "app.updates", hidden: true, discloseToAgent: false, summary: "Read Smithers' published updates again",
+    input: Schema.Struct({}), grammar: () => ({ payload: {} }),
+    handler: async () => { await actions.launcher?.retry() } }),
 ]

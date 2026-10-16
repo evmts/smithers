@@ -124,6 +124,42 @@ const selectionForRepo = (controller: Pick<AppController, "store">, repo: string
 }
 
 /**
+ * The copy whose files the repository route lists: the person's own
+ * per-repository pick first (a selected branch's box stays the one being
+ * browsed), then the repository's shared read-only copy, then any other copy
+ * already in the inventory. Nothing is created, resumed or woken to answer
+ * this — browsing files is a read — so a repository with no copy at all has
+ * no tree to open from here and the route says nothing it cannot read.
+ */
+export const treeCopyOf = (store: AppStore, repo: string): string | undefined => {
+  const copies = store.collections.workingCopies
+  const key = store.session().activeRepoKey
+  const selected = key == null ? null : parseRepoSelection(key)
+  if (selected?.repoId === repo && selected.copyId !== undefined && copies.get(selected.copyId)?.repoId === repo) return selected.copyId
+  const shared = sharedCopyIdOf(repo)
+  if (copies.get(shared) !== undefined) return shared
+  return [...copies.values()].find((copy) => copy.repoId === repo)?.id
+}
+
+/**
+ * The repository's root file tree, the default view of `/owner/repo` (M-45),
+ * opened once on arrival for a repository this account has as well as one
+ * from the public catalog, at every supported width. It runs `files
+ * {operation:"tree"}` through the registry — the same act the sidebar caret
+ * runs — so the read, its refusals and its retry are the existing ones; a
+ * directory already loaded for this copy is this launch's own state and is
+ * left alone.
+ */
+export const openRepositoryTree = (
+  controller: Pick<AppController, "store" | "runCommand">,
+  repo: string
+): void => {
+  const copyId = treeCopyOf(controller.store, repo)
+  if (copyId === undefined || controller.store.collections.repoTree.get(repoTreeRowId(copyId, "")) !== undefined) return
+  controller.runCommand("files", JSON.stringify({ operation: "tree", copy: copyId }))
+}
+
+/**
  * The repository document's default bookmark, read from the public mirror
  * (`GET /api/repos/{o}/{r}`, a public repository read the Worker forwards
  * with no credentials): the bookmark the shared read-only copy tracks. The
@@ -142,6 +178,51 @@ const defaultBookmarkOf = async (http: FetchLike, repo: string): Promise<string 
   } catch {
     return null
   }
+}
+
+/**
+ * The public catalog's rows, joined to the repositories collection so the
+ * launcher at `/` can offer real repositories to explore (M-45). False when
+ * the catalog could not be read: the launcher then says so rather than
+ * showing an empty shelf.
+ *
+ * Being listed publicly is not a fact about who the reader is, so a row this
+ * ACCOUNT already has is never promoted to a catalog row. The account's own
+ * public repository stays the account's — the launcher would otherwise move
+ * it out of "your repositories" and onto the shelf of things to discover —
+ * and only a repository the account does not have enters as `catalog`.
+ *
+ * `isCurrent` is the caller's account guard: a read that lands after the
+ * signed-in person changed writes nothing, so one account's shelf never
+ * appears under another's.
+ */
+export const loadPublicCatalog = async (
+  controller: Pick<AppController, "store">,
+  http: FetchLike,
+  isCurrent: () => boolean = () => true
+): Promise<boolean> => {
+  let catalog: unknown
+  try {
+    const response = await http(PUBLIC_REPOS_PATH, { headers: { accept: "application/json" } })
+    if (!response.ok) return false
+    catalog = await response.json()
+  } catch {
+    return false
+  }
+  if (typeof catalog !== "object" || catalog === null || !Array.isArray((catalog as { repos?: unknown }).repos)) return false
+  if (!isCurrent()) return false
+  const { repositories } = controller.store.collections
+  for (const repository of catalogRepositories(catalog)) {
+    const existing = repositories.get(repository.id)
+    // The account already has it: its own row, and its own membership, stand.
+    if (existing !== undefined) continue
+    controller.store.dispatch({
+      type: "repository.upserted",
+      actor: "system",
+      repository: { ...repository, ownerKind: "user", head: null, catalog: true }
+    })
+  }
+  return true
 }
 
 /** Record the URL before the controller starts any background inventory work. */
@@ -169,7 +250,6 @@ export const openRequestedRepo = async (
   http: FetchLike,
   requested: string,
   requestId = beginRepositoryEntry(controller.store, requested)!,
-  viewportWidth = typeof window === "undefined" ? Number.POSITIVE_INFINITY : window.innerWidth,
   options: { readonly activate?: boolean; readonly isCurrent?: () => boolean; readonly scope?: "command" } = {}
 ): Promise<string | void> => {
   const entry = () => options.scope === "command" ? controller.store.session().repositoryCommandEntry : controller.store.session().repositoryEntry
@@ -208,7 +288,12 @@ export const openRequestedRepo = async (
       if (failure === undefined && own !== undefined) {
         if (options.activate === false || options.scope === "command") return finish()
         const refusal = await controller.selectRepo(selectionForRepo(controller, own.id))
-        return finish(refusal === undefined ? undefined : refusal)
+        if (!current()) return
+        if (refusal !== undefined) return finish(refusal)
+        finish()
+        // An own repository opens on its file tree too, not only a catalog one.
+        openRepositoryTree(controller, own.id)
+        return
       }
       /*
        * Neither the catalog nor this account's inventory has it, so the route
@@ -252,20 +337,12 @@ export const openRequestedRepo = async (
   if (refusal !== undefined) return finish(refusal)
   finish()
   /*
-   * The shared copy's tree opens once, on the first paint of the catalog
-   * repository on wide screens: `repo.tree <copyId>` through the registry, the same act the
-   * caret runs. The tree rows live for this launch only, so a row already
-   * there is this launch's own state, and the caret is the visitor's. On a
-   * phone this opens an obstructing drawer; keep the explicit tree action.
+   * The file tree is the repository's default view (M-45), so it opens on the
+   * first paint of every supported width — a narrow reader who followed a
+   * repository URL came for the repository, and the previous >600px gate left
+   * them on a transcript instead.
    */
-  const sharedId = sharedCopyIdOf(repository.id)
-  if (
-    viewportWidth > 600 &&
-    controller.store.collections.workingCopies.get(sharedId) !== undefined &&
-    controller.store.collections.repoTree.get(repoTreeRowId(sharedId, "")) === undefined
-  ) {
-    controller.runCommand("files", JSON.stringify({ operation: "tree", copy: sharedId }))
-  }
+  openRepositoryTree(controller, repository.id)
   const bookmark = await defaultBookmarkOf(http, repository.id)
   if (!current()) return
   const row = controller.store.collections.repositories.get(repository.id)

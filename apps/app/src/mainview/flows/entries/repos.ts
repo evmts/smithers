@@ -33,6 +33,55 @@ export const reposImportFlows = (actions: CommandActions): ReadonlyArray<FlowEnt
   })
 ]
 
+/**
+ * `repos.explore`: read the public repository catalog again (M-45). A
+ * catalog that could not be read offers this and shows no shelf; it never
+ * presents an empty one as "nothing is public".
+ */
+export const reposExploreFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
+  flow({
+    name: "repos.explore", hidden: true, discloseToAgent: false,
+    summary: "Read the public repository catalog again",
+    input: Schema.Struct({}), grammar: () => ({ payload: {} }),
+    handler: async () => { await actions.launcher?.retryCatalog() }
+  })
+]
+
+/** A GitHub repository name: the one the account's new repository is created under. */
+const REPOSITORY_NAME = /^[A-Za-z0-9_.-]{1,100}$/
+
+/**
+ * `repos.create`, registered beside `repos.import`: the launcher's create
+ * door (M-45). It runs the Cloud create that already exists
+ * (RepositoriesSeam.createRepository, POST /user/repos), so nothing here
+ * reports a repository that was not made — a refused create answers the
+ * backend's own refusal, and the new row reaches the inventory through the
+ * same collection the launcher lists.
+ */
+export const reposCreateFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
+  flow({
+    name: "repos.create", hidden: true, discloseToAgent: false,
+    summary: "Create a GitHub repository in Smithers Cloud",
+    runtime: ["cloud"],
+    agent: "never",
+    agentReason: "creating a repository on the person's GitHub account is the person's act",
+    actors: ["person"],
+    args: "<name>",
+    requires: ["signed-in"],
+    input: Schema.Struct({ name: Schema.String }),
+    grammar: (args) => {
+      const name = args?.trim() ?? ""
+      return REPOSITORY_NAME.test(name) ? { payload: { name } } : { error: "Enter a repository name" }
+    },
+    form: { fields: { name: { label: "Repository name", kind: "text" } }, args: (payload) => String(payload.name ?? "") },
+    handler: async ({ name }) => {
+      if (!REPOSITORY_NAME.test(name.trim())) return "Enter a repository name"
+      const made = await actions.createRepository(name.trim())
+      return typeof made === "string" ? made : { value: `Created ${made.fullName}` }
+    }
+  })
+]
+
 /** `repos.import.retry`, registered beside the GitHub mirror flows it retries. */
 export const reposImportRetryFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
   flow({
