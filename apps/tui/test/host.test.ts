@@ -710,52 +710,6 @@ describe("Host.run completion over a failed request", () => {
   })
 })
 
-describe("Host.run completion reporting unfinished work (#3009)", () => {
-  test("fails the turn with the run's own report instead of finishing it as done", async () => {
-    const cwd = mkdtempSync(join(tmpdir(), "smithers-tui-unfinished-"))
-    roots.push(cwd)
-    const report = "I could not finish the migration: it needs database credentials this run does not have."
-    const asked: Array<string> = []
-    const judge = Evaluator.layerScripted((request) => {
-      const ids = Object.keys(request.questions)
-      asked.push(ids.join(","))
-      if (ids.includes("unfinished")) return { unfinished: { probability: 0.97 } }
-      if (ids.includes("invented")) {
-        return { complete: { probability: 0.04 }, overclaims: { probability: 0.1 }, invented: { probability: 0.05 } }
-      }
-      return Object.fromEntries(ids.map((id) => [id, { probability: 0.05 }]))
-    })
-    const host = Host.make({ cwd, environment: {}, judge })
-    const events: Array<AgentEvent.AgentEvent> = []
-    try {
-      const outcome = await host.run({
-        prompt: "migrate the orders table",
-        role: "worker",
-        seat: `replay:${doneReplay(cwd, `ctx.done(${JSON.stringify(report)})`)}`,
-        history: [],
-        onEvent: (event) => events.push(event)
-      }).done
-
-      // Handed back while bounces last; the same report with none left is
-      // the outcome, and it is a failure that keeps the report.
-      expect(outcome._tag).toBe("failed")
-      if (outcome._tag !== "failed") return
-      expect(outcome.error).toMatchObject({ _tag: "/harness/HarnessError", code: "completion_incomplete" })
-      expect(String((outcome.error as { message: string }).message)).toContain(report)
-      expect(asked.at(-1)).toBe("unfinished")
-      expect(events.some((event) => event._tag === "resolved")).toBe(false)
-      // The card names it and offers the retry.
-      expect(FailureCopy.describe(outcome.error)).toMatchObject({
-        headline: "Worker left work unfinished",
-        fault: "factory",
-        actions: expect.arrayContaining(["resume"])
-      })
-    } finally {
-      await host.dispose()
-    }
-  })
-})
-
 describe("Host.run frame budget", () => {
   test("a coordinator that spends its frames polling a refused delegation says it was not delegated", async () => {
     const { answer, delegations, resolved } = await pollingTurn(() => {
@@ -1496,13 +1450,15 @@ describe("Host.run without a judge (#2163)", () => {
   })
 })
 
+// No workflow arms the claim judge in the TUI (#3993), so no judge reads a
+// worker's answer and a missing or limited judge never touches its outcome.
 describe("Host.run when no judge can check the answer", () => {
   test.each(
     [
       ["no gateway key and no Luna opt-in", false],
       ["Luna opted in without a Codex login", true]
     ] as const
-  )("settles the worker done · unchecked with its answer when there is %s", async (_, optIn) => {
+  )("settles the worker done with its answer when there is %s", async (_, optIn) => {
     const cwd = mkdtempSync(join(tmpdir(), "smithers-tui-judge-failure-"))
     roots.push(cwd)
     const codexHome = join(cwd, "codex")
@@ -1532,13 +1488,13 @@ describe("Host.run when no judge can check the answer", () => {
         onEvent: () => {}
       }).done
       // Never failed, and nothing a person reads names a key, a login or a seat.
-      expect(outcome).toEqual({ _tag: "done", answer: "ok", unchecked: true })
+      expect(outcome).toEqual({ _tag: "done", answer: "ok" })
     } finally {
       await host.dispose()
     }
   })
 
-  test("settles the worker done · unchecked when the judge's subscription is at its limit", async () => {
+  test("settles the worker done when the judge's subscription is at its limit", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "smithers-tui-judge-limit-"))
     roots.push(cwd)
     const judge = Evaluator.layerFromSeat({
@@ -1563,7 +1519,7 @@ describe("Host.run when no judge can check the answer", () => {
         history: [],
         onEvent: () => {}
       }).done
-      expect(outcome).toEqual({ _tag: "done", answer: "ok", unchecked: true })
+      expect(outcome).toEqual({ _tag: "done", answer: "ok" })
     } finally {
       await host.dispose()
     }
@@ -2223,7 +2179,8 @@ describe("Host.run with a box", () => {
     expect(calls(placed.events).length).toBe(1)
     expect(basis(placed.events)).not.toContain("observed")
     const shape = (events: ReadonlyArray<AgentEvent.AgentEvent>) =>
-      settled(events).map(({ result, ...rest }) => ({
+      // The wall clock differs per run; the record's shape does not.
+      settled(events).map(({ result, durationMillis: _durationMillis, ...rest }) => ({
         ...rest,
         result: { ...result, value: { ...(result as { value: object }).value, stdout: "" } }
       }))
