@@ -539,6 +539,11 @@ export const bindPlanned: {
     )
 )
 
+// Arm builders run before the graph walker can enforce its topology bound.
+// Leave native stack headroom to construct the typed refusal and unwind.
+const maximumArmDepth = 512
+let armDepth = 0
+
 /**
  * Builds one arm, once, against the symbolic subject.
  *
@@ -549,16 +554,30 @@ const arm = <A, B, E, R>(
   subject: Planned.Planned<A>,
   side: string
 ): Ast => {
-  const node = build(subject)
-  if (!isNode(node)) {
+  if (armDepth >= maximumArmDepth) {
     throw new GraphBuildError({
-      code: "invalid_continuation",
+      code: "graph_too_deep",
       node: `${branchSubject}/${side}`,
       path: [],
-      message: `Node.branch expected its "${side}" arm to return a Node`
+      message: "Node.branch recursion needs a plan-time bound, such as a payload-derived round count. " +
+        "Both arms are built before the run-time predicate is evaluated."
     })
   }
-  return node.ast
+  armDepth++
+  try {
+    const node = build(subject)
+    if (!isNode(node)) {
+      throw new GraphBuildError({
+        code: "invalid_continuation",
+        node: `${branchSubject}/${side}`,
+        path: [],
+        message: `Node.branch expected its "${side}" arm to return a Node`
+      })
+    }
+    return node.ast
+  } finally {
+    armDepth--
+  }
 }
 
 /**

@@ -80,6 +80,31 @@ describe("Node", () => {
     expectTypeOf<Node.Error<typeof recovered>>().toBeNever()
   })
 
+  it("refuses recursion bounded only by a run-time branch and recovers after refusal", () => {
+    const loop = (): Node.Node<number> =>
+      Node.branch(Node.succeed(0), {
+        if: Node.capture({}, (round: number) => round < 3),
+        then: loop,
+        else: () => Node.succeed(3)
+      })
+    expect(loop).toThrowError(expect.objectContaining({
+      _tag: "@smthrs/plan/GraphBuildError",
+      code: "graph_too_deep",
+      message: expect.stringContaining("plan-time bound")
+    }))
+    const bounded = (round: number): Node.Node<number> =>
+      round === 3 ?
+        Node.succeed(round) :
+        Node.branch(Node.succeed(round), {
+          if: Node.capture({}, (value: number) => value < 3),
+          then: () => bounded(round + 1),
+          else: () => Node.succeed(round)
+        })
+    expect(() => bounded(0)).not.toThrow()
+    expect(loop).toThrowError(GraphBuildError)
+    expect(() => bounded(0)).not.toThrow()
+  })
+
   it("snapshots the branch predicate before building either arm", () => {
     const options = {
       if: Node.capture({}, (_value: number) => true),
