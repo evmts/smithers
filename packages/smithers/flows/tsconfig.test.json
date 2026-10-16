@@ -1,6 +1,9 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
+    // `examples/42-placed-deploy.ts` type-checks `@smthrs/targets` sources,
+    // which use ES2024 string methods.
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "rootDir": "../../..",
     "noEmit": true,
     "declaration": false,
@@ -8,5 +11,5 @@
     "composite": false,
     "resolveJsonModule": true
   },
-  "include": ["src/**/*", "test/**/*"]
+  "include": ["src/**/*", "test/**/*", "examples/**/*"]
 }

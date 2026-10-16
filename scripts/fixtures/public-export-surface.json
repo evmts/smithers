@@ -1457,6 +1457,17 @@
       "development": null,
       "published": null,
       "reason": "Retained core API already exported at clean main 2ad6fe2afcd2e45d81587b62f79d51b4ab02ae0d; source and both maps verified identical during MVP cuts. No production implementation or declaration changed. #3389."
+    },
+    {
+      "name": "@smthrs/flows",
+      "subpath": "./test/TestNodeRuntime",
+      "development": "./src/test/TestNodeRuntime.ts",
+      "published": {
+        "types": "./dist/esm/test/TestNodeRuntime.d.ts",
+        "import": "./dist/esm/test/TestNodeRuntime.js",
+        "require": "./dist/cjs/test/TestNodeRuntime.js"
+      },
+      "reason": "Test support: a durable Node engine over one SQLite file with a recording-nothing Jj. The runnable examples in @smthrs/flows, @smthrs/agent and @smthrs/mcp share it once they live beside the packages they demonstrate (#4089); like engine-store's ./test/TestStores it is not a host."
     }
   ],
   "removed": [

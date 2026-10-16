@@ -134,7 +134,7 @@ the result, `firedAt` included, comes from the journal. See
 
 ## A worked example
 
-[`examples/src/38-monitor-and-alert.ts`](https://github.com/smithersai/smithers/blob/main/examples/src/38-monitor-and-alert.ts)
+[`packages/smithers/flows/examples/38-monitor-and-alert.ts`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/examples/38-monitor-and-alert.ts)
 runs the whole supervision loop over one SQLite file: two durable runs, a monitor
 that beats over them, and the same policy at a production delay and at a zero
 delay, so the quiet case and the paging case are visible side by side.

@@ -161,7 +161,7 @@ is the only vocabulary the plane's row accepts.
 
 The complete, runnable bridge, with discovery, two databases, and one shared
 journal, is
-[`examples/src/24-control-plane-and-gateway.ts`](https://github.com/smithersai/smithers/blob/main/examples/src/24-control-plane-and-gateway.ts).
+[`packages/smithers/flows/examples/24-control-plane-and-gateway.ts`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/examples/24-control-plane-and-gateway.ts).
 
 ## Where to go next
 

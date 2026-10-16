@@ -73,7 +73,7 @@ const cancelRequested = (runId: string) =>
 ```
 
 Poll it at a point where the flow can stop without leaving work half done.
-[`examples/src/19-cancel-and-child-cleanup.ts`](https://github.com/smithersai/smithers/blob/main/examples/src/19-cancel-and-child-cleanup.ts)
+[`packages/smithers/flows/examples/19-cancel-and-child-cleanup.ts`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/examples/19-cancel-and-child-cleanup.ts)
 polls exactly this column and cleans up its children before it settles.
 
 ## Settle under a guard

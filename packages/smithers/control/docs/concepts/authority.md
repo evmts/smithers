@@ -57,7 +57,7 @@ composition with no executor is not broken; it is a plane that starts nothing:
   Without an executor, it remains available for the owning host's next poll.
 
 That is the shape a monitor, a dashboard, or a read-only operator tool has, and
-it is what [`examples/src/38-monitor-and-alert.ts`](https://github.com/smithersai/smithers/blob/main/examples/src/38-monitor-and-alert.ts)
+it is what [`packages/smithers/flows/examples/38-monitor-and-alert.ts`](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/examples/38-monitor-and-alert.ts)
 builds on purpose.
 
 ## Two run tables, one journal
