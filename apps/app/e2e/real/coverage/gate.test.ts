@@ -389,6 +389,37 @@ export const searchFlows = (actions) => [
     expect(messages("critical-action-deferred")).toEqual([expect.stringContaining("chat.send")])
   })
 
+  /*
+   * `issues.transition` is the repository-declared issue workflow of M-47
+   * (#4027). It was once accounted for by a ledger entry rather than by a
+   * scenario, which is what the ledger is for and what the release goal
+   * forbade for this action: the move a repository declares for ITSELF has
+   * no sibling act that can stand in for it. This pins the closure directly,
+   * so re-deferring it — or deleting the scenario and leaving the action
+   * uncovered — fails here by name rather than passing as an accounted gap.
+   */
+  test("the repository-declared issue transition is accounted for by a real scenario, never by a deferral", () => {
+    const app = join(import.meta.dir, "../../..")
+    const report = checkRealE2E({
+      realDir: join(app, "e2e/real"), flowNameFile: join(app, "src/mainview/flows/FlowName.ts"),
+      excludedSpecs: ignoredJourneys({}).map(spec => join(app, "e2e/real", spec)),
+      deferred: UNSCENARIOED_ACTIONS, releaseCritical: RELEASE_CRITICAL_ACTIONS
+    })
+    expect(report.declaredActions).toContain("issues.transition")
+    expect(report.deferred.map(({ action }) => action)).not.toContain("issues.transition")
+    expect(report.gaps.filter((gap) => gap.kind === "action").map((gap) => gap.value)).not.toContain("issues.transition")
+    const covering = report.scenarios.filter((candidate) => candidate.actions.includes("issues.transition"))
+    expect(covering.length).toBeGreaterThan(0)
+    // A real scenario, not a metadata tag on something else: each one has to
+    // name the host it runs on and the door the person used.
+    for (const scenario of covering) {
+      expect(scenario.hosts.length).toBeGreaterThan(0)
+      expect(scenario.doors.length).toBeGreaterThan(0)
+    }
+    expect(covering.some((candidate) => candidate.paths.includes("success"))).toBe(true)
+    expect(covering.some((candidate) => candidate.paths.includes("error") || candidate.paths.includes("permission"))).toBe(true)
+  }, 60_000)
+
   test("the repository's deferrals are current and leave only release-critical actions unscenarioed", () => {
     const app = join(import.meta.dir, "../../..")
     const report = checkRealE2E({

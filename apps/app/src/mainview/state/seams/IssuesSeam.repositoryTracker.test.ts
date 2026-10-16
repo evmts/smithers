@@ -288,6 +288,70 @@ describe("a declared issue transition", () => {
     expect(writes(calls).filter((call) => call.includes("/transitions/"))).toEqual([])
   })
 
+  test("the typed repository is the only one a transition addresses, whatever the active repository is", async () => {
+    const calls: string[] = []
+    const sent: string[] = []
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const controller = createAppController(store, unavailableAgent, backend({
+      "POST /api/repos/will/policy/github/issues/6/transitions/e2e-accept": async (request) => {
+        sent.push(new URL(request.url).pathname)
+        return json(202, { operationId: "op-accept-6", requestId: "k", kind: "requested", state: "accepted", acceptedAt: "2026-10-16T13:00:00Z" })
+      }
+    }, calls))
+    store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "will", admin: false, scopesPlain: null })
+    store.dispatch({
+      type: "repositories.loaded",
+      actor: "system",
+      repositories: [
+        { id: "will/flows", org: "will", ownerKind: "user", name: "flows", head: null, issueTracker: "github" },
+        { id: "will/policy", org: "will", ownerKind: "user", name: "policy", head: null, issueTracker: "github" }
+      ]
+    })
+    store.dispatch({ type: "repo.selected", actor: "user", id: "will/flows" })
+    await settled()
+
+    // The repository that DECLARES the transition is the typed one. The
+    // active repository declares nothing about issue #6 of another
+    // repository, so a move must never be addressed to it.
+    expect((await controller.commands.run("issues.transition", "6 e2e-accept will/policy")).status).toBe("executed")
+    expect(sent).toEqual(["/api/repos/will/policy/github/issues/6/transitions/e2e-accept"])
+    // The active repository's own ambient reads are its own; no issue of it
+    // was read or written for a move addressed to the typed repository.
+    expect(calls.filter((call) => /\/repos\/will\/flows\/(?:github\/)?issues/.test(call))).toEqual([])
+    expect(writes(calls)).toEqual(["POST /api/repos/will/policy/github/issues/6/transitions/e2e-accept"])
+  })
+
+  test("the repository's own refusal is stated and the act is not sent a second time", async () => {
+    const attempts: string[] = []
+    const refusal = (status: number, code: string, message: string) => async (request: Request) => {
+      attempts.push(new URL(request.url).pathname)
+      return json(status, { status: "error", code, message })
+    }
+    const { controller, calls } = await controllerFor({
+      // The repository declares no such transition: refused on the
+      // declaration, before anything is asked of GitHub.
+      "POST /api/repos/will/flows/github/issues/6/transitions/e2e-undeclared":
+        refusal(404, "issue_transition_undeclared", 'This repository declares no issue transition "e2e-undeclared"'),
+      // And a move the repository says a PERSON has to make.
+      "POST /api/repos/will/flows/github/issues/6/transitions/e2e-accept":
+        refusal(403, "permission", "A person has to make this transition")
+    }, "github")
+
+    for (const [id, sentence] of [["e2e-undeclared", "declares no issue transition"], ["e2e-accept", "A person has to make this transition"]] as const) {
+      const outcome = await controller.commands.run("issues.transition", `6 ${id}`)
+      expect(outcome.status).toBe("failed")
+      // The server's own sentence, not a rewritten one, and no claim that the issue moved.
+      expect(outcome.status === "failed" ? outcome.error : "").toContain(sentence)
+    }
+    // One attempt each: a refusal is not retried, and nothing addressed the
+    // Smithers Cloud tracker beside it.
+    expect(attempts).toEqual([
+      "/api/repos/will/flows/github/issues/6/transitions/e2e-undeclared",
+      "/api/repos/will/flows/github/issues/6/transitions/e2e-accept"
+    ])
+    expect(writes(calls).filter((call) => !call.includes("/github/"))).toEqual([])
+  })
+
   test("a repository whose name is not owner/name has no transition door to address", async () => {
     const calls: string[] = []
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
