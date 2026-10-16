@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/jackc/pgx/v5"
-
 	"github.com/smithersai/smithers/packages/backend/flowdispatch"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
@@ -60,9 +58,7 @@ func completedCodingMessages(update flowdispatch.ProjectionUpdate, projection ag
 // fence. Replies, parts and completion commit together under the session row
 // lock; a failed write rolls everything back and a replay appends nothing.
 func (service *AgentService) completeCodingTurn(ctx context.Context, update flowdispatch.ProjectionUpdate, terminal db.UpdateAgentSessionTerminalStatusForFlowParams, messages []string) (db.AgentSession, []AgentMessageResponse, error) {
-	beginner, ok := service.dispatchQ.(interface {
-		BeginTx(context.Context) (pgx.Tx, error)
-	})
+	beginner, ok := service.dispatchQ.(workflowQueryTxStarter)
 	if !ok {
 		return db.AgentSession{}, nil, errors.New("coding completion transactions unavailable")
 	}

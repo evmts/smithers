@@ -91,7 +91,11 @@ func TestSandboxPlanChecksPrecedeHardCaps(t *testing.T) {
 	policy := sandboxPolicyStub{err: denied}
 	workspace := NewWorkspaceService(nil, WithWorkspaceBillingPolicy(policy))
 	require.ErrorIs(t, workspace.enforceWorkspaceQuota(context.Background(), 7), denied)
-	resume := NewWorkspaceService(nil, WithWorkspaceBillingPolicy(policy), WithWorkspaceTransactions(unopenedBranchTransactions{t}), WithBranchMachineProviders(branchMachineTestProviders()))
+	resumeStore := &mockWorkspaceQuerier{}
+	resumeStore.getRepoByIDFn = func(context.Context, int64) (db.Repository, error) {
+		return db.Repository{UserID: pgtype.Int8{Int64: 7, Valid: true}}, nil
+	}
+	resume := NewWorkspaceService(resumeStore, WithWorkspaceBillingPolicy(policy), WithWorkspaceTransactions(unopenedBranchTransactions{t}), WithBranchMachineProviders(branchMachineTestProviders()))
 	resume.EnableMachineAdmission(nil)
 	_, err := resume.resumeWorkspaceVM(context.Background(), db.Workspace{UserID: 7})
 	require.ErrorIs(t, err, denied)
