@@ -413,15 +413,20 @@ func (s *WorkspaceService) CleanupOverQuotaWorkspaces(ctx context.Context) error
 	// Resolve each owner's plan and metering once per pass. A failed read leaves
 	// that owner's workspaces running; returning the error lets the cleaner count
 	// the failure and retry on its next tick.
-	limits := make(map[int64]*pkgerrors.APIError)
+	limits := make(map[string]*pkgerrors.APIError)
 	var errs []error
 	for _, workspace := range workspaces {
 		if err := ctx.Err(); err != nil {
 			return errors.Join(append(errs, err)...)
 		}
-		limit, checked := limits[workspace.UserID]
+		billingCtx, payer, err := s.workspaceBillingContext(ctx, workspace.UserID, workspace.RepositoryID)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		limit, checked := limits[payer.Scope()]
 		if !checked {
-			entitlement, err := sandboxEntitlementForUser(ctx, s.billing, workspace.UserID)
+			entitlement, err := sandboxEntitlementForUser(billingCtx, s.billing, payer.ID)
 			if err != nil {
 				slog.Warn("sandbox hours check failed", "user_id", workspace.UserID, "error", err)
 				if recorder, ok := s.sandboxMetrics.(SandboxHoursMeteringRecorder); ok {
@@ -431,7 +436,7 @@ func (s *WorkspaceService) CleanupOverQuotaWorkspaces(ctx context.Context) error
 			} else {
 				limit = sandboxDailyHoursError(entitlement)
 			}
-			limits[workspace.UserID] = limit
+			limits[payer.Scope()] = limit
 		}
 		if limit == nil {
 			continue
@@ -969,7 +974,11 @@ func (s *WorkspaceService) reprovisionWorkspaceVM(ctx context.Context, workspace
 	}
 
 	// Replacing a lost VM consumes fresh capacity, just like resuming one.
-	if err := authorizeSandboxStartForUser(ctx, s.billing, workspace.UserID); err != nil {
+	billingCtx, payer, billingErr := s.workspaceBillingContext(ctx, workspace.UserID, workspace.RepositoryID)
+	if billingErr != nil {
+		return workspace, billingErr
+	}
+	if err := authorizeSandboxStartForUser(billingCtx, s.billing, payer.ID); err != nil {
 		return workspace, err
 	}
 	var stampErr error

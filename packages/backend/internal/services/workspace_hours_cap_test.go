@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -41,6 +43,7 @@ func TestWorkspaceService_CleanupOverQuotaWorkspaces(t *testing.T) {
 	workspace := func(id string, owner int64) db.Workspace {
 		ws := sampleDBWorkspace(id)
 		ws.UserID = owner
+		ws.RepositoryID = owner
 		ws.VmID = "vm-" + id
 		// These workspaces are active and cannot be selected by the idle sweep.
 		return ws
@@ -66,6 +69,9 @@ func TestWorkspaceService_CleanupOverQuotaWorkspaces(t *testing.T) {
 	var suspended []string
 	var statuses []string
 	q := &mockWorkspaceQuerier{
+		getRepoByIDFn: func(_ context.Context, id int64) (db.Repository, error) {
+			return db.Repository{UserID: pgtype.Int8{Int64: id, Valid: true}}, nil
+		},
 		listRunningWorkspacesFn: func(context.Context) ([]db.Workspace, error) { return rows, nil },
 		suspendRunningWorkspaceFn: func(_ context.Context, id string) (db.Workspace, error) {
 			statuses = append(statuses, id)
@@ -96,10 +102,13 @@ func TestWorkspaceService_CleanupOverQuotaWorkspaces(t *testing.T) {
 
 func TestWorkspaceService_CleanupOverQuotaWorkspacesListFailureAndNoBilling(t *testing.T) {
 	listCalls := 0
-	q := &mockWorkspaceQuerier{listRunningWorkspacesFn: func(context.Context) ([]db.Workspace, error) {
-		listCalls++
-		return nil, errors.New("listing unavailable")
-	}}
+	q := &mockWorkspaceQuerier{
+		getRepoByIDFn: func(_ context.Context, id int64) (db.Repository, error) {
+			return db.Repository{UserID: pgtype.Int8{Int64: id, Valid: true}}, nil
+		}, listRunningWorkspacesFn: func(context.Context) ([]db.Workspace, error) {
+			listCalls++
+			return nil, errors.New("listing unavailable")
+		}}
 	withoutBilling := newWorkspaceServiceForTests(q)
 	require.NoError(t, withoutBilling.CleanupOverQuotaWorkspaces(context.Background()))
 	assert.Zero(t, listCalls)
@@ -119,6 +128,9 @@ func TestWorkspaceService_CleanupOverQuotaWorkspacesRetriesRefusedSleep(t *testi
 	}
 	var attempts, statusWrites int
 	q := &mockWorkspaceQuerier{
+		getRepoByIDFn: func(_ context.Context, id int64) (db.Repository, error) {
+			return db.Repository{UserID: pgtype.Int8{Int64: ws.UserID, Valid: true}}, nil
+		},
 		listRunningWorkspacesFn: func(context.Context) ([]db.Workspace, error) { return []db.Workspace{ws}, nil },
 		suspendRunningWorkspaceFn: func(context.Context, string) (db.Workspace, error) {
 			statusWrites++
@@ -151,6 +163,9 @@ func TestWorkspaceService_CleanupOverQuotaWorkspacesRetriesEntitlementRead(t *te
 	}
 	suspends := 0
 	svc := newWorkspaceServiceForTests(&mockWorkspaceQuerier{
+		getRepoByIDFn: func(context.Context, int64) (db.Repository, error) {
+			return db.Repository{UserID: pgtype.Int8{Int64: ws.UserID, Valid: true}}, nil
+		},
 		listRunningWorkspacesFn: func(context.Context) ([]db.Workspace, error) { return []db.Workspace{ws}, nil },
 	}, WithWorkspaceBillingPolicy(policy), WithWorkspaceSandboxClient(&mockWorkspaceSandboxVMClient{
 		suspendVMFn: func(context.Context, string) (sandbox.SuspendResult, error) {
@@ -176,6 +191,9 @@ func TestWorkspaceService_CleanupOverQuotaWorkspacesCanceledBeforeEntitlement(t 
 	policy := &hoursCapPolicy{reads: map[int64]int{}}
 	suspends := 0
 	svc := newWorkspaceServiceForTests(&mockWorkspaceQuerier{
+		getRepoByIDFn: func(context.Context, int64) (db.Repository, error) {
+			return db.Repository{UserID: pgtype.Int8{Int64: ws.UserID, Valid: true}}, nil
+		},
 		listRunningWorkspacesFn: func(context.Context) ([]db.Workspace, error) { return []db.Workspace{ws}, nil },
 	}, WithWorkspaceBillingPolicy(policy), WithWorkspaceSandboxClient(&mockWorkspaceSandboxVMClient{
 		suspendVMFn: func(context.Context, string) (sandbox.SuspendResult, error) {
@@ -206,6 +224,9 @@ func TestWorkspaceService_CleanupOverQuotaWorkspacesReadsNewDayAllowance(t *test
 	}
 	suspends := 0
 	svc := newWorkspaceServiceForTests(&mockWorkspaceQuerier{
+		getRepoByIDFn: func(context.Context, int64) (db.Repository, error) {
+			return db.Repository{UserID: pgtype.Int8{Int64: ws.UserID, Valid: true}}, nil
+		},
 		listRunningWorkspacesFn: func(context.Context) ([]db.Workspace, error) { return []db.Workspace{ws}, nil },
 	}, WithWorkspaceBillingPolicy(policy), WithWorkspaceSandboxClient(&mockWorkspaceSandboxVMClient{
 		suspendVMFn: func(context.Context, string) (sandbox.SuspendResult, error) {

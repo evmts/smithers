@@ -10,8 +10,39 @@ import (
 	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
+func (s *WorkspaceService) workspaceBillingContext(ctx context.Context, userID, repositoryID int64) (context.Context, sandbox.BillingOwner, error) {
+	if s.billing == nil {
+		return ctx, sandbox.BillingOwner{Type: "user", ID: userID}, nil
+	}
+	store, ok := s.q.(interface {
+		GetRepoByID(context.Context, int64) (db.Repository, error)
+	})
+	if !ok {
+		return nil, sandbox.BillingOwner{}, pkgerrors.Internal("workspace repository store unavailable")
+	}
+	repo, err := store.GetRepoByID(ctx, repositoryID)
+	if err != nil {
+		return nil, sandbox.BillingOwner{}, err
+	}
+	owner := sandbox.BillingOwner{}
+	if repo.UserID.Valid {
+		owner = sandbox.BillingOwner{Type: "user", ID: repo.UserID.Int64}
+	}
+	if repo.OrgID.Valid {
+		owner = sandbox.BillingOwner{Type: "org", ID: repo.OrgID.Int64}
+	}
+	if !owner.Valid() {
+		return nil, owner, pkgerrors.Internal("repository billing owner unavailable")
+	}
+	return sandbox.WithBillingOwner(ctx, owner), owner, nil
+}
+
 func (s *WorkspaceService) sandboxIdleTimeout(ctx context.Context, userID, repositoryID int64) (int32, error) {
-	entitlement, err := sandboxEntitlementForUser(ctx, s.billing, userID)
+	ctx, owner, err := s.workspaceBillingContext(ctx, userID, repositoryID)
+	if err != nil {
+		return 0, err
+	}
+	entitlement, err := sandboxEntitlementForUser(ctx, s.billing, owner.ID)
 	if err != nil {
 		return 0, err
 	}
@@ -84,7 +115,11 @@ func egressQuotaForUser(ctx context.Context, policy BillingPolicy, userID int64)
 	if err != nil {
 		return nil, err
 	}
-	quota := &sandbox.EgressQuota{BillingUserID: userID, DailyBytes: entitlement.EgressBytesPerDay}
+	owner := sandbox.BillingOwnerFromContext(ctx, userID)
+	quota := &sandbox.EgressQuota{BillingUserID: owner.ID, DailyBytes: entitlement.EgressBytesPerDay}
+	if owner.Type == "org" {
+		quota.BillingOwnerType = owner.Type
+	}
 	if err := (&sandbox.EgressProxyPolicy{Enabled: true, Quota: quota}).Validate(); err != nil {
 		return nil, err
 	}

@@ -17,16 +17,6 @@ SET ended_at = GREATEST(started_at, now())
 WHERE sandbox_kind = $1 AND sandbox_id = $2 AND ended_at IS NULL;
 
 
--- name: SumSandboxAwakeSecondsForUserSinceRaw :one
-SELECT COALESCE(FLOOR(SUM(EXTRACT(EPOCH FROM
-    LEAST(COALESCE(ended_at, now()), now()) - GREATEST(started_at, sqlc.arg(since)::timestamptz)
-))), 0)::bigint AS seconds
-FROM sandbox_usage_intervals
-WHERE user_id = sqlc.arg(user_id)
-  AND started_at < now()
-  AND LEAST(COALESCE(ended_at, now()), now()) > GREATEST(started_at, sqlc.arg(since)::timestamptz);
-
-
 -- name: CloseOrphanedSandboxUsageIntervals :exec
 -- Workspace and agent intervals are product state. Private gateway adapters
 -- reconcile gateway intervals against their own placement records.
@@ -47,29 +37,39 @@ WHERE usage.ended_at IS NULL AND (
     ))
 );
 
--- name: CountOtherActiveSandboxesForWorkspaceResume :one
+-- name: CountOtherActiveSandboxesForWorkspaceResumeRaw :one
 -- Check the exact owned VM and all other product reservations in one statement. A
 -- suspended workspace no longer occupies a slot and is not excluded.
 SELECT
   (
     SELECT COUNT(*) FROM workspaces w
-    WHERE w.user_id = sqlc.arg(user_id)::bigint AND w.deleted_at IS NULL
+    WHERE w.repository_id IN (SELECT r.id FROM repositories r WHERE
+      (sqlc.arg(owner_type)::text='user' AND r.user_id=sqlc.arg(user_id)::bigint) OR (sqlc.arg(owner_type)::text='org' AND r.org_id=sqlc.arg(user_id)::bigint)) AND w.deleted_at IS NULL
       AND w.status IN ('pending', 'starting', 'running')
       AND NOT (w.id = sqlc.arg(workspace_id)::uuid AND w.vm_id = sqlc.arg(vm_id)::text AND w.status = 'running')
   ) + (
     SELECT COUNT(*) FROM agent_sessions a
-    WHERE a.user_id = sqlc.arg(user_id)::bigint AND a.status = 'active'
+    WHERE sqlc.arg(owner_type)::text='user' AND a.user_id = sqlc.arg(user_id)::bigint AND a.status = 'active'
       AND a.started_at IS NOT NULL AND a.deleted_at IS NULL
       AND NOT EXISTS (
         SELECT 1 FROM workspaces w
         WHERE (w.id = a.workspace_id OR w.agent_session_id = a.id)
-          AND w.user_id = sqlc.arg(user_id)::bigint AND w.deleted_at IS NULL
+          AND w.repository_id IN (SELECT r.id FROM repositories r WHERE
+      (sqlc.arg(owner_type)::text='user' AND r.user_id=sqlc.arg(user_id)::bigint) OR (sqlc.arg(owner_type)::text='org' AND r.org_id=sqlc.arg(user_id)::bigint)) AND w.deleted_at IS NULL
           AND w.status IN ('pending', 'starting', 'running')
       )
   ) AS others,
   EXISTS (
     SELECT 1 FROM workspaces w
-    WHERE w.id = sqlc.arg(workspace_id)::uuid AND w.user_id = sqlc.arg(user_id)::bigint
+    WHERE w.id = sqlc.arg(workspace_id)::uuid AND w.repository_id IN (SELECT r.id FROM repositories r WHERE
+      (sqlc.arg(owner_type)::text='user' AND r.user_id=sqlc.arg(user_id)::bigint) OR (sqlc.arg(owner_type)::text='org' AND r.org_id=sqlc.arg(user_id)::bigint))
       AND w.vm_id = sqlc.arg(vm_id)::text AND w.deleted_at IS NULL
       AND w.status IN ('running', 'suspended')
   ) AS matches;
+
+-- name: SumSandboxAwakeSecondsForOwnerSinceRaw :one
+SELECT COALESCE(FLOOR(SUM(EXTRACT(EPOCH FROM
+ LEAST(COALESCE(ended_at,now()),now()) - GREATEST(started_at,sqlc.arg(since)::timestamptz)))),0)::bigint AS seconds
+ FROM sandbox_usage_intervals
+ WHERE billing_owner_type=sqlc.arg(owner_type)::text AND billing_owner_id=sqlc.arg(owner_id)::bigint
+ AND started_at < now() AND LEAST(COALESCE(ended_at,now()),now()) > GREATEST(started_at,sqlc.arg(since)::timestamptz);

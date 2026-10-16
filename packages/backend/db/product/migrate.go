@@ -202,6 +202,7 @@ var migrationRegistry = []migrationSpec{
 	{164, "migrations/0164_chat_archives.sql"},
 	{165, "migrations/0165_github_main_commits.sql"},
 	{166, "migrations/0166_sandbox_egress_billing_owner.sql"},
+	{167, "migrations/0167_sandbox_usage_billing_owner.sql"},
 }
 
 type migration struct {

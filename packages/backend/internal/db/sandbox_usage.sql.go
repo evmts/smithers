@@ -52,48 +52,57 @@ func (q *Queries) CloseSandboxUsageInterval(ctx context.Context, arg CloseSandbo
 	return err
 }
 
-const countOtherActiveSandboxesForWorkspaceResume = `-- name: CountOtherActiveSandboxesForWorkspaceResume :one
+const countOtherActiveSandboxesForWorkspaceResumeRaw = `-- name: CountOtherActiveSandboxesForWorkspaceResumeRaw :one
 SELECT
   (
     SELECT COUNT(*) FROM workspaces w
-    WHERE w.user_id = $1::bigint AND w.deleted_at IS NULL
+    WHERE w.repository_id IN (SELECT r.id FROM repositories r WHERE
+      ($1::text='user' AND r.user_id=$2::bigint) OR ($1::text='org' AND r.org_id=$2::bigint)) AND w.deleted_at IS NULL
       AND w.status IN ('pending', 'starting', 'running')
-      AND NOT (w.id = $2::uuid AND w.vm_id = $3::text AND w.status = 'running')
+      AND NOT (w.id = $3::uuid AND w.vm_id = $4::text AND w.status = 'running')
   ) + (
     SELECT COUNT(*) FROM agent_sessions a
-    WHERE a.user_id = $1::bigint AND a.status = 'active'
+    WHERE $1::text='user' AND a.user_id = $2::bigint AND a.status = 'active'
       AND a.started_at IS NOT NULL AND a.deleted_at IS NULL
       AND NOT EXISTS (
         SELECT 1 FROM workspaces w
         WHERE (w.id = a.workspace_id OR w.agent_session_id = a.id)
-          AND w.user_id = $1::bigint AND w.deleted_at IS NULL
+          AND w.repository_id IN (SELECT r.id FROM repositories r WHERE
+      ($1::text='user' AND r.user_id=$2::bigint) OR ($1::text='org' AND r.org_id=$2::bigint)) AND w.deleted_at IS NULL
           AND w.status IN ('pending', 'starting', 'running')
       )
   ) AS others,
   EXISTS (
     SELECT 1 FROM workspaces w
-    WHERE w.id = $2::uuid AND w.user_id = $1::bigint
-      AND w.vm_id = $3::text AND w.deleted_at IS NULL
+    WHERE w.id = $3::uuid AND w.repository_id IN (SELECT r.id FROM repositories r WHERE
+      ($1::text='user' AND r.user_id=$2::bigint) OR ($1::text='org' AND r.org_id=$2::bigint))
+      AND w.vm_id = $4::text AND w.deleted_at IS NULL
       AND w.status IN ('running', 'suspended')
   ) AS matches
 `
 
-type CountOtherActiveSandboxesForWorkspaceResumeParams struct {
+type CountOtherActiveSandboxesForWorkspaceResumeRawParams struct {
+	OwnerType   string `json:"owner_type"`
 	UserID      int64  `json:"user_id"`
 	WorkspaceID string `json:"workspace_id"`
 	VmID        string `json:"vm_id"`
 }
 
-type CountOtherActiveSandboxesForWorkspaceResumeRow struct {
+type CountOtherActiveSandboxesForWorkspaceResumeRawRow struct {
 	Others  int32 `json:"others"`
 	Matches bool  `json:"matches"`
 }
 
 // Check the exact owned VM and all other product reservations in one statement. A
 // suspended workspace no longer occupies a slot and is not excluded.
-func (q *Queries) CountOtherActiveSandboxesForWorkspaceResume(ctx context.Context, arg CountOtherActiveSandboxesForWorkspaceResumeParams) (CountOtherActiveSandboxesForWorkspaceResumeRow, error) {
-	row := q.db.QueryRow(ctx, countOtherActiveSandboxesForWorkspaceResume, arg.UserID, arg.WorkspaceID, arg.VmID)
-	var i CountOtherActiveSandboxesForWorkspaceResumeRow
+func (q *Queries) CountOtherActiveSandboxesForWorkspaceResumeRaw(ctx context.Context, arg CountOtherActiveSandboxesForWorkspaceResumeRawParams) (CountOtherActiveSandboxesForWorkspaceResumeRawRow, error) {
+	row := q.db.QueryRow(ctx, countOtherActiveSandboxesForWorkspaceResumeRaw,
+		arg.OwnerType,
+		arg.UserID,
+		arg.WorkspaceID,
+		arg.VmID,
+	)
+	var i CountOtherActiveSandboxesForWorkspaceResumeRawRow
 	err := row.Scan(&i.Others, &i.Matches)
 	return i, err
 }
@@ -122,23 +131,22 @@ func (q *Queries) OpenSandboxUsageInterval(ctx context.Context, arg OpenSandboxU
 	return err
 }
 
-const sumSandboxAwakeSecondsForUserSinceRaw = `-- name: SumSandboxAwakeSecondsForUserSinceRaw :one
+const sumSandboxAwakeSecondsForOwnerSinceRaw = `-- name: SumSandboxAwakeSecondsForOwnerSinceRaw :one
 SELECT COALESCE(FLOOR(SUM(EXTRACT(EPOCH FROM
-    LEAST(COALESCE(ended_at, now()), now()) - GREATEST(started_at, $1::timestamptz)
-))), 0)::bigint AS seconds
-FROM sandbox_usage_intervals
-WHERE user_id = $2
-  AND started_at < now()
-  AND LEAST(COALESCE(ended_at, now()), now()) > GREATEST(started_at, $1::timestamptz)
+ LEAST(COALESCE(ended_at,now()),now()) - GREATEST(started_at,$1::timestamptz)))),0)::bigint AS seconds
+ FROM sandbox_usage_intervals
+ WHERE billing_owner_type=$2::text AND billing_owner_id=$3::bigint
+ AND started_at < now() AND LEAST(COALESCE(ended_at,now()),now()) > GREATEST(started_at,$1::timestamptz)
 `
 
-type SumSandboxAwakeSecondsForUserSinceRawParams struct {
-	Since  time.Time `json:"since"`
-	UserID int64     `json:"user_id"`
+type SumSandboxAwakeSecondsForOwnerSinceRawParams struct {
+	Since     time.Time `json:"since"`
+	OwnerType string    `json:"owner_type"`
+	OwnerID   int64     `json:"owner_id"`
 }
 
-func (q *Queries) SumSandboxAwakeSecondsForUserSinceRaw(ctx context.Context, arg SumSandboxAwakeSecondsForUserSinceRawParams) (int64, error) {
-	row := q.db.QueryRow(ctx, sumSandboxAwakeSecondsForUserSinceRaw, arg.Since, arg.UserID)
+func (q *Queries) SumSandboxAwakeSecondsForOwnerSinceRaw(ctx context.Context, arg SumSandboxAwakeSecondsForOwnerSinceRawParams) (int64, error) {
+	row := q.db.QueryRow(ctx, sumSandboxAwakeSecondsForOwnerSinceRaw, arg.Since, arg.OwnerType, arg.OwnerID)
 	var seconds int64
 	err := row.Scan(&seconds)
 	return seconds, err

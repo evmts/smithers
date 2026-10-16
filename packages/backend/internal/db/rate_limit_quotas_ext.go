@@ -1,6 +1,10 @@
 package db
 
-import "context"
+import (
+	"context"
+
+	"github.com/smithersai/smithers/packages/backend/sandbox"
+)
 
 func (q *Queries) CountConnectedReposForUser(ctx context.Context, userID int64) (int, error) {
 	var count int
@@ -43,10 +47,10 @@ WHERE wr.status IN ('queued', 'running')
 func (q *Queries) CountActiveSandboxesForUser(ctx context.Context, userID int64) (int, error) {
 	var count int
 	err := q.db.QueryRow(ctx, `
-SELECT COUNT(*) FROM workspaces w
-WHERE w.user_id = $1 AND w.deleted_at IS NULL
+SELECT COUNT(*) FROM workspaces w JOIN repositories r ON r.id=w.repository_id
+WHERE (($2='user' AND r.user_id=$1) OR ($2='org' AND r.org_id=$1)) AND w.deleted_at IS NULL
   AND w.status IN ('pending', 'starting', 'running')
   AND NOT EXISTS (SELECT 1 FROM workspace_children c WHERE c.workspace_id = w.id)
-`, userID).Scan(&count)
+`, userID, sandbox.BillingOwnerFromContext(ctx, userID).Type).Scan(&count)
 	return count, err
 }

@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -56,7 +58,7 @@ func TestWorkspacePlanIdleTimeoutStamping(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			q := &workspaceIdleStore{mockWorkspaceQuerier: &mockWorkspaceQuerier{}}
 			q.getRepoByIDFn = func(context.Context, int64) (db.Repository, error) {
-				return db.Repository{WorkspaceIdleTimeoutSecs: tc.override}, nil
+				return db.Repository{UserID: pgtype.Int8{Int64: user, Valid: true}, WorkspaceIdleTimeoutSecs: tc.override}, nil
 			}
 			svc := machines(q, WithWorkspaceBillingPolicy(sandboxPolicyStub{entitlement: SandboxEntitlement{IdleTimeoutSecs: tc.plan}}))
 			workspace, err := svc.createWorkspaceRow(context.Background(), db.CreateWorkspaceParams{UserID: user, RepositoryID: repo, TargetBookmark: "idle/" + strings.ReplaceAll(tc.name, " ", "-"), Kind: "container", Status: "starting"})
@@ -117,7 +119,7 @@ func TestUnlimitedBillingPolicyIdleControlsRemainDeliberate(t *testing.T) {
 	policy := NewUnlimitedBillingPolicy()
 	q := &workspaceIdleStore{mockWorkspaceQuerier: &mockWorkspaceQuerier{}}
 	q.getRepoByIDFn = func(context.Context, int64) (db.Repository, error) {
-		return db.Repository{WorkspaceIdleTimeoutSecs: 900}, nil
+		return db.Repository{UserID: pgtype.Int8{Int64: 7, Valid: true}, WorkspaceIdleTimeoutSecs: 900}, nil
 	}
 	workspace := NewWorkspaceService(q, WithWorkspaceBillingPolicy(policy))
 	idle, err := workspace.sandboxIdleTimeout(t.Context(), 7, 9)

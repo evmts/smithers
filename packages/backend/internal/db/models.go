@@ -2504,12 +2504,14 @@ type SandboxEgressUsage struct {
 }
 
 type SandboxUsageInterval struct {
-	ID          string             `json:"id"`
-	UserID      int64              `json:"user_id"`
-	SandboxKind string             `json:"sandbox_kind"`
-	SandboxID   string             `json:"sandbox_id"`
-	StartedAt   time.Time          `json:"started_at"`
-	EndedAt     pgtype.Timestamptz `json:"ended_at"`
+	ID               string             `json:"id"`
+	UserID           int64              `json:"user_id"`
+	SandboxKind      string             `json:"sandbox_kind"`
+	SandboxID        string             `json:"sandbox_id"`
+	StartedAt        time.Time          `json:"started_at"`
+	EndedAt          pgtype.Timestamptz `json:"ended_at"`
+	BillingOwnerType string             `json:"billing_owner_type"`
+	BillingOwnerID   int64              `json:"billing_owner_id"`
 }
 
 type SearchRateLimit struct {

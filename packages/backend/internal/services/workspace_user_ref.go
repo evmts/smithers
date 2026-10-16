@@ -48,7 +48,7 @@ func (s *WorkspaceService) createUserRefWorkspace(ctx context.Context, input Cre
 	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return db.Workspace{}, pkgerrors.Internal("load mythical stack: " + err.Error())
 	}
-	if err := s.enforceWorkspaceQuota(ctx, input.UserID); err != nil {
+	if err := s.enforceWorkspaceQuota(ctx, input.UserID, input.RepositoryID); err != nil {
 		return db.Workspace{}, err
 	}
 	id := uuid.New()

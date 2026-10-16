@@ -450,7 +450,11 @@ func (s *WorkspaceService) workspaceEgressProxy(ctx context.Context, repositoryI
 		if err != nil {
 			return nil, err
 		}
-		policy.Quota, err = egressQuotaForUser(ctx, s.billing, workspace.UserID)
+		billingCtx, owner, err := s.workspaceBillingContext(ctx, workspace.UserID, workspace.RepositoryID)
+		if err != nil {
+			return nil, err
+		}
+		policy.Quota, err = egressQuotaForUser(billingCtx, s.billing, owner.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -1144,7 +1148,14 @@ func mapWorkspaceCreateError(err error, action string) error {
 // backstops it with trg_workspaces_user_quota, which serializes concurrent
 // inserts per user and re-counts, closing the check-then-insert race across
 // concurrent create/fork/snapshot-restore requests.
-func (s *WorkspaceService) enforceWorkspaceQuota(ctx context.Context, userID int64) error {
+func (s *WorkspaceService) enforceWorkspaceQuota(ctx context.Context, userID int64, repositoryIDs ...int64) error {
+	if len(repositoryIDs) > 0 && s.billing != nil {
+		billingCtx, payer, err := s.workspaceBillingContext(ctx, userID, repositoryIDs[0])
+		if err != nil {
+			return err
+		}
+		ctx, userID = billingCtx, payer.ID
+	}
 	if err := authorizeSandboxStartForUser(ctx, s.billing, userID); err != nil {
 		return err
 	}

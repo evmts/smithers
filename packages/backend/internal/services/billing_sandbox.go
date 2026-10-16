@@ -7,16 +7,23 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 func (s *BillingService) SandboxEntitlement(ctx context.Context, userID int64) (SandboxEntitlement, error) {
 	if userID <= 0 {
 		return SandboxEntitlement{}, pkgerrors.BadRequest("invalid sandbox billing user ID")
 	}
-	plan, err := s.resolvePlan(ctx, billingOwnerRef{OwnerType: BillingOwnerTypeUser, OwnerID: userID})
+	owner := sandbox.BillingOwnerFromContext(ctx, userID)
+	if !owner.Valid() {
+		return SandboxEntitlement{}, pkgerrors.BadRequest("invalid sandbox billing owner")
+	}
+	plan, err := s.resolvePlan(ctx, billingOwnerRef{OwnerType: owner.Type, OwnerID: owner.ID})
 	if err != nil {
 		return SandboxEntitlement{}, err
 	}
+	userID = owner.ID
 	q, ok := s.queries.(BillingQuerier)
 	if !ok {
 		return SandboxEntitlement{}, pkgerrors.Internal("sandbox metering store unavailable")
