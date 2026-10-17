@@ -573,6 +573,93 @@ for (const installed of [false, true]) {
   )
 }
 
+// J5: an earlier TODO's verified head moved this TODO's prefix after its
+// candidate was accepted. The stack rebased the candidate and refused the
+// stale proposal; the run captures the rebased generation and proposes it.
+// Any other refusal still ends the run.
+for (const refusal of ["reserved_candidate_rebased", "reserved_candidate_changed"]) {
+  test(`vibe landing: a stack proposal refused with ${refusal}`, { timeout: 60_000 }, async (t) => {
+    const calls: string[] = []
+    const unused = () => Effect.die("a stack request neither appends nor opens its own pull request")
+    const fake: BackendLanding = {
+      kind: "backend",
+      binding: { repositoryId: 42, workspaceId: "11111111-1111-4111-a111-111111111111" },
+      readMain: unused(),
+      pinMain: unused(),
+      readDelivery: Effect.succeed("append" as const),
+      openPull: unused,
+      prepare: unused,
+      create: unused,
+      queue: unused,
+      observe: unused,
+      readStack: Effect.succeed(true),
+      submitLane: unused
+    }
+    let generation = 2
+    const native = Layer.succeed(NativeCoding, {
+      sourcePublication: "cloud",
+      stackCandidate: () =>
+        Effect.sync(() => {
+          generation += 1
+          calls.push(`candidate:${generation}`)
+          return { generation, base: stackTip, head: last.commitId }
+        }),
+      stackPropose: (_requestId, proposed) =>
+        Effect.suspend(() => {
+          calls.push(`propose:${proposed}`)
+          return proposed === 3
+            ? Effect.fail(
+              new NativeCodingError({
+                code: "source_refused",
+                message: `Reserved stack operation refused (source_refused: ${refusal})`
+              })
+            )
+            : Effect.succeed({ generation: proposed, head: last.commitId })
+        }),
+      read: () => Effect.die("no reads"),
+      apply: () => Effect.die("no writes"),
+      publishOriginalSource: (request) =>
+        Effect.succeed({
+          status: "retained" as const,
+          requestId: request.requestId,
+          workspaceId: fake.binding.workspaceId,
+          repositoryId: 42,
+          ref: `refs/smithers/workspaces/${fake.binding.workspaceId}/sources/${request.source.commitId}`,
+          source: request.source
+        })
+    })
+    const host = ManagedRuntime.make(
+      Layer.mergeAll(
+        stackBaseLayer,
+        backendLandingLayers,
+        landerLayer,
+        publicationLayers,
+        noChecks,
+        Poll.layer,
+        Sleep.layer
+      )
+        .pipe(
+          Layer.provide(Layer.mergeAll(Layer.succeed(Landing, fake), native)),
+          Layer.provideMerge(Action.layerImplementations),
+          Layer.provideMerge(FlowEngine.layerMemory),
+          Layer.provideMerge(NodeCrypto.layer)
+        )
+    )
+    t.after(() => host.dispose())
+    const exit = await host.runPromiseExit(InstallLandVibe.execute(fromStack, { executionId: "rebased" }))
+    if (refusal === "reserved_candidate_rebased") {
+      assert.equal(exit._tag, "Success")
+      assert.ok(exit._tag === "Success" && "proposal" in exit.value)
+      assert.deepEqual(exit.value.proposal, { generation: 4, head: last.commitId })
+      assert.deepEqual(calls, ["candidate:3", "propose:3", "candidate:4", "propose:4"])
+    } else {
+      assert.equal(exit._tag, "Failure")
+      assert.match(String(exit), /source_refused: reserved_candidate_changed/)
+      assert.deepEqual(calls, ["candidate:3", "propose:3"])
+    }
+  })
+}
+
 /** One durable store two engine processes share, so a restart reclaims a dead owner's run. */
 const durableStores = Layer.mergeAll(
   SqlJournal.layer({ capacity: 1024, overflow: "reject" }),

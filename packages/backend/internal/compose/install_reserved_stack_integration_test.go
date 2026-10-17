@@ -648,6 +648,42 @@ func TestInstallReservedStackOperationsPostgres(t *testing.T) {
 		require.Contains(t, out.Body.String(), "source_refused: reserved_candidate_changed")
 		require.Equal(t, before, runtime.calls)
 	})
+	t.Run("a proposal whose prefix moved waits for the stack's rebase, then learns the rebased generation", func(t *testing.T) {
+		before, err := f.q.GetMythicalItemByNumber(f.ctx, f.repoID, 1)
+		require.NoError(t, err)
+		defer func() {
+			_, err := f.pool.Exec(f.ctx, `UPDATE mythical_items SET state=$2,generation=$3,candidate_base=$4,candidate_verified=$5,checks=$6,reason=$7 WHERE id=$1`, itemID, before.State, before.Generation, before.CandidateBase, before.CandidateVerified, before.Checks, before.Reason)
+			require.NoError(t, err)
+		}()
+		// J5: the run's verified candidate sits on main's old tip; an earlier
+		// item's verified head becomes its prefix before the stack proposes it.
+		_, err = f.pool.Exec(f.ctx, `UPDATE mythical_items SET state='verifying',candidate_base=$2,candidate_verified=true,checks=checks || jsonb_build_object('proposal_run','current-run','proposal_head',candidate_head) WHERE id=$1`, itemID, strings.Repeat("d", 40))
+		require.NoError(t, err)
+		var passes int
+		require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT requested_generation FROM mythical_stacks WHERE repository_id=$1`, f.repoID).Scan(&passes))
+		calls := runtime.calls
+		stale := fmt.Sprintf(`{"requestId":%q,"generation":7}`, uuid.NewString())
+		call(t, token, "propose", stale, 202)
+		require.Equal(t, calls, runtime.calls, "a proposal waiting for its rebase observes nothing")
+		var after int
+		require.NoError(t, f.pool.QueryRow(f.ctx, `SELECT requested_generation FROM mythical_stacks WHERE repository_id=$1`, f.repoID).Scan(&after))
+		require.Greater(t, after, passes, "the waiting proposal asks the stack for its rebase")
+		// The stack marked it rebase_pending first: it still waits.
+		_, err = f.pool.Exec(f.ctx, `UPDATE mythical_items SET state='integrating',candidate_verified=false,reason='rebase_pending',checks=checks || jsonb_build_object('rebase',jsonb_build_object('onto',$2::text)) WHERE id=$1`, itemID, base)
+		require.NoError(t, err)
+		call(t, token, "propose", stale, 202)
+		require.Equal(t, calls, runtime.calls)
+		// The stack rebased the run's candidate onto its prefix as generation 8.
+		_, err = f.pool.Exec(f.ctx, `UPDATE mythical_items SET generation=8,candidate_base=$2,candidate_verified=false,checks=checks || jsonb_build_object('rebase',jsonb_build_object('onto',$2::text,'rebased',true)) WHERE id=$1`, itemID, base)
+		require.NoError(t, err)
+		out := call(t, token, "propose", stale, 409)
+		require.Contains(t, out.Body.String(), "source_refused: reserved_candidate_rebased")
+		// Another run's stale proposal is still only a changed candidate.
+		_, err = f.pool.Exec(f.ctx, `UPDATE mythical_items SET checks=checks || '{"proposal_run":"other-run"}' WHERE id=$1`, itemID)
+		require.NoError(t, err)
+		out = call(t, token, "propose", fmt.Sprintf(`{"requestId":%q,"generation":7}`, uuid.NewString()), 409)
+		require.Contains(t, out.Body.String(), "source_refused: reserved_candidate_changed")
+	})
 	t.Run("changed tree invalidates publication", func(t *testing.T) {
 		freshProposal := strings.Replace(proposal, "22222222-2222-4222-8222-222222222222", "66666666-6666-4666-8666-666666666666", 1)
 		runtime.head = strings.Repeat("e", 40)

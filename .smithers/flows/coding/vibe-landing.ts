@@ -20,7 +20,7 @@ import {
   QueuedAppend
 } from "./landing-schema.ts"
 import { Landing, requireBackend } from "./landing.ts"
-import { requestIdFor } from "./native.ts"
+import { NativeCodingError, requestIdFor } from "./native.ts"
 import { type Check, CodingError, type Implementation, Receipt } from "./schema.ts"
 import { Candidate, Propose } from "./stack.ts"
 import { verifySummary } from "./verify-schema.ts"
@@ -269,6 +269,44 @@ const pullRequest = (cleanup: VibeCleanup) =>
           )))
       )))
   )
+/** How many times the stack may rebase one run's accepted candidate before the stack proposes it. */
+const maximumProposalRebases = 3
+const candidateRebased = /source_refused: reserved_candidate_rebased\b/
+/**
+ * Proposes a captured generation. When an earlier item's verified head or main
+ * moved first, the stack rebases the candidate and refuses the stale proposal
+ * (reserved_candidate_rebased); the run then captures the rebased generation
+ * and proposes that one (§10.4.1: clean rebase → candidate → check → propose).
+ */
+const proposeCandidate = (
+  plan: VibeCleanup["admission"]["request"]["plan"],
+  generation: number | Planned.Planned<number>,
+  rebases: number
+): Node.Node<
+  typeof Propose.successSchema.Type,
+  CodingError | NativeCodingError,
+  Action.Requirement<typeof Candidate.name | typeof Propose.name>
+> =>
+  // Planning expands both arms, so the last allowed proposal is built without the retry arm.
+  rebases === 0 ? Propose.call({ generation }) : Propose.call({ generation }).pipe(
+    Node.catch({
+      error: NativeCodingError,
+      onFailure: Node.capture({}, (error) =>
+        Node.branch(Node.succeed(error), {
+          if: Node.capture(
+            {},
+            (failure) => failure.code === "source_refused" && candidateRebased.test(failure.message)
+          ),
+          then: Node.capture({}, () =>
+            Candidate.call({ plan }).pipe(
+              Node.bindPlanned(
+                Node.capture({}, (candidate) => proposeCandidate(plan, candidate.generation, rebases - 1))
+              )
+            )),
+          else: Node.capture({}, (failure) => Node.fail(failure))
+        }))
+    })
+  )
 /** Return the retained result to the existing stack without moving main. */
 const stackProposal = (
   cleanup: VibeCleanup,
@@ -279,7 +317,13 @@ const stackProposal = (
       if: Node.capture({}, (fromStack) => fromStack),
       then: Node.capture({}, () =>
         Candidate.call({ plan: cleanup.admission.request.plan }).pipe(
-          Node.bindPlanned(Node.capture({}, (candidate) => Propose.call({ generation: candidate.generation }))),
+          Node.bindPlanned(
+            Node.capture(
+              {},
+              (candidate) =>
+                proposeCandidate(cleanup.admission.request.plan, candidate.generation, maximumProposalRebases)
+            )
+          ),
           Node.bindPlanned(Node.capture({}, (proposal) => Node.succeed({ cleanup, cleanedSource, proposal })))
         )),
       else: Node.capture({}, () => SubmitLane.call({ cleanup, cleanedSource }))

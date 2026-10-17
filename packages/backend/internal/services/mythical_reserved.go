@@ -214,6 +214,21 @@ func (s *MythicalService) ReservedStackOperation(ctx context.Context, repository
 		if consumedSource && checks.ProposalRun == item.RequestRunID && checks.ProposalHead == input.Source.CommitID && checks.Rebase != nil && !checks.Rebase.Rebased {
 			return empty, 202, tx.Commit(live)
 		}
+		// An accepted candidate: verified or verifying, or already marked
+		// rebase_pending by the stack. Bytes still pending capture are not.
+		accepted := checks.Capture == nil && (item.CandidateVerified || item.State == "verifying" && (item.VerifyOutcome == "" || item.VerifyOutcome == "passed") ||
+			checks.Rebase != nil && !checks.Rebase.Rebased)
+		if command == "stack.propose" && codingCommitID.MatchString(prefix) && item.CandidateHead != "" && accepted &&
+			item.RequestRunID != "" && checks.ProposalRun == item.RequestRunID && input.Generation == item.Generation {
+			// An earlier item's verified head or main moved under this run's
+			// accepted candidate before the stack proposed it (§10.3.2). The
+			// stack's own rebase advances the candidate; the proposal waits for
+			// it and then learns the new generation (reserved_candidate_rebased).
+			if _, err := q.RequestMythicalStack(live, repository); err != nil {
+				return empty, 0, err
+			}
+			return empty, 202, tx.Commit(live)
+		}
 		s.logger.Warn("source_refused: reserved_prefix_mismatch", "actual", initialBase, "expected", prefix, "candidate_base", item.CandidateBase)
 		return empty, 0, pkgerrors.Conflict("source_refused: reserved_prefix_mismatch")
 	}
@@ -255,6 +270,14 @@ func (s *MythicalService) ReservedStackOperation(ctx context.Context, repository
 	// passing projection still waits for the engine to accept the checks.
 	checking := item.State == "verifying" && (item.VerifyOutcome == "" || item.VerifyOutcome == "passed")
 	if command == "stack.propose" && (input.Generation != item.Generation || !item.CandidateVerified && !checking || item.CandidateBase != prefix) {
+		if checks := mythicalChecksOf(item); input.Generation < item.Generation && checks.Rebase != nil && checks.Rebase.Rebased &&
+			item.RequestRunID != "" && checks.ProposalRun == item.RequestRunID {
+			// The stack rebased this run's own candidate onto its new prefix.
+			// The run captures the rebased generation and proposes that one
+			// (§10.4.1: clean rebase → candidate → check → stack.propose).
+			s.logger.Warn("source_refused: reserved_candidate_rebased", "actual_generation", input.Generation, "expected_generation", item.Generation, "base", item.CandidateBase)
+			return empty, 0, pkgerrors.Conflict("source_refused: reserved_candidate_rebased")
+		}
 		s.logger.Warn("source_refused: reserved_candidate_changed", "actual_generation", input.Generation, "expected_generation", item.Generation, "actual_base", item.CandidateBase, "expected_base", prefix)
 		return empty, 0, pkgerrors.Conflict("source_refused: reserved_candidate_changed")
 	}

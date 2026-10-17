@@ -29,7 +29,8 @@ test("a rebuilt TODO plan keeps the recorded plan's identity", () => {
 
 /**
  * A typed catch filters by an error schema whose AST holds functions. That
- * identity is the plan package's, stable within a process, not a flow callback.
+ * identity is the plan package's, stable within a process, not a flow callback
+ * (#4212: it still differs across processes).
  */
 const isCatchFilter = (diagnostic: Graph.Graph["diagnostics"][number]) =>
   diagnostic.code === "unstable_callback" && diagnostic.path.join(".") === "filter"
