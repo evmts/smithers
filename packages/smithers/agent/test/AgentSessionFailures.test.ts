@@ -326,6 +326,7 @@ interface ScenarioOptions {
   readonly logs?: Array<string>
   readonly logDetails?: Array<Readonly<Record<string, unknown>>>
   readonly abandonedParkAfter?: Duration.Duration | undefined
+  readonly authorizeReleasedChildren?: AgentSession.Options["authorizeReleasedChildren"]
   readonly canExecute?: AgentSession.Options["canExecute"]
   readonly runs?: Partial<RunStore.Service> | undefined
   readonly agent?: Agent.Service | undefined
@@ -370,6 +371,7 @@ const withExecutor = <A>(
   Effect.gen(function*() {
     const executor = yield* AgentSession.make({
       canExecute: options.canExecute,
+      authorizeReleasedChildren: options.authorizeReleasedChildren,
       reenterModules: options.reenterModules,
       reentryCheckpoint: options.reentryCheckpoint,
       abandonedParkAfter: options.abandonedParkAfter,
@@ -1495,26 +1497,33 @@ describe("the executor's driver admission fence", () => {
     expect(result).toEqual({ acceptance: "accepted", status: "failed" })
   })
 
-  it("keeps corrupt succeeded-attempt evidence recoverable in the control record", async () => {
-    const record = recorder()
-    const corruption = new AttemptEvidenceQuarantined({
-      code: "attempt_evidence_quarantined",
-      keyDigest: "saved-key",
-      attempt: 1,
-      path: "/saved.txt",
-      recordedDigest: "original",
-      measuredDigest: "corrupt"
-    })
-    const result = await launched(record, {
-      agent: Agent.makeNoop({ run: () => Stream.die(corruption) })
-    })
+  it.each(["typed", "encoded", "interrupted"] as const)(
+    "keeps %s corrupt succeeded-attempt evidence recoverable in the control record",
+    async (mode) => {
+      const record = recorder()
+      const corruption = new AttemptEvidenceQuarantined({
+        code: "attempt_evidence_quarantined",
+        keyDigest: "saved-key",
+        attempt: 1,
+        path: "/saved.txt",
+        recordedDigest: "original",
+        measuredDigest: "corrupt"
+      })
+      const encoded = Schema.encodeSync(AttemptEvidenceQuarantined)(corruption)
+      const cause = mode === "typed" ? Cause.die(corruption) : mode === "encoded" ?
+        Cause.die(encoded) :
+        Cause.combine(Cause.interrupt(), Cause.die(encoded))
+      const result = await launched(record, {
+        agent: Agent.makeNoop({ run: () => Stream.failCause(cause) })
+      })
 
-    expect(result).toEqual({ acceptance: "accepted", status: "parked" })
-    expect(record.statuses).not.toContain("failed")
-    expect(record.journaled.map((entry) => entry.eventType)).toContain("control.run.parked")
-    expect(JSON.stringify(record.journaled.find((entry) => entry.eventType === "control.run.parked")?.payload))
-      .toContain("AttemptEvidenceQuarantined")
-  })
+      expect(result).toEqual({ acceptance: "accepted", status: "parked" })
+      expect(record.statuses).not.toContain("failed")
+      expect(record.journaled.map((entry) => entry.eventType)).toContain("control.run.parked")
+      expect(JSON.stringify(record.journaled.find((entry) => entry.eventType === "control.run.parked")?.payload))
+        .toContain("AttemptEvidenceQuarantined")
+    }
+  )
 
   it("journals the provider code and message ahead of the outer frame stack", async () => {
     const record = recorder()
@@ -2977,6 +2986,44 @@ describe("approved descriptor snapshots", () => {
 })
 
 describe("consented resume authorization", () => {
+  it("grants a parked body's queued operator consent before clearing it and running", async () => {
+    const record = recorder()
+    const order: string[] = []
+    let entered = false
+    const result = await launched(record, {
+      authorizeReleasedChildren: (id, sequence) =>
+        Effect.sync(() => {
+          order.push(`grant:${id}:${sequence}`)
+        }),
+      agent: Agent.makeNoop({
+        run: () =>
+          Stream.suspend(() => {
+            order.push("body")
+            return completed
+          })
+      }),
+      runtime: {
+        getRun: () => Effect.succeed({ ...launchInput.run, status: entered ? "parked" : "running" }),
+        pendingResumes: Effect.sync(() => entered ? [{ runId, sequence: 7, requestedAtMs: 0, consent: 7 }] : []),
+        clearResume: (id, sequence) =>
+          Effect.sync(() => {
+            order.push(`clear:${id}:${sequence}`)
+          })
+      },
+      engine: (engine) =>
+        ({
+          ...engine,
+          execute: (flow: never, options: never) =>
+            Effect.suspend(() => {
+              entered = true
+              return engine.execute(flow, options)
+            })
+        }) as unknown as EngineService
+    })
+    expect(result).toEqual({ acceptance: "accepted", status: "completed" })
+    expect(order).toEqual([`grant:${runId}:7`, `clear:${runId}:7`, "body"])
+  })
+
   it("leaves a consented delegation standing when the workspace guard still refuses", async () => {
     const record = recorder()
     const checked = Deferred.makeUnsafe<void>()
