@@ -915,7 +915,8 @@
     "package": "packages/backend/internal/services",
     "file": "member_add_stage_test.go",
     "tests": [
-      "TestMemberAddSlowStageNamesItself"
+      "TestMemberAddSlowStageNamesItself",
+      "TestMemberAddNamesTheBlockedStageOfARealRequestPostgres"
     ]
   },
   {

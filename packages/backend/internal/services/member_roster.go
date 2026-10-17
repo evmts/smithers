@@ -400,7 +400,11 @@ type memberAddClock struct {
 }
 
 func (m *Members) addClock(ctx context.Context) *memberAddClock {
-	return &memberAddClock{ctx: ctx, pool: m.Pool, budget: memberAddSlowStage}
+	budget := memberAddSlowStage
+	if m.addStageBudget > 0 {
+		budget = m.addStageBudget
+	}
+	return &memberAddClock{ctx: ctx, pool: m.Pool, budget: budget}
 }
 
 // memberAddStageWatch is one stage's own clock.

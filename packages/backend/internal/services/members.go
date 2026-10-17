@@ -18,10 +18,16 @@ import (
 // token minter (§12.1.3), and Budget accounts every GitHub request the roster
 // makes against the install's shared rate budget.
 type Members struct {
-	Pool           *pgxpool.Pool
-	Credentials    GitHubAppCredentialReader
-	Minter         GitHubInstallationTokenMinter
-	Budget         *BudgetTracker
+	Pool        *pgxpool.Pool
+	Credentials GitHubAppCredentialReader
+	Minter      GitHubInstallationTokenMinter
+	Budget      *BudgetTracker
+	// addStageBudget shortens memberAddSlowStage for a test that has to watch
+	// a real blocked request report itself. It is unexported, so nothing
+	// outside this package can set it, and zero means the production budget.
+	// It changes no deadline, timeout or fence: only when a stage that is
+	// already running becomes worth a line.
+	addStageBudget time.Duration
 	permissionPoll *memberPermissionPoll
 }
 
