@@ -301,14 +301,20 @@ describe("Docker push image archive", () => {
     expect(await Fs.readFile(source)).toEqual(archive.bytes)
     const loadable = await DockerExec.readImageArchive(destination)
     expect(loadable).toMatchObject({ manifest: image.manifest, config: image.config, loadable: true })
-    const listed = spawnSync("tar", ["-xOf", destination, "manifest.json"], { encoding: "utf8" })
+    const listed = spawnSync("tar", ["-xOf", Path.basename(destination), "manifest.json"], {
+      cwd: Path.dirname(destination),
+      encoding: "utf8"
+    })
     expect(listed.status, listed.stderr).toBe(0)
     expect(JSON.parse(listed.stdout)).toEqual([{
       Config: `blobs/sha256/${image.config.slice(7)}`,
       RepoTags: null,
       Layers: image.layers.map((layer) => `blobs/sha256/${layer.slice(7)}`)
     }])
-    const names = spawnSync("tar", ["-tf", destination], { encoding: "utf8" }).stdout.trim().split("\n")
+    const names = spawnSync("tar", ["-tf", Path.basename(destination)], {
+      cwd: Path.dirname(destination),
+      encoding: "utf8"
+    }).stdout.trim().split("\n")
     expect(names).toContain("index.json")
     expect(names).toContain(`blobs/sha256/${image.layers[0]!.slice(7)}`)
   })
