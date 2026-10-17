@@ -192,6 +192,25 @@ describe.each(process.platform === "win32" ? ["native" as const] : ["native", "t
         expect(control.cleanupAcknowledged).toBe(true)
       }))
 
+    it("keeps receiving terminal receipts after a request-channel reset", () =>
+      session(async (control, socket) => {
+        control.activationSent = true
+        await send(socket, ready, spawned)
+        await bounded(control.started.promise)
+        const failure = Object.assign(new Error("request connection reset"), { code: "ECONNRESET" })
+        const failed = once(control.requestSocket!, "error")
+        control.requestSocket!.destroy(failure)
+        expect(await bounded(failed)).toEqual([failure])
+        expect(control.fault).toBe(failure)
+        await expect(control.write({ type: "stop" })).rejects.toMatchObject({ code: "control_channel_closed" })
+        expect(control.socket!.destroyed).toBe(false)
+        await send(socket, exited, { type: "cleanup" })
+        socket.end()
+        expect(await bounded(control.exited.promise)).toBe(0)
+        await bounded(control.ended.promise)
+        expect(control.cleanupAcknowledged).toBe(true)
+      }))
+
     it("settles every pending outcome when the raw owner exits before connecting", async () => {
       const control = new Control(transport)
       try {
