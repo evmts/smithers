@@ -152,6 +152,18 @@ describe("outcome classifier", () => {
 })
 
 describe("service shutdown observation", () => {
+  it("refuses an unhandled termination after readiness", () => {
+    expect(
+      classifyOutcome({
+        exitCode: null,
+        signal: "SIGTERM",
+        stdout: "listening on 4000",
+        stderr: "",
+        sawReadiness: true
+      }).outcome
+    ).toBe("failed")
+  })
+
   it("requires a clean SIGTERM shutdown after readiness", async () => {
     const workspace = await Fs.mkdtemp(NodePath.join(NodeOs.tmpdir(), "sweep-service-"))
     try {
@@ -187,12 +199,23 @@ setInterval(() => {}, 1000);
           reset: false
         })
         const result = report.results[0]!
-        if (exit !== null) expect(await Fs.readFile(receipt, "utf8")).toBe(String(exit))
-        expect(result.observed.exitCode).toBe(exit)
-        expect(result.observed.signal).toBe(exit === null ? "SIGKILL" : null)
-        expect(result.observed.outcome).toBe(exit === 0 ? "ready" : "failed")
-        expect(result.verdict).toBe(exit === 0 ? "pass" : "mismatch")
-        expect(report.ok).toBe(exit === 0)
+        if (process.platform === "win32") {
+          // TerminateProcess cannot invoke the JavaScript handler. A hard kill
+          // after readiness must never count as a clean service shutdown.
+          await expect(Fs.stat(receipt)).rejects.toMatchObject({ code: "ENOENT" })
+          expect(result.observed.exitCode).toBeNull()
+          expect(result.observed.signal).toBe("SIGTERM")
+          expect(result.observed.outcome).toBe("failed")
+          expect(result.verdict).toBe("mismatch")
+          expect(report.ok).toBe(false)
+        } else {
+          if (exit !== null) expect(await Fs.readFile(receipt, "utf8")).toBe(String(exit))
+          expect(result.observed.exitCode).toBe(exit)
+          expect(result.observed.signal).toBe(exit === null ? "SIGKILL" : null)
+          expect(result.observed.outcome).toBe(exit === 0 ? "ready" : "failed")
+          expect(result.verdict).toBe(exit === 0 ? "pass" : "mismatch")
+          expect(report.ok).toBe(exit === 0)
+        }
       }
     } finally {
       await Fs.rm(workspace, { recursive: true, force: true })
@@ -359,11 +382,17 @@ describe("graph output parsing", () => {
   })
 
   it("keeps the documented defaults pointing at the frozen artifacts", () => {
-    expect(defaults.expectations.endsWith("packages/smithers/build/build-cli/test/fixtures/sweep-expectations.json"))
+    expect(
+      defaults.expectations.endsWith(
+        NodePath.join("packages", "smithers", "build", "build-cli", "test", "fixtures", "sweep-expectations.json")
+      )
+    )
       .toBe(
         true
       )
-    expect(defaults.cli.endsWith("packages/smithers/build/build-cli/src/main.js")).toBe(true)
+    expect(defaults.cli.endsWith(NodePath.join("packages", "smithers", "build", "build-cli", "src", "main.js"))).toBe(
+      true
+    )
     expect(defaults.invoke).toBe("run {label}")
   })
 })

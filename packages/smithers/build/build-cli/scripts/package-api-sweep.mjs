@@ -178,7 +178,7 @@ export const compareLabelSets = (expected, actual) => {
  * Classifies one finished CLI invocation. Pure: everything observed comes in
  * as data, so the vitest suite drives it with stubbed outputs.
  */
-export const classifyOutcome = ({ exitCode, signal, stdout, stderr, timedOut = false, sawReadiness = false }) => {
+export const classifyOutcome = ({ exitCode, signal = null, stdout, stderr, timedOut = false, sawReadiness = false }) => {
   const output = `${stdout}\n${stderr}`
   const detectedCodes = Object.entries(refusalRecognizers)
     .filter(([, pattern]) => pattern.test(output))
@@ -187,7 +187,7 @@ export const classifyOutcome = ({ exitCode, signal, stdout, stderr, timedOut = f
     return { outcome: "not-implemented", detectedCodes }
   }
   if (timedOut) return { outcome: sawReadiness ? "failed" : "timeout", detectedCodes }
-  if (sawReadiness && (exitCode === 0 || signal === "SIGTERM")) return { outcome: "ready", detectedCodes }
+  if (sawReadiness && exitCode === 0 && signal === null) return { outcome: "ready", detectedCodes }
   if (exitCode === 0) return { outcome: "green", detectedCodes }
   return { outcome: "failed", detectedCodes }
 }
