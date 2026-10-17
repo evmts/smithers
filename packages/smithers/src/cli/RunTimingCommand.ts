@@ -32,7 +32,9 @@ const unknownRun = (runId: string) =>
 export const appendRunTiming = (cli: Cli.Cli, runtime: Bridge.Runtime = {}): Cli.Cli => {
   const commands = Cli.toCommands.get(cli)!
   const show = commands.get("show")
-  if (show === undefined || !("run" in show)) throw new Error("runs show is not registered")
+  if (show === undefined || !("run" in show)) {
+    throw new CliError.Refused({ fault: "bug", code: "runs_show_unregistered", message: "runs show is not registered" })
+  }
   const timing = (c: any) =>
     Presentation.guard(c, async () => {
       const runId: string = c.args.run
