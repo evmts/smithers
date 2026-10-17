@@ -331,6 +331,11 @@ const makeWithEngineJj = (
     // Resolved at composition like the sandboxes: a verifier composes an
     // engine that replays and executes nothing (`ReplayOnly`).
     const replayOnly = Option.getOrUndefined(yield* Effect.serviceOption(ReplayOnly.ReplayOnly))
+    // Verification observes current code over copied history. Its plan is a
+    // separate producer's immutable observation, never a replacement of the
+    // executing producer's approved plan. ReplayOnly still refuses every new action.
+    const observation = (record: FlowRuntime.NodeRecord): FlowRuntime.NodeRecord =>
+      replayOnly === undefined ? record : { ...record, sourceId: `replay-only/${record.sourceId}` }
     const engineState = yield* DurableEngineState.DurableEngineState
     const attemptSurvivors = engineState.attemptSurvivors
     /**
@@ -523,7 +528,7 @@ const makeWithEngineJj = (
        * walk it no longer owns.
        */
       nodeRecordBytes: (input) => {
-        const record = input
+        const record = observation(input)
         return Effect.flatMap(FlowRuntime.FlowInstance, (parent) =>
           Effect.map(planProvenance(parent, record), (provenance) =>
             NodeJournal.encodedBytes({
@@ -534,7 +539,7 @@ const makeWithEngineJj = (
             }, record)))
       },
       recordNode: (input) => {
-        const record = input
+        const record = observation(input)
         return Effect.flatMap(FlowRuntime.FlowInstance, (parent) =>
           Effect.flatMap(planProvenance(parent, record), (provenance) =>
             journal.emitDurable(

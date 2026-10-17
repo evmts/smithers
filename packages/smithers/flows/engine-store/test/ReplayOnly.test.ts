@@ -7,12 +7,14 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
-import { Action, DurableDeferred, Flow, type FlowRuntime, RetryPolicy } from "@smthrs/flow"
+import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
+import { Journal, JournalEvent } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
+import { Node } from "@smthrs/plan"
 import { AttemptStore, RunStore } from "@smthrs/run-store"
 import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
-import type * as Layer from "effect/Layer"
+import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
@@ -183,6 +185,102 @@ describe("ReplayOnly", () => {
       ])
       for (const dispatch of seen) expect((yield* attempt(dispatch.stepKeyDigest))?.state).toBe("succeeded")
       expect(seen.every((dispatch) => dispatch.runId === "verified" && dispatch.attempt === 1)).toBe(true)
+    })))
+
+  it.effect("a changed authored plan is observed separately and still executes no new action", () =>
+    run(Effect.gen(function*() {
+      const ran: Array<string> = []
+      const seen: Array<ReplayOnly.Dispatch> = []
+      const first = Action.make("ReplayOnly/declared-first", {
+        payload: {},
+        success: Schema.String,
+        tier: "irreversible"
+      })
+      const second = Action.make("ReplayOnly/declared-second", {
+        payload: {},
+        success: Schema.String,
+        tier: "irreversible"
+      })
+      const changed = Action.make("ReplayOnly/declared-changed", {
+        payload: {},
+        success: Schema.String,
+        tier: "irreversible"
+      })
+      const wait = Action.make("ReplayOnly/declared-wait", { payload: {}, success: Schema.String })
+      const flowFor = (choice: typeof second | typeof changed) =>
+        Flow.make("ReplayOnly/Declared", {
+          payload: {},
+          success: Schema.String,
+          body: Node.capture({ action: choice.name }, () =>
+            first.call({}).pipe(
+              Node.andThen<
+                string,
+                never,
+                Action.Requirement<"ReplayOnly/declared-second"> | Action.Requirement<"ReplayOnly/declared-changed">
+              >(choice.call({})),
+              Node.andThen(wait.call({}))
+            ))
+        })
+      const observe = (choice: typeof second | typeof changed, verification: boolean) =>
+        Effect.scoped(Effect.gen(function*() {
+          const make = engineFor("same-plan-producer")
+          const engine = yield* (verification ?
+            make.pipe(Effect.provide(ReplayOnly.layer((event) => Effect.sync(() => seen.push(event))))) :
+            make)
+          const flow = flowFor(choice)
+          const implementations = Layer.mergeAll(
+            first.toLayer(() =>
+              Effect.sync(() => {
+                ran.push(first.name)
+                return "first"
+              })
+            ),
+            choice.toLayer(() =>
+              Effect.sync(() => {
+                ran.push(choice.name)
+                return "second"
+              })
+            ),
+            wait.toLayer(() => DurableDeferred.await(gate)),
+            Interpreter.layer(flow)
+          ).pipe(
+            Layer.provideMerge(Action.layerImplementations),
+            Layer.provideMerge(Layer.succeed(FlowRuntime.FlowRuntime, engine))
+          )
+          if (!verification) {
+            yield* executeUntilParked(engine, flow, { executionId: "authored", payload: {}, discard: true }).pipe(
+              Effect.provide(implementations)
+            )
+          } else {
+            yield* Effect.gen(function*() {
+              yield* flow.execute({}, { executionId: "authored", discard: true })
+              const runs = yield* RunStore.RunStore
+              yield* TestDatabase.until(Effect.map(runs.get("authored"), (row) => row.status === "failed"))
+            }).pipe(Effect.provide(implementations))
+          }
+        })).pipe(Effect.provideService(DurableEngineState.DurableEngineState, DurableEngineState.makeMemory()))
+      yield* observe(second, false)
+      const journal = yield* Journal.Journal
+      const before = yield* journal.entries({
+        runId: JournalEvent.RunId.make("authored"),
+        eventTypes: ["flows.engine.plan-recorded"],
+        limit: 100
+      })
+      yield* observe(changed, true)
+      expect(ran).toEqual([first.name, second.name])
+      expect(seen.map((event) => [event.action, event.outcome])).toEqual([
+        [first.name, "replayed"],
+        [changed.name, "would-execute"]
+      ])
+      expect(yield* attempt(seen[1]!.stepKeyDigest)).toBeUndefined()
+      const after = yield* journal.entries({
+        runId: JournalEvent.RunId.make("authored"),
+        eventTypes: ["flows.engine.plan-recorded"],
+        limit: 100
+      })
+      expect(after.entries).toHaveLength(2)
+      expect(after.entries[0]).toEqual(before.entries[0])
+      expect(new Set(after.entries.map((entry) => entry.sourceId)).size).toBe(2)
     })))
 
   it.effect("a re-keyed step stops at the gate before any attempt, body or retry", () =>
