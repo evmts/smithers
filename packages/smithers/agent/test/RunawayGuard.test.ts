@@ -981,9 +981,14 @@ describe("a run parked on a timeout", () => {
     const bash: Guarded = { flows: () => [StandardFlows.shell(shell)] }
     const root = makeRoot()
     const ran = join(root, "ran.log")
+    // Both cmd.exe and POSIX shells can run this Node program; the path is
+    // data, so neither shell interprets its separators or spaces.
+    const command = `node -e "require('node:fs').appendFileSync(Buffer.from('${
+      Buffer.from(ran).toString("base64")
+    }', 'base64').toString(), 'ran\\n'); setTimeout(() => {}, 5000)"`
     script = (n) => ({
       source: n === 0
-        ? `await ctx.call("bash", { command: "echo ran >> ${ran}; sleep 5", timeoutMs: 200 })\nctx.done("ran")`
+        ? `await ctx.call("bash", ${JSON.stringify({ command, timeoutMs: 200 })})\nctx.done("ran")`
         : `ctx.done("again")`,
       delayMillis: 0
     })
