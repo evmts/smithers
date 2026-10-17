@@ -622,7 +622,14 @@ test("a stack-only repository landing shows its fallback and keeps Files reachab
   const home = host.querySelector('[data-testid="repository-home"]')
   expect(home).not.toBeNull()
   expect(home!.textContent).toContain("Project work")
-  expect(home!.querySelector('[role="status"]')?.textContent).toBe("Stack unavailable")
+  /*
+   * This host serves no history event stream, so the stack cannot be shown.
+   * The block says which read refused, in the seam's own words, rather than
+   * dropping the declaration or claiming a stack it never read.
+   */
+  const unavailable = home!.querySelector<HTMLElement>('[data-testid="repository-home-stack"]')!
+  expect(unavailable.dataset.stack).toBe("refused")
+  expect(unavailable.querySelector('[role="status"]')?.textContent).toContain("could not open the history's event stream")
   expect(writes).toEqual([])
   const files = home!.querySelector<HTMLButtonElement>(".repository-home-files")
   expect(files).not.toBeNull()
@@ -632,4 +639,100 @@ test("a stack-only repository landing shows its fallback and keeps Files reachab
     copyId: `shared:${REPO}`, path: "", state: "loaded", entries: [{ name: "README.md", kind: "file" }]
   }))
   expect(writes).toEqual([])
+})
+
+test("a served stack is the repository landing's own content, with Files reachable and nothing launched", async () => {
+  const writes: string[] = []
+  const backend = ownedRepository({
+    [`${ROOT}/home`]: json(200, { kind: "blocks", blocks: [{ type: "stack", title: "Project work" }] }),
+    [`${ROOT}/contents`]: json(200, [{ name: "README.md", path: "README.md", type: "file" }]),
+    [`${ROOT}/flows`]: json(200, []),
+    /* The hint stream the seam needs before it keeps a snapshot live; it carries no hint and closes. */
+    [`${ROOT}/mythical/events`]: () => new Response(new ReadableStream({ start: (controller) => { controller.close() } }), {
+      status: 200, headers: { "content-type": "text/event-stream" }
+    }),
+    [`${ROOT}/mythical`]: json(200, {
+      repository: REPO,
+      state: "active",
+      generation: 3,
+      mainBehind: false,
+      limits: { maxParallel: 2 },
+      lanes: [{ index: 0, state: "busy", itemId: "i1" }, { index: 1, state: "idle" }],
+      changes: [{ changeId: "c1", commitId: "a".repeat(40), title: "Wire the deep link", kind: "item", state: "landed", itemId: "i9" }],
+      items: [{
+        id: "i1", state: "running", attempt: 1, lane: 0, runs: {}, dependsOn: [], updatedAt: "2026-10-16T10:00:00.000Z",
+        issue: { number: 2, title: "Wire the deep link", url: `https://github.com/${REPO}/issues/2` }
+      }]
+    })
+  })
+  const originalFetch = backend.fetchImpl
+  backend.services.fetchImpl = async (input, init) => {
+    if (init?.method !== undefined && init.method !== "GET") writes.push(init.method)
+    return originalFetch(input, init)
+  }
+  const { store, controller } = await enter(`/${REPO}`, backend)
+  const { host } = mount(controller)
+  await settled()
+  const stack = host.querySelector<HTMLElement>('[data-testid="repository-home-stack"]')
+  expect(stack).not.toBeNull()
+  // The repository's own live stack, not a fallback: its work, its counts, its landed change.
+  expect(stack!.dataset.stack).toBe("served")
+  expect(stack!.textContent).toContain("#2 Wire the deep link")
+  expect(stack!.querySelector('[data-testid="repository-home-stack-counts"]')!.textContent)
+    .toBe("1 of 2 lanes working · 0 queued · 0 to decide · 1 changes, 1 landed")
+  expect(stack!.querySelector('[role="status"]')).toBeNull()
+  // Opening the page read; it never wrote, admitted a model or launched a flow.
+  expect(writes).toEqual([])
+  const files = host.querySelector<HTMLButtonElement>(".repository-home-files")
+  expect(files).not.toBeNull()
+  flushSync(() => files!.click())
+  await settled()
+  expect([...store.collections.repoTree.values()]).toContainEqual(expect.objectContaining({
+    copyId: `shared:${REPO}`, path: "", state: "loaded", entries: [{ name: "README.md", kind: "file" }]
+  }))
+  expect(writes).toEqual([])
+})
+
+test("a stack the host stops serving is not left on the landing as live work", async () => {
+  /*
+   * The seam's readFailed publishes the LAST GOOD snapshot together with the
+   * refusal, so a repository landing that read a stack and then lost access
+   * must say the read refused rather than keep that work on screen.
+   */
+  let revoke: (() => void) | undefined
+  const backend = ownedRepository({
+    [`${ROOT}/home`]: json(200, { kind: "blocks", blocks: [{ type: "stack", title: "Project work" }] }),
+    [`${ROOT}/contents`]: json(200, [{ name: "README.md", path: "README.md", type: "file" }]),
+    [`${ROOT}/flows`]: json(200, []),
+    [`${ROOT}/mythical/events`]: () => new Response(new ReadableStream<Uint8Array>({
+      start: (stream) => {
+        revoke = () => { stream.enqueue(new TextEncoder().encode("event: revoked\n\n")); stream.close() }
+      }
+    }), { status: 200, headers: { "content-type": "text/event-stream" } }),
+    [`${ROOT}/mythical`]: json(200, {
+      repository: REPO, state: "active", generation: 1, mainBehind: false,
+      limits: { maxParallel: 1 }, lanes: [{ index: 0, state: "busy", itemId: "i1" }], changes: [],
+      items: [{
+        id: "i1", state: "running", attempt: 1, lane: 0, runs: {}, dependsOn: [], updatedAt: "2026-10-16T10:00:00.000Z",
+        issue: { number: 2, title: "Wire the deep link", url: `https://github.com/${REPO}/issues/2` }
+      }]
+    })
+  })
+  const { controller } = await enter(`/${REPO}`, backend)
+  const { host } = mount(controller)
+  await settled()
+  const read = host.querySelector<HTMLElement>('[data-testid="repository-home-stack"]')!
+  expect(read.dataset.stack).toBe("served")
+  expect(read.textContent).toContain("#2 Wire the deep link")
+
+  revoke!()
+  for (let attempt = 0; attempt < 40 && host.querySelector<HTMLElement>('[data-testid="repository-home-stack"]')?.dataset.stack === "served"; attempt++) await settled(1)
+  const refused = host.querySelector<HTMLElement>('[data-testid="repository-home-stack"]')!
+  expect(refused.dataset.stack).toBe("refused")
+  expect(refused.querySelector('[role="status"]')?.textContent ?? "").not.toBe("")
+  // The work it last read is gone, not presented as current.
+  expect(refused.textContent).not.toContain("#2 Wire the deep link")
+  expect(refused.querySelector('[data-testid="repository-home-stack-counts"]')).toBeNull()
+  // The tree is still one press away.
+  expect(host.querySelector(".repository-home-files")).not.toBeNull()
 })

@@ -468,3 +468,21 @@ test("History exposes no obsolete TODO Land door", async () => {
   const { controller } = await setup()
   expect(controller.commands.entries().map(nameOf)).not.toContain("history.land")
 })
+
+test("a watched snapshot is dropped when the account changes, never read by the next person (#4085)", async () => {
+  const fake = cloud()
+  const { store, controller } = await setup(fake)
+  /*
+   * The homepage's `stack` block reads `repositorySnapshots.get(repo)`, the
+   * same published value this watch fills (AppController watches a repository
+   * whose declared home carries a stack block). It must not survive an
+   * account change: the next person would read the previous one's work.
+   */
+  controller.showWikiPane()
+  await waitFor(() => controller.repositorySnapshots.get(REPO)?.stack?.generation === 1)
+  expect(stackCard(store)).toBeUndefined()
+
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "bob", admin: false, scopesPlain: null }).isPersisted.promise
+  await waitFor(() => controller.repositorySnapshots.get(REPO) === undefined)
+  expect(controller.repositorySnapshots.get(REPO)).toBeUndefined()
+})

@@ -1,5 +1,10 @@
-import { Button, Markdown } from "@smthrs/ui"
+import { Button, Markdown, StatusPill } from "@smthrs/ui"
+import { useContext, useSyncExternalStore } from "react"
 import type { RepositoryHome } from "@smthrs/rpc/RepositoryHome"
+import type { MythicalStack } from "@smthrs/rpc/Mythical"
+import { itemReason, itemStateLabel, itemTitle, stackCounts, stackRows } from "@smthrs/rpc/StackView"
+import { ControllerContext } from "../ControllerContext"
+import type { RepositorySnapshot, RepositorySnapshots } from "../state/seams/RepositoryHistorySeam"
 import { dynamicFlowProps } from "../flows/FlowAction"
 import type { RunDynamicCommand } from "./CardFamily"
 import "./RepositoryHomeView.css"
@@ -31,6 +36,13 @@ import "./RepositoryHomeView.css"
  * Honest fallback: a declaration that is absent, unreadable, invalid or
  * failed leaves the tree in place, and an outright failure says so. The
  * Files act is in the view either way, so the tree is one press away.
+ *
+ * A declared `stack` block reads the repository's OWN live snapshot from the
+ * stack seam, which already watches a repository whose homepage declares one.
+ * Where the host serves that snapshot it is the block's content, through the
+ * shared `@smthrs/rpc/StackView` projections and the shipped StatusPill;
+ * where it does not, the block is one honest line. An accepted declaration is
+ * never dropped in silence.
  */
 
 /** The transcript slot the repository's declared view occupies at `/owner/repo`. */
@@ -46,6 +58,84 @@ export interface RepositoryHomeViewProps {
   /** The copy the Files act lists; absent when this page has no copy to read. */
   readonly treeCopyId: string | undefined
   readonly onRunCommand: RunDynamicCommand
+}
+
+const NO_SNAPSHOTS: RepositorySnapshots = { get: () => undefined, subscribe: () => () => {} }
+
+/**
+ * The stack seam's live snapshot of ONE repository, read the way the Wiki
+ * pane reads it (WorldSurface). `watchRepository` already keeps it live for a
+ * homepage that declares a stack block (AppController), so this view only
+ * reads; outside a controller there is no snapshot and no subscription.
+ */
+const useRepositorySnapshot = (repo: string): RepositorySnapshot | undefined => {
+  const snapshots = useContext(ControllerContext)?.repositorySnapshots ?? NO_SNAPSHOTS
+  return useSyncExternalStore(snapshots.subscribe, () => snapshots.get(repo), () => snapshots.get(repo))
+}
+
+/** The homepage shows the top of the stack; the stack's own view has the rest. */
+const STACK_ROWS = 5
+
+/**
+ * The served snapshot: the shared counts projection, then the shared rows —
+ * work not yet on the stack above the stack's own changes, exactly the order
+ * `stackRows` already defines. Every row is text: nothing here is a control,
+ * so this view holds no workflow UI of its own.
+ */
+const StackSummary = ({ stack }: { readonly stack: MythicalStack }) => {
+  const counts = stackCounts(stack)
+  const rows = stackRows(stack).slice(0, STACK_ROWS)
+  return <>
+    <p className="repository-home-stack-counts" data-testid="repository-home-stack-counts">
+      {`${counts.busy} of ${counts.maxParallel} lanes working · ${counts.queued} queued · ${counts.open} to decide · ${counts.changes} changes, ${counts.landed} landed`}
+    </p>
+    {rows.length === 0
+      ? <p className="repository-home-notice" role="status">Nothing on the stack right now.</p>
+      : <ul className="repository-home-stack-rows">
+        {rows.map((row) => {
+          const title = row.kind === "item" ? itemTitle(stack, row.item) : row.change.title
+          const state = row.kind === "item" ? row.item.state : row.change.state
+          const label = row.kind === "item" ? itemStateLabel(row.item) : row.change.state
+          const reason = row.kind === "item" ? itemReason(row.item) : row.item === undefined ? undefined : itemReason(row.item)
+          return <li className="repository-home-stack-row" key={row.key}>
+            <span className="repository-home-stack-title">{title}</span>
+            <StatusPill status={state} label={label} />
+            {reason === undefined ? null : <span className="repository-home-stack-reason">{reason}</span>}
+          </li>
+        })}
+      </ul>}
+  </>
+}
+
+/**
+ * The declared `stack` block (#4085). An accepted declaration gets a truthful
+ * answer: the repository's own live stack where this host serves it, else ONE
+ * honest line — the seam's refusal, the stack's own absence, or this build's
+ * plain "unavailable" where nothing serves it. Files stays below either way,
+ * and reading a snapshot runs no command and admits no model or agent.
+ */
+const StackBlock = ({ repo, title }: { readonly repo: string; readonly title: string | undefined }) => {
+  const snapshot = useRepositorySnapshot(repo)
+  /*
+   * The seam's `readFailed` publishes the LAST GOOD stack together with the
+   * error, so a non-null stack beside an error is not a live read. Stale work
+   * is never shown as current: the refused read is the whole answer, and the
+   * tree is still below it.
+   */
+  const refusal = snapshot?.error ?? undefined
+  const stack = refusal === undefined ? snapshot?.stack ?? null : null
+  /* `absent` is the stack saying it does not exist yet, not a failed read. */
+  const absent = stack !== null && stack.state === "absent"
+  const notice = stack === null
+    ? refusal ?? "Stack unavailable"
+    : absent ? stack.reason ?? "No stack on this repository yet." : undefined
+  return <div className="repository-home-block repository-home-stack" data-testid="repository-home-stack"
+    data-stack={stack === null ? refusal === undefined ? "unavailable" : "refused" : absent ? "absent" : "served"}>
+    {title === undefined ? null : <h2>{title}</h2>}
+    {notice === undefined
+      ? <StackSummary stack={stack!} />
+      : <p className="repository-home-notice" role="status">{notice}</p>}
+  </div>
 }
 
 /** The repository's file tree, always one press from its own default view. */
@@ -79,10 +169,7 @@ export function RepositoryHomeView({ repo, home, treeCopyId, onRunCommand }: Rep
       const key = `${block.type}:${index}`
       switch (block.type) {
         case "stack":
-          return <div className="repository-home-block" key={key}>
-            {block.title === undefined ? null : <h2>{block.title}</h2>}
-            <p className="repository-home-notice" role="status">Stack unavailable</p>
-          </div>
+          return <StackBlock key={key} repo={repo} title={block.title} />
         case "markdown":
           return <div className="repository-home-block" key={key}>
             {block.title === undefined ? null : <h2>{block.title}</h2>}
