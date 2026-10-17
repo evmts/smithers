@@ -56,12 +56,14 @@ test("distribution files live beside their callers and model fakes stay gone", (
     "apps/app/licenses/git-COPYING", "packages/smithers/scripts/build-cli.mjs", "packages/smithers/scripts/install-cli.mjs"]) {
     assert.ok(existsSync(`${root}/${file}`), file)
   }
-  // Only the hand-written model fakes remain, until recorded models replace
-  // them (#4086); nothing new joins them.
-  assert.deepEqual(readdirSync(`${root}/distribution`).sort(), ["fake-coding-provider.mjs", "fake-coding-provider.test.mjs",
-    "fake-todo-provider.mjs", "fake-todo-turns.d.mts", "fake-todo-turns.mjs", "fake-todo-turns.test.mjs"])
+  // Only the journey rehearsals' scripted TODO model remains, until recorded
+  // models replace it (#4086); the real-host coding test replays a recording
+  // through @smthrs/testing's model server, and nothing new joins it.
+  assert.deepEqual(readdirSync(`${root}/distribution`).sort(), ["fake-todo-provider.mjs", "fake-todo-turns.d.mts",
+    "fake-todo-turns.mjs", "fake-todo-turns.test.mjs"])
   const patterns = ["distribution/" + "flow-host-manifest", "distribution/" + "licenses",
-    "distribution/" + "install-cli", "distribution/" + "build-cli", "distribution/" + "backend_build_test"]
+    "distribution/" + "install-cli", "distribution/" + "build-cli", "distribution/" + "backend_build_test",
+    "fake-coding-" + "provider"]
   const found = references(root, [".github", "scripts", "apps", "packages", "flows", "PACKAGE.ts"], patterns)
   assert.deepEqual(found, [], found.join("\n"))
 })

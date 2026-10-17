@@ -771,7 +771,7 @@ jobs:
           SMITHERS_POSTGRES_TEST_MAJOR: "18"
       - name: Distribution release contracts
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
-        run: node --test scripts/repo-contract/mac-distribution.test.mjs distribution/fake-coding-provider.test.mjs
+        run: node --test scripts/repo-contract/mac-distribution.test.mjs
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 26.4.0
