@@ -57,6 +57,20 @@ const runScript = (script: string, path: string): Promise<{
     )
   })
 
+/** Proves Git can execute the installed hook with both CLIs deliberately absent. */
+const expectRunnableHook = (root: string, name: string): void => {
+  const git = PackageTree.findOnPath("git")
+  const shell = PackageTree.findOnPath("sh")
+  expect(git).toBeDefined()
+  expect(shell).toBeDefined()
+  const result = NodeChildProcess.spawnSync(git!, ["-C", root, "hook", "run", name], {
+    env: { ...process.env, PATH: NodePath.dirname(shell!) },
+    encoding: "utf8"
+  })
+  expect(result.status, result.stderr).toBe(0)
+  expect(result.stderr).toContain("smthrs: CLI not found on PATH")
+}
+
 describe("resolveHookLabels", () => {
   it("resolves the force-spec workspace bindings to root labels", async () => {
     const index = await openIndex()
@@ -198,7 +212,8 @@ describe("check and install", () => {
     const after = await GitHooks.check(root, rendered)
     expect(after.clean).toBe(true)
     const stats = await Fs.stat(NodePath.join(root, ".git", "hooks", "pre-commit"))
-    expect(stats.mode & 0o111).not.toBe(0)
+    if (process.platform !== "win32") expect(stats.mode & 0o111).not.toBe(0)
+    expectRunnableHook(root, "pre-commit")
     await Fs.appendFile(NodePath.join(root, ".git", "hooks", "pre-commit"), "# manual edit\n", "utf8")
     const drifted = await GitHooks.check(root, rendered)
     expect(drifted.clean).toBe(false)
@@ -258,7 +273,10 @@ describe("check and install", () => {
     await GitHooks.install(root, rendered)
     expect(await Fs.readFile(NodePath.join(hooksDirectory, "pre-commit"), "utf8"))
       .toBe(rendered[0]!.content)
-    expect((await Fs.stat(NodePath.join(hooksDirectory, "pre-commit"))).mode & 0o111).not.toBe(0)
+    if (process.platform !== "win32") {
+      expect((await Fs.stat(NodePath.join(hooksDirectory, "pre-commit"))).mode & 0o111).not.toBe(0)
+    }
+    expectRunnableHook(root, "pre-commit")
     expect((await GitHooks.check(root, rendered)).clean).toBe(true)
     await Fs.appendFile(NodePath.join(hooksDirectory, "pre-commit"), "# drift\n")
     expect((await GitHooks.check(root, rendered)).entries)
