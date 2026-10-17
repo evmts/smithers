@@ -143,7 +143,7 @@ describe("module layer composition", () => {
               }).pipe(Effect.provide(executable.layer))
             ).toBe("new implementation")
             if (persistent) {
-              const journal = yield* Journal.Journal
+              const journal = Option.getOrThrow(yield* Effect.serviceOption(Journal.Journal))
               const page = yield* journal.entries({
                 runId: "adopted-run" as never,
                 eventTypes: ["flows.engine.plan-recorded"],
