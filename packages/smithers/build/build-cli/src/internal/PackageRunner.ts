@@ -1200,7 +1200,8 @@ export const executeEffect = (
      */
     const ci7Fixture = (label: string, writeSet: ReadonlyArray<string>): boolean =>
       root.includes("smthrs-package-exec-") && label === "//:generated" && writeSet.length === 2 &&
-      writeSet.includes("out.txt") && writeSet.includes("entered.txt")
+      writeSet.includes("out.txt") && writeSet.includes("entered.txt") &&
+      JSON.stringify((planned.nodes.get(label)?.attrs as { readonly shell?: unknown } | undefined)?.shell)?.includes(".smithers/workflows/ci.tsx") === true
     const ci7Trace = (phase: string, value: string): void => {
       let text = value
       for (const [name, secret] of Object.entries(options.environment ?? process.env)) {
@@ -1260,7 +1261,7 @@ export const executeEffect = (
           const ran: ExecOutcome = Exit.isSuccess(exit) ?
             exit.value
             : { ok: false, error: causeText(exit.cause, "write") }
-          if (ci7Fixture(label, writeSet)) {
+          if (!ran.ok && ci7Fixture(label, writeSet)) {
             ci7Trace("BODY", JSON.stringify({ ok: ran.ok, error: ran.ok ? undefined : ran.error }))
             if (Exit.isFailure(exit)) {
               const value = Cause.squash(exit.cause)
@@ -1310,7 +1311,6 @@ export const executeEffect = (
             const resolved = PackageTree.resolveChangedPath(root, path)
             if (resolved === undefined || !matchesWriteSet(resolved, writeSet)) outOfSet.push(path)
           }
-          if (ci7Fixture(label, writeSet)) ci7Trace("PATHS", JSON.stringify({ changed, changedIgnored, outOfSet }))
           for (const path of outOfSet) yield* joined(() => PackageTree.revertPath(snapshot, path, quarantine))
           const ignoredOutOfSet: Array<string> = []
           for (const path of changedIgnored) {
@@ -1321,6 +1321,7 @@ export const executeEffect = (
             }
           }
           const offenders = [...outOfSet, ...ignoredOutOfSet, ...escapedPortals]
+          if (offenders.some((path) => path.endsWith("out.txt")) && ci7Fixture(label, writeSet)) ci7Trace("PATHS", JSON.stringify({ changed, changedIgnored, offenders }))
           if (offenders.length > 0) {
             if (unrestored.length === 0) {
               return {
