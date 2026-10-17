@@ -4,7 +4,9 @@ import { promisify } from "node:util"
 import { expect, test } from "../browserTest"
 
 // Engineering CLI boundary with isolated external transport; not host qualification.
-test("C-PRC-03: recorder-to-close refuses invalid evidence before publication", async () => {
+// 27381adab9 moved issue closure out of check-receipts into issue-claim, so this
+// suite now proves the recorder boundary; it pins names the suite still declares.
+test("C-PRC-03: the recorder refuses invalid evidence before publication", async () => {
   test.setTimeout(120_000)
   const root = resolve(__dirname, "../../../../..")
   const { stdout } = await promisify(execFile)(process.execPath,
@@ -13,7 +15,7 @@ test("C-PRC-03: recorder-to-close refuses invalid evidence before publication", 
   expect(stdout).toMatch(/# fail 0\b/)
   expect(stdout).toMatch(/# skipped 0\b/)
   expect(stdout).toMatch(/# pass [1-9]\d*/)
-  expect(stdout).toContain("executable CLI closes recorder-produced evidence through isolated transport")
-  expect(stdout).toContain("root-check-mapping-validation: markers refuse recorder and close without dispatch")
-  expect(stdout).toContain("duplicate CI artifact identities refuse at recorder and completed-close boundaries")
+  expect(stdout).toContain("GitHub check success authenticates artifact claims at recorder boundary")
+  expect(stdout).toContain("root-check-mapping-validation: markers refuse recorder without dispatch")
+  expect(stdout).toContain("duplicate CI artifact identities refuse at recorder boundary")
 })
