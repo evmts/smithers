@@ -174,7 +174,7 @@ func TestInstallCandidateAuthorizationPostgres(t *testing.T) {
 		call(run, input, 202)
 		afterReplay = reads.Load()
 	})
-	t.Run("merge fence and closed items refuse equal-source replay before repository reads", func(t *testing.T) {
+	t.Run("merge fence and closed items admit only receipt lookup before repository reads", func(t *testing.T) {
 		for _, state := range []string{"merging", "landed", "cancelled", "rejected", "declined", "skipped"} {
 			t.Run(state, func(t *testing.T) {
 				if state == "merging" {
@@ -183,10 +183,16 @@ func TestInstallCandidateAuthorizationPostgres(t *testing.T) {
 					_, err = f.pool.Exec(f.ctx, `UPDATE mythical_items SET state=$2,pending_op=NULL WHERE id=$1`, itemID, state)
 				}
 				require.NoError(t, err)
-				call(run, input, 409)
+				before, err := f.q.GetMythicalItemByNumber(f.ctx, f.repoID, 1)
+				require.NoError(t, err)
+				call(run, input, 202)
+				other := input
+				other.Source = strings.Repeat("d", 40)
+				call(run, other, 409)
 				require.Equal(t, afterReplay, reads.Load())
 				retained, err := f.q.GetMythicalItemByNumber(f.ctx, f.repoID, 1)
 				require.NoError(t, err)
+				require.Equal(t, before, retained, "receipt lookup and refused new work preserve the entire item")
 				require.Equal(t, source, retained.CandidateHead)
 				require.True(t, retained.CandidateVerified)
 			})
