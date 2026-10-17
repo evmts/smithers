@@ -31,6 +31,7 @@ const git = (root: string, args: ReadonlyArray<string>): Promise<string> =>
 const temporaryRepo = async (): Promise<string> => {
   const root = await tracked(Fs.realpath(await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-git-commit-"))))
   await git(root, ["init", "--quiet", "--initial-branch=main"])
+  await git(root, ["config", "core.autocrlf", "false"])
   await git(root, ["config", "user.name", "smthrs test"])
   await git(root, ["config", "user.email", "test@example.invalid"])
   await git(root, ["config", "commit.gpgsign", "false"])

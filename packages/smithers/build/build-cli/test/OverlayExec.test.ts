@@ -120,9 +120,11 @@ describe("apply", () => {
 
   it("replaces a regular file and preserves the replacement's executable mode", async () => {
     await Fs.chmod(NodePath.join(root, "replacement.txt"), 0o755)
+    const mode = (await Fs.stat(NodePath.join(root, "replacement.txt"))).mode & 0o777
+    if (process.platform !== "win32") expect(mode).toBe(0o755)
     await OverlayExec.apply(root, [replacement("original.txt")])
     expect(await Fs.readFile(NodePath.join(root, "original.txt"), "utf8")).toBe("replacement")
-    expect((await Fs.stat(NodePath.join(root, "original.txt"))).mode & 0o777).toBe(0o755)
+    expect((await Fs.stat(NodePath.join(root, "original.txt"))).mode & 0o777).toBe(mode)
   })
 
   it("creates nested destinations and reads an internal replacement source link", async () => {
