@@ -251,7 +251,7 @@ describe("smthrs-model-server", () => {
           ...(windows ? ["--import", pathToFileURL(signal).href] : []), bin, "--fixture", fixture
         ], { stdio: ["ignore", "pipe", "pipe", ...(windows ? ["ipc" as const] : [])] })
         const line = yield* Effect.promise(() =>
-          new Promise<string>((resolve) => child.stdout.once("data", (data: Buffer) => resolve(data.toString())))
+          new Promise<string>((resolve) => child.stdout!.once("data", (data: Buffer) => resolve(data.toString())))
         )
         const { url } = JSON.parse(line) as { readonly url: string }
         expect(yield* Effect.promise(() => fetch(`${url}/health`).then((response) => response.text()))).toBe("ok")
