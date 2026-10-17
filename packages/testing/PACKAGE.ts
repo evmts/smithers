@@ -13,6 +13,13 @@ const standard = BuildAndCheckTypeScriptPackage({
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = standard
 
+// `smthrs-model-server` as an out-of-process test runs it from the checkout:
+// the bin imports the package's TypeScript sources through its exports.
+const modelServer = Smithers.Filegroup({
+  cwd,
+  srcs: [Smithers.file("package.json"), Smithers.glob("bin/**/*"), Smithers.glob("src/**/*.ts")]
+})
+
 const securityReview = Smithers.SecurityReview({
   cwd,
   include: ["src/**", "examples/**"],
@@ -125,5 +132,5 @@ const securityReview = Smithers.SecurityReview({
 })
 
 export const Package = Smithers.Package({
-  targets: { check, circular, docs, docsFiles, fmt, lib, lint, test, ...securityReview }
+  targets: { check, circular, docs, docsFiles, fmt, lib, lint, modelServer, test, ...securityReview }
 })

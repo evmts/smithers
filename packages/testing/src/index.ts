@@ -56,6 +56,12 @@ export * as CachedEvaluator from "./CachedEvaluator.ts"
 /** @since 1.0.0 @category models */
 export * as TurnGate from "./TurnGate.ts"
 
+/** @since 1.0.0 @category models */
+export * as ScriptedModel from "./ScriptedModel.ts"
+
+/** @since 1.0.0 @category models */
+export * as BuiltinScript from "./BuiltinScript.ts"
+
 /** @since 0.0.0 @category fixtures */
 export * as Fixture from "./Fixture.ts"
 

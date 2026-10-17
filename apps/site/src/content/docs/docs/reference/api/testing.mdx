@@ -10,7 +10,7 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/testing/docs
 
 > **Related APIs:** [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/engine`](/docs/reference/api/engine/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/platform-browser`](/docs/reference/api/platform-browser/) · [`@smthrs/scorers`](/docs/reference/api/scorers/)
 
-`@smthrs/testing` exports twenty-two modules from its root entry point, and each is
+`@smthrs/testing` exports twenty-four modules from its root entry point, and each is
 also importable from `@smthrs/testing/<Module>`:
 
 ```ts
@@ -19,7 +19,7 @@ import { Conformance, EngineSubject, TestLayers } from "@smthrs/testing"
 import * as TestLayers from "@smthrs/testing/TestLayers"
 ```
 
-Six modules are reachable only by subpath. `TestHost` is the deterministic
+Seven modules are reachable only by subpath. `TestHost` is the deterministic
 host bundle and stays explicit at `@smthrs/testing/TestHost`. `Vitest` is ESM only, because
 `vitest` refuses to load through `require()` and a barrel that carried it would
 break `require("@smthrs/testing")` for every CommonJS consumer of the assertion
@@ -28,9 +28,10 @@ than a double, and keeping it off the barrel keeps that visible at the import
 site.
 `ProcessTable` spawns `ps` through `node:child_process`, which browser test
 hosts cannot load, so it lives at `@smthrs/testing/ProcessTable`.
-`ModelServer` listens through `node:http` and `ModelServerCli` reads the fixture
-file through `node:fs`, so they live at `@smthrs/testing/ModelServer` and
-`@smthrs/testing/ModelServerCli`.
+`ModelServer` listens through `node:http`, `ModelServerCli` reads the fixture
+file through `node:fs`, and `TurnLog` appends its trace through `node:fs`, so
+they live at `@smthrs/testing/ModelServer`, `@smthrs/testing/ModelServerCli`
+and `@smthrs/testing/TurnLog`.
 
 `@smthrs/testing/internal/*` and `@smthrs/testing/*/index` are not public.
 `@smthrs/testing/package.json` is exported.
@@ -1408,6 +1409,165 @@ is `undefined` passes at once. A release is sticky: it answers every turn held
 on the key, and every later turn on it passes at once. `held` lists one entry
 per waiting turn, in arrival order; an interrupted turn leaves the list.
 
+## ScriptedModel
+
+A model that answers from a script, for the turns a recording cannot make: a
+question asked on cue, a build broken once, a turn held until released.
+
+```ts
+interface Reply {
+  readonly name: string
+  readonly text: string
+  readonly hold?: string | undefined
+  readonly detail?: Readonly<Record<string, unknown>> | undefined
+}
+type Script = (request: ModelRequest) => Reply | undefined
+
+interface Turn {
+  readonly name: string
+  readonly when: (request: ModelRequest) => boolean
+  readonly reply: (request: ModelRequest) => string
+  readonly hold?: ((request: ModelRequest) => string | undefined) | undefined
+}
+
+interface Options {
+  readonly script: Script
+  readonly fallback?: Model.Model | undefined
+  readonly gate?: TurnGate.TurnGate | undefined
+  readonly log?: TurnLog.TurnLog | undefined
+  readonly usage?: { readonly inputTokens: number; readonly outputTokens: number } | undefined // 100 and 100
+}
+
+interface TranscriptMessage {
+  readonly role: "system" | "user" | "assistant" | "tool"
+  readonly content: string
+}
+
+const make: (options: Options) => Model.Model
+const fromTurns: (turns: ReadonlyArray<Turn>) => Script
+const transcript: (request: ModelRequest) => ReadonlyArray<TranscriptMessage>
+```
+
+A matched request streams `text` as one text part, a `stop` settle, and then a
+usage event, which `ModelServer` writes as OpenAI's choice-less usage chunk. An
+unmatched request goes to `fallback`; without one it dies with
+`UnscriptedModelError`. A reply with `hold` waits on `gate` first; without a
+gate it answers at once. A script that throws fails the turn with an
+`invalid_request` `ModelError` (`httpStatus` 400) naming the reason. With `log`,
+each turn is recorded at dispatch under the reply's `name`, or `unscripted`,
+with its `hold` and `detail`. `fromTurns` answers with the first turn whose
+`when` holds. `transcript` gives one system message per system part, then each
+message's text, tool-call arguments and tool results joined.
+
+## BuiltinScript
+
+A `ScriptedModel` script for the built-in flows a Smithers install runs: a
+TODO's coding steps, the pull request review, a conflict resolution, `/review`
+and the wiki review. A test steers each TODO with directives written into its
+prompt as bracketed tags.
+
+```ts
+interface Directives {
+  readonly ask?: boolean | undefined // [ASK]
+  readonly fail?: boolean | undefined // [FAIL]
+  readonly failOnce?: boolean | undefined // [FAILONCE]
+  readonly restore?: boolean | undefined // [RESTORE]
+  readonly fixed?: boolean | undefined // [FIXED]
+  readonly hold?: string | undefined // [HOLD key]
+  readonly noResolve?: boolean | undefined // [NORESOLVE]
+  readonly file?: string | undefined // [FILE path]
+  readonly flowEdit?: boolean | undefined // [FLOWEDIT]
+  readonly changelog?: boolean | undefined // [CHANGELOG]
+  readonly observeUid?: number | undefined // [OBSERVEUID uid]
+  readonly probeReview?: boolean | undefined // [PROBEREVIEW]
+}
+
+interface Options {
+  readonly greeting?: string | undefined // GREETING
+  readonly todoFlow?: string | undefined // the source of .smithers/flows/todo/flow.ts
+  readonly holdAt?: ReadonlyArray<string> | undefined
+  readonly reviewFindings?: ReadonlyArray<ReviewFinding> | undefined
+}
+
+interface BuiltinScript {
+  readonly respond: (messages: ReadonlyArray<ChatMessage>) => ScriptedModel.Reply | undefined
+  readonly script: ScriptedModel.Script
+}
+
+const make: (options?: Options) => BuiltinScript
+const tag: (directives: Directives) => string
+const directives: (value: unknown) => Directives
+const unscripted: ScriptedModel.Script
+const isJudgement: (questions: Readonly<Record<string, unknown>> | null | undefined) => boolean
+const answer: (name: string, question: { readonly type?: unknown; readonly criteria?: unknown }) => Evaluator.RawAnswer
+const evaluator: Evaluator.Evaluator
+const teachings: Readonly<Record<string, string>>
+const QUESTION: string
+const GREETING: string
+const SUBJECT: string
+const CHANGELOG_STEP: string
+const REVIEW_ANSWER: string
+```
+
+A turn is recognized by the system teaching in `teachings` and answered with one
+`cell` that settles the step's output. `tag` throws for a hold key outside
+`[A-Za-z0-9._-]+`, a path outside `[A-Za-z0-9._/-]+` or a uid that is not a
+non-negative integer. `directives` reads `fail` and `failOnce` as ended by
+`fixed`. A `flowEdit` edit throws without `todoFlow`. `unscripted` settles any
+other turn with `{ messages: ["scripted"] }` and keeps the teaching and last
+message, 6,000 characters each, as trace detail. `answer` throws for a choice it
+cannot route or an unknown type; `evaluator` fails those as `invalid_question`
+and reports 120 input tokens per evaluation.
+
+## TurnLog
+
+Count and trace the turns a model double serves.
+
+```ts
+type Kind = "chat" | "evaluation" | "refused"
+
+interface Entry {
+  readonly n: number
+  readonly at: string
+  readonly kind: Kind
+  readonly step: string
+  readonly [field: string]: unknown
+}
+
+interface Summary {
+  readonly total: number
+  readonly chat: number
+  readonly evaluation: number
+  readonly refused: number
+  readonly steps: Readonly<Record<string, number>>
+}
+
+interface TurnLog {
+  readonly chat: (
+    request: ModelRequest,
+    step: string,
+    detail?: Readonly<Record<string, unknown>>
+  ) => Effect.Effect<void>
+  readonly record: (kind: Kind, step: string, detail?: Readonly<Record<string, unknown>>) => Effect.Effect<void>
+  readonly entries: () => Effect.Effect<ReadonlyArray<Entry>>
+  readonly summary: () => Effect.Effect<Summary>
+}
+
+const make: (options?: { readonly file?: string; readonly messages?: boolean }) => Effect.Effect<TurnLog>
+const model: (
+  inner: Model.Model,
+  options: { readonly log: TurnLog; readonly step: (request: ModelRequest) => string }
+) => Model.Model
+const evaluator: (inner: Evaluator.Evaluator, options: { readonly log: TurnLog }) => Evaluator.Evaluator
+```
+
+A chat entry carries `model` and `messageCount`, and with `messages: true` the
+request's `ScriptedModel.transcript` as `messages`. A detail never overwrites
+`n`, `at`, `kind` or `step`. With `file`, each entry is appended as one JSON
+line to an owner-only file. `evaluator` records `evaluation` with the answers,
+or `refused` with the failure's message, under the question ids joined with
+commas (`empty` for none). An entry never holds a header or credential.
+
 ## ScoreGate
 
 `@smthrs/testing/ScoreGate` re-exports the pure grading contract from
@@ -1847,12 +2007,14 @@ const paths: {
   readonly evaluation: "/v4/ai/evaluation-model"
   readonly held: "/__testing/held"
   readonly release: "/__testing/release/"
+  readonly turns: "/__testing/turns"
 }
 
 interface Options {
   readonly model: Model.Model
   readonly evaluator?: Evaluator.Evaluator | undefined
   readonly gate?: TurnGate.TurnGate | undefined
+  readonly log?: TurnLog.TurnLog | undefined
   readonly hostname?: string | undefined // 127.0.0.1
   readonly port?: number | undefined // 0, any free port
   readonly heartbeatMs?: number | undefined // 15000
@@ -1874,11 +2036,13 @@ The server listens for the lifetime of the scope. Failing to listen is a defect.
 | `POST /v4/ai/evaluation-model` | Served only with `evaluator`. Answers `{ answers, usage?, providerMetadata.typesafe.confidence? }`.                            |
 | `GET /__testing/held`          | Served only with `gate`. The keys turns wait on, as a JSON array.                                                              |
 | `POST /__testing/release/<k>`  | Served only with `gate`. Releases `k` (letters, digits, `.`, `_`, `-`) and answers `204`.                                      |
+| `GET /__testing/turns`         | Served only with `log`. The log's `Summary` plus `held`, the keys turns wait on now.                                           |
 
 The chat request is lifted back into the `ModelRequest` that lowers to it, so a
 recording made through the server keys exactly as the product's own request.
 A field the client never sends, `stream: false`, or `response_format` is a
-`400` naming the field. A `ModelError` before any output answers its
+`400` naming the field. `max_completion_tokens`, which a metering proxy adds,
+is read as `max_tokens` when `max_tokens` is absent and dropped otherwise. A `ModelError` before any output answers its
 `httpStatus` (500 when absent) with `{ error: { message, type: code, code? } }`;
 after output it ends the stream with an `error` chunk. An `EvaluatorError`
 answers its `status`, else `400` for `invalid_question`, `504` for `timeout`
@@ -1890,14 +2054,15 @@ until output arrives.
 
 ## ModelServerCli
 
-The `smthrs-model-server` command: a `ModelServer` over a fixture file.
+The `smthrs-model-server` command: a `ModelServer` over a fixture file, a
+script, or both.
 Imported by subpath, or run as the package's bin:
 
 ```ts
 import * as ModelServerCli from "@smthrs/testing/ModelServerCli"
 
 interface Config {
-  readonly fixture: string
+  readonly fixture?: string | undefined
   readonly record?: {
     readonly upstream: string
     readonly model?: string | undefined
@@ -1907,6 +2072,8 @@ interface Config {
   readonly normalize: ReadonlyArray<RegExp>
   readonly hostname?: string | undefined
   readonly port?: number | undefined
+  readonly script?: BuiltinScript.Options | undefined
+  readonly trace?: { readonly file: string; readonly messages: boolean } | undefined
 }
 
 interface Io {
@@ -1921,7 +2088,7 @@ const run: (argv: ReadonlyArray<string>, env: Readonly<Record<string, string | u
 
 | Flag                    | Meaning                                                                                                                       |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `--fixture <path>`      | The fixture file. Required. Replay refuses a path that does not exist.                                                        |
+| `--fixture <path>`      | The fixture file. Required unless `--script` is given without `--record`. Replay refuses a path that does not exist.          |
 | `--record`              | Record misses. Needs `--upstream` and `--key-env`.                                                                            |
 | `--upstream <origin>`   | The Chat Completions origin a miss is sent to; its judge is `<origin>/v4/ai/evaluation-model`.                                |
 | `--upstream-model <id>` | The model the upstream is asked for. The fixture keeps the requested id.                                                      |
@@ -1929,6 +2096,18 @@ const run: (argv: ReadonlyArray<string>, env: Readonly<Record<string, string | u
 | `--hold <regex>`        | Hold a turn whose text matches until its key, capture group 1, is released. Repeatable.                                       |
 | `--normalize <regex>`   | Replace every match in a request's strings, except its model id, with `<normalized>` before keying and recording. Repeatable. |
 | `--host`, `--port`      | Where to listen: `127.0.0.1` and any free port by default.                                                                    |
+| `--script builtin`      | Answer with `BuiltinScript` first. The only script.                                                                           |
+| `--script-config <p>`   | `BuiltinScript.Options` as JSON; `todoFlow` names a file, relative to the config, that is read in.                            |
+| `--trace <path>`        | Append each turn to this file as one JSON line through `TurnLog`.                                                             |
+| `--trace-messages`      | Keep each traced chat turn's messages. Needs `--trace`.                                                                       |
+
+Every run keeps a `TurnLog` and serves `GET /__testing/turns`. With `--script`
+the script answers first and its judge answers every evaluation; a turn it does
+not script replays from `--fixture`, or without one is settled by
+`BuiltinScript.unscripted`. With `--record` as well, nothing is scripted: every
+turn and evaluation goes to the upstream and is recorded, and the script only
+names each traced turn. Unscripted turns are traced as `replayed` or
+`recorded`.
 
 `parse` throws an `Error` naming the first problem and the usage line. Replay
 reads the fixture once into memory and never writes it, so parallel runs can

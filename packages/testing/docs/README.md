@@ -118,11 +118,13 @@ tree: [`@smthrs/cli`](/api/cli) is the `smithers` command line, and
 ## Next steps
 
 - [Installation](./installation.md): the import forms, the optional peers, and
-  the six modules that stay off the root barrel.
+  the seven modules that stay off the root barrel.
 - [Quickstart](./quickstart.md): run the nine conformance pins and read what
   each one proved.
 - [Test tiers](./concepts/test-tiers.md): why a harness here is a layer set
   rather than a class.
 - [Replay a model](./guides/replay-a-model.md): record once, replay forever,
   and the calls the recorder refuses to write.
+- [Script a model](./guides/script-a-model.md): the turns a recording cannot
+  make, such as a question on cue, a build broken once, or a held turn.
 - [API reference](./api.md): every module and every export.

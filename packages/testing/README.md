@@ -139,10 +139,31 @@ It prints `{"url":"http://127.0.0.1:<port>"}`; point the install's provider at
 it. `--hold <regex>` holds a matching turn until `POST /__testing/release/<key>`.
 See the [guide](./docs/guides/serve-a-recorded-model.md).
 
-## Six modules stay off the root barrel
+## Script the turns a recording cannot make
+
+A recording replays what a real model said. A test that needs a planner to ask
+a question, an edit to break the build once, or a turn to wait on cue scripts
+those turns instead. `ScriptedModel` answers from a script and hands every
+other turn to a fallback, usually a `CachedModel`. `BuiltinScript` is the
+script for Smithers' own built-in flows, steered by directive tags in a TODO's
+prompt:
+
+```bash
+npx smthrs-model-server --script builtin --trace evidence/turns.jsonl
+```
+
+```ts
+import { BuiltinScript } from "@smthrs/testing"
+
+const prompt = `${BuiltinScript.tag({ ask: true, hold: "t2" })} Add a greeting to JOURNEY.md`
+```
+
+See the [guide](./docs/guides/script-a-model.md).
+
+## Seven modules stay off the root barrel
 
 The root entry point exports one namespace per module, and each is also
-importable from `@smthrs/testing/<Module>`. Six are reachable only by
+importable from `@smthrs/testing/<Module>`. Seven are reachable only by
 subpath.
 
 `TestHost` is the deterministic host bundle: an in-memory filesystem, scripted
@@ -174,9 +195,9 @@ finite timeout, and coverage off.
 hosts cannot load, so it stays at `@smthrs/testing/ProcessTable`. See
 [Inspect real processes](#inspect-real-processes).
 
-`ModelServer` listens through `node:http` and `ModelServerCli` reads fixture
-files through `node:fs`, so they stay at `@smthrs/testing/ModelServer` and
-`@smthrs/testing/ModelServerCli`. See
+`ModelServer` listens through `node:http`, and `ModelServerCli` and `TurnLog`
+write files through `node:fs`, so they stay at `@smthrs/testing/ModelServer`,
+`@smthrs/testing/ModelServerCli` and `@smthrs/testing/TurnLog`. See
 [Serve a recorded model over HTTP](#serve-a-recorded-model-over-http).
 
 `@smthrs/testing/package.json` is also exported. `internal/*` and nested

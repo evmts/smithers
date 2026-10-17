@@ -28,12 +28,15 @@ import { Cause, Effect, Exit, FiberSet, Schema, type Scope, Stream } from "effec
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import type { AddressInfo } from "node:net"
 import type * as TurnGate from "./TurnGate.ts"
+import type * as TurnLog from "./TurnLog.ts"
 
 /**
  * The routes a model server answers.
  *
  * `held` (GET) lists the keys turns wait on; `release` (POST, followed by the
  * key) releases one. Both are served only when the server has a gate.
+ * `turns` (GET) answers the turn log's summary, with the held keys; it is
+ * served only when the server has a log.
  *
  * @category constants
  * @since 1.0.0
@@ -43,7 +46,8 @@ export const paths = {
   chat: "/v1/chat/completions",
   evaluation: "/v4/ai/evaluation-model",
   held: "/__testing/held",
-  release: "/__testing/release/"
+  release: "/__testing/release/",
+  turns: "/__testing/turns"
 } as const
 
 /**
@@ -59,6 +63,8 @@ export interface Options {
   readonly evaluator?: Evaluator.Evaluator | undefined
   /** The gate whose held keys and releases the control routes expose. */
   readonly gate?: TurnGate.TurnGate | undefined
+  /** The turn log `GET /__testing/turns` summarizes. The server records nothing into it itself. */
+  readonly log?: TurnLog.TurnLog | undefined
   /** `127.0.0.1` by default. */
   readonly hostname?: string | undefined
   /** `0` (any free port) by default. */
@@ -256,9 +262,19 @@ const failureBody = (error: ModelError) => ({
   ...(error.providerCode === undefined ? {} : { code: error.providerCode })
 })
 
+/**
+ * `max_completion_tokens` is OpenAI's newer name for `max_tokens`, and a
+ * metering proxy in front of the server may add it. It is read as `max_tokens`.
+ */
+const aliased = (body: unknown): unknown => {
+  if (typeof body !== "object" || body === null || !("max_completion_tokens" in body)) return body
+  const { max_completion_tokens, ...rest } = body as Record<string, unknown>
+  return "max_tokens" in rest ? rest : { ...rest, max_tokens: max_completion_tokens }
+}
+
 const chat = (options: Options, request: IncomingMessage, response: ServerResponse): Effect.Effect<void> =>
   Effect.gen(function*() {
-    const decoded = decodeBody(yield* readBody(request), { onExcessProperty: "error" })
+    const decoded = decodeBody(aliased(yield* readBody(request)), { onExcessProperty: "error" })
     if (decoded._tag === "Failure") return json(response, 400, { error: { message: decoded.failure.message } })
     if (decoded.success.response_format !== undefined) {
       return json(response, 400, {
@@ -339,6 +355,14 @@ const route = (options: Options, request: IncomingMessage, response: ServerRespo
     return evaluation(options.evaluator, request, response)
   }
   const gate = options.gate
+  const log = options.log
+  if (log !== undefined && method === "GET" && url === paths.turns) {
+    return Effect.gen(function*() {
+      const summary = yield* log.summary()
+      const held = gate === undefined ? [] : yield* gate.held()
+      json(response, 200, { ...summary, held })
+    })
+  }
   if (gate !== undefined && method === "GET" && url === paths.held) {
     return Effect.map(gate.held(), (keys) => json(response, 200, keys))
   }

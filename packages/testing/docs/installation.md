@@ -57,7 +57,7 @@ import * as JournalAssertions from "@smthrs/testing/JournalAssertions"
 import * as TestLayers from "@smthrs/testing/TestLayers"
 ```
 
-## Six modules stay off the root barrel
+## Seven modules stay off the root barrel
 
 `TestHost` is the deterministic host bundle: an in-memory filesystem, scripted
 interpreter, `TestClock`, and seeded PRNG. Each layer build starts with a fresh
@@ -105,12 +105,13 @@ which browser test hosts cannot load:
 import * as ProcessTable from "@smthrs/testing/ProcessTable"
 ```
 
-`ModelServer` and `ModelServerCli` are absent because they listen through
-`node:http` and read fixture files through `node:fs`:
+`ModelServer`, `ModelServerCli` and `TurnLog` are absent because they listen
+through `node:http` or write files through `node:fs`:
 
 ```ts
 import * as ModelServer from "@smthrs/testing/ModelServer"
 import * as ModelServerCli from "@smthrs/testing/ModelServerCli"
+import * as TurnLog from "@smthrs/testing/TurnLog"
 ```
 
 The package also installs the `smthrs-model-server` command. See

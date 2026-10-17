@@ -13,6 +13,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
+import * as BuiltinScript from "../src/BuiltinScript.ts"
 import * as ModelServer from "../src/ModelServer.ts"
 import * as ModelServerCli from "../src/ModelServerCli.ts"
 
@@ -124,6 +125,178 @@ describe("ModelServerCli.parse", () => {
   ])("refuses %j", (argv, message) => {
     expect(() => ModelServerCli.parse(argv, {})).toThrow(message)
   })
+})
+
+describe("ModelServerCli.parse --script", () => {
+  it("serves the builtin script with no fixture, and traces turns", () => {
+    expect(ModelServerCli.parse(["--script", "builtin", "--trace", "t.jsonl", "--trace-messages"], {})).toMatchObject({
+      fixture: undefined,
+      script: {},
+      trace: { file: "t.jsonl", messages: true }
+    })
+    expect(ModelServerCli.parse(["--script", "builtin", "--trace", "t.jsonl"], {}).trace).toEqual({
+      file: "t.jsonl",
+      messages: false
+    })
+  })
+
+  it("reads --script-config, with todoFlow read from a path relative to it", () => {
+    const directory = mkdtempSync(join(tmpdir(), "model-server-cli-config-"))
+    try {
+      writeFileSync(join(directory, "flow.ts"), "Request.call(input)")
+      const config = join(directory, "script.json")
+      writeFileSync(config, JSON.stringify({ greeting: "Hi", todoFlow: "flow.ts", holdAt: ["coding/draft-plan"] }))
+      expect(ModelServerCli.parse(["--script", "builtin", "--script-config", config], {}).script).toEqual({
+        greeting: "Hi",
+        todoFlow: "Request.call(input)",
+        holdAt: ["coding/draft-plan"]
+      })
+      writeFileSync(config, JSON.stringify({ greeting: "Hi" }))
+      expect(ModelServerCli.parse(["--script", "builtin", "--script-config", config], {}).script).toEqual({
+        greeting: "Hi"
+      })
+      for (
+        const [content, message] of [
+          ["[1]", "is not a JSON object"],
+          ["null", "is not a JSON object"],
+          ["7", "is not a JSON object"],
+          ["{", "is not readable JSON"],
+          [JSON.stringify({ todoFlow: "absent.ts" }), "absent.ts does not exist"]
+        ] as const
+      ) {
+        writeFileSync(config, content)
+        expect(() => ModelServerCli.parse(["--script", "builtin", "--script-config", config], {})).toThrow(message)
+      }
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it.each([
+    [["--script", "other"], "--script other is not a script"],
+    [["--fixture", "f", "--script-config", "c.json"], "--script-config needs --script"],
+    [["--fixture", "f", "--trace-messages"], "--trace-messages needs --trace"],
+    [["--script", "builtin", "--record", "--upstream", "https://x", "--key-env", "KEY"], "--fixture is required"]
+  ])("refuses %j", (argv, message) => {
+    expect(() => ModelServerCli.parse(argv, { KEY: key })).toThrow(message)
+  })
+})
+
+/** A turn as the coding host sends one step through the proxy. */
+const stepBody = (teaching: string, payload: unknown) => ({
+  model: "coder",
+  messages: [{ role: "system", content: `${teaching}\nThe task for this run: ${JSON.stringify(payload)}` }, {
+    role: "user",
+    content: "Begin."
+  }],
+  stream: true
+})
+
+const getJson = (url: string, path: string) =>
+  Effect.promise(() =>
+    fetch(new URL(path, url)).then((response) => response.json() as Promise<Record<string, unknown>>)
+  )
+
+describe("ModelServerCli.run --script builtin", () => {
+  it.live("answers builtin steps and judgments, settles any other turn, and traces each", () =>
+    withDirectory((directory) =>
+      Effect.gen(function*() {
+        const trace = join(directory, "turns.jsonl")
+        const server = yield* start(["--script", "builtin", "--trace", trace, "--trace-messages"])
+        const lens = yield* post(
+          server.url,
+          ModelServer.paths.chat,
+          stepBody(BuiltinScript.teachings["coding/review-lens"], {})
+        )
+        expect(lens.body).toContain("approve")
+        expect((yield* post(server.url, ModelServer.paths.chat, chatBody("other"))).body).toContain("scripted")
+        const judged = yield* post(server.url, ModelServer.paths.evaluation, {
+          state: {},
+          questions: { complete: { type: "boolean", instructions: "Done?" } }
+        })
+        expect(JSON.parse(judged.body)).toMatchObject({
+          answers: { complete: { probability: 0.99 } },
+          usage: { inputTokens: 120 }
+        })
+        const refused = yield* post(server.url, ModelServer.paths.evaluation, {
+          state: {},
+          questions: { pick: { type: "choice", instructions: "?", criteria: { a: "a", b: "b" } } }
+        })
+        expect(refused.status).toBe(400)
+        expect(yield* getJson(server.url, ModelServer.paths.turns)).toEqual({
+          total: 4,
+          chat: 2,
+          evaluation: 1,
+          refused: 1,
+          steps: { "coding/review-lens": 1, unscripted: 1, complete: 1, pick: 1 },
+          held: []
+        })
+        yield* server.stop
+        const lines = readFileSync(trace, "utf8").trimEnd().split("\n").map((line) => JSON.parse(line))
+        expect(lines[0]).toMatchObject({
+          step: "coding/review-lens",
+          messages: [{ role: "system" }, { role: "user", content: "Begin." }]
+        })
+        expect(lines[1]).toMatchObject({ step: "unscripted", system: "Teach.", last: "other" })
+      })
+    ))
+
+  it.live("holds a TODO's edit, and the steps holdAt names, until the test releases its key", () =>
+    withDirectory((directory) =>
+      Effect.gen(function*() {
+        const config = join(directory, "script.json")
+        writeFileSync(config, JSON.stringify({ holdAt: ["coding/draft-plan"] }))
+        const server = yield* start(["--script", "builtin", "--script-config", config])
+        const planning = yield* Effect.forkChild(post(
+          server.url,
+          ModelServer.paths.chat,
+          stepBody(BuiltinScript.teachings["coding/draft-plan"], { input: { prompt: "[HOLD t4] x" }, context: {} })
+        ))
+        yield* Effect.promise(() => fetch(`${server.url}${ModelServer.paths.held}`).then((r) => r.text())).pipe(
+          Effect.repeat({ until: (body) => body === "[\"t4\"]" })
+        )
+        expect(yield* getJson(server.url, ModelServer.paths.turns)).toMatchObject({ held: ["t4"] })
+        yield* post(server.url, `${ModelServer.paths.release}t4`, {})
+        expect((yield* Fiber.join(planning)).body).toContain("[HOLD t4]")
+        yield* server.stop
+      })
+    ))
+
+  it.live("replays what it does not script from a fixture, and only names turns while recording", () =>
+    withDirectory((directory) =>
+      Effect.gen(function*() {
+        const fixture = join(directory, "model.json")
+        writeFileSync(fixture, JSON.stringify({ calls: [] }))
+        const replaying = yield* start(["--script", "builtin", "--fixture", fixture])
+        expect((yield* post(replaying.url, ModelServer.paths.chat, chatBody("other"))).status).toBe(501)
+        yield* replaying.stop
+        const seen: Array<ModelRequest> = []
+        const origin = yield* upstream(seen)
+        const recorded = join(directory, "recorded.json")
+        const recording = yield* start([
+          "--script",
+          "builtin",
+          "--fixture",
+          recorded,
+          "--record",
+          "--upstream",
+          origin.url,
+          "--key-env",
+          "UPSTREAM_KEY"
+        ], { UPSTREAM_KEY: key })
+        const lens = stepBody(BuiltinScript.teachings["coding/review-lens"], {})
+        expect((yield* post(recording.url, ModelServer.paths.chat, lens)).body).toContain("recorded answer")
+        expect((yield* post(recording.url, ModelServer.paths.chat, chatBody("other"))).body).toContain(
+          "recorded answer"
+        )
+        expect((yield* getJson(recording.url, ModelServer.paths.turns)).steps).toEqual({
+          "coding/review-lens": 1,
+          recorded: 1
+        })
+        yield* recording.stop
+        expect(seen).toHaveLength(2)
+      })
+    ))
 })
 
 describe("ModelServerCli.run", () => {
@@ -248,7 +421,10 @@ describe("smthrs-model-server", () => {
         writeFileSync(signal, `process.once("message", () => { process.disconnect(); process.emit("SIGTERM") })`)
         const windows = process.platform === "win32"
         const child = spawn(process.execPath, [
-          ...(windows ? ["--import", pathToFileURL(signal).href] : []), bin, "--fixture", fixture
+          ...(windows ? ["--import", pathToFileURL(signal).href] : []),
+          bin,
+          "--fixture",
+          fixture
         ], { stdio: ["ignore", "pipe", "pipe", ...(windows ? ["ipc" as const] : [])] })
         const line = yield* Effect.promise(() =>
           new Promise<string>((resolve) => child.stdout!.once("data", (data: Buffer) => resolve(data.toString())))

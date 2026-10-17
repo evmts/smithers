@@ -17,6 +17,7 @@ import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import { canonicalRequestDigest } from "../src/Fixture.ts"
 import * as ModelServer from "../src/ModelServer.ts"
 import * as TurnGate from "../src/TurnGate.ts"
+import * as TurnLog from "../src/TurnLog.ts"
 
 const http = FetchHttpClient.layer
 const executor = RequestExecutor.layer.pipe(Layer.provide(http))
@@ -349,6 +350,43 @@ describe("ModelServer evaluation", () => {
       const miss = yield* post(server.url, ModelServer.paths.evaluation, { state: {}, questions: { a: question } })
       expect(miss.status).toBe(501)
       expect(JSON.parse(miss.body)).toMatchObject({ error: { type: "unrecorded" } })
+    }).pipe(Effect.scoped))
+})
+
+describe("ModelServer max_completion_tokens", () => {
+  it.effect("reads max_completion_tokens, which a metering proxy adds, as max_tokens", () =>
+    Effect.gen(function*() {
+      const seen: Array<ModelRequest> = []
+      const server = yield* ModelServer.make({ model: scripted(textAnswer, seen) })
+      const body = { model: "m", messages: [{ role: "user", content: "hi" }], stream: true }
+      expect((yield* post(server.url, ModelServer.paths.chat, { ...body, max_completion_tokens: 64 })).status).toBe(200)
+      expect(
+        (yield* post(server.url, ModelServer.paths.chat, { ...body, max_tokens: 8, max_completion_tokens: 64 })).status
+      )
+        .toBe(200)
+      expect(seen.map((request) => request.params.maxTokens)).toEqual([64, 8])
+    }).pipe(Effect.scoped))
+})
+
+describe("ModelServer turns", () => {
+  it.effect("summarizes its turn log at /__testing/turns, with the keys held now", () =>
+    Effect.gen(function*() {
+      const log = yield* TurnLog.make()
+      yield* log.record("evaluation", "route")
+      const bare = yield* ModelServer.make({ model: scripted(textAnswer), log })
+      expect(JSON.parse((yield* raw(bare.url, ModelServer.paths.turns)).body)).toEqual({
+        total: 1,
+        chat: 0,
+        evaluation: 1,
+        refused: 0,
+        steps: { route: 1 },
+        held: []
+      })
+      const gate = yield* TurnGate.make()
+      const gated = yield* ModelServer.make({ model: scripted(textAnswer), log, gate })
+      expect(JSON.parse((yield* raw(gated.url, ModelServer.paths.turns)).body)).toMatchObject({ held: [] })
+      const unlogged = yield* ModelServer.make({ model: scripted(textAnswer) })
+      expect((yield* raw(unlogged.url, ModelServer.paths.turns)).status).toBe(404)
     }).pipe(Effect.scoped))
 })
 

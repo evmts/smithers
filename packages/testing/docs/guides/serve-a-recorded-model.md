@@ -95,6 +95,23 @@ npx smthrs-model-server --fixture test/fixtures/install.json --hold '\[HOLD ([a-
 While a turn waits, the server opens its stream and writes an SSE comment every
 15 seconds, so a proxy in front of the model does not time the call out.
 
+## Count and trace the turns
+
+Every run keeps a turn log. `GET /__testing/turns` answers the turns served so
+far by kind and name, with the keys held now. `--trace <path>` appends each turn
+to a file as one JSON line, and `--trace-messages` keeps each chat turn's
+messages, so the trace is evidence of what the install sent:
+
+```bash
+npx smthrs-model-server --fixture test/fixtures/install.json --trace evidence/turns.jsonl
+```
+
+## Script what a recording cannot answer
+
+`--script builtin` answers Smithers' built-in flows from `BuiltinScript` before
+the fixture, for the turns no real model gives on demand. See
+[Script the turns a recording cannot make](./script-a-model.md).
+
 ## Serve from a test in process
 
 The same server is a scoped Effect constructor, for a test that starts the
@@ -129,3 +146,5 @@ record misses.
   in-process layers.
 - [Fixtures and replay identity](../concepts/fixtures.md) explains the
   canonical digest a replay matches on.
+- [Script the turns a recording cannot make](./script-a-model.md) covers
+  `ScriptedModel` and `BuiltinScript`.

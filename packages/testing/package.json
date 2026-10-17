@@ -72,7 +72,10 @@
     "./pins/Interrupt": "./src/pins/Interrupt.ts",
     "./pins/Race": "./src/pins/Race.ts",
     "./pins/Replay": "./src/pins/Replay.ts",
-    "./ProcessTable": "./src/ProcessTable.ts"
+    "./ProcessTable": "./src/ProcessTable.ts",
+    "./BuiltinScript": "./src/BuiltinScript.ts",
+    "./ScriptedModel": "./src/ScriptedModel.ts",
+    "./TurnLog": "./src/TurnLog.ts"
   },
   "bin": {
     "smthrs-model-server": "./bin/smthrs-model-server.mjs"
@@ -430,6 +433,36 @@
         "require": {
           "types": "./dist/cjs/ProcessTable.d.ts",
           "default": "./dist/cjs/ProcessTable.js"
+        }
+      },
+      "./BuiltinScript": {
+        "import": {
+          "types": "./dist/esm/BuiltinScript.d.ts",
+          "default": "./dist/esm/BuiltinScript.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BuiltinScript.d.ts",
+          "default": "./dist/cjs/BuiltinScript.js"
+        }
+      },
+      "./ScriptedModel": {
+        "import": {
+          "types": "./dist/esm/ScriptedModel.d.ts",
+          "default": "./dist/esm/ScriptedModel.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ScriptedModel.d.ts",
+          "default": "./dist/cjs/ScriptedModel.js"
+        }
+      },
+      "./TurnLog": {
+        "import": {
+          "types": "./dist/esm/TurnLog.d.ts",
+          "default": "./dist/esm/TurnLog.js"
+        },
+        "require": {
+          "types": "./dist/cjs/TurnLog.d.ts",
+          "default": "./dist/cjs/TurnLog.js"
         }
       }
     }
