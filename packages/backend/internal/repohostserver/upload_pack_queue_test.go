@@ -255,13 +255,18 @@ func TestUploadPackHTTPKeepaliveAfterSuccessAndQueueTimeout(t *testing.T) {
 	}
 }
 
-func TestUploadPackHTTPMetricsExistBeforeFirstRejection(t *testing.T) {
+// Alerts and dashboards read these series before the first fetch arrives; an
+// absent series reads as "no data", not zero (plue#838).
+func TestUploadPackHTTPExportsEveryAdmissionMetricBeforeTraffic(t *testing.T) {
 	h := newUploadPackQueueHTTPHarness(t, Config{})
 	metrics := h.metrics()
 	for _, reason := range []string{"body", "full", "ended"} {
 		require.Contains(t, metrics, "smithers_repo_host_upload_pack_rejected_total{reason=\""+reason+"\"} 0\n")
 	}
 	require.Contains(t, metrics, "smithers_repo_host_upload_pack_wait_seconds_bucket{le=\"30\"} 0\n")
+	require.Contains(t, metrics, "smithers_repo_host_upload_pack_waiting 0\n")
+	require.Contains(t, metrics, "smithers_repo_host_upload_pack_running 0\n")
+	require.Contains(t, metrics, "smithers_repo_host_upload_pack_peak_rss_bytes_count 0\n")
 }
 
 func TestUploadPackHTTPRefExportFailureReleasesAdmission(t *testing.T) {

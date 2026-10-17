@@ -343,7 +343,7 @@ func packCacheSmartHTTP(t *testing.T, gitDir string, cache *packObjectsCache) ht
 			_, _ = w.Write(out)
 		case strings.HasSuffix(r.URL.Path, "/git-upload-pack"):
 			w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
-			if err := streamGitRPCCached(context.Background(), gitDir, "upload-pack", r.Body, w, maxDecompressedGitRequestSize, 0, cache); err != nil {
+			if err := streamGitRPCCached(context.Background(), gitDir, "upload-pack", r.Body, w, maxDecompressedGitRequestSize, 0, cache, nil); err != nil {
 				t.Errorf("upload-pack: %v", err)
 			}
 		default:

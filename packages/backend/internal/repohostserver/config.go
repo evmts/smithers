@@ -69,8 +69,10 @@ func (c Config) receivePackMaxDuration() time.Duration {
 }
 
 // defaultMaxConcurrentUploadPacks bounds the packs repo-host builds at once.
-// git pack-objects holds 150-300 MB for a clone of a large repository, for
-// tens of seconds; with no bound, a burst of clones and their retries ran
+// git pack-objects holds about 600 MB resident (330 MB anonymous) for a
+// depth-200 clone of smithersai/smithers, for tens of seconds (plue#837;
+// smithers_repo_host_upload_pack_peak_rss_bytes); with no bound, a burst of
+// clones and their retries ran
 // more than a dozen at once and the pod ran out of memory
 // (smithersai/smithers#3070).
 const defaultMaxConcurrentUploadPacks = 4

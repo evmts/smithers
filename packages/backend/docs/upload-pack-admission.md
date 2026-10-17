@@ -61,3 +61,7 @@ least recently served.
 - `smithers_repo_host_upload_pack_waiting`: requests reading negotiation, synchronizing references, or waiting for a process slot or repository read lock.
 - `smithers_repo_host_upload_pack_wait_seconds`: negotiation and admission duration.
 - `smithers_repo_host_upload_pack_rejected_total{reason}`: rejected admission, labeled `full`, `body`, or `ended`.
+- `smithers_repo_host_upload_pack_running`: fetches holding a process slot, building or streaming a pack.
+- `smithers_repo_host_upload_pack_peak_rss_bytes`: peak resident memory of each finished `upload-pack`, read from its exit rusage. Linux and Darwin fold in the largest child it reaped, so a pack build reports `pack-objects`. A depth-200 clone of `smithersai/smithers` measured about 600 MB, of which about 330 MB was anonymous (plue#837).
+
+Every series exists at zero before the first fetch, so an alert reads zero, not "no data".

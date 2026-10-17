@@ -177,12 +177,13 @@ func streamGitRPC(ctx context.Context, gitDir, command string, body io.Reader, d
 // streamGitRPCCapped is streamGitRPC with receive-pack's pack size capped at
 // maxInputSize, for viewer (refViewer).
 func streamGitRPCCapped(ctx context.Context, gitDir, command string, body io.Reader, dst io.Writer, maxInputSize, viewer int64) error {
-	return streamGitRPCCached(ctx, gitDir, command, body, dst, maxInputSize, viewer, nil)
+	return streamGitRPCCached(ctx, gitDir, command, body, dst, maxInputSize, viewer, nil, nil)
 }
 
 // streamGitRPCCached is streamGitRPCCapped with upload-pack's pack-objects
-// served through cache when it is non-nil.
-func streamGitRPCCached(ctx context.Context, gitDir, command string, body io.Reader, dst io.Writer, maxInputSize, viewer int64, cache *packObjectsCache) error {
+// served through cache when it is non-nil. exited, when non-nil, receives the
+// git process's final state.
+func streamGitRPCCached(ctx context.Context, gitDir, command string, body io.Reader, dst io.Writer, maxInputSize, viewer int64, cache *packObjectsCache, exited func(*os.ProcessState)) error {
 	args := []string{command, "--stateless-rpc", gitDir}
 	cmd := hostexec.GitWith(ctx, streamGitCommandContext, args...)
 	cmd.Env = gitServiceEnvWithCache(command, maxInputSize, viewer, false, cache)
@@ -239,6 +240,9 @@ func streamGitRPCCached(ctx context.Context, gitDir, command string, body io.Rea
 	// A child that outlives git, as pack-objects does when git dies on a
 	// closed connection, goes with it.
 	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	if exited != nil && cmd.ProcessState != nil {
+		exited(cmd.ProcessState)
+	}
 	// Signal EOF to the drain goroutine.
 	_ = pw.CloseWithError(waitErr)
 

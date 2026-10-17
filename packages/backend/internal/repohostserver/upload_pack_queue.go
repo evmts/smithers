@@ -23,8 +23,10 @@ const maxUploadPackNegotiationBytes int64 = 10 << 20
 type uploadPackAdmission struct {
 	requests chan struct{}
 	waiting  prometheus.Gauge
+	running  prometheus.Gauge
 	wait     prometheus.Histogram
 	rejected *prometheus.CounterVec
+	peakRSS  prometheus.Histogram
 }
 
 func newUploadPackAdmission(cfg Config, metrics *Metrics) *uploadPackAdmission {
@@ -32,13 +34,24 @@ func newUploadPackAdmission(cfg Config, metrics *Metrics) *uploadPackAdmission {
 		requests: make(chan struct{}, cfg.maxConcurrentUploadPacks()+cfg.maxQueuedUploadPacks()),
 		waiting:  prometheus.NewGauge(prometheus.GaugeOpts{Name: "smithers_repo_host_upload_pack_waiting", Help: "Fetches reading negotiation, synchronizing refs, or waiting for process and repository read slots."}),
 		wait:     prometheus.NewHistogram(prometheus.HistogramOpts{Name: "smithers_repo_host_upload_pack_wait_seconds", Help: "Fetch admission time including negotiation and repository waits.", Buckets: []float64{0.01, 0.1, 0.5, 1, 5, 10, 20, 30, 60}}),
+		running:  prometheus.NewGauge(prometheus.GaugeOpts{Name: "smithers_repo_host_upload_pack_running", Help: "Fetches holding a git process slot: building or streaming a pack."}),
 		rejected: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "smithers_repo_host_upload_pack_rejected_total", Help: "Fetch admission failures by reason."}, []string{"reason"}),
+		peakRSS:  prometheus.NewHistogram(prometheus.HistogramOpts{Name: "smithers_repo_host_upload_pack_peak_rss_bytes", Help: "Peak resident memory of a finished fetch's git upload-pack, including its pack-objects child.", Buckets: prometheus.ExponentialBuckets(32<<20, 2, 8)}),
 	}
 	for _, reason := range []string{"body", "full", "ended"} {
 		a.rejected.WithLabelValues(reason)
 	}
-	metrics.registry.MustRegister(a.waiting, a.wait, a.rejected)
+	metrics.registry.MustRegister(a.waiting, a.running, a.wait, a.rejected, a.peakRSS)
 	return a
+}
+
+// observeExit records a finished upload-pack's peak resident memory. The exit
+// rusage folds in the largest descendant it reaped, so a pack build reports
+// pack-objects' peak; a cached pack reports the hook that streamed it.
+func (a *uploadPackAdmission) observeExit(state *os.ProcessState) {
+	if bytes, ok := peakRSSBytes(state); ok {
+		a.peakRSS.Observe(bytes)
+	}
 }
 
 // acquireUploadPack bounds negotiation reads, reference-export lock waits, and
@@ -135,7 +148,8 @@ func (s *Server) acquireUploadPack(w http.ResponseWriter, r *http.Request, repoP
 		return nil, nil, ended(err)
 	}
 	admitted = true
-	return bytes.NewReader(data), func() { unlockRead(); s.uploadPacks.Release(1); <-a.requests }, nil
+	a.running.Inc()
+	return bytes.NewReader(data), func() { a.running.Dec(); unlockRead(); s.uploadPacks.Release(1); <-a.requests }, nil
 }
 
 func (c Config) maxQueuedUploadPacks() int {

@@ -1151,7 +1151,7 @@ func (s *Server) uploadPack(w http.ResponseWriter, r *http.Request) error {
 	// server-side only — the broken stream will cause the git client to fail.
 	w.Header().Set("Content-Type", "application/x-git-upload-pack-result")
 	w.WriteHeader(http.StatusOK)
-	if err := streamGitRPCCached(r.Context(), gitDir, "upload-pack", requestBody, &idleDeadlineWriter{rc: rc, w: w}, maxDecompressedGitRequestSize, refViewer(r), s.packCache); err != nil {
+	if err := streamGitRPCCached(r.Context(), gitDir, "upload-pack", requestBody, &idleDeadlineWriter{rc: rc, w: w}, maxDecompressedGitRequestSize, refViewer(r), s.packCache, s.uploadPackQueue.observeExit); err != nil {
 		if s.logger != nil {
 			s.logger.Error("upload-pack stream failed after headers committed",
 				"owner", owner, "repo", repo, "error", err)
