@@ -1004,6 +1004,9 @@ describe("openCache", () => {
   })
 
   describe("publication holds its resources honestly", () => {
+    // Windows cannot open directory handles through Node. These barrier error
+    // cases use an actual ordinary handle as the portable syscall boundary.
+    const openBarrier = () => Fs.open(NodePath.join(root, "directory-barrier"), "w+")
     const failing = (code: string): Error => Object.assign(new Error(code), { code })
 
     it("propagates a directory open failure instead of swallowing it", async () => {
@@ -1028,6 +1031,7 @@ describe("openCache", () => {
         const cache = await openCache({
           workspaceRoot: root,
           io: {
+            openDirectory: openBarrier,
             syncHandle: (handle) => {
               syncs += 1
               return syncs === 1 ? handle.sync() : Promise.reject(failing(code))
@@ -1051,6 +1055,7 @@ describe("openCache", () => {
       const cache = await openCache({
         workspaceRoot: root,
         io: {
+          openDirectory: openBarrier,
           syncHandle: (handle) => {
             syncs += 1
             return syncs === 1 ? handle.sync() : Promise.reject(failing("EIO"))

@@ -618,7 +618,8 @@ export interface CacheIo {
 }
 
 const writeContentsLive = (handle: Fs.FileHandle, contents: string): Promise<void> => handle.writeFile(contents, "utf8")
-const openDirectoryLive = (directory: string): Promise<Fs.FileHandle> => Fs.open(directory, "r")
+const openDirectoryLive = (directory: string): Promise<Fs.FileHandle | undefined> =>
+  process.platform === "win32" ? Promise.resolve(undefined) : Fs.open(directory, "r")
 const syncHandleLive = (handle: Fs.FileHandle): Promise<void> => handle.sync()
 const closeHandleLive = (handle: Fs.FileHandle): Promise<void> => handle.close()
 const removeTempLive = (temp: string): Promise<void> => Fs.rm(temp, { force: true })
@@ -671,12 +672,12 @@ const directorySyncUnsupported = new Set(["ENOTSUP", "EOPNOTSUPP", "EINVAL", "EN
  */
 const syncDirectory = async (
   directory: string,
-  openDirectory: (directory: string) => Promise<Fs.FileHandle>,
+  openDirectory: (directory: string) => Promise<Fs.FileHandle | undefined>,
   syncHandle: (handle: Fs.FileHandle) => Promise<void>,
   closeHandle: (handle: Fs.FileHandle) => Promise<void>
 ): Promise<void> => {
-  if (process.platform === "win32") return
   const handle = await openDirectory(directory)
+  if (handle === undefined) return
   let primary: { readonly cause: unknown } | undefined
   try {
     await syncHandle(handle)
