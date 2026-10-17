@@ -697,13 +697,11 @@ describe("generated fields, cache, and refresh", () => {
     const path = NodePath.join(root, "fake-claude.mjs")
     await Fs.writeFile(
       path,
-      `process.stdout.write(JSON.stringify({ result: ${JSON.stringify(answer)} }))\n`,
+      `#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify({ result: ${JSON.stringify(answer)} }))\n`,
       "utf8"
     )
-    const shim = NodePath.join(root, "fake-claude")
-    await Fs.writeFile(shim, `#!/bin/sh\nexec node ${JSON.stringify(path)}\n`, "utf8")
-    await Fs.chmod(shim, 0o755)
-    return shim
+    await Fs.chmod(path, 0o755)
+    return path
   }
 
   const withGenerated = (over: Partial<SyncPayload> = {}): SyncPayload =>
