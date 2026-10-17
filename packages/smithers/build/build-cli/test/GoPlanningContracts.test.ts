@@ -53,7 +53,7 @@ describe("Go planning contracts", () => {
       for (
         const file of [
           go,
-          NodePath.join(sdkRoot, "bin", "go"),
+          NodePath.join(sdkRoot, "bin", process.platform === "win32" ? "go.exe" : "go"),
           NodePath.join(toolDir, "link"),
           NodePath.join(toolDir, "compile")
         ]
@@ -67,11 +67,11 @@ describe("Go planning contracts", () => {
       expect(await GoExec.resolveGo({ ...context, root })).toEqual({
         ok: true,
         // The selected SDK's own go runs the target, never the older launcher.
-        path: NodePath.join(sdkRoot, "bin", "go"),
+        path: NodePath.join(sdkRoot, "bin", process.platform === "win32" ? "go.exe" : "go"),
         sdkRoot,
         executables: [
           go,
-          NodePath.join(sdkRoot, "bin", "go"),
+          NodePath.join(sdkRoot, "bin", process.platform === "win32" ? "go.exe" : "go"),
           NodePath.join(toolDir, "compile"),
           NodePath.join(toolDir, "link")
         ],
