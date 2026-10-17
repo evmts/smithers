@@ -43,7 +43,7 @@ export const effectPinFor = (field: string): string => field === "peerDependenci
  * The version every `@smthrs/*` package a migrated project depends on ends on:
  * this package's own release version, so a migration installs the release that
  * wrote it. A packed install cannot read its manifest at run time, so the
- * literal repeats it; `scripts/set-release-version.mjs` rewrites it on a bump
+ * literal repeats it; `flows/release/set-release-version.mjs` rewrites it on a bump
  * and `test/flow/Dependencies.test.ts` pins it to `package.json`.
  *
  * @since 1.0.0-rc.0

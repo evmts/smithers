@@ -1,7 +1,7 @@
 import { Schema } from "effect"
 import { expect, test } from "bun:test"
 import { httpProjections } from "../src/app-operations/http"
-import { generateCatalog } from "../../../../scripts/catalog-mvp"
+import { generateCatalog } from "../../../../apps/app/scripts/catalog-mvp"
 
 test("HTTP projections retain literal role and actor boundaries in the shipped catalog", () => {
   const rows = generateCatalog()

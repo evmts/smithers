@@ -1,0 +1,2080 @@
+/**
+ * `SandboxedFlow` against `DirectorySandbox`: a real bundle, a real guest
+ * process, real files, and every failure the host can name.
+ *
+ * The integration provider is the scratch-directory one
+ * over the Node filesystem and spawner, the guest is a real `node` (or `bun`)
+ * process running the bundle, and the faults below are injected one layer
+ * OUTSIDE the module: a wrapping provider that refuses one operation, a
+ * runtime command that exits the way a broken image would, an entry the
+ * bundler cannot find, and a host-side declaration that drifted from the one
+ * the guest ran. Limit regressions additionally use a controlled guest with
+ * a real filesystem and observable streaming transport.
+ */
+import { NodeCrypto, NodeFileSystem } from "@effect/platform-node"
+import { afterAll, describe, expect, it } from "@effect/vitest"
+import { Capability, CapabilityPattern } from "@smthrs/capability/Capability"
+import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
+import { PermissionDenied, permissionDenied, toPlatformError } from "@smthrs/capability/Permission"
+import * as Redaction from "@smthrs/journal/Redaction"
+import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
+import * as Node from "@smthrs/plan/Node"
+import * as NodeHost from "@smthrs/platform-node/NodeHost"
+import { DirectorySandbox, RemoteChildProcessSpawner, Sandbox } from "@smthrs/sandbox"
+import * as ByteSize from "effect/ByteSize"
+import * as Cause from "effect/Cause"
+import * as Crypto from "effect/Crypto"
+import * as Deferred from "effect/Deferred"
+import * as Duration from "effect/Duration"
+import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
+import * as FileSystem from "effect/FileSystem"
+import * as Layer from "effect/Layer"
+import * as Option from "effect/Option"
+import * as PlatformError from "effect/PlatformError"
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
+import * as Schema from "effect/Schema"
+import * as Stream from "effect/Stream"
+import { spawnSync } from "node:child_process"
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync
+} from "node:fs"
+import { tmpdir } from "node:os"
+import { dirname, join } from "node:path"
+import { inspect } from "node:util"
+import { vi } from "vitest"
+import { Action, Engine, Flow, FlowRuntime, Interpreter, RetryPolicy } from "../src/index.ts"
+import * as Guest from "../src/internal/SandboxedFlowGuest.ts"
+import * as SandboxedFlow from "../src/SandboxedFlow.ts"
+import { changed, patchedPaths, repository } from "./fixtures/repository.ts"
+import * as childEntry from "./fixtures/sandboxed-child.ts"
+import * as pureEntry from "./fixtures/sandboxed-pure.ts"
+
+vi.mock("effect/Stream", { spy: true })
+
+const { ProviderError } = RemoteChildProcessSpawner
+const { Editor, Failing, Filler, Inspector, Sleeper, Sum, Writer } = childEntry
+
+const root = mkdtempSync(join(tmpdir(), "flows-sandboxed-flow-"))
+afterAll(() => rmSync(root, { recursive: true, force: true }))
+
+const entry = new URL("./fixtures/sandboxed-child.ts", import.meta.url)
+const pure = new URL("./fixtures/sandboxed-pure.ts", import.meta.url)
+const runtimeDirectory = mkdtempSync(join(tmpdir(), "flows-guest-runtimes-"))
+afterAll(() => rmSync(runtimeDirectory, { recursive: true, force: true }))
+const guestRuntime = (name: string, body: string): string => {
+  const path = join(runtimeDirectory, name)
+  writeFileSync(path, `#!/bin/sh\n${body}\n`, { mode: 0o755 })
+  return path
+}
+
+const platform = NodeHost.layerContained({ graceMs: 80 }).pipe(
+  Layer.provide(ProcessLedger.layerMemory({ hostId: "sandboxed-flow-tests", ownerPid: process.pid }))
+)
+
+const provider = Effect.gen(function*() {
+  const fs = yield* FileSystem.FileSystem
+  const spawner = yield* ChildProcessSpawner
+  return DirectorySandbox.make({ fs, spawner, root })
+}).pipe(Effect.provide(platform))
+
+/** Which session operations a wrapping provider refuses. */
+interface Faults {
+  readonly writeFile?: (path: string) => boolean
+  readonly readFile?: (path: string) => boolean
+  readonly spawn?: boolean
+  readonly readDirectory?: boolean
+}
+
+/**
+ * A real provider with one operation refused. The session underneath is the
+ * scratch directory's own; only the named call answers with a failure, the
+ * way a transport that lost its machine mid-run would.
+ */
+const faulty = (base: Sandbox.Provider, faults: Faults): Sandbox.Provider => ({
+  acquire: (key) =>
+    Effect.map(base.acquire(key), (session): Sandbox.Session => ({
+      ...session,
+      writeFile: (path, content) =>
+        faults.writeFile?.(path) === true
+          ? Effect.fail(new ProviderError({ code: "unknown", message: `write refused for ${path}` }))
+          : session.writeFile(path, content),
+      readFile: (path) =>
+        faults.readFile?.(path) === true
+          ? Effect.fail(new ProviderError({ code: "unknown", message: `read refused for ${path}` }))
+          : session.readFile(path),
+      spawn: (command, options) =>
+        faults.spawn === true
+          ? Effect.fail(new ProviderError({ code: "spawn_error", message: "spawn refused" }))
+          : session.spawn(command, options),
+      files: faults.readDirectory === true
+        ? {
+          ...session.files,
+          readDirectory: () =>
+            Effect.fail(
+              PlatformError.systemError({
+                _tag: "Unknown",
+                module: "FileSystem",
+                method: "readDirectory",
+                description: "listing refused"
+              })
+            )
+        }
+        : faults.readFile === undefined ?
+        session.files :
+        {
+          ...session.files,
+          stream: (path) =>
+            Stream.unwrap(
+              (faults.readFile?.(path) === true
+                ? Effect.fail(PlatformError.systemError({
+                  _tag: "Unknown",
+                  module: "FileSystem",
+                  method: "stream",
+                  description: `read refused for ${path}`
+                }))
+                : session.readFile(path).pipe(Effect.mapError(() =>
+                  PlatformError.systemError({
+                    _tag: "Unknown",
+                    module: "FileSystem",
+                    method: "stream",
+                    description: `read failed for ${path}`
+                  })
+                ))).pipe(Effect.map(Stream.succeed))
+            )
+        }
+    }))
+})
+
+/** A provider that remembers every session key it was asked for. */
+const recording = (base: Sandbox.Provider, keys: Array<string>): Sandbox.Provider => ({
+  acquire: (key) => {
+    keys.push(key)
+    return base.acquire(key)
+  }
+})
+
+const failureOf = <A>(
+  effect: Effect.Effect<A, SandboxedFlow.ExecuteError>
+): Effect.Effect<SandboxedFlow.SandboxedFlowError, A> =>
+  Effect.flip(effect).pipe(
+    Effect.map((failure) => {
+      if (failure instanceof SandboxedFlow.SandboxedFlowError) return failure
+      throw new Error(`expected a SandboxedFlowError, got ${failure._tag}`)
+    })
+  )
+
+const bunInstalled = spawnSync("bun", ["--version"], { stdio: "ignore" }).status === 0
+
+describe("SandboxedFlow.execute on a scratch machine", () => {
+  it.live("treats a runtime path containing shell syntax as one executable", () =>
+    Effect.gen(function*() {
+      const directory = yield* provider
+      const runtimeDirectory = mkdtempSync(join(tmpdir(), "flows-runtime-"))
+      const runtime = join(runtimeDirectory, "node guest'; echo injected; #")
+      try {
+        symlinkSync(process.execPath, runtime)
+        const result = yield* SandboxedFlow.execute(Sum, { n: 31 }, {
+          provider: directory,
+          session: "quoted-runtime",
+          entry,
+          runtime
+        })
+        expect(result.output).toBe(42)
+      } finally {
+        rmSync(runtimeDirectory, { recursive: true, force: true })
+      }
+    }), 60_000)
+
+  it.live("runs the child flow's own code in the guest and validates its result", () =>
+    Effect.gen(function*() {
+      const directory = yield* provider
+      const result = yield* SandboxedFlow.execute(Sum, { n: 31 }, {
+        provider: directory,
+        session: "sum",
+        entry
+      })
+      expect(result).toEqual({ output: 42, work: null, capabilityCeiling: [] })
+      // A normal completion releases the session, which removes the workspace.
+      expect(readdirSync(root)).toEqual([])
+    }), 60_000)
+
+  it.live("takes a path entry and captures the files the guest wrote as a patch", () =>
+    Effect.gen(function*() {
+      const directory = repository(yield* provider)
+      const result = yield* SandboxedFlow.execute(Writer, { count: 3, bytes: 16, directory: "out" }, {
+        provider: directory,
+        session: "writer",
+        entry: realpathSync(new URL(entry)),
+        captureWork: true
+      })
+      expect(result.output).toBe(3)
+      const work = changed(result.work)
+      expect(work.session).toBe("writer")
+      expect(work.base).toMatch(/^[0-9a-f]{40}$/)
+      expect(patchedPaths(work.patch)).toEqual(["out/file-0.bin", "out/file-1.bin", "out/file-2.bin"])
+      // Bytes 0x01 are not text, so git carries them as a binary patch.
+      expect(work.patch).toContain("GIT binary patch")
+      // The protocol's own files never count as the guest's changes.
+      expect(work.patch).not.toContain(".smithers-sandbox")
+    }), 60_000)
+
+  it.live("captures Unchanged at the base when the guest changes nothing", () =>
+    Effect.gen(function*() {
+      const result = yield* SandboxedFlow.execute(Sum, { n: 31 }, {
+        provider: repository(yield* provider, { "kept.txt": "as it was" }),
+        session: "unchanged",
+        entry,
+        captureWork: true
+      })
+      expect(result.output).toBe(42)
+      expect(result.work?._tag).toBe("Unchanged")
+      expect(result.work?.base).toMatch(/^[0-9a-f]{40}$/)
+    }), 60_000)
+
+  it.live("refuses to capture a workdir that is not a repository before the guest runs", () =>
+    Effect.gen(function*() {
+      const marker = join(runtimeDirectory, "not-a-repository-ran")
+      const failure = yield* failureOf(SandboxedFlow.execute(Sum, { n: 31 }, {
+        provider: yield* provider,
+        session: "not-a-repository",
+        entry,
+        runtime: guestRuntime(
+          "marks-run",
+          `touch ${JSON.stringify(marker)}; exec ${JSON.stringify(process.execPath)} "$@"`
+        ),
+        captureWork: true
+      }))
+      expect(failure.code).toBe("capture_failed")
+      expect(failure.message).toMatch(/^not_a_repository: the base of the workspace could not be resolved: /)
+      expect(existsSync(marker)).toBe(false)
+      expect(readdirSync(root)).toEqual([])
+    }), 60_000)
+
+  it.live("reports a checkout the guest destroyed as a failed capture", () =>
+    Effect.gen(function*() {
+      const failure = yield* failureOf(SandboxedFlow.execute(Sum, { n: 31 }, {
+        provider: repository(yield* provider),
+        session: "destroyed-repository",
+        entry,
+        runtime: guestRuntime("removes-git", `rm -rf .git && exec ${JSON.stringify(process.execPath)} "$@"`),
+        captureWork: true
+      }))
+      expect(failure.code).toBe("capture_failed")
+      expect(failure.message).toMatch(/^not_a_repository: the work could not be captured: /)
+    }), 60_000)
+
+  it.live("runs an entry that exports no layer", () =>
+    Effect.gen(function*() {
+      const directory = yield* provider
+      const result = yield* SandboxedFlow.execute(pureEntry.Constant, { value: "as it was" }, {
+        provider: directory,
+        session: "pure",
+        entry: pure
+      })
+      expect(result.output).toBe("as it was")
+    }), 60_000)
+
+  it.live("reattaches the machine a previous holder of the session key seeded", () =>
+    Effect.gen(function*() {
+      const directory = yield* provider
+      // The outer holder stands in for a crashed earlier execution: it
+      // acquired the key, wrote into the workspace, and never released it.
+      const result = yield* Effect.scoped(
+        Effect.gen(function*() {
+          const earlier = yield* directory.acquire("seeded")
+          yield* earlier.writeFile(`${earlier.workdir}/seed.txt`, new TextEncoder().encode("from the host"))
+          // Read before the execution: its completion releases the key, which
+          // removes the workspace under this holder, as the contract says.
+          const workdir = realpathSync(earlier.workdir)
+          const result = yield* SandboxedFlow.execute(Inspector, { marker: "left by the guest" }, {
+            provider: directory,
+            session: "seeded",
+            entry,
+            timeout: Duration.seconds(30)
+          })
+          expect(result.output.cwd).toBe(workdir)
+          return result
+        })
+      )
+      expect(result.output.seed).toBe("from the host")
+      expect(result.output.runtime).toMatch(/^node v/)
+    }), 60_000)
+
+  it.live("captures a same-size rewrite and a deletion on a reattached workspace", () =>
+    Effect.gen(function*() {
+      const directory = repository(yield* provider, { "version.txt": "1.2.3\n", "gone.txt": "delete me\n" })
+      const result = yield* Effect.scoped(
+        Effect.gen(function*() {
+          // The earlier holder seeded and committed the repository.
+          yield* directory.acquire("edited")
+          return yield* SandboxedFlow.execute(Editor, { path: "version.txt", text: "1.2.4\n", remove: "gone.txt" }, {
+            provider: directory,
+            session: "edited",
+            entry,
+            captureWork: true,
+            timeout: Duration.seconds(30)
+          })
+        })
+      )
+      const work = changed(result.work)
+      expect(patchedPaths(work.patch)).toEqual(["gone.txt", "version.txt"])
+      expect(work.patch).toContain("deleted file mode 100644")
+      expect(work.patch).toContain("-1.2.3\n+1.2.4\n")
+    }), 60_000)
+
+  it.live("refuses a stale result when a reattached guest exits zero without writing", () =>
+    Effect.gen(function*() {
+      const directory = yield* provider
+      yield* Effect.scoped(
+        Effect.gen(function*() {
+          const earlier = yield* directory.acquire("stale-result")
+          yield* earlier.writeFile(
+            `${earlier.workdir}/.smithers-sandbox/result.json`,
+            new TextEncoder().encode(
+              JSON.stringify({ attempt: "earlier-attempt", capabilityCeiling: [], status: "succeeded", output: 17 })
+            )
+          )
+          const failure = yield* failureOf(SandboxedFlow.execute(Sum, { n: 99 }, {
+            provider: directory,
+            session: "stale-result",
+            entry,
+            runtime: guestRuntime("stale-no-result", "exit 0")
+          }))
+          expect(failure.code).toBe("result_unreadable")
+          expect(failure.message).toContain("without writing a result")
+        })
+      )
+    }), 60_000)
+
+  it.live("creates a fresh attempt when the same execution effect runs again", () =>
+    Effect.gen(function*() {
+      const directory = yield* provider
+      const attempts: Array<string> = []
+      const execution = SandboxedFlow.execute(Sum, { n: 31 }, {
+        provider: {
+          acquire: (key) =>
+            Effect.map(directory.acquire(key), (session) => ({
+              ...session,
+              writeFile: (path, bytes) => {
+                if (path.endsWith("/request.json")) {
+                  attempts.push(
+                    Schema.decodeUnknownSync(Guest.Request)(JSON.parse(new TextDecoder().decode(bytes))).attempt
+                  )
+                }
+                return session.writeFile(path, bytes)
+              }
+            }))
+        },
+        session: "fresh-attempt",
+        entry
+      })
+      expect((yield* execution).output).toBe(42)
+      expect((yield* execution).output).toBe(42)
+      expect(attempts).toHaveLength(2)
+      expect(attempts[0]).not.toBe(attempts[1])
+    }), 60_000)
+
+  it.live(
+    "captures a link the guest planted as a link instead of reading its target",
+    () =>
+      Effect.gen(function*() {
+        const directory = repository(yield* provider)
+        const outside = mkdtempSync(join(tmpdir(), "flows-outside-"))
+        try {
+          const secret = join(outside, "secret.txt")
+          writeFileSync(secret, "host secret")
+          const runtime = guestRuntime(
+            "plant-link",
+            `ln -s ${JSON.stringify(secret)} leak.txt && mkdir sub && ln -s ${JSON.stringify(outside)} sub/dir && ` +
+              `printf kept > kept.txt && exec ${JSON.stringify(process.execPath)} "$@"`
+          )
+          const result = yield* SandboxedFlow.execute(Sum, { n: 31 }, {
+            provider: directory,
+            session: "planted-link",
+            entry,
+            runtime,
+            captureWork: true
+          })
+          const work = changed(result.work)
+          expect(patchedPaths(work.patch)).toEqual(["kept.txt", "leak.txt", "sub/dir"])
+          expect(work.patch).toContain("new file mode 120000")
+          expect(work.patch).not.toContain("host secret")
+        } finally {
+          rmSync(outside, { recursive: true, force: true })
+        }
+      }),
+    60_000
+  )
+})
+
+describe.skipIf(!bunInstalled)("SandboxedFlow.execute under bun", () => {
+  it.live("starts the bundle with the runtime it was told to", () =>
+    Effect.gen(function*() {
+      const directory = yield* provider
+      const result = yield* SandboxedFlow.execute(Inspector, { marker: "bun" }, {
+        provider: directory,
+        session: "bun",
+        entry,
+        runtime: "bun"
+      })
+      expect(result.output.runtime).toBe("bun")
+    }), 60_000)
+})
+
+/** A real filesystem with a controlled guest and observable readback transport. */
+const limitedGuest = (options: {
+  readonly output?: string
+  readonly noise?: Stream.Stream<Uint8Array, RemoteChildProcessSpawner.ProviderError>
+  readonly resultSize?: number
+  readonly failure?: string
+  readonly native?: boolean
+  readonly resultStatFailure?: boolean
+  readonly readbackFailure?: boolean
+} = {}) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem.pipe(Effect.provide(NodeFileSystem.layer))
+    const fileError = (cause: unknown) => new ProviderError({ code: "unknown", message: String(cause) })
+    const directory: Sandbox.Provider = {
+      acquire: (key) =>
+        Effect.gen(function*() {
+          const workdir = yield* fs.makeTempDirectoryScoped({ directory: root }).pipe(Effect.mapError(fileError))
+          return {
+            id: key,
+            remoteId: key,
+            workdir,
+            files: { stat: fs.stat, readDirectory: fs.readDirectory, remove: fs.remove },
+            readFile: (path) => fs.readFile(path).pipe(Effect.mapError(fileError)),
+            writeFile: (path, bytes) =>
+              fs.makeDirectory(dirname(path), { recursive: true }).pipe(
+                Effect.andThen(fs.writeFile(path, bytes)),
+                Effect.mapError(fileError)
+              ),
+            spawn: (command) =>
+              Effect.sync(() => {
+                const child = spawnSync("sh", ["-c", command], { cwd: workdir })
+                return {
+                  stdout: Stream.succeed(child.stdout),
+                  stderr: Stream.succeed(child.stderr),
+                  exitCode: Effect.succeed(child.status ?? 1)
+                }
+              })
+          } satisfies Sandbox.Session
+        })
+    }
+    const reads: Array<string> = []
+    const streamed: Array<{ path: string; bytesToRead: unknown }> = []
+    let attempt = ""
+    let capabilityCeiling: unknown = []
+    const nativeStream: FileSystem.FileSystem["stream"] = (path, settings) => {
+      streamed.push({ path, bytesToRead: settings?.bytesToRead })
+      return fs.stream(path, settings)
+    }
+    const wrapped: Sandbox.Provider = {
+      acquire: (key) =>
+        Effect.map(directory.acquire(key), (session) => ({
+          ...session,
+          writeFile: (path, bytes) => {
+            if (path.endsWith("request.json")) {
+              ;({ attempt, capabilityCeiling } = JSON.parse(new TextDecoder().decode(bytes)))
+            }
+            return session.writeFile(path, bytes)
+          },
+          readFile: (path) => {
+            reads.push(path)
+            return session.readFile(path)
+          },
+          files: {
+            ...session.files,
+            stat: (path) =>
+              Effect.gen(function*() {
+                if (options.resultStatFailure === true && path.endsWith("result.json")) {
+                  return yield* Effect.fail(PlatformError.systemError({
+                    _tag: "Unknown",
+                    module: "FileSystem",
+                    method: "stat",
+                    description: "result transport unavailable"
+                  }))
+                }
+                return yield* fs.stat(path)
+              }).pipe(
+                Effect.map((info) => ({
+                  ...info,
+                  size: ByteSize.bytes(
+                    path.endsWith("result.json") ? options.resultSize ?? Number(info.size) : Number(info.size)
+                  )
+                }))
+              ),
+            ...(options.native === false ? {} : { stream: nativeStream })
+          },
+          spawn: (command, settings) =>
+            Effect.gen(function*() {
+              if (settings.env === undefined) {
+                if (options.readbackFailure === true) {
+                  return {
+                    stdout: Stream.empty,
+                    stderr: Stream.succeed(new TextEncoder().encode("readback transport refused")),
+                    exitCode: Effect.succeed(1)
+                  }
+                }
+                return yield* session.spawn(command, settings)
+              }
+              yield* session.writeFile(
+                settings.env!.SMITHERS_SANDBOX_RESULT_PATH!,
+                new TextEncoder().encode(
+                  JSON.stringify(
+                    options.failure === undefined ?
+                      { attempt, capabilityCeiling, status: "succeeded", output: options.output ?? "ok" }
+                      : { attempt, capabilityCeiling, status: "failed", error: options.failure }
+                  )
+                )
+              )
+              return {
+                stdout: options.noise ?? Stream.empty,
+                stderr: options.noise ?? Stream.empty,
+                exitCode: Effect.as(Effect.sleep("20 millis"), 0)
+              }
+            })
+        }))
+    }
+    return { provider: wrapped, reads, streamed }
+  })
+
+describe("sandbox limit boundaries", () => {
+  const resultSize = (output: string) =>
+    new TextEncoder().encode(JSON.stringify({
+      attempt: "x".repeat(36),
+      capabilityCeiling: [],
+      status: "succeeded",
+      output
+    })).length
+
+  for (const output of ["", "é🌍"]) {
+    for (const extra of [0, 1]) {
+      it.live(
+        `result bytes accept N and reject N+1: ${JSON.stringify(output)}, extra ${extra}`,
+        () =>
+          Effect.gen(function*() {
+            const guest = yield* limitedGuest({ output })
+            const limit = resultSize(output) - extra
+            const exit = yield* SandboxedFlow.execute(pureEntry.Constant, { value: output }, {
+              provider: guest.provider,
+              session: "result-boundary",
+              entry: pure,
+              limits: { resultBytes: limit }
+            }).pipe(Effect.exit)
+            if (extra === 0) expect(Exit.isSuccess(exit) && exit.value.output).toBe(output)
+            else {expect(Exit.isFailure(exit) && exit.cause.reasons[0]).toMatchObject({
+                error: { code: "result_overflow" }
+              })}
+          }),
+        60_000
+      )
+    }
+  }
+
+  it.live("rejects a zero-byte result budget before downloading", () =>
+    Effect.gen(function*() {
+      const guest = yield* limitedGuest()
+      const failure = yield* failureOf(SandboxedFlow.execute(pureEntry.Constant, { value: "ok" }, {
+        provider: guest.provider,
+        session: "zero-result",
+        entry: pure,
+        limits: { resultBytes: 0 }
+      }))
+      expect(failure.code).toBe("result_overflow")
+      expect(guest.reads).toEqual([])
+      expect(guest.streamed).toEqual([])
+    }), 60_000)
+
+  // A NaN or infinite bound compares false against every size and so would
+  // disable the limit it names; a negative or fractional one asks the
+  // transport for a nonsensical byte count.
+  for (const field of ["resultBytes", "diffBytes"] as const) {
+    for (const bound of [Number.NaN, Number.POSITIVE_INFINITY, -1, 1.5]) {
+      it.live(`dies on a ${field} of ${bound} before acquiring a machine`, () =>
+        Effect.gen(function*() {
+          const acquired: Array<string> = []
+          const guest = yield* limitedGuest({ output: "x".repeat(10_000) })
+          const exit = yield* SandboxedFlow.execute(pureEntry.Constant, { value: "ok" }, {
+            provider: { acquire: (key) => Effect.suspend(() => (acquired.push(key), guest.provider.acquire(key))) },
+            session: "invalid-limit",
+            entry: pure,
+            limits: { [field]: bound }
+          }).pipe(Effect.exit)
+          expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true)
+          expect(Cause.pretty((exit as Exit.Failure<unknown, unknown>).cause)).toContain(
+            `SandboxedFlow limits.${field} must be a non-negative safe integer`
+          )
+          expect(acquired).toEqual([])
+        }), 60_000)
+    }
+  }
+
+  it.live("stops a growing result at the byte budget plus one", () =>
+    Effect.gen(function*() {
+      const guest = yield* limitedGuest({ output: "x".repeat(100_000), resultSize: 1 })
+      const failure = yield* failureOf(SandboxedFlow.execute(pureEntry.Constant, { value: "ok" }, {
+        provider: guest.provider,
+        session: "growing-result",
+        entry: pure,
+        limits: { resultBytes: 100 }
+      }))
+      expect(failure.code).toBe("result_overflow")
+      expect(guest.reads).toEqual([])
+      expect(guest.streamed.map((read) => Number(read.bytesToRead))).toEqual([101])
+    }), 60_000)
+
+  for (const timeout of [Duration.zero, Duration.millis(5)]) {
+    it.live(`expires a ${Duration.toMillis(timeout)} millisecond budget`, () =>
+      Effect.gen(function*() {
+        const guest = yield* limitedGuest()
+        const failure = yield* failureOf(SandboxedFlow.execute(pureEntry.Constant, { value: "ok" }, {
+          provider: guest.provider,
+          session: "short-timeout",
+          entry: pure,
+          timeout
+        }))
+        expect(failure.code).toBe("deadline_exceeded")
+      }), 60_000)
+  }
+
+  // A negative budget is a programmer error, and a negative infinite one is
+  // not finite, so it would have switched the hang guard off.
+  for (const timeout of [Duration.millis(-5), Duration.millis(Number.NEGATIVE_INFINITY)]) {
+    it.live(
+      `dies on a ${Duration.toMillis(timeout)} millisecond budget before acquiring a machine`,
+      () =>
+        Effect.gen(function*() {
+          const acquired: Array<string> = []
+          const guest = yield* limitedGuest()
+          const exit = yield* SandboxedFlow.execute(pureEntry.Constant, { value: "ok" }, {
+            provider: { acquire: (key) => Effect.suspend(() => (acquired.push(key), guest.provider.acquire(key))) },
+            session: "negative-timeout",
+            entry: pure,
+            timeout
+          }).pipe(Effect.exit)
+          expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true)
+          expect(Cause.pretty((exit as Exit.Failure<unknown, unknown>).cause)).toContain(
+            "SandboxedFlow timeout must not be negative"
+          )
+          expect(acquired).toEqual([])
+        }),
+      60_000
+    )
+  }
+
+  for (const timeout of [Duration.infinity, Duration.days(30)]) {
+    it.live(`does not immediately expire ${Duration.toMillis(timeout)} milliseconds`, () =>
+      Effect.gen(function*() {
+        const guest = yield* limitedGuest()
+        const result = yield* SandboxedFlow.execute(pureEntry.Constant, { value: "ok" }, {
+          provider: guest.provider,
+          session: "long-timeout",
+          entry: pure,
+          timeout
+        })
+        expect(result.output).toBe("ok")
+      }), 60_000)
+  }
+
+  it.live("redacts credentials across chunks and preserves subsequent UTF-8 diagnostics", () =>
+    Effect.gen(function*() {
+      const credential = "synthetic-output-secret".repeat(400)
+      const bytes = new TextEncoder().encode(`Bearer ${credential}\n${"é".repeat(2100)}🌍 tail`)
+      const noise = Stream.fromIterable(
+        Array.from({ length: Math.ceil(bytes.length / 31) }, (_, i) => bytes.subarray(i * 31, (i + 1) * 31))
+      )
+      const guest = yield* limitedGuest({ noise, failure: "refused" })
+      const failure = yield* failureOf(SandboxedFlow.execute(pureEntry.Constant, { value: "ok" }, {
+        provider: guest.provider,
+        session: "chunked-diagnostics",
+        entry: pure
+      }))
+      expect(failure.code).toBe("flow_failed")
+      expect(failure.message).not.toContain("synthetic-output-secret")
+      expect(failure.message).toContain("🌍 tail")
+      expect(failure.message.length).toBeLessThan(8400)
+    }), 60_000)
+
+  it.live("redacts multiline private keys while retaining a UTF-8 tail", () =>
+    Effect.gen(function*() {
+      const bytes = new TextEncoder().encode(
+        `-----BEGIN PRIVATE KEY-----\n${"private-material".repeat(800)}\n-----END PRIVATE KEY-----\n${
+          "🌍".repeat(2100)
+        } tail`
+      )
+      const noise = Stream.fromIterable(
+        Array.from({ length: Math.ceil(bytes.length / 31) }, (_, i) => bytes.subarray(i * 31, (i + 1) * 31))
+      )
+      const guest = yield* limitedGuest({ noise, failure: "refused" })
+      const failure = yield* failureOf(SandboxedFlow.execute(pureEntry.Constant, { value: "ok" }, {
+        provider: guest.provider,
+        session: "private-key-diagnostics",
+        entry: pure
+      }))
+      expect(failure.message).not.toContain("private-material")
+      expect(failure.message).not.toContain("�")
+      expect(failure.message).toContain("🌍 tail")
+    }), 60_000)
+
+  it.live("redacts a JSON credential whose key and value span lines", () =>
+    Effect.gen(function*() {
+      const noise = Stream.fromIterable([
+        new TextEncoder().encode("{\n  \"password\":\n"),
+        new TextEncoder().encode("  \"synthetic-multiline-credential\"\n}\nreadable tail")
+      ])
+      const guest = yield* limitedGuest({ noise, failure: "refused" })
+      const failure = yield* failureOf(SandboxedFlow.execute(pureEntry.Constant, { value: "ok" }, {
+        provider: guest.provider,
+        session: "json-diagnostics",
+        entry: pure
+      }))
+      expect(failure.message).not.toContain("synthetic-multiline-credential")
+      expect(failure.message).toContain("[REDACTED]")
+      expect(failure.message).toContain("readable tail")
+    }), 60_000)
+
+  it.live("redacts a private key and an inspected string split over lines and chunks", () =>
+    Effect.gen(function*() {
+      const secret = "ZqSynthetic7Secret4Value9"
+      const bytes = new TextEncoder().encode(
+        `-----BEGIN PRIVATE KEY-----\n${secret}\n-----END PRIVATE KEY-----\n${
+          inspect({ privateKey: `${secret}\n`.repeat(8) })
+        }\nreadable tail`
+      )
+      const noise = Stream.fromIterable(
+        Array.from({ length: Math.ceil(bytes.length / 7) }, (_, i) => bytes.subarray(i * 7, (i + 1) * 7))
+      )
+      const guest = yield* limitedGuest({ noise, failure: "refused" })
+      const failure = yield* failureOf(SandboxedFlow.execute(pureEntry.Constant, { value: "ok" }, {
+        provider: guest.provider,
+        session: "inspect-diagnostics",
+        entry: pure
+      }))
+      expect(failure.message).not.toContain(secret)
+      expect(failure.message).toContain("[REDACTED]")
+      expect(failure.message).toContain("readable tail")
+    }), 60_000)
+
+  it.live("keeps a value opened by an overlong line held until it closes", () =>
+    Effect.gen(function*() {
+      const secret = "ZqSynthetic7Secret4Value9"
+      // No quote, so nothing withholds the rest of the stream: only the line
+      // redactor, seeing the opener at the end of the overlong line, holds the key.
+      const bytes = new TextEncoder().encode(
+        `${"a".repeat(33_000)} -----BEGIN PRIVATE KEY-----\n${secret}\n-----END PRIVATE KEY-----\nreadable tail`
+      )
+      const noise = Stream.fromIterable(
+        Array.from({ length: Math.ceil(bytes.length / 31) }, (_, i) => bytes.subarray(i * 31, (i + 1) * 31))
+      )
+      const guest = yield* limitedGuest({ noise, failure: "refused" })
+      const failure = yield* failureOf(SandboxedFlow.execute(pureEntry.Constant, { value: "ok" }, {
+        provider: guest.provider,
+        session: "overlong-opener-diagnostics",
+        entry: pure
+      }))
+      expect(failure.message).not.toContain(secret)
+      expect(failure.message).toContain("readable tail")
+    }), 60_000)
+
+  it.live("withholds what an opener in the dropped middle of an overlong line swallows", () =>
+    Effect.gen(function*() {
+      const secret = "ZqSynthetic7Secret4Value9"
+      const bytes = new TextEncoder().encode(
+        `${"x".repeat(20_000)} password: { value: "${"a".repeat(20_000)}\n${secret}\n" }\nreadable tail`
+      )
+      const noise = Stream.fromIterable(
+        Array.from({ length: Math.ceil(bytes.length / 4096) }, (_, i) => bytes.subarray(i * 4096, (i + 1) * 4096))
+      )
+      const guest = yield* limitedGuest({ noise, failure: "refused" })
+      const failure = yield* failureOf(SandboxedFlow.execute(pureEntry.Constant, { value: "ok" }, {
+        provider: guest.provider,
+        session: "overlong-middle-diagnostics",
+        entry: pure
+      }))
+      expect(failure.message).not.toContain(secret)
+    }), 60_000)
+
+  it.live("redacts diagnostic credential spellings in guest output", () =>
+    Effect.gen(function*() {
+      const secret = "ZqSynthetic7Secret4Value9"
+      const noise = Stream.succeed(
+        new TextEncoder().encode(`Authorization: Token ${secret}\nreadable tail`)
+      )
+      // The guest's own failure sentence reaches the message without the line redactor.
+      const guest = yield* limitedGuest({ noise, failure: `sshpass -p ${secret} ssh host` })
+      const failure = yield* failureOf(SandboxedFlow.execute(pureEntry.Constant, { value: "ok" }, {
+        provider: guest.provider,
+        session: "diagnostic-spellings",
+        entry: pure
+      }))
+      expect(failure.message).not.toContain(secret)
+      expect(failure.message).toContain("sshpass -p [REDACTED] ssh host")
+      expect(failure.message).toContain("Authorization: [REDACTED]")
+      expect(failure.message).toContain("readable tail")
+    }), 60_000)
+
+  it.live("does not expose the suffix of an overlong quoted credential", () =>
+    Effect.gen(function*() {
+      const bytes = new TextEncoder().encode(`{\n"password":\n"${"synthetic-quoted-credential".repeat(400)}"\n}`)
+      const noise = Stream.fromIterable(
+        Array.from({ length: Math.ceil(bytes.length / 31) }, (_, i) => bytes.subarray(i * 31, (i + 1) * 31))
+      )
+      const guest = yield* limitedGuest({ noise, failure: "refused" })
+      const failure = yield* failureOf(SandboxedFlow.execute(pureEntry.Constant, { value: "ok" }, {
+        provider: guest.provider,
+        session: "quoted-diagnostics",
+        entry: pure
+      }))
+      expect(failure.message).not.toContain("synthetic-quoted-credential")
+      expect(failure.message).toContain("[REDACTED]")
+    }), 60_000)
+
+  for (
+    const diagnostic of [
+      {
+        name: "unterminated private key",
+        text: `-----BEGIN PRIVATE KEY-----\n${"private-material".repeat(800)}`,
+        secret: "private-material",
+        tail: "[REDACTED]"
+      },
+      {
+        name: "long ordinary quoted message",
+        text: `message: '${"ordinary text ".repeat(800)}' readable tail`,
+        secret: "[REDACTED]",
+        tail: "readable tail"
+      }
+    ]
+  ) {
+    it.live(`retains safe diagnostics for ${diagnostic.name}`, () =>
+      Effect.gen(function*() {
+        const guest = yield* limitedGuest({
+          noise: Stream.succeed(new TextEncoder().encode(diagnostic.text)),
+          failure: "refused"
+        })
+        const failure = yield* failureOf(SandboxedFlow.execute(pureEntry.Constant, { value: "ok" }, {
+          provider: guest.provider,
+          session: "bounded-diagnostics",
+          entry: pure
+        }))
+        expect(failure.code).toBe("flow_failed")
+        expect(failure.message).not.toContain(diagnostic.secret)
+        expect(failure.message).toContain(diagnostic.tail)
+      }), 60_000)
+  }
+
+  for (const fault of ["resultStatFailure", "readbackFailure"] as const) {
+    it.live(`reports ${fault} as a session failure`, () =>
+      Effect.gen(function*() {
+        const guest = yield* limitedGuest({ native: false, [fault]: true })
+        const failure = yield* failureOf(SandboxedFlow.execute(pureEntry.Constant, { value: "ok" }, {
+          provider: guest.provider,
+          session: "refused-result-transport",
+          entry: pure
+        }))
+        expect(failure.code).toBe("session_failed")
+        expect(failure.message).toContain("the result could not be read back")
+        expect(failure.message).toContain(
+          fault === "readbackFailure" ? "readback transport refused" : "result transport unavailable"
+        )
+      }), 60_000)
+  }
+
+  it.live("drains noisy streams without a whole-output string collector", () =>
+    Effect.gen(function*() {
+      const collector = vi.spyOn(Stream, "mkString").mockClear()
+      let drained = 0
+      const bytes = new TextEncoder().encode("x".repeat(16_384))
+      const noise = Stream.fromIterable(Array.from({ length: 256 }, () => bytes)).pipe(
+        Stream.tap(() =>
+          Effect.sync(() => {
+            drained++
+          })
+        )
+      )
+      try {
+        const guest = yield* limitedGuest({ noise, failure: "noisy failure" })
+        const failure = yield* failureOf(SandboxedFlow.execute(pureEntry.Constant, { value: "ok" }, {
+          provider: guest.provider,
+          session: "noisy",
+          entry: pure
+        }))
+        expect(failure.code).toBe("flow_failed")
+        // The shared line redactor never shows a line past its bound, only its marker.
+        expect(failure.message).toContain(
+          `stdout: ${Redaction.omittedLine}; stderr: ${Redaction.omittedLine}`
+        )
+        expect(failure.message.length).toBeLessThan(8400)
+        expect(drained).toBe(512)
+        expect(collector).not.toHaveBeenCalled()
+      } finally {
+        collector.mockRestore()
+      }
+    }), 60_000)
+})
+
+describe("SandboxedFlow.execute failures", () => {
+  const run = <
+    Tag extends string,
+    Payload extends Flow.AnyStructSchema,
+    Success extends Schema.Top,
+    Error extends Schema.Top,
+    Requires
+  >(
+    flow: Flow.Flow<Tag, Payload, Success, Error, Requires>,
+    payload: Payload["Type"],
+    options: Partial<SandboxedFlow.ExecuteOptions>
+  ) =>
+    Effect.gen(function*() {
+      const directory = yield* provider
+      return yield* failureOf(
+        SandboxedFlow.execute(flow, payload, {
+          provider: directory,
+          session: `failure-${Date.now()}-${Math.random()}`,
+          entry,
+          ...options
+        })
+      )
+    })
+
+  it.live("refuses an entry the bundler cannot find", () =>
+    Effect.gen(function*() {
+      const failure = yield* run(Sum, { n: 1 }, { entry: join(root, "missing-entry.ts") })
+      expect(failure.code).toBe("bundle_failed")
+      expect(failure.message).toContain("could not be bundled")
+      expect(failure.message).toContain("missing-entry.ts")
+    }), 60_000)
+
+  it.live("refuses an entry that is not a file", () =>
+    Effect.gen(function*() {
+      const failure = yield* run(Sum, { n: 1 }, { entry: new URL("https://example.invalid/child.ts") })
+      expect(failure.code).toBe("bundle_failed")
+      expect(failure.message).toContain("https://example.invalid/child.ts")
+    }), 60_000)
+
+  it.live("reports a provider that cannot supply the machine", () =>
+    Effect.gen(function*() {
+      const failure = yield* run(Sum, { n: 1 }, {
+        provider: {
+          acquire: () => Effect.fail(new ProviderError({ code: "unavailable", message: "no machines left" }))
+        }
+      })
+      expect(failure.code).toBe("session_failed")
+      expect(failure.message).toContain("no machines left")
+    }), 60_000)
+
+  it.live("redacts provider messages and nested causes in the returned error", () =>
+    Effect.gen(function*() {
+      const secret = "synthetic-provider-credential-NOT-A-REAL-SECRET"
+      const cause = Object.assign(new Error(`request failed: password=${secret}`), {
+        password: secret,
+        headers: { Authorization: `Bearer ${secret}` }
+      })
+      const failure = yield* run(Sum, { n: 1 }, {
+        provider: {
+          acquire: () =>
+            Effect.fail(
+              new ProviderError({
+                code: "unavailable",
+                message: `provider refused: Bearer ${secret}`,
+                cause
+              })
+            )
+        }
+      })
+      expect(failure.code).toBe("session_failed")
+      expect(failure.message).toContain("provider refused: Bearer [REDACTED_TOKEN]")
+      expect(JSON.stringify(failure)).not.toContain(secret)
+      expect(String(failure.cause)).not.toContain(secret)
+      expect(failure.cause).toMatchObject({
+        cause: {
+          message: "request failed: password=[REDACTED]",
+          password: "[REDACTED]",
+          headers: { Authorization: "[REDACTED]" }
+        }
+      })
+    }), 60_000)
+
+  for (const mode of ["failed", "missing", "invalid", "nonzero"] as const) {
+    it.live(`redacts guest diagnostics before truncating output for ${mode} results`, () =>
+      Effect.gen(function*() {
+        const secret = "synthetic-output-credential-NOT-A-REAL-SECRET"
+        // The credential prefix falls outside the raw tail bound.
+        const chatter = `Bearer ${secret.repeat(150)}`
+        const result = JSON.stringify({ status: "failed", error: `password=${secret}` })
+        const body = [
+          `printf '%s' '${chatter}'`,
+          `printf '%s' '${chatter}' >&2`,
+          mode === "failed"
+            ? `node -e 'const fs = require("node:fs"); const { attempt, capabilityCeiling } = JSON.parse(fs.readFileSync(process.env.SMITHERS_SANDBOX_REQUEST_PATH, "utf8")); fs.writeFileSync(process.env.SMITHERS_SANDBOX_RESULT_PATH, JSON.stringify({ ...${result}, attempt, capabilityCeiling }));'`
+            : "",
+          mode === "invalid" ? `printf garbage > "$SMITHERS_SANDBOX_RESULT_PATH"` : "",
+          mode === "nonzero" ? "exit 1" : ""
+        ].join("\n")
+        const failure = yield* run(Sum, { n: 1 }, { runtime: guestRuntime(`redacted-${mode}`, body) })
+        expect(failure.code).toBe(
+          mode === "failed" ? "flow_failed" : mode === "nonzero" ? "guest_failed" : "result_unreadable"
+        )
+        expect(failure.message).toContain("stderr: Bearer [REDACTED_TOKEN]")
+        if (mode !== "nonzero") expect(failure.message).toContain("stdout: Bearer [REDACTED_TOKEN]")
+        expect(JSON.stringify(failure)).not.toContain(secret)
+      }), 60_000)
+  }
+
+  it.live("names the runtime the image does not contain", () =>
+    Effect.gen(function*() {
+      const failure = yield* run(Sum, { n: 1 }, { runtime: "definitely-not-a-runtime-xyz" })
+      expect(failure.code).toBe("guest_failed")
+      expect(failure.message).toContain("no runnable `definitely-not-a-runtime-xyz`")
+      expect(failure.message).toContain("installs none")
+    }), 60_000)
+
+  it.live("reports a guest that exits non-zero without fabricating a result", () =>
+    Effect.gen(function*() {
+      const failure = yield* run(Sum, { n: 1 }, { runtime: "false" })
+      expect(failure.code).toBe("guest_failed")
+      expect(failure.message).toContain("exited 1")
+      expect(failure.message).toContain("stderr: (empty)")
+    }), 60_000)
+
+  it.live("reports a guest that exits 0 without writing a result, quoting its stderr", () =>
+    Effect.gen(function*() {
+      const failure = yield* run(Sum, { n: 1 }, { runtime: guestRuntime("no-result", "echo nothing to report >&2") })
+      expect(failure.code).toBe("result_unreadable")
+      expect(failure.message).toContain("without writing a result")
+      expect(failure.message).toContain("stderr: nothing to report")
+    }), 60_000)
+
+  for (const status of ["succeeded", "failed", "missing-attempt"] as const) {
+    it.live(`refuses a ${status} result not bound to the current attempt`, () =>
+      Effect.gen(function*() {
+        const result = status === "missing-attempt"
+          ? { status: "succeeded", output: 17 }
+          : { attempt: "earlier-attempt", capabilityCeiling: [], status, output: 17, error: "earlier failure" }
+        const failure = yield* run(Sum, { n: 99 }, {
+          runtime: guestRuntime(
+            `replayed-${status}`,
+            `printf '%s' '${JSON.stringify(result)}' > "$SMITHERS_SANDBOX_RESULT_PATH"`
+          )
+        })
+        expect(failure.code).toBe("result_unreadable")
+        expect(failure.message).toContain(
+          status === "missing-attempt" ? "not the protocol's JSON" : "different attempt"
+        )
+      }), 60_000)
+  }
+
+  it.live("reports a workspace that refuses removal of the previous result", () =>
+    Effect.gen(function*() {
+      const directory = yield* provider
+      const failure = yield* run(Sum, { n: 1 }, {
+        provider: {
+          acquire: (key) =>
+            Effect.map(directory.acquire(key), (session) => ({
+              ...session,
+              files: {
+                ...session.files,
+                remove: () =>
+                  Effect.fail(PlatformError.systemError({
+                    _tag: "PermissionDenied",
+                    module: "FileSystem",
+                    method: "remove",
+                    description: "removal refused"
+                  }))
+              }
+            }))
+        }
+      })
+      expect(failure.code).toBe("session_failed")
+      expect(failure.message).toContain("the previous result could not be removed")
+      expect(failure.message).toContain("removal refused")
+    }), 60_000)
+
+  it.live("reports a result that is not the protocol's JSON, quoting the guest's stdout", () =>
+    Effect.gen(function*() {
+      const failure = yield* run(Sum, { n: 1 }, {
+        runtime: guestRuntime("bad-result", `echo wrote garbage; printf garbage > "$SMITHERS_SANDBOX_RESULT_PATH"`)
+      })
+      expect(failure.code).toBe("result_unreadable")
+      expect(failure.message).toContain("not the protocol's JSON")
+      expect(failure.message).toContain("stdout: wrote garbage")
+    }), 60_000)
+
+  it.live("surfaces a failed child flow with its error and the guest's output", () =>
+    Effect.gen(function*() {
+      const failure = yield* run(Failing, { reason: "the guest said no", chatter: 5000 }, {})
+      expect(failure.code).toBe("flow_failed")
+      expect(failure.message).toContain("flows/SandboxedFlow/fixtures/Failing failed in the guest")
+      // The typed error arrives as its tag and fields, not as a stack trace.
+      expect(failure.message).toContain("flows/SandboxedFlow/fixtures/Refused {\"reason\":\"the guest said no\"}")
+      expect(failure.message).not.toContain("    at ")
+      // Long output is quoted from its tail, marked as cut.
+      expect(failure.message).toContain("stdout: …ccc")
+      expect(failure.message).not.toContain("c".repeat(5000))
+    }), 60_000)
+
+  it.live("surfaces an entry that exports no flow of the requested tag", () =>
+    Effect.gen(function*() {
+      const Unknown = Flow.make("flows/SandboxedFlow/fixtures/Unknown", {
+        payload: { n: Schema.Number },
+        success: Schema.Number,
+        body: (payload) => Node.succeed(payload.n)
+      })
+      const failure = yield* run(Unknown, { n: 1 }, {})
+      expect(failure.code).toBe("flow_failed")
+      expect(failure.message).toContain("exports no flow tagged \"flows/SandboxedFlow/fixtures/Unknown\"")
+      expect(failure.message).toContain("stdout: (empty); stderr: (empty)")
+    }), 60_000)
+
+  it.live("refuses an output the host's success schema does not decode", () =>
+    Effect.gen(function*() {
+      // The host's declaration drifted from the one the guest bundles: same
+      // tag, a different success schema.
+      const Drifted = Flow.make("flows/SandboxedFlow/fixtures/Sum", {
+        payload: { n: Schema.Number },
+        success: Schema.String,
+        body: () => Node.succeed("")
+      })
+      const failure = yield* run(Drifted, { n: 1 }, {})
+      expect(failure.code).toBe("result_invalid")
+      expect(failure.message).toContain("does not decode through the success schema")
+    }), 60_000)
+
+  it.live("refuses a result larger than the limit", () =>
+    Effect.gen(function*() {
+      const failure = yield* run(Filler, { bytes: 20_000 }, { limits: { resultBytes: 1024 } })
+      expect(failure.code).toBe("result_overflow")
+      expect(failure.message).toContain("the limit is 1024")
+    }), 60_000)
+
+  it.live(
+    "convicts a guest that outlives the wall-clock deadline and releases the machine",
+    () =>
+      Effect.gen(function*() {
+        const directory = yield* provider
+        const started = Date.now()
+        const failure = yield* failureOf(
+          SandboxedFlow.execute(Sleeper, { ms: 60_000 }, {
+            provider: directory,
+            session: "sleeper",
+            entry,
+            timeout: Duration.millis(1500)
+          })
+        )
+        expect(failure.code).toBe("deadline_exceeded")
+        expect(failure.message).toContain("1500 milliseconds")
+        expect(Date.now() - started).toBeLessThan(30_000)
+        expect(readdirSync(root)).toEqual([])
+      }),
+    60_000
+  )
+
+  it.live("reports a workspace that refuses the bundle", () =>
+    Effect.gen(function*() {
+      const directory = yield* provider
+      const failure = yield* failureOf(
+        SandboxedFlow.execute(Sum, { n: 1 }, {
+          provider: faulty(directory, { writeFile: (path) => path.endsWith("bundle.mjs") }),
+          session: "refuses-bundle",
+          entry
+        })
+      )
+      expect(failure.code).toBe("session_failed")
+      expect(failure.message).toContain("the bundle could not be written")
+    }), 60_000)
+
+  it.live("reports a workspace that refuses the request", () =>
+    Effect.gen(function*() {
+      const directory = yield* provider
+      const failure = yield* failureOf(
+        SandboxedFlow.execute(Sum, { n: 1 }, {
+          provider: faulty(directory, { writeFile: (path) => path.endsWith("request.json") }),
+          session: "refuses-request",
+          entry
+        })
+      )
+      expect(failure.code).toBe("session_failed")
+      expect(failure.message).toContain("the request could not be written")
+    }), 60_000)
+
+  it.live("reports a session that cannot start the runtime", () =>
+    Effect.gen(function*() {
+      const directory = yield* provider
+      const failure = yield* failureOf(
+        SandboxedFlow.execute(Sum, { n: 1 }, {
+          provider: faulty(directory, { spawn: true }),
+          session: "refuses-spawn",
+          entry
+        })
+      )
+      expect(failure.code).toBe("session_failed")
+      expect(failure.message).toContain("could not be run in the session")
+      expect(failure.message).toContain("spawn refused")
+    }), 60_000)
+
+  it.live("reports a result the session cannot read back", () =>
+    Effect.gen(function*() {
+      const directory = yield* provider
+      const failure = yield* failureOf(
+        SandboxedFlow.execute(Sum, { n: 1 }, {
+          provider: faulty(directory, { readFile: (path) => path.endsWith("result.json") }),
+          session: "refuses-result",
+          entry
+        })
+      )
+      expect(failure.code).toBe("session_failed")
+      expect(failure.message).toContain("the result could not be read back")
+    }), 60_000)
+
+  for (const step of ["base", "capture"] as const) {
+    it.live(`reports a session that cannot run the ${step} script`, () =>
+      Effect.gen(function*() {
+        const directory = repository(yield* provider)
+        const failure = yield* run(Sum, { n: 1 }, {
+          captureWork: true,
+          provider: {
+            acquire: (key) =>
+              Effect.map(directory.acquire(key), (session) => ({
+                ...session,
+                spawn: (command, options) =>
+                  options.env?.[step === "base" ? "SMITHERS_REVISION" : "SMITHERS_BASE"] === undefined
+                    ? session.spawn(command, options)
+                    : Effect.fail(new ProviderError({ code: "spawn_error", message: `${step} refused` }))
+              }))
+          }
+        })
+        expect(failure.code).toBe("session_failed")
+        expect(failure.message).toContain(
+          step === "base" ? "the base of the workspace could not be resolved" : "the work could not be captured"
+        )
+        expect(failure.message).toContain(`${step} refused`)
+      }), 60_000)
+  }
+
+  it.live("reports a control directory that cannot be excluded from the work", () =>
+    Effect.gen(function*() {
+      const directory = yield* provider
+      const failure = yield* failureOf(
+        SandboxedFlow.execute(Sum, { n: 1 }, {
+          provider: faulty(directory, { writeFile: (path) => path.endsWith("/.gitignore") }),
+          session: "refuses-ignore",
+          entry
+        })
+      )
+      expect(failure.code).toBe("session_failed")
+      expect(failure.message).toContain("the control directory could not be excluded from the work")
+    }), 60_000)
+})
+
+describe("the patch bound", () => {
+  const capture = (directory: Sandbox.Provider, session: string, diffBytes?: number) =>
+    SandboxedFlow.execute(Writer, { count: 2, bytes: 64, directory: "bounded" }, {
+      provider: directory,
+      session,
+      entry,
+      captureWork: true,
+      limits: { diffBytes }
+    })
+
+  it.live("accepts a patch of exactly the limit and refuses one byte less", () =>
+    Effect.gen(function*() {
+      const directory = repository(yield* provider)
+      const unbounded = changed((yield* capture(directory, "patch-unbounded")).work)
+      const bytes = new TextEncoder().encode(unbounded.patch).length
+      expect(changed((yield* capture(directory, "patch-at-limit", bytes)).work).patch).toBe(unbounded.patch)
+      const failure = yield* failureOf(capture(directory, "patch-over-limit", bytes - 1))
+      expect(failure.code).toBe("diff_overflow")
+      expect(failure.message).toBe(`the patch holds ${bytes} bytes; the limit is ${bytes - 1}`)
+    }), 60_000)
+})
+
+describe("SandboxedFlow.action on an engine", () => {
+  const RunSum = SandboxedFlow.action(Sum)
+  const Parent = Flow.make("flows/SandboxedFlow/test/Parent", {
+    payload: { n: Schema.Number },
+    success: SandboxedFlow.resultSchema(Schema.Number),
+    error: SandboxedFlow.ExecuteError,
+    body: (payload) => RunSum.call(payload)
+  })
+
+  const engine = <R>(implementation: Layer.Layer<Action.Requirement<typeof RunSum.name>, never, R>) =>
+    Layer.mergeAll(implementation, Interpreter.layer(Parent)).pipe(
+      Layer.provideMerge(Action.layerImplementations),
+      Layer.provideMerge(Engine.FlowEngine.layerMemory),
+      Layer.provideMerge(NodeCrypto.layer)
+    )
+
+  it("declares the action over the child's schemas under a derived tag", () => {
+    expect(RunSum.name).toBe("flows/SandboxedFlow/fixtures/Sum/sandboxed")
+    expect(SandboxedFlow.action(Sum, { name: "custom/RunSum" }).name).toBe("custom/RunSum")
+    expect(RunSum.payloadSchema).toBe(Sum.payloadSchema)
+    expect(RunSum.errorSchema).toBe(SandboxedFlow.ExecuteError)
+  })
+
+  it("keeps distinct implementation requirements for default and custom names", () => {
+    const Other = SandboxedFlow.action(Sum, { name: "custom/OtherSum" })
+    const Both = Flow.make("flows/SandboxedFlow/test/Both", {
+      payload: { n: Schema.Number },
+      success: Schema.Struct({ first: RunSum.successSchema, second: Other.successSchema }),
+      error: SandboxedFlow.ExecuteError,
+      body: (payload) => Node.all({ first: RunSum.call(payload), second: Other.call(payload) })
+    })
+    const first = RunSum.toLayer(() => Effect.succeed({ output: 1, work: null, capabilityCeiling: [] }))
+    const second = Other.toLayer(() => Effect.succeed({ output: 2, work: null, capabilityCeiling: [] }))
+    const partial = Layer.mergeAll(first, Interpreter.layer(Both)).pipe(
+      Layer.provideMerge(Action.layerImplementations),
+      Layer.provideMerge(Engine.FlowEngine.layerMemory),
+      Layer.provideMerge(NodeCrypto.layer)
+    )
+    const complete = Layer.mergeAll(first, second, Interpreter.layer(Both)).pipe(
+      Layer.provideMerge(Action.layerImplementations),
+      Layer.provideMerge(Engine.FlowEngine.layerMemory),
+      Layer.provideMerge(NodeCrypto.layer)
+    )
+    const requiresNoServices = <A, E>(_effect: Effect.Effect<A, E>) => {}
+    // @ts-expect-error implementing RunSum must not discharge Other's requirement
+    requiresNoServices(Both.execute({ n: 1 }).pipe(Effect.provide(partial)))
+    requiresNoServices(Both.execute({ n: 1 }).pipe(Effect.provide(complete)))
+    const defaultName: "flows/SandboxedFlow/fixtures/Sum/sandboxed" = RunSum.name
+    const customName: "custom/OtherSum" = Other.name
+    expect(defaultName).toBe("flows/SandboxedFlow/fixtures/Sum/sandboxed")
+    expect(customName).toBe("custom/OtherSum")
+  })
+
+  it.live(
+    "gives identical parallel calls distinct session keys without overlapping a key",
+    () =>
+      Effect.gen(function*() {
+        const directory = yield* provider
+        const bothAcquired = yield* Deferred.make<void>()
+        const keys: Array<string> = []
+        const active = new Map<string, number>()
+        let peakPerKey = 0
+        let peakTotal = 0
+        const exclusive: Sandbox.Provider = {
+          acquire: (key) =>
+            Effect.gen(function*() {
+              yield* Effect.acquireRelease(
+                Effect.sync(() => {
+                  keys.push(key)
+                  active.set(key, (active.get(key) ?? 0) + 1)
+                  peakPerKey = Math.max(peakPerKey, active.get(key)!)
+                  peakTotal = Math.max(peakTotal, [...active.values()].reduce((a, b) => a + b, 0))
+                }),
+                () =>
+                  Effect.sync(() => {
+                    active.set(key, active.get(key)! - 1)
+                  })
+              )
+              if (keys.length === 2) yield* Deferred.succeed(bothAcquired, undefined)
+              yield* Deferred.await(bothAcquired)
+              if (peakPerKey > 1) {
+                return yield* Effect.fail(new ProviderError({ code: "unknown", message: "overlapping session key" }))
+              }
+              return yield* directory.acquire(key)
+            })
+        }
+        const Parallel = Flow.make("flows/SandboxedFlow/test/Parallel", {
+          payload: { n: Schema.Number },
+          success: Schema.Struct({ first: RunSum.successSchema, second: RunSum.successSchema }),
+          error: SandboxedFlow.ExecuteError,
+          body: (payload) => Node.all({ first: RunSum.call(payload), second: RunSum.call(payload) })
+        })
+        const implementation = SandboxedFlow.toLayer(RunSum, Sum, ({ executionId, callId }) => ({
+          provider: exclusive,
+          session: `child:${executionId}:${callId}`,
+          entry
+        }))
+        const layers = Layer.mergeAll(implementation, Interpreter.layer(Parallel)).pipe(
+          Layer.provideMerge(Action.layerImplementations),
+          Layer.provideMerge(Engine.FlowEngine.layerMemory),
+          Layer.provideMerge(NodeCrypto.layer)
+        )
+        const exit = yield* Parallel.execute({ n: 5 }, { executionId: "parent-parallel" }).pipe(
+          Effect.provide(layers),
+          Effect.exit
+        )
+        expect(keys).toHaveLength(2)
+        expect(new Set(keys).size).toBe(2)
+        expect(keys.every((key) => key.startsWith("child:parent-parallel:"))).toBe(true)
+        expect(peakTotal).toBe(2)
+        expect(peakPerKey).toBe(1)
+        expect([...active.values()]).toEqual([0, 0])
+        expect(Exit.isSuccess(exit) && exit.value).toEqual({
+          first: { output: 16, work: null, capabilityCeiling: [] },
+          second: { output: 16, work: null, capabilityCeiling: [] }
+        })
+      }),
+    60_000
+  )
+
+  for (const recovery of ["retry", "resume"] as const) {
+    it.live(`preserves the call identity across ${recovery}`, () =>
+      Effect.gen(function*() {
+        const directory = yield* provider
+        const keys: Array<string> = []
+        const callIds: Array<string> = []
+        const Recover = Action.make(`flows/SandboxedFlow/test/${recovery}/action`, {
+          payload: Sum.payloadSchema,
+          success: RunSum.successSchema,
+          error: SandboxedFlow.ExecuteError,
+          retryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 2 })
+        })
+        const Recovering = Flow.make(`flows/SandboxedFlow/test/${recovery}`, {
+          payload: Sum.payloadSchema,
+          success: RunSum.successSchema,
+          error: SandboxedFlow.ExecuteError,
+          body: (payload) => Recover.call(payload)
+        })
+        const interrupted: Sandbox.Provider = {
+          acquire: (key) =>
+            Effect.gen(function*() {
+              keys.push(key)
+              if (keys.length === 1) {
+                if (recovery === "retry") {
+                  return yield* Effect.fail(new ProviderError({ code: "unknown", message: "retry acquisition" }))
+                }
+                const instance = yield* Effect.serviceOption(FlowRuntime.FlowInstance)
+                return yield* Flow.suspend(Option.getOrThrow(instance))
+              }
+              return yield* directory.acquire(key)
+            })
+        }
+        const implementation = SandboxedFlow.toLayer(Recover, Sum, ({ executionId, callId }) => {
+          callIds.push(callId)
+          return { provider: interrupted, session: `child:${executionId}:${callId}`, entry }
+        })
+        const layers = Layer.mergeAll(implementation, Interpreter.layer(Recovering)).pipe(
+          Layer.provideMerge(Action.layerImplementations),
+          Layer.provideMerge(Engine.FlowEngine.layerMemory),
+          Layer.provideMerge(NodeCrypto.layer)
+        )
+        const executionId = `parent-${recovery}`
+        const result = yield* Effect.gen(function*() {
+          if (recovery === "resume") {
+            yield* Recovering.execute({ n: 5 }, { executionId, discard: true })
+            let parked = yield* Recovering.poll(executionId)
+            for (let i = 0; i < 1000 && Option.isNone(parked); i++) {
+              yield* Effect.sleep("1 milli")
+              parked = yield* Recovering.poll(executionId)
+            }
+            expect(Option.isSome(parked) && parked.value._tag).toBe("Suspended")
+            yield* Recovering.resume(executionId)
+          }
+          return yield* Recovering.execute({ n: 5 }, { executionId })
+        }).pipe(Effect.provide(layers))
+        expect(result).toEqual({ output: 16, work: null, capabilityCeiling: [] })
+        expect(callIds).toHaveLength(2)
+        expect(callIds[0]).toEqual(expect.any(String))
+        expect(callIds[0]!.length).toBeGreaterThan(0)
+        expect(callIds[1]).toBe(callIds[0])
+        expect(keys).toEqual([`child:${executionId}:${callIds[0]}`, `child:${executionId}:${callIds[0]}`])
+      }), 60_000)
+  }
+
+  it.live("refuses a runtime without a stable invocation key before acquiring a session", () =>
+    Effect.gen(function*() {
+      const directory = yield* provider
+      const keys: Array<string> = []
+      const instance = Engine.FlowEngine.makeInstance(Parent, "parent-unidentified")
+      const exit = yield* Effect.gen(function*() {
+        const runtime = yield* FlowRuntime.FlowRuntime
+        const unidentified = FlowRuntime.FlowRuntime.of({
+          ...runtime,
+          actionExecute: (action) =>
+            Effect.map(Effect.exit(action.executeEncoded), (exit) => new Flow.Complete({ exit }))
+        })
+        return yield* Interpreter.interpret(RunSum.call({ n: 1 })).pipe(
+          Effect.provideService(FlowRuntime.FlowRuntime, unidentified),
+          Effect.provideService(FlowRuntime.FlowInstance, instance),
+          Effect.exit
+        )
+      }).pipe(Effect.provide(engine(SandboxedFlow.toLayer(RunSum, Sum, {
+        provider: recording(directory, keys),
+        session: "unidentified",
+        entry
+      }))))
+      expect(Exit.isFailure(exit) && exit.cause.reasons[0]).toMatchObject({
+        _tag: "Die",
+        defect: expect.stringContaining("Action.CurrentInvocationKey")
+      })
+      expect(keys).toEqual([])
+    }))
+
+  it.live("runs the child as one action of the parent's plan", () =>
+    Effect.gen(function*() {
+      const directory = yield* provider
+      const result = yield* Parent.execute({ n: 31 }, { executionId: "parent-static" }).pipe(
+        Effect.provide(
+          engine(SandboxedFlow.toLayer(RunSum, Sum, { provider: directory, session: "action-static", entry }))
+        )
+      )
+      expect(result).toEqual({ output: 42, work: null, capabilityCeiling: [] })
+    }), 60_000)
+
+  it.live("derives the placement from the call and the parent execution", () =>
+    Effect.gen(function*() {
+      const directory = yield* provider
+      const keys: Array<string> = []
+      const result = yield* Parent.execute({ n: 5 }, { executionId: "parent-derived" }).pipe(
+        Effect.provide(
+          engine(
+            SandboxedFlow.toLayer(RunSum, Sum, ({ executionId, payload }) => ({
+              provider: recording(directory, keys),
+              session: `child:${executionId}:${payload.n}`,
+              entry
+            }))
+          )
+        )
+      )
+      expect(result.output).toBe(16)
+      expect(keys).toEqual(["child:parent-derived:5"])
+    }), 60_000)
+
+  it.live("fails the parent with the typed error the sandbox reported", () =>
+    Effect.gen(function*() {
+      const directory = yield* provider
+      const failure = yield* Effect.flip(
+        Parent.execute({ n: 1 }, { executionId: "parent-failing" }).pipe(
+          Effect.provide(
+            engine(SandboxedFlow.toLayer(RunSum, Sum, {
+              provider: directory,
+              session: "action-failing",
+              entry: join(root, "no-such-entry.ts")
+            }))
+          )
+        )
+      )
+      expect(failure).toBeInstanceOf(SandboxedFlow.SandboxedFlowError)
+      expect((failure as SandboxedFlow.SandboxedFlowError).code).toBe("bundle_failed")
+    }), 60_000)
+})
+
+describe("the result schema", () => {
+  it("encodes a result with its work as the tagged JSON the journal records", () => {
+    const codec = Schema.toCodecJson(SandboxedFlow.resultSchema(Schema.Number))
+    const result = {
+      output: 42,
+      work: new Sandbox.Changed({ session: "s", base: "a".repeat(40), patch: "diff --git a/x b/x\n" }),
+      capabilityCeiling: [[new CapabilityPattern({ action: "fs:read", resource: "**" })]]
+    }
+    const encoded = Schema.encodeSync(codec)(result)
+    expect(encoded).toEqual({
+      output: 42,
+      work: { _tag: "Changed", session: "s", base: "a".repeat(40), patch: "diff --git a/x b/x\n" },
+      capabilityCeiling: [[{ action: "fs:read", resource: "**" }]]
+    })
+    expect(Schema.decodeUnknownSync(codec)(encoded)).toEqual(result)
+  })
+
+  it("decodes a result journaled without work or the ceiling receipt with neither", () => {
+    const decoded = Schema.decodeUnknownSync(Schema.toCodecJson(SandboxedFlow.resultSchema(Schema.Number)))({
+      output: 42
+    })
+    // No receipt is not evidence of unrestricted authority.
+    expect(decoded).toEqual({ output: 42, work: null, capabilityCeiling: null })
+  })
+
+  it("carries the 0.x bundle limits as its defaults", () => {
+    expect(SandboxedFlow.defaultLimits).toEqual({
+      resultBytes: 5 * 1024 * 1024,
+      diffBytes: 100 * 1024 * 1024
+    })
+  })
+})
+
+describe("the guest crypto", () => {
+  it.live("digests exactly as the host's NodeCrypto does", () =>
+    Effect.gen(function*() {
+      const material = new TextEncoder().encode("the same key material on both sides of the machine boundary")
+      const host = yield* Crypto.Crypto
+      const inGuest = yield* Guest.guestCrypto.digest("SHA-256", material)
+      const onHost = yield* host.digest("SHA-256", material)
+      expect(inGuest).toEqual(onHost)
+      expect(yield* Guest.guestCrypto.randomBytes(16)).toHaveLength(16)
+    }).pipe(Effect.provide(NodeCrypto.layer)))
+})
+
+describe("the guest runner in process", () => {
+  const scratch = mkdtempSync(join(tmpdir(), "flows-sandboxed-guest-"))
+  afterAll(() => rmSync(scratch, { recursive: true, force: true }))
+
+  const request = (
+    name: string,
+    body: Omit<typeof Guest.Request.Type, "attempt" | "capabilityCeiling">
+  ): Guest.Environment => {
+    const requestPath = join(scratch, `${name}.request.json`)
+    writeFileSync(requestPath, JSON.stringify({ ...body, attempt: name, capabilityCeiling: [] }))
+    return {
+      SMITHERS_SANDBOX_REQUEST_PATH: requestPath,
+      SMITHERS_SANDBOX_RESULT_PATH: join(scratch, `${name}.result.json`)
+    }
+  }
+
+  const resultOf = (environment: Guest.Environment): typeof Guest.Result.Type =>
+    Schema.decodeUnknownSync(Guest.Result)(
+      JSON.parse(readFileSync(environment.SMITHERS_SANDBOX_RESULT_PATH!, "utf8"))
+    )
+
+  it("refuses to start without the request path", async () => {
+    await expect(Guest.run(childEntry, {})).rejects.toThrow("SMITHERS_SANDBOX_REQUEST_PATH is not set")
+  })
+
+  it("refuses to start without the result path", async () => {
+    await expect(Guest.run(childEntry, { SMITHERS_SANDBOX_REQUEST_PATH: join(scratch, "unused.json") }))
+      .rejects.toThrow("SMITHERS_SANDBOX_RESULT_PATH is not set")
+  })
+
+  it("writes the encoded success of the flow the request names", async () => {
+    const environment = request("sum", { flow: Sum._tag, executionId: "in-process", payload: { n: 1 } })
+    await Guest.run(childEntry, environment)
+    expect(resultOf(environment)).toEqual({ attempt: "sum", capabilityCeiling: [], status: "succeeded", output: 12 })
+  })
+
+  for (
+    const [label, ceiling] of [
+      ["no capability ceiling", undefined],
+      ["a ceiling pattern that does not parse", [[{ action: "fs:everything", resource: "**" }]]],
+      ["a ceiling that is not a list of groups", [{ action: "fs:read", resource: "**" }]]
+    ] as const
+  ) {
+    it(`refuses to run a request with ${label}`, async () => {
+      const requestPath = join(scratch, `ceiling-${label.length}.request.json`)
+      writeFileSync(
+        requestPath,
+        JSON.stringify({
+          attempt: "ceiling",
+          flow: Sum._tag,
+          executionId: "ceiling",
+          payload: { n: 1 },
+          ...(ceiling === undefined ? {} : { capabilityCeiling: ceiling })
+        })
+      )
+      const resultPath = join(scratch, `ceiling-${label.length}.result.json`)
+      await expect(
+        Guest.run(childEntry, { SMITHERS_SANDBOX_REQUEST_PATH: requestPath, SMITHERS_SANDBOX_RESULT_PATH: resultPath })
+      ).rejects.toThrow()
+      expect(existsSync(resultPath)).toBe(false)
+    })
+  }
+
+  const denial = permissionDenied(
+    new Capability({ action: "fs:write", resource: "/workspace/out.txt" }),
+    "outside capability ceiling"
+  )
+  const refusing = (name: string, raise: () => Effect.Effect<never>) => {
+    const Refuse = Action.make(`guest/ceiling/${name}/action`, { payload: {}, success: Schema.Void })
+    const Child = Flow.make(`guest/ceiling/${name}`, {
+      payload: {},
+      success: Schema.Void,
+      body: () => Refuse.call({})
+    })
+    return { Child, layer: Refuse.toLayer(raise) }
+  }
+
+  for (
+    const [label, raise] of [
+      ["dies with the kernel's refusal", () => Effect.die(denial)],
+      [
+        "dies with a guarded service's PlatformError",
+        () => Effect.die(toPlatformError({ module: "FileSystem", method: "write", error: denial }))
+      ]
+    ] as const
+  ) {
+    it(`carries the capability refusal of a child that ${label}`, async () => {
+      const environment = request(`denied-${label.length}`, {
+        flow: `guest/ceiling/${label.length}`,
+        executionId: "denied",
+        payload: {}
+      })
+      await Guest.run(refusing(String(label.length), raise), environment)
+      const result = resultOf(environment)
+      expect(result.status).toBe("failed")
+      const denied = result.status === "failed" ? result.denied : undefined
+      expect(denied).toBeInstanceOf(PermissionDenied)
+      expect(denied?.reason).toBe("outside capability ceiling")
+      expect(denied?.capability).toMatchObject({ action: "fs:write", resource: "/workspace/out.txt" })
+    })
+  }
+
+  it("carries no refusal when the refusal is not the only reason the child failed", async () => {
+    const environment = request("denied-and-more", {
+      flow: "guest/ceiling/more",
+      executionId: "more",
+      payload: {}
+    })
+    await Guest.run(
+      refusing("more", () => Effect.die(denial).pipe(Effect.ensuring(Effect.die(new Error("cleanup failed"))))),
+      environment
+    )
+    const result = resultOf(environment)
+    expect(result.status === "failed" && result.error).toContain("cleanup failed")
+    expect("denied" in result).toBe(false)
+  })
+
+  it("redacts a credential in the refused resource and reason", async () => {
+    const secret = "synthetic-denied-credential-NOT-A-REAL-SECRET"
+    const environment = request("denied-secret", { flow: "guest/ceiling/secret", executionId: "secret", payload: {} })
+    await Guest.run(
+      refusing("secret", () =>
+        Effect.die(
+          permissionDenied(
+            new Capability({ action: "proc:spawn", resource: `curl -H 'Authorization: Bearer ${secret}' host` }),
+            `outside capability ceiling for password=${secret}`
+          )
+        )),
+      environment
+    )
+    const bytes = readFileSync(environment.SMITHERS_SANDBOX_RESULT_PATH!, "utf8")
+    expect(bytes).not.toContain(secret)
+    const result = resultOf(environment)
+    const denied = result.status === "failed" ? result.denied : undefined
+    expect(denied).toBeInstanceOf(PermissionDenied)
+    expect(denied?.capability.action).toBe("proc:spawn")
+    expect(denied?.capability.resource).toContain("[REDACTED")
+  })
+
+  it("reports as text a refusal whose redacted resource the capability schema refuses", async () => {
+    const environment = request("denied-long", { flow: "guest/ceiling/long", executionId: "long", payload: {} })
+    // At the resource limit, redaction lengthens `password=x` past it.
+    const resource = `${"r".repeat(4096 - " password=x".length)} password=x`
+    await Guest.run(
+      refusing(
+        "long",
+        () =>
+          Effect.die(permissionDenied(new Capability({ action: "fs:write", resource }), "outside capability ceiling"))
+      ),
+      environment
+    )
+    const result = resultOf(environment)
+    expect(result.status === "failed" && result.error).toContain("defect @smthrs/capability/PermissionDenied")
+    expect("denied" in result).toBe(false)
+  })
+
+  it("builds the entry's layer under the ceiling, not only the flow body", async () => {
+    const seen: Array<ReadonlyArray<ReadonlyArray<CapabilityPattern>>> = []
+    const environment = request("layer-ceiling", { flow: Sum._tag, executionId: "layer", payload: { n: 1 } })
+    const requestPath = environment.SMITHERS_SANDBOX_REQUEST_PATH!
+    writeFileSync(
+      requestPath,
+      JSON.stringify({
+        ...JSON.parse(readFileSync(requestPath, "utf8")),
+        capabilityCeiling: [[{ action: "fs:read", resource: "**" }]]
+      })
+    )
+    const observe = Layer.effectDiscard(
+      Effect.flatMap(CapabilitySet.current, (set) => Effect.sync(() => seen.push(set.groups)))
+    )
+    await Guest.run({ ...childEntry, layer: Layer.merge(childEntry.layer, observe) }, environment)
+    expect(resultOf(environment).status).toBe("succeeded")
+    expect(seen.map((groups) => groups.map((group) => group.map((pattern) => pattern.action)))).toEqual([[[
+      "fs:read"
+    ]]])
+  })
+
+  it("carries no refusal for a PlatformError that is not a capability refusal", async () => {
+    const environment = request("not-denied", { flow: "guest/ceiling/plain", executionId: "plain", payload: {} })
+    await Guest.run(
+      refusing(
+        "plain",
+        () => Effect.die(PlatformError.systemError({ _tag: "PermissionDenied", module: "FileSystem", method: "write" }))
+      ),
+      environment
+    )
+    const result = resultOf(environment)
+    expect(result.status).toBe("failed")
+    expect("denied" in result).toBe(false)
+  })
+
+  it("echoes the ceiling it ran the child under, normalized", async () => {
+    const requestPath = join(scratch, "echo.request.json")
+    const resultPath = join(scratch, "echo.result.json")
+    writeFileSync(
+      requestPath,
+      JSON.stringify({
+        attempt: "echo",
+        flow: Sum._tag,
+        executionId: "echo",
+        payload: { n: 1 },
+        capabilityCeiling: [
+          [{ action: "fs:write", resource: "b/**" }, { action: "fs:read", resource: "a/**" }],
+          [{ action: "fs:read", resource: "a/**" }, { action: "fs:write", resource: "b/**" }]
+        ]
+      })
+    )
+    await Guest.run(childEntry, {
+      SMITHERS_SANDBOX_REQUEST_PATH: requestPath,
+      SMITHERS_SANDBOX_RESULT_PATH: resultPath
+    })
+    expect(JSON.parse(readFileSync(resultPath, "utf8"))).toEqual({
+      attempt: "echo",
+      capabilityCeiling: [[{ action: "fs:read", resource: "a/**" }, { action: "fs:write", resource: "b/**" }]],
+      status: "succeeded",
+      output: 12
+    })
+  })
+
+  it("writes the failure of a flow that failed", async () => {
+    const environment = request("failing", {
+      flow: Failing._tag,
+      executionId: "in-process",
+      payload: { reason: "refused in process", chatter: 0 }
+    })
+    await Guest.run(childEntry, environment)
+    const result = resultOf(environment)
+    expect(result.status).toBe("failed")
+    expect(result.attempt).toBe("failing")
+    expect(result.status === "failed" && result.error).toContain("refused in process")
+  })
+
+  it("redacts SDK error fields in persisted guest bytes and the returned host error", async () => {
+    const secret = "synthetic-review-credential-NOT-A-REAL-SECRET"
+    const Crash = Action.make("review/credential-failure", { payload: {}, success: Schema.Void })
+    const Child = Flow.make("review/credential-child", {
+      payload: {},
+      success: Schema.Void,
+      body: () => Crash.call({})
+    })
+    const layer = Crash.toLayer(() =>
+      Effect.die(Object.assign(new Error(`SDK request refused: password=${secret}`), {
+        password: secret,
+        request: { headers: { Authorization: `Bearer ${secret}` }, password: secret },
+        statusCode: 401
+      }))
+    )
+    const environment = request("credential", { flow: Child._tag, executionId: "credential", payload: {} })
+    await Guest.run({ Child, layer }, environment)
+    const bytes = readFileSync(environment.SMITHERS_SANDBOX_RESULT_PATH!)
+    const result = resultOf(environment)
+    expect(result.status).toBe("failed")
+    expect(bytes.toString()).not.toContain(secret)
+    expect(result.status === "failed" && result.error).toContain("\"password\":\"[REDACTED]\"")
+    expect(result.status === "failed" && result.error).toContain("\"Authorization\":\"[REDACTED]\"")
+    expect(result.status === "failed" && result.error).toContain("\"statusCode\":401")
+
+    const directory = await Effect.runPromise(provider)
+    const failure = await Effect.runPromise(failureOf(SandboxedFlow.execute(Sum, { n: 1 }, {
+      entry,
+      session: "credential-readback",
+      provider: {
+        acquire: (key) =>
+          Effect.map(directory.acquire(key), (session) => ({
+            ...session,
+            files: {
+              ...session.files,
+              stream: (path) =>
+                Stream.unwrap(
+                  session.readFile(path).pipe(
+                    Effect.orDie,
+                    Effect.map((current) => {
+                      if (!path.endsWith("/result.json")) return Stream.succeed(current)
+                      const { attempt } = JSON.parse(new TextDecoder().decode(current))
+                      return Stream.succeed(new TextEncoder().encode(JSON.stringify({ ...result, attempt })))
+                    })
+                  )
+                )
+            }
+          }))
+      }
+    })))
+    expect(failure.code).toBe("flow_failed")
+    expect(failure.message).toContain("SDK request refused")
+    expect(JSON.stringify(failure)).not.toContain(secret)
+  }, 60_000)
+
+  for (const shape of ["error", "string"] as const) {
+    it(`redacts ${shape} failure text before persisting the guest result`, async () => {
+      const secret = "synthetic-message-credential-NOT-A-REAL-SECRET"
+      const flow = shape === "error" ? childEntry.Dying : childEntry.Plain
+      const payload = shape === "error"
+        ? { message: `Bearer ${secret}`, shape: "error" }
+        : { text: `password=${secret}` }
+      const environment = request(`credential-${shape}`, { flow: flow._tag, executionId: "credential", payload })
+      await Guest.run(childEntry, environment)
+      expect(resultOf(environment).status).toBe("failed")
+      const bytes = readFileSync(environment.SMITHERS_SANDBOX_RESULT_PATH!, "utf8")
+      expect(bytes).not.toContain(secret)
+      expect(bytes).toContain("[REDACTED")
+    })
+  }
+
+  it("writes a failure for a payload the flow's schema refuses", async () => {
+    const environment = request("bad-payload", { flow: Sum._tag, executionId: "in-process", payload: { n: "one" } })
+    await Guest.run(childEntry, environment)
+    expect(resultOf(environment).status).toBe("failed")
+  })
+
+  it("writes a failure for a tag the entry does not export", async () => {
+    const environment = request("unknown", { flow: "nowhere/Flow", executionId: "in-process", payload: {} })
+    await Guest.run(childEntry, environment)
+    const result = resultOf(environment)
+    expect(result.status === "failed" && result.error).toContain("exports no flow tagged \"nowhere/Flow\"")
+  })
+
+  it("redacts a credential a requested tag carries in the missing-flow failure", async () => {
+    const secret = "synthetic-flow-tag-credential-NOT-A-REAL-SECRET"
+    const environment = request("unknown-secret", {
+      flow: `nowhere/Flow?password=${secret}`,
+      executionId: "in-process",
+      payload: {}
+    })
+    await Guest.run(childEntry, environment)
+    const result = resultOf(environment)
+    expect(readFileSync(environment.SMITHERS_SANDBOX_RESULT_PATH!).toString()).not.toContain(secret)
+    expect(result.status === "failed" && result.error).toContain("exports no flow tagged")
+  })
+
+  it("keeps the fields after a redacted message: a failure line is redacted once, where it is made", async () => {
+    const secret = "synthetic-double-pass-credential-NOT-A-REAL-SECRET"
+    const Crash = Action.make("review/double-pass-failure", { payload: {}, success: Schema.Void })
+    const Child = Flow.make("review/double-pass-child", {
+      payload: {},
+      success: Schema.Void,
+      body: () => Crash.call({})
+    })
+    const layer = Crash.toLayer(() =>
+      Effect.die(Object.assign(new Error(`refused: token=${secret}`), { statusCode: 503, retryAfter: 7 }))
+    )
+    const environment = request("double-pass", { flow: Child._tag, executionId: "double-pass", payload: {} })
+    await Guest.run({ Child, layer }, environment)
+    const result = resultOf(environment)
+    expect(readFileSync(environment.SMITHERS_SANDBOX_RESULT_PATH!).toString()).not.toContain(secret)
+    expect(result.status === "failed" && result.error).toContain("\"statusCode\":503")
+    expect(result.status === "failed" && result.error).toContain("\"retryAfter\":7")
+  })
+
+  it("runs an entry without a layer", async () => {
+    const environment = request("pure", {
+      flow: pureEntry.Constant._tag,
+      executionId: "in-process",
+      payload: { value: "still here" }
+    })
+    await Guest.run(pureEntry, environment)
+    expect(resultOf(environment)).toEqual({
+      attempt: "pure",
+      capabilityCeiling: [],
+      status: "succeeded",
+      output: "still here"
+    })
+  })
+
+  it("drives a child boundary the entry registered beside its flow", async () => {
+    const environment = request("nested", {
+      flow: childEntry.Nested._tag,
+      executionId: "in-process",
+      payload: { n: 4 }
+    })
+    await Guest.run(childEntry, environment)
+    expect(resultOf(environment)).toEqual({ attempt: "nested", capabilityCeiling: [], status: "succeeded", output: 15 })
+  })
+
+  it("describes a defect by its name and message", async () => {
+    const environment = request("dying", {
+      flow: childEntry.Dying._tag,
+      executionId: "in-process",
+      payload: { message: "boom", shape: "error" }
+    })
+    await Guest.run(childEntry, environment)
+    const result = resultOf(environment)
+    expect(result.status === "failed" && result.error).toBe("defect Error: boom")
+  })
+
+  it("describes a cyclic defect with the shared redaction marker", async () => {
+    const environment = request("dying-cyclic", {
+      flow: childEntry.Dying._tag,
+      executionId: "in-process",
+      payload: { message: "", shape: "cyclic" }
+    })
+    await Guest.run(childEntry, environment)
+    const result = resultOf(environment)
+    expect(result.status === "failed" && result.error).toBe(
+      "defect failure {\"kind\":\"cyclic\",\"loop\":\"[Circular]\"}"
+    )
+  })
+
+  it("omits redacted fields that JSON cannot serialize", async () => {
+    const Crash = Action.make("review/bigint-failure", { payload: {}, success: Schema.Void })
+    const Child = Flow.make("review/bigint-child", {
+      payload: {},
+      success: Schema.Void,
+      body: () => Crash.call({})
+    })
+    const layer = Crash.toLayer(() => Effect.die({ count: 1n, password: "synthetic-bigint-credential" }))
+    const environment = request("bigint", { flow: Child._tag, executionId: "bigint", payload: {} })
+    await Guest.run({ Child, layer }, environment)
+    expect(resultOf(environment)).toEqual({
+      attempt: "bigint",
+      capabilityCeiling: [],
+      status: "failed",
+      error: "defect failure"
+    })
+  })
+
+  it("describes a bare failure value as itself", async () => {
+    const environment = request("plain", {
+      flow: childEntry.Plain._tag,
+      executionId: "in-process",
+      payload: { text: "plainly refused" }
+    })
+    await Guest.run(childEntry, environment)
+    const result = resultOf(environment)
+    expect(result.status === "failed" && result.error).toBe("plainly refused")
+  })
+
+  it("describes the engine's refusal of a typed error it cannot encode", async () => {
+    const environment = request("cyclic", { flow: childEntry.Cyclic._tag, executionId: "in-process", payload: {} })
+    await Guest.run(childEntry, environment)
+    const result = resultOf(environment)
+    // The engine encodes a typed error for its journal before the runner sees
+    // it, so a cyclic one arrives as the engine's own defect.
+    expect(result.status === "failed" && result.error).toMatch(/^defect SchemaError: Expected JSON value \{/)
+  })
+
+  it("quotes a failure's fields within a bound", async () => {
+    const environment = request("dying-large", {
+      flow: childEntry.Dying._tag,
+      executionId: "in-process",
+      payload: { message: "d".repeat(5000), shape: "large" }
+    })
+    await Guest.run(childEntry, environment)
+    const result = resultOf(environment)
+    const error = result.status === "failed" ? result.error : ""
+    expect(error.startsWith("defect failure {\"detail\":\"ddd")).toBe(true)
+    expect(error.endsWith("…")).toBe(true)
+    expect(error.length).toBeLessThan(1100)
+  })
+
+  it("describes an interruption", async () => {
+    const environment = request("interrupting", {
+      flow: childEntry.Interrupting._tag,
+      executionId: "in-process",
+      payload: {}
+    })
+    await Guest.run(childEntry, environment)
+    const result = resultOf(environment)
+    expect(result.status === "failed" && result.error).toContain("interrupted")
+    expect(result.status === "failed" && result.denied).toBeUndefined()
+  })
+
+  it("reports a refusal only when it is the cause's one reason", () => {
+    const refusal = permissionDenied(
+      new Capability({ action: "fs:write", resource: "/outside" }),
+      "outside capability ceiling"
+    )
+    expect(Guest.deniedIn(Cause.fail(refusal))).toEqual(refusal)
+    expect(Guest.deniedIn(Cause.die(refusal))).toEqual(refusal)
+    // One interrupted fiber, and the two an action's interruption yields on Effect 4.0.4.
+    expect(Guest.deniedIn(Cause.interrupt())).toBeUndefined()
+    expect(Guest.deniedIn(Cause.combine(Cause.interrupt(1), Cause.interrupt(2)))).toBeUndefined()
+    expect(Guest.deniedIn(Cause.combine(Cause.fail(refusal), Cause.interrupt()))).toBeUndefined()
+    expect(Guest.deniedIn(Cause.fail(new Error("not a refusal")))).toBeUndefined()
+  })
+})

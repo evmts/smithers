@@ -1,0 +1,251 @@
+{
+  "name": "@smthrs/registry",
+  "type": "module",
+  "version": "1.0.0-rc.12",
+  "license": "MIT",
+  "smthrs": {
+    "group": "agent"
+  },
+  "description": "Portable flow descriptor discovery and progressive-disclosure registry services",
+  "homepage": "https://github.com/smithersai/smithers",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/smithers/agent/registry"
+  },
+  "bugs": {
+    "url": "https://github.com/smithersai/smithers/issues"
+  },
+  "tags": [
+    "typescript",
+    "effect",
+    "flow",
+    "registry"
+  ],
+  "keywords": [
+    "typescript",
+    "effect",
+    "flow",
+    "registry"
+  ],
+  "engines": {
+    "node": ">=26.4.0"
+  },
+  "sideEffects": [],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null,
+    "./*/index": null,
+    "./Descriptor": "./src/Descriptor.ts",
+    "./Disclosure": "./src/Disclosure.ts",
+    "./Discovery": "./src/Discovery.ts",
+    "./Executable": "./src/Executable.ts",
+    "./MarkdownFlow": "./src/MarkdownFlow.ts",
+    "./Pack": "./src/Pack.ts",
+    "./Registry": "./src/Registry.ts",
+    "./RegistryError": "./src/RegistryError.ts",
+    "./index": "./src/index.ts",
+    "./Prompt": "./src/Prompt.ts",
+    "./Prompt/jsx-runtime": "./src/Prompt/jsx-runtime.ts",
+    "./ExecutionSnapshot": "./src/ExecutionSnapshot.ts"
+  },
+  "files": [
+    "src/**/*.ts",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/package.json",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next",
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./internal/*": null,
+      "./*/index": null,
+      "./Descriptor": {
+        "import": {
+          "types": "./dist/esm/Descriptor.d.ts",
+          "default": "./dist/esm/Descriptor.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Descriptor.d.ts",
+          "default": "./dist/cjs/Descriptor.js"
+        }
+      },
+      "./Disclosure": {
+        "import": {
+          "types": "./dist/esm/Disclosure.d.ts",
+          "default": "./dist/esm/Disclosure.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Disclosure.d.ts",
+          "default": "./dist/cjs/Disclosure.js"
+        }
+      },
+      "./Discovery": {
+        "import": {
+          "types": "./dist/esm/Discovery.d.ts",
+          "default": "./dist/esm/Discovery.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Discovery.d.ts",
+          "default": "./dist/cjs/Discovery.js"
+        }
+      },
+      "./Executable": {
+        "import": {
+          "types": "./dist/esm/Executable.d.ts",
+          "default": "./dist/esm/Executable.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Executable.d.ts",
+          "default": "./dist/cjs/Executable.js"
+        }
+      },
+      "./MarkdownFlow": {
+        "import": {
+          "types": "./dist/esm/MarkdownFlow.d.ts",
+          "default": "./dist/esm/MarkdownFlow.js"
+        },
+        "require": {
+          "types": "./dist/cjs/MarkdownFlow.d.ts",
+          "default": "./dist/cjs/MarkdownFlow.js"
+        }
+      },
+      "./Pack": {
+        "import": {
+          "types": "./dist/esm/Pack.d.ts",
+          "default": "./dist/esm/Pack.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Pack.d.ts",
+          "default": "./dist/cjs/Pack.js"
+        }
+      },
+      "./Registry": {
+        "import": {
+          "types": "./dist/esm/Registry.d.ts",
+          "default": "./dist/esm/Registry.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Registry.d.ts",
+          "default": "./dist/cjs/Registry.js"
+        }
+      },
+      "./RegistryError": {
+        "import": {
+          "types": "./dist/esm/RegistryError.d.ts",
+          "default": "./dist/esm/RegistryError.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RegistryError.d.ts",
+          "default": "./dist/cjs/RegistryError.js"
+        }
+      },
+      "./index": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./Prompt": {
+        "import": {
+          "types": "./dist/esm/Prompt.d.ts",
+          "default": "./dist/esm/Prompt.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Prompt.d.ts",
+          "default": "./dist/cjs/Prompt.js"
+        }
+      },
+      "./Prompt/jsx-runtime": {
+        "import": {
+          "types": "./dist/esm/Prompt/jsx-runtime.d.ts",
+          "default": "./dist/esm/Prompt/jsx-runtime.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Prompt/jsx-runtime.d.ts",
+          "default": "./dist/cjs/Prompt/jsx-runtime.js"
+        }
+      },
+      "./ExecutionSnapshot": {
+        "import": {
+          "types": "./dist/esm/ExecutionSnapshot.d.ts",
+          "default": "./dist/esm/ExecutionSnapshot.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ExecutionSnapshot.d.ts",
+          "default": "./dist/cjs/ExecutionSnapshot.js"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint src --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "circular": "node scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "vitest --coverage"
+  },
+  "dependencies": {
+    "@smthrs/core": "1.0.0-rc.12",
+    "@smthrs/flow": "1.0.0-rc.12",
+    "@smthrs/plan": "1.0.0-rc.12",
+    "yaml": "2.9.0",
+    "@mdx-js/mdx": "3.1.1",
+    "@smthrs/artifacts": "1.0.0-rc.12"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@effect/platform-node": "4.0.4",
+    "@effect/vitest": "4.0.4",
+    "@eslint/js": "9.39.5",
+    "@smthrs/engine-store": "1.0.0-rc.12",
+    "@smthrs/journal": "1.0.0-rc.12",
+    "@smthrs/kernel": "1.0.0-rc.12",
+    "@smthrs/platform-node": "1.0.0-rc.12",
+    "@smthrs/run-store": "1.0.0-rc.12",
+    "@types/node": "26.4.1",
+    "@vitest/coverage-v8": "5.0.0",
+    "dprint": "0.57.1",
+    "effect": "4.0.4",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "madge": "8.0.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0",
+    "@smthrs/engine": "1.0.0-rc.12"
+  },
+  "peerDependencies": {
+    "effect": "^4.0.4"
+  }
+}

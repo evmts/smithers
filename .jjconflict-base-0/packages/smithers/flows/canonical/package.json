@@ -1,0 +1,164 @@
+{
+  "name": "@smthrs/canonical",
+  "type": "module",
+  "version": "1.0.0-rc.12",
+  "license": "MIT",
+  "smthrs": {
+    "group": "engine"
+  },
+  "description": "RFC 8785 canonical JSON as an Effect Schema",
+  "homepage": "https://github.com/smithersai/smithers",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/smithers/flows/canonical"
+  },
+  "engines": {
+    "node": ">=26.4.0"
+  },
+  "sideEffects": [],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null,
+    "./*/index": null,
+    "./Canonical": "./src/Canonical.ts",
+    "./index": "./src/index.ts",
+    "./Record": "./src/Record.ts",
+    "./BoundedJson": "./src/BoundedJson.ts",
+    "./IssuePath": "./src/IssuePath.ts",
+    "./ReadonlyMap": "./src/ReadonlyMap.ts",
+    "./Serializer": "./src/Serializer.ts"
+  },
+  "files": [
+    "src/**/*.ts",
+    "dist/**/*",
+    "LICENSE",
+    "README.md",
+    "docs/",
+    "examples/"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next",
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./internal/*": null,
+      "./*/index": null,
+      "./Canonical": {
+        "import": {
+          "types": "./dist/esm/Canonical.d.ts",
+          "default": "./dist/esm/Canonical.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Canonical.d.ts",
+          "default": "./dist/cjs/Canonical.js"
+        }
+      },
+      "./index": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./Record": {
+        "import": {
+          "types": "./dist/esm/Record.d.ts",
+          "default": "./dist/esm/Record.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Record.d.ts",
+          "default": "./dist/cjs/Record.js"
+        }
+      },
+      "./BoundedJson": {
+        "import": {
+          "types": "./dist/esm/BoundedJson.d.ts",
+          "default": "./dist/esm/BoundedJson.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BoundedJson.d.ts",
+          "default": "./dist/cjs/BoundedJson.js"
+        }
+      },
+      "./IssuePath": {
+        "import": {
+          "types": "./dist/esm/IssuePath.d.ts",
+          "default": "./dist/esm/IssuePath.js"
+        },
+        "require": {
+          "types": "./dist/cjs/IssuePath.d.ts",
+          "default": "./dist/cjs/IssuePath.js"
+        }
+      },
+      "./ReadonlyMap": {
+        "import": {
+          "types": "./dist/esm/ReadonlyMap.d.ts",
+          "default": "./dist/esm/ReadonlyMap.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ReadonlyMap.d.ts",
+          "default": "./dist/cjs/ReadonlyMap.js"
+        }
+      },
+      "./Serializer": {
+        "import": {
+          "types": "./dist/esm/Serializer.d.ts",
+          "default": "./dist/esm/Serializer.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Serializer.d.ts",
+          "default": "./dist/cjs/Serializer.js"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint src examples --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "circular": "node scripts/circular.mjs",
+    "pretest": "pnpm run test:dist",
+    "test": "vitest",
+    "test:dist": "pnpm run build && node --test test/dist-smoke.mjs",
+    "coverage": "vitest --coverage"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@effect/vitest": "4.0.4",
+    "@eslint/js": "9.39.5",
+    "@types/node": "26.4.1",
+    "dprint": "0.57.1",
+    "effect": "4.0.4",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "madge": "8.0.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0",
+    "fast-check": "4.9.0"
+  },
+  "peerDependencies": {
+    "effect": "^4.0.4"
+  }
+}

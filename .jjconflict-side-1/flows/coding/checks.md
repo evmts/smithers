@@ -1,0 +1,262 @@
+# Checks against immutable source
+
+`checks.ts` is a private repository recipe. It registers `coding/CommandCheck`
+with the existing executable catalog and `checkLayers(options)` with the
+existing native action table. There is no additional executor or database.
+
+## Pin a registered command
+
+A project check is an ordinary discovered Markdown flow. Its verified body
+contains the command declaration as its first nonempty line, for example:
+
+```md
+---
+description: Verify the generated schema matches its declarations.
+flows: ["coding/CommandCheck"]
+capabilities: ["fs:read:**", "proc:spawn:node scripts/check-schema.mjs *"]
+---
+
+{"argv":["node","scripts/check-schema.mjs"],"cwd":".","timeoutMs":30000}
+```
+
+The plan names this flow and its existing `Descriptor.executionDigest`. Changing
+the command changes that digest. The lowered Invocation carries the verified
+body into the action payload, so the command also participates in its durable
+step key. The implementation/check input and existing `checkInputDigest` bind the
+result to the precise revision and check declaration.
+The invocation also carries the registry's rendered resource context. Changes to
+that context change the action payload; exact receipt matching still binds
+validation to the recorded implementation and check input.
+The registry appends a resource trailer and encoded arguments; the recipe reads
+only that first JSON declaration line, so appended input cannot replace it.
+
+## Export immutable source
+
+The action asks the host environment's `smithers-jj-export` helper (by default
+`/usr/local/bin/smithers-jj-export`) to materialize the full commit ID in
+a new temporary directory. It verifies the returned commit, tree and JJ change
+IDs before running the command. The host must supply the intended read-only
+exporter implementation; returned identity checks alone do not establish that an
+arbitrary configured binary honors that contract. The command runs from its
+exported source, while the acceptance fixture asserts
+that the owning JJ operation remains unchanged. Arbitrary command confinement
+still belongs to the host. Slow checks can read their original source while a
+later atom is being edited. A new descendant revision gets a
+different check input; an earlier receipt cannot validate it.
+The recipe permits links that resolve inside the export, and refuses dangling
+links or links into the live checkout or anywhere else outside it before a
+checker starts. This prevents a committed dependency link from silently reading
+mutable source. Commands still need the host's execution confinement.
+
+## Run with explicit host policy
+
+The command runs with literal argv, a contained relative working directory, a
+bounded timeout, and a host-supplied build environment. It does not inherit the
+gateway's environment by default. Dependency installation and runtime selection
+belong to the project's declared command and existing toolchain; this recipe
+does not borrow mutable `node_modules` from the editing checkout.
+This repository's `scripts/ci/coding-check.sh` gives each frozen Bun install
+120 seconds, terminates a stalled installer, and retries it once. Other install
+failures retain their exit status; tests start only after installation succeeds.
+`SMITHERS_CHECK_INSTALL_TIMEOUT` can select a different GNU timeout duration
+for an operator or a bootstrap test. Coreutils is supplied by the workspace base.
+Each check starts in a fresh export, so `scripts/ci/check-cache.mjs` carries
+target results between them: it seeds the export's `.flows/cache` from
+`$HOME/.cache/smithers-checks/cache` (or `SMITHERS_CHECK_CACHE_DIR`) before the
+run and saves new entries after it, pass or fail. The partition is named by the
+bytes of Node, Bun, JJ and the native exporter, the tools the target key does
+not fully bind. A rebased revision therefore replays every cacheable target
+whose content key is unchanged, and runs the rest; there is no separate
+diff-based selection. Bun's package cache lives beside it, so a replayed check
+does not download its dependencies again. This cache is evidence for one
+workspace VM: check code runs as the same user and could write it. On a Cloud
+box, repository checks (not setup, inspection or reproduction commands) also
+get the box's read-only remote cache credential
+(`SMITHERS_CACHE_URL`, with the token as `SMITHERS_CACHE_TOKEN` and
+`SMITHERS_CACHE_READ_TOKEN`), so they can replay the repository's published
+results; it never publishes, and it is removed from the host's own environment.
+The example requires an explicit host `environment.PATH` containing `node`;
+without a supplied PATH the command must name an absolute executable. Tools
+that need HOME, a package cache or other build settings receive those explicitly.
+
+## Retain measured receipts
+
+Actual process exit zero produces a passing receipt. A nonzero exit produces a
+failed receipt with `fault: "factory"` and a finding for its current owning Change.
+The finding's message names the check, its command and exit code, for example
+``Check test failed: `npm test` exited with code 1``. Its `output` carries the
+last 4 KiB of the run's stderr and stdout, redacted like the evidence, so the
+repair reads the actual error without running the check again.
+Commands that distinguish unavailable dependencies from a real red declare their
+infrastructure exit codes in the pinned command body, for example
+`"infraExitCodes":[75]`. These must be integers from 1 through 255; an omitted
+list means every nonzero exit is a real red. A declared infrastructure exit
+produces `fault: "infra"` without repair findings. Fast gates, slow feedback and
+post-rebase verification propagate it as `coding/Error/check_infra`, registered
+as infrastructure: the stack retries without spending a TODO attempt or blaming
+its plan. Output text never determines the fault class. Older persisted receipts
+without `fault` keep their original real-red behavior.
+
+Every command receipt records `startedAt` and `finishedAt`, the epoch
+milliseconds around its process, so a TODO can show how long each check took.
+Older receipts omit them.
+
+Invalid exports,
+missing executables, timeouts and unavailable cleanup fail execution instead of
+inventing validation evidence. Output is drained and a bounded prefix is stored
+in the existing receipt, with truncation disclosed.
+
+Command checks compare the exported tracked files before and after execution,
+including executable modes, symlink targets and replaced parent directories.
+A directory replaced with a link fails even when the link reads identical bytes.
+A write, deletion or replacement
+fails with `check_modified_tree`, even on exit zero. The stack stops for a
+person's Retry even if a retained runtime labels this failure as a factory
+fault or reports only its checkpoint code. Generated build outputs do
+not change the candidate. The changed export is retained under
+`modified-*/source` under the host-selected `sourceDirectory`, or the default
+`.jj/smithers-checks` cache; formatting must happen before capture.
+Retention does not require a writable checkout when `sourceDirectory` is configured.
+The adjacent `failure.json` records the sorted changed tracked paths.
+This failure stops correction rather than starting a repair or reproposal cycle.
+
+The stack rechecks outsider protected-path policy from current trusted `main`
+before creating a proposal and before sending a recovered push. A recovered PR
+head must have the verified candidate's tree; a pinned head alone is insufficient.
+Unreadable policy refuses publication, and candidate policy cannot replace it.
+
+## Close scratch after contained processes
+
+The export directory and contained processes use Effect scopes. The recipe relies
+on the injected runtime's scoped cleanup contract on success, ordinary failure and cancellation. Tree-writing failures move their output outside the scoped directory before cleanup. It is a source snapshot, not a security
+sandbox: the host must provide its existing process confinement when running
+untrusted project commands. FileSystem, Path and ChildProcessSpawner are Effect
+dependencies; the recipe does not select Node or Bun.
+
+The private composition supplies its existing trusted `fs` as a service value,
+captured before action workspace guards. Export lifecycle and validation of the exported tree use it; the
+check process still runs through the action's permission-checked, contained
+spawner. Temporary-directory permissions and process confinement are supplied
+by the host; this recipe requests separate scoped scratch rather than writing
+it into the editing checkout. Process evidence is nondeterministic for cache
+purposes; a completed execution still replays its own recorded result.
+
+New private structures are the JSON command declaration (`argv`, `cwd`,
+`timeoutMs`, optional `infraExitCodes`) and `CheckHostOptions` (`repositoryPath`, existing host `fs`, optional `exporterPath`
+and optional `environment`). The process result is converted into the existing
+`Receipt` schema. No public package API or persisted table is added.
+
+## Review wiki prose through the same check protocol
+
+The configured `coding/WikiCheck` delegate shares `immutable-source.ts` with
+command checks. It captures the exact implemented source before asynchronous
+review, then invokes existing wiki review and assessment actions in the native
+runtime. Unsupported or uncertain prose produces ordinary owner findings; an
+invalid reviewer receipt refuses the check. It never publishes the wiki current
+pointer. The host binds its actual reviewer policy and configured page catalog
+to the ordinary check declaration's execution identity. The owning
+[semantic-check guide](wiki-check.md) describes the capture and reuse contract.
+
+The deployed coding host explicitly selects `concurrency: 1` to run one revision command check at a time. The permit covers source export, dependency installation, execution, and temporary-tree cleanup, so concurrent check flows do not multiply the workspace VM's memory and disk usage. Each check still records its own immutable-source receipt. Standalone `checkLayers` compositions retain concurrent execution unless they supply this resource limit; owner-feedback checks can therefore cancel unrelated pending checks without waiting for them to finish.
+
+## Lint on Jev
+
+`jev-check.ts` registers `coding/JevCheck`. Its body's first line declares up to
+eight rules, `{"rules":[{"id","rule","paths"}]}`. The check reads only the
+unified diff between the implementation's immutable parent and head, skips
+private repository-job paths, and asks Jev whether each in-scope hunk violates
+each rule (the `check/rule` classifier, 0.8/0.2 thresholds). A decisive flag
+or an unsure answer fails the receipt with a finding; more than 256 questions
+or a diff over 1 MB fails without asking. An unreachable Jev fails the check;
+no other model answers in its place. See `flows/checks/lint/flow.mdx`.
+
+## Review on a second provider
+
+`review-check.ts` registers `coding/ReviewCheck`. Its body's first line declares
+up to eight lenses, `{"lenses":[{"id","focus"}]}`; `flows/checks/review/flow.mdx`
+declares this repository's. The check reads the same immutable parent..head
+diff as the Jev check, drops private repository-job paths, and asks one
+evidence-only completion per lens on the `coding/review` role. Unpinned, the
+host runs that role on the first seat its keys resolve from `reviewSeats` in
+`host.ts`: the implementer's router (AI Gateway or OpenRouter) on a second
+vendor, an alias on another vendor, another router, and last the implementer's
+own seat. An install with only the AI Gateway key codes on `vercel:openai/...`
+and reviews on `vercel:anthropic/claude-sonnet-4.5`.
+`SMITHERS_CODING_REVIEW_MODEL` or the project's `seats` pin one. Every lens's findings land on the owning Change and its
+commit, so a lens that requests changes fails the receipt; the evidence records
+the role, each lens's verdict and its finding count. A diff over 200 KB or one
+the check cannot read unambiguously fails without asking any lens. The lenses
+change the check's execution digest, so a plan replans when they change.
+
+## Security review on subscription seats
+
+`security-review-check.ts` registers `coding/SecurityReviewCheck`. Its body's
+first line names the review targets it applies, `{"patterns":["//...:security"]}`
+(`flows/checks/security/flow.mdx`). The check exports the Change's immutable
+head and the commit it applies to (the implementation's parent, or the tip a
+stack candidate was rebased onto), reads the trusted `LlmLint` policy from that
+commit's `.smithers/target-index.json`, and runs every review whose include
+selects a changed file, plus the proposed-policy reviews a changed
+`PACKAGE.ts`, `WORKSPACE.ts`, `security.ts` or index adds, through the same
+`TrustedReview` code `smthrs review` uses. Each review is required. Every
+model request goes to a subscription seat, never an API key: Claude models to
+the host's `claude-code:<model>` seat, OpenAI models to its `codex:<model>`
+seat, which calls the ChatGPT backend with the machine's own `codex login`.
+Reviewed source is untrusted, so the request declares no tools and neither
+seat adds any. The ChatGPT backend accepts no output cap, so the Codex seat is
+sent none; the review cuts any answer at its own byte limit.
+Findings persist in `<state dir>/security-review`, so an interrupted review
+resumes from its completed batches. The receipt carries only each finding's
+public summary (`restricted-finding:<fingerprint>`, severity, check and
+impact), and an unfinished review only a fixed reason, since a diagnostic can
+name reviewed files. A change with no reviewable path fails, and so does a
+change no selected review governs; a review that cannot finish (an
+unavailable seat, an exhausted budget) fails as an outage.
+
+`coding/SecurityAudit` runs the audit reviews its body names
+(`flows/security-audit/flow.mdx`: `//...:securityAudit`) the same way over every
+included file of the commit the host's working copy sits on, with that commit's
+own policy. It returns the audited commit, the public summaries and a status.
+An audit that selects no file fails; an audit past its batch limit resumes from
+the store on its next run.
+
+## Check only the affected targets
+
+The command receives the Change's written paths in `SMITHERS_CHECK_FILES`,
+one per line. `checks/affected-lint` (fast) and `checks/affected-test` (slow)
+pass them to `smthrs affected` through `scripts/ci/coding-check.sh affected
+<verb> <patterns>`, with `.github/ci-known-red.json` as the known-red list. A
+Change whose affected target is newly red fails its gate, so `FastGate` stops
+the next Change and correction feeds the failure back to the owning one. A
+target already on the known-red list is reported but does not fail the check.
+A Change that wrote nothing affects no target and passes. `coding/verify`
+hands a rebased stack candidate's changed paths to the same checks.
+
+### Reserved stack operations
+
+The packaged coding host registers `stack.candidate` and `stack.propose` as
+Actions in its existing stack layer, rather than repository flows. Their native
+provider resolves the current TODO attempt, run and machine; flow payloads carry
+no credential or binding authority. Candidate returns the existing generation,
+base and head; Propose names that generation and returns the PR head.
+
+Both refuse before ordinary native reads or capture when the authority transport
+is absent or the host is local-only. Native request identities derive from the
+engine's durable invocation key, so another capture in the same run has a new
+identity and replay retains the original one. The installed adapter requests admission with its process-owned publisher
+credential before native capture. The scripted native-provider test proves
+packaged action dispatch and journal replay, not a C-STK-06 microVM receipt.
+
+The reserved native transport reads the installed workspace binding and the
+coding host's private landing credential (the hosted reporter cache remains its existing fallback). It requests live admission
+before opening JJ; operation bodies cannot select a repository, machine or run.
+The trusted first-run projection binds that credential to the stored TODO run; initial, retired and older-attempt hosts receive no grant. Changed bytes are retained in the workspace source namespace and placed in the
+existing pending capture. The stack worker consumes that capture under its own
+claim, rebases retained bytes if their prefix moved, pins before recording a generation, and launches the separate verify
+lane. Candidate acknowledgments reuse the immutable head when its prefix and
+live tree are equal and its verification is valid or still running. An observed invalidation requests fresh checks even if the next snapshot has equal bytes. Proposal acknowledgments name only the generation that the
+same worker has published. A proposal of the current generation waits while its
+checks run; failed checks, changed trees and stale generations refuse.
+When the attached run offered its candidate through `stack.candidate`, review
+takes the coding machine only after that run has observed its proposal or
+ended, so it is not stopped before it sees its own acceptance.

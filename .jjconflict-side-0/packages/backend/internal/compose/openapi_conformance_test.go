@@ -1,0 +1,922 @@
+package compose
+
+import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"reflect"
+	"regexp"
+	"sort"
+	"strings"
+	"testing"
+	"time"
+
+	"gopkg.in/yaml.v3"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/cors"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/stretchr/testify/require"
+
+	"github.com/smithersai/smithers/packages/backend/internal/chat"
+	"github.com/smithersai/smithers/packages/backend/internal/config"
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	"github.com/smithersai/smithers/packages/backend/internal/routes"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
+	"github.com/smithersai/smithers/packages/backend/modelhost"
+	"github.com/smithersai/smithers/packages/backend/modelproxy"
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
+)
+
+// openAPIPath is the published product API every client is generated from.
+// scripts/openapi-bundle.mjs bundles it from the per-tag sources.
+const openAPIPath = "../../../../docs/api/openapi.yaml"
+
+// openAPISources holds one source file per tag; see scripts/openapi-bundle.mjs.
+const openAPISources = "../../../../docs/api/openapi"
+
+// openAPIUpdateEnv, when "1", appends a skeleton operation for every served
+// route the document lacks to its tag's source. Re-bundle, then tighten its
+// schemas by hand.
+const openAPIUpdateEnv = "SMITHERS_UPDATE_OPENAPI"
+
+var openAPIMethods = []string{"get", "put", "post", "delete", "options", "head", "patch", "trace"}
+
+// servedRoute is one "method path" the composed backend answers under
+// /api/ or /webhooks/.
+type servedRoute struct {
+	method, path string
+	authed       bool
+}
+
+func (r servedRoute) key() string { return r.method + " " + r.path }
+
+var chiParamPattern = regexp.MustCompile(`\{([^}:]+):[^}]*\}`)
+
+// openAPIRoutePath maps a chi pattern to its OpenAPI path: regexp parameters
+// lose their pattern and a trailing catch-all becomes {path}.
+func openAPIRoutePath(pattern string) string {
+	path := chiParamPattern.ReplaceAllString(pattern, "{$1}")
+	if strings.HasSuffix(path, "/*") {
+		path = strings.TrimSuffix(path, "*") + "{path}"
+	}
+	if len(path) > 1 {
+		path = strings.TrimSuffix(path, "/")
+	}
+	return path
+}
+
+func TestOpenAPIRoutePath(t *testing.T) {
+	t.Parallel()
+	for pattern, want := range map[string]string{
+		"/api/repos/{owner}/{repo}":                                  "/api/repos/{owner}/{repo}",
+		"/api/repos/{owner}/{repo}/":                                 "/api/repos/{owner}/{repo}",
+		"/api/repos/{owner}/{repo}/protected-bookmarks/{pattern:.*}": "/api/repos/{owner}/{repo}/protected-bookmarks/{pattern}",
+		"/api/repos/{owner}/{repo}/contents/*":                       "/api/repos/{owner}/{repo}/contents/{path}",
+		"/api/model/openai/*":                                        "/api/model/openai/{path}",
+		"/api/x/{id:[0-9]+}/{name}":                                  "/api/x/{id}/{name}",
+		"/":                                                          "/",
+	} {
+		require.Equal(t, want, openAPIRoutePath(pattern), pattern)
+	}
+}
+
+var requireAuthPointer = reflect.ValueOf(middleware.RequireAuth).Pointer()
+
+func walkServedRoutes(t *testing.T, router chi.Routes, into map[string]servedRoute) {
+	t.Helper()
+	require.NoError(t, chi.Walk(router, func(method, pattern string, _ http.Handler, middlewares ...func(http.Handler) http.Handler) error {
+		if !strings.HasPrefix(pattern, "/api/") && !strings.HasPrefix(pattern, "/webhooks/") {
+			// Git transport, health probes, metrics and /internal callbacks
+			// are not part of the product API.
+			return nil
+		}
+		route := servedRoute{method: strings.ToLower(method), path: openAPIRoutePath(pattern)}
+		for _, mw := range middlewares {
+			if reflect.ValueOf(mw).Pointer() == requireAuthPointer {
+				route.authed = true
+			}
+		}
+		if previous, ok := into[route.key()]; ok {
+			route.authed = route.authed || previous.authed
+		}
+		into[route.key()] = route
+		return nil
+	}))
+}
+
+// openAPIConformanceRouter composes every optional product handler so each
+// route family a deployment can enable is mounted.
+func openAPIConformanceRouter(cfg *config.Config) chi.Router {
+	cfgCopy := *cfg
+	cfgCopy.Install.QuiesceEnabled = true
+	cfg = &cfgCopy
+	// The repository's own GitHub issue doors mount when the Mythical
+	// handler's service is also the hosted issue writer (#4030). Every
+	// composition gives that handler the real *services.MythicalService
+	// (main.go builds exactly one and passes it in both modes), so a nil
+	// service here would enumerate six fewer doors than either deployment
+	// serves and read as "documented but not served". The service is only
+	// type-asserted while routes are mounted, never called by a walk, and
+	// the other three defaults are the ones hostStatusProductionRouter sets
+	// for an unsupplied fixture.
+	return hostStatusProductionRouter(cfg, db.New(nil), &services.InstallCapacityService{}, conformanceServices{
+		billing:  &routes.BillingHandler{},
+		jobs:     &routes.RepositoryJobHandler{},
+		live:     &routes.LiveHandler{},
+		mythical: &routes.MythicalHandler{Service: services.NewMythicalService(nil, nil)},
+	})
+}
+
+// Shared production-router fixture: host HTTP tests use real PostgreSQL queries.
+type conformanceServices struct {
+	auth      *routes.AuthHandler
+	flowRuns  *services.InstallFlowRuns
+	user      *routes.UserHandler
+	mythical  *routes.MythicalHandler
+	pool      *pgxpool.Pool
+	billing   *routes.BillingHandler
+	jobs      *routes.RepositoryJobHandler
+	terminal  *routes.WorkspaceTerminalHandler
+	members   *routes.MembersHandler
+	secret    *routes.SecretHandler
+	live      *routes.LiveHandler
+	wiki      *services.WikiService
+	workspace *routes.WorkspaceHandler
+}
+
+func hostStatusProductionRouter(cfg *config.Config, queries *db.Queries, host *services.InstallCapacityService, supplied ...conformanceServices) chi.Router {
+	deps := conformanceServices{billing: &routes.BillingHandler{}, jobs: &routes.RepositoryJobHandler{}, live: &routes.LiveHandler{}}
+	if len(supplied) > 0 {
+		deps = supplied[0]
+	}
+	if deps.mythical == nil {
+		deps.mythical = &routes.MythicalHandler{}
+	}
+	if deps.live == nil {
+		deps.live = &routes.LiveHandler{}
+	}
+	if deps.terminal == nil {
+		deps.terminal = &routes.WorkspaceTerminalHandler{}
+	}
+	if deps.secret == nil {
+		deps.secret = &routes.SecretHandler{}
+	}
+	if deps.members == nil {
+		deps.members = &routes.MembersHandler{}
+	}
+	if deps.user == nil {
+		deps.user = &routes.UserHandler{}
+	}
+	authHandler := deps.auth
+	if authHandler == nil {
+		authHandler = &routes.AuthHandler{}
+	}
+	workspaceHandler := &routes.WorkspaceHandler{
+		EnvironmentImages: &routes.SandboxEnvironmentImageHandler{},
+	}
+	if deps.workspace != nil {
+		workspaceHandler = deps.workspace
+	}
+	wiki := deps.wiki
+	if wiki == nil {
+		wiki = services.NewWikiService(nil, nil, services.WithWikiCollaboration(nil, nil), services.WithWikiContent(nil))
+	}
+	var fastGateway *modelproxy.FastGateway
+	if config.IsMultitenant(cfg.Auth) {
+		fastGateway = &modelproxy.FastGateway{}
+	}
+	router := buildRouter(cfg, queries, deps.pool,
+		&routes.RepoHandler{}, &routes.GitMirrorSyncHandler{}, authHandler, deps.user, &routes.SSHKeyHandler{}, &routes.DeployKeyHandler{}, &routes.LabelHandler{},
+		&routes.OrgHandler{}, &routes.LandingHandler{}, &routes.BuildCacheHandler{}, &routes.StackHandler{}, &routes.SearchHandler{}, &routes.IssueHandler{},
+		wiki, &routes.GitSmartHandler{}, &routes.NotificationHandler{}, &routes.AdminUserHandler{}, &routes.AdminOrgHandler{}, &routes.AdminRepoHandler{}, &routes.AdminGitHubAppHandler{}, &routes.AdminAuditHandler{},
+		&routes.WebhookHandler{}, deps.secret, &routes.ProviderConnectionHandler{}, &routes.VariableHandler{}, deps.billing,
+		&routes.ProtectedBookmarkHandler{}, &routes.CommitStatusHandler{}, &routes.LFSHandler{}, &routes.JJVCSHandler{}, &routes.AgentInternalHandler{},
+		&routes.AgentSessionHandler{}, &routes.AgentSessionStreamHandler{}, &routes.ApprovalsHandler{}, &routes.InternalPushHookHandler{},
+		&routes.WorkflowHandler{}, &routes.WorkflowCacheHandler{}, &routes.WorkflowArtifactHandler{},
+		&routes.IssueEventHandler{}, workspaceHandler, &routes.WorkspaceInternalHandler{}, deps.jobs, &routes.GitHubProxyHandler{},
+		&routes.GitHubRepoListHandler{}, &routes.GitHubUserReposHandler{}, &routes.GitHubSyncedReposHandler{}, &routes.GitHubImportHandler{},
+		deps.terminal, &routes.TelemetryHandler{}, &routes.FeatureFlagHandler{}, &routes.OAuth2Handler{},
+		&routes.GitHubWebhookHandler{}, routes.NewSmithersMetrics(),
+		routerExtras{
+			InstallScorecard:    &routes.InstallScorecardHandler{Authorize: func(*http.Request) error { return nil }, Service: &services.ScorecardService{}},
+			BillingCapabilities: conformanceBillingCapabilities(cfg),
+			Recommender:         &routes.RecommendationHandler{}, ModelStream: &routes.ModelStreamHandler{}, Mythical: deps.mythical,
+			UserRefs: &routes.UserRefHandler{}, AdminSystemStatus: &routes.AdminSystemStatusHandler{}, AdminSystemHealth: &routes.AdminSystemHealthHandler{DB: deps.pool}, AdminGrant: &routes.AdminGrantHandler{},
+			AdminAnalytics: &routes.AdminAnalyticsHandler{}, AdminAgentSessions: &routes.AdminAgentSessionHandler{},
+			AdminWorkspaces: &routes.AdminWorkspaceHandler{}, AdminTokens: &routes.AdminTokenHandler{}, ModelProxy: http.NotFoundHandler(), FastGateway: fastGateway,
+			EgressPolicy:    &routes.RepositoryEgressPolicyHandler{},
+			GitHubAppSetup:  &routes.GitHubAppSetupHandler{Owners: queries, Setup: &services.InstallSetupService{Capacity: host}, Origins: deps.live.Origins},
+			Members:         deps.members,
+			FlowRuns:        deps.flowRuns,
+			Live:            deps.live,
+			LanguageServers: &routes.BranchLSPHandler{},
+		},
+	)
+	// The routes run() mounts beside buildRouter.
+	mountBrowserFlow(router, cfg, queries, &browserFlowAPI{})
+	mountChatPublic(router, &chat.Runtime{Handler: &chat.Handler{}}, queries, cfg)
+	mountModelPublic(router, modelhost.OwnerModels{}, queries, cfg)
+	return router
+}
+
+// servedAPIRoutes is the union of the self-hosted and multitenant compositions,
+// plus the bootstrap document withAppBootstrap serves in front of the router.
+func servedAPIRoutes(t *testing.T) map[string]servedRoute {
+	return servedCompositionRoutes(t, config.AuthModeSelfHosted, config.AuthModeMultitenant)
+}
+
+func servedCompositionRoutes(t *testing.T, modes ...string) map[string]servedRoute {
+	t.Helper()
+	served := map[string]servedRoute{}
+	for _, mode := range modes {
+		cfg := testConfigAllFlagsOn()
+		cfg.Auth.Mode = mode
+		cfg.Auth.EnableKeyAuth = config.IsMultitenant(cfg.Auth)
+		cfg.FeatureFlags.Integrations = true
+		router := openAPIConformanceRouter(cfg)
+		if config.IsSingleOwner(cfg.Auth) {
+			// Main adds the native monitor doors after building the common router.
+			// Empty dependencies here enumerate routes only; boundary tests compose stores.
+			mountRunMonitors(router, cfg, nil, &runMonitors{})
+		}
+		// The repository-scoped run index serves BOTH compositions: it takes
+		// its repository from the route and the actor's read permission on it,
+		// so it needs no install binding (#4032).
+		mountRepositoryRunMonitors(router, cfg, nil, &runMonitors{})
+		walkServedRoutes(t, router, served)
+	}
+	// A pattern mounted for every method (chi also lists CONNECT for it) is
+	// a byte relay such as the desktop viewer, not a described operation.
+	for _, route := range served {
+		if route.method == "connect" {
+			for key, other := range served {
+				if other.path == route.path {
+					delete(served, key)
+				}
+			}
+		}
+	}
+	bootstrap := withAppBootstrap(http.NotFoundHandler(), appBootstrap{}, cors.Options{})
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		recorder := httptest.NewRecorder()
+		bootstrap.ServeHTTP(recorder, httptest.NewRequest(method, "/api/bootstrap", nil))
+		require.Equal(t, http.StatusOK, recorder.Code, "%s /api/bootstrap", method)
+		route := servedRoute{method: strings.ToLower(method), path: "/api/bootstrap"}
+		served[route.key()] = route
+	}
+	return served
+}
+
+func loadOpenAPIDocument(t *testing.T) *yaml.Node {
+	t.Helper()
+	data, err := os.ReadFile(openAPIPath)
+	require.NoError(t, err)
+	var document yaml.Node
+	require.NoError(t, yaml.Unmarshal(data, &document))
+	return document.Content[0]
+}
+
+func loadOpenAPIPaths(t *testing.T) *yaml.Node {
+	t.Helper()
+	paths := mappingValue(loadOpenAPIDocument(t), "paths")
+	require.NotNil(t, paths, "OpenAPI document has no paths")
+	return paths
+}
+
+func mappingValue(node *yaml.Node, key string) *yaml.Node {
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i].Value == key {
+			return node.Content[i+1]
+		}
+	}
+	return nil
+}
+
+func documentedOperations(paths *yaml.Node) map[string]bool {
+	operations := map[string]bool{}
+	for i := 0; i+1 < len(paths.Content); i += 2 {
+		path, item := paths.Content[i].Value, paths.Content[i+1]
+		for _, method := range openAPIMethods {
+			if mappingValue(item, method) != nil {
+				operations[method+" "+path] = true
+			}
+		}
+	}
+	return operations
+}
+
+// TestOpenAPIDescribesEveryServedRoute fails when docs/api/openapi.yaml and
+// the composed router disagree, in either direction.
+func TestOpenAPIDescribesEveryServedRoute(t *testing.T) {
+	for _, mode := range []string{config.AuthModeSelfHosted, config.AuthModeMultitenant} {
+		t.Run(mode, func(t *testing.T) {
+			served := servedCompositionRoutes(t, mode)
+			paths := loadOpenAPIPaths(t)
+			documented := documentedOperations(paths)
+			for i := 0; i+1 < len(paths.Content); i += 2 {
+				path, item := paths.Content[i].Value, paths.Content[i+1]
+				for _, method := range openAPIMethods {
+					operation := mappingValue(item, method)
+					if operation == nil {
+						continue
+					}
+					composition := mappingValue(operation, "x-composition")
+					if composition == nil {
+						composition = mappingValue(item, "x-composition")
+					}
+					if composition != nil && ((composition.Value == "plue" && mode == config.AuthModeSelfHosted) || (composition.Value == "install" && mode == config.AuthModeMultitenant)) {
+						delete(documented, method+" "+path)
+					}
+				}
+			}
+
+			var missing []servedRoute
+			for key, route := range served {
+				if !documented[key] {
+					missing = append(missing, route)
+				}
+			}
+			sort.Slice(missing, func(i, j int) bool { return missing[i].key() < missing[j].key() })
+			if len(missing) > 0 && os.Getenv(openAPIUpdateEnv) == "1" {
+				for _, file := range appendOpenAPISkeletons(t, openAPISources, paths, missing) {
+					t.Errorf("appended skeletons to docs/api/openapi/%s; run `pnpm exec smithers-build run '//:openapiBundle'` to re-bundle", file)
+				}
+				missing = nil
+			}
+			for _, route := range missing {
+				t.Errorf("served but undocumented: %s (%s=1 go test -run %s appends a skeleton)", route.key(), openAPIUpdateEnv, t.Name())
+			}
+			var stale []string
+			for key := range documented {
+				if _, ok := served[key]; !ok {
+					stale = append(stale, key)
+				}
+			}
+			sort.Strings(stale)
+			for _, key := range stale {
+				t.Errorf("documented but not served: %s", key)
+			}
+		})
+	}
+}
+
+// TestOpenAPIDescribesBootstrap pins the one document every product client
+// loads first.
+func TestOpenAPIDescribesBootstrap(t *testing.T) {
+	t.Parallel()
+	paths := loadOpenAPIPaths(t)
+	documented := documentedOperations(paths)
+	require.True(t, documented["get /api/bootstrap"], "GET /api/bootstrap must be documented")
+	require.True(t, documented["head /api/bootstrap"], "HEAD /api/bootstrap must be documented")
+}
+
+var operationIDUnsafe = regexp.MustCompile(`[^a-z0-9]+`)
+
+// openAPITagFile is the source file owning tag; scripts/openapi-bundle.mjs
+// derives the same name.
+func openAPITagFile(tag string) string {
+	return strings.Trim(operationIDUnsafe.ReplaceAllString(strings.ToLower(tag), "-"), "-") + ".yaml"
+}
+
+// appendOpenAPISkeletons appends a skeleton operation for each route to the
+// source of the tag openAPITag picks against the bundled paths, and returns
+// the source files it wrote.
+func appendOpenAPISkeletons(t *testing.T, sources string, bundled *yaml.Node, routes []servedRoute) []string {
+	t.Helper()
+	documents := map[string]*yaml.Node{}
+	var files []string
+	for _, route := range routes {
+		tag := openAPITag(bundled, route.path)
+		file := openAPITagFile(tag)
+		document, ok := documents[file]
+		if !ok {
+			document = &yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{{Kind: yaml.MappingNode}}}
+			if data, err := os.ReadFile(filepath.Join(sources, file)); err == nil {
+				require.NoError(t, yaml.Unmarshal(data, document))
+			} else {
+				require.ErrorIs(t, err, os.ErrNotExist)
+			}
+			documents[file] = document
+			files = append(files, file)
+		}
+		root := document.Content[0]
+		paths := mappingValue(root, "paths")
+		if paths == nil {
+			paths = &yaml.Node{Kind: yaml.MappingNode}
+			root.Content = append(root.Content, &yaml.Node{Kind: yaml.ScalarNode, Value: "paths"}, paths)
+		}
+		appendOpenAPIOperation(t, paths, route, tag)
+	}
+	sort.Strings(files)
+	for _, file := range files {
+		var out bytes.Buffer
+		encoder := yaml.NewEncoder(&out)
+		encoder.SetIndent(2)
+		require.NoError(t, encoder.Encode(documents[file]))
+		require.NoError(t, encoder.Close())
+		require.NoError(t, os.WriteFile(filepath.Join(sources, file), out.Bytes(), 0o644))
+	}
+	return files
+}
+
+func TestAppendOpenAPISkeletonsWritesTagSources(t *testing.T) {
+	t.Parallel()
+	sources := t.TempDir()
+	admin := "paths:\n  /api/admin/users:\n    get:\n      operationId: get_api_admin_users\n      tags:\n        - Admin\n      responses: {}\n"
+	require.NoError(t, os.WriteFile(filepath.Join(sources, "admin.yaml"), []byte(admin), 0o644))
+	var bundled yaml.Node
+	require.NoError(t, yaml.Unmarshal([]byte(admin), &bundled))
+
+	files := appendOpenAPISkeletons(t, sources, mappingValue(bundled.Content[0], "paths"), []servedRoute{
+		{method: "delete", path: "/api/admin/users/{id}", authed: true},
+		{method: "head", path: "/api/admin/users"},
+		{method: "get", path: "/api/resource_events"},
+	})
+	require.Equal(t, []string{"admin.yaml", "resource-events.yaml"}, files)
+
+	adminOut, err := os.ReadFile(filepath.Join(sources, "admin.yaml"))
+	require.NoError(t, err)
+	require.True(t, strings.HasPrefix(string(adminOut), admin), "existing operations stay byte-identical")
+	require.Contains(t, string(adminOut), "  /api/admin/users/{id}:\n    delete:\n      summary: DELETE /api/admin/users/{id}\n      operationId: delete_api_admin_users_id\n      tags:\n        - Admin\n")
+	var adminDocument yaml.Node
+	require.NoError(t, yaml.Unmarshal(adminOut, &adminDocument))
+	adminPaths := mappingValue(adminDocument.Content[0], "paths")
+	require.Equal(t, map[string]bool{
+		"get /api/admin/users":         true,
+		"head /api/admin/users":        true,
+		"delete /api/admin/users/{id}": true,
+	}, documentedOperations(adminPaths))
+	require.NotNil(t, mappingValue(mappingValue(mappingValue(adminPaths, "/api/admin/users/{id}"), "delete"), "security"))
+
+	created, err := os.ReadFile(filepath.Join(sources, "resource-events.yaml"))
+	require.NoError(t, err)
+	require.True(t, strings.HasPrefix(string(created), "paths:\n  /api/resource_events:\n    get:\n"), string(created))
+	require.Contains(t, string(created), "      tags:\n        - Resource Events\n")
+}
+
+func appendOpenAPIOperation(t *testing.T, paths *yaml.Node, route servedRoute, tag string) {
+	t.Helper()
+	item := mappingValue(paths, route.path)
+	if item == nil {
+		item = &yaml.Node{Kind: yaml.MappingNode}
+		paths.Content = append(paths.Content, &yaml.Node{Kind: yaml.ScalarNode, Value: route.path}, item)
+	}
+	var operation strings.Builder
+	fmt.Fprintf(&operation, "summary: %s %s\n", strings.ToUpper(route.method), route.path)
+	fmt.Fprintf(&operation, "operationId: %s\n", strings.Trim(operationIDUnsafe.ReplaceAllString(route.method+"_"+route.path, "_"), "_"))
+	fmt.Fprintf(&operation, "tags:\n  - %s\n", tag)
+	params := regexp.MustCompile(`\{([^}]+)\}`).FindAllStringSubmatch(route.path, -1)
+	if len(params) == 0 {
+		operation.WriteString("parameters: []\n")
+	} else {
+		operation.WriteString("parameters:\n")
+		for _, param := range params {
+			fmt.Fprintf(&operation, "  - name: %s\n    in: path\n    required: true\n    schema:\n      type: string\n", param[1])
+		}
+	}
+	if route.method == "post" || route.method == "put" || route.method == "patch" {
+		operation.WriteString("requestBody:\n  required: false\n  content:\n    application/json:\n      schema:\n        $ref: '#/components/schemas/AnyJSON'\n")
+	}
+	if route.authed {
+		operation.WriteString("security:\n  - tokenAuth: []\n  - bearerAuth: []\n  - sessionCookie: []\n")
+	}
+	operation.WriteString("responses:\n")
+	if route.method == "head" {
+		operation.WriteString("  '200':\n    description: Successful response\n")
+	} else {
+		operation.WriteString("  '200':\n    description: Successful response\n    content:\n      application/json:\n        schema:\n          $ref: '#/components/schemas/AnyJSON'\n")
+	}
+	for _, status := range []struct{ code, name string }{
+		{"400", "BadRequest"}, {"401", "Unauthorized"}, {"403", "Forbidden"}, {"404", "NotFound"},
+		{"422", "ValidationError"}, {"429", "RateLimited"}, {"500", "InternalError"},
+	} {
+		fmt.Fprintf(&operation, "  '%s':\n    $ref: '#/components/responses/%s'\n", status.code, status.name)
+	}
+	var node yaml.Node
+	require.NoError(t, yaml.Unmarshal([]byte(operation.String()), &node))
+	item.Content = append(item.Content, &yaml.Node{Kind: yaml.ScalarNode, Value: route.method}, node.Content[0])
+}
+
+// openAPITag reuses the tag of the documented path sharing the most leading
+// segments beyond /api.
+func openAPITag(paths *yaml.Node, path string) string {
+	// The first segment after /api/, title-cased, when no documented path
+	// shares one.
+	segment := strings.Split(strings.TrimPrefix(path, "/api/"), "/")[0]
+	words := strings.FieldsFunc(segment, func(r rune) bool { return r == '-' || r == '_' })
+	for i, word := range words {
+		words[i] = strings.ToUpper(word[:1]) + word[1:]
+	}
+	best, bestLength := strings.Join(words, " "), 2
+	for i := 0; i+1 < len(paths.Content); i += 2 {
+		candidate, item := paths.Content[i].Value, paths.Content[i+1]
+		length, want, have := 0, strings.Split(path, "/"), strings.Split(candidate, "/")
+		for length < len(want) && length < len(have) && want[length] == have[length] {
+			length++
+		}
+		if length <= bestLength {
+			continue
+		}
+		for _, method := range openAPIMethods {
+			if operation := mappingValue(item, method); operation != nil {
+				if tags := mappingValue(operation, "tags"); tags != nil && len(tags.Content) > 0 {
+					best, bestLength = tags.Content[0].Value, length
+					break
+				}
+			}
+		}
+	}
+	return best
+}
+
+// The Mac composition keeps owner health while hosted operations remain mounted
+// for Plue. Walk the production router so optional handlers cannot hide a route.
+func TestCutBackendCompositionRoutes(t *testing.T) {
+	for _, mode := range []string{config.AuthModeSelfHosted, config.AuthModeMultitenant, "unknown"} {
+		t.Run(mode, func(t *testing.T) {
+			cfg := testConfigAllFlagsOn()
+			cfg.Auth.Mode = mode
+			served := map[string]servedRoute{}
+			walkServedRoutes(t, openAPIConformanceRouter(cfg), served)
+			_, health := served["get /api/admin/system/health"]
+			require.Equal(t, mode != "unknown", health)
+			for _, key := range []string{
+				"post /api/recommend",
+				"post /api/recommend/outcome",
+				"post /api/repos/{owner}/{repo}/changes/{change_id}/split",
+				"post /api/repos/{owner}/{repo}/branch-locks/acquire",
+				"post /api/repos/{owner}/{repo}/branch-locks/heartbeat",
+				"post /api/repos/{owner}/{repo}/branch-locks/release",
+				"post /api/repos/{owner}/{repo}/branch-locks/join-requests",
+				"get /api/repos/{owner}/{repo}/branch-locks/join-requests",
+				"post /api/repos/{owner}/{repo}/branch-locks/join-requests/{id}/decide",
+			} {
+				require.NotContains(t, served, key)
+				require.NotContains(t, documentedOperations(loadOpenAPIPaths(t)), key)
+			}
+			hosted := mode == config.AuthModeMultitenant
+			for _, operation := range []string{
+				"put /api/gateways/{hostID}/repository-jobs/{job}/trials/{requestID}",
+				"put /api/gateways/{hostID}/repository-jobs/ci/check-receipts/{requestID}",
+			} {
+				require.Equal(t, hosted, served[operation].path != "", operation)
+				parts := strings.SplitN(operation, " ", 2)
+				require.Equal(t, "plue", mappingValue(mappingValue(mappingValue(loadOpenAPIPaths(t), parts[1]), parts[0]), "x-composition").Value)
+				path := strings.NewReplacer("{hostID}", "host", "{job}", "ci", "{requestID}", "request").Replace(parts[1])
+				response := httptest.NewRecorder()
+				openAPIConformanceRouter(cfg).ServeHTTP(response, httptest.NewRequest("PUT", path, nil))
+				if hosted {
+					require.Equal(t, http.StatusServiceUnavailable, response.Code, path)
+				} else {
+					require.Equal(t, http.StatusNotFound, response.Code, path)
+				}
+			}
+
+			router := hostStatusProductionRouter(cfg, nil, &services.InstallCapacityService{})
+			request := httptest.NewRequest("GET", "/api/admin/users", nil)
+			request = withRouterAdminTokenAuth(request, false, middleware.TokenSourcePersonalAccessToken, middleware.ScopeReadRepository)
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			if hosted {
+				require.Equal(t, 403, response.Code)
+			} else {
+				require.Equal(t, 404, response.Code)
+			}
+			_, egress := served["get /api/repos/{owner}/{repo}/agent-sessions/{id}/egress"]
+			require.Equal(t, hosted, egress)
+			if !hosted {
+				egressResponse := httptest.NewRecorder()
+				openAPIConformanceRouter(cfg).ServeHTTP(egressResponse, httptest.NewRequest("GET", "/api/repos/owner/repo/agent-sessions/old/egress", nil))
+				require.Equal(t, http.StatusNotFound, egressResponse.Code)
+			}
+			_, split := served["post /api/repos/{owner}/{repo}/changes/{change_id}/split"]
+			require.False(t, split)
+			admins := 0
+			for _, route := range served {
+				require.NotContains(t, route.path, "/api/repository-setup/")
+				if strings.HasPrefix(route.path, "/api/admin/") && route.path != "/api/admin/system/health" && route.path != "/api/admin/users/{username}/erase" {
+					admins++
+				}
+			}
+			if hosted {
+				require.Positive(t, admins)
+			} else {
+				require.Zero(t, admins)
+			}
+		})
+	}
+}
+
+// Production HTTP boundaries, with populated route families and real identity
+// queries: nil optional handlers cannot provide a false absence result.
+func TestCutBackendHTTPPostgres(t *testing.T) {
+	pool, _ := postgresfixture.NewProductDatabase(t)
+	q := db.New(pool)
+	u, err := q.CreateUser(t.Context(), db.CreateUserParams{Username: "cutowner", LowerUsername: "cutowner"})
+	require.NoError(t, err)
+	repository, err := q.CreateRepo(t.Context(), db.CreateRepoParams{UserID: pgtype.Int8{Int64: u.ID, Valid: true}, Name: "repo", LowerName: "repo", IsPublic: true, DefaultBookmark: "main"})
+	require.NoError(t, err)
+	_, err = pool.Exec(t.Context(), `INSERT INTO self_host_owners(user_id) VALUES ($1)`, u.ID)
+	require.NoError(t, err)
+	binding, err := json.Marshal(map[string]any{"owner_login": "cutowner", "repository_name": "repo", "repository_id": repository.ID})
+	require.NoError(t, err)
+	require.NoError(t, q.UpsertInstallSetting(t.Context(), db.UpsertInstallSettingParams{Key: "github.repository", Value: binding}))
+	access, err := json.Marshal(map[string]any{"owner_login": "cutowner", "repository_name": "repo", "repository_id": repository.ID, "last_access_check_at": time.Now().UTC().Format(time.RFC3339Nano)})
+	require.NoError(t, err)
+	require.NoError(t, q.UpsertInstallSetting(t.Context(), db.UpsertInstallSettingParams{Key: "owner.access", Value: access}))
+	token := "smithers_0123456789012345678901234567890123456789"
+	digest := sha256.Sum256([]byte(token))
+	hash := hex.EncodeToString(digest[:])
+	_, err = q.CreateAccessToken(t.Context(), db.CreateAccessTokenParams{UserID: u.ID, Name: "cuts", TokenHash: hash, TokenLastEight: hash[56:], Scopes: "read:repository,write:repository"})
+	require.NoError(t, err)
+	_, err = q.CreateAuthSession(t.Context(), db.CreateAuthSessionParams{SessionKey: hash, UserID: u.ID, Username: u.Username, ExpiresAt: time.Now().Add(time.Hour)})
+	require.NoError(t, err)
+	_, err = pool.Exec(t.Context(), `INSERT INTO workspaces(id,repository_id,user_id,name,vm_id,status)
+		VALUES ($1,$2,$3,'cut-route-box','cut-route-box','running')`, browserBoxID, repository.ID, u.ID)
+	require.NoError(t, err)
+	for _, mode := range []string{config.AuthModeSelfHosted, config.AuthModeMultitenant} {
+		t.Run(mode, func(t *testing.T) {
+			cfg := testConfigAllFlagsOn()
+			cfg.Auth.Mode = mode
+			cfg.Server.PublicURL = "http://example.com"
+			router := hostStatusProductionRouter(cfg, q, &services.InstallCapacityService{}, conformanceServices{pool: pool, billing: &routes.BillingHandler{}, jobs: &routes.RepositoryJobHandler{}})
+			dispatcher := &browserFlowRecordingDispatcher{}
+			deps := &relayBoxes{Queries: q, t: t, pool: pool, owner: u.ID, login: u.Username, repo: repository, canWrite: true}
+			mountBrowserFlow(router, cfg, q, &browserFlowAPI{installTransactions: pool, repos: deps, queries: deps, dispatcher: dispatcher})
+			server := httptest.NewServer(router)
+			t.Cleanup(server.Close)
+			request := func(method, path, body string) (int, string) {
+				t.Helper()
+				req, err := http.NewRequest(method, server.URL+path, strings.NewReader(body))
+				require.NoError(t, err)
+				req.Host = "example.com"
+				if mode == config.AuthModeSelfHosted {
+					req.AddCookie(&http.Cookie{Name: "smithers_session", Value: token})
+					req.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "cuts-csrf"})
+					req.Header.Set("Origin", config.PublicOrigin(cfg))
+					req.Header.Set("X-CSRF-Token", "cuts-csrf")
+				} else {
+					req.Header.Set("Authorization", "token "+token)
+				}
+				req.Header.Set("Content-Type", "application/json")
+				response, err := server.Client().Do(req)
+				require.NoError(t, err)
+				defer response.Body.Close()
+				data, err := io.ReadAll(response.Body)
+				require.NoError(t, err)
+				return response.StatusCode, string(data)
+			}
+			for _, body := range []string{
+				`{"repo":"cutowner/repo","workspaceId":"` + browserBoxID + `","procedure":"Registration.Report","payload":{}}`,
+				`{"repo":"cutowner/repo","workspaceId":"` + browserBoxID + `","procedure":"Registration.Reviews","payload":{}}`,
+				`{"repo":"cutowner/repo","workspaceId":"` + browserBoxID + `","procedure":"Signal","payload":{"signal":{"name":"register-repository/review#old"}}}`,
+				`{"repo":"cutowner/repo","workspaceId":"` + browserBoxID + `","procedure":"Approval.Submit","payload":{"target":{"requestId":"register-repository/decline-note#old"}}}`,
+			} {
+				status, result := request("POST", "/api/workflow/rpc", body)
+				require.Equal(t, 404, status, result)
+				require.JSONEq(t, `{"code":"registration_retired","class":"user","message":"Registration is unavailable."}`, result)
+				require.Empty(t, dispatcher.calls)
+				require.Empty(t, deps.lookups)
+			}
+
+			status, result := request("POST", "/api/workflow/rpc", `{"repo":"cutowner/repo","workspaceId":"`+browserBoxID+`","procedure":"List","payload":{}}`)
+			require.Equal(t, 200, status, result)
+			require.JSONEq(t, `{"ok":true,"relayed":true}`, result)
+			require.Len(t, dispatcher.calls, 1)
+			require.Equal(t, "List", dispatcher.calls[0].procedure)
+
+			for _, tc := range []struct {
+				method, path  string
+				install, plue int
+			}{
+				{"POST", "/api/repos/cutowner/repo/branch-locks/acquire", 404, 404},
+				{"POST", "/api/repos/cutowner/repo/branch-locks/heartbeat", 404, 404},
+				{"POST", "/api/repos/cutowner/repo/branch-locks/release", 404, 404},
+				{"POST", "/api/repos/cutowner/repo/branch-locks/join-requests", 404, 404},
+				{"GET", "/api/repos/cutowner/repo/branch-locks/join-requests", 404, 404},
+				{"POST", "/api/repos/cutowner/repo/branch-locks/join-requests/1/decide", 404, 404},
+				{"GET", "/api/repository-setup/old", 404, 404},
+				{"POST", "/api/repository-setup/old", 404, 404},
+				{"PUT", "/api/gateways/host/repository-jobs/ci/trials/request", 404, 503},
+				{"PUT", "/api/gateways/host/repository-jobs/ci/check-receipts/request", 404, 503},
+				{"GET", "/api/repos/cutowner/repo/agent-sessions/old/egress", 404, 500},
+				{"GET", "/api/admin/users", 404, 403},
+				{"GET", "/api/admin/system/health", 200, 403},
+				{"POST", "/api/recommend", 404, 404},
+				{"POST", "/api/recommend/outcome", 404, 404},
+				{"POST", "/api/repos/cutowner/repo/changes/change/split", 404, 404},
+				{"GET", "/api/health", 200, 200},
+			} {
+				status, result := request(tc.method, tc.path, `{}`)
+				want := tc.install
+				if mode == config.AuthModeMultitenant {
+					want = tc.plue
+				}
+				if mode == config.AuthModeSelfHosted && want == http.StatusNotFound {
+					for _, credential := range []string{"", "Bearer invalid", "session"} {
+						absent := httptest.NewRequest(tc.method, config.PublicOrigin(cfg)+tc.path, strings.NewReader(`{}`))
+						absent.Header.Set("Content-Type", "application/json")
+						if credential == "session" {
+							absent.AddCookie(&http.Cookie{Name: cfg.Auth.SessionCookieName, Value: "expired-session"})
+						} else if credential != "" {
+							absent.Header.Set("Authorization", credential)
+						}
+						response := httptest.NewRecorder()
+						router.ServeHTTP(response, absent)
+						require.Equal(t, http.StatusNotFound, response.Code, "%s %s %s", tc.method, tc.path, credential)
+					}
+				}
+				require.Equal(t, want, status, "%s %s: %s", tc.method, tc.path, result)
+				if tc.path == "/api/repos/cutowner/repo/agent-sessions/old/egress" && mode == config.AuthModeMultitenant {
+					require.Contains(t, result, "agent service unavailable", "the retained handler, rather than a middleware panic, must answer")
+				}
+				if tc.path == "/api/health" {
+					require.Equal(t, "ok", result)
+				}
+			}
+		})
+	}
+}
+
+// Install conformance models the normal composition with no commerce option.
+func conformanceBillingCapabilities(cfg *config.Config) services.BillingCapabilities {
+	if config.IsSingleOwner(cfg.Auth) {
+		return services.BillingCapabilities{}
+	}
+	return services.BillingCapabilities{Overview: true, Plans: true, Checkout: true, Portal: true, Webhook: true}
+}
+
+func TestDeferredRoutesComposition(t *testing.T) {
+	operations := []string{
+		"get /api/repos/{owner}/{repo}/repository-jobs",
+		"get /api/repos/{owner}/{repo}/repository-jobs/{job}/dispatches",
+		"post /api/repos/{owner}/{repo}/repository-jobs/{job}/pause",
+		"get /api/repos/{owner}/{repo}/repository-jobs/{job}/approvals",
+		"post /api/repos/{owner}/{repo}/repository-jobs/{job}/approvals",
+		"put /api/gateways/{hostID}/repository-jobs/{job}",
+		"put /api/gateways/{hostID}/repository-jobs/{job}/manual/{requestID}",
+		"put /api/gateways/{hostID}/repository-jobs/{job}/comments/{step}",
+		"get /api/billing", "get /api/billing/plans", "get /api/billing/balance",
+		"post /api/billing/checkout", "post /api/billing/portal", "post /api/billing/refresh", "post /api/billing/webhook",
+		"get /api/orgs/{org}/billing", "post /api/orgs/{org}/billing/checkout",
+		"post /api/orgs/{org}/billing/portal", "post /api/orgs/{org}/billing/refresh",
+	}
+	paths := loadOpenAPIPaths(t)
+	for _, mode := range []string{config.AuthModeSelfHosted, config.AuthModeMultitenant} {
+		t.Run(mode, func(t *testing.T) {
+			cfg := testConfigAllFlagsOn()
+			cfg.Auth.Mode = mode
+			router := openAPIConformanceRouter(cfg)
+			served := map[string]servedRoute{}
+			walkServedRoutes(t, router, served)
+			for _, operation := range operations {
+				parts := strings.SplitN(operation, " ", 2)
+				require.Equal(t, mode == config.AuthModeMultitenant, served[operation].path != "", operation)
+				require.Equal(t, "plue", mappingValue(mappingValue(mappingValue(paths, parts[1]), parts[0]), "x-composition").Value, operation)
+				if mode == config.AuthModeSelfHosted {
+					path := strings.NewReplacer("{owner}", "will", "{repo}", "app", "{job}", "ci", "{hostID}", "host", "{requestID}", "request", "{org}", "team", "{step}", "reply").Replace(parts[1])
+					for _, credential := range []string{"", "owner", "maintainer", "member", "delegated", "worker"} {
+						req := httptest.NewRequest(strings.ToUpper(parts[0]), path, nil)
+						if credential != "" {
+							req.Header.Set("Authorization", "Bearer "+credential)
+						}
+						rec := httptest.NewRecorder()
+						router.ServeHTTP(rec, req)
+						require.Equal(t, http.StatusNotFound, rec.Code, operation+" "+credential)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestDeferredTriggerAliasesAndDarkCallbacks(t *testing.T) {
+	cfg := testConfigAllFlagsOn()
+	cfg.Auth.Mode = config.AuthModeSelfHosted
+	router := openAPIConformanceRouter(cfg)
+	for _, request := range []struct{ method, path string }{
+		{"GET", "/api/repos/will/app/repository-jobs/list"},
+		{"POST", "/api/repos/will/app/repository-jobs/ci/register"},
+		{"POST", "/api/repos/will/app/repository-jobs/ci/approve"},
+		{"POST", "/api/repos/will/app/repository-jobs/ci/resume"},
+		{"POST", "/api/repos/will/app/repository-jobs/ci/run"},
+		{"PUT", "/api/gateways/host/repository-jobs/ci/manual/request"},
+		{"PUT", "/api/gateways/host/repository-jobs/ci/trials/request"},
+		{"PUT", "/api/gateways/host/repository-jobs/ci/check-receipts/request"},
+	} {
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, httptest.NewRequest(request.method, request.path, nil))
+		require.Equal(t, http.StatusNotFound, rec.Code, request.path)
+	}
+	// Deferred replies have no install route, even with a composed handler.
+	for _, path := range []string{
+		"/api/gateways/host/repository-jobs/ci/comments/step",
+	} {
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, httptest.NewRequest("PUT", path, nil))
+		require.Equal(t, http.StatusNotFound, rec.Code, path)
+	}
+}
+
+// These are literal command doors; schema checks do not generate policy.
+func TestInstallAuthorizationOpenAPIResponses(t *testing.T) {
+	document := loadOpenAPIDocument(t)
+	paths := mappingValue(document, "paths")
+	require.NotNil(t, paths)
+	for _, door := range []struct{ method, path string }{
+		{"post", "/api/todos"}, {"patch", "/api/todos/{n}"}, {"post", "/api/todos/{n}"},
+		{"post", "/api/todos/{n}/merge"}, {"post", "/api/branches/{b}"},
+		{"post", "/api/proposals/{id}/accept"}, {"post", "/api/proposals/{id}/dismiss"},
+		{"post", "/api/confirmations"}, {"post", "/api/reviews"}, {"post", "/api/issues/{number}/comments"},
+	} {
+		operation := mappingValue(mappingValue(paths, door.path), door.method)
+		require.NotNil(t, operation, door.path)
+		responses := mappingValue(operation, "responses")
+		require.Equal(t, "#/components/responses/AuthorizationForbidden", mappingValue(mappingValue(responses, "403"), "$ref").Value, door.path)
+		accepted := mappingValue(responses, "202")
+		require.NotNil(t, accepted, door.path)
+		// Response components carry the same contract as inline responses.
+		// Resolve only local response refs and refuse missing or cyclic refs.
+		seen := map[string]bool{}
+		for ref := mappingValue(accepted, "$ref"); ref != nil; ref = mappingValue(accepted, "$ref") {
+			const prefix = "#/components/responses/"
+			require.True(t, strings.HasPrefix(ref.Value, prefix), door.path)
+			require.False(t, seen[ref.Value], "cyclic response reference for %s", door.path)
+			seen[ref.Value] = true
+			accepted = mappingValue(mappingValue(mappingValue(document, "components"), "responses"), strings.TrimPrefix(ref.Value, prefix))
+			require.NotNil(t, accepted, door.path)
+		}
+		content := mappingValue(accepted, "content")
+		require.NotNil(t, content, door.path)
+		media := mappingValue(content, "application/json")
+		require.NotNil(t, media, door.path)
+		schema := mappingValue(media, "schema")
+		require.NotNil(t, schema, door.path)
+		var containsReceipt func(*yaml.Node) bool
+		containsReceipt = func(node *yaml.Node) bool {
+			if node.Value == "#/components/schemas/ConfirmationReceipt" {
+				return true
+			}
+			for _, child := range node.Content {
+				if containsReceipt(child) {
+					return true
+				}
+			}
+			return false
+		}
+		require.True(t, containsReceipt(schema), door.path)
+	}
+}
+
+// Every install API door must declare authority independently of its handler.
+func TestInstallRouteAuthorizationCoverage(t *testing.T) {
+	routes := servedCompositionRoutes(t, config.AuthModeSelfHosted)
+	count := 0
+	for _, route := range routes {
+		if !strings.HasPrefix(route.path, "/api/") {
+			continue
+		}
+		path := regexp.MustCompile(`\{[^}]+\}`).ReplaceAllStringFunc(route.path, func(parameter string) string {
+			if parameter == "{digest}" {
+				return strings.Repeat("a", 64)
+			}
+			return "1"
+		})
+		command := middleware.InstallMemberCommand(strings.ToUpper(route.method), path)
+		if command == "" {
+			t.Errorf("unmapped install route: %s", route.key())
+			continue
+		}
+		switch command {
+		case "public", "self", "denied", "branch.control", "todo.control", "order.ok", "approval.decide", "flow.relay", "branch.join":
+			// Authentication/refusal bindings and body-resolved commands are explicit.
+		default:
+			_, exists := services.OperationPolicy(command)
+			require.True(t, exists, "%s names no catalog descriptor: %s", route.key(), command)
+		}
+		count++
+	}
+	t.Logf("%d served install API routes have explicit authorization bindings", count)
+}
+
+func TestInstallGitHubAuthorizationOpenAPIResponses(t *testing.T) {
+	paths := loadOpenAPIPaths(t)
+	for _, door := range []struct{ method, path string }{
+		{"get", "/api/github/sync"}, {"post", "/api/github/sync"}, {"get", "/api/github/synced-repos"},
+	} {
+		operation := mappingValue(mappingValue(paths, door.path), door.method)
+		require.NotNil(t, operation, door.path)
+		responses := mappingValue(operation, "responses")
+		require.Equal(t, "#/components/responses/AuthorizationForbidden", mappingValue(mappingValue(responses, "403"), "$ref").Value, door.path)
+	}
+}

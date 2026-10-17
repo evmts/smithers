@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test"
 import appendixB from "./fixtures/AppendixBPolicy.json"
 import { FLOW_NAMES } from "./FlowName"
-import { generateCatalog } from "../../../../../scripts/catalog-mvp"
-import { auditAppIds } from "../../../../../scripts/catalog-policy"
+import { generateCatalog } from "../../../scripts/catalog-mvp"
+import { auditAppIds } from "../../../scripts/catalog-policy.mts"
 
 // The full literal policy replaces the old Cut-only fixture. This existing
 // cleanup check remains independently useful while the strict build audit

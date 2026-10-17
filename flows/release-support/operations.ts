@@ -4,20 +4,20 @@ import { randomUUID } from "node:crypto"
 import { mkdir, readFile, unlink } from "node:fs/promises"
 import { join } from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
-import { readWorkspaceManifests } from "../../scripts/pack-release.mjs"
+import { readWorkspaceManifests } from "../release/pack-release.mjs"
 import {
   candidateIntegrity,
   preflight,
   publishCandidate,
   verifyLocalCandidate
-} from "../../scripts/publish-release.mjs"
+} from "../release/publish-release.mjs"
 import { releaseGateArgs, releaseGateSetForHost } from "../../scripts/release-gates.mjs"
 import {
   readVersionedManifests,
   retarget,
   retargetSource,
   versionedSources
-} from "../../scripts/set-release-version.mjs"
+} from "../release/set-release-version.mjs"
 import { chooseTemplate } from "../release-content/jev-template.ts"
 import * as Content from "../release-content/workflow.ts"
 import * as Release from "../release/workflow.ts"
@@ -507,10 +507,10 @@ export const operations = (
       throw new Error("Release preparation plan changed after approval")
     }
     const opts = signal ? { signal } : {}
-    await run(process.execPath, ["scripts/set-release-version.mjs", input.version], opts)
+    await run(process.execPath, ["flows/release/set-release-version.mjs", input.version], opts)
     await run(
       process.execPath,
-      ["scripts/generate-changelog.mjs", "--version", input.version, "--from", evidence.from],
+      ["flows/release/generate-changelog.mjs", "--version", input.version, "--from", evidence.from],
       opts
     )
     await run("pnpm", ["install", "--lockfile-only", "--ignore-scripts"], opts)
@@ -525,9 +525,9 @@ export const operations = (
         throw error
       }
     }
-    await run(process.execPath, ["scripts/set-release-version.mjs", "--check", input.version], opts)
+    await run(process.execPath, ["flows/release/set-release-version.mjs", "--check", input.version], opts)
     await run(process.execPath, [
-      "scripts/generate-changelog.mjs",
+      "flows/release/generate-changelog.mjs",
       "--check",
       "--version",
       input.version,
@@ -551,9 +551,9 @@ export const operations = (
       throw new Error("Prepare and commit the requested version before building its release candidate")
     }
     const opts = signal ? { signal } : {}
-    await run(process.execPath, ["scripts/set-release-version.mjs", "--check", input.version], opts)
+    await run(process.execPath, ["flows/release/set-release-version.mjs", "--check", input.version], opts)
     await run(process.execPath, [
-      "scripts/generate-changelog.mjs",
+      "flows/release/generate-changelog.mjs",
       "--check",
       "--version",
       input.version,
@@ -578,8 +578,8 @@ export const operations = (
 
   const build = async (evidence: Evidence, signal?: AbortSignal): Promise<Evidence> => {
     await assertHead(evidence.sourceSha, signal)
-    await run(process.execPath, ["scripts/build-release.mjs"], signal ? { signal } : {})
-    await run(process.execPath, ["scripts/check-api-baseline.mjs"], signal ? { signal } : {})
+    await run(process.execPath, ["flows/release/build-release.mjs"], signal ? { signal } : {})
+    await run(process.execPath, ["flows/release/check-api-baseline.mjs"], signal ? { signal } : {})
     return evidence
   }
 
@@ -591,7 +591,7 @@ export const operations = (
     await assertCleanMain(signal)
     const directory = `.flows/releases/npm/${evidence.version}/${evidence.sourceSha}/${randomUUID()}`
     await mkdir(await inside(root, directory), { recursive: true })
-    await run(process.execPath, ["scripts/pack-release.mjs", directory], {
+    await run(process.execPath, ["flows/release/pack-release.mjs", directory], {
       env: { RELEASE_TAG: `v${evidence.version}` },
       ...(signal ? { signal } : {})
     })
@@ -656,7 +656,7 @@ export const operations = (
       "npm@11.16.0",
       "dlx",
       "node",
-      "scripts/smoke-release.mjs",
+      "flows/release/smoke-release.mjs",
       candidate.directory
     ], signal ? { signal } : {})
     const evidence = await readJson<{ status: string; candidateIntegrity: string; toolchain: { node: string } }>(

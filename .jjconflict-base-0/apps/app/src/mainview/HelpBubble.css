@@ -1,0 +1,149 @@
+.help-anchor {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 100%;
+  min-width: 0;
+  /*
+   * The anchor and the open tip are explanatory chrome floating over real
+   * content: pointer-events pass through to what is beneath (a docked hint
+   * used to eat the transcript's own buttons). The wrapped control and the
+   * tip's own buttons stay hit-testable.
+   */
+  pointer-events: none;
+}
+
+.help-anchor-target {
+  pointer-events: auto;
+}
+
+/* The FirstSightHint wrapper is the same explanatory chrome: click-through. */
+[data-first-sight-hint] {
+  pointer-events: none;
+}
+
+[data-first-sight-hint] .help-anchor-target,
+[data-first-sight-hint] .help-bubble button,
+[data-first-sight-hint] .help-bubble a {
+  pointer-events: auto;
+}
+
+.help-bubble {
+  --help-tip-border: color-mix(in srgb, var(--g-accent, #3a756b) 28%, transparent);
+  --help-tip-background: var(--surface, #fffefa);
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: min(340px, 100%);
+  box-sizing: border-box;
+  margin-bottom: 18px;
+  padding: 14px 12px 14px 16px;
+  border: 1px solid var(--help-tip-border);
+  border-left: 4px solid var(--g-accent, #3a756b);
+  border-radius: 12px;
+  background: var(--help-tip-background);
+  color: var(--text, #211d18);
+  box-shadow: 0 4px 14px #1e393012;
+  text-align: left;
+  /* A hint explains the control beneath it; it never eats that control's clicks. */
+  pointer-events: none;
+}
+
+.help-bubble button,
+.help-bubble a {
+  pointer-events: auto;
+}
+
+.help-bubble::after {
+  content: "";
+  position: absolute;
+  bottom: -6px;
+  left: calc(var(--help-tip-x, 50%) - 5px);
+  width: 10px;
+  height: 10px;
+  border-right: 1px solid var(--help-tip-border);
+  border-bottom: 1px solid var(--help-tip-border);
+  background: var(--help-tip-background);
+  transform: rotate(45deg);
+}
+
+.help-bubble-content {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-small, 14px);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.help-bubble-icon {
+  flex-shrink: 0;
+  margin-top: 3px;
+  color: var(--g-accent, #3a756b);
+}
+
+.help-bubble-dismiss {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  margin: -4px -3px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.help-bubble-dismiss:hover { background: color-mix(in srgb, currentColor 8%, transparent); }
+.help-bubble-dismiss:focus-visible { outline: 2px solid var(--ring-border); outline-offset: 2px; }
+.help-anchor-target { display: flex; justify-content: center; max-width: 100%; }
+
+.help-anchor[data-placement="above"] > .help-bubble {
+  position: absolute;
+  bottom: 100%;
+  width: min(340px, calc(100vw - 32px));
+  max-width: none;
+  z-index: 10;
+}
+.help-anchor[data-help-open] .help-anchor-target > button {
+  box-shadow: 0 0 16px 4px color-mix(in srgb, var(--g-accent, #3a756b) 24%, transparent);
+}
+
+/* Only the action we are waiting for pulses; explanatory tips stay quiet. */
+.help-anchor[data-help-pulse] .help-anchor-target > button,
+.help-anchor[data-help-pulse] .guide-button-key {
+  animation: help-target-glow 1600ms ease-in-out infinite;
+}
+@keyframes help-target-glow {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  50% { box-shadow: 0 0 16px 4px color-mix(in srgb, var(--g-accent, #3a756b) 32%, transparent); }
+}
+.help-anchor[data-help-pulse] .help-anchor-target > button[data-pressed],
+.help-anchor[data-help-pulse] button[data-pressed] .guide-button-key {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .help-anchor[data-help-pulse] .help-anchor-target > button,
+  .help-anchor[data-help-pulse] .guide-button-key {
+    animation: none;
+    box-shadow: 0 0 16px 4px color-mix(in srgb, var(--g-accent, #3a756b) 18%, transparent);
+  }
+}
+
+/* An introduction's explicit acknowledgement; the sentence stays until it is pressed. */
+.help-bubble .help-bubble-content .help-bubble-next {
+  display: flex;
+  min-height: 28px;
+  margin: 6px 0 0 auto;
+  padding: 2px 10px;
+}
+
+.hint-touch { display: none; }
+@media (pointer: coarse) {
+  .hint-keyboard { display: none; }
+  .hint-touch { display: inline; }
+}

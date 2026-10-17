@@ -42,7 +42,7 @@ import * as Memory from "../src/Memory.ts"
 import * as MemoryCalibration from "../src/MemoryCalibration.ts"
 
 /** Where the transcript miner writes decision pages, which memory reads. */
-const decisions = "factory/wiki/decisions"
+const decisions = ".smithers/wiki/decisions"
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -765,8 +765,8 @@ describe("the wiki source", () => {
       "docs/fine.md": "A fine page."
     })
     symlinkSync(join(outside, "secret.md"), join(root, "docs", "linked.md"))
-    mkdirSync(join(root, "factory/wiki/decisions"), { recursive: true })
-    symlinkSync(join(outside, "secret.md"), join(root, "factory/wiki/decisions/linked.md"))
+    mkdirSync(join(root, ".smithers/wiki/decisions"), { recursive: true })
+    symlinkSync(join(outside, "secret.md"), join(root, ".smithers/wiki/decisions/linked.md"))
     put(root, {
       ".smithers/coding-project.json": JSON.stringify({
         pages: [

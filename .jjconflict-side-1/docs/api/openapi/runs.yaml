@@ -1,0 +1,214 @@
+paths:
+  /api/runs:
+    get:
+      x-composition: install
+      summary: List admitted runs
+      description: Run and machine credentials cannot list all runs.
+      operationId: get_api_runs
+      tags:
+        - Runs
+      security: [{sessionCookie: []}, {bearerAuth: []}]
+      responses:
+        '200':
+          description: Admitted native run monitor data
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/AnyJSON'}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /api/runs/{id}:
+    get:
+      x-composition: install
+      summary: Read an admitted run
+      description: Bound run and machine credentials receive only their current TODO execution state and lifecycle events. Private monitor fields are omitted.
+      operationId: get_api_runs_id
+      tags:
+        - Runs
+      security: [{sessionCookie: []}, {bearerAuth: []}]
+      parameters:
+        - {name: id, in: path, required: true, description: Run ID or workspace-prefixed run ID, schema: {type: string}}
+        - {name: at, in: query, description: Journal replay position, schema: {type: integer, format: int64, minimum: 0}}
+      responses:
+        '200':
+          description: Admitted native run monitor data
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AnyJSON'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+    post:
+      x-composition: install
+      summary: Retry or dismiss a background run
+      operationId: post_api_runs_id
+      tags:
+        - Runs
+      security: [{sessionCookie: []}]
+      parameters:
+        - {name: id, in: path, required: true, description: Numeric workflow run ID or durable Learning operation UUID, schema: {type: string}}
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [op]
+              properties:
+                op: {type: string, enum: [retry, dismiss]}
+      responses:
+        '200':
+          description: Dismissed run
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/HomeBackgroundReceipt'}
+        '202':
+          description: Retry requested
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/HomeBackgroundReceipt'}
+        '400': {description: Invalid run action}
+        '401': {description: Sign in}
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '404': {description: Run unavailable}
+        '409': {description: Run cannot be changed}
+        '503': {description: Background runs unavailable}
+  /api/runs/{id}/trace:
+    get:
+      x-composition: install
+      summary: Read an admitted run trace
+      description: Bound run and machine credentials receive only their current TODO execution state and lifecycle events. Private monitor fields are omitted.
+      operationId: get_api_runs_id_trace
+      tags:
+        - Runs
+      security: [{sessionCookie: []}, {bearerAuth: []}]
+      parameters:
+        - {name: id, in: path, required: true, description: Run ID or workspace-prefixed run ID, schema: {type: string}}
+        - {name: at, in: query, description: Journal replay position, schema: {type: integer, format: int64, minimum: 0}}
+      responses:
+        '200':
+          description: Admitted native run monitor data
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AnyJSON'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /api/repos/{owner}/{repo}/monitors:
+    get:
+      summary: List a repository's flow run monitors
+      description: >-
+        The repository's own run index, read-only. The repository comes from the
+        route and the caller needs read permission on it, so this is the index a
+        multi-user deployment serves (the /api/runs index resolves a single-owner
+        install binding instead). Listing reads admitted checkpoints and retained
+        monitors: it never creates, resumes or wakes a machine. A run whose live
+        host cannot be read now keeps its row from its admission's last
+        observation, marked unavailable.
+      operationId: get_api_repos_owner_repo_monitors
+      tags:
+        - Runs
+      security: [{sessionCookie: []}, {bearerAuth: []}, {tokenAuth: []}]
+      parameters:
+        - {name: owner, in: path, required: true, schema: {type: string}}
+        - {name: repo, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: The repository's native run monitor data, newest state per run
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/AnyJSON'}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /api/repos/{owner}/{repo}/monitors/{id}:
+    get:
+      summary: Read one of a repository's flow run monitors
+      description: Reads the run's retained monitor, or its live host's projection. A run of another repository is not found here.
+      operationId: get_api_repos_owner_repo_monitors_id
+      tags:
+        - Runs
+      security: [{sessionCookie: []}, {bearerAuth: []}, {tokenAuth: []}]
+      parameters:
+        - {name: owner, in: path, required: true, schema: {type: string}}
+        - {name: repo, in: path, required: true, schema: {type: string}}
+        - {name: id, in: path, required: true, description: Workspace-prefixed run ID, schema: {type: string}}
+        - {name: at, in: query, description: Journal replay position, schema: {type: integer, format: int64, minimum: 0}}
+      responses:
+        '200':
+          description: Native run monitor data
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AnyJSON'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /api/repos/{owner}/{repo}/monitors/{id}/trace:
+    get:
+      summary: Read one of a repository's flow run monitors with its journal
+      description: The monitor with its journal page, from the live host's run-events projection or a settled run's archive. Replaying an archived frame wakes nothing.
+      operationId: get_api_repos_owner_repo_monitors_id_trace
+      tags:
+        - Runs
+      security: [{sessionCookie: []}, {bearerAuth: []}, {tokenAuth: []}]
+      parameters:
+        - {name: owner, in: path, required: true, schema: {type: string}}
+        - {name: repo, in: path, required: true, schema: {type: string}}
+        - {name: id, in: path, required: true, description: Workspace-prefixed run ID, schema: {type: string}}
+        - {name: at, in: query, description: Journal replay position, schema: {type: integer, format: int64, minimum: 0}}
+      responses:
+        '200':
+          description: Native run monitor data with its journal
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AnyJSON'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /api/runs/{id}/background-status:
+    get:
+      x-composition: install
+      summary: Read a background run receipt
+      operationId: get_api_runs_id_background_status
+      tags:
+        - Runs
+      security: [{sessionCookie: []}]
+      parameters:
+        - {name: id, in: path, required: true, description: Numeric workflow run ID or durable Learning operation UUID, schema: {type: string}}
+      responses:
+        '200':
+          description: Background run receipt
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/HomeBackgroundReceipt'}
+        '401': {description: Sign in}
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '404': {description: Run unavailable}
+        '503': {description: Background runs unavailable}
+components:
+  schemas:
+    HomeBackgroundReceipt:
+      type: object
+      required: [state, run_id]
+      properties:
+        state: {type: string}
+        run_id: {$ref: '#/components/schemas/HomeBackgroundID'}
+    HomeBackgroundID:
+      description: Numeric workflow run ID or durable Learning operation UUID.
+      oneOf:
+        - {type: integer, format: int64, minimum: 1}
+        - {type: string, format: uuid}

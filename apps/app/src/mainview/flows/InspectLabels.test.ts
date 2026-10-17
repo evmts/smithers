@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { generateActionRenderings } from "../../../../../scripts/catalog-mvp"
+import { generateActionRenderings } from "../../../scripts/catalog-mvp"
 
 describe("Appendix C rendering generation", () => {
   test("only retained action rows supply labels; bookkeeping stays distinct", () => {

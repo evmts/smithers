@@ -1,0 +1,290 @@
+import { describe, expect, test } from "bun:test"
+import { createFilesSeam, BRANCH_FILE_PROVIDERS, type BranchFileOptions } from "./FilesSeam"
+import type { SeamContext } from "./SeamContext"
+import type { FileCard } from "@smthrs/rpc/FileCard"
+
+const writer = { kind: "person", login: "maya", name: "Maya", avatar_url: "https://example.com/maya.png", color_index: 1 } as const
+const file = (digest = "one", text = "first\n"): FileCard => ({
+  branch: "scratch/maya/demo", path: "src/deliver.ts", language: "typescript", digest,
+  content: { kind: "text", text }, mode: "read_only", diagnostics: [], authors: [], editors: []
+})
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status })
+const fixture = (http: SeamContext["http"], options?: BranchFileOptions) => createFilesSeam({
+  http, store: {}, baseUrl: "", isDisposed: () => false
+} as SeamContext, options).branchFiles
+const scope = { branch: "scratch/maya/demo", member: "maya", revision: 1, sleeping: false }
+const ready: BranchFileOptions = { ready: () => true, scope: () => scope }
+
+describe("dark branch file operations", () => {
+  test("missing activation and every missing provider refuse before HTTP", async () => {
+    let requests = 0
+    for (const missing of [undefined, ...BRANCH_FILE_PROVIDERS]) {
+      const seam = fixture(async () => { requests++; return json(file()) }, missing === undefined ? undefined : {
+        ...ready, ready: provider => provider !== missing
+      })
+      expect(await seam.read(scope.branch, file().path)).toEqual({ error: "Branch files are unavailable." })
+      expect(await seam.restore(file("current"), { version: "burst-17", post_digest: "one" })).toEqual({ error: "Branch files are unavailable." })
+      expect(await seam.compare(file(), "burst-17")).toEqual({ error: "Branch files are unavailable." })
+    }
+    expect(requests).toBe(0)
+  })
+  test("removed membership, cross-branch and unsafe paths refuse without effects", async () => {
+    let requests = 0
+    const http = async () => { requests++; return json(file()) }
+    expect(await fixture(http, { ...ready, scope: () => null }).read(scope.branch, file().path)).toHaveProperty("error")
+    const seam = fixture(http, ready)
+    for (const path of ["../secret", "%2e%2e/secret", "/etc/passwd", "src/%2Fsecret", ""]) expect(await seam.read(scope.branch, path)).toHaveProperty("error")
+    expect(await seam.read("foreign", file().path)).toHaveProperty("error")
+    expect(requests).toBe(0)
+  })
+  test("digest reads are read-only, scoped and preserve literal bytes", async () => {
+    const calls: string[] = []
+    const seam = fixture(async url => { calls.push(url); return json({ ...file("two", "résumé\n"), mode: "live" }) }, ready)
+    expect(await seam.read(scope.branch, file().path, "two")).toEqual({ ok: file("two", "résumé\n") })
+    expect(calls).toEqual(["/api/branches/scratch%2Fmaya%2Fdemo/files/src/deliver.ts?digest=two"])
+  })
+  test("other paths and unchanged digest do nothing; current write keeps its actor", async () => {
+    let requests = 0
+    const seam = fixture(async () => { requests++; return json(file("two", "new\n")) }, ready)
+    expect(await seam.reload(file(), { path: "other.ts", post_digest: "two", actor: writer })).toBeUndefined()
+    expect(await seam.reload(file(), { path: file().path, post_digest: "one", actor: writer })).toBeUndefined()
+    expect(requests).toBe(0)
+    expect(await seam.reload(file(), { path: file().path, post_digest: "two", actor: writer })).toEqual({ ok: { ...file("two", "new\n"), last_writer: writer } })
+    await seam.reload(file(), { path: file().path, post_digest: "two", actor: writer })
+    expect(requests).toBe(1)
+  })
+  test("an older delayed response cannot replace the newer digest", async () => {
+    let finish!: (response: Response) => void
+    const seam = fixture(async url => url.endsWith("digest=two") ? new Promise(resolve => { finish = resolve }) : json(file("three", "latest\n")), ready)
+    const old = seam.read(scope.branch, file().path, "two")
+    expect(await seam.read(scope.branch, file().path, "three")).toEqual({ ok: file("three", "latest\n") })
+    finish(json(file("two", "old\n")))
+    expect(await old).toHaveProperty("error")
+  })
+  test("revocation during a read discards its response", async () => {
+    let active = true
+    const seam = fixture(async () => { active = false; return json(file()) }, { ...ready, scope: () => active ? scope : null })
+    expect(await seam.read(scope.branch, file().path)).toHaveProperty("error")
+  })
+  test("sleeping reads use capture; restores never wake or write", async () => {
+    const calls: string[] = []
+    const seam = fixture(async url => { calls.push(url); return json(file()) }, { ...ready, scope: () => ({ ...scope, sleeping: true, capturedHead: "captured-7" }) })
+    expect(await seam.read(scope.branch, file().path)).toEqual({ ok: file() })
+    expect(await seam.restore(file("current"), { version: "burst-17", post_digest: "one" })).toEqual({ error: "The branch is asleep." })
+    expect(calls).toEqual(["/api/branches/scratch%2Fmaya%2Fdemo/files/src/deliver.ts?at=captured-7"])
+  })
+  test("restore supplies the burst post digest; stale opens Compare once without overwrite", async () => {
+    const calls: Array<[string, unknown]> = []
+    const seam = fixture(async (url, init) => {
+      calls.push([url, init?.body ? JSON.parse(String(init.body)) : null])
+      return init?.method === "POST" ? json({ error: { code: "stale" } }, 409) : json({ before: "old\n", current: "new\n" })
+    }, ready)
+    expect(await seam.restore(file("current"), { version: "versions-17", post_digest: "one" })).toEqual({ compare: { before: "old\n", current: "new\n" } })
+    expect(calls).toEqual([
+      ["/api/branches/scratch%2Fmaya%2Fdemo/files/src/deliver.ts", { action: "restore", version: "versions-17", base_digest: "one" }],
+      ["/api/branches/scratch%2Fmaya%2Fdemo/files/src/deliver.ts?compare=versions-17", null]
+    ])
+  })
+  test("deleted Restore sends absent; 409 reads the recreated file without retry", async () => {
+    const methods: string[] = []
+    const seam = fixture(async (_url, init) => {
+      methods.push(init?.method ?? "GET")
+      if (init?.method === "POST") {
+        expect(JSON.parse(String(init.body))).toEqual({ action: "restore-deleted", version: "versions-delete", base_digest: "absent" })
+        return json({ error: { code: "stale" } }, 409)
+      }
+      return json(file("recreated", "someone else's bytes\n"))
+    }, ready)
+    expect(await seam.restore(file("current"), { version: "versions-delete", post_digest: "one" }, true)).toEqual({ ok: file("recreated", "someone else's bytes\n") })
+    expect(methods).toEqual(["POST", "GET"])
+  })
+  test("document Restore supplies current text and the retained deletion version once", async () => {
+    const calls: unknown[] = []
+    const seam = fixture(async (_url, init) => { calls.push(JSON.parse(String(init?.body))); return json({ error: { message: "runtime unavailable" } }, 503) }, ready)
+    const deleted: FileCard = { ...file(), mode: "live", gone: { kind: "deleted", by: writer }, outside: { version: "delete-version", at: "" } }
+    expect(await seam.restoreDocument(deleted, "last live text\n")).toHaveProperty("error")
+    expect(calls).toEqual([{ action: "restore-deleted", version: "delete-version", text: "last live text\n", base_digest: "absent" }])
+    const { outside: _outside, ...uncaptured } = deleted
+    expect(await seam.restoreDocument(uncaptured, "last live text\n")).toEqual({ error: "The file has no captured version." })
+    expect(calls).toHaveLength(1)
+  })
+  test("Follow reads the rename destination; hostile destinations refuse", async () => {
+    const calls: string[] = []
+    const seam = fixture(async url => { calls.push(url); return json({ ...file(), path: "src/shipped.ts" }) }, ready)
+    expect(await seam.follow({ ...file(), gone: { kind: "renamed", to: "src/shipped.ts", by: writer } })).toHaveProperty("ok.path", "src/shipped.ts")
+    expect(await seam.follow({ ...file(), gone: { kind: "renamed", to: "../secret", by: writer } })).toHaveProperty("error")
+    expect(calls).toEqual(["/api/branches/scratch%2Fmaya%2Fdemo/files/src/shipped.ts"])
+  })
+  test("malformed, foreign-path, foreign-branch and wrong-digest responses never project", async () => {
+    for (const body of [{}, { ...file(), branch: "foreign" }, { ...file(), path: "other.ts" }, file("wrong")]) {
+      expect(await fixture(async () => json(body), ready).read(scope.branch, file().path, "one")).toHaveProperty("error")
+    }
+  })
+  test("50 writes leave the final literal bytes and digest current", async () => {
+    const seam = fixture(async url => {
+      const digest = new URL(url, "http://localhost").searchParams.get("digest")!
+      return json(file(digest, `${digest}\n`))
+    }, ready)
+    let current = file()
+    for (let i = 1; i <= 50; i++) {
+      const answer = await seam.reload(current, { path: current.path, post_digest: `write-${i}`, actor: writer })
+      if (answer && "ok" in answer) current = answer.ok
+    }
+    expect(current.digest).toBe("write-50")
+    expect(current.content).toEqual({ kind: "text", text: "write-50\n" })
+  })
+  test("successful Restore reads the resulting bytes once; failures never retry", async () => {
+    for (const status of [200, 403, 500]) {
+      const methods: string[] = []
+      const seam = fixture(async (_url, init) => {
+        methods.push(init?.method ?? "GET")
+        return init?.method === "POST" ? json({}, status) : json(file("restored", "before bytes\n"))
+      }, ready)
+      const result = await seam.restore(file(), { version: "versions-17", post_digest: "one" })
+      if (status === 200) {
+        expect(result).toEqual({ ok: file("restored", "before bytes\n") })
+        expect(methods).toEqual(["POST", "GET"])
+      } else {
+        expect(result).toHaveProperty("error")
+        expect(methods).toEqual(["POST"])
+      }
+    }
+  })
+  test("network, invalid JSON and HTTP refusals return errors", async () => {
+    for (const http of [async () => { throw Error("offline") }, async () => new Response("bad json"), async () => json({}, 403)]) {
+      const seam = fixture(http, ready)
+      expect(await seam.read(scope.branch, file().path)).toHaveProperty("error")
+      expect(await seam.compare(file(), "versions-17")).toHaveProperty("error")
+      expect(await seam.restore(file(), { version: "versions-17", post_digest: "one" })).toHaveProperty("error")
+    }
+  })
+  test("sleep without a capture and Follow without a rename perform no requests", async () => {
+    let requests = 0
+    const seam = fixture(async () => { requests++; return json(file()) }, { ...ready, scope: () => ({ ...scope, sleeping: true }) })
+    expect(await seam.read(scope.branch, file().path)).toHaveProperty("error")
+    expect(await seam.compare(file(), "versions-17")).toHaveProperty("error")
+    expect(await seam.follow(file())).toHaveProperty("error")
+    expect(requests).toBe(0)
+  })
+  test("a failed reload can be retried, while provider withdrawal discards pending content", async () => {
+    let attempts = 0
+    let enabled = true
+    const seam = fixture(async () => {
+      attempts++
+      if (attempts === 1) throw Error("offline")
+      if (attempts === 3) enabled = false
+      return json(file("two", "second\n"))
+    }, { ...ready, ready: () => enabled })
+    const event = { path: file().path, post_digest: "two", actor: writer }
+    expect(await seam.reload(file(), event)).toHaveProperty("error")
+    expect(await seam.reload(file(), event)).toHaveProperty("ok.digest", "two")
+    expect(await seam.read(scope.branch, file().path)).toHaveProperty("error")
+    expect(attempts).toBe(3)
+  })
+
+  test("sleep transitions do not reuse an awake reload result", async () => {
+    let sleeping = false
+    const calls: string[] = []
+    const seam = fixture(async url => { calls.push(url); return json(file("two", "second\n")) }, {
+      ...ready, scope: () => ({ ...scope, sleeping, ...(sleeping ? { capturedHead: "captured-7" } : {}) })
+    })
+    const event = { path: file().path, post_digest: "two", actor: writer }
+    await seam.reload(file(), event)
+    sleeping = true
+    await seam.reload(file(), event)
+    expect(calls).toEqual([
+      "/api/branches/scratch%2Fmaya%2Fdemo/files/src/deliver.ts?digest=two",
+      "/api/branches/scratch%2Fmaya%2Fdemo/files/src/deliver.ts?digest=two&at=captured-7"
+    ])
+  })
+
+})
+
+test("live documents never use S2 text reload or snapshot-before Restore", async () => {
+  const requests: string[] = []
+  const seam = fixture(async url => { requests.push(url); return json(file()) }, ready)
+  const live = { ...file(), mode: "live" as const }
+  expect(await seam.reload(live, { path: live.path, post_digest: "two", actor: writer })).toBeUndefined()
+  expect(await seam.restore(live, { version: "before-17", post_digest: "one" })).toEqual({ error: "Use document recovery." })
+  expect(requests).toEqual([])
+})
+
+
+test("committed burst snapshots reload open files after missed hints and retain other cards", async () => {
+  const cards = new Map<string, any>()
+  let changed!: () => void
+  let snapshot: any
+  let projection!: (previous: unknown, delta: unknown) => unknown
+  let dispose!: () => void
+  let subscriptions = 0
+  const reads: string[] = []
+  let latest = file()
+  const ctx = {
+    http: async (url: string) => { reads.push(url); return json(latest) },
+    store: { collections: { cards } }, baseUrl: "", isDisposed: () => false,
+    actor: () => "user", nextOrdinal: () => cards.size,
+    dispatch: (action: any) => {
+      cards.set(action.card.id, action.card)
+      return { isPersisted: { promise: Promise.resolve() } }
+    }
+  } as unknown as SeamContext
+  const seam = createFilesSeam(ctx, { ...ready,
+    onDispose: fn => { dispose = fn },
+    topics: {
+      registerProjection: (_topic, fn) => { projection = fn },
+      getSnapshot: () => snapshot,
+      subscribe: (_topic, listener) => { changed = listener; subscriptions++; return () => { subscriptions-- } }
+    }
+  }).branchFiles
+  await seam.open(file().path, scope.branch)
+  expect(subscriptions).toBe(1)
+  const id = [...cards.keys()][0]!
+  cards.set("unrelated", { kind: "file", payload: { path: "other.ts", file: { ...file(), path: "other.ts" } } })
+  const unrelated = cards.get("unrelated")
+  latest = { ...file("two", "committed bytes\n"), last_writer: writer }
+  const delta = { changed: [
+    { path: file().path, change: "modified", post_digest: "two", last_writer: writer },
+    { path: "unopened.ts", change: "modified", post_digest: "three", last_writer: writer }
+  ], open: [] }
+  snapshot = { cursor: 2, data: projection({ changed: [], open: [] }, delta) }
+  changed()
+  await new Promise(resolve => setTimeout(resolve, 0))
+  expect(cards.get(id).payload.file).toMatchObject({ digest: "two", content: { text: "committed bytes\n" }, last_writer: writer })
+  expect(cards.get("unrelated")).toBe(unrelated)
+  expect(reads).toHaveLength(2)
+  changed()
+  snapshot = { cursor: 3, data: projection(snapshot.data, delta) }
+  changed()
+  await new Promise(resolve => setTimeout(resolve, 0))
+  expect(reads).toHaveLength(2)
+  // A retained participant that is not a rendered Actor must not prevent
+  // invalidation: the authoritative file read supplies current attribution.
+  latest = { ...file("three", "next bytes\n"), last_writer: writer }
+  snapshot = { cursor: 4, data: { changed: [{ path: file().path, post_digest: "three", last_writer: { kind: "outside", id: "outside" } }], open: [] } }
+  changed()
+  await new Promise(resolve => setTimeout(resolve, 0))
+  expect(cards.get(id).payload.file).toMatchObject({ digest: "three", last_writer: writer })
+  expect(reads).toHaveLength(3)
+  latest = { ...file("four", "immediate bytes\n"), last_writer: writer }
+  snapshot = { cursor: 5, data: projection(snapshot.data, { ...delta, written: [
+    { kind: "file_written", path: file().path, post_digest: "four", actor: { kind: "outside", id: "outside" } },
+    { kind: "file_written", path: "unopened.ts", post_digest: "four", actor: writer }
+  ] }) }
+  changed()
+  await new Promise(resolve => setTimeout(resolve, 0))
+  expect(cards.get(id).payload.file).toMatchObject({ digest: "four", content: { text: "immediate bytes\n" }, last_writer: writer })
+  expect(reads).toHaveLength(4)
+  dispose()
+  expect(subscriptions).toBe(0)
+})
+
+ test("live Compare selects outside end state; ordinary recovery keeps before state", async () => {
+   const calls: string[] = []
+   const seam = fixture(async url => { calls.push(url); return json({ text: "retained\n" }) }, ready)
+   expect(await seam.compare(file(), "versions-17", true)).toEqual({ ok: { text: "retained\n" } })
+   expect(await seam.compare(file(), "versions-17")).toEqual({ ok: { text: "retained\n" } })
+   expect(calls).toEqual([
+     "/api/branches/scratch%2Fmaya%2Fdemo/files/src/deliver.ts?compare=versions-17&outside=1",
+     "/api/branches/scratch%2Fmaya%2Fdemo/files/src/deliver.ts?compare=versions-17"
+   ])
+ })

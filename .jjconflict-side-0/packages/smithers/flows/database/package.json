@@ -1,0 +1,231 @@
+{
+  "name": "@smthrs/database",
+  "type": "module",
+  "version": "1.0.0-rc.12",
+  "license": "MIT",
+  "smthrs": {
+    "group": "engine"
+  },
+  "description": "A driver-neutral SQL contract with a bounded write-retry seam, plus the composed migration ladder",
+  "homepage": "https://github.com/smithersai/smithers",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/smithers/flows/database"
+  },
+  "bugs": {
+    "url": "https://github.com/smithersai/smithers/issues"
+  },
+  "tags": [
+    "typescript",
+    "effect",
+    "sql",
+    "sqlite"
+  ],
+  "keywords": [
+    "typescript",
+    "effect",
+    "sql",
+    "sqlite"
+  ],
+  "engines": {
+    "node": ">=26.4.0"
+  },
+  "sideEffects": [],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null,
+    "./*/index": null,
+    "./DatabaseMetrics": "./src/DatabaseMetrics.ts",
+    "./DurableWriter": "./src/DurableWriter.ts",
+    "./Migrations": "./src/Migrations.ts",
+    "./UnsupportedBackend": "./src/UnsupportedBackend.ts",
+    "./index": "./src/index.ts",
+    "./node/NodeDatabase": "./src/node/NodeDatabase.ts",
+    "./test/TestDatabase": "./src/test/TestDatabase.ts",
+    "./bun/BunDatabase": "./src/bun/BunDatabase.ts",
+    "./Dialect": "./src/Dialect.ts",
+    "./postgres/PostgresDatabase": "./src/postgres/PostgresDatabase.ts"
+  },
+  "files": [
+    "src/**/*.ts",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/package.json",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next",
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./internal/*": null,
+      "./*/index": null,
+      "./DatabaseMetrics": {
+        "import": {
+          "types": "./dist/esm/DatabaseMetrics.d.ts",
+          "default": "./dist/esm/DatabaseMetrics.js"
+        },
+        "require": {
+          "types": "./dist/cjs/DatabaseMetrics.d.ts",
+          "default": "./dist/cjs/DatabaseMetrics.js"
+        }
+      },
+      "./DurableWriter": {
+        "import": {
+          "types": "./dist/esm/DurableWriter.d.ts",
+          "default": "./dist/esm/DurableWriter.js"
+        },
+        "require": {
+          "types": "./dist/cjs/DurableWriter.d.ts",
+          "default": "./dist/cjs/DurableWriter.js"
+        }
+      },
+      "./Migrations": {
+        "import": {
+          "types": "./dist/esm/Migrations.d.ts",
+          "default": "./dist/esm/Migrations.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Migrations.d.ts",
+          "default": "./dist/cjs/Migrations.js"
+        }
+      },
+      "./UnsupportedBackend": {
+        "import": {
+          "types": "./dist/esm/UnsupportedBackend.d.ts",
+          "default": "./dist/esm/UnsupportedBackend.js"
+        },
+        "require": {
+          "types": "./dist/cjs/UnsupportedBackend.d.ts",
+          "default": "./dist/cjs/UnsupportedBackend.js"
+        }
+      },
+      "./index": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./node/NodeDatabase": {
+        "import": {
+          "types": "./dist/esm/node/NodeDatabase.d.ts",
+          "default": "./dist/esm/node/NodeDatabase.js"
+        },
+        "require": {
+          "types": "./dist/cjs/node/NodeDatabase.d.ts",
+          "default": "./dist/cjs/node/NodeDatabase.js"
+        }
+      },
+      "./test/TestDatabase": {
+        "import": {
+          "types": "./dist/esm/test/TestDatabase.d.ts",
+          "default": "./dist/esm/test/TestDatabase.js"
+        },
+        "require": {
+          "types": "./dist/cjs/test/TestDatabase.d.ts",
+          "default": "./dist/cjs/test/TestDatabase.js"
+        }
+      },
+      "./bun/BunDatabase": {
+        "import": {
+          "types": "./dist/esm/bun/BunDatabase.d.ts",
+          "default": "./dist/esm/bun/BunDatabase.js"
+        },
+        "require": {
+          "types": "./dist/cjs/bun/BunDatabase.d.ts",
+          "default": "./dist/cjs/bun/BunDatabase.js"
+        }
+      },
+      "./Dialect": {
+        "import": {
+          "types": "./dist/esm/Dialect.d.ts",
+          "default": "./dist/esm/Dialect.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Dialect.d.ts",
+          "default": "./dist/cjs/Dialect.js"
+        }
+      },
+      "./postgres/PostgresDatabase": {
+        "import": {
+          "types": "./dist/esm/postgres/PostgresDatabase.d.ts",
+          "default": "./dist/esm/postgres/PostgresDatabase.js"
+        },
+        "require": {
+          "types": "./dist/cjs/postgres/PostgresDatabase.d.ts",
+          "default": "./dist/cjs/postgres/PostgresDatabase.js"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint src examples --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node ../../../repo-targets/scripts/build.mjs",
+    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "circular": "node ../../../repo-targets/scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "node scripts/test-matrix.mjs",
+    "test:matrix": "node scripts/test-matrix.mjs"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@effect/sql-sqlite-node": "4.0.4",
+    "@effect/vitest": "4.0.4",
+    "@eslint/js": "9.39.5",
+    "@types/node": "26.4.1",
+    "@vitest/coverage-v8": "5.0.0",
+    "dprint": "0.57.1",
+    "effect": "4.0.4",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "madge": "8.0.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0",
+    "@effect/sql-sqlite-bun": "4.0.4",
+    "@types/bun": "1.3.6",
+    "@effect/sql-pg": "4.0.4"
+  },
+  "peerDependencies": {
+    "effect": "^4.0.4",
+    "@effect/sql-sqlite-bun": "4.0.4"
+  },
+  "peerDependenciesMeta": {
+    "@effect/sql-sqlite-node": {
+      "optional": true
+    },
+    "@effect/sql-sqlite-bun": {
+      "optional": true
+    },
+    "@effect/sql-pg": {
+      "optional": true
+    }
+  }
+}

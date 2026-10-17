@@ -1574,7 +1574,7 @@ describe("annotation lowering", () => {
 
   /**
    * Hosts pass `Invocation` itself as an `Action.make` payload schema
-   * (`examples/src/16-fan-out-fan-in.ts`, `examples/src/24-control-plane-and-gateway.ts`),
+   * (`packages/smithers/flows/examples/16-fan-out-fan-in.ts`, `packages/smithers/flows/examples/24-control-plane-and-gateway.ts`),
    * so an envelope is decoded again from the journal on replay. A row written
    * before `placementOptions` existed carries no such key, and a required key
    * would fail that replay. The decoding default is what keeps it readable.

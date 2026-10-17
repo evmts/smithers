@@ -1751,7 +1751,7 @@ test("deferred surfaces are absent from slash, palette/help and agent discovery"
     "prs.review", "review.request", "review.unrequest", "review.since-mine", "review.done", "review.ack",
     "review.reopen", "issue.repro", "issue.poc", "issue.add-flow", "issue.flows"]
   // The install model host consumes generated metadata, not the browser registry.
-  const { generateCatalog } = await import("../../../../../scripts/catalog-mvp")
+  const { generateCatalog } = await import("../../../scripts/catalog-mvp")
   const generated = generateCatalog()
   expect(generated.filter(entry => forbidden.includes(entry.name) && entry.visibility !== "hidden").map(entry => entry.name)).toEqual([])
   for (const name of ["box.facet", "runs.signal"])

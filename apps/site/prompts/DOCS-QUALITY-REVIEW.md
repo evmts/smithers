@@ -57,7 +57,7 @@ Browser checks covered light and dark themes, desktop and 390-pixel layouts, sea
 | --- | --- | --- |
 | Package API pages | Package `docs/api.md` | `scripts/sync-api-docs.mjs` |
 | Flow, engine, and target reference pages | Package `docs/reference/*.md` | `scripts/ingest-reference.mjs` |
-| Example pages | `examples/src/*.ts`; dedicated tests determine the test command | `scripts/gen-examples.mjs` |
+| Example pages | each package's `examples/*.ts`; dedicated tests in its `test/` determine the test command | `scripts/gen-examples.mjs` |
 | CLI help and command manifest | CLI declarations and package versions | `scripts/gen-cli-data.mjs` |
 | Machine-readable documentation | The MDX pages, imported help, and shared project/version data | `scripts/generate-llms.mjs` and `scripts/docs-text.mjs` |
 | Opening description and animation | `src/data/project.json` | Existing project-copy generator; source and outputs preserved |

@@ -16,7 +16,7 @@ import { tmpdir } from "node:os"
 import { dirname, delimiter, join } from "node:path"
 import { describe, it } from "node:test"
 
-import { parseWorkflow } from "../release-rehearsal.mjs"
+import { parseWorkflow } from "../../flows/release/release-rehearsal.mjs"
 import { libraryPackages, repoRoot as root } from "../workspace-packages.mjs"
 
 const readManifest = (path) => JSON.parse(readFileSync(path, "utf8"))

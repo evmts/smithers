@@ -5,7 +5,7 @@ import { memoryStorage, silentAgent } from '../state/TestFixtures'
 import { FLOW_NAMES } from './FlowName'
 import { INPUT_MODES } from '../state/InputMode'
 import { nameOf } from './registry'
-import { generateCatalog } from '../../../../../scripts/catalog-mvp'
+import { generateCatalog } from '../../../scripts/catalog-mvp'
 import { CardSchema, MessageSchema, ToastSchema } from '../state/AppState'
 
 const createAppController = scopedControllers()

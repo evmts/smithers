@@ -47,7 +47,7 @@
  */
 import assert from "node:assert/strict"
 import ts from "typescript"
-import { parseWorkflow } from "../release-rehearsal.mjs"
+import { parseWorkflow } from "../../flows/release/release-rehearsal.mjs"
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { join, relative } from "node:path"
 import { describe, it } from "node:test"
