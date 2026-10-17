@@ -11,7 +11,7 @@
  * count.
  */
 import { readdirSync, readFileSync } from "node:fs"
-import { join, relative } from "node:path"
+import { join, relative, sep } from "node:path"
 import { describe, expect, it } from "vitest"
 
 const root = join(import.meta.dirname, "..")
@@ -90,7 +90,7 @@ const scanned = [join(root, "src"), ...packages.map((name) => join(root, name, "
 const counts = new Map<string, number>()
 for (const path of scanned) {
   const sites = readFileSync(path, "utf8").split("\n").filter((line) => raw.test(line)).length
-  if (sites > 0) counts.set(relative(root, path), sites)
+  if (sites > 0) counts.set(relative(root, path).split(sep).join("/"), sites)
 }
 
 describe("raw failure sites in the flow engine's packages", () => {
@@ -108,7 +108,7 @@ describe("raw failure sites in the flow engine's packages", () => {
 
   it("scans every package's src", () => {
     expect(packages).toEqual(expect.arrayContaining(["database", "engine-store", "flow", "platform-node", "sync"]))
-    expect(scanned.map((path) => relative(root, path))).toEqual(
+    expect(scanned.map((path) => relative(root, path).split(sep).join("/"))).toEqual(
       expect.arrayContaining(["database/src/internal/PostgresSelection.ts", "src/SandboxedFlow.ts"])
     )
   })

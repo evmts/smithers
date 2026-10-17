@@ -1,4 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs"
+import { fileURLToPath } from "node:url"
 import * as ts from "typescript"
 import { describe, expect, it } from "vitest"
 
@@ -78,7 +79,7 @@ describe("documentation contracts", () => {
   it("assembled quickstart typechecks against public Jj", () => {
     const blocks = [...readDoc("quickstart.md").matchAll(/^```ts\n([\s\S]*?)^```/gm)]
     expect(blocks.length).toBeGreaterThan(1)
-    const filename = new URL("../docs/quickstart.mts", import.meta.url).pathname
+    const filename = fileURLToPath(new URL("../docs/quickstart.mts", import.meta.url))
     const source = blocks.map((block) => block[1]).join("\n")
     const options: ts.CompilerOptions = {
       target: ts.ScriptTarget.ES2024,
