@@ -61,3 +61,26 @@ if (process.argv[2] === "peer-original") {
     }).pipe(Effect.provide(host(root)), Effect.scoped)
   )
 }
+
+if (process.argv[2] === "peer-observe" || process.argv[2] === "peer-recover") {
+  const root = process.argv[3]!
+  const mode = process.argv[2]
+  const { readFile } = await import("node:fs/promises")
+  const runId = await readFile(join(root, "run-id"), "utf8")
+  const receipt = await Effect.runPromise(
+    Effect.gen(function*() {
+      const control = yield* Control.Control
+      if (mode === "peer-observe") yield* Effect.sleep("2 seconds")
+      for (let attempt = 0; attempt < 6_000; attempt++) {
+        const page = yield* control.list({ _tag: "runs", filters: { runId } })
+        const status = page._tag === "runs" ? page.items[0]?.status : undefined
+        if (mode === "peer-observe" || status === "completed" || status === "failed") {
+          return { marker: "peer-recovery", pid: process.pid, status, page }
+        }
+        yield* Effect.sleep("10 millis")
+      }
+      return yield* Effect.die(new Error("native recovery did not settle"))
+    }).pipe(Effect.provide(host(root)), Effect.scoped)
+  )
+  console.log(JSON.stringify(receipt))
+}
