@@ -120,6 +120,57 @@ afterAll(async () => {
 })
 
 describe("deploy wrapper", () => {
+  // Model the POSIX group syscalls on every host; the real descendant cases
+  // below additionally prove the kernel behavior on POSIX hosts.
+  it.each([false, true])("waits through a denied group probe before redaction (second signal %s)", async (second) => {
+    const marker = NodePath.join(directory, `modeled-process-group-${second}`)
+    const platform = Object.getOwnPropertyDescriptor(process, "platform")!
+    const originalKill = process.kill.bind(process)
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true)
+    let probes = 0
+    const kill = vi.spyOn(process, "kill").mockImplementation((pid, signal) => {
+      if (typeof pid === "number" && pid < 0) {
+        if (signal === 0) {
+          probes++
+          if (probes === 2) return true
+          throw Object.assign(new Error("group probe"), { code: probes === 1 ? "EPERM" : "ESRCH" })
+        }
+        if (signal === "SIGTERM") return true
+        return originalKill(-pid, signal)
+      }
+      return originalKill(pid, signal)
+    })
+    let running: Promise<number> | undefined
+    try {
+      const code = await withIsolatedSignals(async () => {
+        running = deploy([marker], {
+          cli: script("ignores-sigterm"),
+          cwd: directory,
+          stateDirectory: stateDirectory(`modeled-process-group-${second}`),
+          escalationDelayMs: 100,
+          redact: async () => {
+            Object.defineProperty(process, "platform", platform)
+            expect(probes).toBe(3)
+            return 0
+          }
+        })
+        await vi.waitFor(() => expect(existsSync(`${marker}.ready`)).toBe(true), { timeout: 10_000 })
+        Object.defineProperty(process, "platform", { ...platform, value: "linux" })
+        process.emit("SIGTERM")
+        if (second) process.emit("SIGTERM")
+        return await running
+      })
+      expect(code).toBe(143)
+      expect(kill.mock.calls.some(([pid, signal]) => typeof pid === "number" && pid < 0 && signal === "SIGKILL"))
+        .toBe(true)
+    } finally {
+      Object.defineProperty(process, "platform", platform)
+      await running
+      kill.mockRestore()
+      stdout.mockRestore()
+    }
+  })
+
   it.skipIf(process.platform === "win32").each(["deadline", "second-signal", "denied-probe"])(
     "terminates surviving descendants before redaction and return (%s)",
     async (mode) => {

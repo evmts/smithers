@@ -702,12 +702,12 @@ describe("redactAlchemyState", { timeout: 120_000 }, () => {
     })
   })
 
-  it.skipIf(process.platform === "win32")("refuses a state root reached through a symbolic link", async () => {
+  it("refuses a state root reached through a symbolic link", async () => {
     await withFixture(async (root) => {
       const actual = NodePath.join(root, "actual")
       const alias = NodePath.join(root, "alias")
       await Fs.mkdir(actual)
-      await Fs.symlink(actual, alias)
+      await Fs.symlink(actual, alias, "junction")
       await expect(redactAlchemyState({ directory: alias, bearerToken: "token" })).rejects.toThrow(
         /symbolic links are not allowed in the Alchemy state root/
       )
