@@ -351,10 +351,12 @@ describe("a flow's declared view (unit)", () => {
     expect(FlowViewSchema.parse(view)).toEqual(view)
   })
 
-  test.each([
-    [],
-    [{ type: "markdown", path: "README.md", markdown: "# Readme" }],
-    [{ type: "view", flow: "triage" }]
+  // Each row is ONE argument, the view array: test.each spreads a row, so a
+  // bare row would pass nothing, or a lone block that fails for not being an array.
+  test.each<[ReadonlyArray<unknown>]>([
+    [[]],
+    [[{ type: "markdown", path: "README.md", markdown: "# Readme" }]],
+    [[{ type: "view", flow: "triage" }]]
   ])("refuses an empty view, an unresolved file, and a view inside a view: %j", (view) => {
     expect(FlowViewSchema.safeParse(view).success).toBe(false)
   })
