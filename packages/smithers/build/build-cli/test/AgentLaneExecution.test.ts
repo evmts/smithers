@@ -29,6 +29,7 @@ import * as NodeNet from "node:net"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
+import * as PackageTree from "../src/PackageTree.ts"
 import { serve as serveCli, type ServeOptions } from "./helpers/ServeCli.ts"
 import { write } from "./helpers/WriteFile.ts"
 
@@ -552,7 +553,17 @@ export const Package = S.Package({ targets: { ci, github } })
     expect(installed.output).toContain("pre-commit")
     const hook = NodePath.join(root, ".git/hooks/pre-commit")
     expect(await Fs.readFile(hook, "utf8")).toContain("exec smithers-build '//:check'")
-    expect((await Fs.stat(hook)).mode & 0o111).not.toBe(0)
+    if (process.platform !== "win32") expect((await Fs.stat(hook)).mode & 0o111).not.toBe(0)
+    const git = PackageTree.findOnPath("git")
+    const shell = PackageTree.findOnPath("sh")
+    expect(git).toBeDefined()
+    expect(shell).toBeDefined()
+    const invoked = NodeChildProcess.spawnSync(git!, ["-C", root, "hook", "run", "pre-commit"], {
+      env: { ...process.env, PATH: NodePath.dirname(shell!) },
+      encoding: "utf8"
+    })
+    expect(invoked.status, invoked.stderr).toBe(0)
+    expect(invoked.stderr).toContain("smthrs: CLI not found on PATH")
 
     const clean = await serve(root, ["gitHooks"])
     expect(clean.exitCode).toBe(0)
