@@ -2553,9 +2553,6 @@
       ],
     },
   },
-  "patchedDependencies": {
-    "dprint@0.57.1": "patches/dprint@0.57.1.patch",
-  },
   "overrides": {
     "@effect/opentelemetry": "4.0.4",
     "@effect/platform-bun": "4.0.4",

@@ -54,7 +54,3 @@ overrides:
   "@effect/sql-sqlite-do": "4.0.4"
   "@effect/sql-sqlite-node": "4.0.4"
   "@effect/vitest": "4.0.4"
-
-patchedDependencies:
-  dprint@0.57.1: patches/dprint@0.57.1.patch
-

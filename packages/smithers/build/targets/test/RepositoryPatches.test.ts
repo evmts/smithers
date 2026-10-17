@@ -1,11 +1,13 @@
 /**
- * The repository's install is keyed on every dependency patch it applies.
+ * The repository patches no dependency (Will, 2026-10-16: "get rid of
+ * patches"). A dependency that misbehaves in our environment is fixed in the
+ * environment or upstream, never forked in `patches/`: the dprint patch that
+ * worked around a NixOS guest without its ELF loader (#3007) is gone, and the
+ * guest's loader is declared in `.smithers/environment.nix` (#4093).
  *
- * The root `nodeModules` target once hand-listed its patch files and fell
- * four behind `patches/` (#3089), so editing an unlisted patch never re-keyed
- * the install. The list now comes from the workspace definition's
- * `patchedDependencies`; this suite fails when a patch file in `patches/` is
- * not among the install's expanded inputs.
+ * The root install still keys on every patch file the workspace definition
+ * names, so a reintroduced patch would re-key it; it never needs a hand-kept
+ * list (#3089).
  */
 import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
@@ -14,22 +16,22 @@ import { describe, expect, it } from "vitest"
 import * as Input from "../src/Input.ts"
 
 const repositoryRoot = NodePath.resolve(NodePath.dirname(fileURLToPath(import.meta.url)), "../../../../..")
+const read = (path: string) => Fs.readFile(NodePath.join(repositoryRoot, path), "utf8")
 
-describe("the repository install's patch inputs", () => {
-  it("cover every patch file in patches/", async () => {
-    const patches = (await Fs.readdir(NodePath.join(repositoryRoot, "patches")))
-      .filter((name) => name.endsWith(".patch"))
-      .map((name) => `patches/${name}`)
-      .sort()
-    expect(patches).toContain("patches/dprint@0.57.1.patch")
+describe("the repository's dependency patches", () => {
+  it("are none: neither package manager applies one", async () => {
+    expect(await read("pnpm-workspace.yaml")).not.toMatch(/^patchedDependencies:/m)
+    expect(JSON.parse(await read("package.json"))).not.toHaveProperty("patchedDependencies")
+    expect(await read("pnpm-lock.yaml")).not.toMatch(/^patchedDependencies:/m)
+    expect(await read("bun.lock")).not.toContain(`"patchedDependencies"`)
+    await expect(Fs.stat(NodePath.join(repositoryRoot, "patches"))).rejects.toMatchObject({ code: "ENOENT" })
 
     const inputs = await Input.expandPnpmWorkspace(repositoryRoot, "", Input.pnpmWorkspace("//pnpm-workspace.yaml"))
-    expect(patches.filter((patch) => !inputs.includes(patch))).toEqual([])
-    expect(inputs.filter((input) => input.startsWith("patches/"))).toEqual(patches)
+    expect(inputs.filter((input) => input.endsWith(".patch"))).toEqual([])
   })
 
-  it("come from the workspace definition the root install declares, not a hand-kept list", async () => {
-    const declaration = await Fs.readFile(NodePath.join(repositoryRoot, "PACKAGE.ts"), "utf8")
+  it("would come from the workspace definition the root install declares, not a hand-kept list", async () => {
+    const declaration = await read("PACKAGE.ts")
     const install = declaration.slice(declaration.indexOf("const nodeModules = Smithers.Install({"))
     const body = install.slice(0, install.indexOf("\n})\n"))
     expect(declaration).toContain(`const workspace = Smithers.pnpmWorkspace("//pnpm-workspace.yaml")`)
