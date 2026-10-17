@@ -126,6 +126,14 @@ const moduleDescriptor = new Descriptor.FlowDescriptor({
   flows: ["test/Module"]
 })
 
+/** A `flow.ts` whose `Flow.make` declares a typed prompt instead of a body. */
+const typedDescriptor = new Descriptor.FlowDescriptor({
+  ...agentDescriptor,
+  name: "agents/typed",
+  body: new Descriptor.BodyRefModule({ path: "/flows/agents/typed/flow.ts", contentDigest: "d".repeat(64) }),
+  path: "/flows/agents/typed"
+})
+
 /** The unchanged unknown schema at the executable catalog's codec boundary. */
 const moduleResult: Schema.Codec<unknown, unknown> = Schema.Unknown
 
@@ -163,6 +171,7 @@ const descriptors = new Map([
   [agentDescriptor.name, agentDescriptor],
   [effortDescriptor.name, effortDescriptor],
   [moduleDescriptor.name, moduleDescriptor],
+  [typedDescriptor.name, typedDescriptor],
   [seatlessDescriptor.name, seatlessDescriptor],
   [autoDescriptor.name, autoDescriptor],
   [roleDescriptor.name, roleDescriptor]
@@ -174,6 +183,7 @@ const registryService = Registry.makeNoop({
       agentDescriptor,
       effortDescriptor,
       moduleDescriptor,
+      typedDescriptor,
       seatlessDescriptor,
       autoDescriptor,
       roleDescriptor
@@ -186,8 +196,8 @@ const registryService = Registry.makeNoop({
   getOption: (name) => Effect.succeed(Option.fromNullishOr(descriptors.get(name))),
   loadBody: (name) =>
     Effect.succeed(
-      name === moduleDescriptor.name
-        ? new Descriptor.FlowBodyModule({ path: "/flows/agents/module/flow.ts" })
+      name === moduleDescriptor.name || name === typedDescriptor.name
+        ? new Descriptor.FlowBodyModule({ path: `/flows/${name}/flow.ts` })
         : new Descriptor.FlowBodyPrompt({ text: "Keep the note log tidy.", baseDirectory: "/flows/agents/notes" })
     )
 })
@@ -220,6 +230,13 @@ const memoryFlows: ReadonlyArray<ControlRuntime.MemoryFlow> = [
     description: "An agent seat over a module body, which the harness refuses.",
     deployClass: false,
     envelope: { capabilities: ["fs:read:**"], flows: ["test/Module"], budget: {} }
+  },
+  {
+    flowId: "agents/typed",
+    executionDigest: Descriptor.executionDigest(typedDescriptor),
+    description: "A flow.ts whose typed prompt the agent runs.",
+    deployClass: false,
+    envelope: { capabilities: [], flows: [], budget: {} }
   },
   {
     flowId: "agents/seatless",
@@ -2769,6 +2786,89 @@ describe("AgentSession", () => {
 
     expect(entries.length).toBe(1)
     expect(entries[0]!.payload).toMatchObject({ fields: ["args"], arguments: "## args\n\ns16-marker" })
+  })
+
+  it("runs a prompt-backed flow.ts as a prompt flow, rendering its typed prompt with the launch input", async () => {
+    const requests: Array<ModelRequest.ModelRequest> = []
+    const recording = Model.make({
+      stream: (request) =>
+        Stream.suspend(() => {
+          requests.push(request)
+          return Stream.fail(new ModelError.ModelError({ code: "authentication", message: "no credential" }))
+        })
+    })
+    const flow = Flow.make("agents/typed", {
+      payload: { name: Schema.String },
+      prompt: (props) => `# Greet\n\nGreet ${props.name} by name.`
+    })
+    const executable: Executable.Executable = {
+      descriptor: typedDescriptor,
+      input: flow.payloadSchema,
+      prompt: flow.prompt as (input: unknown) => string,
+      delegate: undefined,
+      lowered: { cache: undefined, placement: undefined, priority: undefined },
+      invocation: (input) => ({
+        flow: typedDescriptor.name,
+        input,
+        prompt: "",
+        model: null,
+        placement: null,
+        placementOptions: null,
+        capabilities: [],
+        flows: []
+      } as const),
+      // The declaration itself: its body dispatches `agents/typed/prompt`,
+      // which nothing implements, so running it instead of the agent fails.
+      flow: flow as unknown as Executable.Executable["flow"],
+      layer: Layer.empty
+    }
+
+    const entries = await Effect.runPromise(
+      Effect.gen(function*() {
+        const gate = yield* Deferred.make<void>()
+        const notes: Array<string> = []
+        return yield* Effect.gen(function*() {
+          const control = yield* Control.Control
+          const journal = yield* Journal.Journal
+          const card = yield* control.plan({ flowId: "agents/typed", input: { name: "Ada" } })
+          yield* control.approve(card.approval)
+          const receipt = yield* control.run({
+            _tag: "Plan",
+            planId: card.planId,
+            digest: card.digest,
+            envelope: card.envelope,
+            idempotencyKey: `run:typed:${card.planId}`
+          })
+          if (receipt._tag !== "Accepted" || receipt.runId === undefined) {
+            return yield* Effect.die("expected an accepted run")
+          }
+          yield* control.watch({ runId: receipt.runId }).pipe(
+            Stream.filter((event) => event.kind === "control.run.failed"),
+            Stream.take(1),
+            Stream.runDrain
+          )
+          yield* journal.flush
+          const page = yield* journal.entries({ runId: JournalEvent.RunId.make(receipt.runId), limit: 200 })
+          return page.entries.filter((entry) => entry.eventType === "control.agent.prompt-rendered")
+        }).pipe(Effect.provide(stack({
+          resolve: seat(recording),
+          notes,
+          gate,
+          bare: true,
+          modules: { catalog: { executables: [executable], refused: [] }, layer: Layer.empty }
+        })))
+      }).pipe(Effect.scoped)
+    )
+
+    const prose = requests.flatMap((request) => [
+      ...request.system.map((part) => part.text),
+      ...request.messages.flatMap((message) =>
+        message.content.flatMap((part) => part.type === "text" ? [part.text] : [])
+      )
+    ]).join("\n")
+    expect(prose).toContain("# Greet\n\nGreet Ada by name.")
+    expect(prose).not.toContain("# Arguments")
+    expect(entries.map((entry) => entry.payload)).toMatchObject([{ fields: ["name"], arguments: "" }])
   })
 
   it("seals the host's opening memory into the run before the first model call", async () => {

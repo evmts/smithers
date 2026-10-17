@@ -2224,6 +2224,31 @@ export const prompt = (text: string, input: unknown): RenderedPrompt => {
 }
 
 /**
+ * Renders a prompt-backed `flow.ts` through its typed renderer, over the launch
+ * input its declared payload schema makes. The props ARE the prompt's
+ * arguments, so no arguments section is appended.
+ */
+const typedPrompt = (
+  runId: string,
+  executable: Executable.Executable,
+  input: unknown
+): Effect.Effect<RenderedPrompt, LaunchFailed> =>
+  Effect.try({
+    try: () => {
+      const props = executable.input === undefined ? input : executable.input.make(input)
+      const fields = typeof props === "object" && props !== null && !Array.isArray(props) ? Object.keys(props) : []
+      // Only a module that declares a renderer reaches here.
+      return { text: executable.prompt!(props).trim(), fields, arguments: "" }
+    },
+    catch: (cause) =>
+      new LaunchFailed({
+        runId,
+        message: `The prompt of flow ${executable.descriptor.name} could not be rendered from its launch input`,
+        cause
+      })
+  })
+
+/**
  * The journal record of what a launch input was rendered into.
  *
  * Without it an ignored argument is only visible in the diff of whatever the
@@ -3674,8 +3699,13 @@ export const make = (
         // The launch already validated the seat and body; re-validation here
         // guards a registry that changed between acceptance and execution.
         const flowBody = yield* registry.loadBody(card.flowId, executionDigest)
-        if (flowBody._tag !== "Prompt") {
-          const executable = yield* approvedModule(payload.runId, card, executionDigest)
+        // A `flow.ts` whose `Flow.make` declares a prompt is a prompt flow: its
+        // typed renderer supplies the text a markdown body would.
+        const promptModule = flowBody._tag === "Prompt"
+          ? undefined
+          : yield* approvedModule(payload.runId, card, executionDigest)
+        if (promptModule !== undefined && promptModule.prompt === undefined) {
+          const executable = promptModule
           const input = yield* Schema.decodeUnknownEffect(Schema.Json)(plan.decodedInput)
           // One ordinary durable child retains the module's native topology,
           // action outputs, waits and replay. The existing session continues
@@ -3843,7 +3873,10 @@ export const make = (
         // out carries it even if the run never opens a turn. Frame `-1` is
         // where it sits: before every frame, and derived from the same
         // material on a resumed attempt, so the unique index deduplicates it.
-        const rendered = prompt(flowBody.text, plan.decodedInput)
+        const rendered = flowBody._tag === "Prompt"
+          ? prompt(flowBody.text, plan.decodedInput)
+          // Loaded above: a body that is not a prompt is an approved module.
+          : yield* typedPrompt(payload.runId, promptModule!, plan.decodedInput)
         // Jev routes an `auto` seat, or a role the host routes by the graph,
         // once per run: the decision is a sealed step keyed by this
         // execution, so a resumed attempt is served the route and variant it
@@ -3979,7 +4012,11 @@ export const make = (
           idempotencyKey: `${payload.runId}:opening-instructions`,
           success: Schema.Array(Schema.String),
           error: Schema.Unknown,
-          execute: options.instructions({ descriptor, text: flowBody.text, capabilities: card.envelope.capabilities })
+          execute: options.instructions({
+            descriptor,
+            text: flowBody._tag === "Prompt" ? flowBody.text : rendered.text,
+            capabilities: card.envelope.capabilities
+          })
         })
         const system = freshContext ? [] : [...(options.system ?? []), ...instructions, ...(routing?.variant ?? [])]
         const outcome = yield* agent.run({
@@ -4954,7 +4991,8 @@ export const make = (
               })
           )
         )
-        if (flowBody._tag !== "Prompt") {
+        let promptFlow = flowBody._tag === "Prompt"
+        if (!promptFlow) {
           if (Option.isNone(executables)) return "pending" as const
           const digest = yield* approvedExecution(input.run.runId, input.plan.card, descriptor.value, recorded)
           // A module whose delegate this host never registered is driven by
@@ -4964,9 +5002,11 @@ export const make = (
           if (
             executables.value.refused.some((entry) => entry.flow === flowId && entry.code === "missing_delegate")
           ) return "pending" as const
-          yield* approvedModule(input.run.runId, input.plan.card, digest)
+          promptFlow = (yield* approvedModule(input.run.runId, input.plan.card, digest)).prompt !== undefined
         } else {
           yield* approvedExecution(input.run.runId, input.plan.card, descriptor.value, recorded)
+        }
+        if (promptFlow) {
           const seatIds = yield* approvedSeats(input.run.runId, input.plan.card, descriptor.value)
           // Resolve the seat now, so a missing key refuses the launch as a
           // typed failure instead of failing the run after it was accepted.

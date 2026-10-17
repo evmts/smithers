@@ -3,7 +3,7 @@ import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import { FlowEngine } from "@smthrs/engine"
 import { Action } from "@smthrs/flow"
-import { Effect, FileSystem, Layer } from "effect"
+import { Effect, FileSystem, Layer, Option } from "effect"
 import { execFile } from "node:child_process"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
@@ -86,6 +86,49 @@ describe("typed MDX prompts", () => {
         )
         const remapped = yield* Effect.flip(Executable.fromDescriptor((yield* scan()).entries[0]!, { delegates: [] }))
         expect(remapped.message).toContain("maps the MDX text runtime to project files")
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(Discovery.layer.pipe(Layer.provide(platform))),
+        Effect.provide(platform)
+      )
+    )
+  })
+  it("exposes a prompt-backed flow's typed renderer to the agent host", async () => {
+    const platform = Layer.mergeAll(
+      NodeFileSystem.layer,
+      NodePath.layer,
+      NodeCrypto.layer,
+      Action.layerImplementations,
+      FlowEngine.layerMemory
+    )
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const fs = yield* FileSystem.FileSystem
+        const fixtures = fileURLToPath(new URL("./fixtures", import.meta.url))
+        const root = yield* fs.makeTempDirectoryScoped({ directory: fixtures, prefix: ".mdx-prompt-" })
+        yield* fs.copy(`${fixtures}/mdx`, `${root}/mdx`)
+        yield* fs.writeFileString(
+          `${root}/mdx/flow.ts`,
+          `import { Flow } from "@smthrs/flow"
+import { Schema } from "effect"
+import Instructions from "./prompt.mdx"
+
+export default Flow.make("mdx", {
+  description: "Greet through an imported typed MDX prompt.",
+  model: "anthropic:test-model",
+  capabilities: [],
+  payload: { name: Schema.String },
+  prompt: Instructions
+})
+`
+        )
+        const discovery = yield* Discovery.Discovery
+        const descriptor = (yield* discovery.scan({ root, source: "project", naming: "path" })).entries[0]!
+        expect(Option.getOrNull(descriptor.model)).toBe("anthropic:test-model")
+        const loaded = yield* Executable.fromDescriptor(descriptor, { delegates: [] })
+        expect(loaded.prompt?.({ name: "Ada" })).toBe(
+          "# Hello Ada\n\nEvidence for Ada\n\n```json\n{\"verified\":true}\n```"
+        )
       }).pipe(
         Effect.scoped,
         Effect.provide(Discovery.layer.pipe(Layer.provide(platform))),

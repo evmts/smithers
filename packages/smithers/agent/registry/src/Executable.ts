@@ -379,6 +379,12 @@ export interface Executable {
    * schema. A host that asks a person for missing input reads it here.
    */
   readonly input: Schema.Top | undefined
+  /**
+   * The typed renderer a prompt-backed `Flow.make` declares; `undefined` for
+   * every other body. The agent host renders it with the decoded launch input
+   * and runs the result as a prompt flow.
+   */
+  readonly prompt?: ((input: unknown) => string) | undefined
   /** The runtime decisions lowered off the descriptor. */
   readonly lowered: Lowered
   /** The envelope the delegate receives for a given caller input. */
@@ -1684,6 +1690,7 @@ export const fromDescriptor = (
         inspect: body.flow === undefined ? undefined : () => Graph.inspect(body.flow!),
         delegate: body.flow === undefined ? name : undefined,
         input: body.flow?.payloadSchema,
+        prompt: body.flow?.prompt,
         lowered,
         invocation,
         // The catalog cannot name services of a dynamically selected delegate.
