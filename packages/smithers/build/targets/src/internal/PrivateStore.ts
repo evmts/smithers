@@ -64,24 +64,31 @@ export const write = (directory: string, name: string, value: unknown): void => 
  * @category store
  * @since 1.0.0
  */
+const invalidRecord = (name: string, cause?: unknown): Error =>
+  new Error(`Review finding store record is not a regular file: ${name}`, { cause })
+
 export const read = (directory: string, name: string): unknown => {
   const path = recordPath(directory, name)
   if (collection(directory, NodePath.dirname(name)) === undefined) return undefined
   let descriptor: number
+  let expected: NodeFs.BigIntStats
   try {
-    // O_NOFOLLOW refuses a final-component link at open time and O_NONBLOCK never waits on a FIFO;
-    // fstat then refuses anything but a regular file.
+    expected = NodeFs.lstatSync(path, { bigint: true })
+    if (!expected.isFile()) throw invalidRecord(name)
+    // O_NOFOLLOW is unavailable on Windows. Verify the opened identity against
+    // the non-following stat before reading; O_NONBLOCK never waits on a FIFO.
     descriptor = NodeFs.openSync(
       path,
       NodeFs.constants.O_RDONLY | NodeFs.constants.O_NOFOLLOW | NodeFs.constants.O_NONBLOCK
     )
   } catch (cause) {
     if ((cause as NodeJS.ErrnoException).code === "ENOENT") return undefined
-    throw new Error(`Review finding store record is not a regular file: ${name}`, { cause })
+    throw invalidRecord(name, cause)
   }
   try {
-    if (!NodeFs.fstatSync(descriptor).isFile()) {
-      throw new Error(`Review finding store record is not a regular file: ${name}`)
+    const opened = NodeFs.fstatSync(descriptor, { bigint: true })
+    if (!opened.isFile() || opened.dev !== expected.dev || opened.ino !== expected.ino) {
+      throw invalidRecord(name)
     }
     return JSON.parse(NodeFs.readFileSync(descriptor, "utf8")) as unknown
   } finally {

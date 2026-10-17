@@ -15,7 +15,7 @@
  * site fails until its count is lowered.
  */
 import { readdirSync, readFileSync } from "node:fs"
-import { join, relative } from "node:path"
+import { join, relative, sep } from "node:path"
 import { describe, expect, it } from "vitest"
 
 const packageRoot = join(import.meta.dirname, "..")
@@ -59,7 +59,7 @@ const reviewed: ReadonlyArray<readonly [file: string, count: number]> = [
   ["src/Shell.ts", 2],
   ["src/Target.ts", 2],
   ["src/WorkspaceDeclaration.ts", 3],
-  ["src/internal/PrivateStore.ts", 6],
+  ["src/internal/PrivateStore.ts", 5],
   ["src/internal/ReviewBatches.ts", 1],
   ["src/internal/ReviewModel.ts", 9]
 ]
@@ -72,7 +72,7 @@ const sources = (directory: string): ReadonlyArray<string> =>
   })
 
 const lines = sources(sourceRoot).map((path) => ({
-  file: relative(packageRoot, path),
+  file: relative(packageRoot, path).split(sep).join("/"),
   lines: readFileSync(path, "utf8").split("\n")
 }))
 

@@ -2,12 +2,20 @@ import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import { execFileSync } from "node:child_process"
 import { createHash } from "node:crypto"
+import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import * as Input from "../src/Input.ts"
+import * as PrivateStore from "../src/internal/PrivateStore.ts"
 import * as LlmLint from "../src/LlmLint.ts"
+
+// Exercise the Windows open flags on every host.
+vi.mock("node:fs", async (original) => {
+  const fs = await original<typeof import("node:fs")>()
+  return { ...fs, constants: { ...fs.constants, O_NOFOLLOW: 0 } }
+})
 
 let root: string
 let store: string
@@ -440,6 +448,32 @@ describe("LlmLint.review review hardening", () => {
     expect((await Effect.runPromise(Effect.flip(LlmLint.storedFindings(store)))).message).toContain(
       "not a regular file"
     )
+  })
+})
+
+describe("finding record identity", () => {
+  it("closes a replaced record before reading its bytes", () => {
+    const directory = PrivateStore.ensure(store)
+    const name = `findings/${"a".repeat(64)}.json`
+    PrivateStore.write(directory, name, { trusted: true })
+    const record = Path.join(directory, name)
+    const open = NodeFs.openSync
+    const replaced = vi.spyOn(NodeFs, "openSync").mockImplementationOnce((path, flags, mode) => {
+      NodeFs.renameSync(record, `${record}.old`)
+      NodeFs.writeFileSync(record, JSON.stringify({ trusted: false }))
+      return open(path, flags, mode)
+    })
+    const read = vi.spyOn(NodeFs, "readFileSync")
+    const close = vi.spyOn(NodeFs, "closeSync")
+    try {
+      expect(() => PrivateStore.read(directory, name)).toThrow("not a regular file")
+      expect(read).not.toHaveBeenCalled()
+      expect(close).toHaveBeenCalledOnce()
+    } finally {
+      replaced.mockRestore()
+      read.mockRestore()
+      close.mockRestore()
+    }
   })
 })
 
