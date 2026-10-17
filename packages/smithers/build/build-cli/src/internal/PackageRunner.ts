@@ -430,7 +430,7 @@ export const executeEffect = (
     /** Label → the key a node actually executed and cached under, when it differs from the preview. */
     const effectiveKeys = new Map<string, string>()
     const keyFor = (node: PackageNode): string => effectiveKeys.get(node.label) ?? node.keyPreview
-    const executablePath = (path: string): string => path.replace(workspaceRootToken, root)
+    const executablePath = (path: string): string => NodePath.normalize(path.replace(workspaceRootToken, root))
     const verifyExecutables = (node: PackageNode): Effect.Effect<void, unknown> =>
       Effect.gen(function*() {
         const identities: Array<Record<string, unknown>> = []

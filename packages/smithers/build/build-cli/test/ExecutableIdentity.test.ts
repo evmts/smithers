@@ -497,6 +497,43 @@ export const Package = S.Package({ targets: { producer, dist: ${target} } })`
     }
   })
 
+  it("revalidates an unchanged tool through a normalized workspace path", async () => {
+    const { root } = await fixture(
+      `S.Shell.Build({ bin: S.Host.bin("node"), args: ["-e", "require('node:fs').mkdirSync('dist');require('node:fs').writeFileSync('dist/value','first')"], outDirs: ["dist"], sandbox: "none" })`
+    )
+    const declaration = Path.join(root, "WORKSPACE.ts")
+    await Fs.writeFile(
+      declaration,
+      (await Fs.readFile(declaration, "utf8")).replace(
+        "bins: [\"identity-compiler\", \"identity-helper\"]",
+        "bins: [\"node\"]"
+      )
+    )
+    const loaded = await PackageLoader.load(await PackageDiscovery.discover(root))
+    const options = {
+      index: PackageIndex.make(loaded),
+      patterns: ["//:dist"],
+      cacheDirectory: ".flows",
+      verb: "auto" as const
+    }
+    const planned = await PackageExec.plan(options)
+    // Stored workspace paths use portable separators. Exercise normalization
+    // independently of the host, while Windows also supplies mixed separators.
+    const visit = (value: unknown): void => {
+      if (value === null || typeof value !== "object") return
+      const object = value as Record<string, unknown>
+      if (object["_tag"] === "Executable") {
+        const path = String(object["path"])
+        object["path"] = Path.join(Path.dirname(path), ".") + Path.sep + "." + Path.sep + Path.basename(path)
+      }
+      for (const child of Object.values(object)) visit(child)
+    }
+    for (const node of planned.workList) visit(node.keyMaterial.inputs)
+    const result = await PackageExec.execute(planned, options)
+    expect(result.ok, JSON.stringify(result)).toBe(true)
+    expect(await Fs.readFile(Path.join(root, "dist/value"), "utf8")).toBe("first")
+  })
+
   it.each(["cold", "warm"])("refuses a host tool replaced after planning before a %s cache lookup", async (cache) => {
     const { root, tools } = await fixture(
       "S.Shell.Build({ bin: S.Host.bin(\"identity-compiler\"), outDirs: [\"dist\"], sandbox: \"none\" })"
