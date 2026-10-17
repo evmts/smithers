@@ -178,12 +178,18 @@ const marker = (): string => `lane-exec-${process.pid}-${Math.random().toString(
 
 /** A node one-liner that GETs one URL and exits 0 on a 2xx answer. */
 const probeCommand = (url: string): string =>
-  `${process.execPath} -e "fetch('${url}').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"`
+  `${shellWord(process.execPath)} -e "fetch('${url}').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"`
 
 /** A fixture-server Serve declaration; `extra` joins the server's argv. */
+const shellWord = (word: string): string => "'" + word.replaceAll("'", "'\\''") + "'"
+
 const serveDeclaration = (port: number, mark: string, extra: string, probes: string): string =>
   `S.Shell.Serve({
-  shell: ${JSON.stringify(`${process.execPath} ${fixtureServer} --port ${port} --marker ${mark} ${extra}`)},
+  shell: ${
+    JSON.stringify(
+      `${shellWord(process.execPath)} ${shellWord(fixtureServer)} --port ${port} --marker ${mark} ${extra}`
+    )
+  },
   ${probes}
 })`
 
@@ -321,8 +327,9 @@ export const Package = S.Package({ targets: { svc, probe } })
     await write(root, "WORKSPACE.ts", workspaceModule())
     // The consumer wedges the server (every later /health answers 500) and
     // then sleeps far longer than the health contract takes to trip.
-    const consumer =
-      `${process.execPath} -e "fetch('http://127.0.0.1:${port}/wedge').then(() => setTimeout(() => {}, 60000))" ${consumerMark}`
+    const consumer = `${
+      shellWord(process.execPath)
+    } -e "fetch('http://127.0.0.1:${port}/wedge').then(() => setTimeout(() => {}, 60000))" ${consumerMark}`
     await write(
       root,
       "PACKAGE.ts",
