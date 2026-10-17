@@ -67,7 +67,12 @@ it("reads a .smithers/flows/ directory as 1.0 state, alone or beside current fil
   const flowsOnly = project(".smithers/flows/review/")
   writeFileSync(join(flowsOnly, ".smithers", "flows", "review", "flow.ts"), "")
   expect(Project.legacyState(flowsOnly)).toEqual([])
-  const configured = project(".smithers/flows/", ".smithers/WORKSPACE.ts", ".smithers/FACTORY.ts", ".smithers/home.json")
+  const configured = project(
+    ".smithers/flows/",
+    ".smithers/WORKSPACE.ts",
+    ".smithers/FACTORY.ts",
+    ".smithers/home.json"
+  )
   expect(Project.legacyState(configured)).toEqual([])
   const served = project(".smithers/flows/", ".smithers/opencode.sqlite")
   expect(Project.legacyState(served)).toEqual([])

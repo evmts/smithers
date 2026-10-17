@@ -129,10 +129,10 @@ over and terminates only when the operating system raises `ELOOP`.
 
 Two more ceilings bound what one file can cost:
 
-| Ceiling                    | Value  | What it bounds                                                                                                                                                                                                        |
-| -------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ceiling                    | Value  | What it bounds                                                                                                                                                                                                                  |
+| -------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Discovery.entrySizeLimit` | 4 MiB  | The size of an entry file discovery admits. A larger file is skipped with `entry_too_large` and contributes no descriptor, so a stray build artifact under `.smithers/flows/` cannot exhaust the process at layer construction. |
-| The metadata parse ceiling | 64 KiB | How much of an admitted file is decoded and parsed looking for frontmatter or module metadata. It bounds parsing only.                                                                                                |
+| The metadata parse ceiling | 64 KiB | How much of an admitted file is decoded and parsed looking for frontmatter or module metadata. It bounds parsing only.                                                                                                          |
 
 The size ceiling is checked twice, because the first check trusts the host. A
 `stat` size past the limit skips the file unread, which is the fast path an
