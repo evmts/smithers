@@ -4,10 +4,10 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { describe, it } from "node:test"
-import { auditPublicExports, explicitMap, exportTarget, publicSubpaths, sourceSubpaths } from "../../packages/smithers/build/build-cli/scripts/public-export-map.mjs"
-import { libraryPackages, repoRoot } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
+import { auditPublicExports, explicitMap, exportTarget, publicSubpaths, sourceSubpaths } from "../../smithers/build/build-cli/scripts/public-export-map.mjs"
+import { libraryPackages, repoRoot } from "../scripts/workspace-packages.mjs"
 
-const baseline = JSON.parse(readFileSync(new URL("../fixtures/public-export-surface.json", import.meta.url), "utf8"))
+const baseline = JSON.parse(readFileSync(new URL("./fixtures/public-export-surface.json", import.meta.url), "utf8"))
 const current = new Map(
   libraryPackages().filter((entry) => !entry.manifest.private).map((entry) => [entry.name, entry])
 )

@@ -6,11 +6,11 @@ import { fileURLToPath } from "node:url"
 
 test("the shipping-links gate depends on the site build even when selected alone", () => {
   // Query the evaluated declarations: an earlier workflow step cannot supply
-  // the route oracle when this target runs on its own or through //scripts/....
+  // the route oracle when this target runs on its own or through //apps/site/....
   const graph = JSON.parse(execFileSync(process.execPath, [
     "packages/smithers/build/build-cli/src/main.js",
     "query",
-    "deps(//scripts/repo-contract:smithersLinks)",
+    "deps(//apps/site:smithersLinks)",
     "--json"
   ], {
     cwd: new URL("..", import.meta.url),

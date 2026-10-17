@@ -987,7 +987,7 @@ const releaseSuite = Smithers.NodeTest({
     ...releaseSources,
     Smithers.file("//packages/repo-targets/scripts/build-library.mjs"),
     Smithers.file("//packages/repo-targets/scripts/private-effect-adapters.mjs"),
-    Smithers.file("//scripts/repo-contract/package-contract.test.mjs"),
+    Smithers.file("//packages/repo-targets/contracts/package-contract.test.mjs"),
     Smithers.file("//.pnpmfile.mjs"),
     Smithers.file("//.github/workflows/release.yml"),
     Smithers.file("//.github/workflows/ci.yml")

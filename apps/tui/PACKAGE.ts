@@ -45,7 +45,7 @@ const check = Smithers.Typecheck({
  * @category test
  */
 // Coverage policy: assertion-only for the Bun suite until a whole-source
-// denominator is measured. See scripts/repo-contract/README.md.
+// denominator is measured. See packages/repo-targets/contracts/README.md.
 const unitTests = Smithers.NodeTest({
   runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
   runner: Smithers.testSuite(["./test"]),

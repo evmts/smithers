@@ -8,7 +8,7 @@
  * release line, a publishable surface that is actually declared, and the four
  * scripts every gate invokes.
  *
- * Run it with `node --test "scripts/repo-contract/*.test.mjs"`.
+ * Run it with `node --test packages/repo-targets/contracts/package-contract.test.mjs`.
  */
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
@@ -18,10 +18,10 @@ import { describe, it } from "node:test"
 import {
   EXPECTED_EFFECT_VERSION as effectVersion,
   SUPPORTED_EFFECT_RANGE as effectRange
-} from "../../packages/repo-targets/contracts/check-single-effect-version.mjs"
-import { retarget } from "../../flows/release/set-release-version.mjs"
-import { libraryPackages } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
-import { repoRoot as root } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
+} from "./check-single-effect-version.mjs"
+import { retarget } from "../../../flows/release/set-release-version.mjs"
+import { libraryPackages } from "../scripts/workspace-packages.mjs"
+import { repoRoot as root } from "../scripts/workspace-packages.mjs"
 
 /**
  * The one version every package on the release line carries, read from the CLI

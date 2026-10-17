@@ -12,15 +12,15 @@
  * its own list of the namespaces it re-exports, which is what makes this
  * checkable rather than a hand-written roster that drifts.
  *
- * Run it with `node --test "scripts/repo-contract/*.test.mjs"`.
+ * Run it with `node --test packages/repo-targets/contracts/barrels.test.mjs`.
  */
 import assert from "node:assert/strict"
 import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, it } from "node:test"
 import { pathToFileURL } from "node:url"
-import { libraryPackages } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
-import { repoRoot as root } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
+import { libraryPackages } from "../scripts/workspace-packages.mjs"
+import { repoRoot as root } from "../scripts/workspace-packages.mjs"
 
 /**
  * The barrel is imported by path rather than by name.

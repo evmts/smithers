@@ -7,7 +7,7 @@
  * installs its browser, runs Playwright and propagates its failure; and the
  * real scheduler runs the browser typecheck and propagates compiler failures.
  *
- * Run it with `node --test scripts/repo-contract/ui-ci-tier.test.mjs`.
+ * Run it with `node --test packages/repo-targets/contracts/ui-ci-tier.test.mjs`.
  */
 import { execFileSync, spawnSync } from "node:child_process"
 import assert from "node:assert/strict"
@@ -16,8 +16,8 @@ import { tmpdir } from "node:os"
 import { dirname, delimiter, join } from "node:path"
 import { describe, it } from "node:test"
 
-import { parseWorkflow } from "../../flows/release/release-rehearsal.mjs"
-import { libraryPackages, repoRoot as root } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
+import { parseWorkflow } from "../../../flows/release/release-rehearsal.mjs"
+import { libraryPackages, repoRoot as root } from "../scripts/workspace-packages.mjs"
 
 const readManifest = (path) => JSON.parse(readFileSync(path, "utf8"))
 

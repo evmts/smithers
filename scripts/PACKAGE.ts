@@ -28,7 +28,6 @@ import { Package as backendPackage } from "../packages/backend/PACKAGE.ts"
 const sources = [
   Smithers.glob("//scripts/**/*.mjs"),
   Smithers.glob("//scripts/**/*.ts"),
-  Smithers.glob("//scripts/fixtures/**/*.json"),
   // Repository contract modules these scripts import from their package.
   Smithers.file("//packages/repo-targets/contracts/check-single-effect-version.mjs"),
   Smithers.file("//packages/repo-targets/contracts/check-tracked-hygiene.mjs"),

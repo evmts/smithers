@@ -22,7 +22,7 @@
  * test, and a wave record that carries one describes a checkout nobody else
  * has: `scorecard.json` arrived in this repository naming
  * `/Users/<operator>/flows/flows`, which resolves to nothing here. The gate that
- * keeps it out is `scripts/repo-contract/machine-paths.test.mjs`.
+ * keeps it out is `packages/repo-targets/contracts/machine-paths.test.mjs`.
  *
  * So the fingerprint is: for every package in the CLI's `@smthrs/*` dependency
  * closure, where its entry point resolves to (src or dist), and a content hash

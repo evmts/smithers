@@ -39,7 +39,7 @@
  * store; see `@smthrs/run-store` `docs/concepts/durable-values.md`.
  *
  * All three are required gates now. Neither may be marked `.fails`, skipped,
- * or deleted; `scripts/repo-contract/fault-skips.test.mjs` refuses all three
+ * or deleted; `packages/repo-targets/contracts/fault-skips.test.mjs` refuses all three
  * and names this file.
  */
 import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient"

@@ -5,15 +5,15 @@
  * record its rotating seed, preserve histories and results even on failure,
  * verify the evidence is complete, and prove mutation sensitivity.
  *
- * Run it with `node --test scripts/repo-contract/reliability-workflow.test.mjs`.
+ * Run it with `node --test packages/repo-targets/contracts/reliability-workflow.test.mjs`.
  */
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { it } from "node:test"
 
-import { evaluateExpression, interpolate, parseWorkflow } from "../../flows/release/release-rehearsal.mjs"
-import { repoRoot as root } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
+import { evaluateExpression, interpolate, parseWorkflow } from "../../../flows/release/release-rehearsal.mjs"
+import { repoRoot as root } from "../scripts/workspace-packages.mjs"
 
 it("scheduled durable histories retain reproducible seeds and operation artifacts", () => {
   const workflow = parseWorkflow(readFileSync(join(root, ".github/workflows/reliability.yml"), "utf8"))
@@ -92,7 +92,7 @@ it('durability runs nightly and reference execution refuses before branch tools'
   assert.doesNotMatch(suite.run, /known-red/)
   assert.doesNotMatch(longTier.run, /known-red/)
   assert.doesNotMatch(JSON.stringify(job), /secrets\./)
-  const ci = parseWorkflow(readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8'))
+  const ci = parseWorkflow(readFileSync(new URL('../../../.github/workflows/ci.yml', import.meta.url), 'utf8'))
   assert.equal(ci.jobs['e2e-faults'], undefined)
 })
 

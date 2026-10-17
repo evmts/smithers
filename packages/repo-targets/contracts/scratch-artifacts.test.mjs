@@ -16,7 +16,7 @@
  * mid-load committed six of them under `flows/coding`, so the root
  * `.gitignore` must ignore that name shape.
  *
- * Run it with `node --test "scripts/repo-contract/*.test.mjs"`.
+ * Run it with `node --test packages/repo-targets/contracts/scratch-artifacts.test.mjs`.
  */
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
@@ -25,7 +25,7 @@ import { tmpdir } from "node:os"
 import { basename, join } from "node:path"
 import { describe, it } from "node:test"
 
-import { repoRoot as root } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
+import { repoRoot as root } from "../scripts/workspace-packages.mjs"
 
 /**
  * Every tracked path under `apps/`. A jj checkout is read from its last

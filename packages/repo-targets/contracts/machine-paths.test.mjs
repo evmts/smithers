@@ -25,7 +25,7 @@
  * on one machine and throws on every other. The cases moved into the packages
  * they test; the class of mistake did not move with them.
  *
- * Run it with `node --test "scripts/repo-contract/*.test.mjs"`.
+ * Run it with `node --test packages/repo-targets/contracts/machine-paths.test.mjs`.
  */
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
@@ -34,7 +34,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, it } from "node:test"
 
-import { repoRoot as root } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
+import { repoRoot as root } from "../scripts/workspace-packages.mjs"
 
 /**
  * A home directory belonging to a person: `/Users/<name>` on macOS,

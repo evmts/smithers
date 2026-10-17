@@ -119,7 +119,7 @@ const check = Smithers.Typecheck({
  */
 // Coverage policy: assertion-only for Bun UI units, with required offline
 // Playwright in browserE2e. No source coverage percentage is claimed; see
-// scripts/repo-contract/README.md for the denominator exception.
+// packages/repo-targets/contracts/README.md for the denominator exception.
 const unitTests = Smithers.NodeTest({
   runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
   // Isolate files that mutate process globals until #3696 removes that pollution.

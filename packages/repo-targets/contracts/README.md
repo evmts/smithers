@@ -83,29 +83,28 @@ workspace member. The cases moved into the packages they test, and these two are
 the part of that directory that belongs to no single package: they are read
 across all of them.
 
-Run them all:
+Run them by label, which is what CI does:
 
 ```sh
-node --test "scripts/repo-contract/*.test.mjs"
+pnpm exec smithers-build test '//packages/repo-targets/...'
 ```
 
-Or by label, which is what CI does:
-
-```sh
-pnpm exec smithers-build test '//scripts/repo-contract/...'
-```
+`ci-inventory.test.mjs`, `test-script-wiring.test.mjs`,
+`egress-http-client.test.mjs` and `mac-distribution.test.mjs` still live in
+`scripts/repo-contract/` and run as `//scripts/repo-contract/...`;
+`smithers-links.test.mjs` is the site's own gate, `//apps/site:smithersLinks`.
 
 | Suite | What it guards |
 | --- | --- |
 | `package-contract.test.mjs` | One version across the release line, a declared publishable surface, the `next` dist-tag, the scripts every gate invokes, and no published dependency on a private package. |
 | `barrels.test.mjs` | `@smthrs/flows` re-exports exactly the namespaces it lists, declares every package it re-exports, and every published root export points at a file that exists. |
 | `public-export-maps.test.mjs` | Explicit development/publication allowlists retain reviewed entrypoints, deny internal migrations and future files, and resolve equivalently through Node's ESM and CommonJS resolvers. |
-| `test-script-wiring.test.mjs` | Every workspace member with tests has a `test` script, and the pnpm workspace and the root manifest name the same members. |
+| `scripts/repo-contract/test-script-wiring.test.mjs` | Every workspace member with tests has a `test` script, and the pnpm workspace and the root manifest name the same members. |
 | `ui-ci-tier.test.mjs` | The required PR workflow selects the apps/app typecheck, units and Playwright once each in their own Ubuntu job; the Playwright wrapper propagates failure; the real scheduler skips TypeScript when strict devkit preparation fails. |
 | `reliability-workflow.test.mjs` | The scheduled `signal-state-machine` job in `reliability.yml` records its seed, preserves histories and results on failure, verifies the evidence and proves mutation sensitivity. |
-| `ci-inventory.test.mjs` | The planned CI commands cover every package, app, script, eval and fault root, with a retained row per selected target and platform. |
+| `scripts/repo-contract/ci-inventory.test.mjs` | The planned CI commands cover every package, app, script, eval and fault root, with a retained row per selected target and platform. |
 | `cli-verbs.test.mjs` | The CLI reference indexes every canonical command, retains the compatibility pages, and documents only flags the public parser accepts. |
-| `smithers-links.test.mjs` | Every smithers.sh URL a published package ships or prints lands on a built page about the URL's own path, fragment included; a redirect that drops a path segment fails. Rules: `scripts/published-links.mjs`. |
+| `apps/site/scripts/smithers-links.test.mjs` | Every smithers.sh URL a published package ships or prints lands on a built page about the URL's own path, fragment included; a redirect that drops a path segment fails. Rules: `apps/site/scripts/published-links.mjs`. |
 | `fault-skips.test.mjs` | No focused, parked, or inverted test in any package's `test/faults` tree, every conditional skip declared with its reason, every required gate still in the matrix — including the ones that are red — and every package carrying fault cases wired to a `faults` target, a serial fault config, and the CI step that runs them. |
 | `machine-paths.test.mjs` | No tracked file under `evals/`, `scripts/`, or a package's `test/faults` tree names one machine's home directory (`/Users/<name>`, `/home/<name>`, the superuser's `root` home, or `C:\Users\<name>`). Recorded material — wave reports, archives, the authoring corpus — is exempt, because rewriting it would falsify a record. |
 

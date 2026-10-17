@@ -2,8 +2,9 @@
  * Targets for the repository-contract gates.
  *
  * They live in their own directory, and their own PACKAGE.ts file, because they are
- * about the workspace rather than about any package in it: the version line,
- * the publishable surface, the barrels, and the fault matrix's own discipline.
+ * about the workspace rather than about any package in it: the CI inventory,
+ * the test wiring, the egress client and the Mac distribution. The other
+ * repository-contract suites live in `packages/repo-targets/contracts/`.
  * `//scripts/...` is recursive, so the whole set stays under the one pattern the
  * pipeline already runs.
  *
@@ -12,60 +13,9 @@
  */
 import { Smithers } from "@smthrs/targets"
 import { Package as scriptPackage } from "../PACKAGE.ts"
-import { Package as sitePackage } from "../../apps/site/PACKAGE.ts"
 
 /** Every gate in this directory, digested as the input of each target. */
 const sources = Smithers.glob("//scripts/repo-contract/**/*.mjs")
-
-/**
- * One version across the release line, a declared publishable surface, and the
- * scripts every other gate invokes.
- *
- * The manifests it reads live in other packages, and a declared glob may not
- * cross a package boundary, so `srcs` names only this directory. The gate is
- * therefore not cacheable and re-runs regardless, which is correct: its subject
- * is the whole workspace.
- *
- * @since 1.0.0
- * @category test
- */
-const packageContract = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//scripts/repo-contract/package-contract.test.mjs")]),
-  srcs: [sources],
-  deps: []
-})
-
-/**
- * Explicit entrypoints preserve reviewed imports and block future source files.
- * @since 1.0.0
- * @category test
- */
-const publicExportMaps = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//scripts/repo-contract/public-export-maps.test.mjs")]),
-  srcs: [
-    sources,
-    Smithers.file("//packages/smithers/build/build-cli/scripts/public-export-map.mjs"),
-    Smithers.file("//scripts/fixtures/public-export-surface.json"),
-    Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs"),
-    Smithers.file("//pnpm-workspace.yaml")
-  ],
-  deps: []
-})
-
-/**
- * The barrels re-export what they claim, checked by importing them.
- *
- * A typecheck reads the same source the declarations are generated from, so it
- * cannot catch a re-export that was never written. Loading the module can.
- *
- * @since 1.0.0
- * @category test
- */
-const barrels = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//scripts/repo-contract/barrels.test.mjs")]),
-  srcs: [sources],
-  deps: []
-})
 
 /**
  * Every workspace member with tests is reachable from the command CI runs.
@@ -89,43 +39,6 @@ const testScriptWiring = Smithers.NodeTest({
   deps: [scriptPackage.repositoryInputs]
 })
 
-/**
- * The apps/app required CI tier: selected once in its own job, a Playwright
- * wrapper that propagates failure, and a typecheck that propagates compiler
- * and security validation failures.
- *
- * @since 1.0.0
- * @category test
- */
-const uiCiTier = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//scripts/repo-contract/ui-ci-tier.test.mjs")]),
-  srcs: [
-    sources,
-    Smithers.file("//flows/release/release-rehearsal.mjs"),
-    Smithers.file("//.github/workflows/ci.yml"),
-    Smithers.file("//apps/app/PACKAGE.ts"),
-    Smithers.file("//apps/app/scripts/run-pr-e2e.mjs"),
-    Smithers.file("//apps/app/package.json"),
-    Smithers.file("//apps/app/tsconfig.json"),
-    Smithers.file("//package.json"),
-    Smithers.file("//pnpm-lock.yaml")
-  ],
-  deps: []
-})
-
-/**
- * The scheduled signal campaign records its seed, preserves its evidence and
- * verifies it.
- *
- * @since 1.0.0
- * @category test
- */
-const reliabilityWorkflow = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//scripts/repo-contract/reliability-workflow.test.mjs")]),
-  srcs: [sources, Smithers.file("//flows/release/release-rehearsal.mjs"), Smithers.file("//.github/workflows/reliability.yml")],
-  deps: []
-})
-
 /** Mac distribution deletion and lifecycle handoff contract. */
 const macDistribution = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//scripts/repo-contract/mac-distribution.test.mjs")]),
@@ -133,96 +46,6 @@ const macDistribution = Smithers.NodeTest({
   deps: [scriptPackage.repositoryInputs]
 })
 
-/**
- * No focused or parked test in the fault matrix, every conditional skip
- * declared with its reason, and every package that carries fault cases wired to
- * a target that runs them.
- *
- * The coverage record the suite reads is an input beside the gates themselves:
- * a required red gate names a row in `fault-gaps.md`, so editing that row has
- * to re-key this target.
- *
- * @since 1.0.0
- * @category test
- */
-const faultSkips = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//scripts/repo-contract/fault-skips.test.mjs")]),
-  srcs: [sources, Smithers.file("//scripts/repo-contract/fault-gaps.md")],
-  deps: []
-})
-
-/**
- * No operator rig under `evals/`, `scripts/`, or a package's `test/faults` tree
- * names one machine's home directory.
- *
- * @since 1.0.0
- * @category test
- */
-const machinePaths = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//scripts/repo-contract/machine-paths.test.mjs")]),
-  srcs: [sources],
-  deps: []
-})
-
-/**
- * No app tracks a run's scratch output: captured exit codes or enrollment
- * traces.
- *
- * @since 1.0.0
- * @category test
- */
-const scratchArtifacts = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//scripts/repo-contract/scratch-artifacts.test.mjs")]),
-  srcs: [sources],
-  deps: []
-})
-
-/**
- * Every smithers.sh URL a published package ships or prints lands on a built
- * page about the URL's own path: directly, or through one production redirect
- * that keeps every path segment, with the fragment present on the page.
- * `apps/site/scripts/published-links.mjs` holds the rules; its `--live` mode applies them
- * to production after a deploy.
- *
- * The route oracle is the emitted files under `apps/site/dist`, so the site's
- * build is a dependency rather than a step someone ran first. The edge orders
- * the build ahead of the gate, keys the gate on the build's own key so a
- * content change re-runs it, and puts the build's declared outputs in the
- * gate's sandbox read set. It is a selector rather than an import because
- * importing `apps/site/PACKAGE.ts` would pull every documented package's
- * declaration into this file to reach one target.
- *
- * `dist` is deliberately not declared as an input: declared inputs expand at
- * plan time, and on a clean checkout the directory the build has not produced
- * yet expands to nothing, which is both a vacuous edge and no read at all.
- *
- * @since 1.0.0
- * @category test
- */
-const smithersLinks = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//scripts/repo-contract/smithers-links.test.mjs")]),
-  srcs: [
-    sources,
-    Smithers.file("//apps/site/scripts/published-links.mjs"),
-    Smithers.file("//flows/release/pack-release.mjs"),
-    Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs")
-  ],
-  deps: [sitePackage.build]
-})
-
-/**
- * The reference indexes every canonical command, retains the compatibility
- * pages, and describes flags accepted by the public parser. The generated
- * manifest and help have their own executable drift gate.
- *
- * @since 1.0.0
- * @category test
- */
-const cliVerbs = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//scripts/repo-contract/cli-verbs.test.mjs")]),
-  srcs: [sources],
-  deps: []
-})
 /**
  * No shipped Node composition installs an HTTP client that ignores the egress
  * proxy its environment names.
@@ -283,18 +106,6 @@ const securityReview = Smithers.SecurityReview({
       paths: ["egress-http-client.test.mjs"]
     },
     {
-      id: "home-path-leak-gate",
-      title: "The machine-path gate catches every tracked home-directory path under evals, scripts and fault suites",
-      threat: "A contributor commits an operator's username and home layout, leaking a maintainer's local identity and paths in the public repository, while the gate stays green.",
-      lookFor: [
-        "A homePath regex that misses a username-bearing path: the superuser's home (also under macOS's /var), a shell ~<name> home, Windows C:\\Users\\<name> at any escaping depth, or /Users/<name> followed by punctuation or the end of the line.",
-        "An isRecorded exemption broader than the reports, archive and SFT-corpus directories it documents.",
-        "An inventory command whose failure or empty output is treated as a pass instead of asserting status 0 and a nonempty list.",
-        "A git/jj selection that reads an ancestor repository's inventory instead of this workspace's."
-      ],
-      paths: ["machine-paths.test.mjs", "scratch-artifacts.test.mjs"]
-    },
-    {
       id: "child-process-containment",
       title: "Gate child processes run fixed code with bounded time and no inherited secrets they do not need",
       threat: "A repository file or environment value controls code a gate evaluates, or a hung child survives the gate, running attacker-chosen code or holding CI runner resources.",
@@ -305,7 +116,7 @@ const securityReview = Smithers.SecurityReview({
         "A child env built from `...process.env` that forwards cache tokens or credentials (SMITHERS_CACHE_TOKEN, NPM_TOKEN) to a stub it does not need them for.",
         "A PATH prefix pointing at a directory that is not a fresh mkdtemp owned by the test."
       ],
-      paths: ["ci-inventory.test.mjs", "public-export-maps.test.mjs", "ui-ci-tier.test.mjs", "machine-paths.test.mjs", "scratch-artifacts.test.mjs"]
+      paths: ["ci-inventory.test.mjs"]
     },
     {
       id: "temp-file-safety",
@@ -317,19 +128,7 @@ const securityReview = Smithers.SecurityReview({
         "rmSync(..., { recursive: true, force: true }) on a path not returned by mkdtemp in the same test.",
         "symlinkSync into a fixture that points outside the fixture root."
       ],
-      paths: ["ci-inventory.test.mjs", "cli-verbs.test.mjs", "public-export-maps.test.mjs", "ui-ci-tier.test.mjs"]
-    },
-    {
-      id: "publish-surface-gate",
-      title: "The package contract keeps the published npm surface explicit and free of private code",
-      threat: "A release publishes a private workspace package, an undeclared file (a .env or credentials fixture), or an unreviewed subpath to every npm user.",
-      lookFor: [
-        "A publishable manifest accepted without a nonempty `files` allowlist or with publishConfig.access other than public.",
-        "The private-dependency check skipping dependency kinds (optionalDependencies, peerDependencies) a consumer installs.",
-        "An export-map baseline entry or wildcard subpath admitted without the gate failing on a new source file.",
-        "A private: true check that treats a missing or string \"true\" value as private."
-      ],
-      paths: ["package-contract.test.mjs", "public-export-maps.test.mjs", "barrels.test.mjs"]
+      paths: ["ci-inventory.test.mjs"]
     },
     {
       id: "ci-workflow-gates",
@@ -341,11 +140,11 @@ const securityReview = Smithers.SecurityReview({
         "A test file excluded from every target in test-script-wiring without a stated reason.",
         "A skip or todo in the fault matrix accepted without a declared reason row in fault-gaps.md."
       ],
-      paths: ["ui-ci-tier.test.mjs", "reliability-workflow.test.mjs", "test-script-wiring.test.mjs", "ci-inventory.test.mjs", "fault-skips.test.mjs", "fault-gaps.md"]
+      paths: ["test-script-wiring.test.mjs", "ci-inventory.test.mjs"]
     }
   ]
 })
 
 export const Package = Smithers.Package({
-  targets: { barrels, cliVerbs, macDistribution, egressHttpClient, faultSkips, machinePaths, packageContract, scratchArtifacts, smithersLinks, testScriptWiring, uiCiTier, reliabilityWorkflow, ciInventory, publicExportMaps, ...securityReview }
+  targets: { macDistribution, egressHttpClient, testScriptWiring, ciInventory, ...securityReview }
 })

@@ -1,7 +1,7 @@
 /**
  * A second `smithers` over one project root is told when the run is not its.
  *
- * `scripts/repo-contract/fault-gaps.md` row 06 recorded that every local control plane ran as
+ * `packages/repo-targets/contracts/fault-gaps.md` row 06 recorded that every local control plane ran as
  * `{hostId: "local", pid: 0}`, so two processes over one project root were one
  * owner to the fence and the loser silently re-drove work the winner held.
  * `engineDurable` now stamps `hostname()` and `process.pid`, and

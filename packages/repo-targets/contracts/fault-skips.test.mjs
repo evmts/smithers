@@ -43,17 +43,17 @@
  * case has not run in six months" is a fact somebody chose rather than one
  * nobody noticed.
  *
- * Run it with `node --test "scripts/repo-contract/*.test.mjs"`.
+ * Run it with `node --test packages/repo-targets/contracts/fault-skips.test.mjs`.
  */
 import assert from "node:assert/strict"
 import ts from "typescript"
-import { parseWorkflow } from "../../flows/release/release-rehearsal.mjs"
+import { parseWorkflow } from "../../../flows/release/release-rehearsal.mjs"
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { join, relative } from "node:path"
 import { describe, it } from "node:test"
 
-import { libraryPackages } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
-import { repoRoot as root } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
+import { libraryPackages } from "../scripts/workspace-packages.mjs"
+import { repoRoot as root } from "../scripts/workspace-packages.mjs"
 
 const packagesRoot = join(root, "packages")
 
@@ -136,7 +136,7 @@ const requiredGates = new Map([
  */
 const requiredRedGates = new Map([])
 
-const faultGaps = join(root, "scripts", "repo-contract", "fault-gaps.md")
+const faultGaps = join(root, "packages", "repo-targets", "contracts", "fault-gaps.md")
 
 /**
  * What a set of required red gates gets wrong, one message per defect.
@@ -159,7 +159,7 @@ const redGateDefects = (redGates, gates, gaps) => {
     }
     const row = rows.find((line) => line.startsWith(gate.limitation.row))
     if (row === undefined) {
-      defects.push(`scripts/repo-contract/fault-gaps.md has no ${gate.limitation.row} row for ${relative_}`)
+      defects.push(`packages/repo-targets/contracts/fault-gaps.md has no ${gate.limitation.row} row for ${relative_}`)
     } else if (!row.includes(gate.limitation.anchor)) {
       defects.push(
         `the ${gate.limitation.row} row claims the limitation is recorded on the known-limitations page and does `
@@ -261,7 +261,7 @@ describe("the fault-suite skip audit", () => {
         0,
         `${source.relative} pins a defect with .fails, which turns a failing required gate into a pass. `
           + "State the requirement as a plain test that fails, cite its owner in the case file, and record "
-          + "the shipped limitation in scripts/repo-contract/fault-gaps.md."
+          + "the shipped limitation in packages/repo-targets/contracts/fault-gaps.md."
       )
     }
   })
@@ -300,7 +300,7 @@ describe("the fault-suite skip audit", () => {
         + "still exists. Add it there as well."
     ])
     assert.deepEqual(redGateDefects(new Map([["missing.test.ts", red("| 99 |")]]), gates, gaps), [
-      "scripts/repo-contract/fault-gaps.md has no | 99 | row for missing.test.ts"
+      "packages/repo-targets/contracts/fault-gaps.md has no | 99 | row for missing.test.ts"
     ])
     assert.deepEqual(redGateDefects(new Map([["unlinked.test.ts", red("| 25 |")]]), gates, gaps), [
       "the | 25 | row claims the limitation is recorded on the known-limitations page and does not link to it. "

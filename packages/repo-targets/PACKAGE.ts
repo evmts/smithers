@@ -310,6 +310,150 @@ const contractsLint = Smithers.EsLint({
 })
 
 /**
+ * One version across the release line, a declared publishable surface, and the
+ * scripts every other gate invokes.
+ *
+ * The manifests it reads live in other packages, and a declared glob may not
+ * cross a package boundary, so `srcs` names only this directory. The gate is
+ * therefore not cacheable and re-runs regardless, which is correct: its subject
+ * is the whole workspace.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const packageContract = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//packages/repo-targets/contracts/package-contract.test.mjs")]),
+  srcs: contracts,
+  deps: []
+})
+
+/**
+ * Explicit entrypoints preserve reviewed imports and block future source files.
+ * @since 1.0.0
+ * @category test
+ */
+const publicExportMaps = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//packages/repo-targets/contracts/public-export-maps.test.mjs")]),
+  srcs: [
+    ...contracts,
+    Smithers.file("//packages/smithers/build/build-cli/scripts/public-export-map.mjs"),
+    Smithers.file("//packages/repo-targets/contracts/fixtures/public-export-surface.json"),
+    Smithers.file("//pnpm-workspace.yaml")
+  ],
+  deps: []
+})
+
+/**
+ * The barrels re-export what they claim, checked by importing them.
+ *
+ * A typecheck reads the same source the declarations are generated from, so it
+ * cannot catch a re-export that was never written. Loading the module can.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const barrels = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//packages/repo-targets/contracts/barrels.test.mjs")]),
+  srcs: contracts,
+  deps: []
+})
+
+/**
+ * The apps/app required CI tier: selected once in its own job, a Playwright
+ * wrapper that propagates failure, and a typecheck that propagates compiler
+ * and security validation failures.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const uiCiTier = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//packages/repo-targets/contracts/ui-ci-tier.test.mjs")]),
+  srcs: [
+    ...contracts,
+    Smithers.file("//flows/release/release-rehearsal.mjs"),
+    Smithers.file("//.github/workflows/ci.yml"),
+    Smithers.file("//apps/app/PACKAGE.ts"),
+    Smithers.file("//apps/app/scripts/run-pr-e2e.mjs"),
+    Smithers.file("//apps/app/package.json"),
+    Smithers.file("//apps/app/tsconfig.json"),
+    Smithers.file("//package.json"),
+    Smithers.file("//pnpm-lock.yaml")
+  ],
+  deps: []
+})
+
+/**
+ * The scheduled signal campaign records its seed, preserves its evidence and
+ * verifies it.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const reliabilityWorkflow = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//packages/repo-targets/contracts/reliability-workflow.test.mjs")]),
+  srcs: [...contracts, Smithers.file("//flows/release/release-rehearsal.mjs"), Smithers.file("//.github/workflows/reliability.yml")],
+  deps: []
+})
+
+/**
+ * No focused or parked test in the fault matrix, every conditional skip
+ * declared with its reason, and every package that carries fault cases wired to
+ * a target that runs them.
+ *
+ * The coverage record the suite reads is an input beside the gates themselves:
+ * a required red gate names a row in `fault-gaps.md`, so editing that row has
+ * to re-key this target.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const faultSkips = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//packages/repo-targets/contracts/fault-skips.test.mjs")]),
+  srcs: [...contracts, Smithers.file("//packages/repo-targets/contracts/fault-gaps.md")],
+  deps: []
+})
+
+/**
+ * No operator rig under `evals/`, `scripts/`, or a package's `test/faults` tree
+ * names one machine's home directory.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const machinePaths = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//packages/repo-targets/contracts/machine-paths.test.mjs")]),
+  srcs: contracts,
+  deps: []
+})
+
+/**
+ * No app tracks a run's scratch output: captured exit codes or enrollment
+ * traces.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const scratchArtifacts = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//packages/repo-targets/contracts/scratch-artifacts.test.mjs")]),
+  srcs: contracts,
+  deps: []
+})
+
+/**
+ * The reference indexes every canonical command, retains the compatibility
+ * pages, and describes flags accepted by the public parser. The generated
+ * manifest and help have their own executable drift gate.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const cliVerbs = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//packages/repo-targets/contracts/cli-verbs.test.mjs")]),
+  srcs: contracts,
+  deps: []
+})
+
+/**
  * Changed public APIs against the README. This private package has no docs
  * directory and no site reference page, so the README is its whole prose.
  *
@@ -333,7 +477,11 @@ const securityReview = Smithers.SecurityReview({
     Smithers.glob("bun-coverage/**/*.mjs", { exclude: ["**/*.test.mjs"] }),
     Smithers.glob("bun-coverage/**/*.ts", { exclude: ["**/*.test.ts"] }),
     Smithers.glob("browser/**/*.mjs"),
-    "scripts/**", "test-utils/**"],
+    "scripts/**", "test-utils/**",
+    // The repository-contract suites carry their own review checks below.
+    "contracts/barrels.test.mjs", "contracts/cli-verbs.test.mjs", "contracts/fault-skips.test.mjs", "contracts/fault-gaps.md",
+    "contracts/machine-paths.test.mjs", "contracts/package-contract.test.mjs", "contracts/public-export-maps.test.mjs",
+    "contracts/reliability-workflow.test.mjs", "contracts/scratch-artifacts.test.mjs", "contracts/ui-ci-tier.test.mjs"],
   checks: [
     {
       id: "review-gate-strength",
@@ -417,6 +565,67 @@ const securityReview = Smithers.SecurityReview({
         "Environment dumps or error messages that print token-bearing variables."
       ],
       paths: ["contracts/ci-planner.mjs", "contracts/ci-inventory.mjs"]
+    },
+    {
+      id: "home-path-leak-gate",
+      title: "The machine-path gate catches every tracked home-directory path under evals, scripts and fault suites",
+      threat: "A contributor commits an operator's username and home layout, leaking a maintainer's local identity and paths in the public repository, while the gate stays green.",
+      lookFor: [
+        "A homePath regex that misses a username-bearing path: the superuser's home (also under macOS's /var), a shell ~<name> home, Windows C:\\Users\\<name> at any escaping depth, or /Users/<name> followed by punctuation or the end of the line.",
+        "An isRecorded exemption broader than the reports, archive and SFT-corpus directories it documents.",
+        "An inventory command whose failure or empty output is treated as a pass instead of asserting status 0 and a nonempty list.",
+        "A git/jj selection that reads an ancestor repository's inventory instead of this workspace's."
+      ],
+      paths: ["contracts/machine-paths.test.mjs", "contracts/scratch-artifacts.test.mjs"]
+    },
+    {
+      id: "child-process-containment",
+      title: "Gate child processes run fixed code with bounded time and no inherited secrets they do not need",
+      threat: "A repository file or environment value controls code a gate evaluates, or a hung child survives the gate, running attacker-chosen code or holding CI runner resources.",
+      lookFor: [
+        "A spawn or spawnSync `--eval`/`-e` string built by interpolating file contents, package names or environment values instead of passing data on stdin or IPC.",
+        "A shell: true spawn or an exec() of a string assembled from repository data.",
+        "A child spawned without timeout, SIGKILL fallback or t.after cleanup.",
+        "A child env built from `...process.env` that forwards cache tokens or credentials (SMITHERS_CACHE_TOKEN, NPM_TOKEN) to a stub it does not need them for.",
+        "A PATH prefix pointing at a directory that is not a fresh mkdtemp owned by the test."
+      ],
+      paths: ["contracts/public-export-maps.test.mjs", "contracts/ui-ci-tier.test.mjs", "contracts/machine-paths.test.mjs", "contracts/scratch-artifacts.test.mjs"]
+    },
+    {
+      id: "temp-file-safety",
+      title: "Gates write only inside fresh temporary directories they create and remove",
+      threat: "Another local user on a shared CI runner pre-plants a symlink at a predictable temp path so a gate overwrites or reads a file it should not.",
+      lookFor: [
+        "A writeFileSync to a predictable tmpdir() path (fixed name or pid) instead of a mkdtemp directory, such as the default smithers-ci-inventory-<pid>.json artifact.",
+        "An environment-supplied output path (SMITHERS_CI_INVENTORY) written without checking it stays inside the workspace or a temp directory.",
+        "rmSync(..., { recursive: true, force: true }) on a path not returned by mkdtemp in the same test.",
+        "symlinkSync into a fixture that points outside the fixture root."
+      ],
+      paths: ["contracts/cli-verbs.test.mjs", "contracts/public-export-maps.test.mjs", "contracts/ui-ci-tier.test.mjs"]
+    },
+    {
+      id: "publish-surface-gate",
+      title: "The package contract keeps the published npm surface explicit and free of private code",
+      threat: "A release publishes a private workspace package, an undeclared file (a .env or credentials fixture), or an unreviewed subpath to every npm user.",
+      lookFor: [
+        "A publishable manifest accepted without a nonempty `files` allowlist or with publishConfig.access other than public.",
+        "The private-dependency check skipping dependency kinds (optionalDependencies, peerDependencies) a consumer installs.",
+        "An export-map baseline entry or wildcard subpath admitted without the gate failing on a new source file.",
+        "A private: true check that treats a missing or string \"true\" value as private."
+      ],
+      paths: ["contracts/package-contract.test.mjs", "contracts/public-export-maps.test.mjs", "contracts/barrels.test.mjs"]
+    },
+    {
+      id: "ci-workflow-gates",
+      title: "Workflow gates keep required CI jobs failing on real failures",
+      threat: "A contributor edits ci.yml or reliability.yml so a required security or test job passes on failure, letting vulnerable code merge to main.",
+      lookFor: [
+        "An assertion that tolerates continue-on-error: true, `|| true`, or an allow-failure known-red list on a required job.",
+        "A regex match on a workflow run string loose enough to accept an extra command that skips or neuters the suite.",
+        "A test file excluded from every target in test-script-wiring without a stated reason.",
+        "A skip or todo in the fault matrix accepted without a declared reason row in fault-gaps.md."
+      ],
+      paths: ["contracts/ui-ci-tier.test.mjs", "contracts/reliability-workflow.test.mjs", "contracts/fault-skips.test.mjs", "contracts/fault-gaps.md"]
     }
   ]
 })
@@ -445,4 +654,4 @@ const mvpDocs = Smithers.NodeTest({
   deps: [scriptPackage.repositoryInputs]
 })
 
-export const Package = Smithers.Package({ targets: { check, test, workspacePackages, conflictMarkers, mvpDocs, conflictMarkersUnit, trackedHygiene, trackedHygieneUnit, toolchainPins, effectVersion, releaseContracts, privateEffectAdapters, driftJob, nativeWindowsWorkflow, runnerContract, webBundleContract, knownRedCoverage, bunCoverage, testPinRegister, contractsLint, reviewDocsAgainstCode, reviewJsdocAgainstCode, ...securityReview } })
+export const Package = Smithers.Package({ targets: { check, test, workspacePackages, conflictMarkers, mvpDocs, conflictMarkersUnit, trackedHygiene, trackedHygieneUnit, toolchainPins, effectVersion, releaseContracts, privateEffectAdapters, driftJob, nativeWindowsWorkflow, runnerContract, webBundleContract, knownRedCoverage, bunCoverage, testPinRegister, contractsLint, packageContract, publicExportMaps, barrels, uiCiTier, reliabilityWorkflow, faultSkips, machinePaths, scratchArtifacts, cliVerbs, reviewDocsAgainstCode, reviewJsdocAgainstCode, ...securityReview } })

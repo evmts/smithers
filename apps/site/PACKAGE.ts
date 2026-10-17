@@ -428,7 +428,7 @@ const siteTypecheckTest = Smithers.Shell.Test({
 })
 
 /**
- * The collector and resolver behind `//scripts/repo-contract:smithersLinks`:
+ * The collector and resolver behind `//apps/site:smithersLinks`:
  * which smithers.sh URLs a published package ships, and whether the page a URL
  * lands on is about the URL's own path. Fixtures only, so it needs no site
  * build; the contract gate runs the same rules over the real build.
@@ -628,6 +628,36 @@ const securityReview = Smithers.SecurityReview({
  * @since 1.0.0
  * @category packages
  */
+/**
+ * Every smithers.sh URL a published package ships or prints lands on a built
+ * page about the URL's own path: directly, or through one production redirect
+ * that keeps every path segment, with the fragment present on the page.
+ * `apps/site/scripts/published-links.mjs` holds the rules; its `--live` mode applies them
+ * to production after a deploy.
+ *
+ * The route oracle is the emitted files under `apps/site/dist`, so the site's
+ * build is a dependency rather than a step someone ran first. The edge orders
+ * the build ahead of the gate, keys the gate on the build's own key so a
+ * content change re-runs it, and puts the build's declared outputs in the
+ * gate's sandbox read set.
+ *
+ * `dist` is deliberately not declared as an input: declared inputs expand at
+ * plan time, and on a clean checkout the directory the build has not produced
+ * yet expands to nothing, which is both a vacuous edge and no read at all.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const smithersLinks = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//apps/site/scripts/smithers-links.test.mjs")]),
+  srcs: [
+    Smithers.file("//apps/site/scripts/published-links.mjs"),
+    Smithers.file("//flows/release/pack-release.mjs"),
+    Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs")
+  ],
+  deps: [build]
+})
+
 export const Package = Smithers.Package({
   targets: {
     check,
@@ -645,6 +675,7 @@ export const Package = Smithers.Package({
     recordTapeTest,
     supportMatrixTest,
     publishedLinksUnit,
+    smithersLinks,
     catalogPublicationTest,
     siteTypecheckTest,
     sameOriginUrlTest,
