@@ -10,6 +10,7 @@ import * as NodePath from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import * as AgentFake from "../src/AgentFake.ts"
 import * as AgentSession from "../src/AgentSession.ts"
+import { writeExecutable } from "./helpers/Executable.ts"
 
 let root: string
 
@@ -34,6 +35,7 @@ beforeEach(async () => {
   await write("src/a.ts", "export const a = 1\n")
   await write("docs/readme.md", "readme\n")
   git("init", "-q")
+  git("config", "core.autocrlf", "false")
   git("add", "-A")
   git("commit", "-q", "-m", "initial")
 })
@@ -818,34 +820,16 @@ describe("agent resolution", () => {
 })
 
 describe("CLI engine adapters", () => {
-  const fakeExecutable = async (name: string, script: string): Promise<string> => {
-    const windows = process.platform === "win32"
-    const path = NodePath.join(root, windows ? `${name}.mjs` : name)
-    const body = windows
-      ? `#!/usr/bin/env node
-import { spawnSync } from "node:child_process"
-const result = spawnSync("sh", ["-c", ${
-        JSON.stringify(script)
-      }, "fixture", ...process.argv.slice(2)], { stdio: "inherit" })
-if (result.error) throw result.error
-process.exit(result.status ?? 1)
-`
-      : `#!/bin/sh\n${script}\n`
-    await Fs.writeFile(path, body, { mode: 0o755 })
-    return path
-  }
+  const fakeExecutable = (
+    name: string,
+    script: string,
+    platform: NodeJS.Platform = process.platform
+  ): Promise<string> => writeExecutable(NodePath.join(root, name), `#!/bin/sh\n${script}\n`, platform)
 
   it("runs the Windows engine fixture with literal shell arguments", async () => {
-    const platform = Object.getOwnPropertyDescriptor(process, "platform")!
-    let executable: string
-    try {
-      Object.defineProperty(process, "platform", { ...platform, value: "win32" })
-      executable = await fakeExecutable("literal-args", `printf '%s\\n' "$@"`)
-    } finally {
-      Object.defineProperty(process, "platform", platform)
-    }
+    const executable = await fakeExecutable("literal-args", `printf '%s\\n' "$@"`, "win32")
     const args = ["a b", "--flag", "$(must-stay-literal)", "é"]
-    const result = spawnSync(process.execPath, [executable, ...args], { cwd: root, encoding: "utf8" })
+    const result = spawnSync(executable, args, { cwd: root, encoding: "utf8" })
     expect(result.error).toBeUndefined()
     expect(result.status).toBe(0)
     expect(result.stdout).toBe(`${args.join("\n")}\n`)

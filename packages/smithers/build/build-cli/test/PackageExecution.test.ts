@@ -40,6 +40,7 @@ const git = (root: string, ...args: ReadonlyArray<string>): string =>
 
 const commitAll = (root: string): void => {
   git(root, "init", "-q")
+  git(root, "config", "core.autocrlf", "false")
   git(root, "add", "-A")
   git(root, "-c", "user.email=t@t.t", "-c", "user.name=t", "commit", "-qm", "init")
 }
