@@ -72,6 +72,8 @@ export const Package = S.Package({ targets: {
 `
   )
   commitAll(root)
+  // Keep the >1 MiB argv probe representable by Git for Windows too.
+  git(root, "config", "core.longpaths", "true")
   const paths = Array.from(
     { length: 6000 },
     (_, index) => `src/${String(index).padStart(4, "0")}-${"x".repeat(220)}.ts`

@@ -171,6 +171,8 @@ describe("diff slice path and byte boundaries", () => {
   }
 
   it.each([undefined, "TODO"])("handles thousands of paths with addedLines=%s", async (addedLines) => {
+    // Git for Windows otherwise refuses these leaves before the argv probe.
+    git("config", "core.longpaths", "true")
     const files = Array.from(
       { length: 6000 },
       (_, index) => `src/${String(index).padStart(4, "0")}-${"x".repeat(220)}.ts`
