@@ -1369,6 +1369,7 @@ They need the optional `@smthrs/*` dependencies a default install brings.
 | `take`                      | `(payload) => Effect<Ref, MigrateError, ...>`                                        | Takes one.                                                                  |
 | `detectVcs`                 | `(root: string) => Effect<Vcs, PlatformError, FileSystem \| Path>`                   | Which of the three this project has.                                        |
 | `digest`                    | `(root: string, roots: ReadonlyArray<string>) => Effect<..., MigrateError, ...>`     | A digest per run-state path.                                                |
+| `carveRoots`                | `(root: string, roots: ReadonlyArray<string>, keep?: string) => Effect<...>`         | The run-state roots with the 1.0 flows directory carved out.                |
 | `tree`                      | `(root: string, exclude?: ReadonlyArray<string>) => Effect<Tree, MigrateError, ...>` | The whole-tree manifest.                                                    |
 | `treeDiff`                  | `(root: string, ref: Ref) => Effect<ReadonlyArray<ChangedFile>, MigrateError, ...>`  | What changed since. The unit report's changed files.                        |
 | `sources`                   | `(ref: Ref) => Effect<ReadonlyMap<string, string>, MigrateError, ...>`               | The unit's files as the checkpoint recorded them.                           |
