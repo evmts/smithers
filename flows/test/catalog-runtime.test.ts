@@ -6,8 +6,8 @@ import { spawnSync } from "node:child_process"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
 import appendixC from "../../apps/app/src/mainview/flows/fixtures/AppendixC.json" with { type: "json" }
-import { auditRuntimeTags } from "../../scripts/catalog-policy.ts"
-import { policyRegistration, withProductionRegistries } from "../../scripts/catalog-runtime.ts"
+import { auditRuntimeTags } from "../../apps/app/scripts/catalog-policy.mts"
+import { policyRegistration, withProductionRegistries } from "./fixtures/catalog-runtime.ts"
 
 test("built native and coding hosts expose their actual private registrations", { timeout: 120_000 }, async () => {
   await withProductionRegistries((inventories, runtimes) =>
@@ -120,7 +120,7 @@ test("built native and coding hosts expose their actual private registrations", 
 test("the default build command audits production registries, while the app/CLI inventory is clean", {
   timeout: 120_000
 }, async () => {
-  const script = fileURLToPath(new URL("../../scripts/catalog-allowlist.ts", import.meta.url))
+  const script = fileURLToPath(new URL("../../apps/app/scripts/catalog-allowlist.ts", import.meta.url))
   const app = spawnSync("bun", [script, "--app-cli"], { encoding: "utf8", timeout: 60_000 })
   assert.equal(app.status, 0, app.stderr)
   assert.equal(app.stdout, "")

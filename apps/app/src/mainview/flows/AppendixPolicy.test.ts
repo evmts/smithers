@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import b from "./fixtures/AppendixBPolicy.json"
 import c from "./fixtures/AppendixC.json"
 import cli from "../../../../../packages/smithers/test/CatalogCli.fixture.json"
-import { assertCatalogPolicy, auditAppIds, auditCliPaths, auditRuntimeTags } from "../../../../../scripts/catalog-policy"
+import { assertCatalogPolicy, auditAppIds, auditCliPaths, auditRuntimeTags } from "../../../scripts/catalog-policy.mts"
 
 test("literal B inventory expands shorthand without authorizing renamed aliases", () => {
   expect(b.rows).toHaveLength(120)
@@ -52,7 +52,7 @@ test("parameterized actions require their inventoried source, and failures name 
 })
 
 test("build command rejects injected aliases and Replaced entry points without loading repository bodies", async () => {
-  const script = new URL("../../../../../scripts/catalog-allowlist.ts", import.meta.url)
+  const script = new URL("../../../scripts/catalog-allowlist.ts", import.meta.url)
   for (const [args, diagnostic] of [
     [["--app-id", "box.open", "invented"], "renamed: box.open\nunlisted: invented"],
     [["--cli-path", "history todo", "host invented"], "unlisted: history todo\nunlisted: host invented"],

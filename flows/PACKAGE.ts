@@ -60,6 +60,11 @@ const suite = Smithers.NodeTest({
     Smithers.file("//packages/backend/flowdispatch/real_host_test.go"),
     Smithers.file("//pnpm-workspace.yaml"),
     Smithers.file("//flows/rollout/refuse-unqualified.mjs"),
+    // The Appendix B catalog gate test/catalog-runtime.test.ts imports and spawns.
+    Smithers.file("//apps/app/scripts/catalog-allowlist.ts"),
+    Smithers.file("//apps/app/scripts/catalog-mvp.ts"),
+    Smithers.file("//apps/app/scripts/catalog-host.mts"),
+    Smithers.file("//apps/app/scripts/catalog-policy.mts"),
     Smithers.file("//apps/bug-worker/package.json")
   ],
   deps: [scripts],

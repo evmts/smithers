@@ -9,12 +9,12 @@ import { Effect, Layer, type Scope } from "effect"
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import * as Host from "../flows/coding/host.ts"
-import { Landing } from "../flows/coding/landing.ts"
-import { makeHostJudge } from "../flows/test/fixtures/scripted-judge.ts"
-import { assertCatalogPolicy, auditRuntimeTags, type RuntimeTag } from "./catalog-policy.ts"
+import * as Host from "../../coding/host.ts"
+import { Landing } from "../../coding/landing.ts"
+import { makeHostJudge } from "./scripted-judge.ts"
+import { assertCatalogPolicy, auditRuntimeTags, type RuntimeTag } from "../../../apps/app/scripts/catalog-policy.mts"
 
-const repository = fileURLToPath(new URL("../", import.meta.url))
+const repository = fileURLToPath(new URL("../../../", import.meta.url))
 export interface RegistryInventory {
   readonly host: "native" | "coding" | "coding-wiki"
   readonly tags: readonly RuntimeTag[]
