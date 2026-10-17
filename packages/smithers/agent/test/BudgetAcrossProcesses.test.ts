@@ -33,7 +33,7 @@ import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Registry from "@smthrs/registry/Registry"
 import { Migrations as RunStoreMigrations, type Ownership, RunStore } from "@smthrs/run-store"
-import { Effect, Layer, Option, Schema, Stream } from "effect"
+import { Clock, Effect, Layer, Option, Schema, Stream } from "effect"
 import { mkdtempSync } from "node:fs"
 import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -49,6 +49,7 @@ import * as Seat from "../src/Seat.ts"
 import * as SeatResolver from "../src/SeatResolver.ts"
 import * as Safety from "./Safety.ts"
 
+const liveClock = Effect.runSync(Clock.Clock)
 const latencyMaxMillis = 1_000
 const betweenProcessesMillis = 2_000
 /** How long the first provider call takes in the case that overruns while active. */
@@ -182,10 +183,29 @@ const controlStores = (filename: string) =>
  * One process's control plane and production executor over one pair of SQLite
  * files, composed the same way as `NodeControl`.
  */
-const host = (root: string, owner: Ownership.OwnerId, engineHost: string) => {
+const host = (root: string, owner: Ownership.OwnerId, engineHost: string, clock?: Clock.Clock) => {
+  const budget = () => {
+    const policy = { latency: { maxMillis: latencyMaxMillis } }
+    if (clock === undefined) return Budget.layer(policy)
+    // Control/engine leases keep the live clock. Only the budget's time is
+    // controlled, including the instant the host asks it to resume at.
+    const timed = <A, E, R>(effect: Effect.Effect<A, E, R>) => effect.pipe(Effect.provideService(Clock.Clock, clock))
+    return Layer.effect(Budget.Budget)(
+      Budget.make(policy).pipe(Effect.map((service): Budget.Service => ({
+        check: (key) => timed(service.check(key)),
+        reserve: (key) => timed(service.reserve(key)),
+        admitReading: (key) => timed(service.admitReading(key)),
+        record: (...args) => timed(service.record(...args)),
+        usage: timed(service.usage),
+        usageOf: (runId) => timed(service.usageOf(runId)),
+        suspend: timed(service.suspend),
+        resume: () => timed(service.resume())
+      })))
+    )
+  }
   const registration = AgentSession.layer({
     quotaPolicy: Safety.quotaPolicy,
-    budget: (_envelope) => Budget.layer({ latency: { maxMillis: latencyMaxMillis } }),
+    budget,
     flows: [],
     limits: { memoryBytes: 64 * 1024 * 1024, steps: 5_000_000 },
     maxFrames: 4
@@ -339,21 +359,26 @@ const awaitTerminalEvent = (runId: string) =>
   })
 
 /** Composition A calls the provider once, parks on the ask, and then exits completely. */
-const parkInFirstProcess = (root: string) =>
+const parkInFirstProcess = (root: string, clock?: Clock.Clock) =>
   Effect.runPromise(
     Effect.gen(function*() {
       const runId = yield* launch
       const approval = yield* askPayload(runId)
       yield* awaitParkEvent(runId)
       return { runId, approval }
-    }).pipe(Effect.provide(host(root, firstOwner, "budget-first")), Effect.scoped, Effect.orDie)
+    }).pipe(
+      Effect.provide(host(root, firstOwner, "budget-first", clock)),
+      Effect.scoped,
+      Effect.orDie
+    )
   )
 
 /** Composition B opens only after A's scope is gone, uses the same files, and approves. */
 const approveInSecondProcess = (
   root: string,
   parked: { readonly runId: string; readonly approval: ControlSchema.ApprovalPayload },
-  status: string
+  status: string,
+  clock?: Clock.Clock
 ) =>
   Effect.runPromise(
     Effect.gen(function*() {
@@ -363,7 +388,11 @@ const approveInSecondProcess = (
       const event = yield* awaitTerminalEvent(parked.runId).pipe(Effect.timeout("100 seconds"))
       const engineRow = yield* awaitEngineStatus(root, parked.runId, status)
       return { engineRow, event, run: yield* runtime.getRun(parked.runId) }
-    }).pipe(Effect.provide(host(root, secondOwner, "budget-second")), Effect.scoped, Effect.orDie)
+    }).pipe(
+      Effect.provide(host(root, secondOwner, "budget-second", clock)),
+      Effect.scoped,
+      Effect.orDie
+    )
   )
 
 /**
@@ -430,17 +459,29 @@ describe("a durable latency budget when its process exits", () => {
 
   it("excludes an ordinary approval suspension across restart from the task allowance", async () => {
     const root = makeRoot()
-    const parked = await parkInFirstProcess(root)
+    let now = Date.now()
+    // Keep real sleeps, host leases and SQLite/process scopes. The budget
+    // measures controlled wall time instead of incidental host contention.
+    const clock: Clock.Clock = {
+      sleep: (duration) => liveClock.sleep(duration),
+      monotonicTimeNanosUnsafe: () => liveClock.monotonicTimeNanosUnsafe(),
+      monotonicTimeNanos: liveClock.monotonicTimeNanos,
+      currentTimeMillisUnsafe: () => now,
+      currentTimeMillis: Effect.sync(() => now),
+      currentTimeNanosUnsafe: () => BigInt(now) * 1_000_000n,
+      currentTimeNanos: Effect.sync(() => BigInt(now) * 1_000_000n)
+    }
+    const parked = await parkInFirstProcess(root, clock)
 
     expect(modelCalls).toEqual(["budget-first"])
     const started = readBudgetStarts(root, parked.runId)
     expect(started).toHaveLength(1)
 
-    // Budget and engine clocks use real wall time. No TestClock participates.
-    // The park alone outlasts the whole allowance.
-    await new Promise((resolve) => setTimeout(resolve, betweenProcessesMillis))
+    // The park alone outlasts the unchanged allowance; active work costs zero.
+    now += betweenProcessesMillis
+    expect(now - started[0]!.startedAt).toBeGreaterThan(latencyMaxMillis)
 
-    const settled = await approveInSecondProcess(root, parked, "completed")
+    const settled = await approveInSecondProcess(root, parked, "completed", clock)
 
     expect(settled.event).toBe("control.run.completed")
     expect(settled.run.status).toBe("completed")
