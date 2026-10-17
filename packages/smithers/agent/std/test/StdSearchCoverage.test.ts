@@ -1,3 +1,4 @@
+import * as NodePath from "@effect/platform-node/NodePath"
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import * as Path from "@smthrs/kernel/Path"
@@ -555,6 +556,7 @@ describe("search wrapper boundaries", () => {
     const result = await Effect.runPromise(
       Ls.run({ path: "/search", offset: 2, limit: 1 }).pipe(
         Effect.provideService(FileSystem.FileSystem, fs),
+        Effect.provide(NodePath.layerPosix),
         Effect.provide(NodeServices.layer)
       )
     )

@@ -16,7 +16,7 @@ const path = Rooted.path(
   Effect.runSync(
     Effect.gen(function*() {
       return yield* Path.Path
-    }).pipe(Effect.provide(NodePath.layer))
+    }).pipe(Effect.provide(NodePath.layerPosix))
   ),
   "/w"
 )
