@@ -523,6 +523,10 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	poolStatsCtx, poolStatsCancel := context.WithCancel(ctx)
 	defer poolStatsCancel()
 	database.StartPoolStatsCollector(poolStatsCtx, pool, smithersMetrics, 15*time.Second)
+	// Active over max says the pool is full; these say whether anything is
+	// waiting on it, which is the difference between a duty parked in an
+	// acquire and a pool that is merely occupied and refusing.
+	smithersMetrics.MustRegister(database.PoolMetricsCollectors(pool)...)
 
 	if options.RehearsalDaemon != "" {
 		if options.topology.hosted() {
@@ -2742,7 +2746,8 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		})
 	}
 	if options.topology.workers() && len(publicMirrors) > 0 {
-		publicMirrorSeeder := services.NewPublicMirrorSeeder(pool, orgService, repoService, gitHubMainPullService, publicMirrors)
+		publicMirrorSeeder := services.NewPublicMirrorSeeder(pool, orgService, repoService, gitHubMainPullService, publicMirrors,
+			services.WithPublicMirrorSeedCorePoolObserver(smithersMetrics))
 		launchWorker(func() { publicMirrorSeeder.Start(workerCtx) })
 	}
 	if options.topology.workers() {

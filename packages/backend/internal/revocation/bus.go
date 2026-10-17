@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -19,6 +20,28 @@ const (
 	defaultRetention    = 24 * time.Hour
 	catchUpBatch        = 500
 	reconnectBackoff    = time.Second
+	// catchUpReadBound is how long ONE catch-up read may take, and it exists
+	// because this bus is a core-pool duty that holds a connection while it
+	// reaches for a SECOND one from the same pool.
+	//
+	// serve() holds the LISTEN connection for the whole process lifetime, and
+	// every catchUp read inside it goes through b.lister, which compose builds
+	// over the SAME pgxpool (db.New(pool)) — so a catch-up read is a nested
+	// acquire made underneath a held connection, taken once per poll interval,
+	// i.e. once a second. pgxpool.Acquire waits until its context is done and
+	// the context here was the process's, which makes a saturated pool an
+	// ABSORBING state rather than a slow one: the bus parks inside the read,
+	// keeps holding its LISTEN connection, and stops calling
+	// WaitForNotification at all, so a revocation published during that window
+	// is never fanned out. That is the hazard the real-PG case in
+	// core_pool_nested_catch_up_pg_test.go arranges and measures at MaxConns 4;
+	// it is not a claim about which owner filled any production pool.
+	//
+	// With the bound the read refuses, the LISTEN connection stays held and
+	// live, the refusal is counted, and the next poll re-drives from the same
+	// cursor: catch-up is already idempotent and advances the cursor only from
+	// rows it actually read, so a refused read loses no event.
+	catchUpReadBound = 10 * time.Second
 )
 
 // ErrBusStopped means a single-use bus cannot start again after its listener exits.
@@ -96,6 +119,17 @@ type Bus struct {
 	PollInterval time.Duration
 	// Retention bounds the in-memory recently-revoked sets. Zero means 24h.
 	Retention time.Duration
+	// catchUpBound overrides catchUpReadBound. It exists so a regression can
+	// state the bound it is proving instead of waiting out the shipped one;
+	// production leaves it zero.
+	catchUpBound time.Duration
+
+	// nestedReads counts catch-up reads IN FLIGHT right now, while this bus
+	// holds its LISTEN connection. An in-flight read is either using a second
+	// pooled connection or still waiting for one, and this counter does not
+	// separate those, so it is not a connection count. It is scraped, so it is
+	// an atomic rather than a field under b.mu.
+	nestedReads atomic.Int64
 
 	mu              sync.Mutex
 	cursor          int64
@@ -243,6 +277,15 @@ func (b *Bus) pollInterval() time.Duration {
 	return defaultPollInterval
 }
 
+// catchUpReadTimeout is the bound one catch-up read runs under while this bus
+// holds its LISTEN connection. See catchUpReadBound.
+func (b *Bus) catchUpReadTimeout() time.Duration {
+	if b.catchUpBound > 0 {
+		return b.catchUpBound
+	}
+	return catchUpReadBound
+}
+
 func (b *Bus) retention() time.Duration {
 	if b.Retention > 0 {
 		return b.Retention
@@ -350,9 +393,25 @@ func (b *Bus) catchUp(ctx context.Context) {
 		b.mu.Lock()
 		after := b.cursor
 		b.mu.Unlock()
-		rows, err := b.lister.ListRevocationEventsAfter(ctx, db.ListRevocationEventsAfterParams{AfterID: after, LimitCount: catchUpBatch})
+		readCtx, cancelRead := context.WithTimeout(ctx, b.catchUpReadTimeout())
+		b.nestedReads.Add(1)
+		rows, err := b.lister.ListRevocationEventsAfter(readCtx, db.ListRevocationEventsAfterParams{AfterID: after, LimitCount: catchUpBatch})
+		b.nestedReads.Add(-1)
+		refused := readCtx.Err() != nil && ctx.Err() == nil
+		cancelRead()
 		if err != nil {
-			if ctx.Err() == nil {
+			switch {
+			case ctx.Err() != nil:
+				// The bus itself is shutting down.
+			case refused:
+				// This read's own bound expired. Why it could not finish in
+				// time is not established here — a full pool, a slow query,
+				// the network and IO all arrive as this. What matters for the
+				// resident is that the LISTEN connection is still held and
+				// still live, and the next poll re-drives the same cursor.
+				b.metrics.catchUpRefusals.Inc()
+				slog.Warn("revocation bus: catch-up read hit its own read bound while the LISTEN connection was held", "after", after)
+			default:
 				b.metrics.catchUpErrors.Inc()
 				slog.Warn("revocation bus: catch-up read failed", "after", after, "error", err)
 			}

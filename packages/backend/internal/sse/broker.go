@@ -127,7 +127,16 @@ type Broker struct {
 	// dispatching reports whether Start launched the dispatch goroutine, i.e.
 	// whether anything actually owns the shared connection.
 	dispatching atomic.Bool
-	once        sync.Once
+	// holdsPooledConn reports whether the shared connection is a pooled
+	// connection this broker is holding RIGHT NOW. It exists to be scraped: a
+	// process whose pool reads full needs to know which of its own
+	// process-lifetime residents is in there, and this broker is one of them
+	// in every composition, including a workers-only process that serves no
+	// SSE client at all. It is an atomic rather than a read of b.conn under
+	// b.mu because b.mu is held across network operations (see
+	// unlistenIfIdleLocked) and a scrape must never wait on one.
+	holdsPooledConn atomic.Bool
+	once            sync.Once
 }
 
 type brokerControl struct {
@@ -180,6 +189,7 @@ func (b *Broker) Start(ctx context.Context) error {
 		return fmt.Errorf("sse broker: acquire connection: %w", err)
 	}
 	b.conn = conn
+	b.holdsPooledConn.Store(true)
 	// Set BEFORE launching dispatch so a Stop racing Start still observes that a
 	// goroutine owns the connection and waits for it (see Stop).
 	b.dispatching.Store(true)
@@ -230,6 +240,7 @@ func (b *Broker) Stop() {
 				b.conn.release()
 			}
 			b.conn = nil
+			b.holdsPooledConn.Store(false)
 		}
 		for _, subs := range b.subscribers {
 			for _, s := range subs {
@@ -729,6 +740,7 @@ func (b *Broker) recoverConnection(ctx context.Context) bool {
 	b.mu.Unlock()
 	if dead != nil {
 		dead.release()
+		b.holdsPooledConn.Store(false)
 	}
 
 	backoff := time.Second
@@ -827,6 +839,7 @@ func (b *Broker) relisten(conn brokerNotifier) bool {
 	// pass connected() and queue on control, which the dispatch loop resumes
 	// draining as soon as this returns.
 	b.conn = conn
+	b.holdsPooledConn.Store(true)
 	b.mu.Unlock()
 
 	for _, ch := range channels {
@@ -836,6 +849,7 @@ func (b *Broker) relisten(conn brokerNotifier) bool {
 			b.conn = nil
 			b.mu.Unlock()
 			conn.release()
+			b.holdsPooledConn.Store(false)
 			return false
 		}
 		b.mu.Lock()
@@ -906,5 +920,23 @@ func (b *Broker) MetricsCollectors() []prometheus.Collector {
 		b.slowDisconnects, b.relistens, b.rejections,
 		prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "smithers_sse_broker_subscriptions", Help: "Live broker subscriptions."}, func() float64 { return float64(b.ActiveConnections()) }),
 		prometheus.NewGaugeFunc(prometheus.GaugeOpts{Name: "smithers_sse_broker_channels", Help: "Channels currently tracked by the broker LISTEN set."}, func() float64 { return float64(b.channelCount.Load()) }),
+		// WHICH process-lifetime resident is in a full pool. The broker is
+		// started in every composition, before any topology branch, and holds
+		// this one connection from Start to Stop — including in a workers-only
+		// process, which serves no HTTP and therefore has no subscriber for it
+		// to fan out to. A pool that reads full needs that connection
+		// attributed by role, because no duty gauge owns it and subtracting an
+		// assumed resident count instead would be inventing a number.
+		prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "smithers_sse_broker_pooled_connections_held",
+			Help: "Core-pool connections this broker is holding right now: one shared LISTEN connection from Start to Stop, zero while reconnecting.",
+		}, func() float64 { return boolGauge(b.holdsPooledConn.Load()) }),
 	}
+}
+
+func boolGauge(held bool) float64 {
+	if held {
+		return 1
+	}
+	return 0
 }

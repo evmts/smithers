@@ -91,6 +91,14 @@ const (
 	// write acquires from the same pool. This is the second hold the closed
 	// aggregate named, by its own ShareLock namespace.
 	corePoolDutyRepositoryOwnershipGuard corePoolDuty = "repository_ownership_guard"
+	// public_mirror_seed: one mirror's seed pass, holding its core-pool
+	// connection and the mirror's SESSION-level advisory lock while the
+	// service-account, organization, repository, source and pull reads it
+	// makes acquire from the same pool. It is worker-only, every replica runs
+	// it, and the lock it takes is the blocking pg_advisory_lock rather than a
+	// try: two replicas seeding one mirror means one holder and one waiter,
+	// each holding a core-pool connection.
+	corePoolDutyPublicMirrorSeed corePoolDuty = "public_mirror_seed"
 )
 
 // corePoolStage is the closed set of places a bound can refuse. A stage names
@@ -143,6 +151,14 @@ const (
 	// admitted and this one aged out waiting for a slot. Distinct from
 	// pool_headroom: the gate was full, not the pool.
 	corePoolStageAwaitClaimSlot corePoolStage = "await_claim_slot"
+	// session_lock: a SESSION-level advisory lock a duty waits for on the
+	// connection it already holds. Distinct from claim_lock, which is a
+	// transaction-scoped lock inside a transaction, and distinct from
+	// acquire_connection, which is the pool: a refusal here means another
+	// session holds the lock, so the duty held a connection while waiting for
+	// a holder that owes it nothing. It asks the pool for nothing, so it is
+	// never an exhausted pool.
+	corePoolStageSessionLock corePoolStage = "session_lock"
 )
 
 // CorePoolDutyObserver publishes which serving background duty is holding a
