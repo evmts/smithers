@@ -1052,6 +1052,11 @@ export default Flow.make("pinned", { description:"Retained", payload:{}, success
       const executable = yield* Executable.fromDescriptor(approved, options({ sourceRoot: { identity, workspace } }))
       expect(executable.descriptor).toBe(approved)
       expect(Descriptor.executionDigest(executable.descriptor)).toBe(digest)
+      const sites = Graph.nodes(Graph.build(executable.flow, { input: {} })).flatMap((node) =>
+        node.declaredAt === undefined ? [] : [node.declaredAt.path]
+      )
+      expect(sites).toContain(`${identity}/.smithers/flows/pinned/flow.ts`)
+      expect(sites.some((site) => site.startsWith(workspace))).toBe(false)
       yield* fs.writeFileString(`${workspace}/pnpm-lock.yaml`, "lockfileVersion: 'changed'\n")
       expect(
         (yield* Effect.flip(Executable.fromDescriptor(approved, options({ sourceRoot: { identity, workspace } })))).code

@@ -604,7 +604,8 @@ const importModule = (
     readonly bytes: Uint8Array
     readonly contentDigest: string
     readonly modules: ReadonlyMap<string, ClosureModule>
-  }
+  },
+  sourceRoot?: Options["sourceRoot"]
 ): Effect.Effect<unknown, unknown, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
@@ -648,7 +649,13 @@ const importModule = (
       // Said before the import, because a declaration captures its site while
       // the module is evaluated: without it every node of this flow would name
       // a scratch file removed when the load settles (D-068).
-      Graph.evaluatedFrom(sibling, original)
+      // The retained directory supplies bytes, while the approved identity
+      // supplies declaration sites. A fork must re-record the same provenance.
+      const declaredPath = sourceRoot === undefined ? original : platformPath.resolve(
+        sourceRoot.identity,
+        platformPath.relative(sourceRoot.workspace, original)
+      )
+      Graph.evaluatedFrom(sibling, declaredPath)
     }
     return yield* Effect.tryPromise({
       try: () => import(/* @vite-ignore */ fileSpecifier(siblings.get(entryPath)!)) as Promise<unknown>,
@@ -1061,7 +1068,9 @@ const loadModule = (
         message: "Retained Core object-form module cannot execute: migrate to @smthrs/flow Flow.make(tag, options)"
       }))
     }
-    const loaded = yield* (options.load ?? importModule)(loadPath, {
+    const load = options.load ??
+      ((path: string, source: Parameters<typeof importModule>[1]) => importModule(path, source, options.sourceRoot))
+    const loaded = yield* load(loadPath, {
       bytes,
       contentDigest: descriptor.body.contentDigest!,
       modules
