@@ -1130,6 +1130,10 @@ test("Conversation shell renders branch navigation, entries and Earlier", async 
   const tree = await mounted({ name: "ancestry", expect: [], render: ({ onAction, onView }) => <BranchTree nodes={[branches.main.model]} view={{ selected_branch: "todo-12" }} onAction={onAction} onView={onView} /> })
   try {
     expect([...tree.host.querySelectorAll(".tree-name")].map(node => node.textContent)).toEqual(["main", "todo/12", "scratch/repro", "Earlier · 3"])
+    const todoRow = tree.host.querySelector('[data-node="todo-12"]')!
+    expect([...todoRow.children].map(node => node.textContent?.trim())).toEqual(["todo/12", "Working", "T12", "BC"])
+    expect(todoRow.querySelector('.state [data-state="working"]')).not.toBeNull()
+    expect([...todoRow.querySelectorAll(".tree-presence .avatar")].map(node => node.getAttribute("data-kind"))).toEqual(["person", "agent"])
     expect([...tree.host.querySelectorAll("li")].map(node => node.getAttribute("data-depth"))).toEqual(["0", "1", "2", "0"])
     expect(tree.host.querySelector('[aria-current="page"]')?.textContent).toContain("todo/12")
     await act(async () => tree.host.querySelector<HTMLButtonElement>('[data-node="scratch-repro"]')!.click())

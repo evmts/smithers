@@ -7,9 +7,9 @@ import { StateWord } from "./StateWord"
 export function BranchNode({ node, selected, onAction, onView }: { node: BranchTreeNodeCard; selected?: string } & Pick<BranchTreeProps, "onAction" | "onView">) {
   const action = node.action
   const navigate = () => onView({ selected_branch: node.id })
-  const content = <>{node.state ? <StateWord state={node.state} /> : <GitBranch size={14} aria-hidden="true" />}{node.todo ? <span>T{node.todo}
-    </span> : null}<span className="tree-name">{node.kind === "earlier" ? node.archive_count === undefined ? "Earlier" : `Earlier · ${node.archive_count}` : node.name}
-    </span>
+  const content = <><span className="tree-name">{node.kind === "earlier" ? node.archive_count === undefined ? "Earlier" : `Earlier · ${node.archive_count}` : node.name}
+    </span>{node.state ? <StateWord state={node.state} /> : <GitBranch size={14} aria-hidden="true" />}{node.todo ? <span>T{node.todo}
+    </span> : null}
     <span className="tree-presence">{node.present.map((actor, index) => <ActorChip key={index} actor={actor} size="s" live />)}
     </span>
     </>
