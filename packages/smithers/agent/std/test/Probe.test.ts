@@ -233,19 +233,24 @@ describe("real shell exit attribution", () => {
 
   it.each([
     ["missing", 127],
-    ["non-executable", 126]
+    ["non-executable", 126],
+    ["invalid executable", 126]
   ])("asks for attribution on a real %s program", async (kind, code) => {
     const dir = mkdtempSync(join(tmpdir(), "probe-exit-"))
     try {
       const file = join(dir, "command")
-      if (kind === "non-executable") {
-        writeFileSync(file, "#!/bin/sh\nexit 0\n")
-        chmodSync(file, 0o644)
+      if (kind !== "missing") {
+        // Windows does not enforce POSIX execute bits. Binary data is also
+        // refused there, rather than being interpreted as a shell script.
+        writeFileSync(file, new Uint8Array([0, 1, 2, 3]))
+        chmodSync(file, kind === "invalid executable" ? 0o755 : 0o644)
       }
       const command = `"${file}"`
       const run = spawnSync("sh", ["-c", command], { encoding: "utf8" })
       expect(run.status).toBe(code)
-      expect(run.stderr).toMatch(/not found|No such file or directory|Permission denied/)
+      expect(run.stderr).toMatch(
+        /not found|No such file or directory|Permission denied|cannot execute|Exec format error/
+      )
       const observed: Array<unknown> = []
       const judge = Evaluator.layerScripted((request) => {
         observed.push(request.state)
