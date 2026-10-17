@@ -55,10 +55,12 @@ export const FlowCard = ({ model: source, allowed, dispatch, View = FlowView, vi
  */
 export const WorkflowListCardBody = ({
   card,
-  onRunCommand: sendRunCommand
+  onRunCommand: sendRunCommand,
+  diagnostic
 }: {
   readonly card: Extract<Card, { kind: "workflow-list" }>
   readonly onRunCommand: RunCommand
+  readonly diagnostic?: string
 }) => {
   const onRunCommand = runSourceCommand(card.id, sendRunCommand)
   const { workflows, issueContext, research, repo } = card.payload
@@ -66,6 +68,7 @@ export const WorkflowListCardBody = ({
   if (card.payload.catalogRequest?.state === "failed") return <div role="alert"><p>{card.body}</p><Button size="sm" {...flowAction(onRunCommand, "flows")}>Retry</Button></div>
   return (
     <div>
+      {diagnostic ? <p role="status" className="smithers-card-note">{diagnostic}</p> : null}
       {issueContext ? <p className="smithers-card-note">Issue #{issueContext.number} · {issueContext.title}</p> : null}
       {workflows.length === 0 ? <p className="smithers-card-note">No flows yet</p> : null}
       <ul className="workflow-list">
@@ -89,9 +92,16 @@ export const WorkflowListCardBody = ({
   )
 }
 
+const WorkflowCatalogBody = (props: Parameters<typeof WorkflowListCardBody>[0]) => {
+  const controller = useController()
+  const catalog = controller.flowCatalog ?? noCatalog
+  const served = useSyncExternalStore(catalog.subscribe, catalog.get, catalog.get)
+  return <WorkflowListCardBody {...props} diagnostic={served.diagnostic} />
+}
+
 export const workflowCardFamily: CardFamily<"workflow-list"> = {
   "workflow-list": {
-    render: (card, actions) => <WorkflowListCardBody card={card} onRunCommand={actions.onRunCommand} />,
+    render: (card, actions) => <WorkflowCatalogBody card={card} onRunCommand={actions.onRunCommand} />,
     pill: settledPill
   }
 }

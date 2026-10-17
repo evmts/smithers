@@ -53,10 +53,13 @@ func (h *FlowsHandler) List(w http.ResponseWriter, r *http.Request) {
 		todoRouteError(w, err)
 		return
 	}
-	cards, err := h.catalog(r)
+	cards, diagnostic, err := h.catalog(r)
 	if err != nil {
 		todoRouteError(w, &services.TodoControlError{Status: http.StatusServiceUnavailable, Code: "flows_unavailable", Class: "infra", Message: "Flows unavailable"})
 		return
+	}
+	if diagnostic != "" {
+		w.Header().Set("X-Smithers-Flow-Diagnostic", diagnostic)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
@@ -73,7 +76,7 @@ func (h *FlowsHandler) Show(w http.ResponseWriter, r *http.Request) {
 		todoRouteError(w, err)
 		return
 	}
-	cards, err := h.catalog(r)
+	cards, _, err := h.catalog(r)
 	if err != nil {
 		todoRouteError(w, &services.TodoControlError{Status: 503, Class: "infra", Code: "flows_unavailable", Message: "Flows unavailable"})
 		return
@@ -104,15 +107,21 @@ func (h *FlowsHandler) Show(w http.ResponseWriter, r *http.Request) {
 
 // catalog is the install repository's catalog (its loaded versions), or the
 // built-in catalog while setup has bound no repository.
-func (h *FlowsHandler) catalog(r *http.Request) ([]services.FlowCard, error) {
+func (h *FlowsHandler) catalog(r *http.Request) ([]services.FlowCard, string, error) {
 	repositoryID, err := h.Queries.InstallRepositoryID(r.Context())
 	if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, db.ErrInstallRepositoryUnavailable) {
-		return services.FlowCatalog()
+		cards, err := services.FlowCatalog()
+		return cards, "", err
 	}
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return services.RepositoryFlowCatalog(r.Context(), h.Queries, repositoryID, h.Proposals)
+	cards, err := services.RepositoryFlowCatalog(r.Context(), h.Queries, repositoryID, h.Proposals)
+	if err != nil {
+		return nil, "", err
+	}
+	diagnostic, err := services.RepositoryFlowDiagnostic(r.Context(), h.Queries, repositoryID)
+	return cards, diagnostic, err
 }
 
 func (h *FlowsHandler) Edit(w http.ResponseWriter, r *http.Request) {

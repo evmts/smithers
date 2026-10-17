@@ -111,6 +111,7 @@ func TestInstallFlowCatalogShowsReservedDeclarationRefusal(t *testing.T) {
 	server.Config.Handler = router
 	server.Start()
 	t.Cleanup(server.Close)
+	var diagnostic string
 	read := func() []services.FlowCard {
 		request := httptest.NewRequest(http.MethodGet, cfg.Server.PublicURL+"/api/flows", nil)
 		request.RemoteAddr = "127.0.0.1:51999"
@@ -118,6 +119,7 @@ func TestInstallFlowCatalogShowsReservedDeclarationRefusal(t *testing.T) {
 		response := httptest.NewRecorder()
 		router.ServeHTTP(response, request)
 		require.Equal(t, 200, response.Code, response.Body.String())
+		diagnostic = response.Header().Get("X-Smithers-Flow-Diagnostic")
 		var cards []services.FlowCard
 		require.NoError(t, json.Unmarshal(response.Body.Bytes(), &cards))
 		return cards
@@ -138,6 +140,20 @@ func TestInstallFlowCatalogShowsReservedDeclarationRefusal(t *testing.T) {
 		require.NoError(t, json.Unmarshal(response.Body.Bytes(), &card))
 		require.Equal(t, name, card.Name)
 		require.Equal(t, name == "merge", card.System)
+	}
+	const rootMessage = "Flows in flows/ are not loaded; move them to .smithers/flows/."
+	for _, tree := range []string{`{"flows/old/flow.ts":"digest","flows/other/flow.ts":"digest"}`, `{".smithers/flows/old/flow.ts":"digest"}`} {
+		load.CommitTree = json.RawMessage(tree)
+		load, err = q.SaveFlowLoad(ctx, load)
+		require.NoError(t, err)
+		read()
+		if strings.Contains(tree, `"flows/`) {
+			require.Equal(t, rootMessage, diagnostic)
+			read() // persisted across catalog reloads
+			require.Equal(t, rootMessage, diagnostic)
+		} else {
+			require.Empty(t, diagnostic, "moving root flows clears the notice")
+		}
 	}
 	cards := read()
 	var refused, custom, builtin bool

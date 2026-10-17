@@ -156,3 +156,24 @@ test("Edit dispatch is bound only while the selected version is Active", () => {
     expect(calls).toEqual(active ? [{ tag: "flow.edit", input: { name: "todo" } }] : [])
   }
 })
+
+import { createFlowsSeam } from "../state/seams/FlowsSeam"
+
+test("the rendered catalog shows one persisted root-flow notice and clears it on reload", async () => {
+  const message = "Flows in flows/ are not loaded; move them to .smithers/flows/."
+  let retired = true
+  const seam = createFlowsSeam({ http: async () => Response.json([], { headers: retired ? { "X-Smithers-Flow-Diagnostic": message } : {} }) })
+  const card: Extract<Card, { kind: "workflow-list" }> = {
+    id: "flows", kind: "workflow-list", title: "Flows", status: "active", createdAt: 1, ordinal: 1,
+    payload: { repo: "owner/repo", workflows: [] }
+  }
+  const render = () => renderToStaticMarkup(<WorkflowListCardBody card={card} diagnostic={seam.snapshots.get().diagnostic} onRunCommand={() => {}} />)
+  for (let reload = 0; reload < 2; reload++) {
+    await seam.read()
+    expect(render().split(message)).toHaveLength(2)
+  }
+  retired = false
+  await seam.read()
+  expect(render()).not.toContain(message)
+  seam.dispose()
+})

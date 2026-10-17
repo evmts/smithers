@@ -193,6 +193,23 @@ func ActiveFlowDigest(ctx context.Context, q *db.Queries, repositoryID int64, na
 	return "", fmt.Errorf("flow %q has no Active version", name)
 }
 
+// RepositoryFlowDiagnostic projects the latest persisted main tree, including
+// a load still running. Moving the files clears the notice on the next load.
+func RepositoryFlowDiagnostic(ctx context.Context, q *db.Queries, repositoryID int64) (string, error) {
+	load, err := q.GetFlowLoad(ctx, repositoryID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	var tree map[string]string
+	if err := json.Unmarshal(load.CommitTree, &tree); err != nil {
+		return "", err
+	}
+	return rootFlowsDiagnostic(tree), nil
+}
+
 // RepositoryFlowCatalog is GET /api/flows for one repository (§6.3, §4.3):
 // each overridable flow with its Active version, the version it replaced
 // (previous), a merged version not yet loaded (merged-syncing) and a merged

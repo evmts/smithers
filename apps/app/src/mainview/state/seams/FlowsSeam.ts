@@ -3,7 +3,7 @@ import { z } from "zod"
 import type { LiveChannel } from "../../runtime/LiveChannel"
 
 /** The install's flow catalog (GET /api/flows, T-APP-05). A failed read keeps the last catalog and says so. */
-export interface FlowsSnapshot { readonly flows?: ReadonlyArray<FlowCard>; readonly error?: string }
+export interface FlowsSnapshot { readonly flows?: ReadonlyArray<FlowCard>; readonly error?: string; readonly diagnostic?: string }
 export interface FlowsSnapshots {
   readonly get: () => FlowsSnapshot
   readonly subscribe: (listener: () => void, name?: string) => () => void
@@ -43,7 +43,7 @@ export function createFlowsSeam(options: {
       if (disposed || revision !== generation) return undefined
       const resolved = named.filter((card): card is FlowCard => card !== undefined)
       const retained = snapshot.flows?.filter(card => card.system && !requested.has(card.name) && !parsed.data.some(row => row.name === card.name)) ?? []
-      publish({ flows: [...parsed.data, ...resolved, ...retained] })
+      publish({ flows: [...parsed.data, ...resolved, ...retained], diagnostic: response.headers.get("X-Smithers-Flow-Diagnostic") ?? undefined })
       return name === undefined ? parsed.data : [...parsed.data, ...resolved.filter(card => card.name === name)]
     } catch {
       if (!disposed && revision === generation) publish({ ...snapshot, error: flowsUnavailable })
