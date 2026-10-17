@@ -918,6 +918,19 @@ describe("ModuleMetadata", () => {
     })
   })
 
+  it.each(["limits", "{ ...limits, tokens: 100 }", "{ [key]: 100 }"])(
+    "refuses an unprojectable budget (%s) without evaluating it",
+    (budget) => {
+      const metadata = ModuleMetadata.parse(`export default Flow.make("review", {
+        description: "Reviews a change.", budget: ${budget}
+      })`)
+      expect(metadata.budget).toBeUndefined()
+      expect(metadata.warnings).toContainEqual({
+        message: "Budget must be a statically projectable object literal; ignoring it"
+      })
+    }
+  )
+
   it("reads a fully declared effect envelope, including nested members", () => {
     const metadata = ModuleMetadata.parse([
       "export default ({",
