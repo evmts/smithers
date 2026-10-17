@@ -1510,10 +1510,10 @@ import { unifiedPatch } from "../DiffSurface"
 import { fixtures as diffs } from "@smthrs/rpc/fixtures/Diff"
 // T-UI-11 Changes: literal file headers, context/removal/addition counts, zero ranges.
 test("Diff supplied hunks serialize exact modified, added, deleted and renamed patches", () => {
-  expect(unifiedPatch(diffs.item_base.model)).toBe('diff --git a/flows/todo/flow.ts b/flows/todo/flow.ts\n--- a/flows/todo/flow.ts\n+++ b/flows/todo/flow.ts\n@@ -2,2 +2,2 @@\n export default Flow.make("todo", {\n-  description: "Build",\n+  description: "Complete one TODO",\n')
-  expect(unifiedPatch(diffs.fork.model)).toBe('diff --git a/flows/todo/flow.ts b/flows/todo/flow.ts\n--- /dev/null\n+++ b/flows/todo/flow.ts\n@@ -0,0 +1,1 @@\n+export const repro = true\n')
-  expect(unifiedPatch(diffs.deleted.model)).toBe('diff --git a/flows/todo/flow.ts b/flows/todo/flow.ts\n--- a/flows/todo/flow.ts\n+++ /dev/null\n@@ -1,1 +0,0 @@\n-export const legacy = true\n')
-  expect(unifiedPatch(diffs.renamed.model)).toBe('diff --git a/flows/todo/flow.ts b/flows/todo-next/flow.ts\nrename from flows/todo/flow.ts\nrename to flows/todo-next/flow.ts\n--- a/flows/todo/flow.ts\n+++ b/flows/todo-next/flow.ts\n')
+  expect(unifiedPatch(diffs.item_base.model)).toBe('diff --git a/.smithers/flows/todo/flow.ts b/.smithers/flows/todo/flow.ts\n--- a/.smithers/flows/todo/flow.ts\n+++ b/.smithers/flows/todo/flow.ts\n@@ -2,2 +2,2 @@\n export default Flow.make("todo", {\n-  description: "Build",\n+  description: "Complete one TODO",\n')
+  expect(unifiedPatch(diffs.fork.model)).toBe('diff --git a/.smithers/flows/todo/flow.ts b/.smithers/flows/todo/flow.ts\n--- /dev/null\n+++ b/.smithers/flows/todo/flow.ts\n@@ -0,0 +1,1 @@\n+export const repro = true\n')
+  expect(unifiedPatch(diffs.deleted.model)).toBe('diff --git a/.smithers/flows/todo/flow.ts b/.smithers/flows/todo/flow.ts\n--- a/.smithers/flows/todo/flow.ts\n+++ /dev/null\n@@ -1,1 +0,0 @@\n-export const legacy = true\n')
+  expect(unifiedPatch(diffs.renamed.model)).toBe('diff --git a/.smithers/flows/todo/flow.ts b/.smithers/flows/todo-next/flow.ts\nrename from .smithers/flows/todo/flow.ts\nrename to .smithers/flows/todo-next/flow.ts\n--- a/.smithers/flows/todo/flow.ts\n+++ b/.smithers/flows/todo-next/flow.ts\n')
   expect(unifiedPatch({ ...diffs.item_base.model, path: 'x.ts', hunks: [{ old_start: 0, new_start: 1, lines: [{ op: '+', text: 'one' }] }, { old_start: 4, new_start: 5, lines: [{ op: ' ', text: 'same' }, { op: '-', text: 'old' }] }] })).toBe('diff --git a/x.ts b/x.ts\n--- a/x.ts\n+++ b/x.ts\n@@ -0,0 +1,1 @@\n+one\n@@ -4,2 +5,1 @@\n same\n-old\n')
 })
 import { DiffCardSurface } from "../DiffSurface"
@@ -1521,7 +1521,7 @@ test("Diff Restore binds the supplied burst; removing it leaves no control", () 
   const calls: unknown[] = []
   const host = render(<DiffCardSurface {...diffs.burst} onAction={(...args) => calls.push(args)} onView={() => {}} />)
   act(() => host.querySelector<HTMLButtonElement>('button[data-flow="file.restore"]')!.click())
-  expect(calls).toEqual([["file.restore", { path: "flows/todo/flow.ts", revision: "burst-17" }]])
+  expect(calls).toEqual([["file.restore", { path: ".smithers/flows/todo/flow.ts", revision: "burst-17" }]])
   act(() => root!.render(<DiffCardSurface {...diffs.burst} actions={[]} onAction={() => {}} onView={() => {}} />))
   expect(host.querySelector('button')).toBeNull()
 })
@@ -1852,7 +1852,7 @@ test("Branch actions retain burst identities, forms, omissions and supplied orde
     expect(onAction.mock.calls).toEqual([["diff", { branch: "todo/12", burst: "burst-6" }]])
     onAction.mockClear()
     await act(async () => host.querySelector<HTMLButtonElement>('.branch-location button[data-flow="file"]')!.click())
-    expect(onAction.mock.calls).toEqual([["file", { branch: "todo/12", path: "flows/todo/flow.ts", line: "12" }]])
+    expect(onAction.mock.calls).toEqual([["file", { branch: "todo/12", path: ".smithers/flows/todo/flow.ts", line: "12" }]])
     onAction.mockClear()
     await act(async () => host.querySelector<HTMLButtonElement>('.branch-muted button[data-flow="terminal.watch"]')!.click())
     expect(onAction.mock.calls).toEqual([["terminal.watch", { id: "terminal-2" }]])
@@ -1867,14 +1867,14 @@ test("Branch actions retain burst identities, forms, omissions and supplied orde
     expect(onView).toHaveBeenCalledTimes(0)
     await act(async () => root.render(<BranchView {...branchFixtures.active} actions={[]} gestures={{}} model={{ ...branchFixtures.active.model, activity: [] }} onAction={onAction} onView={onView} />))
     expect(host.querySelectorAll("button[data-flow]")).toHaveLength(0)
-    expect(host.textContent).toContain("flows/todo/flow.ts:12")
+    expect(host.textContent).toContain(".smithers/flows/todo/flow.ts:12")
     expect(host.textContent).toContain("watching Implement")
     await act(async () => root.render(<BranchView {...branchFixtures.active} view={{ maximized: false, tab: "terminals" }} onAction={onAction} onView={onView} />))
     expect(host.textContent).toContain("pnpm check")
     expect(host.textContent).toContain("Rebasing…")
     expect(host.querySelectorAll(".branch-watchers .avatar")).toHaveLength(2)
     await act(async () => root.render(<BranchView {...branchFixtures.active} view={{ maximized: false, tab: "files" }} onAction={onAction} onView={onView} />))
-    expect(host.textContent).toContain("flows/todo/prompt.md → flows/todo/instructions/implementer.md")
+    expect(host.textContent).toContain(".smithers/flows/todo/prompt.md → .smithers/flows/todo/instructions/implementer.md")
     expect(host.querySelectorAll(".branch-list .avatar")).toHaveLength(6)
   } finally { await act(async () => root.unmount()); host.remove() }
 })
@@ -2046,18 +2046,18 @@ test("File live notices, snapshot and Compare use supplied data", async () => {
     expect(host.querySelector(".code-snapshot-cap")!.textContent).toBe("Snapshot")
     expect(host.querySelector(".cm-content")!.textContent).toContain("Complete one TODO")
     await act(async () => host.querySelector<HTMLButtonElement>("button[data-flow]")!.click())
-    expect(onAction.mock.calls).toEqual([["file.restore-deleted", { path: "flows/todo/flow.ts" }]])
+    expect(onAction.mock.calls).toEqual([["file.restore-deleted", { path: ".smithers/flows/todo/flow.ts" }]])
     await render(liveFileFixtures.renamed)
     expect(host.querySelector(".code-file-notice > span")!.textContent).toBe("Renamed to flow.ts by Ben")
-    expect(host.querySelector(".code-file-notice code")!.getAttribute("title")).toBe("flows/todo-next/flow.ts")
+    expect(host.querySelector(".code-file-notice code")!.getAttribute("title")).toBe(".smithers/flows/todo-next/flow.ts")
     await act(async () => host.querySelector<HTMLButtonElement>("button[data-flow]")!.click())
-    expect(onAction.mock.calls[1]).toEqual(["file.follow-rename", { path: "flows/todo/flow.ts" }])
+    expect(onAction.mock.calls[1]).toEqual(["file.follow-rename", { path: ".smithers/flows/todo/flow.ts" }])
     await render(liveFileFixtures.comparing)
     expect(host.querySelector('.code-notice[data-tone="outside"] > span')!.textContent).toBe("Changed outside Smithers")
     expect(host.querySelector(".code-compare")).toBeNull()
     expect(host.querySelector(".code-snapshot-cap")).toBeNull()
     await act(async () => host.querySelector<HTMLButtonElement>("button[data-flow]")!.click())
-    expect(onAction.mock.calls[2]).toEqual(["file.compare", { path: "flows/todo/flow.ts" }])
+    expect(onAction.mock.calls[2]).toEqual(["file.compare", { path: ".smithers/flows/todo/flow.ts" }])
     await render({ ...liveFileFixtures.comparing, model: { ...liveFileFixtures.comparing.model, gone: liveFileFixtures.deleted.model.gone }, actions: [] })
     expect(host.querySelector(".code-compare")).toBeNull()
     expect(host.querySelector("button[data-flow]")).toBeNull()
@@ -2186,7 +2186,7 @@ describe("File presence review regressions", () => {
     const action = host.querySelector<HTMLButtonElement>('.code-notice [data-flow="file.reapply"]')!
     expect(action.dataset.primary).toBe("true")
     await act(async () => action.click())
-    expect(onAction.mock.calls).toEqual([["file.reapply", { path: "flows/todo/flow.ts" }]])
+    expect(onAction.mock.calls).toEqual([["file.reapply", { path: ".smithers/flows/todo/flow.ts" }]])
     const write = spyOn(navigator.clipboard, "writeText").mockRejectedValue(new Error("unavailable"))
     const exec = Object.getOwnPropertyDescriptor(document, "execCommand")
     Object.defineProperty(document, "execCommand", { configurable: true, value: () => false })
@@ -2564,7 +2564,7 @@ test("Branch copy identifies editing, running, settled questions and moved-off w
     {...callbacks} view={{ maximized: true, tab: "activity" }} /> })
   try {
     const rows = [...item.host.querySelectorAll(".branch-presence li")].map(row => row.textContent)
-    expect(rows[0]).toContain("editingflows/todo/flow.ts:12")
+    expect(rows[0]).toContain("editing.smithers/flows/todo/flow.ts:12")
     expect(rows[2]).toContain("editingpackages/rpc/src/TodoCard.ts")
     expect(rows[3]).toContain("runningChecks · pnpm check")
     expect(item.host.querySelector('[data-kind="steer"]')!.textContent).toContain("Steer · Ben")
@@ -3376,7 +3376,7 @@ describe("ActLine disclosure", () => {
 test.each([false, true])("ContextLine item and Inspect actions expanded=%s", async expanded => {
   const { ContextLine } = await import("../../ContextLine")
   const context = await mounted({ name: "context actions", expect: [], render: ({ onAction, onView }) => <ContextLine count={2} expanded={expanded}
-    items={[{ kind: "file", label: "flow.ts", ref: "flows/todo/flow.ts", revision: "abc123", action: { tag: "file", label: "Open", args: { path: "flows/todo/flow.ts" } } }, { kind: "page", label: "Decisions", ref: "decisions" }]}
+    items={[{ kind: "file", label: "flow.ts", ref: ".smithers/flows/todo/flow.ts", revision: "abc123", action: { tag: "file", label: "Open", args: { path: ".smithers/flows/todo/flow.ts" } } }, { kind: "page", label: "Decisions", ref: "decisions" }]}
     actions={[{ tag: "context.inspect", label: "Inspect" }]} onAction={onAction} onView={onView} /> })
   try {
     expect(context.host.querySelector('[data-flow="context.inspect"]') !== null).toBe(expanded)
@@ -3395,7 +3395,7 @@ test.each([false, true])("ContextLine item and Inspect actions expanded=%s", asy
       expect(inspect.querySelector("svg.lucide-maximize2")).not.toBeNull()
       await act(async () => item.click())
       await act(async () => context.host.querySelector<HTMLButtonElement>('[data-flow="context.inspect"]')!.click())
-      expect(context.onAction.mock.calls).toEqual([["file", { path: "flows/todo/flow.ts" }], ["context.inspect", {}]])
+      expect(context.onAction.mock.calls).toEqual([["file", { path: ".smithers/flows/todo/flow.ts" }], ["context.inspect", {}]])
       expect(context.onView.mock.calls).toEqual([])
     }
     await act(async () => context.host.querySelector<HTMLButtonElement>(".context-toggle")!.click())

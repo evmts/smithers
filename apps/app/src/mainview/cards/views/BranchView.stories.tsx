@@ -39,7 +39,7 @@ stories.push(
   },
   {
     name: "branch-no-actions",
-    expect: ["flows/todo/flow.ts:12", "watching Implement"],
+    expect: [".smithers/flows/todo/flow.ts:12", "watching Implement"],
     actions: [],
     render: callbacks => <BranchView {...active} {...callbacks} actions={[]} gestures={{}}
       model={{ ...active.model, activity: active.model.activity.map(entry => ({ ...entry, actions: [] })) }} />,
