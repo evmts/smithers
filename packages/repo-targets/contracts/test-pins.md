@@ -171,6 +171,17 @@ only.
 | `smithers`                    | `C-INS-06 / C-INS-03 real CLI, launchd, bundled launcher and public origin`                        | `it.skipIf(!enabled && !required)`                          |
 | `smithers/agent/harness`      | `ExternalTranscript with the installed CLIs`                                                       | `describe.skipIf(!enabled)`                                 |
 | `smithers/agent/std`          | `C-COL-01 production dispatcher ${available ? "installed batch/delete/move" : "unavailable provider"}` | `test.skipIf(available && !installed)`                      |
+| `smithers/agent`              | `runs the real OpenAI stack (requires SMITHERS_LIVE_EXAMPLES=1 and OPENAI_API_KEY)`                | `it.effect.skipIf(!liveEnabled \|\| !hasKey)`                |
+| `smithers/agent`              | `decodes each local agent answer (requires SMITHERS_LIVE_EXAMPLES=1 and Ollama qwen2.5:7b)`         | `it.skipIf(!liveEnabled)`                                   |
+| `smithers/agent`              | `isolates the deterministic suite from every ambient provider key`                                 | `it.skipIf(SMITHERS_LIVE_EXAMPLES === "1")`                 |
+
+**`agent`: the live examples.** `test/examples/12-agent-live-smoke.test.ts`
+calls OpenAI and `13-agent-live-smoke-local.test.ts` calls a local Ollama
+`qwen2.5:7b`; both run only with `SMITHERS_LIVE_EXAMPLES=1` and their
+provider. `environment.test.ts` asserts the default run sees no provider key,
+so it steps aside when that opt-in hands the keys in. What breaks if it
+regresses: the examples a user copies first could stop reaching a real model.
+Workaround: run them with `SMITHERS_LIVE_EXAMPLES=1` and the provider set up.
 
 **`smithers`: delegated laptop login (C-J6-02).** `DelegatedLogin.integration.test.ts`
 drives the source CLI against the installed composition that
