@@ -25,7 +25,7 @@
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { dirname, join, posix, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { libraryPackages } from "../../../scripts/workspace-packages.mjs"
+import { libraryPackages } from "../../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 /** Package roots whose relative documentation links can be resolved. */
 const packageDirs = new Set(libraryPackages().map(({ dir }) => dir))

@@ -2,7 +2,7 @@
 import { execFileSync } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
-import { isMain, repoRoot } from "../../scripts/workspace-packages.mjs"
+import { isMain, repoRoot } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 export const changedPaths = (root, base) => [...new Set([
   ...execFileSync("git", ["diff", "--name-only", "-z", base], { cwd: root }).toString().split("\0"),

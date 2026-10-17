@@ -8,7 +8,7 @@ import { join, resolve } from "node:path"
 import { candidateIntegrity, verifyLocalCandidate } from "./publish-release.mjs"
 import { captureProcess } from "./release-process.mjs"
 import { releaseRegistry } from "./release-registry.mjs"
-import { isMain } from "../../scripts/workspace-packages.mjs"
+import { isMain } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 const issuer = "https://token.actions.githubusercontent.com"
 const workflow = "smithersai/smithers/.github/workflows/release.yml"

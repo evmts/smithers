@@ -53,7 +53,7 @@ const thirdPartyNotices = Smithers.NodeTest({
   srcs: [
     Smithers.file("//packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs"),
     Smithers.file("//packages/smithers/flows/jj/scripts/third-party-notices.template.md"),
-    Smithers.file("//scripts/workspace-packages.mjs"),
+    Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs"),
     Smithers.file("//Cargo.toml"),
     Smithers.file("//Cargo.lock"),
     Smithers.file("//packages/smithers/flows/jj-wasm/Cargo.toml"),
@@ -74,7 +74,7 @@ const thirdPartyNoticesUnit = Smithers.NodeTest({
   srcs: [
     Smithers.file("//packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs"),
     Smithers.file("//packages/smithers/flows/jj/scripts/third-party-notices.template.md"),
-    Smithers.file("//scripts/workspace-packages.mjs"),
+    Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs"),
     Smithers.file("//flows/release/release-rehearsal.mjs"),
     Smithers.file("//.github/workflows/ci.yml")
   ],

@@ -8,7 +8,7 @@ import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 
 import { mutants as manifest, exclusions } from "./manifest.mjs"
-import { isMain, repoRoot as root } from "../../../scripts/workspace-packages.mjs"
+import { isMain, repoRoot as root } from "../../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 const hash = (path) => createHash("sha256").update(readFileSync(path)).digest("hex")
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")

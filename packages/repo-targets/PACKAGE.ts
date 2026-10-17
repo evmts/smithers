@@ -38,11 +38,12 @@ const test = Smithers.Vitest({
 
 /**
  * The repository contract gates under `contracts/`, digested as the input of
- * each gate here, with the workspace inventory they import from `scripts/`.
+ * each gate here, with the workspace inventory they import from this package's
+ * `scripts/`.
  */
 const contracts = [
   Smithers.glob("//packages/repo-targets/contracts/**/*.mjs"),
-  Smithers.file("//scripts/workspace-packages.mjs")
+  Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs")
 ]
 
 /**
@@ -255,6 +256,18 @@ const bunCoverage = Smithers.NodeTest({
 })
 
 /**
+ * The workspace membership reader every release and repository gate shares.
+ *
+ * @since 0.1.0
+ * @category test
+ */
+const workspacePackages = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//packages/repo-targets/scripts/workspace-packages.test.mjs")]),
+  srcs: [Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs"), Smithers.file("//packages/repo-targets/scripts/workspace-packages.d.mts")],
+  deps: []
+})
+
+/**
  * Lints the contract gates and the Bun coverage collector against the root
  * config's operator-script block: statement style only, no semicolons.
  *
@@ -264,7 +277,8 @@ const bunCoverage = Smithers.NodeTest({
 const contractsLint = Smithers.EsLint({
   sources: [
     Smithers.glob("//packages/repo-targets/contracts/**/*.mjs"),
-    Smithers.glob("//packages/repo-targets/bun-coverage/**/*.mjs")
+    Smithers.glob("//packages/repo-targets/bun-coverage/**/*.mjs"),
+    Smithers.glob("//packages/repo-targets/scripts/**/*.mjs")
   ],
   configs: [Smithers.file("//eslint.config.js")],
   deps: [],
@@ -407,4 +421,4 @@ const mvpDocs = Smithers.NodeTest({
   deps: [scriptPackage.repositoryInputs]
 })
 
-export const Package = Smithers.Package({ targets: { check, test, conflictMarkers, mvpDocs, conflictMarkersUnit, trackedHygiene, trackedHygieneUnit, toolchainPins, effectVersion, releaseContracts, privateEffectAdapters, driftJob, nativeWindowsWorkflow, runnerContract, knownRedCoverage, bunCoverage, testPinRegister, contractsLint, reviewDocsAgainstCode, reviewJsdocAgainstCode, ...securityReview } })
+export const Package = Smithers.Package({ targets: { check, test, workspacePackages, conflictMarkers, mvpDocs, conflictMarkersUnit, trackedHygiene, trackedHygieneUnit, toolchainPins, effectVersion, releaseContracts, privateEffectAdapters, driftJob, nativeWindowsWorkflow, runnerContract, knownRedCoverage, bunCoverage, testPinRegister, contractsLint, reviewDocsAgainstCode, reviewJsdocAgainstCode, ...securityReview } })

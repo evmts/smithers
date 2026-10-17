@@ -34,7 +34,7 @@ import {
   workspaceDependencies,
   workspaces
 } from "./pack-release.mjs"
-import { repoRoot } from "../../scripts/workspace-packages.mjs"
+import { repoRoot } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 import { verifyPackagedNativeHelpers } from "./release-native-helpers.mjs"
 
 // `workspaces` reads and validates a workspace tree, so this suite reads the
@@ -180,7 +180,7 @@ test("importing the release scripts reads no workspace tree", async () => {
   // roster error before the importer could call anything.
   const fixture = await mkdtemp(join(tmpdir(), "smithers-pack-release-import-"))
   try {
-    for (const file of ["scripts/workspace-packages.mjs", ...["pack-release.mjs", "publish-release.mjs", "packed-export-targets.mjs", "build-release.mjs", "release-native-helpers.mjs"].map((name) => `flows/release/${name}`)]) {
+    for (const file of ["packages/repo-targets/scripts/workspace-packages.mjs", ...["pack-release.mjs", "publish-release.mjs", "packed-export-targets.mjs", "build-release.mjs", "release-native-helpers.mjs"].map((name) => `flows/release/${name}`)]) {
       await mkdir(dirname(join(fixture, file)), { recursive: true })
       await cp(join(repoRoot, file), join(fixture, file))
     }

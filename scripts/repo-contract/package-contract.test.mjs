@@ -20,8 +20,8 @@ import {
   SUPPORTED_EFFECT_RANGE as effectRange
 } from "../../packages/repo-targets/contracts/check-single-effect-version.mjs"
 import { retarget } from "../../flows/release/set-release-version.mjs"
-import { libraryPackages } from "../workspace-packages.mjs"
-import { repoRoot as root } from "../workspace-packages.mjs"
+import { libraryPackages } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
+import { repoRoot as root } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 /**
  * The one version every package on the release line carries, read from the CLI

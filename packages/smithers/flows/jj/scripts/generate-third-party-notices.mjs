@@ -2,7 +2,7 @@
 import { execFileSync } from "node:child_process"
 import { readFileSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
-import { repoRoot as root } from "../../../../../scripts/workspace-packages.mjs"
+import { repoRoot as root } from "../../../../repo-targets/scripts/workspace-packages.mjs"
 
 const output = join(root, "packages/smithers/flows/jj/THIRD_PARTY_NOTICES.md")
 const groups = new Map([

@@ -15,7 +15,7 @@ import { access, cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "no
 import { tmpdir } from "node:os"
 import { basename, join, relative, resolve, sep } from "node:path"
 
-import { libraryPackages, packageKey, isMain, repoRoot } from "../../scripts/workspace-packages.mjs"
+import { libraryPackages, packageKey, isMain, repoRoot } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 import { assertPackedExportTargets } from "./packed-export-targets.mjs"
 import { buildRelease } from "./build-release.mjs"
 import { nativeHelperFiles } from "./release-native-helpers.mjs"
@@ -100,7 +100,8 @@ export const publishedPackages = [
  *
  * The key is a path — `packages/smithers/flows/plan`, `packages/smithers/flows/canonical` — because a
  * package's directory is where it lives and a nested package's basename is not
- * enough to find it. `scripts/workspace-packages.mjs` answers what the members
+ * enough to find it. `packages/repo-targets/scripts/workspace-packages.mjs`
+ * answers what the members
  * are, from `pnpm-workspace.yaml`, so publication and installation cannot
  * disagree about the set and nesting is decided in one place.
  *

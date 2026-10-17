@@ -9,7 +9,7 @@ import test from "node:test"
 import { archiveName, packInstaller, publishInstallerRelease, signInstallerRelease, verifyInstallerRelease } from "./installer-release.mjs"
 import { integrity, recordSmokeSuccess } from "./publish-release.mjs"
 import { parseWorkflow } from "./release-rehearsal.mjs"
-import { repoRoot } from "../../scripts/workspace-packages.mjs"
+import { repoRoot } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 const tag = "v1.0.0-rc.0"
 const version = tag.slice(1)

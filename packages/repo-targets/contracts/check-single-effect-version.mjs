@@ -6,7 +6,7 @@ import { createRequire } from "node:module"
 import { readFileSync, realpathSync } from "node:fs"
 import { join, resolve } from "node:path"
 
-import { workspacePackages, isMain, repoRoot } from "../../../scripts/workspace-packages.mjs"
+import { workspacePackages, isMain, repoRoot } from "../scripts/workspace-packages.mjs"
 import { readWorkspaceManifests } from "../../../flows/release/pack-release.mjs"
 
 /**

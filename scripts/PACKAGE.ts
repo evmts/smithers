@@ -15,7 +15,7 @@ import { backendSQLC } from "../packages/backend/sqlc.ts"
 import { Smithers } from "@smthrs/targets"
 import { readdirSync } from "node:fs"
 import { listFiles } from "../packages/repo-targets/contracts/check-tracked-hygiene.mjs"
-import { repoRoot } from "./workspace-packages.mjs"
+import { repoRoot } from "../packages/repo-targets/scripts/workspace-packages.mjs"
 import { Package as backendPackage } from "../packages/backend/PACKAGE.ts"
 
 /**
@@ -32,7 +32,8 @@ const sources = [
   // Repository contract modules these scripts import from their package.
   Smithers.file("//packages/repo-targets/contracts/check-single-effect-version.mjs"),
   Smithers.file("//packages/repo-targets/contracts/check-tracked-hygiene.mjs"),
-  Smithers.file("//packages/repo-targets/contracts/check-tracked-hygiene.d.mts")
+  Smithers.file("//packages/repo-targets/contracts/check-tracked-hygiene.d.mts"),
+  Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs")
 ]
 
 /** The whole checkout is the subject of repository-wide engineering gates. */
@@ -275,13 +276,6 @@ const issueClaim = Smithers.NodeTest({
   deps: [engineeringChecks, integrationSources]
 })
 
-/** The workspace membership reader every release and repository gate shares. */
-const workspacePackages = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//scripts/workspace-packages.test.mjs")]),
-  srcs: sources,
-  deps: []
-})
-
 /** Typecheck the repository conformance suites and their target declarations. */
 const conformanceCheck = Smithers.Typecheck({
   srcs: sources,
@@ -369,7 +363,6 @@ export const Package = Smithers.Package({
     docsDrift,
     conformanceCheck,
     repositoryConformance,
-    workspacePackages,
     webBundleContract,
     dependencyBoundaries,
     dependencyBoundariesUnit,

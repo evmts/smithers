@@ -25,7 +25,7 @@ import { readdirSync, readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { pathToFileURL } from "node:url"
 import { compare, floorOf } from "./require-toolchain.mjs"
-import { isMain, repoRoot } from "../../../scripts/workspace-packages.mjs"
+import { isMain, repoRoot } from "../scripts/workspace-packages.mjs"
 
 /**
  * A `with:` pin in the generated workflow, whose keys and values are quoted.

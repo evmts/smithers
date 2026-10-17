@@ -19,7 +19,7 @@ import {
 import { assertEffectFamilyAccepts, assertEffectFamilyInstalled, mcpInitialize } from "./release-mcp-handshake.mjs"
 import { captureProcess } from "./release-process.mjs"
 import { releaseRegistry } from "./release-registry.mjs"
-import { isMain, repoRoot } from "../../scripts/workspace-packages.mjs"
+import { isMain, repoRoot } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 // The Effect release the repository is tested on, and what every pinned profile
 // installs. The published libraries accept the range above it; both are

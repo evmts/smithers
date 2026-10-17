@@ -22,7 +22,7 @@ import {
   workflowGatesMissingFromInventory,
   workflowJobs
 } from "./release-gates.mjs"
-import { repoRoot } from "./workspace-packages.mjs"
+import { repoRoot } from "../packages/repo-targets/scripts/workspace-packages.mjs"
 import { parse, stringify } from "yaml"
 
 const workflow = (name) => readFileSync(join(repoRoot, ".github", "workflows", name), "utf8")

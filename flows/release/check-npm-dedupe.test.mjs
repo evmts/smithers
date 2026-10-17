@@ -21,7 +21,7 @@ import { join, resolve } from "node:path"
 import { SINGLETONS, copiesOf, maxPackagesFrom, optionalPeersOf, resolveConsumerTree, resolveConsumerProfiles } from "./check-npm-dedupe.mjs"
 import { EXPECTED_EFFECT_VERSION } from "../../packages/repo-targets/contracts/check-single-effect-version.mjs"
 import { assertConsumerTree } from "./release-consumers.mjs"
-import { repoRoot } from "../../scripts/workspace-packages.mjs"
+import { repoRoot } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 import { readWorkspaceManifests } from "./pack-release.mjs"
 import { peerRangesOf } from "./release-peer-ranges.mjs"
 

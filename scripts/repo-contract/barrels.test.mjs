@@ -19,8 +19,8 @@ import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, it } from "node:test"
 import { pathToFileURL } from "node:url"
-import { libraryPackages } from "../workspace-packages.mjs"
-import { repoRoot as root } from "../workspace-packages.mjs"
+import { libraryPackages } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
+import { repoRoot as root } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 /**
  * The barrel is imported by path rather than by name.

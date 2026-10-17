@@ -4,15 +4,15 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, wri
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
-import { repoRoot } from "../../../../../scripts/workspace-packages.mjs"
+import { repoRoot } from "../../../../repo-targets/scripts/workspace-packages.mjs"
 
 test("notices follow Cargo's wasm normal/build closure and --check detects drift without writing", () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "notices-")))
   try {
-    mkdirSync(join(root, "scripts"))
+    mkdirSync(join(root, "packages/repo-targets/scripts"), { recursive: true })
     mkdirSync(join(root, "packages/smithers/flows/jj/scripts"), { recursive: true })
     cpSync(join(repoRoot, "packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs"), join(root, "packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs"))
-    cpSync(join(repoRoot, "scripts/workspace-packages.mjs"), join(root, "scripts/workspace-packages.mjs"))
+    cpSync(join(repoRoot, "packages/repo-targets/scripts/workspace-packages.mjs"), join(root, "packages/repo-targets/scripts/workspace-packages.mjs"))
     cpSync(join(repoRoot, "packages/smithers/flows/jj/scripts/third-party-notices.template.md"), join(root, "packages/smithers/flows/jj/scripts/third-party-notices.template.md"))
     const crates = ["flows-jj", "normal", "build", "dev", "native"]
     writeFileSync(join(root, "Cargo.toml"), `[workspace]\nresolver = "3"\nmembers = ${JSON.stringify(crates)}\n`)

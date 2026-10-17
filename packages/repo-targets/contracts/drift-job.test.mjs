@@ -342,7 +342,7 @@ test('CLI combines declaration build and baseline update from current source', a
     }))
     await write(root, 'packages/example/src/index.ts', 'export function value(input: string): string { return input }\n')
     await cp(join(repositoryRoot, 'flows/release/check-api-baseline.mjs'), cli)
-    await cp(join(repositoryRoot, 'scripts/workspace-packages.mjs'), join(root, 'scripts/workspace-packages.mjs'))
+    await cp(join(repositoryRoot, 'packages/repo-targets/scripts/workspace-packages.mjs'), join(root, 'packages/repo-targets/scripts/workspace-packages.mjs'))
     await cp(join(repositoryRoot, 'packages/repo-targets/scripts/build-library.mjs'), join(root, 'packages/repo-targets/scripts/build-library.mjs'))
     await cp(join(repositoryRoot, 'packages/repo-targets/scripts/private-effect-adapters.mjs'), join(root, 'packages/repo-targets/scripts/private-effect-adapters.mjs'))
     await mkdir(join(root, 'flows/release/fixtures'), { recursive: true })
@@ -384,7 +384,7 @@ test('CLI combines declaration build and baseline update from current source', a
       })
     }
     assert.equal(await readFile(baselinePath, 'utf8'), `${JSON.stringify(updated, null, 2)}\n`)
-    const alias = join(root, 'scripts/alias.mjs')
+    const alias = join(root, 'alias.mjs')
     await symlink(cli, alias)
     const linked = await runFile(process.execPath, [alias, '--build-declarations'], { cwd: root })
     assert.match(linked.stdout, /Declaration baseline matches 1 public packages/)

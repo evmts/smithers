@@ -22,7 +22,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs"
 import { join, relative, sep } from "node:path"
 
-import { isMain, repoRoot } from "./workspace-packages.mjs"
+import { isMain, repoRoot } from "../packages/repo-targets/scripts/workspace-packages.mjs"
 
 export const REPO_ROOT = repoRoot
 

@@ -11,7 +11,7 @@ import {
   buildPrivateEffectAdapters,
   privateEffectAdapters
 } from "../../packages/repo-targets/scripts/private-effect-adapters.mjs"
-import { isMain, libraryPackages, repoRoot } from "../../scripts/workspace-packages.mjs"
+import { isMain, libraryPackages, repoRoot } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 const declarations = (directory, prefix = "") =>
   readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {

@@ -34,7 +34,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, it } from "node:test"
 
-import { repoRoot as root } from "../workspace-packages.mjs"
+import { repoRoot as root } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 /**
  * A home directory belonging to a person: `/Users/<name>` on macOS,

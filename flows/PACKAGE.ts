@@ -2,9 +2,9 @@
 import { Smithers } from "@smthrs/targets"
 import { existsSync, readdirSync } from "node:fs"
 import codingProject from "../.smithers/coding-project.json" with { type: "json" }
-import { libraryPackages, repoRoot } from "../scripts/workspace-packages.mjs"
 import { Package as backendPackage } from "../packages/backend/PACKAGE.ts"
 import { backendSQLC } from "../packages/backend/sqlc.ts"
+import { libraryPackages, repoRoot } from "../packages/repo-targets/scripts/workspace-packages.mjs"
 import { Package as scriptPackage } from "../scripts/PACKAGE.ts"
 
 const pack = Smithers.NodeTest({
@@ -502,7 +502,7 @@ const packageDocs = Smithers.NodeTest({
     Smithers.file("//flows/docs-sync/package-docs.mjs"),
     Smithers.file("//flows/docs-sync/package-docs.d.mts"),
     Smithers.file("//flows/docs-sync/package-docs.test.mjs"),
-    Smithers.file("//scripts/workspace-packages.mjs"),
+    Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs"),
     Smithers.file("//pnpm-workspace.yaml"),
     Smithers.file("//apps/server/src/docsRedirectMap.ts"),
     ...packageDocInputs
@@ -623,7 +623,7 @@ const triagePublish = Smithers.NodeTest({
   srcs: [
     sources,
     Smithers.file("//flows/triage-publish/github-triage.mjs"),
-    Smithers.file("//scripts/workspace-packages.mjs"),
+    Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs"),
     Smithers.file("//flows/issue-triage/flow.mdx"),
     Smithers.file("//flows/pr-triage/flow.mdx")
   ],
@@ -639,7 +639,7 @@ const runModuleSource = Smithers.file("//flows/automation/run-module.ts")
 const benchSources = [
   Smithers.glob("//flows/bench/**/*"),
   runModuleSource,
-  Smithers.file("//scripts/workspace-packages.mjs")
+  Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs")
 ]
 const perfSources = [Smithers.glob("//flows/perf/**/*"), runModuleSource]
 const gatewaySources = Smithers.Filegroup({
@@ -889,7 +889,7 @@ const landCommit = Smithers.NodeTest({
 const releaseSources = [
   Smithers.glob("//flows/release/**/*"),
   runModuleSource,
-  Smithers.file("//scripts/workspace-packages.mjs"),
+  Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs"),
   Smithers.file("//packages/repo-targets/contracts/check-single-effect-version.mjs")
 ]
 

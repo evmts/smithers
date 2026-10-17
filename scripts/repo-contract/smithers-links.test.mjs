@@ -23,7 +23,7 @@ import { join } from "node:path"
 import { describe, it } from "node:test"
 
 import { collect, composed, failure, offenders, readRedirects } from "../../apps/site/scripts/published-links.mjs"
-import { repoRoot as root } from "../workspace-packages.mjs"
+import { repoRoot as root } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 const output = join(root, "apps", "site", "dist")
 

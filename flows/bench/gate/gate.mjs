@@ -6,7 +6,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 
 import { resources, runCorpus } from "./corpus.mjs"
-import { isMain } from "../../../scripts/workspace-packages.mjs"
+import { isMain } from "../../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 export function compare(results, baseline) {
   assert.deepEqual(results.map((row) => row.id).sort(), baseline.cases.map((row) => row.id).sort(), "fixture roster changed")

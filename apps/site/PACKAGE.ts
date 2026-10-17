@@ -65,7 +65,7 @@ import { Package as migratePackage } from "../../packages/smithers/migrate/PACKA
 import { Package as notificationsPackage } from "../../packages/smithers/notifications/PACKAGE.ts"
 import { Package as cliPackage } from "../../packages/smithers/PACKAGE.ts"
 import { Package as testingPackage } from "../../packages/testing/PACKAGE.ts"
-import { workspacePackages } from "../../scripts/workspace-packages.mjs"
+import { workspacePackages } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 import { Package as uiPackage } from "../app/PACKAGE.ts"
 
 const cwd = "apps/site"
@@ -103,7 +103,7 @@ const appSources = uiPackage.webSources
 const docsKit = Smithers.Filegroup({
   srcs: [
     Smithers.file("//flows/docs-sync/package-docs.mjs"),
-    Smithers.file("//scripts/workspace-packages.mjs"),
+    Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs"),
     Smithers.file("//pnpm-workspace.yaml"),
     ...workspacePackages().map(({ dir }) => Smithers.file(`//${dir}/package.json`))
   ],
@@ -394,7 +394,7 @@ const catalogPublicationTest = Smithers.Shell.Test({
     Smithers.file("scripts/catalog-publication.test.mjs"),
     Smithers.file("docs/reference/api/index.mdx"),
     Smithers.file("//flows/release/pack-release.mjs"),
-    Smithers.file("//scripts/workspace-packages.mjs"),
+    Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs"),
     // The roster is checked against what every member manifest declares, so a
     // manifest flipping `private` has to re-run this.
     ...workspacePackages().map(({ dir }) => Smithers.file(`//${dir}/package.json`))
@@ -441,7 +441,7 @@ const publishedLinksUnit = Smithers.NodeTest({
   srcs: [
     ...sources,
     Smithers.file("//flows/release/pack-release.mjs"),
-    Smithers.file("//scripts/workspace-packages.mjs"),
+    Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs"),
     Smithers.file("//pnpm-workspace.yaml")
   ],
   deps: [],
@@ -464,7 +464,7 @@ const supportMatrixTest = Smithers.Shell.Test({
     ...["pack-release", "packed-export-targets", "publish-release", "release-rehearsal"].map(
       (name) => Smithers.file(`//flows/release/${name}.mjs`)
     ),
-    Smithers.file("//scripts/workspace-packages.mjs"),
+    Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs"),
     // The shared reader parses every member before selecting public packages.
     // Explicit files cross package boundaries; a site-scoped glob cannot.
     ...workspacePackages().map(({ dir }) => Smithers.file(`//${dir}/package.json`)),

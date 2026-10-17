@@ -28,7 +28,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs"
 import { join, relative, sep } from "node:path"
 import { fileURLToPath } from "node:url"
 
-import { libraryPackages, isMain, repoRoot } from "../../../scripts/workspace-packages.mjs"
+import { libraryPackages, isMain, repoRoot } from "../scripts/workspace-packages.mjs"
 
 /** The package groups whose pins this register covers. */
 export const guardedGroups = new Set(["engine", "agent", "tooling"])

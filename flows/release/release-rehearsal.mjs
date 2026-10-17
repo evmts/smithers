@@ -42,7 +42,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import YAML from "yaml"
-import { isMain, repoRoot } from "../../scripts/workspace-packages.mjs"
+import { isMain, repoRoot } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 // ---------------------------------------------------------------------------
 // Workflow files are read by the same YAML 1.2 rules GitHub applies, through

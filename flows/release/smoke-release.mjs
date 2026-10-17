@@ -63,7 +63,7 @@ import { assertSmokeNpmSupport } from "./release-npm-support.mjs"
 import { peerRangesOf } from "./release-peer-ranges.mjs"
 import { captureProcess } from "./release-process.mjs"
 import { releaseRegistry } from "./release-registry.mjs"
-import { repoRoot } from "../../scripts/workspace-packages.mjs"
+import { repoRoot } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 /**
  * Packages whose published entry throws on purpose.

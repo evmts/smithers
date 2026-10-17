@@ -52,8 +52,8 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { join, relative } from "node:path"
 import { describe, it } from "node:test"
 
-import { libraryPackages } from "../workspace-packages.mjs"
-import { repoRoot as root } from "../workspace-packages.mjs"
+import { libraryPackages } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
+import { repoRoot as root } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 const packagesRoot = join(root, "packages")
 

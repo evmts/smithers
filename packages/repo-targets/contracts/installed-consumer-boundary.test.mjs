@@ -6,7 +6,7 @@ import { dirname, join } from "node:path"
 import test from "node:test"
 import { pathToFileURL } from "node:url"
 import { assertInstalledConsumer } from "../../../flows/release/fixtures/installed-consumer/consumer-boundary.mjs"
-import { repoRoot } from "../../../scripts/workspace-packages.mjs"
+import { repoRoot } from "../scripts/workspace-packages.mjs"
 
 const sourceRoot = join(repoRoot, "flows/release/fixtures/installed-consumer")
 const write = (path, value) => {
@@ -53,16 +53,16 @@ test("the boundary gate checks a standalone consumer manifest without exempting 
   try {
     write(join(root, "package.json"), JSON.stringify({ name: "fixture-root", private: true, devDependencies: { typescript: "7.0.2" } }))
     write(join(root, "pnpm-workspace.yaml"), "packages:\n  - packages/*\n")
-    for (const file of ["check-dependency-boundaries.mjs", "workspace-packages.mjs"]) {
-      let source = readFileSync(join(repoRoot, "scripts", file), "utf8")
-      if (file === "check-dependency-boundaries.mjs") {
+    for (const file of ["scripts/check-dependency-boundaries.mjs", "packages/repo-targets/scripts/workspace-packages.mjs"]) {
+      let source = readFileSync(join(repoRoot, file), "utf8")
+      if (file === "scripts/check-dependency-boundaries.mjs") {
         // This synthetic repository has none of the real repository's legacy
         // reach-throughs. Retain the gate, with an empty fixture-specific list.
         const entries = /const knownReachThroughs = new Set\(\[[\s\S]*?\]\)/
         assert.match(source, entries)
         source = source.replace(entries, "const knownReachThroughs = new Set([])")
       }
-      write(join(root, "scripts", file), source)
+      write(join(root, file), source)
     }
     // The gate validates private Effect adapters with the build's own module.
     const adapters = "packages/repo-targets/scripts/private-effect-adapters.mjs"

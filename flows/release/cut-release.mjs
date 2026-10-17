@@ -36,7 +36,7 @@
 import { execFileSync } from "node:child_process"
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import { isMain, repoRoot } from "../../scripts/workspace-packages.mjs"
+import { isMain, repoRoot } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 /**
  * The commit message a cut records, in the repository's emoji convention.

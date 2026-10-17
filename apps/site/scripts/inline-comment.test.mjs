@@ -24,7 +24,7 @@ test("API and LLM generators preserve inline HTML-comment code", () => {
       const path = `apps/site/scripts/${script}`
       put(path, readFileSync(join(repo, path), "utf8"))
     }
-    put("scripts/workspace-packages.mjs", 'export const libraryPackages = () => [{ name: "@smthrs/integrations", dir: "packages/integrations", manifest: {} }]\n')
+    put("packages/repo-targets/scripts/workspace-packages.mjs", 'export const libraryPackages = () => [{ name: "@smthrs/integrations", dir: "packages/integrations", manifest: {} }]\n')
     put("apps/site/scripts/package-doc-links.mjs", 'export const outputRelFor = (value) => value; export const routeFor = (value) => value\n')
     put("packages/integrations/package.json", JSON.stringify({ name: "@smthrs/integrations", description: "Integrations", publishConfig: { access: "public" } }))
     put("packages/integrations/docs/api.md", '# API\n\n| Export | Value |\n| --- | --- |\n| `stickyMarker` | `<!-- smithers:key=KEY -->` |\n\n<!-- prose-only comment -->\n\n[Guide](./guide.md#usage)\n')

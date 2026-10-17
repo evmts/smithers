@@ -8,7 +8,7 @@ import { appendFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSy
 import { tmpdir } from "node:os"
 import { dirname, join, relative } from "node:path"
 import { fileURLToPath } from "node:url"
-import { libraryPackages } from "../../../scripts/workspace-packages.mjs"
+import { libraryPackages } from "../../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 const site = join(dirname(fileURLToPath(import.meta.url)), "..")
 const repo = join(site, "..", "..")
@@ -24,7 +24,7 @@ const withCopy = (fn) => {
 const copy = (root, rel) => cpSync(join(repo, rel), join(root, rel), { recursive: true })
 const copyPackageRoster = (root) => {
   copy(root, "flows/docs-sync/package-docs.mjs")
-  copy(root, "scripts/workspace-packages.mjs")
+  copy(root, "packages/repo-targets/scripts/workspace-packages.mjs")
   copy(root, "pnpm-workspace.yaml")
   copy(root, "apps/site/scripts/package-doc-links.mjs")
   symlinkSync(join(repo, "node_modules"), join(root, "node_modules"), "dir")

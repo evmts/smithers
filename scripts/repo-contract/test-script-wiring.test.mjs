@@ -17,7 +17,7 @@ import { describe, it } from "node:test"
 import ts from "typescript"
 
 import { parseWorkflow } from "../../flows/release/release-rehearsal.mjs"
-import { repoRoot as root } from "../workspace-packages.mjs"
+import { repoRoot as root } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 const readManifest = (path) => JSON.parse(readFileSync(path, "utf8"))
 

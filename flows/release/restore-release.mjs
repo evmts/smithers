@@ -8,7 +8,7 @@ import { dirname, join, resolve } from "node:path"
 import { preflight, registryIntegrity } from "./publish-release.mjs"
 import { superviseProcess } from "./release-process.mjs"
 import { dependencyOrder, publishedPackages, readWorkspaceManifests, workspaceDependencies } from "./pack-release.mjs"
-import { isMain } from "../../scripts/workspace-packages.mjs"
+import { isMain } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 export const restoreSelection = (runId = "", artifactId = "") => {
   if (runId === "" && artifactId === "") return undefined

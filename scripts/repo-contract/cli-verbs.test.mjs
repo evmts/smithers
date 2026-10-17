@@ -12,7 +12,7 @@ import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, it } from "node:test"
 
-import { repoRoot as root } from "../workspace-packages.mjs"
+import { repoRoot as root } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 const indexedCommands = (page) => new Set(page.split("\n")
   .filter((line) => line.startsWith("|"))

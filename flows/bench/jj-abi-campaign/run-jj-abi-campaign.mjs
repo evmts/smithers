@@ -8,7 +8,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { parseArgs } from "node:util"
 
-import { isMain, repoRoot as root } from "../../../scripts/workspace-packages.mjs"
+import { isMain, repoRoot as root } from "../../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex")
 const fileHash = (text) => createHash("blake2b512").update(text).digest("hex").slice(0, 10)

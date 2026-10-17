@@ -12,7 +12,7 @@ import * as NodeBinary from "@smthrs/targets/NodeBinary"
 import * as NodeTest from "@smthrs/targets/NodeTest"
 import * as PackageManager from "@smthrs/targets/PackageManager"
 import * as PackageExec from "@smthrs/build-cli/PackageExec"
-import { isMain, repoRoot } from "../../../scripts/workspace-packages.mjs"
+import { isMain, repoRoot } from "../scripts/workspace-packages.mjs"
 
 export const root = repoRoot
 export const cli = resolve(root, "packages/smithers/src/bin.ts")

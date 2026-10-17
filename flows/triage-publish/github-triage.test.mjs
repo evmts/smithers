@@ -115,10 +115,10 @@ describe("GitHub triage entry point", () => {
     const { join } = await import("node:path")
     const root = mkdtempSync(join(tmpdir(), "smithers triage "))
     try {
-      mkdirSync(join(root, "scripts"))
+      mkdirSync(join(root, "packages", "repo-targets", "scripts"), { recursive: true })
       mkdirSync(join(root, "flows", "triage-publish"), { recursive: true })
       copyFileSync(new URL("./github-triage.mjs", import.meta.url), join(root, "flows", "triage-publish", "github-triage.mjs"))
-      copyFileSync(new URL("../../scripts/workspace-packages.mjs", import.meta.url), join(root, "scripts", "workspace-packages.mjs"))
+      copyFileSync(new URL("../../packages/repo-targets/scripts/workspace-packages.mjs", import.meta.url), join(root, "packages/repo-targets/scripts/workspace-packages.mjs"))
       const result = spawnSync(process.execPath, [join(root, "flows", "triage-publish", "github-triage.mjs")], { encoding: "utf8", timeout: 30_000 })
       assert.equal(result.status, 1)
       assert.match(result.stderr, /usage: github-triage\.mjs/)

@@ -4,7 +4,7 @@ import { createHash } from "node:crypto"
 import { readFile, readdir, writeFile } from "node:fs/promises"
 import { basename, join, resolve } from "node:path"
 
-import { isMain } from "../../scripts/workspace-packages.mjs"
+import { isMain } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 export const integrity = (bytes) => `sha512-${createHash("sha512").update(bytes).digest("base64")}`
 

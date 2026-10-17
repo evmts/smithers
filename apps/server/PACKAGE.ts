@@ -23,7 +23,7 @@ const sources = [
   // package list on import. The map's freshness against the docs is //flows:packageDocs.
   Smithers.file("//flows/docs-sync/package-docs.mjs"),
   Smithers.file("//flows/docs-sync/package-docs.d.mts"),
-  Smithers.file("//scripts/workspace-packages.mjs"),
+  Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs"),
   Smithers.file("//pnpm-workspace.yaml"),
   Smithers.file("wrangler.docs-redirect.jsonc")
 ]

@@ -18,9 +18,9 @@ const configuration = { seed: 0, cases: 1, steps: 1 }
 const copyCampaign = async (root) => {
   const campaign = join(root, "flows/bench/jj-abi-campaign")
   await mkdir(campaign, { recursive: true })
-  await mkdir(join(root, "scripts"))
+  await mkdir(join(root, "packages/repo-targets/scripts"), { recursive: true })
   await copyFile(new URL("run-jj-abi-campaign.mjs", import.meta.url), join(campaign, "run-jj-abi-campaign.mjs"))
-  await copyFile(new URL("../../../scripts/workspace-packages.mjs", import.meta.url), join(root, "scripts", "workspace-packages.mjs"))
+  await copyFile(new URL("../../../packages/repo-targets/scripts/workspace-packages.mjs", import.meta.url), join(root, "packages/repo-targets/scripts/workspace-packages.mjs"))
   return join(campaign, "run-jj-abi-campaign.mjs")
 }
 

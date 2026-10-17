@@ -313,7 +313,7 @@ jobs:
           # ships, which carries no group and would fail this loop on a build
           # artifact. No package is named here: the published set is the pack
           # manifest, and this loop only checks what the workspace declares.
-          for directory in $(node scripts/workspace-packages.mjs --library-dirs); do
+          for directory in $(node packages/repo-targets/scripts/workspace-packages.mjs --library-dirs); do
             manifest="$directory/package.json"
             package_group="$(node -p "require('./' + process.argv[1]).smthrs?.group ?? ''" "$manifest")"
             case "$package_group" in

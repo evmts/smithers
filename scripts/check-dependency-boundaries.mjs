@@ -22,7 +22,7 @@ import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from "node
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path"
 
 import ts from "typescript"
-import { workspacePackages, isMain, repoRoot } from "./workspace-packages.mjs"
+import { workspacePackages, isMain, repoRoot } from "../packages/repo-targets/scripts/workspace-packages.mjs"
 import { privateEffectAdapters } from "../packages/repo-targets/scripts/private-effect-adapters.mjs"
 
 // Resolved from this file, not from `process.cwd()`: the build system runs a

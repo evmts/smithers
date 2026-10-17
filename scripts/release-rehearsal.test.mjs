@@ -12,7 +12,7 @@ import {
   parseWorkflow,
   rehearsalContexts
 } from "../flows/release/release-rehearsal.mjs"
-import { repoRoot } from "./workspace-packages.mjs"
+import { repoRoot } from "../packages/repo-targets/scripts/workspace-packages.mjs"
 
 const release = parseWorkflow(
   readFileSync(join(repoRoot, ".github", "workflows", "release.yml"), "utf8")
@@ -24,10 +24,10 @@ const release = parseWorkflow(
  * the pinned `yaml` parser.
  */
 const installDriver = (root) => {
-  mkdirSync(join(root, "scripts"))
+  mkdirSync(join(root, "packages/repo-targets/scripts"), { recursive: true })
   mkdirSync(join(root, "flows/release"), { recursive: true })
   cpSync(join(repoRoot, "flows/release/release-rehearsal.mjs"), join(root, "flows/release/release-rehearsal.mjs"))
-  cpSync(join(repoRoot, "scripts/workspace-packages.mjs"), join(root, "scripts/workspace-packages.mjs"))
+  cpSync(join(repoRoot, "packages/repo-targets/scripts/workspace-packages.mjs"), join(root, "packages/repo-targets/scripts/workspace-packages.mjs"))
   symlinkSync(join(repoRoot, "node_modules"), join(root, "node_modules"))
 }
 

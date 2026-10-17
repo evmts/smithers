@@ -16,7 +16,7 @@
  */
 import { readFileSync } from "node:fs"
 import * as path from "node:path"
-import { isMain, workspacePackages, repoRoot as root } from "./workspace-packages.mjs"
+import { isMain, workspacePackages, repoRoot as root } from "../packages/repo-targets/scripts/workspace-packages.mjs"
 
 /**
  * `bun.lock` is JSONC: it carries whole-line comments, trailing commas, and

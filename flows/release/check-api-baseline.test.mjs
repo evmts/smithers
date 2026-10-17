@@ -8,7 +8,7 @@ import ts from "typescript"
 import { copyInputDeclarations } from "../../packages/repo-targets/scripts/build-library.mjs"
 import { buildPrivateEffectAdapters } from "../../packages/repo-targets/scripts/private-effect-adapters.mjs"
 import { apiSurface, assertApiBaseline, canonicalDeclaration, withDeclarationBuild } from "./check-api-baseline.mjs"
-import { repoRoot } from "../../scripts/workspace-packages.mjs"
+import { repoRoot } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 it("detects signature changes through private declarations even when export paths stay fixed", () => {
   const root = mkdtempSync(join(tmpdir(), "smithers-api-baseline-"))

@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process"
 import { readdir } from "node:fs/promises"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
-import { workspacePackages } from "../../scripts/workspace-packages.mjs"
+import { workspacePackages } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 import { Package } from "../PACKAGE.ts"
 import { bunNativeTests, nativeTests } from "./coding-native-gate.mjs"
 

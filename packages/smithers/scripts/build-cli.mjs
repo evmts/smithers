@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { buildRelease } from "../../../flows/release/build-release.mjs"
 import { readWorkspaceManifests, stagePackage, workspaceDependencies } from "../../../flows/release/pack-release.mjs"
-import { repoRoot } from "../../../scripts/workspace-packages.mjs"
+import { repoRoot } from "../../repo-targets/scripts/workspace-packages.mjs"
 import { installCLI } from "./install-cli.mjs"
 
 const destination = resolve(process.argv[2] ?? "/out/cli")

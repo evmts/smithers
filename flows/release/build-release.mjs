@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process"
 import { rmSync } from "node:fs"
 import { join } from "node:path"
 import { dependencyOrder, readWorkspaceManifests, workspaceDependencies } from "./pack-release.mjs"
-import { isMain, repoRoot } from "../../scripts/workspace-packages.mjs"
+import { isMain, repoRoot } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 /**
  * Optional peers and development dependencies can point back to their host

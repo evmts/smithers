@@ -12,7 +12,7 @@
 
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import process from "node:process"
-import { isMain } from "../../scripts/workspace-packages.mjs"
+import { isMain } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 export const LABELS = Object.freeze({
   "kind:bug": ["d73a4a", "A reproducible defect"],

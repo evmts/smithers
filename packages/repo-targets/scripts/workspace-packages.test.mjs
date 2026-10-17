@@ -6,7 +6,7 @@ import { join, relative } from "node:path"
 import { test } from "node:test"
 import { readWorkspacePatterns, repoRoot, workspacePackages } from "./workspace-packages.mjs"
 
-const script = join(repoRoot, "scripts", "workspace-packages.mjs")
+const script = join(repoRoot, "packages", "repo-targets", "scripts", "workspace-packages.mjs")
 
 const run = (entry, cwd) => execFileSync(process.execPath, [entry], { cwd, encoding: "utf8", timeout: 30_000 })
 

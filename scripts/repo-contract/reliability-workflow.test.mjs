@@ -13,7 +13,7 @@ import { join } from "node:path"
 import { it } from "node:test"
 
 import { evaluateExpression, interpolate, parseWorkflow } from "../../flows/release/release-rehearsal.mjs"
-import { repoRoot as root } from "../workspace-packages.mjs"
+import { repoRoot as root } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 it("scheduled durable histories retain reproducible seeds and operation artifacts", () => {
   const workflow = parseWorkflow(readFileSync(join(root, ".github/workflows/reliability.yml"), "utf8"))

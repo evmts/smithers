@@ -5,7 +5,7 @@
 import { existsSync, globSync } from "node:fs"
 import { join } from "node:path"
 
-import { libraryPackages, repoRoot, isMain } from "../../../../../scripts/workspace-packages.mjs"
+import { libraryPackages, repoRoot, isMain } from "../../../../repo-targets/scripts/workspace-packages.mjs"
 
 /** Keep condition order and ESM-only branches when substituting a pattern. */
 const substitute = (target, capture) => {

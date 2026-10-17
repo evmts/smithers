@@ -2,7 +2,7 @@
 import { readFile } from "node:fs/promises"
 import { join } from "node:path"
 
-import { isMain } from "../../../scripts/workspace-packages.mjs"
+import { isMain } from "../../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 export const verifySignalCampaign = async (directory, { seed, cases, steps }) => {
   if (!Number.isInteger(seed) || seed < 0 || seed > 0xffff_ffff || !Number.isSafeInteger(cases) || cases < 1 || !Number.isSafeInteger(steps) || steps < 1) throw new Error("Invalid signal campaign configuration")

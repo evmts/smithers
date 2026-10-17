@@ -15,7 +15,7 @@
 import { readdirSync, readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync } from "node:fs"
 import { join, relative, dirname, posix } from "node:path"
 import { fileURLToPath } from "node:url"
-import { libraryPackages } from "../../../scripts/workspace-packages.mjs"
+import { libraryPackages } from "../../../packages/repo-targets/scripts/workspace-packages.mjs"
 import { mapMarkdownProse } from "./docs-text.mjs"
 
 const packageDocsByName = new Map(libraryPackages().map(({ name, dir }) => [name, `https://github.com/smithersai/smithers/tree/main/${dir}/docs`]))

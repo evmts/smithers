@@ -6,7 +6,7 @@ import { mkdir, readFile, writeFile, realpath } from 'node:fs/promises'
 import { join, isAbsolute } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { createInterface } from 'node:readline/promises'
-import { isMain } from '../../../scripts/workspace-packages.mjs'
+import { isMain } from '../../../packages/repo-targets/scripts/workspace-packages.mjs'
 
 const categories = ['distribution', 'provider', 'registry', 'apple']
 const hostname = value => {

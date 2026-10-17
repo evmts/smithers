@@ -25,7 +25,7 @@
  */
 import { readFileSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
-import { workspacePackages, isMain, repoRoot } from "../../scripts/workspace-packages.mjs"
+import { workspacePackages, isMain, repoRoot } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 const dependencyFields = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]
 
@@ -294,7 +294,8 @@ export const sourceMismatches = (version, root = repoRoot, sources = versionedSo
  * Reads every manifest selected by `pnpm-workspace.yaml`, keyed by its path
  * relative to the repository root.
  *
- * The membership reading is `scripts/workspace-packages.mjs`, the one place
+ * The membership reading is `packages/repo-targets/scripts/workspace-packages.mjs`,
+ * the one place
  * that knows where packages live, so a package nested inside the product
  * package it belongs to is bumped like any other.
  */

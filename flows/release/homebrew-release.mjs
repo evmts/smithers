@@ -4,7 +4,7 @@ import { readFile, writeFile, mkdir, rename, readdir } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import { execFileSync } from "node:child_process"
 import { archiveName } from "./installer-release.mjs"
-import { isMain } from "../../scripts/workspace-packages.mjs"
+import { isMain } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 const hash = bytes => createHash("sha256").update(bytes).digest("hex")
 // Homebrew writes name--version locally but fetches name-version from root_url.

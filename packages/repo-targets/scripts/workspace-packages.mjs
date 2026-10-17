@@ -20,7 +20,7 @@ import { dirname, join, resolve } from "node:path"
 import { createRequire } from "node:module"
 
 /** The repository root, resolved from this file rather than `process.cwd()`. */
-export const repoRoot = resolve(import.meta.dirname, "..")
+export const repoRoot = resolve(import.meta.dirname, "../../..")
 
 /**
  * Whether the module that owns `meta` is the process entry point.

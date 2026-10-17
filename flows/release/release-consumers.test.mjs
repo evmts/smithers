@@ -29,7 +29,7 @@ import {
   specName,
 } from "./release-consumers.mjs"
 import { releaseRegistry } from "./release-registry.mjs"
-import { repoRoot } from "../../scripts/workspace-packages.mjs"
+import { repoRoot } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 /**
  * Makes `url` the default registry of both package managers and returns the

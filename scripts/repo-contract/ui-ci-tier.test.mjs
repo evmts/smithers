@@ -17,7 +17,7 @@ import { dirname, delimiter, join } from "node:path"
 import { describe, it } from "node:test"
 
 import { parseWorkflow } from "../../flows/release/release-rehearsal.mjs"
-import { libraryPackages, repoRoot as root } from "../workspace-packages.mjs"
+import { libraryPackages, repoRoot as root } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 const readManifest = (path) => JSON.parse(readFileSync(path, "utf8"))
 

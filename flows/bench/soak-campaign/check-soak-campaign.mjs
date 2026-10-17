@@ -2,7 +2,7 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 
-import { isMain } from "../../../scripts/workspace-packages.mjs"
+import { isMain } from "../../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 export function slope(samples, field) {
   const xs = samples.map((sample) => sample.elapsedMs / 60_000)

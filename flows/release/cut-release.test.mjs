@@ -27,7 +27,7 @@ const copiedScripts = [
   "flows/release/lane-checks.mjs",
   "flows/release/generate-changelog.mjs",
   "flows/release/set-release-version.mjs",
-  "scripts/workspace-packages.mjs"
+  "packages/repo-targets/scripts/workspace-packages.mjs"
 ]
 
 const git = (root, args, env) =>

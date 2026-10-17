@@ -4,7 +4,7 @@ import { dirname, join, relative, resolve } from "node:path"
 import test from "node:test"
 
 import { findPins, guardedGroups, guardedPackages, notesPath, suppliedEnv, undocumentedPins } from "./check-test-pins.mjs"
-import { repoRoot } from "../../../scripts/workspace-packages.mjs"
+import { repoRoot } from "../scripts/workspace-packages.mjs"
 
 test("finds every outright pin form, whatever the runner prefix", () => {
   const source = [

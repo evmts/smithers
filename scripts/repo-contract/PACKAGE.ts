@@ -46,7 +46,7 @@ const publicExportMaps = Smithers.NodeTest({
     sources,
     Smithers.file("//packages/smithers/build/build-cli/scripts/public-export-map.mjs"),
     Smithers.file("//scripts/fixtures/public-export-surface.json"),
-    Smithers.file("//scripts/workspace-packages.mjs"),
+    Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs"),
     Smithers.file("//pnpm-workspace.yaml")
   ],
   deps: []
@@ -205,7 +205,7 @@ const smithersLinks = Smithers.NodeTest({
     sources,
     Smithers.file("//apps/site/scripts/published-links.mjs"),
     Smithers.file("//flows/release/pack-release.mjs"),
-    Smithers.file("//scripts/workspace-packages.mjs")
+    Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs")
   ],
   deps: [sitePackage.build]
 })

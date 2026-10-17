@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { test } from "node:test"
 import { runMutations, verifyOutcome } from "./check-mutations.mjs"
 import { mutants } from "./manifest.mjs"
-import { repoRoot } from "../../../scripts/workspace-packages.mjs"
+import { repoRoot } from "../../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 test("mutation evidence refuses surviving, unloaded, empty, interrupted and infrastructure failures", () => {
   const mutant = { id: "fixture", test: "behavior oracle" }

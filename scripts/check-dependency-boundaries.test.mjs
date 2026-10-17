@@ -5,7 +5,7 @@ import test from "node:test"
 
 import ts from "typescript"
 import { blankLiteralRanges, dependencySets, packageNameForSpecifier, packageSourceReachedBy } from "./check-dependency-boundaries.mjs"
-import { repoRoot } from "./workspace-packages.mjs"
+import { repoRoot } from "../packages/repo-targets/scripts/workspace-packages.mjs"
 
 /**
  * The blanking the gate shipped before the single pass: rebuild the whole

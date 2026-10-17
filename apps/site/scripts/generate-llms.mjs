@@ -13,7 +13,7 @@ import { readdirSync, readFileSync, writeFileSync, existsSync } from "node:fs"
 import { join, dirname, relative } from "node:path"
 import { fileURLToPath } from "node:url"
 import { docsText } from "./docs-text.mjs"
-import { libraryPackages } from "../../../scripts/workspace-packages.mjs"
+import { libraryPackages } from "../../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 const siteRoot = join(dirname(fileURLToPath(import.meta.url)), "..")
 const docsRoot = join(siteRoot, "src/content/docs/docs")
