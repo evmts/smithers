@@ -197,7 +197,11 @@ const states = {
     {
       ...base,
       presence: [
-        { actor: ssh_person, where: { kind: "file", path: ".smithers/flows/todo/flow.ts", line: 12 }, watching: "terminal-2" },
+        {
+          actor: ssh_person,
+          where: { kind: "file", path: ".smithers/flows/todo/flow.ts", line: 12 },
+          watching: "terminal-2"
+        },
         { actor: agent, where: { kind: "file", path: "packages/rpc/src/TodoCard.ts" } },
         { actor: claude_code, where: { kind: "terminal", id: "terminal-1" } },
         { actor: reviewer, where: { kind: "step", label: "Check" } },

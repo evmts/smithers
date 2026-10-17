@@ -102,10 +102,14 @@ describe("Diff as a unified patch", () => {
   })
   test("an added and a deleted file use /dev/null and a zero start", () => {
     expect(unifiedPatch(DiffCardSchema.parse(fixtures.fork.model))).toBe(
-      ["--- /dev/null", "+++ b/.smithers/flows/todo/flow.ts", "@@ -0,0 +1,1 @@", "+export const repro = true"].join("\n") + "\n"
+      ["--- /dev/null", "+++ b/.smithers/flows/todo/flow.ts", "@@ -0,0 +1,1 @@", "+export const repro = true"].join(
+        "\n"
+      ) + "\n"
     )
     expect(unifiedPatch(DiffCardSchema.parse(fixtures.deleted.model))).toBe(
-      ["--- a/.smithers/flows/todo/flow.ts", "+++ /dev/null", "@@ -1,1 +0,0 @@", "-export const legacy = true"].join("\n") + "\n"
+      ["--- a/.smithers/flows/todo/flow.ts", "+++ /dev/null", "@@ -1,1 +0,0 @@", "-export const legacy = true"].join(
+        "\n"
+      ) + "\n"
     )
   })
 })

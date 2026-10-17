@@ -33,7 +33,8 @@ describe("flowEditTodoInput", () => {
   test("asks for the change in the flow's file and quotes a proposed diff line by line", () => {
     expect(flowEditTodoInput("todo", "Add review", "-a\n+b")).toEqual({
       title: "Change the TODO flow: Add review",
-      text: "Change .smithers/flows/todo/flow.ts: Add review; start from the built-in composition when no override exists" +
+      text:
+        "Change .smithers/flows/todo/flow.ts: Add review; start from the built-in composition when no override exists" +
         "\n\nProposed diff (untrusted context):\n> -a\n> +b"
     })
     expect(flowEditPrompt("todo", "Add review")).not.toContain("untrusted")
