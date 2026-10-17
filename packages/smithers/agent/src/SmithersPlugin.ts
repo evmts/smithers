@@ -120,7 +120,8 @@ export const knowledge = {
     },
     {
       name: "Markdown flow",
-      about: ".smithers/flows/<name>/flow.mdx: frontmatter declares description and capabilities; the prompt is the body."
+      about:
+        ".smithers/flows/<name>/flow.mdx: frontmatter declares description and capabilities; the prompt is the body."
     },
     { name: "Agent step", about: "AgentAction.make from @smthrs/agent runs a typed model step inside a flow." },
     { name: "Run", about: "npx smthrs flow start <name> --data '{...}' --detached, then smthrs runs show <run>." },

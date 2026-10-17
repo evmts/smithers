@@ -87,9 +87,20 @@ describe("FlowStore.makeMemory", () => {
     expect(await run(store.list())).toStrictEqual(Exit.succeed([
       {
         id: "digest",
-        files: [".smithers/flows/digest/fixtures/digest.json", ".smithers/flows/digest/flow.e2e.ts", ".smithers/flows/digest/flow.ts"]
+        files: [
+          ".smithers/flows/digest/fixtures/digest.json",
+          ".smithers/flows/digest/flow.e2e.ts",
+          ".smithers/flows/digest/flow.ts"
+        ]
       },
-      { id: "triage", files: [".smithers/flows/triage/fixtures/triage.json", ".smithers/flows/triage/flow.e2e.ts", ".smithers/flows/triage/flow.ts"] }
+      {
+        id: "triage",
+        files: [
+          ".smithers/flows/triage/fixtures/triage.json",
+          ".smithers/flows/triage/flow.e2e.ts",
+          ".smithers/flows/triage/flow.ts"
+        ]
+      }
     ]))
   })
 
@@ -99,7 +110,14 @@ describe("FlowStore.makeMemory", () => {
     await run(store.write("triage", { ".smithers/flows/triage/flow.ts": "the second draft" }))
 
     expect(await run(store.list())).toStrictEqual(Exit.succeed([
-      { id: "triage", files: [".smithers/flows/triage/fixtures/triage.json", ".smithers/flows/triage/flow.e2e.ts", ".smithers/flows/triage/flow.ts"] }
+      {
+        id: "triage",
+        files: [
+          ".smithers/flows/triage/fixtures/triage.json",
+          ".smithers/flows/triage/flow.e2e.ts",
+          ".smithers/flows/triage/flow.ts"
+        ]
+      }
     ]))
   })
 
@@ -125,7 +143,9 @@ describe("FlowStore.makeMemory", () => {
     const written = new Map<string, string>()
     const store = FlowStore.makeMemory(written)
 
-    expect(refused(await run(store.write("../escape", { ".smithers/flows/../escape/flow.ts": "" }))).code).toBe("invalid_id")
+    expect(refused(await run(store.write("../escape", { ".smithers/flows/../escape/flow.ts": "" }))).code).toBe(
+      "invalid_id"
+    )
     expect(written.size).toBe(0)
   })
 
@@ -271,7 +291,9 @@ describe("FlowStore.layerFileSystem", () => {
     const generation = readdirSync(directory).find((name) => name.startsWith(".flow-store-"))!
     expect(generation).toBeDefined()
     expect(refused(result).message).toContain(join(directory, generation))
-    expect(readFileSync(join(directory, generation, "0.old"), "utf8")).toBe(files("triage")[".smithers/flows/triage/flow.ts"])
+    expect(readFileSync(join(directory, generation, "0.old"), "utf8")).toBe(
+      files("triage")[".smithers/flows/triage/flow.ts"]
+    )
     expect(readFileSync(join(directory, ".smithers/flows/triage/flow.e2e.ts"), "utf8")).toBe(
       files("triage")[".smithers/flows/triage/flow.e2e.ts"]
     )
@@ -394,7 +416,10 @@ describe("FlowStore.layerFileSystem", () => {
       const other = separate ? FlowStore.makeFileSystem(recording, path, directory) : store
       const second = yield* Deferred.succeed(secondRequested, undefined).pipe(
         Effect.andThen(
-          other.write("triage", { ".smithers/flows/triage/flow.ts": "second", ".smithers/flows/triage/flow.e2e.ts": "second" })
+          other.write("triage", {
+            ".smithers/flows/triage/flow.ts": "second",
+            ".smithers/flows/triage/flow.e2e.ts": "second"
+          })
         ),
         Effect.forkChild
       )
@@ -582,7 +607,14 @@ describe("FlowStore.layerFileSystem", () => {
     await onDisk(directory, (store) => store.write("triage", files("triage")))
 
     expect(await onDisk(directory, (store) => store.list())).toStrictEqual(Exit.succeed([
-      { id: "triage", files: [".smithers/flows/triage/fixtures/triage.json", ".smithers/flows/triage/flow.e2e.ts", ".smithers/flows/triage/flow.ts"] }
+      {
+        id: "triage",
+        files: [
+          ".smithers/flows/triage/fixtures/triage.json",
+          ".smithers/flows/triage/flow.e2e.ts",
+          ".smithers/flows/triage/flow.ts"
+        ]
+      }
     ]))
   })
 
@@ -604,7 +636,9 @@ describe("FlowStore.layerFileSystem", () => {
           return Effect.succeed(held)
         },
         stat: (target) => {
-          expect(held.map((relative) => path.join(directory, ".smithers", "flows", "triage", relative))).toContain(target)
+          expect(held.map((relative) => path.join(directory, ".smithers", "flows", "triage", relative))).toContain(
+            target
+          )
           return Effect.succeed(info)
         }
       })
@@ -627,7 +661,10 @@ describe("FlowStore.layerFileSystem", () => {
   it("refuses an id that would write outside the flows directory", async () => {
     const directory = root()
 
-    const result = await onDisk(directory, (store) => store.write("../escape", { ".smithers/flows/../escape/flow.ts": "" }))
+    const result = await onDisk(
+      directory,
+      (store) => store.write("../escape", { ".smithers/flows/../escape/flow.ts": "" })
+    )
 
     expect(refused(result).code).toBe("invalid_id")
     expect(await onDisk(directory, (store) => store.list())).toStrictEqual(Exit.succeed([]))
@@ -757,7 +794,14 @@ describe("FlowStore.layerFileSystem", () => {
     symlinkSync(join(directory, ".smithers/flows/triage/missing.ts"), join(directory, ".smithers/flows/triage/link.ts"))
 
     expect(await onDisk(directory, (store) => store.list())).toStrictEqual(Exit.succeed([
-      { id: "triage", files: [".smithers/flows/triage/fixtures/triage.json", ".smithers/flows/triage/flow.e2e.ts", ".smithers/flows/triage/flow.ts"] }
+      {
+        id: "triage",
+        files: [
+          ".smithers/flows/triage/fixtures/triage.json",
+          ".smithers/flows/triage/flow.e2e.ts",
+          ".smithers/flows/triage/flow.ts"
+        ]
+      }
     ]))
   })
 })

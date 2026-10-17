@@ -1467,7 +1467,8 @@ describe("an install's host runs the catalog commands its grant allows, as the t
         method: "POST",
         path: "/api/todos",
         payload: {
-          prompt: "Change .smithers/flows/todo/flow.ts: Run tests; start from the built-in composition when no override exists",
+          prompt:
+            "Change .smithers/flows/todo/flow.ts: Run tests; start from the built-in composition when no override exists",
           title: "Change the TODO flow: Run tests",
           place: { mode: "append" }
         },
