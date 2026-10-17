@@ -48,11 +48,19 @@ const fixture = async (
   const control = await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-push-control-"))
   directories.push(control)
   await Fs.cp(Path.join(import.meta.dirname, "fixtures/chain-exec"), root, { recursive: true })
+  const workspace = Path.join(root, "WORKSPACE.ts")
+  await Fs.writeFile(
+    workspace,
+    (await Fs.readFile(workspace, "utf8")).replace(
+      "bins: [\"docker\", \"forge\", \"anvil\"]",
+      "bins: [\"node\"]"
+    )
+  )
   await Fs.writeFile(
     Path.join(root, "PACKAGE.ts"),
     `import { Smithers as S } from "@smthrs/targets"
 export const Package = S.Package({ targets: {
-  push: S.Shell.Run({ shell: "true", sandbox: "none" })
+  push: S.Shell.Run({ bin: S.Host.bin("node"), args: ["-e", ""], sandbox: "none" })
 } })
 `
   )
@@ -118,6 +126,7 @@ if (image.endsWith(":two")) {
     environment: { PATH: Path.dirname(process.execPath) }
   }
   const base = (await PackageExec.plan(options)).workList.find((node) => node.label === "//:push")!
+  expect(base.refusal).toBeUndefined()
   const commands = tags.map((
     tag
   ) => [process.execPath, script, "push", `${prefix}${tag}`])
