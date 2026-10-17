@@ -216,7 +216,7 @@ export const drive = (
       Effect.provide(reconciliation),
       Effect.provide(boundary(scenario.deviation !== undefined)),
       Effect.provide(runtime(executor)),
-      Effect.provide(TestStores.layerAt(":memory:").pipe(Layer.provideMerge(consensus ?? Layer.empty))),
+      Effect.provide(TestStores.layerAt(":memory:", { consensus })),
       Effect.scoped
     )
   )

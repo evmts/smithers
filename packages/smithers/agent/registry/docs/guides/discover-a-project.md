@@ -138,14 +138,14 @@ const runAfterEdit = Effect.gen(function*() {
 
 ## Pick the right constructor
 
-| Constructor                                          | Use it when                                                                          |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `Registry.layerProject({ root, packs? })`            | The host discovers an optional project `.smithers/flows/` directory and installed packs.       |
-| `Registry.layer(config)`                             | The host scans real directories.                                                     |
-| `Registry.layerFromPacks(packs, { runtimeVersion })` | The catalog is a set of installed packs. See [Load workflow packs](./load-packs.md). |
-| `Registry.layerFromDescriptors(entries, warnings?)`  | The host already holds descriptors and still wants lazy body loading.                |
-| `Registry.layerNoop(overrides?)`                     | The composition has no registry and must say so.                                     |
-| `Registry.make(config)`                              | The host needs the service value rather than a layer.                                |
+| Constructor                                          | Use it when                                                                              |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `Registry.layerProject({ root, packs? })`            | The host discovers an optional project `.smithers/flows/` directory and installed packs. |
+| `Registry.layer(config)`                             | The host scans real directories.                                                         |
+| `Registry.layerFromPacks(packs, { runtimeVersion })` | The catalog is a set of installed packs. See [Load workflow packs](./load-packs.md).     |
+| `Registry.layerFromDescriptors(entries, warnings?)`  | The host already holds descriptors and still wants lazy body loading.                    |
+| `Registry.layerNoop(overrides?)`                     | The composition has no registry and must say so.                                         |
+| `Registry.make(config)`                              | The host needs the service value rather than a layer.                                    |
 
 `layerNoop` and `makeNoop` are explicit absences, not empty catalogs by
 accident: every member fails or answers empty, and `overrides` replaces the

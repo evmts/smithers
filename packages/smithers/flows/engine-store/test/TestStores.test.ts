@@ -5,17 +5,51 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, expect, it } from "@effect/vitest"
+import * as Consensus from "@smthrs/journal/Consensus"
 import { Journal } from "@smthrs/journal/Journal"
 import { type RunId, type SourceId } from "@smthrs/journal/JournalEvent"
 import { AttemptStore } from "@smthrs/run-store/AttemptStore"
 import { RunStore } from "@smthrs/run-store/RunStore"
 import { CacheStore } from "@smthrs/step-cache/CacheStore"
-import { Effect, Option } from "effect"
+import { Effect, Layer, Option } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
 import * as TestStores from "../src/test/TestStores.ts"
 import * as PersistentDatabase from "./fixtures/PersistentDatabase.ts"
 
 describe("TestStores", () => {
+  for (const named of [false, true]) {
+    it.effect(`shares an explicitly selected consensus between run ownership and journal fencing: ${named}`, () => {
+      const strategy = Consensus.layerLocal
+      const options = { consensus: strategy }
+      const bundle = named ? TestStores.layerAt(":memory:", options) : TestStores.layer(options)
+      return Effect.gen(function*() {
+        const owner = { hostId: "explicit", pid: 1, nonce: "explicit" }
+        const runs = yield* RunStore
+        yield* runs.create("explicit", "{}")
+        expect(
+          (yield* runs.claimAndOwn("explicit", { status: "pending", owner: null, heartbeatAtMs: null }, owner, 1))._tag
+        ).toBe("Activated")
+        // A concrete local strategy must hold the SAME lease the SQL-backed
+        // run store claimed, rather than being shadowed by its default strategy.
+        yield* (yield* Consensus.Consensus).guard("explicit", owner)
+        const journal = yield* Journal
+        const entry = {
+          runId: "explicit" as RunId,
+          sourceId: "explicit" as SourceId,
+          eventType: "explicit",
+          payload: {}
+        }
+        yield* journal.emitDurable(entry, owner)
+        const refused = yield* Effect.flip(journal.emitDurable(entry, { ...owner, nonce: "wrong" }))
+        expect(refused.code).toBe("fence_lost")
+      }).pipe(
+        Effect.provide(bundle.pipe(Layer.provideMerge(strategy))),
+        Effect.provide(NodeCrypto.layer),
+        Effect.scoped
+      )
+    })
+  }
+
   it.effect("provides the complete production service bundle over in-memory SQLite", () =>
     Effect.gen(function*() {
       const owner = { hostId: "test-host", pid: 1, nonce: "bundle-owner" }

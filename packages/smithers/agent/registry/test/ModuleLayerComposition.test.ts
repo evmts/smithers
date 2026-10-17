@@ -135,13 +135,15 @@ describe("module layer composition", () => {
                   ...(exported ? { layer: Layer.empty } : {})
                 })
             })
+            const runtime = yield* FlowRuntime.FlowRuntime
             expect(
-              yield* executable.flow.execute({ input: { value: "input" } }, {
+              yield* runtime.execute(executable.flow, {
+                payload: { input: { value: "input" } },
                 executionId: "adopted-run"
               }).pipe(Effect.provide(executable.layer))
             ).toBe("new implementation")
             if (persistent) {
-              const journal = yield* Journal.Journal
+              const journal = Option.getOrThrow(yield* Effect.serviceOption(Journal.Journal))
               const page = yield* journal.entries({
                 runId: "adopted-run" as never,
                 eventTypes: ["flows.engine.plan-recorded"],
