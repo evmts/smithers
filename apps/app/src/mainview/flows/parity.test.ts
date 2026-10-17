@@ -221,7 +221,10 @@ const DELEGATED_HANDLERS: Readonly<Record<string, readonly string[]>> = {
   // The launcher's Open box GOES to `/owner/name` — the same browser
   // navigation its rows' links already are. The route there owns admission,
   // sign-in, import and every refusal, so there is no command to run here.
-  "../cards/RepositoryLauncher.tsx": ["onOpenRepository(repositoryHref("]
+  "../cards/RepositoryLauncher.tsx": ["onOpenRepository(repositoryHref("],
+  // The repository home's stack bound: Show all / Show fewer only widens which
+  // already-loaded rows render (aria-expanded) — local presentation state (#4085).
+  "../cards/RepositoryHomeView.tsx": ["setAll(!all)"]
 }
 
 const routesThroughRegistry = (context: string): boolean =>
@@ -1352,7 +1355,7 @@ describe("launch-law parity: every affordance is a command", () => {
       "../cards/ApprovalCard.tsx": 2,
       "../cards/CodingVibeCard.tsx": 1,
       "../cards/RepositoryChoiceCard.tsx": 2,
-      "../cards/RepositoryHomeView.tsx": 4,
+      "../cards/RepositoryHomeView.tsx": 5,
       "../cards/RepositoryLauncher.tsx": 7,
       "../cards/RepositoryUpdateCard.tsx": 2,
       /*
