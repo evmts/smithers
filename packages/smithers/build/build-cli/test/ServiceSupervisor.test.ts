@@ -1,3 +1,4 @@
+import * as ProcessTable from "../../../../testing/src/ProcessTable.ts"
 /**
  * ServiceSupervisor lifecycle proofs over a real node HTTP fixture server.
  *
@@ -112,7 +113,11 @@ const probeProcesses = (command: string, pattern: string): Promise<ReadonlyArray
     })
   })
 
-const pgrep = (pattern: string): Promise<ReadonlyArray<number>> => probeProcesses("pgrep", pattern)
+const pgrep = async (pattern: string): Promise<ReadonlyArray<number>> =>
+  process.platform === "win32"
+    ? ProcessTable.query({ columns: ["pid", "args"] }).split("\n")
+      .filter((line) => line.includes(pattern)).map((line) => Number(line.trim().split(/\s+/, 1)[0]))
+    : probeProcesses("pgrep", pattern)
 
 /**
  * A process the marker probe must be able to see, alive for the whole file.

@@ -3,19 +3,30 @@ import { randomUUID } from "node:crypto"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import * as ProcessTable from "../../../../../testing/src/ProcessTable.ts"
 
 export const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
 /** Runs `/bin/ps` synchronously; injectable so inspection failures are testable. */
 export type PsRunner = (args: ReadonlyArray<string>) => string
 
-export const runPs: PsRunner = (args) =>
-  execFileSync("/bin/ps", args, {
+export const runPs: PsRunner = (args) => {
+  if (process.platform === "win32") {
+    const output = ProcessTable.query({
+      pid: Number(args[args.indexOf("-p") + 1]),
+      columns: ["stat", "args"],
+      timeoutMs: 1000
+    })
+    if (output.trim() === "") throw Object.assign(new Error("process absent"), { status: 1, signal: null, stdout: "" })
+    return output
+  }
+  return execFileSync("/bin/ps", args, {
     encoding: "utf8",
     timeout: 1000,
     killSignal: "SIGKILL",
     env: { PATH: "/usr/bin:/bin", LC_ALL: "C" }
   })
+}
 
 /** What one inspection established about a pid. */
 export type Observation =

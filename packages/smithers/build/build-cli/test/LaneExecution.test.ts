@@ -1,3 +1,4 @@
+import * as ProcessTable from "../../../../testing/src/ProcessTable.ts"
 /**
  * Package-mode execution of the resolver, bundler, and service lanes through
  * the real CLI against real processes:
@@ -132,7 +133,11 @@ const probeProcesses = (command: string, marker: string): Array<number> => {
   }
 }
 
-const pgrep = (marker: string): Array<number> => probeProcesses("pgrep", marker)
+const pgrep = (marker: string): Array<number> =>
+  process.platform === "win32"
+    ? ProcessTable.query({ columns: ["pid", "args"] }).split("\n")
+      .filter((line) => line.includes(marker)).map((line) => Number(line.trim().split(/\s+/, 1)[0]))
+    : probeProcesses("pgrep", marker)
 
 /**
  * A process the marker probe must be able to see, alive for the whole file.
