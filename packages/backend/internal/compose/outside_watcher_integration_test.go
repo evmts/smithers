@@ -97,15 +97,11 @@ func TestOutsideWatcherComposedInstallLive(t *testing.T) {
 	// Byte paths cannot travel through the public UTF-8 watcher codec.
 	// Exercise a preexisting name and a later modification through inotify.
 	rawPath := "invalid-" + string([]byte{0xff}) + ".ts"
-	require.NoError(t, os.WriteFile(filepath.Join(root, rawPath), []byte("raw before\n"), 0600))
 	rawOther := "invalid-" + string([]byte{0xfe}) + ".ts"
 	rawDirectory := "raw-dir-" + string([]byte{0xff})
 	rawNested := rawDirectory + "/binary-" + string([]byte{0xfe}) + ".bin"
-	require.NoError(t, os.WriteFile(filepath.Join(root, rawOther), []byte("distinct before\n"), 0755))
-	require.NoError(t, os.Mkdir(filepath.Join(root, rawDirectory), 0700))
-	require.NoError(t, os.WriteFile(filepath.Join(root, rawNested), []byte{0, 0xff, 1}, 0600))
 
-	require.NoError(t, os.WriteFile(filepath.Join(root, ".gitignore"), []byte("node_modules/\nprivate-\xff.ts\nsecret-?.tmp\n"), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".gitignore"), []byte("node_modules/\nsecret-?.tmp\n"), 0600))
 	snapshot := exec.Command(jj, "status")
 	snapshot.Dir = root
 	output, err = snapshot.CombinedOutput()
@@ -130,6 +126,14 @@ func TestOutsideWatcherComposedInstallLive(t *testing.T) {
 	_, err = f.pool.Exec(ctx, `UPDATE workspaces SET source_commit=$2,head_commit_id=$2 WHERE id=$1`, f.row.ID, seedHead)
 	require.NoError(t, err)
 	evidence := t.TempDir()
+	// The pinned jj CLI requires UTF-8 paths and ignore patterns when seeding
+	// the branch. Stage the byte fixtures after that snapshot but before the
+	// native watcher starts: they are still preexisting files for its scan.
+	require.NoError(t, os.WriteFile(filepath.Join(root, rawPath), []byte("raw before\n"), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(root, rawOther), []byte("distinct before\n"), 0755))
+	require.NoError(t, os.Mkdir(filepath.Join(root, rawDirectory), 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(root, rawNested), []byte{0, 0xff, 1}, 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".gitignore"), []byte("node_modules/\nprivate-\xff.ts\nsecret-?.tmp\n"), 0600))
 	t.Cleanup(func() {
 		if t.Failed() {
 			log, _ := os.ReadFile(filepath.Join(evidence, "machined-"+f.row.ID+".log"))
