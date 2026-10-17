@@ -7,6 +7,7 @@ const cwd = "packages/smithers/build/build-cli"
 const sources = Smithers.glob("src/**/*.ts")
 const javascript = Smithers.glob("src/**/*.js")
 const tests = Smithers.glob("test/**/*.test.ts")
+const helpers = Smithers.glob("test/helpers/**/*.ts")
 /** Runnable examples; `test/examples.test.ts` imports and runs each one. */
 const examples = Smithers.glob("examples/**/*.ts")
 
@@ -63,7 +64,18 @@ const check = Smithers.Typecheck({
 
 const test = Smithers.Vitest({
   tests: [tests],
-  sources: [sources, javascript, examples, fixtures, routedFixture, prose, readme, sweep],
+  sources: [
+    sources,
+    javascript,
+    examples,
+    helpers,
+    fixtures,
+    routedFixture,
+    prose,
+    readme,
+    sweep,
+    Smithers.file("//rust-toolchain.toml")
+  ],
   deps: [lib],
   config: Smithers.file("vitest.config.ts"),
   environment: "node",
