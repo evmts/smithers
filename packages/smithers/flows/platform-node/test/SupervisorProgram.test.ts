@@ -590,6 +590,7 @@ it("delivers TLS EOF after terminal receipts without a host acknowledgment", asy
       acknowledgeCleanup: true,
       command: process.execPath,
       args: ["-e", "process.exit(0)"],
+      standardFds: ["ignore", "ignore", "ignore"],
       userFds: [],
       killSignal: "SIGKILL",
       graceMs: 0
