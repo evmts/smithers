@@ -2,10 +2,10 @@ import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgain
 import { nativeFfiLib, rehearsalNative } from "../smithers-ffi/native-targets.ts"
 /** Standard package targets plus package-owned documentation generation. */
 import { Smithers } from "@smthrs/targets"
-import { Package as flowsJjPackage } from "../../packages/smithers/flows/jj-wasm/PACKAGE.ts"
 import { Package as machinedPackage } from "../../packages/smithers-machined/PACKAGE.ts"
-import { Package as repoTargetsPackage } from "../repo-targets/PACKAGE.ts"
+import { Package as flowsJjPackage } from "../../packages/smithers/flows/jj-wasm/PACKAGE.ts"
 import { Package as backendPackage } from "../backend/PACKAGE.ts"
+import { Package as repoTargetsPackage } from "../repo-targets/PACKAGE.ts"
 
 const tuiSources = Smithers.Filegroup({
   cwd: "apps/tui",
@@ -99,29 +99,27 @@ const laneThree = [
  */
 const delegatedLoginTest = "test/DelegatedLogin.integration.test.ts"
 
-/** Every other file, so a new file joins the fourth lane without an edit here. */
-const laneFour = [...laneOne, ...laneTwo, ...laneThree, delegatedLoginTest].map((file) => `--exclude ${file}`).join(" ")
+/** The remaining files join four shards automatically, including newly added files. */
+const remainder = [...laneOne, ...laneTwo, ...laneThree, delegatedLoginTest].map((file) => `--exclude ${file}`).join(
+  " "
+)
 
 const test = Smithers.Shell.Test({
-  // The files run one after another (`fileParallelism: false`): 3906 s of
-  // them, measured 2026-10-10 on four pinned cores, against the 40-minute cap.
-  // As two halves the second half alone took 3305 s there and timed out on
-  // the Release gates lane (job 114021383970). Three lanes of about 1300 s
-  // each finished in 1574 s locally but 2114 s hosted. Four lanes isolate
-  // the measured 964 s Bin file and move the 402 s peer-recovery file into
-  // seven shorter files; the six longest remaining files run separately.
-  // Merging their blobs checks the thresholds
-  // over the whole suite as before. The runner shows a target's first 200
-  // live lines: `github-actions` prints one line per failed case first, so a
-  // red names every failing file before `dot` prints details that may pass
-  // the limit.
+  // Keep the measured process-heavy groups separate, then share the remainder
+  // across all four workers. Leaving every new file on worker four grew that
+  // worker to 263 files while the other workers ran only 1, 8 and 6 (#4122).
+  // Each invocation records its own blob; the merge retains every failure and
+  // checks the original coverage thresholds over the complete suite.
   shell: [
     "cd packages/smithers && blobs=$(mktemp -d) && {",
-    `${lane} --outputFile=$blobs/one.json ${laneOne.join(" ")} & one=$!;`,
-    `${lane} --outputFile=$blobs/two.json ${laneTwo.join(" ")} & two=$!;`,
-    `${lane} --outputFile=$blobs/three.json ${laneThree.join(" ")} & three=$!;`,
-    `${lane} --outputFile=$blobs/four.json ${laneFour}; wait $one $two $three;`,
-    "if test -f $blobs/one.json && test -f $blobs/two.json && test -f $blobs/three.json && test -f $blobs/four.json;",
+    `{ ${lane} --outputFile=$blobs/one-fixed.json ${laneOne.join(" ")};`,
+    `${lane} --outputFile=$blobs/one.json ${remainder} --shard=1/4; } & one=$!;`,
+    `{ ${lane} --outputFile=$blobs/two-fixed.json ${laneTwo.join(" ")};`,
+    `${lane} --outputFile=$blobs/two.json ${remainder} --shard=2/4; } & two=$!;`,
+    `{ ${lane} --outputFile=$blobs/three-fixed.json ${laneThree.join(" ")};`,
+    `${lane} --outputFile=$blobs/three.json ${remainder} --shard=3/4; } & three=$!;`,
+    `${lane} --outputFile=$blobs/four.json ${remainder} --shard=4/4; wait $one $two $three;`,
+    "if test -f $blobs/one-fixed.json && test -f $blobs/two-fixed.json && test -f $blobs/three-fixed.json && test -f $blobs/one.json && test -f $blobs/two.json && test -f $blobs/three.json && test -f $blobs/four.json;",
     `then ${vitest} --merge-reports=$blobs --reporter=github-actions --reporter=dot;`,
     "else echo \"a lane of the suite ended without its report\" >&2; false; fi; };",
     "status=$?; rm -rf \"$blobs\"; exit $status"
