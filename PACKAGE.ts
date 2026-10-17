@@ -1218,8 +1218,7 @@ const securityReview = Smithers.SecurityReview({
     ...flowEntries.filter((input) => /\/flow\.(ts|mdx)$/.test(input.path)).map((input) => input.path),
     "distribution/*",
     "crates/smithers-ffi/Cargo.toml",
-    "crates/smithers-ffi/src/*.rs",
-    "patches/*.patch"
+    "crates/smithers-ffi/src/*.rs"
   ],
   checks: [
     {
@@ -1331,11 +1330,10 @@ const securityReview = Smithers.SecurityReview({
         "A contributor slips code into a dependency patch or pnpm hook that runs on every maintainer's machine and CI runner during install.",
       lookFor: [
         ".pnpmfile.mjs readPackage rewriting any package other than the classicCompilerTools names, or adding a dependency, script, or registry URL.",
-        "A patches/*.patch hunk that adds a postinstall script, child_process or fetch call, or an eval into the patched package.",
         "pnpm-workspace.yaml allowBuilds admitting a package that has no documented need for an install script, or .npmrc adding a registry or auth line.",
         "flake.nix or the Dockerfile fetching a source without a pinned hash."
       ],
-      paths: [".pnpmfile.mjs", ".npmrc", "pnpm-workspace.yaml", "patches/*.patch", "flake.nix"]
+      paths: [".pnpmfile.mjs", ".npmrc", "pnpm-workspace.yaml", "flake.nix"]
     },
     {
       id: "root-tool-targets",

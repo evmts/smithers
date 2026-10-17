@@ -274,10 +274,10 @@ const llms = Smithers.Generate({
  */
 const docsTextTest = Smithers.Shell.Test({
   shell: "node --test --test-concurrency=1 apps/site/scripts/docs-text.test.mjs apps/site/scripts/built-site.test.mjs apps/site/scripts/gen-cli-data.test.mjs apps/site/scripts/flows-location.test.mjs",
+  data: [
     Smithers.file("scripts/flows-location.test.mjs"),
     Smithers.file("src/data/migration-paths.json"),
     Smithers.file("src/components/HeroStage.astro"),
-  data: [
     Smithers.file("scripts/docs-text.mjs"),
     Smithers.file("scripts/docs-text.test.mjs"),
     Smithers.file("src/content/docs/docs/reference/http-api.mdx"),
