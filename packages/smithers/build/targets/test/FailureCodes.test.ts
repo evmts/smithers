@@ -88,8 +88,14 @@ describe("Exec failure codes", () => {
     const error = await failureOf(payload({
       argv: [process.execPath, "-e", "process.kill(process.pid, 'SIGKILL'); setTimeout(() => {}, 5000)"]
     }))
-    expect(error.code).toBe("signaled")
-    expect(error.signal).toBe("SIGKILL")
+    if (process.platform === "win32") {
+      expect(error.code).toBe("exit_status")
+      expect(error.exitCode).toBe(1)
+      expect(error.signal).toBeUndefined()
+    } else {
+      expect(error.code).toBe("signaled")
+      expect(error.signal).toBe("SIGKILL")
+    }
   })
 
   it("reports exit_status with the real exit code for a tool that ran and failed", async () => {

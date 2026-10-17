@@ -286,7 +286,15 @@ describe("exit reporting", () => {
       "process.kill(process.pid, 'SIGKILL'); setTimeout(() => {}, 5000)"
     ))
 
-    expect(error.stderr).toContain("terminated by SIGKILL")
+    if (process.platform === "win32") {
+      expect(error.code).toBe("exit_status")
+      expect(error.exitCode).toBe(1)
+      expect(error.signal).toBeUndefined()
+    } else {
+      expect(error.code).toBe("signaled")
+      expect(error.signal).toBe("SIGKILL")
+      expect(error.stderr).toContain("terminated by SIGKILL")
+    }
   })
 
   /**
@@ -359,7 +367,9 @@ describe("payload and environment boundary", () => {
     const previousHelper = process.env["SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"]
     process.env["SDKROOT"] = "/smthrs/test/MacOSX.sdk"
     process.env["DEVELOPER_DIR"] = "/smthrs/test/Developer"
-    process.env["SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"] = "/smthrs/test/native-helper"
+    const helper = process.platform === "win32" ? previousHelper : "/smthrs/test/native-helper"
+    if (helper === undefined) delete process.env["SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"]
+    else process.env["SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"] = helper
     try {
       const result = await succeeded(payload(
         "process.stdout.write(JSON.stringify({" +
@@ -371,7 +381,7 @@ describe("payload and environment boundary", () => {
       expect(JSON.parse(result.stdout)).toEqual({
         sdk: "/smthrs/test/MacOSX.sdk",
         developer: "/smthrs/test/Developer",
-        helper: "/smthrs/test/native-helper"
+        helper
       })
     } finally {
       if (previousSdk === undefined) delete process.env["SDKROOT"]
