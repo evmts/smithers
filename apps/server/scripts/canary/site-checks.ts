@@ -113,12 +113,12 @@ const expectStatus = async (fetch: Fetcher, origin: string, path: string, status
 const SERVED_DOCUMENT_MOUNT = /<div[^>]*\sid=["']root["']/i
 
 /**
- * Cloudflare's documented CF-Cache-Status values
- * (developers.cloudflare.com/cache/concepts/default-cache-behavior). A value
- * outside this list is not reported, whatever it says.
+ * The CF-Cache-Status values Cloudflare documents, exactly as its reference
+ * lists them (developers.cloudflare.com/cache/concepts/cache-responses/).
+ * A value outside this list is not reported, whatever it says.
  */
 const CACHE_STATUSES: ReadonlyArray<string> = [
-  "HIT", "MISS", "EXPIRED", "STALE", "BYPASS", "REVALIDATED", "UPDATING", "DYNAMIC", "NONE", "UNKNOWN", "NONE/UNKNOWN", "IGNORED", "DEFERRED"
+  "HIT", "MISS", "NONE/UNKNOWN", "EXPIRED", "STALE", "BYPASS", "REVALIDATED", "UPDATING", "DYNAMIC"
 ]
 
 /** A header value this probe may print: one of a closed set, absent, or named as neither. */
@@ -147,9 +147,10 @@ export const servingEvidence = (observed: Observed): string =>
   `served ${servedBuildSha(observed.body)} + document ${servedDocumentKind(observed.body)} + cache ${
     finite(header(observed, "cf-cache-status"), (value) => CACHE_STATUSES.includes(value))
   } age ${
-    // Seconds in a shared cache, as HTTP defines Age: digits only, and short
-    // enough that no padded or concatenated value survives.
-    finite(header(observed, "age"), (value) => /^\d{1,7}$/.test(value))
+    // Seconds in a shared cache, as HTTP defines Age: a canonical non-negative
+    // integer — no sign, no padding, no separator — and short enough that no
+    // concatenated value survives.
+    finite(header(observed, "age"), (value) => /^(?:0|[1-9]\d{0,6})$/.test(value))
   } colo ${servedColo(observed)}`
 
 const expectAppDocument = (path: string, observed: Observed): SiteCheck => {

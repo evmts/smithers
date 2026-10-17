@@ -467,10 +467,10 @@ describe("a response header reaches the evidence only through a finite vocabular
   const evidence = (headers: Record<string, string>) => servingEvidence({ status: 200, headers })
 
   test("a cache status is one of Cloudflare's documented values, and anything else is unvalidated", () => {
-    for (const status of ["HIT", "MISS", "EXPIRED", "STALE", "BYPASS", "REVALIDATED", "UPDATING", "DYNAMIC", "NONE/UNKNOWN", "IGNORED", "DEFERRED"]) {
+    for (const status of ["HIT", "MISS", "NONE/UNKNOWN", "EXPIRED", "STALE", "BYPASS", "REVALIDATED", "UPDATING", "DYNAMIC"]) {
       expect(evidence({ "cf-cache-status": status })).toContain(`cache ${status} `)
     }
-    for (const hostile of ["hit", "HIT, MISS", "HIT\nset-cookie: a=b", "sk-live-4129abcdef", "HIT ".repeat(400), ""]) {
+    for (const hostile of ["hit", "HIT, MISS", "HIT\nset-cookie: a=b", "sk-live-4129abcdef", "HIT ".repeat(400), "", "IGNORED", "DEFERRED"]) {
       const got = evidence({ "cf-cache-status": hostile })
       expect(got).toContain("cache unvalidated ")
       if (hostile !== "") expect(got).not.toContain(hostile.slice(0, 8))
@@ -481,7 +481,7 @@ describe("a response header reaches the evidence only through a finite vocabular
   test("an age is seconds and nothing else", () => {
     expect(evidence({ age: "0" })).toContain("age 0 ")
     expect(evidence({ age: "1234567" })).toContain("age 1234567 ")
-    for (const hostile of ["12345678", "-1", "1.5", "41 ", "41; x=y", "0041\nx", "many"]) {
+    for (const hostile of ["12345678", "-1", "1.5", "41 ", "41; x=y", "0041\nx", "many", "0041", "007"]) {
       const got = evidence({ age: hostile })
       expect(got).toContain("age unvalidated ")
       expect(got).not.toContain(hostile)
