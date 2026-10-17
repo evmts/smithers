@@ -7,6 +7,8 @@ import { expect, it } from "vitest"
 import { serve } from "./helpers/ServeCli.ts"
 import { write } from "./helpers/WriteFile.ts"
 
+const shellWord = (word: string): string => "'" + word.replaceAll("'", "'\\''") + "'"
+
 const freePort = (): Promise<number> =>
   new Promise((resolve, reject) => {
     const server = Net.createServer()
@@ -43,14 +45,14 @@ export const Workspace = S.Workspace("fixture", {
     )
     await write(
       root,
-      "server.mjs",
+      "server's example.mjs",
       `import { createServer } from "node:http"
 createServer((request, response) => response.end("service-backed-result")).listen(${port}, "127.0.0.1")
 `
     )
     await write(
       root,
-      "consumer.mjs",
+      "consumer's example.mjs",
       `import { writeFileSync } from "node:fs"
 import assert from "node:assert/strict"
 const response = await fetch("http://127.0.0.1:${port}")
@@ -64,20 +66,20 @@ writeFileSync("receipt.txt", text)
       "PACKAGE.ts",
       `import { Smithers as S } from "@smthrs/targets"
 const service = S.Shell.Serve({
-  shell: ${JSON.stringify(`${process.execPath} server.mjs`)},
-  data: [S.file("server.mjs")],
+  shell: ${JSON.stringify(`${shellWord(process.execPath)} ${shellWord("server's example.mjs")}`)},
+  data: [S.file("server's example.mjs")],
   readiness: { port: ${port} }
 })
 const probe = S.Shell.Test({
-  shell: ${JSON.stringify(`${process.execPath} consumer.mjs`)},
-  data: [S.file("consumer.mjs")], services: [service], sandbox: "none"
+  shell: ${JSON.stringify(`${shellWord(process.execPath)} ${shellWord("consumer's example.mjs")}`)},
+  data: [S.file("consumer's example.mjs")], services: [service], sandbox: "none"
 })
 export const Package = S.Package({ targets: { service, probe } })
 `
     )
     const args = verb === "ci"
       ? ["ci", "//...", "--no-cache", "--jobs", "1"]
-      : ["affected", "ci", "//...", "--files", "consumer.mjs", "--no-cache", "--jobs", "1"]
+      : ["affected", "ci", "//...", "--files", "consumer's example.mjs", "--no-cache", "--jobs", "1"]
     const result = await serve(root, args)
     expect(result.exitCode, result.output + result.logs).toBe(0)
     expect(result.logs).toContain("//:probe  service //:service: ready")
