@@ -306,7 +306,7 @@ export const Package = S.Package({ targets: {
     expect(requests).toBe(requestsBefore + 1)
     // The download and the CAS restore agree on mode as well as bytes, so a
     // restrictive umask cannot make a warm tree differ from a cold one.
-    expect(downloadedMode).toBe(0o644)
+    expect(downloadedMode).toBe(process.platform === "win32" ? 0o666 : 0o644)
     expect((await Fs.stat(destination)).mode & 0o777).toBe(downloadedMode)
   })
 

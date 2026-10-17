@@ -147,7 +147,9 @@ describe("exact Fetch execution", () => {
       expect(publicResult).toEqual(result)
       for (const name of ["download.bin", "public.bin"]) {
         expect(await Fs.readFile(Path.join(root, "data", name))).toEqual(bytes)
-        expect((await Fs.stat(Path.join(root, "data", name))).mode & 0o777).toBe(0o644)
+        expect((await Fs.stat(Path.join(root, "data", name))).mode & 0o777).toBe(
+          process.platform === "win32" ? 0o666 : 0o644
+        )
       }
       expect((await Fs.readdir(Path.join(root, "data"))).sort()).toEqual(["download.bin", "public.bin"])
     }
