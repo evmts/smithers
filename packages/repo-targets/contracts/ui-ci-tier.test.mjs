@@ -11,9 +11,9 @@
  */
 import { execFileSync, spawnSync } from "node:child_process"
 import assert from "node:assert/strict"
-import { chmodSync, copyFileSync, existsSync, globSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
+import { chmodSync, copyFileSync, existsSync, globSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { dirname, delimiter, join } from "node:path"
+import { dirname, delimiter, join, sep } from "node:path"
 import { describe, it } from "node:test"
 
 import { parseWorkflow } from "../../../flows/release/release-rehearsal.mjs"
@@ -191,7 +191,13 @@ else { writeFileSync(${JSON.stringify(tscMarker)}, JSON.stringify(process.argv.s
         .flatMap(([, list]) => [...list.matchAll(/"([^"]+)"/g)].map(([, pattern]) => pattern))
       for (const pattern of patterns) {
         const [base, relative] = pattern.startsWith("//") ? [".", pattern.slice(2)] : [directory, pattern]
-        for (const match of globSync(relative, { cwd: join(root, base), exclude: (name) => name === "node_modules" })) {
+        // The review matches dotfiles; `globSync` skips them, so a `dir/**`
+        // tree is read whole, as the review would see it.
+        const tree = relative.endsWith("/**") ? relative.slice(0, -3) : undefined
+        const matches = tree !== undefined && existsSync(join(root, base, tree))
+          ? readdirSync(join(root, base, tree), { recursive: true }).filter((path) => !path.split(sep).includes("node_modules")).map((path) => join(tree, path))
+          : globSync(relative, { cwd: join(root, base), exclude: (name) => name === "node_modules" })
+        for (const match of matches) {
           const path = join(base, match)
           if (/(?:^|\/)(?:WORKSPACE|PACKAGE)\.ts$/.test(path) || !statSync(join(root, path)).isFile()) continue
           if (!existsSync(join(temporary, path))) copyFileSync(join(root, path), write(path, ""))
