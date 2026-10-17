@@ -255,13 +255,18 @@ const draftAndCheck = (
   const { dialect, maxSqlAttempts, queryPlan, rowLimit, schemaMap } = context
   return Node.bindPlanned(
     WriteSql.call({ queryPlan, schemaMap, dialect, rowLimit, previousCheck }),
-    (draft: Planned.Planned<typeof SqlDraft.Type>) =>
-      Node.branch(CheckSql.call({ draft, queryPlan, dialect, rowLimit }), {
-        if: querySafe,
-        then: (check) => Node.succeed(check),
-        else: (check) =>
-          attempt >= maxSqlAttempts ? Node.succeed(check) : draftAndCheck(context, attempt + 1, check)
-      })
+    Node.capture(
+      { dialect, maxSqlAttempts, rowLimit, attempt },
+      (draft: Planned.Planned<typeof SqlDraft.Type>) =>
+        Node.branch(CheckSql.call({ draft, queryPlan, dialect, rowLimit }), {
+          if: querySafe,
+          then: Node.capture({}, (check) => Node.succeed(check)),
+          else: Node.capture(
+            { maxSqlAttempts, attempt },
+            (check) => attempt >= maxSqlAttempts ? Node.succeed(check) : draftAndCheck(context, attempt + 1, check)
+          )
+        })
+    )
   )
 }
 
@@ -269,15 +274,15 @@ const draftAndCheck = (
 const approve = (check: Planned.Planned<SqlCheck>): Node.Node<Approval | null, Failure, Requirements> =>
   Node.branch(Node.succeed(check), {
     if: needsApproval,
-    then: () =>
+    then: Node.capture({}, () =>
       Node.bindPlanned(
         Node.map(Node.succeed({ check }), question),
-        (prompt: Planned.Planned<string>) =>
+        Node.capture({}, (prompt: Planned.Planned<string>) =>
           HumanTask.decode(Approval)(
             HumanTask.action.call({ name: approvalName, kind: "json", prompt, schema: approvalSchema })
-          )
-      ),
-    else: () => Node.succeed(null)
+          ))
+      )),
+    else: Node.capture({}, () => Node.succeed(null))
   })
 
 /** The flow: inspect, plan, draft and check, approve when needed, execute when allowed, report. */
@@ -291,7 +296,7 @@ export const SqlAnalystDashboard = Flow.make("examples/SqlAnalystDashboard", {
   },
   success: Dashboard,
   error: Schema.Union([AgentAction.AgentFailure, HumanTask.HumanTaskFailed]),
-  body: ({
+  body: Node.capture({}, ({
     database = "fixtures/sql-analyst/orders.sqlite",
     dialect = "sqlite",
     maxSqlAttempts = 3,
@@ -300,40 +305,55 @@ export const SqlAnalystDashboard = Flow.make("examples/SqlAnalystDashboard", {
   }) =>
     Node.bindPlanned(
       InspectSchema.call({ database, dialect }),
-      (schemaMap: Planned.Planned<typeof SchemaMap.Type>) =>
-        Node.bindPlanned(
-          PlanQuery.call({
-            question: asked ??
-              "Which acquisition channel has the highest 90-day gross margin, and is it trending up or down?",
-            schemaMap
-          }),
-          (queryPlan: Planned.Planned<typeof QueryPlan.Type>) =>
-            Node.bindPlanned(
-              draftAndCheck({ queryPlan, schemaMap, dialect, rowLimit, maxSqlAttempts }, 1, undefined),
-              (check: Planned.Planned<SqlCheck>) =>
+      Node.capture(
+        { database, dialect, maxSqlAttempts, asked: asked ?? null, rowLimit },
+        (schemaMap: Planned.Planned<typeof SchemaMap.Type>) =>
+          Node.bindPlanned(
+            PlanQuery.call({
+              question: asked ??
+                "Which acquisition channel has the highest 90-day gross margin, and is it trending up or down?",
+              schemaMap
+            }),
+            Node.capture(
+              { database, dialect, maxSqlAttempts, asked: asked ?? null, rowLimit },
+              (queryPlan: Planned.Planned<typeof QueryPlan.Type>) =>
                 Node.bindPlanned(
-                  approve(check),
-                  (approval: Planned.Planned<Approval | null>) =>
+                  draftAndCheck({ queryPlan, schemaMap, dialect, rowLimit, maxSqlAttempts }, 1, undefined),
+                  Node.capture({ database, dialect, asked: asked ?? null }, (check: Planned.Planned<SqlCheck>) =>
                     Node.bindPlanned(
-                      Node.branch(Node.succeed({ check, approval }), {
-                        if: mayExecute,
-                        then: () => ExecuteQuery.call({ database, dialect, sql: check.safeSql }),
-                        else: () => Node.succeed(null)
-                      }),
-                      (queryResult: Planned.Planned<typeof QueryResult.Type | null>) =>
-                        // 0.x handed the dashboard the raw question, without the planner's default.
-                        MakeDashboard.call({
-                          ...(asked === undefined ? {} : { question: asked }),
-                          queryPlan,
-                          sqlCheck: check,
-                          queryResult,
-                          approval
-                        })
-                    )
+                      approve(check),
+                      Node.capture(
+                        { database, dialect, asked: asked ?? null },
+                        (approval: Planned.Planned<Approval | null>) =>
+                          Node.bindPlanned(
+                            Node.branch(Node.succeed({ check, approval }), {
+                              if: mayExecute,
+                              then: Node.capture(
+                                { database, dialect },
+                                () => ExecuteQuery.call({ database, dialect, sql: check.safeSql })
+                              ),
+                              else: Node.capture({}, () => Node.succeed(null))
+                            }),
+                            Node.capture(
+                              { asked: asked ?? null },
+                              (queryResult: Planned.Planned<typeof QueryResult.Type | null>) =>
+                                // 0.x handed the dashboard the raw question, without the planner's default.
+                                MakeDashboard.call({
+                                  ...(asked === undefined ? {} : { question: asked }),
+                                  queryPlan,
+                                  sqlCheck: check,
+                                  queryResult,
+                                  approval
+                                })
+                            )
+                          )
+                      )
+                    ))
                 )
             )
-        )
-    )
+          )
+      )
+    ))
 })
 
 /** Every step the flow calls, and the human task that parks for the approval. */
@@ -343,6 +363,5 @@ export const layer = Layer.mergeAll(
   WriteSql.layer,
   CheckSql.layer,
   ExecuteQuery.layer,
-  MakeDashboard.layer,
-  HumanTask.layer
+  MakeDashboard.layer
 )

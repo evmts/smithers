@@ -242,29 +242,36 @@ const approveThenWrite = (
 ): Node.Node<typeof Outcome.Type, Failure, Requirements> =>
   Node.bindPlanned(
     Node.map(Node.succeed({ reply, idempotencyKey }), question),
-    (prompt: Planned.Planned<string>) =>
+    Node.capture({ threadId, idempotencyKey: idempotencyKey ?? null }, (prompt: Planned.Planned<string>) =>
       Node.branch(
         HumanTask.decode(Approval)(
           HumanTask.action.call({ name: approvalName, kind: "json", prompt, schema: approvalSchema })
         ),
         {
-          if: (approval) => approval.approved,
-          then: (approval) =>
+          if: Node.capture({}, (approval) => approval.approved),
+          then: Node.capture({ threadId, idempotencyKey: idempotencyKey ?? null }, (approval) =>
             Node.bindPlanned(
               CreateEvent.call({ request, reply, idempotencyKey }),
-              (calendarMutation: Planned.Planned<typeof CalendarMutation.Type>) =>
-                Node.andThen(
-                  Node.succeed(calendarMutation),
-                  Node.bindPlanned(
-                    SendReply.call({ reply, threadId, idempotencyKey }),
-                    (emailResult: Planned.Planned<typeof EmailResult.Type>) =>
-                      Node.succeed({ reply, approval, calendarMutation, emailResult })
+              Node.capture(
+                { threadId, idempotencyKey: idempotencyKey ?? null },
+                (calendarMutation: Planned.Planned<typeof CalendarMutation.Type>) =>
+                  Node.andThen(
+                    Node.succeed(calendarMutation),
+                    Node.bindPlanned(
+                      SendReply.call({ reply, threadId, idempotencyKey }),
+                      Node.capture(
+                        {},
+                        (emailResult: Planned.Planned<typeof EmailResult.Type>) =>
+                          Node.succeed({ reply, approval, calendarMutation, emailResult })
+                      )
+                    )
                   )
-                )
-            ),
-          else: (approval) => Node.succeed({ reply, approval, calendarMutation: null, emailResult: null })
+              )
+            )),
+          else: Node.capture({}, (approval) =>
+            Node.succeed({ reply, approval, calendarMutation: null, emailResult: null }))
         }
-      )
+      ))
   )
 
 /** The flow: parse, check three sources, rank, draft, approve, write. */
@@ -282,7 +289,7 @@ export const CalendarNegotiator = Flow.make("examples/CalendarNegotiator", {
   },
   success: Outcome,
   error: Schema.Union([AgentAction.AgentFailure, HumanTask.HumanTaskFailed]),
-  body: ({
+  body: Node.capture({}, ({
     defaults = { timezone: "America/New_York", durationMinutes: 30 },
     idempotencyKey,
     message = "Could we find 30 minutes next week, ideally Tue or Wed afternoon ET, to review the renewal?",
@@ -295,28 +302,42 @@ export const CalendarNegotiator = Flow.make("examples/CalendarNegotiator", {
   }) =>
     Node.bindPlanned(
       ParseRequest.call({ message, defaults }),
-      (request: Planned.Planned<typeof ScheduleRequest.Type>) =>
+      Node.capture({
+        idempotencyKey: idempotencyKey ?? null,
+        organizerCalendars,
+        policy,
+        preferences,
+        roomCalendars,
+        sender,
+        threadId
+      }, (request: Planned.Planned<typeof ScheduleRequest.Type>) =>
         Node.bindPlanned(
           Node.all({
             organizer: CheckAvailability.call({ source: "organizer", request, calendars: organizerCalendars }),
             room: CheckAvailability.call({ source: "room", request, calendars: roomCalendars }),
             workHours: CheckPolicy.call({ request, policy })
           }),
-          (checks) =>
+          Node.capture({ idempotencyKey: idempotencyKey ?? null, preferences, sender, threadId }, (checks) =>
             Node.bindPlanned(
               RankSlots.call({ request, availability: [checks.organizer, checks.room, checks.workHours], preferences }),
-              (rankedSlots: Planned.Planned<typeof RankedSlots.Type>) =>
-                Node.bindPlanned(
-                  DraftReply.call({ request, rankedSlots, sender }),
-                  (reply: Planned.Planned<typeof Reply.Type>) =>
-                    approveThenWrite(request, reply, threadId, idempotencyKey ?? `calendar-${threadId}`)
-                )
-            )
-        )
-    )
+              Node.capture(
+                { idempotencyKey: idempotencyKey ?? null, sender, threadId },
+                (rankedSlots: Planned.Planned<typeof RankedSlots.Type>) =>
+                  Node.bindPlanned(
+                    DraftReply.call({ request, rankedSlots, sender }),
+                    Node.capture(
+                      { idempotencyKey: idempotencyKey ?? null, threadId },
+                      (reply: Planned.Planned<typeof Reply.Type>) =>
+                        approveThenWrite(request, reply, threadId, idempotencyKey ?? `calendar-${threadId}`)
+                    )
+                  )
+              )
+            ))
+        ))
+    ))
 })
 
-/** Every step the flow calls, and the human task that parks for the approval. */
+/** The flow's action implementations; the interpreter supplies approvals. */
 export const layer = Layer.mergeAll(
   ParseRequest.layer,
   CheckAvailability.layer,
@@ -324,6 +345,5 @@ export const layer = Layer.mergeAll(
   RankSlots.layer,
   DraftReply.layer,
   CreateEvent.layer,
-  SendReply.layer,
-  HumanTask.layer
+  SendReply.layer
 )

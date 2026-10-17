@@ -19,7 +19,6 @@ import * as AgentAction from "@smthrs/agent/AgentAction"
 import { type Action, Flow, HumanTask } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import type * as Planned from "@smthrs/plan/Planned"
-import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 
 const seat = "anthropic:claude-sonnet-5-5"
@@ -306,16 +305,16 @@ const extract = (
       if: Node.capture({ threshold: loop.threshold }, function(draft: RctfPrompt) {
         return draft.score >= this.threshold
       }),
-      then: (draft) => Node.succeed(draft),
-      else: (draft) =>
+      then: Node.capture({}, (draft) => Node.succeed(draft)),
+      else: Node.capture({ loop, turn }, (draft) =>
         turn >= loop.maxTurns
           ? Node.succeed(draft)
           : Node.bindPlanned(
             HumanTask.decode(Schema.String)(
               HumanTask.action.call({ name: `extract-prompt-${turn}`, kind: "ask", prompt: draft.nextQuestion })
             ),
-            (reply: Planned.Planned<string>) => extract(loop, turn + 1, draft, reply)
-          )
+            Node.capture({ loop, turn }, (reply: Planned.Planned<string>) => extract(loop, turn + 1, draft, reply))
+          ))
     }
   )
 
@@ -331,12 +330,17 @@ export const ExtractPrompt = Flow.make("examples/ExtractPrompt", {
   },
   success: RctfPrompt,
   error: Schema.Union([AgentAction.AgentFailure, HumanTask.HumanTaskFailed]),
-  body: ({ cached, context = "", maxTurns = 10, prompt, stakes = "low", threshold }) => {
+  body: Node.capture({}, ({ cached, context = "", maxTurns = 10, prompt, stakes = "low", threshold }) => {
     if (prompt !== undefined && prompt.trim().length >= minTrivialLength) return Node.succeed(provided(prompt))
     if (cached !== undefined) return Node.succeed(fromCache(cached))
-    return extract({ context, threshold: threshold ?? stakesToThreshold(stakes), stakes, maxTurns }, 1, undefined, undefined)
-  }
+    return extract(
+      { context, threshold: threshold ?? stakesToThreshold(stakes), stakes, maxTurns },
+      1,
+      undefined,
+      undefined
+    )
+  })
 })
 
 /** Every step the flow calls. */
-export const layer = Layer.mergeAll(Draft.layer, HumanTask.layer)
+export const layer = Draft.layer

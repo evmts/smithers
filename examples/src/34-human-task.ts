@@ -129,7 +129,7 @@ export const main = (filename: string): Effect.Effect<Summary> =>
   Effect.gen(function*() {
     const executionId = "release-1"
     const engine = (hostId: string) =>
-      Layer.mergeAll(HumanTask.layer, Interpreter.layer(Release)).pipe(
+      Interpreter.layer(Release).pipe(
         Layer.provideMerge(Action.layerImplementations),
         Layer.provideMerge(durableEngine(filename, hostId))
       )

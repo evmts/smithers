@@ -61,9 +61,11 @@ export const Health = Schema.Struct({
   runStatus: Schema.String.annotate({
     description: "The watched run's status, as reported by `smithers status`/the Gateway."
   }),
-  targetNodeId: Schema.optional(Schema.NullOr(Schema.String).annotate({
-    description: "The implicated node, when a single one is."
-  })),
+  targetNodeId: Schema.optional(
+    Schema.NullOr(Schema.String).annotate({
+      description: "The implicated node, when a single one is."
+    })
+  ),
   evidence: Schema.String.annotate({
     description: "What was actually read: node ids, attempt counts, timestamps, error text."
   }),
@@ -257,7 +259,9 @@ const thenFor = (condition: Condition, autoHeal: ReadonlyArray<Condition>): Then
     case "stalled":
       return autoHeal.includes("stalled") ? handle : escalate("Should this run be resumed?")
     case "wedged-node":
-      return autoHeal.includes("wedged-node") ? handle : escalate("Should this node be retried, or is the failure real?")
+      return autoHeal.includes("wedged-node")
+        ? handle
+        : escalate("Should this node be retried, or is the failure real?")
     // Cancelling is destructive, so it heals only when `autoHeal` names it.
     case "runaway-loop":
       return autoHeal.includes("runaway-loop") ? handle : escalate(
@@ -316,14 +320,14 @@ const act = (rule: Rule, health: Planned.Planned<Health | null>, watch: Watch): 
         watchWorkflowPath: watch.watchWorkflowPath,
         health
       }),
-      { onFailure: () => Node.succeed(null) }
+      { onFailure: Node.capture({}, () => Node.succeed(null)) }
     )
     : Node.bindPlanned(
       Node.map(
         Node.succeed({ condition: rule.condition, watchRunId: watch.watchRunId, ask: rule.then.ask, health }),
         escalation
       ),
-      (prompt: Planned.Planned<string>) =>
+      Node.capture({ rule }, (prompt: Planned.Planned<string>) =>
         HumanTask.decode(MonitorAction)(
           HumanTask.action.call({
             name: `monitor-escalate-${rule.condition}`,
@@ -331,7 +335,7 @@ const act = (rule: Rule, health: Planned.Planned<Health | null>, watch: Watch): 
             prompt,
             schema: actionJsonSchema
           })
-        )
+        ))
     )
 
 /**
@@ -346,8 +350,11 @@ const decide = (health: Planned.Planned<Health | null>, watch: Watch): Routed =>
         if: Node.capture({ condition: rule.condition }, function(sample: Health | null) {
           return sample !== null && sample.condition === this.condition
         }),
-        then: (matched) => act(rule, matched, watch),
-        else: () => otherwise
+        then: Node.capture({
+          rule,
+          watch: { watchRunId: watch.watchRunId, watchWorkflowPath: watch.watchWorkflowPath ?? null }
+        }, (matched) => act(rule, matched, watch)),
+        else: Node.capture({}, () => otherwise)
       }),
     Node.succeed(null)
   )
@@ -381,7 +388,7 @@ export const MonitorWorkflow: MonitorFlow = Flow.make("examples/MonitorWorkflow"
   success: Beat,
   error: Failure,
   maxRounds: settings.maxChecks,
-  body: ({
+  body: Node.capture({}, ({
     beat = 0,
     intervalMs = settings.intervalMs,
     maxChecks = settings.maxChecks,
@@ -397,25 +404,47 @@ export const MonitorWorkflow: MonitorFlow = Flow.make("examples/MonitorWorkflow"
         autoHeal: [...settings.autoHeal],
         guidance: settings.guidance
       }),
-      { onFailure: () => Node.succeed(null) }
+      { onFailure: Node.capture({}, () => Node.succeed(null)) }
     )
     // Sample immediately on the first beat; pace every beat after it.
     const paced = beat === 0 ? sample : Node.andThen(Sleep.action.call({ millis: intervalMs }), sample)
-    return Node.bindPlanned(paced, (health: Planned.Planned<Health | null>) =>
-      Node.bindPlanned(
-        decide(health, { watchRunId, watchWorkflowPath }),
-        (action: Planned.Planned<MonitorAction | null>) =>
-          Node.branch(Node.succeed({ beats: beat + 1, health, action }), {
-            // Running out of beats is the monitor's job ending, not a failure.
-            if: Node.capture({ bound: beat + 1 >= maxChecks }, function(last: typeof Beat.Type) {
-              return this.bound || finished(last)
-            }),
-            then: (last) => Flow.done(last),
-            else: () => MonitorWorkflow.to({ watchRunId, watchWorkflowPath, intervalMs, maxChecks, beat: beat + 1 })
-          })
-      ))
-  }
+    return Node.bindPlanned(
+      paced,
+      Node.capture({
+        beat,
+        intervalMs,
+        maxChecks,
+        watchRunId: watchRunId ?? null,
+        watchWorkflowPath: watchWorkflowPath ?? null
+      }, (health: Planned.Planned<Health | null>) =>
+        Node.bindPlanned(
+          decide(health, { watchRunId, watchWorkflowPath }),
+          Node.capture({
+            beat,
+            intervalMs,
+            maxChecks,
+            watchRunId: watchRunId ?? null,
+            watchWorkflowPath: watchWorkflowPath ?? null
+          }, (action: Planned.Planned<MonitorAction | null>) =>
+            Node.branch(Node.succeed({ beats: beat + 1, health, action }), {
+              // Running out of beats is the monitor's job ending, not a failure.
+              if: Node.capture({ bound: beat + 1 >= maxChecks }, function(last: typeof Beat.Type) {
+                return this.bound || finished(last)
+              }),
+              then: Node.capture({}, (last) =>
+                Flow.done(last)),
+              else: Node.capture({
+                beat,
+                intervalMs,
+                maxChecks,
+                watchRunId: watchRunId ?? null,
+                watchWorkflowPath: watchWorkflowPath ?? null
+              }, () => MonitorWorkflow.to({ watchRunId, watchWorkflowPath, intervalMs, maxChecks, beat: beat + 1 }))
+            }))
+        ))
+    )
+  })
 })
 
 /** Every step the flow calls. */
-export const layer = Layer.mergeAll(Check.layer, Handle.layer, HumanTask.layer, Sleep.layer)
+export const layer = Layer.mergeAll(Check.layer, Handle.layer)

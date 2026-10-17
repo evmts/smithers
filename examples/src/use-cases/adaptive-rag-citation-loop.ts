@@ -236,8 +236,13 @@ interface Ask {
 
 type Requirements = Action.Requirement<
   `examples/AdaptiveRagCitationLoop/${
-    "Route" | "PlanRetrieval" | "Retrieve" | "DraftAnswer" | "CitationJudge" | "RepairPlan" | "FinalAnswer"
-  }`
+    | "Route"
+    | "PlanRetrieval"
+    | "Retrieve"
+    | "DraftAnswer"
+    | "CitationJudge"
+    | "RepairPlan"
+    | "FinalAnswer"}`
 >
 
 type Step = Node.Node<Final, AgentAction.AgentFailure | HumanTask.HumanTaskFailed, Requirements>
@@ -249,7 +254,7 @@ const gather = (question: string, plan: Planned.Planned<RetrievalPlan>) =>
     keyword: Retrieve.call({ source: "keyword", plan, question }),
     fetched: Node.bindPlanned(
       Node.map(Node.succeed(plan), fetchSource),
-      (source) => Retrieve.call({ source, plan, question })
+      Node.capture({ question }, (source) => Retrieve.call({ source, plan, question }))
     )
   })
 
@@ -262,18 +267,22 @@ const settleUngrounded = (ask: Ask, answer: Planned.Planned<Answer>, grade: Plan
     if: Node.capture({ reviewThreshold: ask.reviewThreshold }, function(graded: Grade) {
       return graded.score < this.reviewThreshold
     }),
-    then: (graded) =>
+    then: Node.capture({ ask }, (graded) =>
       Node.bindPlanned(
         Node.bindPlanned(
           Node.map(Node.succeed(graded), reviewRequest),
-          (prompt: Planned.Planned<string>) =>
+          Node.capture({ name: reviewTask, schema: approvalSchema }, (prompt: Planned.Planned<string>) =>
             HumanTask.action.call({ name: reviewTask, kind: "json", prompt, schema: approvalSchema }).pipe(
               HumanTask.decode(Approval)
-            )
+            ))
         ),
-        (approval) => FinalAnswer.call({ question: ask.question, answer, grade: graded, approval, grounded: false })
-      ),
-    else: (graded) => FinalAnswer.call({ question: ask.question, answer, grade: graded, grounded: false })
+        Node.capture({ ask }, (approval) =>
+          FinalAnswer.call({ question: ask.question, answer, grade: graded, approval, grounded: false }))
+      )),
+    else: Node.capture(
+      { ask },
+      (graded) => FinalAnswer.call({ question: ask.question, answer, grade: graded, grounded: false })
+    )
   })
 
 /**
@@ -291,13 +300,14 @@ const draft = (
 ): Step =>
   Node.bindPlanned(
     DraftAnswer.call({ question: ask.question, route, evidence, previousGrade }),
-    (answer: Planned.Planned<Answer>) =>
+    Node.capture({ ask, n }, (answer: Planned.Planned<Answer>) =>
       Node.branch(JudgeCitations.call({ question: ask.question, answer, evidence, threshold: ask.threshold }), {
         if: Node.capture({ threshold: ask.threshold }, function(grade: Grade) {
           return grade.grounded && grade.score >= this.threshold
         }),
-        then: (grade) => FinalAnswer.call({ question: ask.question, answer, grade, grounded: true }),
-        else: (grade) => {
+        then: Node.capture({ ask }, (grade) =>
+          FinalAnswer.call({ question: ask.question, answer, grade, grounded: true })),
+        else: Node.capture({ ask, n }, (grade) => {
           const last = n >= ask.maxIterations
           if (plan === undefined) {
             return last ? settleUngrounded(ask, answer, grade) : round(ask, n + 1, route, plan, evidence, grade)
@@ -306,9 +316,13 @@ const draft = (
           const repair = RepairPlan.call({ question: ask.question, priorPlan: plan, grade, evidence })
           return last
             ? Node.andThen(repair, settleUngrounded(ask, answer, grade))
-            : Node.bindPlanned(repair, (repaired) => round(ask, n + 1, route, repaired, evidence, grade))
-        }
-      })
+            : Node.bindPlanned(
+              repair,
+              Node.capture({ ask, n }, (repaired) =>
+                round(ask, n + 1, route, repaired, evidence, grade))
+            )
+        })
+      }))
   )
 
 /** Round `n`: gather evidence when the route retrieves, then draft. */
@@ -324,7 +338,8 @@ const round = (
     ? draft(ask, n, route, plan, evidence, previousGrade)
     : Node.bindPlanned(
       gather(ask.question, plan),
-      (found) => draft(ask, n, route, plan, [...evidence, found.vector, found.keyword, found.fetched], previousGrade)
+      Node.capture({ ask, n }, (found) =>
+        draft(ask, n, route, plan, [...evidence, found.vector, found.keyword, found.fetched], previousGrade))
     )
 
 /** The flow. `maxIterations` is real at plan time, so it sets how many rounds the plan holds. */
@@ -340,7 +355,7 @@ export const AdaptiveRagCitationLoop = Flow.make("examples/AdaptiveRagCitationLo
   },
   success: Final,
   error: Schema.Union([AgentAction.AgentFailure, HumanTask.HumanTaskFailed]),
-  body: ({
+  body: Node.capture({ tag: "examples/AdaptiveRagCitationLoop" }, ({
     corpus = "fixtures/adaptive-rag",
     groundedThreshold = 0.85,
     maxIterations = 3,
@@ -351,15 +366,15 @@ export const AdaptiveRagCitationLoop = Flow.make("examples/AdaptiveRagCitationLo
   }) => {
     const ask: Ask = { question, threshold: groundedThreshold, reviewThreshold, maxIterations }
     return Node.branch(RouteQuery.call({ question, riskPolicy }), {
-      if: (route) => route.mode !== "answer-from-memory",
-      then: (route) =>
+      if: Node.capture({ mode: "answer-from-memory" }, (route) => route.mode !== "answer-from-memory"),
+      then: Node.capture({ ask, question, corpus, requiredCitationPolicy }, (route) =>
         Node.bindPlanned(
           PlanRetrieval.call({ question, route, corpus, requiredCitationPolicy }),
-          (plan: Planned.Planned<RetrievalPlan>) => round(ask, 1, route, plan, [], undefined)
-        ),
-      else: (route) => round(ask, 1, route, undefined, [], undefined)
+          Node.capture({ ask }, (plan: Planned.Planned<RetrievalPlan>) => round(ask, 1, route, plan, [], undefined))
+        )),
+      else: Node.capture({ ask }, (route) => round(ask, 1, route, undefined, [], undefined))
     })
-  }
+  })
 })
 
 /** Every step the flow calls, the review question included. */
@@ -370,6 +385,5 @@ export const layer = Layer.mergeAll(
   DraftAnswer.layer,
   JudgeCitations.layer,
   RepairPlan.layer,
-  FinalAnswer.layer,
-  HumanTask.layer
+  FinalAnswer.layer
 )

@@ -357,6 +357,5 @@ export const layer = Layer.mergeAll(
   DraftAnswer.layer,
   ReviewDrafts.layer,
   PackageProposal.layer,
-  HumanTask.layer,
   Interpreter.layer(DraftAnswers)
 )

@@ -1,6 +1,5 @@
 import { afterAll, afterEach, expect, it } from "@effect/vitest"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
-import { Sleep } from "@smthrs/flow"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
@@ -13,7 +12,15 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { vi } from "vitest"
 import * as Kit from "../../src/use-cases/kit.ts"
-import { delayMillis, layer, PostRefused, PostTweet, tweets, TweetThread, xLayer } from "../../src/use-cases/tweet-thread.ts"
+import {
+  delayMillis,
+  layer,
+  PostRefused,
+  PostTweet,
+  tweets,
+  TweetThread,
+  xLayer
+} from "../../src/use-cases/tweet-thread.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "tweet-thread-"))
 
@@ -27,12 +34,29 @@ afterEach(() => {
 /** The flow makes no agent calls, so any model request is unexpected. */
 const noAgents: Kit.Script = () => undefined
 
+/** Observe the real durable waits, then advance the virtual clock once per deadline. */
+const advanceTimers = (executionId: string, record: () => void) =>
+  Layer.effectDiscard(Effect.forkScoped(Effect.gen(function*() {
+    const state = yield* DurableEngineState.DurableEngineState
+    let lastWakeAt: number | null | undefined
+    while (true) {
+      const row = yield* state.waiting(executionId)
+      if (Option.isSome(row) && row.value.reason === "timer" && row.value.wakeAt !== lastWakeAt) {
+        lastWakeAt = row.value.wakeAt
+        record()
+        const now = yield* Clock.currentTimeMillis
+        yield* TestClock.adjust((row.value.wakeAt ?? now) - now)
+      }
+      yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 1)))
+    }
+  })))
+
 /**
  * A timer that records each wait instead of sleeping, and an X stand-in that
  * records each post with the tweet it replies to and answers id `t<n>`, or is
  * refused at tweet `refuseAt`. Both write to one ordered log.
  */
-const fakes = (refuseAt?: number) => {
+const fakes = (executionId: string, refuseAt?: number) => {
   const log: Array<string> = []
   const index = (text: string) => tweets.indexOf(text)
   const x = PostTweet.toLayer(({ replyToId, text }) =>
@@ -44,13 +68,13 @@ const fakes = (refuseAt?: number) => {
         : Effect.succeed({ tweetId: `t${n}`, posted: true })
     })
   )
-  const timer = Sleep.action.toLayer(({ millis }) => Effect.sync(() => void log.push(`sleep ${millis}`)))
+  const timer = advanceTimers(executionId, () => void log.push(`sleep ${delayMillis}`))
   return { log, actions: Layer.mergeAll(x, timer) }
 }
 
 it.effect("posts every tweet in order, each replying to the one before it after a pause", () =>
   Effect.gen(function*() {
-    const { actions, log } = fakes()
+    const { actions, log } = fakes("tweet-thread-posted")
     const posts = yield* Kit.run(TweetThread, {}, {
       filename: join(directory, "thread.sqlite"),
       executionId: "tweet-thread-posted",
@@ -70,7 +94,7 @@ it.effect("posts every tweet in order, each replying to the one before it after 
 
 it.effect("stops the thread at a refused post and never retries it", () =>
   Effect.gen(function*() {
-    const { actions, log } = fakes(2)
+    const { actions, log } = fakes("tweet-thread-refused", 2)
     const exit = yield* Effect.exit(Kit.run(TweetThread, {}, {
       filename: join(directory, "refused.sqlite"),
       executionId: "tweet-thread-refused",
@@ -87,8 +111,8 @@ it.effect("records every post as not posted, without calling X, when the credent
   Effect.gen(function*() {
     for (const name of ["X_API_KEY", "X_API_SECRET", "X_ACCESS_TOKEN", "X_ACCESS_SECRET"]) vi.stubEnv(name, "")
     const fetched = vi.spyOn(globalThis, "fetch")
-    const { log } = fakes()
-    const timer = Sleep.action.toLayer(() => Effect.sync(() => void log.push("sleep")))
+    const log: Array<string> = []
+    const timer = advanceTimers("tweet-thread-no-credentials", () => void log.push("sleep"))
     const posts = yield* Kit.run(TweetThread, {}, {
       filename: join(directory, "no-credentials.sqlite"),
       executionId: "tweet-thread-no-credentials",
@@ -117,7 +141,7 @@ it.effect("signs each X request and threads it on the id X returned for the post
       requests.push({ url: String(url), authorization: headers.authorization!, body: JSON.parse(String(init?.body)) })
       return Promise.resolve(new Response(JSON.stringify({ data: { id: `x${requests.length}` } }), { status: 201 }))
     })
-    const timer = Sleep.action.toLayer(() => Effect.void)
+    const timer = advanceTimers("tweet-thread-signed", () => {})
     const posts = yield* Kit.run(TweetThread, {}, {
       filename: join(directory, "signed.sqlite"),
       executionId: "tweet-thread-signed",

@@ -84,8 +84,7 @@ export const Intake = AgentAction.make("examples/LeadRouterWithApproval/Intake",
 (webhook payloads, emails, form submissions) into a structured lead record.
 Normalise company names, infer employee count when missing, and extract buying intent.`
   ],
-  prompt: ({ rawLead, source }) =>
-    `Parse this inbound lead.\n\nSource: ${source}\nRaw lead: ${JSON.stringify(rawLead)}`
+  prompt: ({ rawLead, source }) => `Parse this inbound lead.\n\nSource: ${source}\nRaw lead: ${JSON.stringify(rawLead)}`
 })
 
 /** Scores the lead and proposes a route. */
@@ -134,10 +133,10 @@ const question = ({ company, score }: { readonly company: string; readonly score
 const approve = (lead: Planned.Planned<Lead>, score: Planned.Planned<Score>) =>
   Node.bindPlanned(
     Node.map(Node.succeed({ company: lead.company, score }), question),
-    (prompt: Planned.Planned<string>) =>
+    Node.capture({}, (prompt: Planned.Planned<string>) =>
       HumanTask.action.call({ name: approvalTask, kind: "json", prompt, schema: approvalSchema }).pipe(
         HumanTask.decode(Approval)
-      )
+      ))
   )
 
 /** The CRM call for a lead that was approved, or that needed no approval. */
@@ -168,28 +167,28 @@ export const LeadRouterWithApproval = Flow.make("examples/LeadRouterWithApproval
   },
   success: Sink,
   error: Schema.Union([AgentAction.AgentFailure, HumanTask.HumanTaskFailed, RouteDenied]),
-  body: ({ lead, rawPayload, source = "inbound-form" }) =>
+  body: Node.capture({}, ({ lead, rawPayload, source = "inbound-form" }) =>
     Node.bindPlanned(
       Intake.call({ rawLead: lead ?? rawPayload ?? null, source }),
-      (parsed: Planned.Planned<Lead>) =>
+      Node.capture({}, (parsed: Planned.Planned<Lead>) =>
         Node.branch(ScoreLead.call(parsed), {
-          if: (score) => score.needsApproval,
-          then: (score) =>
+          if: Node.capture({}, (score) => score.needsApproval),
+          then: Node.capture({}, (score) =>
             Node.branch(approve(parsed, score), {
-              if: (approval) => approval.approved,
-              then: (approval) => record(parsed, score, approval, true),
-              else: (approval) =>
+              if: Node.capture({}, (approval) => approval.approved),
+              then: Node.capture({}, (approval) => record(parsed, score, approval, true)),
+              else: Node.capture({}, (approval) =>
                 Node.fail({
                   _tag: "examples/LeadRouterWithApproval/RouteDenied" as const,
                   company: parsed.company,
                   reviewer: approval.reviewer,
                   note: approval.note
-                })
-            }),
-          else: (score) => record(parsed, score, { approved: true, note: "" }, false)
-        })
-    )
+                }))
+            })),
+          else: Node.capture({}, (score) => record(parsed, score, { approved: true, note: "" }, false))
+        }))
+    ))
 })
 
-/** Every step the flow calls, the approval question included. */
-export const layer = Layer.mergeAll(Intake.layer, ScoreLead.layer, RecordRoute.layer, HumanTask.layer)
+/** The flow's action implementations; the interpreter supplies approvals. */
+export const layer = Layer.mergeAll(Intake.layer, ScoreLead.layer, RecordRoute.layer)

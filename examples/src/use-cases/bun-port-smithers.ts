@@ -47,7 +47,11 @@ export const Phase = Schema.Literals(phases)
 type Phase = typeof Phase.Type
 
 /** One Zig file to port. */
-export const ZigFile = Schema.Struct({ zig: Schema.String, loc: Schema.optional(Count), crate: Schema.optional(Schema.String) })
+export const ZigFile = Schema.Struct({
+  zig: Schema.String,
+  loc: Schema.optional(Count),
+  crate: Schema.optional(Schema.String)
+})
 
 /** One crate and the tier it compiles in. */
 export const Crate = Schema.Struct({ name: Schema.String, tier: Schema.optional(Count) })
@@ -67,7 +71,12 @@ export const Probe = Schema.Struct({ id: Schema.String, cmd: Schema.String, expe
 export const TestArea = Schema.Struct({ id: Schema.String, glob: Schema.String, crate: Schema.String })
 
 /** One audit sweep. */
-export const Sweep = Schema.Struct({ id: Schema.String, kind: Schema.String, pattern: Schema.String, scope: Schema.String })
+export const Sweep = Schema.Struct({
+  id: Schema.String,
+  kind: Schema.String,
+  pattern: Schema.String,
+  scope: Schema.String
+})
 
 type ZigFile = typeof ZigFile.Type
 type Target = typeof Target.Type
@@ -456,7 +465,9 @@ const selectForVerification = (fields: ReadonlyArray<FlatField>, sampleRate: num
 const lifetimeTsv = (fields: ReadonlyArray<FlatField>): string =>
   [
     "file\tstruct\tfield\tzigType\tclass\trustType\tevidence\tconfidence",
-    ...fields.map((f) => [f.file, f.struct, f.field, f.zigType, f.class, f.rustType, f.evidence, f.confidence].join("\t"))
+    ...fields.map((f) =>
+      [f.file, f.struct, f.field, f.zigType, f.class, f.rustType, f.evidence, f.confidence].join("\t")
+    )
   ].join("\n")
 
 const failureKey = (result: typeof ProbeResult.Type): string =>
@@ -620,7 +631,11 @@ Findings: ${json(issues)}`
 
 /** One `cargo check` round for one crate. */
 export const CrateCheckStep = AgentAction.make("examples/BunPortSmithers/CrateCheck", {
-  payload: { repo: Schema.String, crate: Schema.Struct({ name: Schema.String, tier: Count }), previous: Schema.NullOr(CrateCheck) },
+  payload: {
+    repo: Schema.String,
+    crate: Schema.Struct({ name: Schema.String, tier: Count }),
+    previous: Schema.NullOr(CrateCheck)
+  },
   output: CrateCheck,
   seat,
   timeout: "20 minutes",
@@ -639,7 +654,12 @@ Fix compile errors by preserving Phase A draft bodies where possible. Gate or st
 Round context: ${json(previous)}`
 })
 
-const SurveyedTarget = Schema.Struct({ id: Schema.String, crate: Schema.String, file: Schema.String, reason: Schema.String })
+const SurveyedTarget = Schema.Struct({
+  id: Schema.String,
+  crate: Schema.String,
+  file: Schema.String,
+  reason: Schema.String
+})
 
 /** Ports real behavior into one gated or stubbed target. */
 export const ProperPort = AgentAction.make("examples/BunPortSmithers/ProperPort", {
@@ -851,7 +871,10 @@ const after = <A, E, R, B, E2, R2>(
   step: Node.Node<A, E, R>,
   next: (value: Planned.Planned<A>) => Node.Node<B, E2, R2>
 ): Node.Node<B, E | E2, R | R2> =>
-  Node.bindPlanned(step, (value: Planned.Planned<A>) => Node.andThen(Node.succeed(value), next(value)))
+  Node.bindPlanned(
+    step,
+    Node.capture({}, (value: Planned.Planned<A>) => Node.andThen(Node.succeed(value), next(value)))
+  )
 
 /** 0.x's `<Parallel maxConcurrency>`: the members `concurrency` at a time, results in member order. */
 const parallel = <A, E, R>(
@@ -867,11 +890,12 @@ const parallel = <A, E, R>(
     E,
     R
   >
-  return Node.map(joined, (settled) => keys.map((key) => settled[key]!))
+  return Node.map(joined, Node.capture({}, (settled) => keys.map((key) => settled[key]!)))
 }
 
 /** 0.x's `retries={1}`: a failed call runs once more. */
-const retriedOnce = <A, R>(call: () => Node.Node<A, Failed, R>) => Node.catch(call(), { onFailure: () => call() })
+const retriedOnce = <A, R>(call: () => Node.Node<A, Failed, R>) =>
+  Node.catch(call(), { onFailure: Node.capture({}, () => call()) })
 
 // ---------------------------------------------------------------------------
 // Phase 1: lifetime classification
@@ -882,7 +906,7 @@ export const LifetimeVotes = Flow.make("examples/BunPortSmithers/LifetimeVotes",
   payload: { repo: Schema.String, selected: Schema.Array(SelectedField) },
   success: Schema.Array(LifetimeVote),
   error: AgentAction.AgentFailure,
-  body: ({ repo, selected }) =>
+  body: Node.capture({}, ({ repo, selected }) =>
     parallel(
       selected.flatMap((field) =>
         [0, 1, 2].map((vote) =>
@@ -893,7 +917,7 @@ export const LifetimeVotes = Flow.make("examples/BunPortSmithers/LifetimeVotes",
         )
       ),
       Math.min(24, selected.length * 3)
-    )
+    ))
 })
 
 const flatten = (classifications: ReadonlyArray<typeof LifetimeClassification.Type>): ReadonlyArray<FlatField> =>
@@ -942,22 +966,24 @@ export const Lifetimes = Flow.make("examples/BunPortSmithers/Lifetimes", {
   },
   success: LifetimesDone,
   error: AgentAction.AgentFailure,
-  body: ({ files, repo, sampleRate = 0.12 }) =>
+  body: Node.capture({}, ({ files, repo, sampleRate = 0.12 }) =>
     after(
       parallel(
-        files.map((file) => [`lifetime:classify:${stableNodeId(file.zig)}`, LifetimeClassify.call({ repo, file })] as const),
+        files.map((file) =>
+          [`lifetime:classify:${stableNodeId(file.zig)}`, LifetimeClassify.call({ repo, file })] as const
+        ),
         files.length
       ),
-      (classifications) =>
+      Node.capture({}, (classifications) =>
         after(
-          Node.map(Node.succeed(classifications), (real) => select(real, sampleRate)),
-          (selected) =>
+          Node.map(Node.succeed(classifications), Node.capture({}, (real) => select(real, sampleRate))),
+          Node.capture({}, (selected) =>
             after(
               LifetimeVotes.child({ repo, selected }),
-              (votes) => Node.map(Node.succeed({ classifications, votes }), synthesize)
-            )
-        )
-    )
+              Node.capture({}, (votes) => Node.map(Node.succeed({ classifications, votes }), synthesize))
+            ))
+        ))
+    ))
 })
 
 // ---------------------------------------------------------------------------
@@ -975,16 +1001,20 @@ type PhaseARow = typeof PhaseARow.Type
 const portFile = (repo: string, file: typeof PortFile.Type) =>
   after(
     retriedOnce(() => PhaseAImplementStep.call({ repo, file, feedback: null })),
-    (implementation) =>
-      after(PhaseAVerify.call({ repo, file }), (review) =>
-        Node.bindPlanned(
-          Node.branch(Node.succeed(review), {
-            if: (real) => real.issues.some((issue) => issue.severity !== "nit"),
-            then: (real) => PhaseAFixStep.call({ repo, file, issues: real.issues }),
-            else: () => Node.succeed(null)
-          }),
-          (fix: Planned.Planned<typeof PhaseAFix.Type | null>) => Node.succeed({ implementation, review, fix })
-        ))
+    Node.capture({}, (implementation) =>
+      after(
+        PhaseAVerify.call({ repo, file }),
+        Node.capture({}, (review) =>
+          Node.bindPlanned(
+            Node.branch(Node.succeed(review), {
+              if: Node.capture({}, (real) => real.issues.some((issue) => issue.severity !== "nit")),
+              then: Node.capture({}, (real) => PhaseAFixStep.call({ repo, file, issues: real.issues })),
+              else: Node.capture({}, () => Node.succeed(null))
+            }),
+            Node.capture({}, (fix: Planned.Planned<typeof PhaseAFix.Type | null>) =>
+              Node.succeed({ implementation, review, fix }))
+          ))
+      ))
   )
 
 /** 0.x's `phase-a:report` and `phase-a:output`, folded. */
@@ -1008,17 +1038,20 @@ export const PhaseA = Flow.make("examples/BunPortSmithers/PhaseA", {
   payload: { repo: Schema.String, files: Schema.Array(ZigFile), maxConcurrency: Schema.optional(Positive) },
   success: Schema.NullOr(PhaseDone),
   error: AgentAction.AgentFailure,
-  body: ({ files, maxConcurrency = 8, repo }) => {
+  body: Node.capture({}, ({ files, maxConcurrency = 8, repo }) => {
     const planned = normalizePortFiles(files)
     return Node.branch(
-      parallel(planned.map((file) => [`phase-a:${stableNodeId(file.zig)}`, portFile(repo, file)] as const), maxConcurrency),
+      parallel(
+        planned.map((file) => [`phase-a:${stableNodeId(file.zig)}`, portFile(repo, file)] as const),
+        maxConcurrency
+      ),
       {
-        if: (rows) => rows.every((row) => row.review.approved || row.review.ok || row.fix !== null),
-        then: (rows) => Node.map(Node.succeed(rows), phaseAReport),
-        else: () => Node.succeed(null)
+        if: Node.capture({}, (rows) => rows.every((row) => row.review.approved || row.review.ok || row.fix !== null)),
+        then: Node.capture({}, (rows) => Node.map(Node.succeed(rows), phaseAReport)),
+        else: Node.capture({}, () => Node.succeed(null))
       }
     )
-  }
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -1038,9 +1071,9 @@ const checkCrate = (
   const check = CrateCheckStep.call({ repo, crate, previous })
   if (round >= maxRounds) return check
   return Node.branch(check, {
-    if: (real) => real.compiles,
-    then: (real) => Node.succeed(real),
-    else: (real) => checkCrate(repo, crate, maxRounds, round + 1, real)
+    if: Node.capture({}, (real) => real.compiles),
+    then: Node.capture({}, (real) => Node.succeed(real)),
+    else: Node.capture({ round }, (real) => checkCrate(repo, crate, maxRounds, round + 1, real))
   })
 }
 
@@ -1052,10 +1085,15 @@ const tiers = (
   checks: ReadonlyArray<Planned.Planned<ReadonlyArray<CrateCheck>>>
 ): Node.Node<ReadonlyArray<CrateCheck>, Failed, Action.Requirement<"examples/BunPortSmithers/CrateCheck">> => {
   const [tier, ...rest] = groups
-  if (tier === undefined) return Node.map(Node.succeed(checks), (real) => real.flat())
+  if (tier === undefined) return Node.map(Node.succeed(checks), Node.capture({}, (real) => real.flat()))
   return after(
-    parallel(tier.map((crate) => [`compile:${stableNodeId(crate.name)}:loop`, checkCrate(repo, crate, maxRounds, 1, null)] as const), tier.length),
-    (checked) => tiers(repo, rest, maxRounds, [...checks, checked])
+    parallel(
+      tier.map((crate) =>
+        [`compile:${stableNodeId(crate.name)}:loop`, checkCrate(repo, crate, maxRounds, 1, null)] as const
+      ),
+      tier.length
+    ),
+    Node.capture({}, (checked) => tiers(repo, rest, maxRounds, [...checks, checked]))
   )
 }
 
@@ -1067,7 +1105,8 @@ const compileReport = (checks: ReadonlyArray<CrateCheck>): CompileDone => {
   return {
     phase: "compile",
     status: failingCrates.length > 0 ? "partial" : "completed",
-    summary: `Compile bring-up: ${greenCrates.length}/${checks.length} crate(s) green; ${gatedModules} gated module(s).`,
+    summary:
+      `Compile bring-up: ${greenCrates.length}/${checks.length} crate(s) green; ${gatedModules} gated module(s).`,
     gatedModules,
     failingCrates,
     greenCrates
@@ -1079,8 +1118,10 @@ export const Compile = Flow.make("examples/BunPortSmithers/Compile", {
   payload: { repo: Schema.String, crates: Schema.Array(Crate), maxRounds: Schema.optional(Positive) },
   success: CompileDone,
   error: AgentAction.AgentFailure,
-  body: ({ crates, maxRounds = 25, repo }) =>
-    Node.map(tiers(repo, groupCratesByTier(crates), maxRounds, []), compileReport)
+  body: Node.capture(
+    {},
+    ({ crates, maxRounds = 25, repo }) => Node.map(tiers(repo, groupCratesByTier(crates), maxRounds, []), compileReport)
+  )
 })
 
 // ---------------------------------------------------------------------------
@@ -1100,25 +1141,30 @@ const ungate = (
   round: number,
   previousDecision: Planned.Planned<typeof SpecDecision.Type> | null
 ): Node.Node<UngateRow, Failed, Action.Requirement<UngateTag>> =>
-  after(ProperPort.call({ repo, target, previousDecision }), (patch) =>
-    after(
-      parallel(
-        [0, 1].map((index) =>
-          [
-            `ungate:${stableNodeId(target.id)}:review:${index}`,
-            SpecReviewStep.call({ repo, target, voter: `spec-reviewer-${index + 1}`, patch })
-          ] as const
+  after(
+    ProperPort.call({ repo, target, previousDecision }),
+    Node.capture({ round }, (patch) =>
+      after(
+        parallel(
+          [0, 1].map((index) =>
+            [
+              `ungate:${stableNodeId(target.id)}:review:${index}`,
+              SpecReviewStep.call({ repo, target, voter: `spec-reviewer-${index + 1}`, patch })
+            ] as const
+          ),
+          2
         ),
-        2
-      ),
-      (reviews) =>
-        Node.branch(SpecDecisionStep.call({ repo, target, reviews }), {
-          if: (decision) => decision.approved,
-          then: (decision) => Node.succeed({ patch, decision }),
-          else: (decision) =>
-            round >= maxRounds ? Node.succeed({ patch, decision }) : ungate(repo, target, maxRounds, round + 1, decision)
-        })
-    ))
+        Node.capture({ round }, (reviews) =>
+          Node.branch(SpecDecisionStep.call({ repo, target, reviews }), {
+            if: Node.capture({}, (decision) => decision.approved),
+            then: Node.capture({}, (decision) => Node.succeed({ patch, decision })),
+            else: Node.capture({ round }, (decision) =>
+              round >= maxRounds
+                ? Node.succeed({ patch, decision })
+                : ungate(repo, target, maxRounds, round + 1, decision))
+          }))
+      ))
+  )
 
 /** 0.x's `ungate:report` and `ungate:output`, folded. */
 const ungateReport = (rows: ReadonlyArray<UngateRow>): PhaseDone => {
@@ -1135,16 +1181,18 @@ export const Ungate = Flow.make("examples/BunPortSmithers/Ungate", {
   payload: { repo: Schema.String, targets: Schema.Array(Target), maxRounds: Schema.optional(Positive) },
   success: PhaseDone,
   error: AgentAction.AgentFailure,
-  body: ({ maxRounds = 5, repo, targets }) => {
+  body: Node.capture({}, ({ maxRounds = 5, repo, targets }) => {
     const surveyed = targets.map((target) => ({ ...target, reason: target.reason ?? "ungate/proper-port" }))
     return Node.map(
       parallel(
-        surveyed.map((target) => [`ungate:${stableNodeId(target.id)}:loop`, ungate(repo, target, maxRounds, 1, null)] as const),
+        surveyed.map((target) =>
+          [`ungate:${stableNodeId(target.id)}:loop`, ungate(repo, target, maxRounds, 1, null)] as const
+        ),
         surveyed.length
       ),
       ungateReport
     )
-  }
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -1158,11 +1206,13 @@ export const ProbeFixes = Flow.make("examples/BunPortSmithers/ProbeFixes", {
   payload: { repo: Schema.String, failures: Schema.Array(Failure) },
   success: Schema.Array(FailureFix),
   error: AgentAction.AgentFailure,
-  body: ({ failures, repo }) =>
+  body: Node.capture({}, ({ failures, repo }) =>
     parallel(
-      failures.map((failure) => [`probe:fix:${stableNodeId(failure.failureKey)}`, FailureFixStep.call({ repo, failure })] as const),
+      failures.map((failure) =>
+        [`probe:fix:${stableNodeId(failure.failureKey)}`, FailureFixStep.call({ repo, failure })] as const
+      ),
       failures.length
-    )
+    ))
 })
 
 type ProbeTag = `examples/BunPortSmithers/${"Build" | "Probe"}`
@@ -1173,19 +1223,31 @@ const probeRound = (
   probes: ReadonlyArray<Probe>
 ): Node.Node<ProbeReport | null, Failed, Action.Requirement<ProbeTag>> =>
   Node.branch(Build.call({ repo }), {
-    if: (build) => build.ok,
-    then: () =>
+    if: Node.capture({}, (build) => build.ok),
+    then: Node.capture({}, () =>
       after(
-        parallel(probes.map((probe) => [`probe:run:${stableNodeId(probe.id)}`, ProbeStep.call({ repo, probe })] as const), probes.length),
-        (results) =>
-          after(Node.map(Node.succeed(results), dedupeFailures), (failures) =>
-            after(ProbeFixes.child({ repo, failures }), () =>
-              Node.map(Node.succeed(results), (real): ProbeReport => {
-                const passed = real.filter((r) => r.passed).length
-                return { passed, summary: `Probe swarm: ${passed}/${probes.length} probe(s) passed.` }
-              })))
-      ),
-    else: () => Node.succeed(null)
+        parallel(
+          probes.map((probe) => [`probe:run:${stableNodeId(probe.id)}`, ProbeStep.call({ repo, probe })] as const),
+          probes.length
+        ),
+        Node.capture({}, (results) =>
+          after(
+            Node.map(Node.succeed(results), dedupeFailures),
+            Node.capture({}, (failures) =>
+              after(
+                ProbeFixes.child({ repo, failures }),
+                Node.capture({}, () =>
+                  Node.map(
+                    Node.succeed(results),
+                    Node.capture({}, (real): ProbeReport => {
+                      const passed = real.filter((r) => r.passed).length
+                      return { passed, summary: `Probe swarm: ${passed}/${probes.length} probe(s) passed.` }
+                    })
+                  ))
+              ))
+          ))
+      )),
+    else: Node.capture({}, () => Node.succeed(null))
   })
 
 /** Rounds until every probe passed or `maxRounds`; the latest report decides the phase. */
@@ -1196,24 +1258,30 @@ const probeRounds = (
   round: number,
   latest: Planned.Planned<ProbeReport | null> | null
 ): Node.Node<PhaseDone | null, Failed, Action.Requirement<ProbeTag>> =>
-  Node.bindPlanned(probeRound(repo, probes), (report: Planned.Planned<ProbeReport | null>) =>
-    after(
-      Node.map(Node.succeed({ report, latest }), (real) => real.report ?? real.latest ?? null),
-      (current) => {
-        const done = Node.map(Node.succeed(current), (real): PhaseDone | null =>
-          real === null ? null : {
-            phase: "probes",
-            status: real.passed === probes.length ? "completed" : "partial",
-            summary: real.summary
+  Node.bindPlanned(
+    probeRound(repo, probes),
+    Node.capture({ round }, (report: Planned.Planned<ProbeReport | null>) =>
+      after(
+        Node.map(Node.succeed({ report, latest }), Node.capture({}, (real) => real.report ?? real.latest ?? null)),
+        Node.capture({ round }, (current) => {
+          const done = Node.map(
+            Node.succeed(current),
+            Node.capture({}, (real): PhaseDone | null =>
+              real === null ? null : {
+                phase: "probes",
+                status: real.passed === probes.length ? "completed" : "partial",
+                summary: real.summary
+              })
+          )
+          if (round >= maxRounds) return done
+          return Node.branch(Node.succeed(report), {
+            if: Node.capture({}, (real) => real !== null && real.passed === probes.length),
+            then: Node.capture({}, () => done),
+            else: Node.capture({ round }, () => probeRounds(repo, probes, maxRounds, round + 1, current))
           })
-        if (round >= maxRounds) return done
-        return Node.branch(Node.succeed(report), {
-          if: (real) => real !== null && real.passed === probes.length,
-          then: () => done,
-          else: () => probeRounds(repo, probes, maxRounds, round + 1, current)
         })
-      }
-    ))
+      ))
+  )
 
 /**
  * Phase 5: build, probe and fix in rounds. A run whose every build failed
@@ -1223,8 +1291,11 @@ export const Probes = Flow.make("examples/BunPortSmithers/Probes", {
   payload: { repo: Schema.String, probes: Schema.Array(Probe), maxRounds: Schema.optional(Positive) },
   success: Schema.NullOr(PhaseDone),
   error: AgentAction.AgentFailure,
-  body: ({ maxRounds = 5, probes, repo }) =>
-    probeRounds(repo, probes.length > 0 ? probes : defaultProbes, maxRounds, 1, null)
+  body: Node.capture(
+    {},
+    ({ maxRounds = 5, probes, repo }) =>
+      probeRounds(repo, probes.length > 0 ? probes : defaultProbes, maxRounds, 1, null)
+  )
 })
 
 // ---------------------------------------------------------------------------
@@ -1248,9 +1319,9 @@ const testArea = (
   const result = TestAreaStep.call({ repo, area, branch: areaBranch(area), previous })
   if (iteration >= maxIterations) return result
   return Node.branch(result, {
-    if: (real) => real.allPass,
-    then: (real) => Node.succeed(real),
-    else: (real) => testArea(repo, area, maxIterations, iteration + 1, real)
+    if: Node.capture({}, (real) => real.allPass),
+    then: Node.capture({}, (real) => Node.succeed(real)),
+    else: Node.capture({}, (real) => testArea(repo, area, maxIterations, iteration + 1, real))
   })
 }
 
@@ -1268,11 +1339,11 @@ const mergeAreas = (
   const result = results[index]!
   return after(
     Node.branch(Node.succeed(result), {
-      if: (real) => !requireGreen || real.allPass,
-      then: (real) => Merge.call({ repo, area, branch: areaBranch(area), result: real }),
-      else: () => Node.succeed(null)
+      if: Node.capture({}, (real) => !requireGreen || real.allPass),
+      then: Node.capture({}, (real) => Merge.call({ repo, area, branch: areaBranch(area), result: real })),
+      else: Node.capture({}, () => Node.succeed(null))
     }),
-    (merged) => mergeAreas(repo, areas, results, requireGreen, index + 1, [...merges, merged])
+    Node.capture({}, (merged) => mergeAreas(repo, areas, results, requireGreen, index + 1, [...merges, merged]))
   )
 }
 
@@ -1288,7 +1359,8 @@ const testsReport = (
   return {
     phase: "tests",
     status: results.length - allPass > 0 ? "partial" : "completed",
-    summary: `Test swarm: ${allPass}/${results.length} area(s) all-pass; ${merged.length} area branch(es) eligible for merge.`
+    summary:
+      `Test swarm: ${allPass}/${results.length} area(s) all-pass; ${merged.length} area branch(es) eligible for merge.`
   }
 }
 
@@ -1311,7 +1383,7 @@ export const Tests = Flow.make("examples/BunPortSmithers/Tests", {
   },
   success: Schema.NullOr(PhaseDone),
   error: Schema.Union([AgentAction.AgentFailure, WaitFor.WaitForRequestInvalid]),
-  body: (
+  body: Node.capture({}, (
     {
       areas: given,
       awaitExternalCiSignal = false,
@@ -1324,23 +1396,25 @@ export const Tests = Flow.make("examples/BunPortSmithers/Tests", {
     const areas = given.length > 0 ? given : defaultTestAreas
     return after(
       parallel(
-        areas.map((area) => [`test-swarm:${stableNodeId(area.id)}:loop`, testArea(repo, area, maxIterations, 1, null)] as const),
+        areas.map((area) =>
+          [`test-swarm:${stableNodeId(area.id)}:loop`, testArea(repo, area, maxIterations, 1, null)] as const
+        ),
         maxConcurrency
       ),
-      (results) => {
+      Node.capture({}, (results) => {
         const merge = after(
           mergeAreas(repo, areas, results, requireGreenBeforeMerge, 0, []),
-          (merges) => Node.map(Node.succeed({ results, merges }), testsReport)
+          Node.capture({}, (merges) => Node.map(Node.succeed({ results, merges }), testsReport))
         )
         if (!awaitExternalCiSignal) return merge
         return Node.branch(Node.map(WaitFor.action.call({ name: ciSignalName }), Schema.decodeUnknownSync(CiSignal)), {
-          if: (signal) => signal.status === "passed",
-          then: () => merge,
-          else: () => Node.succeed(null)
+          if: Node.capture({}, (signal) => signal.status === "passed"),
+          then: Node.capture({}, () => merge),
+          else: Node.capture({}, () => Node.succeed(null))
         })
-      }
+      })
     )
-  }
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -1359,9 +1433,9 @@ const sweepLoop = (
   const result = SweepStep.call({ repo, sweep, previous })
   if (round >= 3) return result
   return Node.branch(result, {
-    if: (real) => real.skipped === 0,
-    then: (real) => Node.succeed(real),
-    else: (real) => sweepLoop(repo, sweep, round + 1, real)
+    if: Node.capture({}, (real) => real.skipped === 0),
+    then: Node.capture({}, (real) => Node.succeed(real)),
+    else: Node.capture({ round }, (real) => sweepLoop(repo, sweep, round + 1, real))
   })
 }
 
@@ -1370,17 +1444,24 @@ export const Sweeps = Flow.make("examples/BunPortSmithers/Sweeps", {
   payload: { repo: Schema.String, sweeps: Schema.Array(Sweep) },
   success: PhaseDone,
   error: AgentAction.AgentFailure,
-  body: ({ repo, sweeps: given }) => {
+  body: Node.capture({}, ({ repo, sweeps: given }) => {
     const sweeps = given.length > 0 ? given : defaultSweeps
     return Node.map(
-      parallel(sweeps.map((sweep) => [`sweep:${stableNodeId(sweep.id)}`, sweepLoop(repo, sweep, 1, null)] as const), sweeps.length),
-      (results): PhaseDone => {
+      parallel(
+        sweeps.map((sweep) => [`sweep:${stableNodeId(sweep.id)}`, sweepLoop(repo, sweep, 1, null)] as const),
+        sweeps.length
+      ),
+      Node.capture({}, (results): PhaseDone => {
         const fixed = results.reduce((sum, r) => sum + r.fixed, 0)
         const skipped = results.reduce((sum, r) => sum + r.skipped, 0)
-        return { phase: "sweeps", status: skipped > 0 ? "partial" : "completed", summary: `Audit sweeps: ${fixed} issue(s) fixed.` }
-      }
+        return {
+          phase: "sweeps",
+          status: skipped > 0 ? "partial" : "completed",
+          summary: `Audit sweeps: ${fixed} issue(s) fixed.`
+        }
+      })
     )
-  }
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -1441,14 +1522,24 @@ const gate = <A>(
 ): Node.Node<null, HumanTask.HumanTaskFailed | typeof ApprovalDenied.Type> =>
   Node.branch(Node.succeed(result) as Node.Node<A>, {
     if: needed,
-    then: (real) =>
-      Node.bindPlanned(Node.map(Node.succeed(real) as Node.Node<A>, question), (prompt: Planned.Planned<string>) =>
-        Node.branch(HumanTask.action.call({ name, kind: "confirm", prompt }), {
-          if: (answer) => answer === true,
-          then: () => Node.succeed(null),
-          else: () => Node.fail({ _tag: "examples/BunPortSmithers/ApprovalDenied" as const, gate: name })
-        })),
-    else: () => Node.succeed(null)
+    then: Node.capture(
+      { name },
+      (real) =>
+        Node.bindPlanned(
+          Node.map(Node.succeed(real) as Node.Node<A>, question),
+          Node.capture({ name }, (prompt: Planned.Planned<string>) =>
+            Node.branch(HumanTask.action.call({ name, kind: "confirm", prompt }), {
+              if: Node.capture({}, (answer) =>
+                answer === true),
+              then: Node.capture({}, () => Node.succeed(null)),
+              else: Node.capture(
+                { name },
+                () => Node.fail({ _tag: "examples/BunPortSmithers/ApprovalDenied" as const, gate: name })
+              )
+            }))
+        )
+    ),
+    else: Node.capture({}, () => Node.succeed(null))
   })
 
 /** Runs `phase` when the operator left it on, or settles `null`. */
@@ -1461,64 +1552,113 @@ const when = <B, E, R>(
   if (!input.phases.includes(phase)) return Node.succeed(null)
   if (plan === null) return run()
   return Node.branch(Node.succeed(plan), {
-    if: (real) => real?.[flags[phase]] !== false,
-    then: () => run(),
-    else: () => Node.succeed(null)
+    if: Node.capture({ phase }, (real) => real?.[flags[phase]] !== false),
+    then: Node.capture({}, () => run()),
+    else: Node.capture({}, () => Node.succeed(null))
   })
 }
 
 /** The enabled phases in order, with the two gates, then the final row. */
 const runPhases = (input: Input, plan: Planned.Planned<OperatorPlan | null> | null) => {
   const { repo } = input
-  const lifetimes = when(plan, input, "lifetimes", () =>
-    after(Lifetimes.child({ repo, files: input.files, unknownApprovalThreshold: input.unknownApprovalThreshold }), (result) =>
-      gate(
-        questions.lifetimes,
-        result,
-        (real: LifetimesDone) => real.unknownRate > input.unknownApprovalThreshold,
-        (real) =>
-          `Approve lifetime classification quality?\n\n${real.summary}\n\nMetadata: ${
-            json({ unknownRate: real.unknownRate, totalFields: real.totalFields, refutedKeys: real.refutedKeys })
-          }`
-      )))
-  const phaseA = when(plan, input, "phaseA", () =>
-    PhaseA.child({ repo, files: input.files, maxConcurrency: input.maxConcurrency }))
-  const compile = when(plan, input, "compile", () =>
-    after(Compile.child({ repo, crates: input.crates }), (result) =>
-      gate(
-        questions.compile,
-        result,
-        (real: CompileDone) => real.gatedModules > input.broadGateApprovalThreshold,
-        (real) =>
-          `Approve compile gate/stub debt?\n\n${real.summary}\n\nMetadata: ${
-            json({ gatedModules: real.gatedModules, failingCrates: real.failingCrates })
-          }`
-      )))
-  const ungate = when(plan, input, "ungate", () => Ungate.child({ repo, targets: input.targets }))
-  const probes = when(plan, input, "probes", () => Probes.child({ repo, probes: input.probes }))
-  const tests = when(plan, input, "tests", () =>
-    Tests.child({
-      repo,
-      areas: input.areas,
-      maxConcurrency: input.maxConcurrency,
-      awaitExternalCiSignal: input.awaitExternalCiSignal
-    }))
-  const sweeps = when(plan, input, "sweeps", () => Sweeps.child({ repo, sweeps: input.sweeps }))
-  const final = Node.map(Node.succeed({ plan }), (real): Final => {
-    const ran = requested(input, real.plan ?? null)
-    return {
-      status: "completed",
-      phasesRun: ran,
-      summary: `Bun port Smithers workflow completed ${ran.length} phase(s).`,
-      nextActions: [
-        "Inspect child run reports and Smithers scores.",
-        "Use timeline/fork/replay for any failed or low-confidence node."
-      ]
-    }
-  })
+  const lifetimes = when(
+    plan,
+    input,
+    "lifetimes",
+    Node.capture({ input }, () =>
+      after(
+        Lifetimes.child({ repo, files: input.files, unknownApprovalThreshold: input.unknownApprovalThreshold }),
+        Node.capture({ input }, (result) =>
+          gate(
+            questions.lifetimes,
+            result,
+            Node.capture({ input }, (real: LifetimesDone) => real.unknownRate > input.unknownApprovalThreshold),
+            Node.capture({}, (real) =>
+              `Approve lifetime classification quality?\n\n${real.summary}\n\nMetadata: ${
+                json({ unknownRate: real.unknownRate, totalFields: real.totalFields, refutedKeys: real.refutedKeys })
+              }`)
+          ))
+      ))
+  )
+  const phaseA = when(
+    plan,
+    input,
+    "phaseA",
+    Node.capture({ input }, () => PhaseA.child({ repo, files: input.files, maxConcurrency: input.maxConcurrency }))
+  )
+  const compile = when(
+    plan,
+    input,
+    "compile",
+    Node.capture({ input }, () =>
+      after(
+        Compile.child({ repo, crates: input.crates }),
+        Node.capture({ input }, (result) =>
+          gate(
+            questions.compile,
+            result,
+            Node.capture({ input }, (real: CompileDone) => real.gatedModules > input.broadGateApprovalThreshold),
+            Node.capture({}, (real) =>
+              `Approve compile gate/stub debt?\n\n${real.summary}\n\nMetadata: ${
+                json({ gatedModules: real.gatedModules, failingCrates: real.failingCrates })
+              }`)
+          ))
+      ))
+  )
+  const ungate = when(
+    plan,
+    input,
+    "ungate",
+    Node.capture({ input }, () => Ungate.child({ repo, targets: input.targets }))
+  )
+  const probes = when(
+    plan,
+    input,
+    "probes",
+    Node.capture({ input }, () => Probes.child({ repo, probes: input.probes }))
+  )
+  const tests = when(
+    plan,
+    input,
+    "tests",
+    Node.capture({ input }, () =>
+      Tests.child({
+        repo,
+        areas: input.areas,
+        maxConcurrency: input.maxConcurrency,
+        awaitExternalCiSignal: input.awaitExternalCiSignal
+      }))
+  )
+  const sweeps = when(
+    plan,
+    input,
+    "sweeps",
+    Node.capture({ input }, () => Sweeps.child({ repo, sweeps: input.sweeps }))
+  )
+  const final = Node.map(
+    Node.succeed({ plan }),
+    Node.capture({ input }, (real): Final => {
+      const ran = requested(input, real.plan ?? null)
+      return {
+        status: "completed",
+        phasesRun: ran,
+        summary: `Bun port Smithers workflow completed ${ran.length} phase(s).`,
+        nextActions: [
+          "Inspect child run reports and Smithers scores.",
+          "Use timeline/fork/replay for any failed or low-confidence node."
+        ]
+      }
+    })
+  )
   return Node.andThen(
     lifetimes,
-    Node.andThen(phaseA, Node.andThen(compile, Node.andThen(ungate, Node.andThen(probes, Node.andThen(tests, Node.andThen(sweeps, final))))))
+    Node.andThen(
+      phaseA,
+      Node.andThen(
+        compile,
+        Node.andThen(ungate, Node.andThen(probes, Node.andThen(tests, Node.andThen(sweeps, final))))
+      )
+    )
   )
 }
 
@@ -1527,9 +1667,10 @@ const askOperator = (input: Input) =>
   HumanTask.action.call({
     name: questions.plan,
     kind: "json",
-    prompt: `# Operator Plan Review\n\nReview this Bun port run before agent work starts.\n\nRepository: ${input.repo}\n\nPlanned input: ${
-      json(input)
-    }`,
+    prompt:
+      `# Operator Plan Review\n\nReview this Bun port run before agent work starts.\n\nRepository: ${input.repo}\n\nPlanned input: ${
+        json(input)
+      }`,
     schema: operatorPlanSchema,
     maxAttempts: 5,
     timeoutMs: 7 * 24 * 60 * 60_000
@@ -1561,7 +1702,7 @@ export const BunPortSmithers = Flow.make("examples/BunPortSmithers", {
     WaitFor.WaitForRequestInvalid,
     ApprovalDenied
   ]),
-  body: (payload) => {
+  body: Node.capture({}, (payload) => {
     const input: Input = {
       repo: payload.repo ?? ".",
       phases: payload.phases ?? phases,
@@ -1580,17 +1721,20 @@ export const BunPortSmithers = Flow.make("examples/BunPortSmithers", {
     }
     if (payload.requireOperatorPlan === false) return runPhases(input, null)
     return Node.branch(askOperator(input), {
-      if: (plan) => plan.approved,
-      then: (plan) => runPhases(input, plan),
-      else: (plan) =>
-        Node.map(Node.succeed(plan), (real): Final => ({
-          status: "cancelled",
-          phasesRun: [],
-          summary: `Operator did not approve the Bun port run. ${real.comments ?? ""}`.trim(),
-          nextActions: ["Revise input scope and start a new run."]
-        }))
+      if: Node.capture({}, (plan) => plan.approved),
+      then: Node.capture({ input }, (plan) => runPhases(input, plan)),
+      else: Node.capture({}, (plan) =>
+        Node.map(
+          Node.succeed(plan),
+          Node.capture({}, (real): Final => ({
+            status: "cancelled",
+            phasesRun: [],
+            summary: `Operator did not approve the Bun port run. ${real.comments ?? ""}`.trim(),
+            nextActions: ["Revise input scope and start a new run."]
+          }))
+        ))
     })
-  }
+  })
 })
 
 /** Every agent step, the seven phase children and their nested children, the questions and the CI wait. */
@@ -1618,7 +1762,5 @@ export const layer = Layer.mergeAll(
     Interpreter.layer(ProbeFixes),
     Interpreter.layer(Tests),
     Interpreter.layer(Sweeps)
-  ),
-  HumanTask.layer,
-  WaitFor.layer
+  )
 )

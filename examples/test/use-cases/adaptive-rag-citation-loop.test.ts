@@ -1,7 +1,9 @@
 import { afterAll, expect, it } from "@effect/vitest"
-import { HumanTask } from "@smthrs/flow"
+import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
+import { type DurableDeferred, HumanTask } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import * as Option from "effect/Option"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -214,11 +216,19 @@ it.effect("asks a person to review an answer that ends below the review threshol
   Effect.gen(function*() {
     const { answer, turns } = script({ mode: "retrieve", scores: [0.4] })
     const reviews: Array<typeof HumanTask.action.payloadSchema.Type> = []
-    // The person's answer, given without parking the run.
-    const reviewer = HumanTask.action.toLayer((request) => {
-      reviews.push(request)
-      return Effect.succeed({ approved: true, reviewer: "ana", note: "Ship with the statute caveat." })
-    })
+    const reviewer = Layer.effectDiscard(Effect.forkScoped(Effect.gen(function*() {
+      const state = yield* DurableEngineState.DurableEngineState
+      const row = yield* Effect.andThen(
+        Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 10))),
+        state.waiting("adaptive-rag-reviewed")
+      ).pipe(Effect.repeat({ until: (row) => Option.isSome(row) && row.value.reason === "approval" }))
+      const parked = Option.getOrThrow(row)
+      reviews.push(typeof parked.request === "string" ? JSON.parse(parked.request) : parked.request)
+      yield* HumanTask.answer({
+        token: parked.token as DurableDeferred.Token,
+        value: { approved: true, reviewer: "ana", note: "Ship with the statute caveat." }
+      })
+    })))
     const final = yield* Kit.run(AdaptiveRagCitationLoop, { question, maxIterations: 1 }, {
       filename: join(directory, "reviewed.sqlite"),
       executionId: "adaptive-rag-reviewed",
