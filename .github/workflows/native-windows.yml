@@ -136,3 +136,31 @@ jobs:
           path: ${{ runner.temp }}/portable-package-coverage
           if-no-files-found: ignore
           retention-days: 3
+
+  ci7-probe:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: .node-version
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          shared-key: windows-filesystem
+      - name: Native helper
+        shell: bash
+        run: |
+          rustup toolchain install 1.98.0 --profile minimal
+          cargo +1.98.0 build --locked -p smithers-ffi --bin smithers-jj-export
+          printf 'SMITHERS_WORKSPACE_JJ_EXPORT_BINARY=%s\n' "$(cygpath -w "$PWD/target/debug/smithers-jj-export.exe")" >> "$GITHUB_ENV"
+      - uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b
+        with:
+          tool: jj-cli@0.39.0,ripgrep@14.1.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: "1.4.1"
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Focused Windows diagnostics
+        run: pnpm --dir packages/smithers/build/build-cli exec vitest run test/PackageExecution.test.ts test/PackageRunnerEdges.test.ts --maxWorkers=2 --reporter=verbose --coverage.enabled=false
