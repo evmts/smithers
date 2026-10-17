@@ -330,12 +330,12 @@ describe("the stale-running sweep backs off refused rows (B-04)", () => {
               // Model a hosted database read still in flight after the refusal
               // has been journaled. Advancing virtual time cannot finish it.
               Effect.andThen(
-                eligibleBeforeMs > 0
+                (eligibleBeforeMs ?? 0) > 0
                   ? Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 25)))
                   : Effect.void
               ),
               Effect.ensuring(Effect.sync(() => {
-                if (eligibleBeforeMs > 0) ticks = ticks + 1
+                if ((eligibleBeforeMs ?? 0) > 0) ticks = ticks + 1
               }))
             )
         }))
