@@ -84,6 +84,20 @@ interface MakeOptions<
    * reach.
    */
   readonly modelInvocable?: boolean | undefined
+  /**
+   * The tokens, milliseconds and dollars one run asks a control plane to
+   * approve, and what exceeding them does, as a literal.
+   *
+   * Discovery reads it from the source text onto the descriptor's budget,
+   * exactly as Markdown frontmatter's `budget` is read; the control plane, not
+   * this flow, enforces it.
+   */
+  readonly budget?: {
+    readonly tokens?: number | undefined
+    readonly milliseconds?: number | undefined
+    readonly usd?: number | undefined
+    readonly onExceeded?: "fail" | "warn" | "skip-remaining" | "park" | undefined
+  } | undefined
   readonly idempotencyKey?:
     | ((
       payload: Payload extends Schema.Struct.Fields ? Schema.Struct.Type<Payload>

@@ -571,9 +571,11 @@ const deriveSandbox = (
 }
 
 /**
- * Reads the frontmatter budget: the tokens, milliseconds and dollars this flow
+ * Reads a declared budget: the tokens, milliseconds and dollars this flow
  * asks a control plane to approve for one of its runs, and what exceeding them
- * does.
+ * does. Frontmatter declares it in YAML; a module declares the same keys as a
+ * `Flow.make` literal, which discovery reads into `fields.budget` and names
+ * in warnings by `label`.
  *
  * ```yaml
  * budget:
@@ -590,11 +592,15 @@ const deriveSandbox = (
  * would be reported as a spending decision. An unreadable declaration therefore
  * leaves the flow exactly where an undeclared one leaves it, unbounded, and
  * says so in a warning an operator reads back through `registry.warnings()`.
+ *
+ * @category parsing
+ * @since 1.0.0-rc.1
  */
-const deriveBudget = (
+export const deriveBudget = (
   fields: Record<string, unknown>,
   path: string,
-  warnings: Array<DiscoveryWarning>
+  warnings: Array<DiscoveryWarning>,
+  label = "Frontmatter budget"
 ): FlowBudget | undefined => {
   const value = fields.budget
   if (value === undefined) return undefined
@@ -602,7 +608,7 @@ const deriveBudget = (
     warnings.push({
       code: "invalid_budget",
       path,
-      message: "Frontmatter budget must be an object of tokens, milliseconds and usd; ignoring it"
+      message: `${label} must be an object of tokens, milliseconds and usd; ignoring it`
     })
     return undefined
   }
@@ -623,7 +629,7 @@ const deriveBudget = (
     warnings.push({
       code: "invalid_budget",
       path,
-      message: `Frontmatter budget.${key} must be a positive safe integer; ignoring it`
+      message: `${label}.${key} must be a positive safe integer; ignoring it`
     })
     return undefined
   }
@@ -642,7 +648,7 @@ const deriveBudget = (
     warnings.push({
       code: "invalid_budget",
       path,
-      message: "Frontmatter budget.usd must be a positive dollar amount; ignoring it"
+      message: `${label}.usd must be a positive dollar amount; ignoring it`
     })
     return undefined
   })()
@@ -654,7 +660,7 @@ const deriveBudget = (
     warnings.push({
       code: "invalid_budget",
       path,
-      message: `Frontmatter budget.onExceeded must be one of ${BudgetOnExceeded.literals.join(", ")}; ignoring it`
+      message: `${label}.onExceeded must be one of ${BudgetOnExceeded.literals.join(", ")}; ignoring it`
     })
     return undefined
   }
@@ -667,7 +673,7 @@ const deriveBudget = (
     warnings.push({
       code: "invalid_budget",
       path,
-      message: `Unknown frontmatter budget key: ${key}`
+      message: `${label} has an unknown key: ${key}`
     })
   }
   if (tokens === undefined && milliseconds === undefined && usd === undefined) return undefined

@@ -81,6 +81,41 @@ export default Flow.make("review", {
     })
   })
 
+  it("reads a module budget literal as the markdown frontmatter budget, and warns on an unreadable one", async () => {
+    await withTemporaryRoot(async (root) => {
+      const markdown = join(root, "markdown")
+      const module = join(root, "module")
+      mkdirSync(markdown)
+      mkdirSync(module)
+      writeFileSync(
+        join(markdown, "flow.mdx"),
+        "---\ndescription: Lint.\ncapabilities: []\nbudget:\n  tokens: 200000\n  milliseconds: 600000\n  usd: 2.5\n  onExceeded: park\n---\nbody"
+      )
+      const file = join(module, "flow.ts")
+      const source = `export default Flow.make("module", {
+  description: "Lint.",
+  capabilities: [],
+  budget: { tokens: 200000, milliseconds: 600_000, usd: 2.5, onExceeded: "park" }
+})`
+      writeFileSync(file, source.replace("600_000", "600000"))
+      const result = await scan({ source: "project", root, naming: "path" })
+      const budgets = Object.fromEntries(result.entries.map((entry) => [entry.name, entry.budget]))
+      expect(budgets.module).toEqual({ tokens: 200000, milliseconds: 600000, usd: 2.5, onExceeded: "park" })
+      expect(budgets.module).toEqual(budgets.markdown)
+      expect(result.warnings).toEqual([])
+
+      writeFileSync(file, source)
+      const unreadable = await scan({ source: "project", root, naming: "path" })
+      expect(unreadable.entries.find((entry) => entry.name === "module")!.budget)
+        .toEqual({ tokens: 200000, usd: 2.5, onExceeded: "park" })
+      expect(unreadable.warnings).toContainEqual(expect.objectContaining({
+        code: "invalid_budget",
+        path: file,
+        message: "Flow.make budget.milliseconds must be a positive safe integer; ignoring it"
+      }))
+    })
+  })
+
   it("discloses unrestricted imports from action helpers without evaluating them", async () => {
     await withTemporaryRoot(async (root) => {
       const directory = join(root, "native")

@@ -449,6 +449,9 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
               )
             )
           }
+          const budget = metadata.budget === undefined
+            ? undefined
+            : MarkdownFlow.deriveBudget({ budget: metadata.budget }, location, warnings, "Flow.make budget")
           if (metadata.description === undefined) {
             warnings.push(
               warning(
@@ -492,6 +495,7 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
                 effects: metadata.effects,
                 placement: metadata.placement,
                 modelInvocable: metadata.modelInvocable,
+                ...budget === undefined ? {} : { budget },
                 path: location,
                 frontmatter: {},
                 provenance

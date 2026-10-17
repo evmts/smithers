@@ -37,6 +37,12 @@ export interface Metadata {
   readonly effects: EffectDeclaration
   readonly placement: Option.Option<Placement>
   readonly modelInvocable: boolean
+  /**
+   * The declared `budget` literal's members, each a literal value or, when it
+   * is not one, its source text, so the budget reader refuses it by name
+   * rather than reading it as undeclared.
+   */
+  readonly budget?: Record<string, unknown>
   readonly declaresName: boolean
   /**
    * The name the module declares, when it is a readable string literal.
@@ -1144,6 +1150,17 @@ export const parse = (source: string): Metadata => {
   const modelSource = properties.get("model")
   const model = stringLiteral(modelSource) ?? stringArray(modelSource)
 
+  const budgetSource = properties.get("budget")
+  const budgetProperties = objectProperties(budgetSource)
+  if (budgetSource !== undefined && (budgetProperties === undefined || budgetProperties.hasUnprojectableMembers)) {
+    warnings.push({ message: "Budget must be a statically projectable object literal; ignoring it" })
+  }
+  const budget = budgetProperties === undefined || budgetProperties.hasUnprojectableMembers
+    ? undefined
+    : Object.fromEntries(
+      [...budgetProperties.values].map(([key, value]) => [key, literalValue(trimTrivia(value)) ?? trimTrivia(value)])
+    )
+
   return {
     description: stringLiteral(properties.get("description")),
     // Two declarations name the same two schemas. `@smthrs/core` calls them
@@ -1160,6 +1177,7 @@ export const parse = (source: string): Metadata => {
     effects,
     placement: placementFromSource(source),
     modelInvocable,
+    ...budget === undefined ? {} : { budget },
     declaresName: properties.has("name"),
     declaredName: Option.fromUndefinedOr(stringLiteral(properties.get("name"))),
     warnings

@@ -68,6 +68,7 @@ describe("canonical prompt flows", () => {
       system: ["Keep answers brief."],
       chat: true,
       flows: ["review"],
+      budget: { tokens: 200000, onExceeded: "park" },
       prompt
     })
     for (

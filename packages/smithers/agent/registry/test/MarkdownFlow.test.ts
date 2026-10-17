@@ -863,7 +863,7 @@ body`)
     expect(Option.getOrThrow(result.descriptor).budget).toBeUndefined()
     expect(result.warnings).toContainEqual(expect.objectContaining({
       code: "invalid_budget",
-      message: "Unknown frontmatter budget key: token"
+      message: "Frontmatter budget has an unknown key: token"
     }))
   })
 

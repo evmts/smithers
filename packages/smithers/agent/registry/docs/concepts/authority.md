@@ -138,9 +138,13 @@ control plane enforces it for the whole run, every trampoline round included,
 and expiry fails the run whatever `onExceeded` says. An unreadable deadline is
 dropped with an `invalid_deadline` warning, for the reason a malformed budget is.
 
-Module flows declare no budget. Discovery reads a `flow.ts` without evaluating
-it, so `budget` is absent for every descriptor a module produces and the flow
-runs unbounded unless its host supplies a budget of its own.
+A module flow declares the same keys as a `Flow.make` literal,
+`budget: { tokens: 200000, milliseconds: 600000 }`. Discovery reads the literal
+from the source text without evaluating the module and applies the rules above;
+its warnings name `Flow.make budget`. A budget that is not an object literal,
+or a member that is not a literal value, is dropped with a warning. A module's
+`deadline` is the flow's own `Flow.make` deadline, which the flow runtime
+enforces, so it never joins `budget.deadline`.
 
 ## Reading it back
 
