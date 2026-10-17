@@ -163,4 +163,4 @@ jobs:
           bun-version: "1.4.1"
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Focused Windows diagnostics
-        run: pnpm --dir packages/smithers/build/build-cli exec vitest run test/PackageExecution.test.ts test/PackageRunnerEdges.test.ts --maxWorkers=2 --reporter=verbose --coverage.enabled=false
+        run: pnpm --dir packages/smithers/build/build-cli exec vitest run test/PackageExecution.test.ts --reporter=verbose --coverage.reportOnFailure
