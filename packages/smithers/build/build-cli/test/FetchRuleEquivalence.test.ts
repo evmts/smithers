@@ -103,7 +103,7 @@ describe("Fetch extraction goldens recorded through the original PackageExec pat
         .toMatchSnapshot("pre-extraction report")
       const destination = Path.join(root, "data/nested/payload.bin")
       expect(await Fs.readFile(destination)).toEqual(bytes)
-      expect((await Fs.stat(destination)).mode & 0o777).toBe(0o644)
+      expect((await Fs.stat(destination)).mode & 0o777).toBe(process.platform === "win32" ? 0o666 : 0o644)
       expect(notes).toContain("//data:pinned  fetched 9 byte(s)")
       expect(requests).toBe(1)
 
@@ -122,7 +122,7 @@ describe("Fetch extraction goldens recorded through the original PackageExec pat
       const replay = await PackageExec.execute(planned, options)
       expect(replay.counts).toEqual({ ran: 0, hit: 1, failed: 0, skipped: 0 })
       expect(await Fs.readFile(destination)).toEqual(bytes)
-      expect((await Fs.stat(destination)).mode & 0o777).toBe(0o644)
+      expect((await Fs.stat(destination)).mode & 0o777).toBe(process.platform === "win32" ? 0o666 : 0o644)
       expect(requests).toBe(1)
       const bypass = await PackageExec.execute(planned, { ...options, readCache: false })
       expect(bypass.counts).toEqual({ ran: 1, hit: 0, failed: 0, skipped: 0 })
