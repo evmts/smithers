@@ -2788,7 +2788,16 @@ describe("AgentSession", () => {
     expect(entries[0]!.payload).toMatchObject({ fields: ["args"], arguments: "## args\n\ns16-marker" })
   })
 
-  it("runs a prompt-backed flow.ts as a prompt flow, rendering its typed prompt with the launch input", async () => {
+  it.each(
+    [
+      ["typed", { name: "Ada" }, ["name"]],
+      ["untyped", { name: "Ada" }, ["name"]],
+      ["null", null, []],
+      ["scalar", "Ada", []],
+      ["array", ["Ada"], []],
+      ["refused", { name: "Ada" }, []]
+    ] as const
+  )("runs a prompt-backed flow.ts through the agent (%s)", async (mode, input, fields) => {
     const requests: Array<ModelRequest.ModelRequest> = []
     const recording = Model.make({
       stream: (request) =>
@@ -2803,8 +2812,11 @@ describe("AgentSession", () => {
     })
     const executable: Executable.Executable = {
       descriptor: typedDescriptor,
-      input: flow.payloadSchema,
-      prompt: flow.prompt as (input: unknown) => string,
+      input: mode === "typed" ? flow.payloadSchema : undefined,
+      prompt: (props) => {
+        if (mode === "refused") throw new Error("renderer refused")
+        return mode === "typed" ? flow.prompt!(props as { name: string }) : "# Greet\n\nGreet Ada by name."
+      },
       delegate: undefined,
       lowered: { cache: undefined, placement: undefined, priority: undefined },
       invocation: (input) => ({
@@ -2830,7 +2842,7 @@ describe("AgentSession", () => {
         return yield* Effect.gen(function*() {
           const control = yield* Control.Control
           const journal = yield* Journal.Journal
-          const card = yield* control.plan({ flowId: "agents/typed", input: { name: "Ada" } })
+          const card = yield* control.plan({ flowId: "agents/typed", input })
           yield* control.approve(card.approval)
           const receipt = yield* control.run({
             _tag: "Plan",
@@ -2849,7 +2861,7 @@ describe("AgentSession", () => {
           )
           yield* journal.flush
           const page = yield* journal.entries({ runId: JournalEvent.RunId.make(receipt.runId), limit: 200 })
-          return page.entries.filter((entry) => entry.eventType === "control.agent.prompt-rendered")
+          return page.entries
         }).pipe(Effect.provide(stack({
           resolve: seat(recording),
           notes,
@@ -2860,6 +2872,13 @@ describe("AgentSession", () => {
       }).pipe(Effect.scoped)
     )
 
+    const rendered = entries.filter((entry) => entry.eventType === "control.agent.prompt-rendered")
+    if (mode === "refused") {
+      expect(requests).toEqual([])
+      expect(rendered).toEqual([])
+      expect(JSON.stringify(entries)).toContain("could not be rendered from its launch input")
+      return
+    }
     const prose = requests.flatMap((request) => [
       ...request.system.map((part) => part.text),
       ...request.messages.flatMap((message) =>
@@ -2868,7 +2887,7 @@ describe("AgentSession", () => {
     ]).join("\n")
     expect(prose).toContain("# Greet\n\nGreet Ada by name.")
     expect(prose).not.toContain("# Arguments")
-    expect(entries.map((entry) => entry.payload)).toMatchObject([{ fields: ["name"], arguments: "" }])
+    expect(rendered.map((entry) => entry.payload)).toMatchObject([{ fields, arguments: "" }])
   })
 
   it("seals the host's opening memory into the run before the first model call", async () => {
