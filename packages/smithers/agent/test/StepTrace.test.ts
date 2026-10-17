@@ -7,12 +7,13 @@ import { ModelError } from "@smthrs/model/ModelError"
 import { RunStore } from "@smthrs/run-store"
 import { Context, Deferred, Effect, Fiber, Layer, Option, Scope, Stream } from "effect"
 import { TestClock } from "effect/testing"
-import { spawn } from "node:child_process"
+import { execFile, spawn } from "node:child_process"
 import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { promisify } from "node:util"
 import { describe, expect, it } from "vitest"
 import * as SqlTimeTravelStore from "../../flows/time-travel/src/SqlTimeTravelStore.ts"
 import * as TimeTravel from "../../flows/time-travel/src/TimeTravel.ts"
@@ -215,7 +216,7 @@ describe("agent checkpoint process recovery", () => {
       child.kill("SIGKILL")
       const [, signal] = await exited
       expect(signal).toBe("SIGKILL")
-      let resumedCalls = 0
+
       await Effect.runPromise(
         Effect.scoped(Effect.gen(function*() {
           const runs = yield* RunStore.RunStore
@@ -242,15 +243,20 @@ describe("agent checkpoint process recovery", () => {
           // both calls ran under is stored once.
           expect(asked[1]!.prefixCount).toBe((asked[0]!.messages as ReadonlyArray<unknown>).length)
           expect(asked.map((payload) => Object.hasOwn(payload, "system"))).toEqual([true, false])
-          const wiring = yield* incarnation(Model.make({
-            stream: () =>
-              Stream.suspend(() => {
-                resumedCalls++
-                return answer()
-              })
-          }))
-          expect(yield* Single.execute({ input: "two frames" }, { executionId: runId }).pipe(Effect.provide(wiring)))
-            .toBe("done")
+          // The killed host loaded native TypeScript. Rebuild the same declaration
+          // there too: Vitest rewrites callback source, which is plan identity.
+          const recovered = yield* Effect.promise(() =>
+            promisify(execFile)(process.execPath, [
+              fileURLToPath(new URL("./fixtures/step-trace-child.ts", import.meta.url)),
+              filename,
+              runId,
+              "recover"
+            ], { env: { PATH: process.env.PATH, TMPDIR: process.env.TMPDIR, LANG: "C.UTF-8" }, timeout: 120_000 })
+          )
+          const receipt = JSON.parse(
+            recovered.stdout.split("\n").find((line) => line.startsWith("{\"status\":\"recovered\""))!
+          )
+          expect(receipt).toEqual({ status: "recovered", result: "done", calls: 1 })
           const after = yield* facts(runId)
           expect(after.slice(0, prefix.length)).toEqual(prefix)
           expect(new Set(after.map((row) => `${row.sourceId}:${row.sourceSeq}`)).size).toBe(after.length)
@@ -260,7 +266,6 @@ describe("agent checkpoint process recovery", () => {
           const decisions = after.filter((row) => row.payload.eventType === "control.agent.decision-settled")
           expect(decisions.map((row) => row.payload.payload)).toMatchObject([{ frame: 1 }])
           expect((yield* runs.get(runId)).status).toBe("completed")
-          expect(resumedCalls).toBe(1)
         })).pipe(Effect.provide(stores(filename)), Effect.provide(NodeCrypto.layer), Effect.provide(TestClock.layer()))
       )
     } finally {

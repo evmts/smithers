@@ -182,8 +182,8 @@ const ParkedSteps = Flow.make("agent/test/budget/ParkedSteps", {
   suspendedRetryPolicy: RetryPolicy.make({ initialMs: 200, factor: 1, maxMs: 200 }),
   body: ({ diff }) =>
     First.call({ diff }).pipe(
-      Node.bindPlanned(() => Pause.call({ id: "boundary" })),
-      Node.bindPlanned(() => Second.call({ diff }))
+      Node.bindPlanned(Node.capture({}, () => Pause.call({ id: "boundary" }))),
+      Node.bindPlanned(Node.capture({ diff }, () => Second.call({ diff })))
     )
 })
 
@@ -191,7 +191,7 @@ const TwoSteps = Flow.make("agent/test/budget/TwoSteps", {
   payload: { diff: Schema.String },
   success: Review,
   error: AgentAction.AgentFailure,
-  body: ({ diff }) => First.call({ diff }).pipe(Node.bindPlanned(() => Second.call({ diff })))
+  body: ({ diff }) => First.call({ diff }).pipe(Node.bindPlanned(Node.capture({ diff }, () => Second.call({ diff }))))
 })
 
 const memory = <ROut, RIn>(

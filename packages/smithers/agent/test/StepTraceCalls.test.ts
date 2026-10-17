@@ -1,17 +1,16 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import * as Model from "@smthrs/model/Model"
 import { RunStore } from "@smthrs/run-store"
-import { Effect, Stream } from "effect"
+import { Effect } from "effect"
 import { TestClock } from "effect/testing"
-import { spawn } from "node:child_process"
+import { execFile, spawn } from "node:child_process"
 import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { promisify } from "node:util"
 import { describe, expect, it } from "vitest"
-import { host } from "./fixtures/step-trace-calls-host.ts"
-import { answer, facts, incarnation, Single, stores } from "./fixtures/step-trace-stack.ts"
+import { facts, stores } from "./fixtures/step-trace-stack.ts"
 
 describe("queued cell-call trace replay on SQLite", () => {
   it.each([false, true])(
@@ -88,28 +87,26 @@ describe("queued cell-call trace replay on SQLite", () => {
             expect(new Set(calls.map((row) => (row.payload.payload as { callId: string }).callId)).size).toBe(
               partial ? 1 : 2
             )
-            const performed: string[] = []
-            let providerCalls = 0
-            const second = yield* incarnation(
-              Model.make({
-                stream: () =>
-                  Stream.suspend(() => {
-                    providerCalls++
-                    return answer()
-                  })
-              }),
-              {
-                host: host((text) =>
-                  Effect.sync(() => {
-                    performed.push(text)
-                  }), partial ? "same" : undefined)
-              }
+            // Resume with the native loader used by the killed process, preserving
+            // the exact callback source included in the recorded plan.
+            const recovered = yield* Effect.promise(() =>
+              promisify(execFile)(process.execPath, [
+                fileURLToPath(new URL("./fixtures/step-trace-calls-child.ts", import.meta.url)),
+                filename,
+                runId,
+                partial ? "partial" : "complete",
+                "recover"
+              ], { env: { PATH: process.env.PATH, TMPDIR: process.env.TMPDIR, LANG: "C.UTF-8" }, timeout: 120_000 })
             )
-            expect(
-              yield* Single.execute({ input: "Read both values" }, { executionId: runId }).pipe(Effect.provide(second))
-            ).toBe("done")
-            expect(performed).toEqual(partial ? ["right"] : [])
-            expect(providerCalls).toBe(1)
+            const receipt = JSON.parse(
+              recovered.stdout.split("\n").find((line) => line.startsWith("{\"status\":\"recovered\""))!
+            )
+            expect(receipt).toEqual({
+              status: "recovered",
+              result: "done",
+              performed: partial ? ["right"] : [],
+              providerCalls: 1
+            })
             const after = yield* facts(runId)
             expect(JSON.stringify(after.slice(0, before.length))).toBe(originalBytes)
             const settled = after.filter((row) => row.payload.eventType === "control.agent.cell-call-settled")
