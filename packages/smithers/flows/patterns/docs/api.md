@@ -606,7 +606,7 @@ calls per unit is `Math.floor((Graph.maximumGraphDepth - 1) / callsPerUnit) - 1`
 the root and settled value also spend depth. Eager branch construction also
 obeys `Node.maximumArmDepth`: `Loop.ralph` accepts at most 512 iterations,
 or 256 with a stall breaker. Constructors using these bounds
-check refuse oversized options at declaration with an `invalid_decorator`
+refuse oversized options at declaration with an `invalid_decorator`
 `PatternError` naming the option and limit. This includes `Loop.make`,
 `Optimizer.make`, and `WithRetry.make`; see the boundary assertions in
 `Loop.test.ts` and `Optimizer.test.ts`. Other topology, including deeper
