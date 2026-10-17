@@ -750,9 +750,13 @@ export const resourcePermit = <A, E, R>(
       while (true) {
         const admitted = yield* Effect.uninterruptible(Effect.gen(function*() {
           const nowMs = yield* Clock.currentTimeMillis
-          let grant = yield* strategy.claim(key, owner, nowMs)
+          // A held resource needs a read, not a rejected write transaction on
+          // every poll. Leave the writer available for its owner's heartbeat.
+          const lease = yield* read()
+          let grant = lease?.owner === undefined && lease?.claim === undefined
+            ? yield* strategy.claim(key, owner, nowMs)
+            : rejected("owner_held")
           if (grant._tag === "Rejected") {
-            const lease = yield* read()
             const held = lease?.claim === undefined
               ? lease?.owner
               : { id: lease.claim.id, heartbeatAtMs: lease.claim.claimedAtMs }
@@ -795,7 +799,9 @@ export const resourcePermit = <A, E, R>(
           const renewed = yield* strategy.reconfirm(key, owner, nowMs).pipe(Effect.timeout(heartbeatInterval))
           if (renewed._tag !== "Renewed") return yield* Effect.fail(fenceLost(key, owner))
         })),
-        Effect.mapError(() => fenceLost(key, owner))
+        Effect.mapError((cause) =>
+          new ConsensusError({ code: "fence_lost", message: fenceLost(key, owner).message, cause })
+        )
       )
     )
     return acquire.pipe(

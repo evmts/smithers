@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
+import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Cause, Clock, Deferred, Effect, Exit, Fiber, Layer } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
@@ -211,3 +212,45 @@ it.effect("retries when the SQL resource owner releases between a rejected claim
     expect(yield* Fiber.join(work)).toBe("entered")
     expect(released).toBe(true)
   }).pipe(Effect.provide(Layer.provideMerge(Migrations.layer, TestDatabase.layer))))
+
+it.effect("preserves the renewal timeout when real SQL work blocks a resource pulse", () =>
+  Effect.gen(function*() {
+    const service = yield* Consensus.Consensus
+    const writer = yield* DurableWriter.DurableWriter
+    const entered = yield* Deferred.make<void>()
+    const work = yield* service.withPermit(
+      "blocked-pulse",
+      owner,
+      alive,
+      writer.write(Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never)))
+    ).pipe(Effect.flip, Effect.forkChild)
+    yield* Deferred.await(entered)
+    yield* TestClock.adjust("2 seconds")
+    const failure = yield* Fiber.join(work)
+    expect(failure.code).toBe("fence_lost")
+    expect(failure.cause).toMatchObject({ _tag: "TimeoutError" })
+    expect(yield* service.withPermit("blocked-pulse", other, alive, Effect.succeed("released"))).toBe("released")
+  }).pipe(Effect.provide(SqlConsensus.layer.pipe(
+    Layer.provideMerge(Layer.provideMerge(Migrations.layer, TestDatabase.layer))
+  ))))
+
+it.effect("waits for a held SQLite resource without requesting write access", () =>
+  Effect.gen(function*() {
+    const service = yield* Consensus.Consensus
+    const client = yield* SqlClient.SqlClient
+    const now = yield* Clock.currentTimeMillis
+    const grant = yield* service.claim("read-wait", owner, now)
+    if (grant._tag !== "Claimed") throw new Error("expected grant")
+    yield* service.activate("read-wait", owner, grant.grantedAtMs, now)
+    yield* client`PRAGMA query_only = ON`
+    const waiter = yield* service.withPermit("read-wait", other, alive, Effect.succeed("acquired"))
+      .pipe(Effect.forkChild)
+    yield* TestClock.adjust("100 millis")
+    expect(waiter.pollUnsafe()).toBeUndefined()
+    yield* client`PRAGMA query_only = OFF`
+    yield* service.release("read-wait", owner)
+    yield* TestClock.adjust("100 millis")
+    expect(yield* Fiber.join(waiter)).toBe("acquired")
+  }).pipe(Effect.provide(SqlConsensus.layer.pipe(
+    Layer.provideMerge(Layer.provideMerge(Migrations.layer, TestDatabase.sqliteLayer))
+  ))))

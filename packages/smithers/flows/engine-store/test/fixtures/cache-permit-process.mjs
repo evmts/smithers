@@ -4,13 +4,24 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { Action, Flow } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
 import { Ownership } from "@smthrs/run-store"
-import { Clock, Effect, Layer, Schema } from "effect"
+import { Cause, Clock, Effect, Layer, Schema } from "effect"
+import { Consensus } from "@smthrs/journal/Consensus"
+import * as SqlConsensus from "@smthrs/journal/SqlConsensus"
 import { appendFile } from "node:fs/promises"
 import { once } from "node:events"
 import * as EngineStore from "../../src/EngineStore.ts"
 import * as StepBoundary from "../../src/StepBoundary.ts"
 import * as StepSandbox from "../../src/StepSandbox.ts"
 import * as TestStores from "../../src/test/TestStores.ts"
+
+// Preserve the permit failure before the dispatcher turns a lost fence into
+// self-interruption, so a failed process leaves its renewal cause in stderr.
+const consensus = Layer.effect(Consensus, Effect.map(SqlConsensus.make, (strategy) => ({
+  ...strategy,
+  withPermit: (...args) => strategy.withPermit(...args).pipe(
+    Effect.onError((cause) => Effect.sync(() => process.stderr.write(`permit-failed:${Cause.pretty(cause)}\n`)))
+  )
+})))
 
 const [filename, counter, runId, mode] = process.argv.slice(2)
 process.stdin.resume()
@@ -51,7 +62,7 @@ try {
     process.stdout.write("ready\n")
     return yield* engine.execute(flow, { executionId: runId, payload: {}, discard: false })
   })).pipe(
-    Effect.provide(Layer.mergeAll(TestStores.layerAt(filename).pipe(Layer.provide(NodeCrypto.layer)), StepBoundary.layerTest(), StepSandbox.layerTest(), jj,
+    Effect.provide(Layer.mergeAll(TestStores.layerAt(filename, { consensus }).pipe(Layer.provide(NodeCrypto.layer)), StepBoundary.layerTest(), StepSandbox.layerTest(), jj,
       NodeCrypto.layer, Action.layerCacheEnvironment({ layers: [], capabilities: {} }))),
     Effect.provideService(Clock.Clock, clock)
   ))
