@@ -185,7 +185,13 @@ func newRehearsal(t *testing.T, enable, check, keyPrefix string, poolCapacity ..
 		// This process stand-in cannot qualify machine-only wiki planning.
 		// Use the ordinary repository override rather than weakening isolation.
 		require.NoError(t, os.MkdirAll(filepath.Join(seed, ".smithers"), 0700))
-		require.NoError(t, os.WriteFile(filepath.Join(seed, ".smithers", "coding-project.json"), []byte(`{"wikiCitations":false}`), 0600))
+		project := `{"wikiCitations":false}`
+		if enable == "SMITHERS_ACCESS_CONFIRMATION_ORDER" {
+			// This matrix measures confirmation effects. Setup's independent wiki
+			// refresh must not publish pages into its zero-effect snapshots.
+			project = `{"wiki":false,"wikiCitations":false}`
+		}
+		require.NoError(t, os.WriteFile(filepath.Join(seed, ".smithers", "coding-project.json"), []byte(project), 0600))
 	}
 	git := func(args ...string) {
 		t.Helper()

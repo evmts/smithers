@@ -83,6 +83,22 @@ func testAccessConfirmationWriteOrder(t *testing.T, command string, identityOnly
 	r := newRehearsal(t, "SMITHERS_ACCESS_CONFIRMATION_ORDER", "C-ACC-02", "confirmation-order-")
 	require.True(t, r.install("Confirmation write ordering"))
 	q, ctx := db.New(r.pool), r.ctx
+	defer func() {
+		var refreshes int
+		require.NoError(t, r.pool.QueryRow(ctx, `SELECT count(*) FROM mythical_wikis`).Scan(&refreshes))
+		require.Zero(t, refreshes, "automatic wiki refresh cannot race confirmation effect snapshots")
+	}()
+	credentialWaiters := func(blocker int) (int, error) {
+		var n int
+		// The credential fence holds the owner row FOR SHARE before waiting.
+		// Other duties also take advisory locks, even in this isolated database.
+		err := r.pool.QueryRow(ctx, `SELECT count(*) FROM pg_stat_activity a
+ WHERE datname=current_database() AND wait_event_type='Lock' AND query='SELECT pg_advisory_xact_lock($1)'
+ AND $1=ANY(pg_blocking_pids(a.pid)) AND EXISTS (
+ SELECT 1 FROM pg_locks l WHERE l.pid=a.pid AND l.relation='self_host_owners'::regclass
+ AND l.mode='RowShareLock' AND l.granted)`, blocker).Scan(&n)
+		return n, err
+	}
 	repo, err := q.GetRepoByOwnerAndLowerName(ctx, db.GetRepoByOwnerAndLowerNameParams{Owner: "rehearsal-owner", LowerName: "app"})
 	require.NoError(t, err)
 	origin, err := url.Parse(r.origin)
@@ -466,6 +482,32 @@ func testAccessConfirmationWriteOrder(t *testing.T, command string, identityOnly
 		require.NoError(t, os.WriteFile(filepath.Join(r.evidence, "confirmation-consumer-identity.json"), accessProfilesJSON(t, map[string]any{"boundary": "composed HTTP and production credential issuers", "cells": identities, "full_C_ACC_02_complete": false}), 0600))
 		return
 	}
+	if command == "todo.new" {
+		t.Run("barrier-witness", func(t *testing.T) {
+			lock, err := r.pool.Begin(ctx)
+			require.NoError(t, err)
+			defer lock.Rollback(ctx)
+			_, err = lock.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, repo.ID)
+			require.NoError(t, err)
+			var blocker int
+			require.NoError(t, lock.QueryRow(ctx, `SELECT pg_backend_pid()`).Scan(&blocker))
+			done := make(chan error, 1)
+			go func() {
+				_, err := r.pool.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, repo.ID)
+				done <- err
+			}()
+			require.Eventually(t, func() bool {
+				var n int
+				err := r.pool.QueryRow(ctx, `SELECT count(*) FROM pg_stat_activity WHERE $1=ANY(pg_blocking_pids(pid))`, blocker).Scan(&n)
+				return err == nil && n > 0
+			}, 5*time.Second, 10*time.Millisecond)
+			n, err := credentialWaiters(blocker)
+			require.NoError(t, err)
+			require.Zero(t, n, "an unrelated advisory waiter is not an authenticated HTTP request")
+			require.NoError(t, lock.Rollback(ctx))
+			require.NoError(t, <-done)
+		})
+	}
 	var receipts []map[string]any
 	for _, via := range vias {
 		for _, role := range []string{"admin", "write"} {
@@ -495,13 +537,14 @@ func testAccessConfirmationWriteOrder(t *testing.T, command string, identityOnly
 						defer lock.Rollback(context.Background())
 						_, err = lock.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, repo.ID)
 						require.NoError(t, err)
+						var blocker int
+						require.NoError(t, lock.QueryRow(ctx, `SELECT pg_backend_pid()`).Scan(&blocker))
 						requestCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 						defer cancel()
 						done := make(chan response, 1)
 						go func() { done <- call(requestCtx, a, delegated, path, requestBody, key) }()
 						require.Eventually(t, func() bool {
-							var n int
-							err := r.pool.QueryRow(ctx, `SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query='SELECT pg_advisory_xact_lock($1)'`).Scan(&n)
+							n, err := credentialWaiters(blocker)
 							return err == nil && n >= 1
 						}, 5*time.Second, 10*time.Millisecond, "HTTP request must reach the production serialization barrier")
 						status, code := 401, "unauthenticated"
