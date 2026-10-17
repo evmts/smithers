@@ -1798,6 +1798,45 @@ describe("the executor's resume bridge", () => {
     expect(attempted).toEqual(["run-wedged"])
   })
 
+  it("re-drives a run a steer woke in this process", async () => {
+    const record = recorder()
+    const resumed: Array<string> = []
+    const drove = Deferred.makeUnsafe<void>()
+    const hub = await Effect.runPromise(PubSub.unbounded<JournalEvent.Entry>())
+    const attempted = await withExecutor(
+      record,
+      {
+        journal: {
+          changes: Effect.tap(PubSub.subscribe(hub), () => Deferred.succeed(record.subscribed, void 0))
+        },
+        engine: (engine) =>
+          ({
+            ...engine,
+            poll: () => Effect.succeed(Option.some({ _tag: "Suspended" })),
+            resume: (_flow: unknown, executionId: string, options?: { readonly poll?: boolean }) =>
+              Effect.sync(() => {
+                // A polling resume drives nothing without a due engine wake,
+                // and a steer records none.
+                if (options?.poll === true) return
+                resumed.push(executionId)
+                Deferred.doneUnsafe(drove, Effect.void)
+              })
+          }) as unknown as EngineService
+      },
+      () =>
+        Effect.gen(function*() {
+          yield* Deferred.await(record.subscribed)
+          yield* PubSub.publish(hub, entry("run-steered", "control.steer.woke"))
+          yield* Deferred.await(drove)
+          return resumed
+        })
+    )
+
+    // `Control.steer` claimed the parked row when it woke it. Only this bridge
+    // turns that claim into a running execution.
+    expect(attempted).toEqual(["run-steered"])
+  })
+
   it("ignores a journal entry that is not a resume event", async () => {
     const record = recorder()
     const resumed: Array<string> = []

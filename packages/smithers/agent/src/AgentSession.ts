@@ -4527,14 +4527,18 @@ export const make = (
      * Follows the journal for the control plane's resume events and re-drives
      * the parked engine execution. `Control.resume` and `Control.run`'s
      * `Resume` branch record different event types; both mean the same thing
-     * here.
+     * here. So does `control.steer.woke`: a steer that ended an `event` park
+     * claimed the run in this process, and without this re-drive the claimed
+     * row is `running` while nothing runs it (J10: a review steer on a TODO
+     * waiting for stack events).
      */
     const resumeBridge = Effect.gen(function*() {
       const subscription = yield* journal.changes
       yield* Stream.fromSubscription(subscription).pipe(
         Stream.filter((entry) =>
           (entry.eventType === "control.run.resume" && !handedOff(entry)) ||
-          entry.eventType === "control.run.resumed"
+          entry.eventType === "control.run.resumed" ||
+          entry.eventType === "control.steer.woke"
         ),
         Stream.mapEffect(
           (entry) =>
@@ -4543,7 +4547,10 @@ export const make = (
               (runId, uptake) => resumeExecution(runId, uptake),
               // `control.run.resume` is the operator's own claim, already taken
               // in this process by the call that journaled it; `resumed` is the
-              // approval delegation, which belongs to whoever parked the run.
+              // approval delegation, which belongs to whoever parked the run. A
+              // steer's wake is delegated intent too: the engine records no wake
+              // for an `event` park, so only a delegated resume enters the body,
+              // and it grants no released child a retry.
               entry.eventType === "control.run.resume"
                 ? { _tag: "claimed", sequence: entry.seq }
                 : { _tag: "delegated" }
