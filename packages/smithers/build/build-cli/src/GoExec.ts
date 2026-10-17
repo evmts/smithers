@@ -183,7 +183,7 @@ export const resolveGo = async (context: Context): Promise<
       identity: { tag: "GoBin", path, probe, selected }
     }
   }
-  const selectedGo = NodePath.join(sdk.GOROOT, "bin", "go")
+  const selectedGo = NodePath.join(sdk.GOROOT, "bin", process.platform === "win32" ? "go.exe" : "go")
   const executables = [path]
   for (const directory of [NodePath.join(String(sdk.GOROOT), "bin"), String(sdk.GOTOOLDIR)]) {
     for (

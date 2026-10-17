@@ -182,7 +182,7 @@ describe.runIf(olderGo !== undefined)("Go selected SDK execution", () => {
       cwd: root,
       encoding: "utf8"
     })) as { GOROOT: string; GOTOOLDIR: string }
-    const sdkGo = NodePath.join(selected.GOROOT, "bin/go")
+    const sdkGo = NodePath.join(selected.GOROOT, "bin", process.platform === "win32" ? "go.exe" : "go")
     expect(selected.GOROOT).not.toBe(NodePath.dirname(NodePath.dirname(olderGo!)))
     expect(await Fs.stat(sdkGo)).toBeDefined()
     const control = await serve(await fixture(), ["build", "//:binary"], {

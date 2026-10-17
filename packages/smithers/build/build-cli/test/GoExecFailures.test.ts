@@ -9,8 +9,9 @@ import * as Target from "@smthrs/targets/Target"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
-import { afterAll, beforeEach, describe, expect, it } from "vitest"
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import * as GoExec from "../src/GoExec.ts"
+import * as PackageTree from "../src/PackageTree.ts"
 
 const roots: Array<string> = []
 afterAll(async () => {
@@ -545,4 +546,26 @@ describe.skipIf(process.platform === "win32")("planRule failures and argv", () =
     })
     expect(await host.calls()).toEqual([])
   })
+})
+
+it("resolves the native Windows executable in the selected SDK", async () => {
+  const { goroot, tooldir } = await sdk()
+  const binary = NodePath.join(goroot, "bin", "go.exe")
+  await Fs.rename(NodePath.join(goroot, "bin", "go"), binary)
+  const platform = Object.getOwnPropertyDescriptor(process, "platform")!
+  const find = vi.spyOn(PackageTree, "findOnPath").mockReturnValue(process.execPath)
+  const probe = vi.spyOn(PackageTree, "probeVersion")
+    .mockResolvedValueOnce({ exitCode: 0, output: "go version go1.26.0 windows/amd64" })
+    .mockResolvedValueOnce({ exitCode: 0, output: JSON.stringify({ GOROOT: goroot, GOTOOLDIR: tooldir }) })
+  try {
+    Object.defineProperty(process, "platform", { ...platform, value: "win32" })
+    const resolved = await GoExec.resolveGo(host.context)
+    expect(resolved).toMatchObject({ ok: true, path: binary })
+    expect(await Fs.stat(binary)).toBeDefined()
+    if (resolved.ok) expect(resolved.executables).toContain(binary)
+  } finally {
+    Object.defineProperty(process, "platform", platform)
+    find.mockRestore()
+    probe.mockRestore()
+  }
 })
