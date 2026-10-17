@@ -23,7 +23,7 @@ import * as Fs from "node:fs/promises"
 import * as NodeNet from "node:net"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
-import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 import * as OutputStream from "../src/OutputStream.ts"
 import * as ServiceSupervisor from "../src/ServiceSupervisor.ts"
 
@@ -663,6 +663,7 @@ describe("stop contract", () => {
     const port = await freePort()
     let pid = -1
     let releaseStarted = 0
+    let outputTail = () => ""
     await run(Effect.gen(function*() {
       yield* Effect.scoped(Effect.gen(function*() {
         const supervisor = yield* ServiceSupervisor.make
@@ -671,11 +672,17 @@ describe("stop contract", () => {
           stop: { signal: "SIGTERM", grace: "400ms" }
         }))
         pid = handle.pid
+        outputTail = handle.outputTail
         releaseStarted = Date.now()
       }))
     }))
     const releaseElapsed = Date.now() - releaseStarted
-    expect(releaseElapsed).toBeGreaterThanOrEqual(400)
+    if (process.platform === "win32") {
+      // Node terminates a Windows process directly; no SIGTERM handler runs.
+      expect(outputTail()).not.toContain("ignoring SIGTERM")
+    } else {
+      expect(releaseElapsed).toBeGreaterThanOrEqual(400)
+    }
     await waitFor(() => !alive(pid), 5_000)
   })
 
@@ -981,9 +988,15 @@ describe("process probes", () => {
   })
 
   it("reads a process it may not signal as alive", () => {
-    // pid 1 is launchd: `process.kill` raises EPERM there for an unprivileged
-    // test, which is a permission failure, not a dead process.
-    expect(alive(1)).toBe(true)
+    const kill = vi.spyOn(process, "kill").mockImplementation(() => {
+      throw Object.assign(new Error("permission denied"), { code: "EPERM" })
+    })
+    try {
+      expect(alive(12345)).toBe(true)
+      expect(kill).toHaveBeenCalledWith(12345, 0)
+    } finally {
+      kill.mockRestore()
+    }
   })
 
   it("reads an unused pid as absent", () => {
