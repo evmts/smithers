@@ -262,7 +262,10 @@ export const gather = (
       !Number.isSafeInteger(limit) || limit < 1 || limit > 100 || !Number.isSafeInteger(maximum) || maximum < 1024 ||
       maximum > 90 * 1024
     ) {
-      return yield* failure("memory_budget_invalid", "Planning memory requires historyLimit 1..100 and maxMemoryBytes 1024..92160")
+      return yield* failure(
+        "memory_budget_invalid",
+        "Planning memory requires historyLimit 1..100 and maxMemoryBytes 1024..92160"
+      )
     }
     const wiki = options.wikiCitations === true
       ? yield* wikiMemory(options, input, hostFilesystem)
@@ -294,7 +297,9 @@ export const gather = (
         root: options.repositoryPath,
         pages: []
       }
-    ).pipe(Effect.mapError((error) => failure("memory_selection_unavailable", `Planning memory could not be selected: ${error.message}`)))
+    ).pipe(Effect.mapError((error) =>
+      failure("memory_selection_unavailable", `Planning memory could not be selected: ${error.message}`)
+    ))
     // Unjudged, `memory` keeps only the request's own paths and drops every
     // wiki page and walked file. Planning on that would be a silent exclusion
     // neither the planner nor the reviewer can see.
@@ -346,7 +351,9 @@ export const gather = (
       return digest
     }
     const checks = options.checks.filter((check) => {
-      const descriptor = catalog.executables.find((entry) => entry.descriptor.name === check.flow)?.descriptor
+      const descriptor = catalog.executables.find((entry) =>
+        entry.descriptor.name === check.flow
+      )?.descriptor
       const generatedWiki = check.flow === "checks/wiki" || descriptor?.flows.includes("coding/WikiCheck") === true
       return options.wiki === true || !generatedWiki
     })
@@ -366,10 +373,15 @@ export const gather = (
     })
     const after = yield* native.read([], limit)
     if (before.operationId !== after.operationId || JSON.stringify(before.history) !== JSON.stringify(after.history)) {
-      return yield* failure("native_history_moved", "Native history changed while gathering memory; gather a new coherent view")
+      return yield* failure(
+        "native_history_moved",
+        "Native history changed while gathering memory; gather a new coherent view"
+      )
     }
     const history = before.history.map((row) => {
-      if (row.kind !== "resolved") throw failure("native_history_conflicted", "Conflicted native history cannot be used to plan")
+      if (row.kind !== "resolved") {
+        throw failure("native_history_conflicted", "Conflicted native history cannot be used to plan")
+      }
       return {
         changeId: row.changeId,
         commitId: row.commitId,
@@ -409,7 +421,10 @@ export const gather = (
     // Attached file text carries its own per-file and total caps, so the budget
     // here still bounds the native history, the wiki notes and the definitions.
     if (bytes({ ...context, sources: [] }) > 128 * 1024) {
-      return yield* failure("context_over_budget", "Planning context exceeds 128 KiB; narrow the native history or wiki budget")
+      return yield* failure(
+        "context_over_budget",
+        "Planning context exceeds 128 KiB; narrow the native history or wiki budget"
+      )
     }
     // A context this host gathered that its own contract refuses is a host
     // fault, not a source that moved: name the field that broke the contract.
