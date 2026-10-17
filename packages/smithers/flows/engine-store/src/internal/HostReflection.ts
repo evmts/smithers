@@ -12,7 +12,7 @@
  * Binding `node:util/types` with a static import states that answer as a
  * build-time dependency, and that is wrong twice. `@smthrs/engine-store` is a
  * browser entry point in the release policy and in
- * `scripts/browser-contract.mjs`, so the import fails `pnpm run browser`; and
+ * `packages/repo-targets/browser/browser-contract.mjs`, so the import fails `pnpm run browser`; and
  * it claims a capability every host has, which is false. This module reads the
  * predicates off the host instead, the way `../OwnerIdentity.ts` reads a
  * process id: `process.getBuiltinModule` when the host offers it, portable

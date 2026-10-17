@@ -13,7 +13,7 @@
  * import * as BrowserJj from "@smthrs/jj/browser/BrowserJj"
  * ```
  *
- * `scripts/browser-check.mjs` at the repository root pins that property.
+ * `packages/repo-targets/browser/browser-check.mjs` at the repository root pins that property.
  *
  * @since 0.1.0
  */

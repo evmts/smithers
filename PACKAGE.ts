@@ -595,7 +595,7 @@ const ci = Smithers.GithubCiGen({
     { name: "shared Go backend", verb: Smithers.Verb.Test, pattern: "//:backendGo", job: "go-backend" },
     { name: "backend access-control tests", verb: Smithers.Verb.Test, pattern: "//:backendGoAccess", job: "go-backend-access" },
     { name: "native FFI compiler and tests", verb: Smithers.Verb.Build, pattern: "//:nativeFfi", job: "rust-ffi" },
-    { name: "web bundle compatibility", verb: Smithers.Verb.Test, pattern: "//scripts:webBundleContract" }
+    { name: "web bundle compatibility", verb: Smithers.Verb.Test, pattern: "//packages/repo-targets:webBundleContract" }
   ],
   requiredJobs: [
     "test",
@@ -1014,7 +1014,7 @@ const ci = Smithers.GithubCiGen({
       runsOn: ubuntu,
       timeoutMinutes: 10,
       toolchain: Smithers.CiToolchain.Needs({ runtimes: [node] }),
-      steps: [{ name: "Web bundle compilation guard", verb: Smithers.Verb.Test, pattern: "//scripts:webBundleContract" }]
+      steps: [{ name: "Web bundle compilation guard", verb: Smithers.Verb.Test, pattern: "//packages/repo-targets:webBundleContract" }]
     },
     {
       // One matrix over the three platforms, replacing the two copy-pasted

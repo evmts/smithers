@@ -277,8 +277,8 @@ test("every gate in ci.yml also runs in release.yml", () => {
 
   // The roster is pinned so a new CI job forces a decision here instead of
   // silently landing outside the release's proof. The jobs release.yml
-  // does not mirror: `browser` runs `//scripts:webBundleContract`, which
-  // `//scripts/...` already covers; `packages` runs `test '//packages/...'`,
+  // does not mirror: `browser` runs `//packages/repo-targets:webBundleContract`,
+  // which `ci '//packages/...'` already covers; `packages` runs `test '//packages/...'`,
   // which `ci '//packages/...'` already covers; `apps-browser-1/2/3` need their runners'
   // Chrome; the native Rust crate remains in `rust`, while the shipped FFI
   // and Go backend jobs are mirrored. Release mirrors `wasm-repro` so the

@@ -3,7 +3,7 @@
  *
  * Two lists and nothing else: the entry points the repository promises bundle
  * for a browser, and the ones it documents as Node-only with the `node:`
- * built-in that keeps them there. `scripts/browser-check.mjs` executes the
+ * built-in that keeps them there. `browser-check.mjs` beside it executes the
  * promise with esbuild; `scripts/check-docs.mjs` reads the same declaration and
  * fails when a page states a different set or a different count. They share
  * this module so the prose and the gate cannot drift apart.

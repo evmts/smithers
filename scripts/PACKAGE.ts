@@ -105,28 +105,6 @@ const releaseVersion = Smithers.NodeTest({
   deps: []
 })
 
-/**
- * The web bundle compatibility contract, compiled without a browser process.
- *
- * Browser support is a hard requirement met through layers: the contract entry
- * points must bundle for the browser, and the documented Node-only ones must
- * still fail, and fail only on a documented `node:` built-in. This gates both
- * halves.
- *
- * @since 0.1.0
- * @category test
- */
-const webBundleContract = Smithers.NodeTest({
-  summary: "Compile the web bundle and validate its exported surface; no browser process is started.",
-  featured: true,
-  runner: Smithers.entrypoint(Smithers.file("//scripts/browser-check.mjs")),
-  // The entry points this bundles live in other packages, and a declared glob
-  // may not cross a package boundary — it would expand to nothing and read as
-  // a contract it is not. The gate is not cacheable, so it re-runs regardless.
-  srcs: sources,
-  deps: []
-})
-
 const docsDrift = Smithers.Shell.Diff({
   shell:
     "pnpm run docs:check && cd apps/site && node scripts/sync-support-docs.mjs --check && node scripts/gen-cli-data.mjs --check && node scripts/sync-api-docs.mjs --check && node scripts/ingest-reference.mjs --check && node scripts/generate-llms.mjs --check",
@@ -363,7 +341,6 @@ export const Package = Smithers.Package({
     docsDrift,
     conformanceCheck,
     repositoryConformance,
-    webBundleContract,
     dependencyBoundaries,
     dependencyBoundariesUnit,
     issueClaim,

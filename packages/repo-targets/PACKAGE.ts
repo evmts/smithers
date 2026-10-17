@@ -229,6 +229,28 @@ const nativeWindowsWorkflow = Smithers.NodeTest({
   deps: []
 })
 
+/**
+ * The web bundle compatibility contract, compiled without a browser process.
+ *
+ * Browser support is a hard requirement met through layers: the contract entry
+ * points must bundle for the browser, and the documented Node-only ones must
+ * still fail, and fail only on a documented `node:` built-in. This gates both
+ * halves.
+ *
+ * @since 0.1.0
+ * @category test
+ */
+const webBundleContract = Smithers.NodeTest({
+  summary: "Compile the web bundle and validate its exported surface; no browser process is started.",
+  featured: true,
+  runner: Smithers.entrypoint(Smithers.file("//packages/repo-targets/browser/browser-check.mjs")),
+  // The entry points this bundles live in other packages, and a declared glob
+  // may not cross a package boundary — it would expand to nothing and read as
+  // a contract it is not. The gate is not cacheable, so it re-runs regardless.
+  srcs: [Smithers.glob("//packages/repo-targets/browser/**/*.mjs"), Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs")],
+  deps: []
+})
+
 /** Real-runner sentinels: a declared runner executes its suite and fails closed. */
 const runnerContract = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//packages/repo-targets/contracts/runner-contract.test.mjs")]),
@@ -276,6 +298,7 @@ const workspacePackages = Smithers.NodeTest({
  */
 const contractsLint = Smithers.EsLint({
   sources: [
+    Smithers.glob("//packages/repo-targets/browser/**/*.mjs"),
     Smithers.glob("//packages/repo-targets/contracts/**/*.mjs"),
     Smithers.glob("//packages/repo-targets/bun-coverage/**/*.mjs"),
     Smithers.glob("//packages/repo-targets/scripts/**/*.mjs")
@@ -309,6 +332,7 @@ const securityReview = Smithers.SecurityReview({
     Smithers.glob("contracts/**/*.mjs", { exclude: ["**/*.test.mjs"] }),
     Smithers.glob("bun-coverage/**/*.mjs", { exclude: ["**/*.test.mjs"] }),
     Smithers.glob("bun-coverage/**/*.ts", { exclude: ["**/*.test.ts"] }),
+    Smithers.glob("browser/**/*.mjs"),
     "scripts/**", "test-utils/**"],
   checks: [
     {
@@ -421,4 +445,4 @@ const mvpDocs = Smithers.NodeTest({
   deps: [scriptPackage.repositoryInputs]
 })
 
-export const Package = Smithers.Package({ targets: { check, test, workspacePackages, conflictMarkers, mvpDocs, conflictMarkersUnit, trackedHygiene, trackedHygieneUnit, toolchainPins, effectVersion, releaseContracts, privateEffectAdapters, driftJob, nativeWindowsWorkflow, runnerContract, knownRedCoverage, bunCoverage, testPinRegister, contractsLint, reviewDocsAgainstCode, reviewJsdocAgainstCode, ...securityReview } })
+export const Package = Smithers.Package({ targets: { check, test, workspacePackages, conflictMarkers, mvpDocs, conflictMarkersUnit, trackedHygiene, trackedHygieneUnit, toolchainPins, effectVersion, releaseContracts, privateEffectAdapters, driftJob, nativeWindowsWorkflow, runnerContract, webBundleContract, knownRedCoverage, bunCoverage, testPinRegister, contractsLint, reviewDocsAgainstCode, reviewJsdocAgainstCode, ...securityReview } })

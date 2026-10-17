@@ -2,7 +2,7 @@
  * JavaScript test programs as declared targets.
  *
  * A repository's shell-script gates — `node --test scripts/pack-release.test.mjs`,
- * `node scripts/browser-check.mjs`, `bun e2e/run.ts` — are all the same thing: a
+ * `node packages/repo-targets/browser/browser-check.mjs`, `bun e2e/run.ts` — are all the same thing: a
  * program whose exit code is the verdict. Bazel spells that `nodejs_test`, and
  * this target is modelled on it. The deviation is the runner union below: Bazel
  * hands the entry point to a launcher and lets the program pick its own harness,

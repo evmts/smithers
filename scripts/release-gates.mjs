@@ -63,12 +63,7 @@ export const releaseGates = [
   { name: "Workspace targets", verb: "ci", target: "//packages/...", jobs: 2 },
   // Every NodeTest under scripts/, the release rehearsal and cut suites included.
   {
-    name: "Script gates", verb: "test", target: "//scripts/...",
-    // Pin today's recursive CI coverage claim. Merely living under
-    // scripts/ must not silently give a future workflow command an owner.
-    ciCommands: [
-      "pnpm exec smthrs test '//scripts:webBundleContract' --verbose"
-    ]
+    name: "Script gates", verb: "test", target: "//scripts/..."
   },
   { name: "Command check runner", verb: "test", target: "//flows:checkRunner" },
   { name: "Benchmark cost gate", verb: "test", target: "//flows:benchmarkGate" },
@@ -189,8 +184,7 @@ export const releaseGateSetForHost = (host = process) => {
  * proves each is still a ci.yml gate, that the inventory does not run it (or
  * the reason would be false), and that every other CI gate is run by an
  * inventory gate. A job with no entry is mirrored whole: `test`, `repository`, `scripts`, `docs`
- * and `wasm-repro` step for step, `go-backend` and `go-backend-access` by command; `browser` through `//scripts/...`, which selects
- * `//scripts:webBundleContract`, explicitly pinned in ciCommands. Even omitted
+ * and `wasm-repro` step for step, `go-backend` and `go-backend-access` by command. Even omitted
  * jobs enumerate today's commands so future additions cannot hide behind a
  * whole-job waiver. `push` is an `on` trigger, not a job.
  *
@@ -226,6 +220,11 @@ export const releaseGateExclusions = [
     job: "packages",
     commands: ["pnpm exec smthrs test '//packages/...' --jobs 2 --verbose"],
     reason: "test '//packages/...' repeats the Workspace targets gate's test targets on macOS and Windows; one release runner has no OS matrix, and ci '//packages/...' already runs them on Linux."
+  },
+  {
+    job: "browser",
+    commands: ["pnpm exec smthrs test '//packages/repo-targets:webBundleContract' --verbose"],
+    reason: "The web bundle contract is a //packages/repo-targets NodeTest, so the Workspace targets gate's ci '//packages/...' runs it; the CI job only isolates it under its historical job id."
   }
 ]
 

@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url"
 /**
  * The browser promise, executed for this package's complete Host bundle.
  *
- * `scripts/browser-check.mjs` gates the same entry points at the repository
+ * `packages/repo-targets/browser/browser-check.mjs` gates the same entry points at the repository
  * level; this test keeps the property attached to the package that owns it, so
  * a Node-only import added to `BrowserHost` — the fetch-backed `HttpClient`
  * included — fails here first.

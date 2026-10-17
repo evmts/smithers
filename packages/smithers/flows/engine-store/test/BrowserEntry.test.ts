@@ -2,7 +2,7 @@
  * The browser half of this package's contract, pinned in the package itself.
  *
  * The release policy lists `@smthrs/engine-store` as
- * a browser entry point, and `scripts/browser-contract.mjs` executes that
+ * a browser entry point, and `packages/repo-targets/browser/browser-contract.mjs` executes that
  * promise for the whole repository with esbuild. The repository gate is the
  * contract's owner; this case is the local one, so the package that owns a
  * `node:` import learns about it from its own suite instead of from a root

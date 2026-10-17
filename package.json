@@ -36,7 +36,7 @@
     "release:content": "node --experimental-strip-types flows/release-support/main.ts release-content",
     "release:status": "node --experimental-strip-types flows/release-support/main.ts status",
     "release:answer": "node --experimental-strip-types flows/release-support/main.ts answer",
-    "browser": "node scripts/browser-check.mjs",
+    "browser": "node packages/repo-targets/browser/browser-check.mjs",
     "check": "pnpm --recursive --if-present run check",
     "check:npm-dedupe": "node flows/release/check-npm-dedupe.mjs",
     "circular": "pnpm --recursive --if-present run circular",

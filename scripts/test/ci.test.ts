@@ -307,7 +307,7 @@ describe("ci conformance", () => {
       readonly scripts?: Record<string, string>
     }
     assert.deepEqual(root.scripts, {
-      browser: "node scripts/browser-check.mjs",
+      browser: "node packages/repo-targets/browser/browser-check.mjs",
       check: "pnpm --recursive --if-present run check",
       checklist: "pnpm --filter smithers-app run checklist",
       "check:npm-dedupe": "node flows/release/check-npm-dedupe.mjs",
@@ -356,7 +356,7 @@ describe("ci conformance", () => {
       "pnpm install --frozen-lockfile --ignore-scripts",
       "pnpm exec smthrs ci '//packages/...' --jobs 2 --known-red '.github/ci-known-red.json' --verbose",
       "pnpm exec smthrs test '//scripts/...' --known-red '.github/ci-known-red.json' --verbose",
-      "pnpm exec smthrs test '//scripts:webBundleContract' --known-red '.github/ci-known-red.json' --verbose",
+      "pnpm exec smthrs test '//packages/repo-targets:webBundleContract' --known-red '.github/ci-known-red.json' --verbose",
       "pnpm exec smthrs test '//packages/...' --jobs 2 --known-red '.github/ci-known-red.json' --verbose",
       "jj git init --colocate"
     ]) assert.ok(commands.includes(command), command)

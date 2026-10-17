@@ -7,7 +7,7 @@
  * has no operating-system authority, so confinement is explicitly unconfined.
  *
  * **Node-only.** `effect/testing`'s `TestClock` reaches for `node:assert`, so
- * `scripts/browser-check.mjs` documents this module as a Node-only entry point
+ * `packages/repo-targets/browser/browser-check.mjs` documents this module as a Node-only entry point
  * even though every service it composes is itself browser-safe.
  *
  * @since 1.0.0-rc.0

@@ -18,7 +18,7 @@
  * const layer = BrowserServices.layer({ bash, fs })
  * ```
  *
- * Everything in this package is browser-bundleable; `scripts/browser-check.mjs`
+ * Everything in this package is browser-bundleable; `packages/repo-targets/browser/browser-check.mjs`
  * at the repository root pins that property.
  *
  * @since 1.0.0-rc.0

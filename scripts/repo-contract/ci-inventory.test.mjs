@@ -202,7 +202,7 @@ test("required CI resolves package, app, script and evaluation suites to real ru
     ["//scripts/repo-contract:ciInventory", "scripts"], ["//flows:mutationGate", "scripts"], ["//flows:benchmarkGate", "scripts"],
     ["//flows:campaignVerifiers", "scripts"], ["//flows:signalCampaign", "scripts"], ["//flows:perfUnit", "scripts"],
     ["//flows:checkRunner", "scripts"],
-    ["//scripts:webBundleContract", "browser"],
+    ["//packages/repo-targets:webBundleContract", "browser"],
     ["//packages/smithers/gateway:test", "test"], ["//packages/smithers/flows/jj:test", "packages"]
   ]) assert.ok(selected(label, job).length, `${label} must be a required root of ${job}`)
   const inventoryRunner = selected("//scripts/repo-contract:ciInventory", "scripts")[0].runner

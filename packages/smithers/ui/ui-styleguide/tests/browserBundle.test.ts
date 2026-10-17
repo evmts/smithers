@@ -6,8 +6,8 @@
  * the first. This proves the third: the barrel bundles for a browser, and
  * nothing in `src/` reaches for a Node built-in or a Node global on the way.
  *
- * The repository-wide gate, `scripts/browser-check.mjs`, reads a declared list
- * in `scripts/browser-contract.mjs` that this package is not on, and both files
+ * The repository-wide gate, `packages/repo-targets/browser/browser-check.mjs`, reads a declared list
+ * in `packages/repo-targets/browser/browser-contract.mjs` that this package is not on, and both files
  * live outside it. This test is the package's own copy of that promise, run by
  * the target that already owns `src/`, so a Node import added here fails in the
  * package that introduced it rather than two packages downstream.

@@ -1356,7 +1356,7 @@ jobs:
         run: "pnpm install --frozen-lockfile --ignore-scripts"
       - name: "Web bundle compilation guard"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//scripts:webBundleContract' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//packages/repo-targets:webBundleContract' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"

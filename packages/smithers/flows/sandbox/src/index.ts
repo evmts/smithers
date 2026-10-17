@@ -8,7 +8,7 @@
  *
  * The package is **platform-neutral and browser-bundleable**: it adapts a
  * provider a caller hands it onto Effect's `ChildProcessSpawner` contract and
- * owns no host access of its own. `scripts/browser-check.mjs` at the repository
+ * owns no host access of its own. `packages/repo-targets/browser/browser-check.mjs` at the repository
  * root pins that property. Every provider below obeys it the same way: a
  * vendor SDK arrives as an injected structural slice and a CLI arrives as an
  * injected spawner, so adding a backend costs this package no dependency and

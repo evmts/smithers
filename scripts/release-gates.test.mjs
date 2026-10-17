@@ -451,11 +451,11 @@ test("flow-only gates are the root flows' own targets, which no CI job runs", ()
 test("the release proves every CI gate the exclusions do not name, and every exclusion still describes ci.yml", () => {
   // Release is a superset of CI: each ci.yml job is mirrored gate by gate,
   // covered by a recursive inventory selection, or named in the exclusions
-  // with a reason. `browser` needs no entry: its gate is a `//scripts/...` member.
+  // with a reason.
   assert.deepEqual(workflowJobs(ci), ciJobs)
   assert.deepEqual(ciGatesMissingFromInventory(releaseGates, ci, releaseGateExclusions), [], "these CI gates run in neither the release nor the exclusions")
   assert.deepEqual(staleExclusions(releaseGates, ci, releaseGateExclusions), [])
-  assert.deepEqual(releaseGateExclusions.map((exclusion) => exclusion.job), ["apps-browser-1", "apps-browser-2", "apps-browser-3", "rust", "packages"])
+  assert.deepEqual(releaseGateExclusions.map((exclusion) => exclusion.job), ["apps-browser-1", "apps-browser-2", "apps-browser-3", "rust", "packages", "browser"])
   for (const exclusion of releaseGateExclusions) assert.ok(exclusion.reason.length > 40, `${exclusion.job} carries a reason`)
   // Partial exclusions name only what the release omits: the rest of the job is mirrored.
   for (const shard of [1, 2, 3]) assert.deepEqual(releaseGateExclusions.find(exclusion => exclusion.job === `apps-browser-${shard}`).commands, [`pnpm exec smthrs test '//apps/app:browserE2eShard${shard}' --verbose`])
@@ -488,8 +488,8 @@ test("a CI gate added outside the exclusions is reported, and an exclusion that 
   assert.deepEqual(staleExclusions(releaseGates, ci, [{ job: "test", commands: ["pnpm exec smthrs ci '//packages/...' --jobs 2 --verbose"], reason: "stale" }]), [
     "test excludes pnpm exec smthrs ci '//packages/...' --jobs 2 --verbose, which the inventory runs"
   ])
-  assert.deepEqual(staleExclusions(releaseGates, ci, [{ job: "browser", reason: "whole job" }]), [
-    "browser excludes pnpm exec smthrs test '//scripts:webBundleContract' --verbose, which the inventory runs"
+  assert.deepEqual(staleExclusions(releaseGates, ci, [{ job: "go-backend", reason: "whole job" }]), [
+    "go-backend excludes pnpm exec smthrs test '//:backendGo' --verbose, which the inventory runs"
   ])
   assert.deepEqual(staleExclusions(releaseGates, ci, [{ job: "gone", reason: "stale" }]), ["gone is not a ci.yml job"])
   assert.deepEqual(staleExclusions(releaseGates, ci, [{ job: "rust", commands: [command], reason: "stale" }]), [`rust does not run ${command}`])
@@ -545,7 +545,8 @@ test("commandCovers matches exact targets, recursive selections and job bounds o
   assert.equal(commandCovers("pnpm exec smthrs test '//packages/...' --jobs 2 --verbose", { name: "v", verb: "test", target: "//packages/smithers:test" }), false)
   // gateRuns is the same relation read from the inventory side.
   const scripts = { name: "Script gates", verb: "test", target: "//scripts/..." }
-  assert.equal(gateRuns(scripts, "pnpm exec smthrs test '//scripts:webBundleContract' --verbose"), true)
+  assert.equal(gateRuns(scripts, "pnpm exec smthrs test '//scripts:issueClaim' --verbose"), true)
+  assert.equal(gateRuns(scripts, "pnpm exec smthrs test '//packages/repo-targets:webBundleContract' --verbose"), false)
   assert.equal(gateRuns(scripts, "pnpm exec smthrs lint '//scripts:lint' --verbose"), false)
   assert.equal(gateRuns(scripts, "not a gate"), false)
 })

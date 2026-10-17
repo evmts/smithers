@@ -645,7 +645,7 @@ run_gate() {
       pnpm exec smthrs test '//packages/...:faults' --jobs 1 --known-red '.github/ci-known-red.json' --verbose
       ;;
     web-bundle)
-      pnpm exec smthrs test '//scripts:webBundleContract' --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs test '//packages/repo-targets:webBundleContract' --known-red '.github/ci-known-red.json' --verbose
       ;;
     packages)
       pnpm exec smthrs test '//packages/...' --jobs 2 --known-red '.github/ci-known-red.json' --verbose
