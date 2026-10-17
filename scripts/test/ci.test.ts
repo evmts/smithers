@@ -39,7 +39,7 @@ describe("ci conformance", () => {
     const commands = [
       "pnpm exec smthrs ci '//packages/...'",
       "pnpm exec smthrs test '//scripts/...'",
-      "pnpm exec smthrs test '//scripts:packageDocs' --known-red '.github/ci-known-red.json' --verbose",
+      "pnpm exec smthrs test '//flows:packageDocs' --known-red '.github/ci-known-red.json' --verbose",
       "pnpm exec smthrs test '//flows:pack'"
     ]
     const owners = commands.map((command) => {
@@ -314,8 +314,9 @@ describe("ci conformance", () => {
       circular: "pnpm --recursive --if-present run circular",
       "deploy:dry": "pnpm --filter smithers-server run deploy:dry",
       "docs:check":
-        "go run ./packages/backend/modelprice/cmd/generate -check && node scripts/package-docs.mjs --check && node scripts/package-docs.test.mjs",
-      "docs:sync": "pnpm --filter @smithers/site run sync:docs && node scripts/package-docs.mjs --write",
+        "go run ./packages/backend/modelprice/cmd/generate -check && smthrs flow start docs-sync --data '{\"mode\":\"check\"}' --wait",
+      "docs:sync":
+        "pnpm --filter @smithers/site run sync:docs && smthrs flow start docs-sync --data '{\"mode\":\"write\"}' --wait",
       dev: "pnpm --filter smithers-app run start",
       commit: "node flows/land/commit.mjs",
       deploy: "pnpm --filter smithers-server run deploy",

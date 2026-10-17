@@ -4,7 +4,7 @@ import { promisify } from "node:util"
 import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { legacySites } from "./package-docs.mjs"
-import { libraryPackages, repoRoot } from "./workspace-packages.mjs"
+import { libraryPackages, repoRoot } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 const pack = promisify(execFile)
 const packages = libraryPackages().filter(({ manifest }) => !manifest.private)

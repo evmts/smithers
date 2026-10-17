@@ -3,7 +3,7 @@ import { test } from "node:test"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
-import { repoRoot } from "./workspace-packages.mjs"
+import { repoRoot } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 import {
   aggregatePagesOf, aggregateSites, expectedLocation, GENERATED_MODULE, nestedDocsDirs, pageMapOf, pagesOf, README_URL,
   redirectMapOf, renderModule, sitePathOf
@@ -111,7 +111,7 @@ test("every mapped page is a file in this checkout, or the folder its README int
 
 test("apps/server/src/docsRedirectMap.ts is what this checkout generates", () => {
   assert.equal(readFileSync(GENERATED_MODULE, "utf8"), renderModule(redirectMapOf(), pageMapOf()),
-    "apps/server/src/docsRedirectMap.ts is stale: node scripts/package-docs.mjs --write")
+    "apps/server/src/docsRedirectMap.ts is stale: pnpm docs:sync")
 })
 
 /** A throwaway package with `files` under docs/, removed after `body`. */

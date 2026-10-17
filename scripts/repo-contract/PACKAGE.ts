@@ -181,7 +181,7 @@ const scratchArtifacts = Smithers.NodeTest({
  * Every smithers.sh URL a published package ships or prints lands on a built
  * page about the URL's own path: directly, or through one production redirect
  * that keeps every path segment, with the fragment present on the page.
- * `scripts/published-links.mjs` holds the rules; its `--live` mode applies them
+ * `apps/site/scripts/published-links.mjs` holds the rules; its `--live` mode applies them
  * to production after a deploy.
  *
  * The route oracle is the emitted files under `apps/site/dist`, so the site's
@@ -203,7 +203,7 @@ const smithersLinks = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//scripts/repo-contract/smithers-links.test.mjs")]),
   srcs: [
     sources,
-    Smithers.file("//scripts/published-links.mjs"),
+    Smithers.file("//apps/site/scripts/published-links.mjs"),
     Smithers.file("//flows/release/pack-release.mjs"),
     Smithers.file("//scripts/workspace-packages.mjs")
   ],

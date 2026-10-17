@@ -349,21 +349,21 @@ test("the root TypeScript project owns declarations, not package source or fixtu
 
 
 test("CI discovery preserves a generated results path and rejects repeated flags", () => {
-  const run = `pnpm exec smthrs test '//scripts:packageDocs' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose`
-  assert.deepEqual(targetInvocation(run), { verb: "test", pattern: "//scripts:packageDocs", jobs: undefined, verbose: true, resultsFile: "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" })
+  const run = `pnpm exec smthrs test '//flows:packageDocs' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose`
+  assert.deepEqual(targetInvocation(run), { verb: "test", pattern: "//flows:packageDocs", jobs: undefined, verbose: true, resultsFile: "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" })
   assert.throws(() => targetInvocation(`${run} --results-file "other"`), /Unrecognized CI target option/)
 })
 
 test("the published documentation gate resolves through the public CLI with matching metadata", async () => {
   const index = await packageIndex()
-  const metadata = await PackageExec.plan({ index, verb: "test", patterns: ["//scripts:packageDocs"], cacheDirectory: index.workspace.cache.directory })
-  const cli = planned("test", "//scripts:packageDocs")
-  const target = cli.targets.find(({ label }) => label === "//scripts:packageDocs")
-  const node = metadata.nodes.get("//scripts:packageDocs")
+  const metadata = await PackageExec.plan({ index, verb: "test", patterns: ["//flows:packageDocs"], cacheDirectory: index.workspace.cache.directory })
+  const cli = planned("test", "//flows:packageDocs")
+  const target = cli.targets.find(({ label }) => label === "//flows:packageDocs")
+  const node = metadata.nodes.get("//flows:packageDocs")
   assert.ok(target)
   assert.ok(node)
   assert.equal(target.key ?? target.keyPreview, node.key ?? node.keyPreview)
   const runner = runnerFor(node, index.workspace)
-  assert.deepEqual(runner.slice(1), ["--test", "scripts/package-docs.test.mjs", "scripts/package-docs-redirect.test.mjs"])
+  assert.deepEqual(runner.slice(1), ["--test", "docs-sync/package-docs-redirect.test.mjs", "docs-sync/flow.test.ts"])
   assert.equal(node.attrs.cache, false)
 })

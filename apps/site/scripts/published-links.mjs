@@ -25,9 +25,9 @@
  * line of them: comments, string literals, READMEs and `docs/`. `CHANGELOG.md`
  * is left out because release notes quote the links of their day.
  *
- *   node scripts/published-links.mjs           check against apps/site/dist
- *   node scripts/published-links.mjs --live    fetch every URL from smithers.sh
- *   node scripts/published-links.mjs --list    print the URLs and where they ship
+ *   node apps/site/scripts/published-links.mjs           check against apps/site/dist
+ *   node apps/site/scripts/published-links.mjs --live    fetch every URL from smithers.sh
+ *   node apps/site/scripts/published-links.mjs --list    print the URLs and where they ship
  *
  * Build the site first for the offline check (`pnpm -C apps/site build`). Run
  * `--live` after a site deploy: it is the only check that sees the edge.
@@ -35,8 +35,8 @@
 import { existsSync, globSync, readFileSync, statSync } from "node:fs"
 import { extname, join } from "node:path"
 
-import { readWorkspaceManifests } from "./pack-release.mjs"
-import { isMain, repoRoot } from "./workspace-packages.mjs"
+import { readWorkspaceManifests } from "../../../flows/release/pack-release.mjs"
+import { isMain, repoRoot } from "../../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 /** The only origin this gate answers for. */
 export const ORIGIN = "https://smithers.sh"

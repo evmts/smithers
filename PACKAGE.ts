@@ -840,7 +840,7 @@ const ci = Smithers.GithubCiGen({
       runsOn: ubuntu,
       timeoutMinutes: 45,
       toolchain: Smithers.CiToolchain.Needs({ runtimes: [node, bun], apt: bubblewrap }),
-      steps: [{ name: "Package documentation tarballs", verb: Smithers.Verb.Test, pattern: "//scripts:packageDocs" }]
+      steps: [{ name: "Package documentation tarballs", verb: Smithers.Verb.Test, pattern: "//flows:packageDocs" }]
     },
     {
       id: "apps-e2e",

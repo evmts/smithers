@@ -117,9 +117,9 @@ test('API baseline and docs drift targets are check-only and independent of rele
   assert.match(docs, /pnpm run docs:check/)
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
   assert.match(manifest.scripts['docs:check'], /modelprice\/cmd\/generate -check/)
-  assert.match(manifest.scripts['docs:check'], /node scripts\/package-docs\.test\.mjs/)
-  assert.match(manifest.scripts['docs:check'], /node scripts\/package-docs\.mjs --check/)
-  const packageCheck = await readFile(new URL('../../../scripts/package-docs.test.mjs', import.meta.url), 'utf8')
+  assert.match(manifest.scripts['docs:check'], /node flows\/docs-sync\/package-docs\.test\.mjs/)
+  assert.match(manifest.scripts['docs:check'], /node flows\/docs-sync\/package-docs\.mjs --check/)
+  const packageCheck = await readFile(new URL('../../../flows/docs-sync/package-docs.test.mjs', import.meta.url), 'utf8')
   assert.match(packageCheck, /"pack", "--dry-run"/)
   for (const generator of ['ingest-reference.mjs', 'generate-llms.mjs']) {
     assert.match(docs, new RegExp(`${generator.replace('.', '\\.')}[\\s\\S]{0,100}--check`), `${generator} must run in check mode`)

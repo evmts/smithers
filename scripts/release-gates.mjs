@@ -131,7 +131,7 @@ export const releaseGates = [
   { name: "Generated workflow drift", verb: "lint", target: "//:ci" },
   { name: "Factory projection drift", verb: "lint", target: "//:factoryProjection" },
   { name: "Target index drift", verb: "lint", target: "//:targetIndex" },
-  { name: "Package documentation tarballs", verb: "test", target: "//scripts:packageDocs" },
+  { name: "Package documentation tarballs", verb: "test", target: "//flows:packageDocs" },
   { name: "Native FFI clippy and tests", verb: "build", target: "//:nativeFfi" },
   // Ordinary workspace CI omits this exclusive tier; the explicit label opts in.
   { name: "Exclusive fault matrix", verb: "test", target: "//packages/...:faults", jobs: 1 },

@@ -5,7 +5,7 @@
  * install page from 2026-10-06 until issue 3845, and the gates that existed
  * passed it because the install page is a real page.
  *
- * Run it with `node --test scripts/published-links.test.mjs`.
+ * Run it with `node --test apps/site/scripts/published-links.test.mjs`.
  */
 import assert from "node:assert/strict"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"

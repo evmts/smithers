@@ -13,9 +13,9 @@
  */
 import { backendSQLC } from "../packages/backend/sqlc.ts"
 import { Smithers } from "@smthrs/targets"
-import { existsSync, readdirSync } from "node:fs"
+import { readdirSync } from "node:fs"
 import { listFiles } from "../packages/repo-targets/contracts/check-tracked-hygiene.mjs"
-import { libraryPackages, repoRoot } from "./workspace-packages.mjs"
+import { repoRoot } from "./workspace-packages.mjs"
 import { Package as backendPackage } from "../packages/backend/PACKAGE.ts"
 
 /**
@@ -360,41 +360,6 @@ const securityReview = Smithers.SecurityReview({
   ]
 })
 
-/** Explicit cross-package inputs; declaration-scoped globs do not cross child packages. */
-const packageDocInputs = libraryPackages().flatMap(({ dir }) => {
-  const docs = `${repoRoot}/${dir}/docs`
-  const walk = (path: string): string[] => readdirSync(path, { withFileTypes: true }).flatMap((entry) =>
-    entry.isDirectory() ? walk(`${path}/${entry.name}`) : [`${path}/${entry.name}`])
-  return [
-    Smithers.file(`//${dir}/package.json`),
-    ...(existsSync(`${repoRoot}/${dir}/README.md`) ? [Smithers.file(`//${dir}/README.md`)] : []),
-    ...(existsSync(docs) ? walk(docs).map((path) => Smithers.file(`//${path.slice(repoRoot.length + 1)}`)) : [])
-  ]
-})
-/**
- * The collector and resolver behind `//scripts/repo-contract:smithersLinks`:
- * which smithers.sh URLs a published package ships, and whether the page a URL
- * lands on is about the URL's own path. Fixtures only, so it needs no site
- * build; the contract gate runs the same rules over the real build.
- *
- * @since 1.0.0
- * @category test
- */
-const publishedLinksUnit = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//scripts/published-links.test.mjs")]),
-  srcs: [...sources, Smithers.file("//pnpm-workspace.yaml")],
-  deps: []
-})
-
-const packageDocs = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//scripts/package-docs.test.mjs"), Smithers.file("//scripts/package-docs-redirect.test.mjs")]),
-  timeout: "30m",
-  cache: false,
-  // package-docs-redirect.test.mjs holds the Worker's generated page map to the docs it is built from.
-  srcs: [...sources, Smithers.file("//pnpm-workspace.yaml"), Smithers.file("//apps/server/src/docsRedirectMap.ts"), ...packageDocInputs],
-  deps: []
-})
-
 export const Package = Smithers.Package({
   targets: {
     ...repositoryPackages,
@@ -402,8 +367,6 @@ export const Package = Smithers.Package({
     engineeringScriptRegressions,
     engineeringChecks, integrationSources, gatewaySources, workflowSources, machineSources, ffiSources,
     docsDrift,
-    packageDocs,
-    publishedLinksUnit,
     conformanceCheck,
     repositoryConformance,
     workspacePackages,

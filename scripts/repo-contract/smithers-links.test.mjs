@@ -3,7 +3,7 @@
  * the built site that is about the URL's own path.
  *
  * The target builds the site before running this gate. It stays offline:
- * `scripts/published-links.mjs` reads the emitted files under `apps/site/dist`
+ * `apps/site/scripts/published-links.mjs` reads the emitted files under `apps/site/dist`
  * and the `_redirects` the build copies there, redirects first, as the host
  * does. That module holds the rules and their reasons; `--live` runs the same
  * rules against production after a deploy.
@@ -22,7 +22,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, it } from "node:test"
 
-import { collect, composed, failure, offenders, readRedirects } from "../published-links.mjs"
+import { collect, composed, failure, offenders, readRedirects } from "../../apps/site/scripts/published-links.mjs"
 import { repoRoot as root } from "../workspace-packages.mjs"
 
 const output = join(root, "apps", "site", "dist")
