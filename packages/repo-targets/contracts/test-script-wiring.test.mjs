@@ -16,7 +16,7 @@ import { join, matchesGlob } from "node:path"
 import { describe, it } from "node:test"
 import ts from "typescript"
 
-import { parseWorkflow } from "../../../flows/release/release-rehearsal.mjs"
+import { parseWorkflow } from "../../../.smithers/flows/release/release-rehearsal.mjs"
 import { repoRoot as root } from "../scripts/workspace-packages.mjs"
 
 const readManifest = (path) => JSON.parse(readFileSync(path, "utf8"))
@@ -97,14 +97,14 @@ const unownedTests = new Map([])
 describe("test-file ownership", () => {
   // The repository's own automation suites: the contract gates this package
   // owns and the flow modules for evidence, issue claims and releases.
-  const declarations = ["PACKAGE.ts", "packages/repo-targets/PACKAGE.ts", "flows/PACKAGE.ts"]
+  const declarations = ["PACKAGE.ts", "packages/repo-targets/PACKAGE.ts", ".smithers/flows/PACKAGE.ts"]
     .map((path) => readFileSync(join(root, path), "utf8"))
     .join("\n")
-  const suites = ["packages/repo-targets/contracts", "flows/evidence", "flows/issue-claim", "flows/release"]
+  const suites = ["packages/repo-targets/contracts", ".smithers/flows/evidence", ".smithers/flows/issue-claim", ".smithers/flows/release"]
     .flatMap((directory) => testFiles(directory, ".mjs"))
 
   it("finds the automation suites", () => {
-    assert.ok(suites.includes("flows/issue-claim/issue-claim.test.mjs"))
+    assert.ok(suites.includes(".smithers/flows/issue-claim/issue-claim.test.mjs"))
     assert.ok(suites.includes("packages/repo-targets/contracts/test-script-wiring.test.mjs"))
   })
 
@@ -122,7 +122,7 @@ describe("test-file ownership", () => {
     assert.notEqual(workflow.jobs.test["continue-on-error"], true)
     assert.notEqual(workflow.jobs.scripts["continue-on-error"], true)
     const scripts = workflow.jobs.scripts.steps.flatMap((step) => step.run ? [step.run] : []).join("\n")
-    for (const label of ["//flows:issueClaim", "//flows:evidenceBindings", "//flows:releaseRehearsal", "//flows:releaseVersion"]) {
+    for (const label of ["//.smithers/flows:issueClaim", "//.smithers/flows:evidenceBindings", "//.smithers/flows:releaseRehearsal", "//.smithers/flows:releaseVersion"]) {
       assert.ok(scripts.includes(`smthrs test '${label}'`), label)
     }
     const test = workflow.jobs.test.steps.flatMap((step) => step.run ? [step.run] : []).join("\n")

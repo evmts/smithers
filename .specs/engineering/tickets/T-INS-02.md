@@ -25,7 +25,7 @@ In:
 Out:
 - The configured bind address, public origins, cookies and listener swap (T-INS-04).
 - Host-profile/sizing changes remain T-MCH-01; current apps/backend/isolation.go:171-191 already uses Detect/ComputeSizing. Do not restore removed fixed defaults or shell overrides.
-- Implementing overridable flows/coding bindings remains T-FLW-01; qualify the landed guest-only path here. The remaining local-owner assignment is explicit process-test configuration only (compose/flow_composition.go:71-81).
+- Implementing overridable .smithers/flows/coding bindings remains T-FLW-01; qualify the landed guest-only path here. The remaining local-owner assignment is explicit process-test configuration only (compose/flow_composition.go:71-81).
 - The bootstrap token and local password owner (deleted by T-ACC-01).
 
 - Out of scope: formula and release packaging, launchd lifecycle, owner claim implementation, secret-store setup, external runtime discovery, and enabling repository execution through a host coding binding.

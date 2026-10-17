@@ -6,7 +6,7 @@ card. Every act is a flow; verdicts are user-only for humans; the agent's
 verdict is a review row, never a human's approval.
 
 MVP amendment (2026-10-01, [#3388](https://github.com/smithersai/smithers/issues/3388)):
-review executes as an ordinary flow in `flows/review`; the standalone service
+review executes as an ordinary flow in `.smithers/flows/review`; the standalone service
 and quizzes are retired. The shared run card renders custom flow results.
 
 ## Header additions

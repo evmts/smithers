@@ -1,5 +1,5 @@
 //! The coding host parses the helper's whole stdout as one JSON receipt
-//! (flows/coding/native.ts), so a source import must print nothing else. Only
+//! (.smithers/flows/coding/native.ts), so a source import must print nothing else. Only
 //! a trusted-process build reads a binding outside root-owned /etc/smithers.
 #![cfg(all(unix, feature = "trusted-process-binding"))]
 

@@ -10,7 +10,7 @@ import { planned, plannedInProcess, resolveInventory, root, runnerFor, targetInv
 import { openPackageIndex } from "@smthrs/build-cli/Cli"
 import * as Target from "@smthrs/targets/Target"
 import * as Exec from "@smthrs/targets/Exec"
-import { parseWorkflow } from "../../../flows/release/release-rehearsal.mjs"
+import { parseWorkflow } from "../../../.smithers/flows/release/release-rehearsal.mjs"
 import * as PackageExec from "@smthrs/build-cli/PackageExec"
 
 // Every case reads the same declarations, so they share one index instead of
@@ -138,9 +138,9 @@ test("CI planning cancels the hard deadline after cooperative SIGTERM completion
 test("release smoke retains packing, fresh execution and its measured Exec deadline", async () => {
   const index = await packageIndex()
   const plan = await PackageExec.plan({
-    index, verb: "test", patterns: ["//flows:releaseSmoke"], cacheDirectory: index.workspace.cache.directory
+    index, verb: "test", patterns: ["//.smithers/flows:releaseSmoke"], cacheDirectory: index.workspace.cache.directory
   })
-  const smoke = plan.nodes.get("//flows:releaseSmoke")
+  const smoke = plan.nodes.get("//.smithers/flows:releaseSmoke")
   assert.ok(smoke)
   const declaration = index.targets().find((target) => target.label === smoke.label)
   assert.ok(declaration)
@@ -151,7 +151,7 @@ test("release smoke retains packing, fresh execution and its measured Exec deadl
     "the inner Exec must receive the declared 30m bound, not its 10m default")
   assert.equal(smoke.timeoutMs, 1_800_000, "the outer executor must honor the 30m deadline too")
   assert.equal(smoke.cacheable, false, "a successful receipt never substitutes for a fresh smoke")
-  assert.ok(smoke.dependencies.includes("//flows:releasePack"), "source qualification still rebuilds candidate bytes")
+  assert.ok(smoke.dependencies.includes("//.smithers/flows:releasePack"), "source qualification still rebuilds candidate bytes")
 })
 
 /**
@@ -191,17 +191,17 @@ test("required CI resolves package, app, script and evaluation suites to real ru
     ["//apps/app:browserE2eShard3", "apps-browser-3"],
     ["//apps/tui:check", "apps-e2e"], ["//apps/tui:unitTests", "apps-e2e"], ["//apps/tui:e2eTests", "apps-e2e"],
     ["//apps/server:check", "repository"], ["//apps/server:unitTests", "repository"],
-    ["//flows/review:unitTests", "repository"], ["//apps/bug-worker:unitTests", "repository"],
-    ["//flows/review:check", "repository"], ["//flows/review:checkTests", "repository"],
+    ["//.smithers/flows/review:unitTests", "repository"], ["//apps/bug-worker:unitTests", "repository"],
+    ["//.smithers/flows/review:check", "repository"], ["//.smithers/flows/review:checkTests", "repository"],
     ["//apps/bug-worker:check", "repository"],
     ["//packages/smithers/agent/regression:test", "repository"], ["//evals/authoring:test", "repository"],
     ["//packages/smithers/agent/regression:check", "repository"], ["//evals/authoring:check", "repository"], ["//packages/smithers/agent/harness/benchmarks/swebench:check", "repository"],
-    ["//flows/review/seeded-bugs:suite", "repository"], ["//flows/review/seeded-bugs:test", "repository"],
-    ["//flows/review/seeded-bugs:check", "repository"],
+    ["//.smithers/flows/review/seeded-bugs:suite", "repository"], ["//.smithers/flows/review/seeded-bugs:test", "repository"],
+    ["//.smithers/flows/review/seeded-bugs:check", "repository"],
     ["//packages/backend/modelhost/recommend-eval:suite", "repository"], ["//packages/backend/modelhost/recommend-eval:test", "repository"], ["//packages/backend/modelhost/recommend-eval:check", "repository"],
-    ["//packages/repo-targets:ciInventory", "test"], ["//flows:mutationGate", "scripts"], ["//flows:benchmarkGate", "scripts"],
-    ["//flows:campaignVerifiers", "scripts"], ["//flows:signalCampaign", "scripts"], ["//flows:perfUnit", "scripts"],
-    ["//flows:checkRunner", "scripts"],
+    ["//packages/repo-targets:ciInventory", "test"], ["//.smithers/flows:mutationGate", "scripts"], ["//.smithers/flows:benchmarkGate", "scripts"],
+    ["//.smithers/flows:campaignVerifiers", "scripts"], ["//.smithers/flows:signalCampaign", "scripts"], ["//.smithers/flows:perfUnit", "scripts"],
+    ["//.smithers/flows:checkRunner", "scripts"],
     ["//packages/repo-targets:webBundleContract", "browser"],
     ["//packages/smithers/gateway:test", "test"], ["//packages/smithers/flows/jj:test", "packages"]
   ]) assert.ok(selected(label, job).length, `${label} must be a required root of ${job}`)
@@ -263,7 +263,7 @@ test("required CI resolves package, app, script and evaluation suites to real ru
   for (const app of ["server", "app", "bug-worker"]) {
     assert.match(readFileSync(join(root, `apps/${app}/PACKAGE.ts`), "utf8"), /Coverage policy: assertion-only/)
   }
-  assert.match(readFileSync(join(root, "flows/review/PACKAGE.ts"), "utf8"), /Coverage policy: assertion-only/)
+  assert.match(readFileSync(join(root, ".smithers/flows/review/PACKAGE.ts"), "utf8"), /Coverage policy: assertion-only/)
   if (process.env.SMITHERS_CI_INVENTORY === undefined) rmSync(dirname(artifact), { recursive: true, force: true })
 })
 
@@ -340,7 +340,7 @@ test("jobs that install the workspace restore the pnpm store", () => {
 
 test("the root TypeScript project owns declarations, not package source or fixtures", () => {
   const { include } = JSON.parse(readFileSync(join(root, "tsconfig.json"), "utf8"))
-  for (const entry of ["scripts/*/PACKAGE.ts", "flows/PACKAGE.ts",
+  for (const entry of [".smithers/flows/PACKAGE.ts",
     "packages/*/PACKAGE.ts", "packages/*/*/PACKAGE.ts", "packages/*/*/*/PACKAGE.ts"])
     assert.ok(include.includes(entry), `tsconfig.json include omits ${entry}`)
   assert.ok(include.every((entry) => !entry.includes("/src/") && !entry.includes("/test/") && !entry.includes("/examples/")),
@@ -349,17 +349,17 @@ test("the root TypeScript project owns declarations, not package source or fixtu
 
 
 test("CI discovery preserves a generated results path and rejects repeated flags", () => {
-  const run = `pnpm exec smthrs test '//flows:packageDocs' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose`
-  assert.deepEqual(targetInvocation(run), { verb: "test", pattern: "//flows:packageDocs", jobs: undefined, verbose: true, resultsFile: "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" })
+  const run = `pnpm exec smthrs test '//.smithers/flows:packageDocs' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose`
+  assert.deepEqual(targetInvocation(run), { verb: "test", pattern: "//.smithers/flows:packageDocs", jobs: undefined, verbose: true, resultsFile: "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" })
   assert.throws(() => targetInvocation(`${run} --results-file "other"`), /Unrecognized CI target option/)
 })
 
 test("the published documentation gate resolves through the public CLI with matching metadata", async () => {
   const index = await packageIndex()
-  const metadata = await PackageExec.plan({ index, verb: "test", patterns: ["//flows:packageDocs"], cacheDirectory: index.workspace.cache.directory })
-  const cli = planned("test", "//flows:packageDocs")
-  const target = cli.targets.find(({ label }) => label === "//flows:packageDocs")
-  const node = metadata.nodes.get("//flows:packageDocs")
+  const metadata = await PackageExec.plan({ index, verb: "test", patterns: ["//.smithers/flows:packageDocs"], cacheDirectory: index.workspace.cache.directory })
+  const cli = planned("test", "//.smithers/flows:packageDocs")
+  const target = cli.targets.find(({ label }) => label === "//.smithers/flows:packageDocs")
+  const node = metadata.nodes.get("//.smithers/flows:packageDocs")
   assert.ok(target)
   assert.ok(node)
   assert.equal(target.key ?? target.keyPreview, node.key ?? node.keyPreview)

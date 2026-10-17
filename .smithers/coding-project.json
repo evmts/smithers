@@ -99,7 +99,7 @@
       "inputs": [
         "packages/smithers/build/targets/docs/README.md",
         "packages/smithers/build/docs/reference/targets/filegroup.md",
-        "flows/wiki/PACKAGE.ts"
+        ".smithers/flows/wiki/PACKAGE.ts"
       ],
       "related": [
         "wiki-generation",
@@ -115,8 +115,8 @@
       "document": ".smithers/wiki/pages/agent.md",
       "inputs": [
         "packages/smithers/agent/docs/README.md",
-        "flows/wiki/workflow.ts",
-        "flows/wiki/runtime.ts"
+        ".smithers/flows/wiki/workflow.ts",
+        ".smithers/flows/wiki/runtime.ts"
       ],
       "related": [
         "flows",
@@ -157,7 +157,7 @@
       "document": ".smithers/wiki/pages/coding-direction.md",
       "inputs": [
         "packages/smithers/flows/docs/concepts/runtime-portability.md",
-        "flows/coding/design.md"
+        ".smithers/flows/coding/design.md"
       ],
       "related": [
         "product-ui",
@@ -173,8 +173,8 @@
       "kind": "current",
       "document": ".smithers/wiki/pages/coding-host.md",
       "inputs": [
-        "flows/coding/host.md",
-        "flows/coding/wiki-policy.ts"
+        ".smithers/flows/coding/host.md",
+        ".smithers/flows/coding/wiki-policy.ts"
       ],
       "related": [
         "native-control",
@@ -184,7 +184,7 @@
         "wiki-generation"
       ],
       "excerpts": {
-        "flows/coding/host.md": [
+        ".smithers/flows/coding/host.md": [
           {
             "start": 1,
             "end": 80
@@ -199,13 +199,13 @@
       "kind": "current",
       "document": ".smithers/wiki/pages/coding-request.md",
       "inputs": [
-        "flows/coding/request.md",
-        "flows/coding/request-flow.ts",
-        "flows/coding/request.ts",
-        "flows/coding/prototype/flow.ts"
+        ".smithers/flows/coding/request.md",
+        ".smithers/flows/coding/request-flow.ts",
+        ".smithers/flows/coding/request.ts",
+        ".smithers/flows/coding/prototype/flow.ts"
       ],
       "excerpts": {
-        "flows/coding/request.md": [
+        ".smithers/flows/coding/request.md": [
           {
             "start": 1,
             "end": 58
@@ -235,8 +235,8 @@
       "kind": "current",
       "document": ".smithers/wiki/pages/coding-planning.md",
       "inputs": [
-        "flows/coding/planning.md",
-        "flows/coding/planning-authority.md"
+        ".smithers/flows/coding/planning.md",
+        ".smithers/flows/coding/planning-authority.md"
       ],
       "related": [
         "wiki-generation",
@@ -252,9 +252,9 @@
       "kind": "current",
       "document": ".smithers/wiki/pages/coding-poc.md",
       "inputs": [
-        "flows/coding/poc.md",
-        "flows/coding/prototype/flow.ts",
-        "flows/coding/poc-schema.ts"
+        ".smithers/flows/coding/poc.md",
+        ".smithers/flows/coding/prototype/flow.ts",
+        ".smithers/flows/coding/poc-schema.ts"
       ],
       "related": [
         "coding-request",
@@ -269,8 +269,8 @@
       "kind": "current",
       "document": ".smithers/wiki/pages/coding-progression.md",
       "inputs": [
-        "flows/coding/README.md",
-        "flows/coding/flow.ts"
+        ".smithers/flows/coding/README.md",
+        ".smithers/flows/coding/flow.ts"
       ],
       "related": [
         "coding-direction",
@@ -287,7 +287,7 @@
       "kind": "current",
       "document": ".smithers/wiki/pages/coding-correction.md",
       "inputs": [
-        "flows/coding/correction.md"
+        ".smithers/flows/coding/correction.md"
       ],
       "related": [
         "coding-progression",
@@ -303,8 +303,8 @@
       "kind": "current",
       "document": ".smithers/wiki/pages/coding-checks.md",
       "inputs": [
-        "flows/coding/checks.md",
-        "flows/coding/checks.ts"
+        ".smithers/flows/coding/checks.md",
+        ".smithers/flows/coding/checks.ts"
       ],
       "related": [
         "coding-progression",
@@ -313,13 +313,13 @@
         "build-graph"
       ],
       "excerpts": {
-        "flows/coding/checks.ts": [
+        ".smithers/flows/coding/checks.ts": [
           {
             "start": 60,
             "end": 180
           }
         ],
-        "flows/coding/checks.md": [
+        ".smithers/flows/coding/checks.md": [
           {
             "start": 1,
             "end": 80
@@ -334,7 +334,7 @@
       "kind": "current",
       "document": ".smithers/wiki/pages/coding-finalization.md",
       "inputs": [
-        "flows/coding/finalization.md"
+        ".smithers/flows/coding/finalization.md"
       ],
       "related": [
         "coding-request",
@@ -343,7 +343,7 @@
         "coding-ui"
       ],
       "excerpts": {
-        "flows/coding/finalization.md": [
+        ".smithers/flows/coding/finalization.md": [
           {
             "start": 1,
             "end": 80
@@ -358,7 +358,7 @@
       "kind": "current",
       "document": ".smithers/wiki/pages/coding-ui.md",
       "inputs": [
-        "flows/coding/planning.md",
+        ".smithers/flows/coding/planning.md",
         "apps/app/src/mainview/cards/CodingPlanCard.tsx"
       ],
       "related": [
@@ -535,13 +535,13 @@
       "kind": "current",
       "document": ".smithers/wiki/pages/coding-workspace.md",
       "inputs": [
-        "flows/coding/host.md",
-        "flows/coding/project-config.md",
-        "flows/coding/verify/flow.ts",
-        "flows/coding/wiki/flow.ts"
+        ".smithers/flows/coding/host.md",
+        ".smithers/flows/coding/project-config.md",
+        ".smithers/flows/coding/verify/flow.ts",
+        ".smithers/flows/coding/wiki/flow.ts"
       ],
       "excerpts": {
-        "flows/coding/host.md": [
+        ".smithers/flows/coding/host.md": [
           {
             "start": 1,
             "end": 5
@@ -555,7 +555,7 @@
             "end": 61
           }
         ],
-        "flows/coding/project-config.md": [
+        ".smithers/flows/coding/project-config.md": [
           {
             "start": 1,
             "end": 13
@@ -614,42 +614,42 @@
   "checks": [
     {
       "id": "policy",
-      "target": "flows",
+      "target": ".smithers/flows",
       "flow": "checks/policy",
       "tier": "fast",
       "required": true
     },
     {
       "id": "runtime",
-      "target": "flows",
+      "target": ".smithers/flows",
       "flow": "checks/runtime",
       "tier": "fast",
       "required": true
     },
     {
       "id": "native",
-      "target": "flows",
+      "target": ".smithers/flows",
       "flow": "checks/native",
       "tier": "slow",
       "required": true
     },
     {
       "id": "native-bun",
-      "target": "flows",
+      "target": ".smithers/flows",
       "flow": "checks/native-bun",
       "tier": "slow",
       "required": true
     },
     {
       "id": "bundle",
-      "target": "flows",
+      "target": ".smithers/flows",
       "flow": "checks/bundle",
       "tier": "slow",
       "required": true
     },
     {
       "id": "bundle-bun",
-      "target": "flows",
+      "target": ".smithers/flows",
       "flow": "checks/bundle-bun",
       "tier": "slow",
       "required": true

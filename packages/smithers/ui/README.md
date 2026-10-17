@@ -8,7 +8,7 @@ styled entirely through theme tokens so every component is correct in light and
 dark and honors `prefers-reduced-motion`.
 
 `@smthrs/ui` is `private: true` and workspace-only: `apps/app` and
-`flows/review` consume it through the workspace. npm has only the earlier
+`.smithers/flows/review` consume it through the workspace. npm has only the earlier
 0.35.0 release, which these docs do not describe.
 Import it by its scoped name, `@smthrs/ui`; the unscoped `smthrs` package
 publishes only a deprecation notice whose module throws on import.

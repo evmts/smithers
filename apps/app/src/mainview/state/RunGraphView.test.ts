@@ -188,12 +188,12 @@ describe("a launch snapshots the plan onto the run it started", () => {
     const { store } = await launched({
       graph: {
         edges: [{ from: "gate", to: "steady", reason: "continuation" }],
-        nodes: [{ id: "gate", declaredAt: { path: "flows/review.ts", line: 8 } }, { id: "steady" }]
+        nodes: [{ id: "gate", declaredAt: { path: ".smithers/flows/review.ts", line: 8 } }, { id: "steady" }]
       }
     })
     expect(runCard(store)?.payload.plan?.graph).toEqual({
       edges: [{ from: "gate", to: "steady", reason: "continuation" }],
-      nodes: [{ id: "gate", declaredAt: { path: "flows/review.ts", line: 8 } }, { id: "steady" }]
+      nodes: [{ id: "gate", declaredAt: { path: ".smithers/flows/review.ts", line: 8 } }, { id: "steady" }]
     })
   })
 

@@ -18,7 +18,7 @@ Globs are package scoped: expansion never descends into a subdirectory holding a
 
 ## The wiki's targets
 
-`flows/wiki/PACKAGE.ts` declares three targets over `flows/wiki/main.ts`, with exact `//` file inputs rather than cross-package globs:
+`.smithers/flows/wiki/PACKAGE.ts` declares three targets over `.smithers/flows/wiki/main.ts`, with exact `//` file inputs rather than cross-package globs:
 
 | Target | Runs |
 | --- | --- |

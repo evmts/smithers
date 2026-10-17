@@ -368,7 +368,7 @@ test("a missing flow names the available alternatives and keeps its request retr
 })
 
 test.each([
-  /* The registrar's own refusal (flows/repository/triggers.ts), the person's to answer. */
+  /* The registrar's own refusal (.smithers/flows/repository/triggers.ts), the person's to answer. */
   { cause: 'invalid_receipt: Add a model to "review" to schedule it.\ninternal detail', detail: 'Add a model to "review" to schedule it.' },
   /* The registration service failing under it is typed unavailable (triggers.ts), not the person's. */
   { cause: "unavailable: The exact schedule could not be registered", detail: REFUSAL_COPY.infra.lead },

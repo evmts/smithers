@@ -249,35 +249,35 @@ jobs:
         shell: "bash"
       - name: "Repository flows"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//flows:pack' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//.smithers/flows:pack' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Judge egress"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//flows:egress' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//.smithers/flows:egress' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Repository flow fixtures"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//flows:repository' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//.smithers/flows:repository' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Wiki and release fixtures"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//flows:fixtures' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//.smithers/flows:fixtures' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Repository flows lint"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs lint '//flows/...' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs lint '//.smithers/flows/...' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
@@ -291,7 +291,7 @@ jobs:
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Repository automation lint"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs lint '//flows:moduleLint' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs lint '//.smithers/flows:moduleLint' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
@@ -368,7 +368,7 @@ jobs:
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Review flow"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs ci '//flows/review/...' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs ci '//.smithers/flows/review/...' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
@@ -396,14 +396,14 @@ jobs:
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Review eval suite (offline, baseline-gated)"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//flows/review/seeded-bugs/...' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//.smithers/flows/review/seeded-bugs/...' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Review eval typecheck"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs build '//flows/review/seeded-bugs:check' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs build '//.smithers/flows/review/seeded-bugs:check' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
@@ -562,161 +562,161 @@ jobs:
         shell: "bash"
       - name: "Issue claims and check receipts"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//flows:issueClaim' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//.smithers/flows:issueClaim' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Check bindings"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//flows:evidenceBindings' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//.smithers/flows:evidenceBindings' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Release rehearsal and gate inventory"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//flows:releaseRehearsal' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//.smithers/flows:releaseRehearsal' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Release version suite"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//flows:releaseVersion' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//.smithers/flows:releaseVersion' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Command check runner"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//flows:checkRunner' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//.smithers/flows:checkRunner' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Benchmark cost gate"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//flows:benchmarkGate' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//.smithers/flows:benchmarkGate' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Mutation gate"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//flows:mutationGate' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//.smithers/flows:mutationGate' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Campaign verifiers"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//flows:campaignVerifiers' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//.smithers/flows:campaignVerifiers' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Signal campaign verifier"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//flows:signalCampaign' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//.smithers/flows:signalCampaign' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Performance and fault drivers"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//flows:perfUnit' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//.smithers/flows:perfUnit' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Landing helper"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//flows:land' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//.smithers/flows:land' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Landing helper end to end"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//flows:landCommit' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//.smithers/flows:landCommit' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "GitHub triage publisher"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//flows:triagePublish' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//.smithers/flows:triagePublish' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Release manifest"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//flows:packManifest' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//.smithers/flows:packManifest' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Changelog generator"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//flows:changelog' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//.smithers/flows:changelog' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Release cut"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//flows:releaseCut' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//.smithers/flows:releaseCut' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Release candidate suites"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//flows:releaseSuite' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//.smithers/flows:releaseSuite' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Release publication integrity"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//flows:releaseIntegrity' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//.smithers/flows:releaseIntegrity' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Release smoke"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//flows:releaseSmoke' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//.smithers/flows:releaseSmoke' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "npm consumer dedupe"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//flows:npmDedupe' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//.smithers/flows:npmDedupe' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "npm consumer dedupe cells"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//flows:npmDedupeUnit' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//.smithers/flows:npmDedupeUnit' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Release tools and host recorders"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//flows:releaseTools' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//.smithers/flows:releaseTools' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Release step flows"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//flows:releaseSteps' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//.smithers/flows:releaseSteps' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
@@ -781,7 +781,7 @@ jobs:
         shell: "bash"
       - name: "Package documentation tarballs"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//flows:packageDocs' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//.smithers/flows:packageDocs' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"

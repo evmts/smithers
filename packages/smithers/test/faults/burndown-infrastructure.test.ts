@@ -34,7 +34,7 @@ const fixture = fileURLToPath(new URL("./fixtures/burndown", import.meta.url))
 const bin = fileURLToPath(new URL("../../src/bin.ts", import.meta.url))
 const preload = join(fixture, "preload.mjs") // Only installs the repository's Effect resolution loader.
 const modules = fileURLToPath(new URL("../../node_modules", import.meta.url))
-const owner = fileURLToPath(new URL("../../../../flows/issue-sweep/", import.meta.url))
+const owner = fileURLToPath(new URL("../../../../.smithers/flows/issue-sweep/", import.meta.url))
 const roots: string[] = []
 const reaped = new Set<string>()
 const compileCache = realpathSync(mkdtempSync(join(tmpdir(), "fault-3367-compile-")))
@@ -79,7 +79,7 @@ const copyOwner = (root: string, name: string, destination: string) => {
   appendFileSync(
     join(root, "source-receipts.jsonl"),
     JSON.stringify({
-      source: `flows/issue-sweep/${name}`,
+      source: `.smithers/flows/issue-sweep/${name}`,
       bytes: original.length,
       sha256: createHash("sha256").update(original).digest("hex")
     }) + "\n"
@@ -915,7 +915,7 @@ it.skipIf(!["darwin", "linux"].includes(process.platform))(
     for (const name of ["disk.ts", "host.ts", "msb-nice.sh"]) {
       copyOwner(root, name, join(root, ".smithers", "flows", "disk", name))
     }
-    const require = createRequire(new URL("../../../../flows/package.json", import.meta.url))
+    const require = createRequire(new URL("../../../../.smithers/flows/package.json", import.meta.url))
     const sdkEntry = require.resolve("microsandbox")
     // The SDK's platform package sits beside it. Linux names carry the libc
     // (`microsandbox-linux-x64-gnu`), so select by prefix and require exactly
@@ -982,7 +982,7 @@ it.skipIf(!["darwin", "linux"].includes(process.platform))(
         floor: config.floor,
         pressure,
         after,
-        source: "flows/issue-sweep/disk.ts",
+        source: ".smithers/flows/issue-sweep/disk.ts",
         gate: "makeDiskGate",
         filesystem: "real bounded guest tmpfs",
         cpus: 1,

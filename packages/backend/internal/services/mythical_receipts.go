@@ -20,7 +20,7 @@ type mythicalReceipts struct {
 }
 
 // mythicalReceipt is one check's receipt, as the coding flows recorded it
-// (flows/coding/schema.ts Receipt), without its evidence. DurationMs is how
+// (.smithers/flows/coding/schema.ts Receipt), without its evidence. DurationMs is how
 // long the check's process ran, when the receipt recorded its start and finish.
 type mythicalReceipt struct {
 	LogDigest  string `json:"log_digest,omitempty"`

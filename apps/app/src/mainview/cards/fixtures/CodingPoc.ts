@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs"
-import type { PocResult } from "../../../../../../flows/coding/poc-schema.ts"
+import type { PocResult } from "../../../../../../.smithers/flows/coding/poc-schema.ts"
 import { CODING_PLAN } from "./CodingPlan"
 import { codingDecision } from "./CodingJournal"
 

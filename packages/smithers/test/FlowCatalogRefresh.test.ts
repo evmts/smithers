@@ -51,7 +51,7 @@ const REVIEW_STEP = "example/Review/Read"
 /**
  * That file, lifted out of the instructions an authoring agent is given.
  *
- * `flows/create-flow/scaffold/flow.mdx` is the whole of what the scaffolder
+ * `.smithers/flows/create-flow/scaffold/flow.mdx` is the whole of what the scaffolder
  * reads before it writes `flows/<name>/flow.ts`. If its one example and this
  * host's loader drift apart, every agent-written flow is refused and the
  * document is what taught the refusal. Reading the fence rather than a copy of
@@ -59,11 +59,11 @@ const REVIEW_STEP = "example/Review/Read"
  */
 const scaffoldExample = (): string => {
   const document = readFileSync(
-    fileURLToPath(new URL("../../../flows/create-flow/scaffold/flow.mdx", import.meta.url)),
+    fileURLToPath(new URL("../../../.smithers/flows/create-flow/scaffold/flow.mdx", import.meta.url)),
     "utf8"
   )
   const fence = /```ts\n([\s\S]*?)\n```/.exec(document)
-  if (fence === null) throw new Error("flows/create-flow/scaffold/flow.mdx no longer holds a TypeScript example")
+  if (fence === null) throw new Error(".smithers/flows/create-flow/scaffold/flow.mdx no longer holds a TypeScript example")
   return `${fence[1]!}\n`
 }
 
@@ -98,7 +98,7 @@ export default ({
  * carries each node's declaration site relative to the project root, and a
  * site outside that root is dropped whole rather than published as somebody's
  * home directory. A project registers its own flows from its own files, so
- * this file stands where `flows/repository/registry.ts` stands in this
+ * this file stands where `.smithers/flows/repository/registry.ts` stands in this
  * repository.
  */
 const delegates = `import { Action, Flow, Interpreter } from "@smthrs/flow"
@@ -173,7 +173,7 @@ export const registrations = Layer.mergeAll(
     ({ text }) =>
       Effect.gen(function*() {
         const fs = yield* FileSystem.FileSystem
-        yield* fs.makeDirectory("flows/review", { recursive: true })
+        yield* fs.makeDirectory(".smithers/flows/review", { recursive: true })
         yield* fs.writeFileString(${JSON.stringify(GRAPH)}, text)
         return ${JSON.stringify(GRAPH)}
       }).pipe(Effect.orDie),
@@ -529,7 +529,7 @@ it("leaves a flow its run wrote unplannable until it is started again, when the 
  *
  * The two cases above author a `@smthrs/core` DECLARATION: metadata naming a
  * delegate the host already registered, whose nodes are declared in the
- * project's own `delegate.ts`. `flows/create-flow/scaffold/flow.mdx` teaches
+ * project's own `delegate.ts`. `.smithers/flows/create-flow/scaffold/flow.mdx` teaches
  * the author to write a `@smthrs/flow` GRAPH instead — one flow,
  * default-exported, whose body is the whole of what runs — so the file a real
  * builder loop produces is one nothing has a delegate for. It is its own

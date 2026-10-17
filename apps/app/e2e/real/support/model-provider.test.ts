@@ -332,7 +332,7 @@ describe("the install's role models", () => {
 })
 
 describe("a TODO's coding run, scripted by distribution/fake-todo-turns.mjs", () => {
-  // Each step's system teaching opens as the coding flow writes it (flows/coding planning.ts, atoms.ts, vibe-cleanup.ts);
+  // Each step's system teaching opens as the coding flow writes it (.smithers/flows/coding planning.ts, atoms.ts, vibe-cleanup.ts);
   // an agent action appends its task. The answer is a cell: run here against a recording ctx, as the coding host runs it.
   const task = (payload: unknown) => `\n\nThe task for this run: ${JSON.stringify(payload)}`
   const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor as new (...args: string[]) => (ctx: unknown) => Promise<void>

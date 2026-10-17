@@ -98,7 +98,7 @@ type todoRetry struct {
 }
 
 // todoFeedbackBytes bounds the steers an attempt receives as its coding
-// request's feedback (flows/coding/schema.ts RequestInput.feedback: 32,768
+// request's feedback (.smithers/flows/coding/schema.ts RequestInput.feedback: 32,768
 // UTF-16 units, never fewer than this many UTF-8 bytes).
 const todoFeedbackBytes = 32 << 10
 

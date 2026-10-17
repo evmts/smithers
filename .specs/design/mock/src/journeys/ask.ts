@@ -134,8 +134,8 @@ export const askSmithers: Journey = {
     },
     request("add lint to how we do TODOs", "A flow edit is proposed as a draft TODO, with the Flow card's proposed version. Its Commit is the confirmation.", state => {
       const { world } = state
-      world.drafts.push({ id: "d-lint", title: "Run lint in the TODO flow's Verify step", prompt: "In flows/todo/flow.ts, run pnpm lint after pnpm test in the Verify step.", fixes: false, place: { kind: "append" } })
-      world.flowVersions.push({ id: "v-lint", label: "flows/todo/flow.ts · proposed", state: "proposed",
+      world.drafts.push({ id: "d-lint", title: "Run lint in the TODO flow's Verify step", prompt: "In .smithers/flows/todo/flow.ts, run pnpm lint after pnpm test in the Verify step.", fixes: false, place: { kind: "append" } })
+      world.flowVersions.push({ id: "v-lint", label: ".smithers/flows/todo/flow.ts · proposed", state: "proposed",
         steps: TODO_FLOW.map(step => step.id === "verify" ? { ...step, title: "Verify", detail: "pnpm test, then pnpm lint" } : { ...step }) })
       showCard(state, BEN, "flow", "todo", "v-lint")
       showCard(state, BEN, "draft", "d-lint")

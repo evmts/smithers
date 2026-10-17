@@ -35,7 +35,7 @@
  * read afterwards, so `scripts/canary/build-probe.ts` can hold the deployment
  * to the claim.
  */
-import { PublicationRefusal, rollout, type RolloutReceipt } from "../../../flows/rollout/runtime.ts"
+import { PublicationRefusal, rollout, type RolloutReceipt } from "../../../.smithers/flows/rollout/runtime.ts"
 import { dryRunChecks, readPreviousRevision, workerRolloutHost, writeRolloutReceipt } from "./rollout"
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"

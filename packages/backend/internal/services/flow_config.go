@@ -72,7 +72,7 @@ func PersistInstallCodingProject(ctx context.Context, pool *pgxpool.Pool, source
 	return err
 }
 
-// The files the wiki inventory collects (flows/wiki/operations.ts: safePath,
+// The files the wiki inventory collects (.smithers/flows/wiki/operations.ts: safePath,
 // refusePrivate and the inventory's extensions), for public, non-hidden paths.
 var (
 	wikiSourceName      = regexp.MustCompile(`^[A-Za-z0-9_./@-]+$`)
@@ -96,7 +96,7 @@ func wikiReadsSource(name string) bool {
 
 // installWikiPages is the generated page catalog: an overview, an
 // architecture page and one page per top-level directory, each inventoried
-// afresh at every revision by flows/wiki/operations.ts. A page is declared
+// afresh at every revision by .smithers/flows/wiki/operations.ts. A page is declared
 // only where that inventory reads a source: a page with none has nothing to
 // cite, so the verified refresh would fail at every fold.
 func installWikiPages(paths []string) []map[string]any {

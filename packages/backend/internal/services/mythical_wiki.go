@@ -28,7 +28,7 @@ import (
 // The repository wiki the mythical stack keeps current (D-09b). After every
 // fold, while the stack is current, the worker refreshes the pages the
 // repository's .smithers/coding-project.json declares: it runs coding/wiki
-// (flows/coding/wiki/flow.ts) on a short-lived wiki workspace standing on the
+// (.smithers/flows/coding/wiki/flow.ts) on a short-lived wiki workspace standing on the
 // stack tip, whose tree is exactly the folded main, carrying the last
 // refresh's reviews so unchanged pages are not reviewed again. The run's
 // projection records its outcome; the next pass publishes the verified pages
@@ -82,7 +82,7 @@ type mythicalWikiPage struct {
 	Edited      bool   `json:"edited,omitempty"`
 }
 
-// mythicalWikiResult is coding/wiki's success (flows/coding/wiki-refresh.ts
+// mythicalWikiResult is coding/wiki's success (.smithers/flows/coding/wiki-refresh.ts
 // WikiRefreshResult).
 type mythicalWikiResult struct {
 	CommitID       string `json:"commitId"`
@@ -827,7 +827,7 @@ func mythicalWikiView(row db.MythicalWikiSummary, landedMain string) *MythicalWi
 }
 
 // suppliedWiki is the published wiki a stack request carries into planning
-// (flows/coding/schema.ts SuppliedWiki), trimmed to the memory budget; nil
+// (.smithers/flows/coding/schema.ts SuppliedWiki), trimmed to the memory budget; nil
 // with ok false when the repository declares none.
 func (s *MythicalService) suppliedWiki(ctx context.Context, repositoryID int64) (any, bool) {
 	row, err := s.queries().GetMythicalWiki(ctx, repositoryID)

@@ -157,7 +157,7 @@ describe("durable execution snapshots", () => {
     await run(Effect.gen(function*() {
       const fs = yield* FileSystem.FileSystem
       const path = yield* Path.Path
-      const root = fileURLToPath(new URL("../../../../../flows", import.meta.url))
+      const root = fileURLToPath(new URL("../../../../../.smithers/flows", import.meta.url))
       // Select this entry and its work child; measure their real transitive closure.
       const discovery = Discovery.make({
         ...fs,

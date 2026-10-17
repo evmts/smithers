@@ -1272,7 +1272,7 @@ const FIXTURES: Record<
       graph: {
         edges: [{ from: "root.read", to: "root.review", reason: "value" }],
         nodes: [
-          { id: "root.read", declaredAt: { path: "flows/review/flow.ts", line: 12 } },
+          { id: "root.read", declaredAt: { path: ".smithers/flows/review/flow.ts", line: 12 } },
           { id: "root.review" }
         ],
         // The revision those sites were read at: what the Code tab reads AT.
@@ -1285,8 +1285,8 @@ const FIXTURES: Record<
         node: "root.read",
         tab: "declaration",
         codeError: {
-          path: "flows/review/flow.ts",
-          message: "Path not found: flows/review/flow.ts in smithersai/smithers"
+          path: ".smithers/flows/review/flow.ts",
+          message: "Path not found: .smithers/flows/review/flow.ts in smithersai/smithers"
         }
       }
     }

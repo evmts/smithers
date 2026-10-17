@@ -1040,7 +1040,7 @@ describe("a run parked on a durable clock that fell due while its process was do
    * engine schedules next is the one the executor's park guard sees. Without
    * the engine recording that request the guard reads it as its own heartbeat
    * sweep, refuses it, and the run sleeps forever — which is every
-   * `flows/repository` job, because `AwaitReply` sleeps its remaining budget
+   * `.smithers/flows/repository` job, because `AwaitReply` sleeps its remaining budget
    * on the durable clock while it waits for an author.
    *
    * The deadline is moved to the past between the two processes rather than

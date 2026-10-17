@@ -31,7 +31,7 @@ slash commands run through the app's own registry.
 
 The authored half is the production path and nothing is registered for it
 (D-081). The `create-flow` run writes a real `@smthrs/flow` graph file, shaped
-the way `flows/create-flow/scaffold/flow.mdx` teaches, into the scratch project
+the way `.smithers/flows/create-flow/scaffold/flow.mdx` teaches, into the scratch project
 this box serves. A real registry discovers it, `@smthrs/registry` `Executable`
 measures and loads it, and `Executable.Refresh` registers the rebuilt body with
 the running engine before the run's receipt is readable — the same reaction

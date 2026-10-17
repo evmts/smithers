@@ -1,6 +1,6 @@
 /** Unit contract for the optional host policy, over real disk operations.
  * The callback is deliberately controlled here to test preflight ordering;
- * production coding policy/dispatcher behavior is tested in flows/test.
+ * production coding policy/dispatcher behavior is tested in .smithers/flows/test.
  * This is not a real-machine or authenticated-daemon acceptance receipt.
  */
 import { NodeServices } from "@effect/platform-node"

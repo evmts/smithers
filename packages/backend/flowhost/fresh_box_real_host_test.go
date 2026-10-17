@@ -65,7 +65,7 @@ func TestFreshBoxRealManagedCodingHost(t *testing.T) {
 	artifact := os.Getenv("SMITHERS_FLOWHOST_ARTIFACT")
 	if artifact == "" {
 		artifact = filepath.Join(t.TempDir(), "smithers-coding-host")
-		build := exec.CommandContext(ctx, node, "flows/coding/build.mjs", artifact)
+		build := exec.CommandContext(ctx, node, ".smithers/flows/coding/build.mjs", artifact)
 		build.Dir = repositoryRoot
 		output, buildErr := build.CombinedOutput()
 		require.NoError(t, buildErr, "build bundled coding host: %s", output)

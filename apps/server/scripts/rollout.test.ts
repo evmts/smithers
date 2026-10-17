@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { artifactDigest, decideDeploy, preflightDeploy, readLiveFacts, verifyActivated } from "./deployGuard"
 import { WORKER_IDENTITY } from "../src/workerIdentity"
 import { dryRunChecks, readPreviousRevision, siteProbeTimeout, workerRolloutHost, writeRolloutReceipt } from "./rollout"
-import { rollout, type RolloutReceipt } from "../../../flows/rollout/runtime.ts"
+import { rollout, type RolloutReceipt } from "../../../.smithers/flows/rollout/runtime.ts"
 
 const previous = { version: "11111111-1111-1111-1111-111111111111", revision: "a".repeat(40) }
 const next = { version: "22222222-2222-2222-2222-222222222222", revision: "b".repeat(40) }

@@ -29,7 +29,7 @@ const review = {
   summary: "Review the change.",
   featured: true,
   kind: "mdx",
-  path: "flows/review/flow.mdx",
+  path: ".smithers/flows/review/flow.mdx",
   capabilities: ["fs:read:**"],
   model: null,
   modelInvocable: true

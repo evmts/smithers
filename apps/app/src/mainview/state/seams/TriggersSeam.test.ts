@@ -1193,12 +1193,12 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
 
   /*
    * The app holds no second copy of host policy: the ceiling it names is the
-   * registrar's own (`flows/repository/inspection.ts`, enforced by `Prepare`
+   * registrar's own (`.smithers/flows/repository/inspection.ts`, enforced by `Prepare`
    * and by repository setup), read here so the two cannot drift apart while
    * both still pass their own tests.
    */
   test("the range the app names is the registrar's own ceiling", async () => {
-    const source = await readFile(new URL("../../../../../../flows/repository/inspection.ts", import.meta.url), "utf8")
+    const source = await readFile(new URL("../../../../../../.smithers/flows/repository/inspection.ts", import.meta.url), "utf8")
     const ceiling = (name: string): number =>
       Number((new RegExp(`export const ${name} = ([0-9_]+)`).exec(source)?.[1] ?? "").replaceAll("_", ""))
     expect(LIMIT_SHAPE).toContain(`--tokens 1..${ceiling("deploymentTokens")}`)
@@ -1206,8 +1206,8 @@ describe("triggers seam: registering a repository flow on a schedule", () => {
   })
 
   /*
-   * The registrar is a built-in of the workspace coding host (flows/coding
-   * host.ts, flows/repository/registry.ts). A relay call that names no
+   * The registrar is a built-in of the workspace coding host (.smithers/flows/coding
+   * host.ts, .smithers/flows/repository/registry.ts). A relay call that names no
    * workspace reaches the repository's own gateway instead, which runs the
    * product host and holds the librarian flow and no registrar at all —
    * the canary's `No flow "repository/trigger" is registered on this
@@ -1625,10 +1625,10 @@ describe("triggers seam: watching the registration run", () => {
   const MODEL_REFUSAL = 'Add a model to "nightly-lint" to schedule it.'
   const DECLARED_INPUT =
     '"declared-input" declares an input schema the engine ignores (discovery warning unsupported_input_schema). Remove it: a trigger delivers your registered input to the flow as JSON, unvalidated.'
-  /* The registrar's other code: the one it maps an unexpected failure to (flows/repository/triggers.ts:226). */
+  /* The registrar's other code: the one it maps an unexpected failure to (.smithers/flows/repository/triggers.ts:226). */
   const CRASH = "The schedule registration did not complete; inspect the retained run"
   const journalCause = (sentence: string, code = "invalid_receipt"): string =>
-    `${code}: ${sentence}\n    at repository/trigger (flows/repository/triggers.ts:20)`
+    `${code}: ${sentence}\n    at repository/trigger (.smithers/flows/repository/triggers.ts:20)`
 
   const approved = async (store: AppStore, controller: Awaited<ReturnType<typeof ready>>["controller"]) => {
     await registrationResult(controller, REQUEST)

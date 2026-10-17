@@ -8,7 +8,7 @@ it("discovers, plans, starts and observes ordinary review with shared host servi
   const root = realpathSync(mkdtempSync(join(tmpdir(), "tui-review-flow-")))
   const workspace = resolve(import.meta.dir, "../../..")
   try {
-    cpSync(join(workspace, "flows/review"), join(root, ".smithers/flows/review"), { recursive: true })
+    cpSync(join(workspace, ".smithers/flows/review"), join(root, ".smithers/flows/review"), { recursive: true })
     symlinkSync(join(workspace, "flows/node_modules"), join(root, "node_modules"), "dir")
     const git = (args: string[]) => execFileSync("git", args, { cwd: root, stdio: "pipe" })
     git(["init"])

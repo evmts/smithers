@@ -8,7 +8,7 @@ rollout supplies trusted qualification. There is no local receipt-file or
 environment-variable bypass.
 
 Compose `qualifiedWorkerHost("bug-worker", artifact, ports)` from
-`flows/rollout/worker.ts` with the existing rollout execution layer. The host
+`.smithers/flows/rollout/worker.ts` with the existing rollout execution layer. The host
 must authenticate its own passing `//apps/bug-worker/...` gate and immutable
 artifact at the exact main revision, and retain adoption evidence for that
 artifact. Preserve the Worker, KV namespace, custom domains and the rate-limit Durable

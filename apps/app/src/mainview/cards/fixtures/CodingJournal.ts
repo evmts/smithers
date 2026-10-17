@@ -1,6 +1,6 @@
 import * as JournalRecords from "../../../../../../packages/smithers/flows/engine-store/src/internal/JournalRecords.ts"
 import { Schema } from "effect"
-import { EarlyFeedback } from "../../../../../../flows/coding/feedback-schema.ts"
+import { EarlyFeedback } from "../../../../../../.smithers/flows/coding/feedback-schema.ts"
 import { CODING_PLAN } from "./CodingPlan"
 
 /** Synthetic native records made with the production journal writer. */

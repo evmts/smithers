@@ -7,7 +7,7 @@ import { readFileSync, realpathSync } from "node:fs"
 import { join, resolve } from "node:path"
 
 import { workspacePackages, isMain, repoRoot } from "../scripts/workspace-packages.mjs"
-import { readWorkspaceManifests } from "../../../flows/release/pack-release.mjs"
+import { readWorkspaceManifests } from "../../../.smithers/flows/release/pack-release.mjs"
 
 /**
  * The Effect release this repository is built and tested on. Update the family
@@ -59,8 +59,15 @@ const isFamily = (name) => name === "effect" || name.startsWith("@effect/") && !
  * peer contract also select the tested release; metadata-only peers leave the
  * application free to select its own adapter.
  */
+/**
+ * `@smthrs/testing` is a library a consumer installs beside its own Effect; its
+ * `smthrs-model-server` bin runs inside that install, so it takes the ranged
+ * library peer like any other library.
+ */
+const library = (manifest) => manifest.bin === undefined || manifest.name === "@smthrs/testing"
+
 export const expectedEffectDeclaration = (manifest, section, name) =>
-  section === "peerDependencies" && manifest.private !== true && manifest.bin === undefined &&
+  section === "peerDependencies" && manifest.private !== true && library(manifest) &&
     manifest.peerDependenciesMeta?.[name]?.optional !== true &&
     manifest.peerDependencies?.effect !== undefined
     ? SUPPORTED_EFFECT_RANGE

@@ -2167,7 +2167,7 @@ describe("AgentSession", () => {
    * That is the only way a `HumanTask` ask is ever answered: the gateway's
    * `Approval.Submit` routes a human-wait target to `Control.signal`
    * (`ControlExecutor.answerableWait`), `smithers signal` calls it directly,
-   * and every flow-authored ask in `flows/repository` parks on one. The answer
+   * and every flow-authored ask in `.smithers/flows/repository` parks on one. The answer
    * completes the engine's durable wait point; no approval token is decided,
    * so `ControlLive.decide` — the one caller of `ControlRuntime.requestResume`
    * — never runs.
@@ -2316,7 +2316,7 @@ describe("AgentSession", () => {
    * No person answers anything here, so nothing on the answering path can
    * record the resume: the wake is the engine's own. The run still has to be
    * re-driven, exactly once, or a run that sleeps never settles — which is
-   * every `flows/repository` job, because `AwaitReply` sleeps its remaining
+   * every `.smithers/flows/repository` job, because `AwaitReply` sleeps its remaining
    * budget on `DurableClock` while it waits for an author.
    */
   it("re-drives a run whose durable clock fired, exactly once", async () => {
@@ -2363,7 +2363,7 @@ describe("AgentSession", () => {
    *
    * A child settlement never passes through `scheduleResume` — the driver
    * wakes the parent coordinator directly — so this is the wake with no
-   * scheduler at all behind it, and it is the shape every `flows/repository`
+   * scheduler at all behind it, and it is the shape every `.smithers/flows/repository`
    * job has: `Investigate.child`, `PublishReply.child`, `AwaitReply.child`.
    */
   it("re-drives a run whose child execution settled, exactly once", async () => {

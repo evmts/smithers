@@ -510,7 +510,7 @@ reset time (no clock on `waitingReason`).
 
 **Issue burndown (#3336).** `/issue-sweep` (`flows/entries/issue.ts`) is the
 app's typed entry for the repository's `issue-sweep` flow
-(`flows/issue-sweep/flow.ts`, featured in `.smithers/FACTORY.ts`); its name
+(`.smithers/flows/issue-sweep/flow.ts`, featured in `.smithers/FACTORY.ts`); its name
 equals the repository leaf, so the slash, the featured button and the agent
 resolve it. It takes `<agents> [local|vm] [attempt=<n>] [owner/repo]`; without
 the width it runs on the flow's default (no form), and the agent's call confirms. Its run card's

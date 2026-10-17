@@ -124,7 +124,7 @@ const toolchainPins = Smithers.NodeTest({
     Smithers.file("//.node-version"),
     Smithers.file("//rust-toolchain.toml"),
     Smithers.file("//PACKAGE.ts"),
-    Smithers.file("//.smithers/ci/cloud.sh")
+    Smithers.file("//.github/scripts/ci/cloud.sh")
   ],
   deps: [workflowSources]
 })
@@ -143,7 +143,7 @@ const effectVersion = Smithers.NodeTest({
   summary: "Exactly one effect version resolves across every manifest and both lockfiles.",
   featured: true,
   runner: Smithers.entrypoint(Smithers.file("//packages/repo-targets/contracts/check-single-effect-version.mjs")),
-  srcs: [...contracts, Smithers.file("//flows/release/pack-release.mjs"), Smithers.file("//pnpm-lock.yaml"), Smithers.file("//bun.lock")],
+  srcs: [...contracts, Smithers.file("//.smithers/flows/release/pack-release.mjs"), Smithers.file("//pnpm-lock.yaml"), Smithers.file("//bun.lock")],
   deps: []
 })
 
@@ -162,10 +162,10 @@ const releaseContracts = Smithers.NodeTest({
   ]),
   srcs: [
     ...contracts,
-    Smithers.file("//flows/release/pack-release.mjs"),
+    Smithers.file("//.smithers/flows/release/pack-release.mjs"),
     Smithers.file("//packages/repo-targets/contracts/check-dependency-boundaries.mjs"),
-    Smithers.file("//flows/release/fixtures/installed-consumer/consumer-boundary.mjs"),
-    Smithers.file("//flows/release/fixtures/installed-consumer/dependency-adapters.mjs"),
+    Smithers.file("//.smithers/flows/release/fixtures/installed-consumer/consumer-boundary.mjs"),
+    Smithers.file("//.smithers/flows/release/fixtures/installed-consumer/dependency-adapters.mjs"),
     Smithers.file("//packages/repo-targets/scripts/private-effect-adapters.mjs"),
     Smithers.file("//.pnpmfile.mjs")
   ],
@@ -226,10 +226,10 @@ const driftJob = Smithers.NodeTest({
     Smithers.file("//.github/workflows/trusted-setup-validation.yml"),
     Smithers.file("//PACKAGE.ts"),
     Smithers.file("//package.json"),
-    Smithers.file("//flows/release/check-api-baseline.mjs"),
-    Smithers.file("//flows/PACKAGE.ts"),
-    Smithers.file("//flows/land/engineering-gate-environment.mjs"),
-    Smithers.file("//flows/checks/coding-check.sh"),
+    Smithers.file("//.smithers/flows/release/check-api-baseline.mjs"),
+    Smithers.file("//.smithers/flows/PACKAGE.ts"),
+    Smithers.file("//.smithers/flows/land/engineering-gate-environment.mjs"),
+    Smithers.file("//.smithers/flows/checks/coding-check.sh"),
     Smithers.file("//.github/workflows/drift.yml"),
     Smithers.file("//.github/workflows/ci.yml")
   ],
@@ -384,7 +384,7 @@ const uiCiTier = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//packages/repo-targets/contracts/ui-ci-tier.test.mjs")]),
   srcs: [
     ...contracts,
-    Smithers.file("//flows/release/release-rehearsal.mjs"),
+    Smithers.file("//.smithers/flows/release/release-rehearsal.mjs"),
     Smithers.file("//.github/workflows/ci.yml"),
     Smithers.file("//apps/app/PACKAGE.ts"),
     Smithers.file("//apps/app/scripts/run-pr-e2e.mjs"),
@@ -405,7 +405,7 @@ const uiCiTier = Smithers.NodeTest({
  */
 const reliabilityWorkflow = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//packages/repo-targets/contracts/reliability-workflow.test.mjs")]),
-  srcs: [...contracts, Smithers.file("//flows/release/release-rehearsal.mjs"), Smithers.file("//.github/workflows/reliability.yml")],
+  srcs: [...contracts, Smithers.file("//.smithers/flows/release/release-rehearsal.mjs"), Smithers.file("//.github/workflows/reliability.yml")],
   deps: []
 })
 
@@ -590,7 +590,7 @@ const testScriptWiring = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//packages/repo-targets/contracts/test-script-wiring.test.mjs")]),
   srcs: [
     ...contracts,
-    Smithers.file("//flows/release/release-rehearsal.mjs"),
+    Smithers.file("//.smithers/flows/release/release-rehearsal.mjs"),
     Smithers.file("//PACKAGE.ts"),
     Smithers.file("//.smithers/target-index.json"),
     Smithers.file("//.github/workflows/ci.yml"),

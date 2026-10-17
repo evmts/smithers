@@ -1,7 +1,7 @@
 import { afterAll, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { checkBootstrapCompatibility } from "./bootstrapCompatibility"
-import { PublicationRefusal, rollout, type RolloutReceipt } from "../../../flows/rollout/runtime.ts"
+import { PublicationRefusal, rollout, type RolloutReceipt } from "../../../.smithers/flows/rollout/runtime.ts"
 
 const bootstrap = {
   apiVersion: 1, host: "cloud", version: "1", buildSha: "b".repeat(40),

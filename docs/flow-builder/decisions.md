@@ -584,7 +584,7 @@ measurements per page rather than one per item.
 The original ruling kept nodes and incoming edges together and refused any
 node that could not fit alone. Review 3 measured what that costs: a flat
 `Node.all` was accepted at 130 members and refused at 140 under the in-memory
-measure, lower on a durable host, while `flows/wiki/workflow.ts:66` fans out
+measure, lower on a durable host, while `.smithers/flows/wiki/workflow.ts:66` fans out
 over `input.pages` — a caller-sized width. A plan-time refusal that depends on
 the caller's input size is not a bound anyone can design against, so the width
 is paged instead. `InterpreterError {code: "node_record_too_large"}` is left
@@ -751,7 +751,7 @@ real git repositories), `NativeControlPlan.test.ts` (a plan and the run it
 launched name the same revision on one host, and neither names one when a write
 lands while the catalog is being read),
 `engine-store/test/InterpreterNodeJournal.test.ts` and
-`flows/test/SourceRevisionOption.test.ts` (every recorded page carries it,
+`.smithers/flows/test/SourceRevisionOption.test.ts` (every recorded page carries it,
 including one a reader answered only after the runtime was built),
 `state/controller/graph.test.ts` (an edited working tree does not change what an
 old plan shows), `e2e/graph/lifecycle/gateway.test.ts` (the route answers a
@@ -907,14 +907,14 @@ builder's edit step, and the second case in `FlowCatalogRefresh.test.ts` is
 it: an entry file on disk before the host starts, rewritten by a run to name
 a different delegate, re-planned and run.
 
-`flows/coding/host.ts` gets it too, which matters because that is the box the
+`.smithers/flows/coding/host.ts` gets it too, which matters because that is the box the
 product runs on: it serves `create-flow`, so it is where an agent's
 `flows/<id>/flow.ts` actually lands. It assembles its catalog itself — the
 repository's own tree with the verified loader, the reserved job declarations
 out of the measured bundle it shipped as — so it serves that catalog through
 `Executable.layerRefreshable` and names which half may be rebuilt.
-`refreshableEntry` in `flows/repository/registry.ts` is that rule, shared with
-`flows/test/coding-catalog-refresh.test.ts` rather than restated there: a
+`refreshableEntry` in `.smithers/flows/repository/registry.ts` is that rule, shared with
+`.smithers/flows/test/coding-catalog-refresh.test.ts` rather than restated there: a
 reserved declaration is held `Fixed`, because a run this host is serving can
 write anything into the tree and must not be able to replace an admitted
 declaration by doing so.
@@ -983,7 +983,7 @@ no suite caught it because the compositions in the tree hand the loader a
 `load` of their own (`flows/librarian/host.ts`) or a stand-in
 (`NativeControlPlan.test.ts`, `fixtures/native-control-portable.ts`). And every
 refresh, on every host, since a refresh runs in the registration layer's
-context — including `flows/coding/host.ts`, which escapes the first case only
+context — including `.smithers/flows/coding/host.ts`, which escapes the first case only
 by building its catalog under the trusted filesystem before registration and
 says so at that call site.
 
@@ -1001,7 +1001,7 @@ go in this lane, and the reason is not effort.
 
 Discovery does not admit the file the fixture authors. `AuthoringFixture`
 writes a `@smthrs/flow` `Flow.make("authoring-demo", { body })` under a NAMED
-export — a shape close to what `flows/create-flow/scaffold/flow.mdx` tells an
+export — a shape close to what `.smithers/flows/create-flow/scaffold/flow.mdx` tells an
 author to write. Two shapes, two different failures, both measured against a
 real scan and `Executable.catalog`. The fixture's exact form returns NO
 descriptor at all: discovery warns `missing_description` and
@@ -1041,7 +1041,7 @@ just be an ergonomic wrapper around" the low-level flow. They were siblings.
 Discovery and `Executable.loadModule` admitted one shape — a `@smthrs/core`
 `Flow.make({ description, input, output, flows, effects })` default export (historical constructor; now a plain record checked with `satisfies FlowBinding.Declared`),
 whose whole lowering is ONE node delegating to a flow the host registered —
-while `flows/create-flow/scaffold/flow.mdx` told an authoring agent to write a
+while `.smithers/flows/create-flow/scaffold/flow.mdx` told an authoring agent to write a
 `@smthrs/flow` `Flow.make("<tag>", { payload, success, body })` graph at
 `flows/<name>/flow.ts`, which the repository could not see. D-075 measured
 both failures. This is the minimal bridge that closes them, and it is a bridge
@@ -1084,8 +1084,8 @@ is recorded rather than hidden: a module whose bytes are unreadable is now
 reported `body_unavailable` before a delegate is named, because the file is
 what says whether one is wanted.
 
-`flows/create-flow/scaffold/flow.mdx` now shows one complete entry file and
-`flows/test/create-flow-scaffold-conformance.test.ts` takes that example out
+`.smithers/flows/create-flow/scaffold/flow.mdx` now shows one complete entry file and
+`.smithers/flows/test/create-flow-scaffold-conformance.test.ts` takes that example out
 of the document, writes it as a project's flow, and drives discovery, the
 executable and the plan over it. The instructions and the loader cannot drift
 apart without that test failing, in either direction.
@@ -1101,7 +1101,7 @@ the registration a host has, not deleting three lines, and it is written down
 at the wrapper, in `e2e/graph/README.md` and in the manual walk rather than
 left to be rediscovered. What is still unproven in a BROWSER is a client
 walking an agent-authored graph through the production registry; what is
-proven without one is `flows/test/create-flow-scaffold-conformance.test.ts`
+proven without one is `.smithers/flows/test/create-flow-scaffold-conformance.test.ts`
 and the registry suite, over a real scan and a real plan.
 
 Three residuals, named rather than left to be discovered.
@@ -1166,7 +1166,7 @@ The rebuild is now `Application.Config.rebuildAuthoredFlows`, OFF unless a
 composition asks for it, and the default is the trust statement: turn it on
 for a host whose runs you would let run arbitrary code anyway — a fixture, a
 disposable box, a sandbox — and not for a host holding credentials a run must
-not reach. `flows/coding/host.ts` therefore keeps its startup snapshot; its
+not reach. `.smithers/flows/coding/host.ts` therefore keeps its startup snapshot; its
 catalog is still `layerRefreshable`, so the seam is there for an operator who
 turns it on, and nothing calls it until one does.
 
@@ -1226,7 +1226,7 @@ one place is a wording change with no behaviour in it, which is why it was not
 carried over here rather than why it should not be.
 
 A conformance test over the scaffold's own example.
-`flows/create-flow/scaffold/flow.mdx` tells an authoring agent exactly what to
+`.smithers/flows/create-flow/scaffold/flow.mdx` tells an authoring agent exactly what to
 write, and nothing on `main` lifts that example out of the document and drives
 discovery, the executable and the plan over it. The instructions and the
 loader can drift apart silently again, which is the defect D-075 measured in
@@ -1314,7 +1314,7 @@ check `AgentSession.approvedModule` makes before it dispatches a module flow.
 Nothing is registered on an authored flow's behalf.
 
 What the author writes. A `@smthrs/flow` GRAPH file in the shape
-`flows/create-flow/scaffold/flow.mdx` teaches: one default-exported flow
+`.smithers/flows/create-flow/scaffold/flow.mdx` teaches: one default-exported flow
 stating its `description`, `payload`, `success` and `capabilities` literally,
 dispatching actions the host resolves by name, importing nothing but bare
 specifiers. It is measured, loaded and registered by the same code a deployed

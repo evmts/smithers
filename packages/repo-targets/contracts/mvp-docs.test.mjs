@@ -346,7 +346,7 @@ test("product index preserves every decision cited by source", () => {
   const rows = new Set([...index.matchAll(/^\| (D-\d+[a-z]?)(?: |\()/gm)].map((match) => match[1]))
   for (const id of ["D-09a", "D-16", "D-25"]) assert.ok(rows.has(id), id)
   const missing = new Set()
-  for (const tree of ["apps", "packages", "flows"]) for (const file of scanFiles(join(root, tree))) {
+  for (const tree of ["apps", "packages", ".smithers/flows"]) for (const file of scanFiles(join(root, tree))) {
     for (const [id] of readFileSync(file, "utf8").matchAll(/\bD-\d{2}[a-z]?\b/g)) if (!rows.has(id)) missing.add(id)
   }
   assert.deepEqual([...missing].sort(), [])

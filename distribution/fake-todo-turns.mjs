@@ -95,7 +95,7 @@ export const subject = "📝 docs: add a greeting to JOURNEY.md"
  *   Resolving is the default.
  * - `[FILE path]`: the edit appends to path instead of JOURNEY.md, so TODOs
  *   that run in parallel touch different files.
- * - `[FLOWEDIT]`: the edit writes only flows/todo/flow.ts: the built-in TODO
+ * - `[FLOWEDIT]`: the edit writes only .smithers/flows/todo/flow.ts: the built-in TODO
  *   composition plus a changelog step (CHANGELOG_STEP), which asks each
  *   TODO it runs for `[CHANGELOG]`.
  * - `[CHANGELOG]`: the edit also appends one line to CHANGELOG.md.
@@ -149,9 +149,9 @@ const intentMarkers = (markers, answer) =>
 /** The changelog step a `[FLOWEDIT]` flow adds to every TODO's request. */
 export const CHANGELOG_STEP = "[CHANGELOG] Add one line for this change to CHANGELOG.md."
 
-/** The built-in TODO composition (flows/todo/flow.ts) whose request also asks for the changelog step. */
+/** The built-in TODO composition (.smithers/flows/todo/flow.ts) whose request also asks for the changelog step. */
 const editedFlow = () => {
-  const source = readFileSync(new URL("../flows/todo/flow.ts", import.meta.url), "utf8")
+  const source = readFileSync(new URL("../.smithers/flows/todo/flow.ts", import.meta.url), "utf8")
   const edited = source.replace("Request.call(input)", `Request.call({ ...input, prompt: \`\${input.prompt}\\n\\n${CHANGELOG_STEP}\` })`)
   if (edited === source) throw new Error("TODO composition has no Request.call(input) to edit")
   return edited
@@ -209,8 +209,8 @@ const editCell = (hosted, greeting) => {
     lines.push('await put(".outside-note-uid", identity.stdout);')
   }
   if (markers.flowedit) {
-    lines.push(`await put("flows/todo/flow.ts", ${JSON.stringify(editedFlow())});`)
-    writes.push("flows/todo/flow.ts")
+    lines.push(`await put(".smithers/flows/todo/flow.ts", ${JSON.stringify(editedFlow())});`)
+    writes.push(".smithers/flows/todo/flow.ts")
   } else {
     lines.push(`await append(${JSON.stringify(file)}, ${JSON.stringify(line)});`)
     writes.push(file)
@@ -277,7 +277,7 @@ const steps = [
       const required = (context.checks ?? []).filter((check) => check.required).map((check) => check.id)
       const markers = markersOf(requestOf(payload))
       const file = markers.file ?? "JOURNEY.md"
-      const writes = markers.flowedit ? ["flows/todo/flow.ts"] : [file]
+      const writes = markers.flowedit ? [".smithers/flows/todo/flow.ts"] : [file]
       if (markers.changelog) writes.push("CHANGELOG.md")
       if (markers.observeuid) writes.push(".outside-note-uid")
       if ((markers.fail || markers.failonce) && !writes.includes("JOURNEY.md")) writes.push("JOURNEY.md")
@@ -336,7 +336,7 @@ const steps = [
     answer: () => done({ verdict: "approve", findings: [] })
   },
   {
-    // The stack's review of a TODO's open pull request (flows/review/change):
+    // The stack's review of a TODO's open pull request (.smithers/flows/review/change):
     // its answer's first line is the verdict the stack reads.
     step: "review/change",
     teaching: "Your answer's first line is exactly `approve` or `request-changes`",
@@ -359,12 +359,12 @@ export const GREETING = "Hello from Smithers!"
 /** Every system message of a turn, joined. */
 export const systemOf = (messages) => messages.filter((message) => message?.role === "system").map((message) => text(message.content)).join("\n")
 
-/** The source link a wiki page writes: `](../sources/<path>#L<line>)` (flows/wiki/operations.ts). */
+/** The source link a wiki page writes: `](../sources/<path>#L<line>)` (.smithers/flows/wiki/operations.ts). */
 const sourceLink = /\]\(\.\.\/sources\/([A-Za-z0-9_./@-]+)#L([1-9][0-9]*)\)/g
 
 /**
  * A source's visible lines as the review evidence numbers them (`<n> | <text>`,
- * flows/wiki/evidence.ts), each with the quote a citation may carry: the
+ * .smithers/flows/wiki/evidence.ts), each with the quote a citation may carry: the
  * line's first nonblank run between carriage returns, trimmed. Blank lines
  * carry none.
  */
@@ -376,8 +376,8 @@ const visibleLines = (source) =>
   })
 
 /**
- * The install's wiki review (flows/wiki/workflow.ts ReviewPage). Its task
- * carries the page's review evidence (flows/wiki/evidence.ts reviewEvidence):
+ * The install's wiki review (.smithers/flows/wiki/workflow.ts ReviewPage). Its task
+ * carries the page's review evidence (.smithers/flows/wiki/evidence.ts reviewEvidence):
  * the spec, the heading sections and each source's visible lines. A section is
  * supported by exact visible lines, and a current page never by its own
  * document alone:

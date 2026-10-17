@@ -112,7 +112,7 @@ func TestLearningFiveMergeProposalComposedInstall(t *testing.T) {
 		saved, _ := json.Marshal(cp)
 		_, err = pool.Exec(ctx, `UPDATE product_job_dispatches SET external_receipt=$2 WHERE operation_id=$1`, admitted.OperationID, saved)
 		require.NoError(t, err)
-		script, err := filepath.Abs("../../../../flows/test/fixtures/learning-extraction.ts")
+		script, err := filepath.Abs("../../../../.smithers/flows/test/fixtures/learning-extraction.ts")
 		require.NoError(t, err)
 		command := exec.CommandContext(ctx, "node", "--experimental-strip-types", script, server.URL, host, run, fmt.Sprint(n))
 		command.Env = append(os.Environ(), "SMITHERS_LEARNING_TEST_CREDENTIAL="+bearer)

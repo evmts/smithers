@@ -342,7 +342,7 @@ func realHostFixtureFor(t *testing.T) realHostFixture {
 	require.Len(t, revision, 40)
 
 	artifact := filepath.Join(t.TempDir(), "smithers-coding-host")
-	build := exec.Command(node, "flows/coding/build.mjs", artifact)
+	build := exec.Command(node, ".smithers/flows/coding/build.mjs", artifact)
 	build.Dir = repositoryRoot
 	output, err := build.CombinedOutput()
 	require.NoError(t, err, string(output))

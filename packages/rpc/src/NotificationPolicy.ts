@@ -49,7 +49,7 @@ export const NOTIFICATION_POLICY_EVENT = "notification.route"
 
 /**
  * The tag of the example policy flow this repository ships
- * (`flows/notification-policy/flow.ts`), and the tag of the action that
+ * (`.smithers/flows/notification-policy/flow.ts`), and the tag of the action that
  * decides inside it. A repository may declare any flow id; these name the one
  * a repository can copy.
  *

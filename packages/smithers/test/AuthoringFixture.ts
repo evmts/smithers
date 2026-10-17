@@ -5,7 +5,7 @@
  * The author is scripted — no provider is involved — and everything under it
  * is the production path: the write goes through the engine's workspace
  * sandbox and copy-back, the file it lands on is a `@smthrs/flow` GRAPH file
- * shaped the way `flows/create-flow/scaffold/flow.mdx` teaches an authoring
+ * shaped the way `.smithers/flows/create-flow/scaffold/flow.mdx` teaches an authoring
  * agent to write one, and nothing here registers the flow that file declares.
  * The host discovers it, `@smthrs/registry` `Executable` loads it, and
  * `Executable.Refresh` registers the rebuilt body while the host serves

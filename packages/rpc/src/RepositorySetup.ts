@@ -125,7 +125,7 @@ export const SetupEvalCaseSchema = z.object({
 export const SetupChoreEventSchema = z.enum(["none", "push", "labeled"])
 /**
  * What one unattended run may spend, as the host's registrar bounds it
- * (`flows/repository/inspection.ts` `deploymentTokens`). `budgetMinutes` below
+ * (`.smithers/flows/repository/inspection.ts` `deploymentTokens`). `budgetMinutes` below
  * bounds the same run's time at the same deployment's `deploymentMinutes`, and
  * a job registered past either one is refused where it runs, so both hosts
  * hold a person to the pair before anything is written.

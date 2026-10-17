@@ -29,7 +29,7 @@ func TestJ11NativeMergedSettlement(t *testing.T) {
 	}
 	r := newRehearsal(t, "SMITHERS_J11_NATIVE_SETTLEMENT", "C-J11-01", "j11-settlement-")
 	require.True(t, r.install("Install"))
-	source, err := os.ReadFile(filepath.Join(r.root, "flows/todo/flow.ts"))
+	source, err := os.ReadFile(filepath.Join(r.root, ".smithers/flows/todo/flow.ts"))
 	require.NoError(t, err)
 	activateMonitorOverride(t, r, string(source))
 	n, err := r.file("Retained native run", "[FILE settled.md] Add a greeting to settled.md")

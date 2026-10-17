@@ -37,7 +37,7 @@ import ts from "typescript"
 import { repoRoot as root } from "../scripts/workspace-packages.mjs"
 
 /** The trees that hold shipped source. `scripts/` is absent on purpose: this file names the banned spelling. */
-const scanned = ["packages", "apps", "flows"]
+const scanned = ["packages", "apps", ".smithers/flows"]
 
 /**
  * Directory names that hold no shipped source wherever they appear, or hold a
@@ -196,7 +196,7 @@ describe("the outbound HTTP client shipped compositions install", () => {
     for (const path of [
       "packages/smithers/build/build-cli/src/internal/rules/FetchExecutor.ts",
       "packages/smithers/src/internal/NodeControlHost.ts",
-      "flows/repository/jev-checks.ts",
+      ".smithers/flows/repository/jev-checks.ts",
       "apps/app/src/bun/BrowserFetch.ts"
     ]) {
       assert.ok(found.includes(path), `${path} is shipped source this gate never read`)

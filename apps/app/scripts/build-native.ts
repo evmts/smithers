@@ -261,7 +261,7 @@ await run(
   "canonical coding host",
   [
     nodeBinary,
-    "flows/coding/build.mjs",
+    ".smithers/flows/coding/build.mjs",
     codingHost
   ],
   root,

@@ -3,7 +3,7 @@ import { traceFromJournal, type JournalRecord } from "./RunTrace"
 import { traceStatus, traceGoals } from "./RunTraceStatus"
 import { CODING_PLAN } from "./fixtures/CodingPlan"
 import { codingDecision, preparedCodingJournal } from "./fixtures/CodingJournal"
-import { checkInputDigest, Receipt } from "../../../../../flows/coding/schema"
+import { checkInputDigest, Receipt } from "../../../../../.smithers/flows/coding/schema"
 import { Schema } from "effect"
 
 const event = (sequence: number, kind: string, payload: Record<string, unknown> = {}): JournalRecord =>

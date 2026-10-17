@@ -65,7 +65,7 @@ export const homePath = /(?:\/Users|\/home)\/[A-Za-z0-9_][A-Za-z0-9._-]*|(?<=^|[
 const suites = [
   "packages/smithers/agent/regression",
   "packages/smithers/agent/harness/benchmarks",
-  "flows/review/seeded-bugs",
+  ".smithers/flows/review/seeded-bugs",
   "packages/backend/modelhost/recommend-eval"
 ]
 const scanned = ["evals", "scripts", ...suites, "packages/*/test/faults/*"]

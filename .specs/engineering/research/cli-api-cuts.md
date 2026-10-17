@@ -52,14 +52,14 @@ Verdicts follow §8 plus AGENTS.md ("libraries stay published; cut = product sur
 | packages/rpc | Shared TS API/bootstrap types | Keep |
 | packages/errors, repo-targets, testing, smthrs-deprecation | Support libs | Keep |
 | flows/ (27 dirs) | Repository flows, see flow rows below | Mixed |
-| flows/coding | The coding flow (planning, implementation, landing) | Keep: base of the TODO flow |
-| flows/review (+ review/src) | `/review` flow | Keep (reviews its own work); outside-PR use Defer |
-| flows/wiki, memory, notes | Wiki refresh, agent memory, notes | Keep (wiki, J8) |
-| flows/issue, issue-triage, pr-triage | Issue repro/triage, PR triage | Defer (§14), hide |
-| flows/repository (setup/ci/checks/activation) , register-repository | Five-job setup executor; repository registration/review | Cut (five-job UI, CI checks, registration) |
-| flows/checks | Affected lint/test/bundle drift checks (internal CI) | Keep (our own CI; not product) |
-| flows/issue-sweep | Our burndown/sweep ops flow | Cut from product (§8); keep as internal ops until dogfood replaces it |
-| flows/rollout, release, release-content, release-notes, release-support, security-audit, wrapped, lint, docs, create-flow, create-skill, invoke, migrate-smithers-v1 | Release/ops/authoring flows | Keep internal; `create-flow`/`create-skill` Keep (J5 "teach the factory"); `wrapped` Cut? (marketing, inferred) |
+| .smithers/flows/coding | The coding flow (planning, implementation, landing) | Keep: base of the TODO flow |
+| .smithers/flows/review (+ review/src) | `/review` flow | Keep (reviews its own work); outside-PR use Defer |
+| .smithers/flows/wiki, memory, notes | Wiki refresh, agent memory, notes | Keep (wiki, J8) |
+| .smithers/flows/issue, issue-triage, pr-triage | Issue repro/triage, PR triage | Defer (§14), hide |
+| .smithers/flows/repository (setup/ci/checks/activation) , register-repository | Five-job setup executor; repository registration/review | Cut (five-job UI, CI checks, registration) |
+| .smithers/flows/checks | Affected lint/test/bundle drift checks (internal CI) | Keep (our own CI; not product) |
+| .smithers/flows/issue-sweep | Our burndown/sweep ops flow | Cut from product (§8); keep as internal ops until dogfood replaces it |
+| .smithers/flows/rollout, release, release-content, release-notes, release-support, security-audit, wrapped, lint, docs, create-flow, create-skill, invoke, migrate-smithers-v1 | Release/ops/authoring flows | Keep internal; `create-flow`/`create-skill` Keep (J5 "teach the factory"); `wrapped` Cut? (marketing, inferred) |
 | factory/ (flows, queue, wiki) | Our internal factory flows (slop-sweep, smoke, coverage) + wiki pages | Keep internal |
 | adapters, agentic, approvals, chat, artifacts (each 1-2 .tsx) | Shared UI components for custom flow UIs (MarkdownEditor, ActivityTimeline, Checkpoint, ...) | Keep (smithers skill names these as shared components) |
 | claims, dispatch/claims | Issue-claim lockfiles (`dispatch/claims/smithers-2768.txt`) | Hide/ignore: working clutter; `claims/` empty |
@@ -77,18 +77,18 @@ Surfaces are non-app; app surfaces belong to the other lane. Paths from `rg` evi
 
 | §8 row | Decision | Non-app surfaces |
 | --- | --- | --- |
-| Five-job setup UI, CI/Feature/Chores jobs | Cut | flows: `flows/repository/*` (activation, checks, ci-p..., setup.ts), `flows/register-repository`; backend: `internal/services/repository_setup.go`, `internal/compose/repository_setup.go`, `/api/repository-setup/{operation}`, `/api/gateways/{hostID}/repository-jobs/*` (5 paths) + `/api/repos/.../repository-jobs` (4) ; apps/server `src/repositorySetup.ts`?(inferred); docs: `docs/mvp/ENGINEERING.md`, `docs/mvp/implementation/*`, `docs/mvp/mockups`. KEEP per §8 note: event admission, dispatch, reproduction, review, approvals (do not delete `repository-jobs` gateway paths that admission uses without a check; inferred). Conflicts with AGENTS.md "retain all five maintenance jobs". |
-| Auto triage/duplicate/repro/replies | Defer (§14) | flows: `flows/issue-triage`, `flows/issue/{poc,repro}`, `flows/pr-triage`; hide only, no CLI command found (`history *` shows lanes) |
-| Review of outside PRs | Defer | `flows/review`, `flows/pr-triage`; CLI `smthrs review`, `smthrs land review`; keep for own-work review |
+| Five-job setup UI, CI/Feature/Chores jobs | Cut | flows: `.smithers/flows/repository/*` (activation, checks, ci-p..., setup.ts), `flows/register-repository`; backend: `internal/services/repository_setup.go`, `internal/compose/repository_setup.go`, `/api/repository-setup/{operation}`, `/api/gateways/{hostID}/repository-jobs/*` (5 paths) + `/api/repos/.../repository-jobs` (4) ; apps/server `src/repositorySetup.ts`?(inferred); docs: `docs/mvp/ENGINEERING.md`, `docs/mvp/implementation/*`, `docs/mvp/mockups`. KEEP per §8 note: event admission, dispatch, reproduction, review, approvals (do not delete `repository-jobs` gateway paths that admission uses without a check; inferred). Conflicts with AGENTS.md "retain all five maintenance jobs". |
+| Auto triage/duplicate/repro/replies | Defer (§14) | flows: `.smithers/flows/issue-triage`, `.smithers/flows/issue/{poc,repro}`, `.smithers/flows/pr-triage`; hide only, no CLI command found (`history *` shows lanes) |
+| Review of outside PRs | Defer | `.smithers/flows/review`, `.smithers/flows/pr-triage`; CLI `smthrs review`, `smthrs land review`; keep for own-work review |
 | Contributor trust rules | Keep | backend `internal/middleware/run_credential.go`, `docs/run-credentials.md`, `apps/server/PUBLIC-REPOSITORIES.md`, `packages/smithers` approval commands |
-| CI setup, AI checks, CI matrix | Cut | flows `flows/repository/{ci,checks,check-context,check-receipt}*`, `flows/checks` (internal CI: keep); backend `/api/gateways/.../ci/check-receipts/*`, `land checks` CLI (`land checks` stays: GitHub checks display). NOT `smthrs ci` (build-system verb). |
+| CI setup, AI checks, CI matrix | Cut | flows `.smithers/flows/repository/{ci,checks,check-context,check-receipt}*`, `.smithers/flows/checks` (internal CI: keep); backend `/api/gateways/.../ci/check-receipts/*`, `land checks` CLI (`land checks` stays: GitHub checks display). NOT `smthrs ci` (build-system verb). |
 | Dispatcher screen, chores | Cut screen; keep engine | CLI `smthrs triggers` (Advanced `/triggers`), `workflow dispatch` -> `flow ... dispatch` (Keep); backend `flowdispatch/`, `internal/services/*dispatch*` (keep running) |
 | Repository registration and admin review | Cut | flows `flows/register-repository`; backend `internal/compose/registration_review.go`, `registration_report.go`, `/api/admin/repos`; CLI `repo report`; docs `docs/mvp/REGISTRATION.md` |
 | Cloud hosting, billing, balance, plans, checkout | Defer | backend `commerce/`, `credits/`, `internal/services/billing_composition.go`, `/api/billing*` (7), `/api/admin/grant`; CLI: no `billing` command (grep of Definitions); `smthrs admin` credit grant; `packages/smithers/src/Cloud{Sandbox,Session}.ts`, `smthrs environment` Cloud location (keep: shared execution); site `apps/site/src/pages/{pricing.astro,refunds.md,terms.md}`; `distribution/` cloud deploy |
 | Admin console | Cut | CLI `smthrs admin *` (about 37 definitions: alerts, analytics, audit, deploys, health, runs, sessions, tokens, user, users, workspaces); backend `/api/admin/*` (22); keep an owner-only subset only if self-host ops need it (inferred: `admin health/status`) |
 | Signup poll, first-run checklist, tiles, practice repo | Cut | app mostly; backend `/api/recommend*`, `/api/feature-flags`; `apps/app/...SetupChecklist` (app lane) |
 | Repo switching / multi-repo | Defer | CLI `repo list/connect/create/delete/...` keep (J1 needs `repo connect`); org/team: `smthrs org *` (~17 definitions), `/api/orgs` (20) hide |
-| Issue-sweep / burndown | Cut | `flows/issue-sweep/*`, `examples/burndown`, `factory/flows/slop-sweep.ts`? (inferred internal), `docs/blog/building-burndown-notes.md`, `/api/admin/...` no |
+| Issue-sweep / burndown | Cut | `.smithers/flows/issue-sweep/*`, `examples/burndown`, `factory/flows/slop-sweep.ts`? (inferred internal), `docs/blog/building-burndown-notes.md`, `/api/admin/...` no |
 | Cloud agent sessions outside TODOs | Cut | CLI `agent session *`, `agent run/chat/list/view`, `agent ask`; backend `/api/agent/turn*`, `/api/agent/conversations*`, `/api/repos/.../agent-sessions`, `/api/admin/agent-sessions`; `internal/backend/{AgentDocs,Session}.ts` (`agent ask` is a local docs lookup: Keep) |
 | Subagent grid | Cut | app only (`subagents` user-only entry in `entries/agent.ts`) |
 | Branch locks | Cut | backend `docs/branch-locks.md`, 5 paths `/api/repos/.../branch-locks*`, `internal/pkg/errors` codes, `db/ownership.csv`, `rpc/PlueFailureCodes.ts`, `ProductApi.ts` client calls |
@@ -122,7 +122,7 @@ Surfaces are non-app; app surfaces belong to the other lane. Paths from `rg` evi
 - CLI: `packages/smithers/test/OneCli.test.ts` (group summaries, single tree), `CommandFlagParity.test.ts` (bridged flags), `McpDocs.test.ts` (docs names vs `Mcp.collectTools`), `SkillsInstall.test.ts`, `UnifiedMcp.test.ts`, `Backend*.test.ts` (about 25 files), `Agents.test.ts`.
 - App catalog: `apps/app/src/mainview/flows/{agent-parity,parity,parity-hosts,registry,invocable,requirements,SharedOperations,namespaces}.test.ts`.
 - API: `packages/backend/internal/compose/openapi_conformance_test.go` (served routes == spec), `docs/api/openapi_test.go`, `openapi_opaque_body_test.go`, `scripts/check-api-baseline.mjs`, `internal/middleware/run_credential*_test.go` (inferred names), `internal/routes/command_selection_test.go`.
-- Docs: `pnpm docs:check` (modelprice, llms, sites, content drift), `smthrs docs //pkg:docs`, `flows/pack.test.mjs`.
+- Docs: `pnpm docs:check` (modelprice, llms, sites, content drift), `smthrs docs //pkg:docs`, `.smithers/flows/pack.test.mjs`.
 - Missing: any Appendix A test; any "Cut surface absent" test (suggest: deny-list of route/command names).
 
 ## Related GitHub issues

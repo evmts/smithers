@@ -5,14 +5,14 @@ import type { PlueFault } from "@smthrs/rpc/Refusal"
 import { RECEIPT_CODES, type RunFault, runFailure, runFailureOf, SETUP_REFUSAL_COPY, SETUP_REFUSALS, setupFailureSentence, setupVerdict } from "./RunFailure"
 import { REFUSAL_COPY } from "@smthrs/rpc/RefusalCopy"
 import * as Fault from "@smthrs/flow/Fault"
-import { CodingError } from "../../../../../flows/coding/schema.ts"
+import { CodingError } from "../../../../../.smithers/flows/coding/schema.ts"
 import { runCause } from "./RunCause"
 
 const INFRA = "Something on Smithers' side failed. Not your fault, and nothing your request could have changed."
 // Formatting may wrap the call, but the emitted argument must remain exact.
 const invalidCall = (argument: string): RegExp =>
   new RegExp(`\\binvalid\\(\\s*${argument.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\)`)
-/* One of the sentences flows/repository/triggers.ts refuses a registration with. */
+/* One of the sentences .smithers/flows/repository/triggers.ts refuses a registration with. */
 const REFUSAL = 'Add a model to "nightly-lint" to schedule it.'
 const VERDICT = `failed — invalid_receipt: ${REFUSAL}`
 const journal = (cause: string, fault?: { class: string; tag: string }) =>
@@ -33,7 +33,7 @@ test("coded errors use the shared refusal table without interpreting raw prose",
 })
 
 test("only the registrar's own refusal is the person's input; every other flow's invalid_receipt stays Smithers'", () => {
-  const cause = `invalid_receipt: ${REFUSAL}\n    at repository/trigger (flows/repository/triggers.ts:20)`
+  const cause = `invalid_receipt: ${REFUSAL}\n    at repository/trigger (.smithers/flows/repository/triggers.ts:20)`
   expect(runFailureOf({ workflow: "repository/trigger", error: VERDICT, events: journal(cause) }))
     .toEqual({ fault: "user", message: REFUSAL, detail: `invalid_receipt: ${REFUSAL}` })
   for (const [workflow, engine] of [
@@ -67,9 +67,9 @@ test("a registrar failure the registrar did not refuse keeps the verdict and the
  * (.artifacts/mvp-canary-walk-20260917/B-18-state-trial-terminal.json, receipt run-3). */
 const TRIAL = "Run evals for this exact candidate before continuing"
 const TRIAL_VERDICT = `failed — invalid_receipt: ${TRIAL}`
-/* flows/repository/setup.ts refuses a request whose revision moved on. */
+/* .smithers/flows/repository/setup.ts refuses a request whose revision moved on. */
 const STALE = "Setup input must match the current setup revision"
-const setupCause = (sentence: string) => journal(`invalid_receipt: ${sentence}\n    at repository/Setup (flows/repository/receipts.ts:109)`)
+const setupCause = (sentence: string) => journal(`invalid_receipt: ${sentence}\n    at repository/Setup (.smithers/flows/repository/receipts.ts:109)`)
 
 test("a setup refusal the person must answer is the person's, headline and all", () => {
   expect(runFailureOf({ workflow: "repository/setup", error: TRIAL_VERDICT, events: setupCause(TRIAL) }))
@@ -209,7 +209,7 @@ test("a late failure carrying no code this build knows is still Smithers', headl
 })
 
 test("every sentence in the table is one the setup flows still emit, in the file that emits it", () => {
-  const read = (file: string) => readFileSync(fileURLToPath(new URL(`../../../../../flows/repository/${file}`, import.meta.url)), "utf8")
+  const read = (file: string) => readFileSync(fileURLToPath(new URL(`../../../../../.smithers/flows/repository/${file}`, import.meta.url)), "utf8")
   const source = ["setup.ts", "activation.ts"].map(read).join("\n")
   /* The two the host builds from one template; the rest it writes out. */
   expect(read("receipts.ts")).toMatch(invalidCall('`Run ${operation === "evaluate" ? "evals" : "the live trial"} for this exact candidate before continuing`'))
@@ -258,7 +258,7 @@ test("an evicted candidate reads as factory work on the setup card and run, with
 })
 
 test("every receipt code the setup flows can raise is answered here", () => {
-  const schema = readFileSync(fileURLToPath(new URL("../../../../../flows/coding/schema.ts", import.meta.url)), "utf8")
+  const schema = readFileSync(fileURLToPath(new URL("../../../../../.smithers/flows/coding/schema.ts", import.meta.url)), "utf8")
   const declared = /export class CodingError[\s\S]*?code: Schema\.Literals\(\[([\s\S]*?)\]\)/.exec(schema)?.[1] ?? ""
   const codes = [...declared.matchAll(/"([a-z_]+)"/g)].map((match) => match[1])
   expect(codes.length).toBeGreaterThan(0)
@@ -267,7 +267,7 @@ test("every receipt code the setup flows can raise is answered here", () => {
 })
 
 test("the sentences the app words itself are ones the setup flows still emit", () => {
-  const setup = readFileSync(fileURLToPath(new URL("../../../../../flows/repository/setup.ts", import.meta.url)), "utf8")
+  const setup = readFileSync(fileURLToPath(new URL("../../../../../.smithers/flows/repository/setup.ts", import.meta.url)), "utf8")
   for (const sentence of SETUP_REFUSAL_COPY.keys()) {
     expect(SETUP_REFUSALS.has(sentence)).toBe(true)
     expect(setup).toMatch(invalidCall(JSON.stringify(sentence)))

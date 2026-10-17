@@ -112,7 +112,7 @@ func (dispatch *agentDispatch) codingTurnRequest() (codingTurnInput, error) {
 	}, nil
 }
 
-// codingTriggerTextLimit is flows/coding/dispatch.ts MessageTrigger.text's
+// codingTriggerTextLimit is .smithers/flows/coding/dispatch.ts MessageTrigger.text's
 // maximum length, in the UTF-16 code units the schema counts.
 const codingTriggerTextLimit = 32_768
 

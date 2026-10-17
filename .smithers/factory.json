@@ -7,7 +7,7 @@
       "summary": "Review the uncommitted change and return a verdict.",
       "featured": true,
       "kind": "ts",
-      "path": "flows/review/flow.ts",
+      "path": ".smithers/flows/review/flow.ts",
       "capabilities": [
         "fs:read:**",
         "fs:write:**",
@@ -24,7 +24,7 @@
       "summary": "Lint the files you name against this repository's conventions and fix what it finds.",
       "featured": true,
       "kind": "mdx",
-      "path": "flows/lint/flow.mdx",
+      "path": ".smithers/flows/lint/flow.mdx",
       "capabilities": [
         "fs:read:**",
         "fs:write:**",
@@ -60,7 +60,7 @@
       "summary": "Triage one pull request for scope, tests, docs, and review readiness from its diff alone.",
       "featured": true,
       "kind": "mdx",
-      "path": "flows/pr-triage/flow.mdx",
+      "path": ".smithers/flows/pr-triage/flow.mdx",
       "capabilities": [
         "fs:read:**",
         "fs:write:.triage/report.json",
@@ -96,7 +96,7 @@
       "summary": "Reproduce and triage one GitHub issue into a structured maintainer response.",
       "featured": true,
       "kind": "mdx",
-      "path": "flows/issue-triage/flow.mdx",
+      "path": ".smithers/flows/issue-triage/flow.mdx",
       "capabilities": [
         "fs:read:**",
         "fs:write:.triage/report.json",
@@ -136,7 +136,7 @@
       "summary": "Draft release notes from the commits since the last tag, grouped by package.",
       "featured": true,
       "kind": "mdx",
-      "path": "flows/release-notes/flow.mdx",
+      "path": ".smithers/flows/release-notes/flow.mdx",
       "capabilities": [
         "fs:read:**",
         "proc:spawn:*"
@@ -171,7 +171,7 @@
       "summary": "Work every open GitHub issue that no other machine holds.",
       "featured": true,
       "kind": "ts",
-      "path": "flows/issue-sweep/flow.ts",
+      "path": ".smithers/flows/issue-sweep/flow.ts",
       "capabilities": [
         "proc:spawn:gh api *",
         "proc:spawn:node /*/flows/issue-claim/github-proxy.mjs --ensure",
@@ -190,15 +190,113 @@
       "flows": []
     },
     {
+      "id": "bench/gate",
+      "description": "Run the scheduler and journal cost gate, or its scheduled timing observations.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/bench/gate/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**",
+        "proc:spawn:node *"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "bench/jj-abi-campaign",
+      "description": "Run the seeded parser, native and WASM jj ABI campaign, or verify its sanitizer replay.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/bench/jj-abi-campaign/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**",
+        "proc:spawn:node *",
+        "proc:spawn:cargo *",
+        "proc:spawn:pnpm *"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "bench/mutations",
+      "description": "Prove each declared mutant fails its named behavioral assertion while its baseline passes.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/bench/mutations/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**",
+        "proc:spawn:node *"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "bench/rebase-cache",
+      "description": "Measure whether a rebased stack replays every target whose declared inputs did not change.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/bench/rebase-cache/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**",
+        "proc:spawn:node *",
+        "proc:spawn:git *",
+        "proc:spawn:pnpm *"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "bench/signal-campaign",
+      "description": "Verify every case of a seeded signal state-machine campaign passed with complete evidence.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/bench/signal-campaign/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "proc:spawn:node *"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "bench/soak-campaign",
+      "description": "Verify a sync soak artifact is complete, on schedule and inside its growth budgets.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/bench/soak-campaign/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "proc:spawn:node *"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
       "id": "checks/affected-lint",
       "description": "Lint every target the Change's written files affect; a known red does not fail it.",
       "summary": null,
       "featured": false,
       "kind": "mdx",
-      "path": "flows/checks/affected-lint/flow.mdx",
+      "path": ".smithers/flows/checks/affected-lint/flow.mdx",
       "capabilities": [
         "fs:read:**",
-        "proc:spawn:sh flows/checks/coding-check.sh *"
+        "proc:spawn:sh .smithers/flows/checks/coding-check.sh *"
       ],
       "model": null,
       "modelInvocable": true,
@@ -228,10 +326,10 @@
       "summary": null,
       "featured": false,
       "kind": "mdx",
-      "path": "flows/checks/affected-test/flow.mdx",
+      "path": ".smithers/flows/checks/affected-test/flow.mdx",
       "capabilities": [
         "fs:read:**",
-        "proc:spawn:sh flows/checks/coding-check.sh *"
+        "proc:spawn:sh .smithers/flows/checks/coding-check.sh *"
       ],
       "model": null,
       "modelInvocable": true,
@@ -257,14 +355,14 @@
     },
     {
       "id": "checks/bundle",
-      "description": "Run the existing //flows:codingBundle acceptance target.",
+      "description": "Run the existing //.smithers/flows:codingBundle acceptance target.",
       "summary": null,
       "featured": false,
       "kind": "mdx",
-      "path": "flows/checks/bundle/flow.mdx",
+      "path": ".smithers/flows/checks/bundle/flow.mdx",
       "capabilities": [
         "fs:read:**",
-        "proc:spawn:sh flows/checks/coding-check.sh *"
+        "proc:spawn:sh .smithers/flows/checks/coding-check.sh *"
       ],
       "model": null,
       "modelInvocable": true,
@@ -290,14 +388,14 @@
     },
     {
       "id": "checks/bundle-bun",
-      "description": "Run the existing //flows:codingBundleBun acceptance target.",
+      "description": "Run the existing //.smithers/flows:codingBundleBun acceptance target.",
       "summary": null,
       "featured": false,
       "kind": "mdx",
-      "path": "flows/checks/bundle-bun/flow.mdx",
+      "path": ".smithers/flows/checks/bundle-bun/flow.mdx",
       "capabilities": [
         "fs:read:**",
-        "proc:spawn:sh flows/checks/coding-check.sh *"
+        "proc:spawn:sh .smithers/flows/checks/coding-check.sh *"
       ],
       "model": null,
       "modelInvocable": true,
@@ -327,10 +425,10 @@
       "summary": null,
       "featured": false,
       "kind": "mdx",
-      "path": "flows/checks/drift/flow.mdx",
+      "path": ".smithers/flows/checks/drift/flow.mdx",
       "capabilities": [
         "fs:read:**",
-        "proc:spawn:sh flows/checks/coding-check.sh *"
+        "proc:spawn:sh .smithers/flows/checks/coding-check.sh *"
       ],
       "model": null,
       "modelInvocable": true,
@@ -360,7 +458,7 @@
       "summary": null,
       "featured": false,
       "kind": "mdx",
-      "path": "flows/checks/lint/flow.mdx",
+      "path": ".smithers/flows/checks/lint/flow.mdx",
       "capabilities": [
         "fs:read:**"
       ],
@@ -388,14 +486,14 @@
     },
     {
       "id": "checks/native",
-      "description": "Run the existing //flows:codingNative acceptance target.",
+      "description": "Run the existing //.smithers/flows:codingNative acceptance target.",
       "summary": null,
       "featured": false,
       "kind": "mdx",
-      "path": "flows/checks/native/flow.mdx",
+      "path": ".smithers/flows/checks/native/flow.mdx",
       "capabilities": [
         "fs:read:**",
-        "proc:spawn:sh flows/checks/coding-check.sh *"
+        "proc:spawn:sh .smithers/flows/checks/coding-check.sh *"
       ],
       "model": null,
       "modelInvocable": true,
@@ -421,14 +519,14 @@
     },
     {
       "id": "checks/native-bun",
-      "description": "Run the existing //flows:codingNativeBun acceptance target.",
+      "description": "Run the existing //.smithers/flows:codingNativeBun acceptance target.",
       "summary": null,
       "featured": false,
       "kind": "mdx",
-      "path": "flows/checks/native-bun/flow.mdx",
+      "path": ".smithers/flows/checks/native-bun/flow.mdx",
       "capabilities": [
         "fs:read:**",
-        "proc:spawn:sh flows/checks/coding-check.sh *"
+        "proc:spawn:sh .smithers/flows/checks/coding-check.sh *"
       ],
       "model": null,
       "modelInvocable": true,
@@ -454,14 +552,14 @@
     },
     {
       "id": "checks/policy",
-      "description": "Run the existing //flows:codingPolicy acceptance target.",
+      "description": "Run the existing //.smithers/flows:codingPolicy acceptance target.",
       "summary": null,
       "featured": false,
       "kind": "mdx",
-      "path": "flows/checks/policy/flow.mdx",
+      "path": ".smithers/flows/checks/policy/flow.mdx",
       "capabilities": [
         "fs:read:**",
-        "proc:spawn:sh flows/checks/coding-check.sh *"
+        "proc:spawn:sh .smithers/flows/checks/coding-check.sh *"
       ],
       "model": null,
       "modelInvocable": true,
@@ -491,7 +589,7 @@
       "summary": null,
       "featured": false,
       "kind": "mdx",
-      "path": "flows/checks/review/flow.mdx",
+      "path": ".smithers/flows/checks/review/flow.mdx",
       "capabilities": [
         "fs:read:**"
       ],
@@ -519,14 +617,14 @@
     },
     {
       "id": "checks/runtime",
-      "description": "Run the existing //flows:codingRuntime acceptance target.",
+      "description": "Run the existing //.smithers/flows:codingRuntime acceptance target.",
       "summary": null,
       "featured": false,
       "kind": "mdx",
-      "path": "flows/checks/runtime/flow.mdx",
+      "path": ".smithers/flows/checks/runtime/flow.mdx",
       "capabilities": [
         "fs:read:**",
-        "proc:spawn:sh flows/checks/coding-check.sh *"
+        "proc:spawn:sh .smithers/flows/checks/coding-check.sh *"
       ],
       "model": null,
       "modelInvocable": true,
@@ -556,7 +654,7 @@
       "summary": null,
       "featured": false,
       "kind": "mdx",
-      "path": "flows/checks/security/flow.mdx",
+      "path": ".smithers/flows/checks/security/flow.mdx",
       "capabilities": [
         "fs:read:**"
       ],
@@ -588,7 +686,7 @@
       "summary": null,
       "featured": false,
       "kind": "ts",
-      "path": "flows/checks/wiki/flow.ts",
+      "path": ".smithers/flows/checks/wiki/flow.ts",
       "capabilities": [
         "*"
       ],
@@ -604,7 +702,7 @@
       "summary": null,
       "featured": false,
       "kind": "ts",
-      "path": "flows/coding/flow.ts",
+      "path": ".smithers/flows/coding/flow.ts",
       "capabilities": [
         "*"
       ],
@@ -618,7 +716,7 @@
       "summary": null,
       "featured": false,
       "kind": "ts",
-      "path": "flows/coding/dispatch/flow.ts",
+      "path": ".smithers/flows/coding/dispatch/flow.ts",
       "capabilities": [
         "*"
       ],
@@ -632,7 +730,7 @@
       "summary": null,
       "featured": false,
       "kind": "ts",
-      "path": "flows/coding/flow-load/flow.ts",
+      "path": ".smithers/flows/coding/flow-load/flow.ts",
       "capabilities": [
         "*"
       ],
@@ -646,7 +744,7 @@
       "summary": null,
       "featured": false,
       "kind": "ts",
-      "path": "flows/coding/implementation/flow.ts",
+      "path": ".smithers/flows/coding/implementation/flow.ts",
       "capabilities": [
         "*"
       ],
@@ -660,7 +758,7 @@
       "summary": null,
       "featured": false,
       "kind": "ts",
-      "path": "flows/coding/prototype/flow.ts",
+      "path": ".smithers/flows/coding/prototype/flow.ts",
       "capabilities": [
         "*"
       ],
@@ -674,7 +772,7 @@
       "summary": null,
       "featured": false,
       "kind": "ts",
-      "path": "flows/coding/rebase-conflict/flow.ts",
+      "path": ".smithers/flows/coding/rebase-conflict/flow.ts",
       "capabilities": [
         "*"
       ],
@@ -688,7 +786,7 @@
       "summary": null,
       "featured": false,
       "kind": "ts",
-      "path": "flows/coding/verify/flow.ts",
+      "path": ".smithers/flows/coding/verify/flow.ts",
       "capabilities": [
         "*"
       ],
@@ -702,7 +800,7 @@
       "summary": null,
       "featured": false,
       "kind": "ts",
-      "path": "flows/coding/wiki/flow.ts",
+      "path": ".smithers/flows/coding/wiki/flow.ts",
       "capabilities": [
         "*"
       ],
@@ -716,7 +814,7 @@
       "summary": null,
       "featured": false,
       "kind": "mdx",
-      "path": "flows/create-flow/flow.mdx",
+      "path": ".smithers/flows/create-flow/flow.mdx",
       "capabilities": [
         "fs:read:**",
         "fs:write:**",
@@ -748,7 +846,7 @@
       "summary": null,
       "featured": false,
       "kind": "mdx",
-      "path": "flows/create-flow/clarify/flow.mdx",
+      "path": ".smithers/flows/create-flow/clarify/flow.mdx",
       "capabilities": [],
       "model": "flow/author",
       "modelInvocable": false,
@@ -776,7 +874,7 @@
       "summary": null,
       "featured": false,
       "kind": "mdx",
-      "path": "flows/create-flow/design/flow.mdx",
+      "path": ".smithers/flows/create-flow/design/flow.mdx",
       "capabilities": [],
       "model": "flow/author",
       "modelInvocable": false,
@@ -804,7 +902,7 @@
       "summary": null,
       "featured": false,
       "kind": "mdx",
-      "path": "flows/create-flow/document/flow.mdx",
+      "path": ".smithers/flows/create-flow/document/flow.mdx",
       "capabilities": [
         "fs:read:**",
         "fs:write:**"
@@ -835,7 +933,7 @@
       "summary": null,
       "featured": false,
       "kind": "mdx",
-      "path": "flows/create-flow/fix/flow.mdx",
+      "path": ".smithers/flows/create-flow/fix/flow.mdx",
       "capabilities": [
         "fs:read:**",
         "fs:write:**",
@@ -867,7 +965,7 @@
       "summary": null,
       "featured": false,
       "kind": "mdx",
-      "path": "flows/create-flow/provision/flow.mdx",
+      "path": ".smithers/flows/create-flow/provision/flow.mdx",
       "capabilities": [
         "fs:read:**",
         "proc:spawn:*"
@@ -898,7 +996,7 @@
       "summary": null,
       "featured": false,
       "kind": "mdx",
-      "path": "flows/create-flow/scaffold/flow.mdx",
+      "path": ".smithers/flows/create-flow/scaffold/flow.mdx",
       "capabilities": [
         "fs:read:**",
         "fs:write:**",
@@ -930,7 +1028,7 @@
       "summary": null,
       "featured": false,
       "kind": "mdx",
-      "path": "flows/create-skill/clarify/flow.mdx",
+      "path": ".smithers/flows/create-skill/clarify/flow.mdx",
       "capabilities": [],
       "model": null,
       "modelInvocable": true,
@@ -958,7 +1056,7 @@
       "summary": null,
       "featured": false,
       "kind": "mdx",
-      "path": "flows/create-skill/design/flow.mdx",
+      "path": ".smithers/flows/create-skill/design/flow.mdx",
       "capabilities": [],
       "model": null,
       "modelInvocable": true,
@@ -986,7 +1084,7 @@
       "summary": null,
       "featured": false,
       "kind": "mdx",
-      "path": "flows/create-skill/document/flow.mdx",
+      "path": ".smithers/flows/create-skill/document/flow.mdx",
       "capabilities": [],
       "model": null,
       "modelInvocable": true,
@@ -1014,7 +1112,7 @@
       "summary": null,
       "featured": false,
       "kind": "mdx",
-      "path": "flows/create-skill/scaffold/flow.mdx",
+      "path": ".smithers/flows/create-skill/scaffold/flow.mdx",
       "capabilities": [
         "fs:read:**",
         "fs:write:**"
@@ -1040,12 +1138,49 @@
       "flows": []
     },
     {
+      "id": "docs-sync",
+      "description": "Regenerate the retired docs sites' redirect map from the package docs folders, or check it and the published package tarballs.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/docs-sync/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:apps/server/src/docsRedirectMap.ts",
+        "proc:spawn:node *",
+        "proc:spawn:npm *"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "issue-claim",
+      "description": "Claim, check, release or comment on an issue through the machine's GitHub proxy.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/issue-claim/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**",
+        "proc:spawn:node *",
+        "proc:spawn:gh *",
+        "proc:spawn:git *",
+        "net:get:**",
+        "net:post:**"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
       "id": "issue-sweep/work",
       "description": "One coding agent fixes one issue in its own jj workspace.",
       "summary": null,
       "featured": false,
       "kind": "ts",
-      "path": "flows/issue-sweep/work/flow.ts",
+      "path": ".smithers/flows/issue-sweep/work/flow.ts",
       "capabilities": [
         "proc:spawn:gh api *",
         "proc:spawn:node /*/flows/issue-claim/github-proxy.mjs --ensure",
@@ -1069,7 +1204,7 @@
       "summary": null,
       "featured": false,
       "kind": "mdx",
-      "path": "flows/issue/poc/flow.mdx",
+      "path": ".smithers/flows/issue/poc/flow.mdx",
       "capabilities": [
         "fs:read:**",
         "fs:write:**",
@@ -1107,7 +1242,7 @@
       "summary": null,
       "featured": false,
       "kind": "mdx",
-      "path": "flows/issue/repro/flow.mdx",
+      "path": ".smithers/flows/issue/repro/flow.mdx",
       "capabilities": [
         "fs:read:**",
         "proc:spawn:rg *",
@@ -1139,12 +1274,84 @@
       }
     },
     {
+      "id": "land",
+      "description": "Commit every edit in the shared checkout to main and, with push, publish it after the landing gates.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/land/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**",
+        "proc:spawn:node *",
+        "proc:spawn:bash *",
+        "proc:spawn:git *",
+        "proc:spawn:jj *",
+        "proc:spawn:go *",
+        "proc:spawn:smthrs *",
+        "net:get:**",
+        "net:post:**"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "land/lane-gates",
+      "description": "Run a lane's pre-push gates against main's failure baseline, record that baseline, or check integration.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/land/lane-gates/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**",
+        "proc:spawn:bash *",
+        "proc:spawn:git *",
+        "proc:spawn:node *",
+        "proc:spawn:go *",
+        "proc:spawn:gofmt *",
+        "proc:spawn:pnpm *",
+        "proc:spawn:bun *",
+        "proc:spawn:cargo *",
+        "proc:spawn:psql *",
+        "proc:spawn:pg_isready *",
+        "proc:spawn:smthrs *",
+        "net:get:**",
+        "net:private:**"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "land/renumber-migration",
+      "description": "Renumber an unlanded product migration after origin/main, regenerate sqlc and run the migration gate.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/land/renumber-migration/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:packages/backend/db/**",
+        "fs:write:packages/backend/internal/db/**",
+        "proc:spawn:node *",
+        "proc:spawn:git *",
+        "proc:spawn:go *",
+        "proc:spawn:sqlc *",
+        "proc:spawn:/*/.backend-sqlc/sqlc *"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
       "id": "learning",
       "description": "Read merged TODO evidence and return decision pages and proposals.",
       "summary": null,
       "featured": false,
       "kind": "ts",
-      "path": "flows/learning/flow.ts",
+      "path": ".smithers/flows/learning/flow.ts",
       "capabilities": [
         "model:call:typesafe-ai/jev"
       ],
@@ -1158,7 +1365,7 @@
       "summary": null,
       "featured": false,
       "kind": "ts",
-      "path": "flows/memory/calibrate/flow.ts",
+      "path": ".smithers/flows/memory/calibrate/flow.ts",
       "capabilities": [
         "fs:read:**",
         "fs:write:.smithers/**",
@@ -1177,7 +1384,7 @@
       "summary": null,
       "featured": false,
       "kind": "ts",
-      "path": "flows/memory/mine/flow.ts",
+      "path": ".smithers/flows/memory/mine/flow.ts",
       "capabilities": [
         "fs:read:**",
         "fs:write:.smithers/wiki/decisions/**",
@@ -1194,8 +1401,73 @@
       "summary": null,
       "featured": false,
       "kind": "ts",
-      "path": "flows/notification-policy/flow.ts",
+      "path": ".smithers/flows/notification-policy/flow.ts",
       "capabilities": [],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "perf",
+      "description": "Measure installed-product latency budgets C-PERF-01 to C-PERF-06 and retain their evidence.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/perf/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**",
+        "proc:spawn:node *",
+        "proc:spawn:jj *",
+        "proc:spawn:/usr/bin/ssh *",
+        "proc:spawn:/usr/bin/ssh-keygen *",
+        "net:get:**",
+        "net:post:**",
+        "net:private:**"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "perf/github-freshness",
+      "description": "Measure GitHub-to-install freshness on the canary repository, or compare two webhook phases.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/perf/github-freshness/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**",
+        "proc:spawn:node *",
+        "net:get:**",
+        "net:post:**",
+        "net:private:**"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "perf/working-together",
+      "description": "Run the working-together fault campaign's component or boundary suites and retain C-DUR-04 evidence.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/perf/working-together/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:.artifacts/**",
+        "proc:spawn:node *",
+        "proc:spawn:git *",
+        "proc:spawn:cargo *",
+        "proc:spawn:go *",
+        "proc:spawn:ssh *",
+        "proc:spawn:scp *",
+        "proc:spawn:rustc --version",
+        "proc:spawn:/usr/sbin/sysctl *",
+        "proc:spawn:/usr/bin/sw_vers *"
+      ],
       "model": null,
       "modelInvocable": false,
       "flows": []
@@ -1206,7 +1478,7 @@
       "summary": null,
       "featured": false,
       "kind": "ts",
-      "path": "flows/release/flow.ts",
+      "path": ".smithers/flows/release/flow.ts",
       "capabilities": [
         "*"
       ],
@@ -1220,7 +1492,7 @@
       "summary": null,
       "featured": false,
       "kind": "ts",
-      "path": "flows/release-content/flow.ts",
+      "path": ".smithers/flows/release-content/flow.ts",
       "capabilities": [
         "*"
       ],
@@ -1229,12 +1501,288 @@
       "flows": []
     },
     {
+      "id": "release/api-baseline",
+      "description": "Compare every public package's declarations with the reviewed API baseline, or record a reviewed update.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/release/api-baseline/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:.smithers/flows/release/fixtures/public-api-baseline.json",
+        "proc:spawn:node *"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "release/build-packages",
+      "description": "Build every published package from clean artifacts in workspace dependency order.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/release/build-packages/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:packages/**",
+        "proc:spawn:node *",
+        "proc:spawn:pnpm *"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "release/changelog",
+      "description": "Write or drift-check the CHANGELOG.md section for a release from its commit range.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/release/changelog/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:CHANGELOG.md",
+        "proc:spawn:node *",
+        "proc:spawn:git *"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "release/cut",
+      "description": "Cut a release: write and verify its version, changelog and generated files, and optionally commit and tag it locally.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/release/cut/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**",
+        "proc:spawn:node *",
+        "proc:spawn:git *",
+        "proc:spawn:pnpm *",
+        "proc:spawn:bun *",
+        "net:get:registry.npmjs.org/**"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "release/homebrew",
+      "description": "Prepare the Homebrew formula and bottle assets of a signed release, or require the receipts that qualify them.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/release/homebrew/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**",
+        "proc:spawn:node *",
+        "proc:spawn:git *",
+        "net:get:api.github.com/**",
+        "net:get:github.com/**",
+        "net:get:token.actions.githubusercontent.com/**"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "release/homebrew-publish",
+      "description": "Publish qualified Homebrew release assets or open the tap formula bump.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/release/homebrew-publish/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "proc:spawn:node *",
+        "proc:spawn:git *",
+        "proc:spawn:cosign *",
+        "net:get:api.github.com/**",
+        "net:post:api.github.com/**",
+        "net:put:api.github.com/**",
+        "net:post:uploads.github.com/**",
+        "net:get:github.com/**",
+        "net:get:token.actions.githubusercontent.com/**"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "release/installer",
+      "description": "Build, sign, verify or publish the relocatable installer archives of a packed release candidate.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/release/installer/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**",
+        "proc:spawn:node *",
+        "proc:spawn:npm *",
+        "proc:spawn:tar *",
+        "proc:spawn:gzip *",
+        "proc:spawn:cosign *",
+        "proc:spawn:aws *",
+        "net:get:github.com/**",
+        "net:get:token.actions.githubusercontent.com/**"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "release/npm-dedupe",
+      "description": "Check that an npm consumer of the published set resolves one effect copy and no optional peer.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/release/npm-dedupe/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**",
+        "proc:spawn:node *",
+        "proc:spawn:npm *",
+        "proc:spawn:pnpm *",
+        "net:get:registry.npmjs.org/**"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "release/pack",
+      "description": "Pack every published package into a candidate directory with its release manifest, or list the publication order.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/release/pack/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**",
+        "proc:spawn:node *",
+        "proc:spawn:pnpm *",
+        "proc:spawn:git *",
+        "proc:spawn:jj *"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "release/publish",
+      "description": "Publish a smoke-tested release candidate's exact tarballs to npm in dependency order.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/release/publish/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**",
+        "proc:spawn:node *",
+        "proc:spawn:pnpm *",
+        "proc:spawn:git *",
+        "proc:spawn:sleep *",
+        "net:get:registry.npmjs.org/**",
+        "net:put:registry.npmjs.org/**"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "release/rehearsal",
+      "description": "Rehearse the Release workflow locally as a dispatched dry run of one tag.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/release/rehearsal/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**",
+        "proc:spawn:node *",
+        "proc:spawn:bash *",
+        "proc:spawn:jj *",
+        "proc:spawn:git *",
+        "proc:spawn:pnpm *",
+        "net:get:**",
+        "net:private:**"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "release/restore",
+      "description": "Validate an archived release candidate selection, or restore and verify that candidate from this repository's Release run.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/release/restore/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**",
+        "proc:spawn:node *",
+        "proc:spawn:gh *",
+        "proc:spawn:git *",
+        "proc:spawn:python3 *",
+        "net:get:api.github.com/**"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "release/smoke",
+      "description": "Install a packed release candidate into scratch consumers, import every published entry point and record smoke evidence.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/release/smoke/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**",
+        "proc:spawn:node *",
+        "proc:spawn:pnpm *",
+        "proc:spawn:npm *",
+        "proc:spawn:bun *",
+        "proc:spawn:sh *",
+        "proc:spawn:tar *",
+        "net:get:registry.npmjs.org/**",
+        "net:private:**"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "release/version",
+      "description": "Set every versioned manifest and source to one release version, or verify they carry it.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/release/version/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**",
+        "proc:spawn:node *"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
       "id": "review/change",
       "description": "Reviews one pull request's change the stack proposes and returns a verdict on its first line.",
       "summary": null,
       "featured": false,
       "kind": "mdx",
-      "path": "flows/review/change/flow.mdx",
+      "path": ".smithers/flows/review/change/flow.mdx",
       "capabilities": [],
       "model": "coding/review",
       "modelInvocable": false,
@@ -1266,7 +1814,7 @@
       "summary": null,
       "featured": false,
       "kind": "ts",
-      "path": "flows/rollout/flow.ts",
+      "path": ".smithers/flows/rollout/flow.ts",
       "capabilities": [
         "deploy:rollout"
       ],
@@ -1289,7 +1837,7 @@
       "summary": null,
       "featured": false,
       "kind": "mdx",
-      "path": "flows/security-audit/flow.mdx",
+      "path": ".smithers/flows/security-audit/flow.mdx",
       "capabilities": [
         "fs:read:**"
       ],
@@ -1325,9 +1873,27 @@
       "summary": null,
       "featured": false,
       "kind": "ts",
-      "path": "flows/todo/flow.ts",
+      "path": ".smithers/flows/todo/flow.ts",
       "capabilities": [
         "*"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "triage-publish",
+      "description": "Prepare a GitHub issue or pull request for triage, or publish the triage report's labels and comment.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/triage-publish/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:.triage/**",
+        "proc:spawn:node *",
+        "net:get:api.github.com/**",
+        "net:post:api.github.com/**"
       ],
       "model": null,
       "modelInvocable": false,
@@ -1339,7 +1905,7 @@
       "summary": null,
       "featured": false,
       "kind": "ts",
-      "path": "flows/wiki/flow.ts",
+      "path": ".smithers/flows/wiki/flow.ts",
       "capabilities": [
         "fs:read:**",
         "fs:write:**"
@@ -1354,7 +1920,7 @@
       "summary": null,
       "featured": false,
       "kind": "ts",
-      "path": "flows/wrapped/flow.ts",
+      "path": ".smithers/flows/wrapped/flow.ts",
       "capabilities": [
         "*"
       ],

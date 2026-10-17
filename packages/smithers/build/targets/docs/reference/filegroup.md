@@ -39,7 +39,7 @@ For glob expansion and `Input.discoverFiles`, matching rules in deeper `.gitigno
 
 The CLI planner, affected-file selection and target index use an explicit non-dot
 `cwd` as the workspace-relative input anchor. For example, a group declared in
-`flows/PACKAGE.ts` with `cwd: "packages/library"` and `srcs: [Smithers.glob("src/**")]`
+`.smithers/flows/PACKAGE.ts` with `cwd: "packages/library"` and `srcs: [Smithers.glob("src/**")]`
 tracks that library's sources without running its build. The group's label and
 package ownership still belong to `flows`. The default `cwd: "."` resolves inputs
 from the declaring package; `cwd: "//"` explicitly anchors them at the workspace

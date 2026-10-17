@@ -23,7 +23,7 @@ vitest | bun test | node --test | go test | cargo test | playwright
 ```
 
 - Root `package.json` scripts: `test` = `pnpm -r --if-present run test`; `test:e2e` = `pnpm --filter smithers-app run test:e2e`; `check`, `lint`, `docs:check`, `docs:sync`, `browser` (bundle contract, not a browser test).
-- `exclusive: true` targets are skipped by wildcard selections: `//apps/app:browserE2e`, every `:faults` target, `//flows:registrationCalibrationReal`.
+- `exclusive: true` targets are skipped by wildcard selections: `//apps/app:browserE2e`, every `:faults` target, `//.smithers/flows:registrationCalibrationReal`.
 - `--known-red .github/ci-known-red.json` lists 5 entries, all `win32`-only (advisory lane, expire 2026-10-10..31). Every Linux red is "newly red".
 
 ### 1.2 MVP packages: targets, runners, thresholds, commands
@@ -38,7 +38,7 @@ Delta.md keeps/modifies: Go backend (`packages/backend`, `apps/backend`), `apps/
 | `@smthrs/flow` | `//packages/smithers/flows/flow:test`, `:bunTest`, `:referenceCodeBlocks` | vitest | 100/100/100/100 | `cd packages/smithers/flows/flow && pnpm exec vitest run --coverage.enabled=false` (58 files) | `pnpm exec smthrs test '//packages/smithers/flows/flow:test'` |
 | `@smthrs/engine`, `flows` umbrella, journal, engine-store | `…/engine:test`, `…/flows:test`, `…/journal:test`, `…/engine-store:test`, `…:disasterRecovery` | vitest / node test | 100 (engine, flows) | `cd packages/smithers/flows/engine && pnpm exec vitest run --coverage.enabled=false` | `pnpm exec smthrs test '//packages/smithers/flows/...'` |
 | `@smthrs/rpc` | `//packages/rpc:unitTests` | vitest, `include: ["test/**/*.test.ts"]` | none | `cd packages/rpc && pnpm exec vitest run` (1,676 tests, 7 s) | same |
-| `flows/` (`@smithers/release-workflows`) | `//flows:coding`, `:suite`, `:repository`, `:fixtures`, `:wiki`, `:memory`, `:pack`, `:egress`, `:testCoverage`, `:codingBundle*`, `:codingNative*` (23 test targets, 182 test files) | `node --experimental-strip-types --test` | `:testCoverage` target-coverage test | `cd flows && node --experimental-strip-types --test test/<file>.test.ts` | `pnpm exec smthrs test '//flows/...'` |
+| `flows/` (`@smithers/release-workflows`) | `//.smithers/flows:coding`, `:suite`, `:repository`, `:fixtures`, `:wiki`, `:memory`, `:pack`, `:egress`, `:testCoverage`, `:codingBundle*`, `:codingNative*` (23 test targets, 182 test files) | `node --experimental-strip-types --test` | `:testCoverage` target-coverage test | `cd flows && node --experimental-strip-types --test test/<file>.test.ts` | `pnpm exec smthrs test '//.smithers/flows/...'` |
 | `@smthrs/registry` | `//packages/smithers/agent/registry:test` | vitest | 100 | `cd packages/smithers/agent/registry && pnpm exec vitest run test/ExecutableRefresh.test.ts --coverage.enabled=false` | `pnpm exec smthrs test '//packages/smithers/agent/registry:test'` |
 | `@smthrs/ui` | `//packages/smithers/ui:unitTests` | `bun test tests` (126 files) | none | `cd packages/smithers/ui && bun test tests` | same |
 | `packages/smithers-ffi` | inside `//:nativeFfi` (build target: clippy + `cargo test -p smithers-ffi` + build) | cargo | none | `cargo test -p smithers-ffi --locked` (183 `#[test]`) | `pnpm exec smthrs build '//:nativeFfi'` |
@@ -175,7 +175,7 @@ Ground truth is §2.3 (CI, today). Memory entries below are older and some are m
 | `apps/app` | typecheck TS2550 (CI 10-02); T1 `chat-draft.spec.ts:4` (CI 10-02); ~60 unit reds after boot began GETting `/api/user/settings/signup`, and `src/bun/*` importing deleted `smithers-server/*` (memory 09-30); `FormCardsAgainstMain` 2 reds, `ControllerTestScope`, `Wave12` (09-18..28); real tier 23 scenarios red (09-20); T1 chat/boot-identity reds (09-20). #2290 reports whole App **9,048 pass / 1 skip** at prepared, unlanded `4bb78118` | conflicting; unit suite has not run in CI |
 | CLI `packages/smithers` | 40-min cap exceeded (CI 10-02); 4,440 pass / 8 fail / 10 skip, 2,377 s at `4bb` (6 `NativeBodyCli` #3414, 2 `Bin` retry-warning) (#2290); `UnifiedControlCommands` 8 + `McpModeCli` 1 (09-30); `ModuleBudgetPark` flaky (09-28); faults 7 cases (CI 10-02) | yes |
 | `packages/rpc` | `Refusal.test.ts` auto-retry 1/1,676 (CI 10-02); older `Cards.test.ts` TS2741, `RouteOwnership` (09-18..20) | yes (1 red) |
-| `flows/` | `pack`, `egress`, `fixtures`, `fmt`, `lint` (CI 10-02); `coding-gates`/`coding-host`/`publication` (opencode missing from `codingPackages`) and Jev `repository-host` (09-18) | yes; `//flows:repository` passes today |
+| `flows/` | `pack`, `egress`, `fixtures`, `fmt`, `lint` (CI 10-02); `coding-gates`/`coding-host`/`publication` (opencode missing from `codingPackages`) and Jev `repository-host` (09-18) | yes; `//.smithers/flows:repository` passes today |
 | `@smthrs/flow`, engine, flows umbrella | `flows:test` NodeRuntimeReap integration (CI 10-02, also memory 09-09); dprint fmt in flows/engine/engine-store (Drift 10-02); flows/flow bun timeouts (09-09, load) | yes |
 | registry | red in CI 10-02; branch coverage 98.9% vs 100% floor (`Executable.ts`, `MarkdownFlow.ts`, `ModuleMetadata.ts`) (09-10) | yes; `Executable.ts` is an MVP change site |
 | gateway (app dep) | `gateway:check` TS2339 blocks app unit/conformance (CI 10-02); coverage < 100% (09-10) | yes |

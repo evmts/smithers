@@ -47,7 +47,7 @@ const EDITED: ReadonlyArray<FlowStep> = [...V1_STEPS.slice(0, 4), DOCS, ...V1_ST
 
 /* The agents behind the TODO flow's steps: one Markdown file each, all on the top model until the owner changes one. */
 const AGENTS = (): Array<FactoryAgent> =>
-  ["plan", "implement", "review"].map(step => ({ id: step, steps: [step], instructions: `flows/todo/${step}.md`, model: "Fable 5.1" }))
+  ["plan", "implement", "review"].map(step => ({ id: step, steps: [step], instructions: `.smithers/flows/todo/${step}.md`, model: "Fable 5.1" }))
 
 /*
  * T9's second attempt once merged: the run reel's history up to its question,
@@ -113,7 +113,7 @@ const setup = (): State => {
   Object.assign(branch(world, "b-log"), { machine: "awake", waitPosition: undefined, presence: [{ who: "agent:b-log", where: { kind: "step", step: "plan" } }] })
   world.traces.push(FIRST(), MERGED())
   world.flow = stepsOf(V1_STEPS)
-  world.flowVersions = [version("v1", "v1 · flows/todo/flow.ts · main", "active", stepsOf(V1_STEPS))]
+  world.flowVersions = [version("v1", "v1 · .smithers/flows/todo/flow.ts · main", "active", stepsOf(V1_STEPS))]
   world.agents = AGENTS()
   showCard(state, MAYA, "todo", TODO)
   return state
@@ -178,7 +178,7 @@ export const j11: Journey = {
         draft.committed = FLOW_TODO
         stackOp(state, FLOW_BRANCH, "Placed T12 after T11", MAYA)
         /* The version T12 proposes: v1's steps until her edit lands. */
-        world.flowVersions.push(version("v2", "v2 · flows/todo/flow.ts · T12", "proposed", stepsOf(V1_STEPS), FLOW_TODO, MAYA))
+        world.flowVersions.push(version("v2", "v2 · .smithers/flows/todo/flow.ts · T12", "proposed", stepsOf(V1_STEPS), FLOW_TODO, MAYA))
         world.files.push({ path: FLOW_FILE, branch: FLOW_BRANCH, lines: flowSource() })
         openFile(state, FLOW_FILE, MAYA, ORDER_LINE)
         present(state, FLOW_BRANCH, MAYA, { kind: "file", path: FLOW_FILE, line: ORDER_LINE })

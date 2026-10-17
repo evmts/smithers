@@ -101,7 +101,7 @@ const appSources = uiPackage.webSources
 /** Package metadata used by documentation projections. */
 const docsKit = Smithers.Filegroup({
   srcs: [
-    Smithers.file("//flows/docs-sync/package-docs.mjs"),
+    Smithers.file("//.smithers/flows/docs-sync/package-docs.mjs"),
     Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs"),
     Smithers.file("//pnpm-workspace.yaml"),
     ...workspacePackages().map(({ dir }) => Smithers.file(`//${dir}/package.json`))
@@ -392,7 +392,7 @@ const catalogPublicationTest = Smithers.Shell.Test({
     Smithers.file("scripts/catalog-publication.mjs"),
     Smithers.file("scripts/catalog-publication.test.mjs"),
     Smithers.file("docs/reference/api/index.mdx"),
-    Smithers.file("//flows/release/pack-release.mjs"),
+    Smithers.file("//.smithers/flows/release/pack-release.mjs"),
     Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs"),
     // The roster is checked against what every member manifest declares, so a
     // manifest flipping `private` has to re-run this.
@@ -439,7 +439,7 @@ const publishedLinksUnit = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//apps/site/scripts/published-links.test.mjs")]),
   srcs: [
     ...sources,
-    Smithers.file("//flows/release/pack-release.mjs"),
+    Smithers.file("//.smithers/flows/release/pack-release.mjs"),
     Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs"),
     Smithers.file("//pnpm-workspace.yaml")
   ],
@@ -461,7 +461,7 @@ const supportMatrixTest = Smithers.Shell.Test({
     Smithers.file("//.github/workflows/release.yml"),
     Smithers.file("//pnpm-workspace.yaml"),
     ...["pack-release", "packed-export-targets", "publish-release", "release-rehearsal"].map(
-      (name) => Smithers.file(`//flows/release/${name}.mjs`)
+      (name) => Smithers.file(`//.smithers/flows/release/${name}.mjs`)
     ),
     Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs"),
     // The shared reader parses every member before selecting public packages.
@@ -500,7 +500,7 @@ const docsLint = Smithers.Shell.Test({
     Smithers.file("//apps/site/src/data/versions.json"),
     Smithers.file("//apps/site/public/_redirects"),
     Smithers.file("//apps/site/scripts/catalog-publication.mjs"),
-    Smithers.file("//flows/release/pack-release.mjs")
+    Smithers.file("//.smithers/flows/release/pack-release.mjs")
   ]
 })
 
@@ -650,7 +650,7 @@ const smithersLinks = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//apps/site/scripts/smithers-links.test.mjs")]),
   srcs: [
     Smithers.file("//apps/site/scripts/published-links.mjs"),
-    Smithers.file("//flows/release/pack-release.mjs"),
+    Smithers.file("//.smithers/flows/release/pack-release.mjs"),
     Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs")
   ],
   deps: [build]

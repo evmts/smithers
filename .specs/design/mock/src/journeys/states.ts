@@ -104,9 +104,9 @@ const setup = (): State => {
   world.members = world.members.map(each => each.id === BEN ? { ...each, permission: "maintain" as const } : each.id === ALICE || each.id === "lee" ? { ...each, permission: "write" as const } : each)
   world.secrets = [{ name: "STRIPE_TEST_KEY", scope: "all branches" }, { name: "SENTRY_DSN", scope: "main only" }]
   world.flowVersions = [
-    { id: "v-prev", label: "flows/todo/flow.ts · previous", state: "active", steps: TODO_FLOW.map(step => ({ ...step })) },
-    { id: "v-sync", label: "flows/todo/flow.ts · merged #241", state: "merged-syncing", steps: [...TODO_FLOW.map(step => ({ ...step })), { id: "changelog", title: "Changelog" }] },
-    { id: "v-bad", label: "flows/todo/flow.ts · merged #242", state: "merged-failed", steps: TODO_FLOW.map(step => ({ ...step })), error: "flows/todo/flow.ts:8: verify expects a list of commands" }
+    { id: "v-prev", label: ".smithers/flows/todo/flow.ts · previous", state: "active", steps: TODO_FLOW.map(step => ({ ...step })) },
+    { id: "v-sync", label: ".smithers/flows/todo/flow.ts · merged #241", state: "merged-syncing", steps: [...TODO_FLOW.map(step => ({ ...step })), { id: "changelog", title: "Changelog" }] },
+    { id: "v-bad", label: ".smithers/flows/todo/flow.ts · merged #242", state: "merged-failed", steps: TODO_FLOW.map(step => ({ ...step })), error: ".smithers/flows/todo/flow.ts:8: verify expects a list of commands" }
   ]
   showCard(state, BEN, "home", "acme/api")
   return state

@@ -155,6 +155,193 @@ importers:
         specifier: 2.9.0
         version: 2.9.0
 
+  .smithers/flows:
+    dependencies:
+      '@effect/platform-bun':
+        specifier: 4.0.4
+        version: 4.0.4(effect@4.0.4)
+      '@effect/platform-node':
+        specifier: 4.0.4
+        version: 4.0.4(effect@4.0.4)(redis@6.2.1(@opentelemetry/api@1.9.1))
+      '@pierre/diffs':
+        specifier: ^1.3.6
+        version: 1.3.6(@shikijs/themes@4.4.3)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@smthrs/agent':
+        specifier: workspace:*
+        version: link:../../packages/smithers/agent
+      '@smthrs/build-cli':
+        specifier: workspace:*
+        version: link:../../packages/smithers/build/build-cli
+      '@smthrs/capability':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/capability
+      '@smthrs/cli':
+        specifier: workspace:*
+        version: link:../../packages/smithers
+      '@smthrs/coding':
+        specifier: workspace:*
+        version: link:coding
+      '@smthrs/control':
+        specifier: workspace:*
+        version: link:../../packages/smithers/control
+      '@smthrs/core':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/core
+      '@smthrs/engine':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/engine
+      '@smthrs/engine-store':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/engine-store
+      '@smthrs/flow':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/flow
+      '@smthrs/flows':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows
+      '@smthrs/gateway':
+        specifier: workspace:*
+        version: link:../../packages/smithers/gateway
+      '@smthrs/harness':
+        specifier: workspace:*
+        version: link:../../packages/smithers/agent/harness
+      '@smthrs/kernel':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/kernel
+      '@smthrs/migrate':
+        specifier: workspace:*
+        version: link:../../packages/smithers/migrate
+      '@smthrs/model':
+        specifier: workspace:*
+        version: link:../../packages/smithers/agent/model
+      '@smthrs/patterns':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/patterns
+      '@smthrs/plan':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/plan
+      '@smthrs/platform-node':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/platform-node
+      '@smthrs/registry':
+        specifier: workspace:*
+        version: link:../../packages/smithers/agent/registry
+      '@smthrs/run-store':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/run-store
+      '@smthrs/sandbox':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/sandbox
+      '@smthrs/std':
+        specifier: workspace:*
+        version: link:../../packages/smithers/agent/std
+      '@smthrs/targets':
+        specifier: workspace:*
+        version: link:../../packages/smithers/build/targets
+      '@smthrs/ui-styleguide':
+        specifier: workspace:*
+        version: link:../../packages/smithers/ui/ui-styleguide
+      effect:
+        specifier: 4.0.4
+        version: 4.0.4
+      mermaid:
+        specifier: ^11.17.2
+        version: 11.17.2
+      microsandbox:
+        specifier: 0.6.16
+        version: 0.6.16
+      playwright:
+        specifier: 1.62.1
+        version: 1.62.1
+    devDependencies:
+      '@eslint/js':
+        specifier: 9.39.5
+        version: 9.39.5
+      '@types/bun':
+        specifier: latest
+        version: 1.4.3
+      '@types/node':
+        specifier: 26.4.1
+        version: 26.4.1
+      dprint:
+        specifier: 0.57.1
+        version: 0.57.1
+      eslint:
+        specifier: 9.39.5
+        version: 9.39.5(jiti@2.7.0)(supports-color@10.2.2)
+      eslint-import-resolver-typescript:
+        specifier: 4.4.5
+        version: 4.4.5(eslint-plugin-import@2.32.0)(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
+      eslint-plugin-import:
+        specifier: 2.32.0
+        version: 2.32.0(@typescript-eslint/parser@8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2))(eslint-import-resolver-typescript@4.4.5)(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
+      eslint-plugin-unicorn:
+        specifier: 65.0.0
+        version: 65.0.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))
+      happy-dom:
+        specifier: 20.13.2
+        version: 20.13.2
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      typescript-eslint:
+        specifier: 8.69.0
+        version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
+
+  .smithers/flows/coding: {}
+
+  .smithers/flows/review/seeded-bugs:
+    dependencies:
+      '@effect/platform-node':
+        specifier: 4.0.4
+        version: 4.0.4(effect@4.0.4)(redis@6.2.1(@opentelemetry/api@1.9.1))
+      '@smthrs/agent':
+        specifier: workspace:*
+        version: link:../../../../packages/smithers/agent
+      '@smthrs/cli':
+        specifier: workspace:*
+        version: link:../../../../packages/smithers
+      '@smthrs/core':
+        specifier: workspace:*
+        version: link:../../../../packages/smithers/flows/core
+      '@smthrs/engine':
+        specifier: workspace:*
+        version: link:../../../../packages/smithers/flows/engine
+      '@smthrs/evals':
+        specifier: workspace:*
+        version: link:../../../../packages/smithers/agent/evals
+      '@smthrs/flow':
+        specifier: workspace:*
+        version: link:../../../../packages/smithers/flows/flow
+      '@smthrs/flows':
+        specifier: workspace:*
+        version: link:../../../../packages/smithers/flows
+      '@smthrs/model':
+        specifier: workspace:*
+        version: link:../../../../packages/smithers/agent/model
+      '@smthrs/registry':
+        specifier: workspace:*
+        version: link:../../../../packages/smithers/agent/registry
+      '@smthrs/scorers':
+        specifier: workspace:*
+        version: link:../../../../packages/smithers/agent/scorers
+      effect:
+        specifier: 4.0.4
+        version: 4.0.4
+    devDependencies:
+      '@smthrs/targets':
+        specifier: workspace:*
+        version: link:../../../../packages/smithers/build/targets
+      '@types/node':
+        specifier: 26.4.1
+        version: 26.4.1
+      bun-types:
+        specifier: ^1.4.0
+        version: 1.4.3
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
   apps/app:
     dependencies:
       '@codemirror/state':
@@ -679,193 +866,6 @@ importers:
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
-
-  flows:
-    dependencies:
-      '@effect/platform-bun':
-        specifier: 4.0.4
-        version: 4.0.4(effect@4.0.4)
-      '@effect/platform-node':
-        specifier: 4.0.4
-        version: 4.0.4(effect@4.0.4)(redis@6.2.1(@opentelemetry/api@1.9.1))
-      '@pierre/diffs':
-        specifier: ^1.3.6
-        version: 1.3.6(@shikijs/themes@4.4.3)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@smthrs/agent':
-        specifier: workspace:*
-        version: link:../packages/smithers/agent
-      '@smthrs/build-cli':
-        specifier: workspace:*
-        version: link:../packages/smithers/build/build-cli
-      '@smthrs/capability':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/capability
-      '@smthrs/cli':
-        specifier: workspace:*
-        version: link:../packages/smithers
-      '@smthrs/coding':
-        specifier: workspace:*
-        version: link:coding
-      '@smthrs/control':
-        specifier: workspace:*
-        version: link:../packages/smithers/control
-      '@smthrs/core':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/core
-      '@smthrs/engine':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/engine
-      '@smthrs/engine-store':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/engine-store
-      '@smthrs/flow':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/flow
-      '@smthrs/flows':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows
-      '@smthrs/gateway':
-        specifier: workspace:*
-        version: link:../packages/smithers/gateway
-      '@smthrs/harness':
-        specifier: workspace:*
-        version: link:../packages/smithers/agent/harness
-      '@smthrs/kernel':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/kernel
-      '@smthrs/migrate':
-        specifier: workspace:*
-        version: link:../packages/smithers/migrate
-      '@smthrs/model':
-        specifier: workspace:*
-        version: link:../packages/smithers/agent/model
-      '@smthrs/patterns':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/patterns
-      '@smthrs/plan':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/plan
-      '@smthrs/platform-node':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/platform-node
-      '@smthrs/registry':
-        specifier: workspace:*
-        version: link:../packages/smithers/agent/registry
-      '@smthrs/run-store':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/run-store
-      '@smthrs/sandbox':
-        specifier: workspace:*
-        version: link:../packages/smithers/flows/sandbox
-      '@smthrs/std':
-        specifier: workspace:*
-        version: link:../packages/smithers/agent/std
-      '@smthrs/targets':
-        specifier: workspace:*
-        version: link:../packages/smithers/build/targets
-      '@smthrs/ui-styleguide':
-        specifier: workspace:*
-        version: link:../packages/smithers/ui/ui-styleguide
-      effect:
-        specifier: 4.0.4
-        version: 4.0.4
-      mermaid:
-        specifier: ^11.17.2
-        version: 11.17.2
-      microsandbox:
-        specifier: 0.6.16
-        version: 0.6.16
-      playwright:
-        specifier: 1.62.1
-        version: 1.62.1
-    devDependencies:
-      '@eslint/js':
-        specifier: 9.39.5
-        version: 9.39.5
-      '@types/bun':
-        specifier: latest
-        version: 1.4.3
-      '@types/node':
-        specifier: 26.4.1
-        version: 26.4.1
-      dprint:
-        specifier: 0.57.1
-        version: 0.57.1
-      eslint:
-        specifier: 9.39.5
-        version: 9.39.5(jiti@2.7.0)(supports-color@10.2.2)
-      eslint-import-resolver-typescript:
-        specifier: 4.4.5
-        version: 4.4.5(eslint-plugin-import@2.32.0)(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
-      eslint-plugin-import:
-        specifier: 2.32.0
-        version: 2.32.0(@typescript-eslint/parser@8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2))(eslint-import-resolver-typescript@4.4.5)(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
-      eslint-plugin-unicorn:
-        specifier: 65.0.0
-        version: 65.0.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))
-      happy-dom:
-        specifier: 20.13.2
-        version: 20.13.2
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
-      typescript-eslint:
-        specifier: 8.69.0
-        version: 8.69.0(eslint@9.39.5(jiti@2.7.0)(supports-color@10.2.2))(supports-color@10.2.2)
-
-  flows/coding: {}
-
-  flows/review/seeded-bugs:
-    dependencies:
-      '@effect/platform-node':
-        specifier: 4.0.4
-        version: 4.0.4(effect@4.0.4)(redis@6.2.1(@opentelemetry/api@1.9.1))
-      '@smthrs/agent':
-        specifier: workspace:*
-        version: link:../../../packages/smithers/agent
-      '@smthrs/cli':
-        specifier: workspace:*
-        version: link:../../../packages/smithers
-      '@smthrs/core':
-        specifier: workspace:*
-        version: link:../../../packages/smithers/flows/core
-      '@smthrs/engine':
-        specifier: workspace:*
-        version: link:../../../packages/smithers/flows/engine
-      '@smthrs/evals':
-        specifier: workspace:*
-        version: link:../../../packages/smithers/agent/evals
-      '@smthrs/flow':
-        specifier: workspace:*
-        version: link:../../../packages/smithers/flows/flow
-      '@smthrs/flows':
-        specifier: workspace:*
-        version: link:../../../packages/smithers/flows
-      '@smthrs/model':
-        specifier: workspace:*
-        version: link:../../../packages/smithers/agent/model
-      '@smthrs/registry':
-        specifier: workspace:*
-        version: link:../../../packages/smithers/agent/registry
-      '@smthrs/scorers':
-        specifier: workspace:*
-        version: link:../../../packages/smithers/agent/scorers
-      effect:
-        specifier: 4.0.4
-        version: 4.0.4
-    devDependencies:
-      '@smthrs/targets':
-        specifier: workspace:*
-        version: link:../../../packages/smithers/build/targets
-      '@types/node':
-        specifier: 26.4.1
-        version: 26.4.1
-      bun-types:
-        specifier: ^1.4.0
-        version: 1.4.3
       typescript:
         specifier: 5.9.3
         version: 5.9.3
@@ -9734,9 +9734,6 @@ packages:
 
   '@types/whatwg-mimetype@3.0.2':
     resolution: {integrity: sha512-c2AKvDT8ToxLIOUlN51gTiHXflsfIFisS4pO7pDPoKouJCESkhZnEy623gwP9laCy5lnLDAw1vAzu2vM2YLOrA==}
-
-  '@types/ws@8.18.1':
-    resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
 
   '@types/ws@8.18.2':
     resolution: {integrity: sha512-67MQl+fpWKVTT1NYdnmo3U4sc/xPo/zQBncVnI74qmQa0z/b+1g6iYqNmGCPbxO+zz2aklb08a0oHfegiVd0/w==}
@@ -18776,10 +18773,6 @@ snapshots:
 
   '@types/whatwg-mimetype@3.0.2': {}
 
-  '@types/ws@8.18.1':
-    dependencies:
-      '@types/node': 26.4.1
-
   '@types/ws@8.18.2':
     dependencies:
       '@types/node': 26.4.1
@@ -21117,7 +21110,7 @@ snapshots:
     dependencies:
       '@types/node': 26.4.1
       '@types/whatwg-mimetype': 3.0.2
-      '@types/ws': 8.18.1
+      '@types/ws': 8.18.2
       buffer-image-size: 0.6.4
       entities: 7.0.1
       whatwg-mimetype: 3.0.0

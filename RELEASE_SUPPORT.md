@@ -152,13 +152,13 @@ within the existing host action; omitted timeouts preserve existing behavior.
 
 ## Reviewing changes before publication
 
-After `node flows/release/build-release.mjs`, run
-`node flows/release/check-api-baseline.mjs`. The baseline includes publication export
+After `node .smithers/flows/release/build-release.mjs`, run
+`node .smithers/flows/release/check-api-baseline.mjs`. The baseline includes publication export
 maps and every emitted declaration, including private declarations referenced
 by public types. It detects drift; it does not determine semantic compatibility.
 For a deliberate change, review the declaration diff and consumer examples,
 record the compatibility impact in release notes, then explicitly regenerate
-with `node flows/release/check-api-baseline.mjs --update`. Never update a baseline just
+with `node .smithers/flows/release/check-api-baseline.mjs --update`. Never update a baseline just
 to make a failed release gate green.
 
 Before a stable release, retain immutable databases, journals and artifact

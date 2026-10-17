@@ -217,7 +217,7 @@ test("a stamped failure reaches the card through the run row and is transcribed 
 test("a settled registrar refusal is transcribed as the sentence the card leads with", async () => {
   const refusal = 'Add a model to "nightly-lint" to schedule it.'
   const verdict = `failed — invalid_receipt: ${refusal}`
-  const cause = `invalid_receipt: ${refusal}\n    at repository/trigger (flows/repository/triggers.ts:20:11)`
+  const cause = `invalid_receipt: ${refusal}\n    at repository/trigger (.smithers/flows/repository/triggers.ts:20:11)`
   const result = await poll([{ events: [failed(1, cause)], revision: 1, status: "failed", verdict }], { flowId: "repository/trigger" })
   expect(result.card.payload.error).toBe(verdict)
   expect(result.messages).toEqual([`The run failed: ${refusal}`])
@@ -226,7 +226,7 @@ test("a settled registrar refusal is transcribed as the sentence the card leads 
 test("a settled setup refusal is transcribed as the sentence the person has to answer", async () => {
   const refusal = "Run evals for this exact candidate before continuing"
   const verdict = `failed — invalid_receipt: ${refusal}`
-  const cause = `invalid_receipt: ${refusal}\n    at repository/Setup (flows/repository/receipts.ts:109)`
+  const cause = `invalid_receipt: ${refusal}\n    at repository/Setup (.smithers/flows/repository/receipts.ts:109)`
   const result = await poll([{ events: [failed(1, cause)], revision: 1, status: "failed", verdict }], { flowId: "repository/setup" })
   expect(result.card.payload.error).toBe(verdict)
   expect(result.messages).toEqual([`The run failed: ${refusal}`])

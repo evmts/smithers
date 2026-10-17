@@ -106,7 +106,7 @@ type FlowSignal struct {
 
 // builtinFlowsJSON holds the digest of each built-in version the install
 // ships: the composition's execution digest, as the flow registry measures the
-// descriptor Executable.catalog binds. flows/test/coding-builtin-routes.test.ts
+// descriptor Executable.catalog binds. .smithers/flows/test/coding-builtin-routes.test.ts
 // fails when a built-in composition changes without this file.
 //
 //go:embed builtin_flows.json

@@ -23,7 +23,7 @@ const withCopy = (fn) => {
 }
 const copy = (root, rel) => cpSync(join(repo, rel), join(root, rel), { recursive: true })
 const copyPackageRoster = (root) => {
-  copy(root, "flows/docs-sync/package-docs.mjs")
+  copy(root, ".smithers/flows/docs-sync/package-docs.mjs")
   copy(root, "packages/repo-targets/scripts/workspace-packages.mjs")
   copy(root, "pnpm-workspace.yaml")
   copy(root, "apps/site/scripts/package-doc-links.mjs")

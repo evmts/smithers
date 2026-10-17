@@ -156,7 +156,7 @@ test("every shared-state stack plans against one record under stage prod", () =>
 })
 
 test("bug-worker local deploy commands refuse unqualified publication", () => {
-  const guard = join(root, "flows/rollout/refuse-unqualified.mjs")
+  const guard = join(root, ".smithers/flows/rollout/refuse-unqualified.mjs")
   for (const app of ["bug-worker"]) {
     for (const flags of [[], ["--stage", "prod"], ["--adopt", "--stage", "prod"]]) {
       const label = `${app} ${flags.join(" ")}`

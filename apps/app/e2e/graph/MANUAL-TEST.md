@@ -229,7 +229,7 @@ uses the filesystem diff-bundle and copy-back receipts, not that metadata.
 No source-change receipt is manufactured, and no browser response is intercepted.
 
 This does **not** certify provider authoring. Production `create-flow` is
-`flows/create-flow/flow.mdx`; it needs a configured provider and model seat.
+`.smithers/flows/create-flow/flow.mdx`; it needs a configured provider and model seat.
 Neither `AI_GATEWAY_API_KEY` nor `ANTHROPIC_API_KEY` was present in this lane.
 
 Production `NativeControl` CAN serve without retaining its startup executable
@@ -253,7 +253,7 @@ runs. A stale descriptor beside a rebuilt plan was refused
 that file is the edit step and fails that way when the fix is removed.
 
 **What a graph flow does.** A `@smthrs/flow` graph — the shape
-`flows/create-flow/scaffold/flow.mdx` instructs an agent to write — is a
+`.smithers/flows/create-flow/scaffold/flow.mdx` instructs an agent to write — is a
 production shape. Discovery reads its description, capabilities and effects off
 the constants it exports, the loader accepts it as a default export, and the
 plan a host answers with is the FILE's own graph: the author's actions, under

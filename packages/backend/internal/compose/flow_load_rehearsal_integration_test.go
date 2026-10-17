@@ -67,7 +67,7 @@ func TestFlowLoadGuestRehearsal(t *testing.T) {
 	builtin := original.version("active")
 	var loaded string
 	if !r.step("1 Repository flow activates", "GitHub main; POST /api/github/sync; GET /api/flows", "merged-syncing then Active with the guest's loaded version", "T-FLW-03", func() error {
-		source, err := os.ReadFile(filepath.Join(r.root, "flows/todo/flow.ts"))
+		source, err := os.ReadFile(filepath.Join(r.root, ".smithers/flows/todo/flow.ts"))
 		if err != nil {
 			return err
 		}

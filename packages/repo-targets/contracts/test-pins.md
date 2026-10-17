@@ -4,7 +4,7 @@ This file is the register every test pin must appear in, and the one-page
 ledger of the 1.0.0-rc.0 posture and limits a reader would otherwise have to
 discover from the test tree. The release train packs the `engine`, `agent` and
 `tooling` groups at one synchronized version, and `publishedPackages` in
-`flows/release/pack-release.mjs` is the roster. These are statements of current
+`.smithers/flows/release/pack-release.mjs` is the roster. These are statements of current
 behavior, not promises of planned behavior.
 
 ## Support posture
@@ -14,7 +14,7 @@ manifests declare `engines.node` as `>=26.4.0`, and the release workflow
 runs the candidate tarballs on `26.4.0`. That floor is the Node the published packages support, and it is a
 separate fact from the Node the toolchain runs: `.node-version` at the root
 holds one exact release, `ci.yml` reads it through `node-version-file`,
-`.smithers/ci/cloud.sh` bootstraps a Cloud runner from it, and
+`.github/scripts/ci/cloud.sh` bootstraps a Cloud runner from it, and
 `packages/repo-targets/contracts/check-toolchain-pins.mjs` fails when it drops below the declared
 floor or when a workflow names a release of its own. The durable database backend is
 `@effect/sql-sqlite-node`; see
@@ -70,7 +70,7 @@ after its failures are fixed and repeated main-branch runs are green.
 
 The release train packs the `engine`, `agent` and `tooling` groups together at
 one synchronized version: the 49 names `publishedPackages` restates in
-`flows/release/pack-release.mjs` and checks against what the workspace declares. Four
+`.smithers/flows/release/pack-release.mjs` and checks against what the workspace declares. Four
 tooling packages are public, `@smthrs/build`, `@smthrs/build-cli`,
 `@smthrs/targets`; deployment and repository-local
 tooling stays out of the roster through its manifest `private` flag.
@@ -87,7 +87,7 @@ is application-wired rather than a shipped default.
 ## Cutting a release
 
 Start from a clean `main` checkout and run
-`node flows/release/cut-release.mjs <version> --commit`, without a `v` prefix.
+`node .smithers/flows/release/cut-release.mjs <version> --commit`, without a `v` prefix.
 The cut refuses detached HEADs, existing release tags, and branches other than
 `main` unless `--allow-branch` explicitly permits a named branch.
 
@@ -95,7 +95,7 @@ The sequence bumps manifests and internal ranges, generates the changelog,
 refreshes `pnpm-lock.yaml` with `pnpm install --lockfile-only --ignore-scripts`,
 and refreshes a tracked `bun.lock` with
 `bun install --lockfile-only --ignore-scripts`. It then checks the version and
-runs `node flows/release/generate-changelog.mjs --check --version <version>`.
+runs `node .smithers/flows/release/generate-changelog.mjs --check --version <version>`.
 `--commit` records the manifests and lockfiles, checks the changelog again on
 the exact release commit, and creates an annotated `v<version>` tag locally.
 
@@ -342,13 +342,13 @@ and `AI_GATEWAY_API_KEY` exported, then
 `SMITHERS_CLAUDE_CODE_SMOKE=1 pnpm --filter @smthrs/cli exec vitest run test/ClaudeCodeHost.test.ts --coverage.enabled=false`.
 A source checkout also needs the `smithers-jj-export` helper
 (`cargo build --locked --release -p smithers-ffi --bin smithers-jj-export`).
-The same gate opens one case in `flows/test/wrapped.test.ts`, whose other
+The same gate opens one case in `.smithers/flows/test/wrapped.test.ts`, whose other
 cases launch a fake `claude` script. It runs the `wrapped` flow against the
 real `claude -p` under `plan` permission on a one-file working copy and
 asserts the answer read from that file, the recorded session, and unchanged
 sources. That launch runs under the operator's own settings, so their Claude
 Code hooks fire. Run it with
-`SMITHERS_CLAUDE_CODE_SMOKE=1 node --experimental-strip-types --test --test-name-pattern='installed Claude Code' flows/test/wrapped.test.ts`.
+`SMITHERS_CLAUDE_CODE_SMOKE=1 node --experimental-strip-types --test --test-name-pattern='installed Claude Code' .smithers/flows/test/wrapped.test.ts`.
 Closing either for the default gate means spending subscription quota on
 every run, which the RC does not do.
 

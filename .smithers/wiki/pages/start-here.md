@@ -13,7 +13,7 @@ Smithers is built from typed durable flows, a coding agent that calls flows, and
 
 ## Follow the durable path
 
-A file flow lives at `flows/<name>/flow.ts` and default-exports `Flow.make` from `@smthrs/flow`; the tag matches its directory. `/flows` lists discovered flow descriptions without importing modules, and a flow invoked without required input opens a schema-driven form.
+A file flow lives at `.smithers/flows/<name>/flow.ts` and default-exports `Flow.make` from `@smthrs/flow`; the tag matches its directory. `/flows` lists discovered flow descriptions without importing modules, and a flow invoked without required input opens a schema-driven form.
 
 `NodeRuntime` is the Node host composition over the shared, injected durable runtime. Its `layerHost` provides the native host, guarded services, database and registered flows.
 

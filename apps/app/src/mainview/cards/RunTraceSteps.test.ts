@@ -5,7 +5,7 @@ import type { JournalRecord } from "./RunTrace"
 import { traceGoals, traceStatus } from "./RunTraceStatus"
 import { CODING_PLAN } from "./fixtures/CodingPlan"
 import { codingDecision, preparedCodingJournal } from "./fixtures/CodingJournal"
-import { checkInputDigest } from "../../../../../flows/coding/schema"
+import { checkInputDigest } from "../../../../../.smithers/flows/coding/schema"
 
 const run = { runId: "run", flowId: "module", status: "running" }
 const left = { executionId: "execution", stepId: "a".repeat(64), action: "coding/edit", attempt: 1, ask: 0, retry: 1, scope: "left", generation: 0 }

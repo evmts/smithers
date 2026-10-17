@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs"
 import { Schema } from "effect"
-import { RequestInput, RequestResult } from "../../../../../../flows/coding/schema.ts"
+import { RequestInput, RequestResult } from "../../../../../../.smithers/flows/coding/schema.ts"
 import { codingDecision } from "./CodingJournal"
 import type { Card } from "../../state/AppState"
 

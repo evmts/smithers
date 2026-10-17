@@ -135,7 +135,7 @@ func TestInstallChecksRemainAvailableWithInvalidMachineVersionPostgres(t *testin
 	require.Equal(t, []string{"pnpm", "lint"}, project.Detected[1].Argv)
 }
 
-// A page is declared only where the wiki inventory (flows/wiki/operations.ts)
+// A page is declared only where the wiki inventory (.smithers/flows/wiki/operations.ts)
 // collects a source: a page with none can never be cited, so the verified
 // refresh would fail on every fold (#3785).
 func TestInstallWikiPagesOnlyWhereTheInventoryReadsASource(t *testing.T) {

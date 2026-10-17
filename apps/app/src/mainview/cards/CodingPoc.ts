@@ -1,6 +1,6 @@
 import { Option, Schema } from "effect"
 import * as Digest from "@smthrs/core/Digest"
-import { PocInput, PocResult } from "../../../../../flows/coding/poc-schema.ts"
+import { PocInput, PocResult } from "../../../../../.smithers/flows/coding/poc-schema.ts"
 import type { Card } from "../state/AppState"
 import { engineRunEvidence } from "./EngineTrace"
 

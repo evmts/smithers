@@ -1750,13 +1750,13 @@ func mustRehearsalURL(raw string) *url.URL { u, _ := url.Parse(raw); return u }
 func buildRehearsalCodingHost(t *testing.T, node, root string, fixture ...bool) flowmanifest.Registry {
 	t.Helper()
 	coding := filepath.Join(t.TempDir(), "smithers-coding-host")
-	build := exec.Command(node, filepath.Join(root, "flows/coding/build.mjs"), coding)
+	build := exec.Command(node, filepath.Join(root, ".smithers/flows/coding/build.mjs"), coding)
 	if len(fixture) > 0 && fixture[0] {
 		// Only the Linux trusted-process fixture lacks the guest file broker.
 		// Reference microVMs keep the installed entry and authenticated provider.
 		build = exec.Command(node, "--input-type=module", "-e",
 			`const { bundle } = await import(process.argv[1]); await bundle(process.argv[2], process.argv[3]);`,
-			"file://"+filepath.Join(root, "flows/coding/build.mjs"), filepath.Join(root, "flows/test/rehearsal-host.ts"), coding)
+			"file://"+filepath.Join(root, ".smithers/flows/coding/build.mjs"), filepath.Join(root, ".smithers/flows/test/rehearsal-host.ts"), coding)
 	}
 	build.Dir = root
 	output, err := build.CombinedOutput()

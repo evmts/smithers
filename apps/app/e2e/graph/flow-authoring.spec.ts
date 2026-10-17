@@ -14,7 +14,7 @@ const command = async (page: Page, text: string) => {
  *
  * The author is scripted — no provider is involved — and nothing under it is.
  * The run writes a real `@smthrs/flow` graph file, shaped the way
- * `flows/create-flow/scaffold/flow.mdx` teaches one, through the engine's
+ * `.smithers/flows/create-flow/scaffold/flow.mdx` teaches one, through the engine's
  * workspace sandbox and copy-back. The box then DISCOVERS it: a real registry,
  * a real measured module load, and the catalog refresh that registers the
  * rebuilt body with the running engine. Nothing is registered on the authored

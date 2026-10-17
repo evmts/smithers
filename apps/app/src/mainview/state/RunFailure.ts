@@ -33,21 +33,21 @@ const SETUP_FLOW = "repository/setup"
  * of these leaves the file that emits it.
  */
 export const SETUP_REFUSALS: ReadonlySet<string> = new Set([
-  // flows/repository/receipts.ts:109 — the evidence the next operation needs
+  // .smithers/flows/repository/receipts.ts:109 — the evidence the next operation needs
   "Run evals for this exact candidate before continuing",
   "Run the live trial for this exact candidate before continuing",
-  // flows/repository/setup.ts
+  // .smithers/flows/repository/setup.ts
   "Required evaluation cases have not passed with evidence",
   "A retained candidate was edited; create a new revision",
   "The reviewed flow declaration was edited; create a new candidate",
   "Connect the repository host before testing or activating automation",
   "Repository source changed after the live trial; test the candidate again",
-  // flows/repository/activation.ts
+  // .smithers/flows/repository/activation.ts
   "Connect the repository host before activation",
   "Setup reached its configured time limit",
   "Automatic replies are currently available for native issue handling only; choose draft replies",
   "Resolve native source conflicts before registration",
-  // flows/repository/setup.ts RefuseSetup / RefuseJob
+  // .smithers/flows/repository/setup.ts RefuseSetup / RefuseJob
   "Setup input must match the reviewed candidate digest",
   "Job input does not match its registered responsibility or candidate"
 ])
@@ -72,8 +72,8 @@ export const SETUP_REFUSAL_COPY: ReadonlyMap<string, string> = new Map([
 
 /**
  * Every code a settled setup receipt's verdict can carry: the literal set
- * `CodingError` declares in flows/coding/schema.ts, which every
- * flows/repository/*.ts refusal is built from.
+ * `CodingError` declares in .smithers/flows/coding/schema.ts, which every
+ * .smithers/flows/repository/*.ts refusal is built from.
  *
  * RunFailure.test.ts reads that declaration, so a code added to the flow's set
  * fails this suite until it is answered below, and the exhaustive match in
@@ -164,7 +164,7 @@ const journalledCause = (events: ReadonlyArray<Record<string, unknown>> = []): s
  * `invalid_receipt` is the engine's catch-all evidence code — an exporter exit,
  * a decode failure, a deadline — so the code alone says nothing about blame.
  * The registrar is the one flow that builds it from the maintainer's own
- * declared input (flows/repository/triggers.ts), so the pair identifies a
+ * declared input (.smithers/flows/repository/triggers.ts), so the pair identifies a
  * refusal the request has to answer. Every other pair is Smithers' until the
  * host journals the fault beside the cause.
  *

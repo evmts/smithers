@@ -200,7 +200,7 @@ export const startLocalOwn = async (rootDir: string, revision: string, outputDir
     await run("build GitHub fake", ["go", "build", "-o", fakeBinary, "./packages/backend/cmd/githubfake"])
     const daemonTarget = join(rootDir, ".artifacts", "rehearsal-machined")
     await run("build rehearsal daemon", ["cargo", "build", "--locked", "-p", "smithers-machined", "--example", "rehearsal_daemon", "--target-dir", daemonTarget])
-    await run("build coding host", ["node", "--input-type=module", "-e", `import { bundle } from "./flows/coding/build.mjs"; await bundle("flows/test/rehearsal-host.ts", ${JSON.stringify(join(hostDir, "smithers-coding-host"))})`])
+    await run("build coding host", ["node", "--input-type=module", "-e", `import { bundle } from "./.smithers/flows/coding/build.mjs"; await bundle(".smithers/flows/test/rehearsal-host.ts", ${JSON.stringify(join(hostDir, "smithers-coding-host"))})`])
     await run("build model host", ["node", "apps/model-host/build.mjs", join(hostDir, "smithers-model-host")])
     await run("write Flow host manifest", ["node", "apps/app/scripts/flow-host-manifest.mts", manifest, join(hostDir, "smithers-coding-host")])
 

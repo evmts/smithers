@@ -322,7 +322,7 @@ type SandboxConfig struct {
 	WorkspaceCodingDefaultModel string `mapstructure:"workspace_coding_default_model"`
 	// Optional provider:model pin for the coding/review role (the stack's
 	// review/change and the review check). Unset, the coding host reviews on
-	// a second vendor its keys reach (flows/coding/host.ts reviewSeats).
+	// a second vendor its keys reach (.smithers/flows/coding/host.ts reviewSeats).
 	WorkspaceCodingReviewModel string `mapstructure:"workspace_coding_review_model"`
 
 	// FlowJournalPostgresURL keeps each workspace coding host's control and

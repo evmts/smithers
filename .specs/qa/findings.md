@@ -28,7 +28,7 @@
 | 10-02 16:40 | Q-025 | T-FLW-11 (unstarted) | ahead test plan: 24 spec gaps; 13 unspecified regression behaviors | 8a | open |
 | 10-02 16:55 | Q-026 | #3071 rows 9a,7,12,22,38,39,56 + 42-44 | landed dff26944 (scripts #3093, lazy msb, TUI cut tests); packages/ commit 3ced044f awaits 38 | QA | partly landed |
 | 10-02 16:55 | Q-027 | apps/tui/src/app.tsx:363-370,837 | New/Resume status overwritten (#3187); b8 fixes on main, stk lane rebases | b8 | open |
-| 10-02 16:55 | Q-028 | flows/issue-sweep/work/flow.ts | 8 fault tags unregistered (row 23); not 22s; QA fixes (orphan Codex sessions work nearby) | QA | queued |
+| 10-02 16:55 | Q-028 | .smithers/flows/issue-sweep/work/flow.ts | 8 fault tags unregistered (row 23); not 22s; QA fixes (orphan Codex sessions work nearby) | QA | queued |
 | 10-02 16:55 | Q-029 | burndown-infrastructure.test.ts | row 16: owner 3f; fix = injected-statfs unit seam + host-capable tier + body-failure-first cleanup; land by Sat 12:00 | 3f | owned |
 | 10-02 16:55 | Q-030 | mvp.md §12.6 vs §14 | circular release gate | 98 | ruled 6b2a28d3: launch rehearsal; G-MNT-1 |
 | 10-02 16:55 | Q-031 | AGENTS.md:202 | Sonnet pepper vs Sol | 98 | ruled 6b2a28d3 |

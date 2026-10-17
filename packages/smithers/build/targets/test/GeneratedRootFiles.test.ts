@@ -278,8 +278,8 @@ describe("the checked-in root files match the declarations", () => {
         "apps/*/PACKAGE.ts",
         "evals/*/PACKAGE.ts",
         "packages/smithers/agent/harness/benchmarks/*/PACKAGE.ts",
-        "flows/review/seeded-bugs/PACKAGE.ts",
-        "flows/PACKAGE.ts",
+        ".smithers/flows/review/seeded-bugs/PACKAGE.ts",
+        ".smithers/flows/PACKAGE.ts",
         "packages/*/PACKAGE.ts",
         "packages/*/*/PACKAGE.ts",
         "packages/*/*/*/PACKAGE.ts"

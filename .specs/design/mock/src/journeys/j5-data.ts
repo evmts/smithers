@@ -9,7 +9,7 @@
 import { STACK, type ActorId, type CodeLine, type Evidence, type FlowStep, type FlowVersion, type Todo, type WikiPage } from "../world"
 import { MAYA } from "./seed"
 
-export const FLOW_FILE = "flows/todo/flow.ts"
+export const FLOW_FILE = ".smithers/flows/todo/flow.ts"
 
 const PLAN: FlowStep = { id: "plan", title: "Plan", detail: "Read the TODO and the wiki, then write a plan." }
 const IMPLEMENT: FlowStep = { id: "implement", title: "Implement", detail: "Edit the branch until the plan is done." }
@@ -59,14 +59,14 @@ export const VERIFY_EDIT = `    verify: ["pnpm typecheck", "pnpm test"],`
 /** What the app agent drafts from Maya's rule; nothing reaches the stack until she commits it. */
 export const FLOW_DRAFT = {
   title: "Run pnpm test and update the changelog",
-  prompt: "In flows/todo/flow.ts, run the full pnpm test in Verify and add a Changelog step before Propose."
+  prompt: "In .smithers/flows/todo/flow.ts, run the full pnpm test in Verify and add a Changelog step before Propose."
 }
 
 export const FLOW_TODO: Todo = { id: "t-flow", ref: "T12", title: FLOW_DRAFT.title, prompt: FLOW_DRAFT.prompt, owner: MAYA, branch: "b-flow", state: "starting" }
 
 export const LINT_TODO: Todo = {
   id: "t-lint", ref: "T13", title: "Add lint to the Verify step", owner: MAYA, branch: "b-lint", state: "queued",
-  prompt: "In flows/todo/flow.ts, run pnpm lint in the Verify step."
+  prompt: "In .smithers/flows/todo/flow.ts, run pnpm lint in the Verify step."
 }
 
 export const NEXT_TODO: Todo = {
@@ -85,7 +85,7 @@ export const lessonPage = (seq: number): WikiPage => ({
   lines: [
     { n: 1, text: "Every TODO runs `pnpm test` and adds a CHANGELOG.md entry." },
     { n: 2, text: "Why: Maya's rule, merged as T12." },
-    { n: 3, text: "Flow: `flows/todo/flow.ts`, v2" }
+    { n: 3, text: "Flow: `.smithers/flows/todo/flow.ts`, v2" }
   ],
   decision: { from: 1, to: 2, by: STACK, change: 89 }
 })

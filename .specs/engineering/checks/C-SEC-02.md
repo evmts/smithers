@@ -9,7 +9,7 @@ Automation: `packages/backend/internal/compose/flow_isolation_integration_test.g
 - Install built from the commit under test, started through the bundled launcher and `smthrs host start`; launcher-forced microVM mode and bundled runtime paths; real PostgreSQL 18; fake GitHub serving one repository. Use a disposable bundle copy for runtime-failure cases.
 - Repository at a fixture commit containing:
   - `flows/canary/beacon.ts`: on import, writes `$HOME/.smithers-canary/<nonce>` and opens TCP to `127.0.0.1:<canaryPort>` sending the nonce;
-  - `flows/todo/flow.ts`, `flows/canary/flow.ts` and `flows/merge/flow.ts`, each importing the beacon.
+  - `.smithers/flows/todo/flow.ts`, `flows/canary/flow.ts` and `flows/merge/flow.ts`, each importing the beacon.
 - A canary listener on the host at `127.0.0.1:<canaryPort>`, recording every connection.
 - One owner session; capacity at least 2.
 

@@ -498,7 +498,7 @@ test("T-UI-11 Pierre renders supplied hunks with line numbers and burst Restore"
   await page.goto('/view-stories.html?story=DiffSurface/burst')
   await page.evaluate(() => window.addEventListener('story-callback', event => document.body.setAttribute('data-diff-action', JSON.stringify((event as CustomEvent).detail))))
   await page.getByRole('button', { name: 'Restore this file' }).focus(); await page.keyboard.press('Enter')
-  await expect(page.locator('body')).toHaveAttribute('data-diff-action', JSON.stringify({ kind: 'action', value: { tag: 'file.restore', args: { path: 'flows/todo/flow.ts', revision: 'burst-17' } } }))
+  await expect(page.locator('body')).toHaveAttribute('data-diff-action', JSON.stringify({ kind: 'action', value: { tag: 'file.restore', args: { path: '.smithers/flows/todo/flow.ts', revision: 'burst-17' } } }))
   await page.goto('/view-stories.html?story=DiffSurface/hostile')
   await expect(page.locator('diffs-container')).toContainText('<script>alert("diff")</script>')
   await expect(page.locator('diffs-container script')).toHaveCount(0)
@@ -771,7 +771,7 @@ test("File recovery Copy and Reapply remain keyboard accessible", async ({ page 
   await expect(reapply).toBeFocused()
   await page.keyboard.press("Enter")
   await expect.poll(() => page.evaluate(() => (window as unknown as { fileRecoveryCalls: unknown[] }).fileRecoveryCalls)).toEqual([
-    { kind: "action", value: { tag: "file.reapply", args: { path: "flows/todo/flow.ts" } } },
+    { kind: "action", value: { tag: "file.reapply", args: { path: ".smithers/flows/todo/flow.ts" } } },
   ])
   await expect(notice.locator("pre")).toHaveText('  description: "Build",\n')
 })
@@ -1057,10 +1057,10 @@ test("File and burst Diff supplied actions have keyboard doors", async ({ page }
   for (const theme of ["light", "dark"]) for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 })
     for (const [story, label, tag, args] of [
-      ["CodeSurface/deleted", "Restore", "file.restore-deleted", { path: "flows/todo/flow.ts" }],
-      ["CodeSurface/renamed", "Follow", "file.follow-rename", { path: "flows/todo/flow.ts" }],
-      ["CodeSurface/outside", "Compare", "file.compare", { path: "flows/todo/flow.ts" }],
-      ["DiffSurface/burst", "Restore this file", "file.restore", { path: "flows/todo/flow.ts", revision: "burst-17" }],
+      ["CodeSurface/deleted", "Restore", "file.restore-deleted", { path: ".smithers/flows/todo/flow.ts" }],
+      ["CodeSurface/renamed", "Follow", "file.follow-rename", { path: ".smithers/flows/todo/flow.ts" }],
+      ["CodeSurface/outside", "Compare", "file.compare", { path: ".smithers/flows/todo/flow.ts" }],
+      ["DiffSurface/burst", "Restore this file", "file.restore", { path: ".smithers/flows/todo/flow.ts", revision: "burst-17" }],
     ] as const) {
       await page.goto(`/view-stories.html?story=${story}&theme=${theme}`)
       await page.evaluate(() => {

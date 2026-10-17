@@ -631,7 +631,7 @@ it("keeps every Unicode plan page within the encoded entry budget exactly once a
 /*
  * The width a caller chooses, not the width a page happens to hold.
  *
- * `flows/wiki` fans out over an input-sized list, so a fan-in of any width is
+ * `.smithers/flows/wiki` fans out over an input-sized list, so a fan-in of any width is
  * something a host really records. The node's summary, its dependency list and
  * the thousand edges that end on it are spread over as many pages as they
  * need, measured through the DURABLE envelope — the redacted journal entry

@@ -260,7 +260,7 @@ Owns: `agents.ts`, `models.ts`, `flows.ts`, `flow-control.ts`,
 
 | # | File | Change | Test first (fails before) |
 | --- | --- | --- | --- |
-| 1 | `flow-control.ts`, `flows.ts` | `discover` maps `Extension.project`; `Listed = Extension.Descriptor`; `Port.body(name) => { text, baseDirectory, digest }` via `Registry.loadBody`, `FlowError("refused")` for module bodies | `test/flow-control.test.ts`: fixture `flows/review/flow.mdx` lists `kind: "markdown"`, `seat`, `tui`; `body("review")` returns the prompt; `body("echo")` refuses |
+| 1 | `flow-control.ts`, `flows.ts` | `discover` maps `Extension.project`; `Listed = Extension.Descriptor`; `Port.body(name) => { text, baseDirectory, digest }` via `Registry.loadBody`, `FlowError("refused")` for module bodies | `test/flow-control.test.ts`: fixture `.smithers/flows/review/flow.mdx` lists `kind: "markdown"`, `seat`, `tui`; `body("review")` returns the prompt; `body("echo")` refuses |
 | 2 | `models.ts` | `seatOf(declared, available)`: aliases `sol luna` (OpenAI), `opus fable` (Anthropic), `qwen` (Cerebras); `provider:modelId` passes through; unknown => `unknown_seat` | `test/models.test.ts` table |
 | 3 | `agents.ts` (new) | `Profile { name, digest, system, seat, thinking?, flows, envelope }`, `AgentError`, `profile(descriptor, body, seatOf)` | `test/agents.test.ts`: every row of the failure table; empty `flows`/`capabilities` keep host defaults |
 | 4 | `host.ts` | `TurnInput.agent?: Profile`; extract `turnOptions(input)` (pure) from `run` and apply the profile there | `test/host.test.ts`: `turnOptions` has the body in `system`, the narrowed envelope, only allowlisted standard flows, `effort` as thinking |
@@ -328,7 +328,7 @@ UI 3; plugin lane before AGENTS 9 and UI 8; seat-queue lane before AGENTS 5.
 - `/agent`, a key, and `agent.delegate { agent }` return before the agent
   body is read; chat accepts input while the tab runs; the toast settles only
   from the real outcome; duplicate ids dedupe; failures stay retryable.
-- Editing `flows/review/flow.mdx` changes the next run and the contributed
+- Editing `.smithers/flows/review/flow.mdx` changes the next run and the contributed
   keys within one debounce, with no restart and no module import.
 - Every refusal is a typed code with one line of text.
 

@@ -130,14 +130,14 @@ test("[FAILONCE] fails the first slow check attempt and its repair passes the se
 
 test("[FLOWEDIT] writes only the TODO flow, whose changelog step later TODOs follow", async () => {
   const atom = await plan("[FLOWEDIT] Every TODO must update the changelog")
-  assert.deepEqual(atom.writes, ["flows/todo/flow.ts"])
+  assert.deepEqual(atom.writes, [".smithers/flows/todo/flow.ts"])
   const { tree, settled } = await run(todoTurn(turn(EDIT, { atom })).content, { "CHANGELOG.md": "# Changes\n" })
-  assert.deepEqual(Object.keys(tree).sort(), ["CHANGELOG.md", "flows/todo/flow.ts"])
+  assert.deepEqual(Object.keys(tree).sort(), ["CHANGELOG.md", ".smithers/flows/todo/flow.ts"])
   assert.equal(tree["CHANGELOG.md"], "# Changes\n")
-  assert.deepEqual(settled.writes, ["flows/todo/flow.ts"])
-  assert.match(tree["flows/todo/flow.ts"], /Flow\.make\("todo"/)
-  assert.ok(tree["flows/todo/flow.ts"].includes(CHANGELOG_STEP), "the flow carries no changelog step")
-  assert.ok(tree["flows/todo/flow.ts"].includes("Request.call({ ...input, prompt:"), "the requirement reaches the planner")
+  assert.deepEqual(settled.writes, [".smithers/flows/todo/flow.ts"])
+  assert.match(tree[".smithers/flows/todo/flow.ts"], /Flow\.make\("todo"/)
+  assert.ok(tree[".smithers/flows/todo/flow.ts"].includes(CHANGELOG_STEP), "the flow carries no changelog step")
+  assert.ok(tree[".smithers/flows/todo/flow.ts"].includes("Request.call({ ...input, prompt:"), "the requirement reaches the planner")
   // A TODO the edited flow runs carries [CHANGELOG] and appends one line.
   const next = await plan(`Add a greeting\n\n${CHANGELOG_STEP}`)
   assert.deepEqual(next.writes, ["JOURNEY.md", "CHANGELOG.md"])
@@ -284,8 +284,8 @@ test("with TODO_RELAY_URL the provider relays every call to a real model and scr
 
 test("the stack's review of the pull request approves on its first line", async () => {
   // review/change is a prompt flow: its body is the system teaching and its
-  // arguments a "# Arguments" section (flows/review/change/flow.mdx).
-  const body = readFileSync(new URL("../flows/review/change/flow.mdx", import.meta.url), "utf8").replace(/^---\n[\s\S]*?\n---\n/, "")
+  // arguments a "# Arguments" section (.smithers/flows/review/change/flow.mdx).
+  const body = readFileSync(new URL("../.smithers/flows/review/change/flow.mdx", import.meta.url), "utf8").replace(/^---\n[\s\S]*?\n---\n/, "")
   const args = "Pull request #3.\n\n<untrusted-title>\nGreet visitors\n</untrusted-title>\n\n<untrusted-diff>\n+Hello\n</untrusted-diff>\n"
   const answered = todoTurn([{ role: "system", content: `${body}\n# Arguments\n\n## args\n\n${args}` }, { role: "user", content: "Begin." }])
   assert.equal(answered?.step, "review/change")
@@ -324,7 +324,7 @@ test("the install wiki reviewer quotes hostile fixture sources without tools", a
   assert.equal(todoTurn([{ role: "system", content: WIKI }]), undefined)
 })
 
-// The shapes flows/wiki builds on a real repository; flows/test/wiki-scripted-reviewer.test.ts
+// The shapes .smithers/flows/wiki builds on a real repository; .smithers/flows/test/wiki-scripted-reviewer.test.ts
 // runs the whole flow through this script.
 test("the install wiki reviewer cites the lines a generated page links, whatever the quoted symbol holds", async () => {
   const evidence = {

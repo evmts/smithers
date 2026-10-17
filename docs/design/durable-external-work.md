@@ -23,7 +23,7 @@ Fault cases: #3367 (`packages/smithers/test/faults`).
    Every execution has its own loop, so ~24 work children, the rounds child
    and the root all lapse at once.
 4. Interruption destroys the external work, not only the fiber. `remoteFix` runs
-   `Sandbox.run` inside `Effect.scoped` (`flows/issue-sweep/work/flow.ts:532-548,
+   `Sandbox.run` inside `Effect.scoped` (`.smithers/flows/issue-sweep/work/flow.ts:532-548,
    613-640`). Closing that scope kills the guest process and removes the
    ephemeral microVM (`flows/sandbox/src/Sandbox/run.ts:68-80`,
    `MicrosandboxSandbox/make.ts:580`) or DELETEs the Cloud workspace
@@ -62,7 +62,7 @@ it does not weaken #2982.
    (`Burndown.ts:786-805, 873-879`), which is final for the lineage
    (`Burndown.ts:364`). Run-6 lost 118 items to one 75-minute outage.
 4. Outage detection exists in only one flow and gives up after about 20 minutes
-   (`flows/issue-sweep/host.ts:113-135`). Cloud create errors collapse into a
+   (`.smithers/flows/issue-sweep/host.ts:113-135`). Cloud create errors collapse into a
    single message (`src/CloudSandbox.ts:132-140, 153`).
 
 ### F3. A code change under a live run breaks it
@@ -75,7 +75,7 @@ it does not weaken #2982.
   (`control/src/ControlError.ts:130-150`) until someone passes `--allow-code-drift`.
 - `ExecutionIdentityConflict` (run-8): joining a child admitted under a wider
   capability ceiling is a defect (`RunDriver.ts:1600-1608`). issue-sweep re-keys
-  only interrupt-only causes (`flows/issue-sweep/flow.ts:434-446`), and a member
+  only interrupt-only causes (`.smithers/flows/issue-sweep/flow.ts:434-446`), and a member
   defect fails the round (`Burndown.ts:713-715`). One child failed the whole run.
 
 ### F4. Fixed 30 s flow-load timeout (#3359)

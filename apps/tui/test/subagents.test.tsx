@@ -370,7 +370,7 @@ describe("the Summary overview's tree row", () => {
     group: "working",
     level: 0,
     status: "running",
-    name: "Fix UTF-8 split-chunk decoding in flows/release so a multibyte char survives",
+    name: "Fix UTF-8 split-chunk decoding in .smithers/flows/release so a multibyte char survives",
     seat: "Claude Opus 5.5",
     clock: "11m 43s"
   } as const

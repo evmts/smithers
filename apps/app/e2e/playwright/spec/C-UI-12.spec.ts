@@ -331,7 +331,7 @@ test("C-UI-12: Branch states and recovery controls render in both themes and wid
     ["branch-scratch_ready-activity", "Rebase conflict onto main", "Done"],
     ["branch-moved_off-activity", "Ben moved this branch off T12", "Return to T12"],
     ["branch-scratch_item-activity", "Forked from T12 Card model contracts", "Add to stack"],
-    ["branch-active-files", "flows/todo/prompt.md → flows/todo/instructions/implementer.md", null],
+    ["branch-active-files", ".smithers/flows/todo/prompt.md → .smithers/flows/todo/instructions/implementer.md", null],
     ["branch-active-terminals", "pnpm check", null],
     ["branch-active-maximized", "Asked · Coding agent for Ben", null],
     ["branch-asking", "Asks · Coding agent for Ben", null],
@@ -394,7 +394,7 @@ test("C-UI-12: File Compare is read-only and keyboard accessible in both themes 
     await button.focus()
     await button.press('Enter')
     expect(await page.evaluate(() => (window as unknown as { compareReceipts: unknown[] }).compareReceipts)).toEqual([
-      { kind: "action", value: { tag: "file.compare", args: { path: "flows/todo/flow.ts" } } },
+      { kind: "action", value: { tag: "file.compare", args: { path: ".smithers/flows/todo/flow.ts" } } },
     ])
     await page.keyboard.press('Tab')
     await expect(page.locator('.code-file-current .cm-content')).toBeFocused()

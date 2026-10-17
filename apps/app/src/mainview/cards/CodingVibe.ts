@@ -1,7 +1,7 @@
 import * as Digest from "@smthrs/core/Digest"
 import { Option, Schema } from "effect"
-import { PublicationInput, VibeAdmission, VibeCleanup, VibeInput } from "../../../../../flows/coding/vibe-schema.ts"
-import { SourcePublication } from "../../../../../flows/coding/native-schema.ts"
+import { PublicationInput, VibeAdmission, VibeCleanup, VibeInput } from "../../../../../.smithers/flows/coding/vibe-schema.ts"
+import { SourcePublication } from "../../../../../.smithers/flows/coding/native-schema.ts"
 import type { Card } from "../state/AppState"
 import { engineRunEvidence, type EngineExecutionEvidence } from "./EngineTrace"
 

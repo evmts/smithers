@@ -34,7 +34,7 @@ production denominator across Worker, CLI, React and static assets.
 | --- | --- | --- |
 | `apps/server` | Worker unit and canary-wiring assertions | Whole Worker/script source denominator and failure-branch measurement. |
 | `apps/app` | Typecheck, Bun units, offline Playwright | TSX/host/React denominator and live provider acceptance. |
-| `flows/review` | Strict source/test typechecks, host registry integration and seeded review contracts | Live model review quality remains separate from deterministic coverage. |
+| `.smithers/flows/review` | Strict source/test typechecks, host registry integration and seeded review contracts | Live model review quality remains separate from deterministic coverage. |
 | `apps/tui` | Bun unit and terminal assertions | Explicit source roster is measured by the Istanbul collector; no numeric floor until TUI child-launch paths and complete behavior coverage are qualified. |
 | `apps/bug-worker` | Real fetch handler against in-memory KV | Complete Worker branch measurement, including transport failures. |
 
@@ -122,7 +122,7 @@ obsolete checks were removed.
 | `test-script-wiring-gate` | Ported into `test-script-wiring.test.mjs`. The 0.x version drove `scripts/check-smithers-test-script.mjs` against synthetic workspaces; the script is gone, so the claim is checked against the real tree. |
 | `fault-skip-audit-gate`, `fault-only-todo-audit` | Ported into `fault-skips.test.mjs`. The 0.x ratchet pinned a per-file skip *count*; this one requires a declared reason instead, which is the thing a reviewer can act on. It also refuses `.fails`, which the 0.x gate had no rule about, and it pins the required gates by title. The two rules are one rule: when the product does not meet a requirement the matrix covers, the sanctioned form is a plain test that fails, kept in the matrix with its owner cited and reported as a failure in the gate line. `.fails` turns that test into a pass and deletion turns it into prose; `requiredRedGates` refuses the deletion and the `.fails` rule refuses the marking. `fault-gaps.md` beside it records the shipped limitation next to the red gate, not instead of it. |
 | `effect-version-gate` | Dropped. It unit-tested `packages/repo-targets/contracts/check-single-effect-version.mjs` against synthetic lockfiles. That script survived the migration and is executed against the real tree as `//packages/repo-targets:effectVersion`, which is a stronger check than a fixture. |
-| `version-bump-propagation` | Dropped. It tested `scripts/bump.mjs`, which is gone; version propagation is now `flows/release/set-release-version.mjs` and has its own suite at `//scripts:releaseVersion`. |
+| `version-bump-propagation` | Dropped. It tested `scripts/bump.mjs`, which is gone; version propagation is now `.smithers/flows/release/set-release-version.mjs` and has its own suite at `//scripts:releaseVersion`. |
 | `release-tag-guard` | Dropped. `scripts/release-tag-guard.mjs` has no successor: the RC release flow is `release.yml`, whose dry-run and tag-push paths are covered by `//scripts:releaseRehearsal`. |
 | `coverage-script-gate` | Dropped. It tested `scripts/coverage.mjs` and the Bun LCOV merge, neither of which exists. Coverage is vitest's, and the gate that keeps its denominator honest is `packages/repo-targets/conformance/coverage.test.ts`. |
 | `workspace-test-sharding` | Dropped. `scripts/run-workspace-tests.mjs` and the Windows shard runner are gone; the Windows lane runs `//packages/...` directly. |

@@ -3,7 +3,7 @@ import { ControlFacts } from "@smthrs/control"
 import * as Digest from "@smthrs/core/Digest"
 import { callScope, openCallIndex, uniqueCallEvents } from "@smthrs/gateway/Diagnosis"
 import { FlowActivity } from "@smthrs/registry/Descriptor"
-import { Implementation, Receipt, receiptMatches, type Plan } from "../../../../../flows/coding/schema"
+import { Implementation, Receipt, receiptMatches, type Plan } from "../../../../../.smithers/flows/coding/schema"
 import { engineRunEvidence } from "./EngineTrace"
 import { callSemantics, callSubject, type CallMetadata, type TraceModel } from "./RunTrace"
 

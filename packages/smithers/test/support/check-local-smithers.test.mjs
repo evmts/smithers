@@ -93,8 +93,8 @@ describe("the repo itself", () => {
   it("scans the internal execution surfaces", () => {
     const scanned = listScannedFiles()
     assert.ok(scanned.includes("package.json"))
-    assert.ok(scanned.includes(".smithers/ci/cloud.sh"))
-    assert.ok(scanned.some((path) => path.startsWith("flows/")))
+    assert.ok(scanned.includes(".github/scripts/ci/cloud.sh"))
+    assert.ok(scanned.some((path) => path.startsWith(".smithers/flows/")))
     assert.ok(!scanned.some((path) => path.includes("node_modules")))
   })
 

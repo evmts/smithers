@@ -36,7 +36,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 const filled = (value: unknown): value is string => typeof value === "string" && value.trim() !== ""
 
 /**
- * The message a dispatched turn's admission recorded (flows/coding/dispatch.ts
+ * The message a dispatched turn's admission recorded (.smithers/flows/coding/dispatch.ts
  * `MessageTrigger`), as the run's `control.run.accepted` journal record
  * carries it. A run is admitted once, so the first accepted record is the
  * only one read; a replayed admission re-serves the same record, never a

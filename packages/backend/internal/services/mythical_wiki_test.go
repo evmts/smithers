@@ -235,7 +235,7 @@ func TestMythicalWikiPublishesCitationsAtFoldedMain(t *testing.T) {
 	assert.Len(t, store.pages, 1)
 }
 
-// An imported dependency file travels as an ordinary page (flows/memory/deps.ts):
+// An imported dependency file travels as an ordinary page (.smithers/flows/memory/deps.ts):
 // it publishes, is handed to every stack request with the repository's pages,
 // and is retired once the workspace no longer declares it.
 func TestMythicalWikiCarriesDependencyPagesToLanes(t *testing.T) {

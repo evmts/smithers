@@ -91,10 +91,10 @@ func TestMythicalFailedStageSitesMatchTheirSourceDeclarations(t *testing.T) {
 	root := flowSourceRoot(t)
 	declared := map[string]struct{}{}
 
-	planning, err := os.ReadFile(filepath.Join(root, "flows", "coding", "planning-memory.ts"))
+	planning, err := os.ReadFile(filepath.Join(root, ".smithers", "flows", "coding", "planning-memory.ts"))
 	require.NoError(t, err)
 	block := regexp.MustCompile(`(?s)export const planningSites = \[(.*?)\] as const`).FindSubmatch(planning)
-	require.Len(t, block, 2, "planningSites is declared in flows/coding/planning-memory.ts")
+	require.Len(t, block, 2, "planningSites is declared in .smithers/flows/coding/planning-memory.ts")
 	for _, site := range regexp.MustCompile(`"([a-z_]+)"`).FindAllSubmatch(block[1], -1) {
 		declared[string(site[1])] = struct{}{}
 	}
@@ -104,7 +104,7 @@ func TestMythicalFailedStageSitesMatchTheirSourceDeclarations(t *testing.T) {
 	// message. The backend has a same-named helper that records to its log;
 	// its sites are deliberately out of scope here and out of the allowlist.
 	refusal := regexp.MustCompile(`sourceRefusal\(\s*"([a-z_]+)"`)
-	require.NoError(t, filepath.WalkDir(filepath.Join(root, "flows"), func(path string, entry os.DirEntry, err error) error {
+	require.NoError(t, filepath.WalkDir(filepath.Join(root, ".smithers", "flows"), func(path string, entry os.DirEntry, err error) error {
 		if err != nil || entry.IsDir() {
 			if entry != nil && entry.IsDir() && entry.Name() == "node_modules" {
 				return filepath.SkipDir
@@ -143,7 +143,7 @@ func flowSourceRoot(t *testing.T) string {
 	directory, err := os.Getwd()
 	require.NoError(t, err)
 	for depth := 0; depth < 8; depth++ {
-		if _, err := os.Stat(filepath.Join(directory, "flows", "coding", "planning-memory.ts")); err == nil {
+		if _, err := os.Stat(filepath.Join(directory, ".smithers", "flows", "coding", "planning-memory.ts")); err == nil {
 			return directory
 		}
 		directory = filepath.Dir(directory)

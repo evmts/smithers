@@ -1692,7 +1692,7 @@ export const make = (
          */
         engine.host.revision = capturedRevision
         // Optional, and read rather than required, because a host may build
-        // its catalog itself: `flows/coding/host.ts` assembles a project
+        // its catalog itself: `.smithers/flows/coding/host.ts` assembles a project
         // catalog and a bundled one with different loaders and provides the
         // merged value directly. Such a host keeps the startup snapshot it
         // always had until it offers a rebuild of its own; one composed from

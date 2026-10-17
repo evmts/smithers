@@ -263,7 +263,7 @@ Net new, with why reuse fails: the daemon process layer (no production compositi
 | W17 | Conversation cutover: composer → `/prompt`, host tool loop, private queue, revocation; delete `app_timelines` and the browser executor (3) [T-APP-16] | — | `TestBranchConversationOrderedReplay`, `TestHostTurnAuthorRevocation` (≤ 5 s), `TestHostTurnPrivateContext` (canary never in a model request); e2e a turn survives closing the tab |
 | W18 | Moved-off detection, Return to Tn, Keep for now; agent note on outside change (2) [T-COL-05, T-COL-12] | W6, W2 | `moved_off.rs` predicate table; two Returns race → one 409; e2e C-J3-09, C-J3-03 |
 | W19 | Revocation fan-out end to end including `set_roster` on reconnect (2) [T-ACC-02] | W8, W9, W17 | partition the link, remove the member, restore the link: every descendant gone ≤ 5 s after the handshake; 20 runs |
-| W20 | Fault and perf suites as `smthrs test` targets (K1–K8, C-PERF-02..06, `flows/perf/{keystroke,disk-write}.mjs`) and the reference-host rehearsal (3) | W3, W15 | artifacts under `.artifacts/checks/` and `.artifacts/perf/<date>/` with the host profile; sleep/wake, rebase while two type, host restart, stale outside save, revocation, both themes, second laptop |
+| W20 | Fault and perf suites as `smthrs test` targets (K1–K8, C-PERF-02..06, `.smithers/flows/perf/{keystroke,disk-write}.mjs`) and the reference-host rehearsal (3) | W3, W15 | artifacts under `.artifacts/checks/` and `.artifacts/perf/<date>/` with the host profile; sleep/wake, rebase while two type, host restart, stale outside save, revocation, both themes, second laptop |
 
 ```
 day    0        1

@@ -28,7 +28,7 @@ import (
 // stack worker loads main's flows on a short-lived workspace. Loads
 // coalesce: one runs at a time, and when it ends the next pass loads the
 // newest main not yet loaded, so a main that moved twice during a load is
-// loaded once. The run (flows/coding/flow-load) answers each overridable
+// loaded once. The run (.smithers/flows/coding/flow-load) answers each overridable
 // flow's version; settling it writes the versions and moves Active in one
 // transaction (flow_versions.go). The stack's own MainMoved listener is the
 // trigger: the production GitHub poll callback records the observed main,

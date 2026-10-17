@@ -68,7 +68,7 @@ Regeneration does not publish the app's repository Wiki; [the wiki recipe](.smit
 tracks its distinct generation, review, and Cloud publication receipts.
 
 Cloud's gates use `.github/ci-known-red.json` with `--known-red` where declared
-in `.smithers/ci/cloud.sh`. A successful gate with that option means no new
+in `.github/scripts/ci/cloud.sh`. A successful gate with that option means no new
 unlisted failures, not that every target passed. Keep listed failures tied to
 their issues and inspect the reported results. See the
 [build CLI policy](packages/smithers/build/build-cli/docs/cli.md).
@@ -90,7 +90,7 @@ The cost is that one edit lands in several places. If you change:
 | `pnpm-workspace.yaml` package membership      | `packages/smithers/flows/test/vitestCoverageIsolation.test.ts` (the coverage-universe policy pin); lockfile inputs are derived automatically. Nesting a package inside another has its own recipe below                                                    |
 | root `package.json` scripts                   | `packages/smithers/flows/test/vitestCoverageIsolation.test.ts` (the aggregator roster)                                                                                                          |
 | root `PACKAGE.ts` CI jobs, steps, or triggers | the generated `.github/workflows/ci.yml` (`pnpm exec smithers-build build '//:ci'` with `mode: "write"`), `packages/smithers/flows/test/vitestCoverageIsolation.test.ts` (source-text pins), and the hand-written `.github/workflows/release.yml`, which copies the required `test` job's toolchain and gate steps verbatim |
-| `.github/workflows/release.yml`               | the same suite, plus `flows/release/release-rehearsal.test.mjs` and `flows/release/pack-release.test.mjs`, which compares the release workflow's steps against the generated `ci.yml`               |
+| `.github/workflows/release.yml`               | the same suite, plus `.smithers/flows/release/release-rehearsal.test.mjs` and `.smithers/flows/release/pack-release.test.mjs`, which compares the release workflow's steps against the generated `ci.yml`               |
 | any `PACKAGE.ts` target set — adding, renaming or removing a target, or changing its declared inputs or outputs (a new test file reached by a glob counts) | `.smithers/target-index.json`, with `pnpm run target-index`. Nothing about it is hand-written: the script writes it and `smthrs lint '//:targetIndex'` drift-checks it. See “The target index” |
 | the product API (`docs/api/openapi.yaml`)     | the per-tag source under `docs/api/openapi/` instead: `<tag>.yaml` holds that tag's paths and `_root.yaml` everything else. `pnpm exec smithers-build run '//:openapiBundle'` writes the bundle and `lint '//:openapiBundle'` drift-checks it; then `run '//:openapiClients'` regenerates the Go (`packages/backend/apiclient`) and TypeScript (`packages/smithers/src/internal/backend/ProductApi.ts`) clients from it and `lint '//:openapiClients'` drift-checks them |
 | `CHANGELOG.md` release sections               | nothing by hand inside a `<!-- commits:… -->` block — `pnpm exec smithers-build run '//:changelog'` writes it and `lint '//:changelog'` drift-checks it. See “Cutting a release”         |
@@ -116,7 +116,7 @@ That is `smthrs target '//:targetIndex' --write`. `smthrs lint '//:targetIndex'`
 is the check half, and it is what CI runs.
 
 Running the gate by hand does the repair for you:
-`bash .smithers/ci/cloud.sh target-index` regenerates and then verifies when it
+`bash .github/scripts/ci/cloud.sh target-index` regenerates and then verifies when it
 is not under an inherited `CI=true`, so the file is already in your working
 tree by the time the gate is green. Under inherited CI the same gate only
 checks, because repairing there would hide the stale commit it exists to catch.
@@ -238,7 +238,7 @@ renders `node --test`; `RustToolchain.install()` renders
 implementation asks it for the argv.
 
 Every CI gate is therefore a target, in the package that owns it:
-`flows/PACKAGE.ts` for the repository's flows and the release, landing, benchmark and
+`.smithers/flows/PACKAGE.ts` for the repository's flows and the release, landing, benchmark and
 perf automation they run, `packages/repo-targets/PACKAGE.ts` for repository-wide
 contracts, a crate's own `PACKAGE.ts` for
 the cargo gates, `apps/*/PACKAGE.ts` for an app's end-to-end suites, and
@@ -284,7 +284,7 @@ packages/
 
 Nesting is directories and nothing else. Every npm name, version, dist-tag,
 and the published set are what they were when the tree was flat; the roster is
-`publishedPackages` in `flows/release/pack-release.mjs`, and
+`publishedPackages` in `.smithers/flows/release/pack-release.mjs`, and
 only target labels move, from `//packages/canonical:test` to
 `//packages/smithers/flows/canonical:test`.
 
@@ -378,7 +378,7 @@ To change jj, land the change with its tests on the fork's `smithers` branch, bu
 A release is one commit and one tag. The commit carries the version bump and
 the changelog section; the tag is what publishes. Pushing a `v*` tag starts
 `.github/workflows/release.yml`, which validates the tag, runs every gate,
-packs the publish set declared by `flows/release/pack-release.mjs`, smoke-tests the tarballs, and publishes to npm.
+packs the publish set declared by `.smithers/flows/release/pack-release.mjs`, smoke-tests the tarballs, and publishes to npm.
 npm versions are immutable, so everything that can be proved before the push
 is proved before the push.
 
@@ -386,7 +386,7 @@ is proved before the push.
 required CI `test` job installs — ripgrep, bubblewrap, Go, Foundry, the
 containerd image store — and then runs that job's `smithers-build` steps plus
 the fault matrix, copied verbatim out of the generated `ci.yml`. It is
-hand-written, so `flows/release/pack-release.test.mjs` compares the two files and
+hand-written, so `.smithers/flows/release/pack-release.test.mjs` compares the two files and
 fails when the copy goes stale. Bumping a toolchain pin in the root
 `PACKAGE.ts` therefore means regenerating `ci.yml` and copying the changed
 step into `release.yml` in the same commit.
@@ -403,14 +403,14 @@ left on. It runs every gate, packs, and smoke-tests, and publishes nothing:
 gh workflow run release.yml -f releaseTag=v<version> -f dryRun=true
 ```
 
-`node flows/release/release-rehearsal.mjs --tag v<version>` runs the same workflow's
+`node .smithers/flows/release/release-rehearsal.mjs --tag v<version>` runs the same workflow's
 `run:` bodies locally, against the tree you have. The workflow pins the
 supported floor, Node 26.4.0, for the gates and the smoke test, and each
 `setup-node` step switches PATH to the toolchain pinned for its version, so
 pass a bin directory for it:
 
 ```sh
-node flows/release/release-rehearsal.mjs --tag v<version> \
+node .smithers/flows/release/release-rehearsal.mjs --tag v<version> \
   --node 26.4.0=/path/to/node-26.4.0/bin
 ```
 
@@ -422,13 +422,13 @@ is the fast pass over the validation half.
 ### 2. Cut
 
 ```sh
-node flows/release/cut-release.mjs <version>
+node .smithers/flows/release/cut-release.mjs <version>
 ```
 
 That sets every workspace manifest, every internal `@smthrs/*` range, and the
 three sources that repeat the version as a literal
-(`flows/release/set-release-version.mjs`), writes the commit section into
-`CHANGELOG.md` (`flows/release/generate-changelog.mjs`), refreshes both lockfiles,
+(`.smithers/flows/release/set-release-version.mjs`), writes the commit section into
+`CHANGELOG.md` (`.smithers/flows/release/generate-changelog.mjs`), refreshes both lockfiles,
 and regenerates the site's CLI data, `.smithers/factory.json` and
 `.smithers/target-index.json`. It then verifies each with the same check
 `release.yml` runs, including `smthrs lint '//:factoryProjection'` and
@@ -511,7 +511,7 @@ argument: `ToolRun`'s `args` are fixed strings
 (`packages/smithers/build/targets/src/ToolRun.ts:30`), and the `Shell.*` rules
 take strings or `S.Flags` references, which resolve to fixed text the workspace
 declares (`packages/smithers/build/targets/src/WorkspaceDeclaration.ts:201`).
-The cut is an operator command, and `//flows:releaseCut` is its gate.
+The cut is an operator command, and `//.smithers/flows:releaseCut` is its gate.
 
 ## JSDoc convention
 

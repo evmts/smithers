@@ -904,8 +904,8 @@ func TestProtectedPathMatching(t *testing.T) {
 	t.Parallel()
 	entries := append([]string(nil), protectedPathRoots...)
 	entries = append(entries, "deploy/keys")
-	require.Equal(t, []string{".github/workflows/extra.yml", ".smithers/factory.json", "apps/app/AGENTS.md", "deploy/keys/prod.pem", "flows/PACKAGE.ts"},
-		protectedPathsTouched([]string{"src/fix.ts", "flows/PACKAGE.ts", ".smithers/factory.json", "apps/app/AGENTS.md",
+	require.Equal(t, []string{".github/workflows/extra.yml", ".smithers/factory.json", "apps/app/AGENTS.md", "deploy/keys/prod.pem", ".smithers/flows/PACKAGE.ts"},
+		protectedPathsTouched([]string{"src/fix.ts", ".smithers/flows/PACKAGE.ts", ".smithers/factory.json", "apps/app/AGENTS.md",
 			".github/workflows/extra.yml", "deploy/keys/prod.pem", "src/deploy/keys/x", "docs/github.md", "AGENTS.md.bak"}, entries))
 }
 

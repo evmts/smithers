@@ -49,7 +49,7 @@ type UserRefSource struct {
 	Retained *repohost.RetainedUserRef `json:"retained,omitempty"`
 }
 
-// UserRefBase matches flows/coding's StackBase.
+// UserRefBase matches .smithers/flows/coding's StackBase.
 type UserRefBase struct {
 	CommitID string `json:"commitId"`
 	Ref      string `json:"ref"`

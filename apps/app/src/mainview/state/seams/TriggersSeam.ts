@@ -340,7 +340,7 @@ const sameJobBox = (ctx: SeamContext, repo: string, workspaceId: string | undefi
  *
  * Every call names its box: the box's coding host carries
  * `repository/setup`, `repository/trigger` and the five `repository-jobs/*`
- * (flows/repository/registry.ts), and there is no box-less host to reach.
+ * (.smithers/flows/repository/registry.ts), and there is no box-less host to reach.
  *
  * A refusal keeps the refusing party's own words: the host's module-form
  * sentence and the control plane's `flow_not_found` listing reach the human

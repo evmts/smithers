@@ -432,7 +432,7 @@ Each row: requirement, reference, suggested check and layer, and one-line pass c
 
 | ID | Requirement | Ref | Suggested check (layer) | Pass when |
 | --- | --- | --- | --- | --- |
-| G40 | J11.2–J11.3 Source and Run on a scratch branch | mvp L255–256, L432; spec §11.4.3 L812, §11.5b L818 | C-J11-02 (**e2e**) | Source opens `flows/todo/flow.ts` in the File card on the proposing TODO's branch; Run with test input on a scratch branch shows a "draft version" run whose new step appears live within 1 s; that run can't be a TODO run |
+| G40 | J11.2–J11.3 Source and Run on a scratch branch | mvp L255–256, L432; spec §11.4.3 L812, §11.5b L818 | C-J11-02 (**e2e**) | Source opens `.smithers/flows/todo/flow.ts` in the File card on the proposing TODO's branch; Run with test input on a scratch branch shows a "draft version" run whose new step appears live within 1 s; that run can't be a TODO run |
 | G41 | Journey-layer recordings of J2, J3, J4, J6, J7, J8, J10 and J11 | mvp §12.1 L585–591 | C-JRN-01 (**journey**) | Each journey recorded on a fresh Mac mini from a second laptop, with the five §12.1 inclusions present |
 | G42 | Both themes gate acceptance | mvp L334, L585 | Extend C-JRN-01 (**journey**) | Every recording exists in light and dark; zero axe contrast failures on app pages |
 | G43 | Keyboard-only for J6, J7, J8, J11 | mvp §9 L532 | Extend C-UI-01 (**e2e**) | Guard active; every step completes in both browsers |

@@ -190,7 +190,7 @@ type GitConfig struct {
 }
 
 // Clone history windows. A guest almost never reads more history than the
-// coding flows ask for (flows/coding/project-config.ts caps `historyLimit` at
+// coding flows ask for (.smithers/flows/coding/project-config.ts caps `historyLimit` at
 // 100 native commits), while a full-history clone of a busy repository costs
 // minutes and hundreds of megabytes: cloning smithersai/plue (3,603 commits,
 // 5,200 files) from its GitHub mirror measured 154s / 435MB at full depth

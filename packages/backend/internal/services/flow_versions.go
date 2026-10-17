@@ -21,7 +21,7 @@ import (
 // built-in version, whose digest the install ships (builtin_flows.json).
 
 // FlowLoadVersion is one flow version as flow-load measured it at one commit
-// (FlowVersion in flows/coding/flow-load.ts).
+// (FlowVersion in .smithers/flows/coding/flow-load.ts).
 type FlowLoadVersion struct {
 	Name         string          `json:"name"`
 	Path         string          `json:"path"`
@@ -34,7 +34,7 @@ type FlowLoadVersion struct {
 }
 
 // FlowLoadResult is a flow-load run's output (FlowLoadResult in
-// flows/coding/flow-load.ts).
+// .smithers/flows/coding/flow-load.ts).
 type FlowLoadResult struct {
 	CommitID    string               `json:"commitId"`
 	Flows       []FlowLoadVersion    `json:"flows"`
@@ -42,7 +42,7 @@ type FlowLoadResult struct {
 }
 
 // FlowLoadDiagnostic is one repository-wide problem a load found beside its
-// versions (FlowLoadDiagnostic in flows/coding/flow-load.ts). Today the only
+// versions (FlowLoadDiagnostic in .smithers/flows/coding/flow-load.ts). Today the only
 // code is retired_root: a root flows/ that still holds flow entries.
 type FlowLoadDiagnostic struct {
 	Code    string `json:"code"`

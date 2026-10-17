@@ -627,7 +627,7 @@ test("native call facts upgrade telemetry through the gateway's shared normaliza
  */
 
 /**
- * The targets a plan declares (`flows/coding/schema.ts` `Check.target`), read
+ * The targets a plan declares (`.smithers/flows/coding/schema.ts` `Check.target`), read
  * as explicit recipe inputs: this repo's are build-target
  * LABELS. The path beside them is the other shape a plan may carry, and the
  * two are matched by different rules because they mean different things.

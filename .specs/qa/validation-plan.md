@@ -49,7 +49,7 @@ Evaluate reviewed applicability before creating obligations. S3 learning creates
 | Codex gpt-6.1-sol workers | Implement clear test tasks, harnesses and every discovered product fix with regression evidence. QA reviews quality and results. |
 | Sonnet pepper workers | Explore each weak defect class and author adversarial test cases under Will's process ruling. Sol owns resulting fixes and qualification automation. |
 
-Future work claims its issue before starting and refreshes before expiry. Comments, labels and releases use flows/issue-claim/issue-claim.mjs; exit 75 schedules retry_at. This document does not perform issue writes or launch workers.
+Future work claims its issue before starting and refreshes before expiry. Comments, labels and releases use .smithers/flows/issue-claim/issue-claim.mjs; exit 75 schedules retry_at. This document does not perform issue writes or launch workers.
 
 ## 2. Closed requirement manifest
 
@@ -373,7 +373,7 @@ The tech lead's review read the engineering spec, product spec and code from wor
 | .specs/engineering/tickets/README.md | 6b46607be4e0606a16b506f82aa8b295f77d2e70c2c9113fccf1f666d5b411ef |
 | AGENTS.md | 4fadc7d97735f40fe433e97e7910ed6ecf538dd511aef5c3d2c0bab5e85a686e |
 
-Research and pepper reports are observations, not qualification. Review paths and flows/release/journeys, flows/perf and target names are declared/planned until verified present, registered and executor-bound in the nominated snapshot. Site screenshot helpers cannot substitute for activation automation. Baseline reports do not prove current green, available hardware or landed harnesses.
+Research and pepper reports are observations, not qualification. Review paths and .smithers/flows/release/journeys, .smithers/flows/perf and target names are declared/planned until verified present, registered and executor-bound in the nominated snapshot. Site screenshot helpers cannot substitute for activation automation. Baseline reports do not prove current green, available hardware or landed harnesses.
 
 ## Asks for the leads
 

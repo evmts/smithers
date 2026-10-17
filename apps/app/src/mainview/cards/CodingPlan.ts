@@ -1,7 +1,7 @@
 import { Cause, Option, Schema } from "effect"
 import * as Digest from "@smthrs/core/Digest"
-import { CorrectionResult, Plan, RequestResult, validatePlan } from "../../../../../flows/coding/schema.ts"
-import { EarlyFeedback } from "../../../../../flows/coding/feedback-schema.ts"
+import { CorrectionResult, Plan, RequestResult, validatePlan } from "../../../../../.smithers/flows/coding/schema.ts"
+import { EarlyFeedback } from "../../../../../.smithers/flows/coding/feedback-schema.ts"
 import type { Card } from "../state/AppState"
 import { engineRunEvidence, type EngineExecutionEvidence } from "./EngineTrace"
 

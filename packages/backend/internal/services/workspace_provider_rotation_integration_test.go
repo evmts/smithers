@@ -33,7 +33,7 @@ func TestWorkspaceProviderPoolRotationDoesNotPersistBootAccountModel(t *testing.
 	root, err := filepath.Abs("../../../..")
 	require.NoError(t, err)
 	for _, dependency := range []string{"effect", filepath.Join("@smthrs", "agent")} {
-		path := filepath.Join(root, "flows", "node_modules", dependency)
+		path := filepath.Join(root, ".smithers", "flows", "node_modules", dependency)
 		if _, err := os.Stat(path); err != nil {
 			if strict {
 				t.Fatalf("requires %s; run pnpm install (SMITHERS_REQUIRE_DATABASE_TESTS=1 forbids skipping): %v", path, err)
@@ -76,7 +76,7 @@ func TestWorkspaceProviderPoolRotationDoesNotPersistBootAccountModel(t *testing.
 	startHost := func(profile, model, route string) {
 		t.Helper()
 		command := exec.CommandContext(t.Context(), "/bin/sh", "-c", profile+"\nexec \"$1\" --experimental-strip-types \"$2\"", "host", node,
-			filepath.Join(root, "flows/test/fixtures/workspace-provider-seat.ts"))
+			filepath.Join(root, ".smithers/flows/test/fixtures/workspace-provider-seat.ts"))
 		command.Dir = root
 		command.Env = []string{"HOME=" + t.TempDir(), "PATH=" + os.Getenv("PATH")}
 		var stderr bytes.Buffer

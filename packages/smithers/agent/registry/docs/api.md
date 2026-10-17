@@ -127,7 +127,7 @@ give a new identity. A path outside the root is hashed as recorded.
 
 The repository host also binds its own policy identity to reserved job
 descriptors. In source mode it measures every TypeScript file in
-`flows/repository`, including the semantic judge and its helpers, together with
+`.smithers/flows/repository`, including the semantic judge and its helpers, together with
 the other host sources and prompt bodies. A change to those bytes changes the
 job's execution digest; without an admitted source snapshot, `Registry.loadBody`
 refuses a previously approved digest with `execution_changed`. A compiled host uses its bundled artifact digest.

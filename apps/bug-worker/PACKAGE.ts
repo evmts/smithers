@@ -68,7 +68,7 @@ const unitTests = Smithers.NodeTest({
 const workerDeployQualification = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//apps/bug-worker/deploy-qualification.test.mjs")]),
   srcs: [
-    Smithers.file("//flows/rollout/refuse-unqualified.mjs"),
+    Smithers.file("//.smithers/flows/rollout/refuse-unqualified.mjs"),
     Smithers.file("//apps/bug-worker/package.json")
   ],
   deps: []

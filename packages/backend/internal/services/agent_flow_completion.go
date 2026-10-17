@@ -10,7 +10,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
-// codingReplyMessageLimit is flows/coding/dispatch.ts TurnAnswer.messages'
+// codingReplyMessageLimit is .smithers/flows/coding/dispatch.ts TurnAnswer.messages'
 // maximum length. Each message's text is bounded by the same number of UTF-16
 // code units as codingTriggerTextLimit, which that file also declares.
 const codingReplyMessageLimit = 20

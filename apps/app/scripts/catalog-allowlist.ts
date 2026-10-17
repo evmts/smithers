@@ -3,7 +3,7 @@ import { assertCatalogPolicy, auditAppIds, auditCliPaths, auditRuntimeTags, type
 import { execFileSync } from "node:child_process"
 
 const productionTags = (): RuntimeTag[] => {
-  const script = new URL("../../../flows/test/fixtures/catalog-runtime.ts", import.meta.url).pathname
+  const script = new URL("../../../.smithers/flows/test/fixtures/catalog-runtime.ts", import.meta.url).pathname
   const inventories: Array<{ readonly tags: RuntimeTag[] }> = JSON.parse(execFileSync("node", ["--no-warnings", script, "--inventory"], { encoding: "utf8", timeout: 60_000 }))
   return inventories.flatMap(inventory => inventory.tags)
 }

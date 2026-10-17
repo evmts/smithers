@@ -75,7 +75,7 @@ const thirdPartyNoticesUnit = Smithers.NodeTest({
     Smithers.file("//packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs"),
     Smithers.file("//packages/smithers/flows/jj/scripts/third-party-notices.template.md"),
     Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs"),
-    Smithers.file("//flows/release/release-rehearsal.mjs"),
+    Smithers.file("//.smithers/flows/release/release-rehearsal.mjs"),
     Smithers.file("//.github/workflows/ci.yml")
   ],
   deps: []

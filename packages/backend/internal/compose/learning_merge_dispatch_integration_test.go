@@ -346,7 +346,7 @@ func proveLearningMergedDispatch(t *testing.T, pool *pgxpool.Pool, service *serv
 	// coding host spawn (real install run 14 refused it as unauthorized).
 	require.Equal(t, []string{"admitted"}, transport.spawns)
 	// The guest serves a local pinned source only without a landing binding or
-	// TODO pin (flows/coding/serve-host.ts). Real install run 15 exited three
+	// TODO pin (.smithers/flows/coding/serve-host.ts). Real install run 15 exited three
 	// times on a learning start that carried the box's landing credential.
 	require.Empty(t, boxes.prepared, "a learning host never mints a landing credential")
 	transport.mu.Lock()
@@ -472,7 +472,7 @@ func (r *learningCompletionExtraction) Launch(ctx context.Context, l flowruntime
 }
 func (r *learningCompletionExtraction) Observe(ctx context.Context, _, _ string, _ int) (flowruntime.Observation, error) {
 	if r.output == "" {
-		script, err := filepath.Abs("../../../../flows/test/fixtures/learning-extraction.ts")
+		script, err := filepath.Abs("../../../../.smithers/flows/test/fixtures/learning-extraction.ts")
 		if err != nil {
 			return flowruntime.Observation{}, err
 		}

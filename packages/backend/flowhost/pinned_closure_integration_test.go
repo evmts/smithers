@@ -64,7 +64,7 @@ body: Node.capture({}, () => Node.succeed(value)) })`
 	}
 	run := func(source, digest string, refusal string) receipt {
 		t.Helper()
-		args := []string{node, "--experimental-strip-types", filepath.Join(root, "flows/test/fixtures/pinned-closure-entry.ts"), source}
+		args := []string{node, "--experimental-strip-types", filepath.Join(root, ".smithers/flows/test/fixtures/pinned-closure-entry.ts"), source}
 		if digest != "" {
 			args = append(args, digest)
 		}

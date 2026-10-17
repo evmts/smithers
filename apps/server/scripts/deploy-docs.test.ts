@@ -63,7 +63,7 @@ test("the retired legacy runbook defers rollback and recovery to the current gui
 })
 
 test("the recovery guide tells an operator what every rollout status leaves live", () => {
-  const runtime = readFileSync(new URL("../../../flows/rollout/runtime.ts", import.meta.url), "utf8")
+  const runtime = readFileSync(new URL("../../../.smithers/flows/rollout/runtime.ts", import.meta.url), "utf8")
   const union = runtime.split("interface RolloutReceipt")[1]!.split("previous:")[0]!
   const statuses = [...union.matchAll(/"([a-z-]+)"/g)].map(([, status]) => status!)
   expect(statuses).toContain("rollback-failed")

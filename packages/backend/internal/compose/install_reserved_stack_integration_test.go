@@ -570,7 +570,7 @@ func TestInstallReservedStackOperationsPostgres(t *testing.T) {
 			require.NoError(t, os.WriteFile(configPath, config, 0600))
 			root, err := filepath.Abs("../../../..")
 			require.NoError(t, err)
-			cmd := exec.CommandContext(t.Context(), "node", "--experimental-strip-types", filepath.Join(root, "flows/test/coding-reserved-install-rehearsal.mjs"))
+			cmd := exec.CommandContext(t.Context(), "node", "--experimental-strip-types", filepath.Join(root, ".smithers/flows/test/coding-reserved-install-rehearsal.mjs"))
 			cmd.Env = append(os.Environ(), "SMITHERS_WORKSPACE_CODING_CONFIG="+configPath, "SMITHERS_NATIVE_REPOSITORY_TOKEN="+initial, "SMITHERS_STK12_REPOSITORY_PATH="+directory, "SMITHERS_STK12_NATIVE_HELPER="+helper)
 			var stderr bytes.Buffer
 			cmd.Stderr = &stderr
@@ -609,7 +609,7 @@ func TestInstallReservedStackOperationsPostgres(t *testing.T) {
 			_, err = f.pool.Exec(f.ctx, `UPDATE mythical_items SET paused_at=NOW() WHERE id=$1`, itemID)
 			require.NoError(t, err)
 			for range 2 {
-				capture := exec.CommandContext(t.Context(), "node", "--experimental-strip-types", filepath.Join(root, "flows/test/coding-reserved-install-rehearsal.mjs"))
+				capture := exec.CommandContext(t.Context(), "node", "--experimental-strip-types", filepath.Join(root, ".smithers/flows/test/coding-reserved-install-rehearsal.mjs"))
 				capture.Env = append(cmd.Env, "SMITHERS_STK12_OPERATION=candidate")
 				var stderr bytes.Buffer
 				capture.Stderr = &stderr

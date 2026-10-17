@@ -51,7 +51,7 @@ test("historical run wire validation retains step-instance graph evidence and re
     }],
     graph: {
       edges: [],
-      nodes: [{ id: "checks", declaredAt: { path: "flows/todo/flow.ts", line: 3 } }],
+      nodes: [{ id: "checks", declaredAt: { path: ".smithers/flows/todo/flow.ts", line: 3 } }],
       sourceRevision: "recorded-sha"
     }
   }

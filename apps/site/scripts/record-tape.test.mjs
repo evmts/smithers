@@ -28,14 +28,14 @@ for (const outcome of [0, 42, "missing"]) {
     const site = join(repo, "apps/site")
     const temp = join(fixture, "scratch space")
     const bin = join(fixture, "bin")
-    for (const path of [join(site, "scripts"), join(repo, ".flows/runs/run-1"), join(repo, ".flows/cache"), join(repo, "flows/lint"), join(repo, "packages/smithers/src"), join(repo, "packages/smithers/bin"), join(repo, "node_modules"), temp, bin]) {
+    for (const path of [join(site, "scripts"), join(repo, ".flows/runs/run-1"), join(repo, ".flows/cache"), join(repo, ".smithers/flows/lint"), join(repo, "packages/smithers/src"), join(repo, "packages/smithers/bin"), join(repo, "node_modules"), temp, bin]) {
       mkdirSync(path, { recursive: true })
     }
     cpSync(new URL("record-tape.sh", import.meta.url), join(site, "scripts/record-tape.sh"))
     cpSync(new URL("../tapes", import.meta.url), join(site, "tapes"), { recursive: true })
     writeFileSync(join(repo, ".flows/runs/run-1/events"), Buffer.from([0, 255, 1, 10]))
     writeFileSync(join(repo, ".flows/cache/saved"), "cached result\n")
-    writeFileSync(join(repo, "flows/lint/flow.mdx"), "fixture flow\n")
+    writeFileSync(join(repo, ".smithers/flows/lint/flow.mdx"), "fixture flow\n")
     writeFileSync(join(repo, "packages/smithers/src/Version.ts"), 'export const version = "fixture"\n')
     writeFileSync(join(repo, "package.json"), '{"private":true}\n')
     writeFileSync(join(repo, ".gitignore"), ".flows/\nnode_modules/\n")
@@ -47,7 +47,7 @@ mkdirSync(".flows", { recursive: true })
 writeFileSync(".flows/recorded", "scratch state")
 `)
     git(repo, "init")
-    git(repo, "add", "apps/site", "flows", "packages/smithers", "package.json", ".gitignore")
+    git(repo, "add", "apps/site", ".smithers/flows", "packages/smithers", "package.json", ".gitignore")
     git(repo, "-c", "user.name=Tape test", "-c", "user.email=tape@example.invalid", "-c", "commit.gpgsign=false", "commit", "-m", "fixture")
     git(repo, "tag", "v-fixture")
     const head = git(repo, "rev-parse", "HEAD")
@@ -63,7 +63,7 @@ const commands = [...tape.matchAll(/^Type [\x60"](.*?)[\x60"]$/gm)].map((match) 
 const git = (...args) => spawnSync("git", ["-C", root, ...args], { encoding: "utf8" }).stdout.trim()
 fs.writeFileSync(process.env.VHS_REPORT, JSON.stringify({
   root, cwd: process.cwd(), fresh: root ? !fs.existsSync(root + "/.flows") : false,
-  flow: fs.existsSync(root + "/flows/lint/flow.mdx") ? fs.readFileSync(root + "/flows/lint/flow.mdx", "utf8") : null,
+  flow: fs.existsSync(root + "/.smithers/flows/lint/flow.mdx") ? fs.readFileSync(root + "/.smithers/flows/lint/flow.mdx", "utf8") : null,
   version: fs.existsSync(root + "/packages/smithers/src/Version.ts") ? fs.readFileSync(root + "/packages/smithers/src/Version.ts", "utf8") : null,
   package: fs.existsSync(root + "/package.json"), head: git("rev-parse", "HEAD"),
   branch: git("branch", "--show-current"), tags: git("tag"),

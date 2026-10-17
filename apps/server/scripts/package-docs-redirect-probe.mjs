@@ -3,13 +3,13 @@
  * sampled `<slug>.smithers.sh` URLs (site roots, both legacy aliases, deep
  * pages the published @smthrs/flows README links, the API page, a path that
  * names no page and an unknown slug) must answer 301 with the Location that
- * flows/docs-sync/package-docs.mjs computes, and that Location must answer 200 on
+ * .smithers/flows/docs-sync/package-docs.mjs computes, and that Location must answer 200 on
  * GitHub. Network only; it changes nothing.
  *
  *   node apps/server/scripts/package-docs-redirect-probe.mjs
  */
 import assert from "node:assert/strict"
-import { expectedLocation } from "../../../flows/docs-sync/package-docs.mjs"
+import { expectedLocation } from "../../../.smithers/flows/docs-sync/package-docs.mjs"
 
 /** [URL, slug (null: not a retired site), page path it names (null: none, so the docs folder)] */
 const cases = [

@@ -11,7 +11,7 @@
   "notification.route": { flow: "notification-policy", description: "Choose who is told" }
 }</code></pre>
 <p><code>notification.route</code> is a key of the existing event vocabulary, and the row projects into <code>.smithers/factory.json</code> through <code>//:factoryProjection</code> like every other rule. No new field, schema, store or configuration screen exists for this: the declaration is the repository's typed source, and the app reads it from the signed-out contents route it already reads the Dispatcher card from. Two rows for the event, or one row naming two flows, is ambiguous and the built-in audience stands.</p>
-<p>The flow itself is an ordinary repository flow at <code>flows/&lt;name&gt;/flow.ts</code> — repository scope, priority 2 of the catalog order in <a href="./3871-global-flows.html">#3871</a>. This repository ships <code>flows/notification-policy/flow.ts</code> as the one a maintainer copies.</p>
+<p>The flow itself is an ordinary repository flow at <code>flows/&lt;name&gt;/flow.ts</code> — repository scope, priority 2 of the catalog order in <a href="./3871-global-flows.html">#3871</a>. This repository ships <code>.smithers/flows/notification-policy/flow.ts</code> as the one a maintainer copies.</p>
 
 <h2>The defined set of events</h2>
 <table><thead><tr><th>Kind</th><th>Built-in audience (§6.4)</th></tr></thead><tbody>
@@ -53,7 +53,7 @@
 <tr><td>Contract and the rules the app enforces</td><td><code>packages/rpc/src/NotificationPolicy.ts</code></td></tr>
 <tr><td>Declaration read, run and fallback</td><td><code>apps/app/src/mainview/state/controller/notificationPolicy.ts</code></td></tr>
 <tr><td>Delivery, with access checked first and last</td><td><code>apps/app/src/mainview/state/seams/TodoSeam.ts</code></td></tr>
-<tr><td>The example policy flow</td><td><code>flows/notification-policy/flow.ts</code></td></tr>
+<tr><td>The example policy flow</td><td><code>.smithers/flows/notification-policy/flow.ts</code></td></tr>
 </tbody></table>
 <p>Not done here: the repository update card's own activity rows still project per account and are not routed by a policy, and this repository declares no <code>notification.route</code> rule of its own, so nothing is activated by landing this. A policy run that outlives its deadline is abandoned, not cancelled — the gateway exposes no abort for an HTTP read in flight, so an orphaned declaration or snapshot read ends on its own, and its rejection is absorbed rather than left unhandled. What abandonment does <em>not</em> mean is that the work carries on: the launch's own <code>stillCurrent</code> is the guard the relay consults between <code>Plan</code>, <code>Approval.Submit</code> and <code>Run</code>, and it counts the deadline as part of being current, so a <code>Plan</code> the workspace answers after the fallback grants no approval and starts no run. A held read is left to finish; a held launch is not resumed.</p>
 </main></html>

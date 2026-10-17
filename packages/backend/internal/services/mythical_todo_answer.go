@@ -182,7 +182,7 @@ func todoFirstAnswer(item db.MythicalItem) map[string]any {
 	return map[string]any{"by": latest.By, "text": latest.Answer, "at": latest.SettledAt.UTC().Format(time.RFC3339Nano)}
 }
 
-// The answers an attempt carries (flows/coding/schema.ts CarriedAnswer): at
+// The answers an attempt carries (.smithers/flows/coding/schema.ts CarriedAnswer): at
 // most todoCarriedAnswers, the latest kept whole within todoCarriedBytes, and
 // each field clipped to its own bound. Bytes bound UTF-16 units from above.
 const (

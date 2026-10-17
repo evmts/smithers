@@ -24,9 +24,9 @@ packages:
   - "packages/smithers/build/*"
   - "packages/smithers/flows/*"
   - "packages/smithers/ui/*"
-  - "flows"
-  - "flows/coding"
-  - "flows/review/seeded-bugs"
+  - ".smithers/flows"
+  - ".smithers/flows/coding"
+  - ".smithers/flows/review/seeded-bugs"
   - "apps/*"
   - "evals/*"
 

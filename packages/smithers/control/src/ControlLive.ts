@@ -180,7 +180,7 @@ const json = (value: unknown): ControlEvent["payload"] => JSON.parse(JSON.string
  * The trigger provenance an admitted plan input declared, verbatim.
  *
  * The control plane does not know the record's shape: the flow's own input
- * schema bounded it at plan time (`flows/coding/dispatch.ts` `MessageTrigger`
+ * schema bounded it at plan time (`.smithers/flows/coding/dispatch.ts` `MessageTrigger`
  * is the first). Admission carries it onto the accepted record so a journal
  * reader — the Steps view's trigger row (#2115) — renders what was recorded,
  * never what it inferred from a prompt. Anything that is not a record is

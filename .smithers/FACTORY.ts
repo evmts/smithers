@@ -11,7 +11,7 @@ import { Smithers as S } from "@smthrs/targets"
 
 // --- featured flows --------------------------------------------------------
 // The flows this repository recommends first, and the one line each shows
-// under its id. A flow describes itself in flows/<id>/flow.mdx; how the
+// under its id. A flow describes itself in .smithers/flows/<id>/flow.mdx; how the
 // repository presents it is declared here and nowhere else, riding the same
 // summary and featured pair every target carries. The projection joins these
 // declarations over the discovered flows; a declaration naming no discovered
@@ -90,7 +90,7 @@ export const factory = S.Factory({
   // For now GitHub writes main: a Change opens a GitHub pull request that a
   // maintainer merges there, Smithers Cloud follows GitHub's main, and issues
   // move both ways. Returns to `mirror: "push", changes: "land"` (RULINGS 23)
-  // once landing on Smithers Cloud is proven (flows/coding/finalization.md).
+  // once landing on Smithers Cloud is proven (.smithers/flows/coding/finalization.md).
   // Only the maintainer's todo and automerge labels count; no todoSince, so
   // an issue is a TODO only when a maintainer labels it (agents file GitHub
   // issues under the maintainer's account). The factory's lanes spend at

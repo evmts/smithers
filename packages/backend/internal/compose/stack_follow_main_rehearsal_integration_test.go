@@ -23,7 +23,7 @@ func TestStackFollowsMainRehearsal(t *testing.T) {
 	if !r.install("Install through Machine ready") {
 		return
 	}
-	source, err := os.ReadFile(filepath.Join(r.root, "flows/todo/flow.ts"))
+	source, err := os.ReadFile(filepath.Join(r.root, ".smithers/flows/todo/flow.ts"))
 	require.NoError(t, err)
 	activateMonitorOverride(t, r, string(source))
 	first, err := r.file("First change", "[PR] [FILE FIRST.md] Add the first change.")

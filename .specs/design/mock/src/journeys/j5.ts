@@ -71,7 +71,7 @@ const setup = (): State => {
   Object.assign(branch(world, "b-log"), { machine: "asleep", waitPosition: undefined })
   world.files = []
   world.mergedSinceLook = 0
-  world.flowVersions = [version("v1", "v1 · flows/todo/flow.ts · main", "active", stepsOf(V1_STEPS))]
+  world.flowVersions = [version("v1", "v1 · .smithers/flows/todo/flow.ts · main", "active", stepsOf(V1_STEPS))]
   world.flow = stepsOf(V1_STEPS)
   return state
 }
@@ -101,7 +101,7 @@ export const j5: Journey = {
       act: state => {
         const { world } = state
         pressed(state, PROPOSE)
-        world.flowVersions.push(version("v2", "v2 · flows/todo/flow.ts · proposed", "proposed", stepsOf(V2_STEPS, ["verify", "changelog"], state.seq), undefined, SMITHERS_FOR_MAYA))
+        world.flowVersions.push(version("v2", "v2 · .smithers/flows/todo/flow.ts · proposed", "proposed", stepsOf(V2_STEPS, ["verify", "changelog"], state.seq), undefined, SMITHERS_FOR_MAYA))
         world.drafts.push({ id: DRAFT, ...FLOW_DRAFT, fixes: false, place: { kind: "before", id: "t-checkout" } })
         /* The draft, then the version it proposes, labeled Proposed: a preview, not an edit. */
         showCard(state, MAYA, "draft", DRAFT)
@@ -118,7 +118,7 @@ export const j5: Journey = {
         world.stack = [FLOW_TODO.id, ...world.stack]
         world.branches.push({ id: "b-flow", name: "todo-flow-changelog", item: FLOW_TODO.id, from: "main", machine: "waking", presence: [], activity: [], terminals: [] })
         world.drafts.find(each => each.id === DRAFT)!.committed = FLOW_TODO.id
-        setVersion(state, "v2", { todo: FLOW_TODO.id, label: "v2 · flows/todo/flow.ts · T12" })
+        setVersion(state, "v2", { todo: FLOW_TODO.id, label: "v2 · .smithers/flows/todo/flow.ts · T12" })
         stackOp(state, "b-flow", "Placed T12 before T10", MAYA)
         showCard(state, MAYA, "todo", FLOW_TODO.id)
       }
@@ -176,7 +176,7 @@ export const j5: Journey = {
       act: state => {
         setTodo(state, FLOW_TODO.id, { state: "merged" })
         release(state, "b-flow", "closed")
-        setVersion(state, "v2", { state: "merged-syncing", label: "v2 · flows/todo/flow.ts · main" })
+        setVersion(state, "v2", { state: "merged-syncing", label: "v2 · .smithers/flows/todo/flow.ts · main" })
         run(state, { id: LEARNING, title: LEARNING_TITLE, state: "running", queue: 1, todo: FLOW_TODO.id })
         toast(state, MAYA, { tone: "running", title: LEARNING_TITLE, detail: "Queued" })
         showCard(state, MAYA, "flow", "todo")
@@ -273,7 +273,7 @@ export const j5: Journey = {
         world.stack.push(LINT_TODO.id)
         world.branches.push({ id: "b-lint", name: "todo-flow-lint", item: LINT_TODO.id, from: "main", machine: "asleep", presence: [], activity: [], terminals: [] })
         world.proposals.find(each => each.id === LEARNING)!.todo = LINT_TODO.id
-        world.flowVersions.push(version("v3", "v3 · flows/todo/flow.ts · T13", "proposed", stepsOf(V3_STEPS), LINT_TODO.id, STACK))
+        world.flowVersions.push(version("v3", "v3 · .smithers/flows/todo/flow.ts · T13", "proposed", stepsOf(V3_STEPS), LINT_TODO.id, STACK))
         showCard(state, MAYA, "todo", LINT_TODO.id)
       }
     },
@@ -300,7 +300,7 @@ export const j5: Journey = {
         setTodo(state, LINT_TODO.id, { state: "merged" })
         release(state, "b-lint", "closed")
         setVersion(state, "v2", { state: "previous" })
-        setVersion(state, "v3", { state: "active", label: "v3 · flows/todo/flow.ts · main", steps: stepsOf(V3_STEPS, ["verify"], state.seq) })
+        setVersion(state, "v3", { state: "active", label: "v3 · .smithers/flows/todo/flow.ts · main", steps: stepsOf(V3_STEPS, ["verify"], state.seq) })
         state.world.flow = stepsOf(V3_STEPS)
         run(state, { id: "learn-92", title: "Learning from #92", state: "running", todo: LINT_TODO.id })
         toast(state, MAYA, { tone: "running", title: "Learning from #92", detail: "Working" })

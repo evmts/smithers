@@ -35,14 +35,14 @@ test("removed image files are absent", () => {
 })
 test("active consumers contain no deleted image or launcher references", () => {
   const patterns = ["distribution/" + "Dockerfile", "ghcr.io/smithersai/" + "smithers", "docker-web-" + "selfhost", "SMITHERS_MODE_MATRIX_" + "IMAGE"]
-  const found = references(root, [".github", "flows", "apps", "packages", "distribution", "PACKAGE.ts", ".smithers/target-index.json"], patterns)
+  const found = references(root, [".github", ".smithers/flows", "apps", "packages", "distribution", "PACKAGE.ts", ".smithers/target-index.json"], patterns)
   assert.deepEqual(found, [], found.join("\n"))
 })
 test("retired lifecycle scripts are absent and no active consumer runs them", () => {
   // T-INS-07 ported their guards to the backend; `smthrs host` owns the lifecycle.
   for (const name of ["backup.sh", "restore.sh", "upgrade.sh", "lib.sh", "distribution_test.go"]) assert.equal(existsSync(`${root}/distribution/${name}`), false, name)
   const patterns = ["distribution/" + "lib.sh", "distribution/" + "backup.sh", "distribution/" + "restore.sh", "distribution/" + "upgrade.sh", "SMITHERS_" + "BACKUP_ROOT", "SMITHERS_LIB" + "="]
-  const found = references(root, [".github", "flows", "apps", "packages", "distribution"], patterns)
+  const found = references(root, [".github", ".smithers/flows", "apps", "packages", "distribution"], patterns)
   assert.deepEqual(found, [], found.join("\n"))
 })
 test("the surviving build test and command executor remain", () => {
@@ -64,7 +64,7 @@ test("distribution files live beside their callers and model fakes stay gone", (
   const patterns = ["distribution/" + "flow-host-manifest", "distribution/" + "licenses",
     "distribution/" + "install-cli", "distribution/" + "build-cli", "distribution/" + "backend_build_test",
     "fake-coding-" + "provider"]
-  const found = references(root, [".github", "apps", "packages", "flows", "PACKAGE.ts"], patterns)
+  const found = references(root, [".github", "apps", "packages", ".smithers/flows", "PACKAGE.ts"], patterns)
   assert.deepEqual(found, [], found.join("\n"))
 })
 

@@ -4,7 +4,7 @@
  * `create-workflow` was the 0.x JSX workflow `.smithers/workflows/
  * create-workflow.tsx`, deleted with the reconciler architecture in
  * `2716e9855855`. Its six prompt bodies came back the next day as
- * `flows/create-flow/*` — staged, by that commit's own words, as migration-pack
+ * `.smithers/flows/create-flow/*` — staged, by that commit's own words, as migration-pack
  * inputs — and nothing registered them. The door kept the dead name, so the
  * headline "create a flow from a description" feature refused on every
  * workspace, twice measured on production.
@@ -18,7 +18,7 @@
  *
  * That the id resolves in the registry the coding host really composes is the
  * other half of this seam, proved against that composition in
- * `flows/test/coding-create-flow-registry.test.ts`.
+ * `.smithers/flows/test/coding-create-flow-registry.test.ts`.
  */
 import { expect, test } from "bun:test"
 import { FLOW_AUTHORING_ENTRY } from "@smthrs/rpc/FlowAuthoring"

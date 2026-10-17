@@ -35,7 +35,7 @@
 import { existsSync, globSync, readFileSync, statSync } from "node:fs"
 import { extname, join } from "node:path"
 
-import { readWorkspaceManifests } from "../../../flows/release/pack-release.mjs"
+import { readWorkspaceManifests } from "../../../.smithers/flows/release/pack-release.mjs"
 import { isMain, repoRoot } from "../../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 /** The only origin this gate answers for. */

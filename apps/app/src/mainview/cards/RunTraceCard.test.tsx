@@ -131,7 +131,7 @@ test("a message-started run's Steps view leads with the author, the exact quoted
   expect(bare.host.querySelector("[data-trigger='message']")).toBeNull()
 })
 
-/* One of the sentences flows/repository/triggers.ts refuses a registration with, and the verdict line that clips it. */
+/* One of the sentences .smithers/flows/repository/triggers.ts refuses a registration with, and the verdict line that clips it. */
 const REFUSAL = 'Add a model to "nightly-lint" to schedule it.'
 const VERDICT = `failed — invalid_receipt: ${REFUSAL.slice(0, 20)}`
 const failedJournal = (cause: string) =>
@@ -166,7 +166,7 @@ describe("the run card as a trace", () => {
     expect(detail.querySelector("pre")?.textContent).toBe(raw)
   })
   test("the registrar's refusal leads with its own sentence; another flow's invalid_receipt keeps the infra headline", () => {
-    const cause = `invalid_receipt: ${REFUSAL}\n    at repository/trigger (flows/repository/triggers.ts:20)`
+    const cause = `invalid_receipt: ${REFUSAL}\n    at repository/trigger (.smithers/flows/repository/triggers.ts:20)`
     const refused = renderRun({ workflow: "repository/trigger", phase: "failed", error: VERDICT, events: failedJournal(cause) })
     expect(refusal(refused.host).textContent).toBe(REFUSAL)
     expect(refusal(refused.host).textContent).not.toContain("Not your fault")
@@ -184,7 +184,7 @@ describe("the run card as a trace", () => {
     const trial = "Run evals for this exact candidate before continuing"
     const setupVerdict = `failed — invalid_receipt: ${trial}`
     const refused = renderRun({ workflow: "repository/setup", phase: "failed", error: setupVerdict,
-      events: failedJournal(`invalid_receipt: ${trial}\n    at repository/Setup (flows/repository/receipts.ts:109)`) })
+      events: failedJournal(`invalid_receipt: ${trial}\n    at repository/Setup (.smithers/flows/repository/receipts.ts:109)`) })
     expect(refusal(refused.host).textContent).toBe(trial)
     expect(refusal(refused.host).textContent).not.toContain("invalid_receipt")
     expect(faultOf(refused.host)).toBe("user")

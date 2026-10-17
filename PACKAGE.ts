@@ -13,7 +13,7 @@ import project from "./apps/site/src/data/project.json" with { type: "json" }
 import { Package as modelHostPackage } from "./packages/smithers/agent/model-host/PACKAGE.ts"
 import { Package as integrationsPackage } from "./packages/smithers/agent/integrations/PACKAGE.ts"
 import { Package as flowsPackage } from "./packages/smithers/flows/PACKAGE.ts"
-import { Package as codingFlowsPackage } from "./flows/PACKAGE.ts"
+import { Package as codingFlowsPackage } from "./.smithers/flows/PACKAGE.ts"
 
 // Workspace selections cross package boundaries as explicit files. Expansion
 // retains the shared ignore, repository, symlink and host-state rules.
@@ -30,7 +30,7 @@ const workspaceReviewSources = await workspaceFiles([
 const workspaceReadmes = await workspaceFiles([
   "packages/*/README.md", "packages/*/*/README.md", "packages/*/*/*/README.md"
 ])
-const flowEntries = await workspaceFiles(["flows/**/flow.ts", "flows/**/flow.mdx", "flows/**/SKILL.md"])
+const flowEntries = await workspaceFiles([".smithers/flows/**/flow.ts", ".smithers/flows/**/flow.mdx", ".smithers/flows/**/SKILL.md"])
 
 export const cacheToken = Smithers.Secret("SMITHERS_CACHE_READ_TOKEN")
 export const cacheWriteToken = Smithers.Secret("SMITHERS_CACHE_WRITE_TOKEN")
@@ -71,8 +71,8 @@ const tsconfig = Smithers.Tsconfig({
     // Eval suites and benchmark rigs live in the package they measure; the
     // depth globs below reach `regression` and `recommend-eval`.
     Smithers.glob("packages/smithers/agent/harness/benchmarks/*/PACKAGE.ts"),
-    Smithers.file("flows/review/seeded-bugs/PACKAGE.ts"),
-    Smithers.file("flows/PACKAGE.ts"),
+    Smithers.file(".smithers/flows/review/seeded-bugs/PACKAGE.ts"),
+    Smithers.file(".smithers/flows/PACKAGE.ts"),
     // One entry per nesting depth, spelled out. Packages nest: a granular
     // package lives inside the product package it belongs to, so
     // `@smthrs/canonical` is `packages/smithers/flows/canonical` and
@@ -248,8 +248,8 @@ const repoAbout = Smithers.ToolRun({
 // is never executed by build, test, lint, or CI and never cached or replayed.
 const commit = Smithers.ToolRun({
   command: "node",
-  args: ["flows/land/commit.mjs"],
-  inputs: [Smithers.file("//flows/land/commit.mjs")],
+  args: [".smithers/flows/land/commit.mjs"],
+  inputs: [Smithers.file("//.smithers/flows/land/commit.mjs")],
   deps: [],
   cwd: "."
 })
@@ -287,7 +287,7 @@ const targetIndex = Smithers.TargetIndex({
 const ubuntu = "ubuntu-latest"
 
 // One Node for every environment, named once in `.node-version` at the root:
-// setup-node reads it here through `node-version-file`, `.smithers/ci/cloud.sh`
+// setup-node reads it here through `node-version-file`, `.github/scripts/ci/cloud.sh`
 // reads it to bootstrap a Cloud runner, and fnm, nvm and asdf read it on a
 // developer's machine. Before this the same fact was spelled three ways and
 // three different releases came out: package.json said >=22.19.0, ci.yml
@@ -540,7 +540,7 @@ const driftJob = {
     { name: "OpenAPI bundle drift", verb: Smithers.Verb.Lint, pattern: "//:openapiBundle" },
     { name: "OpenAPI client drift", verb: Smithers.Verb.Lint, pattern: "//:openapiClients" },
     { name: "Documentation drift", verb: Smithers.Verb.Lint, pattern: "//:docsDrift" },
-    { name: "Declaration baseline", verb: Smithers.Verb.Build, pattern: "//flows:apiBaseline" },
+    { name: "Declaration baseline", verb: Smithers.Verb.Build, pattern: "//.smithers/flows:apiBaseline" },
     { name: "Conflict markers", verb: Smithers.Verb.Lint, pattern: "//packages/repo-targets:conflictMarkers" },
     { name: "Tracked file hygiene", verb: Smithers.Verb.Lint, pattern: "//packages/repo-targets:trackedHygiene" },
     { name: "Generated drift workflow", verb: Smithers.Verb.Lint, pattern: "//:driftCi" },
@@ -677,29 +677,29 @@ const ci = Smithers.GithubCiGen({
         docker: dockerImageStore
       }),
       steps: [
-        // The registry and migrate-detector checks over flows/. `//flows/...`
+        // The registry and migrate-detector checks over flows/. `//.smithers/flows/...`
         // would also select the 45-minute codingNative/codingBundle gates.
-        { name: "Repository flows", verb: Smithers.Verb.Test, pattern: "//flows:pack" },
+        { name: "Repository flows", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:pack" },
         // The one case that proves the coding host's judge tunnels through the
         // egress proxy its environment names instead of dialling the gateway
-        // directly. `//flows:pack` does not reach it, and the repo-contract
+        // directly. `//.smithers/flows:pack` does not reach it, and the repo-contract
         // grep beside it bans identifiers, not behaviour: a composition that
         // keeps the approved spelling and hands it an environment naming no
         // proxy passes that gate and fails this one.
-        { name: "Judge egress", verb: Smithers.Verb.Test, pattern: "//flows:egress" },
+        { name: "Judge egress", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:egress" },
         // The repository, wiki and release-content fixtures.
-        // `//flows:pack` reaches none of them and neither did any other job, so
+        // `//.smithers/flows:pack` reaches none of them and neither did any other job, so
         // until these two steps existed the only thing that ran them was
-        // `pnpm test` inside flows/, which no workflow invokes. The seven
+        // `pnpm test` inside .smithers/flows/, which no workflow invokes. The seven
         // fixtures that skip themselves without the Plue adapter and exporter
         // are deliberately not here: they are declared in the native gate,
         // where a missing prerequisite refuses instead of skipping.
-        { name: "Repository flow fixtures", verb: Smithers.Verb.Test, pattern: "//flows:repository" },
-        { name: "Wiki and release fixtures", verb: Smithers.Verb.Test, pattern: "//flows:fixtures" },
-        // ESLint and dprint over the flows tree: `//flows:lint` and `//flows:fmt`.
-        { name: "Repository flows lint", verb: Smithers.Verb.Lint, pattern: "//flows/..." },
+        { name: "Repository flow fixtures", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:repository" },
+        { name: "Wiki and release fixtures", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:fixtures" },
+        // ESLint and dprint over the flows tree: `//.smithers/flows:lint` and `//.smithers/flows:fmt`.
+        { name: "Repository flows lint", verb: Smithers.Verb.Lint, pattern: "//.smithers/flows/..." },
         { name: "Public export JSDoc", verb: Smithers.Verb.Lint, pattern: "//:jsdocTree" },
-        { name: "Repository automation lint", verb: Smithers.Verb.Lint, pattern: "//flows:moduleLint" },
+        { name: "Repository automation lint", verb: Smithers.Verb.Lint, pattern: "//.smithers/flows:moduleLint" },
         { name: "JSDoc rule harness", verb: Smithers.Verb.Test, pattern: "//:jsdocRules" },
         { name: "Reference-host runner hooks", verb: Smithers.Verb.Test, pattern: "//:referenceHostHooks" },
         // Each eval suite lives in the package it measures and is its own
@@ -729,7 +729,7 @@ const ci = Smithers.GithubCiGen({
         // Apps and repository flows have separate source roots from packages.
         // Keep the review flow and its seeded-bug eval in the required gates.
         { name: "Server typecheck and tests", verb: Smithers.Verb.Ci, pattern: "//apps/server/..." },
-        { name: "Review flow", verb: Smithers.Verb.Ci, pattern: "//flows/review/..." },
+        { name: "Review flow", verb: Smithers.Verb.Ci, pattern: "//.smithers/flows/review/..." },
         { name: "Bug worker", verb: Smithers.Verb.Ci, pattern: "//apps/bug-worker/..." },
         { name: "Project copy drift", verb: Smithers.Verb.Lint, pattern: "//:projectCopy" },
         // smithers.sh: the landing page and the Starlight docs. `astro check`
@@ -738,12 +738,12 @@ const ci = Smithers.GithubCiGen({
         {
           name: "Review eval suite (offline, baseline-gated)",
           verb: Smithers.Verb.Test,
-          pattern: "//flows/review/seeded-bugs/..."
+          pattern: "//.smithers/flows/review/seeded-bugs/..."
         },
         {
           name: "Review eval typecheck",
           verb: Smithers.Verb.Build,
-          pattern: "//flows/review/seeded-bugs:check"
+          pattern: "//.smithers/flows/review/seeded-bugs:check"
         },
         // The command-recommender scorer: hit@5, top-1, and coverage over the
         // server's recommendation log. Offline: it scores a checked-in
@@ -769,7 +769,7 @@ const ci = Smithers.GithubCiGen({
         { name: "Generated workflow drift", verb: Smithers.Verb.Lint, pattern: "//:ci" },
         // The factory projection smithers.sh serves from the public mirror:
         // the featured flows, the Dispatcher table, and the homepage,
-        // declared in .smithers/FACTORY.ts, rendered over the flows/ tree,
+        // declared in .smithers/FACTORY.ts, rendered over the .smithers/flows/ tree,
         // checked in.
         { name: "Factory projection drift", verb: Smithers.Verb.Lint, pattern: "//:factoryProjection" },
         // The declaration-derived target index smithers.sh reads from the
@@ -807,34 +807,34 @@ const ci = Smithers.GithubCiGen({
       steps: [
         // The issue-claim convention, check receipts and their bindings, and the
         // release rehearsal and version gates: flows-owned repository automation.
-        { name: "Issue claims and check receipts", verb: Smithers.Verb.Test, pattern: "//flows:issueClaim" },
-        { name: "Check bindings", verb: Smithers.Verb.Test, pattern: "//flows:evidenceBindings" },
-        { name: "Release rehearsal and gate inventory", verb: Smithers.Verb.Test, pattern: "//flows:releaseRehearsal" },
-        { name: "Release version suite", verb: Smithers.Verb.Test, pattern: "//flows:releaseVersion" },
-        { name: "Command check runner", verb: Smithers.Verb.Test, pattern: "//flows:checkRunner" },
+        { name: "Issue claims and check receipts", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:issueClaim" },
+        { name: "Check bindings", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:evidenceBindings" },
+        { name: "Release rehearsal and gate inventory", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:releaseRehearsal" },
+        { name: "Release version suite", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:releaseVersion" },
+        { name: "Command check runner", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:checkRunner" },
         // The benchmark, mutation and campaign gates live with their flows in
-        // flows/bench and flows/perf; the evidence collected above is theirs.
-        { name: "Benchmark cost gate", verb: Smithers.Verb.Test, pattern: "//flows:benchmarkGate" },
-        { name: "Mutation gate", verb: Smithers.Verb.Test, pattern: "//flows:mutationGate" },
-        { name: "Campaign verifiers", verb: Smithers.Verb.Test, pattern: "//flows:campaignVerifiers" },
-        { name: "Signal campaign verifier", verb: Smithers.Verb.Test, pattern: "//flows:signalCampaign" },
-        { name: "Performance and fault drivers", verb: Smithers.Verb.Test, pattern: "//flows:perfUnit" },
+        // .smithers/flows/bench and .smithers/flows/perf; the evidence collected above is theirs.
+        { name: "Benchmark cost gate", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:benchmarkGate" },
+        { name: "Mutation gate", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:mutationGate" },
+        { name: "Campaign verifiers", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:campaignVerifiers" },
+        { name: "Signal campaign verifier", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:signalCampaign" },
+        { name: "Performance and fault drivers", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:perfUnit" },
         // The landing helper (`pnpm commit`) and its flows, lane gates and
         // migration renumbering, with the pinned sqlc the backendSQLC dep builds.
-        { name: "Landing helper", verb: Smithers.Verb.Test, pattern: "//flows:land" },
-        { name: "Landing helper end to end", verb: Smithers.Verb.Test, pattern: "//flows:landCommit" },
-        { name: "GitHub triage publisher", verb: Smithers.Verb.Test, pattern: "//flows:triagePublish" },
+        { name: "Landing helper", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:land" },
+        { name: "Landing helper end to end", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:landCommit" },
+        { name: "GitHub triage publisher", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:triagePublish" },
         // The release tooling lives beside the Release flow.
-        { name: "Release manifest", verb: Smithers.Verb.Test, pattern: "//flows:packManifest" },
-        { name: "Changelog generator", verb: Smithers.Verb.Test, pattern: "//flows:changelog" },
-        { name: "Release cut", verb: Smithers.Verb.Test, pattern: "//flows:releaseCut" },
-        { name: "Release candidate suites", verb: Smithers.Verb.Test, pattern: "//flows:releaseSuite" },
-        { name: "Release publication integrity", verb: Smithers.Verb.Test, pattern: "//flows:releaseIntegrity" },
-        { name: "Release smoke", verb: Smithers.Verb.Test, pattern: "//flows:releaseSmoke" },
-        { name: "npm consumer dedupe", verb: Smithers.Verb.Test, pattern: "//flows:npmDedupe" },
-        { name: "npm consumer dedupe cells", verb: Smithers.Verb.Test, pattern: "//flows:npmDedupeUnit" },
-        { name: "Release tools and host recorders", verb: Smithers.Verb.Test, pattern: "//flows:releaseTools" },
-        { name: "Release step flows", verb: Smithers.Verb.Test, pattern: "//flows:releaseSteps" }
+        { name: "Release manifest", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:packManifest" },
+        { name: "Changelog generator", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:changelog" },
+        { name: "Release cut", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:releaseCut" },
+        { name: "Release candidate suites", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:releaseSuite" },
+        { name: "Release publication integrity", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:releaseIntegrity" },
+        { name: "Release smoke", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:releaseSmoke" },
+        { name: "npm consumer dedupe", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:npmDedupe" },
+        { name: "npm consumer dedupe cells", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:npmDedupeUnit" },
+        { name: "Release tools and host recorders", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:releaseTools" },
+        { name: "Release step flows", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:releaseSteps" }
       ]
     },
     {
@@ -843,7 +843,7 @@ const ci = Smithers.GithubCiGen({
       runsOn: ubuntu,
       timeoutMinutes: 45,
       toolchain: Smithers.CiToolchain.Needs({ runtimes: [node, bun], apt: bubblewrap }),
-      steps: [{ name: "Package documentation tarballs", verb: Smithers.Verb.Test, pattern: "//flows:packageDocs" }]
+      steps: [{ name: "Package documentation tarballs", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:packageDocs" }]
     },
     {
       id: "apps-e2e",
@@ -1223,7 +1223,7 @@ const referenceHostHooks = Smithers.NodeTest({
 const changelog = Smithers.Generate({
   summary: "Regenerate and drift-check the CHANGELOG.md commit section for the current version.",
   featured: true,
-  script: Smithers.file("//flows/release/generate-changelog.mjs"),
+  script: Smithers.file("//.smithers/flows/release/generate-changelog.mjs"),
   data: [
     Smithers.file("//CHANGELOG.md"),
     Smithers.file("//package.json"),

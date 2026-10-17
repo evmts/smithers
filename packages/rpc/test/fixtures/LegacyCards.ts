@@ -971,7 +971,7 @@ export const legacyCards = [
             {
               "id": "root.read",
               "declaredAt": {
-                "path": "flows/review/flow.ts",
+                "path": ".smithers/flows/review/flow.ts",
                 "line": 12
               }
             },
@@ -993,8 +993,8 @@ export const legacyCards = [
           "node": "root.read",
           "tab": "declaration",
           "codeError": {
-            "path": "flows/review/flow.ts",
-            "message": "Path not found: flows/review/flow.ts in smithersai/smithers"
+            "path": ".smithers/flows/review/flow.ts",
+            "message": "Path not found: .smithers/flows/review/flow.ts in smithersai/smithers"
           }
         }
       }

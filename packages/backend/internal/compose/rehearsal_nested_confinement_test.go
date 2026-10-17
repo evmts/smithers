@@ -171,7 +171,7 @@ echo "PROBE_COMPLETE=yes"
 // proof, and the launcher requirement that proof depends on.
 //
 // A coding turn's immutable tree export spawns the native exporter through the
-// coding host's confined spawner (flows/coding/immutable-source.ts), which is
+// coding host's confined spawner (.smithers/flows/coding/immutable-source.ts), which is
 // ProcessSandbox's bubblewrap posture and mounts its own `/proc` for its own
 // PID namespace. Inside the rehearsal's guest that export was refused with
 // `bwrap: Can't mount proc on /newroot/proc: Operation not permitted`, and

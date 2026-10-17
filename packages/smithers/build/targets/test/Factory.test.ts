@@ -529,11 +529,11 @@ describe("Smithers.Factory", () => {
 describe("FactoryProjection target", () => {
   it("declares explicit discovery entries without package-crossing globs", () => {
     const metadata = Target.metadata(Factory.FactoryProjection({
-      entries: [Input.file("//flows/todo/flow.ts"), Input.file("//flows/todo/SKILL.md")]
+      entries: [Input.file("//.smithers/flows/todo/flow.ts"), Input.file("//.smithers/flows/todo/SKILL.md")]
     }))
     expect(metadata.inputs.map(describeInput)).toEqual([
-      "//flows/todo/flow.ts",
-      "//flows/todo/SKILL.md",
+      "//.smithers/flows/todo/flow.ts",
+      "//.smithers/flows/todo/SKILL.md",
       "//.smithers/FACTORY.ts",
       "//.smithers/factory.json",
       "//.smithers/home.json"

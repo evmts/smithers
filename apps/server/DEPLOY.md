@@ -249,8 +249,8 @@ Fix forward by landing on `main`; break glass with
 `bun x wrangler rollback <rollout.previous.version>`.
 
 `scripts/deploy.ts` is the current Actions entry and calls the same policy as
-`flows/rollout/flow.ts`. Self-hosters use `executionLayer` from
-`flows/rollout/host.ts` with an exclusively leased host, bounded checks and
+`.smithers/flows/rollout/flow.ts`. Self-hosters use `executionLayer` from
+`.smithers/flows/rollout/host.ts` with an exclusively leased host, bounded checks and
 durable `record` storage; its structured result
 is the rollout receipt. Any status other than `passed`, including `rolled-back`,
 fails the flow with that receipt. No model or approval is involved.

@@ -19,7 +19,7 @@ import {
   EXPECTED_EFFECT_VERSION as effectVersion,
   SUPPORTED_EFFECT_RANGE as effectRange
 } from "./check-single-effect-version.mjs"
-import { retarget } from "../../../flows/release/set-release-version.mjs"
+import { retarget } from "../../../.smithers/flows/release/set-release-version.mjs"
 import { libraryPackages } from "../scripts/workspace-packages.mjs"
 import { repoRoot as root } from "../scripts/workspace-packages.mjs"
 

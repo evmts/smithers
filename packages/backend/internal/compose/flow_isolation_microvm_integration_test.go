@@ -91,7 +91,7 @@ func TestRepositoryFlowImportsStayInsideRealMicroVM(t *testing.T) {
 	writeEvidence("msb-version.txt", run(msb.Path(), "--version"))
 	work := t.TempDir()
 	bundle := filepath.Join(work, "canary.mjs")
-	fixture := filepath.Join(root, "flows/test/fixtures/flow-isolation-canary.ts")
+	fixture := filepath.Join(root, ".smithers/flows/test/fixtures/flow-isolation-canary.ts")
 	fixtureBefore, err := os.ReadFile(fixture)
 	require.NoError(t, err)
 	require.Less(t, len(fixtureBefore), 64*1024, "canary entry must be source, never a compiled bundle")
@@ -102,7 +102,7 @@ const [bundler, entry, output] = process.argv.slice(1);
 process.argv[1] = "flow-isolation-build-driver";
 const { bundle } = await import(pathToFileURL(bundler).href);
 await bundle(entry, output);`,
-		filepath.Join(root, "flows/coding/build.mjs"), fixture, bundle)
+		filepath.Join(root, ".smithers/flows/coding/build.mjs"), fixture, bundle)
 	fixtureAfter, err := os.ReadFile(fixture)
 	require.NoError(t, err)
 	require.Equal(t, fixtureBefore, fixtureAfter, "bundling must never mutate the entry source")

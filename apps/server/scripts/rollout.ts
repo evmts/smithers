@@ -3,7 +3,7 @@ import { join } from "node:path"
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import { parseDeployedVersions } from "./canary/rollback-verdict"
 import type { RecoveryEvidence } from "./deployGuard"
-import type { CheckResult, Release, RolloutHost, RolloutReceipt } from "../../../flows/rollout/runtime.ts"
+import type { CheckResult, Release, RolloutHost, RolloutReceipt } from "../../../.smithers/flows/rollout/runtime.ts"
 
 export interface WorkerRolloutOptions {
   previous: Release | (() => Promise<Release>)

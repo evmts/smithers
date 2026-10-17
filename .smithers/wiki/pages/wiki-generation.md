@@ -4,7 +4,7 @@ This wiki is a repository recipe over ordinary Smithers flows. It creates no sep
 
 ## One page catalog
 
-The page catalog is the `pages` array of `.smithers/coding-project.json`. The Cloud refresh (`coding/wiki`) and the standalone `flows/wiki/main.ts` command both read it; there is no second catalog. Each page has a purpose, linked neighbors, an owning Markdown document and exact inputs.
+The page catalog is the `pages` array of `.smithers/coding-project.json`. The Cloud refresh (`coding/wiki`) and the standalone `.smithers/flows/wiki/main.ts` command both read it; there is no second catalog. Each page has a purpose, linked neighbors, an owning Markdown document and exact inputs.
 
 The flow caps review evidence at 90 KB per page, full-file capture at 300 KB per page, and accepts at most 30 pages. This repository keeps every page at or under 30 KB of review evidence. Inputs are hand-written documentation and small stable source files, never generated projections. Whole files are preferred to line-range excerpts, because a range that outgrows a shrinking file fails the refresh.
 
@@ -26,7 +26,7 @@ A failed semantic review writes its findings in a `needs-changes` preview and fa
 
 Incremental generation reuses supported reviews from a terminal run through the journal and attempt store. It requires the same reviewer ID and review-policy sources, matches the page specification, input, content and section digests, and revalidates citations; changed pages and uncertain assessments in the selected prior execution require a new model review.
 
-The configured coding host keys that reuse on the identity of its review task: a digest of the review policy sources (`policySources` in `flows/wiki/reuse.ts`), injected by the bundler into the deployed artifact. Nothing else in the host build is covered, so a host deploy that leaves the review task alone keeps prior reviews reusable.
+The configured coding host keys that reuse on the identity of its review task: a digest of the review policy sources (`policySources` in `.smithers/flows/wiki/reuse.ts`), injected by the bundler into the deployed artifact. Nothing else in the host build is covered, so a host deploy that leaves the review task alone keeps prior reviews reusable.
 
 ## Publish after every fold
 

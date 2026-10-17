@@ -160,7 +160,7 @@ imports or protect against concurrent filesystem changes.
 import * as Pack from "@smthrs/registry/Pack"
 
 const address = Pack.digest(manifest, [
-  { path: "flows/review/flow.mdx", contents: reviewSource },
+  { path: ".smithers/flows/review/flow.mdx", contents: reviewSource },
   { path: "pack.json", contents: manifestSource }
 ])
 ```

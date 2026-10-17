@@ -38,9 +38,9 @@ describe("ci conformance", () => {
     const ci = readCi()
     const commands = [
       "pnpm exec smthrs ci '//packages/...'",
-      "pnpm exec smthrs test '//flows:issueClaim'",
-      "pnpm exec smthrs test '//flows:packageDocs' --known-red '.github/ci-known-red.json' --verbose",
-      "pnpm exec smthrs test '//flows:pack'"
+      "pnpm exec smthrs test '//.smithers/flows:issueClaim'",
+      "pnpm exec smthrs test '//.smithers/flows:packageDocs' --known-red '.github/ci-known-red.json' --verbose",
+      "pnpm exec smthrs test '//.smithers/flows:pack'"
     ]
     const owners = commands.map((command) => {
       const matches = Object.entries(ci.jobs).flatMap(([id, job]) =>
@@ -205,9 +205,9 @@ describe("ci conformance", () => {
         "  - \"packages/smithers/build/*\"",
         "  - \"packages/smithers/flows/*\"",
         "  - \"packages/smithers/ui/*\"",
-        "  - \"flows\"",
-        "  - \"flows/coding\"",
-        "  - \"flows/review/seeded-bugs\"",
+        "  - \".smithers/flows\"",
+        "  - \".smithers/flows/coding\"",
+        "  - \".smithers/flows/review/seeded-bugs\"",
         "  - \"apps/*\"",
         "  - \"evals/*\"",
         ""
@@ -290,7 +290,7 @@ describe("ci conformance", () => {
     // here so it stays exactly the write half — a second spelling of the drift
     // check would let a stale commit pass.
     //
-    // `check:npm-dedupe` is the operator alias for `//flows:npmDedupe`, the
+    // `check:npm-dedupe` is the operator alias for `//.smithers/flows:npmDedupe`, the
     // same shape as `browser` and `//packages/repo-targets:webBundleContract`. The resolution reads
     // registry metadata, so the target is uncacheable and re-runs regardless,
     // which is the only concession the network costs. The alias is pinned so
@@ -320,7 +320,7 @@ describe("ci conformance", () => {
       browser: "node packages/repo-targets/browser/browser-check.mjs",
       check: "pnpm --recursive --if-present run check",
       checklist: "pnpm --filter smithers-app run checklist",
-      "check:npm-dedupe": "node flows/release/check-npm-dedupe.mjs",
+      "check:npm-dedupe": "node .smithers/flows/release/check-npm-dedupe.mjs",
       circular: "pnpm --recursive --if-present run circular",
       "deploy:dry": "pnpm --filter smithers-server run deploy:dry",
       "docs:check":
@@ -328,17 +328,17 @@ describe("ci conformance", () => {
       "docs:sync":
         "pnpm --filter @smithers/site run sync:docs && smthrs flow start docs-sync --data '{\"mode\":\"write\"}' --wait",
       dev: "pnpm --filter smithers-app run start",
-      commit: "node flows/land/commit.mjs",
-      "issue-claim": "node flows/issue-claim/issue-claim.mjs",
+      commit: "node .smithers/flows/land/commit.mjs",
+      "issue-claim": "node .smithers/flows/issue-claim/issue-claim.mjs",
       deploy: "pnpm --filter smithers-server run deploy",
       lint: "pnpm --recursive --if-present run lint",
       "target-index": "pnpm exec smthrs target '//:targetIndex' --write",
       "lint:jsdoc":
         "eslint --config eslint.config.js \"packages/*/src/**/*.ts\" \"packages/*/*/src/**/*.ts\" \"packages/*/*/*/src/**/*.ts\" --max-warnings=0",
-      "release:answer": "node --experimental-strip-types flows/release-support/main.ts answer",
-      "release:content": "node --experimental-strip-types flows/release-support/main.ts release-content",
-      "release:status": "node --experimental-strip-types flows/release-support/main.ts status",
-      "release:workflow": "node --experimental-strip-types flows/release-support/main.ts release",
+      "release:answer": "node --experimental-strip-types .smithers/flows/release-support/main.ts answer",
+      "release:content": "node --experimental-strip-types .smithers/flows/release-support/main.ts release-content",
+      "release:status": "node --experimental-strip-types .smithers/flows/release-support/main.ts status",
+      "release:workflow": "node --experimental-strip-types .smithers/flows/release-support/main.ts release",
       test: "pnpm --recursive --if-present run test",
       tui: "bun apps/tui/src/main.tsx",
       "test:e2e": "pnpm --filter smithers-app run test:e2e",
@@ -365,7 +365,7 @@ describe("ci conformance", () => {
     for (const command of [
       "pnpm install --frozen-lockfile --ignore-scripts",
       "pnpm exec smthrs ci '//packages/...' --jobs 2 --known-red '.github/ci-known-red.json' --verbose",
-      "pnpm exec smthrs test '//flows:issueClaim' --known-red '.github/ci-known-red.json' --verbose",
+      "pnpm exec smthrs test '//.smithers/flows:issueClaim' --known-red '.github/ci-known-red.json' --verbose",
       "pnpm exec smthrs test '//packages/repo-targets:webBundleContract' --known-red '.github/ci-known-red.json' --verbose",
       "pnpm exec smthrs test '//packages/...' --jobs 2 --known-red '.github/ci-known-red.json' --verbose",
       "jj git init --colocate"

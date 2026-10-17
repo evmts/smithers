@@ -97,7 +97,7 @@ Do not buy or build a per-file authorship classifier.
 
 Harness landed; the fitted anchors are **not** shipped. `SIGNALS` in `flows/register-repository/cleanup.ts` stays `deterministic-v0` / `hybrid-v0`.
 
-**Method.** `flows/register-repository/calibration/`: `generate.ts` (seeded corpus), `fit.ts` (human p90 per language and size band; logistic regression with weights on the simplex, scaled to the deterministic 55; AUROC; precision at p90), `run.ts` (rewrites `corpus.json` and `fit.json`). Rerun: `node --experimental-strip-types flows/register-repository/calibration/run.ts`. Every third case per stratum and label is held out. Tests: `flows/test/registration-calibration.test.ts` (a rerun matches the artifacts within 1e-3; held-out AUROC at least 0.95; weights non-negative and sum to 55).
+**Method.** `flows/register-repository/calibration/`: `generate.ts` (seeded corpus), `fit.ts` (human p90 per language and size band; logistic regression with weights on the simplex, scaled to the deterministic 55; AUROC; precision at p90), `run.ts` (rewrites `corpus.json` and `fit.json`). Rerun: `node --experimental-strip-types flows/register-repository/calibration/run.ts`. Every third case per stratum and label is held out. Tests: `.smithers/flows/test/registration-calibration.test.ts` (a rerun matches the artifacts within 1e-3; held-out AUROC at least 0.95; weights non-negative and sum to 55).
 
 **Artifacts.** `corpus.json` (300 synthetic cases: 4 languages x 3 bands x 12 human, 8 agent, 5 hybrid; S1-S5 values), `fit.json` (anchors, weights, AUROC: train 0.992, held-out 0.987, hybrid vs human 0.797).
 

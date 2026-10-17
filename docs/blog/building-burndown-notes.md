@@ -18,7 +18,7 @@ record each step as it was taught, the code at that step, and what broke.
 
 ## Step 1 — the smallest flow
 
-File `flows/issue-sweep/flow.ts`; the path makes the flow name `issue-sweep`.
+File `.smithers/flows/issue-sweep/flow.ts`; the path makes the flow name `issue-sweep`.
 Concepts: an **action** declares a step (name, payload schema, success schema,
 no code); a **flow** is the plan (`body` describes, never does); a **layer**
 attaches code to an action (`Hello.toLayer(...)`), keeping the plan pure data and
@@ -43,7 +43,7 @@ written by strangers (issue titles, bodies) flows into commands.
 
 ## Step 3 — read claims and decide
 
-Claim comment format (written by `flows/issue-claim/issue-claim.mjs`):
+Claim comment format (written by `.smithers/flows/issue-claim/issue-claim.mjs`):
 `Claimed by <who> on <host> at <UTC>; expires <UTC+6h>`. Live data: 62 Mac mini
 claims (44 live, 18 expired), 17 claims from the MacBook (abandoned).
 Rule: skip labels are checked first, with the matching label recorded in the
@@ -70,7 +70,7 @@ rewrite:
   pure and testable.
 Result: 266 issues, 46 skip, 220 ours.
 
-Tests (`flows/issue-sweep/test/decide.test.ts`, node:test, 7 cases): no claim,
+Tests (`.smithers/flows/issue-sweep/test/decide.test.ts`, node:test, 7 cases): no claim,
 non-claim comment, live Mac mini claim 1 ms before expiry, expiry boundary,
 other machine, trailing period, unparseable expiry.
 
@@ -94,7 +94,7 @@ other machine, trailing period, unparseable expiry.
 
 ## Step 4 (named step 5 live) — one agent, one issue, read-only
 
-New flow `flows/issue-sweep/work/flow.ts` (`issue-sweep/work`). `Investigate`
+New flow `.smithers/flows/issue-sweep/work/flow.ts` (`issue-sweep/work`). `Investigate`
 spawns `codex-rr exec -m gpt-6.1-sol --sandbox read-only <brief>`; the account
 is read from codex-rr's stderr line `codex-rr: codex-N`.
 First run: codex-1, but the read-only sandbox blocks network, so the agent could
@@ -128,7 +128,7 @@ success/failure into an `Outcome` row so one failure never cancels the batch.
 
 `Claim` action, `tier: "irreversible"` with an `idempotencyKey` (the engine
 refuses to retry an irreversible step without one). Reuses
-`flows/issue-claim/issue-claim.mjs`: exit 0 → claimed, 2 → `Held` (typed, reported as
+`.smithers/flows/issue-claim/issue-claim.mjs`: exit 0 → claimed, 2 → `Held` (typed, reported as
 `held`, never retried), 75 → `RateLimited`, retried with
 `Schedule.exponential("30 seconds")`, `times: 6`, then mapped to `AgentFailed`.
 `Node.andThen` orders Claim before everything without passing a value.

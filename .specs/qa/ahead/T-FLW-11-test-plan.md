@@ -1,9 +1,9 @@
 # T-FLW-11 ahead-of-time test plan: one `todo` run per attempt
 
 Author: QA, 2026-10-02. Read-only study of ~/qa-repo. No code was run.
-Sources: tickets/T-FLW-11.md, T-STK-12.md, checks C-CAT-01, C-J5-01, C-STK-03, C-STK-06, C-J10-09, C-DUR-01, spec.md §4.1, §10.4, §10.7, §11, §12.4.1, §19, delta.md §6, today's `packages/backend/internal/services/mythical_items.go` (and `mythical_receipts.go`, `mythical_failure.go`, `mythical_view.go`), `flows/coding/{request,vibe,verify,todo,steering}.ts`, `flows/review/change/flow.mdx`.
+Sources: tickets/T-FLW-11.md, T-STK-12.md, checks C-CAT-01, C-J5-01, C-STK-03, C-STK-06, C-J10-09, C-DUR-01, spec.md §4.1, §10.4, §10.7, §11, §12.4.1, §19, delta.md §6, today's `packages/backend/internal/services/mythical_items.go` (and `mythical_receipts.go`, `mythical_failure.go`, `mythical_view.go`), `.smithers/flows/coding/{request,vibe,verify,todo,steering}.ts`, `.smithers/flows/review/change/flow.mdx`.
 Not read in full: `mythical.go` (fold, adoption), `mythical_placement.go`, `mythical_land_todo.go`, workspace lane code. Their launch paths are not in the four-run set; rows that depend on them say so.
-`flows/todo/` does not exist yet. All new test paths below are proposed.
+`.smithers/flows/todo/` does not exist yet. All new test paths below are proposed.
 
 Falsifier (overview.md "Top risks"): a first pass runs one TODO end to end as one run id with section 2 green. Section 2 rows marked CHANGED or UNSPECIFIED cannot be green until the tech lead rules (section 5).
 
@@ -14,15 +14,15 @@ Process names used in kill points: BE = Go backend (stack engine, signals), CH =
 
 | Req | Source (line) | Proving test | Layer | File |
 |---|---|---|---|---|
-| Composition `flows/todo/flow.ts` is `Flow.make("todo", ...)`, steps route, plan, implement, candidate, check, review, propose | ticket Scope-In 1; spec §10.4.1 | U01 | unit | flows/test/todo.composition.test.ts |
-| Step flows come from `flows/coding/` exports, one implementation per step | ticket Changes 2 | U02 | unit | same |
+| Composition `.smithers/flows/todo/flow.ts` is `Flow.make("todo", ...)`, steps route, plan, implement, candidate, check, review, propose | ticket Scope-In 1; spec §10.4.1 | U01 | unit | .smithers/flows/test/todo.composition.test.ts |
+| Step flows come from `.smithers/flows/coding/` exports, one implementation per step | ticket Changes 2 | U02 | unit | same |
 | Reserved `candidate`, `propose` steps are system ops, not flow steps; override cannot skip them | ticket Scope-In 2; spec §10.4.1, §11.1.1 | U03, I14 | unit, integration | same; todo_run_db_test.go |
 | Engine launches one run per attempt and signals rebased, edited, steer, changes_requested, merged, dropped | ticket Scope-In 3; spec §10.4.1 | I01-I09 | integration | todo_run_db_test.go |
-| Four registrations deleted; steps stay exported | ticket Scope-In 4; C-CAT-01 step 8 (spec §6.1.2c) | U04, U05 | unit | catalog tests + flows/test |
+| Four registrations deleted; steps stay exported | ticket Scope-In 4; C-CAT-01 step 8 (spec §6.1.2c) | U04, U05 | unit | catalog tests + .smithers/flows/test |
 | Launch sites `:1681 :1775 :1905` and `mythicalReviewFlow` (`:2277`, launched `:2408`) replaced by one launch plus durable signals | ticket Changes 3 | U06 (grep guard), I01 | unit, integration | |
 | Item states keep meaning as phases the run reports | ticket Changes 3; spec §4.1.0 | U07, I10 | unit, integration | |
 | `todo` overridable; `stack.candidate`, `stack.propose` reserved | ticket Changes 5; spec §11.1.1-§11.1.2; M-30 | U03, U04 | unit | |
-| Test fixtures that assume four runs updated | ticket Changes 6 | U06 (no `coding/request` literal in `flows/test` fixtures) | unit | |
+| Test fixtures that assume four runs updated | ticket Changes 6 | U06 (no `coding/request` literal in `.smithers/flows/test` fixtures) | unit | |
 | E2E as one run id; rebase re-enters candidate; edited re-enters candidate; steer re-enters implement; merged ends | ticket Tests 1 | I01-I06 | integration | todo_run_db_test.go |
 | C-STK-06 A-D on the real composition | ticket Tests 2; C-STK-06 | I10-I13 | integration | todo_candidate_flow_db_test.go |
 | Kill between propose and PR open: resume waiting, PR opens once | ticket Tests 3; spec §12.4.1b, §19.2 | F17, F19, F20, F21 | fault | |
@@ -83,20 +83,20 @@ Disposition: KEEP (must hold unchanged), CHANGED (spec changes it; test asserts 
 | R14 | Prompt cap: issue body 24 KiB, whole prompt 48 KiB | `:54`, `:176`, `:1759` | KEEP | U10 |
 | R15 | Other open issue titles supplied for duplicate detection | `:1736-1745` | UNSPECIFIED | gap 9 |
 | R16 | An earlier failure's reason is fed back into the next attempt's prompt | `:1752` | CHANGED: Retry steer is the first message; failure reason is not auto-fed | I27 asserts first message = steer only |
-| R17 | Jev routes once (implement, bug, feature, close); route is recorded on success and on failure; leaf feedback per route (bug: failing regression test first; feature: lint then decline with at most 3 questions; close: decline with evidence) | `flows/coding/todo.ts` `leafFeedback`, `mythicalRoute` `:830` | KEEP in `route` step | I05 (each route), U11 (feedback text per route) |
+| R17 | Jev routes once (implement, bug, feature, close); route is recorded on success and on failure; leaf feedback per route (bug: failing regression test first; feature: lint then decline with at most 3 questions; close: decline with evidence) | `.smithers/flows/coding/todo.ts` `leafFeedback`, `mythicalRoute` `:830` | KEEP in `route` step | I05 (each route), U11 (feedback text per route) |
 | R18 | Planner declines: item ends `declined`; author's edit or a maintainer re-label revives it | `:1393-1404`, `mythicalFailedOutcome` `:808-818` | CHANGED (§10.8.1a): decline raises `needs_you{question}`, run waits | I06 |
 | R19 | Plan summary (title, amends, inserts, appends, steps) projected for the card; plan carries its checks to verification | `mythicalPlanSummary` `:847-923` | KEEP: plan output feeds `check` | I07 |
-| R20 | Plan needs at least two checks (`flows/coding/planning.ts:38`); a rebased result with no checks replans (`:1856`) | | CHANGED: one check minimum; none detected runs build-only and says "no checks detected" (§11.2) | I08 |
+| R20 | Plan needs at least two checks (`.smithers/flows/coding/planning.ts:38`); a rebased result with no checks replans (`:1856`) | | CHANGED: one check minimum; none detected runs build-only and says "no checks detected" (§11.2) | I08 |
 | R21 | Plan cites published wiki; the lane never re-reviews wiki pages | `:1676`, `suppliedWiki` | KEEP (§10.4.1 "plan (cites wiki revisions)") | I09 |
-| R22 | Plan approval policy (`never`, `always`, `timeout:Ns`): confirm waits; refusal ends as `declined`-style failure; timeout approves | `flows/coding/request/flow.ts` `approve` | KEEP as an `approval` wait | I06b (inside I06 family) |
+| R22 | Plan approval policy (`never`, `always`, `timeout:Ns`): confirm waits; refusal ends as `declined`-style failure; timeout approves | `.smithers/flows/coding/request/flow.ts` `approve` | KEEP as an `approval` wait | I06b (inside I06 family) |
 | R23 | Steering at boundaries `after-poc`, `before-implementation`, `after-correction`; feedback capped at 8 planning passes (`maximumPlanningPasses`) | `steering.ts:91`, `request.ts` | KEEP and EXTEND: every step boundary and between implement turns (§10.7.3) | I40-I47 |
 
 ### 2.3 Implement and correction rounds
 
 | ID | Behavior today | Where | Disp | New test |
 |---|---|---|---|---|
-| R24 | Correction rounds: a failing check sends the atom back for up to `maxRounds` (3) corrections before the plan fails | `:1673`, `flows/coding/correction.ts`, `Cursor.maxRounds <= 8` | KEEP; default and where configured UNSPECIFIED (gap 13) | I16 (check seeded to fail twice then pass: one run, step `implement` re-entered by correction, finished steps not re-run; fails 4 times: run `failed{step:"implement" or "check"}`) |
-| R25 | Implementation writes one native change per atom with fenced descriptions | `flows/coding/implementation/flow.ts`, `vibe-cleanup.ts` | CHANGED: working copy history is never rewritten; one commit is written by `stack.candidate` | I17 |
+| R24 | Correction rounds: a failing check sends the atom back for up to `maxRounds` (3) corrections before the plan fails | `:1673`, `.smithers/flows/coding/correction.ts`, `Cursor.maxRounds <= 8` | KEEP; default and where configured UNSPECIFIED (gap 13) | I16 (check seeded to fail twice then pass: one run, step `implement` re-entered by correction, finished steps not re-run; fails 4 times: run `failed{step:"implement" or "check"}`) |
+| R25 | Implementation writes one native change per atom with fenced descriptions | `.smithers/flows/coding/implementation/flow.ts`, `vibe-cleanup.ts` | CHANGED: working copy history is never rewritten; one commit is written by `stack.candidate` | I17 |
 | R26 | Agent `ask` mid-implement | spec §10.7.2a (new) | NEW | I18 |
 | R27 | Check failures typed: `fault infra` vs `factory` per receipt; infra fault preserves the plan attempt | `mythical_receipts.go:55`, `TestMythicalCheckInfraFaultPreservesPlanAttempt` | KEEP | I19 |
 
@@ -134,7 +134,7 @@ Disposition: KEEP (must hold unchanged), CHANGED (spec changes it; test asserts 
 
 | ID | Behavior today | Where | Disp | New test |
 |---|---|---|---|---|
-| R48 | Review is read-only: `capabilities fs:read:**`, no commands, writes nothing | `flows/review/change/flow.mdx:3` | KEEP | I38 (fs write attempts and exec attempts in the review step fail; GitHub write log empty) |
+| R48 | Review is read-only: `capabilities fs:read:**`, no commands, writes nothing | `.smithers/flows/review/change/flow.mdx:3` | KEEP | I38 (fs write attempts and exec attempts in the review step fail; GitHub write log empty) |
 | R49 | Reviewer reads the candidate's own diff only, framed as untrusted title and diff; escapes any tag spelling | `:2399-2402`, `mythicalUntrusted` `:2330` | KEEP (ticket: `base..C`, never the working copy) | I38, U16 (existing `TestMythicalUntrustedEscapesEverySpelling` and `...DefaultIgnorables` move to the new location) |
 | R50 | Reviewer never runs in the box the coding agent wrote to, so agent-written AGENTS.md can't reach it unframed | `:2367-2373`, `:2391-2394` | UNSPECIFIED; the one-run review step runs in the TODO machine | I39 (fixture: working copy contains injected `AGENTS.md`; review prompt must not contain it) |
 | R51 | Verdict contract: first line exactly `approve` or `request-changes`, otherwise `failed: unread`; diff over 96 KiB is not reviewed and waits for a person | `mythicalReviewVerdict` `:756-773`, `:2344`, `:2375-2380` | KEEP verdict parse; `request-changes` effect and over-size handling UNSPECIFIED | U17 (existing `TestMythicalReviewVerdict`), I41 |
@@ -185,7 +185,7 @@ Notation: `A(n)` = `todo_attempts` row n of a TODO; `J` = engine journal attempt
 |---|---|---|
 | Starting entered | `A(n).flow_digest` written once with the entering transition | equals `flow_activations` Active at that instant |
 | flow D2 activated while A(n) runs, host restart, Resume, rebased, steer | digest on every run record and loaded closure blob hash | = A(n).flow_digest |
-| the TODO's own branch edits `flows/todo/` or `pnpm-lock.yaml`, rebases onto such a change | closure restored from blob, no `lockfile_changed` | digest unchanged (C-J5-01 s8) |
+| the TODO's own branch edits `.smithers/flows/todo/` or `pnpm-lock.yaml`, rebases onto such a change | closure restored from blob, no `lockfile_changed` | digest unchanged (C-J5-01 s8) |
 | Retry | A(n+1).flow_digest | = A(n).flow_digest |
 | Retry with current flow | A(n+1).flow_digest | = Active now; same TODO number; A(n) untouched |
 | `todo` imports `review` flow; override of `review` merges mid-run | closure digest covers imported `review` (§11.3.0) | the run keeps the old `review` |
@@ -265,7 +265,7 @@ Pass for every K: each finished step has exactly one attempt row; the run reache
 
 ### INV7 `stack.propose` (and `stack.candidate`) as system operations
 
-Where it lives: packaged, never overridable, registered `reserved` (M-30). The composition has a reserved step that calls the engine; a repository `flows/todo/flow.ts` imports steps but the engine, not the flow, decides acceptance.
+Where it lives: packaged, never overridable, registered `reserved` (M-30). The composition has a reserved step that calls the engine; a repository `.smithers/flows/todo/flow.ts` imports steps but the engine, not the flow, decides acceptance.
 
 `stack.propose` MAY:
 
@@ -321,14 +321,14 @@ State on the card follows an `E` row; `current_step` within 1 s of the runtime e
 ---------------------------------------------------------------------
 ## 4. Test list by layer
 
-IDs are stable. Paths: Go tests in `packages/backend/internal/services/`, flows in `flows/test/`, faults in `packages/smithers/test/faults/host/`.
+IDs are stable. Paths: Go tests in `packages/backend/internal/services/`, flows in `.smithers/flows/test/`, faults in `packages/smithers/test/faults/host/`.
 
 ### 4.1 Unit (19)
 
 | ID | Test | Assert |
 |---|---|---|
 | U01 | composition graph | steps and edges equal route, plan, implement, candidate, check, review, propose with the §10.4.1 loop edges (the ticket's unit test); no other node |
-| U02 | step exports | each step flow comes from a `flows/coding/` export; the file has no second node or graph model (AGENTS.md "Flow layering"); about 60 lines |
+| U02 | step exports | each step flow comes from a `.smithers/flows/coding/` export; the file has no second node or graph model (AGENTS.md "Flow layering"); about 60 lines |
 | U03 | reserved steps | `stack.candidate` and `stack.propose` are `reserved`; `todo` is overridable; an override fixture without `propose` is rejected at load or ends `no_proposal` (per gap 6) |
 | U04 | catalog | the four Replaced tags have no registration in the host flow runtime registry nor the coding host registry (C-CAT-01 s8); both registries built twice |
 | U05 | `/review` | slash `/review` resolves to the overridable `review` flow, not `review/change` (C-J10-09) |

@@ -59,7 +59,7 @@ func TestOwnerChatHTTPIntegration(t *testing.T) {
 	require.NoError(t, err, string(output))
 	// Every browser flow runs on a box's coding host (#2194).
 	coding := filepath.Join(bundleDir, "smithers-coding-host")
-	codingBuild := exec.Command(node, filepath.Join(root, "flows/coding/build.mjs"), coding)
+	codingBuild := exec.Command(node, filepath.Join(root, ".smithers/flows/coding/build.mjs"), coding)
 	codingBuild.Dir = root
 	output, err = codingBuild.CombinedOutput()
 	require.NoError(t, err, string(output))

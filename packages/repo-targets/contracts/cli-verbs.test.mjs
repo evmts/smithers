@@ -101,7 +101,7 @@ describe("the CLI reference", () => {
 
   it("distinguishes the ordinary review flow from the model-review target command", () => {
     const page = readFileSync(reference, "utf8")
-    const flow = readFileSync(join(root, "flows/review/README.md"), "utf8")
+    const flow = readFileSync(join(root, ".smithers/flows/review/README.md"), "utf8")
     assert.ok(page.includes("build/test/lint/docs/review/ci/run"))
     assert.ok(flow.includes("`/review`"))
     assert.ok(flow.includes("`smthrs review <pattern>`"))

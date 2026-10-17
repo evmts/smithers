@@ -44,8 +44,8 @@ export const SOURCE_ENTRY = "packages/smithers/bin/smithers.mjs"
  */
 export const SCANNED_PATHS = [
   "package.json",
-  ".smithers/ci",
-  "flows",
+  ".github/scripts/ci",
+  ".smithers/flows",
   "evals",
 ]
 

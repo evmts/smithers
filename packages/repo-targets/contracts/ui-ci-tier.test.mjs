@@ -16,7 +16,7 @@ import { tmpdir } from "node:os"
 import { dirname, delimiter, join, sep } from "node:path"
 import { describe, it } from "node:test"
 
-import { parseWorkflow } from "../../../flows/release/release-rehearsal.mjs"
+import { parseWorkflow } from "../../../.smithers/flows/release/release-rehearsal.mjs"
 import { libraryPackages, repoRoot as root } from "../scripts/workspace-packages.mjs"
 
 const readManifest = (path) => JSON.parse(readFileSync(path, "utf8"))
@@ -119,7 +119,7 @@ it("browser typecheck executes after security validation and propagates compiler
     const projected = new Set()
     const pending = [
       ...libraryPackages().map((entry) => `${entry.dir}/PACKAGE.ts`),
-      "apps/app/PACKAGE.ts", "PACKAGE.ts", "flows/PACKAGE.ts"
+      "apps/app/PACKAGE.ts", "PACKAGE.ts", ".smithers/flows/PACKAGE.ts"
     ]
     while (pending.length > 0) {
       const path = pending.pop()

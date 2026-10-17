@@ -57,7 +57,7 @@ func TestRepositoryFlowTriggerRegistrationIsLive(t *testing.T) {
 		map[string]any{"plan_id": "plan-01", "plan_digest": planDigest, "flow_id": "nightly-lint", "envelope": envelope})
 	require.Equal(t, http.StatusOK, status, body)
 
-	// The body flows/repository/triggers.ts Activate sends.
+	// The body .smithers/flows/repository/triggers.ts Activate sends.
 	registration := map[string]any{"repo": strings.ToLower(repo.Owner) + "/" + strings.ToLower(repo.Name),
 		"workspace_id": workspace.ID, "flow_id": "nightly-lint", "revision": 1, "digest": strings.Repeat("a", 64),
 		"source_revision": strings.Repeat("b", 40), "execution_digest": strings.Repeat("c", 64), "envelope": envelope,

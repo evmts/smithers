@@ -28,7 +28,7 @@ func TestTodoMissingToolCodingReceiptBrowser(t *testing.T) {
 	r := newRehearsal(t, "SMITHERS_TODO_MISSING_TOOL_BROWSER", "C-APP-03", "missing-tool-")
 	require.True(t, r.install("Install"))
 	t.Log("Composed install ready")
-	source, err := os.ReadFile(filepath.Join(r.root, "flows/todo/flow.ts"))
+	source, err := os.ReadFile(filepath.Join(r.root, ".smithers/flows/todo/flow.ts"))
 	require.NoError(t, err)
 	_, err = r.pushGitHubMain("Seed the main machine recipe", map[string]string{
 		".smithers/machine.json":        `{"packages":["jq"]}`,

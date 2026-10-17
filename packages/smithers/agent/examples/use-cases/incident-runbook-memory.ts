@@ -13,7 +13,7 @@
  * 0.x's agents saved notes through `record_lesson` and `propose_runbook_rule` tools; here they return the text and an action saves it with the run's provenance, so the model still writes bodies, never coordinates.
  * 0.x's note `kind` (`lesson`, `runbook-rule`) is the note id's prefix; its topic tag is `scope:<topic>`.
  * 0.x's `needsApproval` on `ratify` is `WithApproval` around it; the decision is the host's `Approve` action, which answers `"approved"` or fails with `RuleDenied`.
- * `WithMemory` and `flows/memory/mine` scope memory the agents reach through tools; these agents have none, so the actions use `MemoryStore` directly.
+ * `WithMemory` and `.smithers/flows/memory/mine` scope memory the agents reach through tools; these agents have none, so the actions use `MemoryStore` directly.
  */
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import { Action, Flow, FlowRuntime } from "@smthrs/flow"

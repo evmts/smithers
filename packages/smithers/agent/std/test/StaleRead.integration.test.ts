@@ -18,7 +18,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "vitest"
-import * as CodingFileSystem from "../../../../../flows/coding/filesystem.ts"
+import * as CodingFileSystem from "../../../../../.smithers/flows/coding/filesystem.ts"
 
 const installed = process.env.SMITHERS_COL10_INSTALLED === "1"
 for (const available of [false, true]) {

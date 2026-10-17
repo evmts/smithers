@@ -13,7 +13,7 @@
  *
  * The registry's module load siblings are scratch of the same kind: a copy of
  * each flow module written beside it for one import. A jj snapshot taken
- * mid-load committed six of them under `flows/coding`, so the root
+ * mid-load committed six of them under `.smithers/flows/coding`, so the root
  * `.gitignore` must ignore that name shape.
  *
  * Run it with `node --test packages/repo-targets/contracts/scratch-artifacts.test.mjs`.
@@ -115,14 +115,14 @@ it("ignores the registry's module load siblings and none of their originals", ()
   // The six siblings the mid-load snapshot committed were shaped like this one.
   const digest = "35e97ae33074c50c174a90d629d94f35ec8f70baf0bb94f0560fcf54e818e689"
   const siblings = [
-    `flows/coding/.smithers-${digest}-7-murhou7y.ts`,
-    `flows/coding/dispatch/.smithers-${digest}-6-murhou7f.ts`,
-    `flows/review/.smithers-${digest}-a-murhou89.mjs`,
+    `.smithers/flows/coding/.smithers-${digest}-7-murhou7y.ts`,
+    `.smithers/flows/coding/dispatch/.smithers-${digest}-6-murhou7f.ts`,
+    `.smithers/flows/review/.smithers-${digest}-a-murhou89.mjs`,
     `packages/smithers/flows/.smithers-${digest}-b-murhou8c.tsx`
   ]
   const originals = [
-    "flows/coding/flow.ts",
-    "flows/review/prompt.mdx",
+    ".smithers/flows/coding/flow.ts",
+    ".smithers/flows/review/prompt.mdx",
     ".smithers/WORKSPACE.ts",
     ".smithers/target-index.json"
   ]
@@ -131,7 +131,7 @@ it("ignores the registry's module load siblings and none of their originals", ()
 
 it("ignores review scratch under .review-tmp/ and nothing named like it", () => {
   // A review session left nine throwaway scripts in apps/app/.review-tmp/.
-  const scratch = ["apps/app/.review-tmp/peek.mjs", "apps/app/.review-tmp/record-debug.mjs", "flows/review/.review-tmp/notes.md"]
-  const source = ["apps/app/src/review-tmp.ts", "flows/review/flow.ts"]
+  const scratch = ["apps/app/.review-tmp/peek.mjs", "apps/app/.review-tmp/record-debug.mjs", ".smithers/flows/review/.review-tmp/notes.md"]
+  const source = ["apps/app/src/review-tmp.ts", ".smithers/flows/review/flow.ts"]
   assert.deepEqual(ignoredByRoot([...scratch, ...source]), scratch)
 })

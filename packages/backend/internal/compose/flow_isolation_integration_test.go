@@ -330,7 +330,7 @@ func TestCSEC02LearningOverrideInstalledMicroVM(t *testing.T) {
 
 	// Copy source as data. The host must never import this override, including
 	// during catalog load; its import and body both carry the same beacon.
-	source, err := os.ReadFile(filepath.Join(r.root, "flows/learning/flow.ts"))
+	source, err := os.ReadFile(filepath.Join(r.root, ".smithers/flows/learning/flow.ts"))
 	require.NoError(t, err)
 	original := "body: (input) => Run.call(input)"
 	require.Equal(t, 1, strings.Count(string(source), original), "the pinned fixture needs its one learning body")

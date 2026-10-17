@@ -8,8 +8,8 @@ import { spawnSync } from "node:child_process"
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import test from "node:test"
-import { readWorkspaceManifests } from "../../../flows/release/pack-release.mjs"
-import { parseWorkflow } from "../../../flows/release/release-rehearsal.mjs"
+import { readWorkspaceManifests } from "../../../.smithers/flows/release/pack-release.mjs"
+import { parseWorkflow } from "../../../.smithers/flows/release/release-rehearsal.mjs"
 
 const root = resolve(import.meta.dirname, "../../..")
 const read = (path) => readFileSync(resolve(root, path), "utf8")
@@ -59,7 +59,7 @@ test("the support reference states every released Node engine range and current 
 
 test("the release smoke row names the exact runtimes that certify the candidate tarballs", () => {
   const workflow = parseWorkflow(read(".github/workflows/release.yml"))
-  const smokeSteps = workflow.jobs.publish.steps.filter((step) => step.run?.includes("node flows/release/smoke-release.mjs "))
+  const smokeSteps = workflow.jobs.publish.steps.filter((step) => step.run?.includes("node .smithers/flows/release/smoke-release.mjs "))
   assert.equal(smokeSteps.length, 1, "the release requires one smoke receipt on the supported Node floor")
   const pins = smokeSteps.map((step) => {
     const assertion = step.run.match(/test "\$\(node --version\)" = 'v([\d.]+)'/)
@@ -135,7 +135,7 @@ test("operator docs describe the PR evidence upload and factory operator", () =>
     assert.equal(matching.length, 1, `one ${name} step`)
     assert.equal(matching[0].if, "always()")
   }
-  const bench = read("flows/bench/README.md")
+  const bench = read(".smithers/flows/bench/README.md")
   assert.doesNotMatch(bench, /collects\s+evidence only after successful steps/, "stale success-only claim")
   assert.match(bench, /`if: always\(\)`/, "the bench guide states the always() upload")
   assert.match(bench, /if-no-files-found: ignore/, "the bench guide keeps the missing-files caveat")

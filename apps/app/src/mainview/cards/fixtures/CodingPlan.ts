@@ -1,4 +1,4 @@
-import type { Plan } from "../../../../../../flows/coding/schema.ts"
+import type { Plan } from "../../../../../../.smithers/flows/coding/schema.ts"
 
 /** Synthetic recipe input; no native operation or check is claimed to have run. */
 export const CODING_PLAN: Plan = {

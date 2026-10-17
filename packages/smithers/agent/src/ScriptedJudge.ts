@@ -8,7 +8,7 @@
  * computed from the state it is sent. Neither is a general language judge and
  * neither must ever be a production default. Whole-host fixtures with other
  * classifiers must dispatch those question ids too;
- * flows/test/fixtures/scripted-judge.ts is the example. Unknown questions
+ * .smithers/flows/test/fixtures/scripted-judge.ts is the example. Unknown questions
  * fail closed rather than borrowing another classifier's probabilities.
  *
  * @since 1.0.0-rc.0

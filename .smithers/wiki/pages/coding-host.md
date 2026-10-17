@@ -24,4 +24,4 @@ Only `coding/WikiCheck` descriptors receive a derived policy identity; source-au
 
 ## Deployment artifact
 
-`flows/coding/build.mjs` emits one executable ESM file. The Node shebang selects the default runtime, and running it with Bun uses the Bun adapters. It is installed as `/usr/local/bin/smithers-coding-host`, and `SMITHERS_WORKSPACE_JJ_EXPORT_BINARY` must name the packaged JJ helper by absolute path. The host catalog is pinned for its process lifetime, so a changed executable definition requires a restart.
+`.smithers/flows/coding/build.mjs` emits one executable ESM file. The Node shebang selects the default runtime, and running it with Bun uses the Bun adapters. It is installed as `/usr/local/bin/smithers-coding-host`, and `SMITHERS_WORKSPACE_JJ_EXPORT_BINARY` must name the packaged JJ helper by absolute path. The host catalog is pinned for its process lifetime, so a changed executable definition requires a restart.

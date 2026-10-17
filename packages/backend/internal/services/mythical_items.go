@@ -1117,7 +1117,7 @@ func mythicalRunOutcome(phase string, update flowdispatch.ProjectionUpdate) stri
 }
 
 // mythicalReviewVerdict reads the review's answer by its contract
-// (flows/review/change): the first line, alone, is exactly approve or
+// (.smithers/flows/review/change): the first line, alone, is exactly approve or
 // request-changes. Nothing after it counts, so a finding that quotes
 // "approve" cannot flip a rejection; any other first line is a failed
 // review, and nothing merges on it.
@@ -1164,7 +1164,7 @@ const mythicalInterrupted = "stopped: interrupted: interrupted"
 // label through this record.
 //
 // The producers are the repository flows that raise a typed failure: the
-// `planningSites` of `flows/coding/planning-memory.ts` and every
+// `planningSites` of `.smithers/flows/coding/planning-memory.ts` and every
 // `sourceRefusal("<site>")` a `flows/**/*.ts` module declares. The backend's
 // own same-named helper records to its log and never reaches a flow's typed
 // message, so its sites are deliberately not here.
@@ -5477,7 +5477,7 @@ func (st *mythicalItemStep) reviewBody(ctx context.Context, item db.MythicalItem
 }
 
 // mythicalReviewFlow reviews a proposed change read-only, from the change
-// alone (flows/review/change).
+// alone (.smithers/flows/review/change).
 const mythicalReviewFlow = "review/change"
 
 // mythicalUntrustedTag finds anything that could read as an untrusted
@@ -5547,7 +5547,7 @@ func mythicalUntrusted(text string) string {
 // reviewed automatically and waits for a person.
 const mythicalReviewBytes = 96 << 10
 
-// review launches the review flow (flows/review/change) on the pull
+// review launches the review flow (.smithers/flows/review/change) on the pull
 // request's head, with its diff, on a fresh lane under the stack's lane cap;
 // the lane stays bound until the verdict.
 func (st *mythicalItemStep) review(ctx context.Context, item db.MythicalItem) (*db.MythicalItem, bool, error) {

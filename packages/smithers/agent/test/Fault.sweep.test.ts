@@ -4,7 +4,7 @@
  * The sweep reads the source of each owner package, loads every module that
  * declares a `Schema.TaggedError`, and asserts its tag is registered, so a new
  * error without a row fails here rather than reaching a person as `bug`. The
- * repository flows' errors are swept by `flows/test/coding-fault.test.ts`.
+ * repository flows' errors are swept by `.smithers/flows/test/coding-fault.test.ts`.
  */
 import { describe, expect, it } from "@effect/vitest"
 import { Fault } from "@smthrs/flow"

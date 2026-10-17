@@ -116,7 +116,7 @@ test("forbidden: node_modules files and symlinks, bundler temp files and gitigno
     "node_modules",
     "packages/a/node_modules",
     "packages/a/node_modules/x/index.js",
-    "flows/coding/.smithers-35e97ae33074c50c174a90d629d94f35ec8f70baf0bb94f0560fcf54e818e689-7-murhou7y.ts",
+    ".smithers/flows/coding/.smithers-35e97ae33074c50c174a90d629d94f35ec8f70baf0bb94f0560fcf54e818e689-7-murhou7y.ts",
     "packages/a/dist/index.js",
     "packages/a/tsconfig.tsbuildinfo",
     ".smithers/run.json",
@@ -128,7 +128,7 @@ test("forbidden: node_modules files and symlinks, bundler temp files and gitigno
     "node_modules: forbidden: tracked path has a node_modules segment (file or symlink); delete it",
     "packages/a/node_modules: forbidden: tracked path has a node_modules segment (file or symlink); delete it",
     "packages/a/node_modules/x/index.js: forbidden: tracked path has a node_modules segment (file or symlink); delete it",
-    "flows/coding/.smithers-35e97ae33074c50c174a90d629d94f35ec8f70baf0bb94f0560fcf54e818e689-7-murhou7y.ts: forbidden: tracked bundler temp file (.smithers-<hex>-*.ts); delete it",
+    ".smithers/flows/coding/.smithers-35e97ae33074c50c174a90d629d94f35ec8f70baf0bb94f0560fcf54e818e689-7-murhou7y.ts: forbidden: tracked bundler temp file (.smithers-<hex>-*.ts); delete it",
     "packages/a/dist/index.js: forbidden: tracked file that .gitignore excludes (build output or local state); untrack it",
     "packages/a/tsconfig.tsbuildinfo: forbidden: tracked file that .gitignore excludes (build output or local state); untrack it",
     ".smithers/run.json: forbidden: tracked file that .gitignore excludes (build output or local state); untrack it"

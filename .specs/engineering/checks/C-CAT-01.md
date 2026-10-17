@@ -14,7 +14,7 @@ was widened. This is a partial retirement, not C-CAT-01 acceptance.
 
 2026-10-09 — Production native-host registration now rejects `coding/Request`
 and `coding/Vibe`, after their removal from the pinned TODO composition.
-`flows/test/catalog-runtime.test.ts` injects each literal Replaced entry point
+`.smithers/flows/test/catalog-runtime.test.ts` injects each literal Replaced entry point
 through the native host's existing module registration boundary and verifies
 startup refusal with no body or handler execution. The same test registers
 `coding/Verify` and `review/change` successfully, preserving E-19. The registry

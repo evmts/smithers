@@ -1,12 +1,12 @@
 /**
  * The package's own entry point, loaded through its export map the way
- * `flows/review` loads it.
+ * `.smithers/flows/review` loads it.
  *
- * `flows/review` imports this package under Node ESM, where a relative specifier
+ * `.smithers/flows/review` imports this package under Node ESM, where a relative specifier
  * without an extension does not resolve. `tests/generatedThemes.test.ts` guards
  * that discipline for `src/themes/*` only, and the barrel's own specifiers were
  * checked nowhere in this package -- an extension dropped from `src/index.ts`
- * surfaced two packages away, in `flows/review/tests/diffsBarrelImport.test.ts`.
+ * surfaced two packages away, in `.smithers/flows/review/tests/diffsBarrelImport.test.ts`.
  *
  * The suite itself runs under Bun, which resolves extensionless specifiers, so
  * this has to be a real Node process. `process.execPath` is not that process:
