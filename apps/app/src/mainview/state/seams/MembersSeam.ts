@@ -27,6 +27,11 @@ export function createMembersSeam(options: {
   let stop: (() => void) | undefined
   const listeners = new Set<() => void>()
   const publish = (next: MembersSnapshot) => { snapshot = next; for (const listener of listeners) listener() }
+  /* The roster without any refusal: a failed read reports itself, never as the reason an Add stored no row. */
+  const roster = (): MembersSnapshot => snapshot.model ? { model: snapshot.model } : {}
+  /* An Add refusal says why the person's last Add stored no row. A background reread (the live channel
+   * rereads at any moment) does not change that, so it survives reads; the next mutation clears it. */
+  const addRefusal = (): MembersSnapshot => snapshot.refused === "members.add" ? { error: snapshot.error, refused: snapshot.refused } : {}
   const snapshots: MembersSnapshots = { get: () => snapshot, subscribe: listener => {
     listeners.add(listener); return () => { listeners.delete(listener) }
   } }
@@ -41,14 +46,14 @@ export function createMembersSeam(options: {
       if (!response.ok) {
         const parsed = InstallErrorSchema.safeParse(body)
         const error = parsed.success ? parsed.data : membersUnavailable
-        publish({ ...(error.class === "permission" || error.class === "never" ? {} : snapshot), error })
+        publish({ ...(error.class === "permission" || error.class === "never" ? {} : roster()), error })
         return error
       }
       const parsed = MembersCardSchema.safeParse(body)
-      if (!parsed.success) { publish({ ...snapshot, error: membersUnavailable }); return membersUnavailable }
-      publish({ model: parsed.data })
+      if (!parsed.success) { publish({ ...roster(), error: membersUnavailable }); return membersUnavailable }
+      publish({ model: parsed.data, ...addRefusal() })
     } catch {
-      if (revision === generation) publish({ ...snapshot, error: membersUnavailable })
+      if (revision === generation) publish({ ...roster(), error: membersUnavailable })
       return membersUnavailable
     }
   }
@@ -57,6 +62,7 @@ export function createMembersSeam(options: {
     if (!options.ready || !options.http || !options.live) { publish({ error: membersUnavailable }); return membersUnavailable }
     if (!validMemberLogin(input.login)) return { class: "user", code: "invalid_login", message: "Enter a GitHub username" } as const
     if (tag === "members.role" && "role" in input && input.role === "owner") return { class: "permission", code: "owner_immutable", message: "Owner cannot be changed" } as const
+    if (snapshot.refused !== undefined) publish(roster())
     const path = tag === "members.add" ? "/api/members" : `/api/members/${encodeURIComponent(input.login)}`
     try {
       const response = await options.http(path, { credentials: "same-origin",

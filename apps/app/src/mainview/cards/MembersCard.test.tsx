@@ -158,9 +158,10 @@ test("a refused Add shows why in the add row: needs access links to GitHub, othe
     const addRow = () => renderToStaticMarkup(<MembersCard roster={seam.snapshots} role="owner" dispatch={() => {}} view={{ maximized: false }} onView={() => {}} />).split('class="members-add-row"')[1]
     expect(addRow()).toContain(expected)
     expect(addRow()).not.toContain("carol")
-    // A later committed read clears the refusal.
+    // A background roster refresh (the live channel rereads at any moment) keeps
+    // the refusal: it still says why the last Add stored no row.
     await seam.read()
-    expect(addRow()).not.toContain(expected)
+    expect(addRow()).toContain(expected)
     seam.dispose()
   }
   // A failed role change is not an Add refusal.
@@ -212,4 +213,35 @@ test("a roster failure keeps server text inside collapsed Details", () => {
   expect(html).toContain("<details")
   expect(html).not.toContain("<details open")
   expect(html.indexOf("RAW SERVER TRACE")).toBeGreaterThan(html.indexOf("<details"))
+})
+test("an Add refusal outlives background reads, a failed reread cannot pose as it, and the next mutation clears it", async () => {
+  const refusal = { class: "user", code: "needs_github_access", message: "Needs access on GitHub", fix: "https://github.com/smithersai/smithers/settings/access" } as const
+  const pending: ((value: Response) => void)[] = []
+  let addStatus = 403
+  const seam = createMembersSeam({ ready: true, http: (_url, init) => init?.method
+    ? Promise.resolve(Response.json(addStatus === 403 ? refusal : {}, { status: addStatus }))
+    : new Promise(resolve => pending.push(resolve)),
+    live: { subscribe: () => () => {}, getSnapshot: () => undefined } })
+  const settle = async (read: Promise<unknown>) => { pending.shift()!(Response.json(model)); await read }
+  await settle(seam.read())
+  // A live-channel reread already in flight when the refusal lands, and one started after it.
+  const inFlight = seam.read()
+  await seam.mutate("members.add", { login: "carol", role: "member" })
+  await settle(inFlight)
+  expect(seam.snapshots.get()).toEqual({ model, error: refusal, refused: "members.add" })
+  await settle(seam.read())
+  expect(seam.snapshots.get()).toEqual({ model, error: refusal, refused: "members.add" })
+  // A failed reread reports itself, never as the Add's reason.
+  const failed = seam.read()
+  pending.shift()!(Response.json({ class: "infra", code: "unavailable", message: "Members unavailable" }, { status: 503 })); await failed
+  expect(seam.snapshots.get().refused).toBeUndefined()
+  expect(seam.snapshots.get().model).toEqual(model)
+  // The next committed Add rereads the roster without the old refusal.
+  await settle(seam.read())
+  addStatus = 204
+  const added = seam.mutate("members.add", { login: "dave", role: "member" })
+  await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
+  pending.shift()!(Response.json(model)); await added
+  expect(seam.snapshots.get()).toEqual({ model })
+  seam.dispose()
 })
