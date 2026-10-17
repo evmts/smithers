@@ -288,7 +288,9 @@ describe("generator backup recovery and bounds", () => {
     expect(Exit.isFailure(exit)).toBe(true)
     expect((await Fs.lstat(NodePath.join(root, "out"))).isDirectory()).toBe(true)
     expect(await Fs.readFile(NodePath.join(root, "out/nested/original.txt"), "utf8")).toBe("irreplaceable bytes")
-    expect((await Fs.stat(NodePath.join(root, "out/nested/original.txt"))).mode & 0o777).toBe(0o640)
+    expect((await Fs.stat(NodePath.join(root, "out/nested/original.txt"))).mode & 0o777).toBe(
+      process.platform === "win32" ? 0o666 : 0o640
+    )
     expect(await Fs.readdir(outside)).toEqual(["sentinel.txt"])
     expect(await Fs.readFile(NodePath.join(outside, "sentinel.txt"), "utf8")).toBe("untouched")
   })

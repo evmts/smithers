@@ -656,7 +656,7 @@ const restoreMode = async (
       (previous.kind === "directory" && !stats.isDirectory()) ||
       (previous.kind === "file" && !stats.isFile())
     ) throw new Error(`declared output changed while its mode was being restored: ${path}`)
-    await handle.chmod(previous.mode)
+    if ((stats.mode & 0o7777) !== previous.mode) await handle.chmod(previous.mode)
   } finally {
     await handle.close()
   }

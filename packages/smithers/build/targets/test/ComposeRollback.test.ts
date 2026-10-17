@@ -11,8 +11,10 @@ import * as Exit from "effect/Exit"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import * as Compose from "../src/Compose.ts"
+
+vi.mock("node:fs/promises", async (original) => ({ ...await original<typeof Fs>() }))
 
 let root: string
 let outside: string
@@ -55,10 +57,10 @@ describe("check-mode rollback", () => {
     const path = NodePath.join(root, "out.txt")
     await Fs.writeFile(path, "checked in\n", { mode: 0o644 })
     await Fs.chmod(path, 0o644)
-    const exit = await check("require('node:fs').chmodSync('out.txt', 0o755)", ["out.txt"])
+    const exit = await check("require('node:fs').chmodSync('out.txt', 0o444)", ["out.txt"])
     expect(Exit.isFailure(exit)).toBe(true)
     const stats = await Fs.lstat(path)
-    expect(stats.mode & 0o777).toBe(0o644)
+    expect(stats.mode & 0o777).toBe(process.platform === "win32" ? 0o666 : 0o644)
   })
 
   it("reports a removed output and restores its checked-in bytes", async () => {
@@ -102,17 +104,35 @@ describe("check-mode rollback", () => {
     await Fs.chmod(first, 0o640)
     await Fs.chmod(second, 0o600)
 
-    const exit = await check("require('node:fs').rmSync('out', { recursive: true })", ["out"])
+    const open = Fs.open
+    // Model Windows' unsupported directory fchmod while keeping real handles.
+    const refused = vi.spyOn(Fs, "open").mockImplementation(async (...args) => {
+      const handle = await open(...args)
+      const chmod = handle.chmod.bind(handle)
+      handle.chmod = async (mode) => {
+        if ((await handle.stat()).isDirectory()) {
+          throw Object.assign(new Error("directory fchmod denied"), { code: "EPERM" })
+        }
+        return chmod(mode)
+      }
+      return handle
+    })
+    let exit
+    try {
+      exit = await check("require('node:fs').rmSync('out', { recursive: true })", ["out"])
+    } finally {
+      refused.mockRestore()
+    }
 
     expect(Exit.isFailure(exit)).toBe(true)
     expect(JSON.stringify(exit)).toContain("out")
     expect(JSON.stringify(exit)).toContain("generator removes it")
     expect(await Fs.readFile(first, "utf8")).toBe("first checked in\n")
     expect(await Fs.readFile(second, "utf8")).toBe("second checked in\n")
-    expect((await Fs.lstat(directory)).mode & 0o777).toBe(0o750)
-    expect((await Fs.lstat(nested)).mode & 0o777).toBe(0o710)
-    expect((await Fs.lstat(first)).mode & 0o777).toBe(0o640)
-    expect((await Fs.lstat(second)).mode & 0o777).toBe(0o600)
+    expect((await Fs.lstat(directory)).mode & 0o777).toBe(process.platform === "win32" ? 0o666 : 0o750)
+    expect((await Fs.lstat(nested)).mode & 0o777).toBe(process.platform === "win32" ? 0o666 : 0o710)
+    expect((await Fs.lstat(first)).mode & 0o777).toBe(process.platform === "win32" ? 0o666 : 0o640)
+    expect((await Fs.lstat(second)).mode & 0o777).toBe(process.platform === "win32" ? 0o666 : 0o600)
   })
 
   it("reports and restores a permissions-only change inside a declared directory", async () => {
@@ -122,12 +142,12 @@ describe("check-mode rollback", () => {
     await Fs.writeFile(path, "checked in\n")
     await Fs.chmod(path, 0o640)
 
-    const exit = await check("require('node:fs').chmodSync('out/file.txt', 0o755)", ["out"])
+    const exit = await check("require('node:fs').chmodSync('out/file.txt', 0o444)", ["out"])
 
     expect(Exit.isFailure(exit)).toBe(true)
     expect(JSON.stringify(exit)).toContain("out/file.txt")
     expect(JSON.stringify(exit)).toContain("changed its permissions")
-    expect((await Fs.lstat(path)).mode & 0o777).toBe(0o640)
+    expect((await Fs.lstat(path)).mode & 0o777).toBe(process.platform === "win32" ? 0o666 : 0o640)
     expect(await Fs.readFile(path, "utf8")).toBe("checked in\n")
   })
 

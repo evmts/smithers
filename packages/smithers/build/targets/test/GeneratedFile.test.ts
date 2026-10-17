@@ -116,7 +116,7 @@ describe("generated file paths", () => {
   it("revalidates a forged public action payload", async () => {
     const directory = await scratchOutside()
     const escaped = NodePath.join(directory, "escaped.txt")
-    const path = NodePath.relative(root, escaped)
+    const path = NodePath.relative(root, escaped).split(NodePath.sep).join("/")
 
     await expect(write(path, "must not escape\n")).rejects.toThrow(/stay inside|leave|escapes the workspace/)
     await expect(Fs.stat(escaped)).rejects.toMatchObject({ code: "ENOENT" })
@@ -137,7 +137,7 @@ describe("atomic generated-file writes", () => {
     await Fs.chmod(path, 0o640)
 
     await write("config.json", "new\n")
-    expect((await Fs.lstat(path)).mode & 0o7777).toBe(0o640)
+    expect((await Fs.lstat(path)).mode & 0o7777).toBe(process.platform === "win32" ? 0o666 : 0o640)
     expect(await Fs.readFile(path, "utf8")).toBe("new\n")
   })
 
