@@ -190,6 +190,7 @@ export const spawn = (
           // Preserve the cause for consumers that attach after its error event.
           for (const pipe of child.stdio) {
             pipe?.on("error", (error: Error) => {
+              console.error("CI7_RESET_PIPE", child.stdio.indexOf(pipe), (error as NodeJS.ErrnoException).code, child.exitCode, child.signalCode)
               state.pipeErrors.set(pipe, error)
             })
           }

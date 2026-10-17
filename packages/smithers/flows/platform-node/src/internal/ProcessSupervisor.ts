@@ -385,6 +385,7 @@ export class Control {
     // A late write may fail after the owner has sent its last status frames.
     // Destroying this socket must never discard those frames on the reader.
     socket.on("error", (cause) => {
+      console.error("CI7_RESET_CONTROL", socket === this.requestSocket ? "request" : "status", (cause as NodeJS.ErrnoException).code, this.targetDone)
       this.fault = cause
     })
     this.requestsReady.resolve()
@@ -417,6 +418,7 @@ export class Control {
       }
     })
     socket.on("error", (cause) => {
+      console.error("CI7_RESET_CONTROL", socket === this.requestSocket ? "request" : "status", (cause as NodeJS.ErrnoException).code, this.targetDone)
       this.fault = cause
     })
     socket.once("close", () => this.closed())

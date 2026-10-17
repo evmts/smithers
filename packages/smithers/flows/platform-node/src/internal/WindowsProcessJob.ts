@@ -83,9 +83,9 @@ export class WindowsProcessJob {
     // Drain diagnostics without retaining unbounded native output.
     this.child.stderr.resume()
     this.child.once("error", (cause) => this.fail(cause))
-    this.child.stdin.on("error", (cause) => this.fail(cause))
-    this.child.stdout.on("error", (cause) => this.fail(cause))
-    this.child.stderr.on("error", (cause) => this.fail(cause))
+    this.child.stdin.on("error", (cause) => { console.error("CI7_RESET_JOB", "stdin", (cause as NodeJS.ErrnoException).code, this.receivedReady, this.receivedSettled); this.fail(cause) })
+    this.child.stdout.on("error", (cause) => { console.error("CI7_RESET_JOB", "stdout", (cause as NodeJS.ErrnoException).code, this.receivedReady, this.receivedSettled); this.fail(cause) })
+    this.child.stderr.on("error", (cause) => { console.error("CI7_RESET_JOB", "stderr", (cause as NodeJS.ErrnoException).code, this.receivedReady, this.receivedSettled); this.fail(cause) })
     this.child.once("close", (code, signal) => {
       if (!this.failed && code === 0 && signal === null && this.receivedSettled && buffer === "") {
         this.settled.resolve()
