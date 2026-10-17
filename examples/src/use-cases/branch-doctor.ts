@@ -219,7 +219,8 @@ export const BranchDoctor = Flow.make("examples/BranchDoctor", {
                           )
                       )
                   )
-                  : Node.map(Node.succeed({ diagnosis, plan }), (found) => summarize(false, { ...found, execution: null }))
+                  : Node.map(Node.succeed({ diagnosis, plan }), (found) =>
+                    summarize(false, { ...found, execution: null }))
             )
         )
     )

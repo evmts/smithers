@@ -71,7 +71,11 @@ export const Output = Schema.Struct({ consumed: ConsumeResult, routing: Schema.N
 
 /** Reads the receipt into fields with confidences. */
 export const Extract = AgentAction.make("examples/ReceiptStreamWatcher/Extract", {
-  payload: { file: Schema.NullOr(Schema.String), text: Schema.NullOr(Schema.String), confidenceThreshold: Schema.Number },
+  payload: {
+    file: Schema.NullOr(Schema.String),
+    text: Schema.NullOr(Schema.String),
+    confidenceThreshold: Schema.Number
+  },
   output: PartialExtraction,
   seat,
   system: [

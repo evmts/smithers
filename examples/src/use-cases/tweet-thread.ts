@@ -15,7 +15,6 @@ import { Action, Flow, Sleep } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
-import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import { createHmac, randomBytes } from "node:crypto"
 
@@ -159,7 +158,10 @@ const post = (
 ): Node.Node<ReadonlyArray<TweetPost>, Failure, Requirements> => {
   const text = tweets[index]
   if (text === undefined) return Node.succeed(posted)
-  const rest = (current: Planned.Planned<TweetPost>) => post(index + 1, current, [...posted, current])
+  const rest = Node.capture(
+    { index },
+    (current: Planned.Planned<TweetPost>) => post(index + 1, current, [...posted, current])
+  )
   if (previous === undefined) return Node.bindPlanned(PostTweet.call({ text }), rest)
   return Node.andThen(
     Node.andThen(Node.succeed(previous), Sleep.action.call({ millis: delayMillis })),
@@ -172,8 +174,8 @@ export const TweetThread = Flow.make("examples/TweetThread", {
   payload: {},
   success: Schema.Array(TweetPost),
   error: Schema.Union([PostRefused, Sleep.SleepRequestInvalid]),
-  body: () => post(0, undefined, [])
+  body: Node.capture({ action: PostTweet.name, tweets, delayMillis }, () => post(0, undefined, []))
 })
 
-/** Every step the flow calls: the live X post and the durable timer. */
-export const layer = Layer.mergeAll(xLayer, Sleep.layer)
+/** The live X post; the interpreter supplies the durable timer. */
+export const layer = xLayer

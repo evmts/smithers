@@ -85,9 +85,9 @@ export const Intake = AgentAction.make("examples/ServiceDeskDispatcher/Intake", 
 tickets, ensuring each has a clear title, description, and submitter.`
   ],
   prompt: ({ fetchCmd, source, tickets }) =>
-    `Gather and normalize the incoming tickets.\n\nSource: ${source}\nTickets: ${JSON.stringify(tickets)}\nFetch command: ${
-      fetchCmd ?? "none"
-    }`
+    `Gather and normalize the incoming tickets.\n\nSource: ${source}\nTickets: ${
+      JSON.stringify(tickets)
+    }\nFetch command: ${fetchCmd ?? "none"}`
 })
 
 /** Labels each ticket with a category and an urgency. */

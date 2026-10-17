@@ -12,7 +12,10 @@ import { agentArguments, formattedLogArguments, legacyArguments } from "./cli/Co
 import * as Failure from "./internal/Failure.ts"
 
 const start = async (): Promise<void> => {
-  installEffectResolution({ "@smthrs/agent": import.meta.url })
+  installEffectResolution({
+    "@smthrs/agent": import.meta.url,
+    "@smthrs/registry/Prompt/jsx-runtime": import.meta.url
+  })
   const original = process.argv.slice(2)
   const parsed = Argv.parse(original)
   let agentAlias = formattedLogArguments(parsed)

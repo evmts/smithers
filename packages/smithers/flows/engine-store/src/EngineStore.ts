@@ -283,14 +283,15 @@ const makeWithEngineJj = (
     })
     // A copied plan keeps the lineage of its original observation. Reuse that
     // metadata while the journal still compares every byte of its plan content.
-    const planLineage = Effect.fnUntraced(function*(
+    const planProvenance = Effect.fnUntraced(function*(
       instance: FlowRuntime.FlowInstance["Service"],
       record: FlowRuntime.NodeRecord
     ) {
       const root = FlowEngine.Lineage.root(instance.executionId)
-      if (record._tag !== "PlanRecorded") return root
+      const current = { lineageId: root, sourceRevision: sourceRevision() }
+      if (record._tag !== "PlanRecorded") return current
       const origins = yield* keyOrigins(instance)
-      if (origins.length === 0) return root
+      if (origins.length === 0) return current
       const sourceId = `${options.journalSource}/${record.sourceId}`
       let after: JournalEvent.Seq | undefined
       while (true) {
@@ -303,9 +304,13 @@ const makeWithEngineJj = (
         const inherited = page.entries.find((entry) => entry.sourceId === sourceId && entry.sourceSeq === 0)
         if (inherited !== undefined) {
           const { lineageId } = Schema.decodeUnknownSync(Schema.Struct({ lineageId: Schema.String }))(inherited.meta)
-          return origins.some((origin) => FlowEngine.Lineage.root(origin) === lineageId) ? lineageId : root
+          if (!origins.some((origin) => FlowEngine.Lineage.root(origin) === lineageId)) return current
+          const payload = Schema.decodeUnknownSync(
+            Schema.Struct({ graph: Schema.Struct({ sourceRevision: Schema.optional(Schema.String) }) })
+          )(inherited.payload)
+          return { lineageId, sourceRevision: payload.graph.sourceRevision }
         }
-        if (!page.hasMore) return root
+        if (!page.hasMore) return current
         after = page.entries[page.entries.length - 1]!.seq
       }
     })
@@ -326,6 +331,11 @@ const makeWithEngineJj = (
     // Resolved at composition like the sandboxes: a verifier composes an
     // engine that replays and executes nothing (`ReplayOnly`).
     const replayOnly = Option.getOrUndefined(yield* Effect.serviceOption(ReplayOnly.ReplayOnly))
+    // Verification observes current code over copied history. Its plan is a
+    // separate producer's immutable observation, never a replacement of the
+    // executing producer's approved plan. ReplayOnly still refuses every new action.
+    const observation = (record: FlowRuntime.NodeRecord): FlowRuntime.NodeRecord =>
+      replayOnly === undefined ? record : { ...record, sourceId: `replay-only/${record.sourceId}` }
     const engineState = yield* DurableEngineState.DurableEngineState
     const attemptSurvivors = engineState.attemptSurvivors
     /**
@@ -517,25 +527,27 @@ const makeWithEngineJj = (
        * a writer that lost the run self-interrupts rather than narrating a
        * walk it no longer owns.
        */
-      nodeRecordBytes: (record) =>
-        Effect.map(FlowRuntime.FlowInstance, (parent) =>
-          NodeJournal.encodedBytes({
-            runId: parent.executionId,
-            sourceId: options.journalSource,
-            lineageId: FlowEngine.Lineage.root(parent.executionId),
-            root: declarationRoot,
-            sourceRevision: sourceRevision()
-          }, record)),
-      recordNode: (record) =>
-        Effect.flatMap(FlowRuntime.FlowInstance, (parent) =>
-          Effect.flatMap(planLineage(parent, record), (lineageId) =>
+      nodeRecordBytes: (input) => {
+        const record = observation(input)
+        return Effect.flatMap(FlowRuntime.FlowInstance, (parent) =>
+          Effect.map(planProvenance(parent, record), (provenance) =>
+            NodeJournal.encodedBytes({
+              runId: parent.executionId,
+              sourceId: options.journalSource,
+              ...provenance,
+              root: declarationRoot
+            }, record)))
+      },
+      recordNode: (input) => {
+        const record = observation(input)
+        return Effect.flatMap(FlowRuntime.FlowInstance, (parent) =>
+          Effect.flatMap(planProvenance(parent, record), (provenance) =>
             journal.emitDurable(
               NodeJournal.entry({
                 runId: parent.executionId,
                 sourceId: options.journalSource,
-                lineageId,
-                root: declarationRoot,
-                sourceRevision: sourceRevision()
+                ...provenance,
+                root: declarationRoot
               }, record),
               owner
             ).pipe(
@@ -554,7 +566,8 @@ const makeWithEngineJj = (
                   : Effect.die(error)
               ),
               Effect.asVoid
-            ))),
+            )))
+      },
       actionReplayKey: Effect.fnUntraced(function*(derive) {
         const instance = yield* FlowRuntime.FlowInstance
         const origins = yield* keyOrigins(instance)
@@ -637,7 +650,9 @@ const makeWithEngineJj = (
           parent.executionId,
           stepKeyDigest
         )
-        if (Option.isNone(survivors)) return Option.none()
+        if (Option.isNone(survivors)) {
+          return Option.none()
+        }
         return yield* ActionPersistence.earliestBoundarySnapshot(attemptStore, parent.executionId, stepKeyDigest, {
           earliest: survivors.value.earliestAttempt,
           latest: survivors.value.latest
@@ -655,7 +670,8 @@ const makeWithEngineJj = (
       // re-subscribes only costs one poll interval. Cross-process wakes ride
       // the polling schedule and the heartbeat sweeps: the bus is in-process,
       // and the journal offers no committed cross-process subscription.
-      resumeSignal: (_flow, executionId) => wakeBus.awaitWake(executionId)
+      resumeSignal: (_flow, executionId) =>
+        wakeBus.awaitWake(executionId)
     }
     const service = {
       ...FlowEngine.bindHostCeiling(host, FlowEngine.makeUnsafe(encoded)),

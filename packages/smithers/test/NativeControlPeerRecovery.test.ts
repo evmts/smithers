@@ -1,19 +1,26 @@
 import { NodeServices } from "@effect/platform-node"
-import { Control } from "@smthrs/control"
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
 import { Journal } from "@smthrs/journal"
 import * as JournalEvent from "@smthrs/journal/JournalEvent"
 import { Effect } from "effect"
-import { spawn } from "node:child_process"
+import { execFile, spawn } from "node:child_process"
 import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { fileURLToPath } from "node:url"
+import { promisify } from "node:util"
 import { expect, it } from "vitest"
-import { host, source } from "./fixtures/native-control-peer-recovery.ts"
+import { source } from "./fixtures/native-control-peer-recovery.ts"
 
 const fixture = fileURLToPath(new URL("./fixtures/native-control-peer-recovery.ts", import.meta.url))
+const nativePeer = async (root: string, mode: "peer-observe" | "peer-recover") => {
+  const result = await promisify(execFile)(process.execPath, ["--experimental-strip-types", fixture, mode, root], {
+    env: process.env,
+    timeout: 90_000
+  })
+  return JSON.parse(result.stdout.split("\n").find((line) => line.startsWith("{\"marker\":\"peer-recovery\""))!)
+}
 const poll = async (predicate: () => boolean | Promise<boolean>, label: string) => {
   const deadline = Date.now() + 60_000
   while (!await predicate()) {
@@ -140,33 +147,22 @@ it(
         (db) =>
           db.prepare("SELECT count(*) AS n FROM flows_journal_events WHERE run_id = ?").get(runId) as { n: number }
       )
-      await Effect.runPromise(
-        Effect.gen(function*() {
-          yield* Control.Control
-          // Registration immediately sweeps released roots. Allow another sweep
-          // and verify durable history, not merely the final status.
-          yield* Effect.sleep("2 seconds")
-          expect(rows(root).find((row) => row.run_id === runId)).toMatchObject({ status: "suspended", owner_pid: null })
-          expect(
-            rows(root).find((row) => row.run_id === child!.run_id)
-          ).toMatchObject({
-            status: "running",
-            owner_pid: original.pid,
-            cancel_requested_at_ms: null
-          })
-          const after = database(
-            root,
-            "engine",
-            (db) =>
-              db.prepare("SELECT count(*) AS n FROM flows_journal_events WHERE run_id = ?").get(runId) as { n: number }
-          )
-          expect(after.n).toBe(before.n)
-          expect(yield* Effect.promise(attempts)).toEqual([original.pid])
-          expect(
-            yield* Effect.promise(() => exists(join(root, `entered-${process.pid}`)))
-          ).toBe(false)
-        }).pipe(Effect.provide(host(root)), Effect.scoped)
+      const observe = await nativePeer(root, "peer-observe")
+      expect(rows(root).find((row) => row.run_id === runId)).toMatchObject({ status: "suspended", owner_pid: null })
+      expect(rows(root).find((row) => row.run_id === child!.run_id)).toMatchObject({
+        status: "running",
+        owner_pid: original.pid,
+        cancel_requested_at_ms: null
+      })
+      const after = database(
+        root,
+        "engine",
+        (db) =>
+          db.prepare("SELECT count(*) AS n FROM flows_journal_events WHERE run_id = ?").get(runId) as { n: number }
       )
+      expect(after.n).toBe(before.n)
+      expect(await attempts()).toEqual([original.pid])
+      expect(await exists(join(root, `entered-${observe.pid}`))).toBe(false)
 
       original.kill("SIGKILL")
       await exited
@@ -180,26 +176,13 @@ it(
         })
       }
       await writeFile(join(root, "release"), "recover")
-      await Effect.runPromise(
-        Effect.gen(function*() {
-          const control = yield* Control.Control
-          yield* Effect.promise(() =>
-            poll(
-              () => rows(root).find((row) => row.run_id === runId)?.status === "completed",
-              "dead original recovery"
-            )
-          )
-          const page = yield* control.list({ _tag: "runs", filters: { runId } })
-          expect(page._tag).toBe("runs")
-          if (page._tag === "runs") {
-            expect(page.items[0]?.status).toBe("completed")
-          }
-          expect(yield* Effect.promise(attempts)).toEqual([original.pid, process.pid])
-          expect(rows(root).every((row) => row.status === "completed" && row.cancel_requested_at_ms === null)).toBe(
-            true
-          )
-        }).pipe(Effect.provide(host(root)), Effect.scoped)
-      )
+      // Both hosts use native TypeScript: Vitest rewrites callback source,
+      // which is part of the recorded plan's identity.
+      const recovered = await nativePeer(root, "peer-recover")
+      expect(recovered.status).toBe("completed")
+      expect(recovered.page).toMatchObject({ _tag: "runs", items: [{ status: "completed" }] })
+      expect(await attempts()).toEqual([original.pid, recovered.pid])
+      expect(rows(root).every((row) => row.status === "completed" && row.cancel_requested_at_ms === null)).toBe(true)
     } finally {
       original.kill("SIGKILL")
       await exited

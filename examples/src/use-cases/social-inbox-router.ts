@@ -132,7 +132,9 @@ draft a personalized reply, determine the appropriate CRM action, and assign a
 priority level based on the sender's title, company, and message intent.`
   ],
   prompt: ({ leads, senderContext }) =>
-    `Draft actions for these leads.\n\nLeads: ${JSON.stringify(leads)}\nSender context: ${JSON.stringify(senderContext)}`
+    `Draft actions for these leads.\n\nLeads: ${JSON.stringify(leads)}\nSender context: ${
+      JSON.stringify(senderContext)
+    }`
 })
 
 /** Opens tickets for the support items. */

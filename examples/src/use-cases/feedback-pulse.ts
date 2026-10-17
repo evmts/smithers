@@ -109,7 +109,9 @@ identify recurring themes and pain points, classify sentiment for each item,
 and surface the most actionable insights. Be specific about severity and frequency.`
   ],
   prompt: ({ items, totalCount }) =>
-    `Extract the themes and pain points in this feedback.\n\nTotal count: ${totalCount}\nItems: ${JSON.stringify(items)}`
+    `Extract the themes and pain points in this feedback.\n\nTotal count: ${totalCount}\nItems: ${
+      JSON.stringify(items)
+    }`
 })
 
 /** Drafts the Slack messages, Jira tickets and digest. */

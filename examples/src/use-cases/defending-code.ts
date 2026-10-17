@@ -377,7 +377,9 @@ export const FindAll = Flow.make("examples/DefendingCode/FindAll", {
     const unique = uniqueBy(subsystems, (s: Subsystem) => slug(s.id))
     if (unique.length === 0) return Node.succeed([])
     return fanOut(
-      Object.fromEntries(unique.map((subsystem) => [`find-${slug(subsystem.id)}`, FindBug.call({ subsystem, work, binary })])),
+      Object.fromEntries(
+        unique.map((subsystem) => [`find-${slug(subsystem.id)}`, FindBug.call({ subsystem, work, binary })])
+      ),
       fanout,
       Schema.is(Find)
     )
@@ -392,7 +394,9 @@ export const VerifyAll = Flow.make("examples/DefendingCode/VerifyAll", {
     const crashed = crashedOf(finds)
     if (crashed.length === 0) return Node.succeed([])
     return fanOut(
-      Object.fromEntries(crashed.map((find) => [`verify-${slug(find.subsystemId)}`, VerifyCrash.call({ find, work, binary })])),
+      Object.fromEntries(
+        crashed.map((find) => [`verify-${slug(find.subsystemId)}`, VerifyCrash.call({ find, work, binary })])
+      ),
       fanout,
       Schema.is(Verify)
     )
@@ -451,17 +455,21 @@ const triage = (
   ran: object,
   verified: Planned.Planned<ReadonlyArray<Verify>>
 ): Node.Node<Summary, AgentAction.AgentFailure, Requirements> =>
-  Node.bindPlanned(DedupeCrashes.call({ verified }), (dedupe: Planned.Planned<typeof Dedupe.Type>) =>
-    Node.branch(Node.map(Node.succeed(dedupe), bugsOf), {
-      if: (bugs) => bugs.length > 0,
-      then: (bugs) =>
-        Node.andThen(
-          ReportAll.child({ bugs, work, fanout }),
-          Node.bindPlanned(PatchBugs.call({ bugs, work }), (patch: Planned.Planned<Patch>) =>
-            rollUp({ ...ran, dedupe, patch }))
-        ),
-      else: () => rollUp({ ...ran, dedupe })
-    }))
+  Node.bindPlanned(
+    DedupeCrashes.call({ verified }),
+    (dedupe: Planned.Planned<typeof Dedupe.Type>) =>
+      Node.branch(Node.map(Node.succeed(dedupe), bugsOf), {
+        if: (bugs) => bugs.length > 0,
+        then: (bugs) =>
+          Node.andThen(
+            ReportAll.child({ bugs, work, fanout }),
+            Node.bindPlanned(PatchBugs.call({ bugs, work }), (patch: Planned.Planned<Patch>) =>
+              rollUp({ ...ran, dedupe, patch }))
+          ),
+        else: () =>
+          rollUp({ ...ran, dedupe })
+      })
+  )
 
 /** The seven-stage pipeline. */
 export const DefendingCode = Flow.make("examples/DefendingCode", {

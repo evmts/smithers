@@ -80,7 +80,9 @@ export const Validate = AgentAction.make("examples/ExtractAnythingWorkbench/Vali
 Flag missing fields, type mismatches, and low-confidence values. Be strict.`
   ],
   prompt: ({ candidate, targetSchema }) =>
-    `Validate this candidate.\n\nTarget schema: ${JSON.stringify(targetSchema)}\nCandidate: ${JSON.stringify(candidate)}`
+    `Validate this candidate.\n\nTarget schema: ${JSON.stringify(targetSchema)}\nCandidate: ${
+      JSON.stringify(candidate)
+    }`
 })
 
 /** Compares the validated candidates and picks one. */

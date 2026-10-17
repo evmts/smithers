@@ -181,8 +181,7 @@ const settle = (
           sentiment: recall.sentiment,
           recentTickets: recall.recentTickets
         }),
-        (escalation: Planned.Planned<typeof Escalation.Type>) =>
-          Node.succeed({ recall, response, persist, escalation })
+        (escalation: Planned.Planned<typeof Escalation.Type>) => Node.succeed({ recall, response, persist, escalation })
       ),
     else: () => Node.succeed({ recall, response, persist, escalation: null })
   })

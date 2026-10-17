@@ -51702,22 +51702,6 @@
     }
   },
   {
-    "label": "//packages/smithers/control:adapterPostgresDatabase",
-    "package": "packages/smithers/control",
-    "name": "adapterPostgresDatabase",
-    "rule": "Docker.Service",
-    "kinds": [
-      "run"
-    ],
-    "cacheable": false,
-    "inputs": [],
-    "outputs": [],
-    "dependencies": [],
-    "source": {
-      "file": "packages/smithers/control/PACKAGE.ts"
-    }
-  },
-  {
     "label": "//packages/smithers/control:check",
     "package": "packages/smithers/control",
     "name": "check",
@@ -51984,6 +51968,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/flows/database/scripts/test-matrix.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/smithers/control/package.json"
       },
       {
@@ -51993,7 +51981,6 @@
     ],
     "outputs": [],
     "dependencies": [
-      "//packages/smithers/control:adapterPostgresDatabase",
       "//packages/smithers/control:lib"
     ],
     "hosts": [

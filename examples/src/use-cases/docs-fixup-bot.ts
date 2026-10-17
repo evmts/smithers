@@ -195,8 +195,7 @@ export const DocsFixupBot = Flow.make("examples/DocsFixupBot", {
                     })
                 )
               }),
-              (done) =>
-                Node.succeed({ scan, repair, verification: done.verification, pullRequest: done.pullRequest })
+              (done) => Node.succeed({ scan, repair, verification: done.verification, pullRequest: done.pullRequest })
             )
         )
     )

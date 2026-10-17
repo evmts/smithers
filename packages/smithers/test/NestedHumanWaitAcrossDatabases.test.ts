@@ -480,10 +480,13 @@ describe("a host whose control plane and engine keep separate databases", () => 
         signal: { name: "coding-clarification", payload: "the scheduler owns it" },
         idempotencyKey: `signal:${runId}`
       })
-      return { receipt, observation: yield* (yield* Engine).observe(runId) }
+      const engine = yield* Engine
+      const settled = yield* engine.settled(runId)
+      return { receipt, settled, observation: yield* engine.observe(runId) }
     }))
 
     expect(observed.receipt._tag).toBe("Accepted")
+    expect(observed.settled).toBe("completed")
     // The wait is gone: the tree no longer owes anybody an answer.
     expect(observed.observation._tag === "Observed" ? observed.observation.pendingWaits : ["unread"]).toBeUndefined()
   })

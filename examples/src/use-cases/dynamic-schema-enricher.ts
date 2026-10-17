@@ -23,7 +23,14 @@ const seat = "anthropic:claude-sonnet-5-5"
 const Fraction = Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 }))
 
 /** The document families the context step chooses from. */
-export const DocumentFamily = Schema.Literals(["invoice", "contract", "receipt", "onboarding", "support-ticket", "unknown"])
+export const DocumentFamily = Schema.Literals([
+  "invoice",
+  "contract",
+  "receipt",
+  "onboarding",
+  "support-ticket",
+  "unknown"
+])
 
 /** Who sent the document, for whom, and what kind of document it is. */
 export const Context = Schema.Struct({

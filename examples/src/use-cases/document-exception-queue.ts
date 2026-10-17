@@ -120,7 +120,11 @@ confidence from filenames, OCR text, or supplied content. Explain uncertain case
 
 /** Extracts one file, told every file's type. */
 export const Extract = AgentAction.make("examples/DocumentExceptionQueue/Extract", {
-  payload: { file: Schema.String, documentClasses: Schema.Array(DocumentClass), targetFields: Schema.Array(Schema.String) },
+  payload: {
+    file: Schema.String,
+    documentClasses: Schema.Array(DocumentClass),
+    targetFields: Schema.Array(Schema.String)
+  },
   output: Extraction,
   seat,
   system: [extractorSystem],
@@ -153,7 +157,11 @@ and policy rules. Return exceptions with severity.`
 
 /** Re-extracts only what a failed reconciliation implicated. */
 export const TargetedReextract = AgentAction.make("examples/DocumentExceptionQueue/TargetedReextract", {
-  payload: { reconciliation: Reconciliation, extractions: Schema.Array(Extraction), files: Schema.Array(Schema.String) },
+  payload: {
+    reconciliation: Reconciliation,
+    extractions: Schema.Array(Extraction),
+    files: Schema.Array(Schema.String)
+  },
   output: Extraction,
   seat,
   system: [extractorSystem],
@@ -231,7 +239,7 @@ const perFile = <A, Tag extends Tags>(
     AgentAction.AgentFailure,
     Action.Requirement<Tag>
   >
-  return Node.map(joined, (byFile) => Object.keys(members).map((key) => byFile[key]).filter(is))
+  return Node.map(joined, Node.capture({}, (byFile) => Object.keys(members).map((key) => byFile[key]).filter(is)))
 }
 
 /** Every extraction so far, plus the re-extraction. Pure, so it is a `Node.map`, not a step. */
@@ -260,28 +268,29 @@ const review = (
   reconciliation: Planned.Planned<Reconciliation>
 ): Step =>
   Node.branch(Node.succeed(reconciliation), {
-    if: ({ exceptions }) => exceptions.some((exception) => exception.severity === "high"),
-    then: () =>
+    if: Node.capture({}, ({ exceptions }) => exceptions.some((exception) => exception.severity === "high")),
+    then: Node.capture({ settings }, () =>
       Node.branch(
         Node.bindPlanned(
           Node.map(Node.succeed(reconciliation), reviewPrompt),
-          (prompt: Planned.Planned<string>) =>
+          Node.capture({}, (prompt: Planned.Planned<string>) =>
             HumanTask.action.call({ name: reviewTask, kind: "json", prompt, schema: approvalSchema }).pipe(
               HumanTask.decode(Approval)
-            )
+            ))
         ),
         {
-          if: (approval) => approval.approved,
-          then: (approval) => exportRecord(settings, extractions, reconciliation, approval),
-          else: (approval) =>
+          if: Node.capture({}, (approval) => approval.approved),
+          then: Node.capture({ settings }, (approval) =>
+            exportRecord(settings, extractions, reconciliation, approval)),
+          else: Node.capture({}, (approval) =>
             Node.fail({
               _tag: "examples/DocumentExceptionQueue/ReviewDenied" as const,
               reviewer: approval.reviewer,
               note: approval.note
-            })
+            }))
         }
-      ),
-    else: () => exportRecord(settings, extractions, reconciliation, null)
+      )),
+    else: Node.capture({ settings }, () => exportRecord(settings, extractions, reconciliation, null))
   })
 
 /**
@@ -298,20 +307,20 @@ const reconcile = (
   Node.branch(
     Reconcile.call({ extractions, documentClasses, vendorMaster: settings.vendorMaster, checks: settings.checks }),
     {
-      if: (reconciliation) => reconciliation.passed,
-      then: (reconciliation) => review(settings, extractions, reconciliation),
-      else: (reconciliation) =>
+      if: Node.capture({}, (reconciliation) => reconciliation.passed),
+      then: Node.capture({ settings }, (reconciliation) => review(settings, extractions, reconciliation)),
+      else: Node.capture({ settings, round }, (reconciliation) =>
         Node.bindPlanned(
           TargetedReextract.call({ reconciliation, extractions, files: settings.files }),
-          (again: Planned.Planned<Extraction>) =>
+          Node.capture({ settings, round }, (again: Planned.Planned<Extraction>) =>
             Node.bindPlanned(
               Node.map(Node.succeed({ prior: extractions, again }), append),
-              (all: Planned.Planned<ReadonlyArray<Extraction>>) =>
+              Node.capture({ settings, round }, (all: Planned.Planned<ReadonlyArray<Extraction>>) =>
                 round >= settings.maxReconcileIterations
                   ? review(settings, all, reconciliation)
-                  : reconcile(settings, documentClasses, all, round + 1)
-            )
-        )
+                  : reconcile(settings, documentClasses, all, round + 1))
+            ))
+        ))
     }
   )
 
@@ -331,7 +340,7 @@ export const DocumentExceptionQueue = Flow.make("examples/DocumentExceptionQueue
   },
   success: ExportRecord,
   error: Schema.Union([AgentAction.AgentFailure, HumanTask.HumanTaskFailed, ReviewDenied]),
-  body: ({
+  body: Node.capture({}, ({
     checks = defaultChecks,
     files = defaultFiles,
     maxConcurrency = 8,
@@ -343,20 +352,31 @@ export const DocumentExceptionQueue = Flow.make("examples/DocumentExceptionQueue
   }) => {
     const settings: Settings = { files, vendorMaster, checks, maxReconcileIterations, outputDir }
     return Node.bindPlanned(
-      perFile(files, maxConcurrency, (file) => Classify.call({ file, packetContext }), Schema.is(DocumentClass)),
-      (documentClasses: Planned.Planned<ReadonlyArray<DocumentClass>>) =>
-        Node.bindPlanned(
-          perFile(
-            files,
-            maxConcurrency,
-            (file) => Extract.call({ file, documentClasses, targetFields }),
-            Schema.is(Extraction)
-          ),
-          (extractions: Planned.Planned<ReadonlyArray<Extraction>>) =>
-            reconcile(settings, documentClasses, extractions, 1)
-        )
+      perFile(
+        files,
+        maxConcurrency,
+        Node.capture({ packetContext }, (file) => Classify.call({ file, packetContext })),
+        Schema.is(DocumentClass)
+      ),
+      Node.capture(
+        { settings, maxConcurrency, targetFields },
+        (documentClasses: Planned.Planned<ReadonlyArray<DocumentClass>>) =>
+          Node.bindPlanned(
+            perFile(
+              files,
+              maxConcurrency,
+              Node.capture({ targetFields }, (file) => Extract.call({ file, documentClasses, targetFields })),
+              Schema.is(Extraction)
+            ),
+            Node.capture(
+              { settings },
+              (extractions: Planned.Planned<ReadonlyArray<Extraction>>) =>
+                reconcile(settings, documentClasses, extractions, 1)
+            )
+          )
+      )
     )
-  }
+  })
 })
 
 /** Every step the flow calls, and the human task it asks. */
@@ -365,6 +385,5 @@ export const layer = Layer.mergeAll(
   Extract.layer,
   Reconcile.layer,
   TargetedReextract.layer,
-  Export.layer,
-  HumanTask.layer
+  Export.layer
 )

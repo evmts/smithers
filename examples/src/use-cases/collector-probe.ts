@@ -118,9 +118,9 @@ timing, cost, and quality metrics. Compute running statistics (mean, p95) across
 the sample window. Be precise with numbers and preserve all sample data.`
   ],
   prompt: ({ invocations, previousAggregates }) =>
-    `Aggregate the telemetry of these invocations.\n\nInvocations: ${JSON.stringify(invocations)}\nPrevious aggregates: ${
-      JSON.stringify(previousAggregates)
-    }`
+    `Aggregate the telemetry of these invocations.\n\nInvocations: ${
+      JSON.stringify(invocations)
+    }\nPrevious aggregates: ${JSON.stringify(previousAggregates)}`
 })
 
 /** Compares the aggregates with the baselines. */
@@ -217,7 +217,8 @@ const round = (
         (collection: Planned.Planned<Collection>) =>
           Node.branch(Detect.call({ aggregates: collection.aggregates, baselines, previousAnomalies: anomalies }), {
             if: (anomaly) => !anomaly.driftDetected,
-            then: (anomaly) => Node.map(Node.succeed({ iterations: iteration, anomalies: [...anomalies, anomaly] }), report),
+            then: (anomaly) =>
+              Node.map(Node.succeed({ iterations: iteration, anomalies: [...anomalies, anomaly] }), report),
             else: (anomaly) =>
               iteration >= maxIterations
                 ? Node.map(Node.succeed({ iterations: iteration, anomalies: [...anomalies, anomaly] }), report)

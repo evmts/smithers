@@ -207,8 +207,10 @@ export const NormalizeEvidence = Flow.make("examples/ComplianceEvidenceCollector
       AgentAction.AgentFailure,
       Action.Requirement<"examples/ComplianceEvidenceCollector/Normalize">
     >
-    return Node.map(joined, (normalized): ReadonlyArray<Normalized> =>
-      Object.values(normalized).filter(Schema.is(Normalized)))
+    return Node.map(
+      joined,
+      (normalized): ReadonlyArray<Normalized> => Object.values(normalized).filter(Schema.is(Normalized))
+    )
   }
 })
 

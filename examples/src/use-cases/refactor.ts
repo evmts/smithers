@@ -210,8 +210,7 @@ export const Refactor = Flow.make("examples/Refactor", {
           then: (changes) =>
             Node.bindPlanned(
               Verify.call({ directory, typecheckCmd, testCmd, lintCmd }),
-              (verification) =>
-                Node.map(Node.succeed({ targets: analysis.targets, changes, verification }), summarize)
+              (verification) => Node.map(Node.succeed({ targets: analysis.targets, changes, verification }), summarize)
             ),
           else: (changes) =>
             Node.map(Node.succeed({ targets: analysis.targets, changes, verification: null }), summarize)
@@ -221,4 +220,3 @@ export const Refactor = Flow.make("examples/Refactor", {
 
 /** Every step the flow calls, and the child flow it starts. */
 export const layer = Layer.mergeAll(Analyze.layer, RefactorFile.layer, Verify.layer, Interpreter.layer(RefactorTargets))
-

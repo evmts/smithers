@@ -161,7 +161,13 @@ describe("the generated product API client", () => {
     // The GitHub pull request review (#4038) adds two: the person's own
     // verdict on an imported pull request, and the door that answers what
     // became of one admitted review.
-    expect(expected).toHaveLength(595)
+    // The install issue transition (#4067, 51af3b6a) adds the same act under
+    // the install repository's authority, beside the hosted repository door.
+    expect(expected).toHaveLength(596)
+    expect(spec.paths["/api/issues/{number}/transitions/{id}"]).toHaveProperty(
+      "post.operationId",
+      "post_api_issues_number_transitions_id"
+    )
     expect(spec.paths["/api/install/ack-delay"]).toHaveProperty("get.operationId", "get_api_install_ack_delay")
     expect(spec.paths["/api/install/ack-delay"]).toHaveProperty("post.operationId", "post_api_install_ack_delay")
     expect(spec.paths["/api/secrets"]).toHaveProperty("post.operationId", "post_api_secrets")

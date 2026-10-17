@@ -801,6 +801,13 @@ describe("Discovery retired root", () => {
   it.each([
     ["is absent", tree({ [root]: { kind: "directory", entries: [] } })],
     [
+      "loses an entry before stat",
+      tree({
+        [root]: { kind: "directory", entries: [] },
+        [retired]: { kind: "directory", entries: ["vanished"] }
+      })
+    ],
+    [
       "holds no entry file",
       tree({
         [root]: { kind: "directory", entries: [] },

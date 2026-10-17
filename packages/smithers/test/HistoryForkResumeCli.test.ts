@@ -1,9 +1,6 @@
 import * as History from "../src/history/History.ts"
 /** Actual module bytes, native jj/SQLite and the canonical CLI resume boundary. */
 import * as AgentSession from "@smthrs/agent/AgentSession"
-import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
-import { Control } from "@smthrs/control"
-import { Effect, Layer } from "effect"
 import { execFile, execFileSync } from "node:child_process"
 import {
   existsSync,
@@ -18,9 +15,9 @@ import {
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { DatabaseSync } from "node:sqlite"
+import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { expect, it } from "vitest"
-import * as NodeControl from "../src/NodeControl.ts"
 
 const execute = promisify(execFile)
 const source = `
@@ -28,7 +25,7 @@ import { Action, DurableClock, Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Effect, Layer, Schema } from "effect"
 import { appendFileSync } from "node:fs"
-const marker = new URL("../../executed.jsonl", import.meta.url)
+const marker = new URL("../../../executed.jsonl", import.meta.url)
 const First = Action.make("steps/First", { implementationVersion:"first/v1", payload:{}, success:Schema.String, tier:"irreversible", idempotencyKey:"first" })
 const Pause = Action.make("steps/Pause", { implementationVersion:"pause/v1", payload:{}, success:Schema.String, tier:"sealed" })
 const Finish = Action.make("steps/Finish", { implementationVersion:"finish/v1", payload:{}, success:Schema.String, tier:"irreversible", idempotencyKey:"finish" })
@@ -89,32 +86,16 @@ it("resumes the retained module snapshot, replays carried steps and settles only
     execFileSync("jj", ["new", "-R", root], { stdio: "ignore" })
     // The explicit offline evaluator supplies the required judge; no model
     // call, module loader, filesystem, engine or process boundary is mocked.
-    const runId = await Effect.runPromise(Effect.scoped(
-      Effect.gen(function*() {
-        const control = yield* Control.Control
-        const card = yield* control.plan({ flowId: "steps", input: { name: "retained" } })
-        yield* control.approve(card.approval)
-        const launched = yield* control.run({
-          _tag: "Plan",
-          planId: card.planId,
-          digest: card.digest,
-          envelope: card.envelope,
-          idempotencyKey: "initial"
-        })
-        if (launched._tag !== "Accepted" || launched.runId === undefined) return yield* Effect.die("not accepted")
-        for (let n = 0; n < 1000; n++) {
-          const listed = yield* control.list({ _tag: "runs", filters: { runId: launched.runId } })
-          if (listed._tag !== "runs") return yield* Effect.die("wrong run listing")
-          const current = listed.items[0]!
-          if (current.status === "parked" && existsSync(join(root, "executed.jsonl"))) return launched.runId
-          yield* Effect.sleep("10 millis")
-        }
-        return yield* Effect.die("actual module never parked")
-      }).pipe(
-        Effect.provide(NodeControl.layerControl({ root, evaluator: ScriptedJudge.layer })),
-        Effect.timeout("60 seconds")
-      )
-    ))
+    const initial = await execute(process.execPath, [
+      "--no-warnings",
+      "--import",
+      fileURLToPath(new URL("./fixtures/scripted-native-host.ts", import.meta.url)),
+      fileURLToPath(new URL("./fixtures/history-fork-start.ts", import.meta.url)),
+      root
+    ], { cwd: root, env: process.env, timeout: 60_000 })
+    const { runId } = JSON.parse(
+      initial.stdout.split("\n").find((line) => line.startsWith("{\"marker\":\"fork-started\""))!
+    )
     expect(readFileSync(join(root, "executed.jsonl"), "utf8")).toBe("first\n")
     const at = read(
       "engine",

@@ -120,13 +120,17 @@ the expected format and merge them into the known field set.`
 
 /** Validates and normalizes the complete field set. */
 export const Validate = AgentAction.make("examples/FormFillerAssistant/Validate", {
-  payload: { knownFields: Schema.Array(FieldEntry), collectedFields: Schema.Array(FieldEntry), formSchema: Schema.Json },
+  payload: {
+    knownFields: Schema.Array(FieldEntry),
+    collectedFields: Schema.Array(FieldEntry),
+    formSchema: Schema.Json
+  },
   output: Validation,
   seat,
   prompt: ({ collectedFields, formSchema, knownFields }) =>
-    `Validate and normalize the complete field set.\n\nKnown fields: ${JSON.stringify(knownFields)}\nCollected fields: ${
-      JSON.stringify(collectedFields)
-    }\nForm schema: ${JSON.stringify(formSchema)}`
+    `Validate and normalize the complete field set.\n\nKnown fields: ${
+      JSON.stringify(knownFields)
+    }\nCollected fields: ${JSON.stringify(collectedFields)}\nForm schema: ${JSON.stringify(formSchema)}`
 })
 
 /** Submits a validated payload to the target. */

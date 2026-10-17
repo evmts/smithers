@@ -129,18 +129,24 @@ export const ConfigDiffExplainer = Flow.make("examples/ConfigDiffExplainer", {
     gitRef = "HEAD~1..HEAD",
     paths = []
   }) =>
-    Node.bindPlanned(FetchDiffs.call({ paths, gitRef, filePatterns }), (fetched) =>
-      Node.bindPlanned(Explain.call({ files: fetched.files, totalChanges: fetched.totalChanges, context }), (explanation) =>
+    Node.bindPlanned(
+      FetchDiffs.call({ paths, gitRef, filePatterns }),
+      (fetched) =>
         Node.bindPlanned(
-          Approve.call({
-            riskLevel: explanation.riskLevel,
-            affectedSystems: explanation.affectedSystems,
-            blastRadius: explanation.blastRadius,
-            summary: explanation.summary,
-            autoApproveThreshold
-          }),
-          (review) => Node.succeed({ explanation, review })
-        )))
+          Explain.call({ files: fetched.files, totalChanges: fetched.totalChanges, context }),
+          (explanation) =>
+            Node.bindPlanned(
+              Approve.call({
+                riskLevel: explanation.riskLevel,
+                affectedSystems: explanation.affectedSystems,
+                blastRadius: explanation.blastRadius,
+                summary: explanation.summary,
+                autoApproveThreshold
+              }),
+              (review) => Node.succeed({ explanation, review })
+            )
+        )
+    )
 })
 
 /** Every step the flow calls. */

@@ -74,8 +74,7 @@ export const IngestPosts = AgentAction.make("examples/BlogAnalyzerPipeline/Inges
 extract article text, titles, and metadata. Handle different formats (HTML, Markdown, RSS)
 and report any articles that could not be parsed.`
   ],
-  prompt: ({ format, limit, source }) =>
-    `Ingest up to ${limit} blog posts.\n\nSource: ${source}\nFormat: ${format}`
+  prompt: ({ format, limit, source }) => `Ingest up to ${limit} blog posts.\n\nSource: ${source}\nFormat: ${format}`
 })
 
 /** Classifies the sampled articles. */

@@ -119,7 +119,12 @@ const diff = ({ baseline, snapshot }: { readonly snapshot: BenchmarkRun; readonl
     const current = snapshot.benchmarks.find((r) => r.name === b.name)
     if (current === undefined) return []
     const delta = ((current.valueMs - b.valueMs) / b.valueMs) * 100
-    return [{ name: b.name, baselineMs: b.valueMs, currentMs: current.valueMs, deltaPercent: Math.round(delta * 100) / 100 }]
+    return [{
+      name: b.name,
+      baselineMs: b.valueMs,
+      currentMs: current.valueMs,
+      deltaPercent: Math.round(delta * 100) / 100
+    }]
   }).filter((r) => r.deltaPercent >= baseline.thresholdPercent)
   return { regressions, drifted: regressions.length > 0 }
 }

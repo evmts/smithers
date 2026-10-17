@@ -86,7 +86,11 @@ time and compare against the last run.`
 
 /** Exercises one server. */
 export const Probe = AgentAction.make("examples/McpHealthProbe/Probe", {
-  payload: { server: Schema.String, baselineCapabilities: Schema.Array(Schema.String), latencyThresholdMs: Schema.Number },
+  payload: {
+    server: Schema.String,
+    baselineCapabilities: Schema.Array(Schema.String),
+    latencyThresholdMs: Schema.Number
+  },
   output: ProbeResult,
   seat,
   system: [
@@ -117,9 +121,9 @@ capability appearing or disappearing, or a latency regression beyond the thresho
 Only flag material changes; ignore noise.`
   ],
   prompt: ({ latencyThresholdMs, previousBaseline, probeResults }) =>
-    `Check these probe results for material changes.\n\nProbe results: ${JSON.stringify(probeResults)}\nPrevious baseline: ${
-      JSON.stringify(previousBaseline ?? null)
-    }\nLatency threshold (ms): ${latencyThresholdMs}`
+    `Check these probe results for material changes.\n\nProbe results: ${
+      JSON.stringify(probeResults)
+    }\nPrevious baseline: ${JSON.stringify(previousBaseline ?? null)}\nLatency threshold (ms): ${latencyThresholdMs}`
 })
 
 /** Writes the report for a material change. */
@@ -169,7 +173,9 @@ interface Options {
 }
 
 /** Probes every server, `maxConcurrency` at a time. The servers are payload, so the width is real at plan time. */
-const probeAll = (options: Options): Node.Node<Readonly<Record<string, unknown>>, AgentAction.AgentFailure, ProbeRequirement> =>
+const probeAll = (
+  options: Options
+): Node.Node<Readonly<Record<string, unknown>>, AgentAction.AgentFailure, ProbeRequirement> =>
   options.servers.length === 0
     ? Node.succeed({})
     // `Bounded.all` types its joined record loosely; every member is a `Probe`
@@ -188,7 +194,10 @@ const probeAll = (options: Options): Node.Node<Readonly<Record<string, unknown>>
 
 /** Every probe so far: the earlier rounds' and this round's. Pure, so it is a `Node.map`, not a step. */
 const accumulate = (
-  { earlier, probed }: { readonly earlier: ReadonlyArray<ProbeResult>; readonly probed: Readonly<Record<string, unknown>> }
+  { earlier, probed }: {
+    readonly earlier: ReadonlyArray<ProbeResult>
+    readonly probed: Readonly<Record<string, unknown>>
+  }
 ): ReadonlyArray<ProbeResult> => [...earlier, ...Object.values(probed).filter(Schema.is(ProbeResult))]
 
 /**
@@ -268,18 +277,23 @@ export const McpHealthProbe = Flow.make("examples/McpHealthProbe", {
     previousBaseline,
     servers = []
   }) =>
-    round({
-      servers,
-      maxIterations,
-      intervalMs,
-      lastRun,
-      maxConcurrency,
-      baselines,
-      latencyThresholdMs,
-      previousBaseline,
-      outputPath,
-      notifyChannel
-    }, 1, [], [])
+    round(
+      {
+        servers,
+        maxIterations,
+        intervalMs,
+        lastRun,
+        maxConcurrency,
+        baselines,
+        latencyThresholdMs,
+        previousBaseline,
+        outputPath,
+        notifyChannel
+      },
+      1,
+      [],
+      []
+    )
 })
 
 /** Every step the flow calls. */

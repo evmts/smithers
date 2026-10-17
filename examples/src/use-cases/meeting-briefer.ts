@@ -206,7 +206,11 @@ export const MeetingBriefer = Flow.make("examples/MeetingBriefer", {
           Node.succeed(classification),
           Node.bindPlanned(
             Node.all({
-              crm: GatherCrm.call({ accountName: event.title, attendees: event.attendees, intent: classification.intent }),
+              crm: GatherCrm.call({
+                accountName: event.title,
+                attendees: event.attendees,
+                intent: classification.intent
+              }),
               attendees: GatherAttendees.call({ attendees: event.attendees, organizer: event.organizer }),
               history: GatherHistory.call({
                 meetingTitle: event.title,

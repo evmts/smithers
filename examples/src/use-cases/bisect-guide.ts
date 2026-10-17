@@ -36,7 +36,9 @@ export const BisectStep = Schema.Struct({
 
 /** The adjudicator's verdict and the narrowed bounds. */
 export const Adjudication = Schema.Struct({
-  verdict: Schema.Literals(["good", "bad", "skip"]).annotate({ description: "Agent interpretation of the test result" }),
+  verdict: Schema.Literals(["good", "bad", "skip"]).annotate({
+    description: "Agent interpretation of the test result"
+  }),
   confidence: Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 })).annotate({
     description: "How confident the agent is in this verdict"
   }),

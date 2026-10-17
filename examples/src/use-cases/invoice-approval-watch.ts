@@ -184,7 +184,10 @@ export const InvoiceApprovalWatch = Flow.make("examples/InvoiceApprovalWatch", {
       Extract.call({ source, files, inboxFilter }),
       (data: Planned.Planned<typeof InvoiceData.Type>) =>
         Node.bindPlanned(
-          Node.map(Validate.call({ invoices: data.invoices, approvalThreshold, vendorAllowlist, duplicateWindow }), flagged),
+          Node.map(
+            Validate.call({ invoices: data.invoices, approvalThreshold, vendorAllowlist, duplicateWindow }),
+            flagged
+          ),
           (checked: Planned.Planned<ReturnType<typeof flagged>>) =>
             Route.call({
               flaggedInvoices: checked.flaggedInvoices,

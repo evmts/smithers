@@ -12,32 +12,20 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
   cwd: "packages/smithers/control"
 })
 
-const adapterPostgresDatabase = Smithers.Docker.Service({
-  image: "postgres@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94",
-  env: { POSTGRES_PASSWORD: "smithers-adapter-test", POSTGRES_DB: "smithers_adapter_test" },
-  ports: { "5432": 55438 },
-  readiness: {
-    exec: ["pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "smithers_adapter_test"],
-    timeout: "120s"
-  },
-  stop: { signal: "SIGTERM", grace: "10s" }
-})
-
 const postgresInventory = Smithers.Shell.Test({
   shell:
-    "cd packages/smithers/control && npx vitest run --maxWorkers=2 test/SqlControlRuntimePostgres.test.ts --coverage.enabled=false",
+    "cd packages/smithers/control && node ../flows/database/scripts/test-matrix.mjs --maxWorkers=2 test/SqlControlRuntimePostgres.test.ts --coverage.enabled=false",
   data: [
     lib,
     Smithers.glob("src/**/*.ts"),
     Smithers.file("test/SqlControlRuntimePostgres.test.ts"),
     Smithers.file("test/DurableStack.ts"),
+    Smithers.file("//packages/smithers/flows/database/scripts/test-matrix.mjs"),
     Smithers.file("package.json"),
     Smithers.file("vitest.config.ts")
   ],
   timeout: "20m",
   hosts: ["linux"],
-  env: { SMITHERS_TEST_PG_URL: "postgres://postgres:smithers-adapter-test@127.0.0.1:55438/smithers_adapter_test" },
-  services: [adapterPostgresDatabase],
   sandbox: { network: "loopback" }
 })
 
@@ -226,7 +214,6 @@ export const Package = Smithers.Package({
     lint,
     test,
     postgresInventory,
-    adapterPostgresDatabase,
     ...securityReview
   }
 })

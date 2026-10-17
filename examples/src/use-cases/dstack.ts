@@ -99,11 +99,14 @@ export const Dstack = Flow.make("examples/Dstack", {
   success: Output,
   error: AgentAction.AgentFailure,
   body: ({ code, filename = "input.ts" }) =>
-    Node.bindPlanned(ReviewSnippet.call({ filename, code }), (review: Planned.Planned<typeof Review.Type>) =>
-      Node.bindPlanned(
-        ProposePatch.call({ filename, code, issues: review.issues }),
-        (patch: Planned.Planned<typeof Patch.Type>) => Node.succeed({ review, patch })
-      ))
+    Node.bindPlanned(
+      ReviewSnippet.call({ filename, code }),
+      (review: Planned.Planned<typeof Review.Type>) =>
+        Node.bindPlanned(
+          ProposePatch.call({ filename, code, issues: review.issues }),
+          (patch: Planned.Planned<typeof Patch.Type>) => Node.succeed({ review, patch })
+        )
+    )
 })
 
 /** Every step the flow calls. */

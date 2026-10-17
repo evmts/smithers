@@ -118,7 +118,8 @@ export const WriteReport = AgentAction.make("examples/RansomwareIsolationCoordin
     `You are an incident reporter. Compile all detection and containment
 data into a concise incident report with a timeline, containment status, and summary.`
   ],
-  prompt: ({ hostId, ...incident }) => `Report the ransomware incident on ${hostId}.\n\nIncident: ${JSON.stringify(incident)}`
+  prompt: ({ hostId, ...incident }) =>
+    `Report the ransomware incident on ${hostId}.\n\nIncident: ${JSON.stringify(incident)}`
 })
 
 type Detection = typeof Detection.Type
@@ -139,20 +140,20 @@ const approve = (detection: Planned.Planned<Detection>) =>
       Node.succeed({ hostId: detection.hostId, severity: detection.severity, indicators: detection.indicators }),
       question
     ),
-    (prompt: Planned.Planned<string>) =>
+    Node.capture({}, (prompt: Planned.Planned<string>) =>
       HumanTask.action.call({ name: approvalTask, kind: "json", prompt, schema: approvalSchema }).pipe(
         HumanTask.decode(Approval)
-      )
+      ))
   )
 
 /** Approve, contain, report; or fail on a denial. */
 const isolate = (detection: Planned.Planned<Detection>): Node.Node<typeof Report.Type, Failure, Requirements> =>
   Node.branch(approve(detection), {
-    if: (approval) => approval.approved,
-    then: (approval) =>
+    if: Node.capture({}, (approval) => approval.approved),
+    then: Node.capture({}, (approval) =>
       Node.bindPlanned(
         Contain.call({ hostId: detection.hostId, severity: detection.severity, approvedBy: approval.approvedBy }),
-        (containment) =>
+        Node.capture({}, (containment) =>
           WriteReport.call({
             hostId: detection.hostId,
             indicators: detection.indicators,
@@ -160,15 +161,15 @@ const isolate = (detection: Planned.Planned<Detection>): Node.Node<typeof Report
             contained: containment.networkIsolated,
             evidenceUrl: containment.evidenceSnapshotUrl,
             notifiedChannels: containment.notifiedChannels
-          })
-      ),
-    else: (approval) =>
+          }))
+      )),
+    else: Node.capture({}, (approval) =>
       Node.fail({
         _tag: "examples/RansomwareIsolationCoordinator/ContainmentDenied" as const,
         hostId: detection.hostId,
         deniedBy: approval.approvedBy,
         note: approval.note
-      })
+      }))
   })
 
 /** The flow: detect, then isolate behind approval or report as is. */
@@ -176,11 +177,11 @@ export const RansomwareIsolationCoordinator = Flow.make("examples/RansomwareIsol
   payload: { host: Schema.optional(Schema.String), evidence: Schema.optional(Schema.Array(Schema.Json)) },
   success: Report,
   error: Schema.Union([AgentAction.AgentFailure, HumanTask.HumanTaskFailed, ContainmentDenied]),
-  body: ({ evidence = [], host = "unknown" }) =>
+  body: Node.capture({}, ({ evidence = [], host = "unknown" }) =>
     Node.branch(Detect.call({ host, evidence }), {
-      if: (detection) => detection.isolateRecommended,
+      if: Node.capture({}, (detection) => detection.isolateRecommended),
       then: isolate,
-      else: (detection) =>
+      else: Node.capture({}, (detection) =>
         WriteReport.call({
           hostId: detection.hostId,
           indicators: detection.indicators,
@@ -188,9 +189,9 @@ export const RansomwareIsolationCoordinator = Flow.make("examples/RansomwareIsol
           contained: false,
           evidenceUrl: "N/A",
           notifiedChannels: []
-        })
-    })
+        }))
+    }))
 })
 
-/** Every step the flow calls, the approval question included. */
-export const layer = Layer.mergeAll(Detect.layer, Contain.layer, WriteReport.layer, HumanTask.layer)
+/** The flow's action implementations; the interpreter supplies approvals. */
+export const layer = Layer.mergeAll(Detect.layer, Contain.layer, WriteReport.layer)

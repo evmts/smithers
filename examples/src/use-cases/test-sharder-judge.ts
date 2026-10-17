@@ -93,9 +93,9 @@ tests to run first. Prioritize tests that directly cover changed code paths. Def
 that are unlikely to be affected.`
   ],
   prompt: ({ affectedModules, changedFiles, riskLevel, testGlob }) =>
-    `Select the tests to run first among ${testGlob}.\n\nChanged files: ${JSON.stringify(changedFiles)}\nAffected modules: ${
-      JSON.stringify(affectedModules)
-    }\nRisk level: ${riskLevel}`
+    `Select the tests to run first among ${testGlob}.\n\nChanged files: ${
+      JSON.stringify(changedFiles)
+    }\nAffected modules: ${JSON.stringify(affectedModules)}\nRisk level: ${riskLevel}`
 })
 
 /** Runs one test file. The run gives up after the payload's `timeoutMs`, as 0.x's task did. */

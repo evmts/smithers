@@ -195,7 +195,8 @@ const round = (
 ): Node.Node<typeof FinalReport.Type, AgentAction.AgentFailure, Requirements> =>
   Node.branch(RunTests.call({ generatedTests: latest, command: settings.command, appUrl: settings.appUrl }), {
     if: (run) => run.passed,
-    then: (run) => ReportRun.call({ plan: settings.plan, generatedAttempts: attempts, runs: [...runs, run], passed: true }),
+    then: (run) =>
+      ReportRun.call({ plan: settings.plan, generatedAttempts: attempts, runs: [...runs, run], passed: true }),
     else: (run) =>
       Node.bindPlanned(
         HealTests.call({

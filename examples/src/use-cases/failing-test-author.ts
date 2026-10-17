@@ -131,22 +131,25 @@ export const FailingTestAuthor = Flow.make("examples/FailingTestAuthor", {
   success: Report,
   error: AgentAction.AgentFailure,
   body: ({ issue = {}, testCmd = "npx vitest run", testDir = "tests" }) =>
-    Node.bindPlanned(AnalyzeIssue.call({ issue }), (analysis: Planned.Planned<typeof Analysis.Type>) =>
-      Node.bindPlanned(
-        AuthorTest.call({
-          component: analysis.component,
-          reproSteps: analysis.reproSteps,
-          expectedBehavior: analysis.expectedBehavior,
-          actualBehavior: analysis.actualBehavior,
-          testDir
-        }),
-        (test: Planned.Planned<typeof AuthoredTest.Type>) =>
-          Node.bindPlanned(
-            RunTest.call({ testPath: test.testPath, testCmd }),
-            (run: Planned.Planned<typeof RunResult.Type>) =>
-              Node.map(Node.succeed({ testPath: test.testPath, run }), report)
-          )
-      ))
+    Node.bindPlanned(
+      AnalyzeIssue.call({ issue }),
+      (analysis: Planned.Planned<typeof Analysis.Type>) =>
+        Node.bindPlanned(
+          AuthorTest.call({
+            component: analysis.component,
+            reproSteps: analysis.reproSteps,
+            expectedBehavior: analysis.expectedBehavior,
+            actualBehavior: analysis.actualBehavior,
+            testDir
+          }),
+          (test: Planned.Planned<typeof AuthoredTest.Type>) =>
+            Node.bindPlanned(
+              RunTest.call({ testPath: test.testPath, testCmd }),
+              (run: Planned.Planned<typeof RunResult.Type>) =>
+                Node.map(Node.succeed({ testPath: test.testPath, run }), report)
+            )
+        )
+    )
 })
 
 /** Every agent step the flow calls. The host implements {@link RunTest}. */

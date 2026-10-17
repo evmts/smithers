@@ -62,7 +62,7 @@ export const Ship = Flow.make("examples/RemoteShip", {
   body: () => WaitFor.action.call({ name: "clearance" })
 })
 
-/** The project whose `flows/` directory the control plane serves. */
+/** The project whose `.smithers/flows/` directory the control plane serves. */
 export const projectRoot: string = join(dirname(fileURLToPath(import.meta.url)), "24-project")
 
 /** The name discovery derives for `flows/ship/flow.mdx` from its directory. */
@@ -73,7 +73,7 @@ const platform = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 
 /**
  * The registry the control plane lists flows from and the engine registers
- * them from: `<projectRoot>/flows/**`, scanned, with bodies still unread.
+ * them from: `<projectRoot>/.smithers/flows/**`, scanned, with bodies still unread.
  */
 const registry = Registry.layerProject({ root: projectRoot }).pipe(Layer.provide(platform), Layer.orDie)
 

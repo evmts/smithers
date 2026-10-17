@@ -112,7 +112,9 @@ export const runCommand = (
       // Node puts the exit code here, a system error name when the command
       // never started, and null when a signal ended it.
       const code: unknown = error === null ? 0 : error.code ?? null
-      if (typeof code === "number") return resume(Effect.succeed({ command, exitCode: code, stdout, stderr, durationMs }))
+      if (typeof code === "number") {
+        return resume(Effect.succeed({ command, exitCode: code, stdout, stderr, durationMs }))
+      }
       if (code === null && error?.killed === true) {
         return resume(Effect.succeed({
           command,

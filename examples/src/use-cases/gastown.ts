@@ -480,12 +480,19 @@ const slingRow = (plan: Plan, bead: PlannedBead): typeof Sling.Type => ({
 /** The witness bound: 0.x's `maxIterations={plan.beads.length + 2}`. */
 export const patrolsFor = (beads: number) => beads + 2
 
-type WitnessCall = Node.Node<ReadonlyArray<WitnessEvent>, AgentAction.AgentFailure, Action.Requirement<"examples/Gastown/Witness">>
+type WitnessCall = Node.Node<
+  ReadonlyArray<WitnessEvent>,
+  AgentAction.AgentFailure,
+  Action.Requirement<"examples/Gastown/Witness">
+>
 
 /** `count` patrols in a row, each waiting for the one before it. */
 const patrol = (
   count: number,
-  payload: { readonly polecatResults: Planned.Planned<ReadonlyArray<PolecatResult>>; readonly beads: ReadonlyArray<PlannedBead> },
+  payload: {
+    readonly polecatResults: Planned.Planned<ReadonlyArray<PolecatResult>>
+    readonly beads: ReadonlyArray<PlannedBead>
+  },
   events: ReadonlyArray<Planned.Planned<WitnessEvent>>
 ): WitnessCall =>
   count === 0
@@ -509,7 +516,9 @@ export const Dispatch = Flow.make("examples/Gastown/Dispatch", {
     if (plan.beads.length === 0) {
       return Node.andThen(opened, Node.succeed({ results: [], witnessEvents: [] }))
     }
-    const slung = Node.all(Object.fromEntries(plan.beads.map((bead) => [`sling-${bead.id}`, WriteBead.call(slingRow(plan, bead))])))
+    const slung = Node.all(
+      Object.fromEntries(plan.beads.map((bead) => [`sling-${bead.id}`, WriteBead.call(slingRow(plan, bead))]))
+    )
     // 0.x `continueOnFail` after `retries={1}`: a polecat that fails twice settles as null.
     const polecats = Object.fromEntries(plan.beads.map((bead) => [
       `polecat-${bead.id}`,
@@ -596,8 +605,10 @@ export const Refine = Flow.make("examples/Gastown/Refine", {
     ): Node.Node<ReadonlyArray<Landing>, AgentAction.AgentFailure, Action.Requirement<RefineTag>> => {
       const next = completed[index]
       if (next === undefined) return Node.succeed(landed)
-      return Node.bindPlanned(land(next, baseBranch), (pair: Planned.Planned<Landing>) =>
-        Node.andThen(Node.succeed(pair), queue(index + 1, [...landed, pair])))
+      return Node.bindPlanned(
+        land(next, baseBranch),
+        (pair: Planned.Planned<Landing>) => Node.andThen(Node.succeed(pair), queue(index + 1, [...landed, pair]))
+      )
     }
     return Node.bindPlanned(queue(0, []), (pairs: Planned.Planned<ReadonlyArray<Landing>>) => {
       const requests = Node.map(Node.succeed(pairs), (real) => real.flatMap(({ merged, opened }) => [opened, merged]))

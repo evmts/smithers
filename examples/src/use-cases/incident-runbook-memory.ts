@@ -237,8 +237,7 @@ const distill = (topic: string, recall: Planned.Planned<typeof Recall.Type>) =>
               error: RuleDenied,
               onFailure: () => Node.succeed(null)
             }) as Node.Node<typeof Ratification.Type | null, MemoryError, Requirements>,
-            (ratification: Planned.Planned<typeof Ratification.Type | null>) =>
-              Node.succeed({ proposal, ratification })
+            (ratification: Planned.Planned<typeof Ratification.Type | null>) => Node.succeed({ proposal, ratification })
           )
       )
   )

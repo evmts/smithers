@@ -1,14 +1,13 @@
 /** A crash after an unkeyed effect refuses repetition with its original reason. */
-import { Control } from "@smthrs/control"
-import { Effect } from "effect"
-import { spawn } from "node:child_process"
+import { execFile, spawn } from "node:child_process"
 import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { fileURLToPath } from "node:url"
+import { promisify } from "node:util"
 import { expect, it } from "vitest"
-import { host, source } from "./fixtures/native-control-peer-recovery.ts"
+import { source } from "./fixtures/native-control-peer-recovery.ts"
 
 const fixture = fileURLToPath(new URL("./fixtures/native-control-peer-recovery.ts", import.meta.url))
 const exists = (file: string) => access(file).then(() => true, () => false)
@@ -72,32 +71,28 @@ it.each(["Unknown", "Never"] as const)(
         }
       }
       await writeFile(join(root, "release"), "an unsafe retry would finish")
-      await Effect.runPromise(
-        Effect.gen(function*() {
-          yield* Control.Control
-          yield* Effect.promise(() =>
-            poll(
-              () => readRows(root).some((row) => row.run_id !== runId && row.status === "failed"),
-              "native child refused retry"
-            )
-          )
-          const child = readRows(root).find((row) => row.run_id !== runId)!
-          const result = JSON.parse(child.state_json).result
-          expect(result._tag).toBe("Complete")
-          expect(result.exit._tag).toBe("Failure")
-          expect(result.exit.cause).toEqual([{
-            _tag: "Die",
-            defect: {
-              _tag: "@smthrs/flow/IrreversibleRetryRequiresIdempotencyKey",
-              code: "irreversible_retry_requires_idempotency_key",
-              actionName: "peer/Probe",
-              attempt: 1
-            }
-          }])
-          expect(JSON.stringify(result)).not.toContain("SchemaError")
-          expect(yield* Effect.promise(() => readFile(join(root, "attempts.txt"), "utf8"))).toBe(`${original.pid}\n`)
-        }).pipe(Effect.provide(host(root)), Effect.scoped)
-      )
+      // Match the killed host's native loader when rebuilding its plan.
+      await promisify(execFile)(process.execPath, ["--experimental-strip-types", fixture, "peer-recover", root], {
+        env: process.env,
+        timeout: 60_000
+      })
+      {
+        const child = readRows(root).find((row) => row.run_id !== runId)!
+        const result = JSON.parse(child.state_json).result
+        expect(result._tag).toBe("Complete")
+        expect(result.exit._tag).toBe("Failure")
+        expect(result.exit.cause).toEqual([{
+          _tag: "Die",
+          defect: {
+            _tag: "@smthrs/flow/IrreversibleRetryRequiresIdempotencyKey",
+            code: "irreversible_retry_requires_idempotency_key",
+            actionName: "peer/Probe",
+            attempt: 1
+          }
+        }])
+        expect(JSON.stringify(result)).not.toContain("SchemaError")
+        expect(await readFile(join(root, "attempts.txt"), "utf8")).toBe(`${original.pid}\n`)
+      }
       // A fresh observer must see the same durable refusal, not just a live exception.
       const child = readRows(root).find((row) => row.run_id !== runId)!
       expect(child.state_json).toContain("irreversible_retry_requires_idempotency_key")

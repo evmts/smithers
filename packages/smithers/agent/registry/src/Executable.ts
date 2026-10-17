@@ -604,7 +604,8 @@ const importModule = (
     readonly bytes: Uint8Array
     readonly contentDigest: string
     readonly modules: ReadonlyMap<string, ClosureModule>
-  }
+  },
+  sourceRoot?: Options["sourceRoot"]
 ): Effect.Effect<unknown, unknown, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
@@ -648,7 +649,13 @@ const importModule = (
       // Said before the import, because a declaration captures its site while
       // the module is evaluated: without it every node of this flow would name
       // a scratch file removed when the load settles (D-068).
-      Graph.evaluatedFrom(sibling, original)
+      // The retained directory supplies bytes, while the approved identity
+      // supplies declaration sites. A fork must re-record the same provenance.
+      const declaredPath = sourceRoot === undefined ? original : platformPath.resolve(
+        sourceRoot.identity,
+        platformPath.relative(sourceRoot.workspace, original)
+      )
+      Graph.evaluatedFrom(sibling, declaredPath)
     }
     return yield* Effect.tryPromise({
       try: () => import(/* @vite-ignore */ fileSpecifier(siblings.get(entryPath)!)) as Promise<unknown>,
@@ -1061,7 +1068,9 @@ const loadModule = (
         message: "Retained Core object-form module cannot execute: migrate to @smthrs/flow Flow.make(tag, options)"
       }))
     }
-    const loaded = yield* (options.load ?? importModule)(loadPath, {
+    const load = options.load ??
+      ((path: string, source: Parameters<typeof importModule>[1]) => importModule(path, source, options.sourceRoot))
+    const loaded = yield* load(loadPath, {
       bytes,
       contentDigest: descriptor.body.contentDigest!,
       modules
@@ -1211,11 +1220,29 @@ const makeQuiescence = (): Quiescence => {
  * or a refresh may use the same tags without replacing its handlers. Resources
  * remain acquired until its loading host closes or refresh retires the entry.
  */
+// Adoption keeps action keys and the durable child, while recording the newly
+// authorized code's observations under its own immutable producer identity.
+const adoptedRuntime = (runtime: FlowRuntime["Service"], identity: string | undefined): FlowRuntime["Service"] => {
+  if (identity === undefined) return runtime
+  const observation = (record: Parameters<NonNullable<FlowRuntime["Service"]["recordNode"]>>[0]) => ({
+    ...record,
+    sourceId: `adopted/${identity}/${record.sourceId}`
+  })
+  return FlowRuntime.of({
+    ...runtime,
+    ...(runtime.recordNode === undefined ? {} : { recordNode: (record) => runtime.recordNode!(observation(record)) }),
+    ...(runtime.nodeRecordBytes === undefined
+      ? {}
+      : { nodeRecordBytes: (record) => runtime.nodeRecordBytes!(observation(record)) })
+  })
+}
+
 const moduleServices = (
   descriptor: Descriptor.FlowDescriptor,
   implementation: Layer.Layer<unknown, unknown, unknown>,
   own: (scope: Scope.Closeable) => void,
-  quiescence: Quiescence
+  quiescence: Quiescence,
+  observationIdentity: string | undefined
 ): Effect.Effect<
   {
     readonly layer: Layer.Layer<unknown>
@@ -1259,16 +1286,22 @@ const moduleServices = (
     })
     // Bind registration before constructing the exported layer: its private
     // interpreters belong to this module just as its default flow does.
-    const registrationRuntime = Option.map(runtime, (hostRuntime) =>
-      FlowRuntime.of({
+    const registrationRuntime = Option.map(runtime, (originalRuntime) => {
+      const hostRuntime = adoptedRuntime(originalRuntime, observationIdentity)
+      const registered = FlowRuntime.of({
         ...hostRuntime,
         register: (flow, execute, options) =>
           hostRuntime.register(
             flow,
-            (payload, executionId) => quiescence.track(executionId, execute(payload, executionId)),
+            (payload, executionId) =>
+              quiescence.track(executionId, execute(payload, executionId)).pipe(
+                Effect.provideService(FlowRuntime, hostRuntime)
+              ),
             options
           )
-      }))
+      })
+      return registered
+    })
     const input = Context.add(Context.merge(hostServices, local), Action.Implementations, moduleTable)
     // Later registrations reuse the built-in handlers its exported interpreters
     // built, while other modules and refreshes keep independent memo maps.
@@ -1604,10 +1637,11 @@ export const fromDescriptor = (
       // { input }. Registering both under that tag made whichever layer won
       // decode the other's payload. Keep the declaration's tag and give only
       // the private adapter a stable, source-qualified registration identity.
+      const executionDigest = Descriptor.executionDigest(descriptor)
+      const adapterDigest = options.adapterExecutionDigest?.(descriptor) ?? executionDigest
+      const observationIdentity = adapterDigest === executionDigest ? undefined : executionDigest
       const adapterTag = body.flow?._tag === descriptor.name
-        ? `registry/entry/${
-          options.adapterExecutionDigest?.(descriptor) ?? Descriptor.executionDigest(descriptor)
-        }/${descriptor.name}`
+        ? `registry/entry/${adapterDigest}/${descriptor.name}`
         : descriptor.name
       const flow = RuntimeFlow.make(adapterTag, {
         payload: Payload,
@@ -1633,9 +1667,15 @@ export const fromDescriptor = (
       )
       const implementations = body.layer === undefined
         ? undefined
-        : yield* moduleServices(descriptor, body.layer, (scope) => {
-          moduleScope = scope
-        }, quiescence)
+        : yield* moduleServices(
+          descriptor,
+          body.layer,
+          (scope) => {
+            moduleScope = scope
+          },
+          quiescence,
+          observationIdentity
+        )
       const executable: Executable = {
         descriptor,
         source: body.source,
@@ -1658,19 +1698,24 @@ export const fromDescriptor = (
         // CALLS it, and a declared cache policy EXECUTES it as a child, which the
         // runtime resolves by tag.
         layer: (implementations === undefined ?
-          Layer.unwrap(Effect.map(FlowRuntime, (runtime) =>
-            registrations.pipe(Layer.provide(Layer.succeed(
+          Layer.unwrap(Effect.map(FlowRuntime, (originalRuntime) => {
+            const runtime = adoptedRuntime(originalRuntime, observationIdentity)
+            return registrations.pipe(Layer.provide(Layer.succeed(
               FlowRuntime,
               FlowRuntime.of({
                 ...runtime,
                 register: (declaration, execute, options) =>
                   runtime.register(
                     declaration,
-                    (payload, executionId) => quiescence.track(executionId, execute(payload, executionId)),
+                    (payload, executionId) =>
+                      quiescence.track(executionId, execute(payload, executionId)).pipe(
+                        Effect.provideService(FlowRuntime, runtime)
+                      ),
                     options
                   )
               })
-            ))))) :
+            )))
+          })) :
           Layer.effectDiscard(Effect.gen(function*() {
             // Consumers own their registration scope, but it is also a child of
             // the module lifetime so refresh retires every original registration.
