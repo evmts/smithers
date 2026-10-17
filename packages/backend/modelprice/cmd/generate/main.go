@@ -124,7 +124,7 @@ func main() {
 			os.Exit(1)
 		}
 		pricing := "packages/smithers/agent/model/src/Pricing.ts"
-		consumers := []string{"evals/swebench/prices.ts"}
+		consumers := []string{"packages/smithers/agent/harness/benchmarks/swebench/prices.ts"}
 		for _, file := range append(consumers, pricing) {
 			content, err := os.ReadFile(file)
 			generated := importsValue(string(content), file, path, "modelPrices")

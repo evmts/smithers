@@ -36,8 +36,8 @@ not proof that the code is safe.
 Run from the repository root with both provider API keys configured:
 
 ```bash
-node evals/review-seeded-bugs/security-completion.ts 3 /tmp/security-completion-report.json
-bun test evals/review-seeded-bugs/security-completion-score.test.ts
+node flows/review/seeded-bugs/security-completion.ts 3 /tmp/security-completion-report.json
+bun test flows/review/seeded-bugs/security-completion-score.test.ts
 ```
 
 The live run spends inference budget. It reuses the SQL equality and LIKE

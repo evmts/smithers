@@ -168,7 +168,7 @@ describe("TestRun over a real repository", () => {
 
   it("runs the base commit beside the working tree and attributes the difference", async () => {
     const root = repository()
-    // The ref `evals/swebench/lib/snapshot-base.sh` writes, which is also the
+    // The ref `packages/smithers/agent/harness/benchmarks/swebench/lib/snapshot-base.sh` writes, which is also the
     // flow's own default when a declaration names none.
     git(root, ["update-ref", TestRunner.captureBase, "HEAD"])
     writeFileSync(join(root, "mod.py"), "FIXED\nBROKEN\n")

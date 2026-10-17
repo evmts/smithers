@@ -49,7 +49,7 @@
  * at the same subpath under the mount, needs no second mount, and needs no
  * change to how the rig starts its container. `TestRun`'s `against: "base"`
  * reached the same conclusion first and this reuses its shape;
- * `evals/swebench/run-instance.sh` excludes the directory from patch capture for
+ * `packages/smithers/agent/harness/benchmarks/swebench/run-instance.sh` excludes the directory from patch capture for
  * the same reason it excludes `.flows-test-base`.
  *
  * The checkout is added and removed around **one call**, which is stricter than
@@ -111,7 +111,7 @@ export const scratchDirectory = Prune.checkpointScratch
  * -S` searches it — so a checkpoint named by a ref would hand an agent a commit
  * containing its own edit and let it read that back as if it were upstream
  * work. That exact class cost the measured program real money before the rig
- * moved jj's store out of the workspace (`evals/swebench/run-instance.sh`:
+ * moved jj's store out of the workspace (`packages/smithers/agent/harness/benchmarks/swebench/run-instance.sh`:
  * django-13346 applied two of its own snapshots as a fake fix), and a ref here
  * would reintroduce it one wave later.
  *
