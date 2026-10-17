@@ -1586,6 +1586,11 @@ jobs:
         uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
         with:
           "tool": "ripgrep@14.1.1"
+      - name: "Install uv"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
+        with:
+          "tool": "uv@0.8.22"
+          "fallback": "none"
       - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then

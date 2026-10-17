@@ -1084,6 +1084,7 @@ const ci = Smithers.GithubCiGen({
         runtimes: [node, bun],
         jj,
         ripgrep,
+        uv: { release: "0.8.22" },
         apt: bubblewrap,
         go,
         postgres,

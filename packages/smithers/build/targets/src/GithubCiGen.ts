@@ -1040,6 +1040,13 @@ export const toolchainSteps = (attrs: Attrs, job: Job): ReadonlyArray<RenderedSt
       with: { tool: `ripgrep@${needs.ripgrep.release}` }
     })
   }
+  if (needs.uv !== undefined) {
+    steps.push({
+      name: "Install uv",
+      uses: actions.installTool,
+      with: { tool: `uv@${needs.uv.release}`, fallback: "none" }
+    })
+  }
   if (needs.apt !== undefined) {
     // This toolchain step has no `if:` key, so its script detects the runner: a
     // runner without apt-get (macOS, Windows) runs nothing and stays green.

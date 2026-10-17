@@ -185,6 +185,7 @@ describe("CiToolchain.Nix", () => {
     expect(() => CiToolchain.Needs({ nix, postgres: CiToolchain.Postgres({ release: "18" }) })).toThrowError(
       /remove postgres/
     )
+    expect(() => CiToolchain.Needs({ nix, uv: { release: "0.8.22" } })).toThrowError(/remove uv/)
     expect(CiToolchain.Needs({ nix, runtimes: [] }).nix).toEqual(nix)
   })
 })

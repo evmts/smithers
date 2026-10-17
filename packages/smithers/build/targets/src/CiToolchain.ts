@@ -296,6 +296,9 @@ export type RipgrepRelease = typeof RipgrepRelease.Type
  */
 export const RipgrepSetup = Schema.Struct({ release: RipgrepRelease })
 
+// The backend's offline build-backend fixture exercises a real uv process.
+const UvSetup = Schema.Struct({ release: Schema.Literals(["0.8.22"]) })
+
 /**
  * Schema for the system packages a Linux runner installs with `apt-get`.
  *
@@ -1002,6 +1005,7 @@ export const Toolchain = Schema.Struct({
   cargoBinaries: Schema.optional(Schema.Array(CargoBinary)),
   jj: Schema.optional(JjSetup),
   ripgrep: Schema.optional(RipgrepSetup),
+  uv: Schema.optional(UvSetup),
   apt: Schema.optional(AptSetup),
   go: Schema.optional(GoSetup),
   foundry: Schema.optional(FoundrySetup),
@@ -1058,6 +1062,7 @@ export const Needs = (options: {
   readonly cargoBinaries?: ReadonlyArray<CargoBinary> | undefined
   readonly jj?: JjSetup | undefined
   readonly ripgrep?: RipgrepSetup | undefined
+  readonly uv?: typeof UvSetup.Type | undefined
   /** System packages a Linux runner installs before its targets run; a no-op elsewhere. */
   readonly apt?: AptSetup | undefined
   readonly go?: GoSetup | undefined
@@ -1073,12 +1078,13 @@ export const Needs = (options: {
     // The environment supplies every interpreter and language toolchain, so a
     // job that also installs one on the runner would run two copies and the
     // generated PATH would decide which. Refuse the mix rather than pick.
-    const mixed = (["runtimes", "rust", "cargoBinaries", "jj", "ripgrep", "go", "foundry", "postgres"] as const).filter(
-      (name) => {
-        const value = options[name]
-        return Array.isArray(value) ? value.length > 0 : value !== undefined
-      }
-    )
+    const mixed = (["runtimes", "rust", "cargoBinaries", "jj", "ripgrep", "uv", "go", "foundry", "postgres"] as const)
+      .filter(
+        (name) => {
+          const value = options[name]
+          return Array.isArray(value) ? value.length > 0 : value !== undefined
+        }
+      )
     if (mixed.length > 0) {
       throw new Error(
         `CiToolchain.Needs: a Nix environment supplies the toolchain; remove ${mixed.join(", ")} from the job`
@@ -1102,6 +1108,7 @@ export const Needs = (options: {
     ...(options.cargoBinaries === undefined ? {} : { cargoBinaries: options.cargoBinaries }),
     ...(options.jj === undefined ? {} : { jj: options.jj }),
     ...(options.ripgrep === undefined ? {} : { ripgrep: options.ripgrep }),
+    ...(options.uv === undefined ? {} : { uv: options.uv }),
     ...(options.apt === undefined ? {} : { apt: options.apt }),
     ...(options.go === undefined ? {} : { go: options.go }),
     ...(options.foundry === undefined ? {} : { foundry: options.foundry }),

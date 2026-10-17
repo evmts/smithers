@@ -123,6 +123,19 @@ describe("independent gate steps", () => {
 })
 
 describe("CiToolchain.Needs", () => {
+  it("installs the declared uv release before backend targets without a cargo fallback", () => {
+    const toolchain = CiToolchain.Needs({ uv: { release: "0.8.22" } })
+    expect(toolchain.uv).toEqual({ release: "0.8.22" })
+    const steps = toolchainSteps(goldenAttrs, { ...goldenAttrs.jobs[0]!, toolchain })
+    expect(steps.find((step) => step.name === "Install uv")).toEqual({
+      name: "Install uv",
+      uses: actions.installTool,
+      with: { tool: "uv@0.8.22", fallback: "none" }
+    })
+    expect(() => Schema.decodeUnknownSync(CiToolchain.Toolchain)({ ...toolchain, uv: { release: "unqualified" } }))
+      .toThrow()
+  })
+
   it("defaults to no runtime setup and preserves an explicit ripgrep pin", () => {
     expect(CiToolchain.Needs()).toMatchObject({ install: true, runtimes: [], submodules: false })
     const ripgrep = CiToolchain.Ripgrep({ release: "14.1.1" })
