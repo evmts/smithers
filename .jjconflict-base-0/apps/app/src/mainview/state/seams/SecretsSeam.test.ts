@@ -1,0 +1,900 @@
+import { secretArgs } from "../../flows/SecretPayload"
+import type { StorageApi } from "@tanstack/db"
+import { afterEach, describe, expect, test } from "bun:test"
+
+import type { AgentPort } from "../../runtime/AgentPort"
+import { createAppController } from "../AppController"
+import type { AppServices } from "../AppController"
+import { createAppStore } from "../AppStore"
+import type { AppStore } from "../AppStore"
+import type { SecretsProviders } from "./SecretsProviders"
+import { signupProfileFetch } from "../TestFixtures"
+
+/*
+ * The secrets seam (SecretsSeam.ts) through the real command path:
+ * /secrets.list reads GET /api/repos/{owner}/{repo}/secrets (the CI secrets
+ * that set, delete, scope and bind also address) and surfaces the "secrets"
+ * card with each secret's metadata (name, main-only mark, hosts, match headers,
+ * updated time) and a model-readable result, never secret values. Failures are honest strings, never throws; signed out, the agent
+ * door is person-only.
+ */
+
+const memoryStorage = (): StorageApi => {
+  const data = new Map<string, string>()
+  return {
+    getItem: (key) => data.get(key) ?? null,
+    setItem: (key, value) => void data.set(key, value),
+    removeItem: (key) => void data.delete(key)
+  }
+}
+
+const unavailableAgent: AgentPort = {
+  available: false,
+  startTurn: async () => ({ status: "error", message: "unavailable" }),
+  cancelTurn: async () => {},
+  subscribe: () => () => {}
+}
+
+
+const json = (status: number, body: unknown): Response =>
+  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
+
+const settled = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+const ownerRoster = { members: [{ login: "will", name: "Will", avatar_url: "https://example.test/avatar", color_index: 0,
+  role: "owner", needs_access: false, suspended: false, actions: [] }], access_url: "https://github.com/will/flows/settings/access" }
+
+const withheldSecretsProviders = [
+  ["T-UI-18", "View"], ["T-APP-22", "decoder"], ["T-COL-02", "live"],
+  ["T-ACC-03", "authority"], ["T-CAT-01", "catalog"], ["T-MCH-12", "scopedWrite"],
+  ["T-APP-03", "family"], ["T-APP-03 shared provider-accounts family", "shared-family"]
+] as const
+
+for (const [ticket, withheld] of withheldSecretsProviders) test(`Secrets production mount and dispatcher refuse missing ${ticket}`, async () => {
+  const { LiveChannel } = await import("../../runtime/LiveChannel")
+  const { writeOnlyGesture } = await import("../../flows/CommandGesture")
+  const { createElement } = await import("react")
+  const { renderToStaticMarkup } = await import("react-dom/server")
+  const { ControllerTestProvider } = await import("../../ControllerContext")
+  const { CARD_RENDERERS } = await import("../../cards/CardRenderers")
+  let socket!: import("../../runtime/LiveChannel").LiveSocket
+  let topicId = 0
+  const live = new LiveChannel({ socket: () => {
+    socket = { readyState: 1, onopen: null, onclose: null, onmessage: null, close() {}, send(raw) {
+      const frame = JSON.parse(String(raw))
+      if (frame.t === "sub" && frame.topic === "secrets") {
+        topicId = frame.id
+        queueMicrotask(() => socket.onmessage?.({ data: JSON.stringify({
+          t: "snap", id: frame.id, cursor: 1, data: { secrets: [{ name: "DEPLOY", scope: "main_only", actions: [] }] }
+        }) }))
+      }
+    } }
+    queueMicrotask(() => socket.onopen?.())
+    return socket
+  } })
+  let providers!: { -readonly [Key in keyof SecretsProviders]: SecretsProviders[Key] }
+  const hits: { url: string; method: string; body: BodyInit | null | undefined }[] = []
+  const { store, controller, signupReads } = await heldController({ live,
+    bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["identity", "cloud", "install"], authFlow: "credentials", sandbox: null },
+    secretsProviders: defaults => providers = { ...defaults },
+    fetchImpl: async (input, init) => {
+      const url = String(input)
+      if (url.endsWith("/api/members")) return json(200, ownerRoster)
+      if (url.includes("/secrets")) { hits.push({ url, method: init?.method ?? "GET", body: init?.body }); return json(200, {}) }
+      return json(404, {})
+    }
+  })
+  const mount = () => renderToStaticMarkup(createElement(ControllerTestProvider, { controller, children: CARD_RENDERERS.secrets.render(secretsCard(store)!, {
+    onDecideApproval() {}, onConnectGitHub() {}, onRunWorkflow() {}, onStopRun() {}, onRetryRun() {}, onChooseWorkflowRepo() {},
+    worldDocuments: [], onChangeWorldDocument() {}, onRunCommand() {}
+  }) }))
+  try {
+    await heldReady(store, signupReads)
+    expect(await bounded(controller.commands.run("secrets"))).toMatchObject({ status: "executed" })
+    expect(mount()).toContain('data-flow="secrets"')
+    const pinned = secretsCard(store)!
+    const key = withheld === "shared-family" ? "family" : withheld
+    const original = providers[key]
+    if (withheld === "shared-family") providers.family = { ...providers.family, "provider-accounts": providers.family!.secrets }
+    else providers[key] = undefined
+    if (withheld !== "scopedWrite") {
+      socket.onmessage?.({ data: JSON.stringify({ t: "snap", id: topicId, cursor: 2,
+        data: { secrets: [{ name: "UNREAD_WHILE_UNAVAILABLE", scope: "all_branches", actions: [] }] } }) })
+      await checkpoint()
+    }
+    const read = await bounded(controller.commands.run("secrets"))
+    expect(read).toMatchObject(withheld === "scopedWrite" ? { status: "executed" } : { status: "failed", error: "Secrets unavailable" })
+    const html = mount()
+    expect(html).not.toContain('data-flow="secrets"')
+    expect(html).not.toContain('data-flow="secrets"')
+    expect(html).not.toContain('type="password"')
+    expect(html.includes("DEPLOY")).toBe(withheld === "scopedWrite")
+    const gesture = writeOnlyGesture("secrets", { value: "PRIVATE_MATRIX_VALUE" })
+    for (const command of [
+      { name: "secrets", payload: { operation: "set", name: "DEPLOY", repo: "will/flows" }, gesture },
+      { name: "secrets", payload: { operation: "delete", name: "DEPLOY", repo: "will/flows" } },
+      { name: "secrets", payload: { operation: "scope", name: "DEPLOY", scope: "all_branches", repo: "will/flows" } },
+      { name: "secrets", payload: { operation: "bind", name: "DEPLOY", hosts: "api.example.test", headers: "authorization", repo: "will/flows" } }
+    ]) expect(await bounded(controller.commands.submit({ ...command, actor: "user" }))).toMatchObject({ status: "failed", error: "Secrets unavailable" })
+    expect(gesture.takeWriteOnly?.("value")).toBeUndefined()
+    expect(hits).toEqual([])
+    expect(store.session().secretRequests ?? []).toEqual([])
+    expect(JSON.stringify((await store.eventHistory()).events)).not.toContain("PRIVATE_MATRIX_VALUE")
+    expect(JSON.stringify([...store.collections.messages.values()])).not.toMatch(/DEPLOY (saved|deleted)|reached.*machine/i)
+    // Withholding a mount cannot delete the persisted card or its pinned rows.
+    expect(secretsCard(store)?.payload.secrets).toEqual(pinned.payload.secrets)
+    controller.changeDraft("Chat still works")
+    expect(store.session().draft).toBe("Chat still works")
+    Reflect.set(providers, key, original)
+    expect(await bounded(controller.commands.run("secrets"))).toMatchObject({ status: "executed" })
+    expect(mount()).toContain('data-flow="secrets"')
+    expect(await bounded(controller.commands.submit({ name: "secrets", actor: "user", payload: { operation: "set", name: "DEPLOY", repo: "will/flows", scope: "main_only" },
+      gesture: writeOnlyGesture("secrets", { value: "PRIVATE_RESTORED_VALUE" }) }))).toMatchObject({ status: "executed", value: "Requested" })
+    await bounded(Promise.allSettled([...pending]))
+    for (let i = 0; i < 20 && store.session().secretRequests?.[0]?.state !== "completed"; i++) await checkpoint()
+    expect(store.session().secretRequests?.[0]?.state).toBe("completed")
+    expect(hits).toHaveLength(1)
+    expect(hits[0]).toMatchObject({ url: "/api/secrets", method: "PUT", body: '{"name":"DEPLOY","value":"PRIVATE_RESTORED_VALUE","main_only":true}' })
+    expect(JSON.stringify((await store.eventHistory()).events)).not.toContain("PRIVATE_RESTORED_VALUE")
+  } finally { await controller.dispose(); live.dispose() }
+})
+
+type Failure = "empty" | "get-500" | "get-403" | "get-throw" | "malformed"
+
+/** The platform double: plue's workflow secret list plus an unexpected secret value to verify metadata-only parsing. */
+const backend = (failure?: Failure) => {
+  const requests: Array<{ readonly method: string; readonly url: string }> = []
+  const services: AppServices = {
+    fetchImpl: async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+      const method = init?.method ?? "GET"
+      if (!url.endsWith("/secrets")) {
+        return json(404, { status: "error", message: `no stub for ${url}` })
+      }
+      requests.push({ method, url })
+      if (failure === "get-throw") throw new Error("socket hang up")
+      if (failure === "get-500") return json(500, { message: "the platform fell over" })
+      if (failure === "get-403") return json(403, { message: "forbidden: repository write access required" })
+      if (failure === "malformed") return json(200, [{ hosts: [] }])
+      return json(200, failure === "empty" ? [] : [
+        {
+          name: "NPM_TOKEN",
+          value: "DO_NOT_EXPOSE_SECRET_BYTES",
+          main_only: true,
+          hosts: ["registry.npmjs.org"],
+          match_headers: ["authorization"],
+          updated_at: "2026-08-01T00:00:00.000Z"
+        },
+        { name: "SETUP_ONLY", main_only: false, hosts: [], match_headers: [], updated_at: "2026-08-02T00:00:00.000Z" }
+      ])
+    }
+  }
+  return { services, requests }
+}
+
+const freshController = async (failure?: Failure) => {
+  const stub = backend(failure)
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  return {
+    store,
+    requests: stub.requests,
+    controller: createAppController(store, unavailableAgent, stub.services)
+  }
+}
+
+const signedIn = async (store: AppStore): Promise<void> => {
+  store.dispatch({
+    type: "identity.session.loaded",
+    actor: "system",
+    state: "signed-in",
+    login: "will",
+    admin: false,
+    scopesPlain: null
+  })
+  await settled()
+}
+
+const signedOut = async (store: AppStore): Promise<void> => {
+  store.dispatch({
+    type: "identity.session.loaded",
+    actor: "system",
+    state: "signed-out",
+    login: null,
+    admin: false,
+    scopesPlain: null
+  })
+  await settled()
+}
+
+const reposChosen = async (store: AppStore): Promise<void> => {
+  store.dispatch({
+    type: "repositories.loaded",
+    actor: "system",
+    repositories: [{ id: "will/flows", org: "will", ownerKind: "user", name: "flows", head: null }]
+  })
+  await settled()
+}
+
+const ready = async (store: AppStore): Promise<void> => {
+  await signedIn(store)
+  await reposChosen(store)
+}
+
+const secretsCard = (store: AppStore, repo = "will/flows") => {
+  const card = store.collections.cards.get(`secrets-${repo}`)
+  if (card === undefined || card.kind !== "secrets") return undefined
+  return card
+}
+
+describe("secrets seam — secrets.list", () => {
+  test("surfaces the secrets card from the CI secrets list: name, hosts, header, updated time, no secret value", async () => {
+    const { store, controller, requests } = await freshController()
+    await ready(store)
+    const outcome = await controller.commands.run("secrets")
+    expect(outcome.status).toBe("executed")
+    const value = outcome.status === "executed" ? outcome.value : undefined
+    for (const text of ["will/flows", "NPM_TOKEN", "registry.npmjs.org", "authorization", "2026-08-01T00:00:00.000Z", "SETUP_ONLY"]) {
+      expect(value).toContain(text)
+    }
+    expect(value).not.toContain("DO_NOT_EXPOSE_SECRET_BYTES")
+    await settled()
+
+    expect(requests).toEqual([{ method: "GET", url: "/api/repos/will/flows/secrets" }])
+    const card = secretsCard(store)
+    expect(card).toBeDefined()
+    expect(card?.title).toBe("Secrets · will/flows")
+    expect(card?.status).toBe("active")
+    expect(card?.payload.repo).toBe("will/flows")
+    expect(card?.payload.scope).toBe("repository")
+    expect(card?.payload.secrets).toEqual([
+      { name: "NPM_TOKEN", mainOnly: true, hosts: ["registry.npmjs.org"], matchHeaders: ["authorization"], updatedAt: "2026-08-01T00:00:00.000Z" },
+      { name: "SETUP_ONLY", mainOnly: false, hosts: [], matchHeaders: [], updatedAt: "2026-08-02T00:00:00.000Z" }
+    ])
+    expect(JSON.stringify(card)).not.toContain("DO_NOT_EXPOSE_SECRET_BYTES")
+  })
+
+  test("the agent cannot read even an empty secrets list", async () => {
+    const { store, controller, requests } = await freshController("empty")
+    await ready(store)
+    expect((await controller.commands.runForAgent("secrets")).status).toBe("failed")
+    expect(requests).toEqual([])
+    expect(secretsCard(store)).toBeUndefined()
+  })
+
+  test("an explicit owner/repo argument targets that repository", async () => {
+    const { store, controller, requests } = await freshController()
+    await ready(store)
+    const outcome = await controller.commands.run("secrets", "acme/site")
+    expect(outcome.status).toBe("executed")
+    expect(requests[0]?.url).toBe("/api/repos/acme/site/secrets")
+    expect(secretsCard(store, "acme/site")).toBeDefined()
+  })
+
+  test("listing twice re-surfaces the one card at a later ordinal, never a second card", async () => {
+    const { store, controller } = await freshController()
+    await ready(store)
+    await controller.commands.run("secrets")
+    const first = secretsCard(store)?.ordinal
+    await controller.commands.run("secrets")
+    const cards = [...store.collections.cards.values()].filter((card) => card.kind === "secrets")
+    expect(cards).toHaveLength(1)
+    expect(cards[0]?.ordinal).toBeGreaterThan(first ?? Number.POSITIVE_INFINITY)
+  })
+
+  test("the agent cannot read secret names or bindings", async () => {
+    const { store, controller, requests } = await freshController()
+    await ready(store)
+    expect((await controller.commands.runForAgent("secrets")).status).toBe("failed")
+    expect(requests).toEqual([])
+    expect(secretsCard(store)).toBeUndefined()
+  })
+
+  test("an inventory-less signed-in session answers the repo-resolution error as-is", async () => {
+    const { store, controller, requests } = await freshController()
+    await signedIn(store)
+    const outcome = await controller.commands.run("secrets")
+    expect(outcome.status).toBe("failed")
+    if (outcome.status === "failed") {
+      expect(outcome.error).toBe(
+        "No repository is loaded yet — sign in with /cloud.sign-in, or name one as owner/repo"
+      )
+    }
+    expect(requests).toHaveLength(0)
+  })
+
+  test("signed out, the agent's invocation is person-only and reads nothing", async () => {
+    const { store, controller, requests } = await freshController()
+    await signedOut(store)
+    const outcome = await controller.commands.runForAgent("secrets", "will/flows")
+    expect(outcome.status).toBe("failed")
+    if (outcome.status === "failed") expect(outcome.error).toContain("user-only")
+    expect(requests).toHaveLength(0)
+    expect(secretsCard(store)).toBeUndefined()
+  })
+})
+
+describe("secrets seam — honest failures", () => {
+  test("a 403 answers the platform's message and surfaces no card", async () => {
+    const { store, controller } = await freshController("get-403")
+    await ready(store)
+    const outcome = await controller.commands.run("secrets")
+    expect(outcome.status).toBe("failed")
+    if (outcome.status === "failed") expect(outcome.error).toBe("forbidden: repository write access required")
+    expect(secretsCard(store)).toBeUndefined()
+  })
+
+  test("a 500 answers what failed and whose fault it was, never a throw", async () => {
+    const { store, controller } = await freshController("get-500")
+    await ready(store)
+    const outcome = await controller.commands.run("secrets")
+    expect(outcome.status).toBe("failed")
+    if (outcome.status === "failed") {
+      expect(outcome.error).toBe("The secrets for will/flows couldn't be read (HTTP 500). That's a bug in Smithers, not something you did.")
+      expect(outcome.error).not.toContain("the platform fell over")
+    }
+    expect(secretsCard(store)).toBeUndefined()
+  })
+
+  test("a network throw answers an honest string", async () => {
+    const { store, controller } = await freshController("get-throw")
+    await ready(store)
+    const outcome = await controller.commands.run("secrets")
+    expect(outcome.status).toBe("failed")
+    if (outcome.status === "failed") {
+      expect(outcome.error).toBe("The secrets for will/flows couldn't be read — the platform didn't answer.")
+    }
+  })
+
+  test("a malformed answer names the shape problem and surfaces no card", async () => {
+    const { store, controller } = await freshController("malformed")
+    await ready(store)
+    const outcome = await controller.commands.run("secrets")
+    expect(outcome.status).toBe("failed")
+    if (outcome.status === "failed") {
+      expect(outcome.error).toBe("The secrets answer for will/flows wasn't in the expected shape.")
+    }
+    expect(secretsCard(store)).toBeUndefined()
+  })
+})
+
+describe("secrets seam — secrets.scope", () => {
+  test("marks a repository secret main-only and names the stored scope", async () => {
+    const requests: Array<{ readonly method: string; readonly url: string; readonly body: unknown }> = []
+    const services: AppServices = {
+      fetchImpl: async (input, init) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+        if (!url.includes("/secrets/")) return json(404, { message: `no stub for ${url}` })
+        const body = JSON.parse(String(init?.body)) as { main_only: boolean }
+        requests.push({ method: init?.method ?? "GET", url, body })
+        if (url.endsWith("/MISSING")) return json(404, { message: "secret not found" })
+        return json(200, { name: "DEPLOY", main_only: body.main_only })
+      }
+    }
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const controller = createAppController(store, unavailableAgent, services)
+    await ready(store)
+    const marked = await controller.commands.run("secrets", secretArgs("scope", "DEPLOY main-only"))
+    expect(marked).toMatchObject({ status: "executed", value: "DEPLOY: main only" })
+    expect(requests[0]).toMatchObject({ method: "PATCH", body: { main_only: true } })
+    expect(requests[0]!.url).toEndWith("/api/repos/will/flows/secrets/DEPLOY")
+    expect(await controller.commands.run("secrets", secretArgs("scope", "DEPLOY all"))).toMatchObject({ status: "executed", value: "DEPLOY: all branches" })
+    expect(requests[1]).toMatchObject({ body: { main_only: false } })
+    const missing = await controller.commands.run("secrets", secretArgs("scope", "MISSING main-only"))
+    expect(JSON.stringify(missing)).toContain("secret not found")
+    // The agent may only ask to give a secret to all branches; a human confirms.
+    const before = requests.length
+    expect(await controller.commands.runForAgent("secrets", secretArgs("scope", "DEPLOY all"))).toMatchObject({ status: "failed" })
+    expect(requests.length).toBe(before)
+    const confirmation = [...store.collections.messages.values()].find(message => message.action?.flow === "secrets.scope")
+    expect(confirmation).toBeUndefined()
+  })
+})
+
+describe("secrets seam — secrets.bind", () => {
+  test("binds a repository secret to hosts and headers and never sends an omitted binding", async () => {
+    const requests: Array<{ readonly method: string; readonly url: string; readonly body: unknown }> = []
+    const services: AppServices = {
+      fetchImpl: async (input, init) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+        if (!url.includes("/secrets/")) return json(404, { message: `no stub for ${url}` })
+        const body = JSON.parse(String(init?.body)) as { hosts: string[]; match_headers: string[] }
+        requests.push({ method: init?.method ?? "GET", url, body })
+        if (url.endsWith("/MISSING")) return json(404, { message: "secret not found" })
+        return json(200, { name: "NPM_TOKEN", main_only: false, hosts: body.hosts, match_headers: body.match_headers })
+      }
+    }
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const controller = createAppController(store, unavailableAgent, services)
+    await ready(store)
+    const bind = (payload: Record<string, string>) => controller.commands.run("secrets", secretArgs("bind", JSON.stringify(payload)))
+    expect(await bind({ name: "NPM_TOKEN", hosts: "registry.npmjs.org, npm.example.com", headers: "authorization" }))
+      .toMatchObject({ status: "executed", value: "NPM_TOKEN: registry.npmjs.org, npm.example.com" })
+    expect(requests[0]).toMatchObject({ method: "PATCH", body: { hosts: ["registry.npmjs.org", "npm.example.com"], match_headers: ["authorization"] } })
+    expect(requests[0]!.url).toEndWith("/api/repos/will/flows/secrets/NPM_TOKEN")
+    // A bare name opens the form; it never unbinds.
+    expect(await bind({ name: "NPM_TOKEN" })).toMatchObject({ status: "form" })
+    expect(await controller.commands.run("secrets", secretArgs("bind", "NPM_TOKEN"))).toMatchObject({ status: "form" })
+    expect(JSON.stringify(await bind({ name: "NPM_TOKEN", hosts: "registry.npmjs.org", headers: " , " }))).toContain("both hosts and headers")
+    expect(JSON.stringify(await bind({ name: "bad name", hosts: "a.example.com", headers: "authorization" }))).toContain("letters, digits")
+    expect(requests).toHaveLength(1)
+    expect(JSON.stringify(await bind({ name: "MISSING", hosts: "a.example.com", headers: "authorization" }))).toContain("secret not found")
+    // A binding chooses where a value may go: the agent only asks, a human confirms.
+    await store.dispatch({ type: "repo.selected", actor: "user", id: "will/flows" }).isPersisted.promise
+    const before = requests.length
+    expect(await controller.commands.runForAgent("secrets", secretArgs("bind", JSON.stringify({ name: "NPM_TOKEN", hosts: "evil.example.com", headers: "authorization" }))))
+      .toMatchObject({ status: "failed" })
+    expect(requests.length).toBe(before)
+    const confirmation = [...store.collections.messages.values()].find(message => message.action?.flow === "secrets.bind")
+    // The confirmation pins the repository named at ask time.
+    expect(confirmation).toBeUndefined()
+  })
+})
+
+const held = new Set<() => void>()
+const pending = new Set<Promise<unknown>>()
+const checkpoint = () => new Promise<void>(resolve => setImmediate(resolve))
+const track = <T>(promise: Promise<T>): Promise<T> => { pending.add(promise); return promise }
+const bounded = async <T>(promise: Promise<T>): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([promise, new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error("Secret fixture did not settle")), 3_000)
+    })])
+  } finally { clearTimeout(timer) }
+}
+const heldResponse = () => {
+  const response = Promise.withResolvers<Response>()
+  held.add(() => response.resolve(json(503, {})))
+  track(response.promise)
+  return response
+}
+afterEach(async () => {
+  for (const release of held) release()
+  held.clear()
+  await Promise.allSettled([...pending])
+  pending.clear()
+})
+
+// Repo admission performs these adjacent discovery reads; they have no content in this fixture.
+const discoveryRoutes = new Set([
+  "/api/repos/will/flows/contents/.smithers/factory.json", "/api/repos/will/flows/home",
+  ...["issues", "review", "ci", "feature", "chores"].map(job => `/api/repository-setup/state?repo=will%2Fflows&job=${job}`)
+])
+// Keep a signup-profile response available to detect unintended onboarding reads.
+const heldController = async (services: AppServices) => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const profile = signupProfileFetch((input, init) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+    if (discoveryRoutes.has(url)) return Promise.resolve(json(404, {}))
+    return track(Promise.resolve(services.fetchImpl!(input, init)))
+  })
+  const routed: AppServices = { ...services, fetchImpl: profile.fetchImpl }
+  return { store, controller: createAppController(store, unavailableAgent, routed), signupReads: profile.reads }
+}
+/** Sign in and choose the repository without starting onboarding. */
+const heldReady = async (store: AppStore, signupReads: readonly string[]): Promise<void> => {
+  await ready(store)
+  await checkpoint()
+  expect(signupReads).toEqual([])
+}
+
+const metadataAnswer = (name = "CURRENT_SECRET") => [{ name, main_only: false, hosts: [], match_headers: [], updated_at: null, value: "PRIVATE_BYTES" }]
+
+for (const retirement of ["account", "sign-out", "dispose"] as const) for (const answer of ["success", "rejection"] as const) {
+  test(`a held secret read ${answer} after ${retirement} cannot publish the retired metadata`, async () => {
+    const reply = heldResponse()
+    const entered = Promise.withResolvers<void>()
+    const hits: string[] = []
+    const { store, controller, signupReads } = await heldController({ fetchImpl: async input => {
+      hits.push(String(input)); entered.resolve(); return reply.promise
+    } })
+    await heldReady(store, signupReads)
+    const reading = track(controller.commands.run("secrets"))
+    await bounded(entered.promise)
+    controller.changeDraft("Keep my current chat")
+    if (retirement === "account") await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "ada", admin: false, scopesPlain: null }).isPersisted.promise
+    else if (retirement === "sign-out") await signedOut(store)
+    else await controller.dispose()
+    if (answer === "success") reply.resolve(json(200, metadataAnswer("RETIRED_SECRET")))
+    else reply.reject(new Error("retired transport failure"))
+    const outcome = await bounded(reading)
+    await bounded(Promise.allSettled([...pending]))
+    await checkpoint()
+    expect(hits).toEqual(["/api/repos/will/flows/secrets"])
+    // Account changes, sign-out and disposal must not start onboarding reads.
+    expect(signupReads).toEqual([])
+    expect(secretsCard(store)).toBeUndefined()
+    expect(outcome).toEqual(retirement === "dispose"
+      ? { status: "failed", error: "The command's outcome could not be saved. Check its result before trying again.", persistenceFailed: true }
+      : { status: "executed", value: undefined })
+    const retiredFailure = "The secrets for will/flows couldn't be read — the platform didn't answer."
+    const evidence = JSON.stringify({ messages: [...store.collections.messages.values()], toasts: [...store.collections.toasts.values()], cards: [...store.collections.cards.values()], journal: (await store.eventHistory()).events })
+    expect(evidence).not.toContain("RETIRED_SECRET")
+    expect(evidence).not.toContain(retiredFailure)
+    expect(evidence).not.toContain("PRIVATE_BYTES")
+    if (retirement === "dispose") expect(store.session().draft).toBe("Keep my current chat")
+  })
+}
+
+test("duplicate person reads join the held request and publish one metadata card", async () => {
+  const reply = heldResponse()
+  const entered = Promise.withResolvers<void>()
+  let reads = 0
+  const { store, controller, signupReads } = await heldController({ fetchImpl: async () => { reads++; entered.resolve(); return reply.promise } })
+  await heldReady(store, signupReads)
+  const first = track(controller.commands.run("secrets"))
+  await bounded(entered.promise)
+  const duplicate = track(controller.commands.run("secrets"))
+  await checkpoint()
+  expect(reads).toBe(1)
+  expect(secretsCard(store)).toBeUndefined()
+  controller.changeDraft("Chat can be edited during the read")
+  expect(store.session().draft).toBe("Chat can be edited during the read")
+  reply.resolve(json(200, metadataAnswer()))
+  const outcomes = await bounded(Promise.all([first, duplicate]))
+  expect(outcomes[0]).toMatchObject({ status: "executed" })
+  expect(outcomes[1]).toEqual({ status: "executed", value: "Secrets · will/flows\nCURRENT_SECRET · all branches · hosts: none · headers: none · updated: unknown" })
+  expect(reads).toBe(1)
+  expect([...store.collections.cards.values()].filter(card => card.kind === "secrets")).toHaveLength(1)
+  expect(secretsCard(store)?.payload.secrets).toEqual([{ name: "CURRENT_SECRET", mainOnly: false, hosts: [], matchHeaders: [], updatedAt: null }])
+})
+
+test("a refused read can retry immediately without caching the failed answer", async () => {
+  let reads = 0
+  const { store, controller, signupReads } = await heldController({ fetchImpl: async () => ++reads === 1 ? json(503, { message: "Try the repository again" }) : json(200, metadataAnswer()) })
+  await heldReady(store, signupReads)
+  expect(await controller.commands.run("secrets")).toEqual({ status: "failed", error: "The secrets for will/flows couldn't be read (HTTP 503). Something on Smithers' side failed. Not your fault, and nothing your request could have changed." })
+  expect(await controller.commands.run("secrets")).toMatchObject({ status: "executed" })
+  expect(reads).toBe(2)
+  expect(secretsCard(store)?.status).toBe("active")
+  expect(secretsCard(store)?.body).toBeUndefined()
+})
+
+test("optional secret bindings survive without leaking unexpected credential fields", async () => {
+  const wire = [
+    { name: "OMITTED", value: "PRIVATE_BYTES" },
+    { name: "NULL_BINDINGS", hosts: null, match_headers: null, updated_at: "" },
+    { name: "REFUSED", reconnect_required: true },
+    { name: "BOUND", main_only: true, hosts: ["api.example.test"], match_headers: ["authorization"], updated_at: "2026-09-28T00:00:00Z", token: "PRIVATE_BYTES" }
+  ]
+  const { store, controller, signupReads } = await heldController({ fetchImpl: async () => json(200, wire) })
+  await heldReady(store, signupReads)
+  const outcome = await controller.commands.run("secrets")
+  expect(outcome).toMatchObject({ status: "executed" })
+  expect(JSON.stringify(outcome)).not.toContain("PRIVATE_BYTES")
+  expect(secretsCard(store)?.payload.secrets).toEqual([
+    { name: "OMITTED", mainOnly: false, hosts: [], matchHeaders: [], updatedAt: null },
+    { name: "NULL_BINDINGS", mainOnly: false, hosts: [], matchHeaders: [], updatedAt: null },
+    { name: "REFUSED", mainOnly: false, hosts: [], matchHeaders: [], updatedAt: null, reconnect: true },
+    { name: "BOUND", mainOnly: true, hosts: ["api.example.test"], matchHeaders: ["authorization"], updatedAt: "2026-09-28T00:00:00Z" }
+  ])
+  expect(JSON.stringify((await store.eventHistory()).events)).not.toContain("PRIVATE_BYTES")
+})
+
+test("a same-owner held network rejection remains an exact visible failure", async () => {
+  const reply = heldResponse()
+  const entered = Promise.withResolvers<void>()
+  const { store, controller, signupReads } = await heldController({ fetchImpl: async () => { entered.resolve(); return reply.promise } })
+  await heldReady(store, signupReads)
+  const reading = track(controller.commands.run("secrets"))
+  await bounded(entered.promise)
+  reply.reject(new Error("provider transport failed"))
+  const failure = "The secrets for will/flows couldn't be read — the platform didn't answer."
+  expect(await bounded(reading)).toEqual({ status: "failed", error: failure })
+  expect(store.collections.cards.get("secrets-will/flows")).toMatchObject({ status: "error", loading: false, body: failure })
+  expect(JSON.stringify((await store.eventHistory()).events)).toContain(failure)
+})
+
+test("install /secrets reads only its live topic and acknowledges a write before HTTP completion", async () => {
+  const { LiveChannel } = await import("../../runtime/LiveChannel")
+  const { writeOnlyGesture } = await import("../../flows/CommandGesture")
+  const reply = heldResponse()
+  const sockets: import("../../runtime/LiveChannel").LiveSocket[] = []
+  let cursor = 1, topicId = 0
+  const live = new LiveChannel({ socket: () => {
+    const socket: import("../../runtime/LiveChannel").LiveSocket = { readyState: 1, onopen: null, onclose: null, onmessage: null, close() {}, send(raw) {
+      const frame = JSON.parse(String(raw))
+      if (frame.t === "sub" && frame.topic === "secrets") {
+        topicId = frame.id
+        queueMicrotask(() => socket.onmessage?.({ data: JSON.stringify({ t: "snap", id: frame.id, cursor: cursor++, data: { secrets: [{ name: "DEPLOY", scope: "main_only", hosts: ["api.example.test"], actions: [] }] } }) }))
+      }
+    } }
+    sockets.push(socket); queueMicrotask(() => socket.onopen?.()); return socket
+  } })
+  const hits: { url: string; init?: RequestInit }[] = []
+  const { store, controller, signupReads } = await heldController({ live,
+    bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["identity", "cloud", "install"], authFlow: "credentials", sandbox: null },
+    fetchImpl: async (input, init) => {
+      const url = String(input)
+      if (url.endsWith("/api/members")) return json(200, { members: [{ login: "will", name: "Will", avatar_url: "https://example.test/avatar", color_index: 0,
+        role: "owner", needs_access: false, suspended: false, actions: [] }], access_url: "https://github.com/will/flows/settings/access" })
+      if (!url.includes("/api/secrets")) return json(404, {})
+      hits.push({ url, init }); return reply.promise
+    }
+  })
+  try {
+    await heldReady(store, signupReads)
+    await bounded(controller.commands.run("secrets"))
+    await checkpoint()
+    expect(secretsCard(store)?.payload.secrets).toEqual([{ name: "DEPLOY", mainOnly: true, hosts: ["api.example.test"], matchHeaders: [], updatedAt: null }])
+    expect(hits).toEqual([])
+    const result = await bounded(controller.commands.submit({ name: "secrets", actor: "user", payload: { operation: "set", name: "DEPLOY", repo: "will/flows" }, gesture: writeOnlyGesture("secrets", { value: "PRIVATE_WRITE" }) }))
+    expect(result).toMatchObject({ status: "executed", value: "Requested" })
+    await checkpoint()
+    expect(hits[0]?.url).toBe("/api/secrets")
+    expect(hits[0]?.init?.method).toBe("PUT")
+    expect(new Headers(hits[0]?.init?.headers).get("Idempotency-Key")).toBeTruthy()
+    expect(hits[0]?.init?.body).toBe('{"name":"DEPLOY","value":"PRIVATE_WRITE"}')
+    expect(JSON.stringify((await store.eventHistory()).events)).not.toContain("PRIVATE_WRITE")
+    expect(store.session().secretRequests?.[0]?.state).toBe("requested")
+    reply.resolve(json(200, {}))
+    await bounded(Promise.allSettled([...pending]))
+    for (let i = 0; i < 10 && store.session().secretRequests?.[0]?.state !== "completed"; i++) await checkpoint()
+    expect(store.session().secretRequests?.[0]?.state).toBe("completed")
+    sockets[0]!.onmessage?.({ data: JSON.stringify({ t: "snap", id: topicId, cursor: cursor++, data: { secrets: [{ name: "NEW_NAME", scope: "all_branches", actions: [] }] } }) })
+    await checkpoint()
+    expect(secretsCard(store)?.payload.secrets[0]?.name).toBe("NEW_NAME")
+    expect(hits).toHaveLength(1)
+  } finally { reply.resolve(json(503, {})); await controller.dispose(); live.dispose() }
+})
+
+test("install /secrets shows a declared file path and sends a typed one with the write", async () => {
+  const { LiveChannel } = await import("../../runtime/LiveChannel")
+  const { writeOnlyGesture } = await import("../../flows/CommandGesture")
+  const live = new LiveChannel({ socket: () => {
+    const socket: import("../../runtime/LiveChannel").LiveSocket = { readyState: 1, onopen: null, onclose: null, onmessage: null, close() {}, send(raw) {
+      const frame = JSON.parse(String(raw))
+      if (frame.t === "sub" && frame.topic === "secrets") queueMicrotask(() => socket.onmessage?.({ data: JSON.stringify({ t: "snap", id: frame.id, cursor: 1,
+        data: { secrets: [{ name: "ANTHROPIC_API_KEY", scope: "all_branches", hosts: ["api.anthropic.com"], path: "~/.config/anthropic/key", actions: [] }] } }) }))
+    } }
+    queueMicrotask(() => socket.onopen?.()); return socket
+  } })
+  const bodies: unknown[] = []
+  const { store, controller, signupReads } = await heldController({ live,
+    bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["identity", "cloud", "install"], authFlow: "credentials", sandbox: null },
+    fetchImpl: async (input, init) => {
+      const url = String(input)
+      if (url.endsWith("/api/members")) return json(200, ownerRoster)
+      if (!url.includes("/api/secrets")) return json(404, {})
+      bodies.push(JSON.parse(String(init?.body))); return json(201, {})
+    }
+  })
+  try {
+    await heldReady(store, signupReads)
+    await bounded(controller.commands.run("secrets"))
+    await checkpoint()
+    expect(secretsCard(store)?.payload.secrets).toEqual([{ name: "ANTHROPIC_API_KEY", mainOnly: false, hosts: ["api.anthropic.com"], matchHeaders: [], updatedAt: null, path: "~/.config/anthropic/key" }])
+    const set = (payload: Record<string, string>, value: string) => bounded(controller.commands.submit({ name: "secrets", actor: "user",
+      payload: { operation: "set", repo: "will/flows", ...payload }, gesture: writeOnlyGesture("secrets", { value }) }))
+    expect(await set({ name: "NPM_TOKEN", path: " ~/.npmrc " }, "PRIVATE_NPM")).toMatchObject({ status: "executed", value: "Requested" })
+    expect(await set({ name: "ANTHROPIC_API_KEY", path: "" }, "PRIVATE_KEY")).toMatchObject({ status: "executed", value: "Requested" })
+    expect(await set({ name: "OTHER" }, "PRIVATE_OTHER")).toMatchObject({ status: "executed", value: "Requested" })
+    await bounded(Promise.allSettled([...pending]))
+    for (let i = 0; i < 10 && bodies.length < 3; i++) await checkpoint()
+    expect(bodies).toEqual([
+      { name: "NPM_TOKEN", value: "PRIVATE_NPM", path: "~/.npmrc" },
+      { name: "ANTHROPIC_API_KEY", value: "PRIVATE_KEY", path: "" },
+      { name: "OTHER", value: "PRIVATE_OTHER" }
+    ])
+  } finally { await controller.dispose(); live.dispose() }
+})
+
+test("an install without the live provider refuses /secrets and write gestures without polling", async () => {
+  const { writeOnlyGesture } = await import("../../flows/CommandGesture")
+  const hits: string[] = []
+  const { store, controller, signupReads } = await heldController({
+    bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["identity", "cloud", "install"], authFlow: "credentials", sandbox: null },
+    fetchImpl: async input => { if (String(input).includes("/secrets")) hits.push(String(input)); return json(404, {}) }
+  })
+  try {
+    await heldReady(store, signupReads)
+    expect(await controller.commands.run("secrets")).toMatchObject({ status: "failed", error: "Secrets unavailable" })
+    const gesture = writeOnlyGesture("secrets", { value: "PRIVATE_MISSING_PROVIDER" })
+    for (const command of [
+      { name: "secrets", payload: { operation: "set", name: "KEY", repo: "will/flows" }, gesture },
+      { name: "secrets", payload: { operation: "delete", name: "KEY", repo: "will/flows" } },
+      { name: "secrets", payload: { operation: "scope", name: "KEY", scope: "main_only", repo: "will/flows" } },
+      { name: "secrets", payload: { operation: "bind", name: "KEY", hosts: "api.example.test", headers: "authorization", repo: "will/flows" } }
+    ]) expect(await controller.commands.submit({ ...command, actor: "user" })).toMatchObject({ status: "failed", error: "Secrets unavailable" })
+    expect(gesture.takeWriteOnly?.("value")).toBeUndefined()
+    expect(store.session().secretRequests ?? []).toEqual([])
+    expect(hits).toEqual([])
+    expect(JSON.stringify((await store.eventHistory()).events)).not.toContain("PRIVATE_MISSING_PROVIDER")
+  } finally { await controller.dispose() }
+})
+
+
+test("an explicit design fixture stands in until real metadata serves, then never masks a failed real read", async () => {
+  let available = false
+  const hits: string[] = []
+  const { store, controller, signupReads } = await heldController({
+    designFixture: true,
+    bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["identity", "cloud"], authFlow: "credentials", sandbox: null },
+    fetchImpl: async input => { hits.push(String(input)); return available ? json(200, []) : json(404, { message: "No provider" }) }
+  })
+  try {
+    await heldReady(store, signupReads)
+    await controller.commands.run("secrets")
+    expect(secretsCard(store)?.payload.secrets.map(row => [row.name, row.mainOnly])).toEqual([["STRIPE_TEST_KEY", false], ["SENTRY_DSN", true]])
+    const { writeOnlyGesture } = await import("../../flows/CommandGesture")
+    expect(await controller.commands.submit({ name: "secrets", actor: "user", payload: { operation: "set", name: "LOCAL_KEY", scope: "main_only" }, gesture: writeOnlyGesture("secrets", { value: "PRIVATE_SEED" }) })).toMatchObject({ status: "executed", value: "Requested" })
+    expect(secretsCard(store)?.payload.secrets.find(row => row.name === "LOCAL_KEY")?.mainOnly).toBe(true)
+    expect(JSON.stringify((await store.eventHistory()).events)).not.toContain("PRIVATE_SEED")
+    available = true
+    await controller.commands.run("secrets")
+    expect(secretsCard(store)?.payload.secrets).toEqual([])
+    available = false
+    expect(await controller.commands.run("secrets")).toMatchObject({ status: "failed", error: "No provider" })
+    expect(hits.every(url => url.endsWith("/secrets"))).toBe(true)
+  } finally { await controller.dispose() }
+})
+
+// Withhold the live-topic and decoder contracts independently, through the
+// production controller, command dispatcher and CardRenderers mount. Begin
+// with a valid snapshot to prove a formerly mounted card loses authority.
+for (const withheld of ["unauthorized topic", "unsupported topic", "live decoder", "scope decoder"] as const) {
+  test(`install Secrets refuses ${withheld} after a valid mount, with no write or polling fallback`, async () => {
+    const { LiveChannel } = await import("../../runtime/LiveChannel")
+    const { writeOnlyGesture } = await import("../../flows/CommandGesture")
+    const { createElement } = await import("react")
+    const { renderToStaticMarkup } = await import("react-dom/server")
+    const { ControllerTestProvider } = await import("../../ControllerContext")
+    const { CARD_RENDERERS } = await import("../../cards/CardRenderers")
+    let socket!: import("../../runtime/LiveChannel").LiveSocket
+    let topicId = 0
+    const live = new LiveChannel({ socket: () => {
+      socket = { readyState: 1, onopen: null, onclose: null, onmessage: null, close() {}, send(raw) {
+        const frame = JSON.parse(String(raw))
+        if (frame.t === "sub" && frame.topic === "secrets") {
+          topicId = frame.id
+          queueMicrotask(() => socket.onmessage?.({ data: JSON.stringify({ t: "snap", id: topicId, cursor: 1,
+            data: { secrets: [{ name: "DEPLOY", scope: "main_only", actions: [] }] } }) }))
+        }
+      } }
+      queueMicrotask(() => socket.onopen?.())
+      return socket
+    } })
+    const hits: string[] = []
+    const { store, controller, signupReads } = await heldController({ live,
+      bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["identity", "cloud", "install"], authFlow: "credentials", sandbox: null },
+      fetchImpl: async input => { if (String(input).includes("/secrets")) hits.push(String(input)); return json(404, {}) }
+    })
+    try {
+      await heldReady(store, signupReads)
+      expect(await bounded(controller.commands.run("secrets"))).toMatchObject({ status: "executed" })
+      const mounted = secretsCard(store)!
+      expect(mounted.payload.secrets[0]?.name).toBe("DEPLOY")
+      const frame = withheld === "unauthorized topic" || withheld === "unsupported topic"
+        ? { t: "err", id: topicId, code: withheld === "unauthorized topic" ? "forbidden" : "unsupported" }
+        : { t: "snap", id: topicId, cursor: 2, data: withheld === "live decoder"
+          ? { secrets: [{ name: "DEPLOY", mainOnly: true }] }
+          : { secrets: [{ name: "DEPLOY", scope: "unrecognized", actions: [] }] } }
+      socket.onmessage?.({ data: JSON.stringify(frame) })
+      await checkpoint()
+      expect(await bounded(controller.commands.run("secrets"))).toMatchObject({ status: "failed", error: "Secrets unavailable" })
+      const gesture = writeOnlyGesture("secrets", { value: "PRIVATE_WITHHELD" })
+      for (const command of [
+        { name: "secrets", payload: { operation: "set", name: "DEPLOY", repo: "will/flows" }, gesture },
+        { name: "secrets", payload: { operation: "delete", name: "DEPLOY", repo: "will/flows" } },
+        { name: "secrets", payload: { operation: "scope", name: "DEPLOY", scope: "main_only", repo: "will/flows" } },
+        { name: "secrets", payload: { operation: "bind", name: "DEPLOY", hosts: "api.example.test", headers: "authorization", repo: "will/flows" } }
+      ]) {
+        expect(await bounded(controller.commands.submit({ ...command, actor: "user" }))).toMatchObject({ status: "failed", error: "Secrets unavailable" })
+      }
+      expect(gesture.takeWriteOnly?.("value")).toBeUndefined()
+      const html = renderToStaticMarkup(createElement(ControllerTestProvider, { controller, children: CARD_RENDERERS.secrets.render(secretsCard(store)!, {
+        onDecideApproval() {}, onConnectGitHub() {},
+        onRunWorkflow() {}, onStopRun() {}, onRetryRun() {}, onChooseWorkflowRepo() {}, worldDocuments: [],
+        onChangeWorldDocument() {}, onRunCommand() {}
+      }) }))
+      expect(html).toContain('data-kind="secrets"')
+      expect(html).not.toContain("DEPLOY")
+      expect(html).not.toContain('data-flow="secrets"')
+      expect(html).not.toContain('type="password"')
+      controller.changeDraft("Chat still works")
+      expect(store.session().draft).toBe("Chat still works")
+      await checkpoint()
+      expect(hits).toEqual([])
+      expect(store.session().secretRequests ?? []).toEqual([])
+      expect(JSON.stringify((await store.eventHistory()).events)).not.toContain("PRIVATE_WITHHELD")
+    } finally { await controller.dispose(); live.dispose() }
+  })
+}
+
+for (const action of ["delete", "scope"] as const) test(`reload refuses a persisted ${action} without live authority and records failure`, async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  await ready(store)
+  await store.dispatch({ type: "secret.requests.changed", actor: "system", requests: [{
+    id: `withheld-${action}`, owner: "will", repo: "will/flows", name: "DEPLOY", action,
+    ...(action === "scope" ? { mainOnly: true } : {}), state: "requested"
+  }] }).isPersisted.promise
+  const hits: string[] = []
+  const controller = createAppController(store, unavailableAgent, {
+    bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["identity", "cloud", "install"], authFlow: "credentials", sandbox: null },
+    fetchImpl: async input => { if (String(input).includes("/secrets")) hits.push(String(input)); return json(404, {}) }
+  })
+  try {
+    for (let i = 0; i < 30 && store.session().secretRequests?.[0]?.state !== "failed"; i++) await checkpoint()
+    expect(store.session().secretRequests?.[0]?.state).toBe("failed")
+    expect(hits).toEqual([])
+    expect(JSON.stringify([...store.collections.messages.values()])).not.toContain("DEPLOY deleted")
+    expect(JSON.stringify([...store.collections.messages.values()])).not.toContain("DEPLOY saved")
+  } finally { await controller.dispose() }
+})
+
+for (const failure of ["unavailable", "permission", "incompatible", "suspended"] as const) test(`Secrets mount withdraws cached write controls when roster is ${failure}`, async () => {
+  const { LiveChannel } = await import("../../runtime/LiveChannel")
+  const { createElement } = await import("react")
+  const { createRoot } = await import("../../cards/views/testDom")
+  const { act } = await import("react")
+  const host = document.createElement("div")
+  document.body.append(host)
+  const root = createRoot(host)
+  const { ControllerTestProvider } = await import("../../ControllerContext")
+  const { CARD_RENDERERS } = await import("../../cards/CardRenderers")
+  let changed = false
+  let socket!: import("../../runtime/LiveChannel").LiveSocket
+  let memberTopic = 0
+  const live = new LiveChannel({ socket: () => {
+    socket = { readyState: 1, onopen: null, onclose: null, onmessage: null, close() {}, send(raw) {
+      const frame = JSON.parse(String(raw))
+      if (frame.t !== "sub") return
+      if (frame.topic === "members") memberTopic = frame.id
+      if (frame.topic === "secrets") queueMicrotask(() => socket.onmessage?.({ data: JSON.stringify({
+        t: "snap", id: frame.id, cursor: 1, data: { secrets: [{ name: "DEPLOY", scope: "main_only", actions: [] }] }
+      }) }))
+    } }
+    queueMicrotask(() => socket.onopen?.())
+    return socket
+  } })
+  const writes: string[] = []
+  const { store, controller, signupReads } = await heldController({ live,
+    bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["identity", "cloud", "install"], authFlow: "credentials", sandbox: null },
+    fetchImpl: async (input, init) => {
+      const url = String(input)
+      if (url.endsWith("/api/members")) {
+        if (changed && failure === "unavailable") return json(503, { class: "infra", code: "unavailable", message: "Members unavailable" })
+        if (changed && failure === "permission") return json(403, { class: "permission", code: "permission", message: "Not available" })
+        if (changed && failure === "incompatible") return json(200, { members: [{ login: "will", role: "owner" }] })
+        return json(200, { members: [{ login: "will", name: "Will", avatar_url: "https://example.test/avatar", color_index: 0,
+          role: "owner", needs_access: false, suspended: changed && failure === "suspended", actions: [] }], access_url: "https://github.com/will/flows/settings/access" })
+      }
+      if (url.includes("/secrets")) writes.push(`${init?.method ?? "GET"} ${url}`)
+      return json(404, {})
+    }
+  })
+  const mount = async () => { await act(async () => root.render(createElement(ControllerTestProvider, { controller, children: CARD_RENDERERS.secrets.render(secretsCard(store)!, {
+    onDecideApproval() {}, onConnectGitHub() {}, onRunWorkflow() {}, onStopRun() {}, onRetryRun() {}, onChooseWorkflowRepo() {}, worldDocuments: [],
+    onChangeWorldDocument() {}, onRunCommand() {}
+  }) }))); return host.innerHTML }
+  try {
+    await heldReady(store, signupReads)
+    expect(await bounded(controller.commands.run("secrets"))).toMatchObject({ status: "executed" })
+    expect(controller.membersRoster.get()).toMatchObject({ model: { members: [{ role: "owner" }] } })
+    expect(await mount()).toContain('data-flow="secrets"')
+    changed = true
+    socket.onmessage?.({ data: JSON.stringify({ t: "snap", id: memberTopic, cursor: 2, data: {} }) })
+    await checkpoint()
+    await checkpoint()
+    expect(controller.commands.state().viewerRole).toBeUndefined()
+    const html = await mount()
+    expect(html).toContain("DEPLOY")
+    expect(html).not.toContain('data-flow="secrets"')
+    expect(html).not.toContain('data-flow="secrets"')
+    expect(html).not.toContain('type="password"')
+    const { writeOnlyGesture } = await import("../../flows/CommandGesture")
+    const gesture = writeOnlyGesture("secrets", { value: "PRIVATE_WITHHELD_ROSTER" })
+    for (const command of [
+      { name: "secrets", payload: { operation: "set", name: "DEPLOY", repo: "will/flows" }, gesture },
+      { name: "secrets", payload: { operation: "delete", name: "DEPLOY", repo: "will/flows" } },
+      { name: "secrets", payload: { operation: "scope", name: "DEPLOY", scope: "main_only", repo: "will/flows" } },
+      { name: "secrets", payload: { operation: "bind", name: "DEPLOY", hosts: "example.test", headers: "authorization", repo: "will/flows" } }
+    ]) expect(await bounded(controller.commands.submit({ ...command, actor: "user" }))).toMatchObject({ status: "failed", error: "Secrets unavailable" })
+    expect(gesture.takeWriteOnly?.("value")).toBeUndefined()
+    expect(store.session().secretRequests ?? []).toEqual([])
+    expect(JSON.stringify((await store.eventHistory()).events)).not.toContain("PRIVATE_WITHHELD_ROSTER")
+    expect(writes).toEqual([])
+    controller.changeDraft("Chat still works")
+    expect(store.session().draft).toBe("Chat still works")
+  } finally { await act(async () => root.unmount()); host.remove(); await controller.dispose(); live.dispose() }
+})

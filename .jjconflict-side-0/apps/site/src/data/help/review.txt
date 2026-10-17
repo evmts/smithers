@@ -1,0 +1,34 @@
+smthrs review — Review a change, return findings; waits for the person's confirmation
+
+Usage: smthrs review <patterns...> [options]
+
+Arguments:
+  patterns  Bazel labels or recursive patterns; the verb runs their union
+
+Options:
+  --workspace <string>            Directory inside a workspace containing WORKSPACE.ts (default: <cwd>)
+  --cache-dir <string>            Workspace-relative cache directory; overrides the WORKSPACE.ts declaration
+  --policy-revision <string>      Full approved commit SHA containing the trusted review index
+  --revision <string>             Committed source revision: HEAD or a full commit SHA (default: HEAD)
+  --plan                          Show pinned policy and source selection without inference
+  --required                      Fail every selected review that selects no files or cannot run instead of passing it
+  --findings-store <string>       Absolute private directory for review runs and findings (default: the Git directory)
+  --credential-receiver <string>  Absolute executable that receives credential names and locations as JSON on stdin; a nonzero exit fails the review
+  --verbose                       Show redacted diagnostic details
+  --repo <value>
+
+Custom Global Options:
+  --audience <auto|human|agent>  Presentation audience; auto detects agent harnesses, CI, and terminals (default: auto)
+  --silent                       Suppress progress; retain the result and actionable failures
+  --ui <auto|tty|stream|plain>   Terminal renderer: tty draws in place, stream colours without cursor motion, plain prints bare lines; auto shows live human progress; agent, --silent, pipe and dumb-terminal policies take precedence (default: auto)
+
+Global Options:
+  --filter-output <keys>              Filter output by key paths (e.g. foo,bar.baz,a[0,3])
+  --format <toon|json|yaml|md|jsonl>  Output format
+  --full-output                       Show full output envelope
+  --help                              Show help
+  --llms, --llms-full                 Print LLM-readable manifest
+  --schema                            Show JSON Schema for command
+  --token-count                       Print token count of output (instead of output)
+  --token-limit <n>                   Limit output to n tokens
+  --token-offset <n>                  Skip first n tokens of output

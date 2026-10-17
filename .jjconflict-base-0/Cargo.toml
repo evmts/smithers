@@ -1,0 +1,28 @@
+# Cargo workspace for the Rust side of flows.
+#
+# jj-lib comes from the smithersai/jj fork: jj-vcs/jj main plus the patch
+# stack its SMITHERS.md lists, pinned to one commit. Cargo.lock records that
+# commit, and the native bundle builds the jj CLI from the same commit
+# (apps/app/scripts/build-native.ts reads it from Cargo.lock).
+
+[workspace]
+resolver = "3"
+members = ["crates/flows-jj", "crates/smithers-ffi", "crates/smithers-machined"]
+
+[workspace.dependencies]
+# Both browser flows and the repository service use the same jj store format.
+jj-lib = { git = "https://github.com/smithersai/jj", rev = "1d7ce38af52f676c5190172773f9b9081816d985", default-features = false }
+
+# No debuginfo in dev builds: jj-lib's debuginfo multiplies the target dir
+# several times over, and this workspace is exercised through tests, not
+# debuggers.
+[profile.dev]
+debug = false
+
+# The release profile tunes for the wasm32-wasip1 artifact that ships to the
+# browser: small and predictable beats fast-to-compile.
+[profile.release]
+codegen-units = 1
+lto = "thin"
+opt-level = "s"
+strip = "debuginfo"

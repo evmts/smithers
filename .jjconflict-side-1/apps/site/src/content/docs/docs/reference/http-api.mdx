@@ -1,0 +1,89 @@
+---
+title: "HTTP and RPC endpoints"
+description: "The routes smthrs serve mounts, their protocols, their authentication rules, and the RPC groups each one serves."
+---
+
+`smthrs serve` mounts the workspace gateway: the control plane, the served projections, and the journal read path, plus an unauthenticated health probe.
+
+## Mounts
+
+Every route `GatewayServer.layer` mounts, in the order the startup banner prints them.
+
+| Path | Protocol | Purpose | Auth |
+| --- | --- | --- | --- |
+| `/rpc` | HTTP `POST` | Control RPC (`ControlRpcs`) | Bearer in band through `ControlAuth` when a credential is configured |
+| `/rpc/ws` | WebSocket | Control RPC, including a kept-alive `Watch` | Bearer at the edge when a credential is configured |
+| `/projections` | HTTP `POST` | Projection snapshots (`GatewayRpcs`) | Bearer at the edge when a credential is configured |
+| `/projections/ws` | WebSocket | Projection subscriptions | Bearer at the edge when a credential is configured |
+| `/sync` | HTTP `POST` | Journal sync (`SyncRpcs`) | Bearer at the edge when a credential is configured |
+| `/sync/ws` | WebSocket | Journal sync stream | Bearer at the edge when a credential is configured |
+| `/health` | HTTP `GET` | Workspace identity | None, by design |
+
+On the loopback default no bearer credential is configured. Every request must
+still carry a loopback `Host`, and a supplied browser `Origin` must use HTTP(S)
+on `localhost`, `127.0.0.1`, or `[::1]`; Origin-less CLI requests remain
+accepted. The banner prints
+`auth  no bearer (loopback Host; loopback browser Origin)` in that case and
+`auth  bearer token` otherwise.
+
+## Authentication
+
+The bind rule is strict and fails closed.
+
+- The default bind is `127.0.0.1:3000`. A loopback host (`127.0.0.1`, `::1`, or `localhost`) needs no opt-in and no credential. The ingress guard rejects foreign Host values and browser origins before HTTP or WebSocket RPC handling.
+- A non-loopback bind requires an explicit `--listen`. Without it the verb refuses: `Refusing to bind <host>: pass --listen to serve on a non-loopback address.`
+- A non-loopback bind also requires a bearer credential, set as `SMITHERS_TOKEN`. Without one the verb refuses: `Refusing to bind <host> without a bearer token: set SMITHERS_TOKEN.`
+- The server speaks plain HTTP only. For network access, terminate TLS at a trusted reverse proxy or use an encrypted tunnel so the bearer token is not sent in cleartext.
+
+One shared bearer authenticates every mount and binds one principal. There are no users, no roles, no per-run ownership, and no scopes.
+
+Two mounts are deliberate exceptions to edge authentication. `POST /rpc` authenticates in band through the `ControlRpcs.ControlAuth` middleware, whose refusal is the typed control error `Unauthorized`, not an edge status; the `/rpc/ws` upgrade stays edge-authenticated because a refused handshake has no RPC channel to answer on. `GET /health` is unauthenticated so a supervisor can ask which workspace a gateway belongs to before deciding to keep or replace it. The local request guard answers `invalid_host` (421) or `invalid_origin` (403) before those exceptions. On the edge-authenticated paths the remaining refusal vocabulary is `unauthorized` (401) without the credential, `malformed_request` (400) for a body carrying no RPC request message, and `request_too_large` (413) for a body over the limit (default 1 MiB).
+
+## Worker relay authentication
+
+The mounts above belong to `smthrs serve`. The web Worker has removed its raw
+gateway proxy: `/rpc`, `/projections`, `/sync`, `/health`, and their subpaths
+return HTTP 410 with code `gateway_proxy_removed`, including WebSocket upgrades.
+A `GET` or `HEAD` of a former documentation address under `/rpc/` (a page the
+old site published) redirects to this page instead; an RPC-shaped request there
+is still the 410. Cross-origin requests may be refused earlier by the
+same-origin guard.
+`GATEWAY_UPSTREAM_URL` and `GATEWAY_AUTH_TOKEN` are ignored and cannot restore
+the proxy. The Worker's `/health` is retired too.
+
+Product clients use `/api/workflow/provision` and `/api/workflow/rpc` with a
+validated session. Every body names the repository and a box (`workspaceId`); a call without a box is refused. These routes resolve that
+box's coding host by login, repository and box and enforce a procedure
+allowlist; the host's credentials never leave the backend. Native RPC or
+WebSocket clients must connect to a separately authenticated gateway.
+
+## The RPC surface
+
+Three RPC groups share the gateway. The sources pin the procedure names, the error vocabularies, and the subscription frame tags; row-level payload shapes are not pinned here and are decoded by selector through `GatewaySchema.rowSchemaFor`.
+
+`ControlRpcs` on `/rpc` is ten procedures:
+
+| Area | Procedures | Answers |
+| --- | --- | --- |
+| Runs | `Plan`, `Run`, `Resume`, `Cancel`, plus the `List` and `Watch` reads | A `Receipt` per mutation, a `PlanCard` from `Plan`, a stream of `ControlEvent` from `Watch` |
+| Approvals | `Approve`, `Deny` | A `Receipt` |
+| Steering | `Steer` (a durable message to the run), `Signal` (a durable delivery to a named wait) | A `Receipt` |
+
+There is no `Pause` procedure. `ControlRpcs` declares no memory procedure either; the [`smthrs memory`](/docs/reference/cli/memory/) verb is documented separately.
+
+`GatewayRpcs` on `/projections` serves seven read models folded from the control event stream: `workspace-runs`, `run-summary`, `run-events`, `transcript`, `run-tree`, `approvals`, and `node-output`. Over WebSocket, `Projection.Subscribe` streams tagged frames (`SnapshotStartFrame`, `RowFrame`, `SnapshotEndFrame`, `DeltaFrame`, `HeartbeatFrame`) so a client can tell a snapshot from a change. A projection never claims a run and never writes. The group's one mutation, `Approval.Submit`, is the transport form of Control's approve, deny, and answer commands for an approval card; it adds no failure of its own.
+
+`SyncRpcs` on `/sync` is read-only journal replication: `Sync.Snapshot` returns a public projection through a sequence, `Sync.Read` pages entries for a scope and cursor set, and `Sync.Subscribe` streams `Entries` frames under a credit bound. `BranchRpcs`, the client-to-server submission group, has no production mount, so the gateway serves `SyncRpcs` alone.
+
+## Health
+
+`GET /health` answers the gateway's identity as JSON:
+
+| Field | Value |
+| --- | --- |
+| `workspaceHash` | The first 16 hex characters of the SHA-256 of the resolved project root |
+| `gatewayId` | `cli-<pid>` of the serving process |
+| `protocolVersion` | `"1"` |
+| `version` | The installed `@smthrs/cli` package version |
+
+The response carries identity only: never a token, a run, or a path. The workspace path itself is not published, because it names directories on the operator's machine.

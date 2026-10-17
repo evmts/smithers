@@ -1,0 +1,108 @@
+/** Node SQLite driver. Domain stores depend on Effect SqlClient, not this module.
+ * @since 1.0.0
+ */
+
+import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient"
+import { type Duration, Effect, Layer } from "effect"
+import type * as SqlClient from "effect/sql/SqlClient"
+import { statSync } from "node:fs"
+import { DatabaseSync } from "node:sqlite"
+import * as PostgresSelection from "../internal/PostgresSelection.ts"
+import * as ReleasePolicy from "../internal/ReleasePolicy.ts"
+import * as SqliteOpen from "../internal/SqliteOpen.ts"
+
+export { isUnsupportedDatabase, UnsupportedDatabase, UnsupportedDatabaseCode } from "../internal/SqliteOpen.ts"
+
+/**
+ * Where the store at `filename` lives on PostgreSQL, as this module would open
+ * it: the connection URL without its `schema` parameter, and the schema. It is
+ * `undefined` for a store SQLite keeps. `postgres://…?schema=<schema>` opens
+ * that exact schema, so a caller holding a copy of a store in another schema
+ * addresses it by URL.
+ *
+ * @since 1.0.0
+ * @category getters
+ */
+export const postgresLocation: (filename: string) => { readonly url: string; readonly schema: string } | undefined =
+  PostgresSelection.location
+
+/** Connection settings; write policy is supplied separately by DurableWriter.
+ * @since 1.0.0
+ * @category models
+ */
+export interface NodeDatabaseOptions {
+  readonly filename: string
+  /** Creation mode for new plain-path files, subject to umask. Defaults to 0o600. */
+  readonly mode?: number | undefined
+  /** Synchronous lock wait. Defaults to one second for read-only opens, zero otherwise; overrides sqlite.busyTimeout when supplied. */
+  readonly busyTimeout?: Duration.Input | undefined
+  readonly sqlite?: Omit<SqliteClient.SqliteClientConfig, "filename"> | undefined
+  /**
+   * Opens an existing store for reading only: SQLite read-only without WAL
+   * conversion, PostgreSQL read-only transactions without schema creation.
+   * Nothing is created, migrated or locked for writing.
+   */
+  readonly readOnly?: boolean | undefined
+}
+
+const readTableNames = (filename: string): ReadonlyArray<string> | undefined => {
+  let db: DatabaseSync | undefined
+  try {
+    if (!filename.startsWith("file:") && !statSync(filename).isFile()) return undefined
+    db = new DatabaseSync(filename, { readOnly: true })
+    return db
+      .prepare(`SELECT name FROM sqlite_master WHERE type = 'table'`)
+      .all()
+      .map((row) => String((row as { readonly name: unknown }).name))
+  } catch (error) {
+    if (SqliteOpen.isLockedError(error)) throw error
+    return undefined
+  } finally {
+    db?.close()
+  }
+}
+
+/**
+ * Creates the file as part of building the client, so it happens after the
+ * guard has inspected an existing database and never for an open the guard or
+ * the runtime check refused.
+ */
+const client = (options: NodeDatabaseOptions): Layer.Layer<SqlClient.SqlClient> =>
+  Layer.unwrap(Effect.sync(() => {
+    SqliteOpen.createDatabaseFile(options.filename, !options.sqlite?.readonly, options.mode)
+    return SqliteClient.layer({
+      ...options.sqlite,
+      busyTimeout: options.busyTimeout ?? options.sqlite?.busyTimeout ??
+        (options.readOnly || options.sqlite?.readonly ? 1_000 : 0),
+      filename: options.filename
+    }).pipe(
+      // Effect 4.0 reports a failed open or PRAGMA as a typed `SqlError`.
+      // `SqliteOpen` classifies the driver's raw throw as a defect, so the
+      // wrapped cause is re-raised as one.
+      Layer.catch((error): Layer.Layer<SqlClient.SqlClient> => Layer.effectContext(Effect.die(error.reason.cause)))
+    )
+  }))
+
+/** Provides the Node SQLite client with the shared schema guard and open retries.
+ * @since 1.0.0
+ * @category layers
+ */
+export const layer = (options: NodeDatabaseOptions): Layer.Layer<SqlClient.SqlClient> =>
+  Layer.unwrap(Effect.sync(() => {
+    if (process.versions.bun !== undefined) {
+      throw new SqliteOpen.UnsupportedDatabase({
+        code: "unsupported_runtime",
+        message:
+          `Use @smthrs/database/bun/BunDatabase under Bun; NodeDatabase requires Node.js ${ReleasePolicy.nodeFloor}`
+      })
+    }
+    const readOnly = options.readOnly === true
+    const postgres = PostgresSelection.layer(options.filename, readOnly)
+    if (postgres !== undefined) return postgres
+    return SqliteOpen.layer(
+      options.filename,
+      readTableNames,
+      client(readOnly ? { ...options, sqlite: { ...options.sqlite, readonly: true, disableWAL: true } } : options),
+      readOnly
+    )
+  }))

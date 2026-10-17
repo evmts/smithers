@@ -1,0 +1,1663 @@
+//! Git objects belong to the unprivileged daemon's existing jj backing store.
+//! No repository commands run in the root broker or on the install host.
+use crate::{conn::Durable, hooks::Oid, objects::Bundles, outbox::Refs};
+use std::{
+    fs::{self, File, OpenOptions},
+    io::{self, Read, Write},
+    os::unix::{
+        fs::{MetadataExt, OpenOptionsExt},
+        process::CommandExt,
+    },
+    path::{Path, PathBuf},
+    process::{Command, Stdio},
+    time::{Duration, Instant},
+};
+
+/// Only daemon Git children trust the root-owned guest workspace. Never inherit
+/// host/global trust or expose this setting to repository-code sessions.
+pub(crate) fn daemon_git(git: &Path) -> Command {
+    let mut command = Command::new(git);
+    command
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_COUNT", "1")
+        .env("GIT_CONFIG_KEY_0", "safe.directory")
+        .env("GIT_CONFIG_VALUE_0", "/workspace");
+    command
+}
+
+fn invalid() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::InvalidData,
+        "invalid repository object state",
+    )
+}
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+fn id<const N: usize>(bytes: &[u8]) -> io::Result<[u8; N]> {
+    if bytes.len() != N * 2 || !bytes.iter().all(|b| b.is_ascii_hexdigit()) {
+        return Err(invalid());
+    }
+    let mut result = [0; N];
+    for (i, value) in result.iter_mut().enumerate() {
+        *value = u8::from_str_radix(
+            std::str::from_utf8(&bytes[2 * i..2 * i + 2]).map_err(|_| invalid())?,
+            16,
+        )
+        .map_err(|_| invalid())?;
+    }
+    Ok(result)
+}
+
+#[derive(Clone)]
+pub struct Repository {
+    git: PathBuf,
+    directory: PathBuf,
+    spool: PathBuf,
+}
+impl Repository {
+    #[cfg(any(target_os = "linux", test))]
+    pub(crate) fn retain_watcher_close(&self, id: [u8; 16], commit: Oid) -> io::Result<()> {
+        if id == [0; 16] || !self.contains(commit)? {
+            return Err(invalid());
+        }
+        self.command(&[
+            "update-ref",
+            &format!("refs/smithers/watcher/closing/{}", hex(&id)),
+            &hex(&commit),
+        ])?;
+        self.sync()
+    }
+    #[cfg(any(target_os = "linux", test))]
+    pub(crate) fn clear_watcher_closes(&self) -> io::Result<()> {
+        let refs = self.command(&[
+            "for-each-ref",
+            "--format=%(refname)",
+            "refs/smithers/watcher/closing/",
+        ])?;
+        let mut checked = Vec::new();
+        for name in refs.split(|b| *b == b'\n').filter(|name| !name.is_empty()) {
+            let name = std::str::from_utf8(name).map_err(|_| invalid())?;
+            let suffix = name
+                .strip_prefix("refs/smithers/watcher/closing/")
+                .ok_or_else(invalid)?;
+            id::<16>(suffix.as_bytes())?;
+            checked.push(name);
+        }
+        for name in checked {
+            self.command(&["update-ref", "-d", name])?;
+        }
+        self.sync()
+    }
+    /// Fixed installed executable and trusted state directory are supplied by
+    /// composition, never by an RPC or repository configuration.
+    pub fn open(directory: &Path, spool: &Path) -> io::Result<Self> {
+        if !cfg!(target_os = "linux") || rustix::process::geteuid().as_raw() != 19998 {
+            return Err(io::ErrorKind::PermissionDenied.into());
+        }
+        Self::checked(Path::new("/usr/bin/git"), directory, spool)
+    }
+    pub(crate) fn checked(git: &Path, directory: &Path, spool: &Path) -> io::Result<Self> {
+        let metadata = fs::symlink_metadata(spool)?;
+        if !metadata.is_dir()
+            || metadata.uid() != rustix::process::geteuid().as_raw()
+            || metadata.mode() & 0o7777 != 0o700
+            || !directory.is_dir()
+            || !git.is_absolute()
+        {
+            return Err(io::ErrorKind::PermissionDenied.into());
+        }
+        // Composition opens this provider once, before accepting streams.
+        // Validate the complete inventory before deleting anything: this is a
+        // private scratch directory, never repository data or durable events.
+        let mut abandoned = Vec::new();
+        for entry in fs::read_dir(spool)? {
+            let entry = entry?;
+            let name = entry.file_name();
+            let name = name.to_str().ok_or_else(invalid)?;
+            if name.len() != 32
+                || !name
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+            {
+                return Err(invalid());
+            }
+            let metadata = fs::symlink_metadata(entry.path())?;
+            if !metadata.is_file()
+                || metadata.uid() != rustix::process::geteuid().as_raw()
+                || metadata.mode() & 0o7777 != 0o600
+                || metadata.nlink() != 1
+            {
+                return Err(invalid());
+            }
+            abandoned.push(entry.path());
+        }
+        for path in abandoned {
+            fs::remove_file(path)?;
+        }
+        File::open(spool)?.sync_all()?;
+        let repository = Self {
+            git: git.into(),
+            directory: directory.into(),
+            spool: spool.into(),
+        };
+        repository.command(&["rev-parse", "--git-dir"])?;
+        Ok(repository)
+    }
+    fn command(&self, arguments: &[&str]) -> io::Result<Vec<u8>> {
+        let output = self.temporary()?;
+        let mut command = daemon_git(&self.git);
+        command
+            .arg("--no-pager")
+            .args(["-c", "core.hooksPath=/dev/null", "-c", "core.fsync=all"])
+            .arg("-C")
+            .arg(&self.directory)
+            .args(arguments)
+            .stdin(Stdio::null())
+            .stdout(output.file.try_clone()?)
+            .stderr(Stdio::null())
+            .process_group(0);
+        // Shared repository metadata is group-writable. Bundle scratch files
+        // stay private even when Git replaces our reserved pathname.
+        let mask = if arguments.starts_with(&["bundle", "create"]) {
+            0o077
+        } else {
+            0o002
+        };
+        unsafe {
+            command.pre_exec(move || {
+                rustix::process::umask(rustix::fs::Mode::from_raw_mode(mask));
+                Ok(())
+            });
+        }
+        let mut child = command.spawn()?;
+        let deadline = Instant::now() + Duration::from_secs(60);
+        let status = loop {
+            if let Some(status) = child.try_wait()? {
+                break status;
+            }
+            if Instant::now() >= deadline {
+                if let Some(group) = rustix::process::Pid::from_raw(child.id() as i32) {
+                    let _ =
+                        rustix::process::kill_process_group(group, rustix::process::Signal::KILL);
+                }
+                let _ = child.wait();
+                return Err(io::ErrorKind::TimedOut.into());
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        if !status.success() {
+            return Err(invalid());
+        }
+        let mut bytes = vec![];
+        File::open(&output.path)?
+            .take(4 * 1024 * 1024 + 1)
+            .read_to_end(&mut bytes)?;
+        if bytes.len() > 4 * 1024 * 1024 {
+            return Err(invalid());
+        }
+        Ok(bytes)
+    }
+    fn sync(&self) -> io::Result<()> {
+        // Git fsyncs new objects/refs; syncfs additionally orders the complete
+        // backing store before the outbox's separately fsync'd append.
+        #[cfg(target_os = "linux")]
+        rustix::fs::syncfs(File::open(&self.directory)?).map_err(io::Error::from)?;
+        #[cfg(not(target_os = "linux"))]
+        File::open(&self.directory)?.sync_all()?;
+        Ok(())
+    }
+    /// Store literal object bytes without filters, hooks or repository-selected
+    /// commands. Scratch files are private and owned by this daemon.
+    fn object(&self, kind: &str, bytes: &[u8]) -> io::Result<Oid> {
+        let mut input = self.temporary()?;
+        input.file.write_all(bytes)?;
+        input.file.sync_all()?;
+        let path = input.path.to_str().ok_or_else(invalid)?;
+        let result =
+            self.command(&["hash-object", "-w", "--no-filters", "-t", kind, "--", path])?;
+        id(result.strip_suffix(b"\n").ok_or_else(invalid)?)
+    }
+    fn version_tree(
+        &self,
+        entries: &std::collections::BTreeMap<String, (Oid, u32)>,
+    ) -> io::Result<Oid> {
+        use std::collections::BTreeMap;
+        let mut files = BTreeMap::new();
+        let mut directories: BTreeMap<String, BTreeMap<String, (Oid, u32)>> = BTreeMap::new();
+        for (path, value) in entries {
+            if !crate::ignore::relative(Path::new(path)) || path.contains('\0') {
+                return Err(invalid());
+            }
+            if let Some((name, tail)) = path.split_once('/') {
+                directories
+                    .entry(name.into())
+                    .or_default()
+                    .insert(tail.into(), *value);
+            } else {
+                if ![0o100644, 0o100755].contains(&value.1) {
+                    return Err(invalid());
+                }
+                files.insert(path.clone(), *value);
+            }
+        }
+        for (name, children) in directories {
+            if files.contains_key(&name) {
+                return Err(invalid());
+            }
+            files.insert(name, (self.version_tree(&children)?, 0o40000));
+        }
+        // Git orders a directory as though its name had a trailing slash.
+        let mut ordered: Vec<_> = files.into_iter().collect();
+        ordered.sort_by_key(|(name, (_, mode))| {
+            if *mode == 0o40000 {
+                format!("{name}/")
+            } else {
+                name.clone()
+            }
+        });
+        let mut bytes = Vec::new();
+        for (name, (oid, mode)) in ordered {
+            bytes.extend(format!("{mode:o} {name}\0").as_bytes());
+            bytes.extend(oid);
+        }
+        self.object("tree", &bytes)
+    }
+    /// Keep the checkpoint currently on disk pinned until its atomic replacement
+    /// finishes. A crash before rename can still recover that exact version set.
+    pub fn retain_checkpoint(&self, current: Oid, previous: Option<Oid>) -> io::Result<()> {
+        if !self.contains(current)?
+            || previous
+                .map(|id| self.contains(id))
+                .transpose()?
+                .is_some_and(|present| !present)
+        {
+            return Err(invalid());
+        }
+        if let Some(previous) = previous {
+            self.command(&[
+                "update-ref",
+                "refs/smithers/watcher/previous",
+                &hex(&previous),
+            ])?;
+        }
+        self.command(&[
+            "update-ref",
+            "refs/smithers/watcher/current",
+            &hex(&current),
+        ])?;
+        self.sync()
+    }
+    pub fn acknowledged(&self) -> io::Result<Option<Oid>> {
+        let bytes = self.command(&[
+            "for-each-ref",
+            "--format=%(objectname)",
+            "refs/smithers/acked/head",
+        ])?;
+        if bytes.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(id(bytes.strip_suffix(b"\n").ok_or_else(invalid)?)?))
+    }
+    pub fn contains(&self, oid: Oid) -> io::Result<bool> {
+        // Object ids are generated hex, so they cannot be options or revsets.
+        Ok(self
+            .command(&["cat-file", "-e", &format!("{}^{{commit}}", hex(&oid))])
+            .is_ok())
+    }
+    fn temporary(&self) -> io::Result<Spool> {
+        let mut random = [0; 16];
+        getrandom::fill(&mut random).map_err(|e| io::Error::other(e.to_string()))?;
+        let path = self.spool.join(hex(&random));
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&path)?;
+        Ok(Spool { file, path })
+    }
+    /// Verify before importing and never fetch bundle-advertised refs. The
+    /// caller must retain the expected head before wake/session admission.
+    pub fn import(&self, bundle: &Spool, expected: Oid) -> io::Result<()> {
+        let path = bundle.path.to_str().ok_or_else(invalid)?;
+        self.command(&["bundle", "verify", path])?;
+        self.command(&["bundle", "unbundle", path])?;
+        if !self.contains(expected)? {
+            return Err(invalid());
+        }
+        self.command(&[
+            "rev-list",
+            "--objects",
+            "--missing=error",
+            "--quiet",
+            &hex(&expected),
+        ])?;
+        // Retain by object identity, never a peer-selected ref or a mutable
+        // head. A disconnected importer can finish without moving the branch.
+        let reference = format!("refs/smithers/incoming/{}", hex(&expected));
+        if self
+            .command(&["update-ref", &reference, &hex(&expected), &hex(&[0; 20])])
+            .is_err()
+        {
+            let existing = self.command(&["show-ref", "--verify", "--hash", &reference])?;
+            if existing != format!("{}\n", hex(&expected)).as_bytes() {
+                return Err(invalid());
+            }
+        }
+        self.sync()
+    }
+    fn import_stream(&self, bundle: &Spool, stream: u32) -> io::Result<()> {
+        if stream < 0x8000_0000 {
+            return Err(invalid());
+        }
+        let path = bundle.path.to_str().ok_or_else(invalid)?;
+        let heads = self.command(&["bundle", "list-heads", path])?;
+        let suffix = format!(" refs/smithers/xfer/{stream}\n");
+        if heads.len() != 40 + suffix.len() || &heads[40..] != suffix.as_bytes() {
+            return Err(invalid());
+        }
+        self.import(bundle, id(&heads[..40])?)
+    }
+    /// The caller grants at most one credit window at a time. This disk spool
+    /// bounds the complete incoming bundle; no bundle is held in memory.
+    pub fn receive(&self, mut source: impl Read, limit: u64) -> io::Result<Spool> {
+        if limit == 0 || limit == u64::MAX {
+            return Err(io::ErrorKind::InvalidInput.into());
+        }
+        let disk = rustix::fs::statvfs(&self.spool)?;
+        let available = (disk.f_bavail as u64)
+            .checked_mul(disk.f_frsize as u64)
+            .ok_or_else(invalid)?;
+        let limit = limit.min(available.saturating_sub(1024 * 1024 * 1024));
+        if limit == 0 {
+            return Err(io::ErrorKind::StorageFull.into());
+        }
+        let mut spool = self.temporary()?;
+        let written = io::copy(&mut source.by_ref().take(limit + 1), &mut spool.file)?;
+        if written == 0 || written > limit {
+            return Err(io::ErrorKind::InvalidData.into());
+        }
+        spool.file.flush()?;
+        spool.file.sync_all()?;
+        Ok(spool)
+    }
+}
+impl crate::versions::Objects for Repository {
+    type Blob = Oid;
+    type Commit = Oid;
+    fn blob(&mut self, bytes: &[u8]) -> io::Result<Oid> {
+        self.object("blob", bytes)
+    }
+    fn parentless(
+        &mut self,
+        entries: &std::collections::BTreeMap<String, (Oid, u32)>,
+    ) -> io::Result<Oid> {
+        let tree = self.version_tree(entries)?;
+        let bytes = format!("tree {}\nauthor Smithers <smithers@localhost> 0 +0000\ncommitter Smithers <smithers@localhost> 0 +0000\n\nFile versions\n", hex(&tree));
+        let commit = self.object("commit", bytes.as_bytes())?;
+        self.sync()?;
+        Ok(commit)
+    }
+}
+
+impl Refs for Repository {
+    fn pin_and_sync(&mut self, event: [u8; 16], oid: Oid) -> io::Result<()> {
+        if !self.contains(oid)? {
+            return Err(invalid());
+        }
+        self.command(&[
+            "update-ref",
+            &format!("refs/smithers/pending/{}", hex(&event)),
+            &hex(&oid),
+        ])?;
+        self.sync()
+    }
+    fn acknowledge_and_sync(&mut self, head: Oid) -> io::Result<()> {
+        if !self.contains(head)? {
+            return Err(invalid());
+        }
+        self.command(&["update-ref", "refs/smithers/acked/head", &hex(&head)])?;
+        self.sync()
+    }
+    fn unpin(&mut self, event: [u8; 16]) -> io::Result<()> {
+        self.command(&[
+            "update-ref",
+            "-d",
+            &format!("refs/smithers/pending/{}", hex(&event)),
+        ])?;
+        self.sync()
+    }
+    fn pending(&mut self) -> io::Result<Vec<[u8; 16]>> {
+        let bytes = self.command(&[
+            "for-each-ref",
+            "--format=%(refname)",
+            "refs/smithers/pending/",
+        ])?;
+        bytes
+            .split(|b| *b == b'\n')
+            .filter(|line| !line.is_empty())
+            .map(|line| {
+                id(line
+                    .strip_prefix(b"refs/smithers/pending/")
+                    .ok_or_else(invalid)?)
+            })
+            .collect()
+    }
+}
+impl Bundles for Repository {
+    type Source = Spool;
+    fn export(&mut self, event: &Durable, haves: &[Oid]) -> io::Result<Spool> {
+        // Only the event's durable pin is exported; queued events cannot ask
+        // this provider to export arbitrary refs from another event.
+        let reference = format!("refs/smithers/pending/{}", hex(&event.id));
+        let mut spool = self.temporary()?;
+        let path = spool.path.to_str().ok_or_else(invalid)?;
+        let mut arguments = vec!["bundle".to_owned(), "create".into(), path.into(), reference];
+        for have in haves {
+            if self.contains(*have)? {
+                arguments.push(format!("^{}", hex(have)));
+            }
+        }
+        // A have equal to the pinned head yields an empty bundle. Re-export
+        // complete objects rather than certify an objectless transfer.
+        if let Err(error) = self.command(&arguments.iter().map(String::as_str).collect::<Vec<_>>())
+        {
+            if arguments.len() == 4 {
+                return Err(error);
+            }
+            self.command(
+                &arguments[..4]
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>(),
+            )?;
+        }
+        // Git replaces the destination atomically; the original descriptor
+        // still names the empty file created to reserve the random pathname.
+        spool.file = File::open(&spool.path)?;
+        Ok(spool)
+    }
+}
+struct IncomingBundle {
+    repository: Repository,
+    spool: Spool,
+    remaining: u64,
+}
+impl Write for IncomingBundle {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        if bytes.len() as u64 > self.remaining {
+            return Err(io::ErrorKind::StorageFull.into());
+        }
+        let n = self.spool.file.write(bytes)?;
+        self.remaining -= n as u64;
+        Ok(n)
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        self.spool.file.flush()
+    }
+}
+impl crate::incoming::Bundle for IncomingBundle {
+    fn finish(self: Box<Self>, stream: u32) -> io::Result<()> {
+        self.spool.file.sync_all()?;
+        self.repository.import_stream(&self.spool, stream)
+    }
+}
+impl crate::incoming::Store for Repository {
+    fn begin(&self) -> io::Result<Box<dyn crate::incoming::Bundle>> {
+        let disk = rustix::fs::statvfs(&self.spool)?;
+        let available = (disk.f_bavail as u64)
+            .checked_mul(disk.f_frsize as u64)
+            .ok_or_else(invalid)?;
+        let remaining = crate::incoming::LIMIT.min(available.saturating_sub(1024 * 1024 * 1024));
+        if remaining == 0 {
+            return Err(io::ErrorKind::StorageFull.into());
+        }
+        Ok(Box::new(IncomingBundle {
+            repository: self.clone(),
+            spool: self.temporary()?,
+            remaining,
+        }))
+    }
+}
+
+pub struct Spool {
+    file: File,
+    path: PathBuf,
+}
+impl Read for Spool {
+    fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+        self.file.read(bytes)
+    }
+}
+impl Drop for Spool {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(all(feature = "killpoints", debug_assertions))]
+    mod faults {
+        include!("git_faults.rs");
+    }
+    use super::*;
+    use crate::{
+        conn::{self, Frame},
+        outbox::{self, Outbox},
+        outbox_store::Store,
+    };
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn daemon_git_trust_is_exact_and_child_scoped() {
+        let mut command = daemon_git(Path::new("/usr/bin/git"));
+        let environment: std::collections::BTreeMap<_, _> = command
+            .get_envs()
+            .map(|(key, value)| (key.to_str().unwrap(), value.unwrap().to_str().unwrap()))
+            .collect();
+        assert_eq!(environment.len(), 6);
+        assert_eq!(environment["GIT_CONFIG_COUNT"], "1");
+        assert_eq!(environment["GIT_CONFIG_KEY_0"], "safe.directory");
+        assert_eq!(environment["GIT_CONFIG_VALUE_0"], "/workspace");
+        assert_eq!(environment["GIT_CONFIG_GLOBAL"], "/dev/null");
+        assert_eq!(environment["GIT_CONFIG_NOSYSTEM"], "1");
+        // Ask real Git to read the protected configuration, without a repo.
+        let output = command
+            .args(["config", "--get-all", "safe.directory"])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        assert_eq!(output.stdout, b"/workspace\n");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn daemon_git_workspace_namespace_child() {
+        if std::env::var_os("SMITHERS_GIT_TRUST_CHILD").is_none() {
+            return;
+        }
+        let probe = |directory: &str, trusted: bool| {
+            let mut command = daemon_git(Path::new("/usr/bin/git"));
+            // Git's ownership test hook exercises its real dubious-owner check
+            // where this unprivileged host cannot chown to another host uid.
+            command.env("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1");
+            if !trusted {
+                command
+                    .env_remove("GIT_CONFIG_COUNT")
+                    .env_remove("GIT_CONFIG_KEY_0")
+                    .env_remove("GIT_CONFIG_VALUE_0");
+            }
+            command
+                .args(["-C", directory, "rev-parse", "--git-dir"])
+                .output()
+                .unwrap()
+        };
+        for directory in ["/workspace", "/other"] {
+            let rejected = probe(directory, false);
+            assert!(!rejected.status.success());
+            assert!(String::from_utf8_lossy(&rejected.stderr).contains("dubious ownership"));
+        }
+        assert!(probe("/workspace", true).status.success());
+        let other = probe("/other", true);
+        assert!(!other.status.success());
+        assert!(String::from_utf8_lossy(&other.stderr).contains("dubious ownership"));
+        // Exercise both production launch paths at the installed pathname.
+        let repository = Repository::checked(
+            Path::new("/usr/bin/git"),
+            Path::new("/workspace"),
+            Path::new("/spool"),
+        )
+        .unwrap();
+        assert_eq!(
+            repository.command(&["rev-parse", "--git-dir"]).unwrap(),
+            b".git\n"
+        );
+        use crate::ignore::Ignore;
+        let mut ignores =
+            crate::ignore::GitIgnore::new("/workspace".into(), "/usr/bin/git".into(), vec![])
+                .unwrap();
+        assert!(ignores.ignored(Path::new("ignored.txt"), false).unwrap());
+        assert!(!ignores.ignored(Path::new("visible.txt"), false).unwrap());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn daemon_git_workspace_namespace() {
+        let root = tempfile::tempdir().unwrap();
+        let repo = root.path().join("repo");
+        let spool = root.path().join("spool");
+        fs::create_dir(&spool).unwrap();
+        fs::set_permissions(&spool, fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(daemon_git(Path::new("/usr/bin/git"))
+            .args(["init", "--quiet"])
+            .arg(&repo)
+            .status()
+            .unwrap()
+            .success());
+        fs::write(repo.join(".gitignore"), "ignored.txt\n").unwrap();
+        let status = Command::new("bwrap")
+            .args([
+                "--tmpfs",
+                "/",
+                "--ro-bind",
+                "/usr",
+                "/usr",
+                "--ro-bind",
+                "/lib",
+                "/lib",
+                "--ro-bind",
+                "/lib64",
+                "/lib64",
+                "--dev",
+                "/dev",
+                "--unshare-user",
+                "--uid",
+                "19998",
+                "--gid",
+                "19998",
+                "--die-with-parent",
+                "--bind",
+            ])
+            .arg(&repo)
+            .arg("/workspace")
+            .arg("--bind")
+            .arg(&repo)
+            .arg("/other")
+            .arg("--bind")
+            .arg(&spool)
+            .arg("/spool")
+            .arg("--ro-bind")
+            .arg(std::env::current_exe().unwrap())
+            .arg("/test")
+            .args(["--chdir", "/workspace", "--", "/test"])
+            .args([
+                "--exact",
+                "git::tests::daemon_git_workspace_namespace_child",
+                "--nocapture",
+            ])
+            .env("SMITHERS_GIT_TRUST_CHILD", "1")
+            .status();
+        match status {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                eprintln!("namespace test unavailable: bubblewrap not installed");
+            }
+            result => assert!(result.unwrap().success()),
+        }
+    }
+
+    #[test]
+    fn legacy_outbox_migration_preserves_real_pending_refs_through_gc() {
+        let fixture = Fixture::new();
+        let head = fixture.commit();
+        let mut repository = fixture.repository.clone();
+        for seq in [3u8, 4] {
+            repository.pin_and_sync([seq; 16], head).unwrap();
+            let name = format!("{seq:020}.ev");
+            let bytes: &[u8] = if seq == 3 {
+                include_bytes!("../tests/data/outbox/legacy/00000000000000000003.ev")
+            } else {
+                include_bytes!("../tests/data/outbox/legacy/00000000000000000004.ev")
+            };
+            let path = fixture.root.join("state/outbox").join(name);
+            fs::write(&path, bytes).unwrap();
+            fs::set_permissions(path, fs::Permissions::from_mode(0o600)).unwrap();
+        }
+        // Git object contents are deliberately independent of the opaque event
+        // fixture: migration must preserve every pending ref without inspecting
+        // or rewriting either the ref target or the event payload.
+        let before = repository.command(&["show-ref"]).unwrap();
+        for _ in 0..2 {
+            let outbox = fixture.outbox();
+            assert_eq!(outbox.depth(), 2);
+            assert_eq!(outbox.front().unwrap().unwrap().id, [3; 16]);
+            assert_eq!(repository.pending().unwrap(), vec![[3; 16], [4; 16]]);
+            assert_eq!(repository.command(&["show-ref"]).unwrap(), before);
+            repository.command(&["gc", "--prune=now"]).unwrap();
+            repository
+                .command(&["cat-file", "-e", &hex(&head)])
+                .unwrap();
+        }
+    }
+
+    struct Fixture {
+        root: PathBuf,
+        repository: Repository,
+    }
+    impl Fixture {
+        fn new() -> Self {
+            let mut random = [0; 16];
+            getrandom::fill(&mut random).unwrap();
+            let root = std::env::temp_dir().join(format!("w2-git-{}", hex(&random)));
+            fs::create_dir(&root).unwrap();
+            for name in ["repo", "spool", "state", "state/outbox"] {
+                fs::create_dir(root.join(name)).unwrap();
+                fs::set_permissions(root.join(name), fs::Permissions::from_mode(0o700)).unwrap();
+            }
+            let git = std::env::var_os("PATH")
+                .and_then(|paths| {
+                    std::env::split_paths(&paths)
+                        .map(|p| p.join("git"))
+                        .find(|p| p.is_file())
+                })
+                .unwrap();
+            assert!(Command::new(&git)
+                .args(["init", "--bare", "--quiet"])
+                .arg(root.join("repo"))
+                .status()
+                .unwrap()
+                .success());
+            let repository =
+                Repository::checked(&git, &root.join("repo"), &root.join("spool")).unwrap();
+            Self { root, repository }
+        }
+        fn commit(&self) -> Oid {
+            // Independently supplied literal commit/tree, not a production
+            // snapshot or event encoder's idea of the expected repository.
+            let mut content = vec![0; 400_001];
+            getrandom::fill(&mut content).unwrap();
+            let blob = self.root.join("blob");
+            fs::write(&blob, &content).unwrap();
+            let output = self
+                .repository
+                .command(&["hash-object", "-w", blob.to_str().unwrap()])
+                .unwrap();
+            let blob_id: Oid = id(output.strip_suffix(b"\n").unwrap()).unwrap();
+            let mut tree = b"100644 file\0".to_vec();
+            tree.extend(blob_id);
+            let tree_path = self.root.join("tree");
+            fs::write(&tree_path, tree).unwrap();
+            let output = self
+                .repository
+                .command(&[
+                    "hash-object",
+                    "-w",
+                    "-t",
+                    "tree",
+                    tree_path.to_str().unwrap(),
+                ])
+                .unwrap();
+            let tree = std::str::from_utf8(&output).unwrap().trim();
+            let bytes = format!("tree {tree}\nauthor Test <test@example.com> 1 +0000\ncommitter Test <test@example.com> 1 +0000\n\nfixture\n");
+            let path = self.root.join("commit");
+            fs::write(&path, bytes).unwrap();
+            let output = self
+                .repository
+                .command(&["hash-object", "-w", "-t", "commit", path.to_str().unwrap()])
+                .unwrap();
+            id(output.strip_suffix(b"\n").unwrap()).unwrap()
+        }
+        fn outbox(&self) -> Outbox<Repository> {
+            let owner = fs::metadata(&self.root).unwrap().uid();
+            Outbox::open(
+                Store::open(&self.root.join("state/outbox"), owner).unwrap(),
+                owner,
+                self.repository.clone(),
+            )
+            .unwrap()
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.root).unwrap();
+        }
+    }
+
+    #[test]
+    fn watcher_checkpoint_roundtrip_pins_current_and_previous_versions() {
+        use crate::versions::Objects;
+        let fixture = Fixture::new();
+        let store = crate::watcher_store::Store::open(&fixture.root.join("state")).unwrap();
+        let mut repo = fixture.repository.clone();
+        let first = repo.blob(b"first").unwrap();
+        let second = repo.blob(b"second").unwrap();
+        let mut state = crate::events::Checkpoint::default();
+        state.recorded.insert(
+            "file".into(),
+            crate::versions::Version {
+                blob: first,
+                post_digest: [1; 32],
+                mode: 0o100644,
+            },
+        );
+        store.save(&state, &mut repo).unwrap();
+        assert_eq!(store.load().unwrap().recorded, state.recorded);
+        let original = repo
+            .command(&["rev-parse", "refs/smithers/watcher/current"])
+            .unwrap();
+        state.recorded.get_mut("file").unwrap().blob = second;
+        store.save(&state, &mut repo).unwrap();
+        assert_eq!(store.load().unwrap().recorded, state.recorded);
+        assert_eq!(
+            repo.command(&["rev-parse", "refs/smithers/watcher/previous"])
+                .unwrap(),
+            original
+        );
+        let current = repo
+            .command(&["rev-parse", "refs/smithers/watcher/current"])
+            .unwrap();
+        assert_ne!(current, original);
+        let current_id = std::str::from_utf8(&current).unwrap().trim();
+        assert_eq!(
+            repo.command(&["show", &format!("{current_id}:{}", hex(&second))])
+                .unwrap(),
+            b"second"
+        );
+        state.recorded.get_mut("file").unwrap().mode = 0o1004755;
+        assert!(store.save(&state, &mut repo).is_err());
+        assert_eq!(
+            repo.command(&["rev-parse", "refs/smithers/watcher/current"])
+                .unwrap(),
+            current
+        );
+        assert_eq!(store.load().unwrap().recorded["file"].blob, second);
+        assert_eq!(fs::read_dir(&repo.spool).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn open_burst_recovery_keeps_actor_versions_identity_and_rename() {
+        use crate::{
+            burst::{Burst, Bursts, File, Key},
+            hooks::Actor,
+            versions::Objects,
+        };
+        let fixture = Fixture::new();
+        let store = crate::watcher_store::Store::open(&fixture.root.join("state")).unwrap();
+        let mut repo = fixture.repository.clone();
+        let version = crate::versions::Version {
+            blob: repo.blob(b"retained").unwrap(),
+            post_digest: [2; 32],
+            mode: 0o100755,
+        };
+        let key = Key::Smithers(Actor::Principal(b"alice".to_vec()));
+        let burst = Burst {
+            key: key.clone(),
+            opened_ms: 10,
+            last_ms: 20,
+            files: std::collections::BTreeMap::from([
+                (
+                    "old".into(),
+                    File {
+                        before: Some(version.clone()),
+                        after: None,
+                    },
+                ),
+                (
+                    "new".into(),
+                    File {
+                        before: None,
+                        after: Some(version.clone()),
+                    },
+                ),
+            ]),
+            last_path: "new".into(),
+        };
+        let state = crate::events::Checkpoint::restore(
+            std::collections::BTreeMap::from([("new".into(), version)]),
+            Bursts::restore(vec![burst.clone()], 20).unwrap(),
+            vec![(key, [4; 16])],
+            std::collections::BTreeMap::from([("old".into(), "new".into())]),
+        )
+        .unwrap();
+        store.save(&state, &mut repo).unwrap();
+        let restored = store.load().unwrap();
+        assert_eq!(restored.bursts.pending(), [burst]);
+        assert_eq!(restored.identities(), state.identities());
+        assert_eq!(restored.renames(), state.renames());
+        assert_eq!(restored.recorded, state.recorded);
+    }
+
+    #[test]
+    fn parentless_versions_preserve_nested_paths_modes_and_literal_bytes() {
+        use crate::versions::Objects;
+        let fixture = Fixture::new();
+        let mut repo = fixture.repository.clone();
+        let before = repo.blob(b"before\0literal\n").unwrap();
+        let after = repo.blob(b"after\n").unwrap();
+        let tree = std::collections::BTreeMap::from([
+            ("a/dir/run".into(), (before, 0o100755)),
+            ("b/dir/run".into(), (after, 0o100644)),
+            ("a/dir.extra".into(), (after, 0o100644)),
+        ]);
+        let commit = repo.parentless(&tree).unwrap();
+        let commit_id = hex(&commit);
+        let raw = repo.command(&["cat-file", "commit", &commit_id]).unwrap();
+        assert!(!raw.windows(7).any(|b| b == b"parent "));
+        assert_eq!(
+            repo.command(&["show", &format!("{commit_id}:a/dir/run")])
+                .unwrap(),
+            b"before\0literal\n"
+        );
+        let listing = repo.command(&["ls-tree", "-r", &commit_id]).unwrap();
+        let listing = String::from_utf8(listing).unwrap();
+        assert!(listing.contains(&format!("100755 blob {}\ta/dir/run", hex(&before))));
+        assert!(listing.contains(&format!("100644 blob {}\tb/dir/run", hex(&after))));
+        assert_eq!(repo.parentless(&tree).unwrap(), commit);
+        assert_eq!(fs::read_dir(&repo.spool).unwrap().count(), 0);
+        for path in ["../escape", "absolute/../escape", "/escape", "bad\0name"] {
+            assert!(repo
+                .parentless(&std::collections::BTreeMap::from([(
+                    path.into(),
+                    (after, 0o100644)
+                )]))
+                .is_err());
+        }
+        assert!(repo
+            .parentless(&std::collections::BTreeMap::from([
+                ("dir".into(), (after, 0o100644)),
+                ("dir/file".into(), (before, 0o100644))
+            ]))
+            .is_err());
+    }
+
+    #[test]
+    fn restart_removes_interrupted_transfer_without_touching_repository_refs() {
+        let fixture = Fixture::new();
+        let head = fixture.commit();
+        let mut outbox = fixture.outbox();
+        let (_, event) = outbox
+            .append(&outbox::captured(head, [2; 20], [3; 20]), Some(head))
+            .unwrap();
+        let spool = fixture
+            .repository
+            .receive(&b"interrupted"[..], 100)
+            .unwrap();
+        let path = spool.path.clone();
+        drop(spool);
+        // Seed the file left by abrupt death, which skips Spool::drop.
+        let mut abandoned = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&path)
+            .unwrap();
+        abandoned.write_all(b"interrupted").unwrap();
+        abandoned.sync_all().unwrap();
+        drop(abandoned);
+        assert!(path.exists());
+        let mut reopened = Repository::checked(
+            &fixture.repository.git,
+            &fixture.repository.directory,
+            &fixture.repository.spool,
+        )
+        .unwrap();
+        assert!(!path.exists());
+        assert_eq!(reopened.pending().unwrap(), [event]);
+        assert_eq!(outbox.front().unwrap().unwrap().captured_head(), Some(head));
+    }
+
+    #[test]
+    fn restart_refuses_symlinks_hardlinks_and_unexpected_spool_entries() {
+        for kind in ["symlink", "hardlink", "directory", "mode", "name"] {
+            let fixture = Fixture::new();
+            let target = fixture.root.join("retained");
+            fs::write(&target, b"keep").unwrap();
+            fs::set_permissions(&target, fs::Permissions::from_mode(0o600)).unwrap();
+            let valid = fixture.repository.spool.join("b".repeat(32));
+            let mut abandoned = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(&valid)
+                .unwrap();
+            abandoned
+                .write_all(b"not removed on failed startup")
+                .unwrap();
+            drop(abandoned);
+            let path = fixture.repository.spool.join(if kind == "name" {
+                "unrecognized".to_owned()
+            } else {
+                "a".repeat(32)
+            });
+            match kind {
+                "symlink" => std::os::unix::fs::symlink(&target, &path).unwrap(),
+                "hardlink" => fs::hard_link(&target, &path).unwrap(),
+                "directory" => fs::create_dir(&path).unwrap(),
+                _ => fs::write(&path, b"keep").unwrap(),
+            }
+            assert!(
+                Repository::checked(
+                    &fixture.repository.git,
+                    &fixture.repository.directory,
+                    &fixture.repository.spool,
+                )
+                .is_err(),
+                "{kind}"
+            );
+            assert_eq!(fs::read(&target).unwrap(), b"keep");
+            assert!(fs::symlink_metadata(&path).is_ok());
+            assert_eq!(fs::read(&valid).unwrap(), b"not removed on failed startup");
+        }
+    }
+
+    #[test]
+    fn bundle_verified_import_does_not_publish_advertised_pending_ref() {
+        let source = Fixture::new();
+        let destination = Fixture::new();
+        let head = source.commit();
+        let mut outbox = source.outbox();
+        let (seq, event_id) = outbox
+            .append(&outbox::captured(head, [2; 20], [3; 20]), Some(head))
+            .unwrap();
+        let event = outbox.front().unwrap().unwrap();
+        assert_eq!((event.seq, event.id), (seq, event_id));
+        let mut repo = source.repository.clone();
+        for haves in [vec![], vec![head], vec![[99; 20]]] {
+            let bundle = repo.export(&event, &haves).unwrap();
+            assert_eq!(bundle.file.metadata().unwrap().mode() & 0o7777, 0o600);
+            assert!(bundle.file.metadata().unwrap().len() > 256 * 1024);
+            let incoming = destination
+                .repository
+                .receive(bundle, 4 * 1024 * 1024)
+                .unwrap();
+            destination.repository.import(&incoming, head).unwrap();
+            assert!(destination.repository.contains(head).unwrap());
+            assert!(destination.repository.clone().pending().unwrap().is_empty());
+            assert_eq!(destination.repository.acknowledged().unwrap(), None);
+        }
+        assert_eq!(fs::read_dir(source.root.join("spool")).unwrap().count(), 0);
+        assert_eq!(
+            fs::read_dir(destination.root.join("spool"))
+                .unwrap()
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn restart_retains_pin_and_stale_receipt_preserves_acknowledged_head() {
+        let fixture = Fixture::new();
+        let head = fixture.commit();
+        let mut repo = fixture.repository.clone();
+        repo.acknowledge_and_sync(head).unwrap();
+        for outcome in [1u8, 2, 5] {
+            let mut outbox = fixture.outbox();
+            let (seq, event_id) = outbox
+                .append(&outbox::captured(head, [2; 20], [3; 20]), Some(head))
+                .unwrap();
+            drop(outbox);
+            let mut outbox = fixture.outbox();
+            assert_eq!(repo.pending().unwrap(), [event_id]);
+            outbox.after_bundle(seq).unwrap();
+            outbox
+                .acknowledge(&Frame {
+                    kind: 2,
+                    stream: 0,
+                    payload: conn::tagged(
+                        3,
+                        &[conn::field(1, seq.to_be_bytes()), conn::field(2, [outcome])],
+                    ),
+                })
+                .unwrap();
+            assert!(outbox.front().unwrap().is_none());
+            assert!(repo.pending().unwrap().is_empty());
+            assert_eq!(repo.acknowledged().unwrap(), Some(head));
+        }
+        let mut orphan = fixture.repository.clone();
+        orphan.pin_and_sync([22; 16], head).unwrap();
+        drop(fixture.outbox());
+        assert!(orphan.pending().unwrap().is_empty());
+    }
+
+    #[test]
+    fn event_service_replays_real_bundle_and_waits_for_authenticated_receipt() {
+        use crate::hooks::EventSink;
+        use std::sync::{
+            atomic::{AtomicU32, Ordering},
+            Arc,
+        };
+        let source = Fixture::new();
+        let destination = Fixture::new();
+        let head = source.commit();
+        let ids = Arc::new(AtomicU32::new(10));
+        let allocator = ids.clone();
+        let events = crate::event_service::Events::new(
+            source.outbox(),
+            source.repository.clone(),
+            move || Ok(allocator.fetch_add(1, Ordering::SeqCst)),
+        )
+        .unwrap();
+        events.ready().unwrap();
+        let (seq, event_id) = events
+            .append(&outbox::captured(head, [2; 20], [3; 20]), Some(head))
+            .unwrap();
+        let first = events.poll().unwrap().remove(0);
+        assert_eq!((first.kind, first.stream), (6, 10));
+        assert_eq!(first.payload[..2], [1, 0]);
+        assert_eq!(source.repository.clone().pending().unwrap(), [event_id]);
+        // An early close cannot certify import or delete the durable entry.
+        assert!(events
+            .frame(&Frame {
+                kind: 6,
+                stream: 10,
+                payload: vec![7]
+            })
+            .is_err());
+        events.reconnect().unwrap();
+        let mut bundle = Vec::new();
+        loop {
+            let frames = events.poll().unwrap();
+            assert_eq!(frames.len(), 1);
+            let frame = &frames[0];
+            assert_eq!((frame.kind, frame.stream), (6, 11));
+            if frame.payload[0] == 2 {
+                break;
+            }
+            assert_eq!(&frame.payload[..2], &[1, 0]);
+            bundle.extend_from_slice(&frame.payload[2..]);
+            let mut window = vec![6];
+            window.extend(((frame.payload.len() - 2) as u32).to_be_bytes());
+            assert!(events
+                .frame(&Frame {
+                    kind: 6,
+                    stream: 11,
+                    payload: window
+                })
+                .unwrap()
+                .is_none());
+        }
+        let incoming = destination
+            .repository
+            .receive(&bundle[..], 4 * 1024 * 1024)
+            .unwrap();
+        destination.repository.import(&incoming, head).unwrap();
+        assert!(destination.repository.contains(head).unwrap());
+        assert_eq!(
+            destination
+                .repository
+                .command(&["show", &format!("{}:file", hex(&head))])
+                .unwrap(),
+            fs::read(source.root.join("blob")).unwrap(),
+        );
+        let durable = events
+            .frame(&Frame {
+                kind: 6,
+                stream: 11,
+                payload: vec![7],
+            })
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            crate::conn::Durable::decode(&durable.payload).unwrap().seq,
+            seq
+        );
+        assert!(events.poll().unwrap().is_empty());
+        assert_eq!(source.repository.clone().pending().unwrap(), [event_id]);
+        assert!(events
+            .frame(&Frame {
+                kind: 2,
+                stream: 0,
+                payload: conn::tagged(
+                    3,
+                    &[conn::field(1, (seq + 1).to_be_bytes()), conn::field(2, [1]),]
+                ),
+            })
+            .is_err());
+        assert_eq!(source.repository.clone().pending().unwrap(), [event_id]);
+        assert_eq!(source.repository.acknowledged().unwrap(), None);
+        events
+            .frame(&Frame {
+                kind: 2,
+                stream: 0,
+                payload: conn::tagged(3, &[conn::field(1, seq.to_be_bytes()), conn::field(2, [1])]),
+            })
+            .unwrap();
+        assert!(events.poll().unwrap().is_empty());
+        assert!(source.repository.clone().pending().unwrap().is_empty());
+        assert_eq!(source.repository.acknowledged().unwrap(), Some(head));
+        assert_eq!(ids.load(Ordering::SeqCst), 12);
+    }
+
+    #[test]
+    fn invalid_or_oversized_incoming_never_advances_a_ref_and_removes_spool() {
+        let fixture = Fixture::new();
+        assert!(fixture.repository.receive(&b"12345"[..], 4).is_err());
+        assert!(fixture.repository.receive(&b""[..], 4).is_err());
+        assert!(fixture.repository.receive(&b"x"[..], 0).is_err());
+        let spool = fixture
+            .repository
+            .receive(&b"invalid bundle"[..], 40)
+            .unwrap();
+        assert!(fixture.repository.import(&spool, [1; 20]).is_err());
+        drop(spool);
+        assert_eq!(fs::read_dir(fixture.root.join("spool")).unwrap().count(), 0);
+        assert_eq!(fixture.repository.acknowledged().unwrap(), None);
+        assert!(fixture
+            .repository
+            .command(&["show-ref", "--verify", "refs/smithers/incoming/head"])
+            .is_err());
+        assert!(Repository::open(&fixture.root.join("repo"), &fixture.root.join("spool")).is_err());
+    }
+
+    #[cfg(all(feature = "killpoints", debug_assertions))]
+    #[test]
+    fn k3_crash_child() {
+        let Some(root) = std::env::var_os("W2_K3_ROOT") else {
+            return;
+        };
+        let root = PathBuf::from(root);
+        let git = std::env::var_os("PATH")
+            .and_then(|paths| {
+                std::env::split_paths(&paths)
+                    .map(|p| p.join("git"))
+                    .find(|p| p.is_file())
+            })
+            .unwrap();
+        let repository =
+            Repository::checked(&git, &root.join("repo"), &root.join("spool")).unwrap();
+        let head = id::<20>(std::env::var("W2_K3_HEAD").unwrap().as_bytes()).unwrap();
+        let fixture = Fixture { root, repository };
+        fixture
+            .outbox()
+            .append(&outbox::captured(head, [2; 20], [3; 20]), Some(head))
+            .unwrap();
+        panic!("K3 must terminate after durable append");
+    }
+
+    #[cfg(all(feature = "killpoints", debug_assertions))]
+    #[test]
+    fn k3_durable_event_and_real_git_pin_survive_process_crash_ten_times() {
+        for _ in 0..10 {
+            let fixture = Fixture::new();
+            let head = fixture.commit();
+            let status = Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "git::tests::k3_crash_child", "--nocapture"])
+                .env("W2_K3_ROOT", &fixture.root)
+                .env("W2_K3_HEAD", hex(&head))
+                .env("SMITHERS_MACHINED_KILL_AT", "K3")
+                .stdout(Stdio::null())
+                .status()
+                .unwrap();
+            assert_eq!(status.code(), Some(73));
+            let outbox = fixture.outbox();
+            let event = outbox.front().unwrap().unwrap();
+            assert_eq!(event.seq, 1);
+            assert_eq!(event.captured_head(), Some(head));
+            assert_eq!(fixture.repository.clone().pending().unwrap(), [event.id]);
+            let mut repository = fixture.repository.clone();
+            let mut bundle = repository.export(&event, &[]).unwrap();
+            let mut signature = [0; 16];
+            bundle.read_exact(&mut signature).unwrap();
+            assert_eq!(&signature, b"# v2 git bundle\n");
+            assert_eq!(repository.acknowledged().unwrap(), None);
+        }
+    }
+    #[test]
+    fn incoming_frames_import_real_bundle_without_publishing_advertised_refs() {
+        use crate::hooks::EventSink;
+        let source = Fixture::new();
+        let destination = Fixture::new();
+        let head = source.commit();
+        let events = crate::event_service::Events::new(
+            destination.outbox(),
+            destination.repository.clone(),
+            || Ok(1),
+        )
+        .unwrap()
+        .with_incoming(std::sync::Arc::new(destination.repository.clone()));
+        for stream in [0x8000_0000u32, 0x8000_0001] {
+            let reference = format!("refs/smithers/xfer/{stream}");
+            source
+                .repository
+                .command(&["update-ref", &reference, &hex(&head)])
+                .unwrap();
+            let bytes = source
+                .repository
+                .command(&["bundle", "create", "-", &reference])
+                .unwrap();
+            assert!(bytes.len() > crate::credit::INITIAL_CREDIT);
+            for chunk in bytes.chunks(crate::credit::MAX_DATA) {
+                let frame = Frame {
+                    kind: 6,
+                    stream,
+                    payload: [vec![1, 0], chunk.to_vec()].concat(),
+                };
+                let window = events.frame(&frame).unwrap().unwrap();
+                assert_eq!((window.kind, window.stream), (6, stream));
+                assert_eq!(
+                    window.payload,
+                    [vec![6], (chunk.len() as u32).to_be_bytes().to_vec()].concat()
+                );
+            }
+            assert!(events
+                .frame(&Frame {
+                    kind: 6,
+                    stream,
+                    payload: vec![2, 0]
+                })
+                .unwrap()
+                .is_none());
+            let deadline = Instant::now() + Duration::from_secs(10);
+            loop {
+                let frames = events.poll().unwrap();
+                if let Some(frame) = frames.first() {
+                    assert_eq!((frame.stream, &frame.payload), (stream, &vec![7]));
+                    break;
+                }
+                assert!(Instant::now() < deadline);
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            assert!(destination.repository.contains(head).unwrap());
+            assert_eq!(
+                destination
+                    .repository
+                    .command(&["for-each-ref", "--format=%(refname) %(objectname)"])
+                    .unwrap(),
+                format!("refs/smithers/incoming/{} {}\n", hex(&head), hex(&head)).as_bytes()
+            );
+            assert_eq!(destination.repository.acknowledged().unwrap(), None);
+            assert_eq!(
+                fs::read_dir(destination.root.join("spool"))
+                    .unwrap()
+                    .count(),
+                0
+            );
+        }
+    }
+
+    #[test]
+    fn incoming_bundle_identity_and_corruption_refuse_close_and_pins() {
+        use crate::hooks::EventSink;
+        let source = Fixture::new();
+        let head = source.commit();
+        for mode in [
+            "wrong-stream",
+            "advertised-main",
+            "multiple",
+            "truncated",
+            "corrupt",
+        ] {
+            let destination = Fixture::new();
+            let stream = 0x8000_0000u32;
+            let reference = match mode {
+                "wrong-stream" => format!("refs/smithers/xfer/{}", stream + 1),
+                "advertised-main" => "refs/heads/main".into(),
+                _ => format!("refs/smithers/xfer/{stream}"),
+            };
+            source
+                .repository
+                .command(&["update-ref", &reference, &hex(&head)])
+                .unwrap();
+            let mut bytes = if mode == "multiple" {
+                source
+                    .repository
+                    .command(&["update-ref", "refs/heads/extra", &hex(&head)])
+                    .unwrap();
+                source
+                    .repository
+                    .command(&["bundle", "create", "-", &reference, "refs/heads/extra"])
+                    .unwrap()
+            } else {
+                source
+                    .repository
+                    .command(&["bundle", "create", "-", &reference])
+                    .unwrap()
+            };
+            if mode == "truncated" {
+                bytes.truncate(bytes.len() / 2);
+            }
+            if mode == "corrupt" {
+                let last = bytes.len() - 1;
+                bytes[last] ^= 1;
+            }
+            let events = crate::event_service::Events::new(
+                destination.outbox(),
+                destination.repository.clone(),
+                || Ok(1),
+            )
+            .unwrap()
+            .with_incoming(std::sync::Arc::new(destination.repository.clone()));
+            for chunk in bytes.chunks(crate::credit::MAX_DATA) {
+                events
+                    .frame(&Frame {
+                        kind: 6,
+                        stream,
+                        payload: [vec![1, 0], chunk.to_vec()].concat(),
+                    })
+                    .unwrap();
+            }
+            events
+                .frame(&Frame {
+                    kind: 6,
+                    stream,
+                    payload: vec![2, 0],
+                })
+                .unwrap();
+            let deadline = Instant::now() + Duration::from_secs(10);
+            loop {
+                let frames = events.poll().unwrap();
+                if let Some(frame) = frames.first() {
+                    assert_eq!(frame.payload[0], 255, "{mode}");
+                    break;
+                }
+                assert!(Instant::now() < deadline);
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            assert!(
+                destination
+                    .repository
+                    .command(&["for-each-ref"])
+                    .unwrap()
+                    .is_empty(),
+                "{mode}"
+            );
+            assert_eq!(
+                fs::read_dir(destination.root.join("spool"))
+                    .unwrap()
+                    .count(),
+                0,
+                "{mode}"
+            );
+        }
+    }
+    #[test]
+    fn incoming_objects_and_outbox_receipts_progress_in_both_directions() {
+        use crate::hooks::EventSink;
+        let source = Fixture::new();
+        let destination = Fixture::new();
+        let incoming_head = source.commit();
+        let captured_head = destination.commit();
+        let mut outbox = destination.outbox();
+        outbox
+            .append(
+                &outbox::captured(captured_head, [2; 20], [3; 20]),
+                Some(captured_head),
+            )
+            .unwrap();
+        let events =
+            crate::event_service::Events::new(outbox, destination.repository.clone(), || Ok(1))
+                .unwrap()
+                .with_incoming(std::sync::Arc::new(destination.repository.clone()));
+        let stream = 0x8000_0000;
+        source
+            .repository
+            .command(&[
+                "update-ref",
+                "refs/smithers/xfer/2147483648",
+                &hex(&incoming_head),
+            ])
+            .unwrap();
+        let bytes = source
+            .repository
+            .command(&["bundle", "create", "-", "refs/smithers/xfer/2147483648"])
+            .unwrap();
+        let mut chunks = bytes.chunks(crate::credit::MAX_DATA);
+        let mut sent_eof = false;
+        let mut imported = false;
+        let mut returned = Vec::new();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !imported || !events.drained().unwrap() {
+            if let Some(chunk) = chunks.next() {
+                let window = events
+                    .frame(&Frame {
+                        kind: 6,
+                        stream,
+                        payload: [vec![1, 0], chunk.to_vec()].concat(),
+                    })
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(window.stream, stream);
+                assert_eq!(window.payload[0], 6);
+            } else if !sent_eof {
+                assert!(events
+                    .frame(&Frame {
+                        kind: 6,
+                        stream,
+                        payload: vec![2, 0]
+                    })
+                    .unwrap()
+                    .is_none());
+                sent_eof = true;
+            }
+            for frame in events.poll().unwrap() {
+                assert_eq!(frame.kind, 6);
+                if frame.stream == stream {
+                    assert_eq!(frame.payload, vec![7]);
+                    assert!(!imported);
+                    imported = true;
+                } else {
+                    assert_eq!(frame.stream, 1);
+                    match frame.payload[0] {
+                        1 => {
+                            returned.extend_from_slice(&frame.payload[2..]);
+                            assert!(events
+                                .frame(&Frame {
+                                    kind: 6,
+                                    stream: 1,
+                                    payload: [
+                                        vec![6],
+                                        ((frame.payload.len() - 2) as u32).to_be_bytes().to_vec()
+                                    ]
+                                    .concat()
+                                })
+                                .unwrap()
+                                .is_none());
+                        }
+                        2 => {
+                            let frame = events
+                                .frame(&Frame {
+                                    kind: 6,
+                                    stream: 1,
+                                    payload: vec![7],
+                                })
+                                .unwrap()
+                                .unwrap();
+                            let event = conn::Durable::decode(&frame.payload).unwrap();
+                            assert_eq!(event.captured_head(), Some(captured_head));
+                            events
+                                .frame(&Frame {
+                                    kind: 2,
+                                    stream: 0,
+                                    payload: conn::tagged(
+                                        3,
+                                        &[
+                                            conn::field(1, event.seq.to_be_bytes()),
+                                            conn::field(2, [1]),
+                                        ],
+                                    ),
+                                })
+                                .unwrap();
+                        }
+                        _ => panic!("unexpected outgoing bundle frame"),
+                    }
+                }
+            }
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(returned.len() > crate::credit::INITIAL_CREDIT);
+        assert!(destination.repository.contains(incoming_head).unwrap());
+        assert_eq!(
+            destination.repository.acknowledged().unwrap(),
+            Some(captured_head)
+        );
+        assert!(destination.repository.clone().pending().unwrap().is_empty());
+        assert_eq!(
+            fs::read_dir(destination.root.join("spool"))
+                .unwrap()
+                .count(),
+            0
+        );
+    }
+    #[test]
+    fn imported_host_commit_can_drive_native_wake_without_publishing_a_bookmark() {
+        use crate::hooks::EventSink;
+        let (source_dir, source) = crate::native_core::tests::fixture();
+        let (destination_dir, destination) = crate::native_core::tests::fixture();
+        fs::write(
+            source_dir.path().join("workspace/upstream.txt"),
+            b"received from host\n",
+        )
+        .unwrap();
+        let head = source.native.snapshot().unwrap().0;
+        let old = destination.native.current().unwrap().0;
+        destination.git.clone().acknowledge_and_sync(old).unwrap();
+        assert!(!destination.native.contains(head).unwrap());
+        source
+            .git
+            .command(&["update-ref", "refs/smithers/xfer/2147483648", &hex(&head)])
+            .unwrap();
+        let bytes = source
+            .git
+            .command(&["bundle", "create", "-", "refs/smithers/xfer/2147483648"])
+            .unwrap();
+        for chunk in bytes.chunks(crate::credit::MAX_DATA) {
+            destination
+                .events
+                .frame(&Frame {
+                    kind: 6,
+                    stream: 0x8000_0000,
+                    payload: [vec![1, 0], chunk.to_vec()].concat(),
+                })
+                .unwrap();
+        }
+        destination
+            .events
+            .frame(&Frame {
+                kind: 6,
+                stream: 0x8000_0000,
+                payload: vec![2, 0],
+            })
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let frames = destination.events.poll().unwrap();
+            if let Some(frame) = frames.first() {
+                assert_eq!(frame.payload, vec![7]);
+                break;
+            }
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(destination.native.contains(head).unwrap());
+        assert_eq!(
+            destination.native.current().unwrap().0,
+            old,
+            "import moved working copy"
+        );
+        assert!(!destination_dir
+            .path()
+            .join("workspace/upstream.txt")
+            .exists());
+        let wake = crate::native_core::tests::call(destination.clone(), 5, &[conn::field(1, head)]);
+        let result = conn::fields("response", &wake.payload[1..]).unwrap()[1].1;
+        assert_eq!(result[0], 5, "{result:?}");
+        let outcome = conn::fields("result5", &result[1..]).unwrap()[0].1;
+        assert_eq!(outcome[0], 2);
+        assert_eq!(destination.native.current().unwrap().0, head);
+        assert_eq!(
+            fs::read(destination_dir.path().join("workspace/upstream.txt")).unwrap(),
+            b"received from host\n"
+        );
+        assert_eq!(destination.git.acknowledged().unwrap(), Some(head));
+        assert!(destination
+            .git
+            .command(&["for-each-ref", "refs/heads", "refs/tags", "refs/remotes"])
+            .unwrap()
+            .is_empty());
+    }
+}

@@ -1,0 +1,352 @@
+package compose
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/smithersai/smithers/packages/backend/flowhost"
+	"github.com/smithersai/smithers/packages/backend/flowruntime"
+	workspaceapi "github.com/smithersai/smithers/packages/backend/workspace"
+)
+
+type recordingBoxes struct {
+	prepared  []string
+	retired   []string
+	awake     []string
+	restarted []string
+	released  []string
+	lost      error
+	env       map[string]string
+}
+
+func (b *recordingBoxes) RestartLostBox(_ context.Context, workspaceID string, _, _ int64) error {
+	b.restarted = append(b.restarted, workspaceID)
+	return b.lost
+}
+
+func (b *recordingBoxes) KeepBoxAwake(_ context.Context, workspaceID string) {
+	b.awake = append(b.awake, workspaceID)
+}
+
+func (b *recordingBoxes) PrepareBoxHost(_ context.Context, hostID, workspaceID string, _, _ int64) (map[string]string, error) {
+	b.prepared = append(b.prepared, hostID+"@"+workspaceID)
+	return b.env, nil
+}
+func (b *recordingBoxes) RetireBoxHostCredential(_ context.Context, hostID string, _ int64) {
+	b.retired = append(b.retired, hostID)
+}
+func (b *recordingBoxes) ReleaseFailedFlowHostMachine(_ context.Context, binding flowhost.Binding) error {
+	b.released = append(b.released, binding.WorkspaceID)
+	return nil
+}
+
+type recordingHostTransport struct {
+	refusingHostTransport
+	started []flowhost.HostLaunch
+	stopped []flowhost.Binding
+	fail    error
+}
+
+func (r *recordingHostTransport) StartFlowHost(_ context.Context, launch flowhost.HostLaunch) (flowhost.Connection, error) {
+	r.started = append(r.started, launch)
+	return flowhost.Connection{}, r.fail
+}
+
+func (r *recordingHostTransport) StopFlowHost(_ context.Context, binding flowhost.Binding) error {
+	r.stopped = append(r.stopped, binding)
+	return nil
+}
+
+type revisionHostTransport struct {
+	recordingHostTransport
+	revision  string
+	sourceErr error
+}
+
+func (r *revisionHostTransport) ResolveFlowHostSource(context.Context, flowhost.Authority) (string, error) {
+	return r.revision, r.sourceErr
+}
+
+func TestRoleDispatchStaleSourceRevisionFailsOnceVisibly(t *testing.T) {
+	boxes := &recordingBoxes{env: map[string]string{}}
+	transport := &revisionHostTransport{revision: "new-revision"}
+	launcher := newBoxHostLauncher(transport, boxes, nil)
+	launch := flowhost.HostLaunch{
+		Binding:   flowhost.Binding{ID: "host-1", SourceRevision: "registered-revision"},
+		Authority: flowhost.Authority{WorkspaceID: "box", Target: flowruntime.Target{BindingKind: "repository-job-dispatch"}},
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		_, err := launcher.StartFlowHost(context.Background(), launch)
+		var failure flowruntime.Failure
+		require.ErrorAs(t, err, &failure)
+		require.Equal(t, "runtime_source_revision_mismatch", failure.FlowRuntimeCode())
+		require.False(t, failure.FlowRuntimeRetryable(), "dispatch must fail once rather than retry host start")
+	}
+	require.Empty(t, boxes.prepared)
+	require.Empty(t, transport.started)
+}
+
+// Every start of a box's coding host carries that start's landing credential;
+// a failed start and every stop revoke it (#2198).
+func TestBoxHostLauncherMintsPerStartAndRevokes(t *testing.T) {
+	boxes := &recordingBoxes{env: map[string]string{"SMITHERS_JJHUB_TOKEN": "landing"}}
+	transport := &recordingHostTransport{}
+	launcher := newBoxHostLauncher(transport, boxes, nil)
+	launch := flowhost.HostLaunch{Binding: flowhost.Binding{ID: "host-1", UserID: 9, BindingKind: "browser-flow"}, Authority: flowhost.Authority{WorkspaceID: "box", UserID: 9, Target: flowruntime.Target{BindingKind: "browser-flow"}}}
+	_, err := launcher.StartFlowHost(context.Background(), launch)
+	require.NoError(t, err)
+	require.Equal(t, []string{"host-1@box"}, boxes.prepared)
+	require.Equal(t, "landing", transport.started[0].Environment["SMITHERS_JJHUB_TOKEN"])
+	require.Empty(t, boxes.retired)
+
+	transport.fail = errors.New("host did not become ready")
+	_, err = launcher.StartFlowHost(context.Background(), launch)
+	require.Error(t, err)
+	require.Equal(t, []string{"host-1"}, boxes.retired)
+	require.Equal(t, []flowhost.Binding{launch.Binding}, transport.stopped)
+
+	require.NoError(t, launcher.StopFlowHost(context.Background(), launch.Binding))
+	require.Equal(t, []string{"host-1", "host-1"}, boxes.retired)
+	// A start the resolver refuses after launch (identity, checkpoint) is revoked
+	// through the admitting launcher too.
+	admitted := &admittedFlowLauncher{Launcher: launcher}
+	admitted.AbandonFlowHostStart(context.Background(), launch.Binding)
+	require.Equal(t, []string{"host-1", "host-1", "host-1"}, boxes.retired)
+	// A stop that fails (the box is gone) still revokes first.
+	failing := newBoxHostLauncher(stopFailingTransport{}, boxes, nil)
+	require.Error(t, failing.StopFlowHost(context.Background(), launch.Binding))
+	require.Len(t, boxes.retired, 4)
+	boxes.retired = []string{"host-1", "host-1"}
+
+	// Using a live host keeps its box awake; a host that is not running does not.
+	_, err = launcher.InspectFlowHost(context.Background(), launch)
+	require.ErrorIs(t, err, flowhost.ErrHostNotRunning)
+	require.Empty(t, boxes.awake)
+	live := newBoxHostLauncher(liveHostTransport{}, boxes, nil)
+	launch.Binding.WorkspaceID = "box"
+	_, err = live.InspectFlowHost(context.Background(), launch)
+	require.NoError(t, err)
+	require.Equal(t, []string{"box"}, boxes.awake)
+}
+
+type liveHostTransport struct{ refusingHostTransport }
+
+func (liveHostTransport) InspectFlowHost(context.Context, flowhost.HostLaunch) (flowhost.Connection, error) {
+	return flowhost.Connection{Endpoint: "http://127.0.0.1:1"}, nil
+}
+
+type stopFailingTransport struct{ refusingHostTransport }
+
+func (stopFailingTransport) StopFlowHost(context.Context, flowhost.Binding) error {
+	return errors.New("box is unreachable")
+}
+
+type stoppedBoxTransport struct {
+	refusingHostTransport
+	lost error
+}
+
+func (t stoppedBoxTransport) InspectFlowHost(context.Context, flowhost.HostLaunch) (flowhost.Connection, error) {
+	return flowhost.Connection{}, fmt.Errorf("%w: box", t.lost)
+}
+
+// After a backend restart the runtime holds no workspace running. Inspecting
+// a progressing run's host starts the box the product still holds running
+// and reports the host not running, so the resolver restarts it and the run
+// carries on; a box stopped on purpose keeps its refusal (#2131). A box the
+// runtime no longer has at all asks the same restart, which replaces it only
+// when the host's journals live outside the box (#1868).
+func TestBoxHostLauncherRestartsALostBox(t *testing.T) {
+	for _, lost := range []error{workspaceapi.ErrWorkspaceStopped, workspaceapi.ErrWorkspaceNotFound} {
+		t.Run(lost.Error(), func(t *testing.T) {
+			boxes := &recordingBoxes{}
+			launcher := newBoxHostLauncher(stoppedBoxTransport{lost: lost}, boxes, nil)
+			launch := flowhost.HostLaunch{Binding: flowhost.Binding{ID: "host-1", UserID: 9, WorkspaceID: "box"}, Authority: flowhost.Authority{WorkspaceID: "box", RepositoryID: 3, UserID: 9}}
+			_, err := launcher.InspectFlowHost(context.Background(), launch)
+			require.ErrorIs(t, err, flowhost.ErrHostNotRunning)
+			require.Equal(t, []string{"box"}, boxes.restarted)
+
+			boxes.lost = errors.New("workspace is not held running")
+			_, err = launcher.InspectFlowHost(context.Background(), launch)
+			require.ErrorIs(t, err, lost)
+			require.NotErrorIs(t, err, flowhost.ErrHostNotRunning)
+			require.Empty(t, boxes.awake)
+		})
+	}
+}
+
+type recordingTargetEnvironment struct {
+	environment map[string]string
+	err         error
+	asked       []flowhost.Authority
+}
+
+func (r *recordingTargetEnvironment) FlowHostEnvironment(_ context.Context, authority flowhost.Authority) (map[string]string, error) {
+	r.asked = append(r.asked, authority)
+	return r.environment, r.err
+}
+
+// An invoked run's host starts with its workflow variables and secrets over
+// the box's agent variables, while every name the catalog, host or Smithers
+// owns stays theirs; a refused workflow environment refuses the start before
+// the box mints a credential.
+func TestBoxHostLauncherAddsTheTargetEnvironment(t *testing.T) {
+	boxes := &recordingBoxes{env: map[string]string{"SMITHERS_JJHUB_TOKEN": "landing", "REGION": "agent-region", "AGENT_ONLY": "agent"}}
+	targets := &recordingTargetEnvironment{environment: map[string]string{
+		"REGION": "workflow-region", "DEPLOY_TOKEN": "secret", "SMITHERS_JJHUB_TOKEN": "forged", "PATH": "/evil", "CATALOG_SET": "forged",
+	}}
+	transport := &recordingHostTransport{}
+	launcher := newBoxHostLauncher(transport, boxes, targets)
+	launch := flowhost.HostLaunch{
+		Binding:   flowhost.Binding{ID: "host-1", UserID: 9, BindingKind: "workflow-invoke"},
+		Authority: flowhost.Authority{WorkspaceID: "box", UserID: 9},
+		Catalog:   flowhost.Catalog{Environment: map[string]string{"CATALOG_SET": "catalog"}},
+	}
+	launch.Authority.Target.BindingKind = "workflow-invoke"
+	_, err := launcher.StartFlowHost(context.Background(), launch)
+	require.NoError(t, err)
+	require.Len(t, targets.asked, 1)
+	require.Equal(t, "workflow-invoke", targets.asked[0].Target.BindingKind)
+	require.Equal(t, map[string]string{
+		"SMITHERS_JJHUB_TOKEN": "landing", "REGION": "workflow-region", "AGENT_ONLY": "agent", "DEPLOY_TOKEN": "secret",
+	}, transport.started[0].Environment)
+
+	targets.err = errors.New("runtime_workspace_shared")
+	_, err = launcher.StartFlowHost(context.Background(), launch)
+	require.ErrorIs(t, err, targets.err)
+	require.Len(t, boxes.prepared, 1, "a refused environment never prepares the box")
+	require.Len(t, transport.started, 1)
+}
+
+type todoWakeBoxes struct {
+	recordingBoxes
+	wakes   []string
+	wakeErr error
+}
+
+func (b *todoWakeBoxes) WakeTodoWorkspace(_ context.Context, item, workspace string, _, _ int64) error {
+	b.wakes = append(b.wakes, item+"@"+workspace)
+	return b.wakeErr
+}
+
+func TestTodoHostWakeRunsOnlyOnStartBeforePreparation(t *testing.T) {
+	boxes := &todoWakeBoxes{}
+	transport := &recordingHostTransport{}
+	launcher := newBoxHostLauncher(transport, boxes, nil)
+	launch := flowhost.HostLaunch{Binding: flowhost.Binding{ID: "host", WorkspaceID: "lane", UserID: 9, BindingKind: "mythical-item"}, Authority: flowhost.Authority{WorkspaceID: "lane", RepositoryID: 3, UserID: 9, Target: flowruntime.Target{BindingKind: "mythical-item", BindingID: "todo"}}}
+	asleep := newBoxHostLauncher(stoppedBoxTransport{lost: workspaceapi.ErrWorkspaceStopped}, boxes, nil)
+	_, err := asleep.InspectFlowHost(context.Background(), launch)
+	require.ErrorIs(t, err, flowhost.ErrHostNotRunning)
+	require.Empty(t, boxes.wakes)
+	require.Empty(t, boxes.restarted, "read inspection must not wake a retained TODO")
+	_, err = launcher.StartFlowHost(context.Background(), launch)
+	require.NoError(t, err)
+	require.Equal(t, []string{"todo@lane"}, boxes.wakes)
+	require.Equal(t, []string{"host@lane"}, boxes.prepared)
+	require.Len(t, transport.started, 1)
+	boxes.wakeErr = errors.New("TODO paused during wake")
+	_, err = launcher.StartFlowHost(context.Background(), launch)
+	require.ErrorIs(t, err, boxes.wakeErr)
+	require.Len(t, boxes.prepared, 1, "denied wake mints no credential")
+	require.Len(t, transport.started, 1, "denied wake dispatches no host")
+}
+
+func TestLearningHostNeverReceivesPublishingCredential(t *testing.T) {
+	source := strings.Repeat("a", 40)
+	launch := flowhost.HostLaunch{
+		Binding:     flowhost.Binding{ID: "learning-host", BindingKind: "learning", SourceRevision: source},
+		Authority:   flowhost.Authority{SourceRevision: source, Target: flowruntime.Target{BindingKind: "learning"}, ExecutionPin: &flowruntime.Pin{Flow: "learning", SourceCommit: source, ExecutionDigest: strings.Repeat("b", 64)}},
+		Environment: map[string]string{"SMITHERS_JJHUB_TOKEN": "caller"},
+	}
+	for _, scenario := range []string{"valid", "missing pin", "wrong flow", "wrong binding", "wrong target", "changed source"} {
+		t.Run(scenario, func(t *testing.T) {
+			current := launch
+			pin := *launch.Authority.ExecutionPin
+			current.Authority.ExecutionPin = &pin
+			switch scenario {
+			case "missing pin":
+				current.Authority.ExecutionPin = nil
+			case "wrong flow":
+				pin.Flow = "todo"
+			case "wrong binding":
+				current.Binding.BindingKind = "todo"
+			case "wrong target":
+				current.Authority.Target.BindingKind = "todo"
+			case "changed source":
+				current.Authority.SourceRevision = strings.Repeat("c", 40)
+			}
+			boxes := &recordingBoxes{env: map[string]string{"SMITHERS_JJHUB_TOKEN": "publisher"}}
+			transport := &recordingHostTransport{}
+			_, err := newBoxHostLauncher(transport, boxes, nil).StartFlowHost(context.Background(), current)
+			require.Empty(t, boxes.prepared)
+			if scenario != "valid" {
+				require.Error(t, err)
+				require.Empty(t, transport.started)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, transport.started, 1)
+			require.Empty(t, transport.started[0].Environment)
+			require.Equal(t, launch.Authority.ExecutionPin, transport.started[0].Authority.ExecutionPin)
+		})
+	}
+}
+
+// Only a flow host kind that may land gets its box's landing credential.
+// Learning and review load a local pinned source, and their guest refuses any
+// landing binding (real install run 15, #3783). An unnamed kind, or a binding
+// whose kind differs from its authority's, gets none either. A pinned-source
+// kind on only one side is no authenticated pin: the start is refused.
+func TestOnlyLandingFlowHostKindsReceiveTheBoxCredential(t *testing.T) {
+	source := strings.Repeat("a", 40)
+	for _, c := range []struct {
+		target, binding string
+		lands, refused  bool
+	}{
+		{"learning", "learning", false, false},
+		{"review", "review", false, false},
+		{"future-kind", "future-kind", false, false},
+		{"browser-flow", "future-kind", false, false},
+		{"browser-flow", "review", false, true},
+		{"review", "browser-flow", false, true},
+		{"learning", "review", false, true},
+		{"browser-flow", "browser-flow", true, false},
+		{"agent-session", "agent-session", true, false},
+		{"workflow-invoke", "workflow-invoke", true, false},
+	} {
+		t.Run(c.target+"/"+c.binding, func(t *testing.T) {
+			launch := flowhost.HostLaunch{
+				Binding: flowhost.Binding{ID: "host", WorkspaceID: "box", UserID: 9, BindingKind: c.binding, SourceRevision: source},
+				Authority: flowhost.Authority{WorkspaceID: "box", UserID: 9, SourceRevision: source, Target: flowruntime.Target{BindingKind: c.target},
+					ExecutionPin: &flowruntime.Pin{Flow: c.target, SourceCommit: source, ExecutionDigest: strings.Repeat("b", 64)}},
+				Environment: map[string]string{"SMITHERS_JJHUB_TOKEN": "caller"},
+			}
+			boxes := &recordingBoxes{env: map[string]string{"SMITHERS_JJHUB_TOKEN": "landing", "SMITHERS_JJHUB_API_URL": "https://install.test/api", "SMITHERS_CACHE_TOKEN": "cache"}}
+			transport := &recordingHostTransport{}
+			_, err := newBoxHostLauncher(transport, boxes, nil).StartFlowHost(context.Background(), launch)
+			if c.refused {
+				require.Error(t, err)
+				require.Empty(t, boxes.prepared)
+				require.Empty(t, transport.started)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, transport.started, 1)
+			started := transport.started[0].Environment
+			if c.lands {
+				require.Equal(t, []string{"host@box"}, boxes.prepared)
+				require.Equal(t, "landing", started["SMITHERS_JJHUB_TOKEN"])
+				return
+			}
+			require.Empty(t, boxes.prepared, "no landing credential is minted")
+			for _, name := range []string{"SMITHERS_JJHUB_TOKEN", "SMITHERS_JJHUB_API_URL", "SMITHERS_CACHE_TOKEN"} {
+				require.NotContains(t, started, name)
+			}
+		})
+	}
+}

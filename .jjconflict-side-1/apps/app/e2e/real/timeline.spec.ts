@@ -1,0 +1,273 @@
+import { readFileSync } from "node:fs"
+import { test, expect, type Page } from "@playwright/test"
+import { memberRequest } from "./support/seed-stack"
+import { scenario } from "./coverage/types"
+
+test("a committed live TODO reaches both members through the install seam", scenario("timeline.live-todo-both-members", {
+  capabilities: [],
+  coverage: ["action:todo", "host:local", "path:success", "path:persistence", "path:keyboard", "door:button", "surface:timeline", "dimension:keyboard", "dimension:multi-member", "dimension:private-hide", "evidence:conversation-api-readback"]
+}), async ({ browser }) => {
+  const host = JSON.parse(readFileSync(process.env.SMITHERS_TIMELINE_INSTALL!, "utf8")) as {
+    origin: string; repository: string; members: Record<string, Array<{ name: string; value: string }>>; todos: { live: number }
+  }
+  const contexts = []
+  try {
+    for (const [who, width] of [["Maya", 1440], ["Alice", 900]] as const) {
+      const context = await browser.newContext({ baseURL: host.origin, viewport: { width, height: 1000 } })
+      contexts.push(context)
+      await context.addCookies(host.members[who]!.map(cookie => ({ ...cookie, url: host.origin })))
+      const page = await context.newPage()
+      await page.goto(`/${host.repository}`)
+      const timeline = page.getByRole("navigation", { name: "Timeline", exact: true })
+      if (width === 900) {
+        await expect(timeline).toBeHidden()
+        await page.setViewportSize({ width: 1440, height: 1000 })
+      }
+      const line = timeline.locator(`[data-entry="todo:${host.todos.live}"]`)
+      await expect(line).toHaveCount(1)
+      await expect(line).toHaveAttribute("data-tone", "live")
+      await line.getByRole("button").first().press("Enter")
+      await expect(page.locator(`[data-message-id="todo:${host.todos.live}"]`)).toBeInViewport()
+      await expect(page.getByTestId("composer-input")).toBeEditable()
+      const history = await memberRequest(page, "GET", "/api/conversations/main")
+      expect(history.status).toBe(200)
+      expect(history.body.entries.find((entry: any) => entry.subject?.n === host.todos.live).subject).toMatchObject({ state: "working", tone: "live" })
+      if (who === "Alice") {
+        const hidden = await memberRequest(page, "PUT", "/api/conversations/main/view-state", { toasts_hidden: true }, "live-entry-hide")
+        expect(hidden.status).toBe(200)
+        await page.reload()
+        await expect(line).toHaveCount(1)
+        await expect(line).toHaveAttribute("data-tone", "live")
+        expect((await memberRequest(page, "GET", "/api/conversations/main/view-state")).body.toasts_hidden).toBe(true)
+        await line.getByRole("button").first().press("Enter")
+        await expect(page.locator(`[data-message-id="todo:${host.todos.live}"]`)).toBeInViewport()
+        await expect(page.getByTestId("composer-input")).toBeEditable()
+        const maya = contexts[0]!.pages()[0]!
+        expect((await memberRequest(maya, "GET", "/api/conversations/main/view-state")).body.toasts_hidden).not.toBe(true)
+        await expect(maya.getByRole("navigation", { name: "Timeline", exact: true }).locator(`[data-entry="todo:${host.todos.live}"]`)).toHaveAttribute("data-tone", "live")
+      }
+    }
+  } finally { for (const context of contexts) await context.close() }
+})
+
+// TestConversationTimelineInstallBrowser owns a real composed install,
+// PostgreSQL and GitHub fake. No browser route or live frame is intercepted.
+test("shared TODO entries reach both members' timeline and narrow edge", scenario("timeline.shared-entries-narrow-edge", {
+  capabilities: [],
+  coverage: ["action:todo", "host:local", "path:success", "path:persistence", "path:keyboard", "door:button", "surface:timeline", "dimension:keyboard", "dimension:multi-member", "dimension:narrow-edge", "evidence:conversation-api-readback"]
+}), async ({ browser }) => {
+  const host = JSON.parse(readFileSync(process.env.SMITHERS_TIMELINE_INSTALL!, "utf8")) as {
+    origin: string; repository: string; members: Record<string, Array<{ name: string; value: string }>>;
+    todos: { ready: number; ask: number; fail: number; live: number }
+  }
+  const member = async (who: string, width: number) => {
+    const context = await browser.newContext({ baseURL: host.origin, viewport: { width, height: 1000 } })
+    await context.addCookies(host.members[who]!.map(cookie => ({ ...cookie, url: host.origin })))
+    const page = await context.newPage()
+    await page.goto(`/${host.repository}`)
+    await expect(page.getByTestId("composer-input")).toBeEditable()
+    return { context, page }
+  }
+  const maya = await member("Maya", 1440), alice = await member("Alice", 900)
+  try {
+    const timeline = (page: Page) => page.getByRole("navigation", { name: "Timeline", exact: true })
+    const line = (page: Page, n: number) => timeline(page).locator(`[data-entry="todo:${n}"]`)
+    await expect(timeline(maya.page)).toBeVisible()
+    for (const [n, tone] of [[host.todos.live, "live"], [host.todos.ask, "attention"], [host.todos.fail, "failed"], [host.todos.ready, "quiet"]] as const) {
+      await expect(line(maya.page, n)).toHaveAttribute("data-tone", tone)
+      await expect(line(maya.page, n)).toHaveCount(1)
+    }
+    await expect(line(maya.page, host.todos.ask).getByRole("button", { name: "Answer", exact: true })).toBeVisible()
+    await expect(line(maya.page, host.todos.fail).getByRole("button", { name: "Retry", exact: true })).toBeVisible()
+    await expect(line(maya.page, host.todos.ready).getByRole("button", { name: "Merge", exact: true })).toBeVisible()
+    await expect(timeline(alice.page)).toBeHidden()
+    await alice.page.setViewportSize({ width: 1440, height: 1000 })
+    await expect(line(alice.page, host.todos.ask).getByRole("button", { name: "Answer", exact: true })).toBeVisible()
+    await expect(line(alice.page, host.todos.ready).getByRole("button", { name: "Merge", exact: true })).toHaveCount(0)
+    // Jump uses the shared card's real transcript address and leaves Chat usable.
+    await line(maya.page, host.todos.ask).getByRole("button").first().press("Enter")
+    await expect(maya.page.locator(`[data-message-id="todo:${host.todos.ask}"]`)).toBeInViewport()
+    const history = await memberRequest(alice.page, "GET", "/api/conversations/main")
+    expect(history.status).toBe(200)
+    const subjects = history.body.entries.filter((entry: any) => entry.subject)
+    expect(subjects.map((entry: any) => entry.subject.n)).toEqual([host.todos.ready, host.todos.ask, host.todos.live, host.todos.fail])
+    // Hiding is a private production view-state write; entries survive reload.
+    const hidden = await memberRequest(alice.page, "PUT", "/api/conversations/main/view-state", { toasts_hidden: true }, "timeline-hide")
+    expect(hidden.status).toBe(200)
+    await alice.page.reload()
+    await expect(line(alice.page, host.todos.fail)).toHaveAttribute("data-tone", "failed")
+    expect((await memberRequest(maya.page, "GET", "/api/conversations/main/view-state")).body.toasts_hidden).not.toBe(true)
+    await alice.page.setViewportSize({ width: 900, height: 1000 })
+    await expect(timeline(alice.page)).toBeHidden()
+    // The live entry is below the older ASK card; the edge retains its address.
+    await expect(alice.page.getByTestId("composer-input")).toBeEditable()
+    await expect(maya.page.getByTestId("composer-input")).toBeEditable()
+  } finally { await maya.context.close(); await alice.context.close() }
+})
+
+// This install driver stops before any file edit, independently of Ready's
+// authenticated guest mutation prerequisite. HTTP and live are never mocked.
+test("shared attention and live entries preserve actions and private hiding", scenario("timeline.attention-actions-private-hide", {
+  capabilities: [],
+  coverage: ["action:todo.answer", "action:todo.retry", "host:local", "path:success", "path:persistence", "path:keyboard", "door:button", "surface:timeline", "dimension:keyboard", "dimension:private-hide", "evidence:retry-admission-and-conversation-readback"]
+}), async ({ browser }) => {
+  const host = JSON.parse(readFileSync(process.env.SMITHERS_TIMELINE_INSTALL!, "utf8")) as {
+    origin: string; repository: string; members: Record<string, Array<{ name: string; value: string }>>;
+    todos: { ask: number; live: number; aliceFail: number; mayaFail: number }
+  }
+  const contexts = []
+  try {
+    const pages: Page[] = []
+    for (const [who, width] of [["Maya", 1440], ["Alice", 900]] as const) {
+      const context = await browser.newContext({ baseURL: host.origin, viewport: { width, height: 1000 } })
+      contexts.push(context)
+      await context.addCookies(host.members[who]!.map(cookie => ({ ...cookie, url: host.origin })))
+      const page = await context.newPage()
+      pages.push(page)
+      await page.goto(`/${host.repository}`)
+      const timeline = page.getByRole("navigation", { name: "Timeline", exact: true })
+      if (who === "Alice") {
+        await expect(timeline).toBeHidden()
+        await page.setViewportSize({ width: 1440, height: 1000 })
+      }
+      const ask = timeline.locator(`[data-entry="todo:${host.todos.ask}"]`)
+      const live = timeline.locator(`[data-entry="todo:${host.todos.live}"]`)
+      await expect(ask).toHaveCount(1)
+      await expect(ask).toHaveAttribute("data-tone", "attention")
+      await expect(ask.getByRole("button", { name: "Answer", exact: true })).toBeVisible()
+      await expect(live).toHaveCount(1)
+      await expect(live).toHaveAttribute("data-tone", "live")
+      // Both the title and its one action use the real TODO number. Answer
+      // opens the embedded question; it cannot submit on the person's behalf.
+      const answers: string[] = []
+      page.on("request", request => {
+        if (request.method() === "POST" && /\/api\/todos\/[^/]+(?:\/answer)?$/.test(new URL(request.url()).pathname)) answers.push(request.url())
+      })
+      await ask.getByRole("button", { name: "Answer", exact: true }).press("Enter")
+      await expect(page.locator(`[data-message-id="todo:${host.todos.ask}"]`)).toBeInViewport()
+      expect(answers).toEqual([])
+      await expect(page.getByTestId("composer-input")).toBeEditable()
+      const history = await memberRequest(page, "GET", "/api/conversations/main")
+      expect(history.status).toBe(200)
+      expect(history.body.entries.find((entry: any) => entry.subject?.n === host.todos.ask).subject).toMatchObject({ state: "needs_you", tone: "attention" })
+      expect(history.body.entries.find((entry: any) => entry.subject?.n === host.todos.live).subject).toMatchObject({ state: "working", tone: "live" })
+    }
+    const [maya, alice] = pages as [Page, Page]
+    expect((await memberRequest(alice, "PUT", "/api/conversations/main/view-state", { toasts_hidden: true }, "attention-hide")).status).toBe(200)
+    await alice.reload()
+    const ask = alice.getByRole("navigation", { name: "Timeline", exact: true }).locator(`[data-entry="todo:${host.todos.ask}"]`)
+    await expect(ask).toHaveAttribute("data-tone", "attention")
+    await expect(ask.getByRole("button", { name: "Answer", exact: true })).toBeVisible()
+    expect((await memberRequest(alice, "GET", "/api/conversations/main/view-state")).body.toasts_hidden).toBe(true)
+    expect((await memberRequest(maya, "GET", "/api/conversations/main/view-state")).body.toasts_hidden).not.toBe(true)
+    await expect(maya.getByRole("navigation", { name: "Timeline", exact: true }).locator(`[data-entry="todo:${host.todos.ask}"]`)).toHaveAttribute("data-tone", "attention")
+    for (const n of [host.todos.aliceFail, host.todos.mayaFail]) {
+      const published = await memberRequest(maya, "POST", `/api/todos/${n}`, { op: "move", direction: "up" }, `attention-failure-${n}`)
+      expect(published.status, JSON.stringify(published.body)).toBe(202)
+      const history = await memberRequest(maya, "GET", "/api/conversations/main")
+      expect(history.status).toBe(200)
+      expect(history.body.entries.find((entry: any) => entry.subject?.n === n)?.subject, JSON.stringify(history.body)).toMatchObject({ state: "failed", tone: "failed" })
+      for (const viewer of [maya, alice]) {
+        const failed = viewer.getByRole("navigation", { name: "Timeline", exact: true }).locator(`[data-entry="todo:${n}"]`)
+        await expect(failed).toHaveCount(1)
+        await expect(failed).toHaveAttribute("data-tone", "failed")
+        await expect(failed.getByRole("button", { name: "Retry", exact: true })).toBeVisible()
+      }
+      if (n === host.todos.aliceFail) {
+        await alice.setViewportSize({ width: 1440, height: 420 })
+        const timeline = alice.getByRole("navigation", { name: "Timeline", exact: true })
+        await timeline.locator(`[data-entry="todo:${n}"]`).getByRole("button").first().press("Enter")
+        await expect(alice.locator(`[data-message-id="todo:${n}"]`)).toBeInViewport()
+        const above = alice.locator('.edge[data-edge="above"]')
+        await expect(above.getByRole("button", { name: "Question entry", exact: true })).toBeVisible()
+        const more = above.getByRole("button", { name: "+1 above", exact: true })
+        await expect(more).toBeVisible()
+        await more.press("Enter")
+        await expect(alice.locator(`[data-message-id="todo:${host.todos.live}"]`)).toBeInViewport()
+        await timeline.locator(`[data-entry="todo:${n}"]`).getByRole("button").first().press("Enter")
+        await expect(alice.locator(`[data-message-id="todo:${n}"]`)).toBeInViewport()
+        await alice.setViewportSize({ width: 900, height: 420 })
+        await expect(timeline).toBeHidden()
+        const pill = above.getByRole("button", { name: "↑ 3 live above", exact: true })
+        await expect(pill).toBeVisible()
+        await pill.press("Enter")
+        await expect(alice.locator(`[data-message-id="todo:${host.todos.live}"]`)).toBeInViewport()
+        await expect(alice.getByTestId("composer-input")).toBeEditable()
+        await alice.setViewportSize({ width: 1440, height: 1000 })
+      }
+    }
+    // Each failure's owner is read from the real TODO response. Alice's saved
+    // hide suppresses her notice, while Maya's own failure still notifies her.
+    await expect(alice.locator(`[data-notice="toast-todo.failed.${host.todos.aliceFail}.no-run.0"]`)).toHaveCount(0)
+    const mayaNotice = maya.locator(`[data-notice="toast-todo.failed.${host.todos.mayaFail}.no-run.0"]`)
+    await expect(mayaNotice).toBeVisible()
+    await expect(mayaNotice).toHaveAttribute("data-tone", "failed")
+    await expect(mayaNotice.getByRole("button", { name: "Retry", exact: true })).toBeVisible()
+    await expect(maya.locator(`[data-notice="toast-todo.failed.${host.todos.aliceFail}.no-run.0"]`)).toHaveCount(0)
+    await expect(alice.getByTestId("composer-input")).toBeEditable()
+    // The retained failure's Retry uses the real catalog/controller and HTTP
+    // route. Observe the request and receipt without intercepting either.
+    const retryResponse = alice.waitForResponse(response => response.request().method() === "POST" && new URL(response.url()).pathname === `/api/todos/${host.todos.aliceFail}`)
+    const failed = alice.getByRole("navigation", { name: "Timeline", exact: true }).locator(`[data-entry="todo:${host.todos.aliceFail}"]`)
+    await failed.getByRole("button", { name: "Retry", exact: true }).press("Enter")
+    const admitted = await retryResponse
+    expect(admitted.request().postDataJSON()).toEqual({ op: "retry" })
+    expect(admitted.status()).toBe(202)
+    expect(await admitted.json()).toMatchObject({ state: "accepted" })
+    await expect(failed).toHaveCount(1)
+    await expect(failed.getByRole("button", { name: "Retry", exact: true })).toHaveCount(0)
+    await expect(alice.getByTestId("composer-input")).toBeEditable()
+  } finally { for (const context of contexts) await context.close() }
+})
+
+// The Go driver supplies a historical reviewed PR on the GitHub fake. Only
+// initial state is seeded; reads, publication and private confirmation are real.
+test("a historical reviewed TODO exposes Merge only to its owner", scenario("timeline.reviewed-merge-owner-only", {
+  capabilities: [],
+  coverage: ["action:merge", "host:local", "path:success", "path:permission", "door:button", "surface:timeline", "surface:confirm", "dimension:stale-order", "evidence:confirm-card-and-stale-merge-409"]
+}), async ({ browser }) => {
+  const host = JSON.parse(readFileSync(process.env.SMITHERS_TIMELINE_INSTALL!, "utf8")) as {
+    origin: string; repository: string; members: Record<string, Array<{ name: string; value: string }>>; todos: { ready: number }
+  }
+  const contexts = []
+  try {
+    for (const who of ["Maya", "Alice"]) {
+      const context = await browser.newContext({ baseURL: host.origin, viewport: { width: 1440, height: 1000 } })
+      contexts.push(context)
+      await context.addCookies(host.members[who]!.map(cookie => ({ ...cookie, url: host.origin })))
+      const page = await context.newPage()
+      await page.goto(`/${host.repository}`)
+      const line = page.getByRole("navigation", { name: "Timeline", exact: true }).locator(`[data-entry="todo:${host.todos.ready}"]`)
+      await expect(line).toHaveCount(1)
+      await expect(line).toHaveAttribute("data-tone", "quiet")
+      const history = await memberRequest(page, "GET", "/api/conversations/main")
+      expect(history.status).toBe(200)
+      expect(history.body.entries.find((entry: any) => entry.subject?.n === host.todos.ready)?.subject).toMatchObject({ state: "in_review", tone: "quiet" })
+      const merge = line.getByRole("button", { name: "Merge", exact: true })
+      if (who === "Alice") {
+        await expect(merge).toHaveCount(0)
+        await expect(page.getByRole("region", { name: `Merge T${host.todos.ready} into main?`, exact: true })).toHaveCount(0)
+      } else {
+        await expect(merge).toBeVisible()
+        const writes: string[] = []
+        page.on("request", request => {
+          if (request.method() === "POST" && /\/api\/todos\/\d+\/merge$/.test(new URL(request.url()).pathname)) writes.push(request.url())
+        })
+        await merge.press("Enter")
+        await expect(page.getByRole("region", { name: `Merge T${host.todos.ready} into main?`, exact: true }).last().getByRole("button", { name: "Merge", exact: true })).toBeVisible()
+        expect(writes).toEqual([])
+        const shared = await memberRequest(page, "GET", "/api/conversations/main")
+        expect(shared.body.entries.flatMap((entry: any) => entry.frames ?? []).some((frame: any) => frame.card?.kind === "confirm")).toBe(false)
+        const todo = await memberRequest(page, "GET", `/api/todos/${host.todos.ready}`)
+        expect(todo.status).toBe(200)
+        // A different stack order invalidates the earlier row action and a
+        // stale press is refused by the production route before GitHub writes.
+        expect((await memberRequest(page, "POST", `/api/todos/${host.todos.ready}`, { op: "move", direction: "down" }, "ready-stale-order")).status).toBe(202)
+        await expect(merge).toHaveCount(0)
+        expect((await memberRequest(page, "POST", `/api/todos/${host.todos.ready}/merge`, { reviewed_head_sha: todo.body.pr.head }, "ready-stale-merge")).status).toBe(409)
+      }
+      if (!await page.getByTestId("composer-input").isVisible()) await page.getByRole("button", { name: "Chat", exact: true }).press("Enter")
+      await expect(page.getByTestId("composer-input")).toBeEditable()
+    }
+  } finally { for (const context of contexts) await context.close() }
+})

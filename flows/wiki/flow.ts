@@ -11,7 +11,7 @@ export default Flow.make("smithers/Wiki", {
     "Capture declared public source dependencies, independently review each engineering wiki page against its code, and write a provenance-bearing snapshot without modifying human intent.",
   capabilities: ["fs:read:**", "fs:write:**"],
   effects: {
-    reads: ["factory/wiki/**", "packages/**", "apps/app/**"],
+    reads: [".smithers/wiki/**", "packages/**", "apps/app/**"],
     writes: [".flows/wiki/**"],
     mode: "expected",
     onConflict: "serialize",

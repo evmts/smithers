@@ -1,0 +1,129 @@
+name: Windows filesystem
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/native-windows.yml
+      - "crates/smithers-ffi/src/**/*.rs"
+      - "crates/smithers-ffi/tests/**/*.rs"
+      - "packages/smithers/flows/platform-node/**"
+      - "packages/smithers/flows/kernel/**"
+      - pnpm-lock.yaml
+      - crates/smithers-ffi/Cargo.toml
+      - Cargo.lock
+  pull_request:
+    paths:
+      - .github/workflows/native-windows.yml
+      - "crates/smithers-ffi/src/**/*.rs"
+      - "crates/smithers-ffi/tests/**/*.rs"
+      - "packages/smithers/flows/platform-node/**"
+      - "packages/smithers/flows/kernel/**"
+      - pnpm-lock.yaml
+      - crates/smithers-ffi/Cargo.toml
+      - Cargo.lock
+  workflow_dispatch:
+    inputs:
+      portablePackages:
+        description: Run the portable package suites too
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: windows-filesystem-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  kernel:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: .node-version
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Test kernel on Windows
+        run: pnpm --dir packages/smithers/flows/kernel exec vitest run
+  filesystem:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: .node-version
+      - name: Install Rust
+        run: rustup toolchain install 1.98.0 --profile minimal
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          shared-key: windows-filesystem
+      - name: Test native filesystem boundaries
+        run: cargo +1.98.0 test --locked -p smithers-ffi --lib atomic_windows_ -- --nocapture
+      - name: Build Windows helper
+        run: cargo +1.98.0 build --locked -p smithers-ffi --bin smithers-jj-export
+      - name: Test filesystem through the helper modules
+        run: cargo +1.98.0 test --locked -p smithers-ffi --bin smithers-jj-export atomic_ -- --nocapture
+      - name: Test native Windows process identities
+        run: cargo +1.98.0 test --locked -p smithers-ffi --bin smithers-jj-export windows_process::tests -- --nocapture
+      - name: Test workspace file recovery
+        run: cargo +1.98.0 test --locked -p smithers-ffi --bin smithers-jj-export workspace_files::tests -- --nocapture
+      - name: Verify managed guest authority is unavailable locally
+        run: cargo +1.98.0 test --locked -p smithers-ffi --bin smithers-jj-export local_windows_host_cannot_acquire_managed_unix_guest_credentials
+      - uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b
+        with:
+          tool: jj-cli@0.39.0,ripgrep@14.1.1
+      - name: Test executable filesystem protocol
+        run: cargo +1.98.0 test --locked -p smithers-ffi --test atomic_fs_cli -- --nocapture
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+      - name: Install Node workspace dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Expose the built Windows helper
+        id: atomic_helper
+        run: |
+          $helper = (Resolve-Path target/debug/smithers-jj-export.exe).Path
+          "SMITHERS_WORKSPACE_JJ_EXPORT_BINARY=$helper" >> $env:GITHUB_ENV
+      - name: Test the complete Node host suite
+        run: pnpm --dir packages/smithers/flows/platform-node exec vitest run --coverage.reportOnFailure --coverage.reportsDirectory "${{ runner.temp }}/node-host-coverage"
+      - name: Preserve Node host coverage diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: node-host-coverage
+          path: ${{ runner.temp }}/node-host-coverage
+          if-no-files-found: ignore
+          retention-days: 3
+      - name: Install Bun for portable package suites
+        if: inputs.portablePackages == true && !cancelled() && steps.atomic_helper.outcome == 'success'
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: "1.4.1"
+      - name: Test complete sandbox and flow package suites
+        if: inputs.portablePackages == true && !cancelled() && steps.atomic_helper.outcome == 'success'
+        shell: bash
+        run: |
+          suite_status=0
+          pnpm --dir packages/smithers/flows/sandbox exec vitest run --coverage.reportOnFailure --coverage.reportsDirectory "$RUNNER_TEMP/portable-package-coverage/sandbox" || suite_status=1
+          pnpm --dir packages/smithers/flows exec vitest run --coverage.reportOnFailure --coverage.reportsDirectory "$RUNNER_TEMP/portable-package-coverage/flows" || suite_status=1
+          exit "$suite_status"
+      - name: Test remaining Windows package suites
+        if: inputs.portablePackages == true && !cancelled() && steps.atomic_helper.outcome == 'success'
+        shell: bash
+        run: |
+          suite_status=0
+          pnpm --dir packages/smithers/build/infra exec vitest run --coverage.reportOnFailure --coverage.reportsDirectory "$RUNNER_TEMP/portable-package-coverage/infra" || suite_status=1
+          pnpm --dir packages/testing exec vitest run --coverage.reportOnFailure --coverage.reportsDirectory "$RUNNER_TEMP/portable-package-coverage/testing" || suite_status=1
+          pnpm --dir packages/smithers/mcp exec vitest run --coverage.reportOnFailure --coverage.reportsDirectory "$RUNNER_TEMP/portable-package-coverage/mcp" || suite_status=1
+          pnpm --dir packages/smithers/flows/platform-bun exec vitest run --coverage.reportOnFailure --coverage.reportsDirectory "$RUNNER_TEMP/portable-package-coverage/platform-bun" || suite_status=1
+          pnpm --dir packages/smithers/flows/platform-bun exec bun scripts/run-bun-tests.mjs || suite_status=1
+          pnpm --dir packages/smithers/ui exec bun test tests || suite_status=1
+          exit "$suite_status"
+      - name: Preserve portable package coverage diagnostics
+        if: always() && inputs.portablePackages == true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: portable-package-coverage
+          path: ${{ runner.temp }}/portable-package-coverage
+          if-no-files-found: ignore
+          retention-days: 3

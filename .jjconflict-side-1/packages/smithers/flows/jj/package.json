@@ -1,0 +1,203 @@
+{
+  "name": "@smthrs/jj",
+  "type": "module",
+  "version": "1.0.0-rc.12",
+  "license": "MIT",
+  "smthrs": {
+    "group": "engine"
+  },
+  "description": "Jujutsu version control as a portable Effect host service",
+  "homepage": "https://github.com/smithersai/smithers",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/smithers/flows/jj"
+  },
+  "bugs": {
+    "url": "https://github.com/smithersai/smithers/issues"
+  },
+  "tags": [
+    "typescript",
+    "effect",
+    "jj",
+    "jujutsu",
+    "vcs"
+  ],
+  "keywords": [
+    "typescript",
+    "effect",
+    "jj",
+    "jujutsu",
+    "vcs"
+  ],
+  "engines": {
+    "node": ">=26.4.0"
+  },
+  "sideEffects": [],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./wasm/flows_jj.wasm": "./wasm/flows_jj.wasm",
+    "./internal/*": null,
+    "./*/index": null,
+    "./Jj": "./src/Jj.ts",
+    "./browser/BrowserJj": "./src/browser/BrowserJj.ts",
+    "./browser/WasiFs": "./src/browser/WasiFs.ts",
+    "./browser/WasiPreview1": "./src/browser/WasiPreview1.ts",
+    "./bun/BunJj": "./src/bun/BunJj.ts",
+    "./index": "./src/index.ts",
+    "./node/NodeJj": "./src/node/NodeJj.ts",
+    "./node/resolveJjBinary": "./src/node/resolveJjBinary.ts"
+  },
+  "files": [
+    "src/**/*.ts",
+    "wasm/*.wasm",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/package.json",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next",
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./wasm/flows_jj.wasm": "./wasm/flows_jj.wasm",
+      "./internal/*": null,
+      "./*/index": null,
+      "./Jj": {
+        "import": {
+          "types": "./dist/esm/Jj.d.ts",
+          "default": "./dist/esm/Jj.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Jj.d.ts",
+          "default": "./dist/cjs/Jj.js"
+        }
+      },
+      "./browser/BrowserJj": {
+        "import": {
+          "types": "./dist/esm/browser/BrowserJj.d.ts",
+          "default": "./dist/esm/browser/BrowserJj.js"
+        },
+        "require": {
+          "types": "./dist/cjs/browser/BrowserJj.d.ts",
+          "default": "./dist/cjs/browser/BrowserJj.js"
+        }
+      },
+      "./browser/WasiFs": {
+        "import": {
+          "types": "./dist/esm/browser/WasiFs.d.ts",
+          "default": "./dist/esm/browser/WasiFs.js"
+        },
+        "require": {
+          "types": "./dist/cjs/browser/WasiFs.d.ts",
+          "default": "./dist/cjs/browser/WasiFs.js"
+        }
+      },
+      "./browser/WasiPreview1": {
+        "import": {
+          "types": "./dist/esm/browser/WasiPreview1.d.ts",
+          "default": "./dist/esm/browser/WasiPreview1.js"
+        },
+        "require": {
+          "types": "./dist/cjs/browser/WasiPreview1.d.ts",
+          "default": "./dist/cjs/browser/WasiPreview1.js"
+        }
+      },
+      "./bun/BunJj": {
+        "import": {
+          "types": "./dist/esm/bun/BunJj.d.ts",
+          "default": "./dist/esm/bun/BunJj.js"
+        },
+        "require": {
+          "types": "./dist/cjs/bun/BunJj.d.ts",
+          "default": "./dist/cjs/bun/BunJj.js"
+        }
+      },
+      "./index": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./node/NodeJj": {
+        "import": {
+          "types": "./dist/esm/node/NodeJj.d.ts",
+          "default": "./dist/esm/node/NodeJj.js"
+        },
+        "require": {
+          "types": "./dist/cjs/node/NodeJj.d.ts",
+          "default": "./dist/cjs/node/NodeJj.js"
+        }
+      },
+      "./node/resolveJjBinary": {
+        "import": {
+          "types": "./dist/esm/node/resolveJjBinary.d.ts",
+          "default": "./dist/esm/node/resolveJjBinary.js"
+        },
+        "require": {
+          "types": "./dist/cjs/node/resolveJjBinary.d.ts",
+          "default": "./dist/cjs/node/resolveJjBinary.js"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint src --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "build:wasm": "node ../../../../crates/flows-jj/build-wasm.mjs",
+    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "circular": "node scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "vitest --coverage"
+  },
+  "dependencies": {
+    "@smthrs/capability": "1.0.0-rc.12",
+    "@smthrs/canonical": "1.0.0-rc.12"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@effect/vitest": "4.0.4",
+    "@eslint/js": "9.39.5",
+    "@types/node": "26.4.1",
+    "@vitest/coverage-v8": "5.0.0",
+    "dprint": "0.57.1",
+    "effect": "4.0.4",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "madge": "8.0.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0"
+  },
+  "peerDependencies": {
+    "effect": "^4.0.4"
+  }
+}
