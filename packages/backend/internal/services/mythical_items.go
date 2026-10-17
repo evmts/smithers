@@ -393,6 +393,12 @@ func (s *MythicalService) SubmitLane(ctx context.Context, repositoryID, userID i
 	if err != nil {
 		return MythicalLaneReceipt{}, err
 	}
+	// Authorization above binds the workspace, run, base and generation.
+	// A lost acknowledgment may return after delivery closed the TODO; the
+	// already accepted source is a receipt lookup, never a new mutation.
+	if item.CandidateHead == input.Source {
+		return MythicalLaneReceipt{ItemID: uuidString(item.ID), State: item.State, Source: input.Source}, nil
+	}
 	if mythicalMergeFenced(item) {
 		return MythicalLaneReceipt{}, pkgerrors.Conflict("a merge is in flight")
 	}
