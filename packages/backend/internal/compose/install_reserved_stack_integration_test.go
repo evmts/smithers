@@ -652,7 +652,7 @@ func TestInstallReservedStackOperationsPostgres(t *testing.T) {
 		before, err := f.q.GetMythicalItemByNumber(f.ctx, f.repoID, 1)
 		require.NoError(t, err)
 		defer func() {
-			_, err := f.pool.Exec(f.ctx, `UPDATE mythical_items SET state=$2,generation=$3,candidate_base=$4,candidate_verified=$5,checks=$6,reason=$7 WHERE id=$1`, itemID, before.State, before.Generation, before.CandidateBase, before.CandidateVerified, before.Checks, before.Reason)
+			_, err := f.pool.Exec(f.ctx, `UPDATE mythical_items SET state=$2,generation=$3,candidate_base=$4,candidate_verified=$5,checks=$6,reason=$7,verify_outcome=$8,integration=$9 WHERE id=$1`, itemID, before.State, before.Generation, before.CandidateBase, before.CandidateVerified, before.Checks, before.Reason, before.VerifyOutcome, before.Integration)
 			require.NoError(t, err)
 		}()
 		// J5: the run's verified candidate sits on main's old tip; an earlier
@@ -673,10 +673,24 @@ func TestInstallReservedStackOperationsPostgres(t *testing.T) {
 		require.NoError(t, err)
 		call(t, token, "propose", stale, 202)
 		require.Equal(t, calls, runtime.calls)
-		// The stack rebased the run's candidate onto its prefix as generation 8.
-		_, err = f.pool.Exec(f.ctx, `UPDATE mythical_items SET generation=8,candidate_base=$2,candidate_verified=false,checks=checks || jsonb_build_object('rebase',jsonb_build_object('onto',$2::text,'rebased',true)) WHERE id=$1`, itemID, base)
+		// Its checks passed, and the stack holds the sealed submission as the
+		// rebase input: it still waits. A capture of other bytes does not.
+		_, err = f.pool.Exec(f.ctx, `UPDATE mythical_items SET verify_outcome='passed',checks=checks || jsonb_build_object('capture',jsonb_build_object('head',candidate_head,'tree',$2::text,'base',$3::text,'onto',candidate_head)) WHERE id=$1`, itemID, tree, strings.Repeat("d", 40))
+		require.NoError(t, err)
+		call(t, token, "propose", stale, 202)
+		_, err = f.pool.Exec(f.ctx, `UPDATE mythical_items SET checks=jsonb_set(checks,'{capture,head}',to_jsonb(repeat('e',40))) WHERE id=$1`, itemID)
 		require.NoError(t, err)
 		out := call(t, token, "propose", stale, 409)
+		require.Contains(t, out.Body.String(), "source_refused: reserved_prefix_mismatch")
+		// The stack consumed the sealed capture onto the new prefix as generation 8.
+		_, err = f.pool.Exec(f.ctx, `UPDATE mythical_items SET generation=8,candidate_base=$2,candidate_verified=false,verify_outcome='',integration=jsonb_build_object('kind','captured','head',candidate_head),checks=(checks - 'capture' - 'rebase') WHERE id=$1`, itemID, base)
+		require.NoError(t, err)
+		out = call(t, token, "propose", stale, 409)
+		require.Contains(t, out.Body.String(), "source_refused: reserved_candidate_rebased")
+		// The stack rebased the run's candidate onto its prefix as generation 8.
+		_, err = f.pool.Exec(f.ctx, `UPDATE mythical_items SET integration=NULL,checks=checks || jsonb_build_object('rebase',jsonb_build_object('onto',$2::text,'rebased',true)) WHERE id=$1`, itemID, base)
+		require.NoError(t, err)
+		out = call(t, token, "propose", stale, 409)
 		require.Contains(t, out.Body.String(), "source_refused: reserved_candidate_rebased")
 		// Another run's stale proposal is still only a changed candidate.
 		_, err = f.pool.Exec(f.ctx, `UPDATE mythical_items SET checks=checks || '{"proposal_run":"other-run"}' WHERE id=$1`, itemID)

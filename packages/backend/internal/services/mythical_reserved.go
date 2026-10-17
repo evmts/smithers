@@ -214,10 +214,15 @@ func (s *MythicalService) ReservedStackOperation(ctx context.Context, repository
 		if consumedSource && checks.ProposalRun == item.RequestRunID && checks.ProposalHead == input.Source.CommitID && checks.Rebase != nil && !checks.Rebase.Rebased {
 			return empty, 202, tx.Commit(live)
 		}
-		// An accepted candidate: verified or verifying, or already marked
-		// rebase_pending by the stack. Bytes still pending capture are not.
-		accepted := checks.Capture == nil && (item.CandidateVerified || item.State == "verifying" && (item.VerifyOutcome == "" || item.VerifyOutcome == "passed") ||
-			checks.Rebase != nil && !checks.Rebase.Rebased)
+		// An accepted candidate: verified, verifying, or passed its checks and
+		// then marked rebase_pending by the stack. A pending capture must hold
+		// that same sealed submission (the stack's rebase input); a capture of
+		// other bytes, or one never verified, is not this proposal's to wait on.
+		sameBytes := checks.Capture == nil ||
+			checks.Capture.Head == checks.ProposalHead && !checks.Capture.Stale && !checks.Capture.Conflict
+		accepted := sameBytes && (item.CandidateVerified || item.VerifyOutcome == "passed" ||
+			item.State == "verifying" && item.VerifyOutcome == "" ||
+			checks.Capture == nil && checks.Rebase != nil && !checks.Rebase.Rebased)
 		if command == "stack.propose" && codingCommitID.MatchString(prefix) && item.CandidateHead != "" && accepted &&
 			item.RequestRunID != "" && checks.ProposalRun == item.RequestRunID && input.Generation == item.Generation {
 			// An earlier item's verified head or main moved under this run's
@@ -229,7 +234,16 @@ func (s *MythicalService) ReservedStackOperation(ctx context.Context, repository
 			}
 			return empty, 202, tx.Commit(live)
 		}
-		s.logger.Warn("source_refused: reserved_prefix_mismatch", "actual", initialBase, "expected", prefix, "candidate_base", item.CandidateBase)
+		rebasePending, rebased := checks.Rebase != nil && !checks.Rebase.Rebased, checks.Rebase != nil && checks.Rebase.Rebased
+		s.logger.Warn("source_refused: reserved_prefix_mismatch", "command", command, "actual", initialBase, "expected", prefix, "candidate_base", item.CandidateBase,
+			"state", item.State, "reason", item.Reason, "verified", item.CandidateVerified, "verify_outcome", item.VerifyOutcome,
+			"generation", item.Generation, "requested_generation", input.Generation, "capture_pending", checks.Capture != nil,
+			"rebase_pending", rebasePending, "rebased", rebased, "own_proposal", item.RequestRunID != "" && checks.ProposalRun == item.RequestRunID,
+			"candidate_head", item.CandidateHead, "proposal_head", checks.ProposalHead)
+		if checks.Capture != nil {
+			s.logger.Warn("source_refused: reserved_prefix_mismatch capture", "capture_head", checks.Capture.Head, "capture_onto", checks.Capture.Onto,
+				"capture_base", checks.Capture.Base, "stale", checks.Capture.Stale, "conflict", checks.Capture.Conflict)
+		}
 		return empty, 0, pkgerrors.Conflict("source_refused: reserved_prefix_mismatch")
 	}
 	lanes, ok := s.lanes.(*workspaceMythicalLanes)
@@ -270,8 +284,10 @@ func (s *MythicalService) ReservedStackOperation(ctx context.Context, repository
 	// passing projection still waits for the engine to accept the checks.
 	checking := item.State == "verifying" && (item.VerifyOutcome == "" || item.VerifyOutcome == "passed")
 	if command == "stack.propose" && (input.Generation != item.Generation || !item.CandidateVerified && !checking || item.CandidateBase != prefix) {
-		if checks := mythicalChecksOf(item); input.Generation < item.Generation && checks.Rebase != nil && checks.Rebase.Rebased &&
-			item.RequestRunID != "" && checks.ProposalRun == item.RequestRunID {
+		var consumed struct{ Kind, Head string }
+		_ = json.Unmarshal(item.Integration, &consumed)
+		if checks := mythicalChecksOf(item); input.Generation < item.Generation && item.RequestRunID != "" && checks.ProposalRun == item.RequestRunID &&
+			(checks.Rebase != nil && checks.Rebase.Rebased || consumed.Kind == "captured" && consumed.Head == checks.ProposalHead) {
 			// The stack rebased this run's own candidate onto its new prefix.
 			// The run captures the rebased generation and proposes that one
 			// (§10.4.1: clean rebase → candidate → check → stack.propose).
