@@ -1858,6 +1858,10 @@ describe("materialization publication ownership and cleanup", () => {
  * quarantine named in the failure.
  */
 describe("the write-set guard quarantines what it reverts", () => {
+  beforeEach(() => {
+    ChildProcess.execFileSync("git", ["init", "--quiet", "."], { cwd: root, stdio: "ignore" })
+    ChildProcess.execFileSync("git", ["config", "core.autocrlf", "false"], { cwd: root, stdio: "ignore" })
+  })
   const git = (...args: ReadonlyArray<string>): void => {
     ChildProcess.execFileSync("git", [...args], { cwd: root, stdio: "ignore" })
   }
