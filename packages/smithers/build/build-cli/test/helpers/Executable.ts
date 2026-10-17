@@ -11,6 +11,19 @@ const literal = (text: string): string => {
   return `r${hashes}"${text}"${hashes}`
 }
 
+/** MSYS sh does not decode Microsoft CRT quoting. Transfer arguments as data. */
+const shellArguments = `#!/bin/sh
+set --
+SMTHRS_FIXTURE_I=0
+while [ "$SMTHRS_FIXTURE_I" -lt "$SMTHRS_FIXTURE_ARGC" ]; do
+  SMTHRS_FIXTURE_NAME="SMTHRS_FIXTURE_ARG_$SMTHRS_FIXTURE_I"
+  set -- "$@" "\${!SMTHRS_FIXTURE_NAME}"
+  unset "$SMTHRS_FIXTURE_NAME"
+  SMTHRS_FIXTURE_I=$((SMTHRS_FIXTURE_I + 1))
+done
+unset SMTHRS_FIXTURE_I SMTHRS_FIXTURE_NAME SMTHRS_FIXTURE_ARGC
+`
+
 /**
  * Writes an actual executable fixture. Windows cannot execute shebang scripts;
  * its native dispatcher retains literal argv, inherited pipes, and exit status.
@@ -26,19 +39,31 @@ export const writeExecutable = async (
   if (platform !== "win32") return path
   const shell = source.startsWith("#!/bin/sh\n")
   if (!shell && !source.startsWith("#!/usr/bin/env node\n")) throw new Error("Unknown fixture interpreter")
+  // The Windows interpreter is Git's Bash running as sh. Use Bash when this
+  // transport is exercised on a POSIX host, whose /bin/sh may instead be dash.
+  const interpreter = shell ? process.platform === "win32" ? "sh" : "bash" : process.execPath
+  const programSource = shell ? shellArguments + source.slice(source.indexOf("\n") + 1) : source
+  await Fs.writeFile(path, programSource, { mode: 0o755 })
   const directory = await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-fixture-exe-"))
   const executable = `${path}.exe`
   try {
-    const args = shell ? ["-c", source, "fixture"] : [path]
     const code = `use std::{env, fs, process::{Command, exit}};
 fn main() {
-  // The binary identity includes the fixture bytes; refuse stale compilation.
-  if fs::read_to_string(${literal(path)}).ok().as_deref() != Some(${literal(source)}) {
+  if fs::read_to_string(${literal(path)}).ok().as_deref() != Some(${literal(programSource)}) {
     eprintln!("fixture source changed without recompilation"); exit(95);
   }
-  let status = Command::new(${literal(shell ? "sh" : process.execPath)})
-    .args([${args.map(literal).join(", ")}]).args(env::args_os().skip(1)).status();
-  match status { Ok(status) => exit(status.code().unwrap_or(1)), Err(error) => { eprintln!("{}", error); exit(96); } }
+  let mut command = Command::new(${literal(interpreter)});
+  command.arg(${literal(path)});
+  if ${shell} {
+    let args: Vec<_> = env::args_os().skip(1).collect();
+    command.env("SMTHRS_FIXTURE_ARGC", args.len().to_string());
+    for (index, value) in args.iter().enumerate() {
+      command.env(format!("SMTHRS_FIXTURE_ARG_{}", index), value);
+    }
+  } else {
+    command.args(env::args_os().skip(1));
+  }
+  match command.status() { Ok(status) => exit(status.code().unwrap_or(1)), Err(error) => { eprintln!("{}", error); exit(96); } }
 }
 `
     const program = Path.join(directory, "fixture.rs")

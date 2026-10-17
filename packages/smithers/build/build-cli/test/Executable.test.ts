@@ -17,18 +17,18 @@ afterEach(async () => {
 it.each(["sh", "node"])("executes the %s fixture natively with literal argv and pipes", async (interpreter) => {
   const path = Path.join(root, "program")
   const source = interpreter === "sh"
-    ? `#!/bin/sh\n# raw delimiters "# "##\ncat\nprintf '%s\\n' "$@"\nprintf diagnostic >&2\nexit 23\n`
-    : `#!/usr/bin/env node\nprocess.stdin.pipe(process.stdout); process.stdin.on("end", () => { console.log(process.argv.slice(2).join("\\n")); process.stderr.write("diagnostic"); process.exitCode = 23 })\n`
+    ? `#!/bin/sh\n# raw delimiters "# "##\ncat\nprintf '%s\\0' "$@"\nprintf diagnostic >&2\nexit 23\n`
+    : `#!/usr/bin/env node\nprocess.stdin.pipe(process.stdout); process.stdin.on("end", () => { process.stdout.write(process.argv.slice(2).join("\\0") + "\\0"); process.stderr.write("diagnostic"); process.exitCode = 23 })\n`
   await Fs.writeFile(path, source, { mode: 0o755 })
   const environment = { PATH: root, PATHEXT: ".EXE" }
   expect(PackageTree.findOnPath("program", environment, { platform: "win32" })).toBeUndefined()
   const executable = await writeExecutable(path, source, "win32")
   expect(PackageTree.findOnPath("program", environment, { platform: "win32" })).toBe(executable)
-  const args = ["space argument", "$(never-evaluate)", "a\"b", "trailing\\", "é"]
+  const args = ["space argument", "$(never-evaluate)", "a\"b", "trailing\\", "é", "line\nbreak", "single'quote"]
   const result = spawnSync(executable, args, { input: "stdin\n", encoding: "utf8" })
   expect(result.error).toBeUndefined()
   expect(result.status).toBe(23)
-  expect(result.stdout).toBe(`stdin\n${args.join("\n")}\n`)
+  expect(result.stdout).toBe(`stdin\n${args.join("\0")}\0`)
   expect(result.stderr).toBe("diagnostic")
   await Fs.writeFile(path, `${source}\n`)
   const stale = spawnSync(executable, args, { encoding: "utf8" })
