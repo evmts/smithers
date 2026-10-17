@@ -242,7 +242,7 @@ await Effect.runPromise(ReviewLoop.run("draft", {
   },
   {
     // The one pair that diverges from the source it was copied from.
-    // `examples/src/11-agent-step.ts` names a model in its seat, and this file
+    // `packages/smithers/agent/examples/11-agent-step.ts` names a model in its seat, and this file
     // may not: the tool hard-codes no model id, and the deterministic check
     // "every seat comes from the source or from a decision" would refuse a
     // rewrite that copied one out of the teaching. The placeholder says where a

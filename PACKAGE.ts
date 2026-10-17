@@ -68,10 +68,13 @@ const tsconfig = Smithers.Tsconfig({
     Smithers.file("PACKAGE.ts"),
     Smithers.glob("apps/*/PACKAGE.ts"),
     Smithers.glob("evals/*/PACKAGE.ts"),
+    // Eval suites and benchmark rigs live in the package they measure; the
+    // depth globs below reach `regression` and `recommend-eval`.
+    Smithers.glob("packages/smithers/agent/harness/benchmarks/*/PACKAGE.ts"),
+    Smithers.file("flows/review/seeded-bugs/PACKAGE.ts"),
     Smithers.file("scripts/PACKAGE.ts"),
     Smithers.glob("scripts/*/PACKAGE.ts"),
     Smithers.file("flows/PACKAGE.ts"),
-    Smithers.file("examples/PACKAGE.ts"),
     // One entry per nesting depth, spelled out. Packages nest: a granular
     // package lives inside the product package it belongs to, so
     // `@smthrs/canonical` is `packages/smithers/flows/canonical` and
@@ -590,8 +593,6 @@ const ci = Smithers.GithubCiGen({
   mode: "check",
   gates: [
     { name: "documentation parity", verb: Smithers.Verb.Docs, pattern: "//packages/...", job: "test" },
-    { name: "example typecheck", verb: Smithers.Verb.Build, pattern: "//examples/...", job: "test" },
-    { name: "example suite", verb: Smithers.Verb.Test, pattern: "//examples/...", job: "test" },
     { name: "shared Go backend", verb: Smithers.Verb.Test, pattern: "//:backendGo", job: "go-backend" },
     { name: "backend access-control tests", verb: Smithers.Verb.Test, pattern: "//:backendGoAccess", job: "go-backend-access" },
     { name: "native FFI compiler and tests", verb: Smithers.Verb.Build, pattern: "//:nativeFfi", job: "rust-ffi" },
@@ -653,7 +654,6 @@ const ci = Smithers.GithubCiGen({
         })
       }),
       steps: [
-        { name: "Examples", verb: Smithers.Verb.Ci, pattern: "//examples/..." },
         { name: "Workspace targets", verb: Smithers.Verb.Ci, pattern: "//packages/...", parallelism: 2 }
       ]
     },
@@ -704,15 +704,15 @@ const ci = Smithers.GithubCiGen({
         { name: "Script lint", verb: Smithers.Verb.Lint, pattern: "//scripts:lint" },
         { name: "JSDoc rule harness", verb: Smithers.Verb.Test, pattern: "//:jsdocRules" },
         { name: "Reference-host runner hooks", verb: Smithers.Verb.Test, pattern: "//:referenceHostHooks" },
-        // Every `evals/*` directory is its own workspace member now, so each
-        // one's targets carry the standard `check`/`test` names and run from
-        // the directory that pins their toolchain.
+        // Each eval suite lives in the package it measures and is its own
+        // workspace member, so its targets carry the standard `check`/`test`
+        // names and run from the directory that pins their toolchain.
         {
           name: "Agent eval suite (offline, baseline-gated)",
           verb: Smithers.Verb.Test,
-          pattern: "//evals/agent:test"
+          pattern: "//packages/smithers/agent/regression:test"
         },
-        { name: "Agent eval typecheck", verb: Smithers.Verb.Build, pattern: "//evals/agent:check" },
+        { name: "Agent eval typecheck", verb: Smithers.Verb.Build, pattern: "//packages/smithers/agent/regression:check" },
         // The authoring fine-tune's dataset validator. It reads the committed
         // `data/pilot-sft.jsonl` and nothing else, so it gates offline; the
         // Fireworks upload and training targets beside it are `run`-verb only
@@ -725,9 +725,9 @@ const ci = Smithers.GithubCiGen({
         { name: "Authoring eval typecheck", verb: Smithers.Verb.Build, pattern: "//evals/authoring:check" },
         // Offline fixtures need only the workspace install. Docker and funded
         // benchmark runs remain operator commands.
-        { name: "SWE-bench offline fixtures", verb: Smithers.Verb.Test, pattern: "//evals/swebench:offline", parallelism: 1 },
-        { name: "SWE-bench rig typecheck", verb: Smithers.Verb.Build, pattern: "//evals/swebench:check" },
-        { name: "SWE-bench rig lint", verb: Smithers.Verb.Lint, pattern: "//evals/swebench/..." },
+        { name: "SWE-bench offline fixtures", verb: Smithers.Verb.Test, pattern: "//packages/smithers/agent/harness/benchmarks/swebench:offline", parallelism: 1 },
+        { name: "SWE-bench rig typecheck", verb: Smithers.Verb.Build, pattern: "//packages/smithers/agent/harness/benchmarks/swebench:check" },
+        { name: "SWE-bench rig lint", verb: Smithers.Verb.Lint, pattern: "//packages/smithers/agent/harness/benchmarks/swebench/..." },
         // Apps and repository flows have separate source roots from packages.
         // Keep the review flow and its seeded-bug eval in the required gates.
         { name: "Server typecheck and tests", verb: Smithers.Verb.Ci, pattern: "//apps/server/..." },
@@ -740,12 +740,12 @@ const ci = Smithers.GithubCiGen({
         {
           name: "Review eval suite (offline, baseline-gated)",
           verb: Smithers.Verb.Test,
-          pattern: "//evals/review-seeded-bugs/..."
+          pattern: "//flows/review/seeded-bugs/..."
         },
         {
           name: "Review eval typecheck",
           verb: Smithers.Verb.Build,
-          pattern: "//evals/review-seeded-bugs:check"
+          pattern: "//flows/review/seeded-bugs:check"
         },
         // The command-recommender scorer: hit@5, top-1, and coverage over the
         // server's recommendation log. Offline: it scores a checked-in
@@ -753,12 +753,12 @@ const ci = Smithers.GithubCiGen({
         {
           name: "Recommend eval suite (offline, baseline-gated)",
           verb: Smithers.Verb.Test,
-          pattern: "//evals/recommend/..."
+          pattern: "//packages/backend/modelhost/recommend-eval/..."
         },
         {
           name: "Recommend eval typecheck",
           verb: Smithers.Verb.Build,
-          pattern: "//evals/recommend:check"
+          pattern: "//packages/backend/modelhost/recommend-eval:check"
         },
         // The fault matrix no longer typechecks here. It used to need its own
         // step because it was its own workspace member with its own tsconfig;
@@ -1240,7 +1240,7 @@ export const packageDefaults = Smithers.PackageDefaults({
 
 // Security review of the files the root owns and no nested PACKAGE.ts does:
 // the GitHub workflows, the native FFI crate, install-time hooks and patches, and the public
-// `.smithers` projections. `packages/smithers/flows/jj-wasm`, `scripts`, `flows`, `examples`,
+// `.smithers` projections. `packages/smithers/flows/jj-wasm`, `scripts`, `flows`,
 // `apps`, `evals`, and `packages` have their own reviewers.
 const securityReview = Smithers.SecurityReview({
   cwd: ".",

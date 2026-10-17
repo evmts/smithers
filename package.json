@@ -17,14 +17,16 @@
   "packageManager": "pnpm@11.25.0",
   "workspaces": [
     "packages/*",
+    "packages/backend/modelhost/recommend-eval",
     "packages/smithers/*",
     "packages/smithers/agent/*",
+    "packages/smithers/agent/harness/benchmarks/*",
     "packages/smithers/build/*",
     "packages/smithers/flows/*",
     "packages/smithers/ui/*",
-    "examples",
     "flows",
     "flows/coding",
+    "flows/review/seeded-bugs",
     "apps/*",
     "evals/*"
   ],
@@ -50,7 +52,6 @@
     "test": "pnpm --recursive --if-present run test",
     "test:e2e": "pnpm --filter smithers-app run test:e2e",
     "test:jsdoc": "node --test eslint.jsdoc.test.mjs",
-    "test:examples": "pnpm --filter @smthrs/examples run test",
     "lint:jsdoc": "eslint --config eslint.config.js \"packages/*/src/**/*.ts\" \"packages/*/*/src/**/*.ts\" \"packages/*/*/*/src/**/*.ts\" --max-warnings=0"
   },
   "engines": {

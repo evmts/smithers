@@ -331,7 +331,6 @@ describe("ci conformance", () => {
       test: "pnpm --recursive --if-present run test",
       tui: "bun apps/tui/src/main.tsx",
       "test:e2e": "pnpm --filter smithers-app run test:e2e",
-      "test:examples": "pnpm --filter @smthrs/examples run test",
       "test:jsdoc": "node --test eslint.jsdoc.test.mjs"
     })
     const targets = readFileSync(join(packagesDir, "..", "PACKAGE.ts"), "utf8")

@@ -719,7 +719,7 @@ const preparedRequest = {
  * Everything a migration needs, with every seat resolved to a scripted model.
  *
  * The composition is the production one; only the credentialed half is
- * replaced, exactly as `examples/src/11-agent-step.ts` does it. The guarded
+ * replaced, exactly as `packages/smithers/agent/examples/11-agent-step.ts` does it. The guarded
  * filesystem, the grant store, the capability envelope, and the sandbox budget
  * are all real, so a scripted test still proves the confinement.
  *

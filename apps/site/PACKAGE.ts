@@ -14,7 +14,6 @@
  */
 import { Smithers } from "@smthrs/targets"
 import { Package as scriptPackage } from "../../scripts/PACKAGE.ts"
-import { Package as examplesPackage } from "../../examples/PACKAGE.ts"
 import { Package as errorsPackage } from "../../packages/errors/PACKAGE.ts"
 import { Package as chainPackage } from "../../packages/smithers/agent/chain/PACKAGE.ts"
 import { Package as evalsPackage } from "../../packages/smithers/agent/evals/PACKAGE.ts"
@@ -484,7 +483,6 @@ const docsRuntimeTests = Smithers.Shell.Test({
     Smithers.file("//apps/server/scripts/canary/workers-manifest.ts"),
     Smithers.file("//apps/bug-worker/README.md"),
     Smithers.file("//apps/bug-worker/package.json"),
-    examplesPackage.docs,
     cliPackage.docsSources,
     flowPackage.docsSources,
     enginePackage.docsSources,

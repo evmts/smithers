@@ -31,11 +31,8 @@ import { privateEffectAdapters } from "../packages/repo-targets/scripts/private-
 // Membership comes from `pnpm-workspace.yaml` through the shared reader, so a
 // package nested inside the product package it belongs to
 // (`packages/smithers/flows/canonical`) is checked like any other. This gate scans
-// `packages/` and `apps/`; the remaining members (`examples`,
-// `packages/smithers/build/infra` is one of them and needs no separate row now the
-// reader finds it) are named, and `evals/*` stays out.
+// `packages/` and `apps/`, and `evals/*` stays out.
 const scannedRoots = ["packages/", "apps/"]
-const directWorkspaceDirs = ["examples"]
 const sourceExtensions = new Set([".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"])
 const ignoredDirs = new Set([
   ".alchemy",
@@ -101,10 +98,6 @@ function findWorkspacePackages() {
   for (const member of workspacePackages(repoRoot)) {
     if (!scannedRoots.some((root) => member.dir.startsWith(root))) continue
     const pkg = readPackage(member.dir.split("/").join(sep))
-    if (pkg) packages.push(pkg)
-  }
-  for (const dir of directWorkspaceDirs) {
-    const pkg = readPackage(dir)
     if (pkg) packages.push(pkg)
   }
   const rootPackage = readPackage(".")

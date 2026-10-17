@@ -2,7 +2,7 @@
 
 The hand-written 1.0 output for the `jsx-single` fixture. `Checks.run` and `Checks.discovery` run against it, so it is the definition of a clean migration: no old import, no JSX pragma, no React under `.smithers/flows/`, no escape hatch, no scheduler loop, no direct database access, a `description` the registry can read, and a warning-free discovery scan.
 
-Origin: written by hand from `jsx-single/simple-workflow.jsx`, following `examples/src/11-agent-step.ts` in the flows tree. The `<Workflow>` element declares no payload schema, so `Mapping.snippet` gives it no rewrite and the flow's `payload` is the one decision a person makes here; every other line is the shape `Mapping.snippet` emits.
+Origin: written by hand from `jsx-single/simple-workflow.jsx`, following `packages/smithers/agent/examples/11-agent-step.ts` in the flows tree. The `<Workflow>` element declares no payload schema, so `Mapping.snippet` gives it no rewrite and the flow's `payload` is the one decision a person makes here; every other line is the shape `Mapping.snippet` emits.
 
 `.smithers/flows/simple-workflow/flow.ts` carries one declaration: the default export, a `@smthrs/flow` `Flow.make(tag, { description, capabilities, effects, payload, success, error, body })`. `Discovery` reads the literal token sequence `export default Flow.make(` and takes the `description`, `capabilities` and `effects` out of the options object without evaluating the module; `Executable` loads that same default export and hands it to the engine. One declaration is therefore one contract: what the control plane admits is what runs. The old `<Sequence>` of two `<Task agent>` elements is one `Node.bindPlanned` over two `AgentAction`s.
 

@@ -194,11 +194,11 @@ test("required CI resolves package, app, script and evaluation suites to real ru
     ["//flows/review:unitTests", "repository"], ["//apps/bug-worker:unitTests", "repository"],
     ["//flows/review:check", "repository"], ["//flows/review:checkTests", "repository"],
     ["//apps/bug-worker:check", "repository"],
-    ["//evals/agent:test", "repository"], ["//evals/authoring:test", "repository"],
-    ["//evals/agent:check", "repository"], ["//evals/authoring:check", "repository"], ["//evals/swebench:check", "repository"],
-    ["//evals/review-seeded-bugs:suite", "repository"], ["//evals/review-seeded-bugs:test", "repository"],
-    ["//evals/review-seeded-bugs:check", "repository"],
-    ["//evals/recommend:suite", "repository"], ["//evals/recommend:test", "repository"], ["//evals/recommend:check", "repository"],
+    ["//packages/smithers/agent/regression:test", "repository"], ["//evals/authoring:test", "repository"],
+    ["//packages/smithers/agent/regression:check", "repository"], ["//evals/authoring:check", "repository"], ["//packages/smithers/agent/harness/benchmarks/swebench:check", "repository"],
+    ["//flows/review/seeded-bugs:suite", "repository"], ["//flows/review/seeded-bugs:test", "repository"],
+    ["//flows/review/seeded-bugs:check", "repository"],
+    ["//packages/backend/modelhost/recommend-eval:suite", "repository"], ["//packages/backend/modelhost/recommend-eval:test", "repository"], ["//packages/backend/modelhost/recommend-eval:check", "repository"],
     ["//scripts/repo-contract:ciInventory", "scripts"], ["//flows:mutationGate", "scripts"], ["//flows:benchmarkGate", "scripts"],
     ["//flows:campaignVerifiers", "scripts"], ["//flows:signalCampaign", "scripts"], ["//flows:perfUnit", "scripts"],
     ["//flows:checkRunner", "scripts"],
@@ -340,7 +340,7 @@ test("jobs that install the workspace restore the pnpm store", () => {
 
 test("the root TypeScript project owns declarations, not package source or fixtures", () => {
   const { include } = JSON.parse(readFileSync(join(root, "tsconfig.json"), "utf8"))
-  for (const entry of ["scripts/*/PACKAGE.ts", "flows/PACKAGE.ts", "examples/PACKAGE.ts",
+  for (const entry of ["scripts/*/PACKAGE.ts", "flows/PACKAGE.ts",
     "packages/*/PACKAGE.ts", "packages/*/*/PACKAGE.ts", "packages/*/*/*/PACKAGE.ts"])
     assert.ok(include.includes(entry), `tsconfig.json include omits ${entry}`)
   assert.ok(include.every((entry) => !entry.includes("/src/") && !entry.includes("/test/") && !entry.includes("/examples/")),

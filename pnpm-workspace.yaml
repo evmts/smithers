@@ -17,14 +17,16 @@
 # and the identical line to `workspaces` in the root `package.json`.
 packages:
   - "packages/*"
+  - "packages/backend/modelhost/recommend-eval"
   - "packages/smithers/*"
   - "packages/smithers/agent/*"
+  - "packages/smithers/agent/harness/benchmarks/*"
   - "packages/smithers/build/*"
   - "packages/smithers/flows/*"
   - "packages/smithers/ui/*"
-  - "examples"
   - "flows"
   - "flows/coding"
+  - "flows/review/seeded-bugs"
   - "apps/*"
   - "evals/*"
 

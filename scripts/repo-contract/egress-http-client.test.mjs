@@ -37,7 +37,7 @@ import ts from "typescript"
 import { repoRoot as root } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 
 /** The trees that hold shipped source. `scripts/` is absent on purpose: this file names the banned spelling. */
-const scanned = ["packages", "apps", "flows", "examples"]
+const scanned = ["packages", "apps", "flows"]
 
 /**
  * Directory names that hold no shipped source wherever they appear, or hold a

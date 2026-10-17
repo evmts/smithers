@@ -119,7 +119,7 @@ const docsDrift = Smithers.Shell.Diff({
  * `pnpm-lock.yaml` was ever proved: every CI job installs with pnpm and
  * `--frozen-lockfile` rejects a stale one on the spot, while no job runs `bun
  * install` at all. Bun still executes `apps/*`, the `//packages/...:bunTest`
- * matrix, and `evals/agent`, so a stale entry resolves a real package at the
+ * matrix, and `packages/smithers/agent/regression`, so a stale entry resolves a real package at the
  * wrong version on exactly those surfaces and nowhere else. `packages/smithers/agent/fs`
  * reached rc.0 still asking for `@smthrs/core@0.1.0` that way.
  *

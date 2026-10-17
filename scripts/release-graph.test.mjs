@@ -47,17 +47,18 @@ test("the cached site build measures every external release URL input", () => {
   }
 })
 
-test("the ordinary PR CLI entrypoint plans both executable examples checks and the suite", () => {
+test("the ordinary PR CLI entrypoint plans a package's example typecheck and suite", () => {
   const cliRoot = new URL("../packages/smithers/", import.meta.url)
   const manifest = JSON.parse(readFileSync(new URL("package.json", cliRoot), "utf8"))
   // CI invokes the public smthrs bin, which must compose the graph commands.
   // Read the manifest so a stale checkout .bin alias cannot satisfy this gate.
   const entry = fileURLToPath(new URL(manifest.bin.smthrs, cliRoot))
   const plan = JSON.parse(execFileSync(process.execPath, [
-    entry, "ci", "//examples/...", "--plan", "--json"
+    entry, "ci", "//packages/smithers/agent:check", "//packages/smithers/agent:test", "--plan", "--json"
   ], { cwd: new URL("..", import.meta.url), encoding: "utf8", timeout: 300_000 }))
-  assert.ok(plan.roots.includes("//examples:check"), "examples CI must typecheck the executable tutorials")
-  assert.ok(plan.roots.includes("//examples:suite"), "examples CI must execute the Vitest suite")
+  // A package's examples are type-checked by its `check` and run by its `test`.
+  assert.ok(plan.roots.includes("//packages/smithers/agent:check"), "package CI must typecheck the executable examples")
+  assert.ok(plan.roots.includes("//packages/smithers/agent:test"), "package CI must execute the example suite")
 })
 
 test("site CI selects the native bridge typecheck regression", () => {

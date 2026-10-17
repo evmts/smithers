@@ -323,9 +323,9 @@ test("the inventory is release.yml's publish job: same gates, same names, same o
   // The gates the review found missing, named so the fix cannot regress quietly.
   for (const target of [
     "//apps/app:check", "//apps/app:unitTests", "//apps/server/...", "//flows/review/...", "//apps/bug-worker/...",
-    "//:projectCopy", "//evals/agent:test", "//evals/agent:check", "//evals/authoring:test",
-    "//evals/authoring:check", "//evals/swebench:offline", "//evals/swebench:check", "//evals/review-seeded-bugs/...",
-    "//evals/review-seeded-bugs:check", "//evals/recommend/...", "//evals/recommend:check", "//:ci", "//:factoryProjection",
+    "//:projectCopy", "//packages/smithers/agent/regression:test", "//packages/smithers/agent/regression:check", "//evals/authoring:test",
+    "//evals/authoring:check", "//packages/smithers/agent/harness/benchmarks/swebench:offline", "//packages/smithers/agent/harness/benchmarks/swebench:check", "//flows/review/seeded-bugs/...",
+    "//flows/review/seeded-bugs:check", "//packages/backend/modelhost/recommend-eval/...", "//packages/backend/modelhost/recommend-eval:check", "//:ci", "//:factoryProjection",
     "//:targetIndex", "//packages/smithers/flows/engine-store:disasterRecovery", "//packages/smithers/flows/jj-wasm:buildScript",
     "//packages/smithers/flows/jj-wasm:wasmReproducibility", "//scripts/..."
   ]) assert.ok(mirrored.some((gate) => gate.target === target), `${target} is an inventory gate`)
@@ -501,7 +501,7 @@ test("workflowGateSteps reads names and commands, quoted names included, and ski
     "      - uses: actions/checkout@sha",
     "      - name: Install", "        run: pnpm install",
     "      # a comment", "",
-    "      - name: \"Agent eval suite (offline, baseline-gated)\"", "        run: pnpm exec smthrs test '//evals/agent:test' --verbose",
+    "      - name: \"Agent eval suite (offline, baseline-gated)\"", "        run: pnpm exec smthrs test '//packages/smithers/agent/regression:test' --verbose",
     "        env:", "          SMITHERS_CACHE_URL: x",
     "      - name: Build", "        run: node scripts/build-release.mjs",
     "      - name: Serial", "        run: pnpm exec smthrs test '//packages/...:faults' --jobs 1 --verbose",
@@ -509,7 +509,7 @@ test("workflowGateSteps reads names and commands, quoted names included, and ski
   ].join("\n")
   assert.deepEqual(workflowJobs(source), ["publish", "other"])
   assert.deepEqual(workflowGateSteps(source, "publish"), [
-    { name: "Agent eval suite (offline, baseline-gated)", command: "pnpm exec smthrs test '//evals/agent:test' --verbose" },
+    { name: "Agent eval suite (offline, baseline-gated)", command: "pnpm exec smthrs test '//packages/smithers/agent/regression:test' --verbose" },
     { name: "Serial", command: "pnpm exec smthrs test '//packages/...:faults' --jobs 1 --verbose" }
   ])
   assert.deepEqual(workflowGateSteps(source, "other"), [{ name: "Elsewhere", command: "pnpm exec smthrs lint '//:ci' --verbose" }])
@@ -538,9 +538,9 @@ test("commandCovers matches exact targets, recursive selections and job bounds o
   const lint = { name: "z", verb: "lint", target: "//:ci" }
   assert.equal(commandCovers("pnpm exec smthrs lint '//:ci' --verbose", lint), true)
   assert.equal(commandCovers("pnpm exec smthrs test '//:ci' --verbose", lint), false)
-  const typecheck = { name: "w", verb: "build", target: "//evals/agent:check" }
-  assert.equal(commandCovers("pnpm exec smthrs build '//evals/agent:check' --verbose", typecheck), true)
-  assert.equal(commandCovers("pnpm exec smthrs build '//evals/...' --verbose", typecheck), true)
+  const typecheck = { name: "w", verb: "build", target: "//packages/smithers/agent/regression:check" }
+  assert.equal(commandCovers("pnpm exec smthrs build '//packages/smithers/agent/regression:check' --verbose", typecheck), true)
+  assert.equal(commandCovers("pnpm exec smthrs build '//packages/smithers/agent/...' --verbose", typecheck), true)
   // A bounded command covers no unbounded gate: the bound is a different claim.
   assert.equal(commandCovers("pnpm exec smthrs test '//packages/...' --jobs 2 --verbose", { name: "v", verb: "test", target: "//packages/smithers:test" }), false)
   // gateRuns is the same relation read from the inventory side.

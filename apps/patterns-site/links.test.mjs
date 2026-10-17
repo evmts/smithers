@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url"
 const here = dirname(fileURLToPath(import.meta.url))
 const root = join(here, "../..")
 const apiPages = join(root, "apps/site/src/content/docs/docs/reference/api")
-const useCases = join(root, "examples/src/use-cases")
+const useCases = join(root, "packages/smithers/agent/examples/use-cases")
 
 /** The catalog block `site/index.html` renders from. */
 export const readCatalog = (html) => {
@@ -97,6 +97,6 @@ test("every url source is an API reference page with that heading", () => {
 test("every use-case example has a card that links it", () => {
   const linked = new Set(sources.flatMap((source) => (source.path ? [source.path.split("#")[0]] : [])))
   const examples = existsSync(useCases) ? readdirSync(useCases).filter((name) => name.endsWith(".ts") && name !== "kit.ts") : []
-  const missing = examples.map((name) => `examples/src/use-cases/${name}`).filter((path) => !linked.has(path))
+  const missing = examples.map((name) => `packages/smithers/agent/examples/use-cases/${name}`).filter((path) => !linked.has(path))
   assert.deepEqual(missing, [])
 })

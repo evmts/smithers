@@ -671,17 +671,6 @@ test("CI gates the server's checks and tests in the required repository job", ()
   assert.equal(server?.if, gateCondition.replace(" && matrix.lane != 'backend'", ""))
 })
 
-test("ordinary PR CI gates executable examples before workspace checks", () => {
-  const ci = parseWorkflow(readFileSync(join(repoRoot, ".github/workflows/ci.yml"), "utf8"))
-  const steps = ci.jobs.test.steps
-  const examples = steps.find((entry) => entry.name === "Examples")
-  assert.equal(Object.hasOwn(ci.on, "pull_request"), true)
-  assert.equal(ci.jobs.test["continue-on-error"], undefined)
-  assert.equal(examples?.run, "pnpm exec smthrs ci '//examples/...' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose")
-  assert.equal(examples?.if, gateCondition.replace(" && matrix.lane != 'backend'", ""))
-  assert.ok(steps.indexOf(examples) < steps.indexOf(steps.find((entry) => entry.name === "Workspace targets")))
-})
-
 test("a failed gate retains diagnostic files and failure status while skipping later gates", () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "release-failure-artifacts-")))
   try {

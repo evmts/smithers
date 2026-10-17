@@ -331,7 +331,7 @@ decodes for a parked run resuming onto a newer package.
 ### Composing it
 
 Every layer a model-backed step needs, trimmed from
-[`examples/src/11-agent-step.ts`](https://github.com/smithersai/smithers/blob/main/examples/src/11-agent-step.ts).
+[`packages/smithers/agent/examples/11-agent-step.ts`](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/examples/11-agent-step.ts).
 `AgentAction.make` returns the declaration and its `.layer` together, so the
 composition names the action once.
 
