@@ -13,7 +13,7 @@ import { dirname, extname, join, resolve } from "node:path"
 import test from "node:test"
 import { fileURLToPath } from "node:url"
 
-const root = fileURLToPath(new URL("../", import.meta.url))
+const root = fileURLToPath(new URL("../../../", import.meta.url))
 const documents = [
   "docs/architecture/0001-shared-product.md",
   "docs/architecture/0002-mac-install.md",
@@ -338,7 +338,7 @@ test("unapproved repository records retain superseded banners and contents", () 
     ["docs/mvp/DESIGN.md", ".specs/design/README.md"]
   ]) assert.ok(hasLinkTo(readFileSync(join(root, target), "utf8"), join(root, target), join(root, replacement)))
   assert.ok(statSync(join(root, "docs/mvp/implementation/release-20260916.md")).isFile())
-  assert.ok(readFileSync(join(root, "scripts/check-release-evidence-tags.mjs"), "utf8").includes("release-20260916.md"))
+  assert.ok(readFileSync(join(root, "packages/repo-targets/contracts/check-release-evidence-tags.mjs"), "utf8").includes("release-20260916.md"))
 })
 
 test("product index preserves every decision cited by source", () => {

@@ -277,30 +277,6 @@ const docsDrift = Smithers.Shell.Diff({
   timeout: "5m"
 })
 
-/**
- * Checks the proposed Mac install ADR, its supersession links and relative
- * architecture document links, including target headings.
- *
- * @since 0.1.0
- * @category test
- */
-const mvpDocs = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//scripts/mvp-docs.test.mjs")]),
-  srcs: [
-    Smithers.file("//scripts/mvp-docs.test.mjs"),
-    Smithers.file("//AGENTS.md"),
-    Smithers.file("//docs/architecture/0001-shared-product.md"),
-    Smithers.file("//docs/architecture/0002-mac-install.md"),
-    Smithers.file("//docs/architecture/self-host-implementation.md"),
-    Smithers.file("//.specs/product/mvp.md"),
-    Smithers.file("//scripts/check-release-evidence-tags.mjs"),
-    Smithers.file("//.specs/engineering/README.md"),
-    Smithers.file("//.specs/design/README.md"),
-    Smithers.file("//.specs/engineering/spec.md")
-  ],
-  deps: [repositoryInputs]
-})
-
 
 /**
  * Installs the packed artifacts into a scratch project and imports every
@@ -719,7 +695,6 @@ export const Package = Smithers.Package({
     publishedLinksUnit,
     conformanceCheck,
     repositoryConformance,
-    mvpDocs,
     releaseIntegrity,
     webBundleContract,
     changelog,

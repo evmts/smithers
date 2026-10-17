@@ -35,16 +35,16 @@
  * is derived from the findings, so a failing run never prints a summary that contradicts
  * the violations under it.
  *
- * Usage: node scripts/check-release-evidence-tags.mjs [--list]
- *        node scripts/check-release-evidence-tags.mjs <file> [--list]
- *        node scripts/check-release-evidence-tags.mjs --refresh   (rewrite E's paste)
+ * Usage: node packages/repo-targets/contracts/check-release-evidence-tags.mjs [--list]
+ *        node packages/repo-targets/contracts/check-release-evidence-tags.mjs <file> [--list]
+ *        node packages/repo-targets/contracts/check-release-evidence-tags.mjs --refresh   (rewrite E's paste)
  */
 import { readFileSync, writeFileSync } from "node:fs"
 import { join, relative, resolve, sep } from "node:path"
 
 const argv = process.argv.slice(2)
 const list = argv.includes("--list")
-const root = resolve(import.meta.dirname, "..")
+const root = resolve(import.meta.dirname, "../../..")
 const target = argv.find((a) => !a.startsWith("--"))
 const path = target ?? join(root, "docs/mvp/implementation/release-20260916.md")
 
@@ -240,7 +240,7 @@ if (self) {
   const from = fenceOpen + 1 + self.at
   let stop = from + 1
   while (stop < section.length && section[stop] !== "") stop += 1
-  const body = ["$ node scripts/check-release-evidence-tags.mjs", ...report, "$ echo $?", "0"]
+  const body = ["$ node packages/repo-targets/contracts/check-release-evidence-tags.mjs", ...report, "$ echo $?", "0"]
   const found = section.slice(from + 1, stop)
   if (found.join("\n") !== body.join("\n")) {
     if (argv.includes("--refresh")) {
