@@ -745,8 +745,10 @@ describe("scripted fake and environment selection", () => {
   })
 
   it("takes the session ceiling from SMTHRS_AGENT_TIMEOUT_MS for the real CLI factory", async () => {
-    const claude = NodePath.join(root, "fake-claude-slow.mjs")
-    await Fs.writeFile(claude, "#!/usr/bin/env node\nsetTimeout(() => {}, 30000)\n", { mode: 0o755 })
+    const claude = await writeExecutable(
+      NodePath.join(root, "fake-claude-slow.mjs"),
+      "#!/usr/bin/env node\nsetTimeout(() => {}, 30000)\n"
+    )
     const factory = AgentFake.sessionFactoryFromEnvironment(
       {
         workspaceRoot: root,

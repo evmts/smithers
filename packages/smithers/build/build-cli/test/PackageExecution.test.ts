@@ -7,6 +7,7 @@ import * as NodePath from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { afterAll, describe, expect, it, vi } from "vitest"
 import { PACKAGE_EXECUTION_FORMAT, takesExclusiveTreePermit } from "../src/PackageExec.ts"
+import { writeExecutable } from "./helpers/Executable.ts"
 import { repositoryPnpmVersion } from "./helpers/RepositoryPnpm.ts"
 import { serve } from "./helpers/ServeCli.ts"
 import { write } from "./helpers/WriteFile.ts"
@@ -1329,10 +1330,9 @@ describe("toolchain identity in keys", () => {
     const binary = NodePath.join(tools, "uncached-compiler")
     const counter = NodePath.join(tools, "executions")
     const quotedCounter = `'${counter.replaceAll("'", "'\\''")}'`
-    await Fs.writeFile(
+    await writeExecutable(
       binary,
-      `#!/bin/sh\nset -e\nif [ "$1" = --version ]; then echo 1.0; exit 0; fi\nprintf 'run\\n' >> ${quotedCounter}\nmkdir -p dist\nprintf 'artifact' > dist/a.txt\n`,
-      { mode: 0o755 }
+      `#!/bin/sh\nset -e\nif [ "$1" = --version ]; then echo 1.0; exit 0; fi\nprintf 'run\\n' >> ${quotedCounter}\nmkdir -p dist\nprintf 'artifact' > dist/a.txt\n`
     )
     await write(root, "WORKSPACE.ts", workspaceModule(`  host: S.Host({ bins: ["uncached-compiler"] }),`))
     await write(
@@ -1363,10 +1363,9 @@ export const Package = S.Package({ targets: { dist } })
     const tools = await temporaryWorkspace()
     const binary = NodePath.join(tools, "cache-compiler")
     const install = async (value: string): Promise<void> => {
-      await Fs.writeFile(
+      await writeExecutable(
         binary,
-        `#!/bin/sh\nif [ "$1" = --version ]; then echo 1.0; exit 0; fi\nmkdir -p dist\nprintf '${value}' > dist/a.txt\n`,
-        { mode: 0o755 }
+        `#!/bin/sh\nif [ "$1" = --version ]; then echo 1.0; exit 0; fi\nmkdir -p dist\nprintf '${value}' > dist/a.txt\n`
       )
     }
     await install("one")

@@ -10,6 +10,7 @@ import * as MemoryBackend from "../src/MemoryBackend.ts"
 import * as PackageDiscovery from "../src/PackageDiscovery.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
 import * as PackageLoader from "../src/PackageLoader.ts"
+import { writeExecutable } from "./helpers/Executable.ts"
 
 /** Temp directories this file created; removed after the suite so a run leaves nothing in the OS temp dir. */
 const temporaryDirectories: Array<string> = []
@@ -243,19 +244,17 @@ describe("resolved backend", () => {
 
   it("succeeds against a fake CLI that mirrors the real subcommand names", async () => {
     const root = await temporaryRoot()
-    const binary = NodePath.join(root, "smithers")
     // The fake accepts exactly the shipped surface (get|list|rm|set) and
     // answers anything else the way smithers 0.33 does: exit 4, no stderr.
-    await Fs.writeFile(
-      binary,
+    const binary = await writeExecutable(
+      NodePath.join(root, "smithers"),
       `#!/bin/sh
 if [ "$1" != "memory" ]; then exit 4; fi
 case "$2" in
   get|list|rm|set) printf 'ok %s %s' "$3" "$4"; exit 0 ;;
   *) exit 4 ;;
 esac
-`,
-      { encoding: "utf8", mode: 0o755 }
+`
     )
     const cli = MemoryBackend.spawnCli()
     const good = await cli.run(binary, ["memory", "set", "repo", "commit:abc", "{}"], root)

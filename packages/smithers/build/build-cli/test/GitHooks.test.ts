@@ -8,6 +8,7 @@ import * as GitHooks from "../src/GitHooks.ts"
 import * as PackageDiscovery from "../src/PackageDiscovery.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
 import * as PackageLoader from "../src/PackageLoader.ts"
+import * as PackageTree from "../src/PackageTree.ts"
 
 /** Temp directories this file created; removed after the suite so a run leaves nothing in the OS temp dir. */
 const temporaryDirectories: Array<string> = []
@@ -39,9 +40,11 @@ const runScript = (script: string, path: string): Promise<{
   readonly stderr: string
 }> =>
   new Promise((resolve) => {
+    const interpreter = process.platform === "win32" ? PackageTree.findOnPath("sh") : undefined
+    if (process.platform === "win32" && interpreter === undefined) throw new Error("Git Bash is required for hooks")
     NodeChildProcess.execFile(
-      script,
-      [],
+      interpreter ?? script,
+      interpreter === undefined ? [] : [script],
       { env: { PATH: path } },
       (error, stdout, stderr) => {
         const exitCode = error === null
