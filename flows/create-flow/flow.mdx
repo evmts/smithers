@@ -26,11 +26,24 @@ them here without calling another flow.
 For stage 1 use the request appended below. For later stages use your findings
 from earlier stages and this project's directories.
 
+## Questions while you build
+
+The person may steer the build but does not have to. Two kinds of question:
+
+- **Optional.** Clarify's questions, and any later one whose answer only
+  improves the flow. Put each in your reply text with the assumption you
+  proceed on, then keep working in the same turn. Never call `ask` for one.
+  An answer arrives as a steering message before your next step; apply it from
+  there and redo an earlier stage only when the answer changes it.
+- **Blocking.** You cannot continue without the answer: two readings lead to
+  different flows and no default is safe. Call `ask` and wait.
+
 ## The two stages that are not optional
 
 **Stop after Design and call `ask`.** Put the goal, name, stages,
-loops, human gates, and every clarifying question with its proposed assumption
-in the `question`. Wait for the answer. If `approved` is false, stop without
+loops, human gates, every steering answer you received, and each optional
+question still unanswered with the assumption you took in the `question`.
+Wait for the answer. If `approved` is false, stop without
 writing files. Continue to Scaffold only after approval. A flow
 written from an unapproved design is work they did not ask for, and the clarify
 stage promises them this gate by name.

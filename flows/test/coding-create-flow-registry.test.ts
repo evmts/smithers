@@ -97,6 +97,10 @@ test("a freshly imported repository can run the flow the app's create door launc
   }
   assert.ok(resolved.body.text.includes("call `ask`"), "the design must reach the control approval gate")
   assert.ok(
+    resolved.body.text.includes("Never call `ask` for one") && resolved.body.text.includes("steering message"),
+    "an optional question must not park the build; its answer arrives by steering (#3870)"
+  )
+  assert.ok(
     !resolved.body.text.includes("Call one, do what it says"),
     "the entry must not require nested markdown calls"
   )
