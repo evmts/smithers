@@ -15,6 +15,8 @@
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
+import type * as Consensus from "@smthrs/journal/Consensus"
+import * as SqlConsensus from "@smthrs/journal/SqlConsensus"
 import * as SqlJournal from "@smthrs/journal/SqlJournal"
 import * as PlanStore from "@smthrs/plan-store/PlanStore"
 import * as AttemptStore from "@smthrs/run-store/AttemptStore"
@@ -35,10 +37,22 @@ import * as PlanMergeStore from "../PlanMergeStore.ts"
  * @since 0.1.0
  */
 export interface TestStoresOptions {
+  /** Shared ownership strategy; defaults to the production SQL lease strategy. */
+  readonly consensus?: Layer.Layer<Consensus.Consensus> | undefined
   readonly capacity?: number
   readonly overflow?: "reject" | "drop-newest" | "drop-oldest"
   readonly batchSize?: number
 }
+
+const ownedStores = (options?: TestStoresOptions) =>
+  Layer.merge(
+    SqlJournal.layerWith({
+      capacity: options?.capacity ?? 1024,
+      overflow: options?.overflow ?? "reject",
+      batchSize: options?.batchSize
+    }),
+    RunStore.layerWith
+  ).pipe(Layer.provide(options?.consensus ?? SqlConsensus.layer))
 
 /**
  * An in-memory SQLite database with the complete durable engine schema
@@ -65,12 +79,7 @@ export const database = Layer.provideMerge(Migrations.layer, TestDatabase.layer)
  */
 export const layer = (options?: TestStoresOptions) =>
   Layer.mergeAll(
-    SqlJournal.layer({
-      capacity: options?.capacity ?? 1024,
-      overflow: options?.overflow ?? "reject",
-      batchSize: options?.batchSize
-    }),
-    RunStore.layer,
+    ownedStores(options),
     AttemptStore.layer,
     CacheStore.layer,
     PlanStore.layer,
@@ -130,12 +139,7 @@ export const databaseAt = (filename: string) => {
  */
 export const layerAt = (filename: string, options?: TestStoresOptions) =>
   Layer.mergeAll(
-    SqlJournal.layer({
-      capacity: options?.capacity ?? 1024,
-      overflow: options?.overflow ?? "reject",
-      batchSize: options?.batchSize
-    }),
-    RunStore.layer,
+    ownedStores(options),
     AttemptStore.layer,
     CacheStore.layer,
     PlanStore.layer,
