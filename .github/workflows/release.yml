@@ -457,7 +457,7 @@ jobs:
           SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
           SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      # The migration-landing regressions in //scripts:engineeringScriptRegressions
+      # The migration-landing regressions in //flows:land
       # regenerate a fixture with the pinned sqlc (packages/backend/scripts/check-sqlc-drift.sh).
       - name: Install pinned sqlc
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
@@ -509,6 +509,20 @@ jobs:
       - name: Performance and fault drivers
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
         run: pnpm exec smthrs test '//flows:perfUnit' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Landing helper
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
+        run: pnpm exec smthrs test '//flows:land' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Landing helper end to end
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
+        run: pnpm exec smthrs test '//flows:landCommit' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
         env:
           SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
           SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"

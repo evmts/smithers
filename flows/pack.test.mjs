@@ -624,7 +624,7 @@ describe("discovery over the project flows directory", () => {
     // Every module declaration under flows/. Each one but `checks/wiki` IS its
     // own `@smthrs/flow` flow: one file, no `flows:` list, and no delegate name
     // registered on a host to join a second declaration to it.
-    const modules = ["bench/gate", "bench/jj-abi-campaign", "bench/mutations", "bench/rebase-cache", "bench/signal-campaign", "bench/soak-campaign", "perf", "perf/github-freshness", "perf/working-together", "coding", "coding/dispatch", "coding/flow-load", "coding/implementation", "coding/prototype", "coding/rebase-conflict", "coding/verify", "coding/wiki", "issue-sweep", "issue-sweep/work", "learning", "memory/calibrate", "memory/mine", "notification-policy", "release", "release-content", "review", "rollout", "todo", "wiki", "wrapped"];
+    const modules = ["land", "land/lane-gates", "land/renumber-migration", "bench/gate", "bench/jj-abi-campaign", "bench/mutations", "bench/rebase-cache", "bench/signal-campaign", "bench/soak-campaign", "perf", "perf/github-freshness", "perf/working-together", "coding", "coding/dispatch", "coding/flow-load", "coding/implementation", "coding/prototype", "coding/rebase-conflict", "coding/verify", "coding/wiki", "issue-sweep", "issue-sweep/work", "learning", "memory/calibrate", "memory/mine", "notification-policy", "release", "release-content", "review", "rollout", "todo", "wiki", "wrapped"];
     // `checks/wiki` still delegates, and its own file says why: the host binds
     // its reviewer policy to a descriptor by the `flows:` list, and the capture
     // action requires that descriptor's delegate to be the flow this host
@@ -641,10 +641,11 @@ describe("discovery over the project flows directory", () => {
     };
     // The runners, schedules and registration steps are the host's to start,
     // never a model's tool.
-    const hiddenModules = ["bench/gate", "bench/jj-abi-campaign", "bench/mutations", "bench/rebase-cache", "bench/signal-campaign", "bench/soak-campaign", "perf", "perf/github-freshness", "perf/working-together", "coding/rebase-conflict", "coding/verify", "review/change", "coding/flow-load", "issue-sweep", "issue-sweep/work", "learning", "memory/mine", "notification-policy", "rollout", "todo"];
+    const hiddenModules = ["land", "land/lane-gates", "land/renumber-migration", "bench/gate", "bench/jj-abi-campaign", "bench/mutations", "bench/rebase-cache", "bench/signal-campaign", "bench/soak-campaign", "perf", "perf/github-freshness", "perf/working-together", "coding/rebase-conflict", "coding/verify", "review/change", "coding/flow-load", "issue-sweep", "issue-sweep/work", "learning", "memory/mine", "notification-policy", "rollout", "todo"];
     // These named payloads cannot be safely reduced to a static document.
     // Keep this inventory independent of discovery's emitted warning list.
     const unavailablePayloads = [
+      "land", "land/lane-gates", "land/renumber-migration",
       "bench/gate", "bench/jj-abi-campaign", "bench/mutations", "bench/rebase-cache", "bench/signal-campaign", "bench/soak-campaign", "perf", "perf/github-freshness", "perf/working-together",
       "coding", "coding/dispatch", "coding/flow-load", "coding/implementation", "coding/prototype",
       "coding/rebase-conflict", "coding/verify", "coding/wiki",

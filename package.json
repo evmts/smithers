@@ -29,7 +29,7 @@
     "evals/*"
   ],
   "scripts": {
-    "commit": "node scripts/commit.mjs",
+    "commit": "node flows/land/commit.mjs",
     "deploy": "pnpm --filter smithers-server run deploy",
     "tui": "bun apps/tui/src/main.tsx",
     "release:workflow": "node --experimental-strip-types flows/release-support/main.ts release",

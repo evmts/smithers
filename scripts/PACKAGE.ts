@@ -51,13 +51,10 @@ const repositoryInputs = Smithers.Filegroup({ srcs: Object.values(repositoryPack
 const engineeringScriptRegressions = Smithers.NodeTest({
   runner: Smithers.testRunner([
     Smithers.file("//scripts/check-bindings.test.mjs"),
-    Smithers.file("//scripts/lane-gates.test.mjs"),
     Smithers.file("//scripts/lane-checks.test.mjs"),
-    Smithers.file("//scripts/lane-prerequisites.test.mjs"),
     Smithers.file("//scripts/homebrew-publish.test.mjs"),
     Smithers.file("//scripts/homebrew-release.test.mjs"),
     Smithers.file("//scripts/journeys/release-install.test.mjs"),
-    Smithers.file("//scripts/migration-landing.test.mjs"),
     Smithers.file("//scripts/release/host-maintenance-evidence.test.mjs")
   ]),
   srcs: [],
@@ -563,16 +560,6 @@ const lint = Smithers.EsLint({
   fix: false
 })
 
-// 53 end-to-end cases drive commit.mjs through real git, jj and the production
-// build CLI's gates: 798 s on a loaded 48-core lane host, past the 10-minute
-// default that timed the target out in the Release gates lane (#3765).
-const commit = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//scripts/commit.test.mjs")]),
-  srcs: [Smithers.file("//scripts/commit.mjs")],
-  deps: [backendSQLC],
-  timeout: "30m"
-})
-
 /**
  * The security review of the operator, CI and release scripts this package
  * owns. `repo-contract/` is its own package with its own review.
@@ -668,7 +655,6 @@ const securityReview = Smithers.SecurityReview({
         "An unvalidated positional argument placed into go build -ldflags or a similar command-line flag string."
       ],
       paths: [
-        "commit.mjs",
         "generate-changelog.mjs"
       ]
     },
@@ -731,7 +717,6 @@ export const Package = Smithers.Package({
     docsDrift,
     packageDocs,
     publishedLinksUnit,
-    commit,
     conformanceCheck,
     repositoryConformance,
     mvpDocs,

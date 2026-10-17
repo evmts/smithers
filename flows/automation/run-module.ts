@@ -70,10 +70,16 @@ export interface RunModuleOptions {
   readonly cwd?: string
   /** Interpreter arguments placed before the module, such as `--expose-gc`. */
   readonly nodeArgs?: ReadonlyArray<string>
+  /**
+   * The program that runs the module, found on `PATH`; this Node binary when
+   * omitted. A shell script names its shell, such as `bash`.
+   */
+  readonly interpreter?: string
 }
 
 /**
- * Run `node <module> ...args` and succeed on exit 0.
+ * Run `node <module> ...args`, or `<interpreter> <module> ...args`, and succeed
+ * on exit 0.
  *
  * Interrupting the effect stops the child's process group.
  *
@@ -89,7 +95,7 @@ export const runModule = (
   const root = repositoryRoot(module)
   const name = relative(root, path).split("\\").join("/")
   return Effect.callback<void, ModuleFailed>((resume) => {
-    const child = spawn(process.execPath, [...(options.nodeArgs ?? []), path, ...args], {
+    const child = spawn(options.interpreter ?? process.execPath, [...(options.nodeArgs ?? []), path, ...args], {
       cwd: options.cwd ?? process.cwd(),
       env: { ...process.env, ...options.env },
       stdio: ["ignore", "inherit", "inherit"],

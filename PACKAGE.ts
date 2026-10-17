@@ -247,8 +247,8 @@ const repoAbout = Smithers.ToolRun({
 // is never executed by build, test, lint, or CI and never cached or replayed.
 const commit = Smithers.ToolRun({
   command: "node",
-  args: ["scripts/commit.mjs"],
-  inputs: [Smithers.file("//scripts/commit.mjs")],
+  args: ["flows/land/commit.mjs"],
+  inputs: [Smithers.file("//flows/land/commit.mjs")],
   deps: [],
   cwd: "."
 })
@@ -815,7 +815,11 @@ const ci = Smithers.GithubCiGen({
         { name: "Mutation gate", verb: Smithers.Verb.Test, pattern: "//flows:mutationGate" },
         { name: "Campaign verifiers", verb: Smithers.Verb.Test, pattern: "//flows:campaignVerifiers" },
         { name: "Signal campaign verifier", verb: Smithers.Verb.Test, pattern: "//flows:signalCampaign" },
-        { name: "Performance and fault drivers", verb: Smithers.Verb.Test, pattern: "//flows:perfUnit" }
+        { name: "Performance and fault drivers", verb: Smithers.Verb.Test, pattern: "//flows:perfUnit" },
+        // The landing helper (`pnpm commit`) and its flows, lane gates and
+        // migration renumbering, with the pinned sqlc the backendSQLC dep builds.
+        { name: "Landing helper", verb: Smithers.Verb.Test, pattern: "//flows:land" },
+        { name: "Landing helper end to end", verb: Smithers.Verb.Test, pattern: "//flows:landCommit" }
       ]
     },
     {

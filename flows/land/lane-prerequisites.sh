@@ -2,7 +2,7 @@
 # Source from lane setup so the test processes inherit the prerequisite paths.
 smithers_lane_prerequisites() {
   local root target helper capabilities
-  root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P) || return 1
+  root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P) || return 1
   if ! command -v bun >/dev/null 2>&1; then
     export PATH="$HOME/.bun/bin:$PATH"
   fi

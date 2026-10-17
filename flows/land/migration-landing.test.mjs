@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { test } from 'node:test'
 
-const root = resolve(import.meta.dirname, '..')
+const root = resolve(import.meta.dirname, '../..')
 const go = spawnSync('which', ['go'], { encoding: 'utf8' }).stdout.trim()
 // A shim must not be re-entered by the tool it execs. `which git` can name a
 // wrapper that searches PATH itself, and with the shim directory first on PATH
@@ -52,7 +52,7 @@ test('production helper: renumber, real pinned sqlc, reservation conversion, lan
  try {
   const landed = readFileSync(join(dir, 'packages/backend/db/product/migrations/0001_things.sql'))
   pending(dir)
-  ok(dir, 'node', ['scripts/renumber-migration.mjs', 'packages/backend/db/product/migrations/0009_reserved.sql'], { SMITHERS_MIGRATION_TICKET: 'T-TEST-01' })
+  ok(dir, 'node', ['flows/land/renumber-migration.mjs', 'packages/backend/db/product/migrations/0009_reserved.sql'], { SMITHERS_MIGRATION_TICKET: 'T-TEST-01' })
   assert.equal(readFileSync(join(dir, 'packages/backend/db/product/migrations/0002_reserved.sql'), 'utf8'), 'CREATE TABLE reserved(id bigint PRIMARY KEY);\n')
   assert.match(readFileSync(join(dir, 'packages/backend/db/product/migrate.go'), 'utf8'), /\{2, "migrations\/0002_reserved.sql"\}/)
   assert.equal(readFileSync(join(dir, 'packages/backend/db/ownership.csv'), 'utf8'), 'table,target_owner,status\nthings,product,installed\nreserved,product,product migration 0002;owner:smithers-8a\n')
@@ -61,7 +61,7 @@ test('production helper: renumber, real pinned sqlc, reservation conversion, lan
   for (const missing of [false, true]) {
    if (missing) ok(dir, 'git', ['update-ref', '-d', 'refs/remotes/origin/main'])
    const before = bytes(dir)
-   const result = invoke(dir, 'node', ['scripts/renumber-migration.mjs', 'packages/backend/db/product/migrations/0001_things.sql'])
+   const result = invoke(dir, 'node', ['flows/land/renumber-migration.mjs', 'packages/backend/db/product/migrations/0001_things.sql'])
    assert.notEqual(result.status, 0);assert.match(result.stderr, missing ? /origin\/main/ : /already on origin\/main/);assert.deepEqual(bytes(dir), before)
   }
  } finally {rmSync(dir, { recursive: true, force: true })}
@@ -74,7 +74,7 @@ test('production helper numbers against main even when another remote branch con
   ok(dir, 'git', ['add', '.'])
   ok(dir, 'git', ['commit', '-m', 'unlanded work'])
   ok(dir, 'git', ['update-ref', 'refs/remotes/origin/frontrun', 'HEAD'])
-  ok(dir, 'node', ['scripts/renumber-migration.mjs', 'packages/backend/db/product/migrations/0009_reserved.sql'], { SMITHERS_MIGRATION_TICKET: 'T-TEST-01' })
+  ok(dir, 'node', ['flows/land/renumber-migration.mjs', 'packages/backend/db/product/migrations/0009_reserved.sql'], { SMITHERS_MIGRATION_TICKET: 'T-TEST-01' })
   assert.equal(readFileSync(join(dir, 'packages/backend/db/product/migrations/0002_reserved.sql'), 'utf8'), 'CREATE TABLE reserved(id bigint PRIMARY KEY);\n')
  } finally {rmSync(dir, { recursive: true, force: true })}
 })
@@ -86,7 +86,7 @@ test('production helper: another ticket and failed generator roll back every fix
    pending(dir)
    if (mode === 'bad SQL') writeFileSync(join(dir, 'packages/backend/db/product/queries/bad.sql'), '-- name: Bad :one\nSELECT absent FROM reserved;\n')
    const before = bytes(dir)
-   const result = invoke(dir, 'node', ['scripts/renumber-migration.mjs', 'packages/backend/db/product/migrations/0009_reserved.sql'], { SMITHERS_MIGRATION_TICKET: mode === 'another ticket' ? 'T-TEST-02' : 'T-TEST-01' })
+   const result = invoke(dir, 'node', ['flows/land/renumber-migration.mjs', 'packages/backend/db/product/migrations/0009_reserved.sql'], { SMITHERS_MIGRATION_TICKET: mode === 'another ticket' ? 'T-TEST-02' : 'T-TEST-01' })
    assert.notEqual(result.status, 0);assert.match(result.stderr, mode === 'another ticket' ? /another ticket/ : /absent/);assert.deepEqual(bytes(dir), before)
   } finally {rmSync(dir, { recursive: true, force: true })}
  }
@@ -113,7 +113,7 @@ for (const vcs of ['git', 'jj']) for (const defect of ['duplicate', 'gap', 'drif
    if (defect === 'target missing') writeFileSync(join(dir, 'packages/repo-targets/PACKAGE.ts'), 'import { Smithers as S } from "@smthrs/targets"; export const Package = S.Package({targets:{conflictMarkers:S.Shell.Diff({shell:"true",changes:[],sandbox:"none"})}})\n')
    if (defect === 'target failure') writeFileSync(join(dir, 'PACKAGE.ts'), readFileSync(join(dir, 'PACKAGE.ts'), 'utf8').replace('shell:"true"', 'shell:"false"'))
    if (defect === 'drift failure') writeFileSync(join(dir, 'packages/backend/internal/db/models.go'), '// stale generated models\n')
-   const result = invoke(dir, 'node', ['scripts/commit.mjs', '--push', '--test', 'true'], { PATH: `${tools}:${process.env.PATH}` })
+   const result = invoke(dir, 'node', ['flows/land/commit.mjs', '--push', '--test', 'true'], { PATH: `${tools}:${process.env.PATH}` })
    const commands = readFileSync(log, 'utf8').trim().split('\n')
    assert.equal(commands[0], 'go test -run TestMigrationGate|TestMigrationRegistry ./packages/backend/db/product/')
    if (defect === 'clean') {
@@ -140,8 +140,8 @@ test('helper regeneration precedes mandatory push gates in the same production c
   for (const [name, real] of [['go', go], ['sqlc', realSQLC]]) writeFileSync(join(tools, name), `#!/bin/sh\n${outerPath}printf '%s\\n' "${name} $*" >> '${log}'\nexec '${real}' "$@"\n`, { mode: 0o755 })
   writeFileSync(join(tools, 'git'), `#!/bin/sh\n${outerPath}if [ "$1" = push ]; then echo PUSH >> '${log}'; exit 0; fi\nif [ "$1" = fetch ]; then exec '${realGit}' update-ref refs/remotes/origin/main HEAD; fi\nexec '${realGit}' "$@"\n`, { mode: 0o755 })
   const env = { PATH: `${tools}:${process.env.PATH}`, SMITHERS_MIGRATION_TICKET: 'T-TEST-01' }
-  ok(dir, 'node', ['scripts/renumber-migration.mjs', 'packages/backend/db/product/migrations/0009_reserved.sql'], env)
-  ok(dir, 'node', ['scripts/commit.mjs', '--push', '--test', 'true'], env)
+  ok(dir, 'node', ['flows/land/renumber-migration.mjs', 'packages/backend/db/product/migrations/0009_reserved.sql'], env)
+  ok(dir, 'node', ['flows/land/commit.mjs', '--push', '--test', 'true'], env)
   const commands = readFileSync(log, 'utf8').trim().split('\n')
   assert.deepEqual(commands.slice(0, 6), [
    'sqlc version',
@@ -184,7 +184,7 @@ test('production helper isolates Go and sqlc from database and publication crede
   }
   // PGSERVICE/PGPASSFILE survive the outer fixture launcher. The production
   // helper, rather than the test harness, must remove them for both generators.
-  ok(dir, 'node', ['scripts/renumber-migration.mjs', 'packages/backend/db/product/migrations/0009_reserved.sql'], {
+  ok(dir, 'node', ['flows/land/renumber-migration.mjs', 'packages/backend/db/product/migrations/0009_reserved.sql'], {
    PATH: `${tools}:${process.env.PATH}`, SMITHERS_MIGRATION_TICKET: 'T-TEST-01',
    PGSERVICE: 'live-service-canary', PGSERVICEFILE: '/live-service-canary', PGPASSFILE: '/live-password-canary',
   })
@@ -201,7 +201,7 @@ test('production helper refuses a live home credential store before repository m
   mkdirSync(credentials, { recursive: true })
   writeFileSync(join(credentials, 'app.json'), '{"canary":"must remain unread"}\n')
   const before = bytes(dir)
-  const result = invoke(dir, 'node', ['scripts/renumber-migration.mjs', 'packages/backend/db/product/migrations/0009_reserved.sql'], { SMITHERS_MIGRATION_TICKET: 'T-TEST-01' })
+  const result = invoke(dir, 'node', ['flows/land/renumber-migration.mjs', 'packages/backend/db/product/migrations/0009_reserved.sql'], { SMITHERS_MIGRATION_TICKET: 'T-TEST-01' })
   assert.notEqual(result.status, 0)
   assert.match(result.stderr, /isolated home/)
   assert.deepEqual(bytes(dir), before)

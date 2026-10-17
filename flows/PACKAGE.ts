@@ -2,6 +2,8 @@
 import { Smithers } from "@smthrs/targets"
 import codingProject from "../.smithers/coding-project.json" with { type: "json" }
 import { Package as backendPackage } from "../packages/backend/PACKAGE.ts"
+import { backendSQLC } from "../packages/backend/sqlc.ts"
+import { Package as scriptPackage } from "../scripts/PACKAGE.ts"
 
 const pack = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//flows/pack.test.mjs")]),
@@ -781,9 +783,55 @@ const checkRunner = Smithers.NodeTest({
   cwd
 })
 
+/** `runModule`, which every automation flow runs its module through. */
+const automation = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//flows/automation/run-module.test.ts")]),
+  srcs: [runModuleSource],
+  deps: [],
+  cwd
+})
+
+/**
+ * The landing helper: the `land`, `land/renumber-migration` and
+ * `land/lane-gates` flows over their modules, the lane gate and prerequisite
+ * regressions, and the migration-landing suite, which drives the production
+ * renumbering and push gates through real Go, the pinned sqlc and `smthrs`.
+ * The gates read the checkout they land, so all of it is an input.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const landSources = [Smithers.glob("//flows/land/**/*"), runModuleSource]
+const land = Smithers.NodeTest({
+  runner: Smithers.testRunner([
+    Smithers.file("//flows/land/flow.test.ts"),
+    Smithers.file("//flows/land/renumber-migration/flow.test.ts"),
+    Smithers.file("//flows/land/lane-gates/flow.test.ts"),
+    Smithers.file("//flows/land/lane-gates.test.mjs"),
+    Smithers.file("//flows/land/lane-prerequisites.test.mjs"),
+    Smithers.file("//flows/land/migration-landing.test.mjs")
+  ]),
+  srcs: [sources, ...landSources],
+  deps: [scriptPackage.repositoryInputs, backendSQLC],
+  cwd
+})
+
+// 53 end-to-end cases drive commit.mjs through real git, jj and the production
+// build CLI's gates: 798 s on a loaded 48-core lane host, past the 10-minute
+// default that timed the target out in the Release gates lane (#3765).
+const landCommit = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//flows/land/commit.test.mjs")]),
+  srcs: landSources,
+  deps: [backendSQLC],
+  timeout: "30m",
+  cwd
+})
+
 const securityReview = Smithers.SecurityReview({
   cwd,
   include: [
+    // The lane gates are bash; they were reviewed under scripts/ before.
+    Smithers.glob("land/**/*.sh"),
     Smithers.glob("**/*.{ts,mjs,js,mdx}", {
       exclude: ["wiki/**", "test/**", "node_modules/**", "migrate-smithers-v1/test/**", "**/*.test.ts", "**/*.test.mjs"]
     }),
@@ -979,6 +1027,17 @@ const securityReview = Smithers.SecurityReview({
       paths: ["triage-publish/**"]
     },
     {
+      id: "land-subprocess-args",
+      title: "The landing helper spawns processes with argument vectors, never shell strings built from inputs",
+      threat:
+        "A crafted CLI flag, environment value, commit message or git ref makes the landing helper run arbitrary shell commands on a maintainer or CI host.",
+      lookFor: [
+        "exec, execSync or spawn with shell:true, or sh -c, interpolating argv, environment variables, file contents or git output.",
+        "A string option split on spaces and executed."
+      ],
+      paths: ["land/commit.mjs"]
+    },
+    {
       id: "bench-subprocess-args",
       title: "Benchmarks and campaigns spawn processes with argument vectors, never shell strings built from inputs",
       threat:
@@ -1068,6 +1127,9 @@ export const Package = Smithers.Package({
     provider,
     wiki,
     triagePublish,
+    automation,
+    land,
+    landCommit,
     mutationGate,
     benchmarkGate,
     signalCampaign,

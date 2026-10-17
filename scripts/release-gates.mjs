@@ -71,6 +71,8 @@ export const releaseGates = [
     ]
   },
   { name: "Command check runner", verb: "test", target: "//flows:checkRunner" },
+  { name: "Landing helper", verb: "test", target: "//flows:land" },
+  { name: "Landing helper end to end", verb: "test", target: "//flows:landCommit" },
   { name: "Repository flows", verb: "test", target: "//flows:pack" },
   { name: "Judge egress", verb: "test", target: "//flows:egress" },
   { name: "Repository flow fixtures", verb: "test", target: "//flows:repository" },

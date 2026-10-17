@@ -5,7 +5,7 @@ import { copyFileSync, mkdtempSync, writeFileSync, rmSync, mkdirSync, readFileSy
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { spawnSync, execFileSync } from 'node:child_process'
-const script = resolve('scripts/lane-gates.sh')
+const script = resolve(import.meta.dirname, 'lane-gates.sh')
 function fixture(t) {
   const dir = mkdtempSync(join(tmpdir(), 'lane-gates-'))
   t.after(() => rmSync(dir, { recursive: true, force: true }))
@@ -117,7 +117,7 @@ test('unformatted Go in a touched package is refused even with a tool baseline',
 // landed without it reddened both release steps twice in one day (#3765).
 test('a touched operator script or package source must pass the root ESLint config, and nothing else is linted', t => {
   const dir = fixture(t)
-  const root = resolve('.')
+  const root = resolve(import.meta.dirname, '../..')
   symlinkSync(join(root, 'node_modules'), join(dir, 'node_modules'), 'dir')
   for (const file of ['eslint.config.js', 'eslint.jsdoc.js']) copyFileSync(join(root, file), join(dir, file))
   mkdirSync(join(dir, 'scripts'))

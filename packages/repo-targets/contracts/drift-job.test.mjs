@@ -722,7 +722,7 @@ test('C-PRC-01 observes the literal required status and clean per-SHA check thro
 
 test('campaign bootstrap uses the real runner Node and retains launch failures before checkout', async () => {
   const { default: YAML } = await import('yaml')
-  const { engineeringGateEnvironment } = await import('../../../scripts/engineering-gate-environment.mjs')
+  const { engineeringGateEnvironment } = await import('../../../flows/land/engineering-gate-environment.mjs')
   const { createHash } = await import('node:crypto')
   const { dirname } = await import('node:path')
   const action = YAML.parse(await readFile(new URL('../../../.github/actions/trusted-ci-setup-campaign/action.yml', import.meta.url), 'utf8'))

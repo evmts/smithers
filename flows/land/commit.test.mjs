@@ -13,13 +13,13 @@ const copyHygiene = (directory) => {
   const gateBin = join(directory, ".git/test-bin")
   mkdirSync(gateBin, { recursive: true })
   writeFileSync(join(gateBin, "smthrs"), `#!/bin/sh
-exec "${process.execPath}" "${resolve(import.meta.dirname, "../packages/smithers/build/build-cli/src/main.ts")}" "$@"
+exec "${process.execPath}" "${resolve(import.meta.dirname, "../../packages/smithers/build/build-cli/src/main.ts")}" "$@"
 `, { mode: 0o755 })
   mkdirSync(join(directory, "packages/repo-targets/contracts"), { recursive: true })
-  copyFileSync(resolve(import.meta.dirname, "../packages/repo-targets/contracts/check-tracked-hygiene.mjs"), join(directory, "packages/repo-targets/contracts/check-tracked-hygiene.mjs"))
+  copyFileSync(resolve(import.meta.dirname, "../../packages/repo-targets/contracts/check-tracked-hygiene.mjs"), join(directory, "packages/repo-targets/contracts/check-tracked-hygiene.mjs"))
   rmSync(join(directory, "node_modules"), { recursive: true, force: true })
   rmSync(join(directory, "WORKSPACE.ts"), { force: true })
-  symlinkSync(resolve(import.meta.dirname, "../node_modules"), join(directory, "node_modules"), "dir")
+  symlinkSync(resolve(import.meta.dirname, "../../node_modules"), join(directory, "node_modules"), "dir")
   writeFileSync(join(directory, ".gitignore"), "node_modules\n.flows/\n")
   writeFileSync(join(directory, "package.json"), '{"name":"landing-fixture","private":true,"packageManager":"pnpm@11.25.0"}\n')
   writeFileSync(join(directory, "yarn.lock"), "")
@@ -60,7 +60,7 @@ export const Package = S.Package({ targets: {
     `        run: "pnpm exec smthrs lint '//:targetIndex' --verbose"`, ''
   ].join("\n")
   for (const file of ["drift.yml", "ci.yml"]) writeFileSync(join(directory, ".github/workflows", file), workflowBytes)
-  const indexed = spawnSync(process.execPath, [resolve(import.meta.dirname, "../packages/smithers/build/build-cli/src/main.ts"), "target", "//:targetIndex", "--write"], { cwd: directory, encoding: "utf8" })
+  const indexed = spawnSync(process.execPath, [resolve(import.meta.dirname, "../../packages/smithers/build/build-cli/src/main.ts"), "target", "//:targetIndex", "--write"], { cwd: directory, encoding: "utf8" })
   assert.equal(indexed.status, 0, indexed.stderr + indexed.stdout)
 
 }
@@ -292,7 +292,7 @@ for (const vcs of ["git", "jj"]) {
           // not substitute for a passing trackedHygiene target contract.
           const label = gate === "workflowInput" ? "//:targetIndex" :
             ["trackedHygiene", "conflictMarkers"].includes(gate) ? `//packages/repo-targets:${gate}` : `//:${gate}`
-          const checked = command(directory, process.execPath, [resolve(import.meta.dirname, "../packages/smithers/build/build-cli/src/main.ts"), "lint", label])
+          const checked = command(directory, process.execPath, [resolve(import.meta.dirname, "../../packages/smithers/build/build-cli/src/main.ts"), "lint", label])
           assert.notEqual(checked.status, 0, checked.stdout + checked.stderr)
           const result = command(directory, process.execPath, [script, "--push", ...(mode === "test" ? ["--test", "true"] : ["--no-test", "manual recovery"])])
           assert.notEqual(result.status, 0)

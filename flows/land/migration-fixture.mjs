@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { copyFileSync, mkdirSync, writeFileSync, symlinkSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-const root = resolve(import.meta.dirname, '..')
+const root = resolve(import.meta.dirname, '../..')
 process.env.PATH = `${join(root, '.backend-sqlc')}:${join(root, 'node_modules/.bin')}:${process.env.PATH}`
 // Keep toolchain downloads outside disposable homes: Go module directories are
 // read-only and cannot be removed by recursive fixture cleanup on macOS.
@@ -28,7 +28,7 @@ func registeredMigrations()([]fs.DirEntry,error){return migrations.ReadDir("migr
 const schema = 'CREATE TABLE things(id bigint PRIMARY KEY);\n'
 export function installMigrationFixture(dir) {
  const product = join(dir, 'packages/backend/db/product')
- mkdirSync(join(product, 'migrations'), { recursive: true });mkdirSync(join(product, 'queries'));mkdirSync(join(dir, 'packages/backend/internal/db'), { recursive: true });mkdirSync(join(dir, 'scripts'), { recursive: true })
+ mkdirSync(join(product, 'migrations'), { recursive: true });mkdirSync(join(product, 'queries'));mkdirSync(join(dir, 'packages/backend/internal/db'), { recursive: true });mkdirSync(join(dir, 'flows/land'), { recursive: true })
  mkdirSync(join(dir, 'node_modules/@smthrs'), {recursive:true})
  symlinkSync(join(root, 'packages/smithers/build/targets'), join(dir, 'node_modules/@smthrs/targets'), 'dir')
  writeFileSync(join(dir, '.gitignore'), 'node_modules\n.flows/\n')
@@ -68,7 +68,7 @@ export const Package = S.Package({ targets: {
  writeFileSync(join(product, 'queries/things.sql'), '-- name: GetThings :many\nSELECT id FROM things;\n')
  copyFileSync(join(root, 'packages/backend/internal/db/sqlc_regeneration_test.go'), join(dir, 'packages/backend/internal/db/sqlc_regeneration_test.go'))
  mkdirSync(join(dir, 'packages/backend/scripts'), { recursive: true }); copyFileSync(join(root, 'packages/backend/scripts/check-sqlc-drift.sh'), join(dir, 'packages/backend/scripts/check-sqlc-drift.sh'))
- for (const name of ['engineering-gate-environment.mjs', 'commit.mjs', 'renumber-migration.mjs']) copyFileSync(join(root, 'scripts', name), join(dir, 'scripts', name))
+ for (const name of ['engineering-gate-environment.mjs', 'commit.mjs', 'renumber-migration.mjs']) copyFileSync(join(import.meta.dirname, name), join(dir, 'flows/land', name))
  assert.ok(sqlc, 'pinned sqlc must be installed')
  ok(dir, sqlc, ['generate', '-f', 'packages/backend/db/product/sqlc.yaml'])
 }

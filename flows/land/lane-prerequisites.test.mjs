@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { test } from 'node:test'
 
-const script = resolve('scripts/lane-prerequisites.sh')
+const script = resolve(import.meta.dirname, 'lane-prerequisites.sh')
 test('lane prerequisites build once, honor a spaced target path and export it', t => {
   const root = mkdtempSync(join(tmpdir(), 'lane-prerequisites-'))
   t.after(() => rmSync(root, { recursive: true, force: true }))

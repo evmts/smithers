@@ -317,7 +317,7 @@ describe("ci conformance", () => {
         "go run ./packages/backend/modelprice/cmd/generate -check && node scripts/package-docs.mjs --check && node scripts/package-docs.test.mjs",
       "docs:sync": "pnpm --filter @smithers/site run sync:docs && node scripts/package-docs.mjs --write",
       dev: "pnpm --filter smithers-app run start",
-      commit: "node scripts/commit.mjs",
+      commit: "node flows/land/commit.mjs",
       deploy: "pnpm --filter smithers-server run deploy",
       lint: "pnpm --recursive --if-present run lint",
       "target-index": "pnpm exec smthrs target '//:targetIndex' --write",

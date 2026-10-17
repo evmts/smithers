@@ -140,7 +140,7 @@ else
   changed=$(git ls-files)   # every file: the baseline covers all suites
   allfails=$(mktemp)
 fi
-source "$root/scripts/lane-prerequisites.sh" || { echo "BLOCKED: test prerequisites failed" | tee -a "$log"; exit 1; }
+source "$root/flows/land/lane-prerequisites.sh" || { echo "BLOCKED: test prerequisites failed" | tee -a "$log"; exit 1; }
 newreds=()
 
 # PostgreSQL is required: database tests must run, never skip.
@@ -150,10 +150,10 @@ if ! psql "$SMITHERS_TEST_DATABASE_URL" -Atc 'select 1' >/dev/null 2>&1 && ! pg_
   echo "BLOCKED: no PostgreSQL at $SMITHERS_TEST_DATABASE_URL (database tests must run, not skip)" | tee -a "$log"; exit 1
 fi
 
-# 1. The gates scripts/commit.mjs requires before any push to main.
+# 1. The gates flows/land/commit.mjs requires before any push to main.
 check migration-gate "go test -run 'TestMigrationGate|TestMigrationRegistry' ./packages/backend/db/product/"
 [ -f packages/backend/scripts/check-sqlc-drift.sh ] && check sqlc-drift "bash packages/backend/scripts/check-sqlc-drift.sh"
-check lane-gates "node --test scripts/lane-gates.test.mjs scripts/lane-prerequisites.test.mjs"
+check lane-gates "node --test flows/land/lane-gates.test.mjs flows/land/lane-prerequisites.test.mjs"
 check tracked-hygiene "node packages/repo-targets/contracts/check-tracked-hygiene.mjs"
 # A here-string, not a pipe: a piped function runs in a subshell and its newreds would be lost.
 [ $mode = gate ] && check_root_lint <<< "$changed"
