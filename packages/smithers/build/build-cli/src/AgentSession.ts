@@ -983,7 +983,21 @@ const publishFile = async (path: string, contents: string, mode?: number): Promi
     } finally {
       await handle.close()
     }
-    await Fs.rename(temporary, path)
+    for (let attempt = 0;; attempt += 1) {
+      try {
+        await Fs.rename(temporary, path)
+        break
+      } catch (cause) {
+        const code = (cause as NodeJS.ErrnoException).code
+        // Windows replacement can briefly conflict with another replacement.
+        // Retry the same closed inode; never unlink the published destination.
+        if (
+          process.platform !== "win32" || attempt >= 6 ||
+          (code !== "EPERM" && code !== "EACCES" && code !== "EBUSY")
+        ) throw cause
+        await new Promise((resolve) => setTimeout(resolve, 10 * 2 ** attempt))
+      }
+    }
   } finally {
     await Fs.rm(temporary, { force: true })
   }

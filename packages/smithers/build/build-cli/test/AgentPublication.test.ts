@@ -251,3 +251,48 @@ describe.skipIf(process.platform === "win32")("agent publication", () => {
     expect((await Fs.readdir(path("src"))).sort()).toEqual(["a.ts", "b.ts", "input.ts"])
   })
 })
+
+// Windows sharing conflicts arise while another atomic replacement is in flight.
+// Inject only the syscall errno; all temporary writes, reads and cleanup are real.
+describe("verdict replacement sharing conflicts", () => {
+  for (const code of ["EPERM", "EACCES", "EBUSY"]) {
+    it(`retries a transient Windows ${code} without removing the old verdict`, async () => {
+      const platform = Object.getOwnPropertyDescriptor(process, "platform")!
+      const store = AgentSession.makeFileVerdictStore(path("verdicts"))
+      await Effect.runPromise(store.put("same", JSON.stringify({ value: "old" })))
+      vi.mocked(Fs.rename).mockImplementationOnce(async () => {
+        expect(await contents("verdicts/same.json")).toBe(JSON.stringify({ value: "old" }))
+        throw Object.assign(new Error("sharing conflict"), { code })
+      })
+      try {
+        Object.defineProperty(process, "platform", { ...platform, value: "win32" })
+        await Effect.runPromise(store.put("same", JSON.stringify({ value: "new" })))
+        expect(await Effect.runPromise(store.get("same"))).toBe(JSON.stringify({ value: "new" }))
+        expect(await Fs.readdir(path("verdicts"))).toEqual(["same.json"])
+        expect(vi.mocked(Fs.rename)).toHaveBeenCalledTimes(3)
+      } finally {
+        Object.defineProperty(process, "platform", platform)
+      }
+    })
+  }
+
+  it.each([["win32", "EPERM", 7], ["win32", "EIO", 1], ["darwin", "EPERM", 1]] as const)(
+    "bounds permanent %s %s failures and preserves the destination",
+    async (host, code, attempts) => {
+      const platform = Object.getOwnPropertyDescriptor(process, "platform")!
+      const store = AgentSession.makeFileVerdictStore(path("verdicts"))
+      await Effect.runPromise(store.put("same", JSON.stringify({ value: "old" })))
+      vi.mocked(Fs.rename).mockClear().mockRejectedValue(Object.assign(new Error("denied"), { code }))
+      try {
+        Object.defineProperty(process, "platform", { ...platform, value: host })
+        await expect(Effect.runPromise(store.put("same", JSON.stringify({ value: "new" }))))
+          .rejects.toThrow("denied")
+        expect(await contents("verdicts/same.json")).toBe(JSON.stringify({ value: "old" }))
+        expect(await Fs.readdir(path("verdicts"))).toEqual(["same.json"])
+        expect(vi.mocked(Fs.rename)).toHaveBeenCalledTimes(attempts)
+      } finally {
+        Object.defineProperty(process, "platform", platform)
+      }
+    }
+  )
+})
