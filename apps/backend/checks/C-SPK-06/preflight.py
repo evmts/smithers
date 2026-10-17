@@ -11,7 +11,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-APPROVAL = 'distribution/homebrew-spike-approved.json'
+APPROVAL = 'apps/backend/checks/C-SPK-06/homebrew-spike-approved.json'
 IMAGE = 'node@sha256:71fed097c6e5bae40e1aff698793dda483e2380cc2530d7367a72a9d037c798b'
 REQUIRED = ('bin/msb', 'bin/smithers-backend', 'lib/libkrunfw.5.dylib',
             'share/microsandbox/base-image.oci.tar', 'share/microsandbox/base-image.json')

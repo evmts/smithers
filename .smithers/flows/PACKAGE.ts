@@ -5,6 +5,7 @@ import { Package as backendPackage } from "../../packages/backend/PACKAGE.ts"
 import { backendSQLC } from "../../packages/backend/sqlc.ts"
 import { Package as repoTargetsPackage } from "../../packages/repo-targets/PACKAGE.ts"
 import { libraryPackages, repoRoot } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
+import { Package as testingPackage } from "../../packages/testing/PACKAGE.ts"
 import codingProject from "../coding-project.json" with { type: "json" }
 
 const pack = Smithers.NodeTest({
@@ -24,15 +25,9 @@ const sources = Smithers.glob("//.smithers/flows/**/*.ts")
 // issue claims, landing).
 const automationModules = Smithers.Filegroup({ cwd: ".smithers/flows", srcs: [Smithers.glob("**/*.mjs")] })
 
-// The real-run model stand-in's script, which the scripted wiki reviewer suite runs.
-const todoTurns = [
-  Smithers.file("//distribution/fake-todo-turns.mjs"),
-  Smithers.file("//distribution/fake-todo-turns.d.mts")
-]
-
 const check = Smithers.Typecheck({
-  srcs: [sources, ...todoTurns],
-  deps: [automationModules],
+  srcs: [sources],
+  deps: [automationModules, testingPackage.check],
   tsconfig: Smithers.file("tsconfig.json"),
   buildMode: false,
   incremental: false,
@@ -446,10 +441,12 @@ const codingBundleBun = Smithers.Shell.Test({
 const wiki = Smithers.NodeTest({
   runner: Smithers.testRunner([
     Smithers.file("//.smithers/flows/test/wiki.test.ts"),
-    Smithers.file("//.smithers/flows/test/wiki-scripted-reviewer.test.ts")
+    Smithers.file("//.smithers/flows/test/wiki-scripted-reviewer.test.ts"),
+    Smithers.file("//.smithers/flows/test/builtin-script-teachings.test.ts")
   ]),
-  srcs: [sources, ...todoTurns],
-  deps: [],
+  srcs: [sources],
+  // The scripted reviewer and the teachings pin import @smthrs/testing's BuiltinScript.
+  deps: [testingPackage.check],
   cwd
 })
 

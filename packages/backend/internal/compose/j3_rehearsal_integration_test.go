@@ -156,7 +156,7 @@ func settled(s *liveSocket, topic string, within time.Duration, ok func(liveFram
 // TestJ3Rehearsal walks journey J3 (mvp.md §5, join a branch; C-J3-01,
 // C-J3-05) on the install J1 sets up, as members Ben and Alice on the
 // trusted-process runtime. The owner files T2, whose run asks a question
-// first and then holds its edit (distribution/fake-todo-turns.mjs [ASK]
+// first and then holds its edit (@smthrs/testing BuiltinScript [ASK]
 // [HOLD t2]). Ben sees T2 in Needs you and opens its branch over /api/live;
 // Alice's File card location reaches his Branch card; Ben steers, then
 // answers, and the coding agent continues on the same run and working copy.

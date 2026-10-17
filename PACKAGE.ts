@@ -13,6 +13,7 @@ import project from "./apps/site/src/data/project.json" with { type: "json" }
 import { Package as modelHostPackage } from "./packages/smithers/agent/model-host/PACKAGE.ts"
 import { Package as integrationsPackage } from "./packages/smithers/agent/integrations/PACKAGE.ts"
 import { Package as flowsPackage } from "./packages/smithers/flows/PACKAGE.ts"
+import { Package as testingPackage } from "./packages/testing/PACKAGE.ts"
 import { Package as codingFlowsPackage } from "./.smithers/flows/PACKAGE.ts"
 
 // Workspace selections cross package boundaries as explicit files. Expansion
@@ -434,7 +435,8 @@ const backendGo = Smithers.Shell.Test({
     Smithers.file("//packages/rpc/contracts/app-bootstrap-v1.schema.json"),
     backendPackage.buildInputs,
     Smithers.glob("//apps/backend/**/*"),
-    Smithers.glob("//distribution/**/*"),
+    // The journey rehearsals' scripted coding model (smthrs-model-server --script builtin).
+    testingPackage.modelServer,
     Smithers.glob("//docs/api/**/*")
   ],
   services: [backendPostgres],

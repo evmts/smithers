@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { existsSync, lstatSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { existsSync, lstatSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { spawnSync } from "node:child_process"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -35,35 +35,33 @@ test("removed image files are absent", () => {
 })
 test("active consumers contain no deleted image or launcher references", () => {
   const patterns = ["distribution/" + "Dockerfile", "ghcr.io/smithersai/" + "smithers", "docker-web-" + "selfhost", "SMITHERS_MODE_MATRIX_" + "IMAGE"]
-  const found = references(root, [".github", ".smithers/flows", "apps", "packages", "distribution", "PACKAGE.ts", ".smithers/target-index.json"], patterns)
+  const found = references(root, [".github", ".smithers/flows", "apps", "packages", "PACKAGE.ts", ".smithers/target-index.json"], patterns)
   assert.deepEqual(found, [], found.join("\n"))
 })
 test("retired lifecycle scripts are absent and no active consumer runs them", () => {
   // T-INS-07 ported their guards to the backend; `smthrs host` owns the lifecycle.
   for (const name of ["backup.sh", "restore.sh", "upgrade.sh", "lib.sh", "distribution_test.go"]) assert.equal(existsSync(`${root}/distribution/${name}`), false, name)
   const patterns = ["distribution/" + "lib.sh", "distribution/" + "backup.sh", "distribution/" + "restore.sh", "distribution/" + "upgrade.sh", "SMITHERS_" + "BACKUP_ROOT", "SMITHERS_LIB" + "="]
-  const found = references(root, [".github", ".smithers/flows", "apps", "packages", "distribution"], patterns)
+  const found = references(root, [".github", ".smithers/flows", "apps", "packages"], patterns)
   assert.deepEqual(found, [], found.join("\n"))
 })
 test("the surviving build test and command executor remain", () => {
   assert.ok(existsSync(`${root}/packages/backend/internal/compose/build_backend_script_test.go`))
   assert.ok(existsSync(`${root}/apps/app/scripts/mode-matrix/command-execution.ts`))
 })
-test("distribution files live beside their callers and model fakes stay gone", () => {
+test("distribution files live beside their callers and no top-level distribution folder returns", () => {
   // The Mac bundle's manifest writer and licenses sit with the bundle build;
   // the CLI release installer with the CLI package's build scripts (#4086).
   for (const file of ["apps/app/scripts/flow-host-manifest.mts", "apps/app/licenses/jj-LICENSE",
     "apps/app/licenses/git-COPYING", "packages/smithers/scripts/build-cli.mjs", "packages/smithers/scripts/install-cli.mjs"]) {
     assert.ok(existsSync(`${root}/${file}`), file)
   }
-  // Only the journey rehearsals' scripted TODO model remains, until recorded
-  // models replace it (#4086); the real-host coding test replays a recording
-  // through @smthrs/testing's model server, and nothing new joins it.
-  assert.deepEqual(readdirSync(`${root}/distribution`).sort(), ["fake-todo-provider.mjs", "fake-todo-turns.d.mts",
-    "fake-todo-turns.mjs", "fake-todo-turns.test.mjs"])
+  // Model doubles are @smthrs/testing's public API (CachedModel, ScriptedModel,
+  // BuiltinScript, smthrs-model-server), never a repo-only folder (#4086).
+  assert.equal(existsSync(`${root}/distribution`), false, "distribution/ must not return; put a test double in @smthrs/testing")
   const patterns = ["distribution/" + "flow-host-manifest", "distribution/" + "licenses",
     "distribution/" + "install-cli", "distribution/" + "build-cli", "distribution/" + "backend_build_test",
-    "fake-coding-" + "provider"]
+    "fake-coding-" + "provider", "fake-todo-" + "provider", "fake-todo-" + "turns", "distribution/" + "homebrew-spike"]
   const found = references(root, [".github", "apps", "packages", ".smithers/flows", "PACKAGE.ts"], patterns)
   assert.deepEqual(found, [], found.join("\n"))
 })

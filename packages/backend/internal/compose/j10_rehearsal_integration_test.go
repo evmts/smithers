@@ -945,7 +945,7 @@ func TestJ10Rehearsal(t *testing.T) {
 				return err
 			}
 			began := time.Now()
-			// [CHANGELOG] makes the scripted fix (fake-todo-turns.mjs) change the
+			// [CHANGELOG] makes the scripted fix (BuiltinScript) change the
 			// tree, so the steered attempt has a new head to push.
 			if _, err := r.fakeControl("/_fake/reviews", map[string]any{"repo": repo, "number": pr2, "login": "alice", "state": "CHANGES_REQUESTED",
 				"body": "Use the existing backoff helper [CHANGELOG]", "path": "retry-webhooks.md", "line": 1}); err != nil {

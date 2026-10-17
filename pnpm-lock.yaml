@@ -257,6 +257,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/testing':
+        specifier: workspace:*
+        version: link:../../packages/testing
       '@types/bun':
         specifier: latest
         version: 1.4.3
@@ -498,6 +501,9 @@ importers:
       '@smthrs/sync':
         specifier: workspace:*
         version: link:../../packages/smithers/flows/sync
+      '@smthrs/testing':
+        specifier: workspace:*
+        version: link:../../packages/testing
       '@tailwindcss/postcss':
         specifier: 4.3.3
         version: 4.3.3

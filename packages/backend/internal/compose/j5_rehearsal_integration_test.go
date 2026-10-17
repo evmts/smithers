@@ -16,7 +16,7 @@ import (
 
 // TestJ5Rehearsal walks journey J5 (mvp.md §5, teach the factory; C-J5-01,
 // C-J5-02) on the install J1 sets up. TODO A asks a question and waits
-// (distribution/fake-todo-turns.mjs [ASK]); TODO B is the flow edit
+// (@smthrs/testing BuiltinScript [ASK]); TODO B is the flow edit
 // ([FLOWEDIT]): its PR changes exactly .smithers/flows/todo/flow.ts, the built-in
 // composition plus a changelog step. Ben merges B; flow-load runs on every
 // main move (spec §11.3.1) and makes B's flow Active; a broken flow merged on

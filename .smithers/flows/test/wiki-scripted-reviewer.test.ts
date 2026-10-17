@@ -1,18 +1,18 @@
 /**
- * The install's scripted model (distribution/fake-todo-turns.mjs, served by the
+ * The install's scripted model (@smthrs/testing BuiltinScript, served by the
  * real-run stand-in) reviews the pages the wiki flow really builds. Each test
  * runs smithers/Wiki end to end: Collect builds the evidence, the real
  * ReviewPage AgentAction renders its request, the scripted model answers it,
  * and exact assessment, the citation check and the verified write all hold.
  */
 import { NodeServices } from "@effect/platform-node"
+import * as BuiltinScript from "@smthrs/testing/BuiltinScript"
 import { Effect } from "effect"
 import assert from "node:assert/strict"
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { test, type TestContext } from "node:test"
-import { isTodoJudgement, todoAnswer, todoTurn } from "../../../distribution/fake-todo-turns.mjs"
 import type { PageSpec } from "../wiki/schema.ts"
 
 /** A repository shaped like the install's real target (codeplanesmithers/canary-sandbox) plus the source shapes real repositories carry. */
@@ -65,19 +65,16 @@ const refresh = async (root: string, pages: ReadonlyArray<PageSpec>) => {
   const { default: Wiki } = await import("../wiki/flow.ts")
   const { actionLayers, agentLayers } = await import("../wiki/runtime.ts")
   const steps: Array<string> = []
+  const script = BuiltinScript.make()
   const model = Model.make({
     stream: (request) =>
       Stream.suspend(() => {
-        // The stand-in reads a Chat Completions body: the system parts, then the conversation.
-        const turn = todoTurn([
-          { role: "system", content: request.system.map((part) => part.text).join("\n") },
-          ...request.messages
-        ])
-        steps.push(turn?.step ?? "unscripted")
+        const turn = script.script(request)
+        steps.push(turn?.name ?? "unscripted")
         assert.ok(turn !== undefined, "the scripted model has no answer for this turn")
         return Stream.fromIterable([
           ModelEvent.ModelEvent.TextStart({ type: "text-start", id: "review" }),
-          ModelEvent.ModelEvent.TextDelta({ type: "text-delta", id: "review", text: turn.content }),
+          ModelEvent.ModelEvent.TextDelta({ type: "text-delta", id: "review", text: turn.text }),
           ModelEvent.ModelEvent.TextEnd({ type: "text-end", id: "review" }),
           ModelEvent.ModelEvent.Settle({ type: "settle", stopReason: "stop" })
         ])
@@ -110,8 +107,8 @@ const refresh = async (root: string, pages: ReadonlyArray<PageSpec>) => {
   // the shared scripted answers.
   const judge = Evaluator.layerScripted((request) => {
     const ids = Object.keys(request.questions)
-    if (isTodoJudgement(request.questions) || (ids.length === 1 && ids[0] === "support")) {
-      return Object.fromEntries(ids.map((id) => [id, todoAnswer(id, request.questions[id]!)]))
+    if (BuiltinScript.isJudgement(request.questions) || (ids.length === 1 && ids[0] === "support")) {
+      return Object.fromEntries(ids.map((id) => [id, BuiltinScript.answer(id, request.questions[id]!)]))
     }
     const agent = ScriptedJudge.answererFor(ids)
     if (agent !== undefined) return agent(request)

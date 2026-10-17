@@ -9,7 +9,7 @@ import (
 func TestJ7AmendDispatchCutoff(t *testing.T) {
 	admitted := time.Date(2026, 10, 8, 18, 0, 0, 0, time.UTC)
 	turn := func(key string, offset time.Duration) map[string]any {
-		return map[string]any{"hold": key, "dispatchAt": admitted.Add(offset).Format(time.RFC3339Nano)}
+		return map[string]any{"hold": key, "at": admitted.Add(offset).Format(time.RFC3339Nano)}
 	}
 	turns := []map[string]any{turn("t2", -time.Minute), turn("tn", time.Second), turn("t2", 0), turn("t2", time.Second)}
 	index, err := firstHeldTurnAfterAdmission(turns, "t2", admitted)
@@ -21,7 +21,7 @@ func TestJ7AmendDispatchCutoff(t *testing.T) {
 	index, err = firstHeldTurnAfterAdmission(turns[:2], "t2", admitted)
 	require.NoError(t, err)
 	require.Equal(t, -1, index)
-	for _, malformed := range []map[string]any{{"hold": "t2"}, {"hold": "t2", "dispatchAt": "not-a-time"}} {
+	for _, malformed := range []map[string]any{{"hold": "t2"}, {"hold": "t2", "at": "not-a-time"}} {
 		index, err = firstHeldTurnAfterAdmission([]map[string]any{malformed}, "t2", admitted)
 		require.Error(t, err)
 		require.Equal(t, -1, index, "missing evidence refuses qualification")

@@ -44,6 +44,7 @@
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
+    "@smthrs/testing": "workspace:*",
     "@types/node": "26.4.1",
     "dprint": "0.57.1",
     "eslint": "9.39.5",

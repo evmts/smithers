@@ -18,7 +18,7 @@ import { matrixFlowCell } from "./matrix-flow-fixture"
  * answered on any model it serves: a Chat Completions turn that
  * carries a coding step's system teaching gets that step's scripted cell, and an
  * evaluation that asks the coding run's questions gets Jev's TODO answers, both
- * from distribution/fake-todo-turns.mjs, the J1 rehearsal's script. A credential that is not byte-equal
+ * from @smthrs/testing BuiltinScript, the journey rehearsals' script. A credential that is not byte-equal
  * to SMITHERS_MODEL_PROVIDER_KEY is 401, and "down" is a SIGTERM of this
  * process. GET /__journal is append-only evidence that holds a credential's
  * sha256 and never its value. Any session may launch its own copy through
@@ -28,7 +28,7 @@ import { matrixFlowCell } from "./matrix-flow-fixture"
  *   [SMITHERS_MODEL_PROVIDER_SLOW_MS=8000] bun e2e/real/support/model-provider.ts
  */
 import { createHash, timingSafeEqual } from "node:crypto"
-import { isTodoJudgement, todoAnswer, todoTurn } from "../../../../../distribution/fake-todo-turns.mjs"
+import * as BuiltinScript from "@smthrs/testing/BuiltinScript"
 import {
   INSTALL_MODEL, PROVIDER_CONFIDENCE, PROVIDER_ECHO_LEAD, PROVIDER_MODEL, PROVIDER_PATHS, PROVIDER_READ_LEAD, PROVIDER_REPLY, PROVIDER_RETRY_AFTER_SECONDS,
   type ProviderJournalEntry, type ProviderProtocol
@@ -43,6 +43,7 @@ const slowMs = Number(process.env.SMITHERS_MODEL_PROVIDER_SLOW_MS ?? "8000")
 if (!Number.isFinite(slowMs) || slowMs < 0) throw new Error(`Invalid SMITHERS_MODEL_PROVIDER_SLOW_MS: ${process.env.SMITHERS_MODEL_PROVIDER_SLOW_MS}`)
 
 const journal: ProviderJournalEntry[] = []
+const builtin = BuiltinScript.make()
 const encoder = new TextEncoder()
 const sha = (value: string): string => createHash("sha256").update(value).digest("hex")
 // Both sides are hashed first, so the comparison is constant-time and length-blind.
@@ -152,7 +153,7 @@ const judgeTodo = (questions: Record<string, unknown>): Response => {
   const confidence: Record<string, number> = {}
   try {
     for (const [id, question] of Object.entries(questions)) {
-      answers[id] = todoAnswer(id, isRecord(question) ? question : {})
+      answers[id] = BuiltinScript.answer(id, isRecord(question) ? question : {})
       confidence[id] = PROVIDER_CONFIDENCE
     }
   } catch (error) {
@@ -233,9 +234,9 @@ const serve = async (protocol: ProviderProtocol, request: Request): Promise<Resp
     ? body.messages.filter(isRecord).map(message => messageText(message.content)).join("\n") : ""
   const matrixCell = matrixFlowCell(matrixTask)
   if (matrixCell) return record(openaiStream(modelId, includeUsage, [matrixCell]), "matrix/flow")
-  const coding = protocol === "openai-chat" && Array.isArray(body.messages) ? todoTurn(body.messages.filter(isRecord)) : undefined
-  if (coding !== undefined) return record(openaiStream(modelId, includeUsage, [coding.content]), coding.step)
-  if (protocol === "evaluation" && isTodoJudgement(questions)) return record(judgeTodo(questions ?? {}), "todo/judge")
+  const coding = protocol === "openai-chat" && Array.isArray(body.messages) ? builtin.respond(body.messages.filter(isRecord)) : undefined
+  if (coding !== undefined) return record(openaiStream(modelId, includeUsage, [coding.text]), coding.name)
+  if (protocol === "evaluation" && BuiltinScript.isJudgement(questions)) return record(judgeTodo(questions ?? {}), "todo/judge")
   const read = protocol === "openai-chat" && reads.has(modelId) ? readsAnswer(modelId, body) : undefined
   if (read !== undefined) return record(read)
   const answer = record(

@@ -15,6 +15,7 @@ import { Package as rpcPackage } from "../../packages/rpc/PACKAGE.ts"
 import { Package as harnessDetectPackage } from "../../packages/smithers/agent/harness-detect/PACKAGE.ts"
 import { Package as gatewayPackage } from "../../packages/smithers/gateway/PACKAGE.ts"
 import { Package as componentPackage } from "../../packages/smithers/ui/PACKAGE.ts"
+import { Package as testingPackage } from "../../packages/testing/PACKAGE.ts"
 
 const cwd = "apps/app"
 
@@ -74,9 +75,6 @@ const proofSources = Smithers.glob("//apps/app/proof/**/*")
 /** The assertion contracts the e2e tiers share; pure, so the unit suite gates them. */
 const contractSources = Smithers.glob("//apps/app/e2e/contracts/**/*.ts")
 
-/** The TODO coding run's scripted answers the model stand-in serves, shared with the J1 rehearsal's fake, and their types. */
-const todoTurns = [Smithers.file("//distribution/fake-todo-turns.mjs"), Smithers.file("//distribution/fake-todo-turns.d.mts")]
-
 /**
  * Checks the application against its own tsconfig.
  *
@@ -96,13 +94,12 @@ const check = Smithers.Typecheck({
     harnessSources,
     suiteSources,
     proofSources,
-    ...todoTurns,
     lintSources,
     ...buildConfigs,
     Smithers.file("playwright.config.ts"),
     Smithers.file("playwright.showcase.config.ts")
   ],
-  deps: [],
+  deps: [testingPackage.check],
   tsconfig: Smithers.file("tsconfig.json"),
   buildMode: false,
   incremental: false,
@@ -139,7 +136,6 @@ const unitTests = Smithers.NodeTest({
     harnessSources,
     suiteSources,
     proofSources,
-    ...todoTurns,
     ...buildConfigs,
     Smithers.glob("//apps/app/*.ts"),
     Smithers.file("tsconfig.json"),
@@ -153,7 +149,7 @@ const unitTests = Smithers.NodeTest({
     Smithers.file("//packages/rpc/fixtures/force/plan-typeCheck.json")
   ],
   // Globs cannot cross PACKAGE.ts boundaries; dependency keys carry these sources.
-  deps: [rpcPackage.check, componentPackage.check, gatewayPackage.check, harnessDetectPackage.check],
+  deps: [rpcPackage.check, componentPackage.check, gatewayPackage.check, harnessDetectPackage.check, testingPackage.check],
   cwd
 })
 

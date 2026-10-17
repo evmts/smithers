@@ -103,7 +103,7 @@ func (h stackJourneyChatHost) RunChatTurn(ctx context.Context, grant ports.ChatT
 var stackJourneyHold = regexp.MustCompile(`\[HOLD [A-Za-z0-9._-]+\]`)
 
 // stackJourneyQuestion is the question an [ASK] TODO raises (C-J4-02 T2),
-// the same words distribution/fake-todo-turns.mjs asks on the rehearsal.
+// the same words @smthrs/testing BuiltinScript asks on the rehearsal.
 const stackJourneyQuestion = "Which greeting should the file carry?"
 
 // stackJourneyFixtureFlow settles each filed TODO as the fixture `todo` flow

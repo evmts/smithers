@@ -17,7 +17,7 @@ import (
 // TestJ7Rehearsal walks journey J7 (mvp.md §5, plan and fork; C-J7-01..03)
 // on the install J1 sets up. Its setup is C-J7-01's stack at the default
 // parallel of 2: T1 in review, T2 working and held at its edit, T3 behind
-// it and held too ([HOLD key] markers of distribution/fake-todo-turns.mjs).
+// it and held too ([HOLD key] markers of @smthrs/testing BuiltinScript).
 // TN goes before T3; the owner opens a third slot and holds its edit (row 6).
 // The owner amends
 // T2 while its edit is held, and its run's next implement turn reads the
@@ -555,7 +555,7 @@ func (r *rehearsal) amendmentReachesRun(n int64, key, text string) error {
 		}
 		if next >= 0 {
 			carried := false
-			messages, _ := turns[next]["all"].([]any)
+			messages, _ := turns[next]["messages"].([]any)
 			for _, message := range messages {
 				if m, ok := message.(map[string]any); ok && m["role"] == "user" && strings.Contains(fmt.Sprint(m["content"]), text) {
 					carried = true
@@ -686,7 +686,7 @@ func firstHeldTurnAfterAdmission(turns []map[string]any, key string, admitted ti
 		if turn["hold"] != key {
 			continue
 		}
-		stamp, ok := turn["dispatchAt"].(string)
+		stamp, ok := turn["at"].(string)
 		if !ok {
 			return -1, fmt.Errorf("model turn %d has no dispatch timestamp", i+1)
 		}

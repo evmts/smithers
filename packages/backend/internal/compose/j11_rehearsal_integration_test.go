@@ -115,7 +115,7 @@ func (r *rehearsal) refusedOnRun(repo, box, procedure, payload string) (string, 
 
 // TestJ11Rehearsal walks journey J11 (mvp.md §5, look under the hood;
 // C-J11-01) on the install J1 sets up: T5 asks one question and fails its
-// first check attempt (distribution/fake-todo-turns.mjs [ASK] [FAILONCE]),
+// first check attempt (@smthrs/testing BuiltinScript [ASK] [FAILONCE]),
 // its run is read through its lane while it waits, the owner answers it, and
 // T5 merges. Its run stays readable after the merge stops its lane: the
 // monitor's graph, step I/O, transcript, retries, wait, titles and metered

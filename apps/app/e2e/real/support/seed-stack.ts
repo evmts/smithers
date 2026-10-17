@@ -1,4 +1,5 @@
 import { expect, type Page } from "@playwright/test"
+import { tag } from "@smthrs/testing/BuiltinScript"
 
 /**
  * Seeds a stack through the install's public API, as a member files TODOs
@@ -10,15 +11,16 @@ import { expect, type Page } from "@playwright/test"
 /**
  * The fixture `todo` flow's prompt markers. The reference fixture matches the
  * words ASK, FAIL and FIXED; the bracketed forms contain them and are the
- * rehearsal's distribution/fake-todo-turns.mjs markers.
+ * directive tags of @smthrs/testing BuiltinScript, the rehearsals' script.
+ * `pr` names the default path and sets no directive.
  */
 export const marker = {
   pr: "[PR]",
-  ask: "[ASK]",
-  fail: "[FAIL]",
-  fixed: "[FIXED]",
-  hold: (key: string) => `[HOLD ${key}]`,
-  file: (path: string) => `[FILE ${path}]`
+  ask: tag({ ask: true }),
+  fail: tag({ fail: true }),
+  fixed: tag({ fixed: true }),
+  hold: (key: string) => tag({ hold: key }),
+  file: (path: string) => tag({ file: path })
 } as const
 
 export type TodoState = "queued" | "starting" | "working" | "needs_you" | "paused" | "failed" | "in_review" | "merged" | "dropped"

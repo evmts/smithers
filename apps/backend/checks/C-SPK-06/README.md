@@ -6,7 +6,7 @@ exits 2 without installing or booting anything. With `--execute`, it runs the re
 macOS harness after approval and refuses execution on Linux. Delete it after the
 spike is answered.
 
-Required approval: `distribution/homebrew-spike-approved.json` on local `main`,
+Required approval: `homebrew-spike-approved.json` beside this README on local `main`,
 with version 1, revision (full main-built backend SHA), manifestSHA256, image
 `node@sha256:71fed097c6e5bae40e1aff698793dda483e2380cc2530d7367a72a9d037c798b`,
 and acceptedBy `["smithers-3f", "smithers-b8"]`. This file is absent today.

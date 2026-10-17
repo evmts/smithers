@@ -165,8 +165,8 @@ func runTodoHostRecordedCrossingBody(t *testing.T, r *rehearsal, crossing string
 		require.NoError(t, err)
 		for _, turn := range turns {
 			if turn["step"] == "coding/edit-atom" {
-				require.NotNil(t, turn["all"], "provider must record request identity")
-				heldMessages, err = json.Marshal(turn["all"])
+				require.NotNil(t, turn["messages"], "provider must record request identity")
+				heldMessages, err = json.Marshal(turn["messages"])
 				require.NoError(t, err)
 			}
 		}
@@ -278,7 +278,7 @@ export default Flow.make("todo", { description: "D2 must never run", capabilitie
 			require.NoError(t, err)
 			calls := 0
 			for _, turn := range turns {
-				messages, err := json.Marshal(turn["all"])
+				messages, err := json.Marshal(turn["messages"])
 				require.NoError(t, err)
 				if turn["step"] == "coding/edit-atom" && string(messages) == string(heldMessages) {
 					calls++

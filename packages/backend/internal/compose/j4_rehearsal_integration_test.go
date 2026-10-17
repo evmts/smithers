@@ -93,7 +93,7 @@ func (r *rehearsal) modelTurns() ([]map[string]any, error) {
 // turnText is every traced message of a turn, joined.
 func turnText(turn map[string]any) string {
 	var b strings.Builder
-	messages, _ := turn["all"].([]any)
+	messages, _ := turn["messages"].([]any)
 	for _, message := range messages {
 		if m, ok := message.(map[string]any); ok {
 			b.WriteString(fmt.Sprint(m["content"]) + "\n")
@@ -105,7 +105,7 @@ func turnText(turn map[string]any) string {
 // TestJ4Rehearsal walks journey J4 (mvp.md §5, the team's work; C-J4-01..03)
 // with the owner, maintainer Ben and member Alice on the install J1 sets up.
 // T1 goes straight to review, T2
-// asks a question and T3 fails its checks (distribution/fake-todo-turns.mjs
+// asks a question and T3 fails its checks (@smthrs/testing BuiltinScript
 // markers). Alice answers T2 and Ben merges T1 while the owner chats; T4, filed
 // once T3 failed, is the ready item a person moves above T3. Rows that wait
 // on a lane are listed as pending.

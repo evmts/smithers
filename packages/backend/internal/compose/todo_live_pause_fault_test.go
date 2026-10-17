@@ -195,7 +195,7 @@ func TestTodoStartPauseResumeCrashThroughRoutes(t *testing.T) {
 
 func livePauseModelSteps(t *testing.T, r *rehearsal) map[string]int {
 	t.Helper()
-	request, err := http.NewRequestWithContext(t.Context(), "GET", r.coder.url+"/turns", nil)
+	request, err := http.NewRequestWithContext(t.Context(), "GET", r.coder.url+"/__testing/turns", nil)
 	require.NoError(t, err)
 	response, err := http.DefaultClient.Do(request)
 	require.NoError(t, err)

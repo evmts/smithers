@@ -44,12 +44,12 @@ class TestHomebrewSpikeRootInputs(unittest.TestCase):
             entries.append({'path': name, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest(), 'mode': 0o600})
         manifest = self.bundle / 'manifest.json'
         manifest.write_text(json.dumps({'version': 1, 'platform': 'darwin-arm64', 'revision': revision, 'files': entries}))
-        approval = self.root / 'distribution/homebrew-spike-approved.json'
-        approval.parent.mkdir()
+        approval = self.root / 'apps/backend/checks/C-SPK-06/homebrew-spike-approved.json'
+        approval.parent.mkdir(parents=True, exist_ok=True)
         approval.write_text(json.dumps({'version': 1, 'image': image, 'revision': revision,
             'acceptedBy': ['smithers-3f', 'smithers-b8'],
             'manifestSHA256': hashlib.sha256(manifest.read_bytes()).hexdigest()}))
-        self.git('add', 'distribution')
+        self.git('add', 'apps/backend/checks/C-SPK-06/homebrew-spike-approved.json')
         self.git('commit', '-m', 'fixture approval')
 
     def git(self, *args):
@@ -99,7 +99,7 @@ class TestHomebrewSpikeRootInputs(unittest.TestCase):
 
     def test_lane_approval_is_not_trusted(self):
         self.git('checkout', '-b', 'lane')
-        self.git('rm', 'distribution/homebrew-spike-approved.json')
+        self.git('rm', 'apps/backend/checks/C-SPK-06/homebrew-spike-approved.json')
         self.git('commit', '-m', 'remove from lane')
         self.assertEqual(self.run_entry()[0]['status'], 'inputs-verified')
         self.git('update-ref', 'refs/heads/main', 'HEAD')

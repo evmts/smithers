@@ -80,6 +80,7 @@
     "@smthrs/plan": "workspace:*",
     "@smthrs/run-store": "workspace:*",
     "@smthrs/sync": "workspace:*",
+    "@smthrs/testing": "workspace:*",
     "@tailwindcss/postcss": "4.3.3",
     "@types/bun": "latest",
     "@types/d3-force": "3.0.10",

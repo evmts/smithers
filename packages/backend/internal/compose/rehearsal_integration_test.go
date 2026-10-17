@@ -30,6 +30,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -60,8 +61,9 @@ import (
 // j11_rehearsal_integration_test.go) walk one composed install through its
 // public routes: the GitHub fake, the install's repository engine, the
 // composed backend with its packaged coding host on the trusted-process
-// runtime, distribution/fake-todo-provider.mjs as the coding model (each
-// TODO's prompt steers its run with that script's markers), and the owner's
+// runtime, @smthrs/testing's model server with its builtin script as the
+// coding model (each TODO's prompt steers its run with the script's directive
+// tags), and the owner's
 // browser. Each prints one row per step (step, route, expected, actual,
 // result, ticket), then its pass, fail and pending counts, and keeps its
 // evidence under .artifacts/checks/<check>/rehearsal/<UTC>/. A row that waits
@@ -205,7 +207,7 @@ func newRehearsal(t *testing.T, enable, check, keyPrefix string, poolCapacity ..
 	// detector finds: make build is a fast check and make test a slow one.
 	// REHEARSAL_TEST_ONLY_REPOSITORY=1 seeds only make test, the one slow check
 	// of a typical repository (mvp.md J1.4); with TODO_RELAY_URL
-	// (distribution/fake-todo-provider.mjs) a real model then codes the TODO.
+	// (startRehearsalCodingModel) a real model then codes the TODO.
 	makefile := "build:\n\ttest -s JOURNEY.md\n\ntest:\n\tgrep -q . JOURNEY.md\n"
 	if enable == "SMITHERS_TODO_ISSUE_SECURITY_REHEARSAL" {
 		// This fixture uses synthetic canaries only. The upstream's existing
@@ -1540,9 +1542,9 @@ func (r *rehearsal) answer(number int64, wait, text string) (int, []byte, error)
 	return r.request("POST", fmt.Sprintf("/api/todos/%d/answer", number), string(body))
 }
 
-// release answers every coding turn held on the [HOLD key] marker.
+// release answers every coding turn held on the [HOLD key] directive.
 func (r *rehearsal) release(key string) error {
-	resp, err := http.Post(r.coder.url+"/release/"+key, "application/json", nil)
+	resp, err := http.Post(r.coder.url+"/__testing/release/"+key, "application/json", nil)
 	if err != nil {
 		return err
 	}
@@ -1553,11 +1555,11 @@ func (r *rehearsal) release(key string) error {
 	return nil
 }
 
-// waitHeld waits until a coding turn is held on the [HOLD key] marker: its
+// waitHeld waits until a coding turn is held on the [HOLD key] directive: its
 // TODO is Working, at its edit.
 func (r *rehearsal) waitHeld(key string, within time.Duration) error {
 	for deadline := time.Now().Add(within); ; time.Sleep(250 * time.Millisecond) {
-		resp, err := http.Get(r.coder.url + "/held")
+		resp, err := http.Get(r.coder.url + "/__testing/held")
 		if err != nil {
 			return err
 		}
@@ -1801,29 +1803,72 @@ func rehearsalJJExport(t *testing.T, root string) string {
 	return filepath.Join(target, "debug", "smithers-jj-export")
 }
 
-// rehearsalCodingModel is distribution/fake-todo-provider.mjs on a loopback
-// port: the scripted model every coding turn of the TODO reaches.
+// rehearsalCodingModel is @smthrs/testing's model server on a loopback port,
+// answering with its builtin script (BuiltinScript): the scripted model every
+// coding turn of the TODO reaches. Each TODO's prompt steers its run with the
+// script's directive tags ([ASK], [HOLD key], [FILE path], ...).
 type rehearsalCodingModel struct{ url string }
 
+// rehearsalReviewFinding is the J10 cache defect the scripted /review reports
+// and its verification keeps.
+var rehearsalReviewFinding = map[string]any{
+	"path": "src/cache.ts", "startLine": 2, "endLine": 2,
+	"content":      "Off by one: eviction retains capacity + 1 entries.",
+	"existingCode": "entries.length > capacity ? entries.slice(entries.length - capacity - 1) : entries",
+	"match":        "entries.slice(entries.length - capacity - 1)",
+	"severity":     "major", "category": "correctness", "confidence": "confirmed",
+	"reason": "The slice starts one entry too early.",
+}
+
+// startRehearsalCodingModel serves the builtin script. TODO_HOLD_STEP names a
+// further step that holds on the TODO's [HOLD key]; TRACE_MESSAGES=1 keeps each
+// traced turn's messages. With TODO_RELAY_URL it scripts nothing: every turn
+// goes to that OpenAI-compatible origin as TODO_RELAY_MODEL with the key in
+// TODO_RELAY_KEY, and is recorded to the evidence's model-recording.json; the
+// trace still names each turn's step, never the key.
 func startRehearsalCodingModel(t *testing.T, node, root, evidence string) rehearsalCodingModel {
 	t.Helper()
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
 	require.NoError(t, err)
 	port := strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)
 	require.NoError(t, listener.Close())
+	script := map[string]any{
+		"todoFlow":       filepath.Join(root, ".smithers/flows/todo/flow.ts"),
+		"reviewFindings": []any{rehearsalReviewFinding},
+	}
+	if step := os.Getenv("TODO_HOLD_STEP"); step != "" {
+		script["holdAt"] = []string{step}
+	}
+	config, err := json.Marshal(script)
+	require.NoError(t, err)
+	configPath := filepath.Join(evidence, "model-script.json")
+	require.NoError(t, os.WriteFile(configPath, config, 0600))
+	// The trace keeps each turn's step and request shape, never a credential.
+	arguments := []string{filepath.Join(root, "packages/testing/bin/smthrs-model-server.mjs"),
+		"--host", "127.0.0.1", "--port", port, "--script", "builtin", "--script-config", configPath,
+		"--trace", filepath.Join(evidence, "model-turns.jsonl")}
+	if os.Getenv("TRACE_MESSAGES") == "1" {
+		arguments = append(arguments, "--trace-messages")
+	}
+	if relay := os.Getenv("TODO_RELAY_URL"); relay != "" {
+		arguments = append(arguments, "--record", "--fixture", filepath.Join(evidence, "model-recording.json"),
+			"--upstream", relay, "--key-env", "TODO_RELAY_KEY")
+		if model := os.Getenv("TODO_RELAY_MODEL"); model != "" {
+			arguments = append(arguments, "--upstream-model", model)
+		}
+	}
 	logs := &lockedBuffer{}
-	command := exec.Command(node, filepath.Join(root, "distribution/fake-todo-provider.mjs"))
-	// The trace keeps each turn's role and request shape, never a credential.
-	command.Env = append(os.Environ(), "PORT="+port, "HOST=127.0.0.1", "TRACE_FILE="+filepath.Join(evidence, "model-turns.jsonl"))
+	command := exec.Command(node, arguments...)
 	command.Stdout, command.Stderr = logs, logs
 	require.NoError(t, command.Start())
 	t.Cleanup(func() {
-		_ = command.Process.Kill()
+		// SIGTERM, so a relayed run publishes its recording before it exits.
+		_ = command.Process.Signal(syscall.SIGTERM)
 		_ = command.Wait()
 		_ = os.WriteFile(filepath.Join(evidence, "model.log"), []byte(logs.String()), 0600)
 	})
 	model := rehearsalCodingModel{url: "http://127.0.0.1:" + port}
-	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
 		if response, err := http.Get(model.url + "/health"); err == nil {
 			_ = response.Body.Close()
 			if response.StatusCode == http.StatusOK {
@@ -1835,9 +1880,9 @@ func startRehearsalCodingModel(t *testing.T, node, root, evidence string) rehear
 	return model
 }
 
-// turns answers the scripted model's served turns by role.
+// turns answers the scripted model's served turns by step, and the keys held now.
 func (model rehearsalCodingModel) turns() string {
-	response, err := http.Get(model.url + "/turns")
+	response, err := http.Get(model.url + "/__testing/turns")
 	if err != nil {
 		return err.Error()
 	}

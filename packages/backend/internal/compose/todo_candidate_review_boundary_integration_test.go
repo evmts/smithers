@@ -38,7 +38,7 @@ func runTodoFreshReviewerContext(t *testing.T, enable string) {
 	t.Setenv("TRACE_MESSAGES", "1")
 	r := newRehearsal(t, enable, "C-STK-06-review-context", "review-context-")
 	require.True(t, r.install("Install ready"))
-	n, err := r.file("Review boundary", "[PR] Add a greeting to JOURNEY.md. IMPLEMENTER_PROMPT_CANARY: use my private implementation plan.")
+	n, err := r.file("Review boundary [PROBEREVIEW]", "[PR] Add a greeting to JOURNEY.md. IMPLEMENTER_PROMPT_CANARY: use my private implementation plan.")
 	require.NoError(t, err)
 	_, err = r.waitTodoWithin(n, 10*time.Minute, "in_review")
 	require.NoError(t, err)
@@ -54,7 +54,7 @@ func runTodoFreshReviewerContext(t *testing.T, enable string) {
 		All  []struct {
 			Role    string `json:"role"`
 			Content string `json:"content"`
-		} `json:"all"`
+		} `json:"messages"`
 	}
 	require.Eventually(t, func() bool {
 		var err error

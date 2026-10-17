@@ -165,7 +165,7 @@ func TestOutsideNotesPinnedDispatcherMicroVM(t *testing.T) {
 	r.options.Workspace = fault
 	r.workspaceRuntime = fault
 	r.restartBackend()
-	number, err := r.file("Outside note delivery", "[HOLD outside-notes] [OBSERVEUID] [FILE JOURNEY.md] Append a greeting to JOURNEY.md")
+	number, err := r.file("Outside note delivery", "[HOLD outside-notes] [OBSERVEUID 19999] [FILE JOURNEY.md] Append a greeting to JOURNEY.md")
 	require.NoError(t, err)
 	defer func() { _ = r.release("outside-notes") }()
 	require.NoError(t, r.waitHeld("outside-notes", 8*time.Minute))

@@ -1928,20 +1928,13 @@
       },
       {
         "kind": "file",
-        "path": "distribution/fake-todo-turns.mjs"
-      },
-      {
-        "kind": "file",
-        "path": "distribution/fake-todo-turns.d.mts"
-      },
-      {
-        "kind": "file",
         "path": ".smithers/flows/tsconfig.json"
       }
     ],
     "outputs": [],
     "dependencies": [
-      "//.smithers/flows:automationModules"
+      "//.smithers/flows:automationModules",
+      "//packages/testing:check"
     ],
     "source": {
       "file": ".smithers/flows/PACKAGE.ts"
@@ -10684,21 +10677,19 @@
         "path": ".smithers/flows/test/wiki-scripted-reviewer.test.ts"
       },
       {
+        "kind": "file",
+        "path": ".smithers/flows/test/builtin-script-teachings.test.ts"
+      },
+      {
         "kind": "glob",
         "pattern": ".smithers/flows/**/*.ts",
         "exclude": []
-      },
-      {
-        "kind": "file",
-        "path": "distribution/fake-todo-turns.mjs"
-      },
-      {
-        "kind": "file",
-        "path": "distribution/fake-todo-turns.d.mts"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//packages/testing:check"
+    ],
     "source": {
       "file": ".smithers/flows/PACKAGE.ts"
     }
@@ -10962,11 +10953,6 @@
       },
       {
         "kind": "glob",
-        "pattern": "distribution/**/*",
-        "exclude": []
-      },
-      {
-        "kind": "glob",
         "pattern": "docs/api/**/*",
         "exclude": []
       }
@@ -10983,7 +10969,8 @@
       "//packages/backend:buildInputs",
       "//packages/smithers/agent/integrations:lib",
       "//packages/smithers/agent/model-host:lib",
-      "//packages/smithers/flows:lib"
+      "//packages/smithers/flows:lib",
+      "//packages/testing:modelServer"
     ],
     "source": {
       "file": "PACKAGE.ts"
@@ -40583,14 +40570,6 @@
         "exclude": []
       },
       {
-        "kind": "file",
-        "path": "distribution/fake-todo-turns.mjs"
-      },
-      {
-        "kind": "file",
-        "path": "distribution/fake-todo-turns.d.mts"
-      },
-      {
         "kind": "glob",
         "pattern": "apps/app/lint/**/*",
         "exclude": []
@@ -40621,7 +40600,9 @@
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//packages/testing:check"
+    ],
     "source": {
       "file": "apps/app/PACKAGE.ts"
     }
@@ -42827,14 +42808,6 @@
       },
       {
         "kind": "file",
-        "path": "distribution/fake-todo-turns.mjs"
-      },
-      {
-        "kind": "file",
-        "path": "distribution/fake-todo-turns.d.mts"
-      },
-      {
-        "kind": "file",
         "path": "apps/app/vite.config.ts"
       },
       {
@@ -42892,7 +42865,8 @@
       "//packages/rpc:check",
       "//packages/smithers/agent/harness-detect:check",
       "//packages/smithers/gateway:check",
-      "//packages/smithers/ui:check"
+      "//packages/smithers/ui:check",
+      "//packages/testing:check"
     ],
     "source": {
       "file": "apps/app/PACKAGE.ts"
