@@ -30,6 +30,7 @@ import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import * as PackageTree from "../src/PackageTree.ts"
+import { writeExecutable } from "./helpers/Executable.ts"
 import { serve as serveCli, type ServeOptions } from "./helpers/ServeCli.ts"
 import { write } from "./helpers/WriteFile.ts"
 
@@ -768,8 +769,10 @@ export const Package = S.Package({ targets: { retain } })
     // shipped subcommand surface (memory set <bank> <key> <record>).
     const stubBin = NodePath.join(root, "bin-stub")
     const argvFile = NodePath.join(root, "argv.txt")
-    await write(root, "bin-stub/smithers", `#!/bin/sh\nprintf '%s\\n' "$*" > ${JSON.stringify(argvFile)}\n`)
-    await Fs.chmod(NodePath.join(stubBin, "smithers"), 0o755)
+    await writeExecutable(
+      NodePath.join(stubBin, "smithers"),
+      `#!/usr/bin/env node\nrequire("node:fs").writeFileSync(${JSON.stringify(argvFile)}, process.argv.slice(2).join(" ") + "\\n")\n`
+    )
     const called = await serve(root, ["//:retain"], {
       environment: { ...process.env, PATH: [stubBin, process.env["PATH"]].join(NodePath.delimiter) }
     })
@@ -780,7 +783,10 @@ export const Package = S.Package({ targets: { retain } })
     expect((await Fs.readFile(argvFile, "utf8")).trim()).toBe(`memory set repo commit:${sha} ${record}`)
 
     // A refusing backend is a typed command failure naming the argv.
-    await write(root, "bin-stub/smithers", `#!/bin/sh\necho "bank not found" >&2\nexit 3\n`)
+    await writeExecutable(
+      NodePath.join(stubBin, "smithers"),
+      `#!/usr/bin/env node\nprocess.stderr.write("bank not found\\n"); process.exitCode = 3\n`
+    )
     const refused = await serve(root, ["//:retain"], {
       environment: { ...process.env, PATH: [stubBin, process.env["PATH"]].join(NodePath.delimiter) }
     })
