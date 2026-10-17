@@ -343,13 +343,19 @@ describe("SafeFs.digestFile", () => {
     const io: SafeFs.Io = {
       ...SafeFs.defaultIo,
       open: async (path) => {
-        const handle = await SafeFs.defaultIo.open(path)
-        if (!swapped) {
-          swapped = true
-          await Fs.rename(at("src"), at("parked"))
+        if (swapped) return SafeFs.defaultIo.open(path)
+        swapped = true
+        // Windows cannot rename a directory containing an open handle. Move
+        // the original first, then publish the outside link after opening it.
+        await Fs.rename(at("src"), at("parked"))
+        const handle = await SafeFs.defaultIo.open(at("parked/a.ts"))
+        try {
           await Fs.symlink(outside, at("src"))
+          return handle
+        } catch (cause) {
+          await handle.close()
+          throw cause
         }
-        return handle
       }
     }
 
