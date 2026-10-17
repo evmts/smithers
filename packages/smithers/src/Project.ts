@@ -220,12 +220,15 @@ const currentDatabaseFiles = new Set([
   "opencode.server.json"
 ])
 
-/** The one `.smithers` subdirectory 1.0 owns: the project's flows (M-49). */
-const currentFlowsDirectory = basename(Descriptor.projectFlowsDirectory)
+/**
+ * The `.smithers` subdirectories 1.0 owns: the project's flows (M-49) and the
+ * wiki, whose decisions pages agent memory writes under `wiki/decisions/`.
+ */
+const currentDirectories = new Set([basename(Descriptor.projectFlowsDirectory), "wiki"])
 
 /**
  * Whether a `.smithers` directory holds only what 1.0 writes there: the
- * project's `flows/`, the current build definitions, the opencode server's own
+ * project's `flows/` and `wiki/`, the current build definitions, the opencode server's own
  * files, or any of them together. An empty directory, an unknown file, any
  * other subdirectory (0.x's `workflows/` among them) and unreadable metadata
  * all still read as 0.x state.
@@ -238,7 +241,7 @@ const onlyCurrentState = (directory: string, exists: (path: string) => boolean):
     return false
   }
   const current = (entry: (typeof entries)[number]) =>
-    entry.isFile() ? currentDatabaseFiles.has(entry.name) : entry.isDirectory() && entry.name === currentFlowsDirectory
+    entry.isFile() ? currentDatabaseFiles.has(entry.name) : entry.isDirectory() && currentDirectories.has(entry.name)
   if (!entries.every((entry) => entry.isFile() || current(entry))) return false
   const rest = entries.filter((entry) => !current(entry))
   if (rest.length === 0) return entries.length > 0
@@ -253,7 +256,7 @@ const onlyCurrentState = (directory: string, exists: (path: string) => boolean):
  * nothing: a repository mid-migration would otherwise print the notice on
  * every command forever.
  *
- * A `.smithers` directory containing only the project's `flows/`, current
+ * A `.smithers` directory containing only the project's `flows/` and `wiki/`, current
  * build definitions, what a directory-serving host keeps there, or any of them
  * together, is also excluded. Unknown files, other subdirectories and
  * unreadable metadata remain legacy markers.

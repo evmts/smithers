@@ -84,6 +84,17 @@ it("reads a .smithers/flows/ directory as 1.0 state, alone or beside current fil
   expect(Project.legacyState(flowsOnly)).toEqual([join(flowsOnly, ".smithers")])
 })
 
+it("reads the wiki's decisions pages under .smithers/wiki/ as 1.0 state", () => {
+  // Agent memory writes `.smithers/wiki/decisions/<item>.md` (decisionsDirectory).
+  const wikiOnly = project(".smithers/wiki/decisions/")
+  writeFileSync(join(wikiOnly, ".smithers", "wiki", "decisions", "1.md"), "")
+  expect(Project.legacyState(wikiOnly)).toEqual([])
+  const both = project(".smithers/flows/", ".smithers/wiki/", ".smithers/WORKSPACE.ts", ".smithers/FACTORY.ts")
+  expect(Project.legacyState(both)).toEqual([])
+  mkdirSync(join(both, ".smithers", "prompts"))
+  expect(Project.legacyState(both)).toEqual([join(both, ".smithers")])
+})
+
 describe("the project root", () => {
   it("resolves an explicit --root against the invocation directory", () => {
     expect(Project.root("sub/dir", "/a/b")).toBe(resolve("/a/b", "sub/dir"))
