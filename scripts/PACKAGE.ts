@@ -515,20 +515,6 @@ const releaseIntegrity = Smithers.NodeTest({
   deps: []
 })
 
-/** Real-runner sentinels and fail-closed gate regressions. */
-const tierContracts = Smithers.NodeTest({
-  runner: Smithers.testRunner([
-    Smithers.file("//scripts/ci/coding-check.test.mjs"),
-    Smithers.file("//scripts/ci/check-cache.test.mjs")
-  ]),
-  srcs: [
-    ...sources,
-    Smithers.file("//scripts/ci/coding-check.sh"),
-    Smithers.file("//packages/smithers/build/build-cli/src/KnownRed.ts")
-  ],
-  deps: []
-})
-
 /** Typecheck the repository conformance suites and their target declarations. */
 const conformanceCheck = Smithers.Typecheck({
   srcs: sources,
@@ -669,19 +655,7 @@ const securityReview = Smithers.SecurityReview({
         "A version read from a repository file used unvalidated in a URL or shell word.",
         "apt or npm installs that run lifecycle scripts or use sudo in a Cloud task."
       ],
-      paths: ["ci/cloud.sh", "ci/coding-check.sh"]
-    },
-    {
-      id: "check-cache-poisoning",
-      title: "The host check cache cannot carry forged verdicts or escape its root",
-      threat:
-        "Code under check in one revision plants passing target results or links that a later revision's check replays as green, or that overwrite host files.",
-      lookFor: [
-        "copyMissing following a symlink or special file, or writing outside the partition or the export's .flows/cache.",
-        "An existing valid entry replaced by a check's own output.",
-        "SMITHERS_CHECK_CACHE_DIR or the partition marker accepted when relative or pointing outside the cache root."
-      ],
-      paths: ["ci/check-cache.mjs"]
+      paths: ["ci/cloud.sh"]
     },
     {
       id: "script-subprocess-args",
@@ -761,7 +735,6 @@ export const Package = Smithers.Package({
     conformanceCheck,
     repositoryConformance,
     mvpDocs,
-    tierContracts,
     releaseIntegrity,
     webBundleContract,
     changelog,

@@ -67,8 +67,8 @@ test("target results are seeded before the check and saved after it, even when i
   for (const [mode, status] of [["ok", 0], ["testfail", 7]]) {
     const { result, calls } = fixture(mode)
     assert.equal(result.status, status)
-    assert.deepEqual(calls, ["scripts/ci/check-cache.mjs seed .",
-      "packages/smithers/build/build-cli/src/main.js test //flows:codingNative", "scripts/ci/check-cache.mjs save ."])
+    assert.deepEqual(calls, ["flows/checks/check-cache.mjs seed .",
+      "packages/smithers/build/build-cli/src/main.js test //flows:codingNative", "flows/checks/check-cache.mjs save ."])
   }
 })
 

@@ -198,7 +198,7 @@
       "path": "flows/checks/affected-lint/flow.mdx",
       "capabilities": [
         "fs:read:**",
-        "proc:spawn:sh scripts/ci/coding-check.sh *"
+        "proc:spawn:sh flows/checks/coding-check.sh *"
       ],
       "model": null,
       "modelInvocable": true,
@@ -231,7 +231,7 @@
       "path": "flows/checks/affected-test/flow.mdx",
       "capabilities": [
         "fs:read:**",
-        "proc:spawn:sh scripts/ci/coding-check.sh *"
+        "proc:spawn:sh flows/checks/coding-check.sh *"
       ],
       "model": null,
       "modelInvocable": true,
@@ -264,7 +264,7 @@
       "path": "flows/checks/bundle/flow.mdx",
       "capabilities": [
         "fs:read:**",
-        "proc:spawn:sh scripts/ci/coding-check.sh *"
+        "proc:spawn:sh flows/checks/coding-check.sh *"
       ],
       "model": null,
       "modelInvocable": true,
@@ -297,7 +297,7 @@
       "path": "flows/checks/bundle-bun/flow.mdx",
       "capabilities": [
         "fs:read:**",
-        "proc:spawn:sh scripts/ci/coding-check.sh *"
+        "proc:spawn:sh flows/checks/coding-check.sh *"
       ],
       "model": null,
       "modelInvocable": true,
@@ -330,7 +330,7 @@
       "path": "flows/checks/drift/flow.mdx",
       "capabilities": [
         "fs:read:**",
-        "proc:spawn:sh scripts/ci/coding-check.sh *"
+        "proc:spawn:sh flows/checks/coding-check.sh *"
       ],
       "model": null,
       "modelInvocable": true,
@@ -395,7 +395,7 @@
       "path": "flows/checks/native/flow.mdx",
       "capabilities": [
         "fs:read:**",
-        "proc:spawn:sh scripts/ci/coding-check.sh *"
+        "proc:spawn:sh flows/checks/coding-check.sh *"
       ],
       "model": null,
       "modelInvocable": true,
@@ -428,7 +428,7 @@
       "path": "flows/checks/native-bun/flow.mdx",
       "capabilities": [
         "fs:read:**",
-        "proc:spawn:sh scripts/ci/coding-check.sh *"
+        "proc:spawn:sh flows/checks/coding-check.sh *"
       ],
       "model": null,
       "modelInvocable": true,
@@ -461,7 +461,7 @@
       "path": "flows/checks/policy/flow.mdx",
       "capabilities": [
         "fs:read:**",
-        "proc:spawn:sh scripts/ci/coding-check.sh *"
+        "proc:spawn:sh flows/checks/coding-check.sh *"
       ],
       "model": null,
       "modelInvocable": true,
@@ -526,7 +526,7 @@
       "path": "flows/checks/runtime/flow.mdx",
       "capabilities": [
         "fs:read:**",
-        "proc:spawn:sh scripts/ci/coding-check.sh *"
+        "proc:spawn:sh flows/checks/coding-check.sh *"
       ],
       "model": null,
       "modelInvocable": true,

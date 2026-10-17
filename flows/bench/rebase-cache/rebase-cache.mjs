@@ -18,7 +18,7 @@
 // unexpected hit (the key stayed while a declared input changed) fails the run.
 //
 // --execute additionally runs the listed labels for real through
-// scripts/ci/check-cache.mjs, the persistence coding checks use, and records
+// flows/checks/check-cache.mjs, the persistence coding checks use, and records
 // wall time, the executor's hit/ran status and effective key per label, and
 // whether that status matches the prediction from earlier effective keys.
 import { execFileSync, spawnSync } from "node:child_process"
@@ -157,7 +157,7 @@ const executedKeys = new Map()
 const executeRevision = (root) => {
   if (executeLabels.length === 0) return undefined
   const cacheEnvironment = { ...environment, SMITHERS_CHECK_CACHE_DIR: checkCache }
-  const script = path.join(root, "scripts/ci/check-cache.mjs")
+  const script = path.join(root, "flows/checks/check-cache.mjs")
   const cacheStep = (command) => run(process.execPath, [script, command, root], {
     env: cacheEnvironment, stdio: ["ignore", "ignore", "pipe"]
   })

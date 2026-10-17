@@ -32,7 +32,7 @@ if [ "${1:-}" = affected ]; then
   fi
 fi
 # Every check runs in a fresh export. Target results and downloaded packages
-# persist in a host check cache (scripts/ci/check-cache.mjs) so a rebased
+# persist in a host check cache (flows/checks/check-cache.mjs) so a rebased
 # revision replays every target whose content key is unchanged. The Bun cache
 # is content-addressed and dedicated to checks, never the developer's own.
 cache_root="${SMITHERS_CHECK_CACHE_DIR:-$HOME/.cache/smithers-checks/cache}"
@@ -54,7 +54,7 @@ while :; do
   esac
 done
 # A cache failure only costs reuse, never the check's own verdict.
-node scripts/ci/check-cache.mjs seed . || echo 'Check cache unavailable; running cold.' >&2
+node flows/checks/check-cache.mjs seed . || echo 'Check cache unavailable; running cold.' >&2
 # The check is a child rather than exec'd so the cache can be saved after it;
 # forward termination so signalling this wrapper still stops the check.
 # `affected <verb> <patterns...>` runs only the targets the Change's written
@@ -104,5 +104,5 @@ else
   wait "$check_pid" || test_status=$?
   trap - TERM INT HUP
 fi
-node scripts/ci/check-cache.mjs save . || echo 'Check cache could not be saved.' >&2
+node flows/checks/check-cache.mjs save . || echo 'Check cache could not be saved.' >&2
 exit "$test_status"

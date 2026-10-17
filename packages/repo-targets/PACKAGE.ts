@@ -213,7 +213,7 @@ const driftJob = Smithers.NodeTest({
     Smithers.file("//scripts/PACKAGE.ts"),
     Smithers.file("//scripts/check-api-baseline.mjs"),
     Smithers.file("//scripts/engineering-gate-environment.mjs"),
-    Smithers.file("//scripts/ci/coding-check.sh"),
+    Smithers.file("//flows/checks/coding-check.sh"),
     Smithers.file("//.github/workflows/drift.yml"),
     Smithers.file("//.github/workflows/ci.yml")
   ],

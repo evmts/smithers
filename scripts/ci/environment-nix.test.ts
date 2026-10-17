@@ -231,7 +231,7 @@ describe("the Cloud machine carries every tool the checks execute", () => {
   })
 
   test("every tool the Cloud drift check executes is in the image", () => {
-    const gates = /drift_gates="([^"]*)"/.exec(read("scripts/ci/coding-check.sh"))![1]!.split("\n")
+    const gates = /drift_gates="([^"]*)"/.exec(read("flows/checks/coding-check.sh"))![1]!.split("\n")
     const tools = new Set<string>()
     for (const gate of gates) {
       const label = gate.split(" ")[1]!

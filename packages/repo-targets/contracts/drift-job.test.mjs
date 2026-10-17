@@ -393,7 +393,7 @@ test('CLI combines declaration build and baseline update from current source', a
 })
 
 test('the Cloud drift check runs exactly the gates the generated drift workflow runs', async () => {
-  const script = await readFile(new URL('../../../scripts/ci/coding-check.sh', import.meta.url), 'utf8')
+  const script = await readFile(new URL('../../../flows/checks/coding-check.sh', import.meta.url), 'utf8')
   const gates = script.match(/drift_gates="([^"]*)"/)?.[1].split('\n')
   assert.ok(gates, 'coding-check.sh declares its drift gates')
   const expected = gateCommands.map((command) => {
@@ -403,7 +403,7 @@ test('the Cloud drift check runs exactly the gates the generated drift workflow 
   assert.deepEqual(gates, expected)
   const body = await readFile(new URL('../../../flows/checks/drift/flow.mdx', import.meta.url), 'utf8')
   assert.match(body, /flows: \[coding\/CommandCheck\]/)
-  assert.match(body, /\{"argv":\["sh","scripts\/ci\/coding-check\.sh","drift"\]/)
+  assert.match(body, /\{"argv":\["sh","flows\/checks\/coding-check\.sh","drift"\]/)
   assert.ok(gates.every((gate) => !gate.startsWith('test ')), 'the drift check runs no test target')
 })
 

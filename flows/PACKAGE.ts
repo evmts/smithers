@@ -761,12 +761,33 @@ const workingTogetherCodeFaults = Smithers.Shell.Test({
   timeout: "1h"
 })
 
+/**
+ * The runner every `checks/*` command check spawns, `checks/coding-check.sh`,
+ * and its host check cache: real-runner sentinels and fail-closed gate
+ * regressions. The runner is not a flow; the `checks/*` bodies name it in
+ * their argv and their `proc:spawn` grant.
+ */
+const checkRunner = Smithers.NodeTest({
+  runner: Smithers.testRunner([
+    Smithers.file("//flows/checks/coding-check.test.mjs"),
+    Smithers.file("//flows/checks/check-cache.test.mjs")
+  ]),
+  srcs: [
+    Smithers.file("//flows/checks/coding-check.sh"),
+    Smithers.file("//flows/checks/check-cache.mjs"),
+    Smithers.file("//packages/smithers/build/build-cli/src/KnownRed.ts")
+  ],
+  deps: [],
+  cwd
+})
+
 const securityReview = Smithers.SecurityReview({
   cwd,
   include: [
     Smithers.glob("**/*.{ts,mjs,js,mdx}", {
       exclude: ["wiki/**", "test/**", "node_modules/**", "migrate-smithers-v1/test/**", "**/*.test.ts", "**/*.test.mjs"]
-    })
+    }),
+    Smithers.glob("checks/*.sh")
   ],
   checks: [
     {
@@ -990,6 +1011,30 @@ const securityReview = Smithers.SecurityReview({
         "Environment dumps or error messages that print token-bearing variables."
       ],
       paths: ["bench/**"]
+    },
+    {
+      id: "ci-bootstrap-downloads",
+      title: "Every tool the Cloud CI bootstrap downloads and executes is pinned by version and digest",
+      threat:
+        "A compromised or spoofed release host swaps a jj, ripgrep, Foundry, rustup or Node binary that then runs with the CI task's repository access.",
+      lookFor: [
+        "A download() or curl that reaches tar/chmod/exec without download_verified, which checks node_digest or tool_digest with sha256sum -c and exits on a mismatch.",
+        "A version read from a repository file used unvalidated in a URL or shell word.",
+        "apt or npm installs that run lifecycle scripts or use sudo in a Cloud task."
+      ],
+      paths: ["checks/coding-check.sh"]
+    },
+    {
+      id: "check-cache-poisoning",
+      title: "The host check cache cannot carry forged verdicts or escape its root",
+      threat:
+        "Code under check in one revision plants passing target results or links that a later revision's check replays as green, or that overwrite host files.",
+      lookFor: [
+        "copyMissing following a symlink or special file, or writing outside the partition or the export's .flows/cache.",
+        "An existing valid entry replaced by a check's own output.",
+        "SMITHERS_CHECK_CACHE_DIR or the partition marker accepted when relative or pointing outside the cache root."
+      ],
+      paths: ["checks/check-cache.mjs"]
     }
   ]
 })
@@ -1029,6 +1074,7 @@ export const Package = Smithers.Package({
     campaignVerifiers,
     perf,
     perfUnit,
+    checkRunner,
     perfKeystroke,
     perfDiskWrite,
     perfProjection,

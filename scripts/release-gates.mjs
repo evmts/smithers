@@ -70,6 +70,7 @@ export const releaseGates = [
       "pnpm exec smthrs test '//scripts:webBundleContract' --verbose"
     ]
   },
+  { name: "Command check runner", verb: "test", target: "//flows:checkRunner" },
   { name: "Repository flows", verb: "test", target: "//flows:pack" },
   { name: "Judge egress", verb: "test", target: "//flows:egress" },
   { name: "Repository flow fixtures", verb: "test", target: "//flows:repository" },

@@ -808,6 +808,7 @@ const ci = Smithers.GithubCiGen({
       }),
       steps: [
         { name: "Script gates", verb: Smithers.Verb.Test, pattern: "//scripts/..." },
+        { name: "Command check runner", verb: Smithers.Verb.Test, pattern: "//flows:checkRunner" },
         // The benchmark, mutation and campaign gates live with their flows in
         // flows/bench and flows/perf; the evidence collected above is theirs.
         { name: "Benchmark cost gate", verb: Smithers.Verb.Test, pattern: "//flows:benchmarkGate" },
