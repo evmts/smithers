@@ -242,14 +242,22 @@ describe("smthrs-model-server", () => {
       Effect.gen(function*() {
         const fixture = join(directory, "model.json")
         writeFileSync(fixture, JSON.stringify({ calls: [] }))
-        const child = spawn(process.execPath, [bin, "--fixture", fixture], { stdio: ["ignore", "pipe", "pipe"] })
+        // Windows TerminateProcess does not deliver a JavaScript SIGTERM event.
+        // A test-only IPC preload delivers that event to the real CLI handler.
+        const signal = join(directory, "signal.mjs")
+        writeFileSync(signal, `process.once("message", () => { process.disconnect(); process.emit("SIGTERM") })`)
+        const windows = process.platform === "win32"
+        const child = spawn(process.execPath, [
+          ...(windows ? ["--import", signal] : []), bin, "--fixture", fixture
+        ], { stdio: ["ignore", "pipe", "pipe", ...(windows ? ["ipc" as const] : [])] })
         const line = yield* Effect.promise(() =>
           new Promise<string>((resolve) => child.stdout.once("data", (data: Buffer) => resolve(data.toString())))
         )
         const { url } = JSON.parse(line) as { readonly url: string }
         expect(yield* Effect.promise(() => fetch(`${url}/health`).then((response) => response.text()))).toBe("ok")
         const exited = new Promise<number | null>((resolve) => child.once("exit", resolve))
-        child.kill("SIGTERM")
+        if (windows) child.send("SIGTERM")
+        else child.kill("SIGTERM")
         expect(yield* Effect.promise(() => exited)).toBe(0)
       })
     ))
