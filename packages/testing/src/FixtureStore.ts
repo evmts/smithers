@@ -137,15 +137,34 @@ const fileError = (path: string, cause: unknown): Error =>
 const io = <A>(path: string, run: () => Promise<A>): Effect.Effect<A> =>
   Effect.tryPromise({ try: run, catch: (cause) => fileError(path, cause) }).pipe(Effect.orDie)
 
-// The journal sits beside a committed fixture, so a contributor could commit a
-// symlink there and aim a recording run's appends and truncation at any file
-// the test user can write. Every journal open refuses to follow a final
-// symlink (ELOOP), which the store reports as a path-naming defect. Windows has
-// no O_NOFOLLOW; there `| undefined` adds no bit. O_NOFOLLOW covers only the
-// last component, so `refuseSymlinkedDirs` covers the directories above it.
+// O_NOFOLLOW is absent on Windows. Inspect the entry before opening, then
+// verify the opened handle names that same regular file before any IO. A new
+// journal is created exclusively, so a competing link cannot be followed.
 const journalRead = constants.O_RDONLY | constants.O_NOFOLLOW
 const journalAppend = constants.O_WRONLY | constants.O_APPEND | constants.O_CREAT | constants.O_NOFOLLOW
 const journalTruncate = constants.O_WRONLY | constants.O_NOFOLLOW
+
+const withJournal = async <A>(
+  path: string,
+  flags: number,
+  use: (handle: Awaited<ReturnType<typeof open>>) => Promise<A>
+): Promise<A> => {
+  const entry = await lstat(path, { bigint: true }).catch((cause: NodeJS.ErrnoException) => {
+    if (cause.code === "ENOENT" && (flags & constants.O_CREAT) !== 0) return undefined
+    throw cause
+  })
+  if (entry !== undefined && !entry.isFile()) throw new Error(`refusing non-regular journal ${path}`)
+  const handle = await open(path, entry === undefined ? flags | constants.O_EXCL : flags & ~constants.O_CREAT)
+  try {
+    const actual = await handle.stat({ bigint: true })
+    if (!actual.isFile() || (entry !== undefined && (entry.dev !== actual.dev || entry.ino !== actual.ino))) {
+      throw new Error(`journal changed while opening ${path}`)
+    }
+    return await use(handle)
+  } finally {
+    await handle.close()
+  }
+}
 
 // A committed directory symlink on the fixture path (`test/fixtures -> ~/notes`)
 // would carry the journal, the staging file, and the published rename into the
@@ -169,20 +188,17 @@ const refuseSymlinkedDirs = async (path: string): Promise<void> => {
 }
 
 const truncateJournal = async (path: string, length: number): Promise<void> => {
-  const handle = await open(path, journalTruncate)
-  try {
-    await handle.truncate(length)
-  } finally {
-    await handle.close()
-  }
+  await withJournal(path, journalTruncate, (handle) => handle.truncate(length))
 }
 
-const readOptional = (path: string, flag: number = constants.O_RDONLY): Effect.Effect<string | undefined> =>
+const readOptional = (path: string, journal = false): Effect.Effect<string | undefined> =>
   io(path, () =>
-    readFile(path, { encoding: "utf8", flag }).catch((cause: NodeJS.ErrnoException) => {
-      if (cause.code === "ENOENT") return undefined
-      throw cause
-    }))
+    (journal
+      ? withJournal(path, journalRead, (handle) => readFile(handle, { encoding: "utf8" }))
+      : readFile(path, { encoding: "utf8" })).catch((cause: NodeJS.ErrnoException) => {
+        if (cause.code === "ENOENT") return undefined
+        throw cause
+      }))
 
 const parse = (path: string, text: string): Effect.Effect<unknown> =>
   Effect.try({ try: () => JSON.parse(text) as unknown, catch: (cause) => fileError(path, cause) }).pipe(Effect.orDie)
@@ -198,7 +214,7 @@ const readFixture = (path: string): Effect.Effect<Option.Option<Fixture>> =>
     const initial = text === undefined ? undefined : yield* decodeFile(path, yield* parse(path, text))
     const calls = [...(initial?.calls ?? [])]
     const journalPath = `${path}.journal`
-    const journal = yield* readOptional(journalPath, journalRead)
+    const journal = yield* readOptional(journalPath, true)
     if (journal !== undefined) {
       const end = journal.lastIndexOf("\n") + 1
       const complete = journal.slice(0, end)
@@ -298,15 +314,18 @@ export const makeFile = (path: string): Effect.Effect<
               // so a call carrying one appended fine and then made every later
               // open of the fixture die on decode.
               yield* decodeFile(journalPath, { calls: [(JSON.parse(line) as { readonly call: unknown }).call] })
-              yield* io(journalPath, () => appendFile(journalPath, `${line}\n`, { flag: journalAppend }))
+              yield* io(journalPath, () =>
+                withJournal(journalPath, journalAppend, (handle) => appendFile(handle, `${line}\n`)))
               return Option.some(next)
-            }).pipe(Effect.onExit((exit) => Exit.isFailure(exit) ? release : Effect.void))).pipe(Effect.uninterruptible)
+            }).pipe(Effect.onExit((exit) =>
+              Exit.isFailure(exit) ? release : Effect.void
+            ))).pipe(Effect.uninterruptible)
       }),
       flush: () =>
         SynchronizedRef.updateEffect(state, (value) =>
           Effect.gen(function*() {
             const latest = yield* current(value)
-            if (Option.isSome(latest) && (yield* readOptional(`${path}.journal`, journalRead)) !== undefined) {
+            if (Option.isSome(latest) && (yield* readOptional(`${path}.journal`, true)) !== undefined) {
               yield* writeFixture(path, latest.value)
             }
             return latest

@@ -9,6 +9,7 @@ import {
   openSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync
@@ -19,6 +20,12 @@ import { join } from "node:path"
 import { afterEach, vi } from "vitest"
 import type { RecordedCall } from "../src/Fixture.ts"
 import * as FixtureStore from "../src/FixtureStore.ts"
+
+// Exercise the Windows contract on every host: O_NOFOLLOW is unavailable.
+vi.mock("node:fs", async (original) => {
+  const fs = await original<typeof import("node:fs")>()
+  return { ...fs, constants: { ...fs.constants, O_NOFOLLOW: 0 } }
+})
 
 vi.mock("node:fs/promises", async (original) => ({ ...await original<typeof import("node:fs/promises")>() }))
 afterEach(() => vi.restoreAllMocks())
@@ -63,6 +70,77 @@ describe("FixtureStore file persistence", () => {
         expect(Exit.isFailure(exit)).toBe(true)
         if (Exit.isFailure(exit)) expect(String(Cause.squash(exit.cause))).toContain(`${path}.journal`)
         expect(readFileSync(victim, "utf8")).toBe("partial record")
+      })
+    ))
+
+  it.effect("refuses a journal replaced between inspection and open, before reading its bytes", () =>
+    withFile((path) =>
+      Effect.gen(function*() {
+        const journal = `${path}.journal`
+        writeFileSync(journal, "")
+        const originalOpen = fs.open
+        vi.spyOn(fs, "open").mockImplementationOnce(async (...args) => {
+          renameSync(journal, `${journal}.old`)
+          writeFileSync(journal, "partial record")
+          return originalOpen(...args)
+        })
+        const exit = yield* Effect.exit(FixtureStore.makeFile(path))
+        expect(Exit.isFailure(exit)).toBe(true)
+        if (Exit.isFailure(exit)) expect(String(Cause.squash(exit.cause))).toContain("journal changed while opening")
+        expect(readFileSync(journal, "utf8")).toBe("partial record")
+      })
+    ))
+
+  for (const mismatch of ["kind", "device", "inode"] as const) {
+    it.effect(`closes a journal handle with a mismatched ${mismatch} before IO`, () =>
+      withFile((path) =>
+        Effect.gen(function*() {
+          const journal = `${path}.journal`
+          writeFileSync(journal, "partial record")
+          const originalOpen = fs.open
+          let closed = false
+          vi.spyOn(fs, "open").mockImplementationOnce(async (...args) => {
+            const handle = await originalOpen(...args)
+            const originalStat = handle.stat.bind(handle)
+            vi.spyOn(handle, "stat").mockImplementationOnce(async () => {
+              const stat = await originalStat({ bigint: true })
+              if (mismatch === "kind") vi.spyOn(stat, "isFile").mockReturnValue(false)
+              if (mismatch === "device") Object.defineProperty(stat, "dev", { value: stat.dev + 1n })
+              if (mismatch === "inode") Object.defineProperty(stat, "ino", { value: stat.ino + 1n })
+              return stat
+            })
+            const originalClose = handle.close.bind(handle)
+            vi.spyOn(handle, "close").mockImplementationOnce(async () => {
+              await originalClose()
+              closed = true
+            })
+            return handle
+          })
+          const exit = yield* Effect.exit(FixtureStore.makeFile(path))
+          expect(Exit.isFailure(exit)).toBe(true)
+          if (Exit.isFailure(exit)) expect(String(Cause.squash(exit.cause))).toContain("journal changed while opening")
+          expect(closed).toBe(true)
+          expect(readFileSync(journal, "utf8")).toBe("partial record")
+        })
+      ))
+  }
+
+  it.effect("creates a journal exclusively when another writer installs a link during open", () =>
+    withFile((path) =>
+      Effect.gen(function*() {
+        const store = yield* FixtureStore.makeFile(path)
+        const journal = `${path}.journal`
+        const victim = `${path}.victim`
+        writeFileSync(victim, "untouched")
+        const originalOpen = fs.open
+        vi.spyOn(fs, "open").mockImplementationOnce(async (...args) => {
+          symlinkSync(victim, journal)
+          return originalOpen(...args)
+        })
+        const exit = yield* Effect.exit(store.append(call))
+        expect(Exit.isFailure(exit)).toBe(true)
+        expect(readFileSync(victim, "utf8")).toBe("untouched")
+        expect(existsSync(`${path}.lock`)).toBe(false)
       })
     ))
 
