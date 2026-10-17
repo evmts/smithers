@@ -540,8 +540,8 @@ export class CredentialReceiverError extends Data.TaggedError("smithers-build/Cr
 /** Longest a credential receiver may take to accept one review's discoveries. */
 const receiverTimeoutMs = 10 * 60_000
 
-/** Explicit Node modules are interpreted by the current host, without a shell. */
-const nodeReceiver = (path: string): boolean => /\.(?:mjs|cjs|js)$/.test(path)
+/** Windows Node modules are interpreted by the current host, without a shell. */
+const nodeReceiver = (path: string): boolean => process.platform === "win32" && /\.(?:mjs|cjs|js)$/.test(path)
 
 /** Refuses a receiver path that is not an absolute executable file, before any review starts. */
 const receiverPath = async (path: string): Promise<string> => {

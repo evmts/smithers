@@ -313,9 +313,9 @@ describe("LlmLint.review provenance manifest", () => {
         seats: [{ engine: "claude", model: "test" }],
         executable: {
           path: cli.executable,
-          sha256: sha(
-            JSON.stringify([sha(await Fs.readFile(cli.executable)), sha(await Fs.readFile(process.execPath))])
-          )
+          sha256: process.platform === "win32"
+            ? sha(JSON.stringify([sha(await Fs.readFile(cli.executable)), sha(await Fs.readFile(process.execPath))]))
+            : sha(await Fs.readFile(cli.executable))
         }
       },
       context: [{ path: "docs/context.md", sha256: sha("context\n"), bytes: 8 }],

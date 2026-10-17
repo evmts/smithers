@@ -762,7 +762,7 @@ const receiver = async (code: number) => {
       "process.stdout.write(\"receiver stdout detail\\n\")\nprocess.stderr.write(\"receiver stderr detail\\n\")\n" +
       `process.exitCode = ${code}\n`
   )
-  await Fs.chmod(path, 0o644)
+  await Fs.chmod(path, process.platform === "win32" ? 0o644 : 0o755)
   return {
     path,
     record,

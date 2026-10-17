@@ -1311,18 +1311,55 @@ describe("LlmLint.review resource and filesystem boundaries", () => {
 })
 
 describe("LlmLint.promptEngine protocol boundary", () => {
-  it("runs an explicit Node module without relying on executable bits or a shebang", async () => {
+  it("preserves POSIX module interpreters and reports an incompatible Windows module", async () => {
+    const executable = await scriptCli(
+      "bun-module",
+      "if (typeof Bun === 'undefined') process.exit(27); process.stdout.write(JSON.stringify({ type: 'result', result: 'bun' }))"
+    )
+    await Fs.writeFile(
+      executable,
+      (await Fs.readFile(executable, "utf8")).replace("#!/usr/bin/env node", "#!/usr/bin/env bun")
+    )
+    const output = LlmLint.promptEngine(
+      { workspaceRoot: root, executable },
+      { engine: "claude", model: "model", prompt: "prompt" }
+    )
+    if (process.platform === "win32") {
+      const error = await Effect.runPromise(Effect.flip(output))
+      expect(error).toBeInstanceOf(LlmLint.LlmReviewError)
+      expect(error.message).toContain("exited 27")
+    } else {
+      expect(await Effect.runPromise(output)).toBe("bun")
+    }
+  })
+
+  it("launches a Windows Node module with literal host argv", async () => {
     const cli = await fakeCli(
       "portable-node-module",
       JSON.stringify({ type: "result", subtype: "success", result: "portable" })
     )
     await Fs.chmod(cli.executable, 0o644)
-    const output = await Effect.runPromise(LlmLint.promptEngine(
-      { workspaceRoot: root, executable: cli.executable },
-      { engine: "claude", model: "model", prompt: "prompt" }
-    ))
-    expect(output).toBe("portable")
-    expect((await cli.calls())[0]?.stdin).toBe("prompt")
+    const platform = Object.getOwnPropertyDescriptor(process, "platform")!
+    const originalSpawn = ScopedProcess.spawn
+    const launched = vi.spyOn(ScopedProcess, "spawn").mockImplementation((options) => {
+      // Model only selection. The actual process and its cleanup run on this OS.
+      Object.defineProperty(process, "platform", platform)
+      expect(options.command).toBe(process.execPath)
+      expect(options.args?.[0]).toBe(cli.executable)
+      return originalSpawn(options)
+    })
+    try {
+      Object.defineProperty(process, "platform", { ...platform, value: "win32" })
+      const output = await Effect.runPromise(LlmLint.promptEngine(
+        { workspaceRoot: root, executable: cli.executable },
+        { engine: "claude", model: "model", prompt: "prompt" }
+      ))
+      expect(output).toBe("portable")
+      expect((await cli.calls())[0]?.stdin).toBe("prompt")
+    } finally {
+      Object.defineProperty(process, "platform", platform)
+      launched.mockRestore()
+    }
   })
 
   it("runs both engine adapters with their isolated argv and returns plain answer text", async () => {

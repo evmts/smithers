@@ -1340,9 +1340,9 @@ export const publicError = (error: LlmReviewError | ModelCliMissing) =>
     ...(error.attempts === undefined ? {} : { attempts: publicAttempts(error.attempts) })
   }
 
-/** Explicit Node modules use this host's Node, never Windows file associations or a shell. */
+/** Windows Node modules use this host's Node, never file associations or a shell. */
 const nodeModule = (path: string): boolean =>
-  NodePath.isAbsolute(path) && /\.(?:mjs|cjs|js)$/.test(path) &&
+  process.platform === "win32" && NodePath.isAbsolute(path) && /\.(?:mjs|cjs|js)$/.test(path) &&
   NodeFs.statSync(path, { throwIfNoEntry: false })?.isFile() === true
 
 /** Spawns git in the workspace and model CLIs in an isolated home, never through a shell. */
@@ -2639,7 +2639,7 @@ const workspaceRevisions = (
   )
 
 /**
- * The resolved entrypoint and content identity of the command. Node modules
+ * The resolved entrypoint and content identity of the command. Windows Node modules
  * bind both source and interpreter digests; native executables bind their own
  * bytes. An absent entrypoint is reported by the invocation.
  */
