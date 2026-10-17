@@ -3,7 +3,7 @@
  *
  * It lives beside `16-fan-out-fan-in.ts` rather than inside it because two
  * modules declare the same gate: that example, which names it in code, and
- * `16-project/flows/gate/flow.ts`, which is the file a project puts on disk for
+ * `16-project/.smithers/flows/gate/flow.ts`, which is the file a project puts on disk for
  * discovery to find. A shared declaration that lived in either one would make
  * the other import it back, and a module cycle is not a shape a flow file can
  * have: discovery imports the file to run it.

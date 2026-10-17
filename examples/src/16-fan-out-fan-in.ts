@@ -22,7 +22,7 @@ import * as Schema from "effect/Schema"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { batches, Check, Collect, gateBody, specs } from "./16-gate-topology.ts"
-import gateModule from "./16-project/flows/gate/flow.ts"
+import gateModule from "./16-project/.smithers/flows/gate/flow.ts"
 import { durableEngine } from "./durable-layer.ts"
 
 export { batches, Check, type CheckSpec, Collect, declaredBatches, specs } from "./16-gate-topology.ts"
@@ -34,10 +34,10 @@ export const Gate = Flow.make("examples/Gate", {
   body: ({ target }: { readonly target: string }) => gateBody(target)
 })
 
-/** The project whose `flows/` directory declares the gate. */
+/** The project whose `.smithers/flows/` directory declares the gate. */
 export const projectRoot: string = join(dirname(fileURLToPath(import.meta.url)), "16-project")
 
-/** The name discovery derives for `flows/gate/flow.ts` from its directory. */
+/** The name discovery derives for `.smithers/flows/gate/flow.ts` from its directory. */
 export const discoveredFlow = "gate"
 
 /** The priority the declaration on disk carries. */
@@ -61,7 +61,7 @@ const bridge: Executable.Options = {
 /** The platform services discovery and body loading read the project through. */
 const platform = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 
-/** `<projectRoot>/flows/**`, scanned, with bodies still unread. */
+/** `<projectRoot>/.smithers/flows/**`, scanned, with bodies still unread. */
 const registry = Registry.layerProject({ root: projectRoot }).pipe(Layer.provide(platform), Layer.orDie)
 
 /**
