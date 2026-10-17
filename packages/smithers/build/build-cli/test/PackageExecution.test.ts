@@ -1471,10 +1471,10 @@ export const Package = S.Package({ targets: { tool: S.Shell.Test({ bin: S.NodeMo
     await writeExecutable(NodePath.join(root, "node_modules", ".bin", "mytool"), "#!/usr/bin/env node\n")
     commitAll(root)
     const first = await serve(root, ["//:tool", "--plan"])
-    expect(first.exitCode).toBe(0)
+    expect(first.exitCode, first.output + first.logs).toBe(0)
     await write(root, "node_modules/mytool/package.json", `{ "name": "mytool", "version": "2.0.0" }\n`)
     const second = await serve(root, ["//:tool", "--plan"])
-    expect(second.exitCode).toBe(0)
+    expect(second.exitCode, second.output + second.logs).toBe(0)
     expect(keyOf(first.output, "//:tool")).not.toBe(keyOf(second.output, "//:tool"))
   })
 
@@ -2225,7 +2225,7 @@ export const Package = S.Package({ targets: { dist } })
 })
 
 describe("generators beside a live runtime", () => {
-  it.each(["success", "failure", "cancel", "credential", "source"])(
+  it.each(Array.from({ length: 8 }, () => ["success", "failure", "cancel", "credential", "source"]).flat())(
     "preserves concurrent WAL and logs on %s",
     async (mode) => {
       const root = await temporaryWorkspace()
@@ -2288,7 +2288,7 @@ export const Package = S.Package({ targets: {
         expect(await Fs.readFile(NodePath.join(root, ".smithers/logs/run.log"), "utf8")).toBe(
           "initial\n" + "live\n".repeat(count)
         )
-        expect(await Fs.readFile(NodePath.join(root, "out.txt"), "utf8")).toBe(
+        expect(await Fs.readFile(NodePath.join(root, "out.txt"), "utf8"), result.output + result.logs).toBe(
           mode === "failure" || mode === "cancel" ? "before" : "after"
         )
         expect(await Fs.readFile(NodePath.join(root, ".env"), "utf8")).toBe("secret")
