@@ -26,7 +26,7 @@ describe("examples", () => {
       "",
       "Supporting skill resources are available relative to this skill directory but are not loaded into context unless needed:",
       "<skill_resources>",
-      `- Base directory: ${root}/.smithers/flows/review`,
+      `- Base directory: ${join(root, ".smithers/flows/review")}`,
       "- Resolve relative resource paths from this directory and read only the files you need.",
       "</skill_resources>",
       "",

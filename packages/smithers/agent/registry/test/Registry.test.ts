@@ -1138,11 +1138,11 @@ describe("project source lifecycle", () => {
   it("derives the project source from the one project flows directory", () => {
     expect(Registry.projectSource({ join }, "/repo")).toEqual({
       source: "project",
-      root: "/repo/.smithers/flows",
+      root: join("/repo", ".smithers", "flows"),
       naming: "path",
       optionalRoot: true,
       lockfileRoot: "/repo",
-      retiredRoot: "/repo/flows"
+      retiredRoot: join("/repo", "flows")
     })
   })
 })

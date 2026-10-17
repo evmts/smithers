@@ -1055,7 +1055,7 @@ export default Flow.make("pinned", { description:"Retained", payload:{}, success
       const sites = Graph.nodes(Graph.build(executable.flow, { input: {} })).flatMap((node) =>
         node.declaredAt === undefined ? [] : [node.declaredAt.path]
       )
-      expect(sites).toContain(`${identity}/.smithers/flows/pinned/flow.ts`)
+      expect(sites).toContain(join(identity, ".smithers/flows/pinned/flow.ts"))
       expect(sites.some((site) => site.startsWith(workspace))).toBe(false)
       yield* fs.writeFileString(`${workspace}/pnpm-lock.yaml`, "lockfileVersion: 'changed'\n")
       expect(
