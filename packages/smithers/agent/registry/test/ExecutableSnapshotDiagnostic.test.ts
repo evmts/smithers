@@ -5,6 +5,7 @@ import * as NodePath from "@effect/platform-node/NodePath"
 import { Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Deferred, Effect, Exit, Fiber, FileSystem, Layer, PlatformError, Schema } from "effect"
+import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import * as Descriptor from "../src/Descriptor.ts"
 import * as Discovery from "../src/Discovery.ts"
@@ -31,12 +32,12 @@ for (const kind of ["module", "markdown"] as const) {
       Effect.gen(function*() {
         const fs = yield* FileSystem.FileSystem
         const root = yield* fs.makeTempDirectoryScoped({ prefix: "smithers-snapshot-diagnostic-" })
-        const directory = `${root}/flows/repair`
-        const entry = `${directory}/${kind === "module" ? "flow.ts" : "flow.mdx"}`
+        const directory = join(root, "flows", "repair")
+        const entry = join(directory, kind === "module" ? "flow.ts" : "flow.mdx")
         yield* fs.makeDirectory(directory, { recursive: true })
         yield* fs.writeFileString(entry, kind === "module" ? source : markdown)
         const discovery = yield* Discovery.Discovery
-        const scanned = yield* discovery.scan({ source: "project", root: `${root}/flows`, naming: "path" })
+        const scanned = yield* discovery.scan({ source: "project", root: join(root, "flows"), naming: "path" })
         expect(scanned.entries).toHaveLength(1)
         let loads = 0
         let executions = 0

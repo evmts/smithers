@@ -31,7 +31,7 @@ import * as PlatformError from "effect/PlatformError"
 import * as Schema from "effect/Schema"
 import * as TestClock from "effect/testing/TestClock"
 import { execFile } from "node:child_process"
-import { join, relative } from "node:path"
+import { basename, join, relative } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import * as Descriptor from "../src/Descriptor.ts"
 import * as Discovery from "../src/Discovery.ts"
@@ -1311,7 +1311,7 @@ export default Flow.make("pinned", { description:"Retained", payload, success:Sc
       const stubborn = FileSystem.FileSystem.of({
         ...fs,
         remove: (target, options) =>
-          target.includes("/.smithers-") && !target.endsWith(stale)
+          basename(target).startsWith(".smithers-") && !target.endsWith(stale)
             ? Effect.sync(() => refused.push(target)).pipe(
               Effect.andThen(Effect.fail(PlatformError.systemError({
                 _tag: "Busy",
