@@ -31,7 +31,7 @@ export const Single = Flow.make("agent/test/trace/Single", {
   payload: { input: Schema.String },
   success: Schema.String,
   error: AgentAction.AgentFailure,
-  body: ({ input }) => Step.call({ input })
+  body: Node.capture({}, ({ input }) => Step.call({ input }))
 })
 export const Twice = Flow.make("agent/test/trace/Twice", {
   payload: { input: Schema.String },
