@@ -819,7 +819,8 @@ const ci = Smithers.GithubCiGen({
         // The landing helper (`pnpm commit`) and its flows, lane gates and
         // migration renumbering, with the pinned sqlc the backendSQLC dep builds.
         { name: "Landing helper", verb: Smithers.Verb.Test, pattern: "//flows:land" },
-        { name: "Landing helper end to end", verb: Smithers.Verb.Test, pattern: "//flows:landCommit" }
+        { name: "Landing helper end to end", verb: Smithers.Verb.Test, pattern: "//flows:landCommit" },
+        { name: "GitHub triage publisher", verb: Smithers.Verb.Test, pattern: "//flows:triagePublish" }
       ]
     },
     {
