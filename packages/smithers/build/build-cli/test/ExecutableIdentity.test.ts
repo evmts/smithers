@@ -12,6 +12,8 @@ import * as PackageDiscovery from "../src/PackageDiscovery.ts"
 import * as PackageExec from "../src/PackageExec.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
 import * as PackageLoader from "../src/PackageLoader.ts"
+import * as PackageTree from "../src/PackageTree.ts"
+import { writeExecutable } from "./helpers/Executable.ts"
 import { serve as serveCli } from "./helpers/ServeCli.ts"
 
 const temporary: Array<string> = []
@@ -233,13 +235,40 @@ export const Package = S.Package({ targets: { dist: S.Shell.Build({ shell: "${bi
     expect(await Fs.readFile(Path.join(root, "dist/value"), "utf8")).toBe("compiled")
   })
 
-  it("misses after replacing a declared host executable at the same path and version", async () => {
-    const { root, tools } = await fixture(
-      "S.Shell.Build({ bin: S.Host.bin(\"identity-compiler\"), outDirs: [\"dist\"], sandbox: \"none\" })"
-    )
-    await write(tools, "identity-compiler", compiler(tools, "first"))
-    await assertReplacement(root, tools, () => write(tools, "identity-compiler", compiler(tools, "second")))
-  })
+  it.each(process.platform === "win32" ? ["native"] : ["posix", "native"])(
+    "misses after replacing a declared %s host executable at the same path and version",
+    async (transport) => {
+      const name = transport === "native" ? "identity-compiler.exe" : "identity-compiler"
+      const { root, tools } = await fixture(
+        `S.Shell.Build({ bin: S.Host.bin(${JSON.stringify(name)}), outDirs: ["dist"], sandbox: "none" })`
+      )
+      const workspace = Path.join(root, "WORKSPACE.ts")
+      await Fs.writeFile(
+        workspace,
+        (await Fs.readFile(workspace, "utf8")).replace("\"identity-compiler\"", JSON.stringify(name))
+      )
+      const install = async (value: string) => {
+        await writeExecutable(
+          Path.join(tools, "identity-compiler"),
+          `#!/usr/bin/env node
+const fs = require("node:fs");
+if (process.argv.includes("--version")) { console.log("1.0.0"); } else {
+  fs.appendFileSync(${JSON.stringify(Path.join(tools, "dispatches"))}, "dispatch\\n");
+  fs.mkdirSync("dist", { recursive: true });
+  fs.writeFileSync("dist/value", ${JSON.stringify(value)});
+}
+`,
+          transport === "native" ? "win32" : process.platform
+        )
+        if (transport === "native") {
+          expect(PackageTree.findOnPath("identity-compiler", { PATH: tools, PATHEXT: ".EXE" }, { platform: "win32" }))
+            .toBe(Path.join(tools, "identity-compiler.exe"))
+        }
+      }
+      await install("first")
+      await assertReplacement(root, tools, () => install("second"))
+    }
+  )
 
   it.each([true, false])("keys a helper the tool spawns itself only when tools declares it (%s)", async (declared) => {
     const { root, tools } = await fixture(
