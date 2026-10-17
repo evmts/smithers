@@ -12,7 +12,7 @@ import { spawn } from "node:child_process"
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { fileURLToPath } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import * as ModelServer from "../src/ModelServer.ts"
 import * as ModelServerCli from "../src/ModelServerCli.ts"
 
@@ -248,7 +248,7 @@ describe("smthrs-model-server", () => {
         writeFileSync(signal, `process.once("message", () => { process.disconnect(); process.emit("SIGTERM") })`)
         const windows = process.platform === "win32"
         const child = spawn(process.execPath, [
-          ...(windows ? ["--import", signal] : []), bin, "--fixture", fixture
+          ...(windows ? ["--import", pathToFileURL(signal).href] : []), bin, "--fixture", fixture
         ], { stdio: ["ignore", "pipe", "pipe", ...(windows ? ["ipc" as const] : [])] })
         const line = yield* Effect.promise(() =>
           new Promise<string>((resolve) => child.stdout.once("data", (data: Buffer) => resolve(data.toString())))
