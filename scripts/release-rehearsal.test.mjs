@@ -11,7 +11,7 @@ import {
   localEquivalents,
   parseWorkflow,
   rehearsalContexts
-} from "./release-rehearsal.mjs"
+} from "../flows/release/release-rehearsal.mjs"
 import { repoRoot } from "./workspace-packages.mjs"
 
 const release = parseWorkflow(
@@ -25,7 +25,8 @@ const release = parseWorkflow(
  */
 const installDriver = (root) => {
   mkdirSync(join(root, "scripts"))
-  cpSync(join(repoRoot, "scripts/release-rehearsal.mjs"), join(root, "scripts/release-rehearsal.mjs"))
+  mkdirSync(join(root, "flows/release"), { recursive: true })
+  cpSync(join(repoRoot, "flows/release/release-rehearsal.mjs"), join(root, "flows/release/release-rehearsal.mjs"))
   cpSync(join(repoRoot, "scripts/workspace-packages.mjs"), join(root, "scripts/workspace-packages.mjs"))
   symlinkSync(join(repoRoot, "node_modules"), join(root, "node_modules"))
 }
@@ -224,8 +225,8 @@ test("publication keeps provenance and uses the repository token for first publi
 test("publication tolerates tag checkouts and bounded registry throttling", () => {
   const command = step("Publish packages in dependency order").run
 
-  assert.match(command, /node scripts\/publish-release\.mjs/)
-  const publisher = readFileSync(join(repoRoot, "scripts/publish-release.mjs"), "utf8")
+  assert.match(command, /node flows\/release\/publish-release\.mjs/)
+  const publisher = readFileSync(join(repoRoot, "flows/release/publish-release.mjs"), "utf8")
   assert.match(publisher, /--no-git-checks/)
   assert.match(publisher, /retryDelays = \[10, 30, 60\]/)
   assert.match(publisher, /options\.pause\?\.\(2\)/)
@@ -526,7 +527,7 @@ test("a prerelease runs the candidate, gates and backend as separate lanes, and 
 })
 
 test("release builds the checked public graph and pins npm before smoke", () => {
-  assert.equal(step("Build all workspaces from clean artifacts").run, "node scripts/build-release.mjs")
+  assert.equal(step("Build all workspaces from clean artifacts").run, "node flows/release/build-release.mjs")
   const install = step("Install certified npm")
   assert.match(install.run, /npm install --global 'npm@11\.16\.0' /)
   assert.match(install.run, /npm --version/)
@@ -552,8 +553,8 @@ test("the supported Node floor packs and smokes the tarballs and retains its rec
       'const [command, directory] = process.argv.slice(2)',
       'if (command === "--version") { console.log(process.env.MOCK_NODE_VERSION); process.exit(0) }',
       'fs.appendFileSync(process.env.TRACE, JSON.stringify([command, directory, process.env.MOCK_NODE_VERSION]) + "\\n")',
-      'if (command === "scripts/pack-release.mjs") { fs.mkdirSync(directory, { recursive: true }); fs.writeFileSync(path.join(directory, "package.tgz"), "fixed candidate bytes") }',
-      'else if (command === "scripts/smoke-release.mjs") {',
+      'if (command === "flows/release/pack-release.mjs") { fs.mkdirSync(directory, { recursive: true }); fs.writeFileSync(path.join(directory, "package.tgz"), "fixed candidate bytes") }',
+      'else if (command === "flows/release/smoke-release.mjs") {',
       '  const bytes = fs.readFileSync(path.join(directory, "package.tgz"), "utf8")',
       '  fs.writeFileSync(path.join(directory, "smoke-evidence.json"), JSON.stringify({ bytes, node: process.env.MOCK_NODE_VERSION }))',
       '} else throw new Error("unexpected release command")'
@@ -572,7 +573,7 @@ test("the supported Node floor packs and smokes the tarballs and retains its rec
     assert.equal(floor.status, 0, floor.stderr)
     assert.deepEqual(JSON.parse(readFileSync(join(env.SMOKE_EVIDENCE_DIR, "node26.json"), "utf8")), { bytes: "fixed candidate bytes", node: "v26.4.0" })
     const calls = readFileSync(env.TRACE, "utf8").trim().split("\n").map((line) => JSON.parse(line))
-    assert.deepEqual(calls, [["scripts/pack-release.mjs", env.PACK_DIR, "v26.4.0"], ["scripts/smoke-release.mjs", env.PACK_DIR, "v26.4.0"]])
+    assert.deepEqual(calls, [["flows/release/pack-release.mjs", env.PACK_DIR, "v26.4.0"], ["flows/release/smoke-release.mjs", env.PACK_DIR, "v26.4.0"]])
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
@@ -596,7 +597,7 @@ test("archived retries restore an explicit immutable artifact without rebuilding
   assert.equal(release.on.workflow_dispatch.inputs.candidateArtifactId.default, "")
   assert.equal(release.jobs.publish.permissions.actions, "read")
   const restore = step("Restore and verify archived release candidate")
-  assert.equal(restore.run, 'node scripts/restore-release.mjs "$PACK_DIR"')
+  assert.equal(restore.run, 'node flows/release/restore-release.mjs "$PACK_DIR"')
   assert.equal(restore.env.GH_TOKEN, "${{ github.token }}")
   const names = release.jobs.publish.steps.map((candidate) => candidate.name)
   assert.ok(names.indexOf("Validate archived candidate selection") < names.indexOf("Workspace targets"))
@@ -696,7 +697,7 @@ test("a failed gate retains diagnostic files and failure status while skipping l
       '        run: cp failed.log "$RUNNER_TEMP/evidence.log"'
     ].join("\n"))
     const result = spawnSync(process.execPath, [
-      join(root, "scripts/release-rehearsal.mjs"), "--workflow", "workflow.yml",
+      join(root, "flows/release/release-rehearsal.mjs"), "--workflow", "workflow.yml",
       "--runner-temp", join(root, "runner"), "--transcript", join(root, "transcript.json")
     ], { encoding: "utf8", timeout: 30_000 })
     assert.equal(result.status, 1, result.stdout + result.stderr)
@@ -730,7 +731,7 @@ test("a red gate does not skip a later setup-gated gate, and failed setup skips 
         "        run: exit 0"
       ].join("\n"))
       const result = spawnSync(process.execPath, [
-        join(root, "scripts/release-rehearsal.mjs"), "--workflow", "workflow.yml",
+        join(root, "flows/release/release-rehearsal.mjs"), "--workflow", "workflow.yml",
         "--runner-temp", join(root, "runner"), "--transcript", join(root, "transcript.json")
       ], { encoding: "utf8", timeout: 30_000 })
       assert.equal(result.status, 1, result.stdout + result.stderr)
@@ -778,7 +779,7 @@ test("a directory a step appends to $GITHUB_PATH leads PATH for later steps", ()
       "        run: case \"$PATH\" in /opt/fixture-tool/bin:*) exit 0 ;; *) exit 23 ;; esac"
     ].join("\n"))
     const result = spawnSync(process.execPath, [
-      join(root, "scripts/release-rehearsal.mjs"), "--workflow", "workflow.yml",
+      join(root, "flows/release/release-rehearsal.mjs"), "--workflow", "workflow.yml",
       "--runner-temp", join(root, "runner"), "--transcript", join(root, "transcript.json")
     ], { encoding: "utf8", timeout: 30_000 })
     assert.equal(result.status, 0, result.stdout + result.stderr)
@@ -802,7 +803,7 @@ test("a colocated rehearsal skips initialization and continues to the next gate"
       "        run: echo gate passed"
     ].join("\n"))
     const run = () => spawnSync(process.execPath, [
-      join(root, "scripts/release-rehearsal.mjs"), "--workflow", "workflow.yml",
+      join(root, "flows/release/release-rehearsal.mjs"), "--workflow", "workflow.yml",
       "--transcript", join(root, "transcript.json")
     ], { encoding: "utf8", timeout: 30_000 })
     const colocated = run()
@@ -843,7 +844,7 @@ test("the driver switches PATH to the toolchain each setup-node step pins", () =
       "        run: test \"$(node --version)\" = 'v26.4.0'"
     ].join("\n"))
     const result = spawnSync(process.execPath, [
-      join(root, "scripts/release-rehearsal.mjs"), "--workflow", "workflow.yml",
+      join(root, "flows/release/release-rehearsal.mjs"), "--workflow", "workflow.yml",
       "--transcript", join(root, "transcript.json"),
       "--node", `26.5.0=${toolchain("26.5.0")}`, "--node", `26.4.0=${toolchain("26.4.0")}`
     ], { encoding: "utf8", timeout: 30_000 })
@@ -866,7 +867,7 @@ test("release checks out the requested candidate, serializes its tag, and archiv
   assert.equal(interpolate(release.concurrency.group, pushed), "release-v1.0.0-rc.0")
   assert.equal(release.concurrency["cancel-in-progress"], false)
   const archive = steps.findIndex((item) => item.uses?.startsWith("actions/upload-artifact@"))
-  const publish = steps.findIndex((item) => item.run?.includes("node scripts/publish-release.mjs"))
+  const publish = steps.findIndex((item) => item.run?.includes("node flows/release/publish-release.mjs"))
   assert.ok(archive >= 0 && publish > archive)
   assert.equal(steps[archive].with["if-no-files-found"], "error")
 })

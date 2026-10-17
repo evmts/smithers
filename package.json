@@ -38,7 +38,7 @@
     "release:answer": "node --experimental-strip-types flows/release-support/main.ts answer",
     "browser": "node scripts/browser-check.mjs",
     "check": "pnpm --recursive --if-present run check",
-    "check:npm-dedupe": "node scripts/check-npm-dedupe.mjs",
+    "check:npm-dedupe": "node flows/release/check-npm-dedupe.mjs",
     "circular": "pnpm --recursive --if-present run circular",
     "dev": "pnpm --filter smithers-app run start",
     "checklist": "pnpm --filter smithers-app run checklist",

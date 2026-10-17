@@ -3,7 +3,7 @@
  * a reader can install.
  *
  * A manifest's `private` flag keeps a package off npm, and the roster in
- * `scripts/pack-release.mjs` decides what a release train packs. A catalog that
+ * `flows/release/pack-release.mjs` decides what a release train packs. A catalog that
  * gives a package its own heading, or an install command, promises both. This
  * reads the roster instead of restating it, so a package leaving the train
  * reddens the page that still sells it.

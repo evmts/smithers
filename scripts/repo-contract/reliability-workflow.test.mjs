@@ -12,7 +12,7 @@ import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { it } from "node:test"
 
-import { evaluateExpression, interpolate, parseWorkflow } from "../release-rehearsal.mjs"
+import { evaluateExpression, interpolate, parseWorkflow } from "../../flows/release/release-rehearsal.mjs"
 import { repoRoot as root } from "../workspace-packages.mjs"
 
 it("scheduled durable histories retain reproducible seeds and operation artifacts", () => {

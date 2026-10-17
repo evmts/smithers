@@ -10,6 +10,7 @@ import { promisify } from 'node:util'
 const workflowPath = new URL('../../../.github/workflows/drift.yml', import.meta.url)
 const ciPath = new URL('../../../.github/workflows/ci.yml', import.meta.url)
 const scriptsPackagePath = new URL('../../../scripts/PACKAGE.ts', import.meta.url)
+const flowsPackagePath = new URL('../../../flows/PACKAGE.ts', import.meta.url)
 const rootPackagePath = new URL('../../../PACKAGE.ts', import.meta.url)
 const manifestPath = new URL('../../../package.json', import.meta.url)
 const repositoryRoot = fileURLToPath(new URL('../../../', import.meta.url))
@@ -24,7 +25,7 @@ const gateCommands = [
   "pnpm exec smthrs lint '//:openapiBundle' --known-red '.github/ci-known-red.json' --verbose",
   "pnpm exec smthrs lint '//:openapiClients' --known-red '.github/ci-known-red.json' --verbose",
   "pnpm exec smthrs lint '//scripts:docsDrift' --known-red '.github/ci-known-red.json' --verbose",
-  "pnpm exec smthrs build '//scripts:apiBaseline' --known-red '.github/ci-known-red.json' --verbose",
+  "pnpm exec smthrs build '//flows:apiBaseline' --known-red '.github/ci-known-red.json' --verbose",
   "pnpm exec smthrs lint '//packages/repo-targets:conflictMarkers' --known-red '.github/ci-known-red.json' --verbose",
   "pnpm exec smthrs lint '//packages/repo-targets:trackedHygiene' --known-red '.github/ci-known-red.json' --verbose",
   "pnpm exec smthrs lint '//:driftCi' --known-red '.github/ci-known-red.json' --verbose",
@@ -100,7 +101,7 @@ test('CI declares the retained document components using the moved native ABI ad
 })
 
 test('API baseline and docs drift targets are check-only and independent of release packing', async () => {
-  const source = await readFile(scriptsPackagePath, 'utf8')
+  const source = await readFile(flowsPackagePath, 'utf8')
   const api = source.match(/const apiBaseline\s*=\s*Smithers\.NodeBinary\(\{([\s\S]*?)\n\}\)/)?.[1]
   assert.ok(api, 'apiBaseline must use NodeBinary')
   assert.match(api, /check-api-baseline\.mjs/)
@@ -110,7 +111,7 @@ test('API baseline and docs drift targets are check-only and independent of rele
   const release = source.match(/const releasePack\s*=\s*Smithers\.NodeBinary\(\{([\s\S]*?)\n\}\)/)?.[1]
   assert.ok(release, 'releasePack must use NodeBinary')
   assert.match(release, /deps:\s*\[\s*apiBaseline\s*,/, 'releasePack must depend on apiBaseline')
-  const docs = source.match(/const docsDrift\s*=\s*Smithers\.Shell\.Diff\(\{([\s\S]*?)\n\}\)/)?.[1]
+  const docs = (await readFile(scriptsPackagePath, 'utf8')).match(/const docsDrift\s*=\s*Smithers\.Shell\.Diff\(\{([\s\S]*?)\n\}\)/)?.[1]
   assert.ok(docs, 'docsDrift must use Shell.Diff')
   assert.match(docs, /changes:\s*\[\]/)
   assert.match(docs, /pnpm run docs:check/)
@@ -158,7 +159,7 @@ const scratchOutputs = async () => (await readdir(tmpdir())).filter((name) => na
 
 test('declaration build matches normal TypeScript release emit and cleans isolated output', async () => {
   const { default: ts } = await import('typescript')
-  const { apiSurface, withDeclarationBuild } = await import('../../../scripts/check-api-baseline.mjs')
+  const { apiSurface, withDeclarationBuild } = await import('../../../flows/release/check-api-baseline.mjs')
   const root = await mkdtemp(join(tmpdir(), 'smithers-api-fixture-'))
   const previousTmpdir = process.env.TMPDIR
   const previousTemp = process.env.TEMP
@@ -250,7 +251,7 @@ test('declaration build matches normal TypeScript release emit and cleans isolat
 
 test('public build declarations match release-style tsc for all source files', async () => {
   const { default: ts } = await import('typescript')
-  const { apiSurface, withDeclarationBuild } = await import('../../../scripts/check-api-baseline.mjs')
+  const { apiSurface, withDeclarationBuild } = await import('../../../flows/release/check-api-baseline.mjs')
   const root = await mkdtemp(join(tmpdir(), 'smithers-api-build-parity-'))
   try {
     await write(root, 'pnpm-workspace.yaml', 'packages:\n  - "packages/*"\n')
@@ -318,11 +319,11 @@ declare function getB(): B
 })
 
 test('CLI combines declaration build and baseline update from current source', async () => {
-  const { apiSurface, withDeclarationBuild } = await import('../../../scripts/check-api-baseline.mjs')
+  const { apiSurface, withDeclarationBuild } = await import('../../../flows/release/check-api-baseline.mjs')
   const root = await realpath(await mkdtemp(join(tmpdir(), 'smithers-api-cli-fixture-')))
   const packageRoot = join(root, 'packages/example')
-  const cli = join(root, 'scripts/check-api-baseline.mjs')
-  const baselinePath = join(root, 'scripts/fixtures/public-api-baseline.json')
+  const cli = join(root, 'flows/release/check-api-baseline.mjs')
+  const baselinePath = join(root, 'flows/release/fixtures/public-api-baseline.json')
   const runCli = (...options) => runFile(process.execPath, [cli, ...options], { cwd: root })
   try {
     await write(root, 'package.json', '{"type":"module"}\n')
@@ -340,11 +341,11 @@ test('CLI combines declaration build and baseline update from current source', a
       include: ['src/**/*.ts'],
     }))
     await write(root, 'packages/example/src/index.ts', 'export function value(input: string): string { return input }\n')
-    await cp(join(repositoryRoot, 'scripts/check-api-baseline.mjs'), cli)
+    await cp(join(repositoryRoot, 'flows/release/check-api-baseline.mjs'), cli)
     await cp(join(repositoryRoot, 'scripts/workspace-packages.mjs'), join(root, 'scripts/workspace-packages.mjs'))
     await cp(join(repositoryRoot, 'packages/repo-targets/scripts/build-library.mjs'), join(root, 'packages/repo-targets/scripts/build-library.mjs'))
     await cp(join(repositoryRoot, 'packages/repo-targets/scripts/private-effect-adapters.mjs'), join(root, 'packages/repo-targets/scripts/private-effect-adapters.mjs'))
-    await mkdir(join(root, 'scripts/fixtures'), { recursive: true })
+    await mkdir(join(root, 'flows/release/fixtures'), { recursive: true })
     await symlink(join(repositoryRoot, 'node_modules'), join(root, 'node_modules'), 'dir')
     await symlink(join(repositoryRoot, 'node_modules'), join(packageRoot, 'node_modules'), 'dir')
 
@@ -366,7 +367,7 @@ test('CLI combines declaration build and baseline update from current source', a
     await assert.rejects(runCli('--build-declarations'), (error) => {
       assert.match(`${error.stderr}\n${error.stdout}`, /Declaration\/API drift requires compatibility review/)
       assert.match(`${error.stderr}\n${error.stdout}`, /Review declaration diffs, consumer type tests and release notes before explicitly updating the baseline/)
-      assert.match(error.stderr, /node scripts\/check-api-baseline\.mjs --build-declarations --update/)
+      assert.match(error.stderr, /node flows\/release\/check-api-baseline\.mjs --build-declarations --update/)
       return true
     })
     const second = await runCli('--update', '--build-declarations')
@@ -378,7 +379,7 @@ test('CLI combines declaration build and baseline update from current source', a
     assert.match(check.stdout, /Declaration baseline matches 1 public packages/)
     for (const options of [['--unknown'], ['--update', '--update'], ['--build-declarations', '--build-declarations']]) {
       await assert.rejects(runCli(...options), (error) => {
-        assert.match(error.stderr, /usage: node scripts\/check-api-baseline\.mjs/)
+        assert.match(error.stderr, /usage: node flows\/release\/check-api-baseline\.mjs/)
         return true
       })
     }

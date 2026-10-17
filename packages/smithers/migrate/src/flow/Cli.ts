@@ -70,7 +70,7 @@ const flags = {
 /**
  * The version `smithers-migrate --version` prints and every report records
  * as its tool version. It is the package's own release version; the release
- * bump rewrites it through `scripts/set-release-version.mjs`, and
+ * bump rewrites it through `flows/release/set-release-version.mjs`, and
  * `test/flow/Dependencies.test.ts` pins it to `package.json`.
  *
  * @category models

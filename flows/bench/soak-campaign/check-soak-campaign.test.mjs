@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
 import { verifySoak } from "./check-soak-campaign.mjs"
-import { parseWorkflow } from "../../../scripts/release-rehearsal.mjs"
+import { parseWorkflow } from "../../release/release-rehearsal.mjs"
 
 const artifact = () => ({ schemaVersion: 1, status: "complete",
   runtime: { node: "v26.10.0", platform: "linux", arch: "x64" },

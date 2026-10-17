@@ -591,7 +591,7 @@ run_gate() {
       pnpm exec smthrs lint '//scripts:docsDrift' --known-red '.github/ci-known-red.json' --verbose
       ;;
     api-baseline)
-      pnpm exec smthrs build '//scripts:apiBaseline' --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs build '//flows:apiBaseline' --known-red '.github/ci-known-red.json' --verbose
       ;;
     conflict-markers)
       pnpm exec smthrs lint '//packages/repo-targets:conflictMarkers' --known-red '.github/ci-known-red.json' --verbose

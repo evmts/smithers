@@ -280,7 +280,7 @@ describe("ci conformance", () => {
     // here so it stays exactly the write half — a second spelling of the drift
     // check would let a stale commit pass.
     //
-    // `check:npm-dedupe` is the operator alias for `//scripts:npmDedupe`, the
+    // `check:npm-dedupe` is the operator alias for `//flows:npmDedupe`, the
     // same shape as `browser` and `//scripts:browserContract`. The resolution reads
     // registry metadata, so the target is uncacheable and re-runs regardless,
     // which is the only concession the network costs. The alias is pinned so
@@ -310,7 +310,7 @@ describe("ci conformance", () => {
       browser: "node scripts/browser-check.mjs",
       check: "pnpm --recursive --if-present run check",
       checklist: "pnpm --filter smithers-app run checklist",
-      "check:npm-dedupe": "node scripts/check-npm-dedupe.mjs",
+      "check:npm-dedupe": "node flows/release/check-npm-dedupe.mjs",
       circular: "pnpm --recursive --if-present run circular",
       "deploy:dry": "pnpm --filter smithers-server run deploy:dry",
       "docs:check":

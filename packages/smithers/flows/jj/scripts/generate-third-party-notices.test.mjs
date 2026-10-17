@@ -61,7 +61,7 @@ test("notices follow Cargo's wasm normal/build closure and --check detects drift
 })
 
 test("the Rust CI job checks the shipped notices", async () => {
-  const { parseWorkflow } = await import("../../../../../scripts/release-rehearsal.mjs")
+  const { parseWorkflow } = await import("../../../../../flows/release/release-rehearsal.mjs")
   const ci = parseWorkflow(readFileSync(join(repoRoot, ".github/workflows/ci.yml"), "utf8"))
   assert.ok(ci.jobs.rust.steps.some((step) =>
     typeof step.run === "string" && /^pnpm exec smthrs test '\/\/packages\/smithers\/flows\/jj:thirdPartyNotices'(?: --known-red '\.github\/ci-known-red\.json')?(?: --results-file "\$RUNNER_TEMP\/smthrs-results\/\$GITHUB_ACTION\.json")?(?: --verbose)?$/.test(step.run)))

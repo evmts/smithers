@@ -46,7 +46,7 @@ describe("publication conformance", () => {
           )
         }
         // A third carve-out, derived rather than named, and only from the
-        // publication half of this cell. `scripts/pack-release.mjs:43` skips a
+        // publication half of this cell. `flows/release/pack-release.mjs:43` skips a
         // manifest that is `private` or outside the `engine` and `agent`
         // release groups, so the build graph, its CLI, and the target library —
         // private, `smthrs.group: "tooling"`, packed by no candidate — have no
@@ -99,8 +99,8 @@ describe("publication conformance", () => {
     const publish = release.indexOf("Publish packages in dependency order")
     assert.ok(smoke > -1)
     assert.ok(publish > smoke)
-    assert.ok(release.includes("node scripts/pack-release.mjs \"$PACK_DIR\""))
-    assert.ok(release.includes("node scripts/smoke-release.mjs \"$PACK_DIR\""))
+    assert.ok(release.includes("node flows/release/pack-release.mjs \"$PACK_DIR\""))
+    assert.ok(release.includes("node flows/release/smoke-release.mjs \"$PACK_DIR\""))
     // Both workflows install the pnpm version pinned once in package.json.
     const root = JSON.parse(readFileSync(join(packagesDir, "..", "package.json"), "utf8")) as {
       readonly packageManager?: string
@@ -117,26 +117,26 @@ describe("publication conformance", () => {
       Object.values(ci.jobs).flatMap((job) => job.steps)
         .some((step) => step.uses === "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86")
     )
-    assert.ok(release.includes("node scripts/publish-release.mjs \"$PACK_DIR\""))
+    assert.ok(release.includes("node flows/release/publish-release.mjs \"$PACK_DIR\""))
     const restore = release.indexOf("Restore and verify archived release candidate")
     assert.ok(restore > smoke)
     assert.ok(publish > restore)
-    assert.ok(release.includes("node scripts/restore-release.mjs \"$PACK_DIR\""))
+    assert.ok(release.includes("node flows/release/restore-release.mjs \"$PACK_DIR\""))
     // The published set and its order are read out of the pack manifest, so a
-    // restated package list cannot drift from what was packed. `scripts/
+    // restated package list cannot drift from what was packed. `flows/release/
     // pack-release.test.mjs` holds the rest of that conformance suite.
     assert.ok(release.includes("manifest.json"))
     assert.ok(!release.includes("publish_if_missing"))
-    const packScript = readFileSync(join(packagesDir, "..", "scripts", "pack-release.mjs"), "utf8")
-    const smokeScript = readFileSync(join(packagesDir, "..", "scripts", "smoke-release.mjs"), "utf8")
-    const publishScript = readFileSync(join(packagesDir, "..", "scripts", "publish-release.mjs"), "utf8")
+    const packScript = readFileSync(join(packagesDir, "..", "flows", "release", "pack-release.mjs"), "utf8")
+    const smokeScript = readFileSync(join(packagesDir, "..", "flows", "release", "smoke-release.mjs"), "utf8")
+    const publishScript = readFileSync(join(packagesDir, "..", "flows", "release", "publish-release.mjs"), "utf8")
     assert.ok(publishScript.includes("join(directory, \"release-manifest.json\")"))
     assert.ok(publishScript.includes("const pending = await preflight(directory, candidate, options)"))
     assert.ok(publishScript.includes("for (const [index, entry] of pending.entries())"))
     // Verify the actual registry adapter's invocation, so extracting a helper
     // cannot break this contract while dropping provenance still does.
     const { registryPublisher } = await import(
-      pathToFileURL(join(packagesDir, "..", "scripts", "publish-release.mjs")).href
+      pathToFileURL(join(packagesDir, "..", "flows", "release", "publish-release.mjs")).href
     )
     const calls: Array<readonly [string, ReadonlyArray<string>]> = []
     const publisher = registryPublisher({

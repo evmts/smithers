@@ -142,7 +142,7 @@ test("an affected check without its check host's written paths refuses instead o
 const driftGates = [
   ["lint", "//...:fmt"], ["lint", "//:targetIndex"], ["lint", "//:factoryProjection"], ["lint", "//:backendAccessTests"],
   ["lint", "//:openapiBundle"], ["lint", "//:openapiClients"], ["lint", "//scripts:docsDrift"],
-  ["build", "//scripts:apiBaseline"], ["lint", "//packages/repo-targets:conflictMarkers"], ["lint", "//packages/repo-targets:trackedHygiene"],
+  ["build", "//flows:apiBaseline"], ["lint", "//packages/repo-targets:conflictMarkers"], ["lint", "//packages/repo-targets:trackedHygiene"],
   ["lint", "//:driftCi"], ["lint", "//:ci"]
 ]
 const driftRun = (failing) => {

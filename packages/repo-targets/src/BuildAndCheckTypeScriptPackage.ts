@@ -188,7 +188,7 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
   ]
   const dprintConfig = options.dprintConfig ?? Input.file("dprint.json")
   // The published packages are dual: `PackageJson` derives an `import` and a
-  // `require` condition from this `format`, and `scripts/pack-release.mjs`
+  // `require` condition from this `format`, and `flows/release/pack-release.mjs`
   // refuses a package missing either half. One `tsc -p` run emits one format,
   // so the producer is the package's own build program, which compiles the
   // ESM half and its declarations with the package tsconfig and rewrites the

@@ -16,7 +16,7 @@ import { join, matchesGlob } from "node:path"
 import { describe, it } from "node:test"
 import ts from "typescript"
 
-import { parseWorkflow } from "../release-rehearsal.mjs"
+import { parseWorkflow } from "../../flows/release/release-rehearsal.mjs"
 import { repoRoot as root } from "../workspace-packages.mjs"
 
 const readManifest = (path) => JSON.parse(readFileSync(path, "utf8"))
@@ -101,7 +101,7 @@ describe("test-file ownership", () => {
   const suites = testFiles("scripts", ".mjs")
 
   it("finds the script suites", () => {
-    assert.ok(suites.includes("scripts/pack-release.test.mjs"))
+    assert.ok(suites.includes("scripts/issue-claim.test.mjs"))
   })
 
   it("names every script suite in a target's test runner", () => {

@@ -2,13 +2,13 @@ import assert from "node:assert/strict"
 import { mkdir, rm, writeFile } from "node:fs/promises"
 import { basename, join } from "node:path"
 import { test, type TestContext } from "node:test"
-import { publishedPackages } from "../../scripts/pack-release.mjs"
-import { candidateIntegrity, integrity } from "../../scripts/publish-release.mjs"
 import { releaseGateCommand, releaseGates } from "../../scripts/release-gates.mjs"
 import { releaseInput } from "../release-support/input.ts"
 import { commandRunner } from "../release-support/io.ts"
 import { operations, type ReleaseGateSet } from "../release-support/operations.ts"
 import { type Candidate, ReleaseError } from "../release-support/schema.ts"
+import { publishedPackages } from "../release/pack-release.mjs"
+import { candidateIntegrity, integrity } from "../release/publish-release.mjs"
 import { repository } from "./fixtures.ts"
 
 const fixture = async (test: TestContext, options: { gates?: ReleaseGateSet } = {}) => {
@@ -90,8 +90,8 @@ test("the publisher rechecks both runtime receipts and publishes only missing ex
   const state = await fixture(test)
   const verified = await state.ops.verifyCandidate({ input: state.input, candidate: state.candidate })
   // The fixture stocks the registry with every package but the last, so exactly one is
-  // pending out of the whole roster. The roster's size is `scripts/pack-release.mjs`'s
-  // decision and `scripts/pack-release.test.mjs` pins it; restating it here too would
+  // pending out of the whole roster. The roster's size is `release/pack-release.mjs`'s
+  // decision and `release/pack-release.test.mjs` pins it; restating it here too would
   // only mean a third file to edit whenever a package joins or leaves the release.
   assert.match(verified.approvalPrompt, new RegExp(`1 pending of ${publishedPackages.length} packages\\.`))
   const result = await state.ops.publish({ input: state.input, candidate: verified })

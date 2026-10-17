@@ -16,7 +16,7 @@ lint //:backendAccessTests
 lint //:openapiBundle
 lint //:openapiClients
 lint //scripts:docsDrift
-build //scripts:apiBaseline
+build //flows:apiBaseline
 lint //packages/repo-targets:conflictMarkers
 lint //packages/repo-targets:trackedHygiene
 lint //:driftCi

@@ -393,7 +393,7 @@ const catalogPublicationTest = Smithers.Shell.Test({
     Smithers.file("scripts/catalog-publication.mjs"),
     Smithers.file("scripts/catalog-publication.test.mjs"),
     Smithers.file("docs/reference/api/index.mdx"),
-    Smithers.file("//scripts/pack-release.mjs"),
+    Smithers.file("//flows/release/pack-release.mjs"),
     Smithers.file("//scripts/workspace-packages.mjs"),
     // The roster is checked against what every member manifest declares, so a
     // manifest flipping `private` has to re-run this.
@@ -440,9 +440,10 @@ const supportMatrixTest = Smithers.Shell.Test({
     Smithers.file("//.github/workflows/ci.yml"),
     Smithers.file("//.github/workflows/release.yml"),
     Smithers.file("//pnpm-workspace.yaml"),
-    ...["pack-release", "packed-export-targets", "publish-release", "release-rehearsal", "workspace-packages"].map(
-      (name) => Smithers.file(`//scripts/${name}.mjs`)
+    ...["pack-release", "packed-export-targets", "publish-release", "release-rehearsal"].map(
+      (name) => Smithers.file(`//flows/release/${name}.mjs`)
     ),
+    Smithers.file("//scripts/workspace-packages.mjs"),
     // The shared reader parses every member before selecting public packages.
     // Explicit files cross package boundaries; a site-scoped glob cannot.
     ...workspacePackages().map(({ dir }) => Smithers.file(`//${dir}/package.json`)),
@@ -480,7 +481,7 @@ const docsLint = Smithers.Shell.Test({
     Smithers.file("//apps/site/src/data/versions.json"),
     Smithers.file("//apps/site/public/_redirects"),
     Smithers.file("//apps/site/scripts/catalog-publication.mjs"),
-    Smithers.file("//scripts/pack-release.mjs")
+    Smithers.file("//flows/release/pack-release.mjs")
   ]
 })
 

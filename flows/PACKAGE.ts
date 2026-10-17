@@ -650,7 +650,7 @@ const campaignVerifiers = Smithers.NodeTest({
   srcs: [
     sources,
     ...benchSources,
-    Smithers.file("//scripts/release-rehearsal.mjs"),
+    Smithers.file("//flows/release/release-rehearsal.mjs"),
     Smithers.file("//.github/workflows/reliability.yml")
   ],
   deps: [],
@@ -832,6 +832,289 @@ const landCommit = Smithers.NodeTest({
   cwd
 })
 
+/**
+ * The release tooling: the modules the Release workflow and the
+ * `smithers/Release` flow run, in `release/`, a typed flow for each runnable
+ * step in `release/<step>/`, and the C-REL host evidence recorders in
+ * `release/host/` and `release/journeys/`. The module suites run from the
+ * checkout root, where they ran under `scripts/`, because they read the
+ * workflows and the root manifest by repository path.
+ */
+const releaseSources = [
+  Smithers.glob("//flows/release/**/*"),
+  runModuleSource,
+  Smithers.file("//scripts/workspace-packages.mjs"),
+  Smithers.file("//packages/repo-targets/contracts/check-single-effect-version.mjs")
+]
+
+const packDirectory = "dist/release-packs"
+
+const privateAdapterManifests = [
+  "packages/smithers",
+  "packages/smithers/build/build-cli",
+  "packages/smithers/migrate",
+  "packages/smithers/flows/platform-node",
+  "packages/smithers/flows/platform-bun",
+  "packages/smithers/gateway",
+  "packages/smithers/flows"
+].map((directory) => Smithers.file(`//${directory}/package.json`))
+
+/**
+ * Checks the release manifest: which packages are published, in what order, and
+ * with which internal ranges retargeted.
+ *
+ * @since 0.1.0
+ * @category test
+ */
+const packManifest = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//flows/release/pack-release.test.mjs")]),
+  // Both workflows are inputs: the suite compares the release workflow's gate
+  // and toolchain steps against the generated CI workflow's, so an edit to
+  // either one has to re-run this gate rather than read a cached pass.
+  srcs: [
+    ...releaseSources,
+    Smithers.file("//.github/workflows/ci.yml"),
+    Smithers.file("//.github/workflows/release.yml")
+  ],
+  deps: []
+})
+
+/**
+ * Checks the changelog generator: the commit-subject parse, the grouping, the
+ * rendering, and that a second run over one range writes the same bytes.
+ *
+ * The cases drive real temporary repositories. The generator's whole input is
+ * `git log`, `git describe`, and `git tag --points-at`, so a recorded log would
+ * only prove that the recording agrees with itself.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const changelog = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//flows/release/generate-changelog.test.mjs")]),
+  srcs: releaseSources,
+  deps: []
+})
+
+/**
+ * Checks that a cut writes the version and the changelog, verifies both, and
+ * tags without pushing.
+ *
+ * The fixture is a temporary repository holding copies of the scripts a cut
+ * spawns, so a case cannot reach this checkout's manifests: every one of them
+ * resolves its repository root from its own location.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const releaseCut = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//flows/release/cut-release.test.mjs")]),
+  srcs: releaseSources,
+  deps: []
+})
+
+/**
+ * Checks release preparation, installed consumer boundaries and runtime floors,
+ * and the publication path's registry adapter.
+ *
+ * Several assertions read `release.yml` itself, so an edit that breaks the
+ * release fails here instead of at the next release.
+ *
+ * @since 0.1.0
+ * @category test
+ */
+const releaseSuite = Smithers.NodeTest({
+  runner: Smithers.testRunner([
+    Smithers.file("//flows/release/release-publish.test.mjs"),
+    Smithers.file("//flows/release/build-release.test.mjs"),
+    Smithers.file("//flows/release/check-api-baseline.test.mjs"),
+    Smithers.file("//flows/release/release-consumers.test.mjs"),
+    Smithers.file("//flows/release/release-npm-support.test.mjs"),
+    Smithers.file("//flows/release/release-node-support.test.mjs"),
+    Smithers.file("//flows/release/release-peer-ranges.test.mjs"),
+    Smithers.file("//flows/release/release-registry.test.mjs"),
+    Smithers.file("//flows/release/release-process.test.mjs"),
+    Smithers.file("//flows/release/runtime-node-support.test.mjs"),
+    Smithers.file("//flows/release/release-mcp-handshake.test.mjs")
+  ]),
+  srcs: [
+    ...releaseSources,
+    Smithers.file("//packages/repo-targets/scripts/build-library.mjs"),
+    Smithers.file("//packages/repo-targets/scripts/private-effect-adapters.mjs"),
+    Smithers.file("//scripts/repo-contract/package-contract.test.mjs"),
+    Smithers.file("//.pnpmfile.mjs"),
+    Smithers.file("//.github/workflows/release.yml"),
+    Smithers.file("//.github/workflows/ci.yml")
+  ],
+  deps: []
+})
+
+/**
+ * Every public package's declarations hash to the reviewed
+ * `release/fixtures/public-api-baseline.json`.
+ *
+ * Compiles with each package's release compiler into an isolated temporary
+ * tree. Private adapter declarations use the same producer as publication;
+ * packing and the full package JavaScript builds remain separate gates.
+ *
+ * @since 1.0.0
+ * @category build
+ */
+const apiBaseline = Smithers.NodeBinary({
+  entry: Smithers.file("//flows/release/check-api-baseline.mjs"),
+  args: ["--build-declarations"],
+  timeout: "30m",
+  srcs: [
+    ...releaseSources,
+    Smithers.file("//packages/repo-targets/scripts/build-library.mjs"),
+    Smithers.file("//packages/repo-targets/scripts/private-effect-adapters.mjs"),
+    Smithers.file("//packages/repo-targets/package.json"),
+    Smithers.file("//packages/smithers/scripts/compile-commonjs.mjs"),
+    ...privateAdapterManifests,
+    Smithers.file("//package.json"),
+    Smithers.file("//pnpm-lock.yaml"),
+    Smithers.file("//pnpm-workspace.yaml")
+  ],
+  deps: []
+})
+
+/**
+ * Packs every publishable workspace package into {@link packDirectory}.
+ *
+ * A build target rather than a test: its product is the pack tree the smoke
+ * check then installs from.
+ *
+ * @since 0.1.0
+ * @category build
+ */
+const releasePack = Smithers.NodeBinary({
+  entry: Smithers.file("//flows/release/pack-release.mjs"),
+  args: [packDirectory],
+  srcs: releaseSources,
+  // Most packages use workspace default-target synthesis and therefore have
+  // no PACKAGE.ts export this file can import. The selector is still a real
+  // graph edge: every package `lib` settles before packing, including future
+  // packages admitted under `packages/`. `lib` is the whole distribution,
+  // `dist/esm` and `dist/cjs`, which is what `assertBuilt` in the packing
+  // program requires; nothing here depends on a prior `pnpm run build`.
+  deps: [apiBaseline, Smithers.Target.subtree("//packages/...", "lib")]
+})
+
+/**
+ * Installs the packed artifacts into a scratch project and imports every
+ * published entry point, ESM and CJS.
+ *
+ * The dependency edge on {@link releasePack} is what sequences the two; before
+ * this target they were two shell lines in one step that agreed only by naming
+ * the same environment variable.
+ *
+ * @since 0.1.0
+ * @category test
+ */
+const releaseSmoke = Smithers.NodeTest({
+  // See smoke-release.mjs for the measured 1110.40 s Node 24 baseline.
+  // Keep this gate uncached and allow its complete installed-consumer matrix.
+  timeout: "30m",
+  runner: Smithers.entrypoint(Smithers.file("//flows/release/smoke-release.mjs"), [packDirectory]),
+  srcs: releaseSources,
+  deps: [releasePack]
+})
+
+/**
+ * What an npm consumer of the published set actually resolves.
+ *
+ * pnpm settles every internal edge from one workspace-wide pin, so
+ * `//packages/repo-targets:effectVersion` stays green while an npm install of
+ * the same tarballs duplicates Effect or drags a test runner into a production
+ * dependency tree. This packs the release manifests, resolves them with npm's
+ * own arborist, and asserts a single `effect` copy and no optional peer in the
+ * default install.
+ *
+ * The resolution reads registry metadata, so this target needs the network and
+ * is not cacheable. It re-runs regardless, which is what a gate over an
+ * external resolver has to do.
+ *
+ * @since 0.1.0
+ * @category test
+ */
+const npmDedupe = Smithers.NodeTest({
+  runner: Smithers.entrypoint(Smithers.file("//flows/release/check-npm-dedupe.mjs")),
+  srcs: releaseSources,
+  deps: []
+})
+
+/**
+ * The gate's own two claims, named one per cell.
+ *
+ * The script reports both through one exit code, so a regression reads as an
+ * opaque failure. This suite says which claim broke and which package broke it.
+ *
+ * @since 0.1.0
+ * @category test
+ */
+const npmDedupeUnit = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//flows/release/check-npm-dedupe.test.mjs")]),
+  srcs: releaseSources,
+  deps: []
+})
+
+/** Verifies immutable-artifact publication and partial-retry refusal using a fake registry. */
+const releaseIntegrity = Smithers.NodeTest({
+  runner: Smithers.testRunner([
+    Smithers.file("//flows/release/publish-release.test.mjs"),
+    Smithers.file("//flows/release/installer-release.test.mjs"),
+    Smithers.file("//flows/release/restore-release.test.mjs")
+  ]),
+  srcs: releaseSources,
+  deps: []
+})
+
+/**
+ * The documentation-lane checks a cut runs, the Homebrew formula, bottle and
+ * publication refusals, and the C-REL-02/03/06 recorders' portable logic.
+ */
+const releaseTools = Smithers.NodeTest({
+  runner: Smithers.testRunner([
+    Smithers.file("//flows/release/lane-checks.test.mjs"),
+    Smithers.file("//flows/release/homebrew-publish.test.mjs"),
+    Smithers.file("//flows/release/homebrew-release.test.mjs"),
+    Smithers.file("//flows/release/journeys/release-install.test.mjs"),
+    Smithers.file("//flows/release/host/host-maintenance-evidence.test.mjs")
+  ]),
+  srcs: releaseSources,
+  deps: [scriptPackage.repositoryInputs, backendSQLC]
+})
+
+/**
+ * Every `release/<step>` flow through the flow API: the real graph and layer
+ * over a real child process running the step's module, for a refusal and,
+ * where the module has a side-effect-free path, a success.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const releaseSteps = Smithers.NodeTest({
+  runner: Smithers.testRunner([
+    Smithers.file("//flows/release/build-packages/flow.test.ts"),
+    Smithers.file("//flows/release/api-baseline/flow.test.ts"),
+    Smithers.file("//flows/release/version/flow.test.ts"),
+    Smithers.file("//flows/release/changelog/flow.test.ts"),
+    Smithers.file("//flows/release/cut/flow.test.ts"),
+    Smithers.file("//flows/release/pack/flow.test.ts"),
+    Smithers.file("//flows/release/smoke/flow.test.ts"),
+    Smithers.file("//flows/release/restore/flow.test.ts"),
+    Smithers.file("//flows/release/publish/flow.test.ts"),
+    Smithers.file("//flows/release/installer/flow.test.ts"),
+    Smithers.file("//flows/release/homebrew/flow.test.ts"),
+    Smithers.file("//flows/release/homebrew-publish/flow.test.ts"),
+    Smithers.file("//flows/release/rehearsal/flow.test.ts"),
+    Smithers.file("//flows/release/npm-dedupe/flow.test.ts")
+  ]),
+  srcs: [sources, ...releaseSources],
+  deps: [],
+  cwd
+})
+
 const securityReview = Smithers.SecurityReview({
   cwd,
   include: [
@@ -840,7 +1123,9 @@ const securityReview = Smithers.SecurityReview({
     Smithers.glob("**/*.{ts,mjs,js,mdx}", {
       exclude: ["wiki/**", "test/**", "node_modules/**", "migrate-smithers-v1/test/**", "**/*.test.ts", "**/*.test.mjs"]
     }),
-    Smithers.glob("checks/*.sh")
+    Smithers.glob("checks/*.sh"),
+    // The C-REL-05 credential soak recorder; it was reviewed under scripts/ before.
+    Smithers.glob("release/host/*.{sh,py}", { exclude: ["**/*.test.py"] })
   ],
   checks: [
     {
@@ -1099,6 +1384,96 @@ const securityReview = Smithers.SecurityReview({
         "SMITHERS_CHECK_CACHE_DIR or the partition marker accepted when relative or pointing outside the cache root."
       ],
       paths: ["checks/check-cache.mjs"]
+    },
+    {
+      id: "release-publish-integrity",
+      title: "npm publishes only the exact tarballs that passed smoke testing at the tagged commit",
+      threat:
+        "A tampered pack directory, stale evidence or a mismatched tag lets a CI writer publish unreviewed bytes under the @smthrs scope to every consumer.",
+      lookFor: [
+        "A publish path that skips verifyLocalCandidate, the source sha/tag match, or the smoke-evidence candidateIntegrity comparison.",
+        "A manifest filename that can contain a path separator or '..' and escape the pack directory.",
+        "Retry or recovery logic that treats a registry integrity mismatch or a missing version as success.",
+        "A dist-tag choice that can publish a prerelease as latest."
+      ],
+      paths: [
+        "release/publish-release.mjs",
+        "release/cut-release.mjs",
+        "release/set-release-version.mjs",
+        "release/release-process.mjs"
+      ]
+    },
+    {
+      id: "release-archive-restore",
+      title:
+        "A restored release archive comes only from this repository's Release run and cannot write outside staging",
+      threat:
+        "A fork, another workflow, or a crafted zip substitutes release tarballs or writes files outside the restore directory on the release runner.",
+      lookFor: [
+        "verifyArchiveIdentity accepting a run whose repository, head_repository, path, event or artifact workflow_run fields differ from this repository's release.yml.",
+        "The python extractor admitting a member name with '/', '..', a symlink mode, or a duplicate, or exceeding the byte and count budgets.",
+        "A downloaded archive used before its sha256 digest equals the artifact's recorded digest.",
+        "The restore writing into an existing destination instead of a fresh mkdtemp staging directory."
+      ],
+      paths: ["release/restore-release.mjs"]
+    },
+    {
+      id: "packed-tarball-contents",
+      title: "Published tarballs contain only authored package files and no local credentials or caches",
+      threat:
+        "A maintainer's local .env, .npmrc, .smithers database or credential under a package directory ships publicly inside an npm tarball.",
+      lookFor: [
+        "copyFilter admitting dotfiles, .smithers state beyond WORKSPACE.ts/agents.ts/sandbox.ts, or files a manifest `files` list does not name.",
+        "pnpm pack run without --config.ignore-scripts=true, letting a package lifecycle script execute during packing.",
+        "Native helper binaries copied from SMITHERS_NATIVE_HELPERS_DIR without a digest or provenance check."
+      ],
+      paths: [
+        "release/pack-release.mjs",
+        "release/release-native-helpers.mjs",
+        "release/build-release.mjs",
+        "release/packed-export-targets.mjs"
+      ]
+    },
+    {
+      id: "consumer-install-isolation",
+      title: "Smoke installs resolve first-party packages only from the loopback registry and run no install scripts",
+      threat:
+        "A public-registry package squatting an @smthrs name, or a dependency's install script, runs code on the release runner that holds publish credentials.",
+      lookFor: [
+        "An npm, pnpm or bun install in a smoke or consumer probe without --ignore-scripts.",
+        "A scratch .npmrc that leaves any first-party scope resolving from the public registry.",
+        "The loopback registry binding to a non-loopback address or serving a path outside its tarball map."
+      ],
+      paths: [
+        "release/smoke-release.mjs",
+        "release/release-registry.mjs",
+        "release/release-consumers.mjs",
+        "release/check-npm-dedupe.mjs",
+        "release/fixtures/installed-consumer/**"
+      ]
+    },
+    {
+      id: "script-subprocess-args",
+      title: "Scripts spawn processes with argument vectors, never shell strings built from inputs",
+      threat:
+        "A crafted CLI flag, environment value, commit message or git ref makes an operator script run arbitrary shell commands on a maintainer or CI host.",
+      lookFor: [
+        "exec, execSync or spawn with shell:true, or sh -c, interpolating argv, environment variables, file contents or git output.",
+        "A string option split on spaces and executed, like rebase-cache --install.",
+        "An unvalidated positional argument placed into go build -ldflags or a similar command-line flag string."
+      ],
+      paths: ["release/generate-changelog.mjs"]
+    },
+    {
+      id: "credential-scrubbing",
+      title: "Cache and registry tokens never reach child processes that do not need them",
+      threat:
+        "A planner, benchmark or consumer probe subprocess inherits SMITHERS_CACHE_* or registry tokens and leaks them into logs or untrusted package code.",
+      lookFor: [
+        "A spawn passing { ...process.env } to package installs or repository code without deleting SMITHERS_CACHE_TOKEN, SMITHERS_CACHE_READ_TOKEN, SMITHERS_CACHE_WRITE_TOKEN, NPM_TOKEN or GH_TOKEN.",
+        "Environment dumps or error messages that print token-bearing variables."
+      ],
+      paths: ["release/release-consumers.mjs", "release/smoke-release.mjs"]
     }
   ]
 })
@@ -1133,6 +1508,18 @@ export const Package = Smithers.Package({
     wiki,
     triagePublish,
     automation,
+    packManifest,
+    changelog,
+    releaseCut,
+    releaseSuite,
+    apiBaseline,
+    releasePack,
+    releaseSmoke,
+    npmDedupe,
+    npmDedupeUnit,
+    releaseIntegrity,
+    releaseTools,
+    releaseSteps,
     land,
     landCommit,
     mutationGate,

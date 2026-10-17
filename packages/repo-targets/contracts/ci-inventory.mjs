@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 
 import { createPlanner } from "./ci-planner.mjs"
-import { parseWorkflow } from "../../../scripts/release-rehearsal.mjs"
+import { parseWorkflow } from "../../../flows/release/release-rehearsal.mjs"
 import { openPackageIndex } from "@smthrs/build-cli/Cli"
 import { installEffectResolution } from "@smthrs/build-cli/effect-resolution"
 import * as Cargo from "@smthrs/targets/Cargo"

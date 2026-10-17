@@ -127,7 +127,7 @@ const effectVersion = Smithers.NodeTest({
   summary: "Exactly one effect version resolves across every manifest and both lockfiles.",
   featured: true,
   runner: Smithers.entrypoint(Smithers.file("//packages/repo-targets/contracts/check-single-effect-version.mjs")),
-  srcs: [...contracts, Smithers.file("//scripts/pack-release.mjs"), Smithers.file("//pnpm-lock.yaml"), Smithers.file("//bun.lock")],
+  srcs: [...contracts, Smithers.file("//flows/release/pack-release.mjs"), Smithers.file("//pnpm-lock.yaml"), Smithers.file("//bun.lock")],
   deps: []
 })
 
@@ -146,10 +146,10 @@ const releaseContracts = Smithers.NodeTest({
   ]),
   srcs: [
     ...contracts,
-    Smithers.file("//scripts/pack-release.mjs"),
+    Smithers.file("//flows/release/pack-release.mjs"),
     Smithers.file("//scripts/check-dependency-boundaries.mjs"),
-    Smithers.file("//scripts/fixtures/installed-consumer/consumer-boundary.mjs"),
-    Smithers.file("//scripts/fixtures/installed-consumer/dependency-adapters.mjs"),
+    Smithers.file("//flows/release/fixtures/installed-consumer/consumer-boundary.mjs"),
+    Smithers.file("//flows/release/fixtures/installed-consumer/dependency-adapters.mjs"),
     Smithers.file("//packages/repo-targets/scripts/private-effect-adapters.mjs"),
     Smithers.file("//.pnpmfile.mjs")
   ],
@@ -211,7 +211,8 @@ const driftJob = Smithers.NodeTest({
     Smithers.file("//PACKAGE.ts"),
     Smithers.file("//package.json"),
     Smithers.file("//scripts/PACKAGE.ts"),
-    Smithers.file("//scripts/check-api-baseline.mjs"),
+    Smithers.file("//flows/release/check-api-baseline.mjs"),
+    Smithers.file("//flows/PACKAGE.ts"),
     Smithers.file("//flows/land/engineering-gate-environment.mjs"),
     Smithers.file("//flows/checks/coding-check.sh"),
     Smithers.file("//.github/workflows/drift.yml"),

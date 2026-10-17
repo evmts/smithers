@@ -330,7 +330,7 @@ test("the inventory is release.yml's publish job: same gates, same names, same o
     "//packages/smithers/flows/jj-wasm:wasmReproducibility", "//scripts/..."
   ]) assert.ok(mirrored.some((gate) => gate.target === target), `${target} is an inventory gate`)
   // Ordering: the fault matrix and the byte-compare both precede the build.
-  const build = release.indexOf("scripts/build-release.mjs")
+  const build = release.indexOf("flows/release/build-release.mjs")
   assert.ok(build > 0)
   for (const target of ["//packages/...:faults", "//packages/smithers/flows/jj-wasm:wasmReproducibility"]) {
     const at = release.indexOf(`'${target}'`)

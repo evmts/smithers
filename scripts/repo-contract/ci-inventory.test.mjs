@@ -10,7 +10,7 @@ import { planned, plannedInProcess, resolveInventory, root, runnerFor, targetInv
 import { openPackageIndex } from "@smthrs/build-cli/Cli"
 import * as Target from "@smthrs/targets/Target"
 import * as Exec from "@smthrs/targets/Exec"
-import { parseWorkflow } from "../release-rehearsal.mjs"
+import { parseWorkflow } from "../../flows/release/release-rehearsal.mjs"
 import * as PackageExec from "@smthrs/build-cli/PackageExec"
 
 // Every case reads the same declarations, so they share one index instead of
@@ -138,9 +138,9 @@ test("CI planning cancels the hard deadline after cooperative SIGTERM completion
 test("release smoke retains packing, fresh execution and its measured Exec deadline", async () => {
   const index = await packageIndex()
   const plan = await PackageExec.plan({
-    index, verb: "test", patterns: ["//scripts:releaseSmoke"], cacheDirectory: index.workspace.cache.directory
+    index, verb: "test", patterns: ["//flows:releaseSmoke"], cacheDirectory: index.workspace.cache.directory
   })
-  const smoke = plan.nodes.get("//scripts:releaseSmoke")
+  const smoke = plan.nodes.get("//flows:releaseSmoke")
   assert.ok(smoke)
   const declaration = index.targets().find((target) => target.label === smoke.label)
   assert.ok(declaration)
@@ -151,7 +151,7 @@ test("release smoke retains packing, fresh execution and its measured Exec deadl
     "the inner Exec must receive the declared 30m bound, not its 10m default")
   assert.equal(smoke.timeoutMs, 1_800_000, "the outer executor must honor the 30m deadline too")
   assert.equal(smoke.cacheable, false, "a successful receipt never substitutes for a fresh smoke")
-  assert.ok(smoke.dependencies.includes("//scripts:releasePack"), "source qualification still rebuilds candidate bytes")
+  assert.ok(smoke.dependencies.includes("//flows:releasePack"), "source qualification still rebuilds candidate bytes")
 })
 
 /**

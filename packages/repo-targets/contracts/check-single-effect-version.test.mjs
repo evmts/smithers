@@ -13,7 +13,7 @@ import {
   SUPPORTED_EFFECT_RANGE,
   UNSUPPORTED_EFFECT_VERSION
 } from "./check-single-effect-version.mjs"
-import { readWorkspaceManifests } from "../../../scripts/pack-release.mjs"
+import { readWorkspaceManifests } from "../../../flows/release/pack-release.mjs"
 import { repoRoot } from "../../../scripts/workspace-packages.mjs"
 
 const pin = EXPECTED_EFFECT_VERSION

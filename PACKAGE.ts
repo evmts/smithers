@@ -539,7 +539,7 @@ const driftJob = {
     { name: "OpenAPI bundle drift", verb: Smithers.Verb.Lint, pattern: "//:openapiBundle" },
     { name: "OpenAPI client drift", verb: Smithers.Verb.Lint, pattern: "//:openapiClients" },
     { name: "Documentation drift", verb: Smithers.Verb.Lint, pattern: "//scripts:docsDrift" },
-    { name: "Declaration baseline", verb: Smithers.Verb.Build, pattern: "//scripts:apiBaseline" },
+    { name: "Declaration baseline", verb: Smithers.Verb.Build, pattern: "//flows:apiBaseline" },
     { name: "Conflict markers", verb: Smithers.Verb.Lint, pattern: "//packages/repo-targets:conflictMarkers" },
     { name: "Tracked file hygiene", verb: Smithers.Verb.Lint, pattern: "//packages/repo-targets:trackedHygiene" },
     { name: "Generated drift workflow", verb: Smithers.Verb.Lint, pattern: "//:driftCi" },
@@ -820,7 +820,18 @@ const ci = Smithers.GithubCiGen({
         // migration renumbering, with the pinned sqlc the backendSQLC dep builds.
         { name: "Landing helper", verb: Smithers.Verb.Test, pattern: "//flows:land" },
         { name: "Landing helper end to end", verb: Smithers.Verb.Test, pattern: "//flows:landCommit" },
-        { name: "GitHub triage publisher", verb: Smithers.Verb.Test, pattern: "//flows:triagePublish" }
+        { name: "GitHub triage publisher", verb: Smithers.Verb.Test, pattern: "//flows:triagePublish" },
+        // The release tooling moved beside the Release flow; `//scripts/...` ran these.
+        { name: "Release manifest", verb: Smithers.Verb.Test, pattern: "//flows:packManifest" },
+        { name: "Changelog generator", verb: Smithers.Verb.Test, pattern: "//flows:changelog" },
+        { name: "Release cut", verb: Smithers.Verb.Test, pattern: "//flows:releaseCut" },
+        { name: "Release candidate suites", verb: Smithers.Verb.Test, pattern: "//flows:releaseSuite" },
+        { name: "Release publication integrity", verb: Smithers.Verb.Test, pattern: "//flows:releaseIntegrity" },
+        { name: "Release smoke", verb: Smithers.Verb.Test, pattern: "//flows:releaseSmoke" },
+        { name: "npm consumer dedupe", verb: Smithers.Verb.Test, pattern: "//flows:npmDedupe" },
+        { name: "npm consumer dedupe cells", verb: Smithers.Verb.Test, pattern: "//flows:npmDedupeUnit" },
+        { name: "Release tools and host recorders", verb: Smithers.Verb.Test, pattern: "//flows:releaseTools" },
+        { name: "Release step flows", verb: Smithers.Verb.Test, pattern: "//flows:releaseSteps" }
       ]
     },
     {
@@ -1208,7 +1219,7 @@ const referenceHostHooks = Smithers.NodeTest({
 const changelog = Smithers.Generate({
   summary: "Regenerate and drift-check the CHANGELOG.md commit section for the current version.",
   featured: true,
-  script: Smithers.file("//scripts/generate-changelog.mjs"),
+  script: Smithers.file("//flows/release/generate-changelog.mjs"),
   data: [
     Smithers.file("//CHANGELOG.md"),
     Smithers.file("//package.json"),

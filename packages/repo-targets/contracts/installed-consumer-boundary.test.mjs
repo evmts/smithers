@@ -5,10 +5,10 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import test from "node:test"
 import { pathToFileURL } from "node:url"
-import { assertInstalledConsumer } from "../../../scripts/fixtures/installed-consumer/consumer-boundary.mjs"
+import { assertInstalledConsumer } from "../../../flows/release/fixtures/installed-consumer/consumer-boundary.mjs"
 import { repoRoot } from "../../../scripts/workspace-packages.mjs"
 
-const sourceRoot = join(repoRoot, "scripts/fixtures/installed-consumer")
+const sourceRoot = join(repoRoot, "flows/release/fixtures/installed-consumer")
 const write = (path, value) => {
   mkdirSync(dirname(path), { recursive: true })
   writeFileSync(path, value)

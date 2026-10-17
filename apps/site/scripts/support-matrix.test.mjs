@@ -8,8 +8,8 @@ import { spawnSync } from "node:child_process"
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import test from "node:test"
-import { readWorkspaceManifests } from "../../../scripts/pack-release.mjs"
-import { parseWorkflow } from "../../../scripts/release-rehearsal.mjs"
+import { readWorkspaceManifests } from "../../../flows/release/pack-release.mjs"
+import { parseWorkflow } from "../../../flows/release/release-rehearsal.mjs"
 
 const root = resolve(import.meta.dirname, "../../..")
 const read = (path) => readFileSync(resolve(root, path), "utf8")
@@ -59,7 +59,7 @@ test("the support reference states every released Node engine range and current 
 
 test("the release smoke row names the exact runtimes that certify the candidate tarballs", () => {
   const workflow = parseWorkflow(read(".github/workflows/release.yml"))
-  const smokeSteps = workflow.jobs.publish.steps.filter((step) => step.run?.includes("node scripts/smoke-release.mjs "))
+  const smokeSteps = workflow.jobs.publish.steps.filter((step) => step.run?.includes("node flows/release/smoke-release.mjs "))
   assert.equal(smokeSteps.length, 1, "the release requires one smoke receipt on the supported Node floor")
   const pins = smokeSteps.map((step) => {
     const assertion = step.run.match(/test "\$\(node --version\)" = 'v([\d.]+)'/)
