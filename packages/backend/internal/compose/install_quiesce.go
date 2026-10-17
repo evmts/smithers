@@ -157,11 +157,11 @@ func (b installMergeBarrier) Check(ctx context.Context) error {
 func (b installMergeBarrier) Drain(ctx context.Context) error  { return b.Check(ctx) }
 func (b installMergeBarrier) Resume(ctx context.Context) error { return ctx.Err() }
 
-func composeInstallQuiesceBarriers(s *services.InstallQuiesce, pool *pgxpool.Pool, registry *machined.Registry, flow *flowComposition) {
+func composeInstallQuiesceBarriers(s *services.InstallQuiesce, pool *pgxpool.Pool, registry *machined.Registry, flow *flowComposition, qualification *services.InstallQualification) {
 	s.Barriers = map[string]services.QuiesceBarrier{
 		"T-STK-04": services.StackQuiesceBarrier{Pool: pool},
 		"T-GH-09":  services.StackQuiesceBarrier{Pool: pool, ExternalWrites: true},
-		"T-SEC-01": services.SecurityQuiesceBarrier{},
+		"T-SEC-01": services.SecurityQuiesceBarrier{Qualification: qualification},
 	}
 	if registry != nil {
 		s.Barriers["T-STK-04"] = installMergeBarrier{stack: services.StackQuiesceBarrier{Pool: pool}, machines: installMachineBarrier{pool: pool, registry: registry}}

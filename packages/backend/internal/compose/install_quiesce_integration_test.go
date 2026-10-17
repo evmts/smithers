@@ -231,7 +231,7 @@ func TestInstallQuiesceRouteGate(t *testing.T) {
 							jobsStore, err := jobs.NewStore(pool)
 							require.NoError(t, err)
 							stoppedHosts := []string{}
-							composeInstallQuiesceBarriers(service, pool, new(machined.Registry), &flowComposition{pool: pool, bindings: bindings, jobs: jobsStore, stopper: quiesceHostStopFixture{stopped: &stoppedHosts}})
+							composeInstallQuiesceBarriers(service, pool, new(machined.Registry), &flowComposition{pool: pool, bindings: bindings, jobs: jobsStore, stopper: quiesceHostStopFixture{stopped: &stoppedHosts}}, services.NewInstalledQualification("http://mini.lan:8080"))
 							service.Barriers["T-COL-09"] = steps
 							response, err := client.Get("http://install/maintenance/check")
 							require.NoError(t, err)
@@ -239,7 +239,7 @@ func TestInstallQuiesceRouteGate(t *testing.T) {
 							require.NoError(t, err)
 							require.NoError(t, response.Body.Close())
 							require.Equal(t, 503, response.StatusCode)
-							require.Contains(t, string(refusal), "waiting on smithers-3f root-input validation")
+							require.Contains(t, string(refusal), "quiesce unavailable: T-SEC-01 required")
 							for _, ticket := range []string{"T-STK-04", "T-GH-09", "T-TRM-07", "T-COL-08"} {
 								require.NotContains(t, string(refusal), ticket+" required")
 							}
@@ -259,9 +259,9 @@ func TestInstallQuiesceRouteGate(t *testing.T) {
 							require.NoError(t, err)
 							require.NoError(t, response.Body.Close())
 							require.Equal(t, 503, response.StatusCode)
-							require.Contains(t, string(refusal), "waiting on smithers-3f root-input validation")
+							require.Contains(t, string(refusal), "quiesce unavailable: T-SEC-01 required")
 							require.Zero(t, wakes)
-							require.ErrorContains(t, service.RequireReady(ctx, "retained-upgrade", owner.ID), "waiting on smithers-3f root-input validation")
+							require.ErrorContains(t, service.RequireReady(ctx, "retained-upgrade", owner.ID), "quiesce unavailable: T-SEC-01 required")
 							require.NoError(t, os.Remove(marker))
 							_, err = pool.Exec(ctx, `DELETE FROM install_settings WHERE key='quiesce'`)
 							require.NoError(t, err)

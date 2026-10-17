@@ -2078,7 +2078,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		cfg.Install.StateDir = strings.TrimSpace(os.Getenv("SMITHERS_NATIVE_STATE_DIR"))
 	}
 	installQuiesce := services.NewInstallQuiesce(&services.QuiesceGate{Store: services.InstallQuiesceStore{Pool: pool}, StateDir: cfg.Install.StateDir})
-	composeInstallQuiesceBarriers(installQuiesce, pool, options.Machined, flow)
+	composeInstallQuiesceBarriers(installQuiesce, pool, options.Machined, flow, services.NewInstalledQualification(publicBaseURL))
 	if config.IsSingleOwner(cfg.Auth) && options.InstallBranchMachines {
 		if err := composeInstallAdmission(ctx, installQuiesce, options.Workspace, workspaceService); err != nil {
 			return fmt.Errorf("compose maintenance admission: %w", err)

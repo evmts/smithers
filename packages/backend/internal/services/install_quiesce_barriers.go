@@ -70,11 +70,21 @@ func (b StackQuiesceBarrier) Drain(ctx context.Context) error {
 }
 func (b StackQuiesceBarrier) Resume(ctx context.Context) error { return ctx.Err() }
 
-// SecurityQuiesceBarrier remains closed until the root-input review lands.
-type SecurityQuiesceBarrier struct{}
+// SecurityQuiesceBarrier opens only while the install's signed machine
+// qualification (T-SEC-01's root-input receipts) authenticates. Without it,
+// backup, upgrade and health wake refuse before freezing.
+type SecurityQuiesceBarrier struct{ Qualification *InstallQualification }
 
-func (SecurityQuiesceBarrier) Check(context.Context) error {
-	return errors.New("quiesce unavailable: T-SEC-01 required; waiting on smithers-3f root-input validation")
+func (b SecurityQuiesceBarrier) Check(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if b.Qualification != nil {
+		if _, ok := b.Qualification.Snapshot(ctx).(MachineQualification); ok {
+			return nil
+		}
+	}
+	return &QuiesceDependencyError{"T-SEC-01"}
 }
 func (b SecurityQuiesceBarrier) Drain(ctx context.Context) error  { return b.Check(ctx) }
 func (b SecurityQuiesceBarrier) Resume(ctx context.Context) error { return b.Check(ctx) }
