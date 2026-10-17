@@ -11,6 +11,9 @@ import {
   renderTable,
   runSiteChecks,
   observeSiteResponse,
+  servedBuildSha,
+  servedDocumentKind,
+  servingEvidence,
   tally
 } from "./site-checks.ts"
 import type { Fetcher, Observed } from "./site-checks.ts"
@@ -27,8 +30,20 @@ const html = (status: number, headers: Record<string, string> = {}, body?: strin
 const ISOLATION = { "cross-origin-opener-policy": "same-origin", "cross-origin-embedder-policy": "require-corp" }
 /** The prerendered app page: the island's module script is the chunk the probe grades. */
 const APP_CHUNK = "/_astro/AppIsland.B1c2d3e4.js"
-const APP_DOCUMENT_BODY =
-  `<html><head><link rel="stylesheet" href="/_astro/app.C0ffee.css"></head><body><script type="module" src="${APP_CHUNK}"></script></body></html>`
+/* The two real build shas of #4129: the candidate that was activated, and the prior public one. */
+const CANDIDATE_SHA = "6aff046800491ebdaf444d4519b14038304a23d4"
+const PRIOR_SHA = "2fca5dd1f943edda07722b9d4e23845101878365"
+/*
+ * A faithful app document: AppShell stamps the build sha
+ * (apps/site/src/layouts/AppShell.astro) and [owner]/[repo].astro mounts the
+ * island at #root, so a served document names its version and its kind.
+ */
+const appDocumentBody = (sha: string = CANDIDATE_SHA): string =>
+  `<html><head><meta name="smithers-build-sha" content="${sha}"><link rel="stylesheet" href="/_astro/app.C0ffee.css"></head>` +
+  `<body><div id="root"></div><script type="module" src="${APP_CHUNK}"></script></body></html>`
+const APP_DOCUMENT_BODY = appDocumentBody()
+/** The marketing document a curated root answered before lane 95: no island, no stamp. */
+const MARKETING_BODY = "<html><head><title>clack</title></head><body><main>Coming soon</main></body></html>"
 const isolated = html(200, ISOLATION, APP_DOCUMENT_BODY)
 /** A hashed chunk as apps/site/public/_headers serves it. */
 const chunk = (headers: Record<string, string> = {}): Observed => ({
@@ -99,7 +114,9 @@ describe("the site probe grades a deployment of the Worker over the site build",
   test("the app document without its isolation headers fails, naming the missing header", async () => {
     const { fetch } = fakeFetch({ ...healthy, [APP_DOCUMENT_CHECK_PATH]: html(200, {}, APP_DOCUMENT_BODY) })
     const checks = await runSiteChecks(fetch, { origin: ORIGIN, legacyPaths: [] })
-    expect(failures(checks)).toEqual([`${APP_DOCUMENT_CHECK_PATH}: 200 + COOP absent + COEP absent`])
+    expect(failures(checks)).toEqual([
+      `${APP_DOCUMENT_CHECK_PATH}: 200 + COOP absent + COEP absent + served ${CANDIDATE_SHA} + document app + cache absent age absent colo absent`
+    ])
   })
 
   /*
@@ -147,7 +164,7 @@ describe("the site probe grades a deployment of the Worker over the site build",
     const { fetch } = fakeFetch({ ...healthy, [APP_DOCUMENT_CHECK_PATH]: redirect(307, `${APP_DOCUMENT_CHECK_PATH}/`) })
     const checks = await runSiteChecks(fetch, { origin: ORIGIN, legacyPaths: [] })
     expect(failures(checks)).toEqual([
-      `${APP_DOCUMENT_CHECK_PATH}: 307 -> ${APP_DOCUMENT_CHECK_PATH}/ + COOP absent + COEP absent`,
+      `${APP_DOCUMENT_CHECK_PATH}: 307 -> ${APP_DOCUMENT_CHECK_PATH}/ + COOP absent + COEP absent + served unread + document unread + cache absent age absent colo absent`,
       `${APP_DOCUMENT_CHECK_PATH} -> /_astro chunk: the fetcher read no document body`
     ])
   })
@@ -279,4 +296,213 @@ test("the live probe reads robots text as well as app HTML, and cancels binary b
   const binary = new Response("image", { headers: { "content-type": "image/png" } })
   expect((await observeSiteResponse(binary)).body).toBeUndefined()
   expect(binary.bodyUsed).toBe(true)
+})
+
+/*
+ * #4129. The real deploy of 38980376534 recorded exactly this and nothing more
+ * for two of the ten curated roots:
+ *
+ *   FAIL  /bombshell-dev/clack/   200 + COOP absent + COEP absent
+ *   FAIL  /withastro/starlight/   200 + COOP absent + COEP absent
+ *
+ * while the other eight passed on the same Worker version. The candidate's
+ * router cannot answer a routed path without the isolation headers
+ * (edge.ts -> withIsolationHeaders), and all ten roots are one ROUTED_REPOS row
+ * and one prerendered template, so the output left three different situations
+ * indistinguishable: a document served under the previous version, a document
+ * that is not the app at all, and a real defect in the activated candidate.
+ *
+ * The probe now names which, per failed route, from the response it already
+ * graded. These two tests are the discrimination: same symptom, different
+ * evidence. The verdicts are untouched — both are still FAIL.
+ */
+describe("a failed curated root names what was actually served (#4129)", () => {
+  const stale = (path: string): Record<string, Observed> => ({
+    ...healthy,
+    [path]: html(200, { "cf-cache-status": "HIT", age: "41", "cf-ray": "9a1b2c3d4e5f6071-IAD" }, MARKETING_BODY)
+  })
+
+  test("a previous-version, non-app answer is named as one: the stale/mixed-version negative", async () => {
+    for (const repo of COMING_SOON_REPOS) {
+      const path = `/${repo.name.toLowerCase()}/`
+      const { fetch } = fakeFetch(stale(path))
+      const checks = await runSiteChecks(fetch, { origin: ORIGIN, legacyPaths: [] })
+      expect(failures(checks)).toEqual([
+        `${path}: 200 + COOP absent + COEP absent + served absent + document not-app + cache HIT age 41 colo IAD`
+      ])
+    }
+  })
+
+  test("the prior public build's own app document is named by its sha, not by its cache status", async () => {
+    const path = "/bombshell-dev/clack/"
+    const { fetch } = fakeFetch({
+      ...healthy,
+      [path]: html(200, { "cf-cache-status": "HIT", age: "7", "cf-ray": "abc-SJC" }, appDocumentBody(PRIOR_SHA))
+    })
+    const checks = await runSiteChecks(fetch, { origin: ORIGIN, legacyPaths: [] })
+    expect(failures(checks)).toEqual([
+      `${path}: 200 + COOP absent + COEP absent + served ${PRIOR_SHA} + document app + cache HIT age 7 colo SJC`
+    ])
+  })
+
+  test("the candidate's own document missing the headers is named as the candidate's: a routing defect, not a stale answer", async () => {
+    const path = "/withastro/starlight/"
+    const { fetch } = fakeFetch({
+      ...healthy,
+      [path]: html(200, { "cf-cache-status": "MISS", "cf-ray": "feed-FRA" }, appDocumentBody(CANDIDATE_SHA))
+    })
+    const checks = await runSiteChecks(fetch, { origin: ORIGIN, legacyPaths: [] })
+    expect(failures(checks)).toEqual([
+      `${path}: 200 + COOP absent + COEP absent + served ${CANDIDATE_SHA} + document app + cache MISS age absent colo FRA`
+    ])
+  })
+
+  test("eight passing roots and two failing ones: only the failures carry evidence, and the eight are unchanged", async () => {
+    const failing = ["/bombshell-dev/clack/", "/withastro/starlight/"]
+    const { fetch } = fakeFetch({
+      ...healthy,
+      ...Object.fromEntries(failing.map((path) => [
+        path,
+        html(200, { "cf-cache-status": "HIT", age: "45", "cf-ray": "1-IAD" }, appDocumentBody(PRIOR_SHA))
+      ]))
+    })
+    const checks = await runSiteChecks(fetch, { origin: ORIGIN, legacyPaths: [] })
+    expect(tally(checks)).toEqual({ passed: 16 + COMING_SOON_REPOS.length - 2, failed: 2 })
+    for (const repo of COMING_SOON_REPOS) {
+      const path = `/${repo.name.toLowerCase()}/`
+      const graded = checks.find((entry) => entry.path === path)
+      expect(graded?.expected).toBe("200 + COOP same-origin + COEP require-corp")
+      if (failing.includes(path)) expect(graded?.got).toContain(`served ${PRIOR_SHA}`)
+      else expect(graded?.got).toBe("200 + COOP same-origin + COEP require-corp")
+    }
+  })
+
+  test("a served stamp that is not a sha is refused, so no response puts its own text in a verdict", async () => {
+    const path = "/tanstack/db/"
+    const { fetch } = fakeFetch({
+      ...healthy,
+      [path]: html(200, {}, appDocumentBody("'); DROP TABLE releases; --"))
+    })
+    const checks = await runSiteChecks(fetch, { origin: ORIGIN, legacyPaths: [] })
+    expect(failures(checks)).toEqual([
+      `${path}: 200 + COOP absent + COEP absent + served unvalidated + document app + cache absent age absent colo absent`
+    ])
+  })
+
+  /*
+   * The evidence is an allowlist, never a header dump: a failed release gate
+   * runs in CI logs that many people read.
+   */
+  test("no body text, cookie, authorization, caller identity or ray id reaches the output", async () => {
+    const path = "/jj-vcs/jj/"
+    const { fetch } = fakeFetch({
+      ...healthy,
+      [path]: html(
+        200,
+        {
+          "set-cookie": "session=s3cr3t; Path=/",
+          authorization: "Bearer t0ken",
+          "x-customer-id": "cus_4129",
+          "cf-ray": "9a1b2c3d4e5f6071-IAD",
+          "cf-connecting-ip": "203.0.113.7"
+        },
+        `${appDocumentBody(PRIOR_SHA)}<!-- reader@example.com -->`
+      )
+    })
+    const checks = await runSiteChecks(fetch, { origin: ORIGIN, legacyPaths: [] })
+    const table = renderTable(checks)
+    for (const secret of ["s3cr3t", "session=", "Bearer", "t0ken", "cus_4129", "203.0.113.7", "9a1b2c3d4e5f6071", "reader@example.com", "Coming soon"]) {
+      expect(table).not.toContain(secret)
+    }
+    expect(table).toContain(`served ${PRIOR_SHA}`)
+    expect(table).toContain("colo IAD")
+  })
+
+  test("ordinary documentation and static routes are graded exactly as before, with no evidence and no extra request", async () => {
+    const before = fakeFetch(healthy)
+    const baseline = await runSiteChecks(before.fetch, { origin: ORIGIN, legacyPaths: ["/agents/codex"] })
+    expect(failures(baseline)).toEqual([])
+    for (const path of ["/", "/docs/", "/nope", "/docs/nope/", "/llms.txt", "/sitemap-index.xml", "/robots.txt", "/__build.json", APP_CHUNK, "/agents/codex"]) {
+      expect(baseline.find((entry) => entry.path === path)?.got ?? "").not.toContain("served ")
+    }
+    const after = fakeFetch(healthy)
+    await runSiteChecks(after.fetch, { origin: ORIGIN, legacyPaths: ["/agents/codex"] })
+    expect(after.requested).toEqual(before.requested)
+  })
+})
+
+describe("the serving evidence is a total function of one graded response", () => {
+  test("a served sha is the document's own stamp, lowercased, or why there is none", () => {
+    expect(servedBuildSha(appDocumentBody(CANDIDATE_SHA.toUpperCase()))).toBe(CANDIDATE_SHA)
+    expect(servedBuildSha("<html><head></head></html>")).toBe("absent")
+    expect(servedBuildSha(undefined)).toBe("unread")
+    expect(servedBuildSha(appDocumentBody("unknown"))).toBe("unknown")
+    expect(servedBuildSha(appDocumentBody("not-a-sha"))).toBe("unvalidated")
+  })
+
+  test("the document kind is the island mount only the app page carries", () => {
+    expect(servedDocumentKind(APP_DOCUMENT_BODY)).toBe("app")
+    expect(servedDocumentKind("<div id='root'></div>")).toBe("app")
+    expect(servedDocumentKind(MARKETING_BODY)).toBe("not-app")
+    expect(servedDocumentKind(undefined)).toBe("unread")
+  })
+
+  test("a colo is three letters from CF-Ray's last token, and anything else is absent", () => {
+    const withRay = (ray: string) => servingEvidence({ status: 200, headers: { "cf-ray": ray } })
+    expect(withRay("9a1b2c3d4e5f6071-IAD")).toContain("colo IAD")
+    expect(withRay("9a1b2c3d4e5f6071")).toContain("colo absent")
+    expect(withRay("x-iad")).toContain("colo absent")
+    expect(servingEvidence({ status: 200, headers: {} })).toBe("served unread + document unread + cache absent age absent colo absent")
+  })
+})
+
+/*
+ * Root review of this lane, 2026-10-17T00:44Z: the evidence may not echo a
+ * response header. Each value names itself from a finite vocabulary or a
+ * bounded canonical number, or it is reported as `unvalidated` and never
+ * printed — a failed release gate is read in CI logs, and a header is
+ * caller-reachable input.
+ */
+describe("a response header reaches the evidence only through a finite vocabulary", () => {
+  const evidence = (headers: Record<string, string>) => servingEvidence({ status: 200, headers })
+
+  test("a cache status is one of Cloudflare's documented values, and anything else is unvalidated", () => {
+    for (const status of ["HIT", "MISS", "EXPIRED", "STALE", "BYPASS", "REVALIDATED", "UPDATING", "DYNAMIC", "NONE/UNKNOWN", "IGNORED", "DEFERRED"]) {
+      expect(evidence({ "cf-cache-status": status })).toContain(`cache ${status} `)
+    }
+    for (const hostile of ["hit", "HIT, MISS", "HIT\nset-cookie: a=b", "sk-live-4129abcdef", "HIT ".repeat(400), ""]) {
+      const got = evidence({ "cf-cache-status": hostile })
+      expect(got).toContain("cache unvalidated ")
+      if (hostile !== "") expect(got).not.toContain(hostile.slice(0, 8))
+      expect(got.length).toBeLessThan(200)
+    }
+  })
+
+  test("an age is seconds and nothing else", () => {
+    expect(evidence({ age: "0" })).toContain("age 0 ")
+    expect(evidence({ age: "1234567" })).toContain("age 1234567 ")
+    for (const hostile of ["12345678", "-1", "1.5", "41 ", "41; x=y", "0041\nx", "many"]) {
+      const got = evidence({ age: hostile })
+      expect(got).toContain("age unvalidated ")
+      expect(got).not.toContain(hostile)
+    }
+  })
+
+  test("a colo is three letters, and a ray id is never printed", () => {
+    expect(evidence({ "cf-ray": "9a1b2c3d4e5f6071-IAD" })).toContain("colo IAD")
+    for (const hostile of ["9a1b2c3d4e5f6071-iad", "9a1b2c3d4e5f6071-IADX", "-IAD IAD", "x"]) {
+      expect(evidence({ "cf-ray": hostile })).toContain("colo absent")
+    }
+    expect(evidence({ "cf-ray": "9a1b2c3d4e5f6071-IAD" })).not.toContain("9a1b2c3d")
+  })
+
+  test("the whole evidence line stays one short line whatever the response carries", () => {
+    const got = servingEvidence({
+      status: 200,
+      headers: { "cf-cache-status": "x".repeat(5000), age: "9".repeat(5000), "cf-ray": "y".repeat(5000) },
+      body: `<meta name="smithers-build-sha" content="${"z".repeat(5000)}">`
+    })
+    expect(got).toBe("served unvalidated + document not-app + cache unvalidated age unvalidated colo absent")
+    expect(got.split("\n")).toHaveLength(1)
+  })
 })

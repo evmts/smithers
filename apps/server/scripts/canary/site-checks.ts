@@ -20,7 +20,7 @@
  */
 import { DEFAULT_APP_DOCUMENT_PATH } from "../../src/appDocument.ts"
 import { COMING_SOON_REPOS, PUBLIC_REPOS_PATH } from "../../src/publicRepoCatalog.ts"
-import { BUILD_STAMP_PATH } from "./BuildStamp.ts"
+import { BUILD_STAMP_PATH, buildShaFromHtml, isBuildSha } from "./BuildStamp.ts"
 
 export interface Observed {
   readonly status: number
@@ -76,15 +76,92 @@ const expectStatus = async (fetch: Fetcher, origin: string, path: string, status
   return check(path, `${status}`, observed.status === status, describeStatus(observed))
 }
 
+/*
+ * What a FAILED app-document answer was, beyond the headers it lacked (#4129).
+ *
+ * The real deploy of 38980376534 answered eight curated roots with the
+ * isolation headers and two — /bombshell-dev/clack/ and /withastro/starlight/ —
+ * with `200 + COOP absent + COEP absent`, and that was the whole record. The
+ * candidate's router cannot produce it: edge.ts sends every routed path through
+ * `withIsolationHeaders`, which sets both headers unconditionally, and all ten
+ * roots are one `ROUTED_REPOS` row and one prerendered template. So a document
+ * served under the previous Worker version, a non-app document, and a real
+ * routing defect were all consistent with the output and none was distinguished.
+ *
+ * These three facts separate them, cost no extra request, and are read from the
+ * response the probe already graded:
+ *
+ *   served    the build sha the document itself carries, validated by
+ *             BuildStamp's own pattern. The stamp travels inside the artifact,
+ *             so a document from another version names that version.
+ *   document  whether this is the app document at all: the app page is the only
+ *             one that mounts the island at #root (apps/site/src/pages/[owner]/[repo].astro),
+ *             so a marketing or 404 page in its place says so.
+ *   cache     CF-Cache-Status, Age and the CF-Ray colo: where the answer came
+ *             from. HIT alone is NOT proof of a stale version; it is one term of
+ *             the evidence, and it is recorded rather than interpreted here.
+ *
+ * Nothing else is read: no response body text, no header dump, no cookie, no
+ * authorization, no caller or customer identifier. The verdict is unchanged —
+ * this text only appears in `got`, and only when the check already failed.
+ *
+ * Every value is a response header, so none of them is echoed as it arrived: a
+ * failed release gate is read in CI logs, and a header is caller-reachable
+ * input. Each one must name itself from a finite vocabulary or a bounded
+ * canonical number, or it becomes the word `unvalidated` and is not printed.
+ */
+const SERVED_DOCUMENT_MOUNT = /<div[^>]*\sid=["']root["']/i
+
+/**
+ * Cloudflare's documented CF-Cache-Status values
+ * (developers.cloudflare.com/cache/concepts/default-cache-behavior). A value
+ * outside this list is not reported, whatever it says.
+ */
+const CACHE_STATUSES: ReadonlyArray<string> = [
+  "HIT", "MISS", "EXPIRED", "STALE", "BYPASS", "REVALIDATED", "UPDATING", "DYNAMIC", "NONE", "UNKNOWN", "NONE/UNKNOWN", "IGNORED", "DEFERRED"
+]
+
+/** A header value this probe may print: one of a closed set, absent, or named as neither. */
+const finite = (value: string | undefined, admit: (candidate: string) => boolean): string =>
+  value === undefined ? "absent" : admit(value) ? value : "unvalidated"
+
+/** The build sha the served document claims, or why there is none to name. */
+export const servedBuildSha = (body: string | undefined): string => {
+  if (body === undefined) return "unread"
+  const sha = buildShaFromHtml(body)
+  if (sha === null) return "absent"
+  return isBuildSha(sha) ? sha.toLowerCase() : "unvalidated"
+}
+
+/** Is the served document the app document, by the island mount only the app page carries? */
+export const servedDocumentKind = (body: string | undefined): "app" | "not-app" | "unread" =>
+  body === undefined ? "unread" : SERVED_DOCUMENT_MOUNT.test(body) ? "app" : "not-app"
+
+/** The Cloudflare colo that answered, from CF-Ray's trailing token; never the ray id itself. */
+const servedColo = (observed: Observed): string => {
+  const colo = header(observed, "cf-ray")?.split("-").at(-1) ?? ""
+  return /^[A-Z]{3}$/.test(colo) ? colo : "absent"
+}
+
+export const servingEvidence = (observed: Observed): string =>
+  `served ${servedBuildSha(observed.body)} + document ${servedDocumentKind(observed.body)} + cache ${
+    finite(header(observed, "cf-cache-status"), (value) => CACHE_STATUSES.includes(value))
+  } age ${
+    // Seconds in a shared cache, as HTTP defines Age: digits only, and short
+    // enough that no padded or concatenated value survives.
+    finite(header(observed, "age"), (value) => /^\d{1,7}$/.test(value))
+  } colo ${servedColo(observed)}`
+
 const expectAppDocument = (path: string, observed: Observed): SiteCheck => {
   const coop = header(observed, "cross-origin-opener-policy")
   const coep = header(observed, "cross-origin-embedder-policy")
   const ok = observed.status === 200 && coop === "same-origin" && coep === "require-corp"
+  const headers = `${describeStatus(observed)} + COOP ${coop ?? "absent"} + COEP ${coep ?? "absent"}`
   return check(
     path,
     "200 + COOP same-origin + COEP require-corp",
     ok,
-    `${describeStatus(observed)} + COOP ${coop ?? "absent"} + COEP ${coep ?? "absent"}`
+    ok ? headers : `${headers} + ${servingEvidence(observed)}`
   )
 }
 

@@ -16,10 +16,10 @@
  */
 
 /**
- * The asset `vite build` emits into the bundle. Served straight from the
- * Cloudflare assets layer: `wrangler.jsonc` runs the Worker first only for
- * `/api/*`, `/v1/*`, `/workflows/*` and `/smithersai/*`, so this path needs no Worker route and
- * no credential to read.
+ * The asset `vite build` emits into the bundle. `wrangler.jsonc` sets
+ * `run_worker_first: ["/*"]`, so the Worker sees this request and passes it to
+ * the assets layer unchanged (`apps/server/src/edge.ts`): the path still needs
+ * no Worker route of its own and no credential to read.
  */
 export const BUILD_STAMP_PATH = "/__build.json"
 
@@ -40,6 +40,14 @@ export interface FetchedStamp {
 }
 
 const SHA_PATTERN = /^(?:[0-9a-f]{7,40}|unknown)$/i
+
+/**
+ * Is this value one a build stamp could have emitted — a git sha, or the
+ * `unknown` a build outside a checkout writes? The one gate any served stamp
+ * passes before another probe repeats it, so no response can put arbitrary
+ * text in a verdict (site-checks.ts, the per-route serving evidence).
+ */
+export const isBuildSha = (value: string): boolean => SHA_PATTERN.test(value)
 
 /**
  * The stamp, or a sentence naming why there is none. A missing stamp is never
