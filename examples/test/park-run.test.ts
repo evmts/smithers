@@ -1,6 +1,6 @@
 import { afterAll, expect, it } from "@effect/vitest"
-import { Action, DurableDeferred, Flow, Interpreter } from "@smthrs/flow"
 import { EventTypes } from "@smthrs/engine-store"
+import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import { RunStore } from "@smthrs/run-store"
 import * as Deferred from "effect/Deferred"
@@ -19,6 +19,7 @@ const directory = mkdtempSync(join(tmpdir(), "flows-park-run-"))
 afterAll(() => rmSync(directory, { recursive: true, force: true }))
 
 const Gate = Action.make("examples/ParkRun/Gate", { payload: {}, success: Schema.String })
+const Retry = DurableDeferred.make("examples/ParkRun/Retry", { success: Schema.String })
 const Answer = DurableDeferred.make("examples/ParkRun/Answer", { success: Schema.String })
 const delayedRunId = "delayed-test" as JournalEvent.RunId
 const Waiting = Flow.make("examples/ParkRun/Waiting", {
@@ -33,11 +34,13 @@ it.effect("waits for the durable park, joins the caller, and preserves resumabil
     const release = yield* Deferred.make<void>()
     const stopped = yield* Deferred.make<void>()
     const stack = Layer.mergeAll(
-      Gate.toLayer(() => Effect.gen(function*() {
-        yield* Deferred.succeed(entered, undefined)
-        yield* Deferred.await(release)
-        return yield* DurableDeferred.await(Answer)
-      })),
+      Gate.toLayer(() =>
+        Effect.gen(function*() {
+          yield* Deferred.succeed(entered, undefined)
+          yield* Deferred.await(release)
+          return yield* DurableDeferred.await(Answer)
+        })
+      ),
       Interpreter.layer(Waiting)
     ).pipe(
       Layer.provideMerge(Action.layerImplementations),
@@ -45,9 +48,13 @@ it.effect("waits for the durable park, joins the caller, and preserves resumabil
     )
     yield* Effect.gen(function*() {
       const store = yield* RunStore.RunStore
-      const parked = yield* parkRun("park-test", Waiting.execute({}, { executionId: "park-test" }).pipe(
-        Effect.ensuring(Deferred.succeed(stopped, undefined))
-      ), stack).pipe(Effect.forkScoped)
+      const parked = yield* parkRun(
+        "park-test",
+        Waiting.execute({}, { executionId: "park-test" }).pipe(
+          Effect.ensuring(Deferred.succeed(stopped, undefined))
+        ),
+        stack
+      ).pipe(Effect.forkScoped)
       yield* Effect.raceFirst(Deferred.await(entered), Fiber.join(parked))
       expect((yield* store.get("park-test")).status).toBe("running")
       expect(parked.pollUnsafe()).toBeUndefined()
@@ -82,47 +89,66 @@ it.live("quiesces a retry admitted before suspension observation", () =>
     let attempts = 0
     let held = false
     const stack = Layer.mergeAll(
-      Gate.toLayer(() => Effect.gen(function*() {
-        attempts++
-        if (attempts === 2) {
-          yield* Deferred.succeed(secondEntered, undefined)
-          yield* Deferred.await(releaseSecond).pipe(Effect.ensuring(Effect.gen(function*() {
-            yield* Deferred.succeed(cleanupEntered, undefined)
-            yield* Deferred.await(releaseCleanup)
-            yield* Deferred.succeed(secondStopped, undefined)
-          })))
-        }
-        return yield* DurableDeferred.await(Answer)
-      })),
+      Gate.toLayer(() =>
+        Effect.gen(function*() {
+          attempts++
+          if (attempts === 2) {
+            yield* Deferred.succeed(secondEntered, undefined)
+            yield* Deferred.await(releaseSecond).pipe(Effect.ensuring(Effect.gen(function*() {
+              yield* Deferred.succeed(cleanupEntered, undefined)
+              yield* Deferred.await(releaseCleanup)
+              yield* Deferred.succeed(secondStopped, undefined)
+            })))
+          }
+          return yield* DurableDeferred.await(Answer)
+        })
+      ),
       Interpreter.layer(Waiting)
     ).pipe(
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(durableEngine(join(directory, "delayed.sqlite"), "delayed-test"))
     )
-    // Only the observer sees delayed delivery. The engine still commits real
-    // SQLite events and uses its unchanged default automatic retry policy.
-    const observed = Layer.effect(Journal.Journal, Effect.gen(function*() {
-      const journal = yield* Journal.Journal
-      const isSuspension = (entry: JournalEvent.Entry) =>
-        entry.eventType === EventTypes.runDecision &&
-        Schema.is(Schema.Struct({ decision: Schema.Literal("transitioned"), status: Schema.Literal("suspended") }))(entry.payload)
-      return Journal.make({
-        ...journal,
-        stream: options => journal.stream(options).pipe(Stream.mapEffect(entry => Effect.gen(function*() {
-          if (!held && isSuspension(entry)) {
-            held = true
-            yield* Deferred.await(secondEntered)
-          }
-          return entry
-        })))
+    // Only the observer sees delayed delivery. Admit the racing retry
+    // explicitly so the test does not depend on the follower polling policy.
+    const observed = Layer.effect(
+      Journal.Journal,
+      Effect.gen(function*() {
+        const journal = yield* Journal.Journal
+        const runtime = yield* FlowRuntime.FlowRuntime
+        const isSuspension = (entry: JournalEvent.Entry) =>
+          entry.eventType === EventTypes.runDecision &&
+          Schema.is(Schema.Struct({ decision: Schema.Literal("transitioned"), status: Schema.Literal("suspended") }))(
+            entry.payload
+          )
+        return Journal.make({
+          ...journal,
+          stream: (options) =>
+            journal.stream(options).pipe(Stream.mapEffect((entry) =>
+              Effect.gen(function*() {
+                if (!held && isSuspension(entry)) {
+                  held = true
+                  yield* DurableDeferred.succeed(Retry, {
+                    token: DurableDeferred.tokenFromExecutionId(Retry, { flow: Waiting, executionId: "delayed-test" }),
+                    value: "retry admitted"
+                  }).pipe(Effect.provideService(FlowRuntime.FlowRuntime, runtime), Effect.orDie)
+                  yield* Deferred.await(secondEntered)
+                }
+                return entry
+              })
+            ))
+        })
       })
-    })).pipe(Layer.provideMerge(stack))
+    ).pipe(Layer.provideMerge(stack))
     yield* Effect.gen(function*() {
       const journal = yield* Journal.Journal
       const store = yield* RunStore.RunStore
-      const parked = yield* parkRun("delayed-test", Waiting.execute({}, { executionId: "delayed-test" }).pipe(
-        Effect.ensuring(Deferred.succeed(stopped, undefined))
-      ), observed).pipe(
+      const parked = yield* parkRun(
+        "delayed-test",
+        Waiting.execute({}, { executionId: "delayed-test" }).pipe(
+          Effect.ensuring(Deferred.succeed(stopped, undefined))
+        ),
+        observed
+      ).pipe(
         Effect.ensuring(Deferred.succeed(parkReturned, undefined)),
         Effect.forkScoped
       )
@@ -147,8 +173,12 @@ it.live("quiesces a retry admitted before suspension observation", () =>
       yield* journal.flush
       const after = yield* journal.entries({ runId: delayedRunId, limit: 1000 })
       const evidence = {
-        attempts, callerStopped: yield* Deferred.isDone(stopped), statusAtParkReturn: row.status,
-        cancelRequestedAtMs: row.cancelRequestedAtMs, tailAtReturn, tailAfterReturn: after.entries.at(-1)!.seq
+        attempts,
+        callerStopped: yield* Deferred.isDone(stopped),
+        statusAtParkReturn: row.status,
+        cancelRequestedAtMs: row.cancelRequestedAtMs,
+        tailAtReturn,
+        tailAfterReturn: after.entries.at(-1)!.seq
       }
       console.log(JSON.stringify(evidence))
       expect(evidence.statusAtParkReturn).toBe("suspended")
