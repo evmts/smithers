@@ -19,6 +19,12 @@ test("TODO shell and delivery actions explicitly declare recovery policy", () =>
     ["coding/open-vibe-local-pull", "irreversible"],
     ["coding/merge-vibe-local-pull", "irreversible"]
   ])
+  const reconciled = new Set([
+    "coding/prepare-vibe-candidate",
+    "coding/fast-forward-vibe",
+    "coding/open-vibe-local-pull",
+    "coding/merge-vibe-local-pull"
+  ])
   for (const file of ["checks.ts", "workflow.ts", "vibe-landing.ts"]) {
     const source = ts.createSourceFile(
       file,
@@ -38,9 +44,9 @@ test("TODO shell and delivery actions explicitly declare recovery policy", () =>
               .map((property) => [property.name.getText(source), property.initializer.getText(source)])
           )
           assert.equal(fields.get("tier"), JSON.stringify(expected.get(name.text) ?? "sealed"), name.text)
-          // Until lookup providers are wired, irreversible shell crossings are
-          // explicitly keyless. Do not turn a stable string into unsafe retry.
-          assert.equal(fields.get("idempotencyKey"), "undefined", name.text)
+          // Only local lander writes reconcile before repeating; every other
+          // crossing stays keyless until its lookup provider is wired.
+          assert.equal(fields.get("idempotencyKey") !== "undefined", reconciled.has(name.text), name.text)
           expected.delete(name.text)
         }
       }

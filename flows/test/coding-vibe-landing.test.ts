@@ -1,9 +1,20 @@
 import { NodeCrypto } from "@effect/platform-node"
+import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { FlowEngine } from "@smthrs/engine"
+import { DurableEngineState } from "@smthrs/engine-store"
+import * as EngineStore from "@smthrs/engine-store/EngineStore"
+import * as Migrations from "@smthrs/engine-store/Migrations"
+import * as OwnerIdentity from "@smthrs/engine-store/OwnerIdentity"
+import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
 import { Action, Poll, Sleep } from "@smthrs/flow"
+import * as SqlJournal from "@smthrs/journal/SqlJournal"
+import * as AttemptStore from "@smthrs/run-store/AttemptStore"
+import * as RunStore from "@smthrs/run-store/RunStore"
 import { Effect, Layer, ManagedRuntime } from "effect"
 import assert from "node:assert/strict"
 import { test } from "node:test"
+import * as Jj from "../../packages/smithers/flows/jj/src/index.ts"
+import * as CacheStore from "../../packages/smithers/flows/step-cache/src/CacheStore.ts"
 import type { AppendObservation, AppendPreparation } from "../coding/landing-schema.ts"
 import { type BackendLanding, Landing, type LocalLanding } from "../coding/landing.ts"
 import { NativeCoding, NativeCodingError } from "../coding/native.ts"
@@ -562,14 +573,35 @@ for (const installed of [false, true]) {
   )
 }
 
+/** One durable store two engine processes share, so a restart reclaims a dead owner's run. */
+const durableStores = Layer.mergeAll(
+  SqlJournal.layer({ capacity: 1024, overflow: "reject" }),
+  RunStore.layer,
+  AttemptStore.layer,
+  CacheStore.layer,
+  DurableEngineState.layer
+).pipe(
+  Layer.provideMerge(Layer.effectDiscard(Migrations.run)),
+  Layer.provideMerge(Layer.merge(TestDatabase.layer, NodeCrypto.layer))
+)
+const jj = Jj.make({
+  snapshot: () => Effect.succeed({ commitId: "landing" as never, changeId: "landing" as never }),
+  restore: () => Effect.void,
+  diff: () => Effect.succeed(""),
+  workspaceAdd: () => Effect.void,
+  workspaceForget: () => Effect.void,
+  status: () => Effect.succeed("")
+})
 /** A host without the backend: the fake lander answers the members `LandVibe` runs, in order. */
 const localModes = [
   "ff-landed",
+  "ff-crash",
   "ff-checks-failed",
   "ff-check-outage",
   "ff-main-moved",
   "ff-conflict",
   "pr-merged",
+  "pr-crash",
   "pr-open",
   "pr-checks-failed",
   "pr-pending-then-passed"
@@ -578,6 +610,9 @@ for (const mode of localModes) {
   test(`vibe landing without the backend: ${mode}`, { timeout: 60_000 }, async (t) => {
     const calls: string[] = []
     let observations = 0
+    // A crash mid-write: the first call never replies, so the restarted run must reconcile.
+    const crashed = new Set(mode === "ff-crash" ? ["fast-forward"] : mode === "pr-crash" ? ["merge"] : [])
+    const reply = <A>(call: string, value: A) => crashed.delete(call) ? Effect.never : Effect.succeed(value)
     const mainRevision = {
       changeId: "m".repeat(32),
       commitId: main,
@@ -623,7 +658,7 @@ for (const mode of localModes) {
           assert.deepEqual(input, prepared)
           return mode === "ff-main-moved"
             ? Effect.fail(new CodingError({ code: "evicted", message: "main moved after the candidate was verified" }))
-            : Effect.succeed(candidate.commitId)
+            : reply("fast-forward", candidate.commitId)
         }),
       abandon: () =>
         Effect.sync(() => {
@@ -648,12 +683,15 @@ for (const mode of localModes) {
           return { status: "passed" as const, checks: [{ name: "ci", bucket: "pass" }] }
         }),
       merge: (input) =>
-        Effect.sync(() => {
+        Effect.suspend(() => {
           calls.push("merge")
           assert.equal(input.number, 41)
-          return mode === "pr-open"
-            ? { status: "open" as const, reason: "review required" }
-            : { status: "merged" as const, mainCommitId: "9".repeat(40) }
+          return reply(
+            "merge",
+            mode === "pr-open"
+              ? { status: "open" as const, reason: "review required" }
+              : { status: "merged" as const, mainCommitId: "9".repeat(40) }
+          )
         })
     }
     const native = Layer.succeed(NativeCoding, {
@@ -688,10 +726,18 @@ for (const mode of localModes) {
         }
       })
     )
+    const members = Layer.mergeAll(
+      stackBaseLayer,
+      landingLayers,
+      landerLayer,
+      publicationLayers,
+      checks,
+      Poll.layer,
+      Sleep.layer
+    ).pipe(Layer.provide(Layer.mergeAll(Layer.succeed(Landing, fake), native)))
     const host = ManagedRuntime.make(
-      Layer.mergeAll(stackBaseLayer, landingLayers, landerLayer, publicationLayers, checks, Poll.layer, Sleep.layer)
+      members
         .pipe(
-          Layer.provide(Layer.mergeAll(Layer.succeed(Landing, fake), native)),
           Layer.provideMerge(Action.layerImplementations),
           Layer.provideMerge(FlowEngine.layerMemory),
           Layer.provideMerge(NodeCrypto.layer)
@@ -700,7 +746,40 @@ for (const mode of localModes) {
     t.after(() => host.dispose())
     const execute = LandVibe.execute(cleanup, { executionId: `land-${mode}` })
     const requestId = /^[0-9a-f-]{36}$/
-    if (mode === "ff-landed") {
+    if (mode === "ff-crash" || mode === "pr-crash") {
+      // The first process dies mid-write; a second reclaims the run, and the lander reconciles that write.
+      const value = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+        const stores = yield* Layer.build(durableStores)
+        const process = members.pipe(
+          Layer.provideMerge(Action.layerImplementations),
+          Layer.provideMerge(EngineStore.layer({
+            owner: { hostId: "vibe-landing-crash" },
+            journalSource: "vibe-landing-crash",
+            isAlive: () => Effect.succeed(false)
+          })),
+          Layer.provideMerge(Layer.mergeAll(StepBoundary.layerTest(), Layer.succeed(Jj.Jj, jj), OwnerIdentity.layer)),
+          Layer.provideMerge(Layer.succeedContext(stores))
+        )
+        const executionId = `land-${mode}`
+        yield* Effect.scoped(Effect.gen(function*() {
+          const context = yield* Layer.build(process)
+          yield* Effect.forkScoped(Effect.provide(LandVibe.execute(cleanup, { executionId }), context))
+          yield* TestDatabase.until(Effect.sync(() => crashed.size === 0))
+        }))
+        const context = yield* Layer.build(process)
+        return yield* Effect.provide(LandVibe.execute(cleanup, { executionId }), context)
+      })))
+      assert.equal(
+        "receipts" in value ? value.mainCommitId : "merge" in value && value.merge.status,
+        mode === "ff-crash" ? candidate.commitId : "merged"
+      )
+      assert.deepEqual(
+        calls.map((call) => call.replace(/:[0-9a-f-]{36}$/, "")),
+        mode === "ff-crash"
+          ? ["prepare", "check:fast", "fast-forward", "fast-forward"]
+          : ["prepare", "pull", "checks", "merge", "merge"]
+      )
+    } else if (mode === "ff-landed") {
       const value = await host.runPromise(execute)
       assert.ok("receipts" in value)
       assert.equal(value.mainCommitId, candidate.commitId)

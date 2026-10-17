@@ -6,7 +6,7 @@
  * one verified candidate commit, or push the candidate and open its GitHub
  * pull request, which GitHub's required checks and branch protection decide.
  */
-import { Action, Flow, FlowRuntime, Interpreter, Poll } from "@smthrs/flow"
+import { Action, Flow, FlowRuntime, Interpreter, Poll, RetryPolicy } from "@smthrs/flow"
 import { Node, type Planned } from "@smthrs/plan"
 import { Effect, Layer, Schema } from "effect"
 import {
@@ -124,10 +124,17 @@ const VerifyLanded = Action.make("coding/verify-vibe-landed", {
   success: VibeLanded,
   error: CodingError
 })
+// Local lander writes reconcile before repeating (local-landing.ts): prepare
+// drops its own marked commits, fast-forward and merge observe main or the
+// pull first, and the push and pull are bound to the request's branch. Keys
+// let a restarted run dispatch them again instead of stopping as interrupted;
+// `once` keeps failures as verdicts rather than engine retries.
+const once = RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 1 })
 /** A local lander's candidate: the cleaned tip merged onto main as one commit. */
 const PrepareCandidate = Action.make("coding/prepare-vibe-candidate", {
   tier: "irreversible",
-  idempotencyKey: undefined,
+  idempotencyKey: ({ cleanup }) => cleanup.head.commitId,
+  retryPolicy: once,
   payload: { cleanup: VibeCleanup },
   success: LandingCandidate,
   error: CodingError,
@@ -136,7 +143,8 @@ const PrepareCandidate = Action.make("coding/prepare-vibe-candidate", {
 /** Fast-forward main to the candidate every required check passed on; otherwise evict it. */
 const FastForward = Action.make("coding/fast-forward-vibe", {
   tier: "irreversible",
-  idempotencyKey: undefined,
+  idempotencyKey: ({ prepared }) => prepared.candidate.commitId,
+  retryPolicy: once,
   payload: { cleanup: VibeCleanup, prepared: LandingCandidate, receipts: Schema.Array(Receipt) },
   success: VibeFastForwarded,
   error: CodingError,
@@ -144,7 +152,8 @@ const FastForward = Action.make("coding/fast-forward-vibe", {
 })
 const OpenLocalPull = Action.make("coding/open-vibe-local-pull", {
   tier: "irreversible",
-  idempotencyKey: undefined,
+  idempotencyKey: ({ prepared }) => prepared.candidate.commitId,
+  retryPolicy: once,
   payload: { cleanup: VibeCleanup, prepared: LandingCandidate },
   success: LocalPull,
   error: CodingError,
@@ -161,7 +170,8 @@ const ObserveChecks = Action.make("coding/observe-vibe-pull-checks", {
 /** Merge the candidate GitHub's required checks passed, or report why GitHub keeps it open; failed checks evict. */
 const MergeLocalPull = Action.make("coding/merge-vibe-local-pull", {
   tier: "irreversible",
-  idempotencyKey: undefined,
+  idempotencyKey: ({ prepared }) => prepared.candidate.commitId,
+  retryPolicy: once,
   payload: { cleanup: VibeCleanup, prepared: LandingCandidate, pull: LocalPull, checks: PullChecks },
   success: VibePullRequested,
   error: CodingError,
@@ -175,10 +185,13 @@ const AwaitPullChecks = Poll.make("coding/AwaitVibePullChecks", {
   intervalMs: checksIntervalMs,
   maxAttempts: checksAttempts,
   onTimeout: "return-last",
-  check: ({ pull, attempt }) =>
+  check: Node.capture({}, ({ pull, attempt }) =>
     ObserveChecks.call({ pull, attempt }).pipe(Node.catch({
-      onFailure: () => Node.succeed({ satisfied: false, output: { status: "pending" as const, checks: [] } })
-    }))
+      onFailure: Node.capture(
+        {},
+        () => Node.succeed({ satisfied: false, output: { status: "pending" as const, checks: [] } })
+      )
+    })))
 })
 /** The candidate as the checks see it: one commit on main carrying every validated change's reads and writes. */
 function candidateImplementation(cleanup: VibeCleanup, prepared: LandingCandidate): Implementation
@@ -214,14 +227,14 @@ const AwaitAppend = Poll.make("coding/AwaitVibeAppend", {
   intervalMs: observationIntervalMs,
   maxAttempts: observationAttempts,
   onTimeout: "return-last",
-  check: ({ queued, attempt }) =>
+  check: Node.capture({}, ({ queued, attempt }) =>
     ObserveAppend.call({ queued, attempt }).pipe(Node.catch({
-      onFailure: () =>
+      onFailure: Node.capture({}, () =>
         Node.succeed({
           satisfied: false,
           output: { status: "unobserved" as const, reason: "Landing observation was unavailable" }
-        })
-    }))
+        }))
+    })))
 })
 export const LandVibeError = Schema.Union([
   RunCheck.errorSchema,
@@ -232,7 +245,7 @@ export const LandVibeError = Schema.Union([
 /** Fast-forward: the project's checks on the candidate, then main moves or the candidate is evicted. */
 const fastForward = (cleanup: VibeCleanup) =>
   PrepareCandidate.call({ cleanup }).pipe(
-    Node.bindPlanned((prepared) =>
+    Node.bindPlanned(Node.capture({}, (prepared) =>
       Node.all(
         Object.fromEntries(
           candidateChecks(cleanup).map((check) => [
@@ -241,23 +254,20 @@ const fastForward = (cleanup: VibeCleanup) =>
           ])
         )
       ).pipe(
-        Node.map((receipts: Readonly<Record<string, Receipt>>) => Object.values(receipts)),
-        Node.bindPlanned((receipts) => FastForward.call({ cleanup, prepared, receipts }))
-      )
-    )
+        Node.map(Node.capture({}, (receipts: Readonly<Record<string, Receipt>>) => Object.values(receipts))),
+        Node.bindPlanned(Node.capture({}, (receipts) => FastForward.call({ cleanup, prepared, receipts })))
+      )))
   )
 /** Pull request: push the candidate, wait for GitHub's required checks, then merge or leave it open. */
 const pullRequest = (cleanup: VibeCleanup) =>
   PrepareCandidate.call({ cleanup }).pipe(
-    Node.bindPlanned((prepared) =>
+    Node.bindPlanned(Node.capture({}, (prepared) =>
       OpenLocalPull.call({ cleanup, prepared }).pipe(
-        Node.bindPlanned((pull) =>
+        Node.bindPlanned(Node.capture({}, (pull) =>
           AwaitPullChecks.child({ pull }).pipe(
-            Node.bindPlanned((checks) => MergeLocalPull.call({ cleanup, prepared, pull, checks }))
-          )
-        )
-      )
-    )
+            Node.bindPlanned(Node.capture({}, (checks) => MergeLocalPull.call({ cleanup, prepared, pull, checks })))
+          )))
+      )))
   )
 /** Return the retained result to the existing stack without moving main. */
 const stackProposal = (
@@ -266,90 +276,90 @@ const stackProposal = (
 ) =>
   Node.succeed(cleanup.admission.fromStack === true).pipe(
     Node.branch({
-      if: (fromStack) => fromStack,
-      then: () =>
+      if: Node.capture({}, (fromStack) => fromStack),
+      then: Node.capture({}, () =>
         Candidate.call({ plan: cleanup.admission.request.plan }).pipe(
-          Node.bindPlanned((candidate) => Propose.call({ generation: candidate.generation })),
-          Node.bindPlanned((proposal) => Node.succeed({ cleanup, cleanedSource, proposal }))
-        ),
-      else: () => SubmitLane.call({ cleanup, cleanedSource })
+          Node.bindPlanned(Node.capture({}, (candidate) => Propose.call({ generation: candidate.generation }))),
+          Node.bindPlanned(Node.capture({}, (proposal) => Node.succeed({ cleanup, cleanedSource, proposal })))
+        )),
+      else: Node.capture({}, () => SubmitLane.call({ cleanup, cleanedSource }))
     })
   )
 /** Only the stack can receive installed delivery; no legacy append fallback. */
 const installedDelivery = (cleanup: VibeCleanup) =>
   PublishVibeSource.child({ source: cleanup.head, phase: "cleaned" }).pipe(
-    Node.bindPlanned((cleanedSource) =>
+    Node.bindPlanned(Node.capture({}, (cleanedSource) =>
       Node.succeed(cleanedSource).pipe(
         Node.andThen(ReadStack.call({ cleanup })),
         Node.andThen(stackProposal(cleanup, cleanedSource))
-      )
-    )
+      )))
   )
 /** Hosted compatibility: retain the source before the declared landing policy. */
 const backend = (cleanup: VibeCleanup) =>
   PublishVibeSource.child({ source: cleanup.head, phase: "cleaned" }).pipe(
-    Node.bindPlanned((cleanedSource) =>
+    Node.bindPlanned(Node.capture({}, (cleanedSource) =>
       Node.succeed(cleanedSource).pipe(
         Node.andThen(ReadStack.call({ cleanup })),
         Node.branch({
-          if: (stacked) => stacked,
-          then: () => stackProposal(cleanup, cleanedSource),
-          else: () =>
+          if: Node.capture({}, (stacked) => stacked),
+          then: Node.capture({}, () => stackProposal(cleanup, cleanedSource)),
+          else: Node.capture({}, () =>
             Node.succeed(cleanedSource).pipe(
               Node.andThen(PrepareAppend.call({ cleanup })),
-              Node.bindPlanned((preparation) =>
+              Node.bindPlanned(Node.capture({}, (preparation) =>
                 CreateLanding.call({ cleanup, preparation }).pipe(
-                  Node.bindPlanned((landing) =>
+                  Node.bindPlanned(Node.capture({}, (landing) =>
                     Node.succeed(landing).pipe(
                       Node.andThen(ReadDelivery.call({ cleanup })),
                       Node.branch({
-                        if: (delivery) => delivery === "pull-request",
-                        then: () => OpenPull.call({ cleanup, cleanedSource, landing }),
-                        else: () =>
+                        if: Node.capture({}, (delivery) => delivery === "pull-request"),
+                        then: Node.capture({}, () => OpenPull.call({ cleanup, cleanedSource, landing })),
+                        else: Node.capture({}, () =>
                           QueueAppend.call({ cleanup, preparation, landing }).pipe(
-                            Node.bindPlanned((queued) =>
+                            Node.bindPlanned(Node.capture({}, (queued) =>
                               AwaitAppend.child({ queued }).pipe(
-                                Node.bindPlanned((observed) =>
-                                  VerifyLanded.call({ cleanup, cleanedSource, queued, observed })
+                                Node.bindPlanned(
+                                  Node.capture(
+                                    {},
+                                    (observed) => VerifyLanded.call({ cleanup, cleanedSource, queued, observed })
+                                  )
                                 )
-                              )
-                            )
-                          )
+                              )))
+                          ))
                       })
-                    )
-                  )
-                )
-              )
-            )
+                    )))
+                )))
+            ))
         })
-      )
-    )
+      )))
   )
+// Captured callbacks give the recorded plan a stable identity, so a restarted
+// process rebuilds the same plan and resumes delivery instead of refusing it.
+// The version covers the helpers above that the callbacks reach.
 const makeLandVibe = <R>(body: (cleanup: VibeCleanup) => Node.Node<VibeDelivered, typeof LandVibeError.Type, R>) =>
   Flow.make("coding/LandVibe", {
     payload: VibeCleanup,
     success: VibeDelivered,
     error: LandVibeError,
-    body
+    body: Node.capture({ version: "vibe-landing/v1" }, body)
   })
 export const LandVibe = makeLandVibe((cleanup) =>
   ReadLander.call({ phase: "landing" }).pipe(
-    Node.bindPlanned((lander) =>
+    Node.bindPlanned(Node.capture({}, (lander) =>
       Node.succeed(lander).pipe(
         Node.branch({
-          if: (lander) => lander === "backend",
-          then: () => backend(cleanup),
-          else: () =>
+          if: Node.capture({}, (lander) => lander === "backend"),
+          then: Node.capture({}, () => backend(cleanup)),
+          else: Node.capture({}, () =>
             Node.succeed(lander).pipe(
               Node.branch({
-                if: (lander) => lander === "fast-forward",
-                then: () => fastForward(cleanup),
-                else: () => pullRequest(cleanup)
+                if: Node.capture({}, (lander) => lander === "fast-forward"),
+                then: Node.capture({}, () => fastForward(cleanup)),
+                else: Node.capture({}, () => pullRequest(cleanup))
               })
-            )
+            ))
         })
-      )
-    )
+      )))
   )
 )
 export const InstallLandVibe = makeLandVibe(installedDelivery)
