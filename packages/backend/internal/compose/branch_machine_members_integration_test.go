@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -18,12 +19,15 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/smithersai/smithers/packages/backend/flowhost"
+	"github.com/smithersai/smithers/packages/backend/hostexec"
 	"github.com/smithersai/smithers/packages/backend/installbundle"
 	"github.com/smithersai/smithers/packages/backend/installbundle/bundletest"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/microsandbox"
 	"github.com/smithersai/smithers/packages/backend/process"
+	repositoryapi "github.com/smithersai/smithers/packages/backend/repository"
 	workspaceapi "github.com/smithersai/smithers/packages/backend/workspace"
 	"github.com/stretchr/testify/require"
 )
@@ -152,8 +156,42 @@ func branchMachineMemberInstall(t *testing.T, erase, concurrent, realMachine boo
 	origin := "http://" + server.Listener.Addr().String()
 	t.Setenv("SMITHERS_PUBLIC_URL", origin)
 	options := Options{ChatHost: unusedChatHost{}, Workspace: runtimeBoundary, FlowHostProductAPIURL: origin, FlowHostConfig: flowhost.WorkspaceLauncherConfig{AllowTrustedProcessForTests: !realMachine}}
+	var head string
+	var seed []byte
+	var setHead func(string)
 	if realMachine {
 		options.InstallBranchMachines = true
+		// The guest daemon serves member reads from an admitted working copy
+		// pinned to the branch head in the install's repository store.
+		root := t.TempDir()
+		storage := repositoryapi.Config{StoragePath: filepath.Join(root, "repositories"), AuthToken: "members", FFILibraryPath: os.Getenv("SMITHERS_FFI_LIBRARY_PATH")}
+		local, openErr := repositoryapi.OpenLocal(storage)
+		require.NoError(t, openErr)
+		t.Cleanup(func() { require.NoError(t, local.Shutdown(context.Background())) })
+		git := func(args ...string) string {
+			command := hostexec.Git(ctx, append([]string{"-c", "user.name=Test", "-c", "user.email=test@example.test", "-c", "core.hooksPath=/dev/null"}, args...)...)
+			command.Dir = string(os.PathSeparator)
+			out, gitErr := command.CombinedOutput()
+			require.NoError(t, gitErr, "%s", out)
+			return strings.TrimSpace(string(out))
+		}
+		source, store := filepath.Join(root, "source"), storage.GitBackendPath("owner", "demo")
+		git("init", "--initial-branch=main", source)
+		require.NoError(t, os.WriteFile(filepath.Join(source, "shared.txt"), []byte("ben\n"), 0600))
+		git("-C", source, "add", ".")
+		git("-C", source, "commit", "-m", "base")
+		head = git("-C", source, "rev-parse", "HEAD")
+		git("-C", source, "bundle", "create", filepath.Join(root, "seed.bundle"), "main", "HEAD")
+		seed, err = os.ReadFile(filepath.Join(root, "seed.bundle"))
+		require.NoError(t, err)
+		require.NoError(t, local.Client().InitRepo(ctx, "owner", "demo", "main", false))
+		git("-C", store, "fetch", source, "+refs/heads/*:refs/heads/*")
+		git("-C", store, "update-ref", "refs/heads/mythical", head)
+		setHead = func(id string) {
+			git("-C", store, "update-ref", repohost.BranchHeadRef(id), head)
+			require.NoError(t, local.Client().ImportRefs(ctx, "owner", "demo"))
+		}
+		options.Repository = local.Client()
 	} else {
 		options.BranchMachines = rehearsalBranchMachines(pool)
 		if qualification != "" {
@@ -180,7 +218,15 @@ func branchMachineMemberInstall(t *testing.T, erase, concurrent, realMachine boo
 		t.Cleanup(func() { require.NoError(t, vm.DeleteWorkspace(context.WithoutCancel(operation), machine.ID)) })
 		machine, err = q.UpdateWorkspaceExecutionInfo(ctx, db.UpdateWorkspaceExecutionInfoParams{ID: machine.ID, VmID: created.ID, Status: "running"})
 		require.NoError(t, err)
-		require.NoError(t, writeGuestFixture(vm, operation, machine.ID, "shared.txt", []byte("ben\n"), 0664))
+		_, err = pool.Exec(ctx, `UPDATE workspaces SET source_commit=$1,head_commit_id=$1 WHERE id=$2`, head, machine.ID)
+		require.NoError(t, err)
+		setHead(machine.ID)
+		// Seed the guest working copy at the same commit, as provisioning's clone does.
+		require.NoError(t, writeGuestFixture(vm, operation, machine.ID, "/tmp/seed.bundle", seed, 0644))
+		seeded, seedErr := vm.ExecuteCommand(operation, machine.ID, workspaceapi.Command{Args: []string{"/bin/sh", "-c",
+			"git clone -q /tmp/seed.bundle /workspace && cd /workspace && jj git init --colocate ."}})
+		require.NoError(t, seedErr)
+		require.Zero(t, seeded.ExitCode, "%s", seeded.Stderr)
 	}
 	if !realMachine && !concurrent {
 		_, err := runtime.CreateWorkspace(ctx, workspaceapi.WorkspaceSpec{ID: machine.ID})
@@ -319,8 +365,8 @@ func branchMachineMemberInstall(t *testing.T, erase, concurrent, realMachine boo
 	}
 
 	if realMachine {
-		// This retained fixture has no imported repository. Probe the member
-		// HTTP door through validation without claiming a source-ready edit.
+		// Probe the member write door through validation without claiming an
+		// edit; Alice's read returns the seeded bytes through the guest daemon.
 		call("PUT", "/api/repos/owner/demo/workspaces/"+machine.ID+"/files/content?path=shared.txt", `{"content":"ben\n","base_digest":"invalid"}`, benCookie, 400)
 		require.Contains(t, call("GET", "/api/repos/owner/demo/workspaces/"+machine.ID+"/files/content?path=shared.txt", "", aliceCookie, 200), "ben")
 	}
