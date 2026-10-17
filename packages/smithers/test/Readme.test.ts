@@ -109,7 +109,11 @@ describe("the CLI documentation contracts", () => {
     expect(manifest.peerDependencies.effect).toBe(manifest.devDependencies["@effect/platform-node"])
     expect(manifest.dependencies["@effect/platform-node"]).toBeUndefined()
     expect(manifest.smthrs.privateEffectAdapters).toContain("@effect/platform-node")
-    expect(Object.keys(manifest.peerDependencies).sort()).toEqual(["@effect/sql-pg", "@effect/sql-sqlite-node", "effect"])
+    expect(Object.keys(manifest.peerDependencies).sort()).toEqual([
+      "@effect/sql-pg",
+      "@effect/sql-sqlite-node",
+      "effect"
+    ])
     expect(manifest.dependencies["@effect/sql-sqlite-node"]).toBe(manifest.peerDependencies.effect)
     expect(manifest.peerDependenciesMeta["@effect/sql-pg"].optional).toBe(true)
     expect(introduction).toContain(
