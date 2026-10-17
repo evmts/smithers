@@ -54,7 +54,7 @@ body: Node.capture({}, () => Node.succeed(value)) })`
 		write(filepath.Join(source, ".smithers/flows/todo/flow.ts"), flow)
 		write(filepath.Join(source, "lib/value.ts"), "export const value = "+`"`+version+`"`)
 		write(filepath.Join(source, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n")
-		require.NoError(t, os.Symlink(filepath.Join(root, "flows/node_modules"), filepath.Join(source, "node_modules")))
+		require.NoError(t, os.Symlink(filepath.Join(root, ".smithers/flows/node_modules"), filepath.Join(source, "node_modules")))
 		return source
 	}
 	v1, v2 := makeSource("approved-v1"), makeSource("approved-v2")
@@ -85,7 +85,7 @@ body: Node.capture({}, () => Node.succeed(value)) })`
 	write(filepath.Join(box.Root, ".smithers/flows/todo/flow.ts"), flow)
 	write(filepath.Join(box.Root, "lib/value.ts"), `export const value = "draft-working-copy"`)
 	write(filepath.Join(box.Root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n")
-	require.NoError(t, os.Symlink(filepath.Join(root, "flows/node_modules"), filepath.Join(box.Root, "node_modules")))
+	require.NoError(t, os.Symlink(filepath.Join(root, ".smithers/flows/node_modules"), filepath.Join(box.Root, "node_modules")))
 	require.Equal(t, "draft-working-copy", run(box.Root, "draft", "").Output)
 	first := run(v1, "", "")
 	require.Equal(t, "approved-v1", first.Output)
