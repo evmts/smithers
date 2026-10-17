@@ -10,6 +10,7 @@ import * as PackageExec from "../src/PackageExec.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
 import * as PackageLoader from "../src/PackageLoader.ts"
 import * as PackageTree from "../src/PackageTree.ts"
+import { writeExecutable } from "./helpers/Executable.ts"
 import { serve } from "./helpers/ServeCli.ts"
 import { write } from "./helpers/WriteFile.ts"
 
@@ -331,11 +332,9 @@ func TestExternalImport(t *testing.T) { if externalhelper.Want < 1 || helper.Wan
   it("removes a partial module archive when tar fails", async () => {
     const root = await fixture()
     await write(root, "PACKAGE.ts", packageWithoutSandbox(await Fs.readFile(NodePath.join(root, "PACKAGE.ts"), "utf8")))
-    const tar = NodePath.join(root, "fake-tar")
-    await Fs.writeFile(
-      tar,
-      "#!/bin/sh\nif [ \"$1\" = \"-cf\" ]; then printf partial > \"$2\"; echo archive-failed >&2; exit 1; fi\necho fixture-tar\n",
-      { mode: 0o755 }
+    const tar = await writeExecutable(
+      NodePath.join(root, "fake-tar"),
+      "#!/bin/sh\nif [ \"$1\" = \"-cf\" ]; then printf partial > \"$2\"; echo archive-failed >&2; exit 1; fi\necho fixture-tar\n"
     )
     const findOnPath = PackageTree.findOnPath
     const find = vi.spyOn(PackageTree, "findOnPath").mockImplementation((name) =>

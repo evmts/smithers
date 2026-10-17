@@ -12,6 +12,7 @@ import * as Path from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import { approvalRevision } from "../src/Cli.ts"
 import type * as PackageExec from "../src/PackageExec.ts"
+import { writeExecutable } from "./helpers/Executable.ts"
 import { writeImageArchive } from "./helpers/OciArchive.ts"
 import { serve } from "./helpers/ServeCli.ts"
 
@@ -86,7 +87,7 @@ export const Workspace = S.Workspace("approval-fixture", {
   const archive = Path.join(bin, "image.tar")
   const [built] = await writeImageArchive(archive)
   const failing = (options.failing ?? []).map((tag) => `*:${tag}) exit 23;;`).join("\n  ")
-  await Fs.writeFile(
+  await writeExecutable(
     Path.join(bin, "docker"),
     `#!/bin/sh
 printf '%s\\n' "$*" >> '${log}'
@@ -110,8 +111,7 @@ push)
   esac;;
 *) exit 97;;
 esac
-`,
-    { mode: 0o755 }
+`
   )
   return {
     root,

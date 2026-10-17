@@ -3,6 +3,7 @@ import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
+import { writeExecutable } from "./helpers/Executable.ts"
 import { serve } from "./helpers/ServeCli.ts"
 import { write } from "./helpers/WriteFile.ts"
 
@@ -192,30 +193,31 @@ export const Package = S.Package({ targets: { markdown, tutorial } })
         // below the root package, or the compiler could not resolve a bare
         // specifier the block imports. Tool runs execute in a scratch copy, so
         // the check lives in the fake rather than in a file the test reads back.
-        [
-          "#!/bin/sh",
-          "for last; do :; done",
-          "case \"$*\" in *engine.ts*) echo \"fake tsc: context file compiled as a block: $*\" >&2; exit 1 ;; esac",
-          "case \"$last\" in",
-          "  docs/node_modules/.cache/smithers-build/markdown-*/src/run.ts)",
-          "    dir=$(dirname \"$(dirname \"$last\")\")",
-          "    grep -q 'export const greet' \"$dir/greeting.ts\" && grep -q 'export const twice' \"$dir/greeting.ts\" &&",
-          "      grep -q docs-fixture \"$dir/engine.ts\" && ! grep -rq 'return greet' \"$dir\" && exit 0",
-          "    echo \"fake tsc: tutorial scratch files wrong in $dir\" >&2; exit 1 ;;",
-          "  docs/node_modules/.cache/smithers-build/markdown-*/block-0.ts) grep -q docs-fixture \"$last\" && exit 0 ;;",
-          "  node_modules/.cache/smithers-build/markdown-*/block-0.ts) grep -q docs-fixture \"$last\" || exit 0 ;;",
-          "esac",
-          "echo \"fake tsc: block outside its package: $last\" >&2",
-          "exit 1",
-          ""
-        ].join("\n")
+        `#!/usr/bin/env node
+const fs = require("node:fs"); const path = require("node:path");
+const args = process.argv.slice(2); const last = args.at(-1) ?? "";
+const normalized = last.split(path.sep).join("/");
+const fail = message => { console.error("fake tsc: " + message); process.exit(1) };
+if (args.some(arg => arg.includes("engine.ts"))) fail("context file compiled as a block: " + args.join(" "));
+if (/^docs\\/node_modules\\/\\.cache\\/smithers-build\\/markdown-[^/]+\\/src\\/run\\.ts$/.test(normalized)) {
+  const directory = path.dirname(path.dirname(last));
+  const greeting = fs.readFileSync(path.join(directory, "greeting.ts"), "utf8");
+  const engine = fs.readFileSync(path.join(directory, "engine.ts"), "utf8");
+  const files = fs.readdirSync(directory, { recursive: true });
+  const fragment = files.some(file => { const at = path.join(directory, file); return fs.statSync(at).isFile() && fs.readFileSync(at, "utf8").includes("return greet") });
+  if (greeting.includes("export const greet") && greeting.includes("export const twice") && engine.includes("docs-fixture") && !fragment) process.exit(0);
+  fail("tutorial scratch files wrong in " + directory);
+}
+if (/^docs\\/node_modules\\/\\.cache\\/smithers-build\\/markdown-[^/]+\\/block-0\\.ts$/.test(normalized) && fs.readFileSync(last, "utf8").includes("docs-fixture")) process.exit(0);
+if (/^node_modules\\/\\.cache\\/smithers-build\\/markdown-[^/]+\\/block-0\\.ts$/.test(normalized) && !fs.readFileSync(last, "utf8").includes("docs-fixture")) process.exit(0);
+fail("block outside its package: " + last);
+`
       ],
-      ["size-limit", "#!/bin/sh\nexit 0\n"],
-      ["changeset", "#!/bin/sh\nprintf next > version.txt\n"]
+      ["size-limit", "#!/usr/bin/env node\nprocess.exit(0)\n"],
+      ["changeset", "#!/usr/bin/env node\nrequire(\"node:fs\").writeFileSync(\"version.txt\", \"next\")\n"]
     ] as const
   ) {
-    await write(root, `node_modules/.bin/${name}`, body)
-    await Fs.chmod(NodePath.join(root, "node_modules", ".bin", name), 0o755)
+    await writeExecutable(NodePath.join(root, "node_modules", ".bin", name), body)
   }
   NodeChildProcess.execFileSync("git", ["-C", root, "init", "-q"])
   NodeChildProcess.execFileSync("git", ["-C", root, "add", "-A"])
@@ -299,7 +301,10 @@ describe("Node lane package execution", () => {
 
   it("removes Markdown scratch trees when the compiler fails", async () => {
     const root = await markdownFixture()
-    await write(root, "node_modules/.bin/tsc", "#!/bin/sh\necho compiler-failed >&2\nexit 1\n")
+    await writeExecutable(
+      NodePath.join(root, "node_modules/.bin/tsc"),
+      "#!/usr/bin/env node\nconsole.error(\"compiler-failed\"); process.exit(1)\n"
+    )
     const result = await serve(root, ["//:markdown"])
     expect(result.exitCode).toBe(1)
     expect(result.logs).toContain("compiler-failed")

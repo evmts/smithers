@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import * as DockerExec from "../src/DockerExec.ts"
 import type * as HostProbes from "../src/internal/HostProbes.ts"
 import * as PackageTree from "../src/PackageTree.ts"
+import { writeExecutable } from "./helpers/Executable.ts"
 import { imageArchive, tar } from "./helpers/OciArchive.ts"
 import { serve } from "./helpers/ServeCli.ts"
 
@@ -16,7 +17,7 @@ let planningPath: string
 beforeAll(async () => {
   planningPath = await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-push-host-"))
   directories.push(planningPath)
-  await Fs.writeFile(Path.join(planningPath, "docker"), "#!/bin/sh\nexit 97\n", { mode: 0o755 })
+  await writeExecutable(Path.join(planningPath, "docker"), "#!/bin/sh\nexit 97\n")
 })
 afterAll(async () => {
   await Promise.all(directories.map((directory) => Fs.rm(directory, { recursive: true, force: true })))
@@ -131,7 +132,7 @@ describe("Docker push public boundary", () => {
       const bin = Path.join(root, "controlled-bin")
       await Fs.mkdir(bin)
       const calls = Path.join(root, "docker-calls.txt")
-      await Fs.writeFile(
+      await writeExecutable(
         Path.join(bin, "docker"),
         `#!/bin/sh
 printf '%s\\n' "$*" >> '${calls}'
@@ -139,8 +140,7 @@ case "$1" in
 --version|info|buildx) echo 'fixture engine';;
 *) exit 97;;
 esac
-`,
-        { mode: 0o755 }
+`
       )
       const result = await serve(root, args, {
         environment: { ...process.env, PATH: `${bin}${Path.delimiter}${process.env["PATH"] ?? ""}` }
