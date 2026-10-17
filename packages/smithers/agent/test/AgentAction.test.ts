@@ -1404,6 +1404,32 @@ const legacyRuntime = (name: string) =>
   )
 
 describe("AgentAction event sink", () => {
+  it("names a legacy runtime's structured failure without inventing a node identity", async () => {
+    const requests: string[] = []
+    const result = await Effect.runPromise(Effect.result(
+      ReviewFlow.execute({ diff: "diff" }, { executionId: "legacy-structured-failure" }).pipe(
+        Effect.provide(stack(
+          Layer.mergeAll(Reviewer.layer, Interpreter.layer(ReviewFlow)).pipe(
+            Layer.provideMerge(legacyRuntime(Reviewer.name))
+          ),
+          host,
+          scripted([answering("not a review"), answering("still not a review")], requests)
+        ))
+      )
+    ))
+    expect(result).toMatchObject({
+      _tag: "Failure",
+      failure: {
+        _tag: "/harness/StructuredOutputFailure",
+        action: Reviewer.name,
+        message: expect.stringMatching(/^agent\/test\/Reviewer: /)
+      }
+    })
+    if (result._tag !== "Failure") throw new Error("expected a structured failure")
+    expect(result.failure).not.toHaveProperty("nodeId")
+    expect(requests).toHaveLength(2)
+  })
+
   const decodes = answering(`{"approved":true,"issues":[]}`)
 
   it.each(["absent", "observer", "source"] as const)(
