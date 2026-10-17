@@ -521,6 +521,19 @@ func testScratchRebaseComposed(t *testing.T, conflict, asleep bool, options ...s
 		}
 	}
 	final := request("GET", branchPath+"?rebase_request="+receiptKey, "", nil, 200)
+	// A daemon capture can still be draining when a worker poll returns.
+	// Poll count is not a completion receipt; drive the worker until its
+	// persisted execution is complete, retaining the exact receipt below.
+	require.Eventually(t, func() bool {
+		if execution, ok := final["rebase_execution"].(map[string]any); ok && execution["state"] == "completed" {
+			return true
+		}
+		_, err = q.RequestMythicalStack(ctx, f.row.RepositoryID)
+		require.NoError(t, err)
+		require.NoError(t, service.PollOnce(ctx))
+		final = request("GET", branchPath+"?rebase_request="+receiptKey, "", nil, 200)
+		return false
+	}, 5*time.Second, 10*time.Millisecond, "rebase completion receipt: %v", final)
 	require.Equal(t, map[string]any{"onto": onto, "state": "completed"}, final["rebase_execution"])
 	require.NotContains(t, final, "rebase")
 	head := git("-C", store, "rev-parse", "refs/heads/"+branch)
