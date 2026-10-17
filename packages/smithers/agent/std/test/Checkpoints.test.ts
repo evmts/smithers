@@ -10,9 +10,10 @@ import { Cause, Effect, Exit, Layer, Option, Sink, Stream } from "effect"
 import type * as ChildProcess from "effect/process/ChildProcess"
 import { ExitCode, makeHandle, ProcessId } from "effect/process/ChildProcessSpawner"
 import { readFileSync } from "node:fs"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import * as Checkpoints from "../src/Checkpoints.ts"
 import * as Container from "../src/Container.ts"
+import { GitWorktree } from "../src/internal/GitWorktree.ts"
 import * as Relocate from "../src/Relocate.ts"
 
 interface Response {
@@ -169,6 +170,34 @@ const publishScript = [
 ].join("; ")
 
 describe("Checkpoints.makeGit capture", () => {
+  it.each([
+    ["TMPDIR", "/native/tmp/", "/native/tmp"],
+    ["TEMP", "C:\\Users\\runner\\Temp\\", "C:/Users/runner/Temp"],
+    ["TMP", "D:/scratch/", "D:/scratch"]
+  ])("uses %s for both native Git and shell index staging", async (variable, value, expected) => {
+    for (const name of ["TMPDIR", "TEMP", "TMP"]) vi.stubEnv(name, undefined)
+    vi.stubEnv(variable, value)
+    const spawns: Array<ReadonlyArray<string>> = []
+    try {
+      await Effect.runPromise(
+        GitWorktree.withShadow({
+          root: "/work/repo",
+          toplevel: "/work/repo",
+          common: "/work/repo/.git",
+          index: "/work/repo/.git/index",
+          objectFormat: "sha1",
+          settings: []
+        }, (shadow) => shadow.adoptIndex).pipe(Effect.provide(host(spawns, [])))
+      )
+      const directory = spawns.find((argv) => argv.includes("--bare"))!.at(-1)!
+      expect(directory).toMatch(new RegExp(`^${expected}/smithers-git-[0-9a-f-]{36}$`))
+      expect(spawns.find((argv) => argv[0] === "sh")!.at(-1)).toBe(`${directory}/index`)
+      expect(spawns.at(-1)).toEqual(["rm", "-rf", "--", directory])
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it("records the working tree through a shadow GIT_DIR, without touching the index or the worktree", async () => {
     const spawns: Array<ReadonlyArray<string>> = []
     const envs: Array<Readonly<Record<string, string>> | undefined> = []

@@ -1605,6 +1605,10 @@ const visit = async (
   ): Promise<Array<string>> => {
     const resolved: Array<string> = []
     for (const [index, entry] of entries.entries()) {
+      if (index === 0 && process.platform === "win32" && (entry === "/bin/sh" || entry === "/bin/bash")) {
+        resolved.push(await resolveToken(Shell.toolToken({ _tag: "HostBin", name: entry.slice(5) } as never)))
+        continue
+      }
       if (entry.startsWith("{smthrs:tool:") && entry.endsWith("}")) {
         const reference = JSON.parse(entry.slice("{smthrs:tool:".length, -1)) as Record<string, unknown>
         if (reference["_tag"] === "GoRun" || reference["_tag"] === "RuntimeNpx") {
@@ -2905,7 +2909,10 @@ const visit = async (
   // A command-form target spawns a shell, but its leading literal program
   // can change independently of that shell. Dynamic commands still need
   // declared bin/using tools to identify their executable dependencies.
-  if (argv?.[0] === "/bin/sh" && argv[1] === "-c") {
+  if (
+    ((rule.startsWith("Shell.") && (attrs as Shell.ExecAttrs).shell !== undefined) || argv?.[0] === "/bin/sh") &&
+    argv?.[1] === "-c"
+  ) {
     const program = argv[2]?.match(/^\s*(?:exec\s+)?([A-Za-z0-9_./+-]+)(?:\s|$)/)?.[1]
     if (program !== undefined) executableCommands.push(program)
   }

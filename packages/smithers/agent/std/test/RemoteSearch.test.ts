@@ -54,7 +54,7 @@ beforeAll(() => {
   file("edge/unicode.txt", "naïve needle ü 日本語 🎉\n")
   file("edge/invalid-utf8.txt", new Uint8Array([110, 101, 101, 100, 108, 101, 32, 0xff, 10]))
   file("edge/binary.bin", "needle before\n\0needle after\n")
-  file("edge/line\nbreak.txt", "needle in an odd name\n")
+  file(process.platform === "win32" ? "edge/line 'break.txt" : "edge/line\nbreak.txt", "needle in an odd name\n")
   file("edge/-leading.txt", "needle leading dash\n")
   file("edge/empty.txt", "")
   file("edge/target.txt", "needle through a link\n")
