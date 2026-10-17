@@ -57,9 +57,9 @@ it.each(["new request", "committed request before native cleanup", "cancel with 
   async (mode) => {
     const root = await realpath(await mkdtemp(join(tmpdir(), "smithers-cancelled-module-")))
     try {
-      await mkdir(join(root, "flows", "cleanup"), { recursive: true })
+      await mkdir(join(root, ".smithers", "flows", "cleanup"), { recursive: true })
       await symlink(modules, join(root, "node_modules"), "dir")
-      await writeFile(join(root, "flows", "cleanup", "flow.ts"), source)
+      await writeFile(join(root, ".smithers", "flows", "cleanup", "flow.ts"), source)
       await writeFile(join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n")
       const marker = join(root, "entered")
       const runId = await Effect.runPromise(

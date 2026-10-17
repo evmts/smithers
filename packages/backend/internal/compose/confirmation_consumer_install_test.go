@@ -31,8 +31,8 @@ func TestConfirmTodoConsumerInstall(t *testing.T) {
 // doors. Diff bytes remain revision context; approval never applies a patch.
 func TestConfirmFlowEditConsumerInstall(t *testing.T) {
 	for _, tc := range []struct{ name, prompt, body string }{
-		{"request", "Change flows/todo/flow.ts: Run tests; start from the built-in composition when no override exists", `{"request":"Run tests"}`},
-		{"diff", "Change flows/todo/flow.ts: Run tests; start from the built-in composition when no override exists\n\nProposed diff (untrusted context):\n> diff --git a/flows/todo/flow.ts b/flows/todo/flow.ts\n> +pnpm test\n> +```\n> +<script>untrusted</script>", `{"request":"Run tests","diff":"diff --git a/flows/todo/flow.ts b/flows/todo/flow.ts\n+pnpm test\n+\u0060\u0060\u0060\n+<script>untrusted</script>"}`},
+		{"request", "Change .smithers/flows/todo/flow.ts: Run tests; start from the built-in composition when no override exists", `{"request":"Run tests"}`},
+		{"diff", "Change .smithers/flows/todo/flow.ts: Run tests; start from the built-in composition when no override exists\n\nProposed diff (untrusted context):\n> diff --git a/.smithers/flows/todo/flow.ts b/.smithers/flows/todo/flow.ts\n> +pnpm test\n> +```\n> +<script>untrusted</script>", `{"request":"Run tests","diff":"diff --git a/.smithers/flows/todo/flow.ts b/.smithers/flows/todo/flow.ts\n+pnpm test\n+\u0060\u0060\u0060\n+<script>untrusted</script>"}`},
 	} {
 		for _, via := range []string{"codex", "claude-code", "cli", "smithers"} {
 			t.Run(tc.name+"/"+via, func(t *testing.T) {
@@ -45,9 +45,9 @@ func TestConfirmFlowEditConsumerInstall(t *testing.T) {
 func TestConfirmAgentEditConsumerInstall(t *testing.T) {
 	for _, tc := range []struct{ role, title, prompt string }{
 		{"app", "Change the App agent: Be brief", "Change instructions for the App agent in .smithers/instructions/app.md: Be brief; keep current instructions until the TODO merges"},
-		{"planner", "Change the Planner agent: Be brief", "Change instructions for the Planner agent in flows/todo/flow.ts: Be brief; keep current instructions until the TODO merges"},
-		{"implementer", "Change the Implementer agent: Be brief", "Change instructions for the Implementer agent in flows/todo/flow.ts: Be brief; keep current instructions until the TODO merges"},
-		{"reviewer", "Change the Reviewer agent: Be brief", "Change instructions for the Reviewer agent in flows/todo/flow.ts: Be brief; keep current instructions until the TODO merges"},
+		{"planner", "Change the Planner agent: Be brief", "Change instructions for the Planner agent in .smithers/flows/todo/flow.ts: Be brief; keep current instructions until the TODO merges"},
+		{"implementer", "Change the Implementer agent: Be brief", "Change instructions for the Implementer agent in .smithers/flows/todo/flow.ts: Be brief; keep current instructions until the TODO merges"},
+		{"reviewer", "Change the Reviewer agent: Be brief", "Change instructions for the Reviewer agent in .smithers/flows/todo/flow.ts: Be brief; keep current instructions until the TODO merges"},
 	} {
 		t.Run(tc.role, func(t *testing.T) {
 			testConfirmTodoConsumerInstall(t, tc.title, tc.prompt, "codex", `{"request":"Be brief"}`, "/api/agents/"+tc.role+"/edit")
@@ -191,7 +191,7 @@ func testConfirmTodoConsumerInstall(t *testing.T, wantTitle, wantPrompt, via str
 		if endpoint == "/api/agents/app/edit" {
 			require.NoError(t, q.UpsertInstallSetting(ctx, db.UpsertInstallSettingParams{Key: fmt.Sprintf("agent.instructions.main:%d", repo.ID), Value: []byte(`"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"`)}))
 		} else {
-			_, err = q.InsertFlowVersion(ctx, repo.ID, "todo", "flows/todo/flow.ts", strings.Repeat("a", 40), strings.Repeat("b", 64), "loaded", "", []byte(`{"steps":[]}`))
+			_, err = q.InsertFlowVersion(ctx, repo.ID, "todo", ".smithers/flows/todo/flow.ts", strings.Repeat("a", 40), strings.Repeat("b", 64), "loaded", "", []byte(`{"steps":[]}`))
 			require.NoError(t, err)
 			_, err = q.ActivateFlowVersion(ctx, repo.ID, "todo", strings.Repeat("b", 64))
 			require.NoError(t, err)

@@ -1,0 +1,184 @@
+package compose
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	"github.com/smithersai/smithers/packages/backend/internal/routes"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
+	"github.com/smithersai/smithers/packages/backend/internal/sse"
+	"github.com/stretchr/testify/require"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestInstallMemberNotificationReadsPostgres(t *testing.T) {
+	f := newLandingGateFixtureWithFactory(t, nil, "", true)
+	cfg := testConfigAllFlagsOn()
+	cfg.Auth.Mode = "selfhost"
+	cfg.Auth.SessionCookieName = "session"
+	cfg.Server.PublicURL = "http://example.com"
+	cfg.Server.AllowedOrigins = []string{cfg.Server.PublicURL}
+	service := services.NewNotificationServiceWithPool(f.q, f.pool)
+	broker := sse.NewBroker(f.pool)
+	require.NoError(t, broker.Start(f.ctx))
+	t.Cleanup(broker.Stop)
+	router := buildRouterCompat(cfg, f.q, f.pool, &routes.RepoHandler{}, &routes.AuthHandler{}, &routes.UserHandler{}, &routes.SSHKeyHandler{}, &routes.LabelHandler{}, &routes.OrgHandler{}, &routes.LandingHandler{}, &routes.SearchHandler{Service: &mockRouterSearchService{}}, &routes.IssueHandler{}, nil, &routes.GitSmartHandler{Service: &mockRouterGitService{}}, &routes.NotificationHandler{Service: service, Broker: broker}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, &routes.WorkspaceHandler{}, nil, nil, nil, nil, nil, nil)
+	landing, err := f.q.CreateLandingRequest(f.ctx, db.CreateLandingRequestParams{RepositoryID: f.repoID, AuthorID: f.owner.ID, Title: "Notification source", TargetBookmark: "main", StackSize: 1})
+	require.NoError(t, err)
+	baseline, err := f.q.CreateNotification(f.ctx, db.CreateNotificationParams{UserID: f.other.ID, SourceType: "landing", SourceID: pgtype.Int8{Int64: landing.ID, Valid: true}, Subject: "Earlier member notice", Body: "Earlier member notice"})
+	require.NoError(t, err)
+	for _, item := range []struct {
+		user int64
+		body string
+	}{{f.owner.ID, "owner-private-notification"}, {f.other.ID, "member-private-notification"}} {
+		_, err = f.q.CreateNotification(f.ctx, db.CreateNotificationParams{UserID: item.user, SourceType: "landing", SourceID: pgtype.Int8{Int64: landing.ID, Valid: true}, Subject: item.body, Body: item.body})
+		require.NoError(t, err)
+	}
+	// The exclusive-lock doors are retired, but persisted join-request notices
+	// retain their repository authorization and member privacy.
+	var joinRequestID int64
+	require.NoError(t, f.pool.QueryRow(f.ctx, `INSERT INTO branch_lock_join_requests(repository_id,branch,requester_id,lock_generation) VALUES($1,'old-branch',$2,'11111111-1111-4111-8111-111111111111') RETURNING id`, f.repoID, f.other.ID).Scan(&joinRequestID))
+	_, err = f.q.CreateNotification(f.ctx, db.CreateNotificationParams{UserID: f.other.ID, SourceType: "branch_lock", SourceID: pgtype.Int8{Int64: joinRequestID, Valid: true}, Subject: "historical-lock-notification", Body: "historical-lock-notification"})
+	require.NoError(t, err)
+	_, err = f.q.CreateNotification(f.ctx, db.CreateNotificationParams{UserID: f.other.ID, SourceType: "branch_lock", SourceID: pgtype.Int8{Int64: joinRequestID + 1, Valid: true}, Subject: "missing-lock-notification", Body: "missing-lock-notification"})
+	require.NoError(t, err)
+	cookie := "workspace-list-member"
+	sum := sha256.Sum256([]byte(cookie))
+	_, err = f.q.CreateAuthSession(f.ctx, db.CreateAuthSessionParams{UserID: f.other.ID, Username: f.other.Username, SessionKey: hex.EncodeToString(sum[:]), ExpiresAt: time.Now().Add(time.Hour)})
+	require.NoError(t, err)
+	external := f.token(f.other, "workspace-list-external", "read:user,via:codex", true)
+	app := f.token(f.other, "workspace-list-app", "read:user,via:smithers,terminal-session:"+liveAppTurnCredentialFixture(t, f.pool, f.other.ID)+"/1", true)
+	run := f.token(f.other, "workspace-list-run", "read:user", true)
+	machine := f.token(f.other, "workspace-list-machine", "read:user,"+middleware.WorkspaceRestrictionScope("11111111-1111-4111-8111-111111111111"), true)
+	for _, actor := range []struct {
+		name, bearer, cookie string
+		status               int
+	}{{"person", "", cookie, 200}, {"legacy PAT", f.token(f.other, "ticket-legacy", "read:user", false), "", 200}, {"external", external, "", 200}, {"app", app, "", 200}, {"run", run, "", 403}, {"machine", machine, "", 403}, {"scope", f.token(f.other, "list-scope", "read:repository,via:codex", true), "", 403}, {"anonymous", "", "", 401}} {
+		t.Run(actor.name+" ticket stream", func(t *testing.T) {
+			// Normal clients mint through the composed HTTP door. Existing system
+			// grants are seeded directly only to test refusal at redemption.
+			mint := httptest.NewRequest("POST", cfg.Server.PublicURL+"/api/auth/sse-ticket", nil)
+			mint.Header.Set("Origin", cfg.Server.PublicURL)
+			if actor.bearer != "" {
+				mint.Header.Set("Authorization", "Bearer "+actor.bearer)
+			}
+			if actor.cookie != "" {
+				mint.AddCookie(&http.Cookie{Name: "session", Value: actor.cookie})
+				mint.AddCookie(&http.Cookie{Name: middleware.CSRFCookieName, Value: "ticket-csrf"})
+				mint.Header.Set("X-CSRF-Token", "ticket-csrf")
+			}
+			issued := httptest.NewRecorder()
+			router.ServeHTTP(issued, mint)
+			if actor.status != 200 {
+				require.NotEqual(t, 200, issued.Code, issued.Body.String())
+				if actor.bearer == "" {
+					return
+				}
+			} else {
+				require.Equal(t, 200, issued.Code, issued.Body.String())
+			}
+			var result services.SSETicketResult
+			if actor.status == 200 {
+				require.NoError(t, json.Unmarshal(issued.Body.Bytes(), &result))
+			} else {
+				digest := sha256.Sum256([]byte(actor.bearer))
+				info, err := middleware.ReloadCredential(f.ctx, f.q, middleware.Credential{TokenHash: hex.EncodeToString(digest[:])}, time.Now())
+				require.NoError(t, err)
+				require.True(t, middleware.BindInstallCredential(info))
+				result, err = services.NewSSETicketService(f.q).CreateTicket(f.ctx, f.other.ID, true, info.RawScopes, info.TokenHash)
+				require.NoError(t, err)
+			}
+			require.NotEmpty(t, result.Ticket)
+			path := cfg.Server.PublicURL + "/api/notifications/events/stream?ticket=" + url.QueryEscape(result.Ticket)
+			req := httptest.NewRequest("GET", path, nil)
+			req.Header.Set("Last-Event-ID", "0")
+			ctx, cancel := context.WithTimeout(req.Context(), 5*time.Second)
+			defer cancel()
+			out := httptest.NewRecorder()
+			router.ServeHTTP(&notificationAuthorizationRecorder{ResponseRecorder: out, cancel: cancel}, req.WithContext(ctx))
+			require.Equal(t, actor.status, out.Code, out.Body.String())
+			if actor.status == 200 {
+				require.Contains(t, out.Body.String(), "member-private-notification")
+				require.NotContains(t, out.Body.String(), "owner-private-notification")
+			} else {
+				require.NotContains(t, out.Body.String(), "member-private-notification")
+			}
+			replay := httptest.NewRecorder()
+			router.ServeHTTP(replay, httptest.NewRequest("GET", path, nil))
+			require.Equal(t, 401, replay.Code, replay.Body.String())
+		})
+
+		for _, path := range []string{"/api/notifications/list", "/api/notifications/events", "/api/notifications/preferences", "/api/notifications", "/api/notifications/events/stream"} {
+			t.Run(actor.name+path, func(t *testing.T) {
+				req := httptest.NewRequest("GET", cfg.Server.PublicURL+path, nil)
+				if actor.bearer != "" {
+					req.Header.Set("Authorization", "Bearer "+actor.bearer)
+				}
+				if actor.cookie != "" {
+					req.AddCookie(&http.Cookie{Name: "session", Value: actor.cookie})
+				}
+				var commands []string
+				req = req.WithContext(services.WithAuthorizationObserver(req.Context(), func(command string) { commands = append(commands, command) }))
+				out := httptest.NewRecorder()
+				if path == "/api/notifications" || strings.HasSuffix(path, "/stream") {
+					ctx, cancel := context.WithTimeout(req.Context(), 5*time.Second)
+					defer cancel()
+					req = req.WithContext(ctx)
+					req.Header.Set("Last-Event-ID", "0")
+					if path == "/api/notifications" {
+						req.Header.Set("Last-Event-ID", strconv.FormatInt(baseline.ID, 10))
+					}
+					router.ServeHTTP(&notificationAuthorizationRecorder{ResponseRecorder: out, cancel: cancel}, req)
+					if actor.status == 200 {
+						require.Contains(t, out.Header().Get("Content-Type"), "text/event-stream")
+					}
+				} else {
+					router.ServeHTTP(out, req)
+				}
+				require.Equal(t, actor.status, out.Code, out.Body.String())
+				if actor.status == 401 {
+					require.Empty(t, commands)
+				} else {
+					require.Equal(t, []string{"self.read"}, commands)
+				}
+				if actor.status == 200 {
+					if path != "/api/notifications/preferences" {
+						require.Contains(t, out.Body.String(), "member-private-notification")
+						if path != "/api/notifications" && !strings.HasSuffix(path, "/stream") {
+							require.Contains(t, out.Body.String(), "historical-lock-notification")
+							require.NotContains(t, out.Body.String(), "missing-lock-notification")
+						}
+					}
+					require.NotContains(t, out.Body.String(), "owner-private-notification")
+				} else {
+					require.NotContains(t, out.Body.String(), "member-private-notification")
+				}
+			})
+		}
+	}
+}
+
+// Stop only after the real durable stream has delivered the member's stored
+// record. Timeout is a test bound, never evidence of successful delivery.
+type notificationAuthorizationRecorder struct {
+	*httptest.ResponseRecorder
+	cancel context.CancelFunc
+}
+
+func (w *notificationAuthorizationRecorder) Write(body []byte) (int, error) {
+	n, err := w.ResponseRecorder.Write(body)
+	if strings.Contains(w.Body.String(), "member-private-notification") {
+		w.cancel()
+	}
+	return n, err
+}

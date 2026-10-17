@@ -11,7 +11,7 @@
 	"compatibility_flags": ["nodejs_compat"],
 	"workers_dev": false,
 	"observability": { "enabled": true },
-	// One route per retired docs site and no other hostname: scripts/package-docs.mjs
+	// One route per retired docs site and no other hostname: flows/docs-sync/package-docs.mjs
 	// legacySites, held here by src/docsRedirect.test.ts. A route outranks the old
 	// site Worker's Custom Domain on the same hostname, so one deploy cuts every site over.
 	// No wildcard route: *.smithers.sh/* would run this Worker on every other subdomain.

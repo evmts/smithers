@@ -82,8 +82,8 @@ describe("approval binds execution across independent processes", { timeout: jou
   ])("refuses an old approval after changing %s, before any provider dispatch", async (_name, changed) => {
     const root = mkdtempSync(join(tmpdir(), "smithers-approved-content-"))
     try {
-      const flow = join(root, "flows", "review", "flow.mdx")
-      mkdirSync(join(root, "flows", "review"), { recursive: true })
+      const flow = join(root, ".smithers", "flows", "review", "flow.mdx")
+      mkdirSync(join(root, ".smithers", "flows", "review"), { recursive: true })
       writeFileSync(flow, source())
       const first = await runChild("plan", root)
       const cardFile = join(root, "approved.json")
@@ -104,8 +104,8 @@ describe("approval binds execution across independent processes", { timeout: jou
   it("executes unchanged approved bytes after the approving process exits", async () => {
     const root = mkdtempSync(join(tmpdir(), "smithers-approved-unchanged-"))
     try {
-      mkdirSync(join(root, "flows", "review"), { recursive: true })
-      writeFileSync(join(root, "flows", "review", "flow.mdx"), source())
+      mkdirSync(join(root, ".smithers", "flows", "review"), { recursive: true })
+      writeFileSync(join(root, ".smithers", "flows", "review", "flow.mdx"), source())
       const first = await runChild("plan", root)
       const cardFile = join(root, "approved.json")
       writeFileSync(cardFile, JSON.stringify(first.card))

@@ -1,6 +1,6 @@
 # Custom agent example
 
-One custom agent, `flows/review/flow.mdx`: a markdown flow whose body is the
+One custom agent, `.smithers/flows/review/flow.mdx`: a markdown flow whose body is the
 agent's prompt and whose frontmatter picks its model, effort and envelope.
 
 ```sh

@@ -353,9 +353,9 @@ export const supervisorStance = SupervisorMemory.stance
 export { workspaceSshPrefix } from "./internal/backend/WorkspaceSsh.ts"
 
 /**
- * The flow sources a local CLI discovers: the project `flows/` directory, whose
- * per-directory layout is the convention in
- * `docs/specs/Specs/Flow Directory.md`.
+ * The flow sources a local CLI discovers: `Registry.projectSource`, the
+ * project's `.smithers/flows/` directory with the retired root `flows/`
+ * probed for its one warning (mvp.md M-49).
  *
  * Use this when building a project registry. It is pure and cannot fail; the
  * discovery layer reports unreadable or malformed sources later.

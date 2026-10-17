@@ -4,7 +4,7 @@ import { agent, at, claude_code, outside, person, will_person } from "./_shared.
 import { type Story, story } from "./_story.ts"
 
 type FileStory = Story<FileCard, FileView, "hover" | "definition">
-const path = "flows/todo/flow.ts"
+const path = ".smithers/flows/todo/flow.ts"
 const text = "export default Flow.make(\"todo\", { description: \"Complete one TODO\" })\n"
 const base: FileCard = {
   path,
@@ -116,7 +116,7 @@ export const fixtures = {
   ),
   renamed: file(
     "Renamed by Ben",
-    { ...base, gone: { kind: "renamed", to: "flows/todo-next/flow.ts", by: person } },
+    { ...base, gone: { kind: "renamed", to: ".smithers/flows/todo-next/flow.ts", by: person } },
     {
       actions: [{ tag: "file.follow-rename", label: "Follow", args: { path }, primary: true }],
       expect: [path]

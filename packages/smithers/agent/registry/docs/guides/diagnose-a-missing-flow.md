@@ -5,7 +5,7 @@ sidebar:
   order: 2
 ---
 
-A scan never fails because one entry is wrong. `flows/` is a directory a person
+A scan never fails because one entry is wrong. `.smithers/flows/` is a directory a person
 edits, so at any moment one file in it is mid-edit or malformed, and refusing
 the whole catalog for it would take every unrelated command down too. Anything
 a scan can survive becomes a `DiscoveryWarning` instead, and the warnings are
@@ -40,10 +40,11 @@ These codes mean a file or directory contributed nothing:
 | Code                  | What happened                                                                                                                                                                                                              | What to change                                                                                                         |
 | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `missing_description` | A markdown flow has no non-empty frontmatter `description`, or a module flow's default `Flow.make` value has no literal `description`. Discovery needs one, because it is what a model and an autocomplete list are shown. | Add a one-line description. In a module, write it as a string literal; discovery reads it without evaluating the file. |
-| `root_level_entry`    | An entry file sits directly in the root of a path-named source, so there are no directory segments to name it.                                                                                                             | Move it into a subdirectory: `flows/review/flow.mdx`, not `flows/flow.mdx`.                                            |
+| `root_level_entry`    | An entry file sits directly in the root of a path-named source, so there are no directory segments to name it.                                                                                                             | Move it into a subdirectory: `review/flow.mdx`, not `flow.mdx`.                                                        |
 | `entry_too_large`     | The file is past `Discovery.entrySizeLimit`, 4 MiB. The message reports the byte count.                                                                                                                                    | Check for a build artifact or generated file under the source root.                                                    |
 | `unreadable`          | A directory or file could not be read or inspected. `cause` carries the host error.                                                                                                                                        | Fix the permission or the broken link.                                                                                 |
 | `outside_root`        | A directory or selected entry file resolves outside `Source.confinementRoot`, which packs set to their root, or its real path cannot be resolved. The target is skipped before reading its contents.                       | Move the target inside the pack and update the symlink.                                                                |
+| `retired_root`        | The project still holds flow files under a root `.smithers/flows/`, which Smithers no longer reads. `path` is that directory. None of its flows load.                                                                                 | Move each flow directory to `.smithers/flows/`, keeping its name.                                                      |
 
 Two more stop the walk rather than one entry:
 

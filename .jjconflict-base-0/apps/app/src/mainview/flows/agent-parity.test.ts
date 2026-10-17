@@ -1,0 +1,498 @@
+import { savedDiffArgs } from "./DiffPayload"
+import { agentVisibleCatalog } from "./agentTools"
+/*
+ * The three-door law (apps/app/AGENTS.md; .specs/engineering/spec.md §6.1):
+ * every act is ONE flow with three doors — slash, button, agent. `userOnly`
+ * is an enumerated exception for acts that are physically the human's
+ * gesture or that the human alone may answer, and every such flow names its
+ * reason in the registry. Consequential acts are agent-invocable WITH
+ * `confirm`; they are never user-only because they are consequential.
+ *
+ * Will, 2026-09-03, after the agent said "I can't launch a Claude code
+ * session": "anything we can do in the ui the agent should be able to do too".
+ * This file is that rule as a gate: the allowlist below is every user-only
+ * flow with its reason, and nothing else may be user-only.
+ */
+import type { StorageApi } from "@tanstack/db"
+import { describe, expect, test } from "bun:test"
+import { RuntimeCapabilitySchema } from "@smthrs/rpc/AppBootstrap"
+import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
+import { cloudCapabilities } from "@smthrs/rpc/HostCapabilities"
+import { INSTALL_HOST_COMMANDS } from "@smthrs/rpc/AgentCommands"
+
+import type { AgentPort } from "../runtime/AgentPort"
+import { createAppController } from "../state/AppController"
+import { createAppStore } from "../state/AppStore"
+import type { AppStore } from "../state/AppStore"
+import { loadBox, TEST_BOX } from "../state/TestFixtures"
+import { STORAGE_RECOVERY_USER_ONLY_REASON, STORAGE_RESET_USER_ONLY_REASON } from "../state/StorageRecoveryContract"
+import { modelInvocable, nameOf } from "./registry"
+import { PALETTE_ACTIONS_REASON, PALETTE_OPEN_REASON } from "./entries/palette"
+import { WIKI_ATTACH_USER_ONLY_REASON, WIKI_HEADING_USER_ONLY_REASON } from "@smthrs/ui/app-operations/wiki"
+
+/**
+ * Every user-only flow, with the reason the registry states. A flow user-only
+ * for a reason not written here fails the gate; a flow written here that is
+ * no longer user-only fails it too.
+ */
+const USER_ONLY_ALLOWLIST: Readonly<Record<string, string>> = {
+  "auth.email": "sign-in is the human's browser gesture; the agent renders the step with auth.prompt",
+  "account.show": "Install status requires the owner’s person session",
+  "repo.choose": "Install setup requires the owner’s person session",
+  "repo.create": "Install setup requires the owner’s person session",
+  "model.new": "Only the owner’s browser session configures models",
+  "model.edit": "Only the owner’s browser session configures models",
+  "model.save": "Only the owner’s browser session configures models",
+  "model.remove": "Only the owner’s browser session configures models",
+  "model.test": "Only the owner’s browser session configures models",
+  "model.assign": "Only the owner’s browser session configures models",
+
+  "notifications.allow": "browser permission requires the person’s in-card gesture",
+  "debug-api": "raw API bypasses flow typing and approvals; agents use flows",
+  "storage.recovery.export": STORAGE_RECOVERY_USER_ONLY_REASON,
+  "members": "Only a person can do this",
+  "members.add": "Only a person can do this",
+  "members.role": "Only a person can do this",
+  "members.remove": "Only a person can do this",
+  "storage.recovery.reset": STORAGE_RESET_USER_ONLY_REASON,
+  "chat.queue": "the prompt queue is the human's composer",
+  "chat.queue.edit": "the prompt queue is the human's composer",
+  "chat.queue.remove": "the prompt queue is the human's composer",
+  "chat.queue.restore": "the prompt queue is the human's composer",
+  "chat.send": "the composer is the human's; the model is already the turn, and sending would nest one",
+  "stop": "stopping the model's own turn is the human's Escape key",
+  "archive": "turn mechanics: a chat cannot be archived while the model's own turn runs in it",
+  "chat.copy-message": "the clipboard write is the human's browser gesture",
+  "wiki.pane": "a surface switch; the model reads the wiki with wiki and wiki.cloud, which answer as embedded cards",
+  "card.maximize": "maximizing a card is the human's explicit act (THE EMBED LAW)",
+  "card.minimize": "minimizing a card is the human's explicit act",
+  "frame.back": "frame navigation is the human's browser gesture",
+  "frame.forward": "frame navigation is the human's browser gesture",
+  "wiki.delete.confirm": "a confirm-dialog answer is the human's",
+  "confirm.cancel": "a confirmation answer belongs to the person",
+  "wiki.delete.cancel": "a confirm-dialog answer is the human's",
+  "wiki.heading": WIKI_HEADING_USER_ONLY_REASON,
+  "settings": "Install status requires the owner’s person session",
+  "wiki.attach": WIKI_ATTACH_USER_ONLY_REASON,
+  // The hidden world.* aliases (entries/world.ts) carry their wiki.* twins' reason.
+  "sign-in": "sign-in is the human's browser gesture; the agent renders the step with auth.prompt",
+  "sign-out": "dropping the human's session is theirs alone",
+  "cloud.sign-in": "the Smithers Cloud browser login is the human's gesture on their account; the agent renders the step with cloud.prompt",
+  "cloud.sign-out": "dropping the human's Smithers Cloud credential is theirs alone",
+  "toast.dismiss": "dismissing a toast is the human's gesture",
+  "repo.select": "which pinned repository is active is the human's selection",
+  "repos.create": "creating a repository on the person's GitHub account is the person's act",
+  "chat.open": "opening Chat is the human's focus gesture",
+  "palette.open": PALETTE_OPEN_REASON,
+  "palette.actions": PALETTE_ACTIONS_REASON,
+  "admin.reset": "destroys the whole store with no undo; the confirm dialog is the only door",
+  "admin.reset.ask": "opens the human's confirm dialog for the reset",
+  "admin.reset.cancel": "a confirm-dialog answer is the human's",
+  "billing.upgrade": "external checkout with real money; the human clicks",
+  "billing.portal": "the external billing portal; the human clicks",
+  "admin.devtools": "the admin panel's presentation toggle",
+  "debug.backend": "admin diagnostics; the agent must never reason about its engine",
+  "approval.approve": "approvals belong to the human",
+  "triggers.approve": "approvals belong to the human",
+  "approval.deny": "approvals belong to the human",
+  "runs.continue": "approvals belong to the human",
+  "file.reapply": "Only a person can do this",
+  "main.reset-to-github": "Only a person can do this",
+  "merge.confirm": "Only a person can do this",
+  "order.ok": "Only a person can do this",
+  "secrets": "Only a person can do this",
+  "settings.model.set": "Only a person can do this",
+  "ssh": "Only a person can do this",
+  "terminal.watch": "Only a person can do this",
+  "todo.keep-moved": "Only a person can do this",
+  "todo.preapprove": "Only a person can do this",
+  "todo.takeover": "Only a person can do this",
+  "todo.unapprove": "Only a person can do this",
+}
+
+/** The policy table's agent rows (.specs/engineering/spec.md §6.1): the args exercised and whether the act confirms. */
+const AGENT_ROWS: ReadonlyArray<{ readonly name: string; readonly args?: string; readonly confirm: boolean; readonly confirmedArgs?: string }> = [
+  { name: "todo", args: "T12", confirm: false },
+  { name: "todo.new", args: "A TODO", confirm: false },
+  { name: "todo.answer", args: "T12 Yes", confirm: false },
+  { name: "todo.steer", args: "T12 Keep the tests", confirm: false },
+  { name: "todo.amend", args: "T12 Amend the prompt", confirm: true },
+  { name: "todo.stop", args: "T12", confirm: false },
+  { name: "todo.resume", args: "T12", confirm: false },
+  { name: "todo.retry", args: "T12", confirm: false },
+  { name: "todo.drop", args: "T12", confirm: true, confirmedArgs: '{"n":12}' },
+  /* A bare Merge only opens the person's Review & merge; a head-bound one asks the person first (mvp.md Appendix B A✓). */
+  { name: "merge", args: "T8", confirm: false },
+  { name: "runs.trace.filter", args: "run-1 failed", confirm: false },
+  { name: "runs.trace.select", args: "run-1 frame-1", confirm: false },
+  { name: "runs.trace.view", args: "run-1 turns", confirm: false },
+  { name: "runs.trace.live", args: "run-1", confirm: false },
+  { name: "runs.coding.select", args: "run-1 storage", confirm: false },
+  /* The issue-sweep board's reader state is free; starting the sweep launches agents, so it confirms. */
+  { name: "files", args: '{"operation":"tree","copy":"shared:will/smithers"}', confirm: false },
+  { name: "diff", args: savedDiffArgs("change.pins", "c1 parent current"), confirm: false },
+  { name: "diff", args: savedDiffArgs("change.checks", "c1 1"), confirm: false },
+  { name: "change.facet", args: "c1 diff", confirm: false },
+  { name: "flow.run", args: JSON.stringify({ cardId: "card-1", operation: "retry" }), confirm: true },
+  { name: "runs.rerun", args: "sourceCard=card-1 run-1", confirm: true },
+  /* Agents as data (custom-agents.md): listing and the form render cards; defining what spends money confirms. */
+  { name: "agents", confirm: false },
+  /* #3730: starting an agent CLI on the host is consequential, so the agent's call asks first. */
+  /*
+   * The cloud agent sessions (UI-COVERAGE-GAPS.md "agents · Cloud agent
+   * sessions"): the reads are free; launching a sandbox agent, steering it
+   * with a follow-up (dispatches its next run) and stopping it all confirm.
+   */
+  /* Code intelligence (docs/code-intel/PLAN.md §4): reads over the workspace LSP tunnel; none confirms. */
+]
+
+const memoryStorage = (): StorageApi => {
+  const data = new Map<string, string>()
+  return {
+    getItem: (key) => data.get(key) ?? null,
+    setItem: (key, value) => void data.set(key, value),
+    removeItem: (key) => void data.delete(key)
+  }
+}
+
+const unavailableAgent: AgentPort = {
+  available: false,
+  startTurn: async () => ({ status: "error", message: "unavailable" }),
+  cancelTurn: async () => {},
+  subscribe: () => () => {}
+}
+
+/** Every host capability at once, so the gate covers every registerable flow. */
+const EVERYTHING: AppBootstrap = {
+  apiVersion: 1,
+  host: "local",
+  version: "test",
+  buildSha: "test",
+  capabilities: [...RuntimeCapabilitySchema.options],
+  authFlow: "both",
+  sandbox: { platform: "darwin", mode: "enforced" }
+}
+
+/** The web host with every door it can grow: the flows scoped to `hosts: ["cloud"]` register only here. */
+const WEB: AppBootstrap = {
+  apiVersion: 1,
+  host: "cloud",
+  version: "test",
+  buildSha: "cloud",
+  capabilities: cloudCapabilities({ identity: true, cloud: true, agent: true, checkout: true, terminal: true }),
+  authFlow: "redirect",
+  sandbox: null
+}
+
+const settle = async (ticks = 6): Promise<void> => {
+  for (let index = 0; index < ticks; index += 1) await new Promise((resolve) => setTimeout(resolve, 1))
+}
+
+const json = (status: number, body: unknown): Response =>
+  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
+
+/**
+ * The whole app under EVERYTHING as an admin (so the admin plugin registers),
+ * signed in to GitHub (so the requirement axis never intercepts), with two
+ * repositories, a card tab and a card.
+ */
+const boot = async (bootstrap: AppBootstrap = EVERYTHING) => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  let picks = 0
+
+  const controller = createAppController(store, unavailableAgent, {
+    features: {},
+    designFixture: true,
+    bootstrap,
+    fetchImpl: async (input) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+      const path = new URL(url, "http://local.test").pathname
+      if (path === "/api/repos/will/smithers/contents") return json(200, [])
+      return json(404, { status: "error", message: `no stub for ${path}` })
+    }
+  })
+  store.dispatch({
+    type: "identity.session.loaded",
+    actor: "system",
+    state: "signed-in",
+    login: "will",
+    admin: true,
+    scopesPlain: null
+  })
+  store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [
+    { id: "will/smithers", org: "will", name: "smithers", ownerKind: "user", head: null, catalog: true },
+    { id: "will/force", org: "will", name: "force", ownerKind: "user", head: null }
+  ] })
+  store.dispatch({ type: "repo.selected", actor: "user", id: "will/smithers" })
+  store.dispatch({
+    type: "tab.opened",
+    actor: "user",
+    tab: { id: "t1", kind: "card", title: "Pinned", cardId: "card-t1" }
+  })
+  store.dispatch({
+    type: "card.upsert",
+    actor: "system",
+    card: { id: "card-1", kind: "status", title: "Status", status: "active", createdAt: 1, ordinal: 0, payload: { progress: 0.5 } }
+  })
+  await settle()
+  return { store, controller, picks: () => picks }
+}
+
+/** The production agent door (turns.ts continueToolLeg): one tool call, run as actor smithers. */
+const execute = (controller: Awaited<ReturnType<typeof boot>>["controller"], name: string, args?: string) =>
+  controller.commands.executeForAgent({
+    name: "commands",
+    arguments: JSON.stringify({ action: "execute", name, ...(args === undefined ? {} : { args }) })
+  })
+
+const messages = (store: AppStore) =>
+  [...store.collections.messages.values()].sort((left, right) => left.ordinal - right.ordinal)
+
+const confirmationFor = (store: AppStore, flow: string) =>
+  messages(store).find((message) => message.action?.flow === flow)
+
+const cloudSession = (store: AppStore, state: "signed-in" | "signed-out", username: string | null): void => {
+  store.dispatch({ type: "cloud.session.loaded", actor: "system", state, username, expiresAt: null, scopes: null })
+}
+
+describe("the three-door law", () => {
+  test("every user-only flow is in the allowlist with its reason, and the allowlist holds nothing else", async () => {
+    // Both hosts, so a flow scoped to one of them (app.download is the web's) is gated too.
+    const native = await boot()
+    const web = await boot(WEB)
+    const userOnly = [...native.controller.commands.entries(), ...web.controller.commands.entries()]
+      .filter((entry) => entry.metadata.agent === "never")
+    const found = Object.fromEntries(
+      userOnly.map((entry) => [nameOf(entry), entry.metadata.agentReason]).sort(([left], [right]) => String(left).localeCompare(String(right)))
+    )
+    const expected = Object.fromEntries(Object.entries(USER_ONLY_ALLOWLIST).sort(([left], [right]) => left.localeCompare(right)))
+    expect(found).toEqual(expected)
+    // The admin plugin registered, so the admin rows above were really checked.
+    expect(userOnly.some((entry) => nameOf(entry) === "admin.reset")).toBe(true)
+  })
+
+  test("an automatic (system) call of any user-only flow refuses before its handler runs (#3717)", async () => {
+    for (const bootstrap of [EVERYTHING, WEB]) {
+      const { controller } = await boot(bootstrap)
+      const userOnly = controller.commands.entries().filter((entry) => entry.metadata.agent === "never").map((entry) => nameOf(entry))
+      expect(userOnly.length).toBeGreaterThan(20)
+      for (const name of userOnly) {
+        const outcome = await controller.commands.run(name, undefined, "automatic")
+        expect(`${name}: ${outcome.status}`).toBe(`${name}: failed`)
+      }
+      controller.dispose()
+    }
+  })
+  test("the two automatic callers' flows stay invocable automatically", async () => {
+    const { controller } = await boot()
+    for (const name of ["flow.plan", "triggers.list"]) {
+      const entry = controller.commands.entries().find((candidate) => nameOf(candidate) === name)
+      expect(entry?.metadata.agent).toBe("run")
+    }
+  })
+
+  test("automatic calls of every confirmation-gated flow refuse before any act (#3736)", async () => {
+    for (const bootstrap of [EVERYTHING, WEB]) {
+      const { store, controller } = await boot(bootstrap)
+      try {
+        const gated = controller.commands.entries().filter(entry => entry.metadata.confirm !== undefined)
+        expect(gated.length).toBeGreaterThan(0)
+        for (const entry of gated) {
+          const name = nameOf(entry)
+          const args = AGENT_ROWS.find(row => row.name === name)?.args
+          const before = messages(store).length
+          expect(await controller.commands.run(name, args, "automatic")).toEqual({
+            status: "failed", error: `/${name} requires a person's confirmation.`
+          })
+          expect(messages(store).length).toBe(before)
+        }
+      } finally { controller.dispose() }
+    }
+  })
+
+  test("the two automatic callers' flows stay invocable automatically", async () => {
+    const { store, controller } = await boot()
+    try {
+      cloudSession(store, "signed-in", "will")
+      await loadBox(store, "will/smithers")
+      await store.dispatch({ type: "branch.navigation.changed", actor: "user", navigation: { owner: "will", open: true, selected_branch: "scratch/will/review", nodes: [] } }).isPersisted.promise
+      await store.dispatch({ type: "card.upsert", actor: "user", card: { id: `branch:${TEST_BOX}`, kind: "branch", title: "scratch/will/review", status: "active", createdAt: 1, ordinal: 1, payload: { id: TEST_BOX } } }).isPersisted.promise
+      await settle()
+      expect(await controller.commands.run("flow.plan", "review will/smithers", "automatic")).toMatchObject({ status: "executed" })
+      expect([...store.collections.cards.values()].some(card => card.kind === "flow-plan" && card.payload.flowId === "review")).toBe(true)
+      expect((await controller.commands.run("triggers.list", "will/smithers", "automatic")).status).toBe("executed")
+      expect(store.collections.cards.get("trigger-list-will/smithers")?.kind).toBe("trigger-list")
+    } finally { controller.dispose() }
+  })
+
+  test("the deferred Machine control remains hidden and refuses agent execution", async () => {
+    const { store, controller } = await boot()
+    try {
+      expect(controller.commands.find("box.facet")?.metadata.hidden).toBe(true)
+      expect(agentVisibleCatalog(controller.commands.callable()).some(row => row.name === "box.facet")).toBe(false)
+      const before = messages(store).length
+      expect(await execute(controller, "box.facet", "ws-1 files")).toContain("is user-only")
+      expect(messages(store).length).toBe(before)
+    } finally { controller.dispose() }
+  })
+
+  test("backend agent rows refuse browser execution; UI rows keep their confirmation policy", async () => {
+    const { store, controller } = await boot()
+    for (const row of AGENT_ROWS) {
+      const result = await execute(controller, row.name, row.args)
+      expect(`${row.name}: ${result}`).not.toContain("is user-only")
+      expect(`${row.name}: ${result}`).not.toStartWith(`${row.name}: unknown-command`)
+      if (controller.commands.find(row.name)?.metadata.http !== null) {
+        expect(result).toBe("failed: this command runs on the conversation host")
+        expect(confirmationFor(store, row.name)).toBeUndefined()
+        continue
+      }
+      if (!row.confirm) continue
+      expect(`${row.name}: ${result}`).toContain("asked the user to confirm")
+      const confirmation = confirmationFor(store, row.name)
+      expect(`${row.name} confirmation`).toBe(`${row.name} ${confirmation === undefined ? "missing" : "confirmation"}`)
+      expect(confirmation?.action?.args).toBe(row.confirmedArgs ?? row.args)
+    }
+  })
+
+  test("cloud.prompt renders the Smithers Cloud sign-in step; signed in it says so", async () => {
+    const { store, controller } = await boot()
+    cloudSession(store, "signed-out", null)
+    await settle(2)
+    expect((await controller.commands.run("cloud.prompt")).status).toBe("executed")
+    const step = confirmationFor(store, "cloud.sign-in")
+    expect(step?.action).toEqual({ flow: "cloud.sign-in", label: "Sign in to Smithers Cloud" })
+    expect(step?.role).toBe("smithers")
+    cloudSession(store, "signed-in", "will")
+    await settle(2)
+    expect((await controller.commands.run("cloud.prompt")).status).toBe("executed")
+    expect(messages(store).at(-1)?.text).toBe("Smithers Cloud is already signed in as will.")
+  })
+
+  test("a retained change read offers sign-in to the person while the agent uses the conversation host", async () => {
+    const { store, controller } = await boot()
+    cloudSession(store, "signed-out", null)
+    await settle(2)
+    const agent = await execute(controller, "diff", savedDiffArgs("change.view", "change-1"))
+    expect(agent).toBe("failed: this command runs on the conversation host")
+    expect(controller.commands.find("cloud.prompt")).toBeDefined()
+    const human = await controller.commands.run("diff", savedDiffArgs("change.view", "change-1"))
+    expect(human).toEqual({ status: "failed", error: "Sign in to Smithers Cloud to continue." })
+  })
+
+  for (const host of [EVERYTHING, WEB]) {
+    test(`missing Cloud session renders only a registered sign-in door on ${host.host}`, async () => {
+      const { store, controller } = await boot(host)
+      cloudSession(store, "signed-out", null)
+      const flow = host.host === "cloud" ? "sign-in" : "cloud.sign-in"
+      try {
+        for (const name of ["diff"] as const) {
+          const outcome = await controller.commands.run(name, savedDiffArgs("change.view", "change-1"))
+          expect(outcome).toEqual({ status: "failed", error: "Sign in to Smithers Cloud to continue." })
+          const step = messages(store).at(-1)
+          expect(step?.action?.flow).toBe(flow)
+          expect(controller.commands.find(step!.action!.flow)).toBeDefined()
+          expect(step?.text).not.toContain("/cloud.sign-in")
+        }
+        expect(await execute(controller, "diff", savedDiffArgs("change.view", "change-1"))).toBe("failed: this command runs on the conversation host")
+        expect(messages(store).at(-1)?.action?.flow).toBe(flow)
+      } finally { controller.dispose() }
+    })
+  }
+
+  test("a user-only refusal quotes the registry's reason and the agent's door", async () => {
+    const { controller } = await boot()
+    const cloud = await execute(controller, "cloud.sign-in")
+    expect(cloud).toContain(USER_ONLY_ALLOWLIST["cloud.sign-in"])
+    expect(cloud).toContain("invoke cloud.prompt, which renders that button in the chat")
+    // The typed agent door answers the same text.
+    const typed = await controller.commands.runForAgent("sign-in")
+    expect(typed).toEqual({ status: "failed", error: `failed: /sign-in is user-only — ${USER_ONLY_ALLOWLIST["sign-in"]} — invoke auth.prompt, which renders that button in the chat` })
+  })
+
+  test("each command the install's model host runs is the app's own: same copy and agent rule, never the person's alone", async () => {
+    const { controller } = await boot()
+    for (const command of INSTALL_HOST_COMMANDS) {
+      const entry = controller.commands.entries().find((row) => nameOf(row) === command.name)
+      expect(`${command.name} ${entry === undefined ? "missing" : "registered"}`).toBe(`${command.name} registered`)
+      expect(`${command.name} ${modelInvocable(entry!) ? "agent" : "user-only"}`).toBe(`${command.name} agent`)
+      // A flow with a confirmation for the model is a confirm command; any other the agent runs at once.
+      expect({
+        name: nameOf(entry!),
+        summary: entry!.metadata.summary,
+        ...(entry!.metadata.args === undefined ? {} : { args: entry!.metadata.args }),
+        agent: entry!.metadata.confirm === undefined ? "run" : "confirm"
+      }).toEqual(command)
+    }
+  })
+
+  test("flow authoring and card acts remain callable through the agent", async () => {
+    const { controller } = await boot()
+    const callable = new Set(controller.commands.callable().map(nameOf))
+    for (const name of ["flow.new", "agents", "form.set", "form.submit", "card.dismiss"]) {
+      expect(callable.has(name)).toBe(true)
+    }
+    // Flow authoring is listed; the owner model roster remains a hidden door.
+    const disclosed = new Set(controller.commands.disclosed().map((descriptor) => descriptor.name))
+    for (const name of ["flow.new", "agents"]) {
+      expect(disclosed.has(name)).toBe(true)
+    }
+    expect(disclosed.has("cloud.prompt")).toBe(false)
+    expect(disclosed.has("flow.run")).toBe(true)
+    // The form card's acts (THE FORM LAW) are hidden from the catalog and callable, like every id-scoped card act.
+    for (const name of ["form.set", "form.submit", "card.dismiss"]) expect(disclosed.has(name)).toBe(true)
+  })
+})
+
+
+
+test("versioned flow doors draft for a person and refuse backend execution in the browser", async () => {
+  const { flowVersionFlows } = await import("./entries/flow")
+  const entries = flowVersionFlows(new Proxy({}, { get: () => () => undefined }) as never)
+  expect(entries.map(nameOf)).toEqual(["flow", "flow.edit", "flow.source", "flows"])
+  expect(entries.every(modelInvocable)).toBe(true)
+  const edit = entries[1]!
+  const confirm = edit.metadata.confirm
+  if (typeof confirm !== "function") throw new Error("Expected proposal-aware confirmation")
+  expect(confirm({ name: "todo", request: "Add review" })).toBe("change this flow")
+  expect(confirm({ name: "todo", request: "Add review", diff: "+review" })).toBeUndefined()
+  expect(edit.metadata.grammar?.("todo")).toEqual({ payload: { name: "todo" } })
+  expect(edit.metadata.grammar?.("todo Add review")).toEqual({ payload: { name: "todo", request: "Add review" } })
+  expect(edit.metadata.grammar?.("todo Keep  spaces\nand lines ")).toEqual({ payload: { name: "todo", request: "Keep  spaces\nand lines " } })
+  expect(edit.metadata.form?.args?.({ name: "todo", request: "Add review" })).toBe("todo Add review")
+  // Install hosts use repository flows; this case exercises the retained design seed.
+  const { store, controller } = await boot({ ...EVERYTHING, capabilities: EVERYTHING.capabilities.filter(capability => capability !== "install") })
+  for (const name of ["flow", "flow.source", "flow.edit", "flows"]) expect(controller.commands.find(name)).toBeDefined()
+  expect((await controller.commands.run("flow", "todo")).status).toBe("executed")
+  expect([...store.collections.cards.values()].some(card => card.kind === "flow" && card.payload.name === "todo")).toBe(true)
+  const form = await controller.commands.submit({ name: "flow.edit", payload: { name: "todo" }, actor: "user" })
+  expect(form.status).toBe("form")
+  if (form.status !== "form") throw new Error("Expected edit request form")
+  expect(store.collections.cards.get(form.cardId)).toMatchObject({ payload: { given: { name: "todo" }, fields: [{ name: "request" }] } })
+  await controller.setFormField(form.cardId, "request", "Keep the typed name")
+  await controller.submitForm(form.cardId)
+  expect([...store.collections.cards.values()].some(card => card.kind === "draft" && card.title === "Change the TODO flow: Keep the typed name")).toBe(true)
+  // Spec §11.5.1 and the three-door law: a person's edit is a Draft now; an agent's invocation confirms first.
+  expect((await controller.commands.run("flow.edit", "todo Add review")).status).toBe("executed")
+  expect(confirmationFor(store, "flow.edit")).toBeUndefined()
+  expect([...store.collections.cards.values()].some(card => card.kind === "draft")).toBe(true)
+  expect(await execute(controller, "flow.edit", "todo Add lint")).toBe("failed: this command runs on the conversation host")
+  expect(confirmationFor(store, "flow.edit")).toBeUndefined()
+
+})
+
+test("Members doors are a person's: the slash and card commands exist, and the agent has none", async () => {
+  const { controller } = await boot()
+  try {
+    for (const name of ["members", "members.add", "members.role", "members.remove"]) expect(modelInvocable(controller.commands.find(name)!)).toBe(false)
+  } finally { controller.dispose() }
+})
+
+test("history.bootstrap is hidden from slash discovery and the agent catalog on the cloud host", async () => {
+  const { controller } = await boot(WEB)
+  try {
+    expect(controller.commands.find("history.bootstrap")?.metadata.hidden).toBe(true)
+    expect(controller.commands.disclosed().map(entry => entry.name)).not.toContain("history.bootstrap")
+    expect(agentVisibleCatalog(controller.commands.callable()).map(entry => entry.name)).not.toContain("history.bootstrap")
+  } finally { controller.dispose() }
+})

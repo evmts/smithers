@@ -400,7 +400,7 @@ describe("the plan door returns before the workspace answers", () => {
       ok: true,
       payload: planCard({
         nodes: [NODE],
-        graph: { edges: [], nodes: [{ id: "read", declaredAt: { path: "flows/review/flow.ts", line: 12 } }] }
+        graph: { edges: [], nodes: [{ id: "read", declaredAt: { path: ".smithers/flows/review/flow.ts", line: 12 } }] }
       })
     }))
     const { store, controller } = await readyController(relay)
@@ -410,7 +410,7 @@ describe("the plan door returns before the workspace answers", () => {
     relay.release()
     await settle(12)
     expect(held(store)?.payload.graph?.nodes)
-      .toEqual([{ id: "read", declaredAt: { path: "flows/review/flow.ts", line: 12 } }])
+      .toEqual([{ id: "read", declaredAt: { path: ".smithers/flows/review/flow.ts", line: 12 } }])
   })
 
   test("asking twice for the same plan is one Plan call and one card", async () => {

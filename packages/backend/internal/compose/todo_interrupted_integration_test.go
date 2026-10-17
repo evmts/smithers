@@ -224,7 +224,7 @@ func TestTodoInterruptedComposedInstall(t *testing.T) {
 	activeSource := strings.Repeat("d", 40)
 	_, err = pool.Exec(ctx, `UPDATE mythical_stacks SET landed_main=$2 WHERE repository_id=$1`, repo.ID, source)
 	require.NoError(t, err)
-	_, err = pool.Exec(ctx, `INSERT INTO workflow_definitions(repository_id,name,path,config,is_active,source_commit,digest,status) VALUES($1,'todo','flows/todo/flow.ts','{}',true,$2,$3,'loaded')`, repo.ID, activeSource, digest)
+	_, err = pool.Exec(ctx, `INSERT INTO workflow_definitions(repository_id,name,path,config,is_active,source_commit,digest,status) VALUES($1,'todo','.smithers/flows/todo/flow.ts','{}',true,$2,$3,'loaded')`, repo.ID, activeSource, digest)
 	require.NoError(t, err)
 	service.SetTodoFlow(func(ctx context.Context, repository int64, commit string) (string, error) {
 		require.Equal(t, repo.ID, repository)

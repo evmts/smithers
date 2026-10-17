@@ -18,7 +18,7 @@ if (!root) throw new Error("Missing immutable source root")
 const result = await Effect.runPromise(Effect.gen(function*() {
   const snapshots = yield* Snapshot.makeFileSystem({ root })
   const source = yield* Registry.make({
-    sources: [{ root: `${root}/flows`, source: "project", naming: "path", lockfileRoot: root }],
+    sources: [{ root: `${root}/.smithers/flows`, source: "project", naming: "path", lockfileRoot: root }],
     snapshots
   })
   const descriptor = yield* source.get("todo")

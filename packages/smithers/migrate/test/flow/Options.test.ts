@@ -87,7 +87,7 @@ describe("Options.layoutIssue", () => {
     expect(Options.layoutIssue({ root: exampleRoot, reportDir: "flows", layout: { flowsDir: "flows" } })).toMatch(
       /overlap/
     )
-    expect(Options.layoutIssue({ root: exampleRoot, reportDir: "flows/report" })).toMatch(/overlap/)
+    expect(Options.layoutIssue({ root: exampleRoot, reportDir: ".smithers/flows/report" })).toMatch(/overlap/)
     expect(Options.layoutIssue({ root: exampleRoot, layout: { flowsDir: ".smithers-migrate/flows" } })).toMatch(
       /overlap/
     )

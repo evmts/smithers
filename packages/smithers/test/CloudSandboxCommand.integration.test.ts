@@ -170,9 +170,9 @@ describe("CloudSandbox guarded command transport", () => {
     const flow = Flow.make("cloud-install", definition)
     // Registry source discovery and the durable engine are real. A deterministic
     // module loader supplies the exported layer; the SSH control plane stays fake.
-    mkdirSync(join(root, "flows", "cloud-install"), { recursive: true })
+    mkdirSync(join(root, ".smithers", "flows", "cloud-install"), { recursive: true })
     writeFileSync(
-      join(root, "flows", "cloud-install", "flow.ts"),
+      join(root, ".smithers", "flows", "cloud-install", "flow.ts"),
       `
 import { Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"

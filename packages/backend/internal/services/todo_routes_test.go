@@ -17,7 +17,15 @@ import (
 // token follows; other flows with similar names still register.
 func TestTodoFlowIsNeverARepositoryJob(t *testing.T) {
 	now := time.Date(2026, 10, 4, 9, 0, 0, 0, time.UTC)
-	for _, flowID := range []string{"todo", "flows/todo/flow.ts"} {
+	// A path spelling is not a registered flow name: it is refused before
+	// any todo check.
+	input := approvedFlowRegistrationInput()
+	input.FlowID = ".smithers/flows/todo/flow.ts"
+	_, err := validateRepositoryJob("flow:nightly-lint", input, now)
+	var invalid *pkgerrors.APIError
+	require.ErrorAs(t, err, &invalid)
+	require.Equal(t, pkgerrors.CodeBadRequest, invalid.Code)
+	for _, flowID := range []string{"todo"} {
 		input := approvedFlowRegistrationInput()
 		input.FlowID = flowID
 		_, err := validateRepositoryJob("flow:nightly-lint", input, now)
@@ -49,7 +57,7 @@ func TestFactoryNeverRegistersTheTodoFlow(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(`{"flows":[
 		{"id":"todo","kind":"mdx","capabilities":[],"flows":[],"budget":{"tokens":1000,"milliseconds":60000}},
 		{"id":"assistant","kind":"mdx","capabilities":["memory:read:global-team"],"flows":[],"budget":{"tokens":2400000,"milliseconds":21600000}}],
-		"on":[{"event":"issue.labeled:todo","flow":"todo"},{"event":"schedule:0 9 * * 1-5","flow":["todo","assistant"]},{"event":"issue_comment","flow":"flows/todo/flow.ts"}]}`), &projection))
+		"on":[{"event":"issue.labeled:todo","flow":"todo"},{"event":"schedule:0 9 * * 1-5","flow":["todo","assistant"]},{"event":"issue_comment","flow":".smithers/flows/todo/flow.ts"}]}`), &projection))
 	rules, warnings, err := planFactory(projection, strings.Repeat("a", 40))
 	require.NoError(t, err)
 	require.Len(t, rules, 1, "only the assistant rule registers")
@@ -60,5 +68,5 @@ func TestFactoryNeverRegistersTheTodoFlow(t *testing.T) {
 			refused = append(refused, warning.Event+" "+warning.Flow)
 		}
 	}
-	require.ElementsMatch(t, []string{"issue.labeled:todo todo", "schedule:0 9 * * 1-5 todo", "issue_comment flows/todo/flow.ts"}, refused)
+	require.ElementsMatch(t, []string{"issue.labeled:todo todo", "schedule:0 9 * * 1-5 todo", "issue_comment .smithers/flows/todo/flow.ts"}, refused)
 }

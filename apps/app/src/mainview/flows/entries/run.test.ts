@@ -69,13 +69,13 @@ test("flows and flow open Flow cards; flow.source opens the flow's file; flow.ed
     expect(cards(h).filter(row => row.kind === "flow")).toHaveLength(2)
     expect(await h.controller.runCommandForResult("flow", "nope")).toMatchObject({ status: "failed", error: expect.stringContaining("No flow nope") })
     expect(await h.controller.runCommandForResult("flow.source", "todo")).toMatchObject({ status: "executed" })
-    expect(cards(h).find(row => row.kind === "file")).toMatchObject({ id: "design:file:main:flows/todo/flow.ts" })
+    expect(cards(h).find(row => row.kind === "file")).toMatchObject({ id: "design:file:main:.smithers/flows/todo/flow.ts" })
     expect(await h.controller.runCommandForResult("flow.source", "merge")).toMatchObject({ status: "failed", error: expect.stringContaining("Merge flow is built in") })
     expect(await h.controller.runCommandForResult("flow.edit", "merge Add a step")).toMatchObject({ status: "failed", error: expect.stringContaining("Merge flow is built in") })
     expect(await h.controller.runCommandForResult("flow.edit", "todo Add review")).toMatchObject({ status: "executed" })
     const draft = cards(h).find(row => row.kind === "draft")
     expect(draft?.payload).toMatchObject({ prompt: flowEditPrompt("todo", "Add review"), title: "Change the TODO flow: Add review" })
-    expect(flowEditPrompt("todo", "Add review")).toBe("Change flows/todo/flow.ts: Add review; start from the built-in composition when no override exists")
+    expect(flowEditPrompt("todo", "Add review")).toBe("Change .smithers/flows/todo/flow.ts: Add review; start from the built-in composition when no override exists")
   } finally { h.controller.dispose() }
 })
 
@@ -125,6 +125,17 @@ test("on an install, flow doors read GET /api/flows: the built-in TODO flow is e
     expect(await h.controller.runCommandForResult("flow", "merge")).toMatchObject({ status: "failed", error: expect.stringContaining("No flow merge") })
     expect(await h.controller.runCommandForResult("flow.edit", "todo Add review")).toMatchObject({ status: "executed" })
     expect(cards(h).find(row => row.kind === "draft")?.payload).toMatchObject({ prompt: flowEditPrompt("todo", "Add review"), title: "Change the TODO flow: Add review" })
+  } finally { h.controller.dispose() }
+})
+
+// M-49: a built-in flow's first edit copies it to `.smithers/flows/<name>/flow.ts`, never a root `flows/`.
+test("on an install, flow.source of a built-in flow targets .smithers/flows/<name>/flow.ts", async () => {
+  const h = await bootInstall(() => Response.json([SERVED_TODO]))
+  try {
+    expect(await h.controller.runCommandForResult("flow.source", "todo")).toMatchObject({ status: "executed" })
+    expect(h.reads).toContain("/api/branches/main/files/.smithers/flows/todo/flow.ts")
+    expect(h.reads.some(path => path.startsWith("/api/branches/main/files/flows/"))).toBe(false)
+    expect(cards(h).find(row => row.kind === "draft")?.payload).toMatchObject({ source: { path: ".smithers/flows/todo/flow.ts" } })
   } finally { h.controller.dispose() }
 })
 

@@ -1,0 +1,251 @@
+{
+  "name": "@smthrs/observability",
+  "type": "module",
+  "version": "1.0.0-rc.12",
+  "license": "MIT",
+  "smthrs": {
+    "group": "engine"
+  },
+  "description": "Observability for flows: default OTLP export wiring plus Effect-native logger, metric, and OpenTelemetry SDK layers",
+  "homepage": "https://github.com/smithersai/smithers",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/smithers/flows/observability"
+  },
+  "bugs": {
+    "url": "https://github.com/smithersai/smithers/issues"
+  },
+  "tags": [
+    "typescript",
+    "effect",
+    "observability",
+    "opentelemetry"
+  ],
+  "keywords": [
+    "typescript",
+    "effect",
+    "observability",
+    "opentelemetry"
+  ],
+  "engines": {
+    "node": ">=26.4.0"
+  },
+  "sideEffects": [],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./BrowserOtel": "./src/BrowserOtel.ts",
+    "./Endpoint": "./src/Endpoint.ts",
+    "./JournalLogger": "./src/JournalLogger.ts",
+    "./Logger": "./src/Logger.ts",
+    "./Metric": "./src/Metric.ts",
+    "./NodeOtel": "./src/NodeOtel.ts",
+    "./Otel": "./src/Otel.ts",
+    "./Otlp": "./src/Otlp.ts",
+    "./Resource": "./src/Resource.ts",
+    "./index": "./src/index.ts"
+  },
+  "files": [
+    "src/**/*.ts",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/package.json",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next",
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./BrowserOtel": {
+        "import": {
+          "types": "./dist/esm/BrowserOtel.d.ts",
+          "default": "./dist/esm/BrowserOtel.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BrowserOtel.d.ts",
+          "default": "./dist/cjs/BrowserOtel.js"
+        }
+      },
+      "./Endpoint": {
+        "import": {
+          "types": "./dist/esm/Endpoint.d.ts",
+          "default": "./dist/esm/Endpoint.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Endpoint.d.ts",
+          "default": "./dist/cjs/Endpoint.js"
+        }
+      },
+      "./JournalLogger": {
+        "import": {
+          "types": "./dist/esm/JournalLogger.d.ts",
+          "default": "./dist/esm/JournalLogger.js"
+        },
+        "require": {
+          "types": "./dist/cjs/JournalLogger.d.ts",
+          "default": "./dist/cjs/JournalLogger.js"
+        }
+      },
+      "./Logger": {
+        "import": {
+          "types": "./dist/esm/Logger.d.ts",
+          "default": "./dist/esm/Logger.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Logger.d.ts",
+          "default": "./dist/cjs/Logger.js"
+        }
+      },
+      "./Metric": {
+        "import": {
+          "types": "./dist/esm/Metric.d.ts",
+          "default": "./dist/esm/Metric.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Metric.d.ts",
+          "default": "./dist/cjs/Metric.js"
+        }
+      },
+      "./NodeOtel": {
+        "import": {
+          "types": "./dist/esm/NodeOtel.d.ts",
+          "default": "./dist/esm/NodeOtel.js"
+        },
+        "require": {
+          "types": "./dist/cjs/NodeOtel.d.ts",
+          "default": "./dist/cjs/NodeOtel.js"
+        }
+      },
+      "./Otel": {
+        "import": {
+          "types": "./dist/esm/Otel.d.ts",
+          "default": "./dist/esm/Otel.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Otel.d.ts",
+          "default": "./dist/cjs/Otel.js"
+        }
+      },
+      "./Otlp": {
+        "import": {
+          "types": "./dist/esm/Otlp.d.ts",
+          "default": "./dist/esm/Otlp.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Otlp.d.ts",
+          "default": "./dist/cjs/Otlp.js"
+        }
+      },
+      "./Resource": {
+        "import": {
+          "types": "./dist/esm/Resource.d.ts",
+          "default": "./dist/esm/Resource.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Resource.d.ts",
+          "default": "./dist/cjs/Resource.js"
+        }
+      },
+      "./index": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint src --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "circular": "node scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "vitest --coverage"
+  },
+  "dependencies": {
+    "@opentelemetry/sdk-logs": "0.222.0",
+    "@opentelemetry/sdk-metrics": "2.11.0",
+    "@smthrs/journal": "1.0.0-rc.12",
+    "@effect/opentelemetry": "4.0.4"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@effect/opentelemetry": "4.0.4",
+    "@effect/vitest": "4.0.4",
+    "@eslint/js": "9.39.5",
+    "@opentelemetry/api": "1.9.1",
+    "@opentelemetry/exporter-logs-otlp-http": "0.222.0",
+    "@opentelemetry/exporter-metrics-otlp-http": "0.222.0",
+    "@opentelemetry/exporter-trace-otlp-http": "0.222.0",
+    "@opentelemetry/sdk-trace-base": "2.11.0",
+    "@opentelemetry/sdk-trace-node": "2.11.0",
+    "@opentelemetry/sdk-trace-web": "2.11.0",
+    "@types/node": "26.4.1",
+    "@vitest/coverage-v8": "5.0.0",
+    "dprint": "0.57.1",
+    "effect": "4.0.4",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "madge": "8.0.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0"
+  },
+  "peerDependencies": {
+    "@opentelemetry/api": ">=1.9.1 <2.0.0",
+    "@opentelemetry/exporter-logs-otlp-http": ">=0.222.0 <0.300.0",
+    "@opentelemetry/exporter-metrics-otlp-http": ">=0.222.0 <0.300.0",
+    "@opentelemetry/exporter-trace-otlp-http": ">=0.222.0 <0.300.0",
+    "@opentelemetry/sdk-trace-base": ">=2.11.0 <3.0.0",
+    "@opentelemetry/sdk-trace-node": ">=2.11.0 <3.0.0",
+    "@opentelemetry/sdk-trace-web": ">=2.11.0 <3.0.0",
+    "effect": "^4.0.4"
+  },
+  "peerDependenciesMeta": {
+    "@opentelemetry/exporter-logs-otlp-http": {
+      "optional": true
+    },
+    "@opentelemetry/exporter-metrics-otlp-http": {
+      "optional": true
+    },
+    "@opentelemetry/exporter-trace-otlp-http": {
+      "optional": true
+    },
+    "@opentelemetry/sdk-trace-base": {
+      "optional": true
+    },
+    "@opentelemetry/sdk-trace-node": {
+      "optional": true
+    },
+    "@opentelemetry/sdk-trace-web": {
+      "optional": true
+    }
+  }
+}

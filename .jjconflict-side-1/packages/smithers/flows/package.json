@@ -1,0 +1,206 @@
+{
+  "name": "@smthrs/flows",
+  "type": "module",
+  "version": "1.0.0-rc.12",
+  "license": "MIT",
+  "smthrs": {
+    "group": "engine",
+    "privateEffectAdapters": [
+      "@effect/platform-node",
+      "@effect/platform-node-shared"
+    ]
+  },
+  "description": "Barrel package re-exporting the whole @smthrs durable flow engine",
+  "homepage": "https://github.com/smithersai/smithers",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/smithers/flows"
+  },
+  "bugs": {
+    "url": "https://github.com/smithersai/smithers/issues"
+  },
+  "tags": [
+    "typescript",
+    "effect",
+    "flow",
+    "durable-execution"
+  ],
+  "keywords": [
+    "typescript",
+    "effect",
+    "flow",
+    "durable-execution"
+  ],
+  "engines": {
+    "node": ">=26.4.0"
+  },
+  "sideEffects": [],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null,
+    "./*/index": null,
+    "./NodeRuntime": "./src/NodeRuntime.ts",
+    "./SandboxedFlow": "./src/SandboxedFlow.ts",
+    "./index": "./src/index.ts",
+    "./Runtime": "./src/Runtime.ts",
+    "./BunRuntime": "./src/BunRuntime.ts"
+  },
+  "files": [
+    "src/**/*.ts",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/package.json",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "dist/vendor/**",
+    "docs/"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next",
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./internal/*": null,
+      "./*/index": null,
+      "./NodeRuntime": {
+        "import": {
+          "types": "./dist/esm/NodeRuntime.d.ts",
+          "default": "./dist/esm/NodeRuntime.js"
+        },
+        "require": {
+          "types": "./dist/cjs/NodeRuntime.d.ts",
+          "default": "./dist/cjs/NodeRuntime.js"
+        }
+      },
+      "./SandboxedFlow": {
+        "import": {
+          "types": "./dist/esm/SandboxedFlow.d.ts",
+          "default": "./dist/esm/SandboxedFlow.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SandboxedFlow.d.ts",
+          "default": "./dist/cjs/SandboxedFlow.js"
+        }
+      },
+      "./index": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./Runtime": {
+        "import": {
+          "types": "./dist/esm/Runtime.d.ts",
+          "default": "./dist/esm/Runtime.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Runtime.d.ts",
+          "default": "./dist/cjs/Runtime.js"
+        }
+      },
+      "./BunRuntime": {
+        "import": {
+          "types": "./dist/esm/BunRuntime.d.ts",
+          "default": "./dist/esm/BunRuntime.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BunRuntime.d.ts",
+          "default": "./dist/cjs/BunRuntime.js"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint src --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "circular": "node scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "vitest --coverage"
+  },
+  "dependencies": {
+    "@smthrs/artifacts": "1.0.0-rc.12",
+    "@smthrs/canonical": "1.0.0-rc.12",
+    "@smthrs/capability": "1.0.0-rc.12",
+    "@smthrs/crypto": "1.0.0-rc.12",
+    "@smthrs/database": "1.0.0-rc.12",
+    "@smthrs/engine": "1.0.0-rc.12",
+    "@smthrs/engine-store": "1.0.0-rc.12",
+    "@smthrs/flow": "1.0.0-rc.12",
+    "@smthrs/jj": "1.0.0-rc.12",
+    "@smthrs/journal": "1.0.0-rc.12",
+    "@smthrs/kernel": "1.0.0-rc.12",
+    "@smthrs/keys": "1.0.0-rc.12",
+    "@smthrs/observability": "1.0.0-rc.12",
+    "@smthrs/plan": "1.0.0-rc.12",
+    "@smthrs/plan-store": "1.0.0-rc.12",
+    "@smthrs/platform-node": "1.0.0-rc.12",
+    "@smthrs/run-store": "1.0.0-rc.12",
+    "@smthrs/sandbox": "1.0.0-rc.12",
+    "@smthrs/step-cache": "1.0.0-rc.12",
+    "@smthrs/sync": "1.0.0-rc.12",
+    "@smthrs/time-travel": "1.0.0-rc.12",
+    "esbuild": "0.28.2",
+    "undici": "8.11.2",
+    "redis": "6.2.1",
+    "@types/ws": "8.18.2",
+    "ws": "8.22.0",
+    "@effect/sql-sqlite-node": "4.0.4"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@effect/platform-node": "4.0.4",
+    "@effect/platform-node-shared": "4.0.4",
+    "@effect/vitest": "4.0.4",
+    "@eslint/js": "9.39.5",
+    "@smthrs/control": "1.0.0-rc.12",
+    "@smthrs/model": "1.0.0-rc.12",
+    "@smthrs/notifications": "1.0.0-rc.12",
+    "@smthrs/registry": "1.0.0-rc.12",
+    "@types/node": "26.4.1",
+    "@vitest/coverage-v8": "5.0.0",
+    "dprint": "0.57.1",
+    "effect": "4.0.4",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "madge": "8.0.0",
+    "microsandbox": "0.6.16",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0",
+    "@smthrs/platform-bun": "1.0.0-rc.12"
+  },
+  "peerDependencies": {
+    "effect": "^4.0.4",
+    "@smthrs/platform-bun": "1.0.0-rc.12"
+  },
+  "peerDependenciesMeta": {
+    "@smthrs/platform-bun": {
+      "optional": true
+    }
+  }
+}

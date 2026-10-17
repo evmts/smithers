@@ -1,0 +1,317 @@
+import { readFileSync } from "node:fs"
+import { describe, expect, it } from "vitest"
+import { parse } from "yaml"
+import * as ProductApi from "../src/internal/backend/ProductApi.ts"
+
+interface Parameter {
+  readonly name: string
+  readonly in: string
+  readonly required?: boolean
+  readonly schema?: { readonly type?: string | ReadonlyArray<string> }
+}
+interface Operation {
+  readonly operationId: string
+  readonly parameters?: ReadonlyArray<Parameter>
+  readonly requestBody?: { readonly required?: boolean; readonly content?: Record<string, unknown> }
+  readonly responses?: Record<string, { readonly $ref?: string; readonly content?: Record<string, unknown> }>
+}
+
+const spec = parse(readFileSync(new URL("../../../docs/api/openapi.yaml", import.meta.url), "utf8")) as {
+  readonly paths: Record<string, Record<string, Operation>>
+  readonly components: { readonly responses: Record<string, { readonly content?: Record<string, unknown> }> }
+}
+const methods = ["get", "put", "post", "delete", "options", "head", "patch", "trace"]
+
+/** The spec's operations as the generated client should call them. */
+const operations = Object.entries(spec.paths).flatMap(([path, item]) =>
+  methods.filter((method) => item[method] !== undefined).map((method) => ({
+    path,
+    method,
+    operation: {
+      ...item[method]!,
+      parameters: [
+        ...((item.parameters as unknown as ReadonlyArray<Parameter>) ?? []),
+        ...(item[method]!.parameters ?? [])
+      ]
+    }
+  }))
+)
+
+const functionName = (id: string) =>
+  id.split(/[^A-Za-z0-9]+/).filter(Boolean).map((word, index) =>
+    index === 0 ? word.toLowerCase() : word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+  ).join("")
+
+const success = (operation: Operation): "json" | "raw" | "none" => {
+  let kind: "json" | "raw" | "none" = "none"
+  for (const [code, declared] of Object.entries(operation.responses ?? {})) {
+    if (!code.startsWith("2")) continue
+    const response = declared.$ref ? spec.components.responses[declared.$ref.split("/").at(-1)!]! : declared
+    const types = Object.keys(response.content ?? {})
+    if (types.includes("application/json")) kind = "json"
+    else if (types.length > 0) kind = "raw"
+  }
+  return kind
+}
+
+const jsonBody = (operation: Operation) =>
+  operation.requestBody !== undefined && Object.keys(operation.requestBody.content ?? {}).includes("application/json")
+
+/** A value for `parameter` that needs escaping when it is a string. */
+const sample = (parameter: Parameter) => {
+  const types = [parameter.schema?.type ?? []].flat()
+  if (types.includes("integer") || types.includes("number")) return 7
+  if (types.includes("boolean")) return true
+  return `a b/${parameter.name}?#%`
+}
+
+type Call = { readonly via: "request" | "response"; readonly args: ReadonlyArray<unknown> }
+
+const recorder = () => {
+  const calls: Array<Call> = []
+  const answer = { answered: true }
+  const raw = new Response("stream")
+  const transport: ProductApi.Transport = {
+    request: (...args: Array<unknown>) => {
+      calls.push({ via: "request", args })
+      return Promise.resolve(answer)
+    },
+    response: (...args: Array<unknown>) => {
+      calls.push({ via: "response", args })
+      return Promise.resolve(raw)
+    }
+  }
+  return { calls, transport, answer, raw }
+}
+
+const generated = ProductApi as unknown as Record<
+  string,
+  (transport: ProductApi.Transport, input?: unknown) => Promise<unknown>
+>
+
+describe("the generated product API client", () => {
+  it("preserves owner reset completion and empty order acknowledgment", async () => {
+    const owner = recorder()
+    const reset = { old: "a".repeat(40), new: "b".repeat(40) }
+    const receipt = { state: "settled" as const }
+    owner.transport.request = (...args) => {
+      owner.calls.push({ via: "request", args })
+      return Promise.resolve(receipt)
+    }
+    expect(await ProductApi.postApiStackAttentionId(owner.transport, { path: { id: "force/7" }, body: reset })).toBe(
+      receipt
+    )
+    expect(owner.calls).toEqual([{ via: "request", args: ["POST", "/api/stack/attention/force%2F7", reset] }])
+    const maintainer = recorder()
+    maintainer.transport.request = (...args) => {
+      maintainer.calls.push({ via: "request", args })
+      return Promise.resolve(null)
+    }
+    expect(
+      await ProductApi.postApiStackAttentionId(maintainer.transport, { path: { id: "order-7" }, body: { revision: 7 } })
+    ).toBeNull()
+    expect(maintainer.calls).toEqual([{
+      via: "request",
+      args: ["POST", "/api/stack/attention/order-7", { revision: 7 }]
+    }])
+  })
+
+  it("exports one function per operation with a JSON or empty request body, and nothing else", () => {
+    const expected = operations
+      .filter(({ operation }) => operation.requestBody === undefined || jsonBody(operation))
+      .map(({ operation }) => functionName(operation.operationId))
+      .sort()
+    const exported = Object.entries(ProductApi).filter(([, value]) => typeof value === "function").map(([name]) => name)
+      .sort()
+    expect(exported).toEqual(expected)
+    // Reviewed deployed resource inventory (2026-10-05, smithers-b8): the members roster (#3491), the TODO
+    // edit and answer routes, and the dark TODO branch diff (#3452) were added; the unserved branch reads
+    // (fc5676df0, #3565) and the mythical config setter (44b074f80, #3572) were removed. The flow catalog
+    // read, GET /api/flows (#3499), was added. The install issue reads, GET /api/issues and
+    // GET /api/issues/{n} (#3457), were added.
+    // Includes branch operations, live updates, TODO edits and named flow reads,
+    // including the mounted Add-to-stack operation (#3525).
+    // Exact parity above and the literal resource inventory below remain independent.
+    // Includes order acknowledgment, owner main reset, run-bound Learning evidence,
+    // the mounted native stack candidate/proposal transport (#3533),
+    // and durable install flow admission, launch and receipt reads (#3438).
+    // Includes the revision-bound flow and agent edit confirmation doors (#3498).
+    // Includes installed model sign-in (#3564), bound execution trace facts
+    // and repository access doors (#3492) in the current OpenAPI inventory.
+    // Includes confirmed, attributed install issue comments (d5618796c7, #3492).
+    // Includes the public install sign-in session probe (48fbb67655, #3492).
+    // Includes ACK-delay read/write (730bb65909) and canonical secrets POST (5a121e6330).
+    // Includes the debug API command door (2c7484d8bd, #3434), confirmed install issue
+    // creation and its request read (7ba4c5a53f, #3492), and the terminal command
+    // route (87bf2cf115, #3492).
+    // Includes the repository's own GitHub issue acts and their request read,
+    // /api/repos/{owner}/{repo}/github/issues… (#4030): six doors on the
+    // existing repo-scoped GitHub family, beside Smithers Cloud's own tracker.
+    // The literal stood at 572 while the spec already served 577 on `main`:
+    // the doors added between are counted here too, so the inventory matches
+    // the spec again rather than trailing it.
+    // Includes this release foundation's own doors, counted once after the
+    // merge: the account's own repository create and its request read,
+    // POST /api/user/repos and GET /api/user/repos/requests/{id} (#3827), and
+    // the repository's own run index, one run and its trace,
+    // /api/repos/{owner}/{repo}/monitors… (#4032).
+    // The declared issue transitions (#4027) add two more: the repository's
+    // transition list beside its saved views, and the one door that performs a
+    // declared transition.
+    // The GitHub pull request review (#4038) adds two: the person's own
+    // verdict on an imported pull request, and the door that answers what
+    // became of one admitted review.
+    expect(expected).toHaveLength(595)
+    expect(spec.paths["/api/install/ack-delay"]).toHaveProperty("get.operationId", "get_api_install_ack_delay")
+    expect(spec.paths["/api/install/ack-delay"]).toHaveProperty("post.operationId", "post_api_install_ack_delay")
+    expect(spec.paths["/api/secrets"]).toHaveProperty("post.operationId", "post_api_secrets")
+    expect(spec.paths["/api/auth/session"]).toHaveProperty("get.operationId", "get_api_auth_session")
+    expect(spec.paths["/api/auth/session"]).toHaveProperty("get.security", [{}, { sessionCookie: [] }, {
+      bearerAuth: []
+    }])
+    expect(spec.paths["/api/issues/{number}/comments"]).toHaveProperty(
+      "post.operationId",
+      "post_api_issues_number_comments"
+    )
+    expect(spec.paths["/api/repos/{owner}/{repo}/workspaces/{id}/stack/{operation}"]).toHaveProperty(
+      "post.parameters.3.schema.enum",
+      ["candidate", "propose"]
+    )
+    // Retained branch activity is served without waking its machine (#3568).
+    expect(spec.paths["/api/branches/{b}/activity"]).toHaveProperty("get.operationId", "get_api_branches_activity")
+    expect(spec.paths["/api/agents/{name}"]).toHaveProperty("get.operationId", "get_api_agents_name")
+    expect(spec.paths["/api/model/test/receipt"]).toHaveProperty("get.operationId", "get_api_model_test_receipt")
+    expect(spec.paths["/api/stack/attention/{id}"]).toHaveProperty("post.operationId", "post_api_stack_attention_id")
+    expect(spec.paths["/api/stack/attention/{id}"]).toHaveProperty(
+      "post.requestBody.content.application/json.schema.oneOf.0.required",
+      ["revision"]
+    )
+    expect(spec.paths["/api/stack/attention/{id}"]).toHaveProperty("post.responses.204")
+    expect(spec.paths["/api/stack/attention/{id}"]).toHaveProperty(
+      "post.requestBody.content.application/json.schema.oneOf.1.required",
+      ["old", "new"]
+    )
+    expect(spec.paths["/api/stack/attention/{id}"]).toHaveProperty(
+      "post.responses.200.content.application/json.schema.properties.state.enum",
+      ["settled"]
+    )
+    expect(spec.paths["/api/repos/{owner}/{repo}/workspaces/{id}/stack/{operation}"]).toHaveProperty(
+      "post.operationId",
+      "post_api_repos_owner_repo_workspaces_id_stack_operation"
+    )
+    expect(spec.paths["/api/branches/{b}/add-to-stack"]).toHaveProperty(
+      "post.operationId",
+      "post_api_branches_b_add_to_stack"
+    )
+    expect(spec.paths["/api/flows/{name}"]).toHaveProperty("get.operationId", "get_api_flows_name")
+    expect(spec.paths["/api/flows"]).toHaveProperty("post.operationId", "post_api_flows")
+    expect(spec.paths["/api/flows/{name}/run"]).toHaveProperty("post.operationId", "post_api_flows_name_run")
+    expect(spec.paths["/api/flows/runs/{id}"]).toHaveProperty("get.operationId", "get_api_flows_runs_id")
+    for (const path of ["/api/agent/turn/cancel", "/api/agent/turn/retire", "/api/chat/turn", "/api/chat/cancel"]) {
+      expect(spec.paths).not.toHaveProperty(path)
+    }
+    expect(Object.keys(spec.paths).filter((path) => path.startsWith("/api/app-timelines"))).toEqual([])
+    expect(spec.paths).not.toHaveProperty("/api/repository-setup/{operation}")
+    expect(
+      operations.filter(({ path }) => path.startsWith("/api/install")).map(({ path, method }) =>
+        `${method.toUpperCase()} ${path}`
+      ).sort()
+    ).toEqual([
+      // T-INS-06 setup steps in §16.2 order (9e9493943, #3455) plus the install read/write, scorecard and quiesce.
+      "DELETE /api/install/quiesce",
+      "GET /api/install",
+      "GET /api/install/ack-delay",
+      "GET /api/install/metrics",
+      "GET /api/install/scorecard",
+      "POST /api/install/ack-delay",
+      "POST /api/install/quiesce",
+      "POST /api/install/setup/address",
+      "POST /api/install/setup/app",
+      "POST /api/install/setup/machine",
+      "POST /api/install/setup/models",
+      "POST /api/install/setup/repository",
+      "POST /api/install/setup/sign_in",
+      "POST /api/install/setup/source",
+      "PUT /api/install"
+    ])
+    for (const path of Object.keys(spec.paths)) {
+      expect(path).not.toMatch(/^\/api\/(?:pair-sessions|share|oauth2\/applications)(?:\/|$)/)
+    }
+  })
+
+  it.each(operations.filter(({ operation }) => operation.requestBody === undefined || jsonBody(operation)))(
+    "$method $path sends the declared method, escaped path, query and body",
+    async ({ path, method, operation }) => {
+      const parameters = operation.parameters ?? []
+      const pathValues = Object.fromEntries(parameters.filter((p) => p.in === "path").map((p) => [p.name, sample(p)]))
+      const queryValues = Object.fromEntries(parameters.filter((p) => p.in === "query").map((p) => [p.name, sample(p)]))
+      // Only a required header is the caller's; the transport owns the rest.
+      const headers = Object.fromEntries(
+        parameters.filter((p) => p.in === "header" && p.required === true).map((p) => [p.name, `key ${p.name}`])
+      )
+      const sendsHeaders = Object.keys(headers).length > 0
+      const body = { operation: operation.operationId }
+      const input = {
+        ...(Object.keys(pathValues).length > 0 ? { path: pathValues } : {}),
+        ...(Object.keys(queryValues).length > 0 ? { query: queryValues } : {}),
+        ...(sendsHeaders ? { headers } : {}),
+        ...(jsonBody(operation) ? { body } : {})
+      }
+      const { calls, transport, answer, raw } = recorder()
+      const result = await generated[functionName(operation.operationId)]!(transport, input)
+
+      const search = new URLSearchParams(Object.entries(queryValues).map(([key, value]) => [key, String(value)]))
+      const expectedPath =
+        path.replace(/\{([^}]+)\}/g, (_, name: string) => encodeURIComponent(String(pathValues[name]))) +
+        (search.size > 0 ? `?${search}` : "")
+      const kind = success(operation)
+      expect(calls).toEqual([{
+        via: kind === "raw" ? "response" : "request",
+        args: [
+          method.toUpperCase(),
+          expectedPath,
+          ...(jsonBody(operation) ? [body] : sendsHeaders ? [undefined] : []),
+          ...(sendsHeaders ? [{ headers }] : [])
+        ]
+      }])
+      expect(result).toBe(kind === "raw" ? raw : kind === "json" ? answer : undefined)
+    }
+  )
+
+  it("reads Learning evidence through the run-bound callback with escaped identifiers", async () => {
+    const { calls, transport, answer } = recorder()
+    const result = await ProductApi.getApiGatewaysHostLearningRunEvidence(transport, {
+      path: { hostID: "host/1?", runID: "run:7/steer" }
+    })
+    expect(result).toBe(answer)
+    expect(calls).toEqual([{
+      via: "request",
+      args: [
+        "GET",
+        "/api/gateways/host%2F1%3F/learning/run%3A7%2Fsteer/evidence"
+      ]
+    }])
+  })
+
+  it("leaves unset query parameters out of the path", async () => {
+    const { calls, transport } = recorder()
+    const path = { owner: "o", repo: "r", change_id: "c" }
+    await ProductApi.getApiReposOwnerRepoChangesChangeIdDiff(transport, { path, query: { whitespace: "ignore" } })
+    await ProductApi.getApiReposOwnerRepoChangesChangeIdDiff(transport, { path })
+    expect(calls.map((call) => call.args[1])).toEqual([
+      "/api/repos/o/r/changes/c/diff?whitespace=ignore",
+      "/api/repos/o/r/changes/c/diff"
+    ])
+  })
+
+  it("rejects when the transport rejects", async () => {
+    const failure = new Error("refused")
+    const transport: ProductApi.Transport = {
+      request: () => Promise.reject(failure),
+      response: () => Promise.reject(failure)
+    }
+    await expect(ProductApi.getApiUserKeys(transport)).rejects.toBe(failure)
+    await expect(ProductApi.deleteApiUserKeysId(transport, { path: { id: 4 } })).rejects.toBe(failure)
+    await expect(ProductApi.getApiAdminAuditLogs(transport)).rejects.toBe(failure)
+  })
+})

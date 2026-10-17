@@ -30,9 +30,9 @@ const host = runtime === "bun"
 trace("platform imported")
 const root = await mkdtemp(join(tmpdir(), `smithers-native-${runtime}-`))
 try {
-  await mkdir(join(root, "flows", "native"), { recursive: true })
+  await mkdir(join(root, ".smithers", "flows", "native"), { recursive: true })
   await writeFile(
-    join(root, "flows", "native", "flow.ts"),
+    join(root, ".smithers", "flows", "native", "flow.ts"),
     `
 import * as Flow from "@smthrs/core/Flow"
 import { Schema } from "effect"
@@ -215,7 +215,7 @@ export default ({  name: "native", description: "Portable native delegate", inpu
     assert.equal(read().status, "suspended")
     if (drift) {
       await writeFile(
-        join(root, "flows", "native", "flow.ts"),
+        join(root, ".smithers", "flows", "native", "flow.ts"),
         `
 import * as Flow from "@smthrs/core/Flow"
 import { Schema } from "effect"

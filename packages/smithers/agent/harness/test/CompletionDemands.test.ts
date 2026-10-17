@@ -3,7 +3,7 @@
  * against.
  *
  * The first fixture is the five journals of SWE-bench wave 9, distilled by
- * `evals/swebench/lib/narrowing-journals.mjs` to exactly what the detectors
+ * `packages/smithers/agent/harness/benchmarks/swebench/lib/narrowing-journals.mjs` to exactly what the detectors
  * read: every settled call's flow, input and outcome, what its result said
  * about its subject's exit status and about whether it ran a check at all, the
  * digest each frame closed on and whether that frame moved the tree, and the
@@ -34,7 +34,7 @@
  * that resolved has to explain itself against ten real journals.
  *
  * The third fixture is the r97 full-bench wave — 45 journals, distilled by
- * `evals/swebench/lib/r97-narrow-only-journals.mjs` — and it is the file the
+ * `packages/smithers/agent/harness/benchmarks/swebench/lib/r97-narrow-only-journals.mjs` — and it is the file the
  * narrow-only demand's precision was measured on: five firings, of which
  * three were wrong, each answered by the identical completion re-issued with
  * a sentence saying the check carried no filter. It carries two things the

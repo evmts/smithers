@@ -38,9 +38,9 @@ interface Result {
 const run = async (source: string): Promise<Result> => {
   const root = await mkdtemp(join(modulesRoot, ".native-template-"))
   try {
-    await mkdir(join(root, "flows/entry"), { recursive: true })
-    await writeFile(join(root, "flows/entry/flow.ts"), source)
-    await writeFile(join(root, "flows/entry/helper.ts"), "export const priority = 7\n")
+    await mkdir(join(root, ".smithers/flows/entry"), { recursive: true })
+    await writeFile(join(root, ".smithers/flows/entry/flow.ts"), source)
+    await writeFile(join(root, ".smithers/flows/entry/helper.ts"), "export const priority = 7\n")
     const output = await new Promise<string>((resolve, reject) =>
       execFile(
         process.execPath,

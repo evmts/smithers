@@ -8,7 +8,7 @@ import * as NodeControl from "@smthrs/cli/NodeControl"
 import { Control, ControlSchema } from "@smthrs/control"
 import * as Diagnosis from "@smthrs/gateway/Diagnosis"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
-import { executionDigest } from "@smthrs/registry/Descriptor"
+import { executionDigest, projectFlowsDirectory } from "@smthrs/registry/Descriptor"
 import * as Executable from "@smthrs/registry/Executable"
 import * as Registry from "@smthrs/registry/Registry"
 import { Cause, Context, Effect, Exit, Fiber, Layer, ManagedRuntime, Schema, Stream } from "effect"
@@ -106,6 +106,7 @@ export const make = (options: {
   )
   const registry = () => NativeControl.layerRegistry(options.cwd)
   let opening: Promise<Opened> | undefined
+  let notices: ReadonlyArray<string> = []
   // The module flows the opened host imported; a flow file added later needs a restart.
 
   const open = (): Promise<Opened> => {
@@ -168,7 +169,7 @@ export const make = (options: {
     control((service) => service.watch({ runId, follow: false }).pipe(Stream.runCollect)).then((events) => [...events])
 
   return {
-    warm: () => existsSync(join(options.cwd, "flows")) ? control(() => Effect.void) : Promise.resolve(),
+    warm: () => existsSync(join(options.cwd, projectFlowsDirectory)) ? control(() => Effect.void) : Promise.resolve(),
     // Only a host that already opened: asking must never import anything.
     loaded: async () => {
       if (opening === undefined) return undefined
@@ -180,13 +181,20 @@ export const make = (options: {
     },
     discover: () =>
       Effect.runPromise(
-        Registry.Registry.pipe(Effect.flatMap((each) => each.list()), Effect.provide(registry()))
+        Registry.Registry.pipe(
+          Effect.flatMap((each) => Effect.all([each.list(), each.warnings()])),
+          Effect.provide(registry())
+        )
       ).then(
-        (listed) => listed.map(Extension.project),
+        ([listed, warnings]) => {
+          notices = warnings.filter((warning) => warning.code === "retired_root").map((warning) => warning.message)
+          return listed.map(Extension.project)
+        },
         (error) => {
           throw typed(error)
         }
       ),
+    notices: () => notices,
     // A fresh registry each read, so an edited agent file applies to the next launch.
     body: (flow) =>
       Effect.runPromise(

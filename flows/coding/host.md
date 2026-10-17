@@ -37,7 +37,7 @@ With a project it also registers `factory/Todo`, which routes each stack request
 on rebased candidates, and `coding/wiki` when the project enables its wiki: the stack
 runs it after every fold to refresh and review the declared pages.
 These routes ship as host built-ins beside `coding` and `coding/implementation`,
-so a repository needs only its project file and never a `flows/coding/` tree; a
+so a repository needs only its project file and never a `.smithers/flows/coding/` tree; a
 repository's own flow of the same name wins.
 See [project-config.md](project-config.md) for missing and invalid file behavior.
 

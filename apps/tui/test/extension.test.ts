@@ -10,7 +10,7 @@ const listed = (overrides: Partial<Extension.Descriptor> = {}): Extension.Descri
   kind: "markdown",
   flows: [],
   capabilities: ["fs:read:**"],
-  path: "/repo/flows/review/flow.mdx",
+  path: "/repo/.smithers/flows/review/flow.mdx",
   ...overrides
 })
 
@@ -151,7 +151,7 @@ describe("project", () => {
       model: { _tag: "Some", value: "openai:gpt-6-sol" },
       flows: ["read"],
       capabilities: ["fs:read:**"],
-      path: "/repo/flows/review/flow.mdx",
+      path: "/repo/.smithers/flows/review/flow.mdx",
       frontmatter: { effort: "high", metadata: { tui: { status: true } } }
     })
     expect(projected).toEqual({
@@ -163,7 +163,7 @@ describe("project", () => {
       effort: "high",
       flows: ["read"],
       capabilities: ["fs:read:**"],
-      path: "/repo/flows/review/flow.mdx",
+      path: "/repo/.smithers/flows/review/flow.mdx",
       tui: { status: true }
     })
     expect(Extension.project({ ...projected, body: { _tag: "Module" }, model: { _tag: "None" }, frontmatter: {} }))
@@ -174,7 +174,7 @@ describe("project", () => {
         kind: "module",
         flows: ["read"],
         capabilities: ["fs:read:**"],
-        path: "/repo/flows/review/flow.mdx"
+        path: "/repo/.smithers/flows/review/flow.mdx"
       })
   })
 })

@@ -12,7 +12,7 @@ const program = Effect.gen(function*() {
   const registry = yield* Registry.Registry
   const before = yield* registry.get("entry")
   const loaded = yield* Effect.result(Executable.fromDescriptor(before, { delegates: [] }))
-  yield* fs.writeFileString(`${root}/flows/entry/helper.ts`, "export const priority = 9\n")
+  yield* fs.writeFileString(`${root}/.smithers/flows/entry/helper.ts`, "export const priority = 9\n")
   const stale = yield* Effect.flip(Executable.fromDescriptor(before, { delegates: [] }))
   yield* registry.refresh()
   const after = yield* registry.get("entry")
@@ -24,7 +24,7 @@ const program = Effect.gen(function*() {
     stale: stale.code,
     before: Descriptor.executionDigest(before),
     after: Descriptor.executionDigest(after),
-    leftovers: (yield* fs.readDirectory(`${root}/flows/entry`)).filter((name) => name.startsWith(".smithers-"))
+    leftovers: (yield* fs.readDirectory(`${root}/.smithers/flows/entry`)).filter((name) => name.startsWith(".smithers-"))
   }
 })
 const platform = Layer.merge(NodeFileSystem.layer, NodePath.layer)

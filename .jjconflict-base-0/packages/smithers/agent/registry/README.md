@@ -1,0 +1,234 @@
+# @smthrs/registry
+
+Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
+
+This package declares `effect` as a `^4.0.4` peer dependency. Install one
+`effect` release in that range so all Smithers packages share one Effect
+runtime.
+
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/registry/docs
+
+Answers the question "what flows does this project have" without running any of
+them. It scans ordered directories into serializable flow descriptors, keeps
+every prompt body behind a reference, and hands a host the lookups it needs to
+list a catalog, show it to a model, and execute one entry by name.
+
+A flow lives on disk as a directory holding one entry file: a markdown
+`flow.mdx`, its Agent Skills spelling `SKILL.md`, or a TypeScript `flow.ts`.
+Scanning one produces a `FlowDescriptor`, a plain value you can journal, send
+over a wire, or compare against another. The scan reads and hashes each entry
+file whole and parses at most its first 64 KiB to find the declaration, so it
+imports nothing, and the body stays behind a path plus the SHA-256 digest
+measured during the scan.
+
+Literal `payload` objects and `Schema.Struct({...})` using an unshadowed
+`Schema` import from `effect` or a namespace import from `effect/Schema` expose
+String, Number, Boolean and Null fields as an Effect JSON Schema document.
+Nested Struct, Array, optional and Literals calls and import aliases are supported.
+The descriptor keeps its module locator: admission uses the module's real
+decoder. Dynamic schemas, refinements, spreads, computed properties and
+unproven imports remain unavailable in metadata and produce a warning;
+discovery never evaluates them.
+
+## Install
+
+```bash
+npm install @smthrs/registry@next effect
+```
+
+`effect` is a peer dependency in the range `^4.0.4`. `@effect/platform-node`
+supplies the `FileSystem` and `Path` implementations the scan walks with; this
+package has no platform bindings of its own.
+
+## List what a directory holds
+
+The API is Effect services and layers: build a `Registry` layer over the sources
+you want scanned, then run a program that asks that service for the catalog.
+
+```ts
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
+import * as NodePath from "@effect/platform-node/NodePath"
+import * as Discovery from "@smthrs/registry/Discovery"
+import * as Registry from "@smthrs/registry/Registry"
+import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
+import { join } from "node:path"
+
+const platform = Layer.merge(NodeFileSystem.layer, NodePath.layer)
+const discovery = Discovery.layer.pipe(Layer.provide(platform))
+
+const registry = Registry.layer({
+  sources: [{ source: "project", root: join(process.cwd(), ".smithers", "flows"), naming: "path" }]
+}).pipe(Layer.provide([discovery, platform]))
+
+const main = Effect.gen(function*() {
+  const catalog = yield* Registry.Registry
+
+  for (const flow of yield* catalog.list()) {
+    console.log(`${flow.name}: ${flow.description}`)
+  }
+
+  for (const warning of yield* catalog.warnings()) {
+    console.log(`skipped ${warning.path}: ${warning.message}`)
+  }
+})
+
+await Effect.runPromise(main.pipe(Effect.provide(registry), Effect.orDie))
+```
+
+```text
+review: Reviews a proposed change and reports concrete correctness and maintainability risks.
+skipped /repo/.smithers/flows/draft/flow.mdx: Markdown flows require a non-empty frontmatter description
+```
+
+`list()` and `warnings()` both answer from one complete snapshot and touch no
+files. A malformed entry becomes a warning rather than a failure, because a
+`.smithers/flows/` directory is a directory a person edits and one file in it is routinely
+mid-edit.
+
+## Public API
+
+The root entry point exports these namespaces; each is also importable from
+`@smthrs/registry/<Module>`.
+
+| Module              | What it owns                                                                                   |
+| ------------------- | ---------------------------------------------------------------------------------------------- |
+| `Descriptor`        | The serializable descriptor, body, schema, source, provenance, budget, and warning models.     |
+| `Disclosure`        | Projects descriptors to compact entries or Agent Skills XML.                                   |
+| `Discovery`         | Metadata-only source scanning over `FileSystem` and `Path`.                                    |
+| `Executable`        | Turns a discovered descriptor into a registered, engine-runnable `@smthrs/flow` flow.          |
+| `ExecutionSnapshot` | Persists an admitted executable's verified source closure and restores it by execution digest. |
+| `MarkdownFlow`      | Parses markdown metadata, loads prompt bodies lazily, and renders invocation prompts.          |
+| `Pack`              | Reads pack manifests, addresses their contents, and merges packs by origin.                    |
+| `Registry`          | Ordered discovery, lookup, visibility, lazy body loading, refresh, and warnings.               |
+| `RegistryError`     | Typed discovery and registry failures and their constructors.                                  |
+
+`@smthrs/registry/package.json` is also exported; `internal/*` and nested
+`*/index` subpaths are blocked.
+
+## Running a discovered flow
+
+Discovery answers _what flows exist_. `Executable` answers _how one runs_: it
+loads the body a descriptor points at, resolves the flow the descriptor
+delegates to, and returns a durable flow plus the layer that registers it.
+
+```ts
+import { Action } from "@smthrs/flow"
+import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import { Executable, Registry } from "@smthrs/registry"
+import { Layer } from "effect"
+
+const registration = Executable.layer({ delegates: [Agent, Shell] }).pipe(
+  Layer.provideMerge(Action.layerImplementations)
+)
+
+const host = NodeRuntime.layerHost(
+  {
+    filename: ".flows/engine.db",
+    workspaceRoot: process.cwd(),
+    owner: { hostId: "local" }
+  },
+  registration,
+  Registry.layerProject({ root: process.cwd() })
+)
+```
+
+`Registry.layerProject({ root, packs })` scans `<root>/.smithers/flows/**` first, then
+every installed pack, under one refreshable first-found registry.
+`Executable.layer` registers everything runnable, logs a warning naming each
+refusal, and provides the whole `Catalog` as a service, so a host can print what
+it declined instead of letting an operator find out from `smthrs flow start <flow>`.
+
+It also provides `Executable.Refresh`. A flow written or edited after the host
+started has a descriptor and no executable, and `refresh.flow(name)` rebuilds
+that one entry in place — no restart, same `Catalog` service, and the previous
+body stays registered until the new one is. `RefreshOptions.refreshable` holds
+entries a host serves out of its own measured bundle `Fixed`.
+
+Module discovery measures project helpers without evaluating them. Executable
+admission supports relative static imports and package `imports` keys with one
+static file target, including transitive imports and cycles. After a helper edit,
+refresh discovers a new identity; an old descriptor is refused before import.
+
+A host may provide `ExecutionSnapshot.layerFileSystem({ root })`, pass its
+service as `Registry.Config.snapshots` and `Executable.Options.snapshots`, and
+call `snapshots.pin(executable)` at first admission. Catalog discovery and
+loading alone do not persist snapshots. Approved execution can then restore
+its entry and static project helpers after a restart or live edit, using the
+same private sibling loader. The manifest retains the approved descriptor and
+the project lockfile identity; missing or corrupt artifacts and changed
+lockfiles refuse restoration. Installed workspace packages remain host code,
+so run the host from a pinned checkout.
+
+Project registries also bind the repository lockfiles into the descriptor’s
+execution identity. A custom discovery source opts in with `lockfileRoot`;
+the descriptor stores its root relative to the discovery root. Discovery reads
+these files without importing code. Body loading and snapshot admission refuse
+dependency drift; older descriptors remain readable with their original identity. `snapshots.roots(digests)` supplies CAS
+roots for nonterminal executions, including when lockfiles have changed.
+
+Measured project helpers reached through `import()` or `require()`, tsconfig
+aliases, or conditional package mappings without one static target are refused
+with `body_unavailable` before evaluating the entry. Their host loader cache
+cannot guarantee the measured bytes, and deferred loads can outlive temporary
+module cleanup. Use supported static imports for those helpers. Installed
+packages without a project mapping and Node/Bun builtins retain host trust.
+Discovery records these specifiers and native `.node` addon paths as
+`BodyRefModule.hostImports`; native host
+plan and approval cards carry them as `envelope.hostImports`. They run with
+host authority beyond the guarded capability ceiling, even with
+`capabilities: []`. The inventory covers static project imports and names
+external packages conservatively; it does not audit their native dependency
+graph or confine arbitrary JavaScript.
+
+Every delegate receives the same serializable `Invocation` envelope: the flow's
+name, the caller's input, the rendered prompt, the declared seat, the lowered
+placement, the declared capabilities, and the declared collaborator flows. One
+registered driver therefore runs many descriptors.
+
+The bridge retains a delegate's `successSchema` and `errorSchema` through both
+inline calls and dispatched, cached calls. Every `Flow.make` value already
+provides these codecs; custom structural `Executable.Delegate` implementations
+may supply the same optional fields. Omitting them preserves the historical
+`Schema.Unknown` JSON-only behavior. Declared transformations and typed errors
+therefore encode and replay using the delegate's contract.
+The catalog erases static codec service requirements, extending the existing
+`Delegate.call`/`execute` service erasure. The delegate's host owns these same
+codecs and must supply their services
+when registering and executing the catalog; erasure does not make codecs
+service-free.
+
+Retaining these codecs changes bridge step keys once, because result schemas
+participate in graph and cache identity. Previously recorded bridge rows are
+not reused under the corrected keys. A `Flow.make` delegate that declares no
+`error` carries `Schema.Never`, and the bridge's error channel is `Never` too.
+
+## Workflow packs
+
+A pack is a directory with a `pack.json` manifest, the shareable unit a project
+installs rather than copies. `Registry.layerFromPacks(packs, { runtimeVersion })`
+scans a set of installed packs into one registry, folded together by origin, and
+every descriptor a pack contributes carries `provenance.pack` with the pack
+name, version, and origin, so a catalog entry says where it came from. The
+manifest format, the path confinement rules, the content address, and the
+compatibility grammar are documented in
+[Load workflow packs](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/registry/docs/guides/load-packs.md).
+
+## Documentation
+
+- [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/registry/docs/installation.md) and
+  [Quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/registry/docs/quickstart.md).
+- [Delegation](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/registry/docs/concepts/delegation.md): the delegate
+  a descriptor names, and what the runtime does with its declarations.
+- [Run a discovered flow](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/registry/docs/guides/run-a-discovered-flow.md):
+  the whole composition, from registered delegates to a running host.
+- [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/registry/docs/api.md): every export,
+  field, and constructor.
+- [Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/registry/docs/troubleshooting.md): every
+  failure code this package raises, and what to change.
+
+Markdown `model` accepts a seat name or a non-empty ordered list, for example
+`model: [openai:gpt-6-sol, anthropic:claude-opus-5-5]`. The list's first entry is
+primary and the rest are fallbacks. Discovery preserves the order in the
+execution identity and invocation; invalid lists produce `invalid_model` and
+are not registered.

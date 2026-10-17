@@ -125,7 +125,7 @@ func agentDispatchLogFixture(t *testing.T, pool *pgxpool.Pool) (runID, stepID in
 		 VALUES ($1, $2, $2, '', TRUE, 'main') RETURNING id`, userID, name).Scan(&repoID))
 	require.NoError(t, pool.QueryRow(ctx,
 		`INSERT INTO workflow_definitions (repository_id, name, path, config)
-		 VALUES ($1, 'agent', 'flows/agent/flow.ts', '{}') RETURNING id`, repoID).Scan(&definitionID))
+		 VALUES ($1, 'agent', '.smithers/flows/agent/flow.ts', '{}') RETURNING id`, repoID).Scan(&definitionID))
 	run, err := db.New(pool).CreateWorkflowRun(ctx, db.CreateWorkflowRunParams{
 		RepositoryID: repoID, WorkflowDefinitionID: definitionID,
 		Status: "queued", TriggerEvent: "agent_message", ExecutionPlane: WorkflowRunPlaneAgent,

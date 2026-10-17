@@ -365,9 +365,9 @@ describe("Codex subscription seat resolution", () => {
     const root = mkdtempSync(join(tmpdir(), "smithers-codex-workspace-"))
     roots.push(root)
     const { sent, executor } = backend([{ events: completed("```cell\nctx.done(\"journal-ok\")\n```") }])
-    mkdirSync(join(root, "flows", "proof"), { recursive: true })
+    mkdirSync(join(root, ".smithers", "flows", "proof"), { recursive: true })
     writeFileSync(
-      join(root, "flows", "proof", "flow.mdx"),
+      join(root, ".smithers", "flows", "proof", "flow.mdx"),
       "---\ndescription: Codex journal proof.\nmodel: codex:sol\n---\nReply journal-ok.\n"
     )
     const registry = NodeControl.layerRegistry(root)

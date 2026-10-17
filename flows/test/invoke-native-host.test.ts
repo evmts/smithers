@@ -188,9 +188,9 @@ if (process.argv[2] === "--fixture") {
         root = join(temporary, "repo"),
         stateRoot = join(temporary, "state")
       t.after(() => rm(temporary, { recursive: true, force: true }))
-      await mkdir(join(root, "flows", "echo"), { recursive: true })
+      await mkdir(join(root, ".smithers", "flows", "echo"), { recursive: true })
       await mkdir(stateRoot)
-      await writeFile(join(root, "flows", "echo", "flow.ts"), declaration)
+      await writeFile(join(root, ".smithers", "flows", "echo", "flow.ts"), declaration)
       const execute = promisify(execFile), results = []
       for (const mode of ["first", "restart"]) {
         const result = await execute(process.execPath, [
@@ -214,10 +214,10 @@ if (process.argv[2] === "--fixture") {
       root = join(temporary, "repo"),
       stateRoot = join(temporary, "state")
     t.after(() => rm(temporary, { recursive: true, force: true }))
-    await mkdir(join(root, "flows", "echo"), { recursive: true })
+    await mkdir(join(root, ".smithers", "flows", "echo"), { recursive: true })
     await mkdir(stateRoot)
-    await writeFile(join(root, "flows", "echo", "flow.ts"), closureDeclaration)
-    await writeFile(join(root, "flows", "echo", "helper.ts"), helper)
+    await writeFile(join(root, ".smithers", "flows", "echo", "flow.ts"), closureDeclaration)
+    await writeFile(join(root, ".smithers", "flows", "echo", "helper.ts"), helper)
     const pin = sourceDigest(new TextEncoder().encode(closureDeclaration), [
       { path: "helper.ts", contentDigest: createHash("sha256").update(helper).digest("hex") }
     ])!
@@ -231,7 +231,7 @@ if (process.argv[2] === "--fixture") {
     const approved = await run()
     assert.match(approved.stdout, /"completed":true/)
     // flow.ts is unchanged; only the module it imports now does something else.
-    await writeFile(join(root, "flows", "echo", "helper.ts"), "export const suffix = \"-tampered\"\n")
+    await writeFile(join(root, ".smithers", "flows", "echo", "helper.ts"), "export const suffix = \"-tampered\"\n")
     await rm(join(stateRoot, "fixture-receipt.json"), { force: true })
     await assert.rejects(run(), /Pinned invocation source changed/)
   })
@@ -243,7 +243,7 @@ if (process.argv[2] === "--fixture") {
       const temporary = await mkdtemp(join(tmpdir(), "invoke-require-")),
         root = join(temporary, "repo"),
         stateRoot = join(temporary, "state"),
-        echo = join(root, "flows", "echo"),
+        echo = join(root, ".smithers", "flows", "echo"),
         marker = join(temporary, "impl-ran")
       t.after(() => rm(temporary, { recursive: true, force: true }))
       await mkdir(echo, { recursive: true })
@@ -291,7 +291,7 @@ if (process.argv[2] === "--fixture") {
     const temporary = await mkdtemp(join(tmpdir(), "invoke-resolver-")),
       root = join(temporary, "repo"),
       stateRoot = join(temporary, "state"),
-      echo = join(root, "flows", "echo")
+      echo = join(root, ".smithers", "flows", "echo")
     t.after(() => rm(temporary, { recursive: true, force: true }))
     await mkdir(echo, { recursive: true })
     await mkdir(stateRoot)
@@ -313,15 +313,15 @@ if (process.argv[2] === "--fixture") {
     const redirect = JSON.stringify({ compilerOptions: { paths: { effect: ["./evil.ts"] } } })
     // flow.ts and its closure are unchanged in every case; only resolution moves.
     await writeFile(join(echo, "tsconfig.json"), redirect)
-    await assert.rejects(run(), /resolver configuration at flows\/echo\/tsconfig\.json/)
+    await assert.rejects(run(), /resolver configuration at \.smithers\/flows\/echo\/tsconfig\.json/)
     await rm(join(echo, "tsconfig.json"))
     await mkdir(join(echo, "node_modules", "effect"), { recursive: true })
-    await assert.rejects(run(), /resolver configuration at flows\/echo\/node_modules/)
+    await assert.rejects(run(), /resolver configuration at \.smithers\/flows\/echo\/node_modules/)
     await rm(join(echo, "node_modules"), { recursive: true })
     await mkdir(join(root, "node_modules", "zod"), { recursive: true })
     await assert.rejects(run(), /resolver configuration at node_modules\/zod/)
     await rm(join(root, "node_modules", "zod"), { recursive: true })
-    const rootConfig = JSON.stringify({ compilerOptions: { paths: { effect: ["./flows/echo/evil.ts"] } } })
+    const rootConfig = JSON.stringify({ compilerOptions: { paths: { effect: ["./.smithers/flows/echo/evil.ts"] } } })
     await writeFile(join(root, "tsconfig.json"), JSON.stringify({ extends: "./base.json" }))
     await assert.rejects(run(), /resolver configuration at tsconfig\.json/)
     await writeFile(join(root, "tsconfig.json"), rootConfig)
@@ -344,8 +344,8 @@ if (process.argv[2] === "--fixture") {
     )
     for (
       const manifest of [
-        { name: "repo", type: "module", imports: { "#impl": "./flows/echo/impl.ts" } },
-        { name: "repo", type: "module", exports: { "./impl": "./flows/echo/impl.ts" } }
+        { name: "repo", type: "module", imports: { "#impl": "./.smithers/flows/echo/impl.ts" } },
+        { name: "repo", type: "module", exports: { "./impl": "./.smithers/flows/echo/impl.ts" } }
       ]
     ) {
       const bytes = JSON.stringify(manifest)
@@ -365,9 +365,9 @@ if (process.argv[2] === "--fixture") {
     // flow's top-level code never runs in the credentialed host.
     await writeFile(join(root, "tsconfig.json"), "{}")
     const marker = join(temporary, "neighbour-ran")
-    await mkdir(join(root, "flows", "other"))
+    await mkdir(join(root, ".smithers", "flows", "other"))
     await writeFile(
-      join(root, "flows", "other", "flow.ts"),
+      join(root, ".smithers", "flows", "other", "flow.ts"),
       `import { writeFileSync } from "node:fs"\nwriteFileSync(${JSON.stringify(marker)}, "ran")\n` +
         declaration.replace("Flow.make(\"echo\"", "Flow.make(\"other\"")
     )
@@ -378,16 +378,16 @@ if (process.argv[2] === "--fixture") {
     await assert.rejects(readFile(marker), { code: "ENOENT" })
   })
 
-  test("the invocation pins this repository's own flows/ resolver files", { timeout: 120_000 }, async (t) => {
+  test("the invocation pins a repository's own .smithers/flows/ resolver files", { timeout: 120_000 }, async (t) => {
     const temporary = await mkdtemp(join(tmpdir(), "invoke-flows-layout-")),
       root = join(temporary, "repo"),
       stateRoot = join(temporary, "state"),
-      flows = join(root, "flows")
+      flows = join(root, ".smithers", "flows")
     t.after(() => rm(temporary, { recursive: true, force: true }))
     await mkdir(join(flows, "echo"), { recursive: true })
     await mkdir(stateRoot)
     await writeFile(join(flows, "echo", "flow.ts"), declaration)
-    // Materialize the layout this repository tracks: flows/package.json and flows/tsconfig.json.
+    // Materialize the layout this repository tracks: .smithers/flows/package.json and tsconfig.json.
     const ours = fileURLToPath(new URL("..", import.meta.url))
     const manifest = await readFile(join(ours, "package.json"), "utf8")
     const tsconfig = await readFile(join(ours, "tsconfig.json"), "utf8")
@@ -404,8 +404,8 @@ if (process.argv[2] === "--fixture") {
         pin
       ], { timeout: 55_000, maxBuffer: 1024 * 1024 })
     const pinned = sourceDigest(new TextEncoder().encode(declaration), [], [
-      { path: "flows/package.json", contentDigest: digest(manifest) },
-      { path: "flows/tsconfig.json", contentDigest: digest(tsconfig) }
+      { path: ".smithers/flows/package.json", contentDigest: digest(manifest) },
+      { path: ".smithers/flows/tsconfig.json", contentDigest: digest(tsconfig) }
     ])!
     assert.match((await run(pinned)).stdout, /"completed":true/)
     // The files are part of the pin: an approval of flow.ts alone does not cover them.
@@ -414,7 +414,36 @@ if (process.argv[2] === "--fixture") {
     // An intermediate file that redirects a bare import is still refused.
     const redirect = JSON.stringify({ compilerOptions: { paths: { effect: ["./echo/evil.ts"] } } })
     await writeFile(join(flows, "tsconfig.json"), redirect)
-    await assert.rejects(run(pinned), /resolver configuration at flows\/tsconfig\.json/)
+    await assert.rejects(run(pinned), /resolver configuration at \.smithers\/flows\/tsconfig\.json/)
+  })
+
+  test("canonical invocation never runs a flow left in the retired root flows/", { timeout: 30_000 }, async (t) => {
+    const temporary = await mkdtemp(join(tmpdir(), "invoke-retired-root-")),
+      root = join(temporary, "repo"),
+      stateRoot = join(temporary, "state"),
+      marker = join(temporary, "retired-ran")
+    t.after(() => rm(temporary, { recursive: true, force: true }))
+    await mkdir(join(root, "flows", "echo"), { recursive: true })
+    await mkdir(stateRoot)
+    const retired = `import { writeFileSync } from "node:fs"\nwriteFileSync(${JSON.stringify(marker)}, "ran")\n` +
+      declaration
+    await writeFile(join(root, "flows", "echo", "flow.ts"), retired)
+    await assert.rejects(
+      promisify(execFile)(
+        process.execPath,
+        [
+          fileURLToPath(import.meta.url),
+          "--fixture",
+          root,
+          stateRoot,
+          "first",
+          createHash("sha256").update(retired).digest("hex")
+        ],
+        { timeout: 25_000, maxBuffer: 1024 * 1024 }
+      ),
+      /\.smithers\/flows\/echo\/flow\.ts/
+    )
+    await assert.rejects(readFile(marker), { code: "ENOENT" })
   })
 
   test("canonical invocation refuses a declared tag that differs from its path", { timeout: 30_000 }, async (t) => {
@@ -422,10 +451,10 @@ if (process.argv[2] === "--fixture") {
       root = join(temporary, "repo"),
       stateRoot = join(temporary, "state")
     t.after(() => rm(temporary, { recursive: true, force: true }))
-    await mkdir(join(root, "flows", "echo"), { recursive: true })
+    await mkdir(join(root, ".smithers", "flows", "echo"), { recursive: true })
     await mkdir(stateRoot)
     await writeFile(
-      join(root, "flows", "echo", "flow.ts"),
+      join(root, ".smithers", "flows", "echo", "flow.ts"),
       declaration.replace("Flow.make(\"echo\"", "Flow.make(\"other\"")
     )
     await assert.rejects(
@@ -434,7 +463,7 @@ if (process.argv[2] === "--fixture") {
         [fileURLToPath(import.meta.url), "--fixture", root, stateRoot, "mismatch"],
         { timeout: 25_000, maxBuffer: 1024 * 1024 }
       ),
-      /Flow.make tag must match/
+      /Flow\.make tag must match its \.smithers\/flows\/<name>\/flow\.ts path/
     )
   })
 }

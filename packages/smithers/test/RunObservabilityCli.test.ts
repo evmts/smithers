@@ -127,8 +127,8 @@ describe("runs show and runs logs on a live parent run", { timeout: 180_000 }, (
     const root = await realpath(await mkdtemp(join(tmpdir(), "smithers-run-observability-")))
     let runner: ReturnType<typeof command> | undefined
     try {
-      const flow = join(root, "flows", "parent", "flow.ts")
-      await mkdir(join(root, "flows", "parent"), { recursive: true })
+      const flow = join(root, ".smithers", "flows", "parent", "flow.ts")
+      await mkdir(join(root, ".smithers", "flows", "parent"), { recursive: true })
       await symlink(nodeModules, join(root, "node_modules"), "dir")
       await writeFile(flow, source)
       const marker = join(root, "holding")

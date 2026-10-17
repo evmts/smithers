@@ -5,7 +5,7 @@
  * from here, and so does a repository that overrides it by copying only that
  * file (spec §10.4.1a). The packaged coding host shares this entry point with
  * repository flows (`host-modules.ts`), so a copy runs the host's own steps
- * and needs no `flows/coding` tree of its own. A step the copy keeps is
+ * and needs no `.smithers/flows/coding` tree of its own. A step the copy keeps is
  * therefore not part of its digest: `@smthrs` packages come from the host the
  * install ships (§11.3.0).
  *

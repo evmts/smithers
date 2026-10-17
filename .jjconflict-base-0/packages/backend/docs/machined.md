@@ -1,0 +1,470 @@
+# Machine host admission
+
+The composed install binds the authenticated daemon registry to the repository
+engine, durable capture receiver and current member roster. The installed native
+broker supplies member terminal, SSH, SFTP and loopback forwarding sessions.
+The former head reporter and unbound PTY path are retired on this install.
+
+The runtime registers a host-authoritative branch, machine, boot id and newly
+minted machine credential before planting. A new boot atomically revokes the
+previous boot's authority. Boot ids cannot be reused in the registry lifetime.
+Host restart loses this authority and requires fresh registration; retained
+guest credentials must never be adopted from guest files.
+
+The ADR 0004 adapter must verify the nonce proof through
+`internal/machined/wire` before calling `Registry.Admit`. Admission compares the
+credential with the registered boot and derives identity from that binding.
+Invalid credentials close only the newcomer. A successful admission immediately
+replaces and closes the previous connection without waiting for its reader.
+Stream close must promptly interrupt outstanding I/O, as the existing runtime
+relay does. The registry never holds its mutex during stream close.
+
+Every admitted connection starts unready. The production adapter may call
+`Reconciled` only after transferring the host head's objects, receiving the
+object-stream close, completing `wake_reconcile`, and observing `status.ready`.
+Stale replies and reader cleanup cannot affect a replacement lease.
+`RequireReady` checks the lease and branch; it does not replace request
+authorization or serialize an RPC with boot rotation. The dispatcher
+must use this connection's stream, never look up a replacement after admission.
+
+Admission requires the main-pinned bundle, the approved guest helper, current
+branch and member authority, and a reconciled link. Missing providers or a stale
+lease refuse before guest execution. The reference-host terminal chain check
+compares source, bundle and approved helper before booting a VM; component and
+HTTP fixtures do not substitute for that installed acceptance receipt.
+
+The durable event dispatcher owns its authenticated lease. Every exit closes
+that lease, including cancellation, persistence failure and missing writer or
+database composition. Awake operations then refuse until a new connection
+reconciles and replays the outbox. An exiting old dispatcher cannot evict a
+replacement connection. Receipts commit before acknowledgements; projection
+failures leave unacknowledged events retryable.
+
+## Session seam (T-TRM-07)
+
+### Current status
+
+`internal/machined/sessions.go` provides host calls for `open_session`,
+`tcp_connect`, `close_session`, `kill_sessions`, `register_run` and
+`attach_session`. `Registry.Sessions` encodes these calls through the admitted
+host connection. Wrong-branch, stale and unreconciled connections refuse before
+sending. A nil transport returns `unsupported` without effects.
+`SessionTransport.Stream` (also exposed by `Sessions.Stream`) uses that same
+connection pump for bounded session frames. It enforces input credit without
+blocking control replies, caps queued output at the credit bound, and accepts
+output windows only for bytes delivered to the consumer. `Reattach` on a retained
+stream reports delivered output and resends only stdin beyond the broker's
+received offset; it refuses replacement boots. Close and confirmed user/run
+kills wake readers. Window frames remain visible for gateway mapping.
+
+The installed root launcher composes `broker/supervisor.rs` with the Linux
+process owner in `broker/spawn.rs` and one-use installed admission. The child
+permanently drops identity before reading the opaque binding, team environment
+or exact delegated token. Members use private uid directories under
+`/run/smithers`; the agent keeps the existing S1 credential location.
+The generic unbound `msb exec -t` terminal path is removed. Missing installed
+artifacts, authenticated links, current membership or credentials fail closed.
+
+The Go `Terminal` consumer returns output credit when `Read` delivers bytes,
+preserves exit status and signals, and sends stdin EOF separately from close.
+Its reader and writer reattach within the broker's 30-second grace. Unread
+output is replayed from the delivered offset; stdin resumes at the broker's
+consumed offset. A replacement boot or revoked session cannot reattach.
+
+The native repository adapter reuses `flows-jj` snapshot and operation restore,
+and jj's native tree merge for local deltas. Rewrite checkpoints are private,
+durable, and refuse symlinks, replacement and malformed operation IDs. The
+composed host supplies authoritative heads, imports and transactional capture
+and burst projection through its existing repository engine capability.
+
+Capture preserves non-UTF-8 names, binary contents and executable modes in the
+ordinary Git tree. Those names emit no activity or file hints. The shared jj
+runtime stores them losslessly in its path representation and decodes the
+original bytes for snapshot, checkout and ignore matching; it creates no
+surrogate files or companion manifest. Existing UTF-8 paths retain their format.
+
+### Process ownership and stream replay
+
+The supervisor uses the existing registry and `session_stream::Pipe`; it does
+not add another process or credit model. It authorizes the current roster,
+checks account binding and asks the session environment/credential provider
+before creating a cgroup. The Linux process owner binds each child to that
+held cgroup, creates a process group, installs only the team supplementary
+group, permanently drops uid/gid, sets umask 002 and enters `/workspace` before
+executing session argv. Account lookup reads protected passwd/group files;
+it does not load NSS modules in the root process.
+
+PTY allocation uses a held master and kernel-resolved slave. Resize and allowed
+signals target broker-owned descriptors and process groups. SFTP uses the fixed
+image server. TCP uses an unprivileged image relay restricted to a nonzero
+loopback port, with stdin EOF mapped to socket write-half closure.
+
+Each stream direction has 262,144 bytes of credit. Nonblocking descriptor reads
+stop at zero credit. Input receives a window only after bytes reach the kernel;
+blocked input and control frames need no immediate wire reply. Output polling
+rotates between sessions and returns one frame per socketpair exchange. Exit
+follows stdout/stderr EOF. Reattachment validates offsets before clearing the
+grace timer, discards undelivered stdin before replay, and preserves descriptor
+labels and terminal controls. Local streams drain only through their socket's
+scoped polling path, never through host polling.
+
+The root socketpair retains ADR 0004 control encoding. Its private stream
+operations carry one validated frame or bounded registry query per exchange;
+these are not new host wire messages. Agent-local admission uses SO_PEERCRED
+and the kernel cgroup, and atomically inherits the parent session's registered
+run. Only host `register_run` establishes that binding.
+
+### Activation prerequisites
+
+Admission requires authenticated/reconciled transport (T-COL-03), the wire
+codec (T-COL-03r), measured protocol (T-TRM-06), trusted accounts (T-MCH-11),
+trusted root startup (T-SEC-01), session environment (T-MCH-12) and credentials
+(T-TRM-02). An unavailable provider refuses before spawning. Test-only kernels
+exercise refusal and stream behavior; they do not qualify real users/cgroups.
+
+Closed/exited registry entries remain attributable until confirmed cgroup
+cleanup. PTY close sends HUP; exec/SFTP close drops stdin. Lingering descendants
+are killed by user/run revocation or restart. `cgroup.kill` must reach
+`populated 0` within the shared five-second deadline before removal or reply.
+Failed cleanup retains the registry for retry and fences roster admission.
+Root socketpair ticks enforce the 30-second reconnect grace even without host
+traffic. Startup also cleans retained groups before starting another daemon.
+
+C-COL-04, C-J3-06, the terminal cutover and installed root execution remain
+unqualified until their real-host receipts pass. A cross-build or fixture
+kernel is not evidence for privileged execution.
+
+### Reuse decision (E-04)
+
+A long-lived mode of `microsandbox/guest/smithers-guest.py` would retain its
+one-shot managed-child lifecycle and separate JSON control path. Its `relay`
+and `bridge` are transports, not authenticated session dispatchers. Reshaping
+that helper would duplicate the specified daemon supervisor and shared credit
+pipe. Use the Rust broker's lifetime module and shared credit pipe, retaining
+validated descriptor cleanup and privilege-drop ordering from the helper.
+Root qualification remains pending until the helper built from landed main
+is approved. Source packaging and supplemental tests are not root receipts.
+
+
+## Watcher changes and recovery
+
+`session::samples` derives candidate identity from the authenticated broker:
+all sessions of a member share `Person(uid)`, and registered agent PTY commands
+share `Run(run_id)`. Agent exec hosts are excluded from CPU-window candidates;
+their socket writes already have exact attribution. Missing counters, unknown
+actors, changed bindings and overlapping participants remain outside changes.
+The installed sampler emits the immutable host actor reference admitted before
+spawn. Numeric session and run actors still decode for historical recovery;
+neither representation grants authorization.
+
+The shared `Ingestor` event pump routes bursts to `BurstIngest.Apply` with its
+admitted connection and a scope derived from the host workspace row. Its
+object provider must verify the parentless versions commit, indexed blobs,
+`a/` and `b/` paths and post-digests. Missing objects produce no receipt.
+The existing product event writer, file rows and machine receipt commit in one
+transaction; post-commit notifications rebuild `:activity` and `:files` through
+the shared live broker. Burst identity and payload fingerprints reject divergent
+replays. Retaining the branch-scoped burst ref precedes the SQL commit and
+acknowledgement. A ref failure rolls back all projected rows; a later SQL failure
+leaves a safe immutable pin that replay reuses. Split parts stage in the existing
+receipt table, bounded to 32 MiB and 4,096 parts. Staging acknowledges durable
+receipt only; no activity is visible until the complete burst verifies and
+commits. Reconnect recovers staging from PostgreSQL.
+
+Activity uses persisted stream cursors on `/api/live`: a fresh subscription gets
+the last 200 entries, reconnect gets subsequent deltas, and a missing cursor or
+more than 200 replay entries yields `gap`. File projections remain readable
+while the machine sleeps and do not wake it. File snapshots include each path's
+last committed post-digest; open File cards re-read changed paths after a missed
+hint or reconnect, without replacing unrelated cards.
+
+Authenticated `file_written` hints go through the same event pump and shared
+PostgreSQL LISTEN broker. They never create activity, file-version rows, receipts
+or acknowledgements. The live adapter rebuilds and reauthorizes the branch before
+attaching a bounded batch of transient invalidations. Missing attribution or an
+unreconciled/replaced boot refuses publication. Hint loss is repaired by the
+next committed burst snapshot. The single-owner install binds this consumer and
+session-where publishing to its runtime registry. The installed launcher reads
+its authoritative head from the locked host store and requires the consumer
+before guest effects; it does not start a second event reader. Burst verification
+and ref retention share the event transaction and repository maintenance lock,
+including with a one-connection writer pool.
+
+Person and agent attribution resolve committed host references within the event
+transaction, scoped to the branch and machine. Session close, member revocation
+and reused session counters do not change an earlier admitted author. Unknown
+references refuse publication; bytes cannot name a member. Exact legacy burst
+replays use their committed payload digest, and split bursts recover authors only
+from matching retained parts. New legacy session/run events and legacy hints
+without historical evidence refuse publication rather than consulting live
+presence. The installed native coding host now commits an actor reference before
+opening its agent broker session, binds the run before spawn, confirms it through
+`register_run`, and requires broker-confirmed termination during cleanup. Direct
+writes still need their dependency-owned admission migration. The document relay binds
+committed member references to current membership, write-share, lane and machine
+authority. Documents live in the daemon (ADR 0003). The host opens one daemon
+stream per open file, stamps each subscriber's actor and a sequence on its
+frames, relays document bytes unparsed and fans the daemon's replies out; it
+runs no document core for code. It assigns each subscriber a client id bound
+to its actor (ADR 0004 S3), which survives a gap and a host restart (the host
+asks the daemon whether its authors map still assigns the id to that member),
+so unsaved typing resends without Reapply. Admission is cached per subscription for at most 4 s and
+dropped on any revocation event. At most 16 files per branch are open at once
+(`MaxOpenDocuments`). An install mounts the relay only when `app.Config` sets
+`LiveCodeDocuments`; the shipped install leaves it unset until ADR 0003 is
+accepted and C-J3-04, C-DUR-04 K7, C-PERF-03 and C-COL-04 pass on the reference
+host. A subscriber or daemon stream that falls behind its 2 MiB budget gaps
+alone (spec §7.1.1); no overflow or refused open closes the machine link.
+`TestLiveCodeDocumentsComposedInstall` drives two members through the composed
+install with a scripted daemon; it is not daemon-check, disk or latency
+evidence.
+The T-COL-05 moved-off event remains unavailable without its transactional writer.
+
+`POST /api/branches/{b}/files/{path}` accepts the File seam's
+`{action: "restore" | "restore-deleted", version, base_digest}`. The catalog
+resolves the member; unknown fields, including actor overrides, are refused.
+Only that branch's retained version can supply the before bytes. Its blob hash
+is checked before the shared guarded write, using the recorded post-digest (or
+`absent` for deletion). A stale file returns 409 without a retry or overwrite.
+
+The install composes the authenticated object receiver, burst/capture consumer,
+and live notifications. PostgreSQL, native Git, HTTP and live-socket fixtures
+exercise these bindings, but do not qualify the real watcher, VM faults, root
+broker, formatter or reference-host timing checks. Restore still requires the
+runtime's qualified WorkspaceCompareWriter; it has no blind-write fallback.
+
+The existing Git backing-store provider writes literal per-file blobs and parentless version commits without filters or hooks. The private watcher checkpoint pins its current and previous version sets before atomic replacement, and recovery validates burst identities, paths, modes and rename relationships. Corrupt or unsafe recovery files refuse startup instead of resetting history. Installed watcher composition remains required.
+
+Before appending a closed burst, the installed watcher durably retains its
+immutable close intent and versions commit. Startup replays that intent with
+stable event identities, completes any missing multipart entries, and settles
+the original burst before scanning later disk writes. The intent and its pin
+are removed after the watcher checkpoint commits. Writes made while the daemon
+was stopped therefore open a new burst instead of changing an already
+published burst's payload.
+
+## Composed install consumers
+
+`POST /api/terminals` persists a current member's branch request and terminal
+reservation before launching machine or coding-host work. The idempotency key
+recovers the same request after reload. The existing authenticated workspace
+terminal WebSocket attaches owner input or watcher output; a watcher never
+starts a terminal. Native-link and reservation state determine frozen cards.
+
+The SSH gateway reserves each member channel before waking the machine,
+consumes the same delegated credential and admitted session client, and closes
+its persisted reservation on disconnect. SFTP runs the bundled unprivileged
+server; forwarding runs the installed member loopback relay. The agent-only
+TCP primitive cannot select a member identity.
+
+Installed coding hosts run as registered agent sessions under the same broker.
+Authorization locks cover spawn and run registration. An ambiguous registration
+is repaired or fenced with confirmed revocation; process close alone is never
+accepted as proof that an unregistered agent process was terminated. Shared
+native branch access requires current membership and admitted host receipts;
+legacy private boxes keep their single-writer restriction.
+
+Outside-change notes use the same burst transaction and dispatcher intent as
+the pinned TODO attempt. Composition resolves its launch checkpoint, source,
+execution digest, host generation and current membership under row locks;
+the coding participant must also have an acknowledged `register_run` on the
+ready daemon link. A spawn identity alone cannot receive notes. No host is
+launched during ingestion, and another attempt cannot inherit its notes.
+
+The current repository secret projection updates the protected tmpfs team
+environment on authenticated ready links. New processes consume the latest
+literal projection after dropping identity. Existing process environments are
+unchanged. Link replacement, source refusal or membership revocation prevents
+new admission; credential cleanup remains bound to its exact bearer digest.
+
+### Installed session acceptance (T-TRM-07)
+
+`internal/machined/session_native_integration_test.go` connects the production
+Go client to the authenticated installed daemon and root broker. It does not
+launch a branch-built binary as root. Reserve a disposable, exclusively owned
+Linux guest with the shipped broker, real `ben` (20001), `alice` (20002),
+`agent` (19999), team group 20000, cgroup v2, session admission/environment and
+credentials installed. Complete the install's real wake reconciliation and
+roster installation first. Python 3, procps and coreutils must be in its image.
+The guest must have no other Ben sessions: the drainage case kills that user's
+sessions. This is a guest broker harness, not a composed-router or SSH-gateway
+acceptance receipt.
+
+On the host, create a private (0600) JSON authority file with `Endpoint`
+(the forwarded production relay TCP address), `Branch`, `Machine`, `BootID`
+(32 hex characters), `Secret` (64 hex characters), `Credential` and `Principal`
+(a host-committed actor reference, 32 hex characters). An optional `Head`
+(40 hex characters) runs the real wake reconciliation RPC before the roster
+and Status checks; use it for a fresh standalone acceptance guest. Copy boot authority from
+the install's host runtime, never from the branch. Do not record these secrets
+in acceptance artifacts. The harness refuses unknown configuration fields and
+requires the daemon's actual ready Status before admitting sessions.
+
+```sh
+export LANE=fr14-trm07
+source ~/lanes/env.sh
+export SMITHERS_SESSION_ACCEPTANCE_CONFIG=/private/session-acceptance.json
+GOMAXPROCS=8 go test -p 4 ./packages/backend/internal/machined \
+  -run 'TestSession(Production|RootInputsValidatedNative|AdmissionFailsClosedNative)' -count=1 -v -timeout 15m
+```
+
+Cases observe literal uid, supplementary groups, umask, cwd and kernel cgroup;
+exit 7 and TERM; 1 MiB half-close; a lingering child surviving close and user
+kill completing within five seconds; independent empty-cgroup/process checks;
+ten-second disconnect and byte-equal bidirectional replay; stalled 1 GiB
+output with a 32 MiB broker RSS growth bound and every output byte checked;
+hostile branch executable/import/environment payloads; mismatched identity RPCs;
+PTY resize and INT delivery; and real member/registered-agent local socket admission. The RSS bound is a
+harness acceptance ceiling, not a published benchmark claim.
+
+The named root-input test also sends raw malformed controls over the real
+authenticated link, bypassing host codec rejection: unknown method/field/kind,
+missing user, empty exec, SFTP executable override, zero PTY dimensions,
+dimensions on exec, NUL/invalid UTF-8/oversized executable, zero TCP port,
+invalid close/kill selectors, a forged cgroup-path field, empty run selectors,
+member-to-run registration and a future replay offset. A held member process
+must echo byte-equal after these refusals. Drained IDs cannot close, attach or
+register again; repeated kill returns zero. `TestSessionProductionExpiredReattach`
+checks that a 31-second disconnect cannot refresh grace through repeated
+attachment, and an explicit kill still drains any lingering owned cgroup.
+`TestSessionProductionRunDrainIsolation` refuses rebinding a live agent session,
+drains its registered run with a detached child, checks the kernel cgroup after
+the reply, and proves another run and a member's held process remain usable.
+
+`internal/compose/installed_terminal_chain_integration_test.go` now reaches the
+approved native broker through the composed HTTP/WebSocket and SSH doors.
+Its existing retained-home/startup and install-recomposition canaries remain
+part of that chain. Member removal includes a live SSH exec and detached
+`nohup` children in both terminal and SSH cgroups; HTTP removal, affected
+terminal/socket and SSH closures, independent `pgrep -u 20002` and both kernel
+cgroup drainage observations share one five-second deadline starting before DELETE.
+Run `TestInstalledMemberTerminalAndSSHChain` in approved reference-host mode;
+its preflight requires the reviewed helper and install bundle. A skip is no
+proof of this boundary or its deadline.
+
+`TestSessionProductionSignalMatrix` delivers all seven named signals through
+production RPC streams to real exec process groups, observes matching exit
+signals and PID disappearance, and checks that another member's held session
+survives. `TestSessionProductionResizeRefusalMatrix` bypasses the host size
+validator for zero rows/columns, requires broker refusals, and verifies the same
+PTY still reports its original kernel size. `TestSessionProductionLocalAdmissionMatrix`
+uses real agent processes and the production SO_PEERCRED socket to refuse
+member/root identities, exec/sftp kinds, foreign runs and host attribution.
+`TestSessionProductionMalformedStreamReconnectMatrix` sends literal invalid
+signal, resize, credit and oversized data envelopes without the host encoder,
+requires the installed daemon to disconnect, then reattaches the original
+session and proves no rejected stdin advanced its offset or reached the process.
+These are authored native cases, not executed acceptance receipts.
+
+Set `SMITHERS_REQUIRE_SESSION_ACCEPTANCE=1` alongside
+`SMITHERS_SESSION_ACCEPTANCE_CONFIG` when collecting required native receipts.
+The required mode fails if guest authority is absent instead of silently skipping.
+
+`TestSessionProductionProviderAdmissionMatrix` retains a real Alice process
+while removing the Go client's session provider, authenticated connection, boot
+authority, registry and branch binding. Every lifecycle door refuses, and an
+independent kernel census and byte-equal echo prove isolation. Each reconnect
+synchronizes the literal installed Ben/Alice roster through `set_roster` before
+requiring the daemon's observed ready Status.
+
+`crates/smithers-machined/tests/session_installed_inputs.rs` adds the installed
+input-validation and restart/drain driver. Install its reviewed, main-built test
+executable under `/opt/smithers/bundle/tests` in an exclusively reserved Linux
+guest. The executable and all its ancestors must be root-owned and protected;
+a checkout-built root test is refused. Use the shipped `/opt/smithers/bin/smithers-machined`,
+real Ben/Alice/agent accounts, cgroup v2, a relay-topology boot, and host-produced
+one-use admission files for Ben, agent and the raw-envelope fixture Maya (20000).
+Install the reviewed lib-test executable as `/opt/smithers/bundle/tests/smithers_machined`
+and the main-built Go machined test executable as `/opt/smithers/bundle/tests/machined.test`.
+For the outside-run worker, set `SMITHERS_SESSION_ACCEPTANCE_CONFIG` to its private
+host-owned authority JSON, pointing at the guest relay and including `Head` for
+its fresh boot. The selected head comes from that authority JSON. No production readiness
+flag, diagnostic listener, extra broker opcode or injected peer is added.
+
+Run the installed test executable with:
+
+```sh
+export LANE=fr16-trm07
+export SMITHERS_SESSION_ACCEPTANCE_CONFIG=/private/session-acceptance.json
+/opt/smithers/bundle/tests/session_installed_inputs \
+  --exact TestSessionInstalledRootInputMatrices --ignored --nocapture --test-threads=1
+```
+
+Each mutation runs in its own subprocess and private mount namespace. Provider
+cases first execute `id -u` through the production RPC dispatcher, socketpair
+client and real broker, observe `20001`, and drain the positive control. They
+then refuse missing/nonregular environment, invalid environment ownership,
+mode or size, missing admission credentials, invalid credential ownership/mode,
+changed account uid/team group and missing roster, without creating a cgroup.
+Installed credential bytes are copied onto private tmpfs; the original one-use
+binding is never consumed by this driver.
+
+Startup cases cover executable replacement bytes/ownership/mode/setuid/symlink,
+writable or symlinked ancestors, boot ownership,
+mode/content, changed daemon uid/team group and a substituted cgroup parent. The installed launcher is also
+observed with fixed uid/gid 19998, supplementary group 20000, cwd and environment.
+On real daemon exit, a retained non-root child must disappear within five
+seconds, its cgroup must be gone, and only then may a replacement daemon appear.
+Executable bytes/ownership/mode, boot, daemon-account/team and cgroup mutations after the first daemon starts must drain the
+child and refuse replacement. The broker revalidates protected startup inputs
+and the real cgroup hierarchy at every launch. The selected executable must
+remain the running, installer-pinned broker inode; a replacement cannot choose
+different daemon bytes through plausible file metadata.
+
+The outside-run case invokes the installed Go test bundle and its production
+session client, completing the real per-boot handshake, wake reconciliation
+and roster RPCs against the installed daemon. The same local PTY request first
+succeeds from a host-admitted, registered agent process. A separate uid-19999
+process, launched outside every session cgroup, reaches the production
+SO_PEERCRED socket and is closed without a new session; its uid and cgroup are
+independently observed. Run this driver only on an isolated guest: it owns its
+broker/daemon processes and changes their test roster.
+
+The existing approved-bundle `TestSSHRawPrivilegedBrokerEnvelopes` in
+`src/broker/ssh_acceptance.rs` is the direct private socketpair matrix. It covers
+malformed and oversized packets, unknown fields, identity and cgroup selectors,
+invalid streams, live-session controls and roster drainage, with a real installed
+execution control. The driver invokes that installed main-built lib-test bundle with
+`--exact broker::ssh_acceptance::TestSSHRawPrivilegedBrokerEnvelopes --ignored --test-threads=1`;
+its fixture is Maya (20000), and it requires her own installed admission.
+
+Without authority configuration the Go native tests explicitly skip. Installed
+Rust matrices are ignored by default. Compilation, skips and Linux transport
+subsets are not C-COL-04 or C-J3-06 receipts. Passing real-user/cgroup and composed
+five-second removal receipts remain required. C-J3-06 additionally needs the
+second Mac, GitHub key/account exercise and owner-recorded VS Code session.
+
+## Members' own agent sessions (T-AGT-02)
+
+A member's own Codex or Claude Code session reaches the branch conversation as
+ADR 0004 variant-5 `transcript` events (spec §9.6.6). The root broker finds the
+agent process in the member's terminal session and starts children that run as
+the member: one resolves which file is the transcript, one tails it. The
+daemon holds one reader per source, appends each framed record to the durable
+outbox and keeps a checkpoint per source. The host imports a record or answers
+`rejected`; ADR 0004 states what crosses the wire.
+
+### Daemon-local policy
+
+These rules decide what the daemon reads and sends. The host sees only ordinary
+variant-5 records, so none of them is a wire rule and none needs a protocol
+number.
+
+| Policy | Code | Reason |
+| --- | --- | --- |
+| A `rejected` transcript record stops its source for the life of the agent process. | `transcript/pump.rs`, `broker/transcripts.rs` | The host has said this source cannot be imported. Reading on would repeat the refusal for every record. |
+| No transcript is read while 64 durable events of any kind are queued. | `transcript/pump.rs` (`QUEUED`) | The outbox is one queue. A long transcript must not hold a capture or a burst behind it. |
+| A byte that is not UTF-8, and a NUL, is sent as `?`, one byte for one. | `transcript.rs` (`Framer`) | A record must be UTF-8 without NUL. The record stays as long as its line, so its byte range is still the file's and the member sees where the byte was. |
+| An empty or whitespace-only line is carried as leading whitespace of the next record. | `transcript.rs` (`Framer`) | A record is at least one byte. Every byte of the source stays in exactly one record's range, and JSON reads through leading whitespace. |
+| A line longer than 1 MiB becomes one failed, read-only skipped entry. | `transcript.rs` (`Framer`), protocol 12 field 10 | The next line continues at its own file offset; no decoder reads the skipped note. |
+| The daemon asks the broker and reads four times a second; the broker reads the kernel at most once a second and asks a Claude Code process again every 2 s which file is its session. | `transcript/pump.rs` (`PASS`), `broker/transcripts.rs` | A complete record is in the outbox well inside the 5 s bound, and `/clear` becomes a new source of the same participant. |
+| The daemon reads only while it serves an authenticated, reconciled link with a synchronized roster. | `broker/control.rs` (`serving`) | Without one, nothing is discovered and no home is read. |
+
+### Open before T-AGT-02 is Landed (#3622)
+
+- The local `/?codex=` preview stays until the install path's reference-host
+  receipt passes. It is deleted in the commit that records that receipt.
+- Reference-host receipts: `tests/transcript_broker.rs` and
+  `tests/transcript_discovery.rs` with `--ignored` in a microVM, and real
+  Claude Code and Codex sessions in a member's terminal.
+- An agent process is a participant of its entries but is not in presence.

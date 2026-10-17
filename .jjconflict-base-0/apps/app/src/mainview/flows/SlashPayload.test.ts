@@ -1,0 +1,419 @@
+import { describe, expect, test } from "bun:test"
+import type { CommandActions } from "./Flows"
+import { adminFlows, baseFlows } from "./Flows"
+import { nameOf } from "./registry"
+import { flowPlanParts, hasGrammar, payloadFor } from "./SlashPayload"
+
+/** Registration never invokes a handler, so every controller call answers with nothing. */
+const inertActions = new Proxy({}, { get: () => () => undefined }) as CommandActions
+
+/*
+ * The composer boundary refuses what it cannot parse exactly. `files.list`
+ * and `files.read` already reject extra tokens; `flow.run` also refuses
+ * malformed payloads instead of silently dropping tokens.
+ */
+
+describe("slash payload argument counts", () => {
+  test("flow.run refuses extra text that is not a JSON input object", () => {
+    const parsed = payloadFor("flow.run", "create-flow will/flows extra")
+    expect(parsed).toEqual({ error: "Flow input is not valid JSON. Fix the JSON object before running it." })
+  })
+
+  test("flow.run still takes its name and optional repo", () => {
+    expect(payloadFor("flow.run", "create-flow")).toEqual({ payload: { name: "create-flow" } })
+    expect(payloadFor("flow.run", "create-flow will/flows")).toEqual({
+      payload: { name: "create-flow", repo: "will/flows" }
+    })
+    expect(payloadFor("flow.run", "")).toEqual({
+      error: "flow.run needs a flow name"
+    })
+  })
+
+  test("flow.plan takes the launch's own line, and the run to compare it against", () => {
+    expect(payloadFor("flow.plan", "review")).toEqual({ payload: { name: "review" } })
+    expect(payloadFor("flow.plan", "against=run-9 review will/flows")).toEqual({
+      payload: { name: "review", repo: "will/flows", against: "run-9" }
+    })
+    expect(payloadFor("flow.plan", 'sourceCard=card-1 against=run-9 review {"pr":4}')).toEqual({
+      payload: { name: "review", input: { pr: 4 }, against: "run-9", sourceCard: "card-1" }
+    })
+  })
+
+  test("flow.run takes no run to compare against: only the plan door previews", () => {
+    // A launch reads the token as the flow it was asked to run, which is what
+    // the launch grammar has always done with a leading word.
+    expect(payloadFor("flow.run", "against=run-9 review")).toEqual({
+      payload: { name: "against=run-9", repo: "review" }
+    })
+  })
+
+  test("flowPlanParts keeps the tokens a half-typed plan line already carries", () => {
+    expect(flowPlanParts("sourceCard=card-1 against=run-9 review will/flows")).toEqual({
+      name: "review",
+      repo: "will/flows",
+      sourceCard: "card-1",
+      against: "run-9"
+    })
+    expect(flowPlanParts("review")).toEqual({ name: "review" })
+  })
+
+  test("the files.* boundary the others now match", () => {
+    expect(payloadFor("files.list", "src will/flows extra")).toEqual({
+      error: "files takes a path and optionally an owner/repo"
+    })
+  })
+})
+
+/*
+ * Lane runs — the run inbox and its acts. The filters take any order, the
+ * signal's JSON keeps its spacing, and every id-scoped act refuses a blank.
+ */
+describe("the wiki.attach grammar", () => {
+  test("takes an optional path and repo, never a slug", () => {
+    expect(payloadFor("wiki.attach", "")).toEqual({ payload: {} })
+    expect(payloadFor("wiki.attach", "assets/Logo v2.png")).toEqual({ payload: { path: "assets/Logo v2.png" } })
+    expect(payloadFor("wiki.attach", "assets/logo.png will/flows")).toEqual({ payload: { path: "assets/logo.png", repo: "will/flows" } })
+    expect(payloadFor("wiki.attach", "will/flows")).toEqual({ payload: { repo: "will/flows" } })
+  })
+})
+
+describe("the runs grammar", () => {
+  test("runs.list takes its filters in any order, positionals last", () => {
+    expect(payloadFor("runs.list", "")).toEqual({ payload: {} })
+    expect(payloadFor("runs.list", "parked review-pr")).toEqual({
+      payload: { status: "parked", flow: "review-pr" }
+    })
+    expect(payloadFor("runs.list", "lineage=lin-1 parked will/flows")).toEqual({
+      payload: { lineage: "lin-1", status: "parked", repo: "will/flows" }
+    })
+    expect(payloadFor("runs.list", "sourceCard=list-a parked will/flows")).toEqual({ payload: { sourceCard: "list-a", status: "parked", repo: "will/flows" } })
+    expect(payloadFor("runs.list", "by=octocat")).toEqual({ payload: { by: "octocat" } })
+    expect(payloadFor("runs.list", "a b c")).toEqual({
+      error: "runs.list takes [status] [flow] [by=…] [lineage=…] [sourceCard=…] [owner/repo]"
+    })
+  })
+
+  test("runs.open takes a run id and an optional repo", () => {
+    expect(payloadFor("runs.open", "run-1")).toEqual({ payload: { runId: "run-1" } })
+    expect(payloadFor("runs.open", "run-1 will/flows")).toEqual({ payload: { runId: "run-1", repo: "will/flows" } })
+    expect(payloadFor("runs.open", "")).toEqual({
+      error: "runs.open needs a run id: /runs.open <runId> [owner/repo]"
+    })
+  })
+
+  test("runs.signal keeps the JSON payload verbatim", () => {
+    expect(payloadFor("runs.signal", "run-1 deploy-done")).toEqual({
+      payload: { runId: "run-1", name: "deploy-done" }
+    })
+    expect(payloadFor("runs.signal", `run-1 deploy-done {"ok": true}`)).toEqual({
+      payload: { runId: "run-1", name: "deploy-done", payload: `{"ok": true}` }
+    })
+    expect(payloadFor("runs.signal", "run-1")).toEqual({
+      error: "runs.signal needs the signal's name: /runs.signal <runId> <name> [json]"
+    })
+  })
+
+
+  test("runs.logs takes --follow anywhere and nothing else", () => {
+    expect(payloadFor("runs.logs", "run-1")).toEqual({ payload: { runId: "run-1" } })
+    expect(payloadFor("runs.logs", "run-1 --follow")).toEqual({ payload: { runId: "run-1", follow: true } })
+    expect(payloadFor("runs.logs", "--follow run-1")).toEqual({ payload: { runId: "run-1", follow: true } })
+    expect(payloadFor("runs.logs", "run-1 extra")).toEqual({
+      error: "runs.logs takes a run id and optionally --follow"
+    })
+  })
+
+  test("flow.run.stop takes an optional reason after the card id", () => {
+    expect(payloadFor("flow.run.stop", "card-1")).toEqual({ payload: { cardId: "card-1" } })
+    expect(payloadFor("flow.run.stop", "card-1 it hung")).toEqual({
+      payload: { cardId: "card-1", reason: "it hung" }
+    })
+    expect(payloadFor("flow.run.stop", "")).toEqual({ error: "flow.run.stop needs the card id" })
+  })
+
+  test("the id-scoped acts refuse a blank run id", () => {
+    for (const name of ["runs.resume", "runs.rerun", "runs.events", "runs.steps", "approvals.open"]) {
+      expect(payloadFor(name, "")).toEqual({ error: `${name} needs a run id` })
+    }
+  })
+
+  test("the trace's reader gestures take a filter word, or a node with an optional journal seq", () => {
+    expect(payloadFor("runs.trace.filter", "run-1 failed")).toEqual({ payload: { runId: "run-1", filter: "failed" } })
+    expect(payloadFor("runs.trace.filter", "")).toEqual({ error: "runs.trace.filter needs a run id" })
+    expect(payloadFor("runs.trace.filter", "run-1")).toEqual({
+      error: "runs.trace.filter needs one of all, running, failed, model, flow, messages"
+    })
+    expect(payloadFor("runs.trace.filter", "run-1 forks")).toEqual({
+      error: "runs.trace.filter needs one of all, running, failed, model, flow, messages"
+    })
+    expect(payloadFor("runs.trace.filter", "run-1 calls")).toEqual({
+      error: "runs.trace.filter needs one of all, running, failed, model, flow, messages"
+    })
+    expect(payloadFor("runs.trace.filter", "run-1 failed extra")).toEqual({
+      error: "runs.trace.filter takes a run id and one filter"
+    })
+    expect(payloadFor("runs.trace.select", "run-1 call-2")).toEqual({ payload: { runId: "run-1", nodeId: "call-2" } })
+    expect(payloadFor("runs.trace.select", "run-1 call-2 7")).toEqual({ payload: { runId: "run-1", nodeId: "call-2", seq: 7 } })
+    expect(payloadFor("runs.trace.select", "run-1")).toEqual({ error: "runs.trace.select needs the trace node to select" })
+    expect(payloadFor("runs.trace.select", "run-1 call-2 soon")).toEqual({
+      error: "runs.trace.select's seq is a journal sequence number"
+    })
+    expect(payloadFor("runs.trace.select", "")).toEqual({ error: "runs.trace.select needs a run id" })
+  })
+
+  /*
+   * The graph's drill-in (L5): a select takes a node or nothing at all, and a
+   * tab takes one of the four words the drawer answers to.
+   */
+  test("the graph drill-ins take a node to open, or nothing to close the one that is open", () => {
+    expect(payloadFor("runs.graph.select", "run-1 root.flow")).toEqual({ payload: { runId: "run-1", nodeId: "root.flow" } })
+    expect(payloadFor("runs.graph.select", "run-1")).toEqual({ payload: { runId: "run-1" } })
+    expect(payloadFor("runs.graph.select", "")).toEqual({ error: "runs.graph.select needs a run id" })
+    expect(payloadFor("runs.graph.select", "run-1 root.flow extra")).toEqual({
+      error: "runs.graph.select takes a run id and at most one node"
+    })
+    expect(payloadFor("runs.graph.tab", "run-1 code")).toEqual({ payload: { runId: "run-1", tab: "code" } })
+    expect(payloadFor("runs.graph.tab", "run-1 frames")).toEqual({
+      error: "runs.graph.tab needs one of in, declaration, code, output, events, attempts"
+    })
+    expect(payloadFor("runs.graph.tab", "run-1")).toEqual({
+      error: "runs.graph.tab needs one of in, declaration, code, output, events, attempts"
+    })
+    expect(payloadFor("flow.plan.select", "flow-plan-1 gate")).toEqual({ payload: { cardId: "flow-plan-1", nodeId: "gate" } })
+    expect(payloadFor("flow.plan.select", "flow-plan-1")).toEqual({ payload: { cardId: "flow-plan-1" } })
+    expect(payloadFor("flow.plan.select", "")).toEqual({ error: "flow.plan.select needs the plan card it draws on" })
+    expect(payloadFor("flow.plan.tab", "flow-plan-1 declaration")).toEqual({
+      payload: { cardId: "flow-plan-1", tab: "declaration" }
+    })
+    expect(payloadFor("flow.plan.tab", "flow-plan-1 output")).toEqual({
+      payload: { cardId: "flow-plan-1", tab: "output" }
+    })
+    /* A word the drawer has no tab for is refused by name (the mock's `input` is not one the engine can fill). */
+    expect(payloadFor("flow.plan.tab", "flow-plan-1 input")).toEqual({
+      error: "flow.plan.tab needs one of in, declaration, code, output, events, attempts"
+    })
+  })
+
+  test("approvals.list takes just an owner/repo", () => {
+    expect(payloadFor("approvals.list", "")).toEqual({ payload: {} })
+    expect(payloadFor("approvals.list", "will/flows")).toEqual({ payload: { repo: "will/flows" } })
+    expect(payloadFor("approvals.list", "will/flows extra")).toEqual({
+      error: "approvals.list takes just an owner/repo name"
+    })
+  })
+})
+
+
+/*
+ * The line anchor (docs/code-intel/PLAN.md §1, the grammar C7 reserved for
+ * `code.goto`): `files.read <path>[:<line>[:<col>]] [owner/repo]`. Only a
+ * TRAILING numeric suffix comes off the path token, so a repository path
+ * with a colon of its own keeps working; the parser stays first-token-is-path.
+ */
+describe("the files.read line anchor", () => {
+  test("a trailing :line or :line:col comes off the path token into the payload", () => {
+    expect(payloadFor("files.read", "src/x.ts:12")).toEqual({ payload: { path: "src/x.ts", line: 12 } })
+    expect(payloadFor("files.read", "src/x.ts:12:5 will/flows")).toEqual({
+      payload: { path: "src/x.ts", line: 12, column: 5, repo: "will/flows" }
+    })
+    expect(payloadFor("files.read", "/smithersai/smithers/src/x.ts:317")).toEqual({
+      payload: { path: "/smithersai/smithers/src/x.ts", line: 317 }
+    })
+  })
+
+  test("a colon inside the path is the path's own", () => {
+    expect(payloadFor("files.read", "notes/a:b.md")).toEqual({ payload: { path: "notes/a:b.md" } })
+    expect(payloadFor("files.read", "notes/a:b.md:4")).toEqual({ payload: { path: "notes/a:b.md", line: 4 } })
+    expect(payloadFor("files.read", "v1:2:3.txt")).toEqual({ payload: { path: "v1:2:3.txt" } })
+  })
+
+  test("zero is refused by name: lines and columns are 1-based", () => {
+    const error = "file lines and columns count from 1: /file <path>[:<line>[:<col>]]"
+    expect(payloadFor("files.read", "src/x.ts:0")).toEqual({ error })
+    expect(payloadFor("files.read", "src/x.ts:3:0")).toEqual({ error })
+    expect(payloadFor("files.read", ":12")).toEqual({ error: "file needs a file path" })
+  })
+
+  test("files.list keeps a path exactly as typed", () => {
+    expect(payloadFor("files.list", "src:1")).toEqual({ payload: { path: "src:1" } })
+  })
+})
+
+/*
+ * The code-intel positions (docs/code-intel/PLAN.md §4): `code.hover` and
+ * `code.definition` take `<path>:<line>:<col> [owner/repo]` with BOTH numbers
+ * required and 1-based; `code.diagnostics` takes the path alone. The path
+ * keeps a colon of its own exactly as files.read's anchor does.
+ */
+describe("the code.* positions", () => {
+  test("code.hover and code.definition take a path, a line, a column, and the optional repo", () => {
+    expect(payloadFor("code.hover", "src/x.ts:12:5")).toEqual({ payload: { path: "src/x.ts", line: 12, column: 5 } })
+    expect(payloadFor("code.definition", "src/x.ts:12:5 will/flows")).toEqual({
+      payload: { path: "src/x.ts", line: 12, column: 5, repo: "will/flows" }
+    })
+    expect(payloadFor("code.hover", "/smithersai/smithers/src/x.ts:317:9")).toEqual({
+      payload: { path: "/smithersai/smithers/src/x.ts", line: 317, column: 9 }
+    })
+    expect(payloadFor("code.hover", "notes/a:b.ts:4:2")).toEqual({ payload: { path: "notes/a:b.ts", line: 4, column: 2 } })
+  })
+
+  test("a position without both numbers, a zero, or an extra token is refused by name", () => {
+    const usage = "/code.hover <path>:<line>:<col> [owner/repo]"
+    expect(payloadFor("code.hover", "")).toEqual({ error: `code.hover needs a position: ${usage}` })
+    expect(payloadFor("code.hover", "src/x.ts")).toEqual({ error: `code.hover needs <path>:<line>:<col>: ${usage}` })
+    expect(payloadFor("code.hover", "src/x.ts:12")).toEqual({ error: `code.hover needs <path>:<line>:<col>: ${usage}` })
+    expect(payloadFor("code.hover", "src/x.ts:0:1")).toEqual({ error: `code.hover lines and columns count from 1: ${usage}` })
+    expect(payloadFor("code.hover", "src/x.ts:1:0")).toEqual({ error: `code.hover lines and columns count from 1: ${usage}` })
+    expect(payloadFor("code.hover", "src/x.ts:1:1 will/flows extra")).toEqual({
+      error: "code.hover takes a position and optionally an owner/repo"
+    })
+    expect(payloadFor("code.definition", ":1:1")).toEqual({
+      error: "code.definition needs <path>:<line>:<col>: /code.definition <path>:<line>:<col> [owner/repo]"
+    })
+  })
+
+  test("code.diagnostics takes the path and the optional repo, and refuses a third token", () => {
+    expect(payloadFor("code.diagnostics", "src/x.ts")).toEqual({ payload: { path: "src/x.ts" } })
+    expect(payloadFor("code.diagnostics", "src/x.ts will/flows")).toEqual({ payload: { path: "src/x.ts", repo: "will/flows" } })
+    expect(payloadFor("code.diagnostics", "")).toEqual({
+      error: "code.diagnostics needs a file path: /code.diagnostics <path> [owner/repo]"
+    })
+    expect(payloadFor("code.diagnostics", "src/x.ts will/flows extra")).toEqual({
+      error: "code.diagnostics takes a path and optionally an owner/repo"
+    })
+  })
+})
+
+
+describe("structured flow input", () => {
+  test("an optional JSON object preserves nested values and string whitespace with or without a repo", () => {
+    const input = { plan: { prompt: "Keep  two spaces.\nNext line.", changes: [{ title: "One" }] }, count: 3, enabled: true }
+    expect(payloadFor("flow.run", `coding will/repo ${JSON.stringify(input)}`)).toEqual({ payload: { name: "coding", repo: "will/repo", input } })
+    expect(payloadFor("flow.run", `coding ${JSON.stringify(input)}`)).toEqual({ payload: { name: "coding", input } })
+    for (const body of ["[]", "null", '"text"', "3", "true", "{} trailing", "{bad"]) {
+      expect(payloadFor("flow.run", `coding will/repo ${body}`)).toHaveProperty("error")
+    }
+  })
+})
+
+test("run source parsing preserves repository context for slash-shaped run IDs", () => {
+  const known = new Set(["will/flows"])
+  expect(payloadFor("runs.open", "sourceCard=list-a jobs/run-1", undefined, known)).toEqual({
+    payload: { runId: "jobs/run-1", sourceCard: "list-a" }
+  })
+  expect(payloadFor("runs.open", "sourceCard=list-a jobs/run-1 will/flows", undefined, known)).toEqual({
+    payload: { runId: "jobs/run-1", repo: "will/flows", sourceCard: "list-a" }
+  })
+})
+
+
+/* Argument-bearing flows need a table decoder or a declaration grammar. */
+describe("every declaration that takes arguments names a decoder", () => {
+  test("a flow declaring an args hint carries a decoder, in the table or on the declaration", () => {
+    const undecoded = [...baseFlows(inertActions), ...adminFlows(inertActions)]
+      .filter((entry) => entry.metadata.args !== undefined)
+      .filter((entry) => !hasGrammar(nameOf(entry)) && entry.metadata.grammar === undefined)
+      .map(nameOf)
+    expect(undecoded).toEqual([])
+  })
+
+  test("triggers.register preserves the repository it was given, as triggers.list does", () => {
+    expect(payloadFor("triggers.register", "other/repo")).toEqual({ payload: { repo: "other/repo" } })
+    expect(payloadFor("triggers.list", "other/repo")).toEqual({ payload: { repo: "other/repo" } })
+    expect(payloadFor("triggers.register", "")).toEqual({ payload: {} })
+    expect(payloadFor("triggers.register", "other/repo extra")).toEqual({
+      error: "triggers.register takes an owner/repo and --flow, --slug, --schedule, --input, --tokens, --minutes"
+    })
+    expect(payloadFor("triggers.register", 'other/repo --flow nightly-lint --slug nightly --schedule 0 9 * * 1-5 --input {"label":"a"}')).toEqual({
+      payload: { repo: "other/repo", flow: "nightly-lint", slug: "nightly", schedule: "0 9 * * 1-5", input: '{"label":"a"}' }
+    })
+    /* The limits every unattended fire may spend, when the person names them rather than taking the flow's own ceiling. */
+    expect(payloadFor("triggers.register", "other/repo --flow nightly-lint --slug nightly --schedule 0 9 * * 1-5 --tokens 150000 --minutes 20")).toEqual({
+      payload: { repo: "other/repo", flow: "nightly-lint", slug: "nightly", schedule: "0 9 * * 1-5", tokens: "150000", minutes: "20" }
+    })
+  })
+})
+
+test("coding connection revocation decodes its ID and requires a missing ID", () => {
+  expect(payloadFor("secrets.scope", "DEPLOY main-only")).toEqual({ payload: { name: "DEPLOY", scope: "main-only" } })
+  expect(payloadFor("secrets.scope", "DEPLOY all will/flows")).toEqual({ payload: { name: "DEPLOY", scope: "all", repo: "will/flows" } })
+  expect(payloadFor("secrets.scope", "DEPLOY")).toEqual({ error: "secrets.scope takes a secret name and main-only or all" })
+  expect(payloadFor("secrets.bind", "NPM_TOKEN")).toEqual({ payload: { name: "NPM_TOKEN" } })
+  expect(payloadFor("secrets.bind", JSON.stringify({ name: "NPM_TOKEN", hosts: "registry.npmjs.org", headers: "authorization" })))
+    .toEqual({ payload: { name: "NPM_TOKEN", hosts: "registry.npmjs.org", headers: "authorization" } })
+})
+
+test("the workspace launch grammar preserves container and VM but rejects desktop", () => {
+  for (const kind of ["container", "vm"] as const) {
+    expect(payloadFor("box.open", `main --kind ${kind}`)).toEqual({ payload: { bookmark: "main", kind } })
+  }
+  expect(payloadFor("box.open", "main --kind desktop")).toHaveProperty("error")
+  const names = baseFlows(inertActions).map(flow => nameOf(flow))
+  for (const removed of ["desktop", "box.desktop", "box.desktop.open", "box.desktop.rotate", "box.desktop.stop", "app.download", "app.download.prompt"]) {
+    expect(names).not.toContain(removed)
+  }
+  expect(names).toContain("branch")
+  expect(names).not.toContain("box.open")
+  for (const folded of ["box.terminal", "box.sessions"]) expect(names).not.toContain(folded)
+  expect(names).toContain("terminal")
+})
+
+describe("box.open recovery grammar", () => {
+  const recoveries: ReadonlyArray<{ snapshot?: string; recoveryOf?: string }> = [
+    {}, { snapshot: "snapshot-1" }, { recoveryOf: "old-box" }, { snapshot: "snapshot-1", recoveryOf: "old-box" }
+  ]
+  for (const kind of [undefined, "container", "vm"] as const) {
+    for (const recovery of recoveries) {
+      test(`retains ${kind ?? "default"} kind and ${JSON.stringify(recovery)} in any flag position`, () => {
+        const options = [kind === undefined ? "" : `--kind ${kind}`,
+          recovery.snapshot === undefined ? "" : `--snapshot ${recovery.snapshot}`,
+          recovery.recoveryOf === undefined ? "" : `--recoveryOf ${recovery.recoveryOf}`].filter(Boolean)
+        const payload = { bookmark: "main", repo: "o/r", ...(kind === undefined ? {} : { kind }), ...recovery }
+        for (const flags of [options.join(" "), [...options].reverse().join(" ")]) {
+          for (const args of [`${flags} main o/r`, `main ${flags} o/r`, `main o/r ${flags}`]) {
+            expect(payloadFor("box.open", args)).toEqual({ payload })
+          }
+        }
+        expect(payloadFor("box.open", JSON.stringify(payload))).toEqual({ payload })
+      })
+    }
+  }
+  test("omitted bookmark and repository stay omitted when the line only carries recovery flags", () => {
+    expect(payloadFor("box.open", "--snapshot snapshot-1 --recoveryOf old-box")).toEqual({ payload: { snapshot: "snapshot-1", recoveryOf: "old-box" } })
+    expect(payloadFor("box.open", "--kind vm")).toEqual({ payload: { kind: "vm" } })
+  })
+  test("unknown, duplicate and valueless options never become a bookmark or a recovery id", () => {
+    for (const args of [
+      "--unknown", "--kind vm --unknown", "--snapshot one --snapshot", "--recoveryOf one --recoveryOf",
+      "--snapshot --recoveryOf old-box", "--recoveryOf --snapshot snapshot-1", "--snapshot", "--recoveryOf",
+      "main --snapshot one --snapshot two", "--kind vm --kind container", "--kind desktop"
+    ]) expect(payloadFor("box.open", args)).toHaveProperty("error")
+  })
+})
+
+ test("confirmation cancellation refuses scalar JSON before form dispatch", () => {
+  const entry = baseFlows(inertActions).find(row => nameOf(row) === "confirm.cancel")!
+  for (const value of ["7", "0", '"hello world"', "500000", "null", "[]"]) {
+    expect(payloadFor("confirm.cancel", value, entry.metadata.grammar)).toEqual({ error: "Invalid confirmation input" })
+  }
+})
+
+test("restored model forms collect missing fields from scalar JSON", () => {
+  for (const name of ["model.assign", "model.save"]) {
+    const entry = baseFlows(inertActions).find(row => nameOf(row) === name)!
+    for (const value of ["7", "0", '"hello world"', "500000", "null", "[]"]) expect(payloadFor(name, value, entry.metadata.grammar)).toEqual({ payload: {} })
+  }
+})
+
+describe("custom JSON grammar at the slash boundary", () => {
+  const grammar = (args: string | undefined) => ({ payload: JSON.parse(args ?? "{}") as Record<string, unknown> })
+  for (const args of ["7", "0", "500000", '"hello world"', "null", "true", "[]", "[{}]"]) {
+    test(`confirmation scalar ${args} supplies no named fields`, () => {
+      expect(payloadFor("confirm.cancel", args, grammar)).toEqual({ payload: {} })
+    })
+  }
+  test("a confirmation object retains both identity fields", () => {
+    expect(payloadFor("confirm.cancel", '{"confirmation":"act-1","revision":"rev-1"}', grammar))
+      .toEqual({ payload: { confirmation: "act-1", revision: "rev-1" } })
+  })
+})

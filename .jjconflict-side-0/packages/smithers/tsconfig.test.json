@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // Fault fixtures typecheck the owning repository flows; this config emits nothing.
+    "rootDir": "../..",
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "composite": false,
+    "resolveJsonModule": true
+  },
+  "include": ["src/**/*", "test/**/*", "examples/**/*"]
+}

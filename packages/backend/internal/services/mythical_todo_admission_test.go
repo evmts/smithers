@@ -276,7 +276,7 @@ func TestTodoQueuedBeforeActivationPinsVersionAtStarting(t *testing.T) {
 		return ActiveFlowDigest(ctx, q, repositoryID, "todo")
 	})
 	sourceOne := o.landedMain()
-	_, err := o.pool.Exec(ctx, `INSERT INTO workflow_definitions(repository_id,name,path,config,is_active,source_commit,digest,status) VALUES($1,'todo','flows/todo/flow.ts','{}',true,$2,$3,'loaded')`, o.repoID, sourceOne, todoPinOne)
+	_, err := o.pool.Exec(ctx, `INSERT INTO workflow_definitions(repository_id,name,path,config,is_active,source_commit,digest,status) VALUES($1,'todo','.smithers/flows/todo/flow.ts','{}',true,$2,$3,'loaded')`, o.repoID, sourceOne, todoPinOne)
 	require.NoError(t, err)
 	_, err = o.pool.Exec(ctx, `UPDATE mythical_stacks SET max_parallel=3 WHERE repository_id=$1`, o.repoID)
 	require.NoError(t, err)

@@ -29,7 +29,7 @@ const flowNameGrammar = (args: string | undefined) => {
   return { payload: { ...(name ? { name } : {}), ...(request ? { request } : {}) } }
 }
 
-import { flowEditPrompt, flowEditTodoInput } from "@smthrs/rpc/FlowEdit"
+import { flowEditPrompt, flowEditTodoInput, flowFile } from "@smthrs/rpc/FlowEdit"
 export { flowEditPrompt, flowEditTodoInput } from "@smthrs/rpc/FlowEdit"
 
 /*
@@ -72,7 +72,7 @@ export const flowVersionFlows = (actions: CommandActions): ReadonlyArray<FlowEnt
         const model = await named(name)
         if (typeof model === "string") return model
         if (model.system) return `${flowTitle(name)} is built in`
-        const path = "path" in model.source ? model.source.path : `flows/${name}/flow.ts`
+        const path = "path" in model.source ? model.source.path : flowFile(name)
         const proposing = model.versions.find(each => each.state === "proposed" && each.todo !== undefined)
         if (!actions.design.enabled) return proposing?.todo === undefined ? actions.newFlowSourceTodo(flowEditTodoInput(name, "Edit the source"), path) : actions.readFlowSource(proposing.todo, path)
         if (proposing === undefined) {

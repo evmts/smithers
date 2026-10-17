@@ -1,0 +1,57 @@
+{
+  "name": "smithers-tui",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A minimal terminal coding agent over the Smithers cell harness",
+  "type": "module",
+  "bin": {
+    "smithers-tui": "./src/main.tsx"
+  },
+  "scripts": {
+    "start": "bun src/main.tsx",
+    "ask": "bun src/ask.ts",
+    "test": "bun test ./test",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:e2e": "bun test ./e2e",
+    "lint": "eslint src --max-warnings=0 && dprint check"
+  },
+  "dependencies": {
+    "@effect/platform-node": "4.0.4",
+    "@opentui/core": "0.5.11",
+    "@opentui/react": "0.5.11",
+    "@smthrs/agent": "workspace:*",
+    "@smthrs/capability": "workspace:*",
+    "@smthrs/cli": "workspace:*",
+    "@smthrs/control": "workspace:*",
+    "@smthrs/engine": "workspace:*",
+    "@smthrs/flow": "workspace:*",
+    "@smthrs/gateway": "workspace:*",
+    "@smthrs/harness": "workspace:*",
+    "@smthrs/journal": "workspace:*",
+    "@smthrs/kernel": "workspace:*",
+    "@smthrs/model": "workspace:*",
+    "@smthrs/plan": "workspace:*",
+    "@smthrs/registry": "workspace:*",
+    "@smthrs/rpc": "workspace:*",
+    "@smthrs/sandbox": "workspace:*",
+    "@smthrs/std": "workspace:*",
+    "diff": "9.0.0",
+    "effect": "4.0.4",
+    "react": "19.2.8",
+    "string-width": "7.2.0",
+    "@smthrs/ui": "workspace:*"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@types/react": "19.2.18",
+    "@xterm/headless": "6.0.0",
+    "bun-types": "^1.4.0",
+    "dprint": "0.57.1",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-unicorn": "65.0.0",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "8.69.0"
+  }
+}

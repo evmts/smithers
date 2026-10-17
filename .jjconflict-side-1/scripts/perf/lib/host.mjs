@@ -1,0 +1,41 @@
+/** Record the existing authenticated Go host response; never detect or size locally. */
+export function publicOrigin(value) {
+  let url
+  try { url = new URL(value) } catch { throw new Error('T-INS-04: configured public origin required') }
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.pathname !== '/' || url.search || url.hash) throw new Error('public origin required')
+  if (['localhost', '[::1]', '0.0.0.0', '[::]', '::1'].includes(url.hostname) || /^127\./.test(url.hostname) || url.hostname.endsWith('.localhost')) throw new Error('T-INS-04: remote origin required')
+  return url.origin
+}
+
+export function validateHost(host) {
+  const profile = host?.profile
+  for (const field of ['memory_bytes', 'perf_cores', 'physical_cores', 'disk_free_bytes']) {
+    if (!Number.isSafeInteger(profile?.[field]) || profile[field] < 0) throw new Error(`host profile missing ${field}`)
+  }
+  if (typeof profile.macos_version !== 'string' || !profile.macos_version || typeof profile.hypervisor !== 'boolean') throw new Error('host platform missing')
+  if (!host.limits || typeof host.limits !== 'object' || Array.isArray(host.limits) || !Object.keys(host.limits).length) throw new Error('derived host limits missing')
+  return host
+}
+
+/** The release budgets bind to this profile; sizing remains the Go service's job. */
+export function validateReferenceHost(host) {
+  validateHost(host)
+  const profile = host.profile
+  if (profile.memory_bytes !== 68719476736 || profile.perf_cores !== 10 ||
+      !profile.hypervisor || !/^\d+(?:\.\d+)*$/.test(profile.macos_version)) {
+    throw new Error('reference host requires 64 GiB, 10 performance cores and macOS Hypervisor.framework')
+  }
+  return host
+}
+
+export async function readHost(origin, credential, request = fetch) {
+  const headers = typeof credential === 'object' && credential?.cookie
+    ? { Cookie: credential.cookie } : { Authorization: `Bearer ${credential}` }
+  // /api/host was retired when Settings collapsed into the install contract.
+  // Read the same Go capacity service through the owner-only metrics adapter.
+  const response = await request(`${publicOrigin(origin)}/api/install/metrics`, {
+    headers, redirect: 'error', signal: AbortSignal.timeout(10000)
+  })
+  if (response.status !== 200) throw new Error(`T-INS-06: GET /api/install/metrics returned ${response.status}`)
+  return validateReferenceHost((await response.json()).host)
+}

@@ -112,8 +112,8 @@ const parkedModuleRun = async (
     sleep: (duration) => liveClock.sleep(duration)
   }
   try {
-    await mkdir(join(root, "flows", "steps"), { recursive: true })
-    await writeFile(join(root, "flows", "steps", "flow.ts"), source)
+    await mkdir(join(root, ".smithers", "flows", "steps"), { recursive: true })
+    await writeFile(join(root, ".smithers", "flows", "steps", "flow.ts"), source)
     const bodies: Array<string> = []
     agent.disableNetConnect()
     const reply = agent.get("https://api.openai.com").intercept({ method: "POST", path: "/v1/responses" }).reply(

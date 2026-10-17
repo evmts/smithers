@@ -1,0 +1,1274 @@
+paths:
+  /api/agent/turn/erase:
+    post:
+      summary: POST /api/agent/turn/erase
+      operationId: post_api_agent_turn_erase
+      tags:
+        - Agent
+      parameters: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnyJSON'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/agent/turn/replay:
+    post:
+      summary: POST /api/agent/turn/replay
+      operationId: post_api_agent_turn_replay
+      tags:
+        - Agent
+      parameters: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnyJSON'
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/agent/conversations:
+    get:
+      summary: List saved account conversations
+      operationId: get_api_agent_conversations
+      tags:
+        - Agent
+      parameters:
+        - name: after
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 512
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 50
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Account-owned committed conversation facts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SavedConversationPage'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/SavedConversationProblem'
+                  - $ref: '#/components/schemas/Error'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/SavedConversationProblem'
+                  - $ref: '#/components/schemas/Error'
+        '403':
+          description: Account or scope refused
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/SavedConversationProblem'
+                  - $ref: '#/components/schemas/Error'
+        '404':
+          description: Conversation turn not found
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/SavedConversationProblem'
+                  - $ref: '#/components/schemas/Error'
+        '409':
+          description: Uncommitted cursor or bounded index limit
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/SavedConversationProblem'
+                  - $ref: '#/components/schemas/Error'
+        '410':
+          description: Retired or erased turn
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/SavedConversationProblem'
+                  - $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/SavedConversationProblem'
+                  - $ref: '#/components/schemas/Error'
+        '500':
+          description: Journal integrity failure
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/SavedConversationProblem'
+                  - $ref: '#/components/schemas/Error'
+        '503':
+          description: Journal storage unavailable
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/SavedConversationProblem'
+                  - $ref: '#/components/schemas/Error'
+  /api/agent/conversations/replay:
+    post:
+      summary: Replay a saved account conversation without a device token
+      operationId: post_api_agent_conversations_replay
+      tags:
+        - Agent
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SavedConversationReplayRequest'
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Account-owned committed conversation facts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SavedConversationReplay'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/SavedConversationProblem'
+                  - $ref: '#/components/schemas/Error'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/SavedConversationProblem'
+                  - $ref: '#/components/schemas/Error'
+        '403':
+          description: Account or scope refused
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/SavedConversationProblem'
+                  - $ref: '#/components/schemas/Error'
+        '404':
+          description: Conversation turn not found
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/SavedConversationProblem'
+                  - $ref: '#/components/schemas/Error'
+        '409':
+          description: Uncommitted cursor or bounded index limit
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/SavedConversationProblem'
+                  - $ref: '#/components/schemas/Error'
+        '410':
+          description: Retired or erased turn
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/SavedConversationProblem'
+                  - $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/SavedConversationProblem'
+                  - $ref: '#/components/schemas/Error'
+        '500':
+          description: Journal integrity failure
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/SavedConversationProblem'
+                  - $ref: '#/components/schemas/Error'
+        '503':
+          description: Journal storage unavailable
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/SavedConversationProblem'
+                  - $ref: '#/components/schemas/Error'
+  /api/conversations/{b}:
+    get:
+      summary: Read shared branch entries
+      description: Active install branch members read started prompts and committed public answer output in turn and batch order. Hosted accounts without an install read only their own main conversation. Queued prompts, legacy private history, approvals and browser Drafts are excluded. No journal capability or private request context is returned.
+      operationId: get_api_conversation
+      tags:
+        - Agent
+      security:
+        - sessionCookie: []
+        - bearerAuth: []
+      parameters:
+        - name: b
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 160
+      responses:
+        '200':
+          description: Shared conversation snapshot with canonical id and ordered entries.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, entries]
+                properties:
+                  id:
+                    type: string
+                  entries:
+                    type: array
+                    items:
+                      oneOf:
+                        - $ref: '#/components/schemas/ImportedConversationMessage'
+                        - type: object
+                          required: [id, author, runId, prompt, state, frames]
+                          properties:
+                            id:
+                              type: string
+                            author:
+                              type: integer
+                              format: int64
+                            runId:
+                              type: string
+                            prompt:
+                              type: string
+                            state:
+                              type: string
+                            frames:
+                              type: array
+                              items:
+                                $ref: '#/components/schemas/AnyJSON'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          description: Conversation storage or branch provider unavailable.
+  /api/conversations/{b}/prompt:
+    post:
+      summary: Queue my branch prompt
+      description: Persists before acknowledging; does not wait for the model host. Hosted accounts without an install admit a private main conversation using authenticated account identity. Retrying the same credential-scoped key and prompt returns the same turn. Restore uses a new key. Browser history, instructions and author overrides are refused.
+      operationId: post_api_conversation_prompt
+      tags:
+        - Agent
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: b
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 160
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [prompt, idempotencyKey]
+              properties:
+                prompt:
+                  type: string
+                  minLength: 1
+                  maxLength: 1048576
+                idempotencyKey:
+                  type: string
+                  minLength: 1
+                  maxLength: 160
+      responses:
+        '202':
+          description: Durable acceptance or existing turn, with turnId, runId, legId, cursor and terminal. No credential is returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: The key was already used with another prompt.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Conversation admission is unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/conversations/{b}/turns/{id}:
+    parameters:
+      - name: b
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 160
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 160
+    patch:
+      summary: Edit my queued prompt
+      operationId: patch_api_conversation_turn
+      tags:
+        - Agent
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [prompt]
+              properties:
+                prompt:
+                  type: string
+                  minLength: 1
+                  maxLength: 1048576
+      responses:
+        '200':
+          description: The committed replay cursor. Stop is idempotent; edits and removal require an unstarted queued turn owned by this member.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    delete:
+      summary: Remove my queued prompt
+      operationId: delete_api_conversation_turn
+      tags:
+        - Agent
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: The committed replay cursor. Stop is idempotent; edits and removal require an unstarted queued turn owned by this member.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /api/conversations/{b}/turns/{id}/stop:
+    parameters:
+      - name: b
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 160
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 160
+    post:
+      summary: Stop my answer
+      operationId: post_api_conversation_turn_stop
+      tags:
+        - Agent
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: The committed replay cursor. Stop is idempotent; edits and removal require an unstarted queued turn owned by this member.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /api/conversations/{b}/view-state:
+    parameters:
+      - name: b
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 160
+    get:
+      summary: Read my conversation view state
+      operationId: get_api_conversation_view_state
+      tags:
+        - Agent
+      security:
+        - sessionCookie: []
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The authenticated member's conversation state and global toast preference; GET also includes their committed queued prompts when nonempty. The queue is server-owned and cannot be saved through PUT.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                required:
+                  - toasts_hidden
+                properties:
+                  toasts_hidden:
+                    type: boolean
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    put:
+      summary: Save my conversation view state
+      operationId: put_api_conversation_view_state
+      tags:
+        - Agent
+      security:
+        - sessionCookie: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              properties:
+                toasts_hidden:
+                  type: boolean
+                  description: Global for this member; omission preserves the current preference.
+      responses:
+        '200':
+          description: The authenticated member's conversation state and global toast preference.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                required:
+                  - toasts_hidden
+                properties:
+                  toasts_hidden:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /api/conversations/{b}/archive:
+    post:
+      summary: Archive my branch chat
+      description: Moves the branch's chat into history and leaves the branch with an empty chat. The archive records the repository and branch the browser shows, a title and, later, a model-written summary. Refused while a prompt is running or queued. An agent credential is refused.
+      operationId: post_api_conversation_archive
+      tags:
+        - Agent
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: b
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 160
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                repository:
+                  type: string
+                  maxLength: 200
+                branch:
+                  type: string
+                  maxLength: 200
+      responses:
+        '200':
+          description: The archived chat, or a null archive when the chat had no entries.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [archive]
+                properties:
+                  archive:
+                    type: object
+                    nullable: true
+                    required: [id, repository, branch, title, summary, runs, entries, first_at, last_at, archived_at]
+                    properties:
+                      id:
+                        type: string
+                      repository:
+                        type: string
+                        nullable: true
+                        description: owner/name; null is the no-repository group.
+                      branch:
+                        type: string
+                        nullable: true
+                      title:
+                        type: string
+                        description: The first prompt's first line until the model writes a title.
+                      summary:
+                        type: string
+                        nullable: true
+                        description: Null until the model writes it; a chat lists and opens without one.
+                      runs:
+                        type: array
+                        items:
+                          type: object
+                          required: [repo, runId]
+                          properties:
+                            repo:
+                              type: string
+                            runId:
+                              type: string
+                            workspaceId:
+                              type: string
+                      entries:
+                        type: integer
+                      first_at:
+                        type: integer
+                        format: int64
+                      last_at:
+                        type: integer
+                        format: int64
+                      archived_at:
+                        type: integer
+                        format: int64
+                      archived_by:
+                        type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: A prompt is running or queued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /api/conversation-archives:
+    get:
+      summary: List archived chats
+      description: Archived chats the caller reads, newest first. An account reads its own private chats; an active install member reads the install repository's shared ones.
+      operationId: get_api_conversation_archives
+      tags:
+        - Agent
+      security:
+        - sessionCookie: []
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Archived chats, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [archives]
+                properties:
+                  archives:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, repository, branch, title, summary, runs, entries, first_at, last_at, archived_at]
+                      properties:
+                        id:
+                          type: string
+                        repository:
+                          type: string
+                          nullable: true
+                          description: owner/name; null is the no-repository group.
+                        branch:
+                          type: string
+                          nullable: true
+                        title:
+                          type: string
+                          description: The first prompt's first line until the model writes a title.
+                        summary:
+                          type: string
+                          nullable: true
+                          description: Null until the model writes it; a chat lists and opens without one.
+                        runs:
+                          type: array
+                          items:
+                            type: object
+                            required: [repo, runId]
+                            properties:
+                              repo:
+                                type: string
+                              runId:
+                                type: string
+                              workspaceId:
+                                type: string
+                        entries:
+                          type: integer
+                        first_at:
+                          type: integer
+                          format: int64
+                        last_at:
+                          type: integer
+                          format: int64
+                        archived_at:
+                          type: integer
+                          format: int64
+                        archived_by:
+                          type: string
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /api/conversation-archives/{id}:
+    get:
+      summary: Read an archived chat
+      description: The archive and its read-only entries, in the shape of a live conversation.
+      operationId: get_api_conversation_archive
+      tags:
+        - Agent
+      security:
+        - sessionCookie: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 160
+      responses:
+        '200':
+          description: The archive and its entries.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [archive, conversation]
+                properties:
+                  archive:
+                    type: object
+                    required: [id, repository, branch, title, summary, runs, entries, first_at, last_at, archived_at]
+                    properties:
+                      id:
+                        type: string
+                      repository:
+                        type: string
+                        nullable: true
+                        description: owner/name; null is the no-repository group.
+                      branch:
+                        type: string
+                        nullable: true
+                      title:
+                        type: string
+                        description: The first prompt's first line until the model writes a title.
+                      summary:
+                        type: string
+                        nullable: true
+                        description: Null until the model writes it; a chat lists and opens without one.
+                      runs:
+                        type: array
+                        items:
+                          type: object
+                          required: [repo, runId]
+                          properties:
+                            repo:
+                              type: string
+                            runId:
+                              type: string
+                            workspaceId:
+                              type: string
+                      entries:
+                        type: integer
+                      first_at:
+                        type: integer
+                        format: int64
+                      last_at:
+                        type: integer
+                        format: int64
+                      archived_at:
+                        type: integer
+                        format: int64
+                      archived_by:
+                        type: string
+                  conversation:
+                    $ref: '#/components/schemas/AnyJSON'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: No archived chat with this id is readable by the caller.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /api/agents:
+    x-composition: install
+    get:
+      x-composition: install
+      summary: Read factory agents
+      operationId: get_api_agents
+      tags:
+        - Agent
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Factory models, sources and instruction paths
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+  /api/agents/{name}:
+    x-composition: install
+    get:
+      x-composition: install
+      summary: Read one factory agent
+      operationId: get_api_agents_name
+      tags:
+        - Agent
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Agent projection with one selected factory role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/agents/{role}/edit:
+    post:
+      x-composition: install
+      summary: Propose agent instruction edits as a TODO
+      description: Delegated callers receive a private confirmation bound to the activated instruction source. Only the requesting person's session can commit it. The diff is quoted as untrusted context, never applied or executed. The app agent uses .smithers/instructions/app.md; planner, implementer and reviewer instructions belong to the TODO flow. Model settings are separate owner-only operations.
+      operationId: post_api_agents_role_edit
+      tags:
+        - Agent
+      security: [{sessionCookie: []}, {tokenAuth: []}]
+      parameters:
+        - {name: role, in: path, required: true, schema: {type: string}}
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string, maxLength: 256}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [request]
+              properties:
+                name: {type: string}
+                request: {type: string, minLength: 1}
+                diff: {type: string}
+      responses:
+        '202': {description: Private pending confirmation for a delegated caller, or an admitted TODO for a person's session}
+        '400': {description: Invalid request}
+        '401': {description: Not signed in}
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '404': {description: No Active instruction source}
+        '409': {description: Idempotency mismatch}
+        '503': {description: Confirmation or TODO consumer unavailable}
+  /api/agents/{role}/model:
+    x-composition: install
+    put:
+      x-composition: install
+      summary: Assign a factory agent model
+      description: Only the install owner's browser session may write. Members and run or machine credentials are refused; eligible delegated owners receive never.
+      operationId: put_api_agents_role_model
+      tags:
+        - Agent
+      security:
+        - sessionCookie: []
+      parameters:
+        - in: path
+          name: role
+          required: true
+          schema:
+            type: string
+            enum: [planner, implementer, reviewer, app, fast, coding, jev]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnyJSON'
+      responses:
+        '200':
+          description: Assignment persisted; current agent projection
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+components:
+  schemas:
+    ImportedConversationMessage:
+      type: object
+      additionalProperties: false
+      required: [id, origin, agent_kind, format_version, source_id, session_id, participant_id, actor, read_only, role, text, status, createdAt, ordinal]
+      properties:
+        id: {type: string}
+        authorLogin: {type: string}
+        authorName: {type: string}
+        origin: {type: string, enum: [external]}
+        agent_kind: {type: string, enum: [codex, claude-code]}
+        format_version: {type: string, minLength: 1}
+        source_id: {type: string, minLength: 1}
+        session_id: {type: string, minLength: 1}
+        participant_id: {type: string, minLength: 1}
+        actor:
+          type: object
+          required: [kind, avatar_url, color_index]
+          properties:
+            kind: {type: string, enum: [person, agent]}
+            id: {type: string}
+            login: {type: string}
+            name: {type: string}
+            agent: {type: string, enum: [codex, claude-code]}
+            session_id: {type: string}
+            avatar_url: {type: string}
+            color_index: {type: integer, minimum: 0, maximum: 5}
+            for_member:
+              type: object
+              required: [login, name, avatar_url]
+              properties:
+                login: {type: string, minLength: 1}
+                name: {type: string}
+                avatar_url: {type: string}
+        read_only: {type: boolean, enum: [true]}
+        role: {type: string, enum: [user, smithers]}
+        text: {type: string}
+        reasoning: {type: string}
+        act: {type: string}
+        correlation_id: {type: string, minLength: 1}
+        status: {type: string, enum: [complete, failed]}
+        createdAt: {type: integer, format: int64}
+        ordinal: {type: integer, minimum: 0}
+    SavedConversationCursor:
+      type: object
+      additionalProperties: false
+      required:
+        - version
+        - runId
+        - legId
+        - batch
+        - position
+        - hash
+      properties:
+        version:
+          type: integer
+          const: 1
+        runId:
+          type: string
+          minLength: 1
+          maxLength: 160
+        legId:
+          type: string
+          minLength: 1
+          maxLength: 160
+        batch:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+        position:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+        hash:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+    SavedConversationRunReference:
+      type: object
+      additionalProperties: false
+      required:
+        - repo
+        - runId
+      properties:
+        repo:
+          type: string
+          pattern: ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$
+        runId:
+          type: string
+          minLength: 1
+          maxLength: 160
+        workspaceId:
+          type: string
+          minLength: 1
+          maxLength: 160
+    SavedConversationTurn:
+      type: object
+      additionalProperties: false
+      required:
+        - runId
+        - legId
+        - acceptedAt
+        - terminal
+        - runLinks
+      properties:
+        runId:
+          type: string
+          minLength: 1
+          maxLength: 160
+        legId:
+          type: string
+          minLength: 1
+          maxLength: 160
+        acceptedAt:
+          type: number
+        terminal:
+          type: boolean
+        runLinks:
+          type: array
+          maxItems: 64
+          items:
+            $ref: '#/components/schemas/SavedConversationRunReference'
+    SavedConversation:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - turns
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 160
+        turns:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/SavedConversationTurn'
+    SavedConversationPage:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - conversations
+        - next
+      properties:
+        status:
+          type: string
+          enum:
+            - ok
+        conversations:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/SavedConversation'
+        next:
+          type:
+            - string
+            - 'null'
+          minLength: 1
+          maxLength: 512
+    SavedConversationReplayRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - runId
+        - legId
+      properties:
+        runId:
+          type: string
+          minLength: 1
+          maxLength: 160
+        legId:
+          type: string
+          minLength: 1
+          maxLength: 160
+        after:
+          anyOf:
+            - $ref: '#/components/schemas/SavedConversationCursor'
+            - type: 'null'
+    SavedConversationFrame:
+      type: object
+      description: Committed public frame envelope. Type-specific payloads are validated by the versioned AgentTurnFrame RPC union before projection; private tool outputs are absent.
+      additionalProperties: true
+      required:
+        - type
+        - runId
+      properties:
+        type:
+          type: string
+          enum:
+            - delta
+            - done
+            - card
+            - card.update
+            - tool_call
+            - link.authored
+            - call.started
+            - call.settled
+            - gate.rejected
+            - link.ended
+            - steering.drained
+            - park
+        runId:
+          type: string
+          minLength: 1
+          maxLength: 160
+    SavedConversationBatch:
+      type: object
+      additionalProperties: false
+      required:
+        - version
+        - runId
+        - legId
+        - batch
+        - from
+        - previousHash
+        - frames
+        - hash
+      properties:
+        version:
+          type: integer
+          const: 1
+        runId:
+          type: string
+          minLength: 1
+          maxLength: 160
+        legId:
+          type: string
+          minLength: 1
+          maxLength: 160
+        batch:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        from:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        previousHash:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+        frames:
+          type: array
+          minItems: 1
+          maxItems: 256
+          items:
+            $ref: '#/components/schemas/SavedConversationFrame'
+        hash:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+    SavedConversationReplayPage:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - after
+        - next
+        - head
+        - terminal
+        - more
+        - batches
+      properties:
+        status:
+          type: string
+          enum:
+            - ok
+        after:
+          $ref: '#/components/schemas/SavedConversationCursor'
+        next:
+          $ref: '#/components/schemas/SavedConversationCursor'
+        head:
+          $ref: '#/components/schemas/SavedConversationCursor'
+        terminal:
+          type: boolean
+        more:
+          type: boolean
+        batches:
+          type: array
+          maxItems: 8
+          items:
+            $ref: '#/components/schemas/SavedConversationBatch'
+    SavedConversationReplay:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - conversationId
+        - userText
+        - page
+      properties:
+        status:
+          type: string
+          enum:
+            - ok
+        conversationId:
+          type: string
+          minLength: 1
+          maxLength: 160
+        userText:
+          type: string
+          maxLength: 2097152
+        page:
+          $ref: '#/components/schemas/SavedConversationReplayPage'
+    SavedConversationProblem:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - code
+      properties:
+        status:
+          type: string
+          enum:
+            - error
+        code:
+          type: string
+          enum:
+            - request_invalid
+            - forbidden
+            - not-found
+            - retired
+            - cursor
+            - conflict
+            - terminal
+            - limit
+            - corrupt
+            - storage_failed

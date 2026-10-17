@@ -1,7 +1,7 @@
 /**
  * The instructions an agent profile runs with.
  *
- * A profile is the role's markdown flow, `flows/<role>/flow.mdx`: the one
+ * A profile is the role's markdown flow, `.smithers/flows/<role>/flow.mdx`: the one
  * shape every flow has. Its frontmatter carries what the runtime reads
  * (`description`, `model`, `effort`, `capabilities`, `budget`, `flows`) and a
  * string `metadata` map with the role's display `name` and its `skills`, a

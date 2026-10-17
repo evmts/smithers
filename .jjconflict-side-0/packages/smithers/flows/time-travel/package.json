@@ -1,0 +1,230 @@
+{
+  "name": "@smthrs/time-travel",
+  "type": "module",
+  "version": "1.0.0-rc.12",
+  "license": "MIT",
+  "smthrs": {
+    "group": "engine"
+  },
+  "description": "Durable replay, fork, and rewind primitives for flows",
+  "homepage": "https://github.com/smithersai/smithers",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/smithers/flows/time-travel"
+  },
+  "bugs": {
+    "url": "https://github.com/smithersai/smithers/issues"
+  },
+  "tags": [
+    "typescript",
+    "effect",
+    "flow",
+    "time-travel"
+  ],
+  "keywords": [
+    "typescript",
+    "effect",
+    "flow",
+    "time-travel"
+  ],
+  "engines": {
+    "node": ">=26.4.0"
+  },
+  "sideEffects": [],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null,
+    "./*/index": null,
+    "./CompensationHandlers": "./src/CompensationHandlers.ts",
+    "./EffectBoundary": "./src/EffectBoundary.ts",
+    "./Frame": "./src/Frame.ts",
+    "./MemoryTimeTravelStore": "./src/MemoryTimeTravelStore.ts",
+    "./Migrations": "./src/Migrations.ts",
+    "./SqlTimeTravelStore": "./src/SqlTimeTravelStore.ts",
+    "./TimeTravel": "./src/TimeTravel.ts",
+    "./TimeTravelError": "./src/TimeTravelError.ts",
+    "./TimeTravelStore": "./src/TimeTravelStore.ts",
+    "./index": "./src/index.ts"
+  },
+  "files": [
+    "src/**/*.ts",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/package.json",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next",
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./internal/*": null,
+      "./*/index": null,
+      "./CompensationHandlers": {
+        "import": {
+          "types": "./dist/esm/CompensationHandlers.d.ts",
+          "default": "./dist/esm/CompensationHandlers.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CompensationHandlers.d.ts",
+          "default": "./dist/cjs/CompensationHandlers.js"
+        }
+      },
+      "./EffectBoundary": {
+        "import": {
+          "types": "./dist/esm/EffectBoundary.d.ts",
+          "default": "./dist/esm/EffectBoundary.js"
+        },
+        "require": {
+          "types": "./dist/cjs/EffectBoundary.d.ts",
+          "default": "./dist/cjs/EffectBoundary.js"
+        }
+      },
+      "./Frame": {
+        "import": {
+          "types": "./dist/esm/Frame.d.ts",
+          "default": "./dist/esm/Frame.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Frame.d.ts",
+          "default": "./dist/cjs/Frame.js"
+        }
+      },
+      "./MemoryTimeTravelStore": {
+        "import": {
+          "types": "./dist/esm/MemoryTimeTravelStore.d.ts",
+          "default": "./dist/esm/MemoryTimeTravelStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/MemoryTimeTravelStore.d.ts",
+          "default": "./dist/cjs/MemoryTimeTravelStore.js"
+        }
+      },
+      "./Migrations": {
+        "import": {
+          "types": "./dist/esm/Migrations.d.ts",
+          "default": "./dist/esm/Migrations.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Migrations.d.ts",
+          "default": "./dist/cjs/Migrations.js"
+        }
+      },
+      "./SqlTimeTravelStore": {
+        "import": {
+          "types": "./dist/esm/SqlTimeTravelStore.d.ts",
+          "default": "./dist/esm/SqlTimeTravelStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SqlTimeTravelStore.d.ts",
+          "default": "./dist/cjs/SqlTimeTravelStore.js"
+        }
+      },
+      "./TimeTravel": {
+        "import": {
+          "types": "./dist/esm/TimeTravel.d.ts",
+          "default": "./dist/esm/TimeTravel.js"
+        },
+        "require": {
+          "types": "./dist/cjs/TimeTravel.d.ts",
+          "default": "./dist/cjs/TimeTravel.js"
+        }
+      },
+      "./TimeTravelError": {
+        "import": {
+          "types": "./dist/esm/TimeTravelError.d.ts",
+          "default": "./dist/esm/TimeTravelError.js"
+        },
+        "require": {
+          "types": "./dist/cjs/TimeTravelError.d.ts",
+          "default": "./dist/cjs/TimeTravelError.js"
+        }
+      },
+      "./TimeTravelStore": {
+        "import": {
+          "types": "./dist/esm/TimeTravelStore.d.ts",
+          "default": "./dist/esm/TimeTravelStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/TimeTravelStore.d.ts",
+          "default": "./dist/cjs/TimeTravelStore.js"
+        }
+      },
+      "./index": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint src test --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "circular": "node scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "node ../database/scripts/test-matrix.mjs",
+    "test:matrix": "node ../database/scripts/test-matrix.mjs"
+  },
+  "dependencies": {
+    "@smthrs/database": "1.0.0-rc.12",
+    "@smthrs/engine-store": "1.0.0-rc.12",
+    "@smthrs/jj": "1.0.0-rc.12",
+    "@smthrs/journal": "1.0.0-rc.12",
+    "@smthrs/run-store": "1.0.0-rc.12",
+    "@smthrs/step-cache": "1.0.0-rc.12"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@effect/platform-node": "4.0.4",
+    "@effect/vitest": "4.0.4",
+    "@eslint/js": "9.39.5",
+    "@smthrs/artifacts": "1.0.0-rc.12",
+    "@smthrs/engine": "1.0.0-rc.12",
+    "@smthrs/flow": "1.0.0-rc.12",
+    "@smthrs/kernel": "1.0.0-rc.12",
+    "@smthrs/plan": "1.0.0-rc.12",
+    "@smthrs/plan-store": "1.0.0-rc.12",
+    "@types/node": "26.4.1",
+    "@vitest/coverage-v8": "5.0.0",
+    "dprint": "0.57.1",
+    "effect": "4.0.4",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "madge": "8.0.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0"
+  },
+  "peerDependencies": {
+    "effect": "^4.0.4"
+  }
+}

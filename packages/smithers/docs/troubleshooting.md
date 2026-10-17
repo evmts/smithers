@@ -83,7 +83,7 @@ that phrase in the CLI's own sentence.
 disagree about which runs exist.
 
 **Cause.** The upward root walk anchored somewhere else. `.flows/` anchors on
-its own; a bare `flows/` anchors only beside a `package.json`, `.git`, or
+its own; `.smithers/flows/` anchors only beside a `package.json`, `.git`, or
 `.jj`; and the walk stops at the repository root.
 
 **Fix.** Run `smthrs doctor`, which prints the root it resolved and both
@@ -91,13 +91,24 @@ database paths. Pass `--root` to fix the answer for one invocation, or run
 `smthrs init` in the directory you mean, which creates the `.flows/` that
 anchors every later command.
 
+### `Flows in flows/ are not loaded; move them to .smithers/flows/.`
+
+**Symptom.** `smthrs flow list` prints this line and omits flows you wrote.
+
+**Cause.** The project keeps flow files under a root `flows/`. Smithers reads
+flows only from `.smithers/flows/`.
+
+**Fix.** Move each flow directory to `.smithers/flows/`, keeping its name:
+`flows/review/flow.ts` becomes `.smithers/flows/review/flow.ts`.
+
 ### `Found Smithers 0.x state at <path>`
 
 **Symptom.** A one-line stderr notice on every command in a project.
 
 **Cause.** `Project.legacyState` found `.smithers` or `smithers.db` beside a
-directory that has no `.flows/` yet. rc.0 does not load, resume, or migrate 0.x
-run databases.
+directory that has no `.flows/` yet. A `.smithers` that holds only 1.0 files,
+such as `flows/`, `WORKSPACE.ts` and `FACTORY.ts`, is not 0.x state. rc.0 does
+not load, resume, or migrate 0.x run databases.
 
 **Fix.** Finish, archive, or discard those runs with the 0.x CLI
 (`bunx smthrs@0.35.0 ps`), then run `smthrs migrate` to convert the project

@@ -60,8 +60,8 @@ const start = async (flow: "deny" | "spawn") => {
   // wrapper never mistakes this scratch repository for the checkout.
   const root = await realpath(await mkdtemp(join(tmpdir(), "ceiling-")))
   try {
-    await cp(join(fixture, "flows"), join(root, "flows"), { recursive: true })
-    await cp(join(fixture, "probe.ts"), join(root, "probe.ts"))
+    await cp(join(fixture, "flows"), join(root, ".smithers", "flows"), { recursive: true })
+    await cp(join(fixture, "probe.ts"), join(root, ".smithers", "probe.ts"))
     await mkdir(join(root, ".flows"))
     await symlink(nodeModules, join(root, "node_modules"), "dir")
     execFileSync("jj", ["git", "init", root], { stdio: "ignore" })

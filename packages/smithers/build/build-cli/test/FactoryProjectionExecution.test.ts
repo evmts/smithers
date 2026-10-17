@@ -10,6 +10,9 @@
  * message; a workspace without a factory, or a factory importing a
  * PACKAGE.ts, is refused by name.
  */
+import { projectFlowsDirectory } from "@smthrs/registry/Descriptor"
+import { Smithers } from "@smthrs/targets"
+import * as Target from "@smthrs/targets/Target"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
@@ -88,15 +91,15 @@ const fixture = async (
   await write(root, ".smithers/WORKSPACE.ts", workspaceModule)
   await write(root, ".smithers/FACTORY.ts", options.factory ?? factoryModule(options))
   await write(root, "PACKAGE.ts", packageModule)
-  await write(root, "flows/review/flow.mdx", reviewFlow)
+  await write(root, ".smithers/flows/review/flow.mdx", reviewFlow)
   await write(
     root,
-    "flows/lint/flow.mdx",
+    ".smithers/flows/lint/flow.mdx",
     "---\ndescription: Lints the named files.\ncapabilities: [\"fs:read:**\"]\ndisable-model-invocation: true\n---\n\n# Lint\n"
   )
   await write(
     root,
-    "flows/ops/deploy/SKILL.md",
+    ".smithers/flows/ops/deploy/SKILL.md",
     "---\nname: deploy\ndescription: Deploys the service.\n---\n\n# Deploy\n"
   )
   return root
@@ -114,6 +117,13 @@ const projectionOf = (root: string) =>
 const homeOf = (root: string) =>
   readJson(root, ".smithers/home.json") as Promise<{ readonly blocks: ReadonlyArray<Record<string, unknown>> }>
 const absent = (root: string, relative: string) => expect(Fs.access(NodePath.join(root, relative))).rejects.toThrow()
+
+describe("FactoryProjection's default root", () => {
+  it("is the registry's project flows directory", () => {
+    const attrs = Target.metadata(Smithers.FactoryProjection({})).attrs as { readonly root?: unknown }
+    expect(attrs.root).toBe(projectFlowsDirectory)
+  })
+})
 
 describe("FactoryProjection through the CLI", () => {
   it("reports the missing projection, writes both files under --write, then checks them and reds on drift", async () => {
@@ -138,7 +148,7 @@ describe("FactoryProjection through the CLI", () => {
       summary: "Review the change.",
       featured: true,
       kind: "mdx",
-      path: "flows/review/flow.mdx",
+      path: ".smithers/flows/review/flow.mdx",
       capabilities: ["fs:read:**", "proc:spawn:git *"],
       flows: [],
       model: ["openai:gpt-6-sol", "anthropic:claude-opus-5-5"],
@@ -148,7 +158,7 @@ describe("FactoryProjection through the CLI", () => {
       })
     })
     expect(projection.flows[1]).toMatchObject({ modelInvocable: false, model: null })
-    expect(projection.flows[2]).toMatchObject({ kind: "skill", path: "flows/ops/deploy/SKILL.md" })
+    expect(projection.flows[2]).toMatchObject({ kind: "skill", path: ".smithers/flows/ops/deploy/SKILL.md" })
     expect(projection.on).toEqual([
       { event: "issue.opened", flow: "issue", description: "Triage every new issue" },
       { event: "change.landed", flow: ["wiki", "history.fold"] }
@@ -168,7 +178,11 @@ describe("FactoryProjection through the CLI", () => {
     expect(ci.exitCode, ci.logs).toBe(0)
     expect(await projectionOf(root)).toEqual(projection)
 
-    await write(root, "flows/review/flow.mdx", reviewFlow.replace("returns a verdict", "returns two verdicts"))
+    await write(
+      root,
+      ".smithers/flows/review/flow.mdx",
+      reviewFlow.replace("returns a verdict", "returns two verdicts")
+    )
     const drifted = await serve(root, ["ci", "//:factoryProjection"])
     expect(drifted.exitCode).toBe(1)
     expect(drifted.logs).toContain("drifted from its generated form")
@@ -210,10 +224,10 @@ describe("FactoryProjection through the CLI", () => {
 
   it("names the flows directory when it does not exist", async () => {
     const root = await fixture()
-    await Fs.rm(NodePath.join(root, "flows"), { recursive: true })
+    await Fs.rm(NodePath.join(root, ".smithers", "flows"), { recursive: true })
     const result = await serve(root, ["target", "//:factoryProjection", "--write"])
     expect(result.exitCode).toBe(1)
-    expect(result.logs).toContain("could not discover the flows under flows")
+    expect(result.logs).toContain("could not discover the flows under .smithers/flows")
   })
 
   it("names the missing FACTORY.ts when the workspace declares no factory", async () => {
@@ -245,7 +259,7 @@ export const factory = S.Factory({ summary: String(typeof Package) })
         "---\n\n#",
         `budget:\n  tokens: 500\n  milliseconds: 60000\n  usd: ${usd}\n  onExceeded: park\n---\n\n#`
       )
-    await write(root, "flows/review/flow.mdx", budgeted("2.5"))
+    await write(root, ".smithers/flows/review/flow.mdx", budgeted("2.5"))
     const written = await serve(root, ["target", "//:factoryProjection", "--write"])
     expect(written.exitCode, written.logs).toBe(0)
     const projection = await projectionOf(root)
@@ -253,7 +267,7 @@ export const factory = S.Factory({ summary: String(typeof Package) })
     expect(projection.flows[1]).not.toHaveProperty("budget")
     expect((await serve(root, ["lint", "//:factoryProjection"])).exitCode).toBe(0)
 
-    await write(root, "flows/review/flow.mdx", budgeted("3"))
+    await write(root, ".smithers/flows/review/flow.mdx", budgeted("3"))
     const drifted = await serve(root, ["ci", "//:factoryProjection"])
     expect(drifted.exitCode).toBe(1)
     expect(drifted.logs).toContain("drifted from its generated form")

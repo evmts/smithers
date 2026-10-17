@@ -1,0 +1,322 @@
+{
+  "name": "@smthrs/memory",
+  "type": "module",
+  "version": "1.0.0-rc.12",
+  "license": "MIT",
+  "smthrs": {
+    "group": "agent"
+  },
+  "description": "Effect services for durable cross-run facts, history, notes, recall, and maintenance",
+  "homepage": "https://github.com/smithersai/smithers",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/smithers/agent/memory"
+  },
+  "bugs": {
+    "url": "https://github.com/smithersai/smithers/issues"
+  },
+  "tags": [
+    "typescript",
+    "effect",
+    "flow",
+    "memory"
+  ],
+  "keywords": [
+    "typescript",
+    "effect",
+    "flow",
+    "memory"
+  ],
+  "engines": {
+    "node": ">=26.4.0"
+  },
+  "sideEffects": [],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null,
+    "./*/index": null,
+    "./Bank": "./src/Bank.ts",
+    "./Database": "./src/Database.ts",
+    "./Embedding": "./src/Embedding.ts",
+    "./Flows": "./src/Flows.ts",
+    "./Maintenance": "./src/Maintenance.ts",
+    "./MemoryError": "./src/MemoryError.ts",
+    "./MemoryStore": "./src/MemoryStore.ts",
+    "./MemoryTrellis": "./src/MemoryTrellis.ts",
+    "./Migrations": "./src/Migrations.ts",
+    "./Namespace": "./src/Namespace.ts",
+    "./Recall": "./src/Recall.ts",
+    "./RecallFts": "./src/RecallFts.ts",
+    "./RecallKeyword": "./src/RecallKeyword.ts",
+    "./RecallSemantic": "./src/RecallSemantic.ts",
+    "./SnapshotRecorder": "./src/SnapshotRecorder.ts",
+    "./Source": "./src/Source.ts",
+    "./WithMemory": "./src/WithMemory.ts",
+    "./index": "./src/index.ts",
+    "./test/TestMemory": "./src/test/TestMemory.ts",
+    "./migrations/*": null
+  },
+  "files": [
+    "src/**/*.ts",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/package.json",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next",
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./internal/*": null,
+      "./*/index": null,
+      "./Bank": {
+        "import": {
+          "types": "./dist/esm/Bank.d.ts",
+          "default": "./dist/esm/Bank.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Bank.d.ts",
+          "default": "./dist/cjs/Bank.js"
+        }
+      },
+      "./Database": {
+        "import": {
+          "types": "./dist/esm/Database.d.ts",
+          "default": "./dist/esm/Database.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Database.d.ts",
+          "default": "./dist/cjs/Database.js"
+        }
+      },
+      "./Embedding": {
+        "import": {
+          "types": "./dist/esm/Embedding.d.ts",
+          "default": "./dist/esm/Embedding.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Embedding.d.ts",
+          "default": "./dist/cjs/Embedding.js"
+        }
+      },
+      "./Flows": {
+        "import": {
+          "types": "./dist/esm/Flows.d.ts",
+          "default": "./dist/esm/Flows.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Flows.d.ts",
+          "default": "./dist/cjs/Flows.js"
+        }
+      },
+      "./Maintenance": {
+        "import": {
+          "types": "./dist/esm/Maintenance.d.ts",
+          "default": "./dist/esm/Maintenance.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Maintenance.d.ts",
+          "default": "./dist/cjs/Maintenance.js"
+        }
+      },
+      "./MemoryError": {
+        "import": {
+          "types": "./dist/esm/MemoryError.d.ts",
+          "default": "./dist/esm/MemoryError.js"
+        },
+        "require": {
+          "types": "./dist/cjs/MemoryError.d.ts",
+          "default": "./dist/cjs/MemoryError.js"
+        }
+      },
+      "./MemoryStore": {
+        "import": {
+          "types": "./dist/esm/MemoryStore.d.ts",
+          "default": "./dist/esm/MemoryStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/MemoryStore.d.ts",
+          "default": "./dist/cjs/MemoryStore.js"
+        }
+      },
+      "./MemoryTrellis": {
+        "import": {
+          "types": "./dist/esm/MemoryTrellis.d.ts",
+          "default": "./dist/esm/MemoryTrellis.js"
+        },
+        "require": {
+          "types": "./dist/cjs/MemoryTrellis.d.ts",
+          "default": "./dist/cjs/MemoryTrellis.js"
+        }
+      },
+      "./Migrations": {
+        "import": {
+          "types": "./dist/esm/Migrations.d.ts",
+          "default": "./dist/esm/Migrations.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Migrations.d.ts",
+          "default": "./dist/cjs/Migrations.js"
+        }
+      },
+      "./Namespace": {
+        "import": {
+          "types": "./dist/esm/Namespace.d.ts",
+          "default": "./dist/esm/Namespace.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Namespace.d.ts",
+          "default": "./dist/cjs/Namespace.js"
+        }
+      },
+      "./Recall": {
+        "import": {
+          "types": "./dist/esm/Recall.d.ts",
+          "default": "./dist/esm/Recall.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Recall.d.ts",
+          "default": "./dist/cjs/Recall.js"
+        }
+      },
+      "./RecallFts": {
+        "import": {
+          "types": "./dist/esm/RecallFts.d.ts",
+          "default": "./dist/esm/RecallFts.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RecallFts.d.ts",
+          "default": "./dist/cjs/RecallFts.js"
+        }
+      },
+      "./RecallKeyword": {
+        "import": {
+          "types": "./dist/esm/RecallKeyword.d.ts",
+          "default": "./dist/esm/RecallKeyword.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RecallKeyword.d.ts",
+          "default": "./dist/cjs/RecallKeyword.js"
+        }
+      },
+      "./RecallSemantic": {
+        "import": {
+          "types": "./dist/esm/RecallSemantic.d.ts",
+          "default": "./dist/esm/RecallSemantic.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RecallSemantic.d.ts",
+          "default": "./dist/cjs/RecallSemantic.js"
+        }
+      },
+      "./SnapshotRecorder": {
+        "import": {
+          "types": "./dist/esm/SnapshotRecorder.d.ts",
+          "default": "./dist/esm/SnapshotRecorder.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SnapshotRecorder.d.ts",
+          "default": "./dist/cjs/SnapshotRecorder.js"
+        }
+      },
+      "./Source": {
+        "import": {
+          "types": "./dist/esm/Source.d.ts",
+          "default": "./dist/esm/Source.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Source.d.ts",
+          "default": "./dist/cjs/Source.js"
+        }
+      },
+      "./WithMemory": {
+        "import": {
+          "types": "./dist/esm/WithMemory.d.ts",
+          "default": "./dist/esm/WithMemory.js"
+        },
+        "require": {
+          "types": "./dist/cjs/WithMemory.d.ts",
+          "default": "./dist/cjs/WithMemory.js"
+        }
+      },
+      "./index": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./test/TestMemory": {
+        "import": {
+          "types": "./dist/esm/test/TestMemory.d.ts",
+          "default": "./dist/esm/test/TestMemory.js"
+        },
+        "require": {
+          "types": "./dist/cjs/test/TestMemory.d.ts",
+          "default": "./dist/cjs/test/TestMemory.js"
+        }
+      },
+      "./migrations/*": null
+    }
+  },
+  "scripts": {
+    "lint": "eslint src examples --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "circular": "node scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "node ../../flows/database/scripts/test-matrix.mjs",
+    "test:matrix": "node ../../flows/database/scripts/test-matrix.mjs"
+  },
+  "dependencies": {
+    "@smthrs/core": "1.0.0-rc.12",
+    "@smthrs/database": "1.0.0-rc.12",
+    "@smthrs/flow": "1.0.0-rc.12",
+    "@smthrs/patterns": "1.0.0-rc.12"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@effect/vitest": "4.0.4",
+    "@eslint/js": "9.39.5",
+    "@types/node": "26.4.1",
+    "@vitest/coverage-v8": "5.0.0",
+    "dprint": "0.57.1",
+    "effect": "4.0.4",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "madge": "8.0.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0"
+  },
+  "peerDependencies": {
+    "effect": "^4.0.4"
+  }
+}

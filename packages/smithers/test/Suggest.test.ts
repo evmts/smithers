@@ -57,7 +57,7 @@ const base = {
 } satisfies Partial<Suggest.Options>
 
 const implemented = {
-  files: ["flows/test-target/flow.mdx"],
+  files: [".smithers/flows/test-target/flow.mdx"],
   command: "smthrs up test-target",
   notes: "Runs vitest over the changed inputs."
 }

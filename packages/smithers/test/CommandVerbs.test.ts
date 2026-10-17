@@ -269,7 +269,7 @@ describe("smthrs init", () => {
     const scaffolded = result.data
 
     expect(scaffolded).toBeTypeOf("object")
-    expect(existsSync(join(root, "flows", "ship-it"))).toBe(true)
+    expect(existsSync(join(root, ".smithers", "flows", "ship-it"))).toBe(true)
   })
 
   it("refuses a name that would write outside flows/ before touching the disk", async () => {
@@ -282,7 +282,7 @@ describe("smthrs init", () => {
     expect(result.output).toContain("one path segment")
     // The refusal is a refusal, not a partial scaffold: nothing was created
     // under the project and nothing was created beside it.
-    expect(existsSync(join(root, "flows"))).toBe(false)
+    expect(existsSync(join(root, ".smithers", "flows"))).toBe(false)
   })
 })
 

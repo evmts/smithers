@@ -1,0 +1,32 @@
+{
+  "name": "@smthrs/eval-review-seeded-bugs",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "description": "Seeded-bug corpus for the review flow, its deterministic reviewing seat, and the scorer that grades them",
+  "scripts": {
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "bun test score.test.ts deterministicReviewer.test.ts fixtureRepo.test.ts security-completion-score.test.ts",
+    "test:suite": "bun run.ts"
+  },
+  "dependencies": {
+    "@smthrs/agent": "workspace:*",
+    "@smthrs/evals": "workspace:*",
+    "@smthrs/scorers": "workspace:*",
+    "@smthrs/core": "workspace:*",
+    "@smthrs/model": "workspace:*",
+    "effect": "4.0.4",
+    "@smthrs/cli": "workspace:*",
+    "@smthrs/engine": "workspace:*",
+    "@smthrs/flow": "workspace:*",
+    "@smthrs/flows": "workspace:*",
+    "@smthrs/registry": "workspace:*",
+    "@effect/platform-node": "4.0.4"
+  },
+  "devDependencies": {
+    "@smthrs/targets": "workspace:*",
+    "@types/node": "26.4.1",
+    "bun-types": "^1.4.0",
+    "typescript": "5.9.3"
+  }
+}

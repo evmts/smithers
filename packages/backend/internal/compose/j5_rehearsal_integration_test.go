@@ -17,7 +17,7 @@ import (
 // TestJ5Rehearsal walks journey J5 (mvp.md §5, teach the factory; C-J5-01,
 // C-J5-02) on the install J1 sets up. TODO A asks a question and waits
 // (distribution/fake-todo-turns.mjs [ASK]); TODO B is the flow edit
-// ([FLOWEDIT]): its PR changes exactly flows/todo/flow.ts, the built-in
+// ([FLOWEDIT]): its PR changes exactly .smithers/flows/todo/flow.ts, the built-in
 // composition plus a changelog step. Ben merges B; flow-load runs on every
 // main move (spec §11.3.1) and makes B's flow Active; a broken flow merged on
 // GitHub leaves it Active. A resumes its original D1 while new C executes
@@ -103,7 +103,7 @@ func runJ5Rehearsal(t *testing.T, enable string) {
 	}) {
 		return
 	}
-	r.step("3 Edit TODO B in review", "POST /api/todos [FLOWEDIT]; GET /api/todos/{B}; GitHub fake PR", "in_review; the PR changes exactly flows/todo/flow.ts, the TODO flow plus its changelog step", "T-FLW-05", func() error {
+	r.step("3 Edit TODO B in review", "POST /api/todos [FLOWEDIT]; GET /api/todos/{B}; GitHub fake PR", "in_review; the PR changes exactly .smithers/flows/todo/flow.ts, the TODO flow plus its changelog step", "T-FLW-05", func() error {
 		v, err := r.waitTodoWithin(b, 8*time.Minute, "in_review")
 		if err != nil {
 			return err
@@ -116,15 +116,15 @@ func runJ5Rehearsal(t *testing.T, enable string) {
 		if err != nil {
 			return err
 		}
-		if !slices.Equal(files, []string{"flows/todo/flow.ts"}) {
-			return fmt.Errorf("B's PR changes %v, want exactly flows/todo/flow.ts", files)
+		if !slices.Equal(files, []string{".smithers/flows/todo/flow.ts"}) {
+			return fmt.Errorf("B's PR changes %v, want exactly .smithers/flows/todo/flow.ts", files)
 		}
-		flow, err := r.githubGit("show", v.PR.Head+":flows/todo/flow.ts")
+		flow, err := r.githubGit("show", v.PR.Head+":.smithers/flows/todo/flow.ts")
 		if err != nil {
 			return err
 		}
 		if !strings.Contains(flow, `Flow.make("todo"`) || !strings.Contains(flow, "[CHANGELOG]") {
-			return fmt.Errorf("B's flows/todo/flow.ts is not the TODO flow with a changelog step")
+			return fmt.Errorf("B's .smithers/flows/todo/flow.ts is not the TODO flow with a changelog step")
 		}
 		r.actual = fmt.Sprintf("200 T%d in_review; PR #%d changes %v", b, p.Number, files)
 		return nil
@@ -347,11 +347,11 @@ func runJ5Rehearsal(t *testing.T, enable string) {
 				if status != "loaded" || source != squash || !isActive {
 					return fmt.Errorf("todo@%s is %s at %s (active %t), want loaded at %s and Active", active, status, source, isActive, squash)
 				}
-				if card.Source.Path != "flows/todo/flow.ts" || card.version("previous") != d1 {
+				if card.Source.Path != ".smithers/flows/todo/flow.ts" || card.version("previous") != d1 {
 					return fmt.Errorf("todo's card: source %+v, previous %q, merged-syncing %q, Active %q", card.Source, card.version("previous"), syncing, active)
 				}
 				d2 = active
-				r.actual = fmt.Sprintf("200 merged-syncing %s…, then Active D2 %s… from flows/todo/flow.ts, previous D1 %s…; workflow_definitions todo loaded at %s",
+				r.actual = fmt.Sprintf("200 merged-syncing %s…, then Active D2 %s… from .smithers/flows/todo/flow.ts, previous D1 %s…; workflow_definitions todo loaded at %s",
 					syncing[:12], d2[:12], d1[:12], squash[:12])
 				return nil
 			}
@@ -375,18 +375,18 @@ func runJ5Rehearsal(t *testing.T, enable string) {
 		r.actual = fmt.Sprintf("2 runs: setup main %s, B's squash %s; none repeated", r.mainCommit[:12], squash[:12])
 		return nil
 	})
-	r.step("12 Broken flow keeps previous", "GitHub fake: main gets a broken flows/todo/flow.ts; POST /api/github/sync; GET /api/flows", "merged-failed with the file's error; Active stays D2", "T-FLW-03", func() error {
+	r.step("12 Broken flow keeps previous", "GitHub fake: main gets a broken .smithers/flows/todo/flow.ts; POST /api/github/sync; GET /api/flows", "merged-failed with the file's error; Active stays D2", "T-FLW-03", func() error {
 		if d2 == "" {
 			return fmt.Errorf("blocked by 10 Active after load: no D2")
 		}
-		flow, err := r.githubGit("show", "refs/heads/main:flows/todo/flow.ts")
+		flow, err := r.githubGit("show", "refs/heads/main:.smithers/flows/todo/flow.ts")
 		if err != nil {
 			return err
 		}
 		// A literal syntax error exercises failed loading regardless of which
 		// coding steps the current composition calls.
 		broken := flow + "\n)\n"
-		commit, err := r.pushGitHubMain("Break the TODO flow", map[string]string{"flows/todo/flow.ts": broken})
+		commit, err := r.pushGitHubMain("Break the TODO flow", map[string]string{".smithers/flows/todo/flow.ts": broken})
 		if err != nil {
 			return err
 		}
@@ -402,7 +402,7 @@ func runJ5Rehearsal(t *testing.T, enable string) {
 				if active := card.version("active"); active != d2 {
 					return fmt.Errorf("the broken flow moved Active to %q, want D2 %s", active, d2)
 				}
-				if !regexp.MustCompile(`^flows/todo/flow\.ts:\d+: `).MatchString(version.Error) {
+				if !regexp.MustCompile(`^\.smithers/flows/todo/flow\.ts:\d+: `).MatchString(version.Error) {
 					return fmt.Errorf("merged-failed error %q does not name the file and line", version.Error)
 				}
 				var status, source, loadError string

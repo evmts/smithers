@@ -12,14 +12,14 @@ const agent = (overrides: Partial<Extension.Descriptor> = {}): Extension.Descrip
   effort: "high",
   flows: ["read", "bash"],
   capabilities: ["fs:read:**"],
-  path: "/repo/flows/review/flow.mdx",
+  path: "/repo/.smithers/flows/review/flow.mdx",
   ...overrides
 })
 const listed = [agent(), agent({ name: "echo", kind: "module" }), agent({ name: "manual", modelInvocable: false })]
 const body = {
   descriptor: agent(),
   text: "Review the change.",
-  baseDirectory: "/repo/flows/review",
+  baseDirectory: "/repo/.smithers/flows/review",
   digest: "d".repeat(64)
 }
 const seatOf = (declared: string) => Models.seatOf(declared, [])
@@ -77,7 +77,7 @@ describe("profile", () => {
       envelope: ["fs:read:**"]
     })
     expect(profile.system).toStartWith("Review the change.")
-    expect(profile.system).toContain("Base directory: /repo/flows/review")
+    expect(profile.system).toContain("Base directory: /repo/.smithers/flows/review")
   })
   test("empty flows and capabilities keep the host defaults", () => {
     const profile = Agents.profile(

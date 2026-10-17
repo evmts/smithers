@@ -81,10 +81,10 @@ it("resumes the retained module snapshot, replays carried steps and settles only
     return JSON.parse(result.stdout) as Record<string, unknown>
   }
   try {
-    mkdirSync(join(root, "flows", "steps"), { recursive: true })
+    mkdirSync(join(root, ".smithers", "flows", "steps"), { recursive: true })
     symlinkSync(resolve("node_modules"), join(root, "node_modules"), "dir")
     writeFileSync(join(root, ".gitignore"), ".flows/\nnode_modules\nhome/\nconfig/\n")
-    writeFileSync(join(root, "flows", "steps", "flow.ts"), source)
+    writeFileSync(join(root, ".smithers", "flows", "steps", "flow.ts"), source)
     execFileSync("jj", ["git", "init", root], { stdio: "ignore" })
     execFileSync("jj", ["new", "-R", root], { stdio: "ignore" })
     // The explicit offline evaluator supplies the required judge; no model
@@ -125,10 +125,10 @@ it("resumes the retained module snapshot, replays carried steps and settles only
     expect(fork.workspace).toEqual(expect.any(String))
     expect(fork.runId).toEqual(expect.any(String))
     const workspace = String(fork.workspace), forkId = String(fork.runId)
-    expect(readFileSync(join(workspace, "flows", "steps", "flow.ts"), "utf8")).toBe(source)
+    expect(readFileSync(join(workspace, ".smithers", "flows", "steps", "flow.ts"), "utf8")).toBe(source)
     // The ordinary checkout changes after fork. It must neither be evaluated
     // nor replace the descriptor approved for the retained source snapshot.
-    writeFileSync(join(root, "flows", "steps", "flow.ts"), "throw new Error('CURRENT_CHECKOUT_MUST_NOT_LOAD')\n")
+    writeFileSync(join(root, ".smithers", "flows", "steps", "flow.ts"), "throw new Error('CURRENT_CHECKOUT_MUST_NOT_LOAD')\n")
     const digest = read(
       "control",
       (db) =>

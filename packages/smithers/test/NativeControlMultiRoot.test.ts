@@ -40,9 +40,9 @@ const committedRoot = async (label: string) => {
     effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" }
   } as const
   const root = await mkdtemp(join(tmpdir(), `smithers-native-multiroot-${label}-`))
-  await mkdir(join(root, "flows", "native"), { recursive: true })
+  await mkdir(join(root, ".smithers", "flows", "native"), { recursive: true })
   await writeFile(
-    join(root, "flows", "native", "flow.ts"),
+    join(root, ".smithers", "flows", "native", "flow.ts"),
     `
 import * as Flow from "@smthrs/core/Flow"
 import { Schema } from "effect"

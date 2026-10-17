@@ -1,0 +1,459 @@
+package services
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"github.com/jackc/pgx/v5"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/machined"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/repohost"
+	"github.com/smithersai/smithers/packages/backend/jobs"
+	"github.com/smithersai/smithers/packages/backend/microsandbox"
+	workspaceapi "github.com/smithersai/smithers/packages/backend/workspace"
+)
+
+// BranchCapture is the authenticated daemon capture contract. Success means
+// native snapshot, verified object delivery and the entire outbox's durable
+// acknowledgement have completed, not just that capture was requested.
+type BranchCapture interface {
+	Capture(context.Context, string) (machined.CaptureResult, error)
+}
+
+func WithBranchCapture(capture BranchCapture) WorkspaceServiceOption {
+	return func(s *WorkspaceService) { s.branchCapture = capture }
+}
+
+// EnableMachineIdleRelease connects admission to the same capture/stop lifecycle
+// as explicit Sleep. The lifecycle owns its barrier and confirmed-stop receipt;
+// the scheduler never issues a second stop or captures on an unverified branch.
+func (s *WorkspaceService) EnableMachineIdleRelease(freeDisk func(context.Context) (int64, error), observe func(context.Context, db.Workspace) (microsandbox.AdmissionSafety, error)) error {
+	runtime, ok := s.runtime.(interface {
+		AdmissionSnapshot() []microsandbox.AdmissionRequest
+		SetAdmissionIdleProviders(microsandbox.AdmissionIdleProviders) error
+	})
+	if !ok || observe == nil || s.machineAdmission == nil {
+		return errors.New("automatic branch release providers unavailable")
+	}
+	return runtime.SetAdmissionIdleProviders(microsandbox.AdmissionIdleProviders{
+		FreeDisk: freeDisk,
+		Safety: func(ctx context.Context) ([]microsandbox.AdmissionSafety, error) {
+			seen := map[string]bool{}
+			var observations []microsandbox.AdmissionSafety
+			for _, request := range runtime.AdmissionSnapshot() {
+				if request.State != "granted" || request.Class == "background" || seen[request.Holder] || !strings.HasPrefix(request.Holder, "workspace:") {
+					continue
+				}
+				seen[request.Holder] = true
+				row, err := s.q.GetWorkspace(ctx, strings.TrimPrefix(request.Holder, "workspace:"))
+				if err != nil {
+					return nil, err
+				}
+				if row.Status != "running" || row.DeletedAt.Valid {
+					continue
+				}
+				safety, err := observe(ctx, row)
+				if err != nil {
+					return nil, err
+				}
+				safety.Holder = request.Holder
+				observations = append(observations, safety)
+			}
+			return observations, nil
+		},
+		Prepare: func(ctx context.Context, holder string) error {
+			id := strings.TrimPrefix(holder, "workspace:")
+			unlock := s.lockRuntimeWorkspace(id)
+			defer unlock()
+			row, err := s.q.GetWorkspace(ctx, id)
+			if err != nil {
+				return err
+			}
+			fresh, err := observe(ctx, row)
+			if err != nil {
+				return err
+			}
+			if !fresh.PresenceKnown || !fresh.SessionsKnown || !fresh.RunKnown || fresh.Presence || fresh.Terminal || fresh.SSH || fresh.RunningStep ||
+				fresh.BurstsEnabled && (!fresh.BurstsKnown || fresh.BurstOpen) || fresh.DocumentsEnabled && (!fresh.DocumentsKnown || fresh.Unflushed) {
+				return errors.New("branch is no longer safe-idle")
+			}
+			if err := s.captureAndSleepLocked(ctx, row, true); err != nil {
+				return err
+			}
+			current, err := s.q.GetWorkspace(ctx, id)
+			if err != nil {
+				return err
+			}
+			if current.Status != "suspended" && current.Status != "stopped" {
+				return errors.New("branch admission changed before capture")
+			}
+			return nil
+		},
+		Stop: func(ctx context.Context, holder string) error {
+			row, err := s.q.GetWorkspace(ctx, strings.TrimPrefix(holder, "workspace:"))
+			if err != nil {
+				return err
+			}
+			if row.Status != "suspended" && row.Status != "stopped" {
+				return errors.New("branch stop is unconfirmed")
+			}
+			return nil // captureAndSleepLocked already observed the runtime stop.
+		},
+	})
+}
+
+func (s *WorkspaceService) captureAndSleep(ctx context.Context, row db.Workspace, sessionless bool) error {
+	unlock := s.lockRuntimeWorkspace(row.ID)
+	defer unlock()
+	return s.captureAndSleepLocked(ctx, row, sessionless)
+}
+
+func (s *WorkspaceService) captureAndSleepLocked(ctx context.Context, row db.Workspace, sessionless bool) error {
+	if s.prepareFlowHostCapture != nil {
+		if err := s.prepareFlowHostCapture(ctx, row.ID); err != nil {
+			return err
+		}
+	}
+	if fence, ok := s.runtime.(interface {
+		WithCaptureWritersExcluded(context.Context, string, func(context.Context) error) error
+	}); ok {
+		// The trusted-process head publisher snapshots periodically. Stop that
+		// supervised writer before the final native capture; guest capture owns
+		// its daemon barrier instead. Resume provisions the publisher again.
+		operationCtx, err := s.workspaceRuntimeContext(ctx, row, row.UserID, workspaceLifecycleOperation(row, "capture"))
+		if err != nil {
+			return err
+		}
+		if err := s.runtime.StopService(operationCtx, row.ID, workspaceHeadReporterService); err != nil {
+			return err
+		}
+		err = fence.WithCaptureWritersExcluded(ctx, row.ID, func(ctx context.Context) error {
+			return s.captureAndSleepExcluded(context.WithValue(ctx, branchWriterExclusionKey{}, true), row, sessionless)
+		})
+		if errors.Is(err, workspaceapi.ErrCaptureWritersActive) {
+			refusal := pkgerrors.Conflict("active writer blocks final capture; close the branch's terminals and retry")
+			refusal.Details = map[string]string{"reason": "active_writer_blocks_final_capture", "branch_id": row.ID}
+			return refusal.WithCause(err)
+		}
+		return err
+	}
+	return s.captureAndSleepExcluded(ctx, row, sessionless)
+}
+
+// SetFlowHostCapturePreparation stops only hosts whose pinned launches have
+// settled. The runtime's writer fence still verifies quiescence before capture.
+func (s *WorkspaceService) SetFlowHostCapturePreparation(prepare func(context.Context, string) error) {
+	s.prepareFlowHostCapture = prepare
+}
+
+type branchWriterExclusionKey struct{}
+type branchFinalCaptureKey struct{}
+type branchFinalCapture struct {
+	Head string `json:"head"`
+	Tree string `json:"tree"`
+	VMID string `json:"vm_id"`
+}
+
+func (s *WorkspaceService) captureAndSleepExcluded(ctx context.Context, row db.Workspace, sessionless bool) error {
+	// Eleven distinct failures used to return one indistinguishable 503, and
+	// writeRouteError scrubs a 5xx sentence to "service unavailable", so an
+	// idle branch machine that refused to sleep told its owner and the
+	// operator log exactly nothing — the receipt for box
+	// 1d7209c4-1915-4433-bc2b-c15376574147, which held 1 vCPU / 4 GiB / 32 GiB
+	// for 15 h 42 min past its own 1800 s idle timeout while every suspend
+	// answered 503. The stage is a written constant naming the step that did
+	// not hold: no payloads, no keys, no URLs and no raw driver text.
+	//
+	// The two refusals are not the same verdict, because they do not have the
+	// same answer. uncomposed means one of the four seams sleep needs was
+	// never supplied on this deployment: no box here can be suspended, the
+	// identical retry refuses forever, and the owner is the one person who
+	// cannot fix it — so that one is CodeBranchSleepUnavailable, whose
+	// sentence isSafe5xxMessageCode lets through the 5xx scrub, and whose
+	// written copy offers `report` instead of a retry onto a wall.
+	//
+	// unavailable means sleep is composed here and this attempt did not get
+	// past one step: a dropped database connection, a capture that timed out,
+	// a stop the runtime did not confirm. Those come back on their own, so the
+	// verdict stays the scrubbed CodeServiceUnavailable, whose Message carries
+	// the stage into the operator log: writeRouteError logs Message and cause
+	// before it replaces the sentence with the status text, and the scrubbed
+	// body it writes keeps the code and drops Details. Answering them with the
+	// deployment verdict would tell an owner whose deployment can sleep boxes
+	// that it can never sleep one and that retrying is pointless — the
+	// receipt-28 lie with its polarity reversed.
+	refusal := func(code pkgerrors.Code, sentence, stage string, err error) error {
+		failure := pkgerrors.New(code, sentence+stage)
+		failure.Details = map[string]string{
+			"stage":     stage,
+			"branch_id": row.ID,
+		}
+		return failure.WithCause(err)
+	}
+	uncomposed := func(stage string, err error) error {
+		return refusal(pkgerrors.CodeBranchSleepUnavailable,
+			"branch sleep requires verified capture, runtime binding and state publication: ", stage, err)
+	}
+	unavailable := func(stage string, err error) error {
+		return refusal(pkgerrors.CodeServiceUnavailable,
+			"branch sleep is composed here and did not get past this step: ", stage, err)
+	}
+	store, stage, cause := s.branchCaptureDependencies()
+	if stage != "" {
+		return uncomposed(stage, cause)
+	}
+	var err error
+	row, err = s.q.GetWorkspace(ctx, row.ID)
+	if err != nil {
+		return unavailable("reload branch row", err)
+	}
+	if row.Status == "suspended" || row.Status == "stopped" {
+		return nil
+	}
+	if row.Status != "running" || row.VmID == "" {
+		return pkgerrors.Conflict("branch is not awake")
+	}
+	tx, err := s.transactions.Begin(ctx)
+	if err != nil {
+		return unavailable("begin lane binding read", err)
+	}
+	err = s.branchMachineProviders.LaneBinding(ctx, tx, row.RepositoryID, row.TargetBookmark, row.ID)
+	_ = tx.Rollback(context.WithoutCancel(ctx))
+	if err != nil {
+		return unavailable("verify lane binding", err)
+	}
+	operationCtx, err := s.workspaceRuntimeContext(ctx, row, row.UserID, workspaceLifecycleOperation(row, "sleep"))
+	if err != nil {
+		return unavailable("open runtime operation", err)
+	}
+	if err = s.transitionBranchMachine(ctx, row, "running", "releasing", "", sessionless); err != nil {
+		if sessionless && errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		return unavailable("enter releasing", err)
+	}
+	// Cancellation must not strand a live VM in releasing. An inspection failure
+	// is not evidence that it is awake: retain releasing and the failure receipt.
+	fail := func(stage string, cause error) error {
+		recovery, cancel := context.WithTimeout(context.WithoutCancel(operationCtx), 10*time.Second)
+		defer cancel()
+		next := "releasing"
+		observed, inspectErr := s.runtime.InspectWorkspace(recovery, row.ID)
+		if inspectErr == nil && observed.State == workspaceapi.WorkspaceRunning {
+			next = "running"
+		}
+		_ = s.transitionBranchMachine(recovery, row, "releasing", next, "capture or stop failed")
+		return unavailable(stage, cause)
+	}
+	capture, err := s.branchCapture.Capture(ctx, row.ID)
+	if err != nil {
+		return fail("capture branch", err)
+	}
+	current, err := s.q.GetWorkspace(ctx, row.ID)
+	if err != nil {
+		return fail("reload captured branch row", err)
+	}
+	if capture.Head == "" || capture.Tree == "" || current.HeadCommitID != capture.Head {
+		return fail("project capture head", fmt.Errorf("capture head has no durable projection"))
+	}
+	slug, err := s.workspaceRepoSlug(ctx, row.RepositoryID)
+	if err != nil {
+		return fail("resolve repository slug", err)
+	}
+	owner, repo, _ := strings.Cut(slug, "/")
+	advertisement, err := store.InfoRefsUploadPack(ctx, owner, repo)
+	if err != nil {
+		return fail("read branch head advertisement", err)
+	}
+	refs, err := parseUploadPackAdvertisement(advertisement)
+	if err != nil {
+		return fail("parse branch head advertisement", err)
+	}
+	verified := false
+	for _, ref := range refs {
+		if ref.name == repohost.BranchHeadRef(row.ID) && ref.oid == capture.Head {
+			verified = true
+		}
+	}
+	if !verified {
+		return fail("verify published capture ref", fmt.Errorf("capture ref mismatch"))
+	}
+	commit, err := store.GetChange(ctx, owner, repo, capture.Head)
+	if err != nil {
+		return fail("read captured change", err)
+	}
+	if commit.CommitID != capture.Head {
+		return fail("verify captured object", fmt.Errorf("capture object unavailable"))
+	}
+	// No not-found/already-stopped fallback: successful stop is the receipt.
+	stopStartedAt := time.Now()
+	if err = s.runtime.StopWorkspace(operationCtx, row.ID); err != nil {
+		return fail("stop runtime", err)
+	}
+	finish, cancel := context.WithTimeout(context.WithoutCancel(operationCtx), 10*time.Second)
+	defer cancel()
+	observed, err := s.runtime.InspectWorkspace(finish, row.ID)
+	if err != nil {
+		return fail("confirm runtime stop", err)
+	}
+	if observed.ID != row.ID || observed.State != workspaceapi.WorkspaceStopped {
+		return fail("confirm runtime stop", fmt.Errorf("branch stop is unconfirmed"))
+	}
+	if s.sandboxMetrics != nil {
+		s.sandboxMetrics.ObserveSandboxVMSuspend(time.Since(stopStartedAt).Seconds())
+	}
+	if excluded, _ := ctx.Value(branchWriterExclusionKey{}).(bool); excluded {
+		finish = context.WithValue(finish, branchFinalCaptureKey{}, branchFinalCapture{capture.Head, capture.Tree, row.VmID})
+	}
+	if err = s.transitionBranchMachine(finish, row, "releasing", "suspended", ""); err != nil {
+		return unavailable("publish suspended state", err)
+	}
+	s.revokeWorkspaceHeadToken(finish, current)
+	s.meterWorkspaceUsage(finish, current, "suspended")
+	return nil
+}
+
+// CaptureAndStop is install quiesce's machine step (spec §16.5.1, T-MCH-07's
+// final capture). Each awake branch machine takes the sleep path: verified
+// capture, then a confirmed stop that retains its disk. Quiesce ends sessions
+// first, so open sessions do not block it. A failure names its branch, and a
+// machine still awake afterwards refuses; an unavailable provider is never an
+// empty machine list.
+func (s *WorkspaceService) CaptureAndStop(ctx context.Context) error {
+	if err := s.QuiesceAvailable(); err != nil {
+		return err
+	}
+	running, err := s.q.ListRunningWorkspaces(ctx)
+	if err != nil {
+		return fmt.Errorf("list awake machines: %w", err)
+	}
+	var failures []error
+	for _, row := range running {
+		if err := ctx.Err(); err != nil {
+			return errors.Join(append(failures, err)...)
+		}
+		if err := s.quiesceMachine(ctx, row); err != nil {
+			failures = append(failures, err)
+		}
+	}
+	if len(failures) > 0 {
+		return errors.Join(failures...)
+	}
+	// A machine woken while the others were captured is still awake.
+	awake, err := s.q.ListRunningWorkspaces(ctx)
+	if err != nil {
+		return fmt.Errorf("list awake machines: %w", err)
+	}
+	for _, row := range awake {
+		failures = append(failures, fmt.Errorf("branch %s: still awake after capture", quiesceBranchName(row)))
+	}
+	return errors.Join(failures...)
+}
+
+// branchCaptureDependencies returns the branch head store and names the first
+// dependency capture-before-stop needs that is not composed, or "" when every
+// one is. Sleep and quiesce ask the same four questions of the same seams —
+// quiesce freezes by running sleep — so they ask them once: a fifth dependency
+// cannot reach one caller and miss the other, and both name the stage rather
+// than answering one indistinguishable 503. The cause belongs to the provider
+// gate, the only question whose answer is itself an error.
+func (s *WorkspaceService) branchCaptureDependencies() (workspaceSnapshotStore, string, error) {
+	store, ok := s.branchHeads.(workspaceSnapshotStore)
+	if !ok {
+		return nil, "branch head store unavailable", nil
+	}
+	if s.branchCapture == nil {
+		return nil, "branch capture unavailable", nil
+	}
+	if !s.hasWorkspaceRuntime() {
+		return nil, "workspace runtime unavailable", nil
+	}
+	if err := s.requireBranchMachineProviders(); err != nil {
+		return nil, "branch machine providers unavailable", err
+	}
+	return store, "", nil
+}
+
+// QuiesceAvailable reports whether every provider the machine step needs is
+// composed. Quiesce asks before it freezes, so a missing one refuses with
+// admissions still open — and says which one, because the sentence an operator
+// reads is the only place a 503 scrubbed of its reason can name the seam.
+func (s *WorkspaceService) QuiesceAvailable() error {
+	_, stage, cause := s.branchCaptureDependencies()
+	if stage == "" {
+		return nil
+	}
+	return pkgerrors.New(pkgerrors.CodeBranchSleepUnavailable,
+		"quiesce requires verified branch capture and the machine runtime: "+stage).WithCause(cause)
+}
+
+func (s *WorkspaceService) quiesceMachine(ctx context.Context, row db.Workspace) error {
+	owned, err := s.branchMachineOwned(ctx, row.UserID)
+	if err != nil {
+		return fmt.Errorf("branch %s: %w", quiesceBranchName(row), err)
+	}
+	if !owned {
+		return fmt.Errorf("branch %s: not a branch machine; quiesce cannot capture it", quiesceBranchName(row))
+	}
+	if err := s.suspendWorkspace(ctx, row); err != nil {
+		return fmt.Errorf("branch %s: %w", quiesceBranchName(row), err)
+	}
+	return nil
+}
+
+func quiesceBranchName(row db.Workspace) string {
+	if row.TargetBookmark != "" {
+		return row.TargetBookmark
+	}
+	return row.ID
+}
+
+// Commit state and its notification together. Branch live subscriptions project
+// this same row; a rollback can never publish a state that did not persist.
+func (s *WorkspaceService) transitionBranchMachine(ctx context.Context, row db.Workspace, from, to, failure string, sessionless ...bool) error {
+	tx, err := s.transactions.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	idle := len(sessionless) > 0 && sessionless[0]
+	result, err := tx.Exec(ctx, `UPDATE workspaces SET status=$3::varchar,updated_at=NOW(),suspended_at=CASE WHEN $3::varchar='suspended' THEN NOW() ELSE suspended_at END WHERE id=$1 AND status=$2 AND vm_id=$4 AND deleted_at IS NULL AND (NOT $5::boolean OR NOT EXISTS (SELECT 1 FROM workspace_sessions s WHERE s.workspace_id=workspaces.id AND s.status IN ('pending','starting','running')))`, row.ID, from, to, row.VmID, idle)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() != 1 {
+		if idle {
+			return pgx.ErrNoRows
+		}
+		return pkgerrors.Conflict("branch machine changed")
+	}
+	payload, err := json.Marshal(map[string]string{"status": to})
+	if err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `SELECT pg_notify($1,$2)`, "workspace_status_"+strings.ReplaceAll(row.ID, "-", ""), string(payload)); err != nil {
+		return err
+	}
+	if failure != "" {
+		payload, _ := json.Marshal(map[string]string{"branch": row.ID, "message": failure})
+		if _, err = jobs.RecordFactInTx(ctx, tx, jobs.Scope{TenantID: fmt.Sprint(row.RepositoryID), PrincipalID: "branch:" + row.ID}, uuid.NewString(), "branch.sleep", "failed", payload); err != nil {
+			return err
+		}
+	}
+	if capture, ok := ctx.Value(branchFinalCaptureKey{}).(branchFinalCapture); ok && to == "suspended" {
+		payload, err := json.Marshal(capture)
+		if err != nil {
+			return err
+		}
+		if _, err = jobs.RecordFactInTx(ctx, tx, jobs.Scope{TenantID: fmt.Sprint(row.RepositoryID), PrincipalID: "branch:" + row.ID}, uuid.NewString(), "branch.final_capture", "completed", payload); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}

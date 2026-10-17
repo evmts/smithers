@@ -15,6 +15,7 @@
  * @since 1.0.0
  */
 
+import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Factory from "@smthrs/targets/Factory"
 import type * as FlowCatalog from "@smthrs/targets/FlowCatalog"
 import * as Home from "@smthrs/targets/Home"
@@ -170,22 +171,60 @@ export const appsOf = (value: unknown): ReadonlyArray<App> => {
 }
 
 /**
+ * A discovery warning as a listing page carries it.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Warning {
+  readonly code: string
+  readonly path: string
+  readonly message: string
+}
+
+/**
+ * The discovery warnings a rendered listing carries, when it carries any.
+ *
+ * @category guards
+ * @since 1.0.0
+ */
+export const warningsOf = (value: unknown): ReadonlyArray<Warning> => {
+  const warnings = (value as { warnings?: unknown }).warnings
+  return Array.isArray(warnings)
+    ? warnings.filter((warning): warning is Warning =>
+      typeof warning === "object" && warning !== null &&
+      typeof (warning as { code?: unknown }).code === "string" &&
+      typeof (warning as { path?: unknown }).path === "string" &&
+      typeof (warning as { message?: unknown }).message === "string"
+    )
+    : []
+}
+
+/**
  * The human listing: one line per flow, a leading `*` on featured rows, the
  * id, then the declared summary or the flow's own description; then the
- * homepage's apps, one line each, when the project declares any.
+ * `retired_root` warning, which says flows the operator wrote did not load;
+ * then the homepage's apps, one line each, when the project declares any.
+ * Every other discovery warning is `smthrs doctor`'s to print.
  *
  * @category rendering
  * @since 1.0.0
  */
-export const human = (items: ReadonlyArray<Presented>, apps: ReadonlyArray<App> = []): string => {
-  const flows = items.length === 0 ? "No flows discovered under flows/.\n" : (() => {
+export const human = (
+  items: ReadonlyArray<Presented>,
+  apps: ReadonlyArray<App> = [],
+  warnings: ReadonlyArray<Warning> = []
+): string => {
+  const retired = warnings.filter((warning) => warning.code === "retired_root")
+    .map((warning) => `${warning.message}\n`).join("")
+  const flows = (items.length === 0 ? `No flows discovered under ${Descriptor.projectFlowsDirectory}/.\n` : (() => {
     const width = Math.max(...items.map((item) => item.flowId.length))
     return items
       .map((item) =>
         `${item.featured === true ? "* " : "  "}${item.flowId.padEnd(width)}  ${item.summary ?? item.description}`
       )
       .join("\n") + "\n"
-  })()
+  })()) + retired
   if (apps.length === 0) return flows
   // The homepage's apps: one line per app, its title then the flow it opens.
   const width = Math.max(...apps.map((app) => app.title.length))

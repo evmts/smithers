@@ -58,12 +58,12 @@ func TestInstallReviewPinsMemberPRBeforeDispatch(t *testing.T) {
 	require.Equal(t, strings.Repeat("7", 40), builtin.Pin.SourceCommit)
 	require.Equal(t, digests["review"], builtin.Pin.ExecutionDigest)
 	// A failed or inactive repository version leaves Active on the built-in.
-	_, err = q.InsertFlowVersion(ctx, f.repoID, "review", "flows/review/flow.ts", strings.Repeat("6", 40), strings.Repeat("5", 64), "failed", "load failed", []byte(`{}`))
+	_, err = q.InsertFlowVersion(ctx, f.repoID, "review", ".smithers/flows/review/flow.ts", strings.Repeat("6", 40), strings.Repeat("5", 64), "failed", "load failed", []byte(`{}`))
 	require.NoError(t, err)
 	builtin, err = f.service.prepareReview(ctx, f.repoID, f.userID, request, "review-50")
 	require.NoError(t, err)
 	require.Equal(t, digests["review"], builtin.Pin.ExecutionDigest)
-	_, err = q.InsertFlowVersion(ctx, f.repoID, "review", "flows/review/flow.ts", strings.Repeat("b", 40), strings.Repeat("c", 64), "loaded", "", []byte(`{}`))
+	_, err = q.InsertFlowVersion(ctx, f.repoID, "review", ".smithers/flows/review/flow.ts", strings.Repeat("b", 40), strings.Repeat("c", 64), "loaded", "", []byte(`{}`))
 	require.NoError(t, err)
 	activated, err := q.ActivateFlowVersion(ctx, f.repoID, "review", strings.Repeat("c", 64))
 	require.NoError(t, err)
@@ -76,7 +76,7 @@ func TestInstallReviewPinsMemberPRBeforeDispatch(t *testing.T) {
 	require.Equal(t, strings.Repeat("c", 64), admission.Pin.ExecutionDigest)
 	require.Equal(t, member.ID, admission.AuthorID)
 	// Later remote/main changes cannot mutate the selected value.
-	_, err = q.InsertFlowVersion(ctx, f.repoID, "review", "flows/review/flow.ts", strings.Repeat("e", 40), strings.Repeat("f", 64), "loaded", "", []byte(`{}`))
+	_, err = q.InsertFlowVersion(ctx, f.repoID, "review", ".smithers/flows/review/flow.ts", strings.Repeat("e", 40), strings.Repeat("f", 64), "loaded", "", []byte(`{}`))
 	require.NoError(t, err)
 	activated, err = q.ActivateFlowVersion(ctx, f.repoID, "review", strings.Repeat("f", 64))
 	require.NoError(t, err)

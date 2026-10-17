@@ -120,9 +120,9 @@ have to make rather than a bug to work around:
 
 When the run finishes, the tree has changed in four ways:
 
-- `flows/<name>/flow.ts` holds each migrated workflow, at the position its old
+- `.smithers/flows/<name>/flow.ts` holds each migrated workflow, at the position its old
   file had: `.smithers/workflows/pipelines/ci-fast.tsx` becomes
-  `flows/pipelines/ci-fast/flow.ts`.
+  `.smithers/flows/pipelines/ci-fast/flow.ts`.
 - `.smithers-migrate/archive/<original path>` holds every source the migration
   replaced. `--keep-old-sources` leaves them in place instead.
 - `package.json`, `tsconfig*.json`, and `.gitignore` are rewritten where they

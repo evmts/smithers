@@ -1,0 +1,450 @@
+package compose
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/smithersai/smithers/packages/backend/flowdispatch"
+	"github.com/smithersai/smithers/packages/backend/flowruntime"
+	"github.com/smithersai/smithers/packages/backend/hostexec"
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	"github.com/smithersai/smithers/packages/backend/internal/repohost"
+	"github.com/smithersai/smithers/packages/backend/internal/repohostffi"
+	"github.com/smithersai/smithers/packages/backend/internal/repohostserver"
+	"github.com/smithersai/smithers/packages/backend/internal/routes"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
+	"github.com/smithersai/smithers/packages/backend/jobs"
+	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
+	"github.com/stretchr/testify/require"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+type conflictDoorProvider struct {
+	unresolved  []string
+	signals     int
+	validations int
+	lastSignal  flowdispatch.SignalRequest
+}
+
+func (p *conflictDoorProvider) UnresolvedPaths(context.Context, services.ConflictValidation) ([]string, error) {
+	p.validations++
+	return p.unresolved, nil
+}
+func (p *conflictDoorProvider) AdmitInTx(context.Context, pgx.Tx, flowdispatch.LaunchRequest) (jobs.RequestReceipt, error) {
+	panic("unexpected launch")
+}
+func (p *conflictDoorProvider) SignalInTx(_ context.Context, _ pgx.Tx, request flowdispatch.SignalRequest) (jobs.RequestReceipt, error) {
+	p.signals++
+	p.lastSignal = request
+	return jobs.RequestReceipt{}, nil
+}
+
+// Real install HTTP/auth/storage, native validator contract fake. This does
+// not replace C-J7-03's microVM evidence or enable Resolve in the app.
+func TestConflictDoneComposedInstall(t *testing.T) {
+	pool, _ := postgresfixture.NewProductDatabase(t)
+	ctx, q := t.Context(), db.New(pool)
+	owner, err := q.CreateUser(ctx, db.CreateUserParams{Username: "pin-owner", LowerUsername: "pin-owner", DisplayName: "Owner"})
+	require.NoError(t, err)
+	repo, err := q.CreateRepo(ctx, db.CreateRepoParams{UserID: pgtype.Int8{Int64: owner.ID, Valid: true}, Name: "app", LowerName: "app", DefaultBookmark: "main"})
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `INSERT INTO self_host_owners(user_id) VALUES($1)`, owner.ID)
+	require.NoError(t, err)
+	binding := []byte(fmt.Sprintf(`{"owner_login":"pin-owner","repository_name":"app","repository_id":%d}`, repo.ID))
+	require.NoError(t, q.UpsertInstallSetting(ctx, db.UpsertInstallSettingParams{Key: "github.repository", Value: binding}))
+	access := []byte(fmt.Sprintf(`{"owner_login":"pin-owner","repository_name":"app","repository_id":%d,"last_access_check_at":"%s"}`, repo.ID, time.Now().UTC().Format(time.RFC3339)))
+	require.NoError(t, q.UpsertInstallSetting(ctx, db.UpsertInstallSettingParams{Key: "owner.access", Value: access}))
+	_, err = q.RequestMythicalBootstrap(ctx, repo.ID, owner.ID, 1, false)
+	require.NoError(t, err)
+	source, digest := strings.Repeat("a", 40), strings.Repeat("b", 64)
+	item, _, err := q.InsertMythicalItem(ctx, db.MythicalItem{RepositoryID: repo.ID, State: "running", Checks: []byte(fmt.Sprintf(`{"todo":true,"run_launched":true,"run_attached":true,"flowSource":"%s"}`, source))})
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `UPDATE mythical_items SET source='todo',number=1,owner_id=$2,attempt=1,flow_digest=$3,request_run_id='pinned-run',workspace_id='11111111-1111-4111-8111-111111111111',revisions='[{"text":"Original","acceptance":[],"reason":"create"}]',title='Pinned source' WHERE id=$1`, item.ID, owner.ID, digest)
+	require.NoError(t, err)
+	hash := sha256.Sum256([]byte("pin-cookie"))
+	_, err = pool.Exec(ctx, `INSERT INTO auth_sessions(session_key,user_id,username,expires_at) VALUES($1,$2,'pin-owner',NOW()+interval '1 hour')`, hex.EncodeToString(hash[:]), owner.ID)
+	require.NoError(t, err)
+	server := httptest.NewUnstartedServer(nil)
+	origin := "http://" + server.Listener.Addr().String()
+	cfg := testConfigAllFlagsOn()
+	cfg.Auth.Mode, cfg.Server.PublicURL, cfg.Server.AllowedOrigins = "selfhost", origin, []string{origin}
+	// Native mirrored main is independent of the stack's folding receipt.
+	native := repohostffi.New(os.Getenv("SMITHERS_FFI_LIBRARY_PATH"))
+	require.NoError(t, native.Load())
+	hostCfg := repohostserver.Config{StoragePath: t.TempDir(), AuthToken: "conflict-door"}
+	repoPath := hostCfg.RepoPath(owner.Username, repo.Name)
+	_, err = native.InitRepo(repoPath)
+	require.NoError(t, err)
+	store := filepath.Join(repoPath, ".jj", "repo", "store", "git")
+	git := func(args ...string) string {
+		t.Helper()
+		out, err := hostexec.Git(ctx, append([]string{"--git-dir", store, "-c", "user.name=Test", "-c", "user.email=test@example.com", "-c", "core.hooksPath=/dev/null"}, args...)...).CombinedOutput()
+		require.NoError(t, err, "%s", out)
+		return strings.TrimSpace(string(out))
+	}
+	treeCommand := hostexec.Git(ctx, "--git-dir", store, "hash-object", "-t", "tree", "-w", "--stdin")
+	treeCommand.Stdin = strings.NewReader("")
+	treeBytes, err := treeCommand.Output()
+	require.NoError(t, err)
+	onto := git("commit-tree", strings.TrimSpace(string(treeBytes)), "-m", "main")
+	moved := git("commit-tree", strings.TrimSpace(string(treeBytes)), "-p", onto, "-m", "moved main")
+	mirror := func(head string) {
+		t.Helper()
+		git("update-ref", "refs/heads/main", head)
+		require.NoError(t, native.ImportGitRefs(repoPath))
+	}
+	mirror(onto)
+	engine, err := repohostserver.NewWithFFI(hostCfg, native)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, engine.Shutdown(context.Background())) })
+	client := repohost.NewLocalClient(engine.Handler(), hostCfg.AuthToken)
+	service := services.NewMythicalService(pool, client)
+
+	provider := &conflictDoorProvider{unresolved: []string{"a.txt"}}
+	service.SetLauncher(provider)
+	handler := &routes.MythicalHandler{Service: service}
+	server.Config.Handler = todoMergeComposeRouter(cfg, q, pool, handler)
+	server.Start()
+	t.Cleanup(server.Close)
+	checks := `{"todo":true,"run_launched":true,"run_attached":true,"flowSource":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","rebase":{"onto":"onto","name":"main"},"waits":[{"id":"conflict-1","kind":"conflict","paths":["a.txt"],"conflict_change":"change","onto_revision":"onto","signal":{"flow":"todo","run":"pinned-run","name":"conflict"}}]}`
+	checks = strings.ReplaceAll(checks, `:"onto"`, fmt.Sprintf(":%q", onto))
+	// Bind the fake signal to the same production launch address as the item.
+	var bound map[string]any
+	require.NoError(t, json.Unmarshal([]byte(checks), &bound))
+	signal := bound["waits"].([]any)[0].(map[string]any)["signal"].(map[string]any)
+	tenant, principal := fmt.Sprintf("repository:%d", repo.ID), fmt.Sprintf("user:%d", owner.ID)
+	signal["scope"] = map[string]any{"tenantId": tenant, "principalId": principal}
+	signal["target"] = map[string]any{"tenantId": tenant, "principalId": principal, "workspaceId": "11111111-1111-4111-8111-111111111111", "bindingKind": "mythical-item", "bindingId": fmt.Sprintf("%s", item.ID)}
+	bound["conflictReservation"] = map[string]any{"change": "change", "onto": onto, "run": "pinned-run", "limit": 1, "reserved": 1}
+	encoded, err := json.Marshal(bound)
+	require.NoError(t, err)
+	checks = string(encoded)
+	_, err = pool.Exec(ctx, `UPDATE mythical_items SET checks=$2,integration=jsonb_build_object('conflict',jsonb_build_object('head','change','onto',$3::text,'paths',jsonb_build_array('a.txt'))) WHERE id=$1`, item.ID, checks, onto)
+	require.NoError(t, err)
+	call := func(t *testing.T, expected int, code string) {
+		t.Helper()
+		req, err := http.NewRequest("POST", origin+"/api/todos/1/answer", strings.NewReader(`{"wait":"conflict-1","answer":"done"}`))
+		require.NoError(t, err)
+		req.AddCookie(&http.Cookie{Name: "smithers_session", Value: "pin-cookie"})
+		req.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+		req.Header.Set("X-CSRF-Token", "csrf")
+		req.Header.Set("Origin", origin)
+		req.Header.Set("Content-Type", "application/json")
+		res, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		defer res.Body.Close()
+		var body map[string]any
+		require.NoError(t, json.NewDecoder(res.Body).Decode(&body))
+		require.Equal(t, expected, res.StatusCode, body)
+		if code != "" {
+			require.Equal(t, code, body["code"])
+		}
+	}
+	// The card's Done is the conflict wait's own todo.answer, served only once
+	// native validation is composed.
+	waitActions := func(t *testing.T) []any {
+		t.Helper()
+		req, err := http.NewRequest("GET", origin+"/api/todos/1", nil)
+		require.NoError(t, err)
+		req.AddCookie(&http.Cookie{Name: "smithers_session", Value: "pin-cookie"})
+		req.Header.Set("Origin", origin)
+		res, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		defer res.Body.Close()
+		var card struct {
+			Waits []struct {
+				ID      string `json:"id"`
+				Kind    string `json:"kind"`
+				Paths   []string
+				Actions []any `json:"actions"`
+			} `json:"waits"`
+		}
+		require.Equal(t, 200, res.StatusCode)
+		require.NoError(t, json.NewDecoder(res.Body).Decode(&card))
+		require.Len(t, card.Waits, 1)
+		require.Equal(t, "conflict-1", card.Waits[0].ID)
+		require.Equal(t, []string{"a.txt"}, card.Waits[0].Paths)
+		return card.Waits[0].Actions
+	}
+	t.Run("missing mirrored repository provider", func(t *testing.T) {
+		missingHost := services.NewMythicalService(pool, nil)
+		missingHost.SetLauncher(provider)
+		missingHost.SetConflictValidator(provider)
+		handler.Service = missingHost
+		defer func() { handler.Service = service }()
+		before, err := q.GetMythicalItem(ctx, item.ID)
+		require.NoError(t, err)
+		require.Empty(t, waitActions(t))
+		call(t, 503, "conflict_validation_unavailable")
+		after, err := q.GetMythicalItem(ctx, item.ID)
+		require.NoError(t, err)
+		require.JSONEq(t, string(before.Checks), string(after.Checks))
+		require.Zero(t, provider.validations)
+		require.Zero(t, provider.signals)
+	})
+	require.Empty(t, waitActions(t))
+	call(t, 503, "conflict_validation_unavailable")
+	service.SetConflictValidator(provider)
+	require.Equal(t, []any{map[string]any{"tag": "todo.answer", "label": "Done", "args": map[string]any{"answer": "done"}}}, waitActions(t))
+	for _, field := range []string{"change", "onto", "run"} {
+		t.Run("stale reservation "+field, func(t *testing.T) {
+			reservation := map[string]any{"change": "change", "onto": onto, "run": "pinned-run", "limit": 1, "reserved": 1}
+			reservation[field] = "another-conflict"
+			raw, err := json.Marshal(reservation)
+			require.NoError(t, err)
+			_, err = pool.Exec(ctx, `UPDATE mythical_items SET checks=jsonb_set(checks,'{conflictReservation}',$2::jsonb) WHERE id=$1`, item.ID, raw)
+			require.NoError(t, err)
+			before, err := q.GetMythicalItem(ctx, item.ID)
+			require.NoError(t, err)
+			validations := provider.validations
+			call(t, 409, "stale_conflict")
+			after, err := q.GetMythicalItem(ctx, item.ID)
+			require.NoError(t, err)
+			require.JSONEq(t, string(before.Checks), string(after.Checks))
+			require.JSONEq(t, string(before.Integration), string(after.Integration))
+			require.Equal(t, before.CandidateHead, after.CandidateHead)
+			require.Equal(t, validations, provider.validations)
+			require.Zero(t, provider.signals)
+			_, err = pool.Exec(ctx, `UPDATE mythical_items SET checks=$2 WHERE id=$1`, item.ID, checks)
+			require.NoError(t, err)
+		})
+	}
+	// Missing or mismatched attempt providers refuse individually before native
+	// inspection or signal admission, with the person's retained wait unchanged.
+	for name, update := range map[string]string{
+		"run not launched":         `checks=checks-'run_launched'`,
+		"run not attached":         `checks=checks-'run_attached'`,
+		"workspace":                `workspace_id=''`,
+		"digest":                   `flow_digest=NULL`,
+		"malformed digest":         `flow_digest='not-a-pin'`,
+		"source":                   `checks=checks-'flowSource'`,
+		"run":                      `request_run_id=''`,
+		"signal":                   `checks=checks #- '{waits,0,signal}'`,
+		"stale run":                `checks=jsonb_set(checks,'{waits,0,signal,run}','"another-run"')`,
+		"foreign flow":             `checks=jsonb_set(checks,'{waits,0,signal,flow}','"another-flow"')`,
+		"missing scope":            `checks=checks #- '{waits,0,signal,scope}'`,
+		"foreign tenant":           `checks=jsonb_set(checks,'{waits,0,signal,target,tenantId}','"repository:999"')`,
+		"foreign principal":        `checks=jsonb_set(checks,'{waits,0,signal,target,principalId}','"user:999"')`,
+		"foreign signal authority": `checks=jsonb_set(jsonb_set(checks,'{waits,0,signal,scope,principalId}','"user:999"'),'{waits,0,signal,target,principalId}','"user:999"')`,
+		"foreign workspace":        `checks=jsonb_set(checks,'{waits,0,signal,target,workspaceId}','"another-branch"')`,
+		"foreign binding":          `checks=jsonb_set(checks,'{waits,0,signal,target,bindingId}','"another-item"')`,
+		"foreign kind":             `checks=jsonb_set(checks,'{waits,0,signal,target,bindingKind}','"browser-flow"')`,
+		"signal name":              `checks=jsonb_set(checks,'{waits,0,signal,name}','""')`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := pool.Exec(ctx, "UPDATE mythical_items SET "+update+" WHERE id=$1", item.ID)
+			require.NoError(t, err)
+			before, err := q.GetMythicalItem(ctx, item.ID)
+			require.NoError(t, err)
+			validations := provider.validations
+			call(t, 503, "conflict_validation_unavailable")
+			require.Equal(t, validations, provider.validations)
+			after, err := q.GetMythicalItem(ctx, item.ID)
+			require.NoError(t, err)
+			require.JSONEq(t, string(before.Checks), string(after.Checks))
+			require.JSONEq(t, string(before.Integration), string(after.Integration))
+			require.Equal(t, before.CandidateHead, after.CandidateHead)
+			require.Zero(t, provider.signals)
+			_, err = pool.Exec(ctx, `UPDATE mythical_items SET workspace_id='11111111-1111-4111-8111-111111111111',flow_digest=$2,request_run_id='pinned-run',checks=$3 WHERE id=$1`, item.ID, digest, checks)
+			require.NoError(t, err)
+		})
+	}
+	_, err = pool.Exec(ctx, `UPDATE mythical_stacks SET landed_main='onto' WHERE repository_id=$1`, repo.ID)
+	require.NoError(t, err)
+	call(t, 409, "still_conflicted")
+	retained, err := q.GetMythicalItem(ctx, item.ID)
+	require.NoError(t, err)
+	require.JSONEq(t, checks, string(retained.Checks))
+	require.Zero(t, provider.signals)
+	_, err = pool.Exec(ctx, `UPDATE mythical_items SET checks=jsonb_set(checks,'{rebase,onto}','"new-target"') WHERE id=$1`, item.ID)
+	require.NoError(t, err)
+	call(t, 409, "stale_conflict")
+	require.Zero(t, provider.signals)
+	_, err = pool.Exec(ctx, `UPDATE mythical_items SET checks=$2 WHERE id=$1`, item.ID, checks)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `UPDATE mythical_stacks SET landed_main='moved-main' WHERE repository_id=$1`, repo.ID)
+	require.NoError(t, err)
+	mirror(moved)
+	validations := provider.validations
+	call(t, 409, "stale_conflict")
+	require.Equal(t, validations, provider.validations)
+	require.Zero(t, provider.signals)
+	retained, err = q.GetMythicalItem(ctx, item.ID)
+	require.NoError(t, err)
+	require.JSONEq(t, checks, string(retained.Checks))
+	_, err = pool.Exec(ctx, `UPDATE mythical_stacks SET landed_main='onto' WHERE repository_id=$1`, repo.ID)
+	require.NoError(t, err)
+	mirror(onto)
+	provider.unresolved = nil
+	call(t, 202, "")
+	call(t, 202, "")
+	require.Equal(t, 1, provider.signals)
+	// Both branch doors are mounted and authorized, but the install has no
+	// native conflict/recovery provider. Neither request admits any rewrite.
+	tokens := map[string]string{}
+	for _, kind := range []string{"run", "machine"} {
+		raw := "smithers_" + strings.Repeat("a", 40)
+		if kind == "machine" {
+			raw = "smithers_" + strings.Repeat("b", 40)
+		}
+		sum := sha256.Sum256([]byte(raw))
+		digest := hex.EncodeToString(sum[:])
+		scopes := "write:repository," + middleware.RepositoryRestrictionScope(repo.ID)
+		if kind == "machine" {
+			scopes += "," + middleware.WorkspaceRestrictionScope("11111111-1111-4111-8111-111111111111")
+		}
+		_, err := q.CreateAccessToken(ctx, db.CreateAccessTokenParams{UserID: owner.ID, Name: kind, TokenHash: digest, TokenLastEight: digest[len(digest)-8:], Scopes: scopes, SystemIssued: true})
+		require.NoError(t, err)
+		tokens[kind] = raw
+	}
+	for _, tc := range []struct {
+		body      string
+		malformed bool
+	}{
+		{`{"rebase":true}`, false},
+		{`{"op":"rebase"}`, false},
+		{`{"conflict_change":"change","onto_revision":"onto"}`, false},
+		{`{"op":"rebase","conflict_change":"change","onto_revision":"onto"}`, false},
+		{`{"op":"rebase","conflict_change":"","onto_revision":""}`, true},
+		{`{"op":"rebase","conflict_change":null,"onto_revision":null}`, true},
+		{`{"op":"rebase","conflict_change":null}`, true},
+	} {
+		for _, principal := range []string{"person", "anonymous", "run", "machine"} {
+			if tc.malformed && principal != "person" {
+				continue
+			}
+			request, err := http.NewRequest("POST", origin+"/api/branches/scratch%2Fben%2Fwork", strings.NewReader(tc.body))
+			require.NoError(t, err)
+			if principal == "person" {
+				request.AddCookie(&http.Cookie{Name: "smithers_session", Value: "pin-cookie"})
+			}
+			if token := tokens[principal]; token != "" {
+				request.Header.Set("Authorization", "Bearer "+token)
+			}
+			request.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+			request.Header.Set("X-CSRF-Token", "csrf")
+			request.Header.Set("Origin", origin)
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("Idempotency-Key", "same-press")
+			response, err := http.DefaultClient.Do(request)
+			require.NoError(t, err)
+			var result map[string]any
+			require.NoError(t, json.NewDecoder(response.Body).Decode(&result))
+			response.Body.Close()
+			if tc.malformed {
+				require.Equal(t, 400, response.StatusCode, result)
+				require.Equal(t, "bad_request", result["code"])
+			} else if principal == "person" {
+				require.Equal(t, 503, response.StatusCode, result)
+				code := "conflict_validation_unavailable"
+				if tc.body == `{"rebase":true}` || tc.body == `{"op":"rebase"}` {
+					code = "rebase_execution_unavailable"
+				}
+				require.Equal(t, code, result["code"])
+				require.Equal(t, "infra", result["class"])
+			} else if principal == "anonymous" {
+				require.Equal(t, 401, response.StatusCode, result)
+			} else {
+				require.Equal(t, 403, response.StatusCode, result)
+				require.Equal(t, "permission", result["code"])
+			}
+		}
+	}
+	require.Equal(t, 1, provider.signals)
+	// The native continuation contract parks the existing attempt. Project it
+	// through the production runtime boundary and read the mounted HTTP card.
+	_, err = pool.Exec(ctx, `UPDATE mythical_items SET checks=jsonb_set($2::jsonb-'waits','{conflictReservation}',jsonb_build_object('change','change','onto',$3::text,'run','pinned-run','limit',1,'reserved',1)) WHERE id=$1`, item.ID, checks, onto)
+	require.NoError(t, err)
+	current, err := q.GetMythicalItem(ctx, item.ID)
+	require.NoError(t, err)
+	projection, err := json.Marshal(map[string]any{"kind": "mythical-item", "itemId": fmt.Sprint(item.ID), "generation": current.Generation, "attempt": 1, "phase": "todo", "flowDigest": digest, "flowSource": source})
+	require.NoError(t, err)
+	update := flowdispatch.ProjectionUpdate{State: jobs.StateWaiting, Scope: jobs.Scope{TenantID: tenant, PrincipalID: principal}, Checkpoint: flowdispatch.RuntimeCheckpoint{
+		FlowID: "todo", RunID: "pinned-run", ExecutionDigest: digest, Projection: projection,
+		Target: flowruntime.Target{TenantID: tenant, PrincipalID: principal, WorkspaceID: current.WorkspaceID, BindingKind: "mythical-item", BindingID: fmt.Sprint(item.ID)},
+		Run:    &flowruntime.Run{RunID: "pinned-run", Status: "waiting", PendingWaits: []flowruntime.PendingWait{{RunID: "conflict-child", Token: "park-1", Name: "conflict", Request: json.RawMessage(fmt.Sprintf(`{"kind":"conflict","conflict_change":"change","onto_revision":%q,"paths":["invented.txt"]}`, onto))}}},
+	}}
+	var projectedWaitID string
+	for range 10 {
+		require.NoError(t, service.ProjectFlowRuntime(ctx, update))
+		var projectedID string
+		require.NoError(t, pool.QueryRow(ctx, `SELECT checks->'waits'->0->>'id' FROM mythical_items WHERE id=$1`, item.ID).Scan(&projectedID))
+		require.Regexp(t, `^c-[0-9a-f]{16}$`, projectedID)
+		if projectedWaitID == "" {
+			projectedWaitID = projectedID
+		} else {
+			require.Equal(t, projectedWaitID, projectedID, "replayed projection keeps the same conflict")
+		}
+	}
+	request, err := http.NewRequest("GET", origin+"/api/todos/1", nil)
+	require.NoError(t, err)
+	request.AddCookie(&http.Cookie{Name: "smithers_session", Value: "pin-cookie"})
+	response, err := http.DefaultClient.Do(request)
+	require.NoError(t, err)
+	defer response.Body.Close()
+	var card map[string]any
+	require.NoError(t, json.NewDecoder(response.Body).Decode(&card))
+	require.Equal(t, 200, response.StatusCode, card)
+	require.Equal(t, "needs_you", card["state"], card)
+	stored, err := q.GetMythicalItem(ctx, item.ID)
+	require.NoError(t, err)
+	var waits struct {
+		Waits []services.TodoWait `json:"waits"`
+	}
+	require.NoError(t, json.Unmarshal(stored.Checks, &waits))
+	require.Len(t, waits.Waits, 1)
+	require.Equal(t, projectedWaitID, waits.Waits[0].ID)
+	require.Equal(t, []string{"a.txt"}, waits.Waits[0].Paths)
+	require.Equal(t, "change", waits.Waits[0].ConflictChange)
+	require.Equal(t, onto, waits.Waits[0].OntoRevision)
+	require.Equal(t, 1, provider.signals, "projection never launches or answers an attempt")
+
+	// A recovered run parks the same conflict at a new wait. Done must
+	// signal that wait while retaining the original card and native paths.
+	update.Checkpoint.Run.PendingWaits[0].Name = "conflict-recovered"
+	update.Checkpoint.Run.PendingWaits[0].Token = "park-2"
+	for range 10 {
+		require.NoError(t, service.ProjectFlowRuntime(ctx, update))
+	}
+	stored, err = q.GetMythicalItem(ctx, item.ID)
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(stored.Checks, &waits))
+	require.Len(t, waits.Waits, 1)
+	require.Equal(t, projectedWaitID, waits.Waits[0].ID)
+	require.Equal(t, []string{"a.txt"}, waits.Waits[0].Paths)
+	require.Equal(t, "conflict-recovered", waits.Waits[0].Signal.Name)
+	done, err := http.NewRequest("POST", origin+"/api/todos/1/answer", strings.NewReader(fmt.Sprintf(`{"wait":%q,"answer":"done"}`, projectedWaitID)))
+	require.NoError(t, err)
+	done.AddCookie(&http.Cookie{Name: "smithers_session", Value: "pin-cookie"})
+	done.AddCookie(&http.Cookie{Name: "__csrf", Value: "csrf"})
+	done.Header.Set("X-CSRF-Token", "csrf")
+	done.Header.Set("Origin", origin)
+	done.Header.Set("Content-Type", "application/json")
+	completed, err := http.DefaultClient.Do(done)
+	require.NoError(t, err)
+	completed.Body.Close()
+	require.Equal(t, 202, completed.StatusCode)
+	require.Equal(t, 2, provider.signals)
+	require.Equal(t, "conflict-recovered", provider.lastSignal.Name)
+	// Replayed checkpoints after Done cannot reopen or retarget the wait.
+	update.Checkpoint.Run.PendingWaits[0].Name = "obsolete"
+	require.NoError(t, service.ProjectFlowRuntime(ctx, update))
+	stored, err = q.GetMythicalItem(ctx, item.ID)
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(stored.Checks, &waits))
+	require.Len(t, waits.Waits, 1)
+	require.NotNil(t, waits.Waits[0].SettledAt)
+	require.Equal(t, "conflict-recovered", waits.Waits[0].Signal.Name)
+
+}

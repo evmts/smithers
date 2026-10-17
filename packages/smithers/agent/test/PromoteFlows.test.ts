@@ -235,7 +235,7 @@ describe("flows/show-script", () => {
       Effect.gen(function*() {
         const fs = yield* FileSystem.FileSystem
         const root = yield* fs.makeTempDirectoryScoped({ directory: testDirectory, prefix: ".promotion-" })
-        const flows = join(root, "flows")
+        const flows = join(root, ".smithers", "flows")
         const example = join(flows, "example")
         yield* fs.makeDirectory(example, { recursive: true })
         yield* fs.writeFileString(
@@ -329,12 +329,12 @@ describe("flows/write-flow", () => {
     expect(result.outcome).toBe("success")
     expect(result.value).toEqual({
       files: [
-        "flows/weekly-digest/flow.ts",
-        "flows/weekly-digest/flow.e2e.ts",
-        "flows/weekly-digest/fixtures/weekly-digest.json"
+        ".smithers/flows/weekly-digest/flow.ts",
+        ".smithers/flows/weekly-digest/flow.e2e.ts",
+        ".smithers/flows/weekly-digest/fixtures/weekly-digest.json"
       ]
     })
-    expect(written.get("flows/weekly-digest/flow.e2e.ts")).toBe(`it("runs weekly-digest", () => {})`)
+    expect(written.get(".smithers/flows/weekly-digest/flow.e2e.ts")).toBe(`it("runs weekly-digest", () => {})`)
   })
 
   it("refuses an unroutable id as a correctable failure and writes nothing", async () => {
@@ -403,12 +403,12 @@ describe("flows/write-flow", () => {
     expect(written.size).toBe(0)
     expect(refreshes).toBe(0)
     expect(JSON.stringify(events)).toContain(
-      "Flow flows/write-flow needs fs:write:/flows/**, which is outside this run's capability envelope."
+      "Flow flows/write-flow needs fs:write:/.smithers/flows/**, which is outside this run's capability envelope."
     )
   })
 
   it("declares the flow-file write it performs", () => {
-    expect(PromoteFlows.writeFlowFlow.capabilities).toStrictEqual(["fs:write:/flows/**"])
+    expect(PromoteFlows.writeFlowFlow.capabilities).toStrictEqual(["fs:write:/.smithers/flows/**"])
   })
 
   it("does not refresh a registry when the write was refused", async () => {

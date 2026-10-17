@@ -1,0 +1,163 @@
+import { expect, test } from "bun:test"
+import { createAppStore } from "./AppStore"
+import { scopedControllers } from "./ControllerTestScope"
+import { memoryStorage, silentAgent } from "./TestFixtures"
+
+const controllerFor = scopedControllers()
+
+test("run detail selection persists through the flow, reopening and storage reload", async () => {
+  const storage = memoryStorage()
+  const store = await createAppStore({ kind: "localStorage", storage })
+  const controller = controllerFor(store, silentAgent)
+  await controller.presentRun("recorded-run", "Recorded run", false)
+  const result = await controller.commands.submit({ name: "runs.trace.view", actor: "user",
+    payload: { runId: "recorded-run", view: "timeline", state: { selected: "step:attempt:checks", tab: "journal", at: 3 } } })
+  expect(controller.commands.find("run.view")).toBeUndefined()
+  expect(result.status).toBe("executed")
+  await controller.presentRun("recorded-run", "Recorded run", false)
+  const card = store.collections.cards.get("run:recorded-run")
+  expect(card?.kind === "run" && card.payload.memberViews?.[controller.design.viewer()]).toEqual({ selected: "step:attempt:checks", tab: "journal", at: 3 })
+  await controller.commands.submit({ name: "runs.trace.view", actor: "user", payload: { runId: "recorded-run", view: "turns", state: { selected: "cell-2" } } })
+  await controller.dispose()
+  const restored = await createAppStore({ kind: "localStorage", storage })
+  const saved = restored.collections.cards.get("run:recorded-run")
+  expect(saved?.kind === "run" && saved.payload.memberViews?.[controller.design.viewer()]).toEqual({ selected: "cell-2", tab: "journal", at: 3 })
+  expect([...restored.collections.transitions.values()].some(row => row.type === "card.updated" && row.actor === "user")).toBe(true)
+})
+
+test("run view refuses a missing card and invalid scrubber input", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = controllerFor(store, silentAgent)
+  const missing = await controller.commands.submit({ name: "runs.trace.view", actor: "user", payload: { runId: "missing", view: "turns", state: { selected: "cell" } } })
+  expect(missing.status).toBe("failed")
+  for (const at of [-1, 1.5]) {
+    const invalid = await controller.commands.submit({ name: "runs.trace.view", actor: "user", payload: { runId: "missing", view: "turns", state: { at } } })
+    expect(invalid.status).toBe("failed")
+  }
+  expect(store.collections.cards.size).toBe(0)
+})
+
+for (const name of ["runs", "monitor"] as const) test(`install /${name} returns before its list read and presents every served run without the seed`, async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  let resolveList!: (response: Response) => void
+  const pending = new Promise<Response>(resolve => { resolveList = resolve })
+  const requests: string[] = []
+  const controller = controllerFor(store, silentAgent, {
+    bootstrap: { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "none", sandbox: null },
+    live: { subscribe: () => () => {}, getSnapshot: () => undefined },
+    fetchImpl: async (input, init) => {
+      const path = new URL(String(input), "https://app.test").pathname
+      requests.push(`${init?.method ?? "GET"} ${path}`)
+      return path === "/api/runs" ? pending : Response.json({}, { status: 404 })
+    }
+  })
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "member", admin: false, scopesPlain: null }).isPersisted.promise
+  const result = await controller.commands.submit({ name, actor: "user", payload: {} })
+  expect(result).toMatchObject({ status: "executed", value: "Requested" })
+  expect(await controller.commands.submit({ name, actor: "user", payload: {} })).toMatchObject({ status: "executed", value: "Requested" })
+  expect([...store.collections.cards.values()].filter(card => card.kind === "run")).toEqual([])
+  await controller.presentRun("unrelated", "Unrelated", false)
+  resolveList(Response.json([{ id: "background-native", title: "Background native", flow: "flow-load", version: "digest", state: "interrupted",
+    attempts: [], waits: [], tokens: 0, time_s: 0, cost_usd: 0, engine: [] }]))
+  for (let count = 0; count < 100 && !store.collections.cards.has("run:background-native"); count++) await new Promise(resolve => setTimeout(resolve, 5))
+  expect(store.collections.cards.get("run:background-native")?.title).toBe("Background native")
+  expect(requests.filter(path => path.endsWith(" /api/runs"))).toEqual(["GET /api/runs"])
+})
+
+test("the agent Inspect door stays embedded and records the agent as actor", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = controllerFor(store, silentAgent)
+  const result = await controller.commands.submit({ name: "run.inspect", actor: "agent", payload: { id: "run-retry" } })
+  expect(result.status).toBe("executed")
+  expect(store.collections.cards.get("run:run-retry")?.kind).toBe("run")
+  expect(store.session().maximizedCardId).toBeNull()
+  expect([...store.collections.transitions.values()].some(row => row.type === "card.upsert" && row.actor === "smithers")).toBe(true)
+})
+
+test("members retain separate selections on the same install run", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = controllerFor(store, silentAgent, {
+    bootstrap: { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "none", sandbox: null },
+    fetchImpl: async () => Response.json({}, { status: 404 })
+  })
+  let shared: import("@smthrs/rpc/Cards").Card | undefined
+  for (const login of ["alice", "bob"]) {
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login, admin: false, scopesPlain: null }).isPersisted.promise
+    // Shared conversation delivery restores the same card after account-local
+    // projections are cleared on sign-in; each member selects independently.
+    if (shared) await store.dispatch({ type: "card.upsert", actor: "system", card: shared }).isPersisted.promise
+    await controller.presentRun("shared", "Shared", false)
+    const result = await controller.commands.submit({ name: "runs.trace.view", actor: "user", payload: { runId: "shared", view: "turns", state: { selected: `${login}-cell` } } })
+    expect(result).toMatchObject({ status: "executed" })
+    shared = store.collections.cards.get("run:shared")
+  }
+  await controller.presentRun("shared", "Shared", false)
+  const card = store.collections.cards.get("run:shared")
+  expect(card?.kind === "run" && card.payload.memberViews).toEqual({ alice: { selected: "alice-cell" }, bob: { selected: "bob-cell" } })
+  expect(card?.kind === "run" && card.payload.view).toBeUndefined()
+})
+
+
+test("recorded run detail actions retain their selection through canonical decoding", async () => {
+  const { MessageSchema, ToastSchema } = await import("./AppState")
+  const action = MessageSchema.shape.action.parse({ flow: "run.view", label: "Journal", args: JSON.stringify({ cardId: "run:recorded", selected: "checks", tab: "journal", at: 2 }) })!
+  expect(ToastSchema.shape.action.parse({ flow: "run.view", label: "Journal", args: JSON.stringify({ cardId: "run:recorded", selected: "checks", tab: "journal", at: 2 }) })).toEqual(action)
+  expect(JSON.parse(MessageSchema.shape.action.parse({ flow: "run.view", label: "Invalid", args: '{"cardId":"unrelated"}' })!.args!)).toEqual({})
+  expect(action.flow).toBe("runs.trace.view")
+  expect(JSON.parse(action.args!)).toEqual({ runId: "recorded", sourceCard: "run:recorded", view: "turns", state: { selected: "checks", tab: "journal", at: 2 } })
+})
+
+/*
+ * A read that produced no card still owes the person its answer.
+ *
+ * `/monitor` ran `withToast("monitor.list", "Loading runs", "")` and returned
+ * true for an empty list, so an install with nothing running resolved a notice
+ * with an EMPTY TITLE over a transcript with no result in it — a check mark
+ * for an act with nothing to show (root screenshot, 2026-10-15). The refused
+ * read beside it keeps its own visible sentence.
+ */
+test("an install with no runs says so, durably, instead of an unlabelled check", async () => {
+  const expected = "No runs yet."
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  let resolveList!: (response: Response) => void
+  const pending = new Promise<Response>(resolve => { resolveList = resolve })
+  const controller = controllerFor(store, silentAgent, {
+    bootstrap: { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "none", sandbox: null },
+    live: { subscribe: () => () => {}, getSnapshot: () => undefined },
+    toastDebounceMs: 0,
+    fetchImpl: async input => new URL(String(input), "https://app.test").pathname === "/api/runs"
+      ? pending : Response.json({}, { status: 404 })
+  })
+  const settle = async (holds: () => boolean) => {
+    for (let count = 0; count < 200 && !holds(); count++) await new Promise(resolve => setTimeout(resolve, 5))
+  }
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "member", admin: false, scopesPlain: null }).isPersisted.promise
+  expect(await controller.commands.submit({ name: "monitor", actor: "user", payload: {} })).toMatchObject({ status: "executed", value: "Requested" })
+  // The read is slow enough to put the notice up, exactly as the install does.
+  await settle(() => store.collections.toasts.get("toast-monitor.list")?.status === "running")
+  resolveList(Response.json([]))
+  await settle(() => [...store.collections.messages.values()].some(message => message.text === expected))
+  // The answer is in the transcript, so it survives the notice and a reload.
+  expect([...store.collections.messages.values()].map(message => message.text)).toContain(expected)
+  expect([...store.collections.cards.values()].filter(card => card.kind === "run")).toEqual([])
+  // And the notice it leaves behind is words, never a check mark with an empty title.
+  await settle(() => store.collections.toasts.get("toast-monitor.list")?.status === "ok")
+  expect(store.collections.toasts.get("toast-monitor.list")).toMatchObject({ status: "ok", title: "Runs" })
+})
+
+test("an install whose run list is refused keeps that failure visible", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = controllerFor(store, silentAgent, {
+    bootstrap: { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "none", sandbox: null },
+    live: { subscribe: () => () => {}, getSnapshot: () => undefined },
+    toastDebounceMs: 0,
+    fetchImpl: async () => Response.json({ code: "unavailable" }, { status: 503 })
+  })
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "member", admin: false, scopesPlain: null }).isPersisted.promise
+  await controller.commands.submit({ name: "monitor", actor: "user", payload: {} })
+  for (let count = 0; count < 200 && store.collections.toasts.get("toast-monitor.list")?.status !== "failed"; count++) {
+    await new Promise(resolve => setTimeout(resolve, 5))
+  }
+  expect(store.collections.toasts.get("toast-monitor.list")).toMatchObject({ status: "failed", detail: "Runs unavailable" })
+  expect([...store.collections.messages.values()].map(message => message.text)).not.toContain("No runs yet.")
+})

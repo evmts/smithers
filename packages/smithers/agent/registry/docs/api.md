@@ -176,6 +176,7 @@ interface Source {
   readonly system?: boolean | undefined
   readonly optionalRoot?: boolean | undefined
   readonly confinementRoot?: string | undefined
+  readonly retiredRoot?: string | undefined
 }
 ```
 
@@ -190,6 +191,23 @@ Sources are required by default; declared pack roots remain required.
 `confinementRoot` bounds directories and selected entry files to that root
 when the host can resolve the root's real path. `Pack.sources` sets it to the pack
 root; ordinary project sources leave it unset.
+`retiredRoot` names a directory the source's flows moved out of. Nothing there
+loads. When it holds any entry file, the scan reports one `retired_root`
+warning whose `path` is that directory. `Registry.projectSource` sets it to
+`<root>/flows`.
+
+### Descriptor.projectFlowsDirectory
+
+```ts
+const projectFlowsDirectory: ".smithers/flows"
+const retiredProjectFlowsDirectory: "flows"
+const retiredRootMessage: string
+```
+
+Where a project keeps its flows, relative to the project root, and where it
+kept them before. Every host derives a project's flow location from these
+constants. `retiredRootMessage` is the `retired_root` warning text:
+`Flows in flows/ are not loaded; move them to .smithers/flows/.`
 
 ### Descriptor.Provenance and Descriptor.PackRef
 
@@ -438,14 +456,14 @@ class DiscoveryWarning {
 
 A non-fatal source-discovery diagnostic. Anything a scan can survive is
 reported this way rather than raised, and read back through
-`registry.warnings()`. The 35 codes are grouped by what they say:
+`registry.warnings()`. The 36 codes are grouped by what they say:
 
 | Group                  | Codes                                                                                                                                                                                                                                                                                                                            |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Naming and description | `missing_description`, `invalid_description`, `missing_name`, `invalid_name`, `directory_name_mismatch`, `name_field_ignored`, `duplicate_name`, `root_level_entry`                                                                                                                                                              |
 | Declaration fields     | `unknown_frontmatter_key`, `invalid_allowed_tools`, `invalid_capabilities`, `invalid_budget`, `invalid_deadline`, `invalid_model`, `invalid_model_invocation`, `invalid_placement`, `invalid_sandbox`, `invalid_compatibility`, `invalid_license`, `invalid_metadata`, `unsupported_input_schema`, `unsupported_module_metadata` |
 | Authority              | `unprojectable_authority`, `invalid_effect_declaration`, `invalid_effect_tier`                                                                                                                                                                                                                                                   |
-| Source shape           | `multiple_entry_files`, `frontmatter_parse_error`, `non_serializable_frontmatter`, `symlink_cycle`, `outside_root`, `max_depth_exceeded`, `entry_too_large`, `unreadable`                                                                                                                                                        |
+| Source shape           | `multiple_entry_files`, `frontmatter_parse_error`, `non_serializable_frontmatter`, `symlink_cycle`, `outside_root`, `max_depth_exceeded`, `entry_too_large`, `unreadable`, `retired_root`                                                                                                                                        |
 | Packs                  | `unknown_pack_key`, `shadowed`                                                                                                                                                                                                                                                                                                   |
 
 `service` names a service missing during construction of a module's exported `layer`.
@@ -751,9 +769,14 @@ A name claimed twice by ordinary sources resolves first-found with a
 `duplicate_name` warning. A name shared with a source declared `system: true`
 fails `RegistryError { code: "system_collision" }` in either direction.
 
-### Registry.ProjectOptions and Registry.layerProject
+### Registry.ProjectOptions, Registry.projectSource and Registry.layerProject
 
 ```ts
+const projectSource: (
+  path: { readonly join: (...segments: ReadonlyArray<string>) => string },
+  root: string
+) => Descriptor.Source
+
 interface ProjectOptions {
   readonly root: string
   readonly packs?: Registry.PackConfig | undefined
@@ -766,7 +789,11 @@ const layerProject: (options: ProjectOptions) => Layer.Layer<
 >
 ```
 
-The registry a Node host discovers a project in: `<root>/flows/**` first, then
+`projectSource` is the one source for a project's own flows:
+`<root>/.smithers/flows`, path-named, optional, and with `<root>/flows` as its
+`retiredRoot`. Every host that discovers a project builds its source here.
+
+The registry a Node host discovers a project in: `<root>/.smithers/flows/**` first, then
 every installed pack, all under one first-found registry, so a project flow
 shadows a pack flow of the same name and `refresh` rescans both.
 
@@ -777,11 +804,13 @@ carries its `provenance.pack`, a name two packs both define is reported as
 rather than beside it, so a caller cannot ask for packs without saying what
 their range is checked against.
 
-A project with no `flows/` directory has no project entries. The source stays
-configured with `optionalRoot: true`, so every `refresh()` checks it again.
-Creating the first `flows/<id>/flow.mdx` or `flow.ts` makes it discoverable on
-refresh in the same session. Removing `flows/` empties the project entries on
-refresh; recreating it makes them discoverable again. Pack entries remain,
+A project with no `.smithers/flows/` directory has no project entries. The
+source stays configured with `optionalRoot: true`, so every `refresh()` checks
+it again. Creating the first `.smithers/flows/<id>/flow.mdx` or `flow.ts` makes
+it discoverable on refresh in the same session. Removing `.smithers/flows/`
+empties the project entries on refresh; recreating it makes them discoverable
+again. Flows in a root `flows/` never load; each scan reports one
+`retired_root` warning until they move. Pack entries remain,
 and a missing declared pack directory fails with `invalid_pack`.
 
 ### Registry.layerFromDescriptors
@@ -903,7 +932,7 @@ One discovered flow, made runnable. `flow` is tagged with the descriptor's
 registry name and `layer` registers it with the runtime.
 
 `delegate` is the registered flow this descriptor hands its work to, and
-`undefined` when the module IS the flow: a `flows/<name>/flow.ts` that
+`undefined` when the module IS the flow: a `.smithers/flows/<name>/flow.ts` that
 `export default`s a `@smthrs/flow` flow runs its own body, so its body is the
 plan rather than one delegating node. The distinction is an authority one. A
 delegate is host-registered code the descriptor never measured, so an approved

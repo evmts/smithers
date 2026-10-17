@@ -143,7 +143,7 @@ func TestInstallAgentModelsOwnerBoundaryPostgres(t *testing.T) {
 	require.NotContains(t, recent.Body.String(), "receipt-run-false")
 	// Factory receipts retain the model actually used, after assignments change.
 	var definition, factoryRun, factoryStep int64
-	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO workflow_definitions(repository_id,name,path,config) VALUES($1,'todo','flows/todo/flow.ts','{}') RETURNING id`, repo.ID).Scan(&definition))
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO workflow_definitions(repository_id,name,path,config) VALUES($1,'todo','.smithers/flows/todo/flow.ts','{}') RETURNING id`, repo.ID).Scan(&definition))
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO workflow_runs(repository_id,workflow_definition_id,status,trigger_event) VALUES($1,$2,'running','agent') RETURNING id`, repo.ID, definition).Scan(&factoryRun))
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO workflow_steps(workflow_run_id,name,position,status) VALUES($1,'coding/review',0,'running') RETURNING id`, factoryRun).Scan(&factoryStep))
 	_, err = pool.Exec(ctx, `INSERT INTO model_usage(request_key,paid_by,owner_type,owner_id,source,repository_id,workflow_run_id,workflow_step_id,provider,model,outcome,settled_at)

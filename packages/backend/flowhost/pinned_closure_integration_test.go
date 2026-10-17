@@ -46,12 +46,12 @@ func TestPinnedClosureProcessRestartIgnoresEditableBranch(t *testing.T) {
 	flow := `import { Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Schema } from "effect"
-import { value } from "../../lib/value.ts"
+import { value } from "../../../lib/value.ts"
 export default Flow.make("todo", { description: "Pinned fixture", payload: {}, success: Schema.String,
 body: Node.capture({}, () => Node.succeed(value)) })`
 	makeSource := func(version string) string {
 		source := filepath.Join(t.TempDir(), version)
-		write(filepath.Join(source, "flows/todo/flow.ts"), flow)
+		write(filepath.Join(source, ".smithers/flows/todo/flow.ts"), flow)
 		write(filepath.Join(source, "lib/value.ts"), "export const value = "+`"`+version+`"`)
 		write(filepath.Join(source, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n")
 		require.NoError(t, os.Symlink(filepath.Join(root, "flows/node_modules"), filepath.Join(source, "node_modules")))
@@ -82,7 +82,7 @@ body: Node.capture({}, () => Node.succeed(value)) })`
 	}
 	// The same real interpreter can run working-copy code only through the
 	// explicitly authorized draft registry; it is separate from either pin.
-	write(filepath.Join(box.Root, "flows/todo/flow.ts"), flow)
+	write(filepath.Join(box.Root, ".smithers/flows/todo/flow.ts"), flow)
 	write(filepath.Join(box.Root, "lib/value.ts"), `export const value = "draft-working-copy"`)
 	write(filepath.Join(box.Root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n")
 	require.NoError(t, os.Symlink(filepath.Join(root, "flows/node_modules"), filepath.Join(box.Root, "node_modules")))
@@ -95,7 +95,7 @@ body: Node.capture({}, () => Node.succeed(value)) })`
 	require.NotEqual(t, first.Digest, active.Digest)
 	marker := filepath.Join(box.Root, "branch-imported")
 	canary := "import { writeFileSync } from 'node:fs'; writeFileSync(" + `"` + marker + `"` + ", 'imported'); throw new Error('branch imported')"
-	write(filepath.Join(box.Root, "flows/todo/flow.ts"), canary)
+	write(filepath.Join(box.Root, ".smithers/flows/todo/flow.ts"), canary)
 	write(filepath.Join(box.Root, "lib/value.ts"), canary)
 	write(filepath.Join(box.Root, "pnpm-lock.yaml"), "edited branch lockfile")
 	// Each execution starts a new OS process: no module cache can supply v1.
