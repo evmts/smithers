@@ -1,7 +1,8 @@
-import { spawn, spawnSync } from "node:child_process"
+import { execFile, spawn, spawnSync } from "node:child_process"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
+import { promisify } from "node:util"
 import { afterEach, beforeEach, expect, it } from "vitest"
 import * as PackageTree from "../src/PackageTree.ts"
 import { writeExecutable } from "./helpers/Executable.ts"
@@ -45,11 +46,35 @@ it("writes the POSIX script unchanged and rejects an unknown Windows interpreter
 })
 
 it("releases the wrapper stdin when its live child closes stdin", async () => {
-  const executable = await writeExecutable(
-    Path.join(root, "close-input"),
-    "#!/usr/bin/env node\nimport { closeSync } from \"node:fs\"; closeSync(0); process.stderr.write(`CLOSED ${process.pid}\\n`); setInterval(() => {}, 1000)\n",
-    "win32"
+  // A native child closes both Windows stdin representations. Closing only
+  // Node's fd0 does not establish that every inherited HANDLE was relinquished.
+  const closer = Path.join(root, "input-closer.exe")
+  const program = Path.join(root, "input-closer.rs")
+  await Fs.writeFile(
+    program,
+    `
+fn main() {
+  #[cfg(unix)] unsafe { extern "C" { fn close(fd: i32) -> i32; } assert_eq!(close(0), 0); }
+  #[cfg(windows)] unsafe {
+    extern "C" { fn _get_osfhandle(fd: i32) -> isize; fn _close(fd: i32) -> i32; }
+    #[link(name="kernel32")] extern "system" {
+      fn GetStdHandle(kind: u32) -> *mut std::ffi::c_void;
+      fn CloseHandle(handle: *mut std::ffi::c_void) -> i32;
+    }
+    let standard = GetStdHandle((-10i32) as u32);
+    let descriptor = _get_osfhandle(0);
+    if descriptor != -1 && descriptor != -2 { assert_eq!(_close(0), 0); }
+    if !standard.is_null() && standard as isize != -1 && standard as isize != descriptor {
+      assert_ne!(CloseHandle(standard), 0);
+    }
+  }
+  eprintln!("CLOSED {}", std::process::id());
+  std::thread::sleep(std::time::Duration::from_secs(30));
+}
+`
   )
+  await promisify(execFile)("rustc", ["--edition=2021", "--crate-name=input_closer", program, "-o", closer])
+  const executable = await writeExecutable(Path.join(root, "close-input"), "#!/usr/bin/env node\n", "win32", closer)
   const child = spawn(executable, [], { stdio: ["pipe", "ignore", "pipe"] })
   const closed = new Promise<void>((resolve) => child.once("close", () => resolve()))
   child.stdin.on("error", () => {})
@@ -62,7 +87,7 @@ it("releases the wrapper stdin when its live child closes stdin", async () => {
         child.on("error", reject)
         child.stderr.on("data", (chunk: Buffer) => {
           output += chunk.toString("utf8")
-          const observed = /CLOSED (\d+)\n/.exec(output)
+          const observed = /CLOSED (\d+)\r?\n/.exec(output)
           if (observed !== null) {
             pid = Number(observed[1])
             resolve()
