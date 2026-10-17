@@ -338,7 +338,8 @@ const postgres = Smithers.CiToolchain.Postgres({ release: "18" })
 // not in the cross-platform package matrix.
 const backendPostgres = Smithers.Docker.Service({
   image: "postgres@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336",
-  env: { POSTGRES_USER: "smithers", POSTGRES_PASSWORD: "smithers-backend-test" },
+  // Both backend targets share this server when selected together.
+  env: { POSTGRES_USER: "smithers", POSTGRES_PASSWORD: "smithers-backend-test", POSTGRES_INITDB_ARGS: "--set=max_connections=256" },
   ports: { "5432": 55435 },
   readiness: {
     exec: ["pg_isready", "-h", "127.0.0.1", "-U", "smithers", "-d", "postgres"],

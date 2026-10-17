@@ -1059,8 +1059,10 @@ func (s *InstallSetupService) SetModelSettings(ctx context.Context, actor int64,
 		return err
 	}
 	defer tx.Rollback(context.WithoutCancel(ctx))
+	// Settings read owner identity; share the fence held by pending branch wakes.
+	// Owner replacement still waits for this transaction to finish.
 	var owner int64
-	if err = tx.QueryRow(ctx, `SELECT user_id FROM self_host_owners FOR UPDATE`).Scan(&owner); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT user_id FROM self_host_owners FOR SHARE`).Scan(&owner); err != nil {
 		return err
 	}
 	if actor <= 0 || owner != actor {
