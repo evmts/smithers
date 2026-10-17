@@ -8,7 +8,7 @@ import * as Layer from "effect/Layer"
 import * as ChildProcess from "node:child_process"
 import { spawnSync } from "node:child_process"
 import { EventEmitter } from "node:events"
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { PassThrough } from "node:stream"
@@ -172,28 +172,23 @@ it("reaps the process group a killed host left running", async () => {
   )).toBe("")
   expect(summary.orphaned).toBe(true)
   expect(summary.survivedTheReaper).toBe(false)
-  // Each host's startup jj version probe uses the contained spawner and records
-  // its normal exit. Between those probes, the dead host's process group is
-  // spawned and then reaped by its replacement on their shared journal run.
+  // This flow uses processes, so jj is never probed. The dead host's process
+  // group is spawned and then reaped on their shared journal run.
   expect(summary.hostEvents).toEqual([
     "flows.host.process-spawned.v1",
-    "flows.host.process-exited.v1",
-    "flows.host.process-spawned.v1",
-    "flows.host.process-reaped.v1",
-    "flows.host.process-spawned.v1",
-    "flows.host.process-exited.v1"
+    "flows.host.process-reaped.v1"
   ])
 }, 120_000)
 
 it("reports a host startup failure on stderr and exits unsuccessfully", () => {
-  const binary = join(directory, "unsupported-jj")
-  writeFileSync(binary, "#!/bin/sh\necho \"jj 0.38.0\"\n", { mode: 0o755 })
+  const databaseDirectory = join(directory, "database-directory")
+  mkdirSync(databaseDirectory)
   const child = spawnSync(process.execPath, [
     new URL("../src/37-host-containment-host.ts", import.meta.url).pathname,
-    join(directory, "failure.sqlite"),
+    databaseDirectory,
     "failed-host"
   ], {
-    env: { ...process.env, SMITHERS_JJ_PATH: binary },
+    env: process.env,
     encoding: "utf8",
     timeout: 30_000
   })
@@ -201,5 +196,5 @@ it("reports a host startup failure on stderr and exits unsuccessfully", () => {
   expect(child.signal).toBeNull()
   expect(child.status).toBe(1)
   expect(child.stdout).toBe("")
-  expect(child.stderr).toContain("jj requires version 0.39.0 or newer; found jj 0.38.0")
+  expect(child.stderr).toContain("unable to open database file")
 })
