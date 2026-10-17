@@ -8,6 +8,7 @@ import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
 import * as TestStores from "@smthrs/engine-store/test/TestStores"
 import * as WorkspaceSandbox from "@smthrs/engine-store/WorkspaceSandbox"
 import { Action, ExternalJob, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { Journal } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
 import * as Workspace from "@smthrs/kernel/Workspace"
 import { Node } from "@smthrs/plan"
@@ -30,6 +31,7 @@ import {
 import { createRequire } from "node:module"
 import { basename, dirname, join } from "node:path"
 import { describe, expect, it, vi } from "vitest"
+import * as Descriptor from "../src/Descriptor.ts"
 import * as Executable from "../src/Executable.ts"
 import * as Registry from "../src/Registry.ts"
 
@@ -114,6 +116,51 @@ const durableHost = (filename: string, incarnation: number) =>
   )
 
 describe("module layer composition", () => {
+  it.each([false, true])("records adopted code separately with exported layer %s", async (exported) => {
+    for (const persistent of [false, true]) {
+      const environment = persistent ? undefined : await host()
+      await Effect.runPromise(
+        Effect.gen(function*() {
+          const root = yield* project(["adopted"])
+          yield* Effect.gen(function*() {
+            const registry = yield* Registry.Registry
+            const descriptor = yield* registry.get("adopted")
+            const digest = Descriptor.executionDigest(descriptor)
+            const executable = yield* Executable.fromDescriptor(descriptor, {
+              delegates: [],
+              adapterExecutionDigest: () => "original-authorized-code",
+              load: () =>
+                Effect.succeed({
+                  default: definition("adopted", Node.succeed("new implementation")),
+                  ...(exported ? { layer: Layer.empty } : {})
+                })
+            })
+            expect(
+              yield* executable.flow.execute({ input: { value: "input" } }, {
+                executionId: "adopted-run"
+              }).pipe(Effect.provide(executable.layer))
+            ).toBe("new implementation")
+            if (persistent) {
+              const journal = yield* Journal.Journal
+              const page = yield* journal.entries({
+                runId: "adopted-run" as never,
+                eventTypes: ["flows.engine.plan-recorded"],
+                limit: 100
+              })
+              expect(page.entries.length).toBeGreaterThan(0)
+              expect(page.entries.every((entry) => entry.sourceId.includes(`/adopted/${digest}/`))).toBe(true)
+            }
+          }).pipe(
+            Effect.provide(Registry.layerProject({ root })),
+            Effect.provide(Action.layerImplementations),
+            Effect.provide(environment ?? durableHost(join(root, "engine.db"), 1)),
+            Effect.scoped
+          )
+        }).pipe(Effect.scoped, Effect.provide(platform))
+      )
+    }
+  })
+
   it("retains host and private-child ownership across a cold durable restart and replay", async () => {
     const calls = { host: 0, module: 0 }
     const independent = definition("cold-host-child", Shared.call({ value: "host-child" }))
