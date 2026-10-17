@@ -264,6 +264,25 @@ describe("issue-claim commands", () => {
     assert.equal(cli(github, ["claim", "smithers#1"], hours(6)).out.action, "took-over")
   })
 
+  it("dates a label-only claim after historical claims were released", () => {
+    const github = fakeGitHub({ labels: [LABEL], comments: [
+      { body: claimBody({ by: "old", host: "mac", now: hours(-10) }), created_at: hours(-10).toISOString() },
+      { body: releaseBody({ by: "old", host: "mac", now: hours(-9) }), created_at: hours(-9).toISOString() }
+    ], events: [
+      { event: "labeled", label: { name: LABEL }, created_at: hours(-10).toISOString() },
+      { event: "unlabeled", label: { name: LABEL }, created_at: hours(-9).toISOString() },
+      { event: "labeled", label: { name: LABEL }, created_at: T0.toISOString() },
+      { event: "labeled", label: { name: "other" }, created_at: hours(1).toISOString() }
+    ] })
+    assert.equal(cli(github, ["claim", "smithers#1"], new Date(hours(6).getTime() - 1)).code, 2)
+    assert.equal(writesOf(github).length, 0)
+    const taken = cli(github, ["claim", "smithers#1"], hours(6))
+    assert.equal(taken.code, 0)
+    assert.equal(taken.out.action, "took-over")
+    assert.match(github.state.comments.at(-1).body, /\nTook over a stale claim: in-progress label without a claim comment$/)
+    assert.equal(cli(github, ["check", "smithers#1"], hours(7)).out.mine, true)
+  })
+
   it("reports a lost race when another claim lands first", () => {
     const github = fakeGitHub()
     github.state.afterComment = (state) => {

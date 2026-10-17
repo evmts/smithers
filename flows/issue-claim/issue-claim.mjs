@@ -182,7 +182,7 @@ export const read = ({ repo, number }, gh = defaultGh) => {
   const labeled = (issue.labels ?? []).some((label) => (label.name ?? label) === LABEL)
   const comments = pages(gh(["api", "--paginate", "--slurp", `${base}/comments?per_page=100`]))
   let labeledAt = null
-  if (labeled && !comments.some((comment) => CLAIM.test(comment.body ?? ""))) {
+  if (labeled && !holder({ labeled: false, comments })) {
     const events = pages(gh(["api", "--paginate", "--slurp", `${base}/events?per_page=100`]))
     labeledAt = events.filter((event) => event.event === "labeled" && event.label?.name === LABEL).at(-1)?.created_at ?? null
   }
