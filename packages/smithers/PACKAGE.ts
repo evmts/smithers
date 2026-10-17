@@ -108,17 +108,19 @@ const test = Smithers.Shell.Test({
   // Keep the measured process-heavy groups separate, then share the remainder
   // across all four workers. Leaving every new file on worker four grew that
   // worker to 263 files while the other workers ran only 1, 8 and 6 (#4122).
-  // Each invocation records its own blob; the merge retains every failure and
-  // checks the original coverage thresholds over the complete suite.
+  // A free worker takes the next group immediately, rather than waiting for
+  // one assigned long group. Each invocation records its own blob; the merge
+  // retains every failure and checks the original coverage thresholds.
   shell: [
     "cd packages/smithers && blobs=$(mktemp -d) && {",
-    `{ ${lane} --outputFile=$blobs/one-fixed.json ${laneOne.join(" ")};`,
-    `${lane} --outputFile=$blobs/one.json ${remainder} --shard=1/4; } & one=$!;`,
-    `{ ${lane} --outputFile=$blobs/two-fixed.json ${laneTwo.join(" ")};`,
-    `${lane} --outputFile=$blobs/two.json ${remainder} --shard=2/4; } & two=$!;`,
-    `{ ${lane} --outputFile=$blobs/three-fixed.json ${laneThree.join(" ")};`,
-    `${lane} --outputFile=$blobs/three.json ${remainder} --shard=3/4; } & three=$!;`,
-    `${lane} --outputFile=$blobs/four.json ${remainder} --shard=4/4; wait $one $two $three;`,
+    "printf '%s\\n'",
+    `"${lane} --outputFile=$blobs/one-fixed.json ${laneOne.join(" ")}"`,
+    `"${lane} --outputFile=$blobs/two-fixed.json ${laneTwo.join(" ")}"`,
+    `"${lane} --outputFile=$blobs/three-fixed.json ${laneThree.join(" ")}"`,
+    ...[1, 2, 3, 4].map((shard) =>
+      `"${lane} --outputFile=$blobs/${["one", "two", "three", "four"][shard - 1]}.json ${remainder} --shard=${shard}/4"`
+    ),
+    "| xargs -P 4 -I '{}' sh -c '{}';",
     "if test -f $blobs/one-fixed.json && test -f $blobs/two-fixed.json && test -f $blobs/three-fixed.json && test -f $blobs/one.json && test -f $blobs/two.json && test -f $blobs/three.json && test -f $blobs/four.json;",
     `then ${vitest} --merge-reports=$blobs --reporter=github-actions --reporter=dot;`,
     "else echo \"a lane of the suite ended without its report\" >&2; false; fi; };",
