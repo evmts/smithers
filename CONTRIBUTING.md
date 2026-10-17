@@ -238,7 +238,9 @@ renders `node --test`; `RustToolchain.install()` renders
 implementation asks it for the argv.
 
 Every CI gate is therefore a target, in the package that owns it:
-`scripts/PACKAGE.ts` for the operator and release scripts, a crate's own `PACKAGE.ts` for
+`flows/PACKAGE.ts` for the repository's flows and the release, landing, benchmark and
+perf automation they run, `packages/repo-targets/PACKAGE.ts` for repository-wide
+contracts, a crate's own `PACKAGE.ts` for
 the cargo gates, `apps/*/PACKAGE.ts` for an app's end-to-end suites, and
 a package's own `PACKAGE.ts` for everything it claims about itself, including its
 Bun re-run. No file declares another package's targets.
