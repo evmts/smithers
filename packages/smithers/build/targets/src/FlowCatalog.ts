@@ -75,6 +75,16 @@ export type DiscoveredFlow = typeof DiscoveredFlow.Type
  * `summary` is `null` and `featured` is `false` for a flow no declaration
  * names, so a consumer reads every row the same way.
  *
+ * `view` is the view the flow DRAWS, and it has to be on the row: the row is
+ * what `Factory.renderProjection` encodes into `.smithers/factory.json`, and
+ * the projection is the only place the app reads a repository's flows from
+ * (`@smthrs/rpc/FactoryProjection` `FactoryFlowSchema`, the app's
+ * `RepositoryFlowsSeam`). A field the row omits is dropped on encode, so the
+ * monitor's custom view and a homepage that names the flow owning the landing
+ * both read "declares no view" however the repository declared it (#4025).
+ * It is the same `Home.FlowView` the declaration carries, so there is one
+ * declaration and one view vocabulary end to end.
+ *
  * @category schemas
  * @since 1.0.0
  */
@@ -90,7 +100,8 @@ export const Row = Schema.Struct({
   modelInvocable: Schema.Boolean,
   inputSchema: Schema.optional(Schema.Json),
   flows: Schema.optional(Schema.Array(Schema.String)),
-  budget: Schema.optional(Schema.Json)
+  budget: Schema.optional(Schema.Json),
+  view: Schema.optional(Home.FlowView)
 })
 
 /**
@@ -169,7 +180,13 @@ export const rows = (
     ...(flow.flows === undefined ? {} : { flows: flow.flows }),
     ...(flow.budget === undefined ? {} : { budget: flow.budget }),
     ...(flow.inputSchema === undefined ? {} : { inputSchema: flow.inputSchema }),
-    ...(declaration?.view === undefined ? {} : { view: declaration.view })
+    /*
+     * One view reaches the catalog from either side of the join: the
+     * repository's declaration for the flow (`Smithers.Flow({ view })`) is
+     * the authority, and a flow that carries its own view is used where the
+     * declaration names none. A flow no declaration names keeps its own.
+     */
+    ...((declaration?.view ?? flow.view) === undefined ? {} : { view: declaration?.view ?? flow.view })
   })
   const featured: Array<Row> = []
   const declaredOnly: Array<Row> = []

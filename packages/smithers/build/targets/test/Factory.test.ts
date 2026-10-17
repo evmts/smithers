@@ -13,13 +13,58 @@
 import { describe, expect, it } from "vitest"
 import * as Factory from "../src/Factory.ts"
 import * as Flow from "../src/Flow.ts"
-import type * as FlowCatalog from "../src/FlowCatalog.ts"
+import * as FlowCatalog from "../src/FlowCatalog.ts"
 import * as Home from "../src/Home.ts"
 import { Smithers } from "../src/index.ts"
 import * as Input from "../src/Input.ts"
 import * as Reference from "../src/Reference.ts"
 import * as Target from "../src/Target.ts"
 import { plannedCalls } from "./plan.ts"
+
+/*
+ * The catalog row is the one carrier of a flow's declared view (#4025): it is
+ * what `renderProjection` encodes into `.smithers/factory.json`, which is the
+ * only place the app reads a repository's flows from, so a view the row drops
+ * never reaches the monitor or the landing the repository names.
+ */
+describe("FlowCatalog.rows and the declared view", () => {
+  const view = [Home.Text({ title: "Review", text: "What this flow decided." })]
+  const discovered = (id: string, own?: ReadonlyArray<unknown>): FlowCatalog.DiscoveredFlow => ({
+    id,
+    description: `Describes ${id}.`,
+    kind: "mdx",
+    path: `flows/${id}/flow.mdx`,
+    capabilities: ["fs:read:**"],
+    model: null,
+    modelInvocable: true,
+    ...(own === undefined ? {} : { view: own as FlowCatalog.DiscoveredFlow["view"] })
+  })
+
+  it("carries the declaration's view, keeps a flow's own when no declaration names it, and leaves every other row viewless", () => {
+    const declared = Flow.Flow({ flow: "review", summary: "Review the change.", featured: true, view })
+    const catalog = FlowCatalog.rows([discovered("review"), discovered("lint"), discovered("triage", view)], [declared])
+    expect(catalog.map((entry) => entry.id)).toEqual(["review", "lint", "triage"])
+    expect(catalog[0]!.view).toEqual(view)
+    expect(catalog[1]).not.toHaveProperty("view")
+    expect(catalog[2]!.view).toEqual(view)
+  })
+
+  it("lets the repository's declaration override the view the flow carries", () => {
+    const declaredView = [Home.Text({ title: "Review", text: "The repository's wording." })]
+    const declared = Flow.Flow({ flow: "review", featured: false, view: declaredView })
+    const catalog = FlowCatalog.rows([discovered("review", view)], [declared])
+    expect(catalog[0]!.view).toEqual(declaredView)
+  })
+
+  it("survives the projection encode, which is where a row without the field loses it", () => {
+    const declared = Flow.Flow({ flow: "review", summary: "Review the change.", featured: true, view })
+    const catalog = FlowCatalog.rows([discovered("review")], [declared])
+    const document = JSON.parse(
+      Factory.renderProjection(Factory.Factory({ summary: "S.", flows: [declared] }), catalog)
+    ) as { readonly flows: ReadonlyArray<Record<string, unknown>> }
+    expect(document.flows[0]!["view"]).toEqual(view)
+  })
+})
 
 const describeInput = (input: Input.Declared): string =>
   input._tag === "Glob" ? input.pattern : input._tag === "File" ? input.path : input._tag

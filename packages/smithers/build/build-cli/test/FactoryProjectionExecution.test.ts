@@ -287,6 +287,65 @@ export const factory = S.Factory({ summary: String(typeof Package) })
     await absent(root, ".smithers/home.json")
   })
 
+  /*
+   * A flow's own screen (#4025, mvp.md §6.14/§6.17, M-45/M-47). The catalog
+   * row is the only carrier: `.smithers/factory.json` is what the app reads a
+   * repository's flows from, so a view the row drops is a view the monitor
+   * and the repository's landing can never draw, however it was declared.
+   */
+  it("carries a flow's declared view into its catalog row, and the home block that names the owning flow", async () => {
+    const root = await fixture({
+      factory: `import { Smithers as S } from "@smthrs/targets"
+export const review = S.Flow({
+  flow: "review",
+  summary: "Review the change.",
+  featured: true,
+  view: [
+    S.Home.Text({ title: "Review", text: "What this flow decided." }),
+    S.Home.App({ flow: "review", title: "Review now", picture: "review" }),
+  ],
+})
+export const lint = S.Flow({ flow: "lint", summary: "Lint the named files." })
+export const factory = S.Factory({ summary: "S.", flows: [review, lint] })
+export const home = S.Factory.Home({ blocks: [S.Home.View({ flow: "review" })] })
+`
+    })
+    const written = await serve(root, ["target", "//:factoryProjection", "--write"])
+    expect(written.exitCode, written.logs).toBe(0)
+
+    const projection = await projectionOf(root)
+    expect(projection.flows[0]!["id"]).toBe("review")
+    expect(projection.flows[0]!["view"]).toEqual([
+      { type: "text", title: "Review", text: "What this flow decided." },
+      { type: "app", flow: "review", title: "Review now", picture: "review" }
+    ])
+    /* A view is declared, never defaulted: every other row stays viewless. */
+    expect(projection.flows[1]).not.toHaveProperty("view")
+    expect(projection.flows[2]).not.toHaveProperty("view")
+    /* The repository names the flow that owns its landing; the app resolves it. */
+    expect((await homeOf(root)).blocks).toEqual([{ type: "view", flow: "review" }])
+
+    expect((await serve(root, ["lint", "//:factoryProjection"])).exitCode).toBe(0)
+    expect((await serve(root, ["ci", "//:factoryProjection"])).exitCode).toBe(0)
+  })
+
+  it("refuses a flow view a drawn block union does not hold, and writes nothing", async () => {
+    const root = await fixture({
+      factory: `import { Smithers as S } from "@smthrs/targets"
+export const review = S.Flow({
+  flow: "review",
+  summary: "Review the change.",
+  featured: true,
+  view: [S.Home.Markdown({ path: "README.md" })],
+})
+export const factory = S.Factory({ summary: "S.", flows: [review] })
+`
+    })
+    const result = await serve(root, ["target", "//:factoryProjection", "--write"])
+    expect(result.exitCode).toBe(1)
+    await absent(root, ".smithers/factory.json")
+  })
+
   it("refuses a home declaration that carries raw HTML and writes nothing", async () => {
     const root = await fixture({ text: "<h1>Hello</h1>" })
     const result = await serve(root, ["target", "//:factoryProjection", "--write"])
