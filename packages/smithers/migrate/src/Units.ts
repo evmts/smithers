@@ -234,6 +234,17 @@ export const simpleCommand = (line: string): ArgvCommand | undefined => {
 }
 
 /**
+ * Where migrated flows are written, relative to the project root: the 1.0
+ * project flows directory, `@smthrs/registry`'s
+ * `Descriptor.projectFlowsDirectory` (mvp.md M-49). The core does not load the
+ * optional registry at module load, so a test pins the two equal.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const defaultFlowsDir = ".smithers/flows"
+
+/**
  * Derives the commands that verify a migrated project: install from the
  * lockfile, format from the formatter the project already configures,
  * typecheck once per `tsconfig.json`, and test from `smithers.config.ts`
@@ -256,7 +267,7 @@ export const simpleCommand = (line: string): ArgvCommand | undefined => {
 export const verifyCommands = (
   detection: Detection,
   overrides: CommandOverrides = {},
-  flowsDir = "flows"
+  flowsDir = defaultFlowsDir
 ): VerifyCommands => {
   const lockfiles = new Set(detection.lockfiles.map((file) => file.split("/").pop() ?? file))
   const byLock = installByLockfile.find(([name]) => lockfiles.has(name))?.[1]
@@ -317,7 +328,7 @@ const renderArgv = (command: ArgvCommand): string => CommandLine.renderArgv(comm
  *
  * A file under `.smithers/workflows/` keeps its position, so
  * `.smithers/workflows/pipelines/ci-fast.tsx` becomes `pipelines/ci-fast` and
- * lands at `flows/pipelines/ci-fast/flow.ts`. Anything else keeps its own
+ * lands at `.smithers/flows/pipelines/ci-fast/flow.ts`. Anything else keeps its own
  * directories, so `examples/hello.jsx` becomes `examples/hello` and
  * `src/wf/hello.tsx` becomes `src/wf/hello`.
  *
@@ -464,7 +475,7 @@ export const plan = (
   options: Options = {},
   parse: typeof Ts.parse = Ts.parse
 ): ReadonlyArray<UnitPlan> => {
-  const flowsDir = options.flowsDir ?? "flows"
+  const flowsDir = options.flowsDir ?? defaultFlowsDir
   const verification = verifyCommands(input.detection, options.commands ?? {}, flowsDir)
   const specifiers = specifierContext(input.detection)
   const byFile = new Map<string, Array<InventoryEntry>>()

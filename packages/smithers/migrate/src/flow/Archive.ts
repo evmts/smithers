@@ -5,7 +5,7 @@
  * A unit's sources fall into two kinds and they get opposite treatment.
  *
  * A source the migration *replaced* — a `.jsx` workflow whose content now
- * lives in `flows/<name>/flow.ts`, a `preload.js` the 1.0 runtime has no use
+ * lives in `.smithers/flows/<name>/flow.ts`, a `preload.js` the 1.0 runtime has no use
  * for — moves to `<reportDir>/archive/<original path>`. Deleting it would throw
  * away the only readable record of what the migration was working from; leaving
  * it in place would keep JSX in the typecheck and in the registry's discovery

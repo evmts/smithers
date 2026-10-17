@@ -21,7 +21,7 @@ import { Effect } from "effect"
 import { resolve } from "node:path"
 
 const program = Effect.gen(function*() {
-  const { routes } = yield* FileRouter.scan({ root: resolve("flows") })
+  const { routes } = yield* FileRouter.scan({ root: resolve(".smithers/flows") })
   return yield* Command.make(routes)
 })
 ```

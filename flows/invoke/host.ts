@@ -1,5 +1,6 @@
 /** Deployment recipe for one pinned public invocation. The native runtime owns every graph and receipt. */
 import type * as Evaluator from "@smthrs/model/Evaluator"
+import { projectFlowsDirectory } from "@smthrs/registry/Descriptor"
 import * as Executable from "@smthrs/registry/Executable"
 import * as Registry from "@smthrs/registry/Registry"
 import { Effect, FileSystem, Layer } from "effect"
@@ -25,7 +26,7 @@ const byPath = (modules: ReadonlyArray<Measured>) =>
   [...modules].sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0)
 
 /**
- * The pinned identity of `flows/<name>/flow.ts`: SHA-256 over the entry bytes,
+ * The pinned identity of `.smithers/flows/<name>/flow.ts`: SHA-256 over the entry bytes,
  * then `\0<path>\0<sha256>` for each module the entry loads from beside itself
  * (POSIX path relative to the entry's directory), then
  * `\0config\0<path>\0<sha256>` for each resolver file ({@link resolverFiles})
@@ -76,7 +77,7 @@ const redirectsSpecifiers = (bytes: Uint8Array): boolean => {
  * `node_modules` from the importing file up. Below the root no `node_modules`
  * may exist on the closure's path; root/node_modules may hold only the pinned
  * library links. Resolver files anywhere from the closure up to the root (a
- * repository's own `flows/package.json`, say) are pinned by content and
+ * repository's own `.smithers/flows/package.json`, say) are pinned by content and
  * refused when they `extends`, map `paths`, set `baseUrl`, declare `imports`,
  * or name themselves with `exports`.
  */
@@ -127,10 +128,11 @@ export const layer = (platform: NativeControl.Platform, options: Options) => {
   ) throw new Error("Invalid pinned invocation host identity")
   const native = NativeControl.make(platform)
   const registry = native.layerRegistry(root)
+  const entryDirectory = resolve(root, projectFlowsDirectory, options.flow)
   return Layer.unwrap(
     Effect.gen(function*() {
       const fs = yield* FileSystem.FileSystem
-      const source = yield* fs.readFile(resolve(root, "flows", options.flow, "flow.ts"))
+      const source = yield* fs.readFile(join(entryDirectory, "flow.ts"))
       // Measure from static discovery before anything is imported, then load
       // only this flow: the catalog imports every descriptor it is given, and a
       // neighbouring flow's top-level code would run beside the credential.
@@ -146,7 +148,7 @@ export const layer = (platform: NativeControl.Platform, options: Options) => {
           // registry re-measures before import), and every resolver file on the
           // closure's path to the root; one that redirects a bare import is refused.
           const imports = body.imports ?? []
-          const configuration = resolverConfiguration(root, stateRoot, resolve(root, "flows", options.flow), imports)
+          const configuration = resolverConfiguration(root, stateRoot, entryDirectory, imports)
           if (sourceDigest(source, imports, configuration) !== options.sourceDigest) {
             throw new Error("Pinned invocation source changed")
           }
@@ -162,7 +164,7 @@ export const layer = (platform: NativeControl.Platform, options: Options) => {
           }
           // A tag other than the path would register this body under another name.
           if (target.declaredTag !== options.flow) {
-            throw new Error("Invocation Flow.make tag must match its flows/<name>/flow.ts path")
+            throw new Error(`Invocation Flow.make tag must match its ${projectFlowsDirectory}/<name>/flow.ts path`)
           }
           return Layer.mergeAll(
             Executable.layerRefreshable(built, { delegates: [], refreshable: () => false }),

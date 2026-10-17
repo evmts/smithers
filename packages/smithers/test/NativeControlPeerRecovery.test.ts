@@ -53,9 +53,9 @@ it(
   "a peer leaves a live control owner's released root and keyed native child alone, then recovers the dead owner",
   async () => {
     const root = await mkdtemp(join(tmpdir(), "smithers-peer-recovery-"))
-    await mkdir(join(root, "flows", "peer"), { recursive: true })
+    await mkdir(join(root, ".smithers", "flows", "peer"), { recursive: true })
     await symlink(resolve("node_modules"), join(root, "node_modules"), "dir")
-    await writeFile(join(root, "flows", "peer", "flow.ts"), source(root))
+    await writeFile(join(root, ".smithers", "flows", "peer", "flow.ts"), source(root))
     const original = spawn(process.execPath, ["--experimental-strip-types", fixture, "peer-original", root], {
       stdio: ["ignore", "ignore", "pipe"]
     })

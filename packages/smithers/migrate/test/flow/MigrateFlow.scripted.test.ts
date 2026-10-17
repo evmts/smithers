@@ -31,7 +31,7 @@ import { pathToFileURL } from "node:url"
 import { copyFixture, fixture, hashTree, nativeHelperAvailable } from "../fixtures/helpers.ts"
 
 const golden = readFileSync(
-  join(fixture("jsx-single.migrated"), "flows", "simple-workflow", "flow.ts"),
+  join(fixture("jsx-single.migrated"), ".smithers", "flows", "simple-workflow", "flow.ts"),
   "utf8"
 )
 
@@ -74,7 +74,7 @@ const script = (root: string, written: Array<string>): Layers.Script => (asked) 
   const unit = /# Unit `([^`]+)`/.exec(asked)?.[1] ?? "unknown"
   const result = {
     unit,
-    changedFiles: unit === "workflow:simple-workflow" ? ["flows/simple-workflow/flow.ts"] : [],
+    changedFiles: unit === "workflow:simple-workflow" ? [".smithers/flows/simple-workflow/flow.ts"] : [],
     decisions: [],
     unresolved: [],
     unsupported: [],
@@ -85,7 +85,7 @@ const script = (root: string, written: Array<string>): Layers.Script => (asked) 
   // Relative to the project root, which is the workspace the kernel pinned:
   // the agent never sees, and never needs, an absolute path.
   return [
-    `await ctx.call("write", { path: "flows/simple-workflow/flow.ts", content: ${JSON.stringify(golden)} })`,
+    `await ctx.call("write", { path: ".smithers/flows/simple-workflow/flow.ts", content: ${JSON.stringify(golden)} })`,
     Layers.done(result)
   ].join("\n")
 }
@@ -154,7 +154,7 @@ describe("apply over a single-file JSX project", () => {
           execFileSync("git", ["rev-parse", "--verify", checkpoint!.ref], { cwd: linked, encoding: "utf8" })
             .trim()
         ).toMatch(/^[a-f0-9]{40,64}$/)
-        expect(readFileSync(join(linked, "flows", "simple-workflow", "flow.ts"), "utf8")).toBe(golden)
+        expect(readFileSync(join(linked, ".smithers", "flows", "simple-workflow", "flow.ts"), "utf8")).toBe(golden)
       } finally {
         execFileSync("git", ["worktree", "remove", "--force", linked], { cwd: main, stdio: "ignore" })
         rmSync(linked, { recursive: true, force: true })
@@ -182,7 +182,7 @@ describe("apply over a single-file JSX project", () => {
         expect(workflow?.verification?.discovery?.exitCode).toBe(0)
 
         // The rewrite is on disk and the old source is not.
-        expect(readFileSync(join(root, "flows", "simple-workflow", "flow.ts"), "utf8")).toBe(golden)
+        expect(readFileSync(join(root, ".smithers", "flows", "simple-workflow", "flow.ts"), "utf8")).toBe(golden)
         expect(existsSync(join(root, "simple-workflow.jsx"))).toBe(false)
         expect(
           existsSync(join(root, ".smithers-migrate", "archive", "simple-workflow.jsx"))
@@ -232,7 +232,7 @@ describe("apply over a single-file JSX project", () => {
       yield* apply(root, { keepOldSources: true })
 
       expect(existsSync(join(root, "simple-workflow.jsx"))).toBe(true)
-      expect(existsSync(join(root, "flows", "simple-workflow", "flow.ts"))).toBe(true)
+      expect(existsSync(join(root, ".smithers", "flows", "simple-workflow", "flow.ts"))).toBe(true)
     }))
 
   it.effect("is idempotent: a second run over the migrated tree changes no source", () =>
@@ -268,12 +268,12 @@ describe("apply over a single-file JSX project", () => {
         if (unit !== "workflow:simple-workflow") return emptyAnswer(unit)
         written.push(unit)
         return [
-          `await ctx.call("write", { path: "flows/simple-workflow/flow.ts", content: ${JSON.stringify(golden)} })`,
+          `await ctx.call("write", { path: ".smithers/flows/simple-workflow/flow.ts", content: ${JSON.stringify(golden)} })`,
           `await ctx.call("write", { path: "tests/simple-workflow.test.ts", content: "made the tests pass" })`,
           `await ctx.call("write", { path: "scratch/notes.md", content: "notes" })`,
           Layers.done({
             unit,
-            changedFiles: ["flows/simple-workflow/flow.ts"],
+            changedFiles: [".smithers/flows/simple-workflow/flow.ts"],
             decisions: [],
             unresolved: [],
             unsupported: [],
@@ -297,7 +297,7 @@ describe("apply over a single-file JSX project", () => {
       // The unit itself is back where it started.
       const after = hashTree(root)
       expect(after.get("simple-workflow.jsx")).toBe(before.get("simple-workflow.jsx"))
-      expect(existsSync(join(root, "flows", "simple-workflow", "flow.ts"))).toBe(false)
+      expect(existsSync(join(root, ".smithers", "flows", "simple-workflow", "flow.ts"))).toBe(false)
     }))
 
   guarded(
@@ -312,12 +312,12 @@ describe("apply over a single-file JSX project", () => {
           if (unit !== "workflow:simple-workflow") return emptyAnswer(unit)
           written.push(unit)
           return [
-            `await ctx.call("write", { path: "flows/simple-workflow/flow.ts", content: ${JSON.stringify(golden)} })`,
+            `await ctx.call("write", { path: ".smithers/flows/simple-workflow/flow.ts", content: ${JSON.stringify(golden)} })`,
             `await ctx.call("write", { path: "tests/simple-workflow.test.ts", content: "changed outside the unit" })`,
             `await ctx.call("write", { path: "scratch/operator-note.md", content: "created while migration ran" })`,
             Layers.done({
               unit,
-              changedFiles: ["flows/simple-workflow/flow.ts"],
+              changedFiles: [".smithers/flows/simple-workflow/flow.ts"],
               decisions: [],
               unresolved: [],
               unsupported: [],
@@ -360,8 +360,8 @@ describe("apply over a single-file JSX project", () => {
       // The operator already has a file at the path the unit is going to
       // write. It is user data, and a failed unit owes it back exactly.
       const theirs = "// the operator's own flow, written before the migration\n"
-      mkdirSync(join(root, "flows", "simple-workflow"), { recursive: true })
-      writeFileSync(join(root, "flows", "simple-workflow", "flow.ts"), theirs)
+      mkdirSync(join(root, ".smithers", "flows", "simple-workflow"), { recursive: true })
+      writeFileSync(join(root, ".smithers", "flows", "simple-workflow", "flow.ts"), theirs)
       committed(root)
       const before = hashTree(root)
 
@@ -372,8 +372,8 @@ describe("apply over a single-file JSX project", () => {
 
       const workflow = report.units.find((unit) => unit.id === "workflow:simple-workflow")
       expect(workflow?.status).toBe("failed")
-      expect(readFileSync(join(root, "flows", "simple-workflow", "flow.ts"), "utf8")).toBe(theirs)
-      expect(hashTree(root).get("flows/simple-workflow/flow.ts")).toBe(before.get("flows/simple-workflow/flow.ts"))
+      expect(readFileSync(join(root, ".smithers", "flows", "simple-workflow", "flow.ts"), "utf8")).toBe(theirs)
+      expect(hashTree(root).get(".smithers/flows/simple-workflow/flow.ts")).toBe(before.get(".smithers/flows/simple-workflow/flow.ts"))
       expect(hashTree(root).get("simple-workflow.jsx")).toBe(before.get("simple-workflow.jsx"))
       // A restored target is a restore, not a deletion with a recovery copy.
       expect(workflow?.unresolved.some((entry) => entry.construct === "rollback deleted a post-checkpoint file"))
@@ -397,12 +397,12 @@ describe("apply over a single-file JSX project", () => {
         if (unit !== "workflow:simple-workflow") return emptyAnswer(unit)
         written.push(unit)
         return [
-          `await ctx.call("write", { path: "flows/simple-workflow/flow.ts", content: ${JSON.stringify(golden)} })`,
+          `await ctx.call("write", { path: ".smithers/flows/simple-workflow/flow.ts", content: ${JSON.stringify(golden)} })`,
           `await ctx.call("write", { path: "src/pnpm-lock.yaml", content: "lockfileVersion: 9" })`,
           `await ctx.call("write", { path: "pnpm-lock.yaml", content: "lockfileVersion: 9" })`,
           Layers.done({
             unit,
-            changedFiles: ["flows/simple-workflow/flow.ts"],
+            changedFiles: [".smithers/flows/simple-workflow/flow.ts"],
             decisions: [],
             unresolved: [],
             unsupported: [],
@@ -435,11 +435,11 @@ describe("apply over a single-file JSX project", () => {
           if (unit !== "workflow:simple-workflow") return emptyAnswer(unit)
           written.push(unit)
           return [
-            `await ctx.call("write", { path: "flows/simple-workflow/flow.ts", content: ${JSON.stringify(golden)} })`,
+            `await ctx.call("write", { path: ".smithers/flows/simple-workflow/flow.ts", content: ${JSON.stringify(golden)} })`,
             `await ctx.call("write", { path: "pnpm-lock.yaml", content: "lockfileVersion: 9" })`,
             Layers.done({
               unit,
-              changedFiles: ["flows/simple-workflow/flow.ts"],
+              changedFiles: [".smithers/flows/simple-workflow/flow.ts"],
               decisions: [],
               unresolved: [],
               unsupported: [],
@@ -560,7 +560,7 @@ describe("apply over a single-file JSX project", () => {
         expect(report.units.map((unit) => unit.id)).toEqual(["dependencies", "workflow:simple-workflow", "project"])
         // The failed unit's files are as the checkpoint found them.
         expect(hashTree(root).get("simple-workflow.jsx")).toBe(before.get("simple-workflow.jsx"))
-        expect(existsSync(join(root, "flows", "simple-workflow", "flow.ts"))).toBe(false)
+        expect(existsSync(join(root, ".smithers", "flows", "simple-workflow", "flow.ts"))).toBe(false)
         expect(existsSync(join(root, ".smithers-migrate", "report.md"))).toBe(true)
       })
   )
@@ -573,7 +573,7 @@ describe("apply over a single-file JSX project", () => {
 
       const workflow = report.units.find((unit) => unit.id === "workflow:simple-workflow")
       expect(workflow?.checkpoint?.vcs).toBe("none")
-      expect(existsSync(join(root, "flows", "simple-workflow", "flow.ts"))).toBe(true)
+      expect(existsSync(join(root, ".smithers", "flows", "simple-workflow", "flow.ts"))).toBe(true)
       expect(
         existsSync(join(root, ".smithers-migrate", "backup", "workflow", "simple-workflow", "simple-workflow.jsx"))
       ).toBe(true)
@@ -620,7 +620,7 @@ describe("apply over a project that still holds run state", () => {
 
       // The gate let it through, so every unit ran.
       expect(report.units.map((unit) => unit.status)).toEqual(["migrated", "migrated", "migrated"])
-      expect(existsSync(join(root, "flows", "simple-workflow", "flow.ts"))).toBe(true)
+      expect(existsSync(join(root, ".smithers", "flows", "simple-workflow", "flow.ts"))).toBe(true)
       const after = hashTree(root)
       for (const file of runStateFiles) {
         expect([file, after.get(file)]).toEqual([file, before.get(file)])
@@ -641,11 +641,11 @@ describe("apply over a project that still holds run state", () => {
         if (unit !== "workflow:simple-workflow") return emptyAnswer(unit)
         written.push(unit)
         return [
-          `await ctx.call("write", { path: "flows/simple-workflow/flow.ts", content: ${JSON.stringify(golden)} })`,
+          `await ctx.call("write", { path: ".smithers/flows/simple-workflow/flow.ts", content: ${JSON.stringify(golden)} })`,
           `await ctx.call("write", { path: ".smithers/scratch.txt", content: "resume this" })`,
           Layers.done({
             unit,
-            changedFiles: ["flows/simple-workflow/flow.ts"],
+            changedFiles: [".smithers/flows/simple-workflow/flow.ts"],
             decisions: [],
             unresolved: [],
             unsupported: [],
@@ -684,10 +684,10 @@ describe("apply over a project that still holds run state", () => {
           // A refused call resolves rather than throws, so the answer is a
           // value the cell can put in its report entry.
           `const answered = await ctx.call("write", { path: ".smithers/smithers.db", content: "clobbered" })`,
-          `await ctx.call("write", { path: "flows/simple-workflow/flow.ts", content: ${JSON.stringify(golden)} })`,
+          `await ctx.call("write", { path: ".smithers/flows/simple-workflow/flow.ts", content: ${JSON.stringify(golden)} })`,
           `ctx.done(JSON.stringify({`,
           `  unit: ${JSON.stringify("workflow:simple-workflow")},`,
-          `  changedFiles: ["flows/simple-workflow/flow.ts"],`,
+          `  changedFiles: [".smithers/flows/simple-workflow/flow.ts"],`,
           `  decisions: [],`,
           `  unresolved: [{`,
           `    construct: "the write the kernel refused",`,
@@ -737,10 +737,10 @@ describe("apply over a project that still holds run state", () => {
             `const listed = await ctx.call("ls", { path: ".smithers/executions" })`,
             `const log = await ctx.call("read", { path: ".smithers/executions/run-1783757199651/stdout.log" })`,
             `const source = await ctx.call("read", { path: "simple-workflow.jsx" })`,
-            `await ctx.call("write", { path: "flows/simple-workflow/flow.ts", content: ${JSON.stringify(golden)} })`,
+            `await ctx.call("write", { path: ".smithers/flows/simple-workflow/flow.ts", content: ${JSON.stringify(golden)} })`,
             `ctx.done(JSON.stringify({`,
             `  unit: ${JSON.stringify("workflow:simple-workflow")},`,
-            `  changedFiles: ["flows/simple-workflow/flow.ts"],`,
+            `  changedFiles: [".smithers/flows/simple-workflow/flow.ts"],`,
             `  decisions: [],`,
             `  unresolved: [`,
             `    { construct: "read database", reason: JSON.stringify(read), file: "simple-workflow.jsx", line: 1, suggestion: "none" },`,

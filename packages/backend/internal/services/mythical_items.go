@@ -501,7 +501,7 @@ func (s *MythicalService) submitLane(ctx context.Context, repositoryID, userID i
 		}
 		// The lane's own request run, launched by the stack, validated the
 		// result before delivery started; that is the verification evidence.
-		// A pinned attempt runs one todo composition (flows/todo/flow.ts): its
+		// A pinned attempt runs one todo composition (.smithers/flows/todo/flow.ts): its
 		// delivery child hands the request child's validated result over
 		// while the composition runs, so its bound run is the composition's.
 		_, pinned := mythicalPinOf(item)

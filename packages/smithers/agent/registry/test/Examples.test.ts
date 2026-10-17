@@ -8,8 +8,8 @@ describe("examples", () => {
 
     expect(catalog).toEqual([{ name: "review", tier: "sealed", invocable: true }])
     expect(warnings).toEqual([
-      { code: "missing_description", path: join(root, "flows/draft/flow.mdx") },
-      { code: "name_field_ignored", path: join(root, "flows/draft/flow.mdx") }
+      { code: "missing_description", path: join(root, ".smithers/flows/draft/flow.mdx") },
+      { code: "name_field_ignored", path: join(root, ".smithers/flows/draft/flow.mdx") }
     ])
     expect(xml).toBe([
       "<available_skills>",
@@ -26,7 +26,7 @@ describe("examples", () => {
       "",
       "Supporting skill resources are available relative to this skill directory but are not loaded into context unless needed:",
       "<skill_resources>",
-      `- Base directory: ${root}/flows/review`,
+      `- Base directory: ${root}/.smithers/flows/review`,
       "- Resolve relative resource paths from this directory and read only the files you need.",
       "</skill_resources>",
       "",

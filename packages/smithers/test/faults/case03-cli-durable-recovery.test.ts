@@ -64,9 +64,9 @@ const recover = async (mode: "approval" | "timer" | "checkpoint") => {
       // process must recover this exact tree without recapturing the live one.
       writeFileSync(join(root, "ledger.txt"), "pinned working tree\n")
     }
-    mkdirSync(join(root, "flows", "recovery"), { recursive: true })
+    mkdirSync(join(root, ".smithers", "flows", "recovery"), { recursive: true })
     writeFileSync(
-      join(root, "flows", "recovery", "flow.mdx"),
+      join(root, ".smithers", "flows", "recovery", "flow.mdx"),
       [
         "---",
         "name: recovery",

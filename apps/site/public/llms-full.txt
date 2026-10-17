@@ -6510,7 +6510,7 @@ host whose flows are laid out differently replaces both through `Options`.
 | Export                                                                        | Declaration                                                                                                                                                                                                                                                                                                                                                                |
 | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `showScriptFlow`, `ShowScriptInput`, `ShowScriptOutput`                       | `flows/show-script`: return the source of every cell this turn has executed, plus the rules and the skeleton. Input `{ bestPractices? }` (extra guidance appended after the house rules). Output `{ cells, bestPractices, template }`.                                                                                                                                     |
-| `writeFlowFlow`, `writeFlowCapabilities`, `WriteFlowInput`, `WriteFlowOutput` | `flows/write-flow`: write `flow.ts`, `flow.e2e.ts`, and the fixture under `flows/<id>/`. Input `{ id, description, flowSource, testSource, fixtureJson }`. Output `{ files }`, the root-relative paths written. Declares `writes: ["flows/**"]` and `capabilities: writeFlowCapabilities` (`["fs:write:/flows/**"]`), so a run whose envelope lacks that write is refused. |
+| `writeFlowFlow`, `writeFlowCapabilities`, `WriteFlowInput`, `WriteFlowOutput` | `flows/write-flow`: write `flow.ts`, `flow.e2e.ts`, and the fixture under `.smithers/flows/<id>/`. Input `{ id, description, flowSource, testSource, fixtureJson }`. Output `{ files }`, the root-relative paths written. Declares `writes: [".smithers/flows/**"]` and `capabilities: writeFlowCapabilities` (`["fs:write:/.smithers/flows/**"]`), so a run whose envelope lacks that write is refused. |
 
 ## FlowStore
 
@@ -6569,7 +6569,7 @@ also fails, the error reports the directory where recovery files are retained.
 Individual renames are atomic. External readers can observe the file set
 between renames. This does not provide crash recovery or coordinate writers
 in other processes.
-`PromoteFlows` writes `<root>/flows/<id>/{flow.ts,flow.e2e.ts,fixtures/<id>.json}`.
+`PromoteFlows` writes `<root>/.smithers/flows/<id>/{flow.ts,flow.e2e.ts,fixtures/<id>.json}`.
 
 ### FlowStore.makeMemory, FlowStore.layerMemory
 
@@ -6580,7 +6580,7 @@ const layerMemory: (written?: Map<string, string>) => Layer.Layer<FlowStore>
 
 A store over an in-memory map, keyed by path. The map is the caller's, so a
 test writes through the store and reads the bytes back without a filesystem.
-Every key must be a file path under `flows/<id>/` with no empty, `.`, or `..`
+Every key must be a file path under `.smithers/flows/<id>/` with no empty, `.`, or `..`
 segment; otherwise the whole write fails with
 `FlowStoreError { code: "invalid_path" }` before any key is stored.
 
@@ -10973,7 +10973,7 @@ Where an invocation decides it is running.
 | `root`                                                        | `(explicit, cwd, exists?) => string`      | `--root`, else the nearest ancestor that anchors a project, else the invocation directory.                       |
 | `legacyRoot`                                                  | `(explicit, cwd, exists?) => string`      | The same walk anchored on 0.x markers, for `smthrs migrate`.                                                     |
 | `legacyMarkers`                                               | `ReadonlyArray<string>`                   | `.smithers`, `smithers.db`, and its WAL and shared-memory files.                                                 |
-| `stateDirectory`, `logDirectory`, `logFile`, `flowsDirectory` | `(root, ...) => string`                   | `.flows/`, `.flows/logs/`, `.flows/logs/<run-id>.log`, and `flows/`.                                             |
+| `stateDirectory`, `logDirectory`, `logFile`, `flowsDirectory` | `(root, ...) => string`                   | `.flows/`, `.flows/logs/`, `.flows/logs/<run-id>.log`, and `.smithers/flows/`.                                             |
 | `legacyState`                                                 | `(cwd, exists?) => ReadonlyArray<string>` | 0.x markers beside a project, skipping any directory that already holds `.flows/`. The notice's input.           |
 | `legacyDatabases`                                             | `(cwd, exists?) => ReadonlyArray<string>` | Every 0.x `smithers.db` beside a project, not gated on `.flows/`. The report's and the refusal's input.          |
 | `legacyNotice`                                                | `(path: string) => string`                | The one-line stderr notice.                                                                                      |
@@ -11119,7 +11119,7 @@ The gateway bind rule and its banner.
 | `defaultName`                   | `(root) => string`                                   | The slug of the project directory, or `flow`.                                                                                                                                                                             |
 | `Seat`, `defaultSeat`           | `{ seat, variable, resolved }`                       | The seat the scaffold declares, chosen from the same provider keys `doctor` reports. A directory with no key still declares a seat, so the launch refuses by naming the key instead of leaving a run nothing drives. |
 | `template`                      | `(name, seat) => string`                             | The tagged `flow.ts`, with an ordinary AgentAction and exported implementation layer.                                                                                                                      |
-| `Scaffolded`, `scaffold`        | `(root, name, environment) => Scaffolded`            | Writes `flows/<name>/flow.ts` and creates `.flows/`. Retains any single flow.ts, flow.mdx or SKILL.md entry, refuses duplicate entries and unsafe scaffold paths, and never overwrites an authored entry.                                                                                                                     |
+| `Scaffolded`, `scaffold`        | `(root, name, environment) => Scaffolded`            | Writes `.smithers/flows/<name>/flow.ts` and creates `.flows/`. Retains any single flow.ts, flow.mdx or SKILL.md entry, refuses duplicate entries and unsafe scaffold paths, and never overwrites an authored entry.                                                                                                                     |
 
 ## Suggest
 
@@ -16866,7 +16866,7 @@ body kind.
 import { Command, FileRouter } from "@smthrs/fs"
 
 const program = Effect.gen(function*() {
-  const { routes } = yield* FileRouter.scan({ root: "flows" })
+  const { routes } = yield* FileRouter.scan({ root: ".smithers/flows" })
   const commands = yield* Command.make(routes)
   return yield* commands.execute("review --number 42")
 })
@@ -24866,7 +24866,7 @@ below is `Mapping.rows` rendered, so it cannot fall behind the code.
 | `delegationV2Schemas`                    | none                                                                                         | none                                                                            | unsafe    |
 | `denyNode`                               | `Control.deny`                                                                               | `@smthrs/control/Control`                                                       | guided    |
 | `devPreviewKindSchema`                   | none                                                                                         | none                                                                            | unsafe    |
-| `docs`                                   | `Text pointing at flows/, smthrs flow start, and report.md`                                  | none                                                                            | guided    |
+| `docs`                                   | `Text pointing at .smithers/flows/, smthrs flow start, and report.md`                         | none                                                                            | guided    |
 | `dryRun`                                 | `@smthrs/testing`                                                                            | `@smthrs/testing`                                                               | guided    |
 | `e2eHarness`                             | `@smthrs/testing`                                                                            | `@smthrs/testing`                                                               | guided    |
 | `edit`                                   | `The std flows bound through StandardFlows`                                                  | `@smthrs/std, @smthrs/agent/StandardFlows`                                      | automatic |
@@ -24917,7 +24917,7 @@ below is `Mapping.rows` rendered, so it cannot fall behind the code.
 | `makeHarness`                            | `@smthrs/testing`                                                                            | `@smthrs/testing`                                                               | guided    |
 | `makeReplayBundle`                       | `@smthrs/testing`                                                                            | `@smthrs/testing`                                                               | guided    |
 | `markdownComponents`                     | none                                                                                         | none                                                                            | automatic |
-| `mdx-prompt`                             | `prompt: (payload) => string, or flows/<name>/flow.mdx`                                      | `@smthrs/agent/AgentAction, @smthrs/registry/MarkdownFlow`                      | automatic |
+| `mdx-prompt`                             | `prompt: (payload) => string, or .smithers/flows/<name>/flow.mdx`                             | `@smthrs/agent/AgentAction, @smthrs/registry/MarkdownFlow`                      | automatic |
 | `mdxPlugin`                              | none                                                                                         | none                                                                            | automatic |
 | `memoryFactReads`                        | `@smthrs/memory`                                                                             | `@smthrs/memory`                                                                | guided    |
 | `memoryFactWrites`                       | `@smthrs/memory`                                                                             | `@smthrs/memory`                                                                | guided    |
@@ -25413,6 +25413,7 @@ and carries on.
 The order is fixed:
 
 1. `dependencies`: add the 1.0 packages beside the old ones and install.
+| `defaultFlowsDir`     | `".smithers/flows"`                                                                              | Where migrated flows go: the registry's `Descriptor.projectFlowsDirectory`.                                |
 2. one `workflow:<name>` per workflow file, in dependency order. Each shared
    component, library, and prompt attaches to the first workflow that imports
    it, so nothing is migrated twice.
@@ -25434,7 +25435,7 @@ the same way `Detect.scan` did.
 
 `Units.flowName(path)` gives a workflow its registry name:
 `.smithers/workflows/pipelines/ci-fast.tsx` becomes `pipelines/ci-fast` and
-lands at `flows/pipelines/ci-fast/flow.ts`.
+lands at `.smithers/flows/pipelines/ci-fast/flow.ts`.
 
 `Units.verifyCommands(detection, overrides?, flowsDir?)` derives the commands
 that verify a unit: install from the lockfile or `packageManager` (`bun`,
@@ -25699,7 +25700,7 @@ always pass: they report the blockage instead of refusing on it. See
 | `flowsDir`               | `(options: MigrateOptions) => string`                                         | The flows directory, defaulted.                                                                    |
 | `maxRepairRounds`        | `(options: MigrateOptions) => number`                                         | The repair rounds, defaulted.                                                                      |
 | `defaultReportDir`       | `".smithers-migrate"`                                                         | The default report directory.                                                                      |
-| `defaultFlowsDir`        | `"flows"`                                                                     | The default flows directory.                                                                       |
+| `defaultFlowsDir`        | `".smithers/flows"`                                                           | The default flows directory, `Units.defaultFlowsDir`.                                              |
 | `defaultMaxRepairRounds` | `3`                                                                           | The default repair rounds.                                                                         |
 | `reservedDirectories`    | `[".flows", ".git", ".jj", "node_modules"]`                                   | Directory names no segment of a layout path may be, at any depth.                                  |
 | `reportDirEntries`       | `ReadonlyArray<string>`                                                       | Everything the tool itself writes at the top of the report directory.                              |
@@ -32249,6 +32250,7 @@ root; ordinary project sources leave it unset.
 
 ### Descriptor.Provenance and Descriptor.PackRef
 
+  readonly retiredRoot?: string | undefined
 ```ts
 class Provenance {
   readonly source: string
@@ -32263,6 +32265,23 @@ const PackRef: Schema.Struct<{
 }>
 ```
 
+`retiredRoot` names a directory the source's flows moved out of. Nothing there
+loads. When it holds any entry file, the scan reports one `retired_root`
+warning whose `path` is that directory. `Registry.projectSource` sets it to
+`<root>/flows`.
+
+### Descriptor.projectFlowsDirectory
+
+```ts
+const projectFlowsDirectory: ".smithers/flows"
+const retiredProjectFlowsDirectory: "flows"
+const retiredRootMessage: string
+```
+
+Where a project keeps its flows, relative to the project root, and where it
+kept them before. Every host derives a project's flow location from these
+constants. `retiredRootMessage` is the `retired_root` warning text:
+`Flows in flows/ are not loaded; move them to .smithers/flows/.`
 Where a descriptor came from. `pack` is absent for a descriptor a plain source
 produced and present only when a pack manifest named the directory the entry
 was found in. `origin` is what decided a name collision between packs, so an
@@ -32501,7 +32520,7 @@ reported this way rather than raised, and read back through
 | Naming and description | `missing_description`, `invalid_description`, `missing_name`, `invalid_name`, `directory_name_mismatch`, `name_field_ignored`, `duplicate_name`, `root_level_entry`                                                                                                                                                              |
 | Declaration fields     | `unknown_frontmatter_key`, `invalid_allowed_tools`, `invalid_capabilities`, `invalid_budget`, `invalid_deadline`, `invalid_model`, `invalid_model_invocation`, `invalid_placement`, `invalid_sandbox`, `invalid_compatibility`, `invalid_license`, `invalid_metadata`, `unsupported_input_schema`, `unsupported_module_metadata` |
 | Authority              | `unprojectable_authority`, `invalid_effect_declaration`, `invalid_effect_tier`                                                                                                                                                                                                                                                   |
-| Source shape           | `multiple_entry_files`, `frontmatter_parse_error`, `non_serializable_frontmatter`, `symlink_cycle`, `outside_root`, `max_depth_exceeded`, `entry_too_large`, `unreadable`                                                                                                                                                        |
+| Source shape           | `multiple_entry_files`, `frontmatter_parse_error`, `non_serializable_frontmatter`, `symlink_cycle`, `outside_root`, `max_depth_exceeded`, `entry_too_large`, `unreadable`, `retired_root`                                                                                                                                        |
 | Packs                  | `unknown_pack_key`, `shadowed`                                                                                                                                                                                                                                                                                                   |
 
 `service` names a service missing during construction of a module's exported `layer`.
@@ -32807,7 +32826,7 @@ A name claimed twice by ordinary sources resolves first-found with a
 `duplicate_name` warning. A name shared with a source declared `system: true`
 fails `RegistryError { code: "system_collision" }` in either direction.
 
-### Registry.ProjectOptions and Registry.layerProject
+### Registry.ProjectOptions, Registry.projectSource and Registry.layerProject
 
 ```ts
 interface ProjectOptions {
@@ -32822,22 +32841,33 @@ const layerProject: (options: ProjectOptions) => Layer.Layer<
 >
 ```
 
-The registry a Node host discovers a project in: `<root>/flows/**` first, then
+`projectSource` is the one source for a project's own flows:
+`<root>/.smithers/flows`, path-named, optional, and with `<root>/flows` as its
+`retiredRoot`. Every host that discovers a project builds its source here.
+
+The registry a Node host discovers a project in: `<root>/.smithers/flows/**` first, then
 every installed pack, all under one first-found registry, so a project flow
 shadows a pack flow of the same name and `refresh` rescans both.
 
 Packs are scanned through the registry's own pack path, so each pack descriptor
+const projectSource: (
+  path: { readonly join: (...segments: ReadonlyArray<string>) => string },
+  root: string
+) => Descriptor.Source
+
 carries its `provenance.pack`, a name two packs both define is reported as
 `shadowed`, and every pack's `requires.smithers` is checked against
 `PackConfig.runtimeVersion`. The runtime version rides inside `PackConfig`
 rather than beside it, so a caller cannot ask for packs without saying what
 their range is checked against.
 
-A project with no `flows/` directory has no project entries. The source stays
-configured with `optionalRoot: true`, so every `refresh()` checks it again.
-Creating the first `flows/<id>/flow.mdx` or `flow.ts` makes it discoverable on
-refresh in the same session. Removing `flows/` empties the project entries on
-refresh; recreating it makes them discoverable again. Pack entries remain,
+A project with no `.smithers/flows/` directory has no project entries. The
+source stays configured with `optionalRoot: true`, so every `refresh()` checks
+it again. Creating the first `.smithers/flows/<id>/flow.mdx` or `flow.ts` makes
+it discoverable on refresh in the same session. Removing `.smithers/flows/`
+empties the project entries on refresh; recreating it makes them discoverable
+again. Flows in a root `flows/` never load; each scan reports one
+`retired_root` warning until they move. Pack entries remain,
 and a missing declared pack directory fails with `invalid_pack`.
 
 ### Registry.layerFromDescriptors
@@ -32959,7 +32989,7 @@ One discovered flow, made runnable. `flow` is tagged with the descriptor's
 registry name and `layer` registers it with the runtime.
 
 `delegate` is the registered flow this descriptor hands its work to, and
-`undefined` when the module IS the flow: a `flows/<name>/flow.ts` that
+`undefined` when the module IS the flow: a `.smithers/flows/<name>/flow.ts` that
 `export default`s a `@smthrs/flow` flow runs its own body, so its body is the
 plan rather than one delegating node. The distinction is an authority one. A
 delegate is host-registered code the descriptor never measured, so an approved

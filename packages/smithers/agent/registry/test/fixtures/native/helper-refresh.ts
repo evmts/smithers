@@ -4,7 +4,7 @@
  * Run by `ExecutableNativeRefresh.test.ts` as `node helper-refresh.ts <root>
  * <helper>`: Vitest's module runner would answer the loader's `import()`
  * itself, so only a child process exercises the host's own module cache.
- * `<root>/flows/entry/flow.ts` takes its priority from a relative import; the
+ * `<root>/.smithers/flows/entry/flow.ts` takes its priority from a relative import; the
  * run loads it, rewrites `<helper>` to export priority 9, refreshes, loads the
  * refreshed descriptor, and prints both priorities and execution digests.
  */

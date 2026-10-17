@@ -154,7 +154,7 @@ func TestLearningFiveMergeProposalComposedInstall(t *testing.T) {
 				var note services.LearningProposalNote
 				require.NoError(t, json.Unmarshal(fifthNote, &note))
 				require.Equal(t, "check:lint@review", note.Signature)
-				require.Contains(t, note.Diff, "--- a/flows/todo/flow.ts")
+				require.Contains(t, note.Diff, "--- a/.smithers/flows/todo/flow.ts")
 				require.Contains(t, note.Diff, "Require lint as a fast required check")
 				require.Equal(t, []int64{1, 3, 5}, note.Todos)
 			} else {
@@ -180,6 +180,6 @@ func TestLearningFiveMergeProposalComposedInstall(t *testing.T) {
 	var prompt string
 	require.NoError(t, pool.QueryRow(ctx, `SELECT issue_body FROM mythical_items WHERE repository_id=$1 AND number=7`, repo).Scan(&prompt))
 	require.Contains(t, prompt, "3 of the last 5 failed check:lint@review")
-	require.Contains(t, prompt, "--- a/flows/todo/flow.ts")
+	require.Contains(t, prompt, "--- a/.smithers/flows/todo/flow.ts")
 	require.Contains(t, prompt, "Require lint as a fast required check")
 }

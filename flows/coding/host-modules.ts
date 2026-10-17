@@ -1,7 +1,7 @@
 /**
  * The modules a repository's file flows share with the packaged coding host.
  *
- * A file flow (`flows/<name>/flow.ts`) imports `effect` and `@smthrs/*`
+ * A file flow (`.smithers/flows/<name>/flow.ts`) imports `effect` and `@smthrs/*`
  * packages, and the host decodes what that flow declared with its own copies.
  * Two physical copies disagree: Schema's private sentinels are compared by
  * identity, so a foreign `Schema.String` decodes a string as a symbol and the

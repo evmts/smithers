@@ -128,9 +128,9 @@ export const measureWorkspaceHost = async (page: Page, request: APIRequestContex
 /** Type real files through the PTY, then verify the bytes through the independent file API. */
 export const writeSeededFlow = async (page: Page, request: APIRequestContext, repo: string, workspaceId: string, marker: string): Promise<void> => {
   const files = new Map([
-    [`flows/${SEEDED_FLOW}/flow.mdx`, flowText(false, marker)],
-    [`flows/${FAILED_FLOW}/flow.mdx`, flowText(true, marker)],
-    [`flows/${GUARD_FLOW}/flow.mdx`, guardFlowText],
+    [`.smithers/flows/${SEEDED_FLOW}/flow.mdx`, flowText(false, marker)],
+    [`.smithers/flows/${FAILED_FLOW}/flow.mdx`, flowText(true, marker)],
+    [`.smithers/flows/${GUARD_FLOW}/flow.mdx`, guardFlowText],
     // The live interval comes from the subject's own frames now, so this check
     // only has to be a real process that fails before the edit and passes after.
     [MARKER_TEST, `import {test, expect} from "bun:test";\nimport {readFileSync} from "node:fs";\ntest("exact marker line", async () => { await Bun.sleep(5000); expect(readFileSync("README.md", "utf8").split(/\\r?\\n/)).toContain(${JSON.stringify(marker)}); }, 60000);\n`]
@@ -144,7 +144,7 @@ export const writeSeededFlow = async (page: Page, request: APIRequestContext, re
     await terminal.locator(".xterm-helper-textarea").focus()
     for (const [path, content] of files) {
       const encoded = Buffer.from(content).toString("base64")
-      await page.keyboard.insertText(`mkdir -p flows/${SEEDED_FLOW} flows/${FAILED_FLOW} flows/${GUARD_FLOW}; printf %s '${encoded}' | base64 -d > '${path}'`)
+      await page.keyboard.insertText(`mkdir -p .smithers/flows/${SEEDED_FLOW} .smithers/flows/${FAILED_FLOW} .smithers/flows/${GUARD_FLOW}; printf %s '${encoded}' | base64 -d > '${path}'`)
       await page.keyboard.press("Enter")
       await expect(async () => expect(await readWorkspaceText(page, request, repo, workspaceId, path)).toBe(content)).toPass({ timeout: 45000 })
     }

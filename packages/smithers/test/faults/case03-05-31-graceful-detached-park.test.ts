@@ -44,11 +44,11 @@ const smithers = (...args: ReadonlyArray<string>): Invocation => {
   }
 }
 
-mkdirSync(join(project, "flows", "idle"), { recursive: true })
+mkdirSync(join(project, ".smithers", "flows", "idle"), { recursive: true })
 mkdirSync(join(project, ".flows"), { recursive: true })
 mkdirSync(home, { recursive: true })
 writeFileSync(
-  join(project, "flows", "idle", "flow.ts"),
+  join(project, ".smithers", "flows", "idle", "flow.ts"),
   [
     "import { Flow } from \"@smthrs/core\"",
     "import { Schema } from \"effect\"",

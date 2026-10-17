@@ -49,7 +49,7 @@ try {
   assert.equal(exchange.failure, undefined)
   const receipt = JSON.parse(exchange.response!.body)
   assert.equal(receipt.flow, "debug-canary")
-  assert.equal(receipt.path, "flows/debug-canary/flow.ts")
+  assert.equal(receipt.path, ".smithers/flows/debug-canary/flow.ts")
   assert.equal(receipt.status, "queued")
   assert.ok(Number.isSafeInteger(receipt.run_id) && receipt.run_id > 0)
   assert.equal(receipt.id, receipt.run_id)

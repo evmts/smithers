@@ -503,7 +503,7 @@ describe("FactoryProjection target", () => {
     const checking = Factory.FactoryProjection({})
     const metadata = Target.metadata(checking)
     expect(metadata.attrs).toEqual({
-      root: "flows",
+      root: ".smithers/flows",
       declaration: ".smithers/FACTORY.ts",
       output: ".smithers/factory.json",
       homeOutput: ".smithers/home.json",
@@ -512,9 +512,9 @@ describe("FactoryProjection target", () => {
     expect(metadata.cacheable).toBe(true)
     expect(metadata.outputs).toEqual({ cwd: ".", paths: [] })
     expect(metadata.inputs.map(describeInput)).toEqual([
-      "//flows/**/flow.ts",
-      "//flows/**/flow.mdx",
-      "//flows/**/SKILL.md",
+      "//.smithers/flows/**/flow.ts",
+      "//.smithers/flows/**/flow.mdx",
+      "//.smithers/flows/**/SKILL.md",
       "//.smithers/FACTORY.ts",
       "//.smithers/factory.json",
       "//.smithers/home.json"
@@ -522,7 +522,7 @@ describe("FactoryProjection target", () => {
     expect(plannedCalls(checking)).toEqual([{
       action: "smithers-build/factory-projection",
       payload: {
-        root: "flows",
+        root: ".smithers/flows",
         output: ".smithers/factory.json",
         homeOutput: ".smithers/home.json",
         mode: "check",

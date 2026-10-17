@@ -35,7 +35,7 @@ func TestLiveFlowsRepairsMissedHintAndKeepsActive(t *testing.T) {
 	var repository int64
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO repositories(user_id,name,lower_name,default_bookmark,is_public) VALUES ($1,'app','app','main',false) RETURNING id`, user.ID).Scan(&repository))
 	active, failed := strings.Repeat("a", 64), strings.Repeat("b", 64)
-	_, err = q.InsertFlowVersion(ctx, repository, "todo", "flows/todo/flow.ts", strings.Repeat("1", 40), active, "loaded", "", json.RawMessage(`{"steps":[{"id":"changelog","label":"Changelog"}]}`))
+	_, err = q.InsertFlowVersion(ctx, repository, "todo", ".smithers/flows/todo/flow.ts", strings.Repeat("1", 40), active, "loaded", "", json.RawMessage(`{"steps":[{"id":"changelog","label":"Changelog"}]}`))
 	require.NoError(t, err)
 	_, err = q.ActivateFlowVersion(ctx, repository, "todo", active)
 	require.NoError(t, err)
@@ -92,7 +92,7 @@ func TestLiveFlowsRepairsMissedHintAndKeepsActive(t *testing.T) {
 	load, err := q.EnsureFlowLoad(ctx, repository)
 	require.NoError(t, err)
 	load.CommitID, load.LoadedCommit = strings.Repeat("2", 40), strings.Repeat("2", 40)
-	load.Versions = json.RawMessage(`[{"name":"todo","path":"flows/todo/flow.ts","digest":"` + failed + `","status":"failed","error":"flows/todo/flow.ts:12: invalid type"}]`)
+	load.Versions = json.RawMessage(`[{"name":"todo","path":".smithers/flows/todo/flow.ts","digest":"` + failed + `","status":"failed","error":".smithers/flows/todo/flow.ts:12: invalid type"}]`)
 	_, err = q.SaveFlowLoad(ctx, load)
 	require.NoError(t, err)
 	// Allow scheduling overhead, while refusing the old five-second cadence.
@@ -106,7 +106,7 @@ func TestLiveFlowsRepairsMissedHintAndKeepsActive(t *testing.T) {
 	require.Equal(t, "active", card.Versions[0].State)
 	require.Equal(t, failed, card.Versions[1].ID)
 	require.Equal(t, "merged-failed", card.Versions[1].State)
-	require.Equal(t, "flows/todo/flow.ts:12: invalid type", card.Versions[1].Error)
+	require.Equal(t, ".smithers/flows/todo/flow.ts:12: invalid type", card.Versions[1].Error)
 }
 
 // The person-facing install route reads the same persisted version metadata
@@ -130,7 +130,7 @@ func TestInstallFlowsServesPersistedGuestSteps(t *testing.T) {
 	_, err = q.CreateAuthSession(ctx, db.CreateAuthSessionParams{UserID: owner.ID, Username: owner.Username, SessionKey: hex.EncodeToString(hash[:]), ExpiresAt: time.Now().Add(time.Hour)})
 	require.NoError(t, err)
 	digest := strings.Repeat("a", 64)
-	_, err = q.InsertFlowVersion(ctx, repository, "todo", "flows/todo/flow.ts", strings.Repeat("1", 40), digest, "loaded", "", json.RawMessage(`{"steps":[{"id":"changelog","label":"Changelog"}]}`))
+	_, err = q.InsertFlowVersion(ctx, repository, "todo", ".smithers/flows/todo/flow.ts", strings.Repeat("1", 40), digest, "loaded", "", json.RawMessage(`{"steps":[{"id":"changelog","label":"Changelog"}]}`))
 	require.NoError(t, err)
 	_, err = q.ActivateFlowVersion(ctx, repository, "todo", digest)
 	require.NoError(t, err)

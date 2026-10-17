@@ -456,7 +456,7 @@ metadata:
 ```
 
 Where `metadata` must map strings to strings (`SKILL.md`), `tui` may be the
-same mapping as a JSON string. Observed changes under `flows/` debounce for
+same mapping as a JSON string. Observed changes under `.smithers/flows/` debounce for
 300 ms before re-listing the registry and replacing repository contributions
 at once. A filesystem identity scan every second reconciles missed native
 notifications; large trees also incur scan time.
@@ -475,7 +475,7 @@ card.
 ## Flows
 
 `/flows` is the one catalog of the directory's flows and agents
-(`flows/<name>/flow.ts`, a `Flow.make` default export, or a markdown agent): each
+(`.smithers/flows/<name>/flow.ts`, a `Flow.make` default export, or a markdown agent): each
 row shows its input names (`a, b, unit`) and keys (`alt+r`), the selected row its
 description, and the right end its last run (`✓ 2m ago`); Enter runs the
 selection. `/flow <name>` is the direct call: a flow takes a JSON object or
@@ -506,9 +506,11 @@ flow's steps (each action or flow call it made, from the engine's
 `node-scheduled` and `node-settled` records) with their results, then the
 result; Summary's `g` draws them as the run's children.
 
-Listing reads `flows/` without importing anything. Observed changes debounce
+Listing reads `.smithers/flows/` without importing anything; a root `flows/` never
+loads, and a toast says `Flows in flows/ are not loaded; move them to .smithers/flows/.`
+Observed changes debounce
 for 300 ms; a filesystem identity scan every second reconciles missed native
-notifications, with additional scan time for large trees. After first draw, projects with `flows/` warm the host
+notifications, with additional scan time for large trees. After first draw, projects with `.smithers/flows/` warm the host
 in the background, importing modules and opening `<cwd>/.flows` (the store
 `smthrs runs` reads). A module flow added after that lists as
 `Restart to load`, and `/flow` on it says `Restart to load <name>.`; an edited
@@ -578,7 +580,7 @@ sandbox).
 
 ## Custom agents
 
-A custom agent is a markdown flow, `flows/<name>/flow.mdx` (or `SKILL.md`).
+A custom agent is a markdown flow, `.smithers/flows/<name>/flow.mdx` (or `SKILL.md`).
 There is no other agent format: `smthrs flow start`, approvals and the app read
 the same file. The body is the agent's system prompt; the frontmatter sets the
 rest.

@@ -62,7 +62,7 @@ export default Flow.make("proof", {
 })
 `
 
-// A file flow in the one shape every repository flow has (flows/<name>/flow.ts
+// A file flow in the one shape every repository flow has (.smithers/flows/<name>/flow.ts
 // with Flow.make): it imports @smthrs/flow, @smthrs/plan and effect from the
 // repository's own node_modules, not from the host's bundle (#2197).
 const realHostFileFlow = `import { Flow } from "@smthrs/flow"
@@ -310,10 +310,10 @@ func realHostFixtureFor(t *testing.T) realHostFixture {
 	require.NoError(t, err)
 
 	root := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(root, "flows", "proof"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(root, "flows", "proof", "flow.ts"), []byte(realHostFlow), 0o644))
-	require.NoError(t, os.MkdirAll(filepath.Join(root, "flows", "echo"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(root, "flows", "echo", "flow.ts"), []byte(realHostFileFlow), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".smithers", "flows", "proof"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".smithers", "flows", "proof", "flow.ts"), []byte(realHostFlow), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".smithers", "flows", "echo"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".smithers", "flows", "echo", "flow.ts"), []byte(realHostFileFlow), 0o644))
 	require.NoError(t, os.Symlink(filepath.Join(repositoryRoot, "node_modules"), filepath.Join(root, "node_modules")))
 	require.NoError(t, os.WriteFile(filepath.Join(root, ".gitignore"), []byte("node_modules\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "README.md"), []byte("# Fixture\n"), 0o644))

@@ -35,7 +35,7 @@ afterEach(async () => {
 const workspace = async (budget: ControlSchema.Envelope["budget"] = {}): Promise<string> => {
   const root = await mkdtemp(join(tmpdir(), "smithers-composition-contract-"))
   roots.add(root)
-  const directory = join(root, "flows", "capacity")
+  const directory = join(root, ".smithers", "flows", "capacity")
   await mkdir(directory, { recursive: true })
   await writeFile(
     join(directory, "flow.mdx"),

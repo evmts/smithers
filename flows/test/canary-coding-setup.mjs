@@ -30,8 +30,8 @@ for path in root.rglob('*.md'):
   assert resolved.exists(), f'Broken local link: {path.relative_to(root)} -> {target}'
 print('Local Markdown links resolve inside source tree')
 `
-for (const [tier, program] of [['fast', fast], ['slow', slow]]) files['flows/checks/' + tier + '/flow.mdx'] = '---\ndescription: ' + (tier === 'fast' ? 'Verify the explicit README documentation task.' : 'Verify local Markdown links against the immutable source tree.') + '\nflows: [coding/CommandCheck]\ncapabilities: ["*"]\n---\n' + JSON.stringify({ argv: ['python3', '-c', program], cwd: '.', timeoutMs: 30000 }) + '\n'
-files['flows/checks/wiki/flow.mdx'] = '---\ndescription: Verify current wiki semantics against source.\nflows: [coding/WikiCheck]\ncapabilities: ["*"]\n---\nReview the operator-configured wiki.\n'
+for (const [tier, program] of [['fast', fast], ['slow', slow]]) files['.smithers/flows/checks/' + tier + '/flow.mdx'] = '---\ndescription: ' + (tier === 'fast' ? 'Verify the explicit README documentation task.' : 'Verify local Markdown links against the immutable source tree.') + '\nflows: [coding/CommandCheck]\ncapabilities: ["*"]\n---\n' + JSON.stringify({ argv: ['python3', '-c', program], cwd: '.', timeoutMs: 30000 }) + '\n'
+files['.smithers/flows/checks/wiki/flow.mdx'] = '---\ndescription: Verify current wiki semantics against source.\nflows: [coding/WikiCheck]\ncapabilities: ["*"]\n---\nReview the operator-configured wiki.\n'
 const project = { wikiOutput: '../canary-coding-wiki', reviewer: 'canary-source-docs-v1', pages: [{ id: 'overview', title: 'Canary fixture', purpose: 'Document the tracked fixture and its canary role', kind: 'current', document: 'overview.md', inputs: ['README.md'], related: [] }], implementation: 'coding/implementation', checks: ['fast', 'slow', 'wiki'].map(tier => ({ id: tier, target: 'README.md', flow: 'checks/' + tier, tier: tier === 'fast' ? 'fast' : 'slow', required: true })) }
 files['.smithers/coding-project.json'] = JSON.stringify(project, null, 2) + '\n'
 for (const [path, content] of Object.entries(files)) { await mkdir(join(output, path, '..'), { recursive: true }); await writeFile(join(output, path), content) }

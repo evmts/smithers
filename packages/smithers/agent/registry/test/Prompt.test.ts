@@ -24,14 +24,14 @@ describe("typed MDX prompts", () => {
           directory: fileURLToPath(new URL("./fixtures", import.meta.url)),
           prefix: ".mdx-refresh-"
         })
-        yield* fs.makeDirectory(`${root}/flows`, { recursive: true })
+        yield* fs.makeDirectory(`${root}/.smithers/flows`, { recursive: true })
         yield* Effect.gen(function*() {
           const catalog = yield* Executable.Catalog
           const refresh = yield* Executable.Refresh
           expect(catalog.executables).toEqual([])
-          yield* fs.makeDirectory(`${root}/flows/missing`, { recursive: true })
+          yield* fs.makeDirectory(`${root}/.smithers/flows/missing`, { recursive: true })
           yield* fs.writeFileString(
-            `${root}/flows/missing/SKILL.md`,
+            `${root}/.smithers/flows/missing/SKILL.md`,
             "---\nname: missing\ndescription: An external skill.\n---\nDo the work."
           )
           const outcome = yield* refresh.flow("missing")

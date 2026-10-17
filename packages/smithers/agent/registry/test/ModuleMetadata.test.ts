@@ -130,7 +130,10 @@ describe("ModuleMetadata", () => {
     // 525197db11 changed the emitter to this tagged Flow.make declaration;
     // its other schemas also nest Schema.Array(Schema.String).
     const source = readFileSync(
-      new URL("../../../migrate/test/fixtures/jsx-single.migrated/flows/simple-workflow/flow.ts", import.meta.url),
+      new URL(
+        "../../../migrate/test/fixtures/jsx-single.migrated/.smithers/flows/simple-workflow/flow.ts",
+        import.meta.url
+      ),
       "utf8"
     )
     const metadata = ModuleMetadata.parse(source)

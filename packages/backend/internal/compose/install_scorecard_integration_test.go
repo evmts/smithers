@@ -488,7 +488,7 @@ func TestInstallScorecardOwnerReadsRealCreationReceipts(t *testing.T) {
 		_, err = pool.Exec(ctx, `UPDATE product_job_events SET recorded_at=$2::timestamptz WHERE principal_id=$1 AND event_type='todo.created'`, "todo:"+id, at)
 		require.NoError(t, err)
 	}
-	note, err := json.Marshal(services.LearningProposalNote{Repository: repositoryName, Run: "learning-run", LearningProposal: services.LearningProposal{Signature: "check:unit@check", Title: "Run unit checks", Prompt: "Update todo flow", Diff: "flows/todo/flow.ts"}})
+	note, err := json.Marshal(services.LearningProposalNote{Repository: repositoryName, Run: "learning-run", LearningProposal: services.LearningProposal{Signature: "check:unit@check", Title: "Run unit checks", Prompt: "Update todo flow", Diff: ".smithers/flows/todo/flow.ts"}})
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, `INSERT INTO memory_notes(id,namespace_kind,namespace_id,text,tags_json,provenance_json,status,created_at_ms,status_at_ms,accepted_todo) VALUES('scorecard-learning','flow',$1,'Run unit checks','[]',$2,'accepted',1791097200000,1791097200000,$3)`, fmt.Sprintf("learning:%d", repo), string(note), fmt.Sprint(number))
 	require.NoError(t, err)

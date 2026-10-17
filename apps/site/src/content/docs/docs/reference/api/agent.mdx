@@ -2238,7 +2238,7 @@ host whose flows are laid out differently replaces both through `Options`.
 | Export                                                                        | Declaration                                                                                                                                                                                                                                                                                                                                                                |
 | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `showScriptFlow`, `ShowScriptInput`, `ShowScriptOutput`                       | `flows/show-script`: return the source of every cell this turn has executed, plus the rules and the skeleton. Input `{ bestPractices? }` (extra guidance appended after the house rules). Output `{ cells, bestPractices, template }`.                                                                                                                                     |
-| `writeFlowFlow`, `writeFlowCapabilities`, `WriteFlowInput`, `WriteFlowOutput` | `flows/write-flow`: write `flow.ts`, `flow.e2e.ts`, and the fixture under `flows/<id>/`. Input `{ id, description, flowSource, testSource, fixtureJson }`. Output `{ files }`, the root-relative paths written. Declares `writes: ["flows/**"]` and `capabilities: writeFlowCapabilities` (`["fs:write:/flows/**"]`), so a run whose envelope lacks that write is refused. |
+| `writeFlowFlow`, `writeFlowCapabilities`, `WriteFlowInput`, `WriteFlowOutput` | `flows/write-flow`: write `flow.ts`, `flow.e2e.ts`, and the fixture under `.smithers/flows/<id>/`. Input `{ id, description, flowSource, testSource, fixtureJson }`. Output `{ files }`, the root-relative paths written. Declares `writes: [".smithers/flows/**"]` and `capabilities: writeFlowCapabilities` (`["fs:write:/.smithers/flows/**"]`), so a run whose envelope lacks that write is refused. |
 
 ## FlowStore
 
@@ -2297,7 +2297,7 @@ also fails, the error reports the directory where recovery files are retained.
 Individual renames are atomic. External readers can observe the file set
 between renames. This does not provide crash recovery or coordinate writers
 in other processes.
-`PromoteFlows` writes `<root>/flows/<id>/{flow.ts,flow.e2e.ts,fixtures/<id>.json}`.
+`PromoteFlows` writes `<root>/.smithers/flows/<id>/{flow.ts,flow.e2e.ts,fixtures/<id>.json}`.
 
 ### FlowStore.makeMemory, FlowStore.layerMemory
 
@@ -2308,7 +2308,7 @@ const layerMemory: (written?: Map<string, string>) => Layer.Layer<FlowStore>
 
 A store over an in-memory map, keyed by path. The map is the caller's, so a
 test writes through the store and reads the bytes back without a filesystem.
-Every key must be a file path under `flows/<id>/` with no empty, `.`, or `..`
+Every key must be a file path under `.smithers/flows/<id>/` with no empty, `.`, or `..`
 segment; otherwise the whole write fails with
 `FlowStoreError { code: "invalid_path" }` before any key is stored.
 

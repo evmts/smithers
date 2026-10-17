@@ -51,8 +51,8 @@ export default ({
 /** One project root holding one discovered flow named `native`. */
 const project = async () => {
   const root = await mkdtemp(join(tmpdir(), "smithers-native-plan-"))
-  await mkdir(join(root, "flows", "native"), { recursive: true })
-  await writeFile(join(root, "flows", "native", "flow.ts"), source)
+  await mkdir(join(root, ".smithers", "flows", "native"), { recursive: true })
+  await writeFile(join(root, ".smithers", "flows", "native", "flow.ts"), source)
   return root
 }
 
@@ -66,7 +66,8 @@ const project = async () => {
  */
 const committedProject = async () => {
   const root = await project()
-  await writeFile(join(root, ".gitignore"), ".flows/\n.smithers/\n")
+  // Host state under `.smithers/` stays out of the commit; the flows there are source.
+  await writeFile(join(root, ".gitignore"), ".flows/\n.smithers/*\n!.smithers/flows/\n")
   const git = (...args: ReadonlyArray<string>) =>
     execFileSync("git", [
       "-c",
@@ -290,11 +291,11 @@ describe("planning a discovered flow on the native host", () => {
     const root = await project()
     try {
       await writeFile(
-        join(root, "flows", "native", "flow.ts"),
+        join(root, ".smithers", "flows", "native", "flow.ts"),
         `import "./vm.ts";
 ${source}`
       )
-      await writeFile(join(root, "flows", "native", "vm.ts"), `import "microsandbox"; import "node:fs";`)
+      await writeFile(join(root, ".smithers", "flows", "native", "vm.ts"), `import "microsandbox"; import "node:fs";`)
       const registry = NodeControl.layerRegistry(root)
       // This host lists the module for an external driver; planning remains
       // metadata-only and does not require loading the native SDK.
@@ -561,7 +562,7 @@ describe("the revision a plan's sites were read at", () => {
   it("is absent where the tree has moved off every revision it could name", async () => {
     const { root } = await committedProject()
     try {
-      await writeFile(join(root, "flows", "native", "flow.ts"), `${source}\n// edited after the commit\n`)
+      await writeFile(join(root, ".smithers", "flows", "native", "flow.ts"), `${source}\n// edited after the commit\n`)
       const card = await planOn(root, Planned)
 
       expect(card.graph?.sourceRevision).toBeUndefined()
@@ -584,7 +585,7 @@ describe("the revision a plan's sites were read at", () => {
     try {
       const card = await planOn(root, Planned, undefined, async () => {
         await writeFile(
-          join(root, "flows", "native", "flow.ts"),
+          join(root, ".smithers", "flows", "native", "flow.ts"),
           `${source}
 // written during startup
 `

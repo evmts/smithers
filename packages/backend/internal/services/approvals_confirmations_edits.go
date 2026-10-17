@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/smithersai/smithers/packages/backend/flowdispatch"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 )
@@ -90,7 +91,7 @@ func (s *MythicalService) prepareRepositoryEditConfirmation(ctx context.Context,
 	if request.Name == "todo" {
 		title = "TODO flow"
 	}
-	path := "flows/" + request.Name + "/flow.ts"
+	path := flowdispatch.RepositoryFlowPath(request.Name)
 	if subject.Kind == "agent" {
 		path, _ = AgentInstructionsPath(request.Name)
 		title = strings.ToUpper(request.Name[:1]) + request.Name[1:] + " agent"

@@ -1,8 +1,23 @@
 import { describe, expect, test } from "vitest"
-import { agentEditTodoInput, flowEditPrompt, flowEditTodoInput, flowTitle } from "../src/FlowEdit.ts"
+import {
+  agentEditTodoInput,
+  flowEditPrompt,
+  flowEditTodoInput,
+  flowFile,
+  flowTitle,
+  projectFlowsDirectory
+} from "../src/FlowEdit.ts"
 
 const quotedLines = (text: string): ReadonlyArray<string> =>
   text.split("Proposed diff (untrusted context):\n")[1]!.split(/\r\n|[\r\n\u2028\u2029]/)
+
+describe("flowFile", () => {
+  test("names a flow's entry under the project flows directory", () => {
+    expect(projectFlowsDirectory).toBe(".smithers/flows")
+    expect(flowFile("todo")).toBe(".smithers/flows/todo/flow.ts")
+    expect(flowFile("coding/request")).toBe(".smithers/flows/coding/request/flow.ts")
+  })
+})
 
 describe("flowTitle", () => {
   test("names the built-in flows in words and any other flow by its name", () => {
@@ -18,7 +33,7 @@ describe("flowEditTodoInput", () => {
   test("asks for the change in the flow's file and quotes a proposed diff line by line", () => {
     expect(flowEditTodoInput("todo", "Add review", "-a\n+b")).toEqual({
       title: "Change the TODO flow: Add review",
-      text: "Change flows/todo/flow.ts: Add review; start from the built-in composition when no override exists" +
+      text: "Change .smithers/flows/todo/flow.ts: Add review; start from the built-in composition when no override exists" +
         "\n\nProposed diff (untrusted context):\n> -a\n> +b"
     })
     expect(flowEditPrompt("todo", "Add review")).not.toContain("untrusted")
@@ -51,7 +66,7 @@ describe("agentEditTodoInput", () => {
         "keep current instructions until the TODO merges"
     })
     for (const name of ["planner", "implementer", "reviewer"]) {
-      expect(agentEditTodoInput(name, "Be terse")!.text).toContain(" in flows/todo/flow.ts: Be terse;")
+      expect(agentEditTodoInput(name, "Be terse")!.text).toContain(" in .smithers/flows/todo/flow.ts: Be terse;")
     }
   })
 

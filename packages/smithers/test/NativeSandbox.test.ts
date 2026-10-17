@@ -80,8 +80,8 @@ const project = async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "smithers-native-sandbox-")))
   roots.add(root)
   for (const [name, sandbox] of [["scribe", "{provider: directory}"], ["boxed", "{provider: container}"]]) {
-    await mkdir(join(root, "flows", name!), { recursive: true })
-    await writeFile(join(root, "flows", name!, "flow.mdx"), flow(name!, sandbox!))
+    await mkdir(join(root, ".smithers", "flows", name!), { recursive: true })
+    await writeFile(join(root, ".smithers", "flows", name!, "flow.mdx"), flow(name!, sandbox!))
   }
   // The engine snapshots the host checkout around a run's steps, sandboxed or not.
   execFileSync("jj", ["git", "init", root], { stdio: "ignore" })
@@ -227,7 +227,10 @@ describe("a sandbox-selected flow on the shipped Node executor", () => {
         const parked = yield* parkedOnAsk(machines, log, "native-sandbox:drift")
         // The flow no longer selects a sandbox; the operator accepts the drift.
         yield* Effect.promise(() =>
-          writeFile(join(root, "flows", "scribe", "flow.mdx"), flow("scribe", "").replace("sandbox: \n", ""))
+          writeFile(
+            join(root, ".smithers", "flows", "scribe", "flow.mdx"),
+            flow("scribe", "").replace("sandbox: \n", "")
+          )
         )
         // The approval alone would resume unchanged code, which drift refuses.
         yield* Effect.flip(parked.control.approve(parked.approval))

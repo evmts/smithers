@@ -100,7 +100,7 @@ A workflow is a \`Flow\`. A step is an \`Action\`. A model-backed step is an
 
 ## Layout
 
-One flow per directory: \`flows/<name>/flow.ts\`. The default export is the
+One flow per directory: \`.smithers/flows/<name>/flow.ts\`. The default export is the
 \`@smthrs/flow\` flow itself, tag and \`body\` included, so one declaration
 carries both the contract the control plane admits and the graph the engine
 runs. Write no second declaration for the registry to read: there is one. The
@@ -481,7 +481,7 @@ export const UnitBrief = Schema.Struct({
    *
    * Absent means yes, which is the answer for every unit that writes a flow.
    * The dependency unit adds packages and creates none, and the agent has to
-   * be told: a self-check that demands a `flows/` directory the unit cannot
+   * be told: a self-check that demands a `.smithers/flows/` directory the unit cannot
    * create reports a failure for work that is going correctly.
    */
   expectFlows: Schema.optional(Schema.Boolean)

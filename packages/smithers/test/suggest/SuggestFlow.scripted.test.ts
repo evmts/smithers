@@ -67,22 +67,30 @@ describe("the suggest flow with a scripted model", { timeout: 120_000 }, () => {
     const result = await execute(root, Brief.suggestion(context, suggestion), (prompt) => {
       asked.push(prompt)
       return [
-        `await ctx.call("write", { path: "flows/test-target/flow.mdx", content: ${JSON.stringify(flowBody)} })`,
-        SuggestFlow.done({ files: ["flows/test-target/flow.mdx"], command: "smthrs up test-target", notes: "scripted" })
+        `await ctx.call("write", { path: ".smithers/flows/test-target/flow.mdx", content: ${
+          JSON.stringify(flowBody)
+        } })`,
+        SuggestFlow.done({
+          files: [".smithers/flows/test-target/flow.mdx"],
+          command: "smthrs up test-target",
+          notes: "scripted"
+        })
       ].join("\n")
     }, events)
 
     expect(result).toEqual({
-      files: ["flows/test-target/flow.mdx"],
+      files: [".smithers/flows/test-target/flow.mdx"],
       command: "smthrs up test-target",
       notes: "scripted"
     })
-    expect(readFileSync(join(root, "flows", "test-target", "flow.mdx"), "utf8")).toBe(flowBody)
+    expect(readFileSync(join(root, ".smithers", "flows", "test-target", "flow.mdx"), "utf8")).toBe(flowBody)
     // The teaching and the brief both reach the model, in that order.
     expect(asked[0]).toContain("# Implementing one suggestion in a Smithers project")
     expect(asked[0]).toContain("# Suggestion `test-target`: A test target that reruns only what changed")
     expect(asked[0]).toContain("Seat for the flow's `model:` line: `openai:gpt-5.6-sol`")
     expect(asked[0]).toContain("- test runner: vitest")
+    expect(asked[0]).toContain("`.smithers/flows/test-target/flow.mdx` at least")
+    expect(asked[0]).not.toContain("`flows/")
     // The host's judge is real, so the run arms judged discipline and is
     // taught to call jev.
     expect(events.find((event) => event._tag === "discipline-armed")).toMatchObject({ judged: true })
@@ -154,12 +162,12 @@ describe("Brief.followUp", () => {
       followUps: [Checklist.followUps.ci, Checklist.followUps.incremental],
       files: []
     }
-    const implemented = { files: ["flows/lint-target/flow.mdx"], command: "smthrs up lint-target" }
+    const implemented = { files: [".smithers/flows/lint-target/flow.mdx"], command: "smthrs up lint-target" }
     const ci = Brief.followUp({ seat: "s:m", facts }, suggestion, implemented, Checklist.followUps.ci)
     const incremental = Brief.followUp({ seat: "s:m", facts }, suggestion, implemented, Checklist.followUps.incremental)
 
     expect(ci).toContain("# Follow-up on `lint-target`: Run this in CI?")
-    expect(ci).toContain("It wrote: `flows/lint-target/flow.mdx`. It runs with `smthrs up lint-target`.")
+    expect(ci).toContain("It wrote: `.smithers/flows/lint-target/flow.mdx`. It runs with `smthrs up lint-target`.")
     expect(ci).toContain(".github/workflows/ci.yml")
     expect(incremental).toContain("Make it incremental")
     expect(incremental).toContain("`PACKAGE.ts` target")

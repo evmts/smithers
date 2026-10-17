@@ -57,7 +57,7 @@ const base = {
 } satisfies Partial<Suggest.Options>
 
 const implemented = {
-  files: ["flows/test-target/flow.mdx"],
+  files: [".smithers/flows/test-target/flow.mdx"],
   command: "smthrs up test-target",
   notes: "Runs vitest over the changed inputs."
 }
@@ -362,7 +362,7 @@ describe("the interactive session", () => {
     expect(ui.briefs[1]).toContain("# Follow-up on `test-target`: Run this in CI?")
     // Every file it wrote, and the one command that runs them.
     expect(ui.lines).toContain(
-      "note A test target that reruns only what changed: - flows/test-target/flow.mdx\n\nRun it with: smthrs up test-target\n\nRuns vitest over the changed inputs."
+      "note A test target that reruns only what changed: - .smithers/flows/test-target/flow.mdx\n\nRun it with: smthrs up test-target\n\nRuns vitest over the changed inputs."
     )
     expect(ui.lines.at(-1)).toBe("outro: 2 changes written, nothing committed")
     expect(Suggest.exitStatus(outcome)).toBe(0)

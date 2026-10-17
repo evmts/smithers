@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
+import { projectFlowsDirectory } from "@smthrs/registry/Descriptor"
 import * as Effect from "effect/Effect"
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
@@ -7,6 +8,12 @@ import * as Units from "../src/Units.ts"
 import { copyFixture, nodeLayer } from "./fixtures/helpers.ts"
 
 const scan = (root: string, options: Scan.Options = {}) => Scan.scan(root, options).pipe(Effect.provide(nodeLayer))
+
+describe("Units.defaultFlowsDir", () => {
+  it("is the registry's project flows directory", () => {
+    expect(Units.defaultFlowsDir).toBe(projectFlowsDirectory)
+  })
+})
 
 describe("Units.flowName", () => {
   it("keeps a pack workflow's position and drops the extension", () => {
@@ -40,7 +47,7 @@ describe("Units.plan over jsx-single", () => {
         "prompts/simple-workflow/research.mdx",
         "prompts/simple-workflow/write.mdx"
       ])
-      expect(workflow?.targets).toEqual(["flows/simple-workflow/flow.ts"])
+      expect(workflow?.targets).toEqual([".smithers/flows/simple-workflow/flow.ts"])
       expect(workflow?.hints.prompt.map((hint) => hint.file)).toEqual([
         "prompts/simple-workflow/research.mdx",
         "prompts/simple-workflow/write.mdx"
@@ -62,7 +69,7 @@ describe("Units.plan over jsx-single", () => {
       // read off the disk is one argument, whatever characters it carries.
       expect(commands.typecheck).toEqual([Units.argv("tsc", "--noEmit", "-p", "tsconfig.json")])
       expect(commands.test).toEqual(Units.argv("npm", "run", "test"))
-      expect(commands.discovery).toEqual({ flowsDir: "flows" })
+      expect(commands.discovery).toEqual({ flowsDir: ".smithers/flows" })
       expect(commands.notes).toEqual([])
     }))
 
@@ -275,7 +282,7 @@ describe("Units.plan over plue-pack", () => {
         "workflow:batch-issues/workflow",
         "project"
       ])
-      expect(workflow?.targets).toEqual(["flows/batch-issues/workflow/flow.ts"])
+      expect(workflow?.targets).toEqual([".smithers/flows/batch-issues/workflow/flow.ts"])
       expect(workflow?.sources.filter((file) => file.includes("/components/"))).toHaveLength(14)
       expect(workflow?.sources.filter((file) => file.endsWith(".mdx"))).toHaveLength(8)
       expect(workflow?.sources).toContain(".smithers/workflows/batch-issues/agents.ts")

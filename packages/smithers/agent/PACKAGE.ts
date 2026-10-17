@@ -56,13 +56,13 @@ const securityReview = Smithers.SecurityReview({
   checks: [
     {
       id: "flow-store-confinement",
-      title: "A saved flow is written only under flows/<id>/ inside the store root",
+      title: "A saved flow is written only under .smithers/flows/<id>/ inside the store root",
       threat:
         "A model-driven cell writes or overwrites files outside the flows root on the host checkout, such as package sources or CI config.",
       lookFor: [
         "An id or file key reaching FlowStore.write that is not checked against idPattern and validatePath before any filesystem call.",
         "A symlink segment created between validateConfinement and fs.rename that redirects the publish outside the root (TOCTOU).",
-        "makeMemory or a custom store accepting file keys outside flows/<id>/ because only the id is validated.",
+        "makeMemory or a custom store accepting file keys outside .smithers/flows/<id>/ because only the id is validated.",
         "Rollback or generation cleanup removing a path that was not staged by this save."
       ],
       paths: ["src/FlowStore.ts", "src/PromoteFlows.ts"]

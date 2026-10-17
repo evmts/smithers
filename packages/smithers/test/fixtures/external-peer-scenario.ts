@@ -116,10 +116,10 @@ if (
 ) {
   const root = await mkdtemp(join(tmpdir(), "smithers-external-peer-"))
   await symlink(fileURLToPath(new URL("../../../../node_modules", import.meta.url)), join(root, "node_modules"), "dir")
-  await mkdir(join(root, "flows", "external-peer"), { recursive: true })
+  await mkdir(join(root, ".smithers", "flows", "external-peer"), { recursive: true })
   await copyFile(
     fileURLToPath(new URL("./external-peer-flow.ts", import.meta.url)),
-    join(root, "flows", "external-peer", "flow.ts")
+    join(root, ".smithers", "flows", "external-peer", "flow.ts")
   )
   const observer = spawn(process.execPath, ["--experimental-strip-types", fixture, "observer", root], {
     stdio: ["ignore", "pipe", "pipe"]

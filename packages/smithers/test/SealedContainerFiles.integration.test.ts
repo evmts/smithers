@@ -120,8 +120,8 @@ describe.skipIf(!engineAvailable)("a sealed host's file flows against a real con
         ].join(" && ")
       )
       const root = join(scratch, "workspace")
-      mkdirSync(join(root, "flows", "fix"), { recursive: true })
-      writeFileSync(join(root, "flows", "fix", "flow.mdx"), flow)
+      mkdirSync(join(root, ".smithers", "flows", "fix"), { recursive: true })
+      writeFileSync(join(root, ".smithers", "flows", "fix", "flow.mdx"), flow)
 
       const agent = new MockAgent()
       agent.disableNetConnect()

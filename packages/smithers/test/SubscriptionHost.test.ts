@@ -33,9 +33,9 @@ it.skipIf(process.env.SMITHERS_LIVE_MODEL_TESTS !== "1")(
       })
     try {
       expect(spawnSync("git", ["init", "--quiet"], { cwd: root, env }).status).toBe(0)
-      mkdirSync(join(root, "flows", "hello"), { recursive: true })
+      mkdirSync(join(root, ".smithers", "flows", "hello"), { recursive: true })
       writeFileSync(
-        join(root, "flows", "hello", "flow.mdx"),
+        join(root, ".smithers", "flows", "hello", "flow.mdx"),
         `---
 description: Subscription prompt proof.
 model: openai:gpt-6.1-sol

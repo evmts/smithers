@@ -35,9 +35,9 @@ const project = (entry: string) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const root = yield* fs.makeTempDirectoryScoped({ directory: modulesRoot, prefix: ".template-" })
-    yield* fs.makeDirectory(`${root}/flows/entry`, { recursive: true })
-    yield* fs.writeFileString(`${root}/flows/entry/flow.ts`, entry)
-    yield* fs.writeFileString(`${root}/flows/entry/helper.ts`, "export const priority = 7")
+    yield* fs.makeDirectory(`${root}/.smithers/flows/entry`, { recursive: true })
+    yield* fs.writeFileString(`${root}/.smithers/flows/entry/flow.ts`, entry)
+    yield* fs.writeFileString(`${root}/.smithers/flows/entry/helper.ts`, "export const priority = 7")
     return root
   })
 
@@ -90,13 +90,15 @@ describe("native loading of template closures", () => {
         const unsupported = yield* Effect.flip(Executable.fromDescriptor(before, { delegates: [] }))
         expect(unsupported.code).toBe("body_unavailable")
         expect(unsupported.message).toContain("runtime module cache")
-        yield* fs.writeFileString(`${root}/flows/entry/helper.ts`, "export const priority = 9")
+        yield* fs.writeFileString(`${root}/.smithers/flows/entry/helper.ts`, "export const priority = 9")
         const failure = yield* Effect.flip(Executable.fromDescriptor(before, { delegates: [] }))
         expect(failure.code).toBe("body_unavailable")
         expect(failure.message).toContain("changed")
         const after = yield* read
         expect(Descriptor.executionDigest(after)).not.toBe(Descriptor.executionDigest(before))
-        expect((yield* fs.readDirectory(`${root}/flows/entry`)).filter((name) => name.startsWith(".smithers-")))
+        expect(
+          (yield* fs.readDirectory(`${root}/.smithers/flows/entry`)).filter((name) => name.startsWith(".smithers-"))
+        )
           .toEqual([])
       }).pipe(Effect.scoped, Effect.provide(platform)))
   }
@@ -109,7 +111,7 @@ describe("native loading of template closures", () => {
         Effect.provide(Registry.layerProject({ root }))
       )
       expect((yield* Executable.fromDescriptor(before, { delegates: [] })).lowered.priority).toBe(7)
-      yield* fs.writeFileString(`${root}/flows/entry/helper.ts`, "export const priority = 9")
+      yield* fs.writeFileString(`${root}/.smithers/flows/entry/helper.ts`, "export const priority = 9")
       expect((yield* Effect.flip(Executable.fromDescriptor(before, { delegates: [] }))).code).toBe("body_unavailable")
     }).pipe(Effect.scoped, Effect.provide(platform)))
 

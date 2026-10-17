@@ -143,7 +143,7 @@ await bundle(entry, output);`,
 	port := listener.Addr().(*net.TCPAddr).Port
 	repository := filepath.Join(work, "repository")
 	for _, name := range []string{"todo", "canary", "merge"} {
-		directory := filepath.Join(repository, "flows", name)
+		directory := filepath.Join(repository, ".smithers", "flows", name)
 		require.NoError(t, os.MkdirAll(directory, 0755))
 		source := fmt.Sprintf(`import { Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"

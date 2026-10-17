@@ -29,6 +29,7 @@
 
 import * as CellHistory from "@smthrs/harness/CellHistory"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
+import { projectFlowsDirectory } from "@smthrs/registry/Descriptor"
 import * as Registry from "@smthrs/registry/Registry"
 import type * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
@@ -65,7 +66,7 @@ import { Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import * as Schema from "effect/Schema"
 
-// Save as flows/<id>/flow.ts; the tag must match the directory name.
+// Save as .smithers/flows/<id>/flow.ts; the tag must match the directory name.
 export default Flow.make("<id>", {
   description: "<one line naming what this flow produces>",
   capabilities: [],
@@ -146,12 +147,12 @@ export const showScriptFlow = {
 } as const
 
 /**
- * The authority `flows/write-flow` needs: writing files under `/flows/`.
+ * The authority `flows/write-flow` needs: writing files under `/.smithers/flows/`.
  *
  * @category flows
  * @since 1.0.0
  */
-export const writeFlowCapabilities = ["fs:write:/flows/**"]
+export const writeFlowCapabilities = [`fs:write:/${projectFlowsDirectory}/**`]
 
 /**
  * The `flows/write-flow` declaration.
@@ -162,14 +163,20 @@ export const writeFlowCapabilities = ["fs:write:/flows/**"]
 export const writeFlowFlow = {
   name: "flows/write-flow",
   description:
-    "Save a flow: writes flow.ts, flow.e2e.ts, and its fixture under flows/<id>/. The id must be lowercase letters, digits, and hyphens.",
+    `Save a flow: writes flow.ts, flow.e2e.ts, and its fixture under ${projectFlowsDirectory}/<id>/. The id must be lowercase letters, digits, and hyphens.`,
   input: WriteFlowInput,
   output: WriteFlowOutput,
   // Saving writes workspace files that the next frame discovers, so the run's
   // envelope must already grant writing them; without this declaration a run
   // with no write authority could still create flow files.
   capabilities: writeFlowCapabilities,
-  effects: { reads: [], writes: ["flows/**"], mode: "expected", onConflict: "serialize", tier: "irreversible" }
+  effects: {
+    reads: [],
+    writes: [`${projectFlowsDirectory}/**`],
+    mode: "expected",
+    onConflict: "serialize",
+    tier: "irreversible"
+  }
 } as const
 
 /**
@@ -187,9 +194,9 @@ export interface Options {
 
 /** The three files one saved flow is written as. */
 const filesFor = (input: typeof WriteFlowInput.Type): Record<string, string> => ({
-  [`flows/${input.id}/flow.ts`]: input.flowSource,
-  [`flows/${input.id}/flow.e2e.ts`]: input.testSource,
-  [`flows/${input.id}/fixtures/${input.id}.json`]: input.fixtureJson
+  [`${projectFlowsDirectory}/${input.id}/flow.ts`]: input.flowSource,
+  [`${projectFlowsDirectory}/${input.id}/flow.e2e.ts`]: input.testSource,
+  [`${projectFlowsDirectory}/${input.id}/fixtures/${input.id}.json`]: input.fixtureJson
 })
 
 /**

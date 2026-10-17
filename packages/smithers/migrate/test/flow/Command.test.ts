@@ -46,7 +46,7 @@ describe("Command.optionsOf", () => {
     expect(options.root).toBe(resolve("/work/project"))
     expect(options.seat).toBeUndefined()
     expect(Options.reportDir(options)).toBe(".smithers-migrate")
-    expect(Options.flowsDir(options)).toBe("flows")
+    expect(Options.flowsDir(options)).toBe(".smithers/flows")
     expect(Options.maxRepairRounds(options)).toBe(3)
   })
 
@@ -335,7 +335,7 @@ describe("Command.survey", () => {
       // Every outline names its sources; none of them carries their text,
       // because the text a unit is shown is captured when that unit starts.
       expect(surveyed.outlines[1]?.sources).toContain("simple-workflow.jsx")
-      expect(surveyed.commands.flowsDir).toBe("flows")
+      expect(surveyed.commands.flowsDir).toBe(".smithers/flows")
       expect(hashTree(root)).toEqual(before)
     }))
 })

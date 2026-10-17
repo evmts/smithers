@@ -238,7 +238,7 @@ catalog (D-073), and does so only when a composition turns it on
 it costs, all measured:
 
 **What works, with the rebuild on.** A `@smthrs/core` declaration a run writes
-into `flows/<id>/`, naming a delegate the host registered at startup, becomes
+into `.smithers/flows/<id>/`, naming a delegate the host registered at startup, becomes
 plannable and runnable without a restart.
 `packages/smithers/test/FlowCatalogRefresh.test.ts` is that path end to end on
 a real host, with no entry pre-registered for the
@@ -266,7 +266,7 @@ instructions' own example out of the document and drives discovery, the
 executable and the plan over it, which closes the drift D-075 measured.
 
 **What this fixture is.** It composes that registration (D-081). Serving a
-project gives this stack a real `Registry` over the project's `flows/`
+project gives this stack a real `Registry` over the project's `.smithers/flows/`
 directory, an `Executable` catalog built from it, and the `Executable.Refresh`
 the observer calls when one of its own runs has applied a flow file. Its
 control runtime reads that catalog PER PLAN
@@ -287,7 +287,7 @@ the serving process with the host's credentials and nothing approves it
 starts and `plan` answers `FlowNotFound` until then.
 
 **What a graph flow's Code tab does, and what it still cannot.** Its nodes'
-declaration sites name `flows/<id>/flow.ts`, not the digest-named sibling the
+declaration sites name `.smithers/flows/<id>/flow.ts`, not the digest-named sibling the
 loader actually imported: `Executable`'s loader says
 `Graph.evaluatedFrom(sibling, entry)` before it imports, so a declaration
 captured while that module evaluates is reported against the entry file. Both
@@ -341,7 +341,7 @@ files go with the temporary directory that held them.
 - **The Code tab is missing on every node of an AUTHORED flow.** Expected, for
   the same reason: that flow's file is in the scratch project this box serves,
   which is under no version control and names no revision. Its nodes still
-  carry their site, `flows/<id>/flow.ts`
+  carry their site, `.smithers/flows/<id>/flow.ts`
   (`packages/smithers/test/FlowAuthoringRun.test.ts`).
 - **`curl` against the origin answers `local_session_required`.** The local
   session token reaches the browser with the page. Drive the stack through a

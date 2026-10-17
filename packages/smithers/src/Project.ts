@@ -18,9 +18,10 @@
  * @since 1.0.0
  */
 
+import * as Descriptor from "@smthrs/registry/Descriptor"
 import { Context, Layer } from "effect"
 import { existsSync, readdirSync, statSync } from "node:fs"
-import { dirname, isAbsolute, join, resolve } from "node:path"
+import { basename, dirname, isAbsolute, join, resolve } from "node:path"
 import * as CliError from "./CliError.ts"
 import * as Environment from "./Environment.ts"
 import { packageVersion } from "./Version.ts"
@@ -58,18 +59,17 @@ const projectMarkers: ReadonlyArray<string> = ["package.json", ".git", ".jj"]
  * `.flows/` anchors on its own: rc.0 writes that directory and nothing else
  * does, so finding one is proof of the project it belongs to.
  *
- * `flows/` anchors only beside a project marker. A directory called `flows` is
- * a source root in a Smithers project and an ordinary package directory
- * everywhere else, and this repository holds both: `packages/smithers/flows` is the
- * `@smthrs/flows` package, so the bare-name rule made every command run under
- * `packages/` resolve its root to `packages/` and write a second
+ * `.smithers/flows/` anchors only beside a project marker. A bare-name rule
+ * once made a directory called `flows` anchor anywhere, and
+ * `packages/smithers/flows` (the `@smthrs/flows` package) then resolved every
+ * command under `packages/` to `packages/` and wrote a second
  * `packages/.flows` database. Requiring `package.json`, `.git`, or `.jj` in
  * the same directory keeps the anchor on the directory a project actually
- * starts at.
+ * starts at. A root `flows/` no longer anchors at all (mvp.md M-49).
  */
 const anchors = (directory: string, exists: (path: string) => boolean): boolean => {
   if (exists(join(directory, ".flows"))) return true
-  return exists(join(directory, "flows")) &&
+  return exists(flowsDirectory(directory)) &&
     projectMarkers.some((marker) => exists(join(directory, marker)))
 }
 
@@ -156,12 +156,13 @@ export const logDirectory = (projectRoot: string): string => join(stateDirectory
 export const logFile = (projectRoot: string, runId: string): string => join(logDirectory(projectRoot), `${runId}.log`)
 
 /**
- * Where a project's flow sources live.
+ * Where a project's flow sources live: `<root>/.smithers/flows`, from
+ * `Descriptor.projectFlowsDirectory`.
  *
  * @category getters
  * @since 1.0.0
  */
-export const flowsDirectory = (projectRoot: string): string => join(projectRoot, "flows")
+export const flowsDirectory = (projectRoot: string): string => join(projectRoot, Descriptor.projectFlowsDirectory)
 
 /**
  * Every 0.x run database beside a project, newest ancestor first.
@@ -198,6 +199,7 @@ const buildDefinitionFiles = new Set([
   "factory.json",
   "home.json",
   "target-index.json",
+  "cross-package-globs.json",
   "environment.nix",
   "coding-project.json",
   "memory-thresholds.json",
@@ -218,21 +220,27 @@ const currentDatabaseFiles = new Set([
   "opencode.server.json"
 ])
 
+/** The one `.smithers` subdirectory 1.0 owns: the project's flows (M-49). */
+const currentFlowsDirectory = basename(Descriptor.projectFlowsDirectory)
+
 /**
  * Whether a `.smithers` directory holds only what 1.0 writes there: the
- * current build definitions, the opencode server's own files, or both. An empty
- * directory, an unknown file, a subdirectory and unreadable metadata all
- * still read as 0.x state.
+ * project's `flows/`, the current build definitions, the opencode server's own
+ * files, or any of them together. An empty directory, an unknown file, any
+ * other subdirectory (0.x's `workflows/` among them) and unreadable metadata
+ * all still read as 0.x state.
  */
 const onlyCurrentState = (directory: string, exists: (path: string) => boolean): boolean => {
-  let entries: Array<{ readonly name: string; readonly isFile: () => boolean }>
+  let entries: Array<{ readonly name: string; readonly isFile: () => boolean; readonly isDirectory: () => boolean }>
   try {
     entries = readdirSync(directory, { withFileTypes: true })
   } catch {
     return false
   }
-  if (!entries.every((entry) => entry.isFile())) return false
-  const rest = entries.filter((entry) => !currentDatabaseFiles.has(entry.name))
+  const current = (entry: (typeof entries)[number]) =>
+    entry.isFile() ? currentDatabaseFiles.has(entry.name) : entry.isDirectory() && entry.name === currentFlowsDirectory
+  if (!entries.every((entry) => entry.isFile() || current(entry))) return false
+  const rest = entries.filter((entry) => !current(entry))
   if (rest.length === 0) return entries.length > 0
   if (!exists(join(directory, "WORKSPACE.ts")) || !exists(join(directory, "FACTORY.ts"))) return false
   return rest.every((entry) => buildDefinitionFiles.has(entry.name))
@@ -245,9 +253,10 @@ const onlyCurrentState = (directory: string, exists: (path: string) => boolean):
  * nothing: a repository mid-migration would otherwise print the notice on
  * every command forever.
  *
- * A `.smithers` directory containing only current build definitions, only
- * what a directory-serving host keeps there, or both, is also excluded. Unknown files, subdirectories and unreadable metadata remain
- * legacy markers.
+ * A `.smithers` directory containing only the project's `flows/`, current
+ * build definitions, what a directory-serving host keeps there, or any of them
+ * together, is also excluded. Unknown files, other subdirectories and
+ * unreadable metadata remain legacy markers.
  *
  * @category getters
  * @since 1.0.0

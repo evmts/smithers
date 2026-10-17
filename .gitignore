@@ -146,6 +146,8 @@ packages/smithers/test/fixtures/.catalog-refresh/
 # modules resolve this package's dependencies, and remove after each case. A
 # concurrent graph evaluation must not read one as a declared input (#3979).
 packages/smithers/agent/registry/test/fixtures/**/.*/
+# The executable fixture's project flows (M-49) are committed test data.
+!packages/smithers/agent/registry/test/fixtures/executable/.smithers/
 # Module load siblings. The registry evaluates each flow module from a copy
 # beside its original, `.smithers-<digest>-<sequence>-<stamp><ext>`
 # (`packages/smithers/agent/registry/src/Executable.ts`), and removes it once

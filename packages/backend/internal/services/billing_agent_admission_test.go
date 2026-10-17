@@ -211,7 +211,7 @@ func billingAgentTestFixture(t *testing.T, pool *pgxpool.Pool, ownerType string)
 	var definitionID int64
 	require.NoError(t, pool.QueryRow(ctx,
 		`INSERT INTO workflow_definitions (repository_id, name, path, config)
-		 VALUES ($1, 'agent', 'flows/agent/flow.ts', '{}') RETURNING id`, repoID).Scan(&definitionID))
+		 VALUES ($1, 'agent', '.smithers/flows/agent/flow.ts', '{}') RETURNING id`, repoID).Scan(&definitionID))
 	return ownerID, repoID, definitionID
 }
 

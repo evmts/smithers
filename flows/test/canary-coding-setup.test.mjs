@@ -14,7 +14,7 @@ import { Effect, Layer } from 'effect'
 const scan = root =>
   Effect.runPromise(
     Effect.gen(function*() {
-      return yield* (yield* Discovery.Discovery).scan({ source: 'project', root: join(root, 'flows'), naming: 'path' })
+      return yield* (yield* Discovery.Discovery).scan({ source: 'project', root: join(root, '.smithers/flows'), naming: 'path' })
     }).pipe(Effect.provide(Discovery.layer.pipe(Layer.provideMerge(NodeServices.layer))))
   )
 
@@ -30,7 +30,8 @@ test('canary setup installs only documentation checks and the project file, neve
   assert.equal(await readFile(join(root, 'README.md'), 'utf8'), initial, 'setup never edits the task file')
   // The host serves every coding route as a built-in, so setup installs no
   // coding code: the registry finds only the three checks.
-  assert.equal(existsSync(join(root, 'flows/coding')), false, 'setup vendors no coding bundles')
+  assert.equal(existsSync(join(root, '.smithers/flows/coding')), false, 'setup vendors no coding bundles')
+  assert.equal(existsSync(join(root, 'flows')), false, 'setup writes no root flows/ (mvp.md M-49)')
   const found = await scan(root)
   assert.deepEqual(found.entries.map(entry => [entry.name, [...entry.flows]]), [
     ['checks/fast', ['coding/CommandCheck']],
@@ -45,8 +46,8 @@ test('canary setup installs only documentation checks and the project file, neve
   assert.equal(check('slow').status, 0)
   await writeFile(join(root, 'README.md'), initial + '\n[Broken link](missing.md)\n')
   assert.notEqual(check('slow').status, 0, 'broken source links must fail')
-  await writeFile(join(root, 'flows/checks/fast/flow.mdx'), 'existing user flow')
+  await writeFile(join(root, '.smithers/flows/checks/fast/flow.mdx'), 'existing user flow')
   const retry = spawnSync('bash', [join(output, 'setup.sh')], { cwd: root, encoding: 'utf8' })
   assert.notEqual(retry.status, 0, 'setup cannot replace different existing flow source')
-  assert.equal(await readFile(join(root, 'flows/checks/fast/flow.mdx'), 'utf8'), 'existing user flow')
+  assert.equal(await readFile(join(root, '.smithers/flows/checks/fast/flow.mdx'), 'utf8'), 'existing user flow')
 })

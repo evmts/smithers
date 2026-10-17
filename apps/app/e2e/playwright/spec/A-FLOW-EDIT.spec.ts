@@ -25,7 +25,7 @@ test("A-FLOW-EDIT: mounted controls", async ({ page }) => {
   await page.goto("/")
   await say(page, "/flow.edit todo Run pnpm test")
   await expect(page.getByRole("textbox", { name: "Title", exact: true }).last()).toHaveValue("Change the TODO flow: Run pnpm test")
-  await expect(page.getByRole("textbox", { name: "Prompt", exact: true }).last()).toHaveValue("Change flows/todo/flow.ts: Run pnpm test; start from the built-in composition when no override exists")
+  await expect(page.getByRole("textbox", { name: "Prompt", exact: true }).last()).toHaveValue("Change .smithers/flows/todo/flow.ts: Run pnpm test; start from the built-in composition when no override exists")
   await page.keyboard.press("Control+k")
   await expect(page.getByTestId("composer-input")).toBeEditable()
 })

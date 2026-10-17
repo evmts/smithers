@@ -172,7 +172,7 @@ export const pushMainFiles = async (page: Page, request: APIRequestContext, repo
       return body.items.find((row: { name: string }) => row.name === "main")?.target_commit_id
     }, { timeout: 120_000 }).toBe(commit)
     for (const path of Object.keys(files)) {
-      const name = /^flows\/(.+)\/flow\.mdx$/.exec(path)?.[1]
+      const name = /^\.smithers\/flows\/(.+)\/flow\.mdx$/.exec(path)?.[1]
       if (!name) continue
       const prior = previous.find(card => card.name === name)?.versions.find(version => version.state === "active")?.id
       await expect.poll(async () => {

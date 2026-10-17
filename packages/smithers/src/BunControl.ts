@@ -31,8 +31,8 @@ export const layerControl: typeof native.layerControl = (...args) =>
   )
 
 /**
- * Provides the flow registry for `<root>/flows` without importing any flow
- * module. A root with no `flows/` directory lists no flows.
+ * Provides the flow registry for `<root>/.smithers/flows` without importing
+ * any flow module. A root with no `.smithers/flows/` directory lists no flows.
  *
  * @category layers
  * @since 1.0.0

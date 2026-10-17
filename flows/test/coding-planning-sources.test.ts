@@ -178,9 +178,9 @@ const gathering = async (root: string, snapshotFailure?: Jj.JjError) => {
   await write("needed.ts", "export const needed = 3\n")
   await write("other.ts", "export const other = 4\n")
   for (const name of ["implement/atoms", "checks/fast", "checks/slow"]) {
-    await mkdir(join(root, "flows", name), { recursive: true })
+    await mkdir(join(root, ".smithers", "flows", name), { recursive: true })
     await write(
-      join("flows", name, "flow.mdx"),
+      join(".smithers", "flows", name, "flow.mdx"),
       "---\ndescription: Planning fixture.\nflows: [planning-test/delegate]\ncapabilities: []\n---\nRun.\n"
     )
   }
@@ -208,7 +208,7 @@ const gathering = async (root: string, snapshotFailure?: Jj.JjError) => {
   const executables = await Effect.runPromise(
     Effect.gen(function*() {
       const discovery = yield* Discovery.Discovery
-      const found = yield* discovery.scan({ source: "project", root: join(root, "flows"), naming: "path" })
+      const found = yield* discovery.scan({ source: "project", root: join(root, ".smithers", "flows"), naming: "path" })
       return yield* Effect.forEach(
         found.entries,
         (descriptor) => Executable.fromDescriptor(descriptor, { delegates: [Delegate] })

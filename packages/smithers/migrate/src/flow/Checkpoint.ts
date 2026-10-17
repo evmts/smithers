@@ -165,7 +165,12 @@ export const action = Action.make("smithers/migrate-v1/Checkpoint", {
      * directory, the 1.0 runtime state directory, and the run-state roots,
      * which have their own check.
      */
-    treeExclude: Schema.optional(Schema.Array(Schema.String))
+    treeExclude: Schema.optional(Schema.Array(Schema.String)),
+    /**
+     * A project-relative directory carved out of the run-state roots: the 1.0
+     * flows directory, which 0.x never wrote. See {@link carveRoots}.
+     */
+    carve: Schema.optional(Schema.String)
   },
   success: Ref,
   error: MigrateError,
@@ -481,6 +486,54 @@ export const digest = (
   }).pipe(Effect.mapError(io(`could not read the run-state paths under "${root}"`)))
 
 /**
+ * The run-state roots with one project directory carved out of them.
+ *
+ * A root that holds `keep` is replaced by its entries, recursively along the
+ * path to `keep`, and `keep` itself is dropped. So `keep` is neither digested
+ * as run state nor hidden from the tree manifest, while every sibling stays
+ * covered. The 1.0 flows directory, `.smithers/flows`, is what is carved: a
+ * 0.x database in `.smithers/` makes `.smithers` a run-state root, and 0.x
+ * never wrote `.smithers/flows`. Absolute roots, roots beside `keep`, and roots
+ * inside it are returned unchanged; {@link module:MigrateFlow.layoutConflict}
+ * refuses the last.
+ *
+ * @category combinators
+ * @since 1.0.0
+ */
+export const carveRoots = (
+  root: string,
+  roots: ReadonlyArray<string>,
+  keep: string | undefined
+): Effect.Effect<ReadonlyArray<string>, never, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    if (keep === undefined) return roots
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const carved: Array<string> = []
+    const split = (relative: string): Effect.Effect<void> =>
+      Effect.gen(function*() {
+        if (relative === keep) return
+        if (!keep.startsWith(`${relative}/`)) {
+          carved.push(relative)
+          return
+        }
+        const next = keep.slice(relative.length + 1).split("/")[0]!
+        const entries = yield* fs.readDirectory(path.join(root, ...relative.split("/"))).pipe(
+          Effect.orElseSucceed(() => [] as Array<string>)
+        )
+        for (const entry of [...entries].sort()) {
+          if (entry === next) yield* split(`${relative}/${entry}`)
+          else carved.push(`${relative}/${entry}`)
+        }
+      })
+    for (const relative of roots) {
+      if (path.isAbsolute(relative)) carved.push(relative)
+      else yield* split(relative)
+    }
+    return [...new Set(carved)].sort()
+  })
+
+/**
  * Directory names the whole-tree manifest never descends into, at any depth.
  *
  * Two are version control's own storage and one is the package manager's. All
@@ -673,6 +726,7 @@ export const take = (payload: {
   readonly allowNoVcs: boolean
   readonly runStateRoots?: ReadonlyArray<string> | undefined
   readonly treeExclude?: ReadonlyArray<string> | undefined
+  readonly carve?: string | undefined
 }): Effect.Effect<Ref, MigrateError, FileSystem.FileSystem | Path.Path | ChildProcessSpawner> =>
   Effect.gen(function*() {
     const path = yield* Path.Path
@@ -684,12 +738,13 @@ export const take = (payload: {
     const directory = path.join(payload.backupDir, ...payload.unit.split(/[:/]/))
     const entries = yield* backup(payload.root, payload.files, directory)
     const files = entries.filter((entry) => entry.state === "file").map((entry) => entry.path)
-    const digests = yield* digest(payload.root, payload.runStateRoots ?? [])
+    const runStateRoots = yield* carveRoots(payload.root, payload.runStateRoots ?? [], payload.carve)
+    const digests = yield* digest(payload.root, runStateRoots)
     // The whole tree, written beside the unit's backup rather than into it, so
     // the manifest can never collide with a source path the backup holds.
     const manifest = `${directory}.tree.json`
     const walked = yield* tree(payload.root, [
-      ...new Set([...(payload.treeExclude ?? []), ...(payload.runStateRoots ?? [])])
+      ...new Set([...(payload.treeExclude ?? []), ...runStateRoots])
     ])
     yield* Fs.writeAtomic(manifest, `${JSON.stringify(walked)}\n`).pipe(
       Effect.mapError(io(`could not record the tree manifest ${manifest}`))

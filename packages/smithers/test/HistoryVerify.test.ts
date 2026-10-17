@@ -61,7 +61,7 @@ export default Flow.make("steps", {
 `
 const recordedActions = (root: string) => readFileSync(join(root, "ran.txt"), "utf8").trim().split("\n")
 const renameSecond = (root: string) =>
-  writeFileSync(join(root, "flows", "steps", "flow.ts"), moduleSource(root, "verify/second-renamed"))
+  writeFileSync(join(root, ".smithers", "flows", "steps", "flow.ts"), moduleSource(root, "verify/second-renamed"))
 
 const roots: Array<string> = []
 afterEach(() => {
@@ -73,8 +73,8 @@ const parkedProject = async (runs = 1, cancelled = 0, adopt = false) => {
   const root = mkdtempSync(join(tmpdir(), "smithers-verify-"))
   roots.push(root)
   symlinkSync(resolve("node_modules"), join(root, "node_modules"), "dir")
-  mkdirSync(join(root, "flows", "steps"), { recursive: true })
-  writeFileSync(join(root, "flows", "steps", "flow.ts"), moduleSource(root))
+  mkdirSync(join(root, ".smithers", "flows", "steps"), { recursive: true })
+  writeFileSync(join(root, ".smithers", "flows", "steps", "flow.ts"), moduleSource(root))
   const registry = NodeControl.layerRegistry(root)
   const engine = NodeControl.engineDurable(root, registry)
   const runIds = await Effect.runPromise(
@@ -112,7 +112,7 @@ const parkedProject = async (runs = 1, cancelled = 0, adopt = false) => {
       if (adopt) {
         const runId = ids[0]!
         const before = yield* runtime.getRun(runId)
-        writeFileSync(join(root, "flows", "steps", "flow.ts"), `${moduleSource(root)}// adopted\n`)
+        writeFileSync(join(root, ".smithers", "flows", "steps", "flow.ts"), `${moduleSource(root)}// adopted\n`)
         expect((yield* control.resume({ runId, idempotencyKey: "adopt", allowCodeDrift: true }))._tag).toBe("Accepted")
         for (let attempt = 0;; attempt++) {
           const after = yield* runtime.getRun(runId)

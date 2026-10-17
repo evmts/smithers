@@ -45,7 +45,7 @@ func TestLearningMachineComposedInstall(t *testing.T) {
 	var item string
 	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO mythical_items(repository_id,source,state,owner_id,pr_state,pr_merge_commit,checks) VALUES($1,'todo','landed',$2,'merged',$3,'{}') RETURNING id::text`, repository, owner.ID, merge).Scan(&item))
 	digest := strings.Repeat("1", 64)
-	_, err = q.InsertFlowVersion(ctx, repository, "learning", "flows/learning/flow.ts", merge, digest, "loaded", "", json.RawMessage(`{}`))
+	_, err = q.InsertFlowVersion(ctx, repository, "learning", ".smithers/flows/learning/flow.ts", merge, digest, "loaded", "", json.RawMessage(`{}`))
 	require.NoError(t, err)
 	_, err = q.ActivateFlowVersion(ctx, repository, "learning", digest)
 	require.NoError(t, err)

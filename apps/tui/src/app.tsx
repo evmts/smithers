@@ -968,6 +968,13 @@ export function App(props: AppProps) {
     shownDiscovery.current = notice.shown
     if (notice.show) setStatus(Failures.sentence("flow", discoveryFailure), "danger")
   }, [discoveryFailure, discoveryListed, setStatus])
+  const discoveryNotices = runs.notices()
+  // Each notice shows once until a discovery no longer reports it.
+  const shownNotices = useRef<ReadonlySet<string>>(new Set())
+  useEffect(() => {
+    for (const notice of discoveryNotices) if (!shownNotices.current.has(notice)) setStatus(notice, "warning")
+    shownNotices.current = new Set(discoveryNotices)
+  }, [discoveryNotices, setStatus])
   deliver.current = (delivery) => {
     const text = `${delivery.title}: ${
       delivery._tag === "update" ? delivery.text : Failures.sentence("monitor", delivery.failure)

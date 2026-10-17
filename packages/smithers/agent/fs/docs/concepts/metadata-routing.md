@@ -31,8 +31,8 @@ projection for the lifetime of the CLI.
 ## Route identity comes from paths
 
 A route's name is its directory path relative to the scan root, joined with
-slashes: `flows/review/flow.ts` under root `flows` becomes the route
-`review`, and `flows/domains/list/flow.ts` becomes `domains/list`. The flow's
+slashes: `.smithers/flows/review/flow.ts` under root `.smithers/flows` becomes the route
+`review`, and `.smithers/flows/domains/list/flow.ts` becomes `domains/list`. The flow's
 own `name` field is ignored; the registry emits a `name_field_ignored`
 warning when one is declared. Root-level entries produce no route at all.
 

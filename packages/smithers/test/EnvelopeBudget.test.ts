@@ -64,8 +64,8 @@ const plannedEnvelope = async (
 ) => {
   const project = await mkdtemp(join(tmpdir(), "flows-cli-budget-"))
   try {
-    await mkdir(join(project, "flows", "review"), { recursive: true })
-    await writeFile(join(project, "flows", "review", "SKILL.md"), skill(declaration))
+    await mkdir(join(project, ".smithers", "flows", "review"), { recursive: true })
+    await writeFile(join(project, ".smithers", "flows", "review", "SKILL.md"), skill(declaration))
     const registry = NodeControl.layerRegistry(project)
     const engine = NodeControl.engineDurable(project, registry)
     return await Effect.runPromise(
@@ -226,9 +226,9 @@ const parkedRun = async (
     sleep: (duration) => liveClock.sleep(duration)
   }
   try {
-    await mkdir(join(root, "flows", "review"), { recursive: true })
+    await mkdir(join(root, ".smithers", "flows", "review"), { recursive: true })
     await writeFile(
-      join(root, "flows", "review", "flow.mdx"),
+      join(root, ".smithers", "flows", "review", "flow.mdx"),
       [
         "---",
         "name: review",

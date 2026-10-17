@@ -427,6 +427,34 @@ export class Provenance extends Schema.Class<Provenance>("flows/registry/Provena
 }) {}
 
 /**
+ * Where a project keeps its flows, relative to the project root (mvp.md M-49).
+ * Every consumer derives the location from this constant.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const projectFlowsDirectory = ".smithers/flows"
+
+/**
+ * Where a project kept its flows before M-49, relative to the project root.
+ * Discovery never loads it; see {@link retiredRootMessage}.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const retiredProjectFlowsDirectory = "flows"
+
+/**
+ * The one `retired_root` warning a scan reports when its retired root still
+ * holds flow entries.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const retiredRootMessage =
+  `Flows in ${retiredProjectFlowsDirectory}/ are not loaded; move them to ${projectFlowsDirectory}/.`
+
+/**
  * Registry source configuration. `source` is opaque caller-supplied metadata.
  *
  * @category models
@@ -443,6 +471,11 @@ export interface Source {
   readonly optionalRoot?: boolean | undefined
   /** Pack root whose real path bounds discovery when the host can resolve it. */
   readonly confinementRoot?: string | undefined
+  /**
+   * A directory this source's flows moved out of. Entries there never load;
+   * if any exist, the scan reports one `retired_root` warning naming it.
+   */
+  readonly retiredRoot?: string | undefined
 }
 
 /**
@@ -486,7 +519,8 @@ export const DiscoveryWarningCode = Schema.Literals([
   "outside_root",
   "max_depth_exceeded",
   "entry_too_large",
-  "unreadable"
+  "unreadable",
+  "retired_root"
 ])
 
 /**

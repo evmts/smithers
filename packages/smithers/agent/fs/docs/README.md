@@ -69,7 +69,7 @@ routing contract and the schema behavior; to run flows from a shell today, use
 
 ## The smallest working example
 
-Start with one flow at `flows/review/flow.ts`, whose directory path gives the
+Start with one flow at `.smithers/flows/review/flow.ts`, whose directory path gives the
 command its name:
 
 ```ts
@@ -99,7 +99,7 @@ const invoker = FlowInvoker.make({
 })
 
 const program = Effect.gen(function*() {
-  const { routes } = yield* FileRouter.scan({ root: resolve("flows") })
+  const { routes } = yield* FileRouter.scan({ root: resolve(".smithers/flows") })
   const commands = yield* Command.make(routes)
   return yield* commands.execute("review --number 42")
 }).pipe(

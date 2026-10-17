@@ -50,7 +50,7 @@ const invoker = FlowInvoker.make({
 })
 
 const program = Effect.gen(function*() {
-  const { routes } = yield* FileRouter.scan({ root: resolve("flows") })
+  const { routes } = yield* FileRouter.scan({ root: resolve(".smithers/flows") })
   const commands = yield* Command.make(routes)
   return yield* commands.execute("review --number 42")
 }).pipe(
@@ -60,7 +60,7 @@ const program = Effect.gen(function*() {
 ```
 
 The command name comes from the flow's directory, so this dispatches
-`flows/review/flow.ts`. The root and the named module subpaths are the whole
+`.smithers/flows/review/flow.ts`. The root and the named module subpaths are the whole
 import surface: `./internal/*` and nested `*/index` paths do not resolve.
 
 A runnable, tested version of this program, which also serves the same route
