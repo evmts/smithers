@@ -312,3 +312,93 @@ func TestMemberAddNamesTheBlockedStageOfARealRequestPostgres(t *testing.T) {
 		})
 	}
 }
+
+// #4075's recorded symptom is a roster add whose POST waits a minute for
+// headers while the host is idle, no PostgreSQL backend is waiting, the
+// caller's deadline expires and the product's own record says nothing. An
+// unbounded pool acquire produces exactly that: the goroutine parks in Go with
+// no query running, so nothing in the database can be seen waiting. This is
+// the discrimination the stage record's pool counters exist for, at the real
+// boundary and with a real starved product pool rather than a narrative.
+//
+// Nothing here changes the pool, the budget or any deadline in production. The
+// fixture's own capacity argument makes the pool one connection wide, the test
+// holds that connection, and the add's FIRST stage is the one that cannot get
+// a second.
+func TestMemberAddNamesAStarvedPoolAsItsOwnStagePostgres(t *testing.T) {
+	if testing.Short() {
+		t.Skip("the roster add's real boundary needs PostgreSQL")
+	}
+	pool, _ := postgresfixture.NewProductDatabase(t, 1)
+	ctx := t.Context()
+	q := db.New(pool)
+	owner, err := q.CreateUser(ctx, db.CreateUserParams{Username: "owner", LowerUsername: "owner"})
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `INSERT INTO self_host_owners(user_id) VALUES($1)`, owner.ID)
+	require.NoError(t, err)
+	repo, err := q.CreateRepo(ctx, db.CreateRepoParams{UserID: pgtype.Int8{Int64: owner.ID, Valid: true}, Name: "app", LowerName: "app", DefaultBookmark: "main"})
+	require.NoError(t, err)
+	binding, _ := json.Marshal(map[string]any{"owner_login": "acme", "repository_name": "app", "repository_id": repo.ID})
+	require.NoError(t, q.UpsertInstallSetting(ctx, db.UpsertInstallSettingParams{Key: "github.repository", Value: binding}))
+	request := registerTestInstallCredential(t, pool,
+		middleware.ContextWithAuthInfo(ctx, &middleware.AuthInfo{User: &owner, SessionHash: "member-add-starved-session"}), repo.ID)
+
+	// Every setup query is done, so the pool's one connection can be held.
+	held, err := pool.Acquire(ctx)
+	require.NoError(t, err)
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(held.Release) }
+	t.Cleanup(release)
+
+	records, restore := captureMemberAddRecords(t)
+	t.Cleanup(restore)
+	members := &Members{
+		Pool: pool, Credentials: memberCredentials{}, Minter: &recordingMinter{},
+		addStageBudget: 100 * time.Millisecond,
+	}
+	blocked, giveUp := context.WithCancel(request)
+	done, finished := make(chan error, 1), make(chan struct{})
+	go func() { done <- members.Add(blocked, "newmember"); close(finished) }()
+	t.Cleanup(func() {
+		giveUp()
+		release()
+		select {
+		case <-finished:
+		case <-time.After(10 * time.Second):
+			t.Error("the roster add never returned after its caller gave up and the pool was released")
+		}
+	})
+
+	// The add's first stage cannot get a connection, and says so.
+	require.Eventually(t, func() bool {
+		text := records.String()
+		return strings.Contains(text, "stage="+memberAddStageAuthorize) &&
+			strings.Contains(text, "phase="+memberAddPhaseInFlight)
+	}, 10*time.Second, 10*time.Millisecond,
+		"a roster add that cannot acquire a connection must name the stage that is waiting")
+	starved := records.String()
+	// These three are what separate a starved pool from a stalled upstream: no
+	// connection is free, every one the pool has is held, and the caller is
+	// still waiting.
+	for _, counter := range []string{"pool_idle=0", "pool_max=1", "pool_acquired=1"} {
+		require.Contains(t, starved, counter,
+			"the stage record must carry %q so a starved pool is not read as a slow upstream", counter)
+	}
+	require.Contains(t, starved, "caller="+memberAddCallerLive)
+
+	// The caller gives up, as the recorded symptom's caller did. The stage
+	// names itself and names the caller, rather than returning silently.
+	giveUp()
+	select {
+	case err = <-done:
+	case <-time.After(20 * time.Second):
+		t.Fatalf("the roster add did not return after its caller gave up; stages recorded: %q", records.String())
+	}
+	require.Error(t, err)
+	text := records.String()
+	require.Contains(t, text, "stage="+memberAddStageAuthorize)
+	require.Contains(t, text, "phase="+memberAddPhaseReturned)
+	require.Contains(t, text, "caller="+memberAddCallerCanceled,
+		"the record must say the caller had given up, which is what the reported stall looked like")
+	require.NotContains(t, text, "newmember", "a stage record carries no login")
+}

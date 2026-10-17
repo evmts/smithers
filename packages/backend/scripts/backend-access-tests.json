@@ -916,7 +916,8 @@
     "file": "member_add_stage_test.go",
     "tests": [
       "TestMemberAddSlowStageNamesItself",
-      "TestMemberAddNamesTheBlockedStageOfARealRequestPostgres"
+      "TestMemberAddNamesTheBlockedStageOfARealRequestPostgres",
+      "TestMemberAddNamesAStarvedPoolAsItsOwnStagePostgres"
     ]
   },
   {
