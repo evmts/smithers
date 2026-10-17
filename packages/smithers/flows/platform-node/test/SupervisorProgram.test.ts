@@ -43,6 +43,8 @@ const program = (
       writable: true,
       destroyed: false,
       setEncoding: () => {},
+      writableEnded: false,
+      end() { this.writableEnded = true },
       write: (_data: string, done: () => void) => done()
     })
   const status = socket()
@@ -163,6 +165,16 @@ describe("supervisor stop policy", () => {
     expect(helper.statusFrames).toEqual([{ type: "exit", code: 0, signal: null }, { type: "cleanup" }])
     expect(helper.signals).toEqual([])
     helper.send({ type: "cleanup_ack" })
+    expect(helper.signals).toEqual([[-4101, "SIGKILL"]])
+  })
+
+  it("ends the acknowledged status stream before its forced-exit deadline", () => {
+    const helper = program("SIGKILL", false, "linux", undefined, undefined, true)
+    helper.target.emit("exit", 0, null)
+    expect(helper.statusFrames).toEqual([{ type: "exit", code: 0, signal: null }, { type: "cleanup" }])
+    expect(helper.status.writableEnded).toBe(true)
+    expect(helper.signals).toEqual([])
+    helper.timers[0]!.run()
     expect(helper.signals).toEqual([[-4101, "SIGKILL"]])
   })
 
@@ -554,6 +566,37 @@ describe("supervisor descendant observation", () => {
     expect(helper.signals).toEqual([[4103, "SIGTERM"], [-4101, "SIGTERM"], [-4101, "SIGKILL"]])
     expect(faults(helper)).toEqual([])
   })
+})
+
+it("delivers TLS EOF after terminal receipts without a host acknowledgment", async () => {
+  const control = new Control("tls")
+  await control.listening
+  const owner = spawn(process.execPath, ["-e", source, control.path, "direct"], {
+    env: control.environment(), stdio: "ignore"
+  })
+  const exited = once(owner, "exit")
+  try {
+    await control.ready.promise
+    await control.requestsReady.promise
+    let eof = false
+    control.socket!.once("end", () => { eof = true })
+    await control.write({
+      type: "configure", acknowledgeCleanup: true,
+      command: process.execPath, args: ["-e", "process.exit(0)"],
+      userFds: [], killSignal: "SIGKILL", graceMs: 0
+    })
+    control.activationSent = true
+    await control.write({ type: "start" })
+    await control.started.promise
+    await control.ended.promise
+    expect(await control.exited.promise).toBe(0)
+    expect(control.cleanupAcknowledged).toBe(true)
+    expect(eof).toBe(true)
+  } finally {
+    control.dispose()
+    owner.kill("SIGKILL")
+    await exited
+  }
 })
 
 describe.skipIf(process.platform === "win32")("real supervisor stop policy", () => {

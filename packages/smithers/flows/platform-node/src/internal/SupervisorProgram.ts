@@ -186,7 +186,11 @@ const force = () => {
     // Keep the owner alive for its receipt; an unresponsive host still cannot
     // delay cleanup beyond the existing delivery bound.
     setTimeout(selfKill, 100);
-    send({ type: 'cleanup' }, config?.acknowledgeCleanup ? () => {} : selfKill);
+    // A killed Windows TLS peer can reset unread terminal records. Queue a
+    // TLS close-notify after those records, before the bounded fallback kill.
+    // Receipt acknowledgment still permits immediate exit; missing receipts
+    // remain a host failure.
+    send({ type: 'cleanup' }, config?.acknowledgeCleanup ? () => control.end() : selfKill);
   };
   complete();
 };
