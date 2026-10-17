@@ -4,8 +4,10 @@
  * failure (no store, wrong token, a store error, a closed bridge, a malformed
  * answer) refuses rather than approving.
  */
+import { randomUUID } from "node:crypto"
 import * as Fs from "node:fs/promises"
 import * as Net from "node:net"
+import * as Os from "node:os"
 import * as Path from "node:path"
 import { describe, expect, it } from "vitest"
 import * as ApprovalBridge from "../src/internal/ApprovalBridge.ts"
@@ -137,8 +139,10 @@ describe("approval bridge", () => {
   })
 
   it("rejects an answer that is not a verdict", async () => {
-    const directory = await Fs.mkdtemp("/tmp/smthrs-bridge-test-")
-    const path = `${directory}/s`
+    const directory = await Fs.mkdtemp(Path.join(Os.tmpdir(), "smthrs-bridge-test-"))
+    const path = process.platform === "win32"
+      ? `\\\\.\\pipe\\smthrs-bridge-${randomUUID()}`
+      : Path.join(directory, "s")
     for (const reply of ["{}\n", "null\n", ""]) {
       const server = Net.createServer((socket) => {
         socket.resume()

@@ -9,6 +9,7 @@
 import * as LocalRepository from "@smthrs/targets/LocalRepository"
 import * as RepoTarget from "@smthrs/targets/RepoTarget"
 import { EventEmitter } from "node:events"
+import * as NodePath from "node:path"
 import { PassThrough } from "node:stream"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
@@ -95,7 +96,7 @@ describe("child repository queries", () => {
     expect(await pending).toEqual({
       repoName: "child",
       repoPath: "repos/child",
-      absolutePath: "/parent/repos/child",
+      absolutePath: NodePath.join("/parent", "repos", "child"),
       label: "//:test",
       args: ["--x"],
       kinds: ["test"],
@@ -109,11 +110,11 @@ describe("child repository queries", () => {
       "query",
       "//:test",
       "--workspace",
-      "/parent/repos/child",
+      NodePath.join("/parent", "repos", "child"),
       "--format",
       "json"
     ])
-    expect(spawned[0]!.options).toMatchObject({ cwd: "/parent/repos/child", env: { KEEP: "1" } })
+    expect(spawned[0]!.options).toMatchObject({ cwd: NodePath.join("/parent", "repos", "child"), env: { KEEP: "1" } })
   })
 
   it("refuses an undeclared repository declaration by path without starting a child", async () => {
@@ -227,7 +228,7 @@ describe("child repository queries", () => {
 const resolution: Resolution = {
   repoName: "child",
   repoPath: "repos/child",
-  absolutePath: "/parent/repos/child",
+  absolutePath: NodePath.join("/parent", "repos", "child"),
   label: "//:test",
   args: ["--flag"],
   kinds: ["test"],
@@ -242,8 +243,8 @@ describe("child repository git state", () => {
     finish(await started(2), 0, { stdout: " M file\n" })
     expect(await pending).toEqual({ head: "abc123", dirty: true, status: " M file\n" })
     expect(spawned.map((row) => row.args)).toEqual([
-      ["-C", "/parent/repos/child", "rev-parse", "HEAD"],
-      ["-C", "/parent/repos/child", "status", "--porcelain"]
+      ["-C", NodePath.join("/parent", "repos", "child"), "rev-parse", "HEAD"],
+      ["-C", NodePath.join("/parent", "repos", "child"), "status", "--porcelain"]
     ])
   })
 
@@ -292,7 +293,7 @@ describe("child repository execution", () => {
       RepoResolution.buildCliPath,
       "//:test",
       "--workspace",
-      "/parent/repos/child",
+      NodePath.join("/parent", "repos", "child"),
       "--write",
       "--plan",
       "--flag"
