@@ -262,9 +262,13 @@ func startTestWorker(t *testing.T, service *Service, workerID string) context.Ca
 	return cancel
 }
 
+// operationWait bounds waitOperation. A run that records a live model's
+// turns (SMITHERS_RECORD_MODEL=1) waits on the provider and takes longer.
+var operationWait = 10 * time.Second
+
 func waitOperation(t *testing.T, store *jobs.Store, scope jobs.Scope, operationID string, match func(jobs.Operation) bool) jobs.Operation {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(operationWait)
 	var last jobs.Operation
 	for time.Now().Before(deadline) {
 		operation, err := store.Get(context.Background(), scope, operationID)

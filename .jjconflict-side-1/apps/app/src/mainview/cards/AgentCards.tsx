@@ -1,0 +1,119 @@
+import { useLiveQuery } from "@tanstack/react-db"
+import type { ConfiguredModel } from "@smthrs/rpc/ConfiguredModel"
+import { AgentModel, ModelRecords } from "./ModelCards"
+import { flowArgs } from "../flows/FlowArgs"
+import { flowAction } from "../flows/FlowAction"
+import { Button } from "@smthrs/ui"
+import type { Card } from "../state/AppState"
+import { Monogram } from "../AgentMark"
+import type { CardFamily, RunCommand } from "./CardFamily"
+import { settledPill } from "./CardFamily"
+import { describedFailure, FailureNotice } from "../FailureNotice"
+import type { UserFailureCopy } from "@smthrs/rpc/UserFailure"
+
+type AgentsCard = Extract<Card, { kind: "agents" }>
+
+/* The agents listing's last refusal: one sentence; the seam's words stay behind Details. */
+const AGENTS_FAILED: UserFailureCopy = {
+  fault: "infra",
+  sentence: "Smithers could not update your agents. Not your fault.",
+  actions: []
+}
+
+type ProfileRow = Extract<AgentsCard["payload"], { native: boolean }>["agents"][number]
+
+/*
+ * One configured agent profile (smithers-ui-DESIGN.md §3.3): its mark, label,
+ * model, its kind when the profile carries one, availability
+ * where a harness answers for it, and the door to its recorded work: a
+ * profile is a role flow, so its runs are the run list filtered by that flow
+ * (runs.list flow=<id>).
+ */
+const ProfileRowView = ({ agent, native, canAssign, onRunCommand }: { readonly agent: ProfileRow; readonly native: boolean; readonly canAssign: boolean; readonly onRunCommand: RunCommand }) => (
+  <li key={agent.id} className="workflow-list-row agent-row" data-agent={agent.id} data-available={agent.available} data-kind={agent.kind}>
+    <Monogram persona={{ id: agent.id, name: agent.label, agentId: agent.id }} />
+    <span className="workflow-list-text">
+      <strong>{agent.label}</strong>
+      <span title={agent.purpose}>
+        {[
+          agent.kind === undefined || agent.kind === "core" ? undefined : agent.kind,
+          agent.model.label,
+          native ? (agent.available ? `● ${agent.account === "" ? "signed in" : agent.account}` : `○ ${agent.reason}`) : undefined
+        ].filter((fact) => fact !== undefined && fact !== "").join(" · ")}
+      </span>
+    </span>
+    {agent.runs && agent.runs.length > 0 && <ul data-testid={`agent-recent-runs-${agent.id}`}>{agent.runs.map((run, index) => <li key={`${run.id}:${index}`}>{run.id} · {run.model}</li>)}</ul>}
+    <AgentModel agent={agent} canAssign={canAssign} onRunCommand={onRunCommand} />
+    <Button variant="ghost" size="sm" data-testid={`agent-runs-${agent.id}`} {...flowAction(onRunCommand, "runs.list", flowArgs("runs.list", { flow: agent.id }))}>Runs</Button>
+  </li>
+)
+
+/*
+ * The card's body when it holds no rows: the stage of the source that would
+ * have answered them, and nothing beyond it.
+ *
+ * An empty list is not a verdict. A host that answered with none, a catalog
+ * that answered and declares no agent flow, one that has not answered yet,
+ * one whose read was refused, and a host with no repository to read are five
+ * different facts, and the one sentence that used to cover them all ("Agents
+ * run on the native app's harnesses") named harnesses that retired with the
+ * local backend and a host that answers for nothing
+ * ([#3831](https://github.com/smithersai/smithers/issues/3831); the rule
+ * `BranchCard.tsx` states for the same shape in #3882). `data-agents-source`
+ * carries the classification so the next native retest names its own stage.
+ *
+ * Only `repository` and `host` are an inventory of none. `unreadable` is the
+ * refusal the listing's own words already state, so it reads as that failure
+ * and not as an empty repository.
+ */
+const EMPTY_SENTENCE: Record<NonNullable<Extract<AgentsCard["payload"], { native: boolean }>["inventory"]>, string> = {
+  host: "No agents yet",
+  repository: "No agents yet",
+  reading: "Loading agents.",
+  unreadable: "Could not read agents",
+  "no-repository": "No repository is selected."
+}
+
+export const AgentsCardBody = ({ card, onRunCommand, models = [] }: { readonly card: AgentsCard; readonly onRunCommand: RunCommand; readonly models?: ReadonlyArray<ConfiguredModel> }) => {
+  if ("cloud" in card.payload) return null
+  const { native, agents, error, canAssign, selectedAgent, selectedModel, testing, inventory } = card.payload
+  if (agents.length === 0 && card.payload.install !== true) {
+    /*
+     * A card written before `inventory` existed names no source, so it states
+     * nothing: it renders no note at all rather than an empty one, and the
+     * controller rewrites it off this launch's source. The listing's own
+     * refusal still shows, which the single sentence used to swallow.
+     */
+    return <>
+      {inventory === undefined ? null :
+        <p className="smithers-card-note" data-agents-source={inventory}>{EMPTY_SENTENCE[inventory]}</p>}
+      {error === undefined ? null :
+        <FailureNotice className="sui-approval-error" data-testid="agents-failure" failure={describedFailure("AgentsFailed", AGENTS_FAILED, error)} />}
+    </>
+  }
+  return (
+    <div className="agents-card">
+      <ul className="workflow-list" data-testid="agents-list">
+        {agents.filter(agent => selectedAgent === undefined || agent.id === selectedAgent).map((agent) => <ProfileRowView key={agent.id} agent={agent} native={native} canAssign={canAssign === true} onRunCommand={onRunCommand} />)}
+      </ul>
+      {canAssign && <ModelRecords models={models.filter(model => selectedModel === undefined || model.id === selectedModel)} testing={testing ?? []} onRunCommand={onRunCommand} />}
+      {error !== undefined ?
+        <FailureNotice className="sui-approval-error" data-testid="agents-failure" failure={describedFailure("AgentsFailed", AGENTS_FAILED, error)} /> :
+        null}
+    </div>
+  )
+}
+
+const ObservedAgents = ({ card, actions }: { readonly card: AgentsCard; readonly actions: import("./CardFamily").CardActions }) => {
+ const { data } = useLiveQuery(actions.projectionStore!.collections.models)
+ return <AgentsCardBody card={card} onRunCommand={actions.onRunCommand} models={data} />
+}
+
+export const agentCardFamily: CardFamily<"agents"> = {
+  /* Agents as data: the listings settle when they render. */
+  agents: {
+    render: (card, actions) => actions.projectionStore ? <ObservedAgents card={card} actions={actions} /> : <AgentsCardBody card={card} onRunCommand={actions.onRunCommand} />,
+    pill: settledPill
+  },
+
+}

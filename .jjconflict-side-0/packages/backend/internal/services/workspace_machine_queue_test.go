@@ -1,0 +1,492 @@
+package services
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/stretchr/testify/require"
+
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/microsandbox"
+)
+
+// machineQueueStore holds workspace rows in memory and records their
+// provisioning stage, as the product store does.
+type machineQueueStore struct {
+	*mockWorkspaceQuerier
+	mu   sync.Mutex
+	rows map[string]db.Workspace
+}
+
+func (q *machineQueueStore) row(id string) db.Workspace {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.rows[id]
+}
+
+func (q *machineQueueStore) update(id string, change func(*db.Workspace)) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	row := q.rows[id]
+	change(&row)
+	q.rows[id] = row
+}
+
+func (q *machineQueueStore) UpdateWorkspaceProvisioningStage(_ context.Context, arg db.UpdateWorkspaceProvisioningStageParams) (db.Workspace, error) {
+	q.update(arg.ID, func(row *db.Workspace) { row.ProvisioningStage = arg.ProvisioningStage })
+	return q.row(arg.ID), nil
+}
+
+// machineQueueService composes the real runtime admission queue: an
+// unbooted microsandbox.Runtime orders demand without msb.
+func machineQueueService(t *testing.T, ids ...string) (*WorkspaceService, *machineQueueStore) {
+	t.Helper()
+	every := workspaceMachineWaitEvery
+	workspaceMachineWaitEvery = 5 * time.Millisecond
+	t.Cleanup(func() { workspaceMachineWaitEvery = every })
+	q := &machineQueueStore{mockWorkspaceQuerier: &mockWorkspaceQuerier{}, rows: map[string]db.Workspace{}}
+	q.getWorkspaceFn = func(_ context.Context, id string) (db.Workspace, error) { return q.row(id), nil }
+	for _, id := range ids {
+		row := sampleDBWorkspace(id)
+		row.Status, row.VmID = "pending", ""
+		q.rows[id] = row
+	}
+	return newWorkspaceServiceForTests(q, WithWorkspaceRuntime(new(microsandbox.Runtime))), q
+}
+
+// fullHost is a host with slots machines free; a try beyond them is the
+// runtime's typed refusal, as runtimeOperationError answers it.
+type fullHost struct {
+	mu      sync.Mutex
+	slots   int
+	granted []string
+	tries   map[string]int
+}
+
+func (h *fullHost) try(_ context.Context, row db.Workspace) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.tries[row.ID]++
+	if h.slots == 0 {
+		return runtimeOperationError("inspect workspace runtime", &microsandbox.CapacityError{Code: "machine_capacity", Class: "capacity",
+			Message: "microVM capacity reached: 1 of 1 machines are in use"})
+	}
+	h.slots--
+	h.granted = append(h.granted, row.ID)
+	return nil
+}
+
+func (h *fullHost) free() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.slots++
+}
+
+func (h *fullHost) triesOf(id string) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.tries[id]
+}
+
+// The runtime's capacity refusal is the honest no_capacity answer, not an
+// internal failure: nothing was created.
+func TestMachineCapacityRefusalIsNoCapacity(t *testing.T) {
+	refusal := &microsandbox.CapacityError{Code: "machine_capacity", Class: "capacity", Message: "microVM capacity reached: 1 of 1 machines are in use"}
+	err := runtimeOperationError("inspect workspace runtime", fmt.Errorf("create: %w", refusal))
+	require.True(t, isNoCapacityError(err))
+	var api *pkgerrors.APIError
+	require.ErrorAs(t, err, &api)
+	require.Equal(t, workspaceNoCapacityMessage, api.Message)
+	require.ErrorIs(t, api.Cause(), refusal)
+	// A host that can never fit a machine is not a line to wait in.
+	zero := &microsandbox.CapacityError{Code: "host_capacity_zero", Class: "capacity", Message: "cannot start a fresh install"}
+	require.False(t, isNoCapacityError(runtimeOperationError("inspect workspace runtime", zero)))
+}
+
+func TestMachineDemandOwnerTerminalIsPerson(t *testing.T) {
+	row := sampleDBWorkspace("owner-terminal")
+	for _, tc := range []struct {
+		ctx             context.Context
+		actor           int64
+		class, identity string
+	}{
+		{context.Background(), row.UserID, "todo", "workspace:owner-terminal"},
+		{personMachineDemand(context.Background()), row.UserID, "person", fmt.Sprintf("person:%d", row.UserID)},
+		{context.WithValue(personMachineDemand(context.Background()), sessionMachineDemandKey{}, "terminal-a"), row.UserID, "person", fmt.Sprintf("person:%d:session:terminal-a", row.UserID)},
+		{context.Background(), row.UserID + 1, "person", fmt.Sprintf("person:%d", row.UserID+1)},
+		{context.WithValue(context.Background(), todoMachineDemandKey{}, "todo:reserved"), row.UserID + 1, "todo", "workspace:owner-terminal"},
+		{personMachineDemand(context.WithValue(context.Background(), todoMachineDemandKey{}, "todo:reserved")), row.UserID + 1, "person", fmt.Sprintf("person:%d", row.UserID+1)},
+	} {
+		class, actor := machineDemand(context.WithoutCancel(tc.ctx), row, tc.actor)
+		require.Equal(t, tc.class, class)
+		require.Equal(t, tc.identity, actor)
+	}
+}
+
+func TestMachineSessionDemandRequiresLiveBoundSession(t *testing.T) {
+	row := sampleDBWorkspace("session-machine")
+	unavailable := errors.New("session storage unavailable")
+	for _, mode := range []string{"pending", "starting", "running", "stopped", "failed", "unknown", "workspace", "repository", "person", "unavailable"} {
+		t.Run(mode, func(t *testing.T) {
+			session := db.WorkspaceSession{ID: "terminal", WorkspaceID: row.ID, RepositoryID: row.RepositoryID, UserID: row.UserID, Status: "pending"}
+			switch mode {
+			case "workspace":
+				session.WorkspaceID = "other"
+			case "repository":
+				session.RepositoryID++
+			case "person":
+				session.UserID++
+			default:
+				session.Status = mode
+			}
+			q := &mockWorkspaceQuerier{getWorkspaceSessionFn: func(_ context.Context, id string) (db.WorkspaceSession, error) {
+				require.Equal(t, "terminal", id)
+				if mode == "unavailable" {
+					return db.WorkspaceSession{}, unavailable
+				}
+				return session, nil
+			}}
+			err := newWorkspaceServiceForTests(q).validateMachineSession(t.Context(), row, row.UserID, "terminal")
+			switch mode {
+			case "pending", "starting", "running":
+				require.NoError(t, err)
+			case "unavailable":
+				require.ErrorIs(t, err, unavailable)
+			default:
+				require.ErrorIs(t, err, context.Canceled)
+			}
+		})
+	}
+}
+
+// A full host queues workspaces in the runtime's admission queue instead of
+// failing them: each stays pending, waiting for a machine with its place in
+// line, and only the head of the line tries again, so machines go out in
+// order as slots free.
+func TestFullHostQueuesWorkspacesInOrder(t *testing.T) {
+	svc, q := machineQueueService(t, "first", "second")
+	host := &fullHost{tries: map[string]int{}}
+	ctx := context.Background()
+	done := map[string]chan error{"first": make(chan error, 1), "second": make(chan error, 1)}
+	wait := func(id string) {
+		err := host.try(ctx, q.row(id))
+		require.True(t, isNoCapacityError(err))
+		go func() { done[id] <- svc.waitForMachine(ctx, q.row(id), err, host.try) }()
+	}
+	place := func(id string) int {
+		place, _ := svc.MachinePlace(q.row(id))
+		return place
+	}
+	wait("first")
+	require.Eventually(t, func() bool { return place("first") == 1 }, 5*time.Second, time.Millisecond)
+	wait("second")
+	require.Eventually(t, func() bool { return place("second") == 2 }, 5*time.Second, time.Millisecond)
+	for _, id := range []string{"first", "second"} {
+		row := q.row(id)
+		require.Equal(t, "pending", row.Status, "a full host never fails a workspace")
+		require.Equal(t, workspaceWaitingForMachine, row.ProvisioningStage)
+	}
+	require.Eventually(t, func() bool { return host.triesOf("first") >= 3 }, 5*time.Second, time.Millisecond)
+	require.Equal(t, 1, host.triesOf("second"), "only the head of the line tries")
+
+	host.free()
+	require.NoError(t, <-done["first"])
+	require.Empty(t, q.row("first").ProvisioningStage, "a workspace with a machine no longer waits")
+	_, waiting := svc.MachinePlace(q.row("first"))
+	require.False(t, waiting)
+	require.Eventually(t, func() bool { return place("second") == 1 }, 5*time.Second, time.Millisecond)
+
+	host.free()
+	require.NoError(t, <-done["second"])
+	require.Equal(t, []string{"first", "second"}, host.granted)
+}
+
+// A workspace leaves the line without a failure when it is stopped or
+// deleted while it waits, or when the wait runs out of time; another
+// provisioning failure ends the wait with that failure.
+func TestMachineWaitEnds(t *testing.T) {
+	refused := func() error {
+		return runtimeOperationError("inspect workspace runtime", &microsandbox.CapacityError{Code: "machine_capacity", Class: "capacity", Message: "full"})
+	}
+	for _, tc := range []struct {
+		name  string
+		leave func(q *machineQueueStore, cancel context.CancelFunc)
+		try   error
+		want  error
+	}{
+		{name: "stopped", leave: func(q *machineQueueStore, _ context.CancelFunc) {
+			q.update("lane", func(row *db.Workspace) { row.Status = "stopped" })
+		}, want: errWorkspaceMachineWaitEnded},
+		{name: "deleted", leave: func(q *machineQueueStore, _ context.CancelFunc) {
+			q.update("lane", func(row *db.Workspace) { row.DeletedAt.Valid = true })
+		}, want: errWorkspaceMachineWaitEnded},
+		{name: "out of time", leave: func(_ *machineQueueStore, cancel context.CancelFunc) { cancel() }, want: errWorkspaceMachineWaitEnded},
+		{name: "another failure", try: errors.New("guest boot failed")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, q := machineQueueService(t, "lane")
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			try := func(context.Context, db.Workspace) error {
+				if tc.try != nil {
+					return tc.try
+				}
+				return refused()
+			}
+			result := make(chan error, 1)
+			go func() { result <- svc.waitForMachine(ctx, q.row("lane"), refused(), try) }()
+			require.Eventually(t, func() bool { _, waiting := svc.MachinePlace(q.row("lane")); return waiting || tc.try != nil }, 5*time.Second, time.Millisecond)
+			if tc.leave != nil {
+				tc.leave(q, cancel)
+			}
+			err := <-result
+			if tc.want != nil {
+				require.ErrorIs(t, err, tc.want)
+			} else {
+				require.ErrorIs(t, err, tc.try)
+			}
+			require.NotEqual(t, "failed", q.row("lane").Status)
+			for _, row := range svc.runtime.(workspaceMachineQueue).AdmissionSnapshot() {
+				require.NotEqual(t, "waiting", row.State, "the workspace left the line")
+			}
+		})
+	}
+}
+
+// A workspace that already has a machine, or a runtime with no admission
+// queue, is not queued: the refusal stands as it was.
+func TestMachineWaitNeedsAQueueAndNoMachine(t *testing.T) {
+	refusal := errors.New("refused")
+	svc, q := machineQueueService(t, "lane")
+	row := q.row("lane")
+	row.VmID = "vm-live"
+	require.ErrorIs(t, svc.waitForMachine(context.Background(), row, refusal, nil), refusal)
+	plain := newWorkspaceServiceForTests(&mockWorkspaceQuerier{}, WithWorkspaceRuntime(&laneStopRuntime{}))
+	require.ErrorIs(t, plain.waitForMachine(context.Background(), q.row("lane"), refusal, nil), refusal)
+}
+
+func TestMachinePositionProjectsEveryWaitingState(t *testing.T) {
+	svc, q := machineQueueService(t, "todo", "person")
+	queue := svc.runtime.(workspaceMachineQueue)
+	_, err := queue.Request("todo", machineQueueHolder("todo"), "run", "machine")
+	require.NoError(t, err)
+	_, err = queue.Request("person", machineQueueHolder("person"), "Alice", "terminal")
+	require.NoError(t, err)
+	row := q.row("todo")
+	// A retained sleeping branch has a machine ID and still needs a position.
+	row.Status, row.VmID = "suspended", "retained-vm"
+	require.Equal(t, 2, svc.toWorkspaceResponse(row).WaitPosition)
+	position, waiting := svc.MachinePlace(row)
+	require.True(t, waiting)
+	require.Equal(t, 2, position)
+	queue.CancelAdmission(machineQueueHolder("person"), "Alice", time.Now())
+	require.Equal(t, 1, svc.toWorkspaceResponse(row).WaitPosition)
+	queue.CancelAdmission(machineQueueHolder("todo"), "run", time.Now())
+	require.Zero(t, svc.toWorkspaceResponse(row).WaitPosition)
+}
+
+func TestAdmissionReplacesAgeOnlyIdleSweep(t *testing.T) {
+	listed := false
+	svc := newWorkspaceServiceForTests(&mockWorkspaceQuerier{listIdleWorkspacesFn: func(context.Context) ([]db.Workspace, error) {
+		listed = true
+		return nil, errors.New("the old age-only sweep must not run")
+	}})
+	svc.EnableMachineAdmission(nil)
+	require.NoError(t, svc.CleanupIdleWorkspaces(t.Context()))
+	require.False(t, listed)
+}
+
+func TestMachineStartsUseExistingPolicyHook(t *testing.T) {
+	calls := 0
+	policy := NewMachineAdmissionPolicy(NewUnlimitedBillingPolicy())
+	require.NoError(t, policy.AuthorizeSandboxStart(t.Context(), 7), "durable request admission does not book a VM")
+	intent := &machineStartIntent{acquire: func(ctx context.Context) (context.Context, error) {
+		calls++
+		return microsandbox.WithAdmissionHolder(ctx, "workspace:branch"), nil
+	}}
+	ctx := context.WithValue(t.Context(), machineStartIntentKey{}, intent)
+	require.NoError(t, policy.AuthorizeSandboxStart(ctx, 7))
+	require.Equal(t, 1, calls)
+	require.NotNil(t, intent.granted)
+	denied := errors.New("binding unavailable")
+	intent = &machineStartIntent{acquire: func(ctx context.Context) (context.Context, error) { return nil, denied }}
+	require.ErrorIs(t, policy.AuthorizeSandboxStart(context.WithValue(t.Context(), machineStartIntentKey{}, intent), 7), denied)
+	require.Nil(t, intent.granted)
+	require.Error(t, policy.AuthorizeSandboxStart(context.WithValue(t.Context(), machineStartIntentKey{}, &machineStartIntent{}), 7))
+}
+
+func TestTodoMachineOwnershipRefusesUnknownRelease(t *testing.T) {
+	svc, store := machineQueueService(t, "T1")
+	lanes := NewWorkspaceMythicalLanes(svc)
+	held, err := lanes.MachineHeld(t.Context(), "T1")
+	require.NoError(t, err)
+	require.False(t, held, "an ungranted pending boot owns no runtime slot")
+	store.update("T1", func(row *db.Workspace) { row.Status = "running" })
+	held, err = lanes.MachineHeld(t.Context(), "T1")
+	require.ErrorContains(t, err, "unconfirmed")
+	require.True(t, held, "missing runtime metadata is not an observed stop")
+	_, err = svc.runtime.(workspaceMachineQueue).Request("todo", "workspace:T1", "workspace:T1", "machine")
+	require.NoError(t, err)
+	held, err = lanes.MachineHeld(t.Context(), "T1")
+	require.ErrorContains(t, err, "unconfirmed")
+	require.True(t, held, "waiting demand is not a release receipt")
+	for _, stage := range []string{"", workspaceStartCleanupPending} {
+		store.update("T1", func(row *db.Workspace) { row.Status, row.ProvisioningStage = "failed", stage })
+		held, err = lanes.MachineHeld(t.Context(), "T1")
+		require.ErrorContains(t, err, "unconfirmed")
+		require.True(t, held, "failure alone never proves the guest was reaped")
+	}
+	store.update("T1", func(row *db.Workspace) { row.ProvisioningStage = workspaceStartCleanupComplete })
+	held, err = lanes.MachineHeld(t.Context(), "T1")
+	require.NoError(t, err)
+	require.False(t, held, "successful stop/delete remains a release receipt after the runtime forgets its VM")
+	store.update("T1", func(row *db.Workspace) { row.Status = "stopped" })
+	held, err = lanes.MachineHeld(t.Context(), "T1")
+	require.NoError(t, err)
+	require.False(t, held)
+}
+
+func TestIssueTodoMachineOrderFollowsTheStack(t *testing.T) {
+	svc, q := machineQueueService(t, "manual", "issue", "historical", "chat")
+	queue := svc.runtime.(workspaceMachineQueue)
+	for _, id := range []string{"manual", "issue", "historical", "chat"} {
+		_, err := queue.Request("todo", machineQueueHolder(id), "run", "machine")
+		require.NoError(t, err)
+	}
+	lanes := &workspaceMythicalLanes{workspaces: svc}
+	lanes.OrderTodoMachines([]db.MythicalItem{
+		{Source: "issue", WorkspaceID: "historical", Revisions: []byte(`[]`)},
+		{Source: "chat", WorkspaceID: "chat"},
+		{Source: "issue", WorkspaceID: "issue", Revisions: []byte(`[{"text":"Frozen issue"}]`)},
+		{Source: "todo", WorkspaceID: "manual"},
+	})
+	position, waiting := svc.MachinePlace(q.row("issue"))
+	require.True(t, waiting)
+	require.Equal(t, 3, position)
+	position, waiting = svc.MachinePlace(q.row("manual"))
+	require.True(t, waiting)
+	require.Equal(t, 4, position)
+	position, _ = svc.MachinePlace(q.row("historical"))
+	require.Equal(t, 1, position, "historical intake is excluded from stack reorder")
+	position, _ = svc.MachinePlace(q.row("chat"))
+	require.Equal(t, 2, position, "chat demand is excluded from stack reorder")
+}
+
+func TestIssueTodoSharesOrderedRuntimeAdmission(t *testing.T) {
+	svc, _ := machineQueueService(t)
+	lanes := &workspaceMythicalLanes{workspaces: svc}
+	issue := db.MythicalItem{Source: "issue", WorkspaceID: "issue", State: "queued", Revisions: []byte(`[{"text":"Frozen issue"}]`)}
+	issue.StackPosition.Int64, issue.StackPosition.Valid = 1, true
+	manual := db.MythicalItem{Source: "todo", WorkspaceID: "manual", State: "queued"}
+	manual.StackPosition.Int64, manual.StackPosition.Valid = 2, true
+	historical := db.MythicalItem{Source: "issue", WorkspaceID: "historical", State: "queued", Revisions: []byte(`[]`)}
+	historical.StackPosition.Int64, historical.StackPosition.Valid = 3, true
+	require.NoError(t, lanes.SyncTodoMachines(1, []db.MythicalItem{issue, manual, historical}, 1, time.Now()))
+	require.True(t, lanes.TodoMachineEligible(issue), "admitted issue leads the shared stack")
+	require.False(t, lanes.TodoMachineEligible(manual), "issue demand consumes the parallel cutoff")
+	require.False(t, lanes.TodoMachineEligible(historical), "historical intake is not executable demand")
+	step := &mythicalItemStep{s: &MythicalService{installParallelRequired: true, lanes: lanes}, maxParallel: 1}
+	require.True(t, step.slot(issue))
+	require.False(t, step.slot(manual), "issue and manual TODOs use the same runtime eligibility")
+	issue.PausedAt.Valid = true
+	require.NoError(t, lanes.SyncTodoMachines(1, []db.MythicalItem{issue, manual, historical}, 1, time.Now()))
+	require.False(t, lanes.TodoMachineEligible(issue))
+	require.True(t, lanes.TodoMachineEligible(manual), "pausing the issue releases its demand")
+}
+
+func TestTodoReviewRetainsOrderedAdmissionAfterCodingStops(t *testing.T) {
+	svc, _ := machineQueueService(t)
+	lanes := &workspaceMythicalLanes{workspaces: svc}
+	item := db.MythicalItem{Source: "todo", State: "proposed", WorkspaceID: "stopped-coding", PRHead: "head"}
+	item.StackPosition.Int64, item.StackPosition.Valid = 1, true
+	require.NoError(t, lanes.SyncTodoMachines(1, []db.MythicalItem{item}, 1, time.Now()))
+	require.True(t, lanes.TodoMachineEligible(item), "the review needs admission even after coding released its machine")
+	item.Checks = mythicalChecks{Review: &mythicalReview{Head: "head", Verdict: "approve"}}.encode()
+	require.NoError(t, lanes.SyncTodoMachines(1, []db.MythicalItem{item}, 1, time.Now()))
+	require.False(t, lanes.TodoMachineEligible(item), "a settled review consumes no machine demand")
+	for _, c := range []struct {
+		name    string
+		review  *mythicalReview
+		foreign string
+		outages int
+		want    bool
+	}{
+		{"new head", &mythicalReview{Head: "old", Verdict: "approve"}, "", 0, true},
+		{"outage retry", &mythicalReview{Head: "head", Verdict: mythicalOutage + "offline"}, "", 0, true},
+		{"exhausted outage", &mythicalReview{Head: "head", Verdict: mythicalOutage + "offline"}, "", mythicalOutageBound + 1, false},
+		{"foreign head", nil, "foreign", 0, false},
+		{"failed review", &mythicalReview{Head: "head", Verdict: "failed"}, "", 0, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			item.Checks = mythicalChecks{Review: c.review, ForeignHead: c.foreign, Outages: c.outages}.encode()
+			require.NoError(t, lanes.SyncTodoMachines(1, []db.MythicalItem{item}, 1, time.Now()))
+			require.Equal(t, c.want, lanes.TodoMachineEligible(item))
+		})
+	}
+}
+
+func TestForeignBringReentersOrderedAdmission(t *testing.T) {
+	svc, _ := machineQueueService(t)
+	lanes := &workspaceMythicalLanes{workspaces: svc}
+	item := db.MythicalItem{Source: "todo", State: "proposed", PRHead: "head"}
+	item.StackPosition.Int64, item.StackPosition.Valid = 1, true
+	checks := mythicalChecks{ForeignHead: "foreign", Review: &mythicalReview{Head: "head", Verdict: "approve"}}
+	item.Checks = checks.encode()
+	require.NoError(t, lanes.SyncTodoMachines(1, []db.MythicalItem{item}, 1, time.Now()))
+	require.False(t, lanes.TodoMachineEligible(item), "an unanswered push does not admit a machine")
+	checks.ForeignBring = &mythicalForeignBring{SHA: "foreign", Wait: "wait"}
+	item.Checks = checks.encode()
+	require.NoError(t, lanes.SyncTodoMachines(1, []db.MythicalItem{item}, 1, time.Now()))
+	require.True(t, lanes.TodoMachineEligible(item), "the durable person choice needs the native machine")
+	item.PausedAt.Valid = true
+	require.NoError(t, lanes.SyncTodoMachines(1, []db.MythicalItem{item}, 1, time.Now()))
+	require.False(t, lanes.TodoMachineEligible(item), "pause continues to hold re-admission")
+}
+
+// Releasing the reviewed lane cannot strand the next prefix rebase outside
+// the shared admission queue. Eligibility does not authorize the rewrite.
+func TestTodoMachineDemandIncludesReleasedRebase(t *testing.T) {
+	svc, _ := machineQueueService(t)
+	lanes := &workspaceMythicalLanes{workspaces: svc}
+	now := time.Now()
+	item := db.MythicalItem{Source: "todo", State: "integrating", Reason: "rebase_pending", CandidateHead: "head", Checks: mythicalChecks{Rebase: &mythicalRebase{Onto: "main"}}.encode()}
+	item.StackPosition.Int64, item.StackPosition.Valid = 1, true
+	for _, c := range []struct {
+		name   string
+		change func(*db.MythicalItem)
+		want   bool
+	}{
+		{"released pending", func(*db.MythicalItem) {}, true},
+		{"no candidate", func(i *db.MythicalItem) { i.CandidateHead = "" }, false},
+		{"no rebase", func(i *db.MythicalItem) { i.Checks = nil }, false},
+		{"completed rebase", func(i *db.MythicalItem) { i.Checks = mythicalChecks{Rebase: &mythicalRebase{Rebased: true}}.encode() }, false},
+		{"different integration", func(i *db.MythicalItem) { i.Reason = "" }, false},
+		{"not on stack", func(i *db.MythicalItem) { i.StackPosition.Valid = false }, false},
+		{"chat", func(i *db.MythicalItem) { i.Source = "chat" }, false},
+		{"paused", func(i *db.MythicalItem) { i.PausedAt = pgtype.Timestamptz{Time: now, Valid: true} }, false},
+		{"write pending", func(i *db.MythicalItem) { i.PendingOp = []byte(`{}`) }, false},
+		{"backoff", func(i *db.MythicalItem) { i.NextAttemptAt = pgtype.Timestamptz{Time: now.Add(time.Hour), Valid: true} }, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			candidate := item
+			c.change(&candidate)
+			require.NoError(t, lanes.SyncTodoMachines(1, []db.MythicalItem{candidate}, 1, now))
+			require.Equal(t, c.want, lanes.TodoMachineEligible(candidate))
+		})
+	}
+	require.NoError(t, lanes.SyncTodoMachines(1, []db.MythicalItem{item}, 0, now))
+	require.False(t, lanes.TodoMachineEligible(item), "no capacity is not eligibility")
+	earlier := item
+	earlier.ID = pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
+	item.StackPosition.Int64 = 2
+	require.NoError(t, lanes.SyncTodoMachines(1, []db.MythicalItem{earlier, item}, 1, now))
+	require.True(t, lanes.TodoMachineEligible(earlier))
+	require.False(t, lanes.TodoMachineEligible(item), "rebase keeps the existing stack order and cutoff")
+
+}

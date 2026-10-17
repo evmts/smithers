@@ -19,6 +19,7 @@ import { bundleMicrosandbox } from "./bundle-microsandbox"
 import { archiveBundle, normalizeImageArchive } from "./server-bundle-archive"
 import { requireLinuxArm64 } from "./linux-arm64"
 import { validateGitBundle } from "./validate-git-bundle"
+import { readJjPin } from "./jj-pin"
 
 const appDir = resolve(import.meta.dir, "..")
 const root = resolve(appDir, "..", "..")
@@ -26,8 +27,8 @@ const revision = process.env.SMITHERS_BUILD_SHA?.trim()
 if (!revision || !/^[0-9a-f]{40,64}$/.test(revision)) throw new Error("Native build requires an exact SMITHERS_BUILD_SHA.")
 if (process.platform !== "darwin" || process.arch !== "arm64") throw new Error("Server bundles require darwin-arm64.")
 const nativeDir = join(appDir, ".native")
-const jjRevision = "47589ada70c12b3e829b5c98ab32503abad49eac"
-const jjVersion = `jj 0.44.0-${jjRevision}`
+// The jj CLI is built from the smithersai/jj commit Cargo.lock pins for jj-lib.
+const { repository: jjRepository, revision: jjRevision, version: jjVersion } = readJjPin(root)
 const configuredCargoTarget = process.env.CARGO_TARGET_DIR?.trim()
 const cargoTargetDir = configuredCargoTarget
   ? resolve(root, configuredCargoTarget)
@@ -198,14 +199,13 @@ writeFileSync(zigcc, zigWrapperScript, { mode: 0o755 })
 const linuxEnvironment = { CC_aarch64_unknown_linux_gnu: zigcc, CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: zigcc }
 const jjInstallRoot = join(nativeDir, ".jj-install")
 const guestJjInstallRoot = join(nativeDir, ".jj-linux-arm64-install")
-// Build the pinned CLI with the same library source as the
-// daemon/helper. An upstream-only cargo install would restore 0600 guest files.
+// Build the CLI from the same fork commit the daemon and helper link, so its
+// guest writes keep the fork's team-group grant; an upstream CLI writes 0600.
 const jjSourceDir = join(nativeDir, ".jj-source")
 mkdirSync(jjSourceDir, { recursive: true })
 await run("jj source", ["git", "init", jjSourceDir])
-await run("pinned jj source", ["git", "fetch", "--depth=1", "https://github.com/smithersai/jj.git", jjRevision], jjSourceDir)
+await run("pinned jj source", ["git", "fetch", "--depth=1", `${jjRepository}.git`, jjRevision], jjSourceDir)
 await run("jj checkout", ["git", "checkout", "--detach", "FETCH_HEAD"], jjSourceDir)
-cpSync(join(root, "third_party/jj/lib/src"), join(jjSourceDir, "lib/src"), { recursive: true })
 const jjSource = ["--force", "--path", join(jjSourceDir, "cli")]
 const jjTargetDir = join(cargoTargetDir, `jj-${jjRevision}`)
 try {
@@ -372,7 +372,7 @@ await run("bundle host CLI", ["bun", "build", "--compile", "--target=bun-darwin-
 await run("bundle guest CLI", ["bun", "build", "--compile", "--target=bun-linux-arm64", "../../packages/smithers/src/guest-bin.ts", "--outfile", join(nativeDir, "bin", "linux-arm64", "smthrs")], appDir)
 chmodSync(join(nativeDir, "bin", "linux-arm64", "smthrs"), 0o755)
 requireLinuxArm64(join(nativeDir, "bin", "linux-arm64", "smthrs"), "guest smthrs")
-await run("verify generated Smithers skill", ["bun", "scripts/catalog-mvp.ts", "--check", "--skill"], root)
+await run("verify generated Smithers skill", ["bun", "apps/app/scripts/catalog-mvp.ts", "--check", "--skill"], root)
 const skillDirectory = join(nativeDir, "share", "skills", "smithers")
 mkdirSync(skillDirectory, { recursive: true })
 cpSync(join(root, "packages", "smithers", "skills", "smithers", "SKILL.md"), join(skillDirectory, "SKILL.md"))

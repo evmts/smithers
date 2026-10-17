@@ -52,7 +52,7 @@ describe("Installation docs", () => {
   })
 
   it("installs the published package, whose peer ships the filesystem helper", () => {
-    // `scripts/set-release-version.mjs` stamps these lines at every release.
+    // `flows/release/set-release-version.mjs` stamps these lines at every release.
     for (const page of ["../README.md", "../docs/README.md", "../docs/installation.md", "../docs/quickstart.md"]) {
       const text = flatten(read(page))
       expect(text, page).toContain(`bun add @smthrs/platform-bun@${manifest.version} effect`)

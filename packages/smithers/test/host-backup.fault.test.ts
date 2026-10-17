@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest"
 // reports these cases skipped; it cannot qualify APFS/launchd/microVM faults.
 const config = process.env.SMITHERS_HOST_BACKUP_FAULT_CONFIG
 const eligible = process.platform === "darwin" && process.arch === "arm64" && process.getuid?.() !== 0 && !!config
-const runner = fileURLToPath(new URL("../../../scripts/release/host-backup-fault.mjs", import.meta.url))
+const runner = fileURLToPath(new URL("../../../flows/release/host/host-backup-fault.mjs", import.meta.url))
 
 describe("C-REL-06 installed backup kill points", () => {
   for (const point of ["freeze", "drain", "capture", "pg_dump", "clone", "manifest"]) {

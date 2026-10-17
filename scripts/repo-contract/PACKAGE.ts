@@ -77,7 +77,7 @@ const testScriptWiring = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//scripts/repo-contract/test-script-wiring.test.mjs")]),
   srcs: [
     sources,
-    Smithers.file("//scripts/release-rehearsal.mjs"),
+    Smithers.file("//flows/release/release-rehearsal.mjs"),
     Smithers.file("//PACKAGE.ts"),
     Smithers.file("//.smithers/target-index.json"),
     Smithers.file("//scripts/PACKAGE.ts"),
@@ -101,7 +101,7 @@ const uiCiTier = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//scripts/repo-contract/ui-ci-tier.test.mjs")]),
   srcs: [
     sources,
-    Smithers.file("//scripts/release-rehearsal.mjs"),
+    Smithers.file("//flows/release/release-rehearsal.mjs"),
     Smithers.file("//.github/workflows/ci.yml"),
     Smithers.file("//apps/app/PACKAGE.ts"),
     Smithers.file("//apps/app/scripts/run-pr-e2e.mjs"),
@@ -122,7 +122,7 @@ const uiCiTier = Smithers.NodeTest({
  */
 const reliabilityWorkflow = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//scripts/repo-contract/reliability-workflow.test.mjs")]),
-  srcs: [sources, Smithers.file("//scripts/release-rehearsal.mjs"), Smithers.file("//.github/workflows/reliability.yml")],
+  srcs: [sources, Smithers.file("//flows/release/release-rehearsal.mjs"), Smithers.file("//.github/workflows/reliability.yml")],
   deps: []
 })
 
@@ -181,7 +181,7 @@ const scratchArtifacts = Smithers.NodeTest({
  * Every smithers.sh URL a published package ships or prints lands on a built
  * page about the URL's own path: directly, or through one production redirect
  * that keeps every path segment, with the fragment present on the page.
- * `scripts/published-links.mjs` holds the rules; its `--live` mode applies them
+ * `apps/site/scripts/published-links.mjs` holds the rules; its `--live` mode applies them
  * to production after a deploy.
  *
  * The route oracle is the emitted files under `apps/site/dist`, so the site's
@@ -203,8 +203,8 @@ const smithersLinks = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//scripts/repo-contract/smithers-links.test.mjs")]),
   srcs: [
     sources,
-    Smithers.file("//scripts/published-links.mjs"),
-    Smithers.file("//scripts/pack-release.mjs"),
+    Smithers.file("//apps/site/scripts/published-links.mjs"),
+    Smithers.file("//flows/release/pack-release.mjs"),
     Smithers.file("//scripts/workspace-packages.mjs")
   ],
   deps: [sitePackage.build]

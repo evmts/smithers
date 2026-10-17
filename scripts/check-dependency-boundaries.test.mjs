@@ -96,10 +96,6 @@ test("a relative specifier into another workspace package's src/ names that pack
     packageSourceReachedBy("scripts/bench/corpus.mjs", "../../packages/smithers/flows/plan/src/Plan.ts", dirs),
     "packages/smithers/flows/plan",
   )
-  assert.equal(
-    packageSourceReachedBy("factory/flows/harness.ts", "../../packages/smithers/flows/plan/src/index.ts", dirs),
-    "packages/smithers/flows/plan",
-  )
   // The deepest package owns the file: `packages/smithers` also contains it.
   assert.equal(
     packageSourceReachedBy("flows/pack.test.mjs", "../packages/smithers/flows/plan/src/Node.ts", dirs),

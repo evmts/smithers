@@ -1,0 +1,209 @@
+# @smthrs/journal
+
+Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
+
+This package declares `effect` as a `^4.0.4` peer dependency. Install one
+`effect` release in that range so all Smithers packages share one Effect
+runtime.
+
+**Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/journal/docs
+
+An append-only event history for [Effect](https://effect.website) applications.
+`@smthrs/journal` records what a long-running piece of work did, in order, in
+SQLite. Rows are appended and never updated, so the history reads the same on
+the tenth pass as on the first, and a process that dies halfway through leaves
+behind everything it had already committed.
+
+It is a set of Effect services: every write returns a typed receipt or a typed
+failure, and the database arrives as a layer you compose. It belongs to the
+Smithers durable flow engine, but it runs on its own, and no other Smithers
+package is required.
+
+## Install
+
+```bash
+npm install @smthrs/journal@next effect
+```
+
+`effect` is a peer dependency in the range `^4.0.4`. Two copies of `effect`
+in one program are two sets of service tags, so a journal layer built against
+one copy cannot be provided to a program holding the other.
+
+Node.js 26.4.0 or later is required for the Node SQLite driver. The package
+ships as both ESM and CommonJS with TypeScript declarations.
+
+## Write one run and read it back
+
+```ts
+import * as DurableWriter from "@smthrs/database/DurableWriter"
+import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
+import { Journal, JournalEvent, Migrations, SqlJournal } from "@smthrs/journal"
+import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
+
+const database = Layer.provideMerge(
+  DurableWriter.layer(),
+  NodeDatabase.layer({ filename: "history.db" })
+)
+
+const journalLayer = SqlJournal.layer({ capacity: 1024, overflow: "reject" }).pipe(
+  Layer.provide(Layer.provideMerge(Migrations.layer, database))
+)
+
+const runId = "run-1" as JournalEvent.RunId
+const sourceId = "engine" as JournalEvent.SourceId
+
+const program = Effect.gen(function*() {
+  const journal = yield* Journal.Journal
+
+  const created = yield* journal.emitDurableUnfenced({
+    runId,
+    sourceId,
+    eventType: "run.created",
+    payload: { flow: "build", token: "ghp_0123456789abcdefghijklmnopqrstuvwxyz" }
+  })
+  console.log("durable:", created._tag, "seq", created.seq)
+
+  yield* journal.emitLossy({
+    runId,
+    sourceId,
+    eventType: "step.progress",
+    payload: { step: "compile", percent: 40 }
+  })
+  yield* journal.flush
+
+  const page = yield* journal.entries({ runId, limit: 100 })
+  for (const entry of page.entries) {
+    console.log(entry.seq, entry.eventType, JSON.stringify(entry.payload))
+  }
+})
+
+await Effect.runPromise(program.pipe(Effect.provide(journalLayer), Effect.orDie))
+```
+
+```text
+durable: Accepted seq 0
+0 run.created {"flow":"build","token":"[REDACTED]"}
+1 step.progress {"percent":40,"step":"compile"}
+```
+
+The token came back as `[REDACTED]` because it was scrubbed before the row was
+encoded, so the credential is not in `history.db` and never was. `SqlJournal.layer`
+needs both database services: `SqlClient` to read through and `DurableWriter`
+to write through.
+
+## What the journal guarantees
+
+- **Two channels, one order.** `emitDurable` and `emitDurableUnfenced` are on
+  disk before the call returns. `emitLossy` goes through a bounded queue that
+  drops under pressure rather than stalling the writer. Both land in one
+  per-run `seq`, so the cheap channel cannot reorder the expensive one.
+- **Every write gets an answer.** An emission returns `Accepted`, `Duplicate`,
+  or `Dropped`, and every failure is a `JournalError` carrying one of fourteen
+  stable codes, from `invalid_event` and `fence_lost` through `queue_overflow`
+  and `sink_failed`.
+- **A retry is not a second event.** Producer identity is
+  `(runId, sourceId, sourceSeq)`, unique in the database, so a producer that
+  replays after a crash gets `Duplicate` back rather than doubling its history.
+- **Credentials never reach the file.** Payloads are scrubbed on the write
+  path, before encoding, because a row is permanent and gets replayed verbatim
+  to every later reader.
+- **A stale process cannot append.** `emitDurable` takes an `OwnerId` and
+  commits only while the injected `Consensus` strategy still records that
+  owner as holding the run. A process that was replaced fails `fence_lost`
+  instead of writing into a history it no longer owns.
+- **State and its entry commit together.** `transact` runs your own writes and
+  the entries describing them in one transaction and defers publication until
+  it commits, so the two can never disagree. Committing locally is not remote
+  atomicity: external effects still need idempotency keys, fencing tokens, or
+  compensation.
+- **A long run stops growing.** A checkpoint pins replay state to a sequence,
+  and `compact` deletes the entries below it.
+
+`Seq` is canonical per-run replay order; `SourceSeq` identifies producer
+retries. Rejected and dropped admissions may consume either sequence, so gaps
+are valid.
+
+Post-commit compaction preserves the durable writer caller's Effect
+interruption policy. Ordinary callers can interrupt a slow capture; a write
+inside an uninterruptible cancellation finalizer keeps that policy, so
+journaling cannot abandon the cleanup that follows the commit.
+
+## Public API
+
+The root exports each module as a namespace, and each is also importable from
+the matching `@smthrs/journal/*` subpath. The
+[API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/api.md) lists every export
+with its one-line summary.
+
+| Namespace        | What it holds                                                                                                                                                                                                                                                      |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Journal`        | The service and its operations, the `Checkpoint` and `Compacted` models, typed errors, receipts, read options, constructors, and the no-op layer.                                                                                                                  |
+| `JournalEvent`   | Branded `RunId`, `Seq`, `SourceId`, and `SourceSeq`; the `Input` and committed `Entry` schemas; deterministic `makeEventId`.                                                                                                                                       |
+| `SqlJournal`     | `SqlJournalOptions`, `CompactionPolicy`, the database-backed `layer(options)` fenced by `SqlConsensus`, and `layerWith(options)` over an injected strategy.                                                                                                        |
+| `OwnerId`        | The fencing token `emitDurable` accepts, carrying `hostId`, `pid`, and `nonce`.                                                                                                                                                                                    |
+| `Consensus`      | The injectable ownership strategy: `claim`, `activate`, `heartbeat`, `reconfirm`, `release`, `steal`, `recover`, and the commit-time `guard`; typed outcomes; `LivenessEvidence`; the lease constants; `layerLocal`, `layerNoop`, `make`, `makeLocal`, `makeNoop`. |
+| `SqlConsensus`   | The default database-backed strategy over `flows_consensus_leases`: `make` and `layer`.                                                                                                                                                                            |
+| `Redaction`      | The payload redaction applied to entries before they are written, its rule set, and `makeNoop`.                                                                                                                                                                    |
+| `Projection`     | The reproducible `Projection` model and its identity constructor.                                                                                                                                                                                                  |
+| `JournalMetrics` | The `flows_journal_writes` counter and the per-channel views `SqlJournal` updates on every emission receipt.                                                                                                                                                       |
+| `Migrations`     | `set`, `run`, and `layer` for this package's tables: `flows_journal_events` with its indexes, `flows_journal_checkpoints`, `flows_journal_dedup`, and the `flows_consensus_leases` lease table.                                                                    |
+
+Two test entry points sit outside the root:
+`@smthrs/journal/test/TestJournal` provides the production journal over an
+in-memory database (Node only), and `@smthrs/journal/test/Notifying` wraps a
+service so a hook fires around every operation, which is how you inject a crash
+at an exact transition.
+
+## What a fenced write needs
+
+`emitDurable`, `checkpoint`, and `compact` gate their write on the
+`Consensus` strategy the journal was built with: the write joins the
+strategy's `guard` inside its own transaction and commits only while the
+strategy still records the supplied owner as holding the run. `SqlJournal.layer`
+fences through `SqlConsensus`, whose lease lives in `flows_consensus_leases`, a
+table this package's own migrations create; `SqlJournal.layerWith` takes any
+strategy, such as `Consensus.layerLocal` for a single process or the browser.
+An owner takes the run through the strategy's `claim` and `activate`, which
+[`@smthrs/run-store`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/run-store/docs) drives for a durable run.
+
+`emitDurableUnfenced` is the sanctioned path for a genuinely ownerless
+admission, such as an import or a repair tool. Reaching for it to dodge
+`fence_lost` writes exactly the zombie entry the fence exists to reject.
+
+## Where the journal sits
+
+The journal holds the history and nothing else. Run and attempt state live in
+[`@smthrs/run-store`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/run-store/docs), sealed step results in
+[`@smthrs/step-cache`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/step-cache/docs), and the durable
+deferred and clock tables in
+[`@smthrs/engine-store`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/engine-store/docs). Those stores hold
+the executable state, which is not derived from journal entries; `transact` is
+what keeps the two halves consistent, because every one of them writes through
+the same `DurableWriter`.
+
+SQLite and PostgreSQL share this journal and migration ladder; see
+[database configuration](../database/docs/concepts/sqlite-only.md).
+
+Rewinding SQL histories expose `Journal.Service.generation(runId)`, which reads
+`{ generation, afterSeq }` from `flows_journal_generations` (initially zero and
+`-1`). The SQL layer installs this table idempotently on existing databases.
+Time travel increments the generation in the archive transaction. Append-only
+adapters may omit the operation; truncating adapters must implement it. The
+`JournalGeneration.initialize` subpath shares the table installation with time
+travel without adding a migration below an already applied migration block.
+
+## Documentation
+
+- [State and event authority](./docs/concepts/state-event-authority.md)
+- [Installation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/installation.md)
+- [Quickstart](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/quickstart.md)
+- [The two channels](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/concepts/two-channels.md)
+- [The owner fence](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/concepts/owner-fence.md)
+- [Checkpoints and compaction](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/concepts/compaction.md)
+- [API reference](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/api.md)
+- [Troubleshooting](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/docs/troubleshooting.md)
+
+## License
+
+MIT

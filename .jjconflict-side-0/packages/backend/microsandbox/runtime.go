@@ -1,0 +1,1399 @@
+// Package microsandbox runs every workspace in a local Microsandbox microVM.
+//
+// It implements the common workspace contract (packages/backend/workspace)
+// over the pinned `msb` CLI. Nothing a workspace runs executes on the host:
+// terminals and installed coding hosts use admitted native broker sessions;
+// one-shot commands, bridges, previews and file operations use the protected
+// helper inside the workspace VM. When
+// Microsandbox is missing or unqualified the runtime refuses to start, and a
+// VM that cannot be reached fails the operation; there is no process fallback.
+//
+// Machines carry the same ownership labels as @smthrs/sandbox's
+// MicrosandboxSandbox (smithers.provider, smithers.owner, smithers.holder), so
+// one installation never reaps or prunes another's machines or snapshots.
+package microsandbox
+
+import (
+	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/smithersai/smithers/packages/backend/egressrelay"
+	"github.com/smithersai/smithers/packages/backend/installbundle"
+	"github.com/smithersai/smithers/packages/backend/internal/machined"
+	workspaceapi "github.com/smithersai/smithers/packages/backend/workspace"
+)
+
+const (
+	metadataVersion = 1
+
+	providerLabel  = "smithers.provider"
+	providerName   = "microsandbox"
+	ownerLabel     = "smithers.owner"
+	holderLabel    = "smithers.holder"
+	workspaceLabel = "smithers.workspace"
+	layerLabel     = "smithers.layer"
+
+	guestRoot     = "/workspace"
+	guestHome     = "/home/agent"
+	guestStateDir = "/var/lib/smithers/state"
+	guestTempDir  = "/var/tmp/smithers"
+	guestUser     = "agent"
+	guestUID      = 19999
+
+	// guestRunMount makes the guest's /run memory-backed, as on any booted
+	// Linux. The guest helper keeps boot authority, session tokens and the team
+	// environment below /run/smithers and refuses them on disk
+	// (require_secret_tmpfs checks /run itself): there they would enter a
+	// snapshot or capture. msb mounts it root-owned, mode 0755, at every boot.
+	guestRunMount = "/run:64M:nosuid,nodev,noexec"
+)
+
+// DefaultImage is the L0 image: node:26.5.0-trixie (Debian 13, glibc 2.41,
+// linux/arm64) pinned by digest. Trixie, not bookworm: the app's build stage
+// uses it; the Hutch devkit needs glibc 2.38.
+const DefaultImage = "node@sha256:71fed097c6e5bae40e1aff698793dda483e2380cc2530d7367a72a9d037c798b"
+
+// Config selects the msb binary, the data root holding adapter metadata, the
+// VM shape, and the backend ports a guest may reach through its bridge.
+type Config struct {
+	// RecoverAdmission preserves retained VMs until the install reconstructs
+	// demand from its existing jobs and sessions. New grants remain disabled.
+	RecoverAdmission bool
+	// HostProfile distinguishes a computed zero capacity from missing sizing.
+	HostProfile *HostProfile
+	// Binary is the absolute path of an msb executable for a runtime
+	// without a Bundle. With a Bundle it must be empty: msb is the bundle's
+	// bin/msb, verified with the guest kernel before every run.
+	Binary string
+	// Root holds adapter metadata. It is host state, never a guest mount.
+	Root string
+	// Image is the OCI image a workspace boots when no environment layer
+	// applies. Default DefaultImage.
+	Image string
+	// CPUs, MemoryMiB and DiskMiB shape each workspace VM.
+	CPUs      int
+	MemoryMiB int
+	DiskMiB   int
+	// HostPorts are host loopback ports (the backend's own listener) that a
+	// guest reaches at 127.0.0.1:<port> through the adapter's bridge. Every
+	// other destination is denied.
+	HostPorts []uint16
+	// Environment augments every command's controlled environment.
+	Environment map[string]string
+	// MaxConcurrent caps concurrent one-shot commands across all workspaces.
+	MaxConcurrent int
+	// MaxRunningVMs caps simultaneously running workspace VMs.
+	MaxRunningVMs int
+	// OutputLimit bounds captured stdout and stderr per stream.
+	OutputLimit int
+	// FileReadLimit bounds ReadFile.
+	FileReadLimit int64
+	// CommandTimeout is the runaway guard for one command (default 60 min).
+	CommandTimeout time.Duration
+	// DaemonLossLimit is how long a running machine may stay without a
+	// reachable daemon before the runtime stops it to release its slot
+	// (default 3 min). The stop retains the disk; nothing is discarded.
+	DaemonLossLimit time.Duration
+	// Environments enables graph-keyed environment layers. Nil boots Image.
+	Environments *EnvironmentConfig
+	// Bundle is the approved installed bundle this backend runs from, pinned
+	// and its own executable verified by installbundle.OpenRunning. msb and
+	// the guest kernel it loads come only from it and are verified before
+	// every msb run. A managed host command's program naming one of its
+	// files is planted in the guest from the bytes the pinned manifest
+	// declares; so is the coding binding's Linux arm64 helper. No other host
+	// file ever reaches a guest. Nil plants nothing.
+	Bundle *installbundle.Bundle
+	// BundlePrograms are the host programs managed hosts will run from
+	// Bundle. New refuses to start unless the pinned manifest declares each,
+	// and the coding helper, with exactly its bytes and mode.
+	BundlePrograms []string
+	// EgressRelay, when set, is the egress secret channel
+	// (workspace.WorkspaceEgressSecrets). Its port joins HostPorts, so it
+	// must stay the same across restarts for existing machines to reach it.
+	EgressRelay *egressrelay.Relay
+	// SkipQualification is for unit tests with a fake msb only.
+	SkipQualification bool
+}
+
+// Layer is the environment a workspace VM boots from.
+type Layer struct {
+	// Snapshot is the Microsandbox snapshot name; empty boots the image.
+	Snapshot string
+	// Key is the content digest of the layer's graph node.
+	Key string
+	// Link is the offline command run after the product checkout.
+	Link []string
+}
+
+type metadata struct {
+	Version   int      `json:"version"`
+	ID        string   `json:"id"`
+	Machine   string   `json:"machine"`
+	State     string   `json:"state"`
+	Snapshot  string   `json:"snapshot,omitempty"`
+	LayerKey  string   `json:"layerKey,omitempty"`
+	Link      []string `json:"link,omitempty"`
+	CreatedAt string   `json:"createdAt"`
+	// Reclaimed marks a stopped workspace whose machine and disk were
+	// removed; its next start boots a fresh machine (see ReclaimWorkspaceDisk).
+	Reclaimed bool `json:"reclaimed,omitempty"`
+	// RelayPort is the egress relay port the machine was built to reach.
+	RelayPort uint16 `json:"relayPort,omitempty"`
+}
+
+type workspace struct {
+	daemonMu sync.Mutex
+	// daemonAttemptMu owns the flight, failure backoff and workspace watcher.
+	daemonAttemptMu         sync.Mutex
+	daemonAttempt           *daemonAttempt
+	daemonFailure           error
+	daemonRetryAt           time.Time
+	daemonBackoff           time.Duration
+	daemonReport            string
+	daemonReconnect         bool
+	daemonBoot              *machined.BootAuthority
+	secretEnvironmentDigest *[32]byte
+	secretEnvironmentLink   *machined.Link
+	// relayDigest and relayEnvironment are the bound secrets' live egress
+	// relay binding and the route it gives sessions (machineEnvironment).
+	relayDigest      *[32]byte
+	relayEnvironment map[string]string
+	sessionMu        sync.Mutex // serializes sealed admission with its broker spawn
+	metadata
+	recovering bool // retained VM awaits reattachment after durable-demand reconstruction
+	booting    bool // guarded by Runtime.mu; an in-flight launcher can still create a VM
+	directory  string
+	commands   map[string]*guestCommand
+	services   map[string]*managedService
+	previews   map[uint16]*previewListener
+	guestOK    bool
+}
+
+// Runtime owns every microVM it creates and the metadata that names them.
+type Runtime struct {
+	workspaceapi.CleanupGate
+	machinedItem           func(context.Context, string) (machined.ItemBinding, error)
+	machinedAgentAdmission func(context.Context, string, string, func(context.Context) error) error
+	machinedHead           func(context.Context, string) (string, error)
+	machinedConflict       func(context.Context, string) (*machined.RetainedConflict, error)
+	secretEnvironment      func(context.Context, string) (MachineSecrets, error)
+	memberRoster           MemberRoster
+	memberActor            MemberActor
+	machinedAgentActor     func(context.Context, string, string, string) ([]byte, error)
+	machined               machined.Registry
+	cli                    *cli
+	config                 Config
+	root                   string
+	owner                  string
+	holder                 string
+	semaphore              chan struct{}
+	terminalHold           func(string) bool
+	machinedDispatch       func(context.Context, *machined.Link, string) error
+
+	environments *environments
+	codingHelper codingHelperCache
+	guestJJ      codingHelperCache
+
+	mu                        sync.Mutex
+	closed                    bool
+	workspaces                map[string]*workspace
+	relaySlots                map[string]chan struct{}         // live relays by VM; see maxRelaysPerMachine
+	relayHosts                map[string]map[uint16]*relayHost // shared guest port clients by workspace and port
+	auxVMs                    map[string]struct{}
+	auxCleanup                map[string]struct{}
+	capacityReader            func(context.Context) (int, error)
+	admission                 map[string]*admissionHolder
+	admissionFrozen           bool
+	admissionSequence         uint64
+	admissionChanged          chan struct{}
+	admissionCancel           context.CancelFunc
+	admissionGrantMu          sync.Mutex
+	admissionPublisher        func(context.Context, AdmissionRequest) error
+	admissionUnpublished      *AdmissionRequest
+	admissionIdleMu           sync.Mutex
+	admissionIdle             *AdmissionIdleProviders
+	admissionStarted          time.Time
+	admissionRecoveryPending  bool
+	admissionRecoveryMu       sync.Mutex
+	metrics                   *machineMetrics
+	todoParallelReader        func(context.Context) (int, error)
+	admissionOwnershipChanged chan struct{}
+}
+
+// MachinedRegistry is the install's single registry. Composition and runtime
+// lifecycle use the same boot leases; callers cannot create a second authority.
+// The empty registry admits nothing until a trusted boot is planted.
+func (r *Runtime) MachinedRegistry() *machined.Registry {
+	return &r.machined
+}
+
+// New qualifies Microsandbox, loads persisted workspaces, reaps this
+// installation's orphaned machines, and cleans command processes a previous
+// backend process left in running guests.
+func New(ctx context.Context, config Config) (*Runtime, error) {
+	if err := validateSizing(config); err != nil {
+		return nil, err
+	}
+	if config.Environments != nil {
+		if err := config.Environments.validate(config); err != nil {
+			return nil, err
+		}
+	}
+	// msb, the guest kernel and every file the runtime will plant are checked
+	// against the pinned bundle before Microsandbox is touched: a bad one
+	// refuses startup, not the first plant.
+	binary, verify, err := startupChecks(config)
+	if err != nil {
+		return nil, err
+	}
+
+	// An installed runtime's existing metadata (machines, snapshots, layer
+	// records that decide what guests boot) is refused before msb runs unless
+	// only root or this user can change it, every directory from / down.
+	if config.Bundle != nil {
+		if err := protectedState(config.Root); err != nil {
+			return nil, err
+		}
+	}
+
+	client, err := runtimeCLI(binary, verify)
+	if err != nil {
+		return nil, err
+	}
+	if !config.SkipQualification {
+		qualifyCtx, cancel := context.WithTimeout(ctx, time.Minute)
+		err = client.qualify(qualifyCtx)
+		cancel()
+		if err != nil {
+			return nil, err
+		}
+	}
+	if config.Bundle != nil {
+		archive := config.Bundle.Library("share/microsandbox/base-image.oci.tar")
+		if err := archive.Check(); err != nil {
+			return nil, fmt.Errorf("%w: bundled base image: %w", ErrUnavailable, err)
+		}
+		loadCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		_, err := client.run(loadCtx, nil, "image", "load", "--input", archive.Path(), "--tag", DefaultImage)
+		cancel()
+		if err != nil {
+			return nil, fmt.Errorf("%w: load bundled base image: %w", ErrUnavailable, err)
+		}
+	}
+	if strings.TrimSpace(config.Root) == "" {
+		return nil, errors.New("microsandbox workspace root is required")
+	}
+	root, err := filepath.Abs(config.Root)
+	if err != nil {
+		return nil, err
+	}
+	applyDefaults(&config)
+	if err := withRelayRoute(&config); err != nil {
+		return nil, err
+	}
+	if err := createState(root, config.Bundle != nil); err != nil {
+		return nil, err
+	}
+	owner, err := installationOwner(root)
+	if err != nil {
+		return nil, err
+	}
+	holderToken := make([]byte, 6)
+	if _, err := rand.Read(holderToken); err != nil {
+		return nil, err
+	}
+	runtime := &Runtime{
+		cli: client, config: config, root: root, owner: owner,
+		admissionStarted:         time.Now(),
+		admissionRecoveryPending: config.RecoverAdmission,
+		holder:                   fmt.Sprintf("backend-%d-%s", os.Getpid(), hex.EncodeToString(holderToken)),
+		semaphore:                make(chan struct{}, config.MaxConcurrent),
+		workspaces:               make(map[string]*workspace),
+	}
+	if config.Environments != nil {
+		environmentConfig := *config.Environments
+		environmentConfig.defaults()
+		runtime.environments = &environments{runtime: runtime, config: environmentConfig, verified: map[string]bool{}}
+		if runtime.config.Image == "" || config.Environments.Image != "" {
+			runtime.config.Image = environmentConfig.Image
+		}
+	}
+	if err := runtime.load(); err != nil {
+		return nil, err
+	}
+	recoverCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	if err := runtime.recover(recoverCtx); err != nil {
+		return nil, err
+	}
+	runtime.startAdmissionReconciler(ctx)
+	return runtime, nil
+}
+
+// stateDirectories are the metadata root and the directories below it.
+func stateDirectories(root string) []string {
+	return []string{root, filepath.Join(root, "workspaces"), filepath.Join(root, "snapshots"), filepath.Join(root, "layers")}
+}
+
+// protectedState checks the existing metadata directories through
+// installbundle.ProtectedDirectory.
+func protectedState(root string) error {
+	if strings.TrimSpace(root) == "" {
+		return errors.New("microsandbox workspace root is required")
+	}
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return err
+	}
+	for _, dir := range stateDirectories(root) {
+		if _, err := os.Lstat(dir); errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if _, err := installbundle.ProtectedDirectory("microVM state", dir); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// createState makes the metadata directories private; an installed runtime
+// then checks each through the protected chain.
+func createState(root string, installed bool) error {
+	for _, dir := range stateDirectories(root) {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return fmt.Errorf("create microsandbox state: %w", err)
+		}
+	}
+	if installed {
+		return protectedState(root)
+	}
+	return nil
+}
+
+func applyDefaults(config *Config) {
+	if config.Image == "" {
+		config.Image = DefaultImage
+	}
+	if config.MaxConcurrent <= 0 {
+		config.MaxConcurrent = 32
+	}
+	if config.OutputLimit <= 0 {
+		config.OutputLimit = 4 << 20
+	}
+	if config.FileReadLimit <= 0 {
+		config.FileReadLimit = 16 << 20
+	}
+	if config.CommandTimeout <= 0 {
+		config.CommandTimeout = 60 * time.Minute
+	}
+	if config.DaemonLossLimit <= 0 {
+		config.DaemonLossLimit = 3 * time.Minute
+	}
+}
+
+// installationOwner is this installation's durable owner label. Every machine
+// and snapshot it creates carries it; nothing without it is ever touched.
+func installationOwner(root string) (string, error) {
+	path := filepath.Join(root, "owner")
+	contents, err := os.ReadFile(path)
+	if err == nil {
+		owner := strings.TrimSpace(string(contents))
+		if strings.HasPrefix(owner, "smithers-backend-") && len(owner) == len("smithers-backend-")+16 {
+			return owner, nil
+		}
+		return "", errors.New("microsandbox owner file is invalid")
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		return "", err
+	}
+	token := make([]byte, 8)
+	if _, err := rand.Read(token); err != nil {
+		return "", err
+	}
+	owner := "smithers-backend-" + hex.EncodeToString(token)
+	if err := os.WriteFile(path, []byte(owner+"\n"), 0o600); err != nil {
+		return "", err
+	}
+	return owner, nil
+}
+
+// Owner is the installation's ownership label value.
+func (r *Runtime) Owner() string { return r.owner }
+
+func digest(value string) string {
+	sum := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(sum[:])
+}
+
+func (r *Runtime) machineName(workspaceID string) string {
+	return "smthrs-ws-" + strings.TrimPrefix(r.owner, "smithers-backend-")[:8] + "-" + digest(workspaceID)[:20]
+}
+
+func (r *Runtime) ownership(workspaceID string) map[string]string {
+	labels := map[string]string{providerLabel: providerName, ownerLabel: r.owner, holderLabel: r.holder}
+	if workspaceID != "" {
+		labels[workspaceLabel] = digest(workspaceID)[:20]
+	}
+	return labels
+}
+
+func (r *Runtime) load() error {
+	entries, err := os.ReadDir(filepath.Join(r.root, "workspaces"))
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		directory := filepath.Join(r.root, "workspaces", entry.Name())
+		contents, err := os.ReadFile(filepath.Join(directory, "metadata.json"))
+		if errors.Is(err, fs.ErrNotExist) {
+			// A create that crashed before its metadata commit owns no machine.
+			_ = os.RemoveAll(directory)
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("read microsandbox workspace metadata: %w", err)
+		}
+		var stored metadata
+		if err := json.Unmarshal(contents, &stored); err != nil || stored.Version != metadataVersion || stored.ID == "" || digest(stored.ID) != entry.Name() {
+			return fmt.Errorf("invalid microsandbox workspace metadata %s", entry.Name())
+		}
+		r.workspaces[stored.ID] = newWorkspace(stored, directory)
+	}
+	return nil
+}
+
+func newWorkspace(stored metadata, directory string) *workspace {
+	return &workspace{metadata: stored, directory: directory, commands: map[string]*guestCommand{},
+		services: map[string]*managedService{}, previews: map[uint16]*previewListener{}}
+}
+
+func writeMetadata(ws *workspace) error {
+	contents, err := json.MarshalIndent(ws.metadata, "", "  ")
+	if err != nil {
+		return err
+	}
+	temporary := filepath.Join(ws.directory, ".metadata.json.tmp")
+	if err := os.WriteFile(temporary, append(contents, '\n'), 0o600); err != nil {
+		return fmt.Errorf("write microsandbox metadata: %w", err)
+	}
+	return os.Rename(temporary, filepath.Join(ws.directory, "metadata.json"))
+}
+
+// recover reconciles metadata with Microsandbox after a restart. Installs
+// retain known VMs until durable demand is reconstructed, then reattach through
+// the normal trusted guest recovery path. Standalone adapters settle old VMs
+// immediately. Owned machines without metadata are always reaped.
+func (r *Runtime) recover(ctx context.Context) error {
+	killOrphanClients(r.cli.binary, "smthrs-ws-"+strings.TrimPrefix(r.owner, "smithers-backend-")[:8]+"-")
+	records, err := r.cli.listSandboxes(ctx, map[string]string{providerLabel: providerName, ownerLabel: r.owner})
+	if err != nil {
+		return fmt.Errorf("%w: list owned microVMs: %v", ErrUnavailable, err)
+	}
+	known := map[string]*workspace{}
+	for _, ws := range r.workspaces {
+		known[ws.Machine] = ws
+	}
+	var errs []error
+	present := map[string]string{}
+	for _, record := range records {
+		ws := known[record.Name]
+		if ws == nil {
+			if err := r.removeMachine(ctx, record.Name); err != nil {
+				errs = append(errs, fmt.Errorf("reap orphaned microVM %s: %w", record.Name, err))
+			}
+			continue
+		}
+		present[record.Name] = strings.ToLower(record.Status)
+	}
+	for _, ws := range r.workspaces {
+		status, ok := present[ws.Machine]
+		switch {
+		case !ok && ws.Reclaimed:
+			// A reclaimed workspace owns no machine by design.
+			ws.State = string(workspaceapi.WorkspaceStopped)
+		case !ok && ws.State == string(workspaceapi.WorkspaceStarting):
+			// Creation never reached Microsandbox; the metadata owns nothing.
+			_ = os.RemoveAll(ws.directory)
+			delete(r.workspaces, ws.ID)
+			continue
+		case !ok:
+			ws.State = string(workspaceapi.WorkspaceRecoveryRequired)
+		case r.config.RecoverAdmission && status != "stopped":
+			// Keep the physical machine and its slot, including a boot whose
+			// reply was lost. Composition decides demand before any new grant.
+			ws.State = string(workspaceapi.WorkspaceStarting)
+			ws.recovering = true
+			if r.admission == nil {
+				r.admission = map[string]*admissionHolder{}
+			}
+			r.admission["workspace:"+ws.ID] = &admissionHolder{held: true, machine: ws.Machine, rows: map[string]*AdmissionRequest{}}
+		case status == "running":
+			if err := r.cleanupGuest(ctx, ws.Machine); err != nil {
+				errs = append(errs, fmt.Errorf("clean previous command groups in %s: %w", ws.Machine, err))
+			}
+			ws.State = string(workspaceapi.WorkspaceStopped)
+			// A stopped state makes common reconciliation call StartWorkspace,
+			// which restarts the host bridge before anything runs.
+			if err := r.stopMachine(ctx, ws.Machine); err != nil {
+				ws.State = string(workspaceapi.WorkspaceStarting)
+				errs = append(errs, err)
+			}
+		case status == "stopped":
+			ws.State = string(workspaceapi.WorkspaceStopped)
+		default:
+			// Provisioning, starting, stopping and unknown runtime states still
+			// own a VM. Reconciliation may not turn them into free capacity
+			// merely because they are not yet running. Settle the old boot
+			// through the same independently observed stop as running guests.
+			ws.State = string(workspaceapi.WorkspaceStarting)
+			if err := r.stopMachine(ctx, ws.Machine); err != nil {
+				errs = append(errs, fmt.Errorf("%w: reconcile microVM %s (%s): %v", ErrUnavailable, ws.Machine, status, err))
+			} else {
+				ws.State = string(workspaceapi.WorkspaceStopped)
+			}
+		}
+		if err := writeMetadata(ws); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func (r *Runtime) Isolation() workspaceapi.IsolationLevel { return workspaceapi.IsolationSandboxed }
+
+// GuestIdentity is the one account every repository command, file operation
+// and layer recipe runs as in a guest: the non-root agent user.
+func (r *Runtime) GuestIdentity() (string, int) { return guestUser, guestUID }
+
+func (r *Runtime) Capabilities() workspaceapi.WorkspaceCapabilities {
+	return workspaceapi.WorkspaceCapabilities{
+		PersistentFiles: true, Execution: true, ManagedServices: true, ManagedHTTPHosts: true,
+		SourceRevision: true, Terminal: true, LoopbackPreview: true, FileOperations: true, ColdSnapshots: true,
+		EgressSecrets: r.config.EgressRelay != nil,
+	}
+}
+
+// WorkspaceIsolation reports what this adapter actually enforces.
+func (r *Runtime) WorkspaceIsolation(ctx context.Context, workspaceID string) (workspaceapi.IsolationGuarantees, error) {
+	if _, err := r.InspectWorkspace(ctx, workspaceID); err != nil {
+		return workspaceapi.IsolationGuarantees{}, err
+	}
+	return workspaceapi.IsolationGuarantees{
+		Level: workspaceapi.IsolationSandboxed, Boundary: "microvm",
+		DedicatedTenantFilesystem: true, DedicatedTenantNetwork: true, DefaultDenyEgress: true,
+		NonPersistentCredentials: true, RuntimeVersion: "microsandbox " + RequiredVersion,
+	}, nil
+}
+
+// WithholdConversationEgress holds by construction: a workspace VM reaches
+// only the backend's own host ports, never GitHub.
+func (r *Runtime) WithholdConversationEgress(context.Context, string) error { return nil }
+
+var _ workspaceapi.WorkspaceConversationEgress = (*Runtime)(nil)
+
+func describe(ws *workspace) workspaceapi.Workspace {
+	return workspaceapi.Workspace{ID: ws.ID, Root: guestRoot, Home: guestHome, StateDir: guestStateDir, TempDir: guestTempDir,
+		State: workspaceapi.WorkspaceState(ws.State)}
+}
+
+// WorkspaceMachineIdentity resolves the runtime-owned VM name, never caller data.
+func (r *Runtime) WorkspaceMachineIdentity(ctx context.Context, id string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	ws, err := r.runningWorkspace(id)
+	if err != nil {
+		return "", err
+	}
+	return ws.Machine, nil
+}
+
+// WorkspaceIDs lists every workspace this runtime owns.
+func (r *Runtime) WorkspaceIDs() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	ids := make([]string, 0, len(r.workspaces))
+	for id := range r.workspaces {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+func validWorkspaceID(id string) (string, error) {
+	id = strings.TrimSpace(id)
+	if id == "" || len(id) > 512 || strings.IndexByte(id, 0) >= 0 {
+		return "", errors.New("workspace id is required")
+	}
+	return id, nil
+}
+
+// CreateWorkspace boots the workspace VM from its environment layer (or the
+// base image), prepares the guest, and records durable metadata first so a
+// crash mid-create is reconciled rather than leaked.
+func (r *Runtime) CreateWorkspace(ctx context.Context, spec workspaceapi.WorkspaceSpec) (workspaceapi.Workspace, error) {
+	if existing, err := r.InspectWorkspace(ctx, spec.ID); err == nil {
+		return existing, nil
+	}
+	ctx = context.WithValue(ctx, machineWakeStarted{}, time.Now())
+	if r.environments != nil {
+		if err := r.environments.admit(ctx); err != nil {
+			return workspaceapi.Workspace{}, err
+		}
+	}
+	layer, release, err := r.resolveWorkspaceLayerForCreate(ctx, spec)
+	defer release()
+	if err != nil {
+		return workspaceapi.Workspace{}, fmt.Errorf("resolve workspace environment: %w", err)
+	}
+	return r.createFrom(ctx, spec, layer)
+}
+
+func (r *Runtime) createFrom(ctx context.Context, spec workspaceapi.WorkspaceSpec, layer Layer) (result workspaceapi.Workspace, resultErr error) {
+	started, _ := ctx.Value(machineWakeStarted{}).(time.Time)
+	if started.IsZero() {
+		started = time.Now()
+	}
+	attempted := false
+	defer func() {
+		if attempted {
+			r.observeMachineWake(ctx, "cold", started, resultErr)
+		}
+	}()
+	id, err := validWorkspaceID(spec.ID)
+	if err != nil {
+		return workspaceapi.Workspace{}, err
+	}
+	maximum, err := r.prepareAdmission(ctx)
+	if err != nil {
+		return workspaceapi.Workspace{}, err
+	}
+	r.mu.Lock()
+	if r.closed {
+		r.mu.Unlock()
+		return workspaceapi.Workspace{}, errors.New("microsandbox runtime is closed")
+	}
+	if existing := r.workspaces[id]; existing != nil {
+		r.mu.Unlock()
+		return describe(existing), nil
+	}
+	if err := r.admitMachineLocked(ctx, maximum, r.machineName(id)); err != nil {
+		r.mu.Unlock()
+		return workspaceapi.Workspace{}, err
+	}
+	attempted = true
+	directory := filepath.Join(r.root, "workspaces", digest(id))
+	if err := os.Mkdir(directory, 0o700); err != nil {
+		r.detachAdmissionMachineLocked(r.machineName(id), false)
+		r.mu.Unlock()
+		return workspaceapi.Workspace{}, fmt.Errorf("create microsandbox workspace state: %w", err)
+	}
+	ws := newWorkspace(metadata{Version: metadataVersion, ID: id, Machine: r.machineName(id),
+		State: string(workspaceapi.WorkspaceStarting), Snapshot: layer.Snapshot, LayerKey: layer.Key, Link: layer.Link,
+		CreatedAt: time.Now().UTC().Format(time.RFC3339)}, directory)
+	r.workspaces[id] = ws
+	ws.booting = true
+	r.mu.Unlock()
+	defer r.finishBoot(ws)
+
+	if err := writeMetadata(ws); err != nil {
+		r.forget(ws)
+		return workspaceapi.Workspace{}, err
+	}
+	if err := r.createMachine(ctx, ws); err != nil {
+		if cleanupErr := r.removeMachine(context.Background(), ws.Machine); cleanupErr != nil {
+			r.mu.Lock()
+			ws.State = string(workspaceapi.WorkspaceStarting)
+			_ = writeMetadata(ws)
+			r.mu.Unlock()
+			return workspaceapi.Workspace{}, errors.Join(err, cleanupErr)
+		}
+		r.forget(ws)
+		return workspaceapi.Workspace{}, err
+	}
+	r.mu.Lock()
+	ws.State = string(workspaceapi.WorkspaceRunning)
+	err = writeMetadata(ws)
+	described := describe(ws)
+	r.mu.Unlock()
+	if err != nil {
+		return workspaceapi.Workspace{}, err
+	}
+	return described, nil
+}
+
+func (r *Runtime) forget(ws *workspace) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.workspaces[ws.ID] == ws {
+		delete(r.workspaces, ws.ID)
+		r.detachAdmissionMachineLocked(ws.Machine, true)
+	}
+	_ = os.RemoveAll(ws.directory)
+}
+
+func (r *Runtime) finishBoot(ws *workspace) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	ws.booting = false
+	r.notifyAdmissionLocked()
+}
+
+// admitRunningLocked refuses to boot beyond the running-VM cap rather than
+// overcommitting the host.
+func (r *Runtime) admitRunningLocked(maximum int) error {
+	running := r.inUseLocked()
+	if running >= maximum {
+		return &CapacityError{Code: "machine_capacity", Class: "capacity", Message: fmt.Sprintf("microVM capacity reached: %d of %d machines are in use", running, maximum)}
+	}
+	return nil
+}
+
+func (r *Runtime) machineFlags(workspaceID string) []string {
+	args := []string{"-n", r.machineName(workspaceID), "-c", strconv.Itoa(r.config.CPUs), "-m", strconv.Itoa(r.config.MemoryMiB) + "M", "-q",
+		// Deny every destination but the backend's own loopback listener.
+		"--no-net", "--tmpfs", guestRunMount}
+	for _, port := range r.config.HostPorts {
+		args = append(args, "--net-rule", fmt.Sprintf("allow@host:tcp:%d", port))
+	}
+	labels := r.ownership(workspaceID)
+	keys := make([]string, 0, len(labels))
+	for key := range labels {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		args = append(args, "--label", key+"="+labels[key])
+	}
+	return args
+}
+
+// Snapshot launches must keep the VM idle rather than execute the image CMD.
+// msb run otherwise starts Node's default command, which exits on closed stdin
+// and stops the VM before its agent relay is available.
+func snapshotBootArgs(snapshot string, flags []string) []string {
+	args := append([]string{"run", "--from-snapshot", snapshot, "-d"}, flags...)
+	return append(args, "--entrypoint", "/bin/sleep", "--", "infinity")
+}
+
+func (r *Runtime) createMachine(ctx context.Context, ws *workspace) error {
+	if ws.Snapshot == "" && r.config.Image != DefaultImage {
+		return fmt.Errorf("%w: unapproved workspace base image", ErrUnavailable)
+	}
+	ws.RelayPort = relayPort(r.config.EgressRelay)
+	var args []string
+	if ws.Snapshot != "" {
+		args = snapshotBootArgs(ws.Snapshot, r.machineFlags(ws.ID))
+	} else {
+		pull := "if-missing"
+		if r.config.Bundle != nil {
+			pull = "never"
+		}
+		args = append([]string{"create", r.config.Image, "--pull", pull, "--root-disk", strconv.Itoa(r.config.DiskMiB) + "M"}, r.machineFlags(ws.ID)...)
+	}
+	createCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	if _, err := r.cli.run(createCtx, nil, args...); err != nil {
+		return fmt.Errorf("%w: boot workspace microVM: %v", ErrUnavailable, err)
+	}
+	return r.prepareGuest(ctx, ws)
+}
+
+// prepareGuest plants the adapter's guest helper, creates the unprivileged
+// workspace user and directories, and starts the host bridge.
+func (r *Runtime) prepareGuest(ctx context.Context, ws *workspace) error {
+	ws.daemonMu.Lock()
+	ws.daemonBoot = nil
+	ws.secretEnvironmentDigest = nil
+	ws.relayDigest, ws.relayEnvironment = nil, nil
+	if link, err := r.machined.Current(ws.ID); err == nil {
+		_ = link.Close()
+	}
+	ws.daemonMu.Unlock()
+	if err := r.installGuest(ctx, ws.Machine); err != nil {
+		return err
+	}
+	if _, err := r.guest(ctx, ws.Machine, nil, "setup", guestUser, strconv.Itoa(guestUID), guestRoot, guestHome, guestStateDir, guestTempDir); err != nil {
+		return fmt.Errorf("prepare workspace guest: %w", err)
+	}
+	if err := r.prepareMembers(ctx, ws, nil); err != nil {
+		return fmt.Errorf("prepare workspace members: %w", err)
+	}
+	if err := r.installGuestJJ(ctx, ws.Machine); err != nil {
+		return fmt.Errorf("prepare workspace guest jj: %w", err)
+	}
+	if err := r.startBridges(ctx, ws); err != nil {
+		return err
+	}
+	ws.guestOK = true
+	return nil
+}
+
+func (r *Runtime) removeMachine(ctx context.Context, name string) error {
+	removeCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	_, err := r.cli.run(removeCtx, nil, "remove", "--force", "-q", name)
+	// `msb remove -q` reports a missing machine with a bare exit 1.
+	_, found, statusErr := r.cli.sandboxStatus(ctx, name)
+	if statusErr == nil && !found {
+		return nil
+	}
+	if statusErr != nil {
+		return fmt.Errorf("observe removed microVM %s: %w", name, statusErr)
+	}
+	if err == nil {
+		return fmt.Errorf("microVM %s removal is not confirmed", name)
+	}
+	return err
+}
+
+func (r *Runtime) stopMachine(ctx context.Context, name string) error {
+	stopCtx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	_, err := r.cli.run(stopCtx, nil, "stop", "-t", "10", "-q", name)
+	// The command acknowledges the request before the hypervisor necessarily
+	// finishes suspension. Keep the disk and admission slot until observation
+	// confirms completion, under the same deadline as the stop request.
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	last := "unobserved"
+	for {
+		status, found, statusErr := r.cli.sandboxStatus(stopCtx, name)
+		if statusErr != nil {
+			// The deadline can land inside an observation. That is the same
+			// unconfirmed stop as one that lands between observations.
+			if stopCtx.Err() != nil {
+				return fmt.Errorf("microVM %s stop is not confirmed: %s: %w", name, last, stopCtx.Err())
+			}
+			return fmt.Errorf("observe stopped microVM %s: %w", name, statusErr)
+		}
+		last = status
+		if !found || status == "stopped" {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("stop microVM %s: %w", name, err)
+		}
+		select {
+		case <-stopCtx.Done():
+			return fmt.Errorf("microVM %s stop is not confirmed: %s: %w", name, status, stopCtx.Err())
+		case <-ticker.C:
+		}
+	}
+}
+
+func (r *Runtime) InspectWorkspace(ctx context.Context, id string) (workspaceapi.Workspace, error) {
+	if err := ctx.Err(); err != nil {
+		return workspaceapi.Workspace{}, err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	ws, err := r.workspaceLocked(id)
+	if err != nil {
+		return workspaceapi.Workspace{}, err
+	}
+	return describe(ws), nil
+}
+
+func (r *Runtime) workspaceLocked(id string) (*workspace, error) {
+	if r.closed {
+		return nil, errors.New("microsandbox runtime is closed")
+	}
+	ws := r.workspaces[strings.TrimSpace(id)]
+	if ws == nil {
+		return nil, fmt.Errorf("%w: %s", workspaceapi.ErrWorkspaceNotFound, id)
+	}
+	return ws, nil
+}
+
+func (r *Runtime) runningWorkspace(id string) (*workspace, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	ws, err := r.workspaceLocked(id)
+	if err != nil {
+		return nil, err
+	}
+	if ws.State != string(workspaceapi.WorkspaceRunning) {
+		return nil, fmt.Errorf("%w: %s", workspaceapi.ErrWorkspaceStopped, id)
+	}
+	return ws, nil
+}
+
+// StartWorkspace boots a stopped workspace VM on its own disk.
+func (r *Runtime) StartWorkspace(ctx context.Context, id string) (result workspaceapi.Workspace, resultErr error) {
+	ctx, releaseFence, fenceErr := r.CleanupGate.Enter(ctx, id)
+	if fenceErr != nil {
+		return workspaceapi.Workspace{}, fenceErr
+	}
+	defer releaseFence()
+	started := time.Now()
+	attempted := false
+	kind := "warm"
+	defer func() {
+		if attempted {
+			r.observeMachineWake(ctx, kind, started, resultErr)
+		}
+	}()
+	r.mu.Lock()
+	ws, err := r.workspaceLocked(id)
+	if err != nil {
+		r.mu.Unlock()
+		return workspaceapi.Workspace{}, err
+	}
+	if ws.State == string(workspaceapi.WorkspaceRunning) {
+		described := describe(ws)
+		r.mu.Unlock()
+		return described, nil
+	}
+	if ws.State != string(workspaceapi.WorkspaceStopped) && !(ws.State == "starting" && ws.recovering && !ws.booting) {
+		state := ws.State
+		r.mu.Unlock()
+		return workspaceapi.Workspace{}, fmt.Errorf("workspace is %s", state)
+	}
+	r.mu.Unlock()
+	maximum, err := r.prepareAdmission(ctx)
+	if err != nil {
+		return workspaceapi.Workspace{}, err
+	}
+	r.mu.Lock()
+	// Stop/delete/start may have changed the record while admission did I/O.
+	current, err := r.workspaceLocked(id)
+	if err != nil {
+		r.mu.Unlock()
+		return workspaceapi.Workspace{}, err
+	}
+	ws = current
+	if ws.State == string(workspaceapi.WorkspaceRunning) {
+		described := describe(ws)
+		r.mu.Unlock()
+		return described, nil
+	}
+	if ws.State != string(workspaceapi.WorkspaceStopped) && !(ws.State == "starting" && ws.recovering && !ws.booting) {
+		state := ws.State
+		r.mu.Unlock()
+		return workspaceapi.Workspace{}, fmt.Errorf("workspace is %s", state)
+	}
+	if err := r.admitMachineLocked(ctx, maximum, ws.Machine); err != nil {
+		r.mu.Unlock()
+		return workspaceapi.Workspace{}, err
+	}
+	attempted = true
+	ws.State = string(workspaceapi.WorkspaceStarting)
+	ws.booting = true
+	r.mu.Unlock()
+	defer r.finishBoot(ws)
+
+	var startErr error
+	if ws.Reclaimed {
+		kind = "cold"
+		startErr = r.recreateMachine(ctx, ws)
+	} else {
+		startErr = r.startMachine(ctx, ws)
+	}
+	// A guest preparation failure can occur after the VM started. Keep its
+	// capacity until stop is confirmed, even if the caller cancelled the boot.
+	var stopErr error
+	if startErr != nil {
+		stopErr = r.stopMachine(context.Background(), ws.Machine)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if startErr != nil {
+		ws.State = string(workspaceapi.WorkspaceStopped)
+		if stopErr == nil {
+			ws.recovering = false
+			r.detachAdmissionMachineLocked(ws.Machine, true)
+		}
+		if stopErr != nil {
+			ws.State = string(workspaceapi.WorkspaceStarting)
+		}
+		_ = writeMetadata(ws)
+		return workspaceapi.Workspace{}, errors.Join(startErr, stopErr)
+	}
+	ws.Reclaimed = false
+	ws.recovering = false
+	ws.State = string(workspaceapi.WorkspaceRunning)
+	if err := writeMetadata(ws); err != nil {
+		return workspaceapi.Workspace{}, err
+	}
+	return describe(ws), nil
+}
+
+func (r *Runtime) startMachine(ctx context.Context, ws *workspace) error {
+	status, found, err := r.cli.sandboxStatus(ctx, ws.Machine)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrUnavailable, err)
+	}
+	if !found {
+		return fmt.Errorf("workspace microVM %s no longer exists", ws.Machine)
+	}
+	if ws.recovering && status != "running" && status != "stopped" {
+		// The old launcher may still be booting. Observe it; never issue a
+		// second start for the same retained boot.
+		observe, cancel := context.WithTimeout(ctx, 5*time.Minute)
+		defer cancel()
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		for status != "running" && status != "stopped" {
+			select {
+			case <-observe.Done():
+				return observe.Err()
+			case <-ticker.C:
+			}
+			status, found, err = r.cli.sandboxStatus(observe, ws.Machine)
+			if err != nil {
+				return err
+			}
+			if !found {
+				return fmt.Errorf("recovered microVM %s disappeared", ws.Machine)
+			}
+		}
+	}
+	if ws.recovering && status == "stopped" {
+		// The original boot ended. Its confirmed stop must release this slot;
+		// a retry needs a fresh grant and the current disk/capacity checks.
+		return fmt.Errorf("%w: recovered microVM %s stopped before reattachment", ErrUnavailable, ws.Machine)
+	}
+	if ws.recovering && status == "running" && r.config.Bundle != nil {
+		// A new host registry requires a fresh guest boot. Retain this machine's
+		// disk and admission slot, but end the old broker before minting a new
+		// boot authority; replacing a serving broker's secret is forbidden.
+		if err := r.stopMachine(ctx, ws.Machine); err != nil {
+			return err
+		}
+		status = "stopped"
+	}
+	if status != "running" {
+		startCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+		_, err := r.cli.run(startCtx, nil, "start", "-q", ws.Machine)
+		cancel()
+		if err != nil {
+			return fmt.Errorf("%w: start workspace microVM: %v", ErrUnavailable, err)
+		}
+	}
+	if err := r.cleanupGuest(ctx, ws.Machine); err != nil {
+		return err
+	}
+	return r.prepareGuest(ctx, ws)
+}
+
+// RefreshWorkspaceRecipe replaces only a stopped machine's root disk when its
+// current repository recipe changed. Layer preparation completes before any
+// retained disk is removed; homes are never transferred to the new image.
+func (r *Runtime) RefreshWorkspaceRecipe(ctx context.Context, spec workspaceapi.WorkspaceSpec) (bool, error) {
+	ctx, releaseFence, err := r.CleanupGate.Enter(ctx, spec.ID)
+	if err != nil {
+		return false, err
+	}
+	defer releaseFence()
+	r.mu.Lock()
+	existing, lookupErr := r.workspaceLocked(spec.ID)
+	if lookupErr != nil {
+		r.mu.Unlock()
+		return false, lookupErr
+	}
+	if existing.State != string(workspaceapi.WorkspaceStopped) {
+		state := existing.State
+		r.mu.Unlock()
+		return false, fmt.Errorf("workspace is %s; recipe replacement requires a stopped machine", state)
+	}
+	if existing.LayerKey != "" && spec.Source == nil {
+		r.mu.Unlock()
+		return false, errors.New("recipe replacement requires the workspace source")
+	}
+	r.mu.Unlock()
+	if r.environments != nil {
+		if err := r.environments.admit(ctx); err != nil {
+			return false, err
+		}
+	}
+	layer, release, err := r.resolveWorkspaceLayerForCreate(ctx, spec)
+	defer release()
+	if err != nil {
+		return false, err
+	}
+	r.mu.Lock()
+	ws, err := r.workspaceLocked(spec.ID)
+	if err != nil {
+		r.mu.Unlock()
+		return false, err
+	}
+	if ws.State != string(workspaceapi.WorkspaceStopped) {
+		r.mu.Unlock()
+		return false, fmt.Errorf("workspace is %s; recipe replacement requires a stopped machine", ws.State)
+	}
+	if ws.LayerKey == layer.Key && ws.Snapshot == layer.Snapshot {
+		changed := ws.Reclaimed
+		r.mu.Unlock()
+		return changed, nil
+	}
+	old := ws.metadata
+	ws.State = string(workspaceapi.WorkspaceStopping)
+	ws.Snapshot, ws.LayerKey, ws.Link, ws.Reclaimed = layer.Snapshot, layer.Key, layer.Link, true
+	// Persist the target before removal: recovery never mistakes the missing
+	// old disk for a lost workspace or restores credentials from an old layer.
+	if err := writeMetadata(ws); err != nil {
+		ws.metadata = old
+		r.mu.Unlock()
+		return false, err
+	}
+	r.mu.Unlock()
+	removeErr := r.removeMachine(ctx, ws.Machine)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	ws.State = string(workspaceapi.WorkspaceStopped)
+	return true, errors.Join(removeErr, writeMetadata(ws))
+}
+
+// recreateMachine boots a fresh machine for a reclaimed workspace from its
+// environment layer, or the base image, with an empty root. A partial boot is
+// removed so the workspace stays reclaimed and startable.
+func (r *Runtime) recreateMachine(ctx context.Context, ws *workspace) error {
+	// A crash or unconfirmed removal can leave the old stopped disk present.
+	// Never boot it under the new recipe or reuse its member homes.
+	_, found, err := r.cli.sandboxStatus(ctx, ws.Machine)
+	if err != nil {
+		return err
+	}
+	if found {
+		if err := r.removeMachine(ctx, ws.Machine); err != nil {
+			return err
+		}
+	}
+	if r.environments != nil {
+		if err := r.environments.admit(ctx); err != nil {
+			return err
+		}
+	}
+	if err := r.createMachine(ctx, ws); err != nil {
+		_ = r.removeMachine(context.Background(), ws.Machine)
+		return err
+	}
+	return nil
+}
+
+// ReclaimWorkspaceDisk removes a stopped workspace's machine and disk and
+// keeps its metadata. The next StartWorkspace boots a fresh machine with an
+// empty root from the workspace's environment layer; a workspace forked from
+// a cold snapshot boots the base image instead, because that snapshot holds
+// another workspace's files. It is idempotent.
+func (r *Runtime) ReclaimWorkspaceDisk(ctx context.Context, id string) error {
+	r.mu.Lock()
+	ws, err := r.workspaceLocked(id)
+	if err != nil {
+		r.mu.Unlock()
+		return err
+	}
+	if ws.State != string(workspaceapi.WorkspaceStopped) {
+		state := ws.State
+		r.mu.Unlock()
+		return fmt.Errorf("workspace is %s; only a stopped workspace's disk is reclaimed", state)
+	}
+	if ws.Reclaimed {
+		r.mu.Unlock()
+		return nil
+	}
+	ws.State = string(workspaceapi.WorkspaceStopping)
+	r.mu.Unlock()
+
+	revokeErr := r.machined.RevokeBoot(ws.ID)
+	removeErr := r.removeMachine(ctx, ws.Machine)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	ws.State = string(workspaceapi.WorkspaceStopped)
+	if removeErr != nil {
+		return errors.Join(fmt.Errorf("reclaim workspace disk: %w", removeErr), revokeErr)
+	}
+	ws.Reclaimed = true
+	if strings.HasPrefix(ws.Snapshot, coldSnapshotPrefix) {
+		ws.Snapshot, ws.LayerKey, ws.Link = "", "", nil
+	}
+	return errors.Join(writeMetadata(ws), revokeErr)
+}
+
+// StopWorkspace ends every command and service, then stops the VM. Its disk,
+// and so the workspace's files, are kept.
+func (r *Runtime) StopWorkspace(ctx context.Context, id string) error {
+	ctx, releaseFence, fenceErr := r.CleanupGate.Enter(ctx, id)
+	if fenceErr != nil {
+		return fenceErr
+	}
+	defer releaseFence()
+	r.mu.Lock()
+	ws, err := r.workspaceLocked(id)
+	if err != nil {
+		r.mu.Unlock()
+		return err
+	}
+	if ws.State == string(workspaceapi.WorkspaceStopped) {
+		r.mu.Unlock()
+		ws.daemonMu.Lock()
+		defer ws.daemonMu.Unlock()
+		return r.machined.RevokeBoot(ws.ID)
+	}
+	if ws.State == string(workspaceapi.WorkspaceStopping) {
+		r.mu.Unlock()
+		return errors.New("workspace stop is already in progress")
+	}
+	previous := ws.State
+	ws.State = string(workspaceapi.WorkspaceStopping)
+	for _, h := range r.admission {
+		if h.held && h.machine == ws.Machine && h.releasing.IsZero() {
+			h.releasing = time.Now()
+		}
+	}
+	commands := r.detachProcessesLocked(ws)
+	r.mu.Unlock()
+
+	ws.daemonMu.Lock()
+	defer ws.daemonMu.Unlock()
+	// Revoke before waiting for guest shutdown, including when stop fails.
+	// Restoring the observed VM state never restores its old credential.
+	revokeErr := r.machined.RevokeBoot(ws.ID)
+	for _, command := range commands {
+		command.cancel()
+	}
+	stopErr := r.stopMachine(ctx, ws.Machine)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if stopErr != nil {
+		ws.State = previous
+		return errors.Join(stopErr, revokeErr)
+	}
+	ws.State = string(workspaceapi.WorkspaceStopped)
+	ws.recovering = false
+	r.detachAdmissionMachineLocked(ws.Machine, true)
+	ws.guestOK = false
+	return errors.Join(writeMetadata(ws), revokeErr)
+}
+
+// detachProcessesLocked revokes the egress binding, marks services stopped,
+// and returns every live guest command so the caller can end them outside
+// the lock.
+func (r *Runtime) detachProcessesLocked(ws *workspace) []*guestCommand {
+	if r.config.EgressRelay != nil {
+		r.config.EgressRelay.Revoke(ws.ID)
+	}
+	commands := make([]*guestCommand, 0, len(ws.commands))
+	for _, command := range ws.commands {
+		commands = append(commands, command)
+	}
+	for _, service := range ws.services {
+		if !service.command.finished() {
+			service.stopped = true
+		}
+	}
+	for port, preview := range ws.previews {
+		preview.close()
+		delete(ws.previews, port)
+	}
+	r.closeRelayHostsLocked(ws.ID)
+	return commands
+}
+
+// DeleteWorkspace removes the VM and its disk. It is idempotent.
+func (r *Runtime) DeleteWorkspace(ctx context.Context, id string) error {
+	ctx, releaseFence, fenceErr := r.CleanupGate.Enter(ctx, id)
+	if fenceErr != nil {
+		return fenceErr
+	}
+	defer releaseFence()
+	r.mu.Lock()
+	ws, err := r.workspaceLocked(id)
+	if errors.Is(err, workspaceapi.ErrWorkspaceNotFound) {
+		r.mu.Unlock()
+		return nil
+	}
+	if err != nil {
+		r.mu.Unlock()
+		return err
+	}
+	commands := r.detachProcessesLocked(ws)
+	ws.State = string(workspaceapi.WorkspaceStopping)
+	r.mu.Unlock()
+	ws.daemonMu.Lock()
+	defer ws.daemonMu.Unlock()
+	revokeErr := r.machined.RevokeBoot(ws.ID)
+	for _, command := range commands {
+		command.cancel()
+	}
+	if err := r.removeMachine(ctx, ws.Machine); err != nil {
+		return errors.Join(fmt.Errorf("delete workspace microVM: %w", err), revokeErr)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := os.RemoveAll(ws.directory); err != nil {
+		return errors.Join(fmt.Errorf("delete microsandbox workspace state: %w", err), revokeErr)
+	}
+	delete(r.workspaces, ws.ID)
+	return revokeErr
+}
+
+// Close ends every command the backend holds and stops running VMs so no
+// guest work outlives the backend. Disks and metadata are kept.
+func (r *Runtime) Close() error {
+	r.mu.Lock()
+	if r.closed {
+		r.mu.Unlock()
+		return nil
+	}
+	r.closed = true
+	if r.admissionCancel != nil {
+		r.admissionCancel()
+	}
+	var commands []*guestCommand
+	var running []*workspace
+	var auxiliary []string
+	for name := range r.auxCleanup {
+		auxiliary = append(auxiliary, name)
+	}
+	for _, ws := range r.workspaces {
+		commands = append(commands, r.detachProcessesLocked(ws)...)
+		if ws.State == string(workspaceapi.WorkspaceRunning) {
+			running = append(running, ws)
+		}
+	}
+	r.mu.Unlock()
+	for _, command := range commands {
+		command.cancel()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	var errs []error
+	errs = append(errs, r.machined.Close())
+	for _, name := range auxiliary {
+		errs = append(errs, r.finishAuxVM(name))
+	}
+	for _, ws := range running {
+		if err := r.stopMachine(ctx, ws.Machine); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		ws.State = string(workspaceapi.WorkspaceStopped)
+		errs = append(errs, writeMetadata(ws))
+	}
+	return errors.Join(errs...)
+}
+
+var (
+	_ workspaceapi.WorkspaceRuntime       = (*Runtime)(nil)
+	_ workspaceapi.IsolationReporter      = (*Runtime)(nil)
+	_ workspaceapi.WorkspaceDiskReclaimer = (*Runtime)(nil)
+)

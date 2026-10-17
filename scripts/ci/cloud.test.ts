@@ -417,7 +417,7 @@ describe("Local CI gate runner", () => {
 
     test("the real docs lane checks published package content", () => {
       const result = run("docs")
-      expect(result.stdout).toContain("RAN exec smthrs test //scripts:packageDocs")
+      expect(result.stdout).toContain("RAN exec smthrs test //flows:packageDocs")
     })
 
     test("bootstraps the union of the group's toolchains exactly once", () => {

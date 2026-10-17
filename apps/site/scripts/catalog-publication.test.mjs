@@ -4,7 +4,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { catalogPublicationErrors } from "./catalog-publication.mjs"
-import { publishedPackages } from "../../../scripts/pack-release.mjs"
+import { publishedPackages } from "../../../flows/release/pack-release.mjs"
 
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url))
 

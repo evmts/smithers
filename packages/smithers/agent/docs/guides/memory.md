@@ -46,7 +46,7 @@ still withhold any opening row at `Relevance.withholdAt`, like any memory row.
 | Source  | Candidates                                                                                                                  | Jev question                       | Threshold        |
 | ------- | --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- | ---------------- |
 | Seeds   | Paths (with `repo`) and commit ids (with `commits`) the task or `paths` name                                                | none, kept                         |                  |
-| Wiki    | Pages in `.smithers/coding-project.json`, `factory/wiki/decisions/*.md`, `.agents/skills/*/SKILL.md`, `.flows/wiki/deps/**` | `memory/needed`, top 30 by keyword | 0.35; deps 0.50  |
+| Wiki    | Pages in `.smithers/coding-project.json`, `.smithers/wiki/decisions/*.md`, `.agents/skills/*/SKILL.md`, `.flows/wiki/deps/**` | `memory/needed`, top 30 by keyword | 0.35; deps 0.50  |
 | Repo    | A README walk: 4 levels, 64 children judged and 8 kept per directory, 48 directories; then the files of kept directories    | `memory/descend`, `memory/needed`  | 0.30, 0.35       |
 | Commits | `jj log` of the kept and seeded files, 60 at most, with `refs/notes/mythical` notes                                         | `memory/needed`                    | 0.50             |
 | Facts   | Rows of the named banks from `@smthrs/memory`                                                                               | `relevance/unnecessary`            | withheld at 0.90 |

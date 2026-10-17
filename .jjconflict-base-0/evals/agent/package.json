@@ -1,0 +1,34 @@
+{
+  "name": "@smthrs/eval-agent",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "description": "Offline flows-agent evaluation suite, gated on the committed baseline, and the character runner for agent profiles",
+  "scripts": {
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "bun run.ts",
+    "character": "bun character/run.ts",
+    "test:character": "bun test character"
+  },
+  "dependencies": {
+    "@effect/platform-node": "4.0.4",
+    "@smthrs/agent": "workspace:*",
+    "@smthrs/core": "workspace:*",
+    "@smthrs/engine": "workspace:*",
+    "@smthrs/evals": "workspace:*",
+    "@smthrs/flow": "workspace:*",
+    "@smthrs/harness": "workspace:*",
+    "@smthrs/model": "workspace:*",
+    "@smthrs/plan": "workspace:*",
+    "@smthrs/registry": "workspace:*",
+    "@smthrs/scorers": "workspace:*",
+    "effect": "4.0.4",
+    "yaml": "2.9.0"
+  },
+  "devDependencies": {
+    "@smthrs/targets": "workspace:*",
+    "@types/node": "26.4.1",
+    "bun-types": "^1.4.0",
+    "typescript": "5.9.3"
+  }
+}

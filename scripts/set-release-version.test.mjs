@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import test from "node:test"
-import { changelogMismatches, mismatches, readManifests, readVersionedManifests, releaseChangelog, retarget, retargetSource, sourceMismatches, versionedChangelogs, versionedSources, versionedTemplates } from "./set-release-version.mjs"
+import { changelogMismatches, mismatches, readManifests, readVersionedManifests, releaseChangelog, retarget, retargetSource, sourceMismatches, versionedChangelogs, versionedSources, versionedTemplates } from "../flows/release/set-release-version.mjs"
 import { repoRoot } from "./workspace-packages.mjs"
 
 const workspaceNames = new Set(["@smthrs/kernel", "@smthrs/flows"])
@@ -104,7 +104,7 @@ test("this workspace is internally coherent at its current version", () => {
 test("workspace discovery follows every pnpm-workspace package glob", () => {
   const directories = new Set(readManifests().map(({ directory }) => directory))
   assert.equal(directories.has("packages/smithers/build/infra"), true)
-  assert.equal(directories.has("examples"), true)
+  assert.equal(directories.has("flows/coding"), true)
   assert.equal(directories.has("apps/server"), true)
   assert.equal(directories.has("packages/rpc"), true)
   assert.equal(directories.has("apps/app"), true)

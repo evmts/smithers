@@ -1,0 +1,375 @@
+{
+  "name": "@smthrs/kernel",
+  "type": "module",
+  "version": "1.0.0-rc.12",
+  "license": "MIT",
+  "smthrs": {
+    "group": "engine"
+  },
+  "description": "Capability kernel: effect tiers, monotone capability sets, grant store, and permission-decorating layers over the Host services",
+  "homepage": "https://github.com/smithersai/smithers",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/smithers/flows/kernel"
+  },
+  "bugs": {
+    "url": "https://github.com/smithersai/smithers/issues"
+  },
+  "tags": [
+    "typescript",
+    "effect",
+    "flow",
+    "capabilities"
+  ],
+  "keywords": [
+    "typescript",
+    "effect",
+    "flow",
+    "capabilities"
+  ],
+  "engines": {
+    "node": ">=26.4.0"
+  },
+  "sideEffects": [],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./test/contract": "./src/test/HostContract.ts",
+    "./internal/*": null,
+    "./*/index": null,
+    "./CapabilitySet": "./src/CapabilitySet.ts",
+    "./ChildProcessSpawner": "./src/ChildProcessSpawner.ts",
+    "./CommandLine": "./src/CommandLine.ts",
+    "./ContainedSpawner": "./src/ContainedSpawner.ts",
+    "./FileSystem": "./src/FileSystem.ts",
+    "./GrantEvent": "./src/GrantEvent.ts",
+    "./GrantStore": "./src/GrantStore.ts",
+    "./HostError": "./src/HostError.ts",
+    "./HostServices": "./src/HostServices.ts",
+    "./HttpClient": "./src/HttpClient.ts",
+    "./Jj": "./src/Jj.ts",
+    "./JournalGrantStore": "./src/JournalGrantStore.ts",
+    "./Path": "./src/Path.ts",
+    "./ProcessLedger": "./src/ProcessLedger.ts",
+    "./Rooted": "./src/Rooted.ts",
+    "./Workspace": "./src/Workspace.ts",
+    "./index": "./src/index.ts",
+    "./test/HostContract": "./src/test/HostContract.ts",
+    "./test/TestGrantStore": "./src/test/TestGrantStore.ts",
+    "./ChildProcessEnvironment": "./src/ChildProcessEnvironment.ts",
+    "./ProcessConfinement": "./src/ProcessConfinement.ts",
+    "./Unreachable": "./src/Unreachable.ts"
+  },
+  "files": [
+    "src/**/*.ts",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/package.json",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next",
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./test/contract": {
+        "import": {
+          "types": "./dist/esm/test/HostContract.d.ts",
+          "default": "./dist/esm/test/HostContract.js"
+        },
+        "require": {
+          "types": "./dist/cjs/test/HostContract.d.ts",
+          "default": "./dist/cjs/test/HostContract.js"
+        }
+      },
+      "./internal/*": null,
+      "./*/index": null,
+      "./CapabilitySet": {
+        "import": {
+          "types": "./dist/esm/CapabilitySet.d.ts",
+          "default": "./dist/esm/CapabilitySet.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CapabilitySet.d.ts",
+          "default": "./dist/cjs/CapabilitySet.js"
+        }
+      },
+      "./ChildProcessSpawner": {
+        "import": {
+          "types": "./dist/esm/ChildProcessSpawner.d.ts",
+          "default": "./dist/esm/ChildProcessSpawner.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ChildProcessSpawner.d.ts",
+          "default": "./dist/cjs/ChildProcessSpawner.js"
+        }
+      },
+      "./CommandLine": {
+        "import": {
+          "types": "./dist/esm/CommandLine.d.ts",
+          "default": "./dist/esm/CommandLine.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CommandLine.d.ts",
+          "default": "./dist/cjs/CommandLine.js"
+        }
+      },
+      "./ContainedSpawner": {
+        "import": {
+          "types": "./dist/esm/ContainedSpawner.d.ts",
+          "default": "./dist/esm/ContainedSpawner.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ContainedSpawner.d.ts",
+          "default": "./dist/cjs/ContainedSpawner.js"
+        }
+      },
+      "./FileSystem": {
+        "import": {
+          "types": "./dist/esm/FileSystem.d.ts",
+          "default": "./dist/esm/FileSystem.js"
+        },
+        "require": {
+          "types": "./dist/cjs/FileSystem.d.ts",
+          "default": "./dist/cjs/FileSystem.js"
+        }
+      },
+      "./GrantEvent": {
+        "import": {
+          "types": "./dist/esm/GrantEvent.d.ts",
+          "default": "./dist/esm/GrantEvent.js"
+        },
+        "require": {
+          "types": "./dist/cjs/GrantEvent.d.ts",
+          "default": "./dist/cjs/GrantEvent.js"
+        }
+      },
+      "./GrantStore": {
+        "import": {
+          "types": "./dist/esm/GrantStore.d.ts",
+          "default": "./dist/esm/GrantStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/GrantStore.d.ts",
+          "default": "./dist/cjs/GrantStore.js"
+        }
+      },
+      "./HostError": {
+        "import": {
+          "types": "./dist/esm/HostError.d.ts",
+          "default": "./dist/esm/HostError.js"
+        },
+        "require": {
+          "types": "./dist/cjs/HostError.d.ts",
+          "default": "./dist/cjs/HostError.js"
+        }
+      },
+      "./HostServices": {
+        "import": {
+          "types": "./dist/esm/HostServices.d.ts",
+          "default": "./dist/esm/HostServices.js"
+        },
+        "require": {
+          "types": "./dist/cjs/HostServices.d.ts",
+          "default": "./dist/cjs/HostServices.js"
+        }
+      },
+      "./HttpClient": {
+        "import": {
+          "types": "./dist/esm/HttpClient.d.ts",
+          "default": "./dist/esm/HttpClient.js"
+        },
+        "require": {
+          "types": "./dist/cjs/HttpClient.d.ts",
+          "default": "./dist/cjs/HttpClient.js"
+        }
+      },
+      "./Jj": {
+        "import": {
+          "types": "./dist/esm/Jj.d.ts",
+          "default": "./dist/esm/Jj.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Jj.d.ts",
+          "default": "./dist/cjs/Jj.js"
+        }
+      },
+      "./JournalGrantStore": {
+        "import": {
+          "types": "./dist/esm/JournalGrantStore.d.ts",
+          "default": "./dist/esm/JournalGrantStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/JournalGrantStore.d.ts",
+          "default": "./dist/cjs/JournalGrantStore.js"
+        }
+      },
+      "./Path": {
+        "import": {
+          "types": "./dist/esm/Path.d.ts",
+          "default": "./dist/esm/Path.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Path.d.ts",
+          "default": "./dist/cjs/Path.js"
+        }
+      },
+      "./ProcessLedger": {
+        "import": {
+          "types": "./dist/esm/ProcessLedger.d.ts",
+          "default": "./dist/esm/ProcessLedger.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ProcessLedger.d.ts",
+          "default": "./dist/cjs/ProcessLedger.js"
+        }
+      },
+      "./Rooted": {
+        "import": {
+          "types": "./dist/esm/Rooted.d.ts",
+          "default": "./dist/esm/Rooted.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Rooted.d.ts",
+          "default": "./dist/cjs/Rooted.js"
+        }
+      },
+      "./Workspace": {
+        "import": {
+          "types": "./dist/esm/Workspace.d.ts",
+          "default": "./dist/esm/Workspace.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Workspace.d.ts",
+          "default": "./dist/cjs/Workspace.js"
+        }
+      },
+      "./index": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./test/HostContract": {
+        "import": {
+          "types": "./dist/esm/test/HostContract.d.ts",
+          "default": "./dist/esm/test/HostContract.js"
+        },
+        "require": {
+          "types": "./dist/cjs/test/HostContract.d.ts",
+          "default": "./dist/cjs/test/HostContract.js"
+        }
+      },
+      "./test/TestGrantStore": {
+        "import": {
+          "types": "./dist/esm/test/TestGrantStore.d.ts",
+          "default": "./dist/esm/test/TestGrantStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/test/TestGrantStore.d.ts",
+          "default": "./dist/cjs/test/TestGrantStore.js"
+        }
+      },
+      "./ChildProcessEnvironment": {
+        "import": {
+          "types": "./dist/esm/ChildProcessEnvironment.d.ts",
+          "default": "./dist/esm/ChildProcessEnvironment.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ChildProcessEnvironment.d.ts",
+          "default": "./dist/cjs/ChildProcessEnvironment.js"
+        }
+      },
+      "./ProcessConfinement": {
+        "import": {
+          "types": "./dist/esm/ProcessConfinement.d.ts",
+          "default": "./dist/esm/ProcessConfinement.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ProcessConfinement.d.ts",
+          "default": "./dist/cjs/ProcessConfinement.js"
+        }
+      },
+      "./Unreachable": {
+        "import": {
+          "types": "./dist/esm/Unreachable.d.ts",
+          "default": "./dist/esm/Unreachable.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Unreachable.d.ts",
+          "default": "./dist/cjs/Unreachable.js"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint src examples --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "circular": "node scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "vitest --coverage"
+  },
+  "dependencies": {
+    "@smthrs/capability": "1.0.0-rc.12",
+    "@smthrs/crypto": "1.0.0-rc.12",
+    "@smthrs/jj": "1.0.0-rc.12",
+    "@smthrs/journal": "1.0.0-rc.12"
+  },
+  "peerDependencies": {
+    "effect": "^4.0.4",
+    "vitest": "^5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@effect/vitest": {
+      "optional": true
+    },
+    "vitest": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@effect/platform-node": "4.0.4",
+    "@effect/vitest": "4.0.4",
+    "@eslint/js": "9.39.5",
+    "@smthrs/database": "1.0.0-rc.12",
+    "@types/node": "26.4.1",
+    "@vitest/coverage-v8": "5.0.0",
+    "dprint": "0.57.1",
+    "effect": "4.0.4",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "madge": "8.0.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0",
+    "fast-check": "4.9.0"
+  }
+}

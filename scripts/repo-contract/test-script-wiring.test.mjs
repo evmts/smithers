@@ -16,7 +16,7 @@ import { join, matchesGlob } from "node:path"
 import { describe, it } from "node:test"
 import ts from "typescript"
 
-import { parseWorkflow } from "../release-rehearsal.mjs"
+import { parseWorkflow } from "../../flows/release/release-rehearsal.mjs"
 import { repoRoot as root } from "../workspace-packages.mjs"
 
 const readManifest = (path) => JSON.parse(readFileSync(path, "utf8"))
@@ -98,14 +98,13 @@ describe("test-file ownership", () => {
   const declarations = ["PACKAGE.ts", "scripts/PACKAGE.ts", "scripts/repo-contract/PACKAGE.ts"]
     .map((path) => readFileSync(join(root, path), "utf8"))
     .join("\n")
-  const suites = [...testFiles("scripts", ".mjs"), ...testFiles("factory", ".ts")]
+  const suites = testFiles("scripts", ".mjs")
 
-  it("finds the script and factory suites", () => {
-    assert.ok(suites.includes("scripts/pack-release.test.mjs"))
-    assert.ok(suites.includes("factory/flows/harness.test.ts"))
+  it("finds the script suites", () => {
+    assert.ok(suites.includes("scripts/issue-claim.test.mjs"))
   })
 
-  it("names every script and factory suite in a target's test runner", () => {
+  it("names every script suite in a target's test runner", () => {
     const orphans = suites.filter((path) => !unownedTests.has(path) && !declarations.includes(`Smithers.file("//${path}")`))
     assert.deepEqual(orphans, [], "each suite needs a Smithers.testRunner entry or a reasoned unownedTests entry")
   })
@@ -114,17 +113,13 @@ describe("test-file ownership", () => {
     for (const path of unownedTests.keys()) assert.ok(suites.includes(path) && !declarations.includes(`//${path}"`), path)
   })
 
-  it("selects script and factory targets in their required jobs", () => {
+  it("selects script targets in their required jobs", () => {
     const workflow = parseWorkflow(readFileSync(join(root, ".github/workflows/ci.yml"), "utf8"))
     assert.notEqual(workflow.jobs.test["continue-on-error"], true)
-    const main = workflow.jobs.test.steps.flatMap((step) => step.run ? [step.run] : []).join("\n")
     assert.notEqual(workflow.jobs.scripts["continue-on-error"], true)
     const scripts = workflow.jobs.scripts.steps.flatMap((step) => step.run ? [step.run] : []).join("\n")
     assert.match(scripts, /smthrs test '\/\/scripts\/\.\.\.'/)
     assert.notEqual(workflow.jobs.repository["continue-on-error"], true)
-    const repository = workflow.jobs.repository.steps.flatMap((step) => step.run ? [step.run] : []).join("\n")
-    assert.doesNotMatch(main, /smthrs test '\/\/:factoryHarness'/)
-    assert.match(repository, /smthrs test '\/\/:factoryHarness'/)
   })
 })
 

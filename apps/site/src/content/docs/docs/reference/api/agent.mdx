@@ -2822,7 +2822,7 @@ calls `extract`, `judge` and `write` over a finished run's journal.
 | `reading`, `judge(task, candidates)`  | One `memory/mine` reading: `durable` and `issue` per candidate, each accepted when `accepts(p)` (τ 0.70).                                                                               |
 | `write(store, { bank, runId, text })` | The one fact writer: redacted, keyed by `noteId(bank, text)`, `source:transcript`; a stored fact is kept as it is.                                                                      |
 | `settle(input)`                       | The run-end reading as the `memory-mine` boundary; returns its `decision-settled` or `decision-unjudged` rows and a `supervisor-memory-failed` row per refused write or engine failure. |
-| `decisionsDirectory`                  | `factory/wiki/decisions`: where `memory/mine` appends `<item>.md` and where the `memory` wiki source reads decisions pages.                                                             |
+| `decisionsDirectory`                  | `.smithers/wiki/decisions`: where `memory/mine` appends `<item>.md` and where the `memory` wiki source reads decisions pages.                                                             |
 
 A Jev or engine failure writes nothing and never fails the run. A replayed run
 is served the recorded reading.

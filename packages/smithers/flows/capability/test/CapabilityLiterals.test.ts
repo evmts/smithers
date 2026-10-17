@@ -55,7 +55,16 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", 
  */
 const roots = [
   "skills",
-  "examples/src",
+  // Each package's runnable examples, which users copy.
+  "packages/smithers/flows/examples",
+  "packages/smithers/flows/engine/examples",
+  "packages/smithers/flows/patterns/examples",
+  "packages/smithers/flows/sync/examples",
+  "packages/smithers/agent/examples",
+  "packages/smithers/agent/model/examples",
+  "packages/smithers/agent/std/examples",
+  "packages/smithers/mcp/examples",
+  "packages/testing/examples",
   "docs",
   ".smithers",
   "prompts",

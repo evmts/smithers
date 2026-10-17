@@ -1,0 +1,1419 @@
+{
+  "summary": "How smithersai/smithers develops itself.",
+  "flows": [
+    {
+      "id": "review",
+      "description": "Review a working-copy change or pinned revisions, independently verify findings, and render the change as a walkthrough.",
+      "summary": "Review the uncommitted change and return a verdict.",
+      "featured": true,
+      "kind": "ts",
+      "path": "flows/review/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**",
+        "proc:spawn:*",
+        "model:call:*"
+      ],
+      "model": null,
+      "modelInvocable": true,
+      "flows": []
+    },
+    {
+      "id": "lint",
+      "description": "Lints the files you name against this repository's own conventions and fixes what it finds.",
+      "summary": "Lint the files you name against this repository's conventions and fix what it finds.",
+      "featured": true,
+      "kind": "mdx",
+      "path": "flows/lint/flow.mdx",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**",
+        "proc:spawn:*"
+      ],
+      "model": "luna",
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": [],
+      "budget": {
+        "tokens": 200000,
+        "milliseconds": 600000
+      }
+    },
+    {
+      "id": "pr-triage",
+      "description": "Triages one pull request for scope, tests, documentation, and review readiness from an untrusted diff without checking out its code.",
+      "summary": "Triage one pull request for scope, tests, docs, and review readiness from its diff alone.",
+      "featured": true,
+      "kind": "mdx",
+      "path": "flows/pr-triage/flow.mdx",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:.triage/report.json",
+        "proc:spawn:rg *"
+      ],
+      "model": "luna",
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": [],
+      "budget": {
+        "tokens": 100000,
+        "milliseconds": 600000
+      }
+    },
+    {
+      "id": "issue-triage",
+      "description": "Reproduces and triages one GitHub issue, producing a structured maintainer response without holding a GitHub write token.",
+      "summary": "Reproduce and triage one GitHub issue into a structured maintainer response.",
+      "featured": true,
+      "kind": "mdx",
+      "path": "flows/issue-triage/flow.mdx",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:.triage/report.json",
+        "proc:spawn:rg *",
+        "proc:spawn:git status *",
+        "proc:spawn:git diff *",
+        "proc:spawn:pnpm test *",
+        "proc:spawn:pnpm exec vitest *"
+      ],
+      "model": "luna",
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": [],
+      "budget": {
+        "tokens": 120000,
+        "milliseconds": 600000
+      }
+    },
+    {
+      "id": "release-notes",
+      "description": "Drafts release notes from the commits since the last tag, grouped by the package each one touched.",
+      "summary": "Draft release notes from the commits since the last tag, grouped by package.",
+      "featured": true,
+      "kind": "mdx",
+      "path": "flows/release-notes/flow.mdx",
+      "capabilities": [
+        "fs:read:**",
+        "proc:spawn:*"
+      ],
+      "model": "sol",
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": [],
+      "budget": {
+        "tokens": 250000,
+        "milliseconds": 600000
+      }
+    },
+    {
+      "id": "issue-sweep",
+      "description": "Work every open GitHub issue that no other machine holds.",
+      "summary": "Work every open GitHub issue that no other machine holds.",
+      "featured": true,
+      "kind": "ts",
+      "path": "flows/issue-sweep/flow.ts",
+      "capabilities": [
+        "proc:spawn:gh api *",
+        "proc:spawn:node /*/scripts/github-proxy.mjs --ensure",
+        "proc:spawn:node /*/scripts/issue-claim.mjs *",
+        "proc:spawn:jj -R *",
+        "proc:spawn:lockf *",
+        "proc:spawn:pnpm *",
+        "proc:spawn:codex *",
+        "proc:spawn:codex-rr *",
+        "proc:spawn:claude-rr *",
+        "proc:spawn:claude-as *",
+        "model:call:typesafe-ai/jev"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "checks/affected-lint",
+      "description": "Lint every target the Change's written files affect; a known red does not fail it.",
+      "summary": null,
+      "featured": false,
+      "kind": "mdx",
+      "path": "flows/checks/affected-lint/flow.mdx",
+      "capabilities": [
+        "fs:read:**",
+        "proc:spawn:sh scripts/ci/coding-check.sh *"
+      ],
+      "model": null,
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": [
+        "coding/CommandCheck"
+      ]
+    },
+    {
+      "id": "checks/affected-test",
+      "description": "Test every target the Change's written files affect; a known red does not fail it.",
+      "summary": null,
+      "featured": false,
+      "kind": "mdx",
+      "path": "flows/checks/affected-test/flow.mdx",
+      "capabilities": [
+        "fs:read:**",
+        "proc:spawn:sh scripts/ci/coding-check.sh *"
+      ],
+      "model": null,
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": [
+        "coding/CommandCheck"
+      ]
+    },
+    {
+      "id": "checks/bundle",
+      "description": "Run the existing //flows:codingBundle acceptance target.",
+      "summary": null,
+      "featured": false,
+      "kind": "mdx",
+      "path": "flows/checks/bundle/flow.mdx",
+      "capabilities": [
+        "fs:read:**",
+        "proc:spawn:sh scripts/ci/coding-check.sh *"
+      ],
+      "model": null,
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": [
+        "coding/CommandCheck"
+      ]
+    },
+    {
+      "id": "checks/bundle-bun",
+      "description": "Run the existing //flows:codingBundleBun acceptance target.",
+      "summary": null,
+      "featured": false,
+      "kind": "mdx",
+      "path": "flows/checks/bundle-bun/flow.mdx",
+      "capabilities": [
+        "fs:read:**",
+        "proc:spawn:sh scripts/ci/coding-check.sh *"
+      ],
+      "model": null,
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": [
+        "coding/CommandCheck"
+      ]
+    },
+    {
+      "id": "checks/drift",
+      "description": "Report formatting, target index, generated API, docs and declaration baseline drift for the revision.",
+      "summary": null,
+      "featured": false,
+      "kind": "mdx",
+      "path": "flows/checks/drift/flow.mdx",
+      "capabilities": [
+        "fs:read:**",
+        "proc:spawn:sh scripts/ci/coding-check.sh *"
+      ],
+      "model": null,
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": [
+        "coding/CommandCheck"
+      ]
+    },
+    {
+      "id": "checks/lint",
+      "description": "Lint the change on Jev against this repository's conventions, one changed hunk at a time.",
+      "summary": null,
+      "featured": false,
+      "kind": "mdx",
+      "path": "flows/checks/lint/flow.mdx",
+      "capabilities": [
+        "fs:read:**"
+      ],
+      "model": null,
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": [
+        "coding/JevCheck"
+      ]
+    },
+    {
+      "id": "checks/native",
+      "description": "Run the existing //flows:codingNative acceptance target.",
+      "summary": null,
+      "featured": false,
+      "kind": "mdx",
+      "path": "flows/checks/native/flow.mdx",
+      "capabilities": [
+        "fs:read:**",
+        "proc:spawn:sh scripts/ci/coding-check.sh *"
+      ],
+      "model": null,
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": [
+        "coding/CommandCheck"
+      ]
+    },
+    {
+      "id": "checks/native-bun",
+      "description": "Run the existing //flows:codingNativeBun acceptance target.",
+      "summary": null,
+      "featured": false,
+      "kind": "mdx",
+      "path": "flows/checks/native-bun/flow.mdx",
+      "capabilities": [
+        "fs:read:**",
+        "proc:spawn:sh scripts/ci/coding-check.sh *"
+      ],
+      "model": null,
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": [
+        "coding/CommandCheck"
+      ]
+    },
+    {
+      "id": "checks/policy",
+      "description": "Run the existing //flows:codingPolicy acceptance target.",
+      "summary": null,
+      "featured": false,
+      "kind": "mdx",
+      "path": "flows/checks/policy/flow.mdx",
+      "capabilities": [
+        "fs:read:**",
+        "proc:spawn:sh scripts/ci/coding-check.sh *"
+      ],
+      "model": null,
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": [
+        "coding/CommandCheck"
+      ]
+    },
+    {
+      "id": "checks/review",
+      "description": "Review the implemented Change through the declared lenses on a second provider and return findings bound to its commit.",
+      "summary": null,
+      "featured": false,
+      "kind": "mdx",
+      "path": "flows/checks/review/flow.mdx",
+      "capabilities": [
+        "fs:read:**"
+      ],
+      "model": null,
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": [
+        "coding/ReviewCheck"
+      ]
+    },
+    {
+      "id": "checks/runtime",
+      "description": "Run the existing //flows:codingRuntime acceptance target.",
+      "summary": null,
+      "featured": false,
+      "kind": "mdx",
+      "path": "flows/checks/runtime/flow.mdx",
+      "capabilities": [
+        "fs:read:**",
+        "proc:spawn:sh scripts/ci/coding-check.sh *"
+      ],
+      "model": null,
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": [
+        "coding/CommandCheck"
+      ]
+    },
+    {
+      "id": "checks/security",
+      "description": "Run the trusted security reviews that govern the implemented Change on subscription seats and return only public finding summaries.",
+      "summary": null,
+      "featured": false,
+      "kind": "mdx",
+      "path": "flows/checks/security/flow.mdx",
+      "capabilities": [
+        "fs:read:**"
+      ],
+      "model": null,
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": [
+        "coding/SecurityReviewCheck"
+      ]
+    },
+    {
+      "id": "checks/wiki",
+      "description": "Review the configured public wiki against the implemented immutable JJ revision and return ordinary owning-Change findings.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/checks/wiki/flow.ts",
+      "capabilities": [
+        "*"
+      ],
+      "model": null,
+      "modelInvocable": true,
+      "flows": [
+        "coding/WikiCheck"
+      ]
+    },
+    {
+      "id": "coding",
+      "description": "Implement a predicted linear Change plan with fast gates and asynchronous slow validation through the repository's registered flows.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/coding/flow.ts",
+      "capabilities": [
+        "*"
+      ],
+      "model": null,
+      "modelInvocable": true,
+      "flows": []
+    },
+    {
+      "id": "coding/dispatch",
+      "description": "Run one dispatched agent turn in this workspace and answer with the assistant messages it produced.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/coding/dispatch/flow.ts",
+      "capabilities": [
+        "*"
+      ],
+      "model": null,
+      "modelInvocable": true,
+      "flows": []
+    },
+    {
+      "id": "coding/flow-load",
+      "description": "Load every overridable flow at one main commit and answer each version's digest and load status.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/coding/flow-load/flow.ts",
+      "capabilities": [
+        "*"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "coding/implementation",
+      "description": "Implement one planned Change as native JJ atoms, preserving existing identities and recording exact revision evidence.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/coding/implementation/flow.ts",
+      "capabilities": [
+        "*"
+      ],
+      "model": null,
+      "modelInvocable": true,
+      "flows": []
+    },
+    {
+      "id": "coding/prototype",
+      "description": "Create and retain a disposable source prototype without implementing or landing it.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/coding/prototype/flow.ts",
+      "capabilities": [
+        "*"
+      ],
+      "model": null,
+      "modelInvocable": true,
+      "flows": []
+    },
+    {
+      "id": "coding/rebase-conflict",
+      "description": "Resolve a retained rebase conflict within the existing coding attempt.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/coding/rebase-conflict/flow.ts",
+      "capabilities": [
+        "*"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "coding/verify",
+      "description": "Run the project's required checks on one retained commit of the repository's mythical stack.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/coding/verify/flow.ts",
+      "capabilities": [
+        "*"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "coding/wiki",
+      "description": "Refresh the repository wiki on one retained commit of the mythical stack and answer its verified pages.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/coding/wiki/flow.ts",
+      "capabilities": [
+        "*"
+      ],
+      "model": null,
+      "modelInvocable": true,
+      "flows": []
+    },
+    {
+      "id": "create-flow",
+      "description": "Turns a plain-English request into a working Smithers flow in this workspace, through the clarify, provision, design, scaffold, fix and document stages.",
+      "summary": null,
+      "featured": false,
+      "kind": "mdx",
+      "path": "flows/create-flow/flow.mdx",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**",
+        "proc:spawn:*"
+      ],
+      "model": "flow/author",
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": []
+    },
+    {
+      "id": "create-flow/clarify",
+      "description": "Turns a plain-English request for a Smithers flow into a precise, buildable specification, without writing any files.",
+      "summary": null,
+      "featured": false,
+      "kind": "mdx",
+      "path": "flows/create-flow/clarify/flow.mdx",
+      "capabilities": [],
+      "model": "flow/author",
+      "modelInvocable": false,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": []
+    },
+    {
+      "id": "create-flow/design",
+      "description": "Turns a clarified flow specification and its provisioning notes into a concrete node graph a scaffolder can implement.",
+      "summary": null,
+      "featured": false,
+      "kind": "mdx",
+      "path": "flows/create-flow/design/flow.mdx",
+      "capabilities": [],
+      "model": "flow/author",
+      "modelInvocable": false,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": []
+    },
+    {
+      "id": "create-flow/document",
+      "description": "Writes the agent-facing skill file for a newly verified Smithers flow so future agents know it exists and how to run it.",
+      "summary": null,
+      "featured": false,
+      "kind": "mdx",
+      "path": "flows/create-flow/document/flow.mdx",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**"
+      ],
+      "model": "flow/author",
+      "modelInvocable": false,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": []
+    },
+    {
+      "id": "create-flow/fix",
+      "description": "Repairs a newly scaffolded Smithers flow until its typecheck, discovery, and test all pass.",
+      "summary": null,
+      "featured": false,
+      "kind": "mdx",
+      "path": "flows/create-flow/fix/flow.mdx",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**",
+        "proc:spawn:*"
+      ],
+      "model": "flow/author",
+      "modelInvocable": false,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": []
+    },
+    {
+      "id": "create-flow/provision",
+      "description": "Pulls the documentation, examples, patterns, and seats a new Smithers flow needs into context before anyone designs it.",
+      "summary": null,
+      "featured": false,
+      "kind": "mdx",
+      "path": "flows/create-flow/provision/flow.mdx",
+      "capabilities": [
+        "fs:read:**",
+        "proc:spawn:*"
+      ],
+      "model": "flow/author",
+      "modelInvocable": false,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": []
+    },
+    {
+      "id": "create-flow/scaffold",
+      "description": "Writes the flow file, its actions, and its test from an approved design, then reports exactly what it wrote.",
+      "summary": null,
+      "featured": false,
+      "kind": "mdx",
+      "path": "flows/create-flow/scaffold/flow.mdx",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**",
+        "proc:spawn:*"
+      ],
+      "model": "flow/author",
+      "modelInvocable": false,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": []
+    },
+    {
+      "id": "create-skill/clarify",
+      "description": "Turns a plain-English request for an agent skill into a precise, buildable skill specification, without writing any files.",
+      "summary": null,
+      "featured": false,
+      "kind": "mdx",
+      "path": "flows/create-skill/clarify/flow.mdx",
+      "capabilities": [],
+      "model": null,
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": []
+    },
+    {
+      "id": "create-skill/design",
+      "description": "Turns a clarified skill specification into a concrete SKILL.md blueprint a scaffolder can write without guessing.",
+      "summary": null,
+      "featured": false,
+      "kind": "mdx",
+      "path": "flows/create-skill/design/flow.mdx",
+      "capabilities": [],
+      "model": null,
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": []
+    },
+    {
+      "id": "create-skill/document",
+      "description": "Summarizes a newly written agent skill for the operator, naming its path and when an agent should reach for it.",
+      "summary": null,
+      "featured": false,
+      "kind": "mdx",
+      "path": "flows/create-skill/document/flow.mdx",
+      "capabilities": [],
+      "model": null,
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": []
+    },
+    {
+      "id": "create-skill/scaffold",
+      "description": "Writes a real agent-facing SKILL.md and its supporting files from an approved skill design, then reports what it wrote.",
+      "summary": null,
+      "featured": false,
+      "kind": "mdx",
+      "path": "flows/create-skill/scaffold/flow.mdx",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**"
+      ],
+      "model": null,
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": []
+    },
+    {
+      "id": "issue-sweep/work",
+      "description": "One coding agent fixes one issue in its own jj workspace.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/issue-sweep/work/flow.ts",
+      "capabilities": [
+        "proc:spawn:gh api *",
+        "proc:spawn:node /*/scripts/github-proxy.mjs --ensure",
+        "proc:spawn:jj -R *",
+        "proc:spawn:git --git-dir *",
+        "proc:spawn:pnpm *",
+        "proc:spawn:codex *",
+        "proc:spawn:claude-as *",
+        "proc:spawn:codex-rr status",
+        "proc:spawn:claude-rr status",
+        "proc:spawn:codex-rr cool *",
+        "proc:spawn:claude-rr cool *"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "issue/poc",
+      "description": "Build a small proof of concept for an issue.",
+      "summary": null,
+      "featured": false,
+      "kind": "mdx",
+      "path": "flows/issue/poc/flow.mdx",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**",
+        "proc:spawn:rg *",
+        "proc:spawn:pnpm test *",
+        "proc:spawn:npm test *"
+      ],
+      "model": "coding/poc",
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": [],
+      "budget": {
+        "tokens": 32000,
+        "milliseconds": 300000
+      }
+    },
+    {
+      "id": "issue/repro",
+      "description": "Research and reproduce an issue before implementation.",
+      "summary": null,
+      "featured": false,
+      "kind": "mdx",
+      "path": "flows/issue/repro/flow.mdx",
+      "capabilities": [
+        "fs:read:**",
+        "proc:spawn:rg *",
+        "proc:spawn:pnpm test *",
+        "proc:spawn:npm test *"
+      ],
+      "model": "repository/research",
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": [],
+      "budget": {
+        "tokens": 32000,
+        "milliseconds": 300000
+      }
+    },
+    {
+      "id": "learning",
+      "description": "Read merged TODO evidence and return decision pages and proposals.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/learning/flow.ts",
+      "capabilities": [
+        "model:call:typesafe-ai/jev"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "memory/calibrate",
+      "description": "Refit the repository's memory thresholds from run journals and landed fixes; report recall at 32 KiB and each decision's outcome.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/memory/calibrate/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:.smithers/**",
+        "fs:write:.jj/**",
+        "proc:spawn:jj *",
+        "proc:spawn:git *",
+        "model:call:typesafe-ai/jev"
+      ],
+      "model": null,
+      "modelInvocable": true,
+      "flows": []
+    },
+    {
+      "id": "memory/mine",
+      "description": "Mine a finished run's journal: durable facts to memory, human decisions to the item's wiki page, factory issues back to the caller.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/memory/mine/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:factory/wiki/decisions/**",
+        "memory:write:**",
+        "model:call:typesafe-ai/jev"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "notification-policy",
+      "description": "Decide who is told about a repository notification, among the people who can already read it.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/notification-policy/flow.ts",
+      "capabilities": [],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "release",
+      "description": "Prepare a Smithers release or validate, build, smoke-test and publish its exact npm tarballs with durable human approval.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/release/flow.ts",
+      "capabilities": [
+        "*"
+      ],
+      "model": null,
+      "modelInvocable": true,
+      "flows": []
+    },
+    {
+      "id": "release-content",
+      "description": "Analyze a release, draft changelog/blog/thread content, revise against quality gates, render previews and wait for approval before publication.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/release-content/flow.ts",
+      "capabilities": [
+        "*"
+      ],
+      "model": null,
+      "modelInvocable": true,
+      "flows": []
+    },
+    {
+      "id": "review/change",
+      "description": "Reviews one pull request's change the stack proposes and returns a verdict on its first line.",
+      "summary": null,
+      "featured": false,
+      "kind": "mdx",
+      "path": "flows/review/change/flow.mdx",
+      "capabilities": [],
+      "model": "coding/review",
+      "modelInvocable": false,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": [],
+      "budget": {
+        "tokens": 200000,
+        "milliseconds": 600000
+      }
+    },
+    {
+      "id": "rollout",
+      "description": "Deploy, verify, automatically restore the baseline release on failure, and re-verify.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/rollout/flow.ts",
+      "capabilities": [
+        "deploy:rollout"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "not": {
+            "type": "null"
+          }
+        },
+        "definitions": {}
+      },
+      "flows": []
+    },
+    {
+      "id": "security-audit",
+      "description": "Audit every package's security boundary at the workspace's commit on subscription seats and return only public finding summaries.",
+      "summary": null,
+      "featured": false,
+      "kind": "mdx",
+      "path": "flows/security-audit/flow.mdx",
+      "capabilities": [
+        "fs:read:**"
+      ],
+      "model": null,
+      "modelInvocable": true,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "args": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "args"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": [
+        "coding/SecurityAudit"
+      ],
+      "budget": {
+        "tokens": 20000000,
+        "milliseconds": 14400000
+      }
+    },
+    {
+      "id": "todo",
+      "description": "Route, plan, implement and deliver one TODO.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/todo/flow.ts",
+      "capabilities": [
+        "*"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
+      "id": "wiki",
+      "description": "Capture declared public source dependencies, independently review each engineering wiki page against its code, and write a provenance-bearing snapshot without modifying human intent.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/wiki/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:**"
+      ],
+      "model": null,
+      "modelInvocable": true,
+      "flows": []
+    },
+    {
+      "id": "wrapped",
+      "description": "Run Claude Code or Codex on a task with the memory a native agent starts with and the shared Smithers prompt appended through its own mechanism.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": "flows/wrapped/flow.ts",
+      "capabilities": [
+        "*"
+      ],
+      "model": null,
+      "modelInvocable": true,
+      "flows": []
+    }
+  ],
+  "on": [
+    {
+      "event": "issue.labeled:todo",
+      "flow": "todo",
+      "description": "Implement every TODO"
+    },
+    {
+      "event": "change.opened",
+      "flow": "review/change",
+      "description": "Review every Change"
+    },
+    {
+      "event": "change.updated",
+      "flow": "review/change",
+      "description": "Review every Change"
+    },
+    {
+      "event": "change.landed",
+      "flow": [
+        "coding/wiki"
+      ],
+      "description": "Refresh the wiki"
+    },
+    {
+      "event": "github.push:main",
+      "flow": "coding/wiki",
+      "description": "Refresh the wiki after outside merges"
+    },
+    {
+      "event": "schedule:0 9 * * 1-5",
+      "flow": "review",
+      "description": "Weekday morning review of main"
+    },
+    {
+      "event": "schedule:0 2 * * *",
+      "flow": "security-audit",
+      "description": "Audit security nightly"
+    },
+    {
+      "event": "schedule:0 10 * * 1",
+      "flow": "improve.suggest",
+      "description": "Suggest factory improvements once a week; every one needs your approval"
+    }
+  ],
+  "github": {
+    "mirror": "pull",
+    "issues": "two-way",
+    "changes": "send-upstream",
+    "maintainers": [
+      "roninjin10"
+    ],
+    "dailyTokens": 2000000000
+  }
+}

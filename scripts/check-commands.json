@@ -2464,10 +2464,10 @@
     },
     "C-REL-05": {
       "status": "manual",
-      "reason": "Person/hardware required: reference mini, fresh macOS user account, with Ben's live Claude Code, Codex and `gh` logins; Automation present: scripts/release/credential-soak.sh; authenticated owner approval of argv/host and qualification receipts pending",
+      "reason": "Person/hardware required: reference mini, fresh macOS user account, with Ben's live Claude Code, Codex and `gh` logins; Automation present: flows/release/host/credential-soak.sh; authenticated owner approval of argv/host and qualification receipts pending",
       "pendingBinding": {
         "files": [
-          "scripts/release/credential-soak.sh"
+          "flows/release/host/credential-soak.sh"
         ],
         "commands": [],
         "unboundSubcases": [
@@ -2478,10 +2478,10 @@
     },
     "C-REL-06": {
       "status": "manual",
-      "reason": "Person/hardware required: reference host A and a second Mac B, recorded; Automation present: scripts/release/backup-restore.mjs, packages/smithers/test/host-backup.fault.test.ts, packages/backend/internal/services/install_quiesce_integration_test.go; authenticated owner approval of argv/host and qualification receipts pending",
+      "reason": "Person/hardware required: reference host A and a second Mac B, recorded; Automation present: flows/release/host/backup-restore.mjs, packages/smithers/test/host-backup.fault.test.ts, packages/backend/internal/services/install_quiesce_integration_test.go; authenticated owner approval of argv/host and qualification receipts pending",
       "pendingBinding": {
         "files": [
-          "scripts/release/backup-restore.mjs",
+          "flows/release/host/backup-restore.mjs",
           "packages/smithers/test/host-backup.fault.test.ts",
           "packages/backend/internal/services/install_quiesce_integration_test.go"
         ],

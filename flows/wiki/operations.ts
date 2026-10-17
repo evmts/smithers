@@ -45,7 +45,7 @@ const publicHiddenFile = new Set([".gitignore", ".gitattributes", ".editorconfig
 // (runs, executions, cache, *.db), so only its declarations pass.
 const smithersDeclarationFile =
   /^(?:WORKSPACE\.ts|FACTORY\.ts|factory\.json|home\.json|target-index\.json|environment\.nix|coding-project\.json|agents\.ts|sandbox\.ts|smithers\.config\.ts)$/
-const smithersDeclarationDirectory = new Set(["workflows", "prompts", "agents", "components"])
+const smithersDeclarationDirectory = new Set(["workflows", "prompts", "agents", "components", "wiki"])
 const privateHidden = (parts: ReadonlyArray<string>) =>
   parts.some((part, index) => {
     if (!part.startsWith(".")) return false

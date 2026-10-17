@@ -310,7 +310,7 @@ describe("C-CAT-02 installed parser and descriptor dispatcher", () => {
   )
   it("audits the actual install discovery tree against literal Appendix A and B.6 paths", async () => {
     const { installCommandPaths } = await import("../src/internal/backend/InstallDiscovery.ts")
-    const { auditCliPaths } = await import("../../../scripts/catalog-policy.ts")
+    const { auditCliPaths } = await import("../../../apps/app/scripts/catalog-policy.mts")
     const paths = installCommandPaths(makeCli())
     expect(paths).toEqual([...fixtureCases.commands.map((row) => row.path), ...fixtureCases.b6].sort())
     expect(auditCliPaths(paths)).toEqual([])
@@ -341,7 +341,7 @@ describe("C-CAT-02 installed parser and descriptor dispatcher", () => {
     }
   })
   it("the generated host reference is fresh and contains exactly the literal B.6 host paths", async () => {
-    const { generateHostReference } = await import("../../../scripts/catalog-host.ts")
+    const { generateHostReference } = await import("../../../apps/app/scripts/catalog-host.mts")
     const reference = await readFile(new URL("../docs/reference/cli/host.md", import.meta.url), "utf8")
     expect(reference).toBe(generateHostReference())
     expect([...reference.matchAll(/\| `smthrs (host [a-z]+)/g)].map((match) => match[1]).sort())

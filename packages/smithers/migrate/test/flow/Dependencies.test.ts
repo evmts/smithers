@@ -152,7 +152,7 @@ describe("the flow surface's dependency boundary", () => {
   it("reports the package's own version, in the report and at --version", () => {
     // The manifest is the release version; two literals in source repeat it
     // because a report and a `--version` flag cannot read a manifest at run
-    // time from a packed install. `scripts/set-release-version.mjs` rewrites
+    // time from a packed install. `flows/release/set-release-version.mjs` rewrites
     // both on a bump, and this pins them until it does.
     expect(Report.tool.version).toBe(manifest.version)
     expect(Cli.version).toBe(manifest.version)

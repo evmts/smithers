@@ -1,0 +1,289 @@
+{
+  "name": "@smthrs/journal",
+  "type": "module",
+  "version": "1.0.0-rc.12",
+  "license": "MIT",
+  "smthrs": {
+    "group": "engine"
+  },
+  "description": "Effect services for the Smithers event journal: the immutable run history and the owner fence on its durable channel",
+  "homepage": "https://github.com/smithersai/smithers",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/smithers/flows/journal"
+  },
+  "bugs": {
+    "url": "https://github.com/smithersai/smithers/issues"
+  },
+  "tags": [
+    "typescript",
+    "effect",
+    "journal",
+    "durability"
+  ],
+  "keywords": [
+    "typescript",
+    "effect",
+    "journal",
+    "durability"
+  ],
+  "engines": {
+    "node": ">=26.4.0"
+  },
+  "sideEffects": [],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null,
+    "./migrations/*": null,
+    "./*/index": null,
+    "./Journal": "./src/Journal.ts",
+    "./JournalEvent": "./src/JournalEvent.ts",
+    "./EngineEvent": "./src/EngineEvent.ts",
+    "./JournalMetrics": "./src/JournalMetrics.ts",
+    "./Migrations": "./src/Migrations.ts",
+    "./OwnerId": "./src/OwnerId.ts",
+    "./Projection": "./src/Projection.ts",
+    "./RedactedLogger": "./src/RedactedLogger.ts",
+    "./Redaction": "./src/Redaction.ts",
+    "./SqlJournal": "./src/SqlJournal.ts",
+    "./index": "./src/index.ts",
+    "./test/Notifying": "./src/test/Notifying.ts",
+    "./test/TestJournal": "./src/test/TestJournal.ts",
+    "./JournalGeneration": "./src/JournalGeneration.ts",
+    "./Consensus": "./src/Consensus.ts",
+    "./SqlConsensus": "./src/SqlConsensus.ts"
+  },
+  "files": [
+    "src/**/*.ts",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/package.json",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next",
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./internal/*": null,
+      "./migrations/*": null,
+      "./*/index": null,
+      "./Journal": {
+        "import": {
+          "types": "./dist/esm/Journal.d.ts",
+          "default": "./dist/esm/Journal.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Journal.d.ts",
+          "default": "./dist/cjs/Journal.js"
+        }
+      },
+      "./JournalEvent": {
+        "import": {
+          "types": "./dist/esm/JournalEvent.d.ts",
+          "default": "./dist/esm/JournalEvent.js"
+        },
+        "require": {
+          "types": "./dist/cjs/JournalEvent.d.ts",
+          "default": "./dist/cjs/JournalEvent.js"
+        }
+      },
+      "./EngineEvent": {
+        "import": {
+          "types": "./dist/esm/EngineEvent.d.ts",
+          "default": "./dist/esm/EngineEvent.js"
+        },
+        "require": {
+          "types": "./dist/cjs/EngineEvent.d.ts",
+          "default": "./dist/cjs/EngineEvent.js"
+        }
+      },
+      "./JournalMetrics": {
+        "import": {
+          "types": "./dist/esm/JournalMetrics.d.ts",
+          "default": "./dist/esm/JournalMetrics.js"
+        },
+        "require": {
+          "types": "./dist/cjs/JournalMetrics.d.ts",
+          "default": "./dist/cjs/JournalMetrics.js"
+        }
+      },
+      "./Migrations": {
+        "import": {
+          "types": "./dist/esm/Migrations.d.ts",
+          "default": "./dist/esm/Migrations.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Migrations.d.ts",
+          "default": "./dist/cjs/Migrations.js"
+        }
+      },
+      "./OwnerId": {
+        "import": {
+          "types": "./dist/esm/OwnerId.d.ts",
+          "default": "./dist/esm/OwnerId.js"
+        },
+        "require": {
+          "types": "./dist/cjs/OwnerId.d.ts",
+          "default": "./dist/cjs/OwnerId.js"
+        }
+      },
+      "./Projection": {
+        "import": {
+          "types": "./dist/esm/Projection.d.ts",
+          "default": "./dist/esm/Projection.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Projection.d.ts",
+          "default": "./dist/cjs/Projection.js"
+        }
+      },
+      "./RedactedLogger": {
+        "import": {
+          "types": "./dist/esm/RedactedLogger.d.ts",
+          "default": "./dist/esm/RedactedLogger.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RedactedLogger.d.ts",
+          "default": "./dist/cjs/RedactedLogger.js"
+        }
+      },
+      "./Redaction": {
+        "import": {
+          "types": "./dist/esm/Redaction.d.ts",
+          "default": "./dist/esm/Redaction.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Redaction.d.ts",
+          "default": "./dist/cjs/Redaction.js"
+        }
+      },
+      "./SqlJournal": {
+        "import": {
+          "types": "./dist/esm/SqlJournal.d.ts",
+          "default": "./dist/esm/SqlJournal.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SqlJournal.d.ts",
+          "default": "./dist/cjs/SqlJournal.js"
+        }
+      },
+      "./index": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./test/Notifying": {
+        "import": {
+          "types": "./dist/esm/test/Notifying.d.ts",
+          "default": "./dist/esm/test/Notifying.js"
+        },
+        "require": {
+          "types": "./dist/cjs/test/Notifying.d.ts",
+          "default": "./dist/cjs/test/Notifying.js"
+        }
+      },
+      "./test/TestJournal": {
+        "import": {
+          "types": "./dist/esm/test/TestJournal.d.ts",
+          "default": "./dist/esm/test/TestJournal.js"
+        },
+        "require": {
+          "types": "./dist/cjs/test/TestJournal.d.ts",
+          "default": "./dist/cjs/test/TestJournal.js"
+        }
+      },
+      "./JournalGeneration": {
+        "import": {
+          "types": "./dist/esm/JournalGeneration.d.ts",
+          "default": "./dist/esm/JournalGeneration.js"
+        },
+        "require": {
+          "types": "./dist/cjs/JournalGeneration.d.ts",
+          "default": "./dist/cjs/JournalGeneration.js"
+        }
+      },
+      "./Consensus": {
+        "import": {
+          "types": "./dist/esm/Consensus.d.ts",
+          "default": "./dist/esm/Consensus.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Consensus.d.ts",
+          "default": "./dist/cjs/Consensus.js"
+        }
+      },
+      "./SqlConsensus": {
+        "import": {
+          "types": "./dist/esm/SqlConsensus.d.ts",
+          "default": "./dist/esm/SqlConsensus.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SqlConsensus.d.ts",
+          "default": "./dist/cjs/SqlConsensus.js"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint src examples --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "circular": "node scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "node ../database/scripts/test-matrix.mjs",
+    "test:matrix": "node ../database/scripts/test-matrix.mjs"
+  },
+  "dependencies": {
+    "@smthrs/database": "1.0.0-rc.12"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@effect/sql-sqlite-node": "4.0.4",
+    "@effect/vitest": "4.0.4",
+    "@eslint/js": "9.39.5",
+    "@smthrs/flow": "1.0.0-rc.12",
+    "@types/node": "26.4.1",
+    "@vitest/coverage-v8": "5.0.0",
+    "dprint": "0.57.1",
+    "effect": "4.0.4",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "madge": "8.0.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0",
+    "fast-check": "4.9.0"
+  },
+  "peerDependencies": {
+    "effect": "^4.0.4"
+  }
+}

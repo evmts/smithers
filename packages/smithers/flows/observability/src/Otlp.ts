@@ -59,7 +59,7 @@ export const defaultServiceName = "flows"
  *
  * A published package cannot read its own manifest on every runtime it
  * supports, so the version lives here as a literal.
- * `scripts/set-release-version.mjs` rewrites this declaration with the
+ * `flows/release/set-release-version.mjs` rewrites this declaration with the
  * manifests, and its `--check` mode reports drift, so a release bump cannot
  * leave it behind.
  *

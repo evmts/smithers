@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import controls from "./fixtures/AppendixB4.json"
-import { generateCatalog } from "../../../../../scripts/catalog-mvp"
+import { generateCatalog } from "../../../scripts/catalog-mvp"
 import { baseFlows, type CommandActions } from "./Flows"
 import { repositoryFlowLeaves } from "./entries/flow"
 import { disclosedToAgent, nameOf, visible } from "./registry"

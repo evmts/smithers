@@ -1,0 +1,2193 @@
+import { historicalPullNavigation, savedPullNavigationArgs } from "../flows/PullNavigationPayload"
+import { historicalWorkspaceNavigation, savedWorkspaceNavigationArgs } from "../flows/WorkspaceNavigationPayload"
+import { historicalRunLifecycle, savedRunLifecycleArgs } from "../flows/RunLifecyclePayload"
+import { historicalDiffOperations, savedDiffArgs } from "../flows/DiffPayload"
+import { savedFileNavigationArgs } from "../flows/FileNavigationPayload"
+import { workspaceFlowsArgs } from "../flows/WorkspaceFlowsPayload"
+import { runsArgs } from "../flows/RunsPayload"
+import { githubArgs } from "../flows/GitHubPayload"
+import { secretArgs, type SecretOperation } from "../flows/SecretPayload"
+import { publicSettingsInput } from "../flows/SettingsPayload"
+import { BranchTreeNodeCardSchema } from "@smthrs/rpc/BranchTreeNodeCard"
+import type { ConversationHistory } from "./ConversationHistory"
+import type { ApprovalRow } from "@smthrs/gateway/GatewayProjection"
+import type { AgentRole } from "@smthrs/rpc/AgentRoles"
+import { AgentRoleSchema } from "@smthrs/rpc/AgentRoles"
+import { BillingPlanSchema,SandboxEntitlementSchema } from "@smthrs/rpc/BillingPlans"
+import type { Card,CardPatch } from "@smthrs/rpc/Cards"
+import {
+CardPatchSchema,
+RepositoryImportRequestSchema,
+CardPlanItemSchema,
+CardSchema,
+EnvironmentImageRowSchema,
+SandboxEgressRowSchema,
+WorkspaceDesktopSchema,
+WorkspaceEnvironmentSchema,
+WorkspaceFileEntrySchema,
+WorkspaceHeadSchema,
+WorkspaceServiceSchema
+} from "@smthrs/rpc/Cards"
+import type { ConfiguredModel,ModelRecordId,ModelTestRecord,SeatId } from "@smthrs/rpc/ConfiguredModel"
+import { ConfiguredModelSchema,ModelTestRecordSchema,SeatAssignmentSchema } from "@smthrs/rpc/ConfiguredModel"
+import { ActorSchema as ParticipantActorSchema, ContextItemSchema } from "@smthrs/rpc/CardPrimitives"
+import { RepoFileEntrySchema } from "@smthrs/rpc/LocalApp"
+import type { AgentTurnUsage } from "@smthrs/rpc/NativeAgent"
+import type { LocalRepositoryInspection,RepositoryAccess } from "@smthrs/rpc/NativeRepository"
+import { REPOSITORY_ACCESS_VALUES } from "@smthrs/rpc/NativeRepository"
+import { NotificationPolicyStampSchema } from "@smthrs/rpc/NotificationPolicy"
+import { RepositoryHomeSchema } from "@smthrs/rpc/RepositoryHome"
+import { RepositoryJobSchema, SetupRecoveryResponseSchema } from "@smthrs/rpc/RepositorySetup"
+import { z } from "zod"
+import { SetupStepIdSchema } from "@smthrs/rpc/SetupCard"
+import { SignupSchema, type Signup } from "./LegacySignup"
+import { currentFlowName, FLOW_NAMES } from "../flows/FlowName"
+import { CloudWikiState } from "../wiki/CloudWikiState"
+import type { CommandIntent } from "./CommandIntent"
+import { HISTORICAL_INPUT_MODES,type HistoricalInputMode } from "./InputMode"
+import type { PendingRecoveryScope } from "./PendingRecovery"
+import type { RuntimeApprovalSubmission,RuntimeRunObservation,RuntimeScope } from "./RuntimeProjection"
+import { CHAT_KINDS } from "./ChatTimeline"
+
+export type {
+Card,CardPatch,CardPlanItem,EnvironmentImageRow,
+SandboxEgressRow,
+WorkspaceDesktop,
+WorkspaceEnvironment,
+WorkspaceFileEntry,
+WorkspaceHead,
+WorkspaceService
+} from "@smthrs/rpc/Cards"
+export {
+AgentRoleSchema,CardPatchSchema,
+CardPlanItemSchema,
+CardSchema,
+EnvironmentImageRowSchema,SandboxEgressRowSchema,
+WorkspaceDesktopSchema,
+WorkspaceEnvironmentSchema,
+WorkspaceFileEntrySchema,
+WorkspaceHeadSchema,
+WorkspaceServiceSchema
+}
+export type { AgentRole }
+
+/*
+ * Models as data. An `app-models` row is a configured model plus the last test
+ * of THIS route; an `app-seats` row is one seat's assignment, and a seat the
+ * host answers by default has no row. A credential is a name: no value is ever
+ * a field of either.
+ */
+export const StoredModelSchema = ConfiguredModelSchema.extend({ lastTest: ModelTestRecordSchema.optional() })
+export type StoredModel = z.infer<typeof StoredModelSchema>
+export { SeatAssignmentSchema }
+export type { SeatAssignment } from "@smthrs/rpc/ConfiguredModel"
+
+/*
+ * The flows one repository declares (Factory design session 2026-09-07 §4):
+ * the `flows` rows of `.smithers/factory.json`, read for the active
+ * repository through the public contents route, one row per repository. The
+ * registry derives a slash leaf from every flow row (flows/entries/flow.ts
+ * `repositoryFlowLeaves`), so `/review` runs the repository's review flow
+ * exactly as `/flow.run review` does. Collection state, never persisted: a
+ * projection changes when the repository lands, so every launch re-reads it.
+ */
+export const RepositoryFlowSchema = z.object({
+  id: z.string().min(1),
+  description: z.string(),
+  summary: z.string().nullable(),
+  featured: z.boolean(),
+  /** The model seat the flow declares, as written (`sol`, `openai:gpt-6.1-sol`); a flow with one is an agent (controller/agents.ts). */
+  model: z.string().nullable(),
+  modelInvocable: z.boolean(),
+  inputSchema: z.unknown().optional()
+})
+export type RepositoryFlow = z.infer<typeof RepositoryFlowSchema>
+export const RepositoryFlowsRowSchema = z.object({
+  /** The `owner/repo` the projection belongs to. */
+  id: z.string(),
+  /** The projection's flow rows, featured first, in catalog order. */
+  flows: z.array(RepositoryFlowSchema),
+  home: z.union([RepositoryHomeSchema, z.object({ kind: z.literal("error"), message: z.string() })]).optional(),
+  /**
+   * How the catalog read itself ended, which an empty `flows` cannot say:
+   * `read` (the projection answered), `absent` (the mirror has no
+   * `.smithers/factory.json`, so the repository declares none) or
+   * `unreadable` (the read was refused, so this row states NOTHING about what
+   * the repository declares). A reader that treats the third as the first
+   * publishes a verdict the read never reached
+   * ([#3831](https://github.com/smithersai/smithers/issues/3831);
+   * controller/agents.ts is the one that must tell them apart).
+   */
+  catalog: z.enum(["read", "absent", "unreadable"]).optional(),
+  loadedAt: z.number()
+})
+export type RepositoryFlowsRow = z.infer<typeof RepositoryFlowsRowSchema>
+
+/** Host observations outlive conversation cards, but are refreshed each app lifetime. */
+export const RepositoryJobObservationSchema = z.object({
+  id: z.string(),
+  owner: z.string(),
+  repo: z.string(),
+  job: RepositoryJobSchema,
+  selectedWorkspaceId: z.string().nullable(),
+  state: z.enum(["requested", "completed", "failed"]),
+  registration: SetupRecoveryResponseSchema.shape.registration.optional(),
+  error: z.string().optional()
+})
+export type RepositoryJobObservation = z.infer<typeof RepositoryJobObservationSchema>
+
+/*
+ * The sidebar's repository file tree:
+ * one row per directory the user expanded in a working copy, keyed
+ * `<copyId>#<path>` (`""` is the copy's root). `expanded` is the caret;
+ * `state` is the listing's honest state — `loading` until the local route
+ * answers, `loaded` with the entries it returned (nothing filtered, nothing
+ * invented), `failed` with the server's error text verbatim. Collection
+ * state, never React state, and NEVER persisted across launches: a checkout
+ * changes on disk, so every launch starts with every row collapsed.
+ */
+export type RepoTreeEntry = z.infer<typeof RepoFileEntrySchema>
+export const RepoTreeRowSchema = z.object({
+  /** `repoTreeRowId(copyId, path)`. */
+  id: z.string(),
+  /** The working copy (`WorkingCopy.id`, `local:<path>` for a checkout). */
+  copyId: z.string(),
+  /** Relative to the copy's root; `""` is the root. */
+  path: z.string(),
+  expanded: z.boolean(),
+  state: z.enum(["loading", "loaded", "failed"]),
+  entries: z.array(RepoFileEntrySchema),
+  /** The route's error text, verbatim, when `state` is `failed`. */
+  error: z.string().optional(),
+  /** The route capped the listing at its first page by name. */
+  truncated: z.boolean().optional(),
+  loadedAt: z.number()
+})
+export type RepoTreeRow = z.infer<typeof RepoTreeRowSchema>
+export const repoTreeRowId = (copyId: string, path: string): string => `${copyId}#${path}`
+
+/*
+ * How long one flow's nodes take, per action tag (D-030): the gateway's
+ * `flow-durations` projection, one row per tag it has measured. Server state,
+ * re-read per session and NEVER persisted, because a workspace's history
+ * moves between launches and a stale prediction is a lie with a number in it.
+ * A tag nothing has measured has no row; there is no shape here for an
+ * unmeasured prediction.
+ */
+/** A wiki space: one repository's public part or its private part (#1922). */
+export const WikiSpaceSchema = z.enum(["public", "private"])
+export type WikiSpace = z.infer<typeof WikiSpaceSchema>
+
+/** One page as the navigation index lists it: metadata and backlinks, no body. */
+export const WikiIndexPageSchema = z.object({
+  id: z.number().int().positive(),
+  slug: z.string(),
+  title: z.string(),
+  path: z.string(),
+  revision: z.number().int().positive(),
+  updatedAt: z.string(),
+  attachment: z.object({ digest: z.string(), mediaType: z.string(), size: z.number() }).optional(),
+  tags: z.array(z.string()),
+  aliases: z.array(z.string()),
+  headings: z.array(z.string()),
+  links: z.array(z.object({ target: z.string(), heading: z.string().optional(), alias: z.string().optional(), embed: z.boolean(), pageId: z.number().int().positive().optional() })),
+  backlinks: z.array(z.object({ pageId: z.number().int().positive(), path: z.string(), heading: z.string().optional(), embed: z.boolean() })),
+  error: z.string().optional()
+})
+export type WikiIndexPage = z.infer<typeof WikiIndexPageSchema>
+
+/*
+ * One space's navigation index (`GET /wiki/navigation/index`): the pages with
+ * their metadata and backlinks, the folders and the tags, one row per
+ * repository and space. A live snapshot the cloud wiki controller holds
+ * (`controller.wikiIndexes`, the way the Stack views read `repositorySnapshots`),
+ * never a collection: the index is one SQL snapshot, re-read whenever the
+ * space is opened, and a saved copy would only ever be stale.
+ */
+export const WikiIndexRowSchema = z.object({
+  /** `wikiIndexRowId(repo, space)`. */
+  id: z.string(),
+  repo: z.string(),
+  space: WikiSpaceSchema,
+  pages: z.array(WikiIndexPageSchema),
+  folders: z.array(z.string()),
+  tags: z.array(z.string()),
+  /** The read's refusal, verbatim, when the index could not be read; the rows then are the last read's. */
+  error: z.string().optional(),
+  /** The refusal's server code, when it stated one. */
+  errorCode: z.string().optional(),
+  loadedAt: z.number()
+})
+export type WikiIndexRow = z.infer<typeof WikiIndexRowSchema>
+export const wikiIndexRowId = (repo: string, space: WikiSpace): string => `${repo}#${space}`
+
+export const FlowDurationsRowSchema = z.object({
+  /** `flowDurationRowId(repo, flowId, actionTag, workspaceId)`. */
+  id: z.string(),
+  repo: z.string(),
+  /** Absent only for the repository default gateway. */
+  workspaceId: z.string().optional(),
+  flowId: z.string(),
+  /** The action or flow the measured nodes dispatched. */
+  actionTag: z.string(),
+  /** How many measured executions the two percentiles were folded from. */
+  samples: z.number(),
+  p50Ms: z.number(),
+  p90Ms: z.number(),
+  loadedAt: z.number()
+})
+export type FlowDurationsRow = z.infer<typeof FlowDurationsRowSchema>
+export const flowDurationRowId = (repo: string, flowId: string, actionTag: string, workspaceId?: string): string =>
+  JSON.stringify([repo, workspaceId ?? null, flowId, actionTag])
+
+/*
+ * A target this user starred (target.star): the targets card's Featured
+ * view leads with the repository's manifest-featured labels plus these.
+ * Keyed by the repo's pin key and the label so a star survives the server's
+ * fresh repo id on a reopen.
+ */
+export const StarredTargetSchema = z.object({
+  /** `${repoKey}::${label}`. */
+  id: z.string(),
+  repoKey: z.string(),
+  label: z.string(),
+  starredAt: z.number()
+})
+export type StarredTarget = z.infer<typeof StarredTargetSchema>
+
+export const starredTargetId = (repoKey: string, label: string): string => `${repoKey}::${label}`
+
+/*
+ * Lane piper (docs/decisions/0001-piper-one-truth.md): Smithers Cloud is the one
+ * truth. A repository lives under a user or an org; its head is the default
+ * bookmark's change and commit ids. NO mirror field: the backend has no
+ * mirror status yet, and nothing here may fake one. The row is shaped so
+ * plue#445's `owner_type` and `default_bookmark_head` replace the per-repo
+ * bookmarks call when they land.
+ */
+export const RepoHeadSchema = z.object({
+  bookmark: z.string(),
+  changeId: z.string().nullable(),
+  commitId: z.string().nullable()
+})
+export type RepoHead = z.infer<typeof RepoHeadSchema>
+
+export const CloudRepositorySchema = z.object({
+  /** `org/repo` — the first two segments of every global path. */
+  id: z.string(),
+  /** The owner's login (a user or an org). */
+  org: z.string(),
+  /** GET /api/user/orgs classifies the owner; "local" = no cloud repository (ADR 0001). */
+  ownerKind: z.enum(["user", "org", "local"]),
+  name: z.string(),
+  /** The default bookmark's head; null while unloaded or when the repo declares none. */
+  head: RepoHeadSchema.nullable(),
+  /**
+   * True for a row the public catalog (GET /api/public/repos) supplied: a
+   * repository anyone reads signed out (apps/server/PUBLIC-REPOSITORIES.md).
+   * Absent on the signed-in inventory.
+   */
+  catalog: z.boolean().optional(),
+  /**
+   * The catalog's curated one-sentence explanation of the repository, the
+   * welcome's source (controller/onboarding.ts). Absent on the signed-in
+   * inventory, which carries no such sentence.
+   */
+  summary: z.string().optional(),
+  /*
+   * Which tracker this repository's ordinary issues live in, as the
+   * inventory resolved it from the repository's own GitHub binding
+   * (`issue_tracker`, services/user.go `issueTrackersOf`): an imported
+   * GitHub repository addresses GitHub's issues, a Smithers Cloud
+   * repository its own. Absent when the server could not resolve it, which
+   * is NOT "Smithers Cloud": an unknown source stays unknown, so a write
+   * that needs one asks rather than inventing a tracker (IssuesSeam
+   * `issueWriteTarget`). Never derived from a display name or a number.
+   */
+  issueTracker: z.enum(["github", "smithers-cloud"]).optional(),
+  updatedAt: z.number(),
+  revision: z.number().int().nonnegative()
+})
+export type CloudRepository = z.infer<typeof CloudRepositorySchema>
+
+/*
+ * A working copy of a repository (ADR 0001): a cloud workspace (a box), or
+ * the SHARED copy of a public
+ * repository: the one read-only virtual box every reader of a catalog
+ * repository shares over the public mirror (factory design session ruling,
+ * lane plan B2: a virtual copy over the mirror's contents reads; factory
+ * spec 04 §2 gives a signed-in person one box per branch). It has no VM and
+ * no terminal; its files are the mirror's contents route. A cloud workspace
+ * carries state only. A shared copy is a materialized view (WorkspaceViews.ts), never
+ * a persisted row.
+ */
+export const WorkingCopySchema = z.object({
+  /** `workspace:<workspaceId>` for a cloud workspace; `shared:<org/repo>` for the shared copy. */
+  id: z.string(),
+  /** The repositories row this is a copy of. */
+  repoId: z.string(),
+  kind: z.enum(["workspace", "shared"]),
+  /**
+   * The derived access bit (no role field on the wire yet, lane plan B2): `read`
+   * for the shared copy, whose only route is the public mirror's contents
+   * read, so no write door renders on it. Absent for a checkout and a box:
+   * their own routes decide.
+   */
+  access: z.enum(["read", "write"]).optional(),
+  /** The bookmark the copy tracks, when a seam supplied it: the shared copy reads the repositories row's head bookmark. */
+  bookmark: z.string().optional(),
+  label: z.string(),
+  workspaceId: z.string().optional(),
+  state: z.string().optional(),
+  updatedAt: z.number(),
+  revision: z.number().int().nonnegative()
+})
+export type WorkingCopy = z.infer<typeof WorkingCopySchema>
+
+/*
+ * The Smithers Cloud session as the renderer may know it (lane piper step 1b):
+ * the token NEVER appears here — it lives in Bun memory and the OS keychain.
+ * "degraded" scopes mean the legacy token set lacks workspace/agent/approval
+ * scope, so those acts say "sign in again to enable".
+ */
+export const CloudSessionRowSchema = z.object({
+  id: z.literal("cloud"),
+  state: z.enum(["unknown", "signed-out", "signing-in", "signed-in"]),
+  username: z.string().nullable(),
+  expiresAt: z.string().nullable(),
+  scopes: z.literal("degraded").nullable(),
+  updatedAt: z.number(),
+  revision: z.number().int().nonnegative(),
+  ownerRevision: z.number().int().nonnegative().optional(),
+  /** A missing list is not an empty inventory. Scopes are repositories or the per-user "*". */
+  workspaceLists: z.array(z.object({
+    scope: z.string(),
+    phase: z.enum(["loading", "ready", "failed"]),
+    requestId: z.string().optional(),
+    revision: z.number().int().nonnegative(),
+    /**
+     * The revision a list for this scope last COMPLETED at. A refresh replaces
+     * `phase` with `loading`, and an inventory being re-read has not un-proven
+     * what the last complete read proved (#3882).
+     */
+    readyRevision: z.number().int().nonnegative().optional(),
+    error: z.string().optional()
+  })).optional()
+})
+export type CloudSessionRow = z.infer<typeof CloudSessionRowSchema>
+
+export const initialCloudSession = (createdAt = Date.now()): CloudSessionRow => ({
+  id: "cloud",
+  state: "unknown",
+  username: null,
+  expiresAt: null,
+  scopes: null,
+  updatedAt: createdAt,
+  revision: 0,
+  workspaceLists: []
+})
+
+/*
+ * A cloud workspace (lane citc, ADR 0002; completed by lane L3): plue's
+ * workspace DTO trimmed to what the app states — the six statuses, the
+ * provisioning stage, the target bookmark, and the header facts plue#446
+ * landed: the sandbox kind, the workspace's OWN head, ahead/behind, the
+ * environment reference, persistence, the ssh host, and when the VM started.
+ * Each of those is nullable AND optional: absent on the wire means absent on
+ * the row and nothing rendered — never a default, never a guess. Optional so
+ * a row persisted before this lane still validates without a schema reset.
+ * This collection is the authority the workspace working copies
+ * (`workingCopies`, kind "workspace") derive from.
+ */
+export const WORKSPACE_STATUSES = ["pending", "starting", "running", "suspended", "stopped", "failed"] as const
+export const CloudWorkspaceStatusSchema = z.enum(WORKSPACE_STATUSES)
+export type CloudWorkspaceStatus = z.infer<typeof CloudWorkspaceStatusSchema>
+
+export const WorkspaceRecoverySchema = z.object({
+  owner: z.string(),
+  ownerRevision: z.number(),
+  identityOwnerRevision: z.number().optional(),
+  snapshotId: z.string().optional(),
+  createFresh: z.boolean(),
+  request: z.object({
+    id: z.string(), name: z.string(), actor: z.enum(["user", "smithers"]),
+    bookmark: z.string().nullable(), kind: z.enum(["container", "vm", "desktop"]).optional(),
+    snapshotId: z.string().optional(),
+    state: z.enum(["requested", "running", "completed", "failed"]),
+    workspaceId: z.string().optional(), error: z.string().optional()
+  }).optional()
+})
+export type WorkspaceRecovery = z.infer<typeof WorkspaceRecoverySchema>
+
+export const CloudWorkspaceRowSchema = z.object({
+  /** Local recovery intent survives ordinary remote observations. */
+  recovery: WorkspaceRecoverySchema.optional(),
+  sourceSnapshotId: z.string().nullable().optional(),
+  /** plue's workspace id. */
+  id: z.string(),
+  /** `org/repo` — the repositories row this workspace is bound to. */
+  repoId: z.string(),
+  name: z.string(),
+  targetBookmark: z.string().nullable(),
+  status: CloudWorkspaceStatusSchema,
+  /**
+   * plue#482 `failure_code` / `failure_message`: why a `failed` workspace
+   * failed, in the provider's own words. Both null when the platform
+   * recorded none — a failure with no reason is a fact, not a blank.
+   */
+  failureCode: z.string().nullable().optional(),
+  failureMessage: z.string().nullable().optional(),
+  provisioningStage: z.string().nullable(),
+  suspendedAt: z.string().nullable(),
+  createdAt: z.string().nullable(),
+  /**
+   * `container` / `vm` / `desktop` / `agent`, verbatim from the DTO (ADR 0002:
+   * the kind IS the choice; RFD-004 added `agent` for the computer an agent
+   * run executed in).
+   */
+  kind: z.string().nullable().optional(),
+  /** The agent session that drove this workspace (RFD-004 `agent_session_id`); null for a human's. */
+  agentSessionId: z.string().nullable().optional(),
+  /** The workspace's own head as the guest last reported it — never the bookmark's. */
+  head: WorkspaceHeadSchema.nullable().optional(),
+  ahead: z.number().int().nullable().optional(),
+  behind: z.number().int().nullable().optional(),
+  /** When the VM last started; null while it has never run, and the uptime line is then absent. */
+  startedAt: z.string().nullable().optional(),
+  environment: WorkspaceEnvironmentSchema.nullable().optional(),
+  persistence: z.string().nullable().optional(),
+  sshHost: z.string().nullable().optional(),
+  /**
+   * Lane L3b: the DTO's `desktop` object — the relative stream path and the
+   * last mint's id and expiry. Present only for `kind: "desktop"`; the
+   * credential the facet renders never lands here (see seams/DesktopStream.ts).
+   */
+  desktop: WorkspaceDesktopSchema.nullable().optional(),
+  /**
+   * Lane L6 (plue #505): the languages the workspace relays a language server
+   * for (DTO `lsp.languages`, `["typescript"]` today). Null when the DTO
+   * carried no `lsp` object — unknown, never assumed empty.
+   */
+  lspLanguages: z.array(z.string()).nullable().optional(),
+  updatedAt: z.number(),
+  revision: z.number().int().nonnegative()
+})
+export type CloudWorkspaceRow = z.infer<typeof CloudWorkspaceRowSchema>
+
+/** The fields a workspace load or act writes (the reducer adds updatedAt/revision). */
+export type CloudWorkspaceInput = Omit<CloudWorkspaceRow, "updatedAt" | "revision">
+
+/*
+ * Lane change (ADR 0003 — the change is the unit): one change as the app
+ * knows it, keyed `${repoId}#${changeId}` because a change id is per-repo and
+ * a changeset's members span repos. The row carries what plue's change DTO
+ * carries today — one `commitId`, no revisions — so `currentSeq` and
+ * `revisionCount` stay null until plue#450 records them; nothing is inferred
+ * from timestamps. Pinned cards (file, diff) read this collection to learn
+ * when a newer revision exists.
+ */
+export const ChangeRowSchema = z.object({
+  /** `${repoId}#${changeId}`. */
+  id: z.string(),
+  /** `org/repo`. */
+  repoId: z.string(),
+  changeId: z.string(),
+  commitId: z.string().nullable(),
+  description: z.string(),
+  authorName: z.string().nullable(),
+  timestamp: z.string().nullable(),
+  hasConflict: z.boolean(),
+  parentChangeIds: z.array(z.string()),
+  /** null until plue#450 records revisions. */
+  currentSeq: z.number().int().positive().nullable(),
+  revisionCount: z.number().int().nonnegative().nullable(),
+  updatedAt: z.number(),
+  revision: z.number().int().nonnegative()
+})
+export type ChangeRow = z.infer<typeof ChangeRowSchema>
+
+/** The fields a change load writes (the reducer adds updatedAt/revision). */
+export type ChangeInput = Pick<
+  ChangeRow,
+  "id" | "repoId" | "changeId" | "commitId" | "description" | "authorName" | "timestamp" | "hasConflict" | "parentChangeIds" | "currentSeq" | "revisionCount"
+>
+
+/** The changes collection key for one repo's change. */
+export const changeRowId = (repoId: string, changeId: string): string => `${repoId}#${changeId}`
+
+/*
+ * Lane sync (ADR 0005): the GitHub App status the app has READ for one
+ * repository (GET /api/repos/{o}/{r}/github-app-status). The Connectors
+ * surface's GitHub row counts these — every counted row is a DTO read, so a
+ * repo the app never checked is simply absent, never assumed. `rateLimit`
+ * rides the status answer's own `github_rate_limit_*` fields when they
+ * arrive; null when they don't.
+ */
+export const GitHubAppStatusRowSchema = z.object({
+  /** `org/repo` (the key). */
+  repo: z.string(),
+  installed: z.boolean(),
+  configured: z.boolean(),
+  installationId: z.number().int().nullable(),
+  /** The App's install page when the status answer carries it (untrusted until the card checks the origin). */
+  installUrl: z.string().nullable(),
+  rateLimit: z.object({
+    limit: z.number().int().nonnegative(),
+    remaining: z.number().int().nonnegative(),
+    resetAt: z.string().nullable()
+  }).nullable(),
+  updatedAt: z.number(),
+  revision: z.number().int().nonnegative()
+})
+export type GitHubAppStatusRow = z.infer<typeof GitHubAppStatusRowSchema>
+
+/** The fields a status read writes (the reducer adds updatedAt/revision). */
+export type GitHubAppStatusInput = Pick<
+  GitHubAppStatusRow,
+  "repo" | "installed" | "configured" | "installationId" | "installUrl" | "rateLimit"
+>
+
+/** The working-copy id of a public repository's shared read-only copy: one per repository, keyed on `org/repo`. */
+export const sharedCopyIdOf = (repoId: string): string => `shared:${repoId}`
+
+/**
+ * The repo.select grammar (lane piper step 3): `org/repo` selects the
+ * repository (its head); `org/repo#copyId` selects one working copy.
+ */
+export const parseRepoSelection = (
+  token: string
+): { readonly repoId: string; readonly copyId?: string } | null => {
+  const hash = token.indexOf("#")
+  const head = hash === -1 ? token : token.slice(0, hash)
+  if (!/^[\w.-]+\/[\w.-]+$/.test(head)) return null
+  if (hash === -1) return { repoId: head }
+  const copyId = token.slice(hash + 1)
+  return copyId === "" ? null : { repoId: head, copyId }
+}
+
+export const ActorSchema = z.enum(["user", "smithers", "system"])
+export type Actor = z.infer<typeof ActorSchema>
+
+const MessageActionBaseSchema = z.object({
+  /** Revision of a pending flow confirmation; absent in older history and ordinary message actions. */
+  revision: z.string().optional(),
+  /** Old rows name the flow as it was called when written; decoding answers with the flow that runs today. */
+  flow: z.string(), args: z.string().optional(), label: z.string(),
+  /** Web Cloud login uses sign-in too; its requirement is still Cloud access. */
+  signInRequirement: z.enum(["identity", "cloud"]).optional()
+})
+// A retired environment write only opens Settings. Its assignment must not
+// become an argument on that public card door when saved history is decoded.
+const savedDocsRead = (args?: string): string => {
+  let page = args
+  if (args?.trim().startsWith("{")) {
+    try {
+      const input: unknown = JSON.parse(args)
+      if (typeof input === "object" && input !== null && "page" in input && typeof input.page === "string") page = input.page
+    } catch { /* Invalid saved input remains a missing-page refusal. */ }
+  }
+  return JSON.stringify({ mode: "read", ...(page === undefined ? {} : { page }) })
+}
+const savedRunView = (args?: string): string => {
+  try {
+    const input: unknown = JSON.parse(args ?? "{}")
+    if (typeof input === "object" && input !== null && "cardId" in input && typeof input.cardId === "string" && input.cardId.startsWith("run:")) {
+      const { cardId, ...state } = input
+      return JSON.stringify({ runId: cardId.slice(4), sourceCard: cardId, view: "turns", state })
+    }
+  } catch { /* Invalid historical input must refuse rather than target another run. */ }
+  return "{}"
+}
+const savedSecret = (flow: string, args?: string): string => secretArgs(flow.slice("secrets.".length) as SecretOperation, args)
+const savedContext = (args?: string): string => {
+  try { if (args?.trim().startsWith("{")) {
+    const input: unknown = JSON.parse(args)
+    return JSON.stringify(input && typeof input === "object" && !Array.isArray(input)
+      ? Object.fromEntries(["branch", "answer"].flatMap(key => typeof (input as Record<string, unknown>)[key] === "string" ? [[key, (input as Record<string, unknown>)[key]]] : [])) : {})
+  } } catch { return "{}" }
+  const [branch, answer] = (args ?? "").trim().split(/\s+/)
+  return JSON.stringify({ ...(branch ? { branch } : {}), ...(answer ? { answer } : {}) })
+}
+const savedSettings = (flow: string, args?: string): string => {
+  const operation = flow.slice("settings.".length)
+  let payload: Record<string, unknown> = {}
+  if (args?.trim().startsWith("{")) {
+    try { const input: unknown = JSON.parse(args); if (input && typeof input === "object" && !Array.isArray(input)) payload = input as Record<string, unknown> } catch { /* Missing inputs require a fresh form. */ }
+  } else if (args?.trim()) {
+    const count = operation === "daily-admissions" ? "todo_daily_admissions" : operation === "capacity" || operation === "parallel" ? operation : undefined
+    if (count && Number.isFinite(Number(args))) payload[count] = Number(args)
+    else if (operation === "obsidian") payload.path = args
+    else if (operation === "setup") payload.step = args
+    else if (operation === "fast-model" && ["sign-in", "sign-out"].includes(args.trim())) payload.action = args.trim()
+  }
+  return JSON.stringify(publicSettingsInput({ ...payload, operation }))
+}
+const savedTerminalCommand = (args?: string): string => {
+  let payload: Record<string, unknown> = {}
+  try { const value: unknown = JSON.parse(args ?? "{}"); if (value && typeof value === "object" && !Array.isArray(value)) payload = value as Record<string, unknown> } catch { /* Invalid old input requires a fresh form. */ }
+  return JSON.stringify({ ...payload, operation: "command" })
+}
+const savedFileRead = (args?: string): string => savedFileNavigationArgs("files.read", args)
+const savedProposal = (args?: string): string => {
+  let id: unknown = args?.trim()
+  try { const value: unknown = JSON.parse(args ?? "{}"); if (value && typeof value === "object" && !Array.isArray(value)) id = (value as Record<string, unknown>).id } catch { /* The old slash door carried the id as one word. */ }
+  return JSON.stringify({ operation: "proposal", ...(typeof id === "string" && id.trim() ? { id } : {}) })
+}
+const currentAction = <T extends { readonly flow: string; readonly args?: string }>(action: T): Omit<T, "flow" | "args"> & { flow: string; args?: string } => ({
+  ...action, flow: currentFlowName(action.flow), ...(historicalPullNavigation.includes(action.flow) ? { args: savedPullNavigationArgs(action.flow, action.args) } : action.flow in historicalWorkspaceNavigation ? { args: savedWorkspaceNavigationArgs(action.flow, action.args) } : action.flow in historicalRunLifecycle ? { args: savedRunLifecycleArgs(action.flow, action.args) } : action.flow in historicalDiffOperations ? { args: savedDiffArgs(action.flow, action.args) } : ["files.list", "repo.tree", "box.files", "box.file"].includes(action.flow) ? { args: savedFileNavigationArgs(action.flow, action.args) } : action.flow === "files.read" ? { args: savedFileRead(action.args) } : action.flow === "proposal" ? { args: savedProposal(action.args) } : action.flow === "terminal.send" ? { args: savedTerminalCommand(action.args) } : action.flow === "flow.list" ? { args: workspaceFlowsArgs(action.args) } : ["approvals.list", "approvals.open", "runs.attention"].includes(action.flow) ? { args: runsArgs(action.flow === "approvals.open" ? "approval-open" : action.flow === "approvals.list" ? "approval-list" : "attention", action.args) } : ["github.retry", "github.app", "github.app.open", "github.app.choose", "github.reconcile"].includes(action.flow) ? { args: githubArgs(action.flow === "github.retry" ? "retry" : action.flow === "github.app.open" ? "app-open" : action.flow === "github.app.choose" ? "app-choose" : action.flow === "github.reconcile" ? "reconcile" : "app-status", action.args) } : action.flow.startsWith("settings.") && currentFlowName(action.flow) === "settings" ? { args: savedSettings(action.flow, action.args) } : ["secrets.set", "secrets.delete", "secrets.scope", "secrets.bind"].includes(action.flow) ? { args: savedSecret(action.flow, action.args) } : action.flow === "context.inspect" ? { args: savedContext(action.args) } : action.flow === "run.view" ? { args: savedRunView(action.args) } : action.flow === "debug.seams" ? { args: "--health" } : ["env.set", "agent.codex", "agent.claude"].includes(action.flow) ? { args: undefined } : action.flow === "docs.read"
+    ? { args: savedDocsRead(action.args) } : {})
+})
+const MessageActionSchema = MessageActionBaseSchema.transform(currentAction)
+  .transform(action => action.flow === "chat.dictate" ? undefined : action)
+const AnsweredActionSchema = MessageActionBaseSchema.extend({ answer: z.string(), answeredAt: z.number() }).transform(currentAction)
+
+export const MessageSchema = z.object({
+  id: z.string(),
+  /** Imported identities are data only, never executable Smithers turns. */
+  origin: z.enum(["smithers", "external"]).optional(),
+  agent_kind: z.enum(["claude-code", "codex"]).optional(),
+  format_version: z.string().trim().min(1).optional(),
+  source_id: z.string().trim().min(1).optional(),
+  session_id: z.string().trim().min(1).optional(),
+  participant_id: z.string().trim().min(1).optional(),
+  actor: ParticipantActorSchema.optional(),
+  read_only: z.literal(true).optional(),
+  correlation_id: z.string().trim().min(1).optional(),
+  issueCardId: z.string().optional(),
+  issueCommentId: z.number().int().optional(),
+  /** Owning turn for tool-act cleanup on retry. */
+  turnId: z.string().optional(),
+  role: z.enum(["user", "smithers"]),
+  text: z.string(),
+  reasoning: z.string().optional(),
+  status: z.enum(["complete", "failed", "interrupted"]),
+  statusDetail: z.string().optional(),
+  /** A private developer read, scoped to the person and branch that requested it. */
+  diagnostic: z.object({ login: z.string().min(1), branch: z.string().min(1) }).strict().optional(),
+  /** A message-ridden action (sign-in rides the opening message; retry rides the failed-OAuth one). */
+  action: MessageActionSchema.optional(),
+  /** The answered step retains its original prose and identity, but no executable action. */
+  answeredAction: AnsweredActionSchema.optional(),
+  /** A one-line visible tool act ("Smithers ran /world.new-note") renders as a marker row, not a bubble. */
+  act: z.string().optional(),
+  /** The Context line of an answer (T-APP-17): what it read, shown as "Context · N". */
+  context: z.array(ContextItemSchema).optional(),
+  /**
+   * A door's own refusal, written where it stays.
+   *
+   * A consequential door whose sentence has to outlive a four-second toast
+   * appends it to the transcript itself AND returns it (seams/TriggersSeam.ts
+   * refusePause, controller/repositorySetup.ts). This flag is that door
+   * telling the rest of the app it has already been said, so the form card the
+   * same submission settles does not print it a second time
+   * (controller/forms.ts). Nothing else sets it and nothing renders it.
+   */
+  spoken: z.literal(true).optional(),
+  /**
+   * On a user message: the commands the decision model selected for it, and
+   * those the agent discovered while answering it (`commands` list with a
+   * query). Every retained message's names are listed in full in the turn's
+   * prompt (controller/turns.ts); absent means selection has not run.
+   */
+  disclosed: z.array(z.string().min(1).max(160)).max(64).optional(),
+  createdAt: z.number(),
+  ordinal: z.number().int().nonnegative(),
+  /**
+   * The conversation this message belongs to (docs/LOCAL-APP.md "Tabs").
+   * There is one Smithers, so live rows carry no id; the field stays so rows
+   * persisted by a build that had conversation tabs parse unchanged.
+   */
+  tabId: z.string().optional()
+}).superRefine((message, ctx) => {
+  const imported = message.origin === "external"
+  const metadata = [message.agent_kind, message.format_version, message.source_id,
+    message.session_id, message.participant_id, message.read_only]
+  if (!imported && (metadata.some(value => value !== undefined) || message.correlation_id !== undefined ||
+    (message.actor?.kind === "agent" && ["claude-code", "codex"].includes(message.actor.agent)))) {
+    ctx.addIssue({ code: "custom", message: "External metadata requires external origin" })
+  }
+  if (!imported) return
+  const actor = message.actor
+  if (metadata.some(value => value === undefined) || !actor ||
+    (actor.kind === "person" && !actor.login.trim()) || (actor.kind === "agent" && !actor.id.trim()) ||
+    (message.role === "user" ? actor.kind !== "person" :
+      actor.kind !== "agent" || actor.agent !== message.agent_kind ||
+      actor.id !== message.participant_id || actor.session_id !== message.session_id || !actor.for_member?.login.trim())) {
+    ctx.addIssue({ code: "custom", message: "Incomplete external conversation identity" })
+  }
+  if (message.turnId !== undefined || message.action !== undefined || message.answeredAction !== undefined ||
+    message.disclosed !== undefined) {
+    ctx.addIssue({ code: "custom", message: "External conversations cannot carry executable turns or actions" })
+  }
+})
+export type Message = z.infer<typeof MessageSchema>
+
+export const DEFAULT_WORKSPACE_ID = "workspace-main"
+export const DEFAULT_BRANCH_ID = "branch-main"
+
+export const rootFrameId = (branchId: string): string => `frame-root:${branchId}`
+export const cardFrameId = (branchId: string, cardId: string): string => `frame-card:${branchId}:${cardId}`
+
+export const WorkspaceSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  createdAt: z.number(),
+  revision: z.number().int().nonnegative()
+})
+export type Workspace = z.infer<typeof WorkspaceSchema>
+
+/** Branch-owned conversation state. Host resources and credentials remain shared authorities. */
+export const FrameSnapshotSchema = z.object({
+  revision: z.number().int().nonnegative(),
+  messages: z.array(MessageSchema),
+  cards: z.array(CardSchema),
+  worldDocuments: z.array(z.lazy(() => WorldDocumentSchema)),
+  draft: z.string(),
+  selectedWorldDocumentId: z.string().nullable().optional()
+})
+export type FrameSnapshot = z.infer<typeof FrameSnapshotSchema>
+
+export const BranchSchema = z.object({
+  archiveOwner: z.string().optional(),
+  id: z.string(),
+  workspaceId: z.string(),
+  title: z.string(),
+  parentBranchId: z.string().nullable(),
+  forkedFromFrameId: z.string().nullable(),
+  forkedAtRevision: z.number().int().nonnegative().nullable(),
+  snapshot: FrameSnapshotSchema.optional(),
+  createdAt: z.number(),
+  revision: z.number().int().nonnegative()
+})
+export type Branch = z.infer<typeof BranchSchema>
+
+export const FrameSchema = z.object({
+  id: z.string(),
+  workspaceId: z.string(),
+  branchId: z.string(),
+  kind: z.enum(["root", "card"]),
+  parentFrameId: z.string().nullable(),
+  cardId: z.string().nullable(),
+  presentation: z.enum(["embedded", "maximized"]),
+  stateRevision: z.number().int().nonnegative(),
+  snapshot: FrameSnapshotSchema.optional(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+  revision: z.number().int().nonnegative()
+})
+export type Frame = z.infer<typeof FrameSchema>
+
+/*
+ * The shared toast stack (the 300ms law, 2026-08-09): background work that has
+ * not settled within 300ms states what is running on ONE store-backed corner
+ * surface; work under 300ms never flashes anything. Toasts are notifications,
+ * not state mutations — they never gate the app, and a failure toast is
+ * honest and stays until dismissed.
+ */
+/** Authoritative member-routed entry facts; ordinary background work has no audience. */
+export const ToastAudienceSchema = z.object({
+  member: z.string(),
+  entryId: z.string(),
+  kind: z.enum(["needs_you", "approval", "conflict", "in_review", "failed", "merged"]),
+  actorLabel: z.string(),
+  /*
+   * Who chose this recipient (M-47, #4026): absent while the built-in §6.4
+   * default decided with no repository policy declared, present when a
+   * repository flow decided or when its policy could not and the default
+   * stood instead. The reason is one closed code, never error text, so a
+   * fallback is a readable fact and never prose on a notice.
+   */
+  policy: NotificationPolicyStampSchema.optional(),
+  /*
+   * The repository's policy asked for this notice WITHOUT raising it (M-47,
+   * #4026 `handling.quiet`): the record is kept — the timeline line, the
+   * repository update and Hide all read it — and the surfaces that raise a
+   * notice skip it (ShellRail `railNotices`, controller/failures.ts browser
+   * delivery). Absent on every notice no policy asked to quiet, so an
+   * already-stored row reprojects to exactly the state its sealed hash names
+   * and no projector moved with it (AppEventStream.ts 36/37).
+   */
+  quiet: z.boolean().optional(),
+  target: z.discriminatedUnion("flow", [
+    z.object({ flow: z.literal("todo"), n: z.number().int().positive() }),
+    z.object({ flow: z.literal("run"), id: z.string().min(1) }),
+    z.object({ flow: z.literal("branch"), branch: z.string().min(1) })
+  ])
+})
+
+export const ToastSchema = z.object({
+  audience: ToastAudienceSchema.optional(),
+  sourceCard: z.string().optional(),
+  id: z.string(),
+  /** The work identity ("billing.balance.refresh"): one toast per background flow. */
+  key: z.string(),
+  title: z.string(),
+  status: z.enum(["running", "ok", "failed", "cancelled"]),
+  detail: z.string(),
+  action: MessageActionBaseSchema.transform(currentAction)
+    .refine(action => action.flow === "chat.dictate" || z.enum(FLOW_NAMES).safeParse(action.flow).success)
+    .transform(action => action.flow === "chat.dictate" ? undefined : action).optional(),
+  answeredAction: AnsweredActionSchema.optional(),
+  createdAt: z.number(),
+  updatedAt: z.number()
+})
+export type Toast = z.infer<typeof ToastSchema>
+
+/*
+ * The Wiki's display name, owned by the shared wiki operations. Will renamed
+ * World to Wiki on 2026-09-07: every user-visible label and flow summary reads
+ * this constant, while `world` stays the persisted surface id, the card kind,
+ * the store event prefix and the CSS class prefix, so no session migration is
+ * needed.
+ */
+export { WIKI_DISPLAY_NAME } from "@smthrs/ui/app-operations/wiki"
+
+/*
+ * The graph's unfocused scope, named by the design session (spec 07 §2): a
+ * scope pill names a kind of wiki content, never a surface and never a store,
+ * so the graph over everything reads "All" and not "the whole Wiki". The two
+ * kinds it covers are the pages the //:wiki target generates and the person's
+ * own notes; only notes exist today, and a scope that has no pages shows none
+ * rather than an empty group. The focused scope stays `Around <path>`, which
+ * names a note, not a store.
+ */
+export const WIKI_GRAPH_ALL_SCOPE = "All"
+
+/*
+ * The next-step pills are a projection of ONE store row, regenerated by the
+ * `recommend` flow (Recommend.ts) after every material change: the server's
+ * recommender (POST /api/recommend) orders what to click next from the chat
+ * tail and the invocable flows (source "agent"), and the old state rule
+ * stands in whenever the recommender cannot answer (source "rule").
+ * Persisted so a reload shows the last recommendation instead of a blank row
+ * while the first regeneration is in flight.
+ */
+export const SuggestionSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  flow: z.string(),
+  args: z.string().optional(),
+  emphasis: z.enum(["primary", "secondary"]),
+  /** The recommender's one-line reason, when an agent chose the pill. */
+  why: z.string().optional()
+})
+/*
+ * Wave 10 (§2a/§2f) — pills are flow BINDINGS, never prompt strings: a
+ * suggestion carries the flow it invokes directly, and the suggestion set
+ * is DERIVED in App.tsx from live state (the genuinely-next step) — never
+ * fabricated, never stored.
+ */
+export type Suggestion = z.infer<typeof SuggestionSchema>
+export const RecommendationSourceSchema = z.enum(["agent", "rule"])
+export type RecommendationSource = z.infer<typeof RecommendationSourceSchema>
+export const RECOMMENDATION_ID = "current"
+export const RecommendationSchema = z.object({
+  id: z.literal(RECOMMENDATION_ID),
+  suggestions: z.array(SuggestionSchema),
+  source: RecommendationSourceSchema,
+  /** The session revision the recommendation was made against. */
+  revision: z.number().int().nonnegative(),
+  createdAt: z.number(),
+  /**
+   * The recommender's own retry window, as its last 429 stated it: no request
+   * leaves before `at` (epoch ms) for `owner` (the account owner login, null
+   * for a visitor). The rule keeps writing the row meanwhile. Bound to the
+   * owner because the server's daily bucket is per login or per address, so
+   * a visitor's spent bucket says nothing about the login that follows it.
+   * Absent once an agent answer lands or the account leaves.
+   */
+  retry: z.object({ at: z.number(), owner: z.string().nullable(), origin: z.string().optional() }).optional()
+})
+export type Recommendation = z.infer<typeof RecommendationSchema>
+
+/** Historical theme ids remain a wire contract for journal and snapshot recovery. */
+export const HISTORICAL_PALETTES = ["night-owl", "paper", "fucory", "one", "github", "catppuccin", "solarized", "gruvbox", "rose-pine"] as const
+export type Palette = (typeof HISTORICAL_PALETTES)[number]
+/** The sole brand palette. Light and dark remain separate appearance modes. */
+export const DEFAULT_PALETTE = "paper" as const
+/** The contrast and graph checks exercise the retained brand palette. */
+export const PALETTES = [DEFAULT_PALETTE] as const
+
+export const RepositoryEntrySchema = z.object({
+  requestId: z.string(),
+  repo: z.string(),
+  phase: z.enum(["pending", "ready", "failed"]),
+  failureKind: z.enum(["unavailable", "not-public"]).optional(),
+  /** Alternatives from this entry's live catalog receipt, never a build-time roster. */
+  publicRepositories: z.array(z.string()).optional(),
+  error: z.string().optional()
+})
+export type RepositoryEntry = z.infer<typeof RepositoryEntrySchema>
+/** A cold command target is independent of the current URL's repository admission. */
+export const RepositoryCommandEntrySchema = RepositoryEntrySchema.extend({ owner: z.string().nullable() })
+export type RepositoryCommandEntry = z.infer<typeof RepositoryCommandEntrySchema>
+
+/**
+ * One background `approvals.list` read, persisted before its acknowledgment.
+ * The target (repo + gateway workspace) and the account owner are captured
+ * at the ask, so a later repository selection or account change can never
+ * retarget the read; the inbox card is published only from received rows.
+ * A recorded `error` is a visible, retryable failure: it never resumes on
+ * its own, and the next explicit ask replaces it.
+ */
+export const ApprovalsInboxRequestSchema = z.object({
+  id: z.string(),
+  repo: z.string(),
+  workspaceId: z.string().optional(),
+  owner: z.string(),
+  requestedAt: z.number(),
+  error: z.string().optional()
+})
+export type ApprovalsInboxRequest = z.infer<typeof ApprovalsInboxRequestSchema>
+
+/** A monitor read is saved before its remote summary exists; failures stay retryable. */
+export const RunOpenRequestSchema = ApprovalsInboxRequestSchema.extend({ runId: z.string(), cardId: z.string(), requireExisting: z.boolean().optional() })
+export type RunOpenRequest = z.infer<typeof RunOpenRequestSchema>
+
+export const QueuedPromptSchema = z.object({ id: z.string(), text: z.string(), scope: z.string() })
+
+/** One conversation's chat meter (`Session.chatUsage`), folded from `chat.usage.recorded`. */
+export const ChatUsageSchema = z.object({
+  branchId: z.string(),
+  input: z.number().int().nonnegative(),
+  output: z.number().int().nonnegative(),
+  cached: z.number().int().nonnegative().optional(),
+  context: z.number().int().nonnegative(),
+  modelId: z.string().optional()
+})
+export type ChatUsage = z.infer<typeof ChatUsageSchema>
+
+export const BranchNavigationSchema = z.object({
+  owner: z.string().nullable(), open: z.boolean(), selected_branch: z.string(), selected_archive: z.string().optional(), previous_branch: z.string().optional(),
+  nodes: z.array(BranchTreeNodeCardSchema)
+})
+
+export const SharedPromptSchema = z.object({
+  id: z.string(), owner: z.string(), branch: z.string(), prompt: z.string(),
+  state: z.enum(["editing", "requested", "accepted", "completed", "failed", "cancelled"]), turnId: z.string().optional(), error: z.string().optional()
+})
+export type SharedPrompt = z.infer<typeof SharedPromptSchema>
+
+/** Private placement of a local entry after the shared turns visible when it was admitted. */
+export const TranscriptAnchorSchema = z.object({ scope: z.string().min(1), afterSequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER), localOrdinal: z.number().int().nonnegative().optional() })
+export type TranscriptAnchor = z.infer<typeof TranscriptAnchorSchema>
+
+/**
+ * The card a view read the PERSON asked for published, as the transcript's
+ * read destination. A read can navigate one card in place and keep its own
+ * place — the repository web pane is one card (EmbeddedHistory.paneTarget),
+ * and a saved conversation holds every private card at its anchored position
+ * — so the entry a read refreshed is routinely not the transcript's last one,
+ * and nothing else in the projection names it. `afterOrdinal` is the next
+ * transcript ordinal at the moment the read landed: anything appended from
+ * there on retires the receipt, and the live edge is the destination again.
+ * `revision` changes on every read, so asking for the same view twice is two
+ * destinations rather than one. An agent's read records nothing: nobody asked
+ * to be moved.
+ */
+export const RequestedReadSchema = z.object({
+  cardId: z.string().min(1),
+  afterOrdinal: z.number().int().nonnegative(),
+  revision: z.number().int().nonnegative(),
+  /** The account, repository and branch that asked ({@link readScopeOf}). */
+  scope: z.string().min(1)
+})
+export type RequestedRead = z.infer<typeof RequestedReadSchema>
+
+export const SessionSchema = z.object({
+  /** Account/repository/branch-scoped placement; never published to the shared conversation. */
+  transcriptAnchors: z.record(z.string(), TranscriptAnchorSchema).optional(),
+  /** The destination of the last read a person asked for. Optional so sessions persisted before the field parse. */
+  requestedRead: RequestedReadSchema.optional(),
+  sharedPrompts: z.array(SharedPromptSchema).optional(),
+  uiInstructionsSeen: z.array(z.string()).optional(),
+  branchNavigation: BranchNavigationSchema.optional(),
+  branchControlRequests: z.array(z.object({ key: z.string(), owner: z.string(), origin: z.string(), branch: z.string(),
+    operation: z.enum(["sleep", "wake", "rebase"]),
+    number: z.number().int().positive().optional(), onto: z.string().optional(), input: z.object({ conflict_change: z.string().optional(), onto_revision: z.string().optional() }).optional(), state: z.enum(["requested", "accepted", "completed", "failed"]),
+    workspace: z.string().optional(), operationId: z.string().optional(), repo: z.string().optional(), settled: z.boolean().optional(), error: z.string().optional()
+  })).optional(),
+  terminalRequests: z.array(z.object({
+    id: z.string(), owner: z.string(), repo: z.string(), branch: z.string(), branchId: z.string().optional(), session: z.string().optional(), uncertain: z.boolean().optional(),
+    state: z.enum(["requested", "running", "completed", "failed"]), error: z.string().optional()
+  })).optional(),
+  wikiSaves: z.array(z.object({
+    id: z.string(), owner: z.string(), branch: z.string(), repo: z.string(), space: z.enum(["public", "private"]),
+    name: z.string(), text: z.string(), state: z.enum(["requested", "completed", "failed"]), error: z.string().optional()
+  })).optional(),
+  orderRequests: z.array(z.object({
+    id: z.string(), origin: z.string(), owner: z.string(), revision: z.number().int().positive(),
+    state: z.enum(["requested", "completed", "failed"]), error: z.string().optional()
+  })).optional(),
+  issueCreateRequests: z.array(z.object({
+    id: z.string(), owner: z.string(), origin: z.string(), title: z.string(), body: z.string(), operationId: z.string().optional(),
+    state: z.enum(["requested", "running", "completed", "failed"]), terminal: z.boolean().optional()
+  })).optional(),
+  reviewRequests: z.array(z.object({
+    id: z.string(), origin: z.string(), owner: z.string(), repo: z.string(), number: z.number().int().positive(),
+    conversation: z.string(), tabId: z.string().optional(), operationId: z.string().optional(), confirmationId: z.string().optional(), terminal: z.boolean().optional(), state: z.enum(["requested", "running", "completed", "failed"])
+  })).optional(),
+  installRequests: z.array(z.object({
+    id: z.string(), step: SetupStepIdSchema, origin: z.string(), body: z.record(z.string(), z.unknown()),
+    state: z.enum(["requested", "running", "completed", "failed"]),
+    handoff: z.object({ action_url: z.string(), manifest: z.record(z.string(), z.unknown()), state: z.string() }).optional(),
+    /* The App step's lease (InstallSeam APP_LEASE_MS): its handoff is continued only before this instant. */
+    expires_at: z.string().optional()
+  })).optional(),
+  queuedPrompts: z.array(QueuedPromptSchema).optional(),
+  promptQueuePaused: z.boolean().optional(),
+  branchRequests: z.array(z.object({ id: z.string(), owner: z.string(), operation: z.enum(["fork", "add"]), input: z.record(z.string(), z.unknown()), state: z.enum(["requested", "provisioning", "completed", "failed"]), branch: z.string().optional(), n: z.number().int().positive().optional(), error: z.string().optional() })).optional(),
+  issueTodoRequests: z.array(z.object({ id: z.string(), owner: z.string(), repo: z.string(), number: z.number().int().positive(), state: z.enum(["requested", "completed", "failed"]), error: z.string().optional() })).optional(),
+  codingProviderRequests: z.array(z.object({
+    id: z.string(), owner: z.string(), action: z.enum(["connect", "revoke", "codex", "order"]).optional(), connectionId: z.string().optional(),
+    /* An order request: the provider's whole live order, replayed as is (PUT is idempotent). */
+    provider: z.enum(["claude", "codex"]).optional(), ids: z.array(z.string()).optional(),
+    /* A started Codex device sign-in: what a reload needs to keep polling and to show the code. */
+    device: z.object({ id: z.string(), userCode: z.string(), verificationUri: z.string(), interval: z.number(), expiresAt: z.string() }).optional(),
+    state: z.enum(["requested", "completed", "failed"])
+  })).optional(),
+  /* Repository secret writes (SecretsSeam.setSecret/deleteSecret): never a value, only what a reload needs to settle them. */
+  repositoryImports: z.array(RepositoryImportRequestSchema).optional(),
+  secretRequests: z.array(z.object({
+    id: z.string(), owner: z.string(), repo: z.string(), name: z.string(), action: z.enum(["set", "delete", "scope"]),
+    mainOnly: z.boolean().optional(),
+    state: z.enum(["requested", "completed", "failed"])
+  })).optional(),
+  /** Atomic egress additions can be replayed; only the authorized owner, repository and host are saved. */
+  egressRequests: z.array(z.object({
+    id: z.string(), owner: z.string(), repo: z.string(), host: z.string(),
+    state: z.enum(["requested", "completed", "failed"]), error: z.string().max(1024).optional()
+  }).strict()).optional(),
+  /* Wiki refreshes asked of a repository's stack (WikiRefreshSeam.refreshWiki): each notice reconnects after a reload until the Wiki settles. */
+  branchArchiveRequests: z.array(z.object({ id:z.string(), owner:z.string(), branch:z.string(), state:z.enum(["requested","completed","failed"]), error:z.string().optional() }).strict()).optional(),
+  githubSyncRequest: z.object({ id: z.string(), owner: z.string(), lastSuccessAt: z.string().nullable(), phase: z.enum(["requested", "running", "failed"]), error: z.string().optional(), mainReset: z.object({ id: z.string().min(1), old: z.string().regex(/^[0-9a-f]{40}$/), new: z.string().regex(/^[0-9a-f]{40}$/) }).optional() }).optional(),
+  homeBackgroundRequests: z.array(z.object({
+    key: z.string(), owner: z.string(), id: z.string(), op: z.enum(["retry", "dismiss"]),
+    state: z.enum(["requested", "running", "completed", "failed"]), run_id: z.union([z.number().int().positive(), z.string().uuid()]).optional(), error: z.string().optional()
+  })).optional(),
+  wikiRequests: z.array(z.object({ repo: z.string(), owner: z.string(), requestedAt: z.number() })).optional(),
+
+  /** Optional so previously saved sessions still parse. */
+  firstRunDismissed: z.boolean().optional(),
+  hintsSeen: z.array(z.string()).optional(),
+  /** The signup onboarding's stage and answers (state/LegacySignup.ts); absent on sessions saved before it existed. */
+  signup: SignupSchema.optional(),
+  id: z.literal("main"),
+  draft: z.string(),
+  phase: z.enum(["idle", "responding"]),
+  theme: z.enum(["light", "dark"]),
+  /*
+   * The color theme. Optional (missing = DEFAULT_PALETTE) so sessions
+   * persisted before the field parse without a schema reset — the same
+   * discipline pendingCommand follows below; a zod default
+   * would fork the schema's input and output types and break collection
+   * inference.
+   */
+  palette: z.enum(HISTORICAL_PALETTES).optional(),
+  composerOwner: z.enum(["user", "smithers"]),
+  /* The pane the chat shell has open beside the conversation ("flows": will, ask 5, 2026-09-02; "subagents": the ctrl+s overview, #2190). */
+  surface: z.enum(["chat", "world", "connectors", "flows", "plugins", "subagents"]),
+  /*
+   * The plugins installed on this workspace, in the order a person added
+   * them. Optional (missing = none installed) so sessions persisted before
+   * the plugin shelf existed parse unchanged, the same discipline `palette`
+   * follows above.
+   */
+  plugins: z.array(z.string()).optional(),
+  selectedWorldDocumentId: z.string().nullable(),
+  /** The card currently maximized (a presentation transition; null = embedded). */
+  maximizedCardId: z.string().nullable(),
+  /** Durable navigation scope; optional only for rows written before frames existed. */
+  activeWorkspaceId: z.string().optional(),
+  activeBranchId: z.string().optional(),
+  activeFrameId: z.string().optional(),
+  /** The admin dev-tools panel (§2b/§2d) — only ever true for admin sessions. */
+  devtoolsOpen: z.boolean(),
+  /** Admin reset confirmation; optional for sessions persisted before this field. */
+  resetConfirmOpen: z.boolean().optional(),
+  /*
+   * The maintainer's /verbose switch: while on, every flow invocation and
+   * every non-user transition (background, system, agent) renders as a trace
+   * line in the transcript and the transition logger writes to the console.
+   * Optional (missing = off) so sessions persisted before the field parse.
+   */
+  verbose: z.boolean().optional(),
+  /*
+   * The note `/world.delete` is asking about (§10.6, §28.4). Deleting is not
+   * undoable, so the flow ASKS and the answer is an act of its own — and the
+   * question lives in the store rather than in a component's local state,
+   * because a component is a projection and never an authority. Optional so
+   * sessions persisted before the field parse without a schema reset.
+   */
+  pendingWorldDeleteId: z.string().nullable().optional(),
+  /*
+   * The Wiki pane's mode (Librarian L5): the note editor with its link rail,
+   * or the knowledge graph over the same notes. `wiki.graph [path]` switches
+   * it and `wikiGraphPath` names the note the graph is focused on (null =
+   * every page). Both live here, not in a component, for the reason
+   * pendingWorldDeleteId does; optional so persisted sessions parse.
+   */
+  wikiPane: z.enum(["document", "graph"]).optional(),
+  wikiGraphPath: z.string().nullable().optional(),
+  /** The Wiki space the pane shows (#1922): public (repository-readable) or private (explicit access). Absent reads public. */
+  wikiSpace: WikiSpaceSchema.optional(),
+  /** The Wiki pane's page view: the rendered page (read) or its editor (edit). Absent reads read. */
+  wikiPageView: z.enum(["read", "edit"]).optional(),
+  /** Repository whose disconnect confirmation is open. */
+  pendingConnectorRemovalId: z.string().nullable().optional(),
+  /*
+   * The one deferred command (requirement axis): a user-invoked command whose
+   * requirement (e.g. signed-in) was unmet parks HERE while the fulfilling
+   * command runs, and resumes when the requirement's predicate flips true.
+   * Persisted because sign-in is a full OAuth redirect — the intent must
+   * survive the reload. Optional (missing = none) so persisted sessions from
+   * before the field parse without a schema reset, like palette above.
+   * Latest wins: deferring a second command replaces the first.
+   */
+  flowInventoryRequest: z.object({ id: z.string(), owner: z.string(), origin: z.string(), actor: z.enum(["user", "smithers"]), state: z.enum(["requested", "running", "completed", "failed"]) }).optional(),
+  pendingCommand: z
+    .object({
+      name: z.string(),
+      args: z.string().nullable(),
+      /** The requirement id the command is waiting on. */
+      requirement: z.string(),
+      requestedAt: z.number()
+    }).overwrite(pending => {
+      const current = currentAction({ flow: pending.name, args: pending.args ?? undefined })
+      return { ...pending, name: current.flow, args: current.args ?? null }
+    })
+    .nullable()
+    .optional(),
+  /*
+   * The workspace approval reads still owed or last failed, one per target
+   * (ApprovalsInboxRequestSchema). Optional (missing = none) so persisted
+   * sessions parse without a schema reset; scrubbed with the account.
+   */
+  approvalsInboxRequests: z.array(ApprovalsInboxRequestSchema).optional(),
+  runOpenRequests: z.array(RunOpenRequestSchema).optional(),
+  /*
+   * The user's recently run visible commands, most recent first (capped in
+   * the reducer): the slash menu's recency ranking past its cap. Optional
+   * (missing = none) so persisted sessions parse without a schema reset.
+   */
+  recentCommands: z.array(z.string()).optional(),
+  /*
+   * The local-app tab strip (docs/LOCAL-APP.md "Tabs"). The selected tab,
+   * the `+` menu's open state, and the tab a close is asking about all live
+   * here for the same reason as pendingWorldDeleteId: a
+   * component is a projection, never an authority. Optional (missing =
+   * main / closed / none) so sessions persisted before the fields parse.
+   */
+  activeTabId: z.string().optional(),
+  /*
+   * The conversation the turn in flight was asked in: a chat tab's id, or
+   * null for main. Read only while `phase` is "responding", so a response
+   * lands in the tab that asked even if the human switched tabs meanwhile.
+   * Optional (missing = main) so persisted sessions parse without a reset.
+   */
+  turnTabId: z.string().nullable().optional(),
+  /*
+   * The turn in flight. Read only while `phase` is "responding", so boot
+   * reconciliation names the turn the session was actually answering:
+   * steering inserts its own `message-steer-<revision>` user bubble and a
+   * retry re-runs an older turn, so the newest user message does not
+   * identify it. Optional (missing = derive it from the transcript) so
+   * sessions persisted before the field parse without a schema reset.
+   */
+  turnId: z.string().nullable().optional(),
+  /**
+   * Decode-only: the retired chat filter's durable state, kept so persisted
+   * sessions and journaled `chat-filter.*` events still read. No door writes it.
+   */
+  chatFilter: z.object({
+    sources: z.array(z.string()),
+    kinds: z.array(z.enum(CHAT_KINDS)).catch(({ value }) =>
+      Array.isArray(value) ? value.filter((kind): kind is typeof CHAT_KINDS[number] => (CHAT_KINDS as ReadonlyArray<unknown>).includes(kind)) : []),
+    query: z.string()
+  }).optional(),
+  chatFilterMenuOpen: z.boolean().optional(),
+  /*
+   * The search palette (Search and Command Palette Spec 2026-09-07 §3, §5):
+   * the overlay's open state, the item whose actions panel is open, the last
+   * query (Cmd+Shift+K reopens it) and the recents ledger the ranking reads.
+   * Session state like the menus above, never a component's; all optional so
+   * sessions persisted before the fields parse without a schema reset.
+   */
+  // Decode-only dictation state is migrated by the input controller on boot.
+  inputMode: z.enum(HISTORICAL_INPUT_MODES).optional(),
+  dictating: z.boolean().optional(),
+  paletteOpen: z.boolean().optional(),
+  paletteActionsRef: z.string().nullable().optional(),
+  paletteLastQuery: z.string().optional(),
+  paletteRecents: z
+    .array(z.object({ ref: z.string(), kind: z.string(), count: z.number().int().positive(), lastSeen: z.number() }))
+    .optional(),
+  /*
+   * The active repository selection (`parseRepoSelection`): the row the
+   * sidebar highlights and the name the composer's selector shows.
+   */
+  activeRepoKey: z.string().nullable().optional(),
+  /** An explicit entry URL blocks ambient repository fallback until it resolves. */
+  repositoryEntry: RepositoryEntrySchema.nullable().optional(),
+  repositoryCommandEntry: RepositoryCommandEntrySchema.optional(),
+  /*
+   * The sidebar heading's name:
+   * `workspace.rename <name>` writes it; the heading renders "Workspace"
+   * until it is set. `workspaceRenameOpen` is the inline editor the pencil
+   * opens (workspace.rename.edit) — session state like every other menu,
+   * so a component never owns it. Both optional so persisted sessions parse.
+   */
+  workspaceName: z.string().optional(),
+  workspaceRenameOpen: z.boolean().optional(),
+  /*
+   * The chat agent's token meter for one conversation (branch): totals over
+   * every model call its turns made, and `context` = the latest call's input.
+   * `modelId` is the chat seat's model when the call settled, for the window.
+   * Absent until a call reports usage; optional so persisted sessions parse.
+   */
+  chatUsage: ChatUsageSchema.optional(),
+  revision: z.number().int().nonnegative()
+})
+export type Session = z.infer<typeof SessionSchema>
+
+/** The heading's default until the user names the workspace. */
+export const DEFAULT_WORKSPACE_NAME = "Workspace"
+
+/*
+ * The tabs (docs/LOCAL-APP.md "Cards", "Open in tab"): main, and a card
+ * pinned beside the conversation. `TabRow` is what the collection stores;
+ * `Tab` is the same record as it is OPENED, without the one field the
+ * collection owns: its place in the strip (creation order). The terminal and
+ * harness rows retired with the local backend (smithersai/smithers#2229); a
+ * persisted row of either kind fails this schema and is quarantined at open,
+ * and the projector upgrade seeds the surviving rows (APP_PROJECTOR_VERSION).
+ */
+const tabRowShape = {
+  ordinal: z.number().int().nonnegative(),
+  /** The pinned repository the tab nests under in the sidebar; absent = "No repository". */
+  repoKey: z.string().optional()
+}
+
+export const TabSchema = z.discriminatedUnion("kind", [
+  z.object({ ...tabRowShape, id: z.literal("main"), kind: z.literal("main"), title: z.literal("Smithers") }),
+  z.object({ ...tabRowShape, id: z.string(), kind: z.literal("card"), title: z.string(), cardId: z.string() })
+])
+export type TabRow = z.infer<typeof TabSchema>
+/* Distributive: every member of the union loses the collection's field, none of the others. */
+export type Tab = TabRow extends infer Row ? (Row extends TabRow ? Omit<Row, "ordinal"> : never) : never
+
+/**
+ * The conversation a transcript row belongs to, as a tab id. There is ONE
+ * Smithers: the first tab, aware of every other one — so the conversation is
+ * always main's (undefined). The scoping seam stays so a turn in flight keeps
+ * writing where it started, and so a persisted row that carries a `tabId`
+ * from an earlier build still parses.
+ */
+export const conversationTabIdOf = (session: Pick<Session, "phase" | "turnTabId">): string | undefined =>
+  session.phase === "responding" ? session.turnTabId ?? undefined : undefined
+
+/** Whether a row (message or card) belongs to the given conversation. */
+export const inConversation = (row: { readonly tabId?: string | undefined }, tabId: string | undefined): boolean =>
+  (row.tabId ?? undefined) === tabId
+
+/** Private local diagnostic output supplements the shared host conversation. */
+export const diagnosticVisible = (message: Pick<Message, "diagnostic">, login: string | null | undefined, branch: string): boolean =>
+  login !== null && login !== undefined && message.diagnostic?.login === login && message.diagnostic.branch === branch
+
+/**
+ * Who a read belongs to: the account, the repository and the branch. A read is
+ * an ask by one person at one place, so signing in as somebody else, switching
+ * repository or moving branch makes an earlier read theirs and not this
+ * reader's — the shape `TranscriptOrder.scope` uses for private placement,
+ * stated for a signed-out session too so a local host has a scope as well.
+ */
+export const readScopeOf = (
+  identity: Pick<IdentitySession, "state" | "login" | "memberId"> | undefined,
+  session: Pick<Session, "branchNavigation" | "activeRepoKey">
+): string => {
+  const login = identity?.state === "signed-in" && identity.login ? identity.login : null
+  const branch = login !== null && session.branchNavigation?.owner === login
+    ? session.branchNavigation.selected_branch
+    : "main"
+  return JSON.stringify([login, identity?.memberId ?? null, session.activeRepoKey ?? null, branch])
+}
+
+export const MAIN_TAB_ID = "main"
+
+export const mainTab = (): TabRow => ({ id: "main", kind: "main", title: "Smithers", ordinal: 0 })
+
+/*
+ * The tool-call stream the admin dev-tools panel reads (Wave 10, §2b): the
+ * full arguments AND result of every agent tool act. Persisted like
+ * everything else, recorded with actor smithers, and rendered ONLY in the
+ * admin panel — the transcript itself never carries raw payloads.
+ */
+export const ToolCallRecordSchema = z.object({
+  id: z.string(),
+  turnId: z.string(),
+  name: z.string(),
+  arguments: z.string(),
+  result: z.string(),
+  createdAt: z.number()
+})
+export type ToolCallRecord = z.infer<typeof ToolCallRecordSchema>
+
+export const TransitionRecordSchema = z.object({
+  id: z.string(),
+  revision: z.number().int().nonnegative(),
+  actor: ActorSchema,
+  type: z.string(),
+  payload: z.string(),
+  createdAt: z.number()
+})
+export type TransitionRecord = z.infer<typeof TransitionRecordSchema>
+
+export const WorldDocumentSchema = z.object({
+  id: z.string(),
+  path: z.string(),
+  title: z.string(),
+  body: z.string(),
+  links: z.array(z.string()),
+  tags: z.array(z.string()),
+  sources: z.array(z.string()),
+  confidence: z.number().min(0).max(1),
+  cloud: CloudWikiState.optional(),
+  updatedAt: z.number(),
+  updatedBy: ActorSchema,
+  revision: z.number().int().nonnegative()
+})
+export type WorldDocument = z.infer<typeof WorldDocumentSchema>
+
+export const RepositoryCapabilityPatternSchema = z.object({
+  action: z.enum(["fs:read", "fs:write"]),
+  resource: z.string()
+})
+export type RepositoryCapabilityPattern = z.infer<typeof RepositoryCapabilityPatternSchema>
+
+export const LocalRepositoryConnectorSchema = z.object({
+  id: z.string(),
+  kind: z.literal("local-repository"),
+  status: z.literal("connected"),
+  access: z.enum(REPOSITORY_ACCESS_VALUES),
+  name: z.string(),
+  root: z.string(),
+  head: z.string().nullable(),
+  branch: z.string().nullable(),
+  remoteUrl: z.string().nullable(),
+  capabilities: z.array(RepositoryCapabilityPatternSchema),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+  revision: z.number().int().nonnegative()
+})
+export type LocalRepositoryConnector = z.infer<typeof LocalRepositoryConnectorSchema>
+
+export const ConnectorOperationSchema = z.object({
+  id: z.literal("connector-operation"),
+  phase: z.enum(["idle", "selecting-local-repository"]),
+  requestedAccess: z.enum(REPOSITORY_ACCESS_VALUES).nullable(),
+  error: z.string().nullable(),
+  updatedAt: z.number(),
+  revision: z.number().int().nonnegative()
+})
+export type ConnectorOperation = z.infer<typeof ConnectorOperationSchema>
+
+/*
+ * The identity session record: one row, driven only by real answers from the
+ * identity seam (GET /api/user). "unknown" is pre-load; "unavailable"
+ * is an honest seam failure — neither changes the chat, because neither is a
+ * definitive answer about the person. Signed-out is definitive and changes
+ * what the chat CONTAINS (the opening Smithers message carries the one
+ * available action) — never which page exists.
+ */
+export const IdentitySessionSchema = z.object({
+  memberId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
+  /** Present on provider-aware session observations; absent only in legacy journal history. */
+  provider: z.enum(["github", "local"]).optional(),
+  id: z.literal("identity"),
+  state: z.enum(["unknown", "signed-out", "signed-in", "unavailable"]),
+  login: z.string().nullable(),
+  /** Owner of retained account data, even while identity is unavailable. Missing only on legacy rows. */
+  accountOwnerLogin: z.string().nullable().optional(),
+  /** Session evidence has its own clock: a row update is not a new sign-in. */
+  sessionObservation: z.object({ at: z.number(), revision: z.number().int().nonnegative() }).optional(),
+  admin: z.boolean(),
+  /** Plain-words scope list fetched from GET /api/auth/scopes; null = honest fallback copy. */
+  scopesPlain: z.string().nullable(),
+  updatedAt: z.number(),
+  revision: z.number().int().nonnegative(),
+  ownerRevision: z.number().int().nonnegative().optional()
+})
+export type IdentitySession = z.infer<typeof IdentitySessionSchema>
+
+/*
+ * The billing record: one row, dollars only (no credit abstraction). Chat is
+ * complimentary during the alpha (the billing seam records true cost, debits
+ * zero), so a definitive $0 NEVER pauses the composer or the chat — the pause
+ * discipline applies only to non-complimentary (paid) work, and the dollar
+ * balance chip stays visible either way.
+ */
+export const BillingAccountSchema = z.object({
+  planKey: z.string().nullable().default(null),
+  sandbox: SandboxEntitlementSchema.nullable().default(null),
+  plans: z.array(BillingPlanSchema).default([]),
+  /** Model credit (`credit_balance_cents`), integer cents. */
+  creditBalanceCents: z.number().int().nullable().default(null),
+  /** When the next monthly credit grant lands (`usage_period_end`). */
+  creditResetsAt: z.string().nullable().default(null),
+  id: z.literal("billing"),
+  state: z.enum(["unknown", "ok", "low", "empty", "unavailable"]),
+  totalUsd: z.string().nullable(),
+  allowedToStartWork: z.boolean(),
+  lifetimeChargedUsd: z.string().nullable(),
+  chargeCount: z.number().int().nonnegative(),
+  refreshedAt: z.number().nullable(),
+  revision: z.number().int().nonnegative()
+})
+export type BillingAccount = z.infer<typeof BillingAccountSchema>
+
+export const CardHistorySchema = z.object({ id: z.string(), index: z.number().int().nonnegative(), entries: z.array(CardSchema) })
+export type CardHistory = z.infer<typeof CardHistorySchema>
+
+/** Private transcript placement is captured with the event that admits local output. */
+export type AppTransition = AppTransitionBody & { transcriptAnchor?: TranscriptAnchor }
+
+type AppTransitionBody =
+  | { type: "gateway.run.observed"; actor: "system"; observation: RuntimeRunObservation }
+  | { type: "gateway.run.observer.changed"; actor: "system"; scope: RuntimeScope; observer: { state: "connected" | "reconnecting" | "quiet" | "stopped"; action?: "retry"; error?: string; quietForMs?: number } }
+  | { type: "gateway.approvals.observed"; actor: "system"; scope: RuntimeScope; rows: ReadonlyArray<ApprovalRow> }
+  | { type: "gateway.approval.submission.changed"; actor: "user" | "system"; submission: RuntimeApprovalSubmission }
+  | { type: "approval.answer.changed"; actor: "user"; id: string; question: string; text: string }
+  | { type: "http.turn.started"; actor: "user" | "smithers"; attemptId: string; turnId: string; text: string; retry: boolean; preserveDraft?: boolean; journal: import("@smthrs/rpc/AgentTurnJournal").AgentTurnJournalRequest }
+  | { type: "http.leg.prepared"; actor: "system"; attemptId: string; journal: import("@smthrs/rpc/AgentTurnJournal").AgentTurnJournalRequest }
+  | { type: "http.leg.accepted"; actor: "system"; attemptId: string; legId: string; cursor: import("@smthrs/rpc/AgentTurnJournal").AgentTurnCursor }
+  | { type: "http.turn.batch.received"; actor: "system"; attemptId: string; legId: string; batch: import("@smthrs/rpc/AgentTurnJournal").AgentTurnBatch }
+  | { type: "http.tool.started"; actor: "smithers"; attemptId: string; legId: string }
+  | { type: "http.tool.settled"; actor: "smithers"; attemptId: string; legId: string; result: string }
+  | { type: "http.turn.interrupted"; actor: "user" | "system"; attemptId: string; status: "failed" | "cancelled" | "ambiguous"; detail: string; silent?: boolean }
+  | { type: "command.intent.accepted"; actor: Actor; id: string; name: string; source: CommandIntent["source"]; invocationKey?: string }
+  | { type: "command.intent.settled"; actor: Actor; id: string; outcome: NonNullable<CommandIntent["outcome"]>; retryable?: boolean }
+  | { type: "repo.update.observed"; actor: Actor; context: import("./RepositoryContext").RepositoryContext; notifications: import("./RepositoryNotifications").RepositoryNotification[] }
+  | { type: "repo.update.published"; actor: Actor; card: Extract<Card, { kind: "repo-update" }>; notifications: import("./RepositoryNotifications").RepositoryNotification[] }
+  | { type: "notifications.read"; actor: Actor; receipts: Array<{ id: string; version: string }> }
+  | { type: "notification.tagged"; actor: Actor; id: string; tag: string }
+  | { type: "card.navigated"; actor: Actor; card: Card }
+  | { type: "card.view.loaded"; actor: Actor; card: Card }
+  | { type: "card.history.moved"; actor: Actor; id: string; delta: -1 | 1 }
+  /** Boot-only restoration of one crash-recorded card projection and its local history. */
+  | { type: "card.recovered"; actor: Actor; workspaceId: string; branchId: string; id: string; card: Card | null; history?: CardHistory }
+  | { type: "input.mode.changed"; actor: Actor; mode: HistoricalInputMode }
+  | { type: "dictation.changed"; actor: Actor; listening: boolean }
+  | { type: "prompt.queued"; actor: "user"; prompt: z.infer<typeof QueuedPromptSchema>; preserveDraft?: boolean }
+  | { type: "prompt.removed"; actor: "user"; id: string; edit?: boolean }
+  | { type: "prompt.queue.paused"; actor: Actor; paused: boolean }
+  | { type: "composer.changed"; actor: Actor; draft: string; recoveryScope?: PendingRecoveryScope }
+  | { type: "chat.sign-in.required"; actor: "system"; draft: string; provider: "github" | "local"; turnId?: string; attemptId?: string }
+  | { type: "message.submitted"; actor: "user" | "smithers"; turnId: string; text: string; preserveDraft?: boolean }
+  | {
+    type: "message.response.delta"
+    actor: "smithers"
+    turnId: string
+    channel: "text" | "reasoning"
+    delta: string
+  }
+  | {
+    type: "message.response.completed"
+    actor: "smithers"
+    turnId: string
+    /** The Context line of the answer (T-APP-17): what it read ({@link Message.context}). */
+    context?: Message["context"]
+  }
+  /* One model call of a chat turn settled with this usage (the `done` frame's). */
+  | { type: "chat.usage.recorded"; actor: "smithers"; turnId: string; usage: AgentTurnUsage }
+  | {
+    type: "message.response.failed"
+    actor: "system"
+    turnId: string
+    message: string
+  }
+  | {
+    /*
+     * /retry re-RUNS the last turn: the answer that turn produced is
+     * dropped and the same turn id launches again. Re-SENDING the prompt
+     * instead appended a second user bubble per retry, so the transcript
+     * grew a duplicate pair every time and every retry re-sent a longer
+     * history than the one before it.
+     */
+    type: "message.retried"
+    actor: "user"
+    turnId: string
+  }
+  | {
+    type: "message.response.cancelled"
+    // "user" pressed stop; "system" is a server-side kill ending the stream.
+    actor: "user" | "system"
+    turnId: string
+    /** One honest line naming what was stopped. */
+    detail?: string
+  }
+  | {
+    /*
+     * Boot reconciliation: the persisted session said a turn was in
+     * flight when the app went away, so the stream is orphaned — there
+     * is no turnId to cancel and no done frame will ever arrive. The
+     * boot names what happened (the in-flight message is marked
+     * interrupted, the phase returns to idle) instead of restoring a
+     * silently stuck "responding" surface.
+     */
+    type: "session.turn.orphaned"
+    actor: "system"
+  }
+  | { type: "conversation.archives.loaded"; actor: "system"; owner: string; branches: readonly Branch[] }
+  | { type: "conversation.restored"; actor: "system"; owner: string; afterRevision: number; conversations: readonly ConversationHistory[] }
+  | { type: "conversation.reset"; actor: "user" }
+  | { type: "conversation.reset.asked"; actor: "user"; open: boolean }
+  | {
+    /*
+     * One commit archives the outgoing branch, adds optional summary notes,
+     * and starts a fresh conversation. Notes are append-only, never upserts.
+     */
+    type: "conversation.cleared"
+    actor: "user"
+    branchId: string
+    notes: ReadonlyArray<{ readonly title: string; readonly body: string; readonly confidence: number }>
+    interruptedTurnId?: string
+  }
+  | { type: "app.reset"; actor: Actor }
+  | { type: "hint.dismissed"; actor: Actor; id: string }
+  | { type: "first-run.dismissed"; actor: Actor }
+  /** One merge onto the signup row; a missing row starts from initialSignup(). */
+  | { type: "signup.changed"; actor: Actor; patch: Partial<Signup> }
+  /* Retired with the Librarian history flow (#2165): replayed journals still decode it; it changes nothing. */
+  | { type: "librarian.launches.changed"; actor: Actor; launches: ReadonlyArray<unknown> }
+  | { type: "branch.requests.changed"; actor: Actor; requests: NonNullable<Session["branchRequests"]> }
+  | { type: "issue.todo.requests.changed"; actor: Actor; requests: NonNullable<Session["issueTodoRequests"]> }
+  | { type: "coding.provider.requests.changed"; actor: Actor; requests: NonNullable<Session["codingProviderRequests"]> }
+  | { type: "github.sync.request.changed"; actor: Actor; request?: Session["githubSyncRequest"] }
+  | { type: "home.background.requests.changed"; actor: Actor; requests: NonNullable<Session["homeBackgroundRequests"]> }
+  | { type: "stack.wiki.requests.changed"; actor: Actor; requests: NonNullable<Session["wikiRequests"]> }
+  | { type: "branch.control.requests.changed"; actor: Actor; requests: NonNullable<Session["branchControlRequests"]> }
+  | { type: "terminal.requests.changed"; actor: Actor; requests: NonNullable<Session["terminalRequests"]> }
+  | { type: "wiki.saves.changed"; actor: Actor; requests: NonNullable<Session["wikiSaves"]> }
+  | { type: "order.requests.changed"; actor: Actor; requests: NonNullable<Session["orderRequests"]> }
+  | { type: "flow.inventory.changed"; actor: Actor; request: NonNullable<Session["flowInventoryRequest"]> }
+  | { type: "issue.create.requests.changed"; actor: Actor; requests: NonNullable<Session["issueCreateRequests"]> }
+  | { type: "review.requests.changed"; actor: Actor; requests: NonNullable<Session["reviewRequests"]> }
+  | { type: "install.requests.changed"; actor: Actor; requests: NonNullable<Session["installRequests"]> }
+  | { type: "repository.imports.changed"; actor: Actor; requests: NonNullable<Session["repositoryImports"]> }
+  | { type: "secret.requests.changed"; actor: Actor; requests: NonNullable<Session["secretRequests"]> }
+  | { type: "branch.archive.requests.changed"; actor: Actor; requests: NonNullable<Session["branchArchiveRequests"]> }
+  | { type: "egress.requests.changed"; actor: Actor; requests: NonNullable<Session["egressRequests"]> }
+  | { type: "conversation.ui.applied"; actor: "system"; owner: string; id: string }
+  | { type: "conversation.prompt.changed"; actor: Actor; request: SharedPrompt; clearDraft?: boolean }
+  | { type: "branch.navigation.changed"; actor: Actor; navigation: z.infer<typeof BranchNavigationSchema> }
+  | { type: "theme.changed"; actor: "user" | "system"; theme: Session["theme"] }
+  /* The color theme (/theme) — the axis orthogonal to light/dark. */
+  | { type: "palette.changed"; actor: "user" | "system"; palette: Palette }
+  | {
+    /* Maximize/minimize an embedded card — a presentation transition, user-only. */
+    type: "card.maximized"
+    actor: "user"
+    id: string
+  }
+  | { type: "card.minimized"; actor: "user" }
+  | {
+    type: "frame.navigated"
+    actor: "user" | "system"
+    workspaceId: string
+    branchId: string
+    frameId: string
+  }
+  | {
+    type: "frame.forked"
+    actor: "user"
+    branch: Branch
+    rootFrame: Frame
+    selectedFrame: Frame
+  }
+  | {
+    /* The admin dev-tools panel opens/closes (registered only for admins). */
+    type: "devtools.toggled"
+    actor: "user"
+    open: boolean
+  }
+  | {
+    /* The /verbose switch flips; the reducer states it in the transcript. */
+    type: "verbose.toggled"
+    actor: "user"
+    on: boolean
+  }
+  | {
+    /*
+     * One flow invocation settled through the registry's single run path —
+     * every trigger (button, slash, agent, deferral) included. Always recorded
+     * as a transition; rendered as a transcript trace line only while verbose.
+     */
+    type: "flow.invoked"
+    actor: Actor
+    name: string
+    args: string | null
+    hidden: boolean
+    outcome: "executed" | "failed" | "unknown-command" | "deferred" | "confirm-requested" | "form"
+    detail: string | null
+    durationMs: number
+  }
+  // Historical menu events remain decodable when replaying an existing journal.
+  | {
+    /* The composer surfaces menu opens/closes (the surfaces command). */
+    type: "surfaces-menu.toggled"
+    actor: "user"
+    open: boolean
+  }
+  | {
+    /* The composer connect menu opens/closes (trigger, Escape, outside press). */
+    type: "connect-menu.toggled"
+    actor: "user"
+    open: boolean
+  }
+  | {
+    /* The composer `+` menu opens/closes (trigger, Escape, outside press, an entry). */
+    type: "add-menu.toggled"
+    actor: "user"
+    open: boolean
+  }
+  | { type: "chat-filter.menu.toggled"; actor: Actor; open: boolean }
+  | { type: "chat-filter.changed"; actor: Actor; filter: NonNullable<Session["chatFilter"]> }
+  | {
+    /* The search palette opens/closes (Cmd+K, Escape, Enter on an item); a close remembers the query. */
+    type: "palette.toggled"
+    actor: "user" | "system"
+    open: boolean
+    lastQuery?: string
+  }
+  | {
+    /* The palette's actions panel opens for one item (→, a second Cmd+K) or closes (←, Escape). */
+    type: "palette.actions.toggled"
+    actor: "user"
+    ref: string | null
+  }
+  | {
+    /* An item opened from the palette: the recents ledger (§5) the ranking reads. */
+    type: "palette.item.opened"
+    actor: "user"
+    ref: string
+    kind: string
+    at: number
+  }
+  | {
+    /*
+     * A user-invoked command parked on an unmet requirement (requirement
+     * axis): the fulfilling command runs now; this record resumes the
+     * original when the requirement's predicate flips true.
+     */
+    type: "command.deferred"
+    actor: "user"
+    name: string
+    args: string | null
+    requirement: string
+    /** A user retry admits the request and replaces the failed catalog entry atomically. */
+    repositoryRetry?: { requestId: string; repo: string }
+    repositoryRequest?: { requestId: string; repo: string; owner: string | null }
+  }
+  | {
+    /* The deferred command resumed (or went stale) — the parking spot clears. */
+    type: "command.deferral.cleared"
+    actor: "system"
+  }
+  | {
+    /*
+     * A workspace approval read was asked for: its target and owner are
+     * fixed here, before any slow work, and the ask replaces any earlier
+     * request for the same target.
+     */
+    type: "approvals.inbox.requested"
+    actor: "user" | "smithers"
+    request: { id: string; repo: string; workspaceId?: string; owner: string }
+  }
+  | {
+    /* The read ended: received rows clear the request; a failure stays on it, visible and retryable. */
+    type: "approvals.inbox.settled"
+    actor: "system"
+    id: string
+    error?: string
+  }
+  | {
+    type: "runs.open.requested"
+    actor: "user" | "smithers"
+    request: { id: string; repo: string; workspaceId?: string; owner: string; runId: string; cardId: string; requireExisting?: boolean }
+  }
+  | {
+    type: "runs.open.settled"
+    actor: "system"
+    id: string
+    error?: string
+  }
+  | {
+    /* A visible command ran for the user — the slash menu's recency signal. */
+    type: "command.ran"
+    actor: "user"
+    name: string
+  }
+  | {
+    /* The full-fidelity record of one agent tool act (dev-tools panel only). */
+    type: "toolcall.recorded"
+    actor: "smithers"
+    turnId: string
+    name: string
+    arguments: string
+    result: string
+  }
+  | {
+    type: "composer.control.changed"
+    actor: "smithers" | "system"
+    owner: Session["composerOwner"]
+    draft?: string
+  }
+  | {
+    type: "surface.changed"
+    actor: Actor
+    surface: Session["surface"]
+  }
+  /* A plugin is added to (or taken off) this workspace's shelf. */
+  | {
+    type: "plugin.installed"
+    actor: Actor
+    plugin: string
+  }
+  | {
+    type: "plugin.removed"
+    actor: Actor
+    plugin: string
+  }
+  | {
+    type: "world.document.selected"
+    actor: Actor
+    id: string
+  }
+  | {
+    type: "world.document.upserted"
+    actor: Actor
+    recoveryScope?: PendingRecoveryScope
+    document: Omit<WorldDocument, "updatedAt" | "updatedBy" | "revision">
+    /*
+     * false = write without stealing the world surface's selection. The
+     * user-facing editor keeps the default; agent memory writes pass
+     * false so a background remember never moves what the human reads.
+     */
+    select?: boolean
+  }
+  | {
+    type: "world.document.removed"
+    actor: Actor
+    id: string
+  }
+  | {
+    /* The Wiki pane's mode: the editor or the graph, focused on a note or over every page. */
+    type: "wiki.pane.changed"
+    actor: Actor
+    pane: "document" | "graph"
+    path: string | null
+  }
+  | {
+    /* The Wiki space the pane shows: public or private (#1922). */
+    type: "wiki.space.changed"
+    actor: Actor
+    space: WikiSpace
+  }
+  | {
+    /* The Wiki pane's page view: the rendered page or its editor. */
+    type: "wiki.page-view.changed"
+    actor: Actor
+    view: "read" | "edit"
+  }
+
+  | {
+    /*
+     * The delete question, asked and answered (§10.6). `id: null` is the
+     * answer "no" — the dialog closes and the note stays.
+     */
+    type: "world.delete.asked"
+    actor: Actor
+    id: string | null
+  }
+  | {
+    type: "connector.local.requested"
+    actor: "user"
+    access: RepositoryAccess
+  }
+  | {
+    type: "connector.local.cancelled"
+    actor: "user" | "system"
+  }
+  | {
+    type: "connector.local.failed"
+    actor: "system"
+    message: string
+  }
+  | {
+    type: "connector.local.connected"
+    actor: "system"
+    access: RepositoryAccess
+    repository: LocalRepositoryInspection
+  }
+  | {
+    type: "connector.access.changed"
+    actor: "user"
+    id: string
+    access: RepositoryAccess
+  }
+  | { type: "connector.removal.asked"; actor: "user"; id: string | null }
+  | {
+    type: "connector.removed"
+    actor: "user"
+    id: string
+  }
+  | { type: "card.upsert"; actor: Actor; card: Card; /** The turn a system-authored answer belongs to. */ turnId?: string }
+  // Local producers may omit kind: the store binds it to the existing card.
+  // RPC producers must pass the discriminated CardPatchSchema instead.
+  | { type: "card.updated"; actor: Actor; id: string; patch: Omit<CardPatch, "kind"> & { kind?: Card["kind"] } }
+  | {
+    type: "card.approval.decision.pending"
+    actor: "user"
+    id: string
+  }
+  | {
+    type: "card.approval.decision.failed"
+    actor: "system"
+    id: string
+    message: string
+  }
+  | {
+    type: "card.approval.decided"
+    actor: "user"
+    id: string
+    decision: "approved" | "denied"
+    decidedAt: number
+  }
+  | {
+    type: "card.approval.observed"
+    actor: "system"
+    id: string
+    runId: string
+    requestId: string
+    digest: string
+    decision: "approved" | "denied"
+  }
+  | {
+    type: "identity.session.loaded"
+    memberId?: number
+    provider?: "github" | "local"
+    actor: "system"
+    state: "signed-out" | "signed-in" | "unavailable"
+    login: string | null
+    /** The signed-in person's profile name from `GET /api/user`; it only prefills the signup's Full name. */
+    displayName?: string
+    admin: boolean
+    scopesPlain: string | null
+  }
+  | { type: "identity.session.cleared"; actor: "user" }
+  | {
+    type: "billing.refreshed"
+    actor: "system"
+    state: "ok" | "low" | "empty"
+    totalUsd: string
+    allowedToStartWork: boolean
+    lifetimeChargedUsd: string
+    chargeCount: number
+  }
+  | { type: "billing.plans.loaded"; actor: Actor; planKey: string; sandbox: BillingAccount["sandbox"]; plans: BillingAccount["plans"]; creditBalanceCents?: number | null; creditResetsAt?: string | null }
+  | { type: "billing.unavailable"; actor: "system" }
+  | {
+    /* The 300ms toast law: slow background work states what is running. */
+    type: "toast.shown"
+    audience?: Toast["audience"]
+    sourceCard?: string
+    actor: "system"
+    key: string
+    title: string
+    action?: Toast["action"]
+  }
+  | {
+    /* Ok and cancelled auto-dismiss; failed stays until dismissed. */
+    type: "toast.resolved"
+    actor: "system"
+    key: string
+    status: "ok" | "failed" | "cancelled"
+    /** The settled title, so a done toast stops reading as still running. */
+    title?: string
+    detail: string
+    action?: Toast["action"]
+  }
+  | { type: "toast.progressed"; actor: "system"; key: string; detail: string; title?: string }
+  | { type: "toast.dismissed"; actor: "user" | "system"; id: string }
+	| { type: "card.removed"; actor: Actor; id: string }
+  | {
+    /* The visible one-line record of an agent tool execution. */
+    type: "message.tool.executed"
+    actor: "smithers"
+    turnId: string
+    text: string
+  }
+  | {
+    /*
+     * Mid-turn input admitted as steering (DESIGN.md §14): the user's
+     * words render as their own bubble without touching the turn phase;
+     * the running chain drains them at its next link boundary.
+     */
+    type: "message.steered"
+    actor: "user"
+    turnId: string
+    text: string
+    preserveDraft?: boolean
+  }
+  | {
+    /*
+     * Wave 12 §1 — the deterministic claim surface. A turn that launched a
+     * run does not get to narrate it: the client replaces the model's prose
+     * for that turn with the one line it is willing to stand behind. Actor
+     * system, journaled, so the substitution is a recorded act rather than
+     * an invisible edit.
+     */
+    type: "message.claim.substituted"
+    actor: "system"
+    turnId: string
+    text: string
+  }
+  | {
+    /* Commands disclosed to the agent for one user message (CommandSelection.ts); names add to its `disclosed`. */
+    type: "message.commands.disclosed"
+    actor: "system" | "smithers"
+    turnId: string
+    names: ReadonlyArray<string>
+  }
+  | {
+    /* A complete one-line Smithers message (admin results, honest states, auth replies). */
+    type: "message.appended"
+    /** The initiator of this app-authored reply, independently of its transcript role. */
+    actor: "system" | "user" | "smithers"
+    text: string
+    diagnostic?: Message["diagnostic"]
+    /** The action that rides the message (sign-in, request access, retry, a confirm flow). */
+    action?: Message["action"]
+    /** The door is saying this refusal here, so its form card must not repeat it ({@link Message.spoken}). */
+    spoken?: true
+    /** What the answer read ({@link Message.context}). */
+    context?: Message["context"]
+  }
+  | { type: "confirmation.cancelled"; actor: "user"; id: string; revision: string }
+  /* The card tabs (docs/LOCAL-APP.md "Cards"). */
+  | { type: "tab.opened"; actor: Actor; tab: Tab }
+  | { type: "tab.selected"; actor: Actor; id: string }
+  | { type: "tab.closed"; actor: "user" | "system"; id: string }
+  | { type: "status.expired"; actor: "system"; now: number; runtime?: true }
+  /* Models as data: the host's catalog replaces its own rows in place and never a user's record. */
+  | { type: "models.observed"; actor: "system"; models: ReadonlyArray<ConfiguredModel> }
+  | { type: "model.saved"; actor: Actor; model: ConfiguredModel }
+  | { type: "model.removed"; actor: Actor; id: ModelRecordId }
+  | { type: "model.tested"; actor: "system"; test: ModelTestRecord }
+  /* A null record returns the seat to the host's default. */
+  | { type: "seat.assigned"; actor: Actor; seat: SeatId; recordId: ModelRecordId | null }
+  /*
+   * Lane piper: the cloud repository inventory (RepositoriesSeam) replaces
+   * the repositories collection; the cloud workspace list replaces the
+   * workspace working copies; the
+   * cloud session record answers { state, username, expiresAt, scopes } —
+   * never the token.
+   */
+  | {
+    type: "repositories.loaded"
+    actor: "system"
+    repositories: ReadonlyArray<Pick<CloudRepository, "id" | "org" | "ownerKind" | "name" | "head" | "catalog" | "summary" | "issueTracker">>
+  }
+  /*
+   * One repository row upserted: the catalog row a `/owner/name` request
+   * opens, and that row's default bookmark once the mirror answers
+   * (RepoLink.ts). Every other row is left as it was, so a caller adding one
+   * row never re-projects the whole collection. A row keeps its fresher head
+   * when the upsert carries none, the same reading `repositories.loaded` takes.
+   */
+  | {
+    type: "repository.upserted"
+    actor: "system"
+    repository: Pick<CloudRepository, "id" | "org" | "ownerKind" | "name" | "head" | "catalog" | "summary" | "issueTracker">
+  }
+  | {
+    type: "workingcopies.workspaces.loaded"
+    actor: "system"
+    copies: ReadonlyArray<Pick<WorkingCopy, "id" | "repoId" | "kind" | "label" | "workspaceId" | "state">>
+  }
+  | {
+    type: "cloud.session.loaded"
+    actor: "system"
+    state: "signed-out" | "signing-in" | "signed-in"
+    username: string | null
+    expiresAt: string | null
+    scopes: "degraded" | null
+  }
+  /*
+   * Lane citc: the workspaces collection (the authority the workspace
+   * working copies derive from). `workspaces.loaded` replaces a scope — the
+   * per-user list (no repoId) or one repository's; `workspace.updated` upserts
+   * one row (an act's answer, the watch's poll). Live working copies and card
+   * headers are derived views over those rows.
+   */
+  | { type: "workspaces.list.started"; actor: "system"; requestId: string; repoId?: string }
+  | { type: "workspaces.list.failed"; actor: "system"; requestId: string; repoId?: string; error: string }
+  | {
+    type: "workspaces.loaded"
+    actor: "system"
+    requestId?: string
+    workspaces: ReadonlyArray<CloudWorkspaceInput>
+    /** Present = one repository's list replaced; absent = the per-user list. */
+    repoId?: string
+  }
+  | {
+    type: "workspace.updated"
+    actor: "system"
+    workspace: CloudWorkspaceInput
+  }
+  /*
+   * A destroyed session and a deleted workspace are facts the card, the
+   * collection, and the terminal tabs learn in ONE transaction: a tab whose
+   * session or workspace is gone closes here, never one poll later.
+   */
+  | { type: "workspace.session.destroyed"; actor: Actor; sessionId: string }
+  | { type: "workspace.deleted"; actor: Actor; workspaceId: string }
+  /*
+   * Lane change: one change read through the ChangeSeam (change.view, a
+   * land's re-read). Upsert only — the collection answers "what is the
+   * current revision of this change" for the pinned cards.
+   */
+  | {
+    type: "change.loaded"
+    actor: "system"
+    change: ChangeInput
+  }
+  | {
+    type: "github.app-status.loaded"
+    actor: "system"
+    status: GitHubAppStatusInput
+  }
+  /* Selecting names the active repository. */
+  | { type: "repo.selected"; actor: Actor; id: string }
+  | { type: "repository.entry.changed"; actor: "system"; entry: RepositoryEntry | null }
+  | { type: "repository.command.changed"; actor: "system"; entry: RepositoryCommandEntry }
+  /*
+   * The sidebar's file tree: a caret
+   * toggles a directory row; a first expand (or a retry of a failed one)
+   * marks it loading, and the local route's answer lands as loaded or failed.
+   */
+  | { type: "repo-tree.toggled"; actor: Actor; copyId: string; path: string; expanded: boolean }
+  | { type: "repo-tree.loading"; actor: Actor; copyId: string; path: string }
+  | { type: "repo-tree.loaded"; actor: "system"; copyId: string; path: string; entries: ReadonlyArray<RepoTreeEntry>; truncated: boolean }
+  | { type: "repo-tree.failed"; actor: "system"; copyId: string; path: string; error: string }
+  /* One repository job's host registration read: requested, then completed or failed. */
+  | { type: "repository-job.observed"; actor: "system"; observation: RepositoryJobObservation }
+  /* The repository's declared flows landed (or went absent: an empty list) from its factory projection. */
+  | { type: "repository-flows.loaded"; actor: "system"; repo: string; flows: ReadonlyArray<RepositoryFlow>; home?: RepositoryFlowsRow["home"]; catalog?: RepositoryFlowsRow["catalog"] }
+  /* The whole of one flow's measured history, replacing whatever was read before. */
+  | { type: "flow-durations.loaded"; actor: "system"; repo: string; workspaceId?: string; flowId: string; rows: ReadonlyArray<{ readonly actionTag: string; readonly samples: number; readonly p50Ms: number; readonly p90Ms: number }> }
+  /* The workspace heading: its name, and the inline editor the pencil opens. */
+  | { type: "workspace.renamed"; actor: Actor; name: string }
+  | { type: "workspace.rename.toggled"; actor: "user"; open: boolean }
+  /* A user's star on a target (targets card Featured view); `repoId` names the open card the mirror lands on. */
+  | { type: "target.starred"; actor: Actor; repoId: string; star: StarredTarget }
+  | { type: "target.unstarred"; actor: Actor; repoId: string; id: string }
+  | {
+    /*
+     * The next-step pills were regenerated (Recommend.ts): by the server's
+     * recommender (source "agent") or by the state rule it falls back to
+     * (source "rule"). `revision` is the session revision the read was made
+     * against, so a stale answer never overwrites a fresher one.
+     */
+    type: "recommendations.updated"
+    actor: "system" | "smithers"
+    suggestions: ReadonlyArray<Suggestion>
+    source: RecommendationSource
+    revision: number
+  }
+  | {
+    /*
+     * The server's recommender refused with a 429 and named when the bucket
+     * reopens (Recommend.ts recommendRetryAt): no POST /api/recommend leaves
+     * before `retryAt` (epoch ms) for the account that asked. The row keeps
+     * the rule's pills; nothing user-visible changes.
+     */
+    type: "recommendations.deferred"
+    actor: "system"
+    retryAt: number
+    origin: string
+  }
+
+export const initialSession = (theme: Session["theme"]): Session => ({
+  id: "main",
+  inputMode: "normal",
+  draft: "",
+  phase: "idle",
+  theme,
+  // Immutable historical boot seed; AppStore journals the current palette after replay.
+  palette: "night-owl",
+  composerOwner: "user",
+  surface: "chat",
+  selectedWorldDocumentId: null,
+  maximizedCardId: null,
+  activeWorkspaceId: DEFAULT_WORKSPACE_ID,
+  activeBranchId: DEFAULT_BRANCH_ID,
+  activeFrameId: rootFrameId(DEFAULT_BRANCH_ID),
+  devtoolsOpen: false,
+  resetConfirmOpen: false,
+  verbose: false,
+  pendingWorldDeleteId: null,
+  wikiPane: "document",
+  wikiSpace: "public",
+  wikiPageView: "read",
+  wikiGraphPath: null,
+  pendingConnectorRemovalId: null,
+  activeTabId: MAIN_TAB_ID,
+  chatFilterMenuOpen: false,
+  activeRepoKey: null,
+  revision: 0
+})
+
+export const initialConnectorOperation = (createdAt = Date.now()): ConnectorOperation => ({
+  id: "connector-operation",
+  phase: "idle",
+  requestedAccess: null,
+  error: null,
+  updatedAt: createdAt,
+  revision: 0
+})
+
+export const initialIdentitySession = (createdAt = Date.now()): IdentitySession => ({
+  id: "identity",
+  state: "unknown",
+  login: null,
+  accountOwnerLogin: null,
+  admin: false,
+  scopesPlain: null,
+  updatedAt: createdAt,
+  revision: 0
+})
+
+export const initialBillingAccount = (): BillingAccount => ({
+  planKey: null, sandbox: null, plans: [], creditBalanceCents: null, creditResetsAt: null,
+  id: "billing",
+  state: "unknown",
+  totalUsd: null,
+  allowedToStartWork: true,
+  lifetimeChargedUsd: null,
+  chargeCount: 0,
+  refreshedAt: null,
+  revision: 0
+})
+
+/*
+ * Wave 14 §1: there is no seeded opening message, in either auth state.
+ *
+ * A generic "Hey — I'm Smithers, tell me what you're working on" rendered as
+ * the OPENING message before the honest content arrived, and the opening
+ * message is the one the product is judged by. Signed out, the opening (and
+ * only) message IS the auth conversation state — App.tsx derives it, nothing
+ * is seeded under it. Signed in, the transcript opens clean and the loaded
+ * repositories arrive through the inventory seam. A filler line ahead of
+ * either is invention, because it claims a conversation before there is one.
+ */

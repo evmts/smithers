@@ -29,7 +29,7 @@ import { readdirSync, readFileSync, existsSync } from "node:fs"
 import { join, dirname, relative } from "node:path"
 import { fileURLToPath } from "node:url"
 import { catalogPublicationErrors } from "./catalog-publication.mjs"
-import { publishedPackages } from "../../../scripts/pack-release.mjs"
+import { publishedPackages } from "../../../flows/release/pack-release.mjs"
 
 const siteRoot = join(dirname(fileURLToPath(import.meta.url)), "..")
 const repoRoot = join(siteRoot, "..", "..")

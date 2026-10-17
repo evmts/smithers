@@ -2,7 +2,7 @@ import { FORM_INSTRUCTION_FIELDS, UI_INSTRUCTION_FIELDS } from "@smthrs/rpc/UiIn
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import appendixA from "./fixtures/AppendixA.json"
-import { generateCatalog, generateSkill, generateFormInstructions } from "../../../../../scripts/catalog-mvp"
+import { generateCatalog, generateSkill, generateFormInstructions } from "../../../scripts/catalog-mvp"
 import { lintText } from "../cards/productWords"
 import { disclosedToAgent, visible, viewerAdmitted, type CommandState } from "./registry"
 
