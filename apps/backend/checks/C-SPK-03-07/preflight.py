@@ -61,7 +61,7 @@ def verify(root):
         if not measurement_only(name) and name not in expected:
             raise ValueError('unreviewed extra runtime input: ' + name)
     # Host code must itself be reviewed main, including build recipes and probes.
-    harness = 'scripts/spikes/col-01'
+    harness = 'apps/backend/checks/C-SPK-03-07'
     for entry in filter(None, git('ls-tree', '-r', '-z', approved, '--', harness).split(b'\0')):
         metadata, raw_name = entry.split(b'\t', 1)
         name = raw_name.decode()

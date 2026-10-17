@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 SPIKE_DIR="$(cd "$(dirname "$0")" && pwd)"
-SPIKE_ROOT="$(cd "$SPIKE_DIR/../../.." && pwd)"
+SPIKE_ROOT="$(cd "$SPIKE_DIR/../../../.." && pwd)"
 cd "$SPIKE_ROOT"
 export GIT_CEILING_DIRECTORIES="$HOME"
 SPIKE_BUILD="$SPIKE_ROOT/.artifacts/spikes/col01-build"
@@ -21,7 +21,7 @@ if [[ "$SPIKE_MODE" == all || "$SPIKE_MODE" == snapshot ]]; then
     exit 2
   fi
 fi
-if [[ ! -f scripts/spikes/col-01/node_modules/@playwright/test/cli.js ]]; then
+if [[ ! -f apps/backend/checks/C-SPK-03-07/node_modules/@playwright/test/cli.js ]]; then
   pnpm --dir "$SPIKE_DIR" install --offline --frozen-lockfile --ignore-scripts
 fi
 if [[ "$SPIKE_MODE" == remote ]]; then
@@ -29,7 +29,7 @@ if [[ "$SPIKE_MODE" == remote ]]; then
   export SPIKE_TRANSPORT="${3:?relay or bridge required}"
   export SPIKE_CLIENT_TOPOLOGY=second-mac
   export SPIKE_EVIDENCE="${SPIKE_EVIDENCE:-$SPIKE_ROOT/.artifacts/checks/C-SPK-07/$(date -u +%Y%m%dT%H%M%SZ)-remote}"
-  exec node scripts/spikes/col-01/node_modules/@playwright/test/cli.js test --config "$SPIKE_DIR/playwright.config.ts"
+  exec node apps/backend/checks/C-SPK-03-07/node_modules/@playwright/test/cli.js test --config "$SPIKE_DIR/playwright.config.ts"
 fi
 mkdir -p "$SPIKE_BUILD" "$SPIKE_ROOT/.artifacts/col01-tmp"
 export TMPDIR="$SPIKE_ROOT/.artifacts/col01-tmp"

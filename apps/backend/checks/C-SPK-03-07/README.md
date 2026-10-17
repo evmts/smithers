@@ -3,7 +3,7 @@
 From this checkout, run:
 
 ```sh
-scripts/spikes/col-01/run.sh
+apps/backend/checks/C-SPK-03-07/run.sh
 ```
 
 Requires Apple Silicon, the pinned Rust toolchain, Go, pnpm, Chromium installed
@@ -81,7 +81,7 @@ The default also shallow-clones public `main` inside the VM, installs dependenci
 with pinned Node 26.5.0 / pnpm 11.25.0 (dependency installation is offline and
 requires `SPIKE_SNAPSHOT_STORE_ARCHIVE`, an absolute path to a tar archive of
 an already populated pnpm 11 store for Linux ARM64). Build it on the reference
-host with `scripts/spikes/col-01/store.sh`: the shared runtime starts one
+host with `apps/backend/checks/C-SPK-03-07/store.sh`: the shared runtime starts one
 fixed-image guest and executes dependency work as agent uid 19999. Its printed
 evidence directory contains `store.tar` and an archive/revision receipt. The archive holds the
 `--store-dir` root without `v11/projects` (symlinks back to the build checkout,
@@ -127,17 +127,17 @@ Validation, with build output kept inside the checkout:
 ```sh
 export GIT_CEILING_DIRECTORIES="$HOME"
 export CARGO_TARGET_DIR="$PWD/.artifacts/spikes/col01-host-tests"
-cargo test --locked --manifest-path scripts/spikes/col-01/guest/Cargo.toml
-python3 -m unittest discover -s scripts/spikes/col-01/jj-snapshot -v
-cargo build --locked --manifest-path scripts/spikes/col-01/guest/Cargo.toml 
+cargo test --locked --manifest-path apps/backend/checks/C-SPK-03-07/guest/Cargo.toml
+python3 -m unittest discover -s apps/backend/checks/C-SPK-03-07/jj-snapshot -v
+cargo build --locked --manifest-path apps/backend/checks/C-SPK-03-07/guest/Cargo.toml 
 export COL01_ECHO_BINARY="$CARGO_TARGET_DIR/debug/col01-echo"
 export COL01_DOCHOST_BINARY="$CARGO_TARGET_DIR/debug/col01-dochost"
-(cd scripts/spikes/col-01 && go test -race ./... && go vet ./...)
+(cd apps/backend/checks/C-SPK-03-07 && go test -race ./... && go vet ./...)
 ```
 
 The 2026-10-06 reference-host run (RTT matrix, second-Mac keystrokes, snapshot table) is recorded in
-[ADR 0003](../../../docs/architecture/0003-live-code-co-editing.md).
-Retain this prototype and its raw evidence as the reproducible T-COL-11 benchmark method; do not port it into product code. Run measurements with `--no-cache`. Declared exclusive targets: `//scripts/spikes/col-01:test`, `:rtt`, `:keystrokes`, `:snapshot`.
+[ADR 0003](../../../../docs/architecture/0003-live-code-co-editing.md).
+Retain this prototype and its raw evidence as the reproducible T-COL-11 benchmark method; do not port it into product code. Run measurements with `--no-cache`. Declared exclusive targets: `//apps/backend/checks/C-SPK-03-07:test`, `:rtt`, `:keystrokes`, `:snapshot`.
 Nothing here becomes product code. See [control/README.md](control/README.md)
 for the current two-exec service versus one-exec rejected-alternative gap.
 

@@ -55,6 +55,16 @@ class BoundaryTests(unittest.TestCase):
         (self.root / "packages/helper/helper.go").rename(self.root / "packages/helper/helper_test.go")
         self.assertEqual(boundaries.source_imports(self.root), [])
 
+    def test_nested_module_harness_may_use_testkit(self):
+        # A reference-host check harness in its own module never ships.
+        self.write("apps/backend/checks/harness/go.mod", "module example.com/harness\n")
+        self.write("apps/backend/checks/harness/control/postgres.go", f'package control\nimport "{boundaries.TESTKIT_IMPORT}/postgresfixture"\n')
+        self.assertEqual(boundaries.source_imports(self.root), [])
+        (self.root / "apps/backend/checks/harness/go.mod").unlink()
+        self.assertEqual(boundaries.source_imports(self.root), [
+            "apps/backend/checks/harness/control/postgres.go: production source imports testkit",
+        ])
+
     def test_testkit_subpackages_are_testkit(self):
         self.write("packages/helper/helper.go", f'package helper\nimport "{boundaries.TESTKIT_IMPORT}/testdb"\n')
         self.assertEqual(boundaries.source_imports(self.root), [

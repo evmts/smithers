@@ -15,7 +15,7 @@ class PreflightTests(unittest.TestCase):
                 continue  # This host supplies the reference architecture.
             with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as temp:
                 root = Path(temp)
-                spike = root / 'scripts/spikes/col-01'
+                spike = root / 'apps/backend/checks/C-SPK-03-07'
                 spike.mkdir(parents=True)
                 for name in ['run.sh', 'preflight.py']:
                     shutil.copyfile(Path(__file__).with_name(name), spike / name)

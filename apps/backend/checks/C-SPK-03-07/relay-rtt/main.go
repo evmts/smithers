@@ -294,7 +294,7 @@ func run() (retErr error) {
 	}
 	if *mode == "snapshot" {
 		retErr = h.snapshots(dir03, cpus)
-		cmd := exec.CommandContext(ctx, "node", "scripts/spikes/col-01/result.mjs", dir03, dir07, dir03, *mode)
+		cmd := exec.CommandContext(ctx, "node", "apps/backend/checks/C-SPK-03-07/result.mjs", dir03, dir07, dir03, *mode)
 		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 		return errors.Join(retErr, cmd.Run())
 	}
@@ -311,7 +311,7 @@ func run() (retErr error) {
 		return err
 	}
 	if *mode == "all" || *mode == "rtt" {
-		forwarder, err := os.ReadFile("scripts/spikes/col-01/echo/bridge_nodelay.py")
+		forwarder, err := os.ReadFile("apps/backend/checks/C-SPK-03-07/echo/bridge_nodelay.py")
 		if err != nil {
 			return err
 		}
@@ -354,7 +354,7 @@ func run() (retErr error) {
 		retErr = errors.Join(retErr, h.snapshots(dir03, cpus))
 	}
 	if *mode != "serve" {
-		cmd := exec.CommandContext(ctx, "node", "scripts/spikes/col-01/result.mjs", dir03, dir07, dir03, *mode)
+		cmd := exec.CommandContext(ctx, "node", "apps/backend/checks/C-SPK-03-07/result.mjs", dir03, dir07, dir03, *mode)
 		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 		if err = cmd.Run(); err != nil {
 			retErr = errors.Join(retErr, err)
@@ -682,11 +682,11 @@ func (h *harness) keystrokes(dir, transport, lan string, httpPort int, serveOnly
 	}
 	fmt.Printf("BROWSER %s %s | %s\n", transport, origin, deviation)
 	if serveOnly {
-		fmt.Printf("SECOND MAC: SPIKE_CLIENT_TOPOLOGY=second-mac scripts/spikes/col-01/run.sh remote %s %s\n", origin, transport)
+		fmt.Printf("SECOND MAC: SPIKE_CLIENT_TOPOLOGY=second-mac apps/backend/checks/C-SPK-03-07/run.sh remote %s %s\n", origin, transport)
 		<-h.ctx.Done()
 		return nil
 	}
-	cmd := playwrightCommand(h.ctx, "test", "--config", "scripts/spikes/col-01/playwright.config.ts")
+	cmd := playwrightCommand(h.ctx, "test", "--config", "apps/backend/checks/C-SPK-03-07/playwright.config.ts")
 	cmd.Env = append(os.Environ(), "SPIKE_ORIGIN="+origin, "SPIKE_EVIDENCE="+subdir, "SPIKE_TRANSPORT="+transport, "SPIKE_CLIENT_TOPOLOGY=same-mac")
 	log, err := os.Create(filepath.Join(subdir, "playwright.log"))
 	if err != nil {
@@ -710,7 +710,7 @@ func (h *harness) keystrokes(dir, transport, lan string, httpPort int, serveOnly
 func digest(b []byte) string { sum := sha256.Sum256(b); return hex.EncodeToString(sum[:]) }
 
 func playwrightCommand(ctx context.Context, args ...string) *exec.Cmd {
-	return exec.CommandContext(ctx, "node", append([]string{"scripts/spikes/col-01/node_modules/@playwright/test/cli.js"}, args...)...)
+	return exec.CommandContext(ctx, "node", append([]string{"apps/backend/checks/C-SPK-03-07/node_modules/@playwright/test/cli.js"}, args...)...)
 }
 
 // Repository work cannot start before the fresh image's actual identity is known.

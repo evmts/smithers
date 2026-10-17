@@ -75,11 +75,11 @@ func (h *harness) snapshots(dir string, cpus int) (retErr error) {
 	defer server.Close()
 	for destination, source := range map[string]string{
 		"col01-jj":            filepath.Join(h.build, "col01-jj"),
-		"snapshot-prepare.py": "scripts/spikes/col-01/jj-snapshot/prepare.py",
-		"snapshot-measure.py": "scripts/spikes/col-01/jj-snapshot/snapshot.py",
-		"snapshot.py":         "scripts/spikes/col-01/jj-snapshot/snapshot.py",
-		"growth.py":           "scripts/spikes/col-01/jj-snapshot/growth.py",
-		"kernel.py":           "scripts/spikes/col-01/jj-snapshot/kernel.py",
+		"snapshot-prepare.py": "apps/backend/checks/C-SPK-03-07/jj-snapshot/prepare.py",
+		"snapshot-measure.py": "apps/backend/checks/C-SPK-03-07/jj-snapshot/snapshot.py",
+		"snapshot.py":         "apps/backend/checks/C-SPK-03-07/jj-snapshot/snapshot.py",
+		"growth.py":           "apps/backend/checks/C-SPK-03-07/jj-snapshot/growth.py",
+		"kernel.py":           "apps/backend/checks/C-SPK-03-07/jj-snapshot/kernel.py",
 	} {
 		data, err := os.ReadFile(source)
 		if err != nil {
@@ -208,7 +208,7 @@ func (h *harness) prepareStore(dir string) error {
 	defer server.Close()
 	for destination, source := range map[string]string{
 		"col01-jj":            filepath.Join(h.build, "col01-jj"),
-		"snapshot-prepare.py": "scripts/spikes/col-01/jj-snapshot/prepare.py",
+		"snapshot-prepare.py": "apps/backend/checks/C-SPK-03-07/jj-snapshot/prepare.py",
 	} {
 		data, err := os.ReadFile(source)
 		if err != nil {

@@ -70,6 +70,16 @@ def private_sql_references(source: str) -> list[str]:
 
 
 
+def nested_module(path: Path, root: Path) -> bool:
+    """Whether `path` belongs to a Go module nested below the root module.
+
+    A nested module is never linked into the root module's binaries, so its
+    sources may use testkit; `local_graph` still checks what ships.
+    """
+    return any((directory / "go.mod").is_file() for directory in path.parents
+               if directory != root and directory.is_relative_to(root))
+
+
 def source_imports(root: Path = ROOT) -> list[str]:
     failures = []
     for relative in (
@@ -105,6 +115,7 @@ def source_imports(root: Path = ROOT) -> list[str]:
             if (
                 not path.name.endswith("_test.go")
                 and not path.relative_to(root).as_posix().startswith(TESTKIT_ROOT + "/")
+                and not nested_module(path, root)
                 and re.search(r'"' + re.escape(TESTKIT_IMPORT) + r'(?:/[^"]*)?"', path.read_text())
             ):
                 failures.append(f"{path.relative_to(root)}: production source imports testkit")

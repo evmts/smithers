@@ -24,7 +24,7 @@ for (const [name, content] of [['missing', undefined], ['invalid', '{'], ['incom
     const dir = await mkdtemp(join(tmpdir(), 'col01-result-'))
     try {
       if (content !== undefined) await writeFile(join(dir, 'snapshot-summary.json'), content)
-      const result = spawnSync(process.execPath, ['scripts/spikes/col-01/result.mjs', dir, dir, dir, 'snapshot'], { encoding: 'utf8' })
+      const result = spawnSync(process.execPath, ['apps/backend/checks/C-SPK-03-07/result.mjs', dir, dir, dir, 'snapshot'], { encoding: 'utf8' })
       assert.equal(result.status, 2)
       assert.match(result.stdout, /Incomplete requested measurements/)
       assert.match(result.stdout, /snapshot/)
@@ -36,7 +36,7 @@ test('explicit snapshot-only mode does not require RTT or browsers', async () =>
   try {
     await snapshot(dir)
     await followup(dir)
-    const result = spawnSync(process.execPath, ['scripts/spikes/col-01/result.mjs', dir, dir, dir, 'snapshot'], { encoding: 'utf8' })
+    const result = spawnSync(process.execPath, ['apps/backend/checks/C-SPK-03-07/result.mjs', dir, dir, dir, 'snapshot'], { encoding: 'utf8' })
     assert.equal(result.status, 0, result.stderr)
     assert.doesNotMatch(result.stdout, /Incomplete requested measurements/)
   } finally { await rm(dir, { recursive: true, force: true }) }
@@ -44,7 +44,7 @@ test('explicit snapshot-only mode does not require RTT or browsers', async () =>
 test('combined report rejects absent RTT, controls and browser runs', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'col01-result-'))
   try {
-    const result = spawnSync(process.execPath, ['scripts/spikes/col-01/result.mjs', dir, dir], { encoding: 'utf8' })
+    const result = spawnSync(process.execPath, ['apps/backend/checks/C-SPK-03-07/result.mjs', dir, dir], { encoding: 'utf8' })
     assert.equal(result.status, 2)
     assert.match(result.stdout, /summary.json/)
     assert.match(result.stdout, /control-summary.json/)
@@ -59,7 +59,7 @@ for (const [name, n, verified, status] of [['complete', 100, true, 0], ['short',
       for (const baseline of ['control', 'one-exec-control']) {
         await writeFile(join(dir, `${baseline}-summary.json`), JSON.stringify({ n, all_readbacks_verified: verified, p50_ns: 1, p95_ns: 2, p99_ns: 3 }))
       }
-      const result = spawnSync(process.execPath, ['scripts/spikes/col-01/result.mjs', dir, dir, dir, 'control'], { encoding: 'utf8' })
+      const result = spawnSync(process.execPath, ['apps/backend/checks/C-SPK-03-07/result.mjs', dir, dir, dir, 'control'], { encoding: 'utf8' })
       assert.equal(result.status, status, result.stderr)
       assert.match(result.stdout, /control writes/)
       if (status) assert.match(result.stdout, /expected 100 verified writes/)
@@ -80,7 +80,7 @@ for (const scenario of ['missing', 'blocked', 'short', 'budget', 'stale-gate', '
       if (scenario === 'blocked') await writeFile(join(dir, 'kernel-probes.json'), JSON.stringify({ uid: 19999, complete: false, probes: { 'cgroup.kill': { status: 'blocked' } } }))
       if (scenario === 'short') await writeFile(join(dir, 'growth-samples.csv'), 'seq,value\n1,1\n')
       if (scenario === 'budget' || scenario === 'stale-gate') await writeFile(join(dir, 'growth-summary.json'), JSON.stringify({ uid: 19999, captures: 1000, cycles: [1,2,3].map(cycle => ({cycle, captures:5760, before_cleanup:{'.jj':1000,'.git':0}, after_cleanup:{'.jj':500,'.git':0}})), versions: { n: 100, p95_ns: 2 }, projected_14_day_bytes: 2147483648, growth_budget_passed: scenario === 'stale-gate' }))
-      const result = spawnSync(process.execPath, ['scripts/spikes/col-01/result.mjs', dir, dir, dir, 'snapshot'], { encoding: 'utf8' })
+      const result = spawnSync(process.execPath, ['apps/backend/checks/C-SPK-03-07/result.mjs', dir, dir, dir, 'snapshot'], { encoding: 'utf8' })
       assert.equal(result.status, 2, result.stderr)
       assert.match(result.stdout, /growth|kernel/)
     } finally { await rm(dir, { recursive: true, force: true }) }

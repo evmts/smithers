@@ -124,7 +124,7 @@ Reference-host findings (lead ruling 10-03):
 
 Current service control uses two guest execs via the real provider-service path, including SQL and a canonical-path guard. The separate one-exec control uses Runtime.WriteFile and runs second, with warm guest/file state. Neither is a CRDT path or a product gate.
 
-Evidence: ${dir03}, ${dir07}. Strict second-Mac steps: **not run: needs second Mac**. Start \`SPIKE_HTTP_PORT=39041 scripts/spikes/col-01/run.sh serve ${candidate??"relay"}\` on the host; run \`SPIKE_CLIENT_TOPOLOGY=second-mac scripts/spikes/col-01/run.sh remote http://<host-LAN-address>:39041 ${candidate??"relay"}\` from this checkout on the second Mac. No ADR was written.
+Evidence: ${dir03}, ${dir07}. Strict second-Mac steps: **not run: needs second Mac**. Start \`SPIKE_HTTP_PORT=39041 apps/backend/checks/C-SPK-03-07/run.sh serve ${candidate??"relay"}\` on the host; run \`SPIKE_CLIENT_TOPOLOGY=second-mac apps/backend/checks/C-SPK-03-07/run.sh remote http://<host-LAN-address>:39041 ${candidate??"relay"}\` from this checkout on the second Mac. No ADR was written.
 `
 await Promise.all([writeFile(join(dir03,"result.md"),text),writeFile(join(dir07,"result.md"),text)])
 process.stdout.write(text)

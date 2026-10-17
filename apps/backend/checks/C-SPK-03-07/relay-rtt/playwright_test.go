@@ -13,8 +13,8 @@ import (
 func TestPlaywrightLauncherLoadsAllThreeWorkloads(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	cmd := playwrightCommand(ctx, "test", "--config", "scripts/spikes/col-01/playwright.config.ts", "--list")
-	root, err := filepath.Abs("../../../..")
+	cmd := playwrightCommand(ctx, "test", "--config", "apps/backend/checks/C-SPK-03-07/playwright.config.ts", "--list")
+	root, err := filepath.Abs("../../../../..")
 	if err != nil {
 		t.Fatal(err)
 	}

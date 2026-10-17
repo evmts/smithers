@@ -152,7 +152,7 @@ func originalYjsEdits(t *testing.T, ctx context.Context, initial string) yjsEdit
 	if !ok {
 		t.Fatal("cannot locate installed Yjs dependency")
 	}
-	modulePath := filepath.Clean(filepath.Join(filepath.Dir(source), "../../../../apps/app/node_modules/yjs/dist/yjs.mjs"))
+	modulePath := filepath.Clean(filepath.Join(filepath.Dir(source), "../../../../../apps/app/node_modules/yjs/dist/yjs.mjs"))
 	moduleURL := (&url.URL{Scheme: "file", Path: modulePath}).String()
 	const script = `
 const Y = await import(process.argv[1]);
