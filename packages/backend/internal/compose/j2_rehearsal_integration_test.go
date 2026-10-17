@@ -466,7 +466,10 @@ func rehearseIssueTodo(t *testing.T, security bool) {
 			}
 			line := "Review: " + review
 			r.actual = fmt.Sprintf("review=%q merge=%s body has %q: %t", review, card.Merge.State, line, review != "" && strings.Contains(pull.Body, line))
-			if review == "approve" && strings.Contains(pull.Body, "\n\n"+line+"\n\n") && card.Merge.State == "ready" {
+			// The evidence keeps the review's whole text (9fc78a4ae3); its first
+			// line is the verdict.
+			verdict, _, _ := strings.Cut(review, "\n")
+			if verdict == "approve" && strings.Contains(pull.Body, "\n\n"+line+"\n\n") && card.Merge.State == "ready" {
 				return nil
 			}
 			if time.Now().After(deadline) {
