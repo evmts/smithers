@@ -359,7 +359,16 @@ describe("Input.expandGlob", () => {
     await write(".gitignore", "src/nested/\n")
     await Fs.chmod(at(".gitignore"), 0o000)
     try {
-      await expect(Input.expandGlob(root, "", "**/*.ts")).rejects.toMatchObject({ code: "EACCES" })
+      const io = process.platform === "win32" ?
+        {
+          ...SafeFs.defaultIo,
+          open: async (path: string) => {
+            if (path === at(".gitignore")) throw Object.assign(new Error("read denied"), { code: "EACCES" })
+            return SafeFs.defaultIo.open(path)
+          }
+        } :
+        SafeFs.defaultIo
+      await expect(Input.expandGlob(root, "", "**/*.ts", { io })).rejects.toMatchObject({ code: "EACCES" })
     } finally {
       await Fs.chmod(at(".gitignore"), 0o600).catch(() => undefined)
     }
@@ -383,7 +392,16 @@ describe("Input.expandGlob", () => {
   it.runIf(unprivileged)("fails on a directory it cannot list", async () => {
     await Fs.chmod(at("src/nested"), 0o000)
     try {
-      await expect(Input.expandGlob(root, "", "**/*.ts")).rejects.toMatchObject({ code: "EACCES" })
+      const io = process.platform === "win32" ?
+        {
+          ...SafeFs.defaultIo,
+          readdir: async (path: string, limit?: number) => {
+            if (path === at("src/nested")) throw Object.assign(new Error("listing denied"), { code: "EACCES" })
+            return SafeFs.defaultIo.readdir(path, limit)
+          }
+        } :
+        SafeFs.defaultIo
+      await expect(Input.expandGlob(root, "", "**/*.ts", { io })).rejects.toMatchObject({ code: "EACCES" })
     } finally {
       await Fs.chmod(at("src/nested"), 0o700).catch(() => undefined)
     }
@@ -396,6 +414,8 @@ describe("Input.expandGlob", () => {
  * defers to a macrotask, which is what makes concurrently requested reads
  * overlap the way a real `opendir` handle does.
  */
+const seamRoot = NodePath.resolve("/ws")
+
 const seamTree = (
   siblings: number,
   failing?: string
@@ -405,7 +425,11 @@ const seamTree = (
   active: () => number
 } => {
   const names = Array.from({ length: siblings }, (_, index) => `d${String(index).padStart(4, "0")}`)
-  const directories = new Set(["/ws", "/ws/src", ...names.map((name) => `/ws/src/${name}`)])
+  const directories = new Set([
+    seamRoot,
+    NodePath.join(seamRoot, "src"),
+    ...names.map((name) => NodePath.join(seamRoot, "src", name))
+  ])
   const stats = (directory: boolean): SafeFs.Stats =>
     ({
       isDirectory: () => directory,
@@ -433,7 +457,7 @@ const seamTree = (
       realpath: async (path) => path,
       lstat: async (path) => {
         if (directories.has(path)) return stats(true)
-        if (path.endsWith("/file.ts")) return stats(false)
+        if (NodePath.basename(path) === "file.ts") return stats(false)
         throw Object.assign(new Error(`ENOENT: ${path}`), { code: "ENOENT" })
       },
       readdir: async (path) => {
@@ -441,11 +465,11 @@ const seamTree = (
         peak = Math.max(peak, inFlight)
         try {
           await new Promise((resolve) => setTimeout(resolve, 1))
-          if (failing !== undefined && path === `/ws/src/${failing}`) {
+          if (failing !== undefined && path === NodePath.join(seamRoot, "src", failing)) {
             throw Object.assign(new Error(`EACCES: ${path}`), { code: "EACCES" })
           }
-          if (path === "/ws") return [dirent("src", true)]
-          if (path === "/ws/src") return names.map((name) => dirent(name, true))
+          if (path === seamRoot) return [dirent("src", true)]
+          if (path === NodePath.join(seamRoot, "src")) return names.map((name) => dirent(name, true))
           return [dirent("file.ts", false)]
         } finally {
           inFlight -= 1
@@ -467,7 +491,7 @@ const seamTree = (
 describe("Input.expandGlob traversal fan-out", () => {
   it("holds no more listings open than the digest concurrency", async () => {
     const seam = seamTree(256)
-    const found = await Input.expandGlob("/ws", "", "src/**/*.ts", { io: seam.io })
+    const found = await Input.expandGlob(seamRoot, "", "src/**/*.ts", { io: seam.io })
     expect(found).toHaveLength(256)
     expect(seam.peak()).toBeLessThanOrEqual(Input.defaultDigestConcurrency)
     // Still concurrent: a serial descent would never hold two listings at once.
@@ -477,7 +501,7 @@ describe("Input.expandGlob traversal fan-out", () => {
 
   it("leaves no listing in flight when a directory fails", async () => {
     const seam = seamTree(256, "d0100")
-    await expect(Input.expandGlob("/ws", "", "src/**/*.ts", { io: seam.io }))
+    await expect(Input.expandGlob(seamRoot, "", "src/**/*.ts", { io: seam.io }))
       .rejects.toMatchObject({ code: "EACCES" })
     expect(seam.active()).toBe(0)
     expect(seam.peak()).toBeLessThanOrEqual(Input.defaultDigestConcurrency)
@@ -485,7 +509,7 @@ describe("Input.expandGlob traversal fan-out", () => {
 
   it("bounds discoverFiles the same way", async () => {
     const seam = seamTree(256)
-    expect(await Input.discoverFiles("/ws", { io: seam.io })).toHaveLength(256)
+    expect(await Input.discoverFiles(seamRoot, { io: seam.io })).toHaveLength(256)
     expect(seam.peak()).toBeLessThanOrEqual(Input.defaultDigestConcurrency)
     expect(seam.active()).toBe(0)
   })
