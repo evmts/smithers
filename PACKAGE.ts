@@ -566,7 +566,7 @@ const driftCi = Smithers.GithubCiGen({
   workflowName: "Drift",
   output: ".github/workflows/drift.yml",
   concurrency: "commit",
-  trustedWorkflowRevision: "6fe01e9c168a7bad6f34808d603628b406c33f2c",
+  trustedWorkflowRevision: "7df5f685fc8495bd32c05b192e10f1b8270f016a",
   workflowDispatch: false,
   knownRed: ".github/ci-known-red.json",
   mode: "check",

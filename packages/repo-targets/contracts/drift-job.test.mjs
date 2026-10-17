@@ -39,7 +39,7 @@ test('drift job concurrency group includes github.sha and runs only drift gates'
   assert.equal(workflow.name, 'Drift')
   assert.deepEqual(Object.keys(workflow.jobs), ['trusted-drift', 'drift'])
   assert.deepEqual(workflow.jobs['trusted-drift'], {
-    uses: 'smithersai/smithers/.github/workflows/trusted-drift.yml@6fe01e9c168a7bad6f34808d603628b406c33f2c',
+    uses: 'smithersai/smithers/.github/workflows/trusted-drift.yml@7df5f685fc8495bd32c05b192e10f1b8270f016a',
   })
   assert.equal(workflow.jobs.drift.name, 'Per-commit drift')
   assert.equal(workflow.jobs.drift.needs, 'trusted-drift')

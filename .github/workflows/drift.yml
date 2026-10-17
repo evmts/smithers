@@ -10,7 +10,7 @@ permissions:
   contents: read
 jobs:
   trusted-drift:
-    uses: "smithersai/smithers/.github/workflows/trusted-drift.yml@6fe01e9c168a7bad6f34808d603628b406c33f2c"
+    uses: "smithersai/smithers/.github/workflows/trusted-drift.yml@7df5f685fc8495bd32c05b192e10f1b8270f016a"
   drift:
     name: "Per-commit drift"
     needs: trusted-drift
