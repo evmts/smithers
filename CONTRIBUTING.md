@@ -367,7 +367,9 @@ bootstrap or repair operations.
 
 ## Working with the pinned jj fork
 
-The Rust crates build against `jj-lib` from the jj fork vendored in `third_party/jj`, which the root `Cargo.toml` declares as a path dependency, so a plain `git clone` needs no extra step.
+The Rust crates build against `jj-lib` from [smithersai/jj](https://github.com/smithersai/jj), a fork that carries a short patch stack over jj-vcs/jj; its `SMITHERS.md` lists each patch and why. The root `Cargo.toml` pins it as a git dependency at one commit, `Cargo.lock` records that commit, and `cargo fetch` is the only setup. The native bundle builds the `jj` CLI from the same commit.
+
+To change jj, land the change with its tests on the fork's `smithers` branch, bump the `rev` in the root `Cargo.toml`, run `cargo update -p jj-lib`, and rebuild `packages/smithers/flows/jj/wasm/flows_jj.wasm` with `node packages/smithers/flows/jj-wasm/build-wasm.mjs` in the same change. A scheduled flow in the fork rebases the stack onto jj-vcs/jj daily and proposes each rebase on an issue there.
 
 ## Cutting a release
 
