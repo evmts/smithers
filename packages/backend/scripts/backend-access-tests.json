@@ -1007,6 +1007,7 @@
     "package": "packages/backend/internal/services",
     "file": "mythical_todo_admission_test.go",
     "tests": [
+      "TestTodoAdmissionRepositoryStackLockOrder",
       "TestTodoOwnerAdmissionLaunchesThePinnedComposition",
       "TestTodoQueuedBeforeActivationPinsVersionAtStarting",
       "TestTodoItemPinMustBeExact",

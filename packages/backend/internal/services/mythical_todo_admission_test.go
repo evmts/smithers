@@ -60,6 +60,83 @@ func newTodoAdmission(t *testing.T) (*mythicalOrchestration, context.Context) {
 	return o, registerTestInstallCredential(t, o.pool, middleware.ContextWithAuthInfo(ctx, &middleware.AuthInfo{User: &db.User{ID: o.userID}, SessionHash: "owner-session"}), o.repoID)
 }
 
+func TestTodoAdmissionRepositoryStackLockOrder(t *testing.T) {
+	for _, operation := range []string{"amend", "answer"} {
+		t.Run(operation, func(t *testing.T) {
+			ctx := context.Background()
+			var o *mythicalOrchestration
+			var session context.Context
+			var item db.MythicalItem
+			var call func() error
+			if operation == "amend" {
+				o, session = newTodoAdmission(t)
+				o.service.SetTodoFlow(func(context.Context, int64, string) (string, error) { return todoPinOne, nil })
+				o.service.todoSteering = true
+				peer := &todoRuntimeHost{}
+				o.runDispatcher(t, peer.resolver(t))
+				item = o.fileTodo(session, "repository-lock-order")
+				call = func() error {
+					_, err := o.service.AmendTodo(session, item.Number.Int64, TodoAmendInput{Repository: o.repoID, Actor: o.userID,
+						Request: "ordered-amend", Prompt: "Ordered admission", Acceptance: []string{"One revision"}})
+					return err
+				}
+			} else {
+				var launch flowdispatch.LaunchRequest
+				o, session, _, item, launch = newAskingTodo(t)
+				o.projectAsking(launch, jobs.StateWaiting, "todo-run-1", humanAsk("ordered-answer", "clarification", "Choose a retry"))
+				item = o.byID(uuidString(item.ID))
+				wait := todoOpenWaits(item)[0].ID
+				call = func() error {
+					return o.service.AnswerTodo(session, o.repoID, o.userID, item.Number.Int64, TodoAnswerInput{Wait: wait, Answer: "Use backoff"})
+				}
+			}
+			// Model fetched-ref ingestion: it owns the repository before updating
+			// the stack. The real admission must wait without owning that stack.
+			holder, err := o.pool.Begin(ctx)
+			require.NoError(t, err)
+			_, err = holder.Exec(ctx, `SELECT 1 FROM repositories WHERE id=$1 FOR UPDATE`, o.repoID)
+			require.NoError(t, err)
+			var blocker int
+			require.NoError(t, holder.QueryRow(ctx, `SELECT pg_backend_pid()`).Scan(&blocker))
+			done := make(chan struct{})
+			var admissionError error
+			go func() { admissionError = call(); close(done) }()
+			defer func() {
+				_ = holder.Rollback(ctx)
+				select {
+				case <-done:
+				case <-time.After(5 * time.Second):
+					t.Error("admission did not finish after releasing the repository")
+				}
+			}()
+			require.Eventually(t, func() bool {
+				var n int
+				err := o.pool.QueryRow(ctx, `SELECT count(*) FROM pg_stat_activity a WHERE datname=current_database()
+ AND wait_event_type='Lock' AND query='SELECT 1 FROM repositories WHERE id=$1 FOR SHARE'
+ AND $1=ANY(pg_blocking_pids(a.pid))`, blocker).Scan(&n)
+				return err == nil && n == 1
+			}, 5*time.Second, 10*time.Millisecond, "admission must reach its repository credential fence")
+			_, err = holder.Exec(ctx, `SELECT generation FROM mythical_stacks WHERE repository_id=$1 FOR UPDATE NOWAIT`, o.repoID)
+			require.NoError(t, err, "admission cannot hold the stack while waiting for the repository")
+			require.NoError(t, holder.Commit(ctx))
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				t.Fatal("admission did not finish")
+			}
+			require.NoError(t, admissionError)
+			current := o.byID(uuidString(item.ID))
+			if operation == "amend" {
+				var revisions []json.RawMessage
+				require.NoError(t, json.Unmarshal(current.Revisions, &revisions))
+				require.Len(t, revisions, 2)
+			} else {
+				require.Empty(t, todoOpenWaits(current))
+			}
+		})
+	}
+}
+
 // fileTodo files an owner's TODO through the public creation path.
 func (o *mythicalOrchestration) fileTodo(session context.Context, request string) db.MythicalItem {
 	o.t.Helper()

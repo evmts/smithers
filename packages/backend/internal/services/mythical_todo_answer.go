@@ -338,9 +338,6 @@ func (s *MythicalService) answerTodo(ctx context.Context, repositoryID, userID, 
 		}
 	}
 	return pgx.BeginFunc(ctx, s.store, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `SELECT 1 FROM mythical_stacks WHERE repository_id = $1 FOR UPDATE`, repositoryID); err != nil {
-			return err
-		}
 		if err := guardInstallTodoWrite(ctx, tx, repositoryID, userID); err != nil {
 			return err
 		}
