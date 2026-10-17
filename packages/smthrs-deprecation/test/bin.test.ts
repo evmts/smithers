@@ -65,8 +65,10 @@ describe("the published command wrapper", () => {
   it("preserves signal termination rather than converting it to success", () => {
     const result = run("process.kill(process.pid, 'SIGTERM')")
     expect(result.error).toBeUndefined()
-    expect(result.status).toBeNull()
-    expect(result.signal).toBe("SIGTERM")
+    // Native Windows terminates self with exit code 1; it has no POSIX
+    // wait status carrying SIGTERM. Both hosts must preserve failure.
+    expect(result.status).toBe(process.platform === "win32" ? 1 : null)
+    expect(result.signal).toBe(process.platform === "win32" ? null : "SIGTERM")
     expect(result.stdout).toBe("")
     expect(result.stderr).toBe("")
   })
