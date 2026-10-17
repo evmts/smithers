@@ -911,6 +911,11 @@ describe("render", () => {
         "//packages/smithers/flows/core/...:a:b",
         "//packages/smithers/flows/core/...:--help",
         "//packages/../...:build",
+        "//./packages",
+        "//packages/./core",
+        "//.../core",
+        "//.-x:build",
+        "//..smithers/flows",
         "//packages/smithers/flows/core:a:b",
         "//packages/smithers/flows/core:--help",
         "//packages/smithers/flows/core build",
@@ -953,7 +958,12 @@ describe("render", () => {
         "//packages/smithers/flows/core:build",
         "//:ci",
         "//...:bunTest",
-        "//packages/...:bunTest"
+        "//packages/...:bunTest",
+        // A hidden directory names a package too: a repository's own flows
+        // live under `.smithers/flows` (M-49).
+        "//.smithers/flows:pack",
+        "//.smithers/flows/...",
+        "//.smithers/flows/coding:check"
       ]
     ) {
       const rendered = render(attrsOf({

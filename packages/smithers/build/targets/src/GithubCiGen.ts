@@ -657,12 +657,13 @@ export const renderStep = (step: RenderedStep, indent: string): ReadonlyArray<st
 /**
  * One package-path or target-name component of a target pattern.
  *
- * A component starts with a letter, a digit, or `_`, which rejects the
+ * A component starts with a letter, a digit, or `_`, optionally after one
+ * leading `.` for a hidden directory such as `.smithers`, which rejects the
  * option-like forms (`--help`, `-x`) whose only effect in a generated command
  * is a green no-op, and rejects `.` and `..` traversal along with them. It
  * carries no shell metacharacter, no `*`, no whitespace, and no quote.
  */
-const patternComponent = /^[A-Za-z0-9_][A-Za-z0-9._-]*$/
+const patternComponent = /^\.?[A-Za-z0-9_][A-Za-z0-9._-]*$/
 
 /** Whether every component of a package path is a supported one. */
 const packagePath = (path: string): boolean => path.split("/").every((part) => patternComponent.test(part))
