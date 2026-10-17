@@ -540,11 +540,17 @@ export class CredentialReceiverError extends Data.TaggedError("smithers-build/Cr
 /** Longest a credential receiver may take to accept one review's discoveries. */
 const receiverTimeoutMs = 10 * 60_000
 
+/** Explicit Node modules are interpreted by the current host, without a shell. */
+const nodeReceiver = (path: string): boolean => /\.(?:mjs|cjs|js)$/.test(path)
+
 /** Refuses a receiver path that is not an absolute executable file, before any review starts. */
 const receiverPath = async (path: string): Promise<string> => {
   const usable = NodePath.isAbsolute(path) &&
     await Fs.stat(path).then((stat) => stat.isFile(), () => false) &&
-    await Fs.access(path, Fs.constants.X_OK).then(() => true, () => false)
+    (nodeReceiver(path)
+      ? await Fs.access(path, Fs.constants.R_OK).then(() => true, () => false)
+      : (process.platform !== "win32" || /\.(?:exe|com)$/i.test(path)) &&
+        await Fs.access(path, Fs.constants.X_OK).then(() => true, () => false))
   if (!usable) {
     throw new CredentialReceiverError({
       code: "unusable_receiver",
@@ -570,8 +576,8 @@ const deliverCredentials = (
   Schema.encodeEffect(LlmLint.CredentialDelivery)({ revision, discoveries }).pipe(
     Effect.flatMap((document) =>
       ContainedProcess.runEffect({
-        command: executable,
-        args: [],
+        command: nodeReceiver(executable) ? process.execPath : executable,
+        args: nodeReceiver(executable) ? [executable] : [],
         cwd,
         environment,
         stdin: JSON.stringify(document),

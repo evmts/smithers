@@ -490,7 +490,16 @@ describe("TrustedReview Git boundary", () => {
     try {
       delete process.env["ANTHROPIC_API_KEY"]
       delete process.env["OPENAI_API_KEY"]
-      result = await serve(root, ["review", "//...", "--policy-revision", trusted, "--revision", candidate])
+      result = await serve(root, [
+        "review",
+        "//...",
+        "--policy-revision",
+        trusted,
+        "--revision",
+        candidate,
+        "--format",
+        "json"
+      ])
     } finally {
       if (previousAnthropic === undefined) delete process.env["ANTHROPIC_API_KEY"]
       else process.env["ANTHROPIC_API_KEY"] = previousAnthropic
@@ -507,7 +516,8 @@ describe("TrustedReview Git boundary", () => {
     expect(receipt).not.toContain("skipped")
     // The failed run persists in the private default store inside the Git directory.
     const store = NodePath.join(await Fs.realpath(NodePath.join(root, ".git")), "smithers", "review-findings")
-    expect(receipt).toContain(store)
+    const envelope = JSON.parse(result.output) as { message: string }
+    expect(JSON.parse(envelope.message) as { findingsStore: string }).toMatchObject({ findingsStore: store })
     const [run] = await Fs.readdir(NodePath.join(store, "runs"))
     const record = JSON.parse(await Fs.readFile(NodePath.join(store, "runs", run!), "utf8")) as {
       status: string
@@ -752,7 +762,7 @@ const receiver = async (code: number) => {
       "process.stdout.write(\"receiver stdout detail\\n\")\nprocess.stderr.write(\"receiver stderr detail\\n\")\n" +
       `process.exitCode = ${code}\n`
   )
-  await Fs.chmod(path, 0o755)
+  await Fs.chmod(path, 0o644)
   return {
     path,
     record,
