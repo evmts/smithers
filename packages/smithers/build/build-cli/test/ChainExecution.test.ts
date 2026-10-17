@@ -9,6 +9,7 @@ import * as AnvilExec from "../src/AnvilExec.ts"
 import * as DockerExec from "../src/DockerExec.ts"
 import * as PackageTree from "../src/PackageTree.ts"
 import { dockerAvailable } from "./helpers/DockerProbe.ts"
+import { writeExecutable } from "./helpers/Executable.ts"
 import { serve } from "./helpers/ServeCli.ts"
 
 const fixture = NodePath.resolve(import.meta.dirname, "fixtures/chain-exec")
@@ -67,10 +68,9 @@ interface StubEngine {
 const withDockerStub = async <A>(engine: StubEngine, body: (dockerPath: string) => Promise<A>): Promise<A> => {
   const directory = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-docker-stub-"))
   temporaryDirectories.push(directory)
-  const dockerPath = NodePath.join(directory, "docker")
   const builderLine = engine.builder === undefined ? "" : `${engine.builder}   docker-container`
-  await Fs.writeFile(
-    dockerPath,
+  const dockerPath = await writeExecutable(
+    NodePath.join(directory, "docker"),
     `#!/bin/sh
 case "$1" in
   --version) echo 'Docker version 0.0.0-stub, build stub' ;;
@@ -78,8 +78,7 @@ case "$1" in
   buildx) printf '%s\\n' 'NAME/NODE DRIVER/ENDPOINT STATUS' '${builderLine}' ;;
   *) echo "stub docker was asked for $*" >&2; exit 97 ;;
 esac
-`,
-    { mode: 0o755 }
+`
   )
   const original = process.env["PATH"] ?? ""
   process.env["PATH"] = `${directory}${NodePath.delimiter}${original}`
