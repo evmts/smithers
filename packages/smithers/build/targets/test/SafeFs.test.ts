@@ -22,6 +22,18 @@ const at = (relative: string): string => NodePath.join(root, relative)
 const sha256 = (text: string): string => createHash("sha256").update(text).digest("hex")
 
 /** Root can read anything, so the permission cases prove nothing under it. */
+// Windows chmod cannot deny reads. Keep real IO except the refused open.
+const deniedRead = (denied: string): SafeFs.Io =>
+  process.platform === "win32" ?
+    {
+      ...SafeFs.defaultIo,
+      open: async (path) => {
+        if (path === denied) throw Object.assign(new Error("read denied"), { code: "EACCES" })
+        return SafeFs.defaultIo.open(path)
+      }
+    } :
+    SafeFs.defaultIo
+
 const unprivileged = process.getuid?.() !== 0
 
 const posixOnly = process.platform !== "win32"
@@ -153,7 +165,13 @@ describe("SafeFs.digestFile", () => {
     await write("secret.ts", "content\n")
     await Fs.chmod(at("secret.ts"), 0o000)
     try {
-      await expect(SafeFs.digestFile(at("secret.ts"), { root: await canonical(), what: "declared input" }))
+      await expect(
+        SafeFs.digestFile(at("secret.ts"), {
+          root: await canonical(),
+          what: "declared input",
+          io: deniedRead(at("secret.ts"))
+        })
+      )
         .rejects.toMatchObject({ code: "EACCES" })
     } finally {
       await Fs.chmod(at("secret.ts"), 0o600).catch(() => undefined)
@@ -378,7 +396,9 @@ describe("SafeFs.readText", () => {
     await write("ignore", "dist/\n")
     await Fs.chmod(at("ignore"), 0o000)
     try {
-      await expect(SafeFs.readText(at("ignore"), { root: await canonical(), what: ".gitignore" }))
+      await expect(
+        SafeFs.readText(at("ignore"), { root: await canonical(), what: ".gitignore", io: deniedRead(at("ignore")) })
+      )
         .rejects.toMatchObject({ code: "EACCES" })
     } finally {
       await Fs.chmod(at("ignore"), 0o600).catch(() => undefined)
