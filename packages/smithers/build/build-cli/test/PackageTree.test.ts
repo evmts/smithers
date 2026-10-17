@@ -425,7 +425,9 @@ describe("the write-set guard measures a workspace without a local .git from the
       expect(changed).toEqual(["dist/a.js", "src/a.ts", "src/b.ts"])
       for (const path of changed) expect(await PackageTree.revertIgnored(snapshot, path)).toBe(true)
       expect(await Fs.readFile(NodePath.join(root, "src", "a.ts"), "utf8")).toBe("source")
-      expect((await Fs.lstat(NodePath.join(root, "src", "a.ts"))).mode & 0o777).toBe(0o600)
+      expect((await Fs.lstat(NodePath.join(root, "src", "a.ts"))).mode & 0o777).toBe(
+        process.platform === "win32" ? 0o666 : 0o600
+      )
       expect(await Fs.readFile(NodePath.join(root, "dist", "a.js"), "utf8")).toBe("built")
       expect(await Fs.lstat(NodePath.join(root, "src", "b.ts")).then(() => true, () => false)).toBe(false)
     } finally {
@@ -944,8 +946,12 @@ describe("treeMatchesManifest compares the tree, not just the manifest", () => {
   it("reports executable-bit drift", async () => {
     const manifest = await capture()
     await Fs.chmod(NodePath.join(root, "dist", "a.txt"), 0o755)
-    expect(await PackageTree.treeMatchesManifest(root, manifest)).toMatch(
-      /dist\/a\.txt does not match the captured mode/
+    // Windows cannot represent the executable bit: chmod leaves this file
+    // unchanged. POSIX must detect the actual executable-bit change.
+    const mode = (await Fs.stat(NodePath.join(root, "dist", "a.txt"))).mode
+    expect((mode & 0o111) !== 0).toBe(process.platform !== "win32")
+    expect(await PackageTree.treeMatchesManifest(root, manifest)).toBe(
+      process.platform === "win32" ? undefined : "dist/a.txt does not match the captured mode"
     )
   })
 })
@@ -1266,7 +1272,7 @@ describe("the ignored guard restores what a body changed", () => {
       expect(await PackageTree.changedIgnored(snapshot, ".flows")).toEqual([".env"])
       expect(await PackageTree.revertIgnored(snapshot, ".env")).toBe(true)
       expect(await Fs.readFile(env, "utf8")).toBe("secret")
-      expect((await Fs.lstat(env)).mode & 0o777).toBe(0o600)
+      expect((await Fs.lstat(env)).mode & 0o777).toBe(process.platform === "win32" ? 0o666 : 0o600)
     } finally {
       await PackageTree.releaseIgnored(snapshot)
     }
@@ -1541,7 +1547,7 @@ describe("the ignored census costs what a body can change", () => {
       expect(await PackageTree.changedIgnored(snapshot, ".flows")).toEqual(["dist/a.bin"])
       expect(await PackageTree.revertIgnored(snapshot, "dist/a.bin")).toBe(true)
       expect((await Fs.readFile(target)).equals(original)).toBe(true)
-      expect((await Fs.lstat(target)).mode & 0o777).toBe(0o640)
+      expect((await Fs.lstat(target)).mode & 0o777).toBe(process.platform === "win32" ? 0o666 : 0o640)
       await PackageTree.releaseIgnored(snapshot)
     } finally {
       await PackageTree.releaseIgnoredStash(stash)
@@ -1557,7 +1563,7 @@ describe("the ignored census costs what a body can change", () => {
     const snapshot = await PackageTree.snapshotIgnored(root, ".flows")
     try {
       expect([...snapshot.entries.keys()].sort()).toEqual(["alias", "vendor/portal", "vendor/real/x.txt"])
-      expect(snapshot.entries.get("alias")).toMatchObject({ kind: "link", target: "vendor/real" })
+      expect(snapshot.entries.get("alias")).toMatchObject({ kind: "link", target: NodePath.join("vendor", "real") })
       // The link under the ignored directory reaches the portal census from
       // this snapshot, and from a census of its own when no snapshot is given.
       const fromSnapshot = await PackageTree.snapshotPortals(root, ".flows", snapshot)
