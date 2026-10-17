@@ -1,15 +1,20 @@
+import * as ScopedProcess from "@smthrs/platform-node/ScopedProcess"
 import * as Effect from "effect/Effect"
 import { execFileSync } from "node:child_process"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import * as Input from "../src/Input.ts"
 import * as ReviewBatches from "../src/internal/ReviewBatches.ts"
 import { maximumResponseTokens } from "../src/internal/ReviewModel.ts"
 import * as LlmLint from "../src/LlmLint.ts"
 import * as SecurityReview from "../src/SecurityReview.ts"
 import * as Target from "../src/Target.ts"
+
+vi.mock("@smthrs/platform-node/ScopedProcess", async (original) => ({
+  ...await original<typeof import("@smthrs/platform-node/ScopedProcess")>()
+}))
 
 let root: string
 
@@ -232,28 +237,26 @@ describe("LlmLint.review related-file discovery boundaries", () => {
 
   describe("with a substituted git grep", () => {
     const withGrep = async <A>(body: string, use: () => Promise<A>): Promise<A> => {
-      const real = execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).trim()
-      const previous = process.env["PATH"]
-      const directory = Path.join(root, "git-bin")
-      await Fs.mkdir(directory, { recursive: true })
-      // The git found on PATH may be a wrapper that looks git up on PATH
-      // again; under the substituted PATH it would find this script and the
-      // two would call each other forever. It runs under the original PATH.
-      const realEnv = `{ ...process.env, PATH: ${JSON.stringify(previous ?? "")} }`
+      const executable = Path.join(root, "git-protocol.mjs")
       await Fs.writeFile(
-        Path.join(directory, "git"),
-        "#!/usr/bin/env node\nimport { spawnSync } from \"node:child_process\"\n" +
+        executable,
+        "import { spawnSync } from \"node:child_process\"\n" +
           "if (process.argv.includes(\"grep\")) {\n" + body + "\n} else {\n" +
-          `const result = spawnSync(${JSON.stringify(real)}, process.argv.slice(2), ` +
-          `{ stdio: "inherit", env: ${realEnv} })\n` +
-          "process.exit(result.status ?? 1)\n}\n",
-        { mode: 0o755 }
+          "const result = spawnSync(\"git\", process.argv.slice(2), { stdio: \"inherit\" })\n" +
+          "process.exit(result.status ?? 1)\n}\n"
       )
-      process.env["PATH"] = `${directory}${Path.delimiter}${previous ?? ""}`
+      const spawn = ScopedProcess.spawn
+      const replacement = vi.spyOn(ScopedProcess, "spawn").mockImplementation((options) =>
+        spawn(
+          options.command === "git"
+            ? { ...options, command: process.execPath, args: [executable, ...options.args ?? []] }
+            : options
+        )
+      )
       try {
         return await use()
       } finally {
-        process.env["PATH"] = previous
+        replacement.mockRestore()
       }
     }
     const changedScript = async () => {
