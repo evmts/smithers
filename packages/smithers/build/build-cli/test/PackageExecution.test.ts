@@ -1143,8 +1143,8 @@ export const Package = S.Package({ targets: { nodeGenerate, shellBuild, shellGen
     commitAll(root)
     const planned = await serve(root, ["//...", "--plan"])
     expect(planned.output).toContain("/bin/sh,sync.sh")
-    expect(planned.output).toMatch(/argv\[2\]: [^\n]*node,gen\.mjs/)
-    expect(planned.output).not.toMatch(/node,sync\.sh/)
+    expect(planned.output).toMatch(/argv\[2\]: [^\n]*node(?:\.exe)?"?,gen\.mjs/)
+    expect(planned.output).not.toMatch(/node(?:\.exe)?"?,sync\.sh/)
   })
 
   it("redirects a declared Generate stdout for the command form, not only for script and bin", async () => {
@@ -1468,8 +1468,7 @@ export const Package = S.Package({ targets: { tool: S.Shell.Test({ bin: S.NodeMo
 `
     )
     await write(root, "node_modules/mytool/package.json", `{ "name": "mytool", "version": "1.0.0" }\n`)
-    await write(root, "node_modules/.bin/mytool", "#!/bin/sh\nexit 0\n")
-    await Fs.chmod(NodePath.join(root, "node_modules", ".bin", "mytool"), 0o755)
+    await writeExecutable(NodePath.join(root, "node_modules", ".bin", "mytool"), "#!/usr/bin/env node\n")
     commitAll(root)
     const first = await serve(root, ["//:tool", "--plan"])
     expect(first.exitCode).toBe(0)
