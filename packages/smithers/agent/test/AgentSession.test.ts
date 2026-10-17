@@ -2799,6 +2799,7 @@ describe("AgentSession", () => {
     ] as const
   )("runs a prompt-backed flow.ts through the agent (%s)", async (mode, input, fields) => {
     const requests: Array<ModelRequest.ModelRequest> = []
+    const instructionInputs: Array<Parameters<NonNullable<AgentSession.Options["instructions"]>>[0]> = []
     const recording = Model.make({
       stream: (request) =>
         Stream.suspend(() => {
@@ -2867,6 +2868,11 @@ describe("AgentSession", () => {
           notes,
           gate,
           bare: true,
+          instructions: (input) =>
+            Effect.sync(() => {
+              instructionInputs.push(input)
+              return ["Typed host rule"]
+            }),
           modules: { catalog: { executables: [executable], refused: [] }, layer: Layer.empty }
         })))
       }).pipe(Effect.scoped)
@@ -2875,6 +2881,7 @@ describe("AgentSession", () => {
     const rendered = entries.filter((entry) => entry.eventType === "control.agent.prompt-rendered")
     if (mode === "refused") {
       expect(requests).toEqual([])
+      expect(instructionInputs).toEqual([])
       expect(rendered).toEqual([])
       expect(JSON.stringify(entries)).toContain("could not be rendered from its launch input")
       return
@@ -2887,6 +2894,8 @@ describe("AgentSession", () => {
     ]).join("\n")
     expect(prose).toContain("# Greet\n\nGreet Ada by name.")
     expect(prose).not.toContain("# Arguments")
+    expect(prose).toContain("Typed host rule")
+    expect(instructionInputs).toMatchObject([{ text: "# Greet\n\nGreet Ada by name." }])
     expect(rendered.map((entry) => entry.payload)).toMatchObject([{ fields, arguments: "" }])
   })
 
