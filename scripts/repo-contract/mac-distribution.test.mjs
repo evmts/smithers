@@ -51,9 +51,9 @@ test("the surviving build test and command executor remain", () => {
 })
 test("distribution files live beside their callers and model fakes stay gone", () => {
   // The Mac bundle's manifest writer and licenses sit with the bundle build;
-  // the CLI release installer with the release scripts (#4086).
+  // the CLI release installer with the CLI package's build scripts (#4086).
   for (const file of ["apps/app/scripts/flow-host-manifest.mts", "apps/app/licenses/jj-LICENSE",
-    "apps/app/licenses/git-COPYING", "scripts/release/build-cli.mjs", "scripts/release/install-cli.mjs"]) {
+    "apps/app/licenses/git-COPYING", "packages/smithers/scripts/build-cli.mjs", "packages/smithers/scripts/install-cli.mjs"]) {
     assert.ok(existsSync(`${root}/${file}`), file)
   }
   // Only the hand-written model fakes remain, until recorded models replace

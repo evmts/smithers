@@ -429,6 +429,24 @@ const hostProcessSampler = Smithers.NodeTest({
 })
 
 /**
+ * The CLI's release installer: `install-cli.mjs` installs a packed release
+ * closure with relocatable installation receipts, and `build-cli.mjs` packs
+ * and installs the CLI for the distribution and offline boxes. They build
+ * the CLI itself, so they run before `smthrs` exists and are not flows.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const cliInstall = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//packages/smithers/scripts/install-cli.test.mjs")]),
+  srcs: [
+    Smithers.file("//packages/smithers/scripts/install-cli.mjs"),
+    Smithers.file("//packages/smithers/scripts/build-cli.mjs")
+  ],
+  deps: []
+})
+
+/**
  * Security review of the CLI's own sources. Nested packages (agent, build,
  * control, flows, gateway, ...) carry their own declarations.
  */
@@ -590,6 +608,7 @@ export const Package = Smithers.Package({
     faultReferenceHost,
     fmt,
     hostProcessSampler,
+    cliInstall,
     lib,
     lint,
     nativeSources,
