@@ -481,7 +481,7 @@ const checkoutScript = [
   "set -e",
   "top=$(git rev-parse --show-toplevel)",
   "cd \"$top\"",
-  "common=$(cd \"$(git rev-parse --git-common-dir)\" && pwd -P)",
+  "common=$(git rev-parse --path-format=absolute --git-common-dir)",
   `if [ "$1" = ${baseId} ]; then`,
   `  commit=$(git rev-parse --verify --quiet '${TestRunner.captureBase}^{commit}' || git rev-parse --verify --quiet 'HEAD^{commit}') || { echo "No commit resolves from ${TestRunner.captureBase} or HEAD in $top." >&2; exit 1; }`,
   "else",
