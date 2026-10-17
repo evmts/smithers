@@ -615,6 +615,18 @@ const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
     reason: "Third-party libkrunfw shared-library basename packaged by bundle-microsandbox.ts."
   },
   {
+    literal: "write-only", file: "scripts/catalog-mvp.ts",
+    reason: "Form field kind declared by @smthrs/rpc Cards.ts (FormField.kind); the catalog filters form fields, never cards."
+  },
+  {
+    literal: "smithers-jj-export.sha256", file: "scripts/flow-host-manifest.test.ts",
+    reason: "Checksum sidecar filename flow-host-manifest.mts writes beside the helper in a temporary directory."
+  },
+  {
+    literal: "flow-host-manifest.mts", file: "scripts/flow-host-manifest.test.ts",
+    reason: "Script filename the test resolves beside itself to run it under node; never a product identifier."
+  },
+  {
     literal: "deleted", file: "e2e/contracts/file-reload.spec.ts",
     reason: "FileCard.gone discriminator declared by @smthrs/rpc/FileCard; this compares file state, never a card kind."
   },
