@@ -576,8 +576,8 @@ const deliverCredentials = (
   Schema.encodeEffect(LlmLint.CredentialDelivery)({ revision, discoveries }).pipe(
     Effect.flatMap((document) =>
       ContainedProcess.runEffect({
-        command: nodeReceiver(executable) ? process.execPath : executable,
-        args: nodeReceiver(executable) ? [executable] : [],
+        command: executable,
+        args: [],
         cwd,
         environment,
         stdin: JSON.stringify(document),

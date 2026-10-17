@@ -4,6 +4,8 @@
 
 import * as ScopedProcess from "@smthrs/platform-node/ScopedProcess"
 import { Cause, Data, Effect, Exit, Stream } from "effect"
+import * as Fs from "node:fs"
+import * as NodePath from "node:path"
 
 /** A bounded process operation failed, with its original cause retained.
  * @category errors
@@ -53,9 +55,14 @@ export const runEffect = (options: Omit<Options, "signal">): Effect.Effect<numbe
     const program = Effect.gen(function*() {
       const handle = yield* Effect.uninterruptibleMask(() =>
         Effect.gen(function*() {
+          const nodeModule = yield* Effect.try(() =>
+            process.platform === "win32" && NodePath.isAbsolute(options.command) &&
+            /\.(?:mjs|cjs|js)$/.test(options.command) &&
+            Fs.statSync(options.command, { throwIfNoEntry: false })?.isFile() === true
+          )
           const handle = yield* ScopedProcess.spawn({
-            command: options.command,
-            args: options.args,
+            command: nodeModule ? process.execPath : options.command,
+            args: nodeModule ? [options.command, ...options.args] : options.args,
             cwd: options.cwd,
             env: options.environment,
             stdin: options.stdin === undefined ? "ignore" : "pipe",

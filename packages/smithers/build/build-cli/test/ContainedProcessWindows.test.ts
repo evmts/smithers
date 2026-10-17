@@ -1,6 +1,9 @@
 import * as ScopedProcess from "@smthrs/platform-node/ScopedProcess"
 import { Effect, PlatformError, Sink, Stream } from "effect"
 import { type ChildProcessHandle, ExitCode, makeHandle, ProcessId } from "effect/process/ChildProcessSpawner"
+import * as Fs from "node:fs"
+import * as Os from "node:os"
+import * as Path from "node:path"
 import { afterEach, expect, it, vi } from "vitest"
 
 vi.mock("@smthrs/platform-node/ScopedProcess", async (original) => ({
@@ -71,4 +74,37 @@ it("retains owner failures instead of announcing successful timeout cleanup", as
   })
   await expect(ContainedProcess.run({ ...fixture(true, () => Effect.fail(error)), timeoutMs: 20 })).rejects
     .toMatchObject({ code: "cleanup_failed", cause: error })
+})
+
+for (const extension of ["mjs", "cjs", "js"]) {
+  it(`launches a Windows .${extension} module with literal Node argv`, async () => {
+    const directory = Fs.mkdtempSync(Path.join(Os.tmpdir(), "contained-module-"))
+    const command = Path.join(directory, `literal module.${extension}`)
+    Fs.writeFileSync(command, "process.exit(0)")
+    try {
+      const options = fixture(false, () => Effect.void)
+      expect(await ContainedProcess.run({ ...options, command })).toBe(0)
+      expect(ScopedProcess.spawn).toHaveBeenCalledWith(expect.objectContaining({
+        command: process.execPath,
+        args: [command, "literal argument"]
+      }))
+    } finally {
+      Fs.rmSync(directory, { recursive: true, force: true })
+    }
+  })
+}
+
+it.each(["missing.mjs", "directory.mjs"])("preserves native spawn refusal for %s", async (name) => {
+  const directory = Fs.mkdtempSync(Path.join(Os.tmpdir(), "contained-missing-"))
+  const command = Path.join(directory, name)
+  if (name === "directory.mjs") Fs.mkdirSync(command)
+  try {
+    expect(await ContainedProcess.run({ ...fixture(false, () => Effect.void), command })).toBe(0)
+    expect(ScopedProcess.spawn).toHaveBeenCalledWith(expect.objectContaining({
+      command,
+      args: ["literal argument"]
+    }))
+  } finally {
+    Fs.rmSync(directory, { recursive: true, force: true })
+  }
 })

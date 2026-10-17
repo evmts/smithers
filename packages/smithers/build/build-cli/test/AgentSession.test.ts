@@ -743,8 +743,8 @@ describe("scripted fake and environment selection", () => {
   })
 
   it("takes the session ceiling from SMTHRS_AGENT_TIMEOUT_MS for the real CLI factory", async () => {
-    const claude = NodePath.join(root, "fake-claude-slow")
-    await Fs.writeFile(claude, "#!/bin/sh\nsleep 30\n", { mode: 0o755 })
+    const claude = NodePath.join(root, "fake-claude-slow.mjs")
+    await Fs.writeFile(claude, "#!/usr/bin/env node\nsetTimeout(() => {}, 30000)\n", { mode: 0o755 })
     const factory = AgentFake.sessionFactoryFromEnvironment(
       {
         workspaceRoot: root,
@@ -819,10 +819,37 @@ describe("agent resolution", () => {
 
 describe("CLI engine adapters", () => {
   const fakeExecutable = async (name: string, script: string): Promise<string> => {
-    const path = NodePath.join(root, name)
-    await Fs.writeFile(path, `#!/bin/sh\n${script}\n`, { mode: 0o755 })
+    const windows = process.platform === "win32"
+    const path = NodePath.join(root, windows ? `${name}.mjs` : name)
+    const body = windows
+      ? `#!/usr/bin/env node
+import { spawnSync } from "node:child_process"
+const result = spawnSync("sh", ["-c", ${
+        JSON.stringify(script)
+      }, "fixture", ...process.argv.slice(2)], { stdio: "inherit" })
+if (result.error) throw result.error
+process.exit(result.status ?? 1)
+`
+      : `#!/bin/sh\n${script}\n`
+    await Fs.writeFile(path, body, { mode: 0o755 })
     return path
   }
+
+  it("runs the Windows engine fixture with literal shell arguments", async () => {
+    const platform = Object.getOwnPropertyDescriptor(process, "platform")!
+    let executable: string
+    try {
+      Object.defineProperty(process, "platform", { ...platform, value: "win32" })
+      executable = await fakeExecutable("literal-args", `printf '%s\\n' "$@"`)
+    } finally {
+      Object.defineProperty(process, "platform", platform)
+    }
+    const args = ["a b", "--flag", "$(must-stay-literal)", "é"]
+    const result = spawnSync(process.execPath, [executable, ...args], { cwd: root, encoding: "utf8" })
+    expect(result.error).toBeUndefined()
+    expect(result.status).toBe(0)
+    expect(result.stdout).toBe(`${args.join("\n")}\n`)
+  })
 
   const poolAgents = AgentTarget.Agents({
     default: AgentTarget.Pool(["luna", "sol"]),
