@@ -310,29 +310,37 @@ const repairChecks = (
             check.id,
             tier === "slow" ?
               result.pipe(
-                Node.bindPlanned((receipt) =>
-                  RecordSlow.call({ plan, index, implementation: group.implementation, check, receipt })
-                )
+                Node.bindPlanned(Node.capture({}, (receipt) =>
+                  RecordSlow.call({ plan, index, implementation: group.implementation, check, receipt })))
               ) :
               result
           ]
         })
     ))
   return checks("fast").pipe(
-    Node.bindPlanned((receipts) =>
-      FastGate.call({ change, parent: group.implementation.parent, implementation: group.implementation, receipts })
+    Node.bindPlanned(
+      Node.capture(
+        {},
+        (receipts) =>
+          FastGate.call({ change, parent: group.implementation.parent, implementation: group.implementation, receipts })
+      )
     ),
-    Node.bindPlanned((group) => RecordGate.call({ plan, index, group })),
-    Node.bindPlanned((current) =>
-      Node.all({ current: Node.succeed(current), slow: checks("slow"), next: repairChecks(plan, refreshed, index + 1) })
-        .pipe(
-          Node.map((
-            { current, slow, next }
-          ) => [
-            { implementation: current.implementation, receipts: [...current.receipts, ...Object.values(slow)] },
-            ...next
-          ])
-        )
+    Node.bindPlanned(Node.capture({}, (group) => RecordGate.call({ plan, index, group }))),
+    Node.bindPlanned(
+      Node.capture({}, (current) =>
+        Node.all({
+          current: Node.succeed(current),
+          slow: checks("slow"),
+          next: repairChecks(plan, refreshed, index + 1)
+        })
+          .pipe(
+            Node.map(Node.capture({}, (
+              { current, slow, next }
+            ) => [
+              { implementation: current.implementation, receipts: [...current.receipts, ...Object.values(slow)] },
+              ...next
+            ]))
+          ))
     )
   )
 }
@@ -341,46 +349,58 @@ const RepairPass = Flow.make("coding/RepairPass", {
   payload: { plan: Plan, previous: Result },
   success: Result,
   error: Error,
-  body: ({ plan, previous }) =>
-    ReadHistory.call({ changeIds: ids(plan, previous), phase: "before", dependency: null }).pipe(
-      Node.bindPlanned((read) => PrepareContext.call({ plan, previous, read })),
-      Node.bindPlanned((context) =>
-        SelectRepair.call(context).pipe(
-          Node.bindPlanned((selection) =>
-            PrepareRepair.call({ context, selection, memoryRevision: plan.memoryRevision })
-          )
-        )
-      ),
-      Node.bindPlanned((repair) =>
-        Implement.call({
-          change: repair.change,
-          parent: repair.parent,
-          memoryRevision: repair.memoryRevision,
-          ...(repair.memory === undefined ? {} : { memory: repair.memory })
-        }).pipe(
-          Node.bindPlanned((edited) =>
-            ReadHistory.call({ changeIds: ids(plan, previous), phase: "edited", dependency: edited }).pipe(
-              Node.bindPlanned((read) => ReturnTip.call({ plan, previous, repair, edited, read })),
-              Node.bindPlanned((operation) => ApplyNative.call({ operation })),
-              Node.bindPlanned((returned) =>
-                ReadHistory.call({ changeIds: ids(plan, previous), phase: "tip", dependency: returned })
-              ),
-              Node.bindPlanned((read) => Refresh.call({ plan, previous, repair, edited, read }))
+  body: Node.capture(
+    {},
+    ({ plan, previous }) =>
+      ReadHistory.call({ changeIds: ids(plan, previous), phase: "before", dependency: null }).pipe(
+        Node.bindPlanned(Node.capture({}, (read) => PrepareContext.call({ plan, previous, read }))),
+        Node.bindPlanned(Node.capture({}, (context) =>
+          SelectRepair.call(context).pipe(
+            Node.bindPlanned(
+              Node.capture({}, (selection) =>
+                PrepareRepair.call({ context, selection, memoryRevision: plan.memoryRevision }))
             )
-          )
-        )
-      ),
-      // The refreshed list is a runtime value; a child boundary materializes it
-      // before the fixed-width validation graph expands.
-      Node.bindPlanned((changes) => Recheck.child({ plan, changes }))
-    )
+          ))),
+        Node.bindPlanned(Node.capture({}, (repair) =>
+          Implement.call({
+            change: repair.change,
+            parent: repair.parent,
+            memoryRevision: repair.memoryRevision,
+            ...(repair.memory === undefined ? {} : { memory: repair.memory })
+          }).pipe(
+            Node.bindPlanned(Node.capture({}, (edited) =>
+              ReadHistory.call({ changeIds: ids(plan, previous), phase: "edited", dependency: edited }).pipe(
+                Node.bindPlanned(Node.capture({}, (read) =>
+                  ReturnTip.call({ plan, previous, repair, edited, read }))),
+                Node.bindPlanned(Node.capture({}, (operation) =>
+                  ApplyNative.call({ operation }))),
+                Node.bindPlanned(
+                  Node.capture(
+                    {},
+                    (returned) =>
+                      ReadHistory.call({ changeIds: ids(plan, previous), phase: "tip", dependency: returned })
+                  )
+                ),
+                Node.bindPlanned(Node.capture({}, (read) => Refresh.call({ plan, previous, repair, edited, read })))
+              )))
+          ))),
+        // The refreshed list is a runtime value; a child boundary materializes it
+        // before the fixed-width validation graph expands.
+        Node.bindPlanned(Node.capture({}, (changes) => Recheck.child({ plan, changes })))
+      )
+  )
 })
 const Recheck = Flow.make("coding/RecheckCorrected", {
   payload: { plan: Plan, changes: Schema.Array(ValidatedChange) },
   success: Result,
   error: FeedbackError,
-  body: ({ plan, changes }) =>
-    repairChecks(plan, changes, 0).pipe(Node.bindPlanned((result) => Assess.call({ plan, changes: result })))
+  body: Node.capture(
+    {},
+    ({ plan, changes }) =>
+      repairChecks(plan, changes, 0).pipe(
+        Node.bindPlanned(Node.capture({}, (result) => Assess.call({ plan, changes: result })))
+      )
+  )
 })
 
 type RoundFlow = Flow.Flow<
@@ -395,18 +415,22 @@ const Round: RoundFlow = Flow.make("coding/CorrectionRound", {
   success: CorrectionResult,
   error: atomError,
   maxRounds: 8,
-  body: (cursor) =>
+  body: Node.capture({}, (cursor) =>
     RunRound.call(cursor).pipe(
-      Node.bindPlanned((outcome) => RecordLearning.call({ plan: cursor.plan, round: cursor.round, outcome })),
+      Node.bindPlanned(
+        Node.capture({}, (outcome) => RecordLearning.call({ plan: cursor.plan, round: cursor.round, outcome }))
+      ),
       Node.branch({
-        if: (outcome) =>
+        if: Node.capture({}, (outcome) =>
           outcome.blocked !== null || outcome.stalled !== null || outcome.result?.status === "validated" ||
-          cursor.round >= cursor.maxRounds,
-        then: (outcome) => Finish.call({ cursor, outcome }).pipe(Node.bindPlanned((result) => Flow.done(result))),
-        else: (outcome) =>
-          Round.to({ ...cursor, round: cursor.round + 1, previous: outcome.result, streaks: outcome.streaks })
+          cursor.round >= cursor.maxRounds),
+        then: Node.capture({}, (outcome) =>
+          Finish.call({ cursor, outcome }).pipe(Node.bindPlanned(Node.capture({}, (result) =>
+            Flow.done(result))))),
+        else: Node.capture({}, (outcome) =>
+          Round.to({ ...cursor, round: cursor.round + 1, previous: outcome.result, streaks: outcome.streaks }))
       })
-    )
+    ))
 })
 
 /** Private opt-in composition; existing coding/ImplementPlan keeps its current contract. */
@@ -414,7 +438,10 @@ export const CorrectPlan = Flow.make("coding/CorrectPlan", {
   payload: Input,
   success: CorrectionResult,
   error: atomError,
-  body: (input) => Begin.call(input).pipe(Node.bindPlanned((cursor) => Round.child(cursor)))
+  body: Node.capture(
+    {},
+    (input) => Begin.call(input).pipe(Node.bindPlanned(Node.capture({}, (cursor) => Round.child(cursor))))
+  )
 })
 
 /** The owner and findings a repair corrects, checked against the native read; the plan's memory rides along. */

@@ -27,59 +27,84 @@ const Atom = Flow.make("coding/ImplementAtom", {
     writes: Schema.Array(Schema.String)
   }),
   error: Error,
-  body: ({ change, atom, parent, ordinal, memoryRevision, memory }) =>
-    Entry.call({ change, atom, parent, ordinal }).pipe(
-      Node.bindPlanned((operation) => ApplyNative.call({ operation })),
-      Node.bindPlanned((result) => Observe.call({ result, parent, expectedChangeId: atom.changeId })),
-      Node.bindPlanned((revision) => {
-        const edit = (feedback?: Planned.Planned<string>) =>
-          EditAtom.call({
-            atom,
-            parent,
-            revision,
-            memoryRevision,
-            ...(memory === undefined ? {} : { memory }),
-            ...(feedback === undefined ? {} : { feedback })
-          })
-        // A TODO's messages that arrived since its previous model turn reach
-        // this atom's first model request; its harness drains the rest between
-        // turns. Explicit sequencing keeps the drain after the native entry.
-        return Node.succeed(revision).pipe(
-          Node.andThen(
-            ReceiveFeedback.call({ boundary: "implement", revision: ordinal }).pipe(
-              Node.branch({
-                if: (receipt) => receipt.messages.length > 0,
-                then: (receipt) => Node.succeed(receipt).pipe(Node.map(renderFeedback), Node.bindPlanned(edit)),
-                else: () => edit()
-              })
-            )
-          )
-        ).pipe(
-          Node.bindPlanned((report) =>
-            Node.all({
-              report: Node.succeed(report),
-              final: Prepare.call({ change, phase: "snapshot", atom, revision, parent, ordinal, editing: report }).pipe(
-                Node.bindPlanned((operation) => ApplyNative.call({ operation })),
-                Node.bindPlanned((result) => Observe.call({ result, parent, expectedChangeId: revision.changeId })),
-                Node.bindPlanned((snapshot) =>
-                  Prepare.call({
-                    change,
-                    phase: "describe",
-                    atom,
-                    revision: snapshot,
-                    parent,
-                    ordinal,
-                    editing: report
-                  })
-                ),
-                Node.bindPlanned((operation) => ApplyNative.call({ operation })),
-                Node.bindPlanned((result) => Observe.call({ result, parent, expectedChangeId: revision.changeId }))
+  body: Node.capture(
+    {},
+    ({ change, atom, parent, ordinal, memoryRevision, memory }) =>
+      Entry.call({ change, atom, parent, ordinal }).pipe(
+        Node.bindPlanned(Node.capture({}, (operation) => ApplyNative.call({ operation }))),
+        Node.bindPlanned(
+          Node.capture({}, (result) => Observe.call({ result, parent, expectedChangeId: atom.changeId }))
+        ),
+        Node.bindPlanned(Node.capture({}, (revision) => {
+          const edit = (feedback?: Planned.Planned<string>) =>
+            EditAtom.call({
+              atom,
+              parent,
+              revision,
+              memoryRevision,
+              ...(memory === undefined ? {} : { memory }),
+              ...(feedback === undefined ? {} : { feedback })
+            })
+          // A TODO's messages that arrived since its previous model turn reach
+          // this atom's first model request; its harness drains the rest between
+          // turns. Explicit sequencing keeps the drain after the native entry.
+          return Node.succeed(revision).pipe(
+            Node.andThen(
+              ReceiveFeedback.call({ boundary: "implement", revision: ordinal }).pipe(
+                Node.branch({
+                  if: Node.capture({}, (receipt) => receipt.messages.length > 0),
+                  then: Node.capture({}, (receipt) =>
+                    Node.succeed(receipt).pipe(
+                      Node.map(Node.capture({}, renderFeedback)),
+                      Node.bindPlanned(Node.capture({}, edit))
+                    )),
+                  else: Node.capture({}, () => edit())
+                })
               )
-            }).pipe(Node.map(({ report, final }) => ({ revision: final, reads: report.reads, writes: report.writes })))
+            )
+          ).pipe(
+            Node.bindPlanned(Node.capture({}, (report) =>
+              Node.all({
+                report: Node.succeed(report),
+                final: Prepare.call({ change, phase: "snapshot", atom, revision, parent, ordinal, editing: report })
+                  .pipe(
+                    Node.bindPlanned(Node.capture({}, (operation) => ApplyNative.call({ operation }))),
+                    Node.bindPlanned(
+                      Node.capture(
+                        {},
+                        (result) => Observe.call({ result, parent, expectedChangeId: revision.changeId })
+                      )
+                    ),
+                    Node.bindPlanned(Node.capture({}, (snapshot) =>
+                      Prepare.call({
+                        change,
+                        phase: "describe",
+                        atom,
+                        revision: snapshot,
+                        parent,
+                        ordinal,
+                        editing: report
+                      }))),
+                    Node.bindPlanned(Node.capture({}, (operation) => ApplyNative.call({ operation }))),
+                    Node.bindPlanned(
+                      Node.capture(
+                        {},
+                        (result) => Observe.call({ result, parent, expectedChangeId: revision.changeId })
+                      )
+                    )
+                  )
+              }).pipe(
+                Node.map(
+                  Node.capture(
+                    {},
+                    ({ report, final }) => ({ revision: final, reads: report.reads, writes: report.writes })
+                  )
+                )
+              )))
           )
-        )
-      })
-    )
+        }))
+      )
+  )
 })
 
 type AtomResult = typeof Atom.successSchema.Type
@@ -94,9 +119,13 @@ const atoms = (
   return atom === undefined ?
     Node.succeed([]) :
     Atom.call({ change: change.id, atom, parent, ...recalled, ordinal }).pipe(
-      Node.bindPlanned((result) =>
-        Node.all({ current: Node.succeed(result), rest: atoms(change, result.revision, recalled, ordinal + 1) })
-          .pipe(Node.map(({ current, rest }) => [current, ...rest]))
+      Node.bindPlanned(
+        Node.capture(
+          {},
+          (result) =>
+            Node.all({ current: Node.succeed(result), rest: atoms(change, result.revision, recalled, ordinal + 1) })
+              .pipe(Node.map(Node.capture({}, ({ current, rest }) => [current, ...rest])))
+        )
       )
     )
 }
@@ -120,7 +149,7 @@ export default Flow.make("coding/ImplementAtoms", {
   },
   success: Implementation,
   error: Error,
-  body: ({ change, parent, memoryRevision, memory }) => {
+  body: Node.capture({}, ({ change, parent, memoryRevision, memory }) => {
     if (!Array.isArray(change.atoms)) {
       throw new CodingError({
         code: "invalid_plan",
@@ -131,15 +160,15 @@ export default Flow.make("coding/ImplementAtoms", {
       change: Node.succeed(change.id),
       parent: Node.succeed(parent),
       results: atoms(change, parent, { memoryRevision, ...(memory === undefined ? {} : { memory }) }, 0)
-    }).pipe(Node.map(({ change, parent, results }) => ({
+    }).pipe(Node.map(Node.capture({}, ({ change, parent, results }) => ({
       change,
       parent,
       atoms: results.map((result) => result.revision),
       head: results.at(-1)!.revision,
       reads: [...new Set(results.flatMap((result) => result.reads))],
       writes: [...new Set(results.flatMap((result) => result.writes))]
-    })))
-  }
+    }))))
+  })
 })
 
 export const atomFlows = Layer.mergeAll(Interpreter.layer(Atom), Interpreter.layer(ImplementAtoms))

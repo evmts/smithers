@@ -24,14 +24,17 @@ export default Flow.make("coding/rebase-conflict", {
   payload: RepairPayload,
   success: Schema.Void,
   error: RepairError,
-  body: ({ input, remaining }: typeof RepairPayload.Type): Repairs =>
-    Math.min(input.limit, remaining) <= 0 ? Done.call(input) : Repair.call(input).pipe(
-      Node.andThen(Resolved.call(input)),
-      Node.branch({
-        if: (resolved) => resolved,
-        then: () => Done.call(input),
-        else: () => TodoConflict.child({ input, remaining: Math.min(input.limit, remaining) - 1 })
-      }),
-      Node.catch({ error: RepairError, onFailure: () => Done.call(input) })
-    )
+  body: Node.capture(
+    {},
+    ({ input, remaining }: typeof RepairPayload.Type): Repairs =>
+      Math.min(input.limit, remaining) <= 0 ? Done.call(input) : Repair.call(input).pipe(
+        Node.andThen(Resolved.call(input)),
+        Node.branch({
+          if: Node.capture({}, (resolved) => resolved),
+          then: Node.capture({}, () => Done.call(input)),
+          else: Node.capture({}, () => TodoConflict.child({ input, remaining: Math.min(input.limit, remaining) - 1 }))
+        }),
+        Node.catch({ error: RepairError, onFailure: Node.capture({}, () => Done.call(input)) })
+      )
+  )
 })

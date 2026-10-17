@@ -108,14 +108,14 @@ const stages = (plan: Plan, index: number, parent: Parameters<typeof Implement.c
   const change = plan.changes[index]
   if (!change) return Node.succeed([])
   return Implement.call({ change, parent, ...recalled(plan) }).pipe(
-    Node.bindPlanned((implementation) =>
+    Node.bindPlanned(Node.capture({}, (implementation) =>
       Node.all(Object.fromEntries(
         change.checks.filter((check) => check.tier === "fast")
           .map((check) => [check.id, RunCheck.call({ implementation, check })])
       )).pipe(
-        Node.bindPlanned((receipts) => FastGate.call({ change, parent, implementation, receipts })),
-        Node.bindPlanned((group) => RecordGate.call({ plan, index, group })),
-        Node.bindPlanned((group) =>
+        Node.bindPlanned(Node.capture({}, (receipts) => FastGate.call({ change, parent, implementation, receipts }))),
+        Node.bindPlanned(Node.capture({}, (group) => RecordGate.call({ plan, index, group }))),
+        Node.bindPlanned(Node.capture({}, (group) =>
           Node.all({
             current: Node.succeed(group),
             slow: Node.all(
@@ -124,8 +124,12 @@ const stages = (plan: Plan, index: number, parent: Parameters<typeof Implement.c
                   (check) => [
                     check.id,
                     RunCheck.call({ implementation: group.implementation, check }).pipe(
-                      Node.bindPlanned((receipt) =>
-                        RecordSlow.call({ plan, index, implementation: group.implementation, check, receipt })
+                      Node.bindPlanned(
+                        Node.capture(
+                          {},
+                          (receipt) =>
+                            RecordSlow.call({ plan, index, implementation: group.implementation, check, receipt })
+                        )
                       )
                     )
                   ]
@@ -134,16 +138,14 @@ const stages = (plan: Plan, index: number, parent: Parameters<typeof Implement.c
             ),
             next: stages(plan, index + 1, group.implementation.head)
           }).pipe(
-            Node.map((
+            Node.map(Node.capture({}, (
               { current, slow, next }
             ) => [
               { implementation: current.implementation, receipts: [...current.receipts, ...Object.values(slow)] },
               ...next
-            ])
-          )
-        )
-      )
-    )
+            ]))
+          )))
+      )))
   )
 }
 
@@ -152,10 +154,10 @@ export const ObservePlan = Flow.make("coding/ObservePlan", {
   payload: { plan: Plan },
   success: Result,
   error: FeedbackError,
-  body: ({ plan }) =>
+  body: Node.capture({}, ({ plan }) =>
     ValidatePlan.call({ plan }).pipe(Node.andThen(
-      stages(plan, 0, plan.base).pipe(Node.bindPlanned((changes) => Assess.call({ plan, changes })))
-    ))
+      stages(plan, 0, plan.base).pipe(Node.bindPlanned(Node.capture({}, (changes) => Assess.call({ plan, changes }))))
+    )))
 })
 
 // A cancellation request is not acknowledgement. Reuse the engine's native
@@ -171,7 +173,7 @@ const AwaitStopped = Poll.make("coding/AwaitObsoleteChecksStopped", {
   intervalMs: 100,
   maxAttempts: 300,
   onTimeout: "fail",
-  check: (input) => ChildrenStopped.call(input)
+  check: Node.capture({}, (input) => ChildrenStopped.call(input))
 })
 export const acknowledgeFeedback = (flow: Flow.Any, executionId: string) =>
   Effect.gen(function*() {

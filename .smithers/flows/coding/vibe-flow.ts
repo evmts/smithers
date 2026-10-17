@@ -18,9 +18,9 @@ export default Flow.make("coding/Vibe", {
   payload: VibeInput,
   success: VibeDelivered,
   error: VibeError,
-  body: (input) =>
+  body: Node.capture({}, (input) =>
     AdmitVibe.child(input).pipe(
-      Node.bindPlanned((admission) => CleanVibeHistory.child(admission)),
-      Node.bindPlanned((cleanup) => LandVibe.child(cleanup))
-    )
+      Node.bindPlanned(Node.capture({}, (admission) => CleanVibeHistory.child(admission))),
+      Node.bindPlanned(Node.capture({}, (cleanup) => LandVibe.child(cleanup)))
+    ))
 })

@@ -21,10 +21,10 @@ export default Flow.make("coding/Verify", {
   payload: VerifyInput,
   success: VerifyResult,
   error: RunCheck.errorSchema,
-  body: (input) => {
+  body: Node.capture({}, (input) => {
     // Admission refuses a check set that cannot verify anything before any check runs.
     return AdmitVerifySource.call({ source: input.source, checks: input.checks }).pipe(
-      Node.bindPlanned((head) =>
+      Node.bindPlanned(Node.capture({}, (head) =>
         Node.all({
           head: Node.succeed(head),
           receipts: Node.all(
@@ -48,7 +48,7 @@ export default Flow.make("coding/Verify", {
             )
           )
         }).pipe(
-          Node.map((
+          Node.map(Node.capture({}, (
             { head, receipts }: { head: typeof Revision.Type; receipts: Readonly<Record<string, typeof Receipt.Type>> }
           ) => {
             const result = verifySummary(
@@ -57,14 +57,16 @@ export default Flow.make("coding/Verify", {
               Object.values(receipts)
             )
             return result instanceof CodingError ? { outage: result, result: null } : { outage: null, result }
-          }),
+          })),
           Node.branch({
-            if: (summary) => summary.outage !== null,
-            then: (summary) => Node.fail(summary.outage as Planned.Planned<CodingError>),
-            else: (summary) => Node.succeed(summary.result as Planned.Planned<typeof VerifyResult.Type>)
+            if: Node.capture({}, (summary) => summary.outage !== null),
+            then: Node.capture({}, (summary) => Node.fail(summary.outage as Planned.Planned<CodingError>)),
+            else: Node.capture(
+              {},
+              (summary) => Node.succeed(summary.result as Planned.Planned<typeof VerifyResult.Type>)
+            )
           })
-        )
-      )
+        )))
     )
-  }
+  })
 })

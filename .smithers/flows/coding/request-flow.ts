@@ -36,17 +36,16 @@ export const RequestFeedback = Flow.make("coding/RequestFeedback", {
   payload: PlanningInput,
   success: PlanningInput.fields.feedback,
   error: CodingError,
-  body: (input) =>
+  body: Node.capture({}, (input) =>
     ReceiveFeedback.call({ boundary: "plan", revision: 0 }).pipe(
-      Node.bindPlanned((receipt) =>
+      Node.bindPlanned(Node.capture({}, (receipt) =>
         MergeFeedback.call({
           cursor: { ...input, maxRounds: 3, revision: 0 },
           receipt,
           advance: false
-        })
-      ),
-      Node.map((ready) => ready.feedback)
-    )
+        }))),
+      Node.map(Node.capture({}, (ready) => ready.feedback))
+    ))
 })
 
 export const RefusePlan = Action.make("coding/refuse-plan-approval", {
@@ -74,28 +73,27 @@ const approve = (plan: Plan | Planned.Planned<Plan>, policy: typeof RequestInput
     ].join("\n\n")
   const timeoutMs = policy === "always" ? undefined : Number(policy.slice("timeout:".length, -1)) * 1000
   return Node.succeed(plan).pipe(
-    Node.map(prompt),
-    Node.bindPlanned((prompt) =>
+    Node.map(Node.capture({}, prompt)),
+    Node.bindPlanned(Node.capture({}, (prompt) =>
       HumanTask.action.call({
         name: "coding-plan-approval",
         kind: "confirm",
         prompt,
         maxAttempts: 1,
         ...(timeoutMs === undefined ? {} : { timeoutMs })
-      })
-    ),
+      }))),
     Node.catch({
       error: HumanTask.HumanTaskFailed,
-      onFailure: (error) =>
+      onFailure: Node.capture({}, (error) =>
         Node.branch(Node.succeed(error), {
-          if: (failure) => failure.code === "timeout" && timeoutMs !== undefined,
-          then: () => Node.succeed(true),
-          else: (failure) =>
+          if: Node.capture({}, (failure) => failure.code === "timeout" && timeoutMs !== undefined),
+          then: Node.capture({}, () => Node.succeed(true)),
+          else: Node.capture({}, (failure) =>
             Node.succeed(failure).pipe(
-              Node.map((value) => `Plan approval failed: ${value.message}`),
-              Node.bindPlanned((message) => RefusePlan.call({ message }))
-            )
-        })
+              Node.map(Node.capture({}, (value) => `Plan approval failed: ${value.message}`)),
+              Node.bindPlanned(Node.capture({}, (message) => RefusePlan.call({ message })))
+            ))
+        }))
     })
   )
 }
@@ -116,7 +114,7 @@ export const Coordinate: CoordinateFlow = Flow.make("coding/CoordinateRequest", 
   success: RequestResult,
   error: RequestError,
   maxRounds: maximumPlanningPasses,
-  body: (cursor) =>
+  body: Node.capture({}, (cursor) =>
     (cursor.preparedPlan === undefined
       ? PrepareRequest.child({
         prompt: cursor.prompt,
@@ -128,54 +126,57 @@ export const Coordinate: CoordinateFlow = Flow.make("coding/CoordinateRequest", 
         // bindPlanned exposes a reference and permits independent descendants.
         // Explicit sequencing makes each entire feedback subtree wait for the
         // referenced producer, even though the drain payload is only a boundary.
-        Node.bindPlanned((plan) =>
+        Node.bindPlanned(Node.capture({}, (plan) =>
           Node.succeed(plan).pipe(
             Node.andThen(
               ReceiveFeedback.call({ boundary: "before-implementation", revision: cursor.revision }).pipe(
                 Node.branch({
-                  if: (receipt) => receipt.messages.length > 0,
-                  then: (receipt) =>
+                  if: Node.capture({}, (receipt) => receipt.messages.length > 0),
+                  then: Node.capture({}, (receipt) =>
                     MergeFeedback.call({ cursor, receipt, advance: true }).pipe(
-                      Node.bindPlanned((next) => Coordinate.to(next))
-                    ),
-                  else: () =>
+                      Node.bindPlanned(Node.capture({}, (next) => Coordinate.to(next)))
+                    )),
+                  else: Node.capture({}, () =>
                     Node.branch(approve(plan, cursor.planApproval), {
-                      if: (approved) => approved === true,
-                      then: () => AdmitSource.call({ plan }),
-                      else: () => RefusePlan.call({ message: "The predicted Change plan was denied." })
+                      if: Node.capture({}, (approved) => approved === true),
+                      then: Node.capture({}, () => AdmitSource.call({ plan })),
+                      else: Node.capture(
+                        {},
+                        () => RefusePlan.call({ message: "The predicted Change plan was denied." })
+                      )
                     }).pipe(
-                      Node.bindPlanned((plan) =>
+                      Node.bindPlanned(Node.capture({}, (plan) =>
                         CorrectPlan.child({ plan, maxRounds: cursor.maxRounds }).pipe(
-                          Node.bindPlanned((outcome) =>
+                          Node.bindPlanned(Node.capture({}, (outcome) =>
                             Node.succeed(outcome).pipe(
                               Node.andThen(
                                 ReceiveFeedback.call({ boundary: "after-correction", revision: cursor.revision }).pipe(
                                   Node.branch({
-                                    if: (receipt) => receipt.messages.length > 0,
-                                    then: (receipt) =>
-                                      MergeFeedback.call({ cursor, receipt, advance: true }).pipe(
-                                        Node.bindPlanned((next) => Coordinate.to(next))
-                                      ),
-                                    else: () =>
+                                    if: Node.capture({}, (receipt) => receipt.messages.length > 0),
+                                    then: Node.capture(
+                                      {},
+                                      (receipt) =>
+                                        MergeFeedback.call({ cursor, receipt, advance: true }).pipe(
+                                          Node.bindPlanned(Node.capture({}, (next) => Coordinate.to(next)))
+                                        )
+                                    ),
+                                    else: Node.capture({}, () =>
                                       Flow.done({
                                         plan,
                                         outcome,
                                         ...(cursor.requestRoute === undefined ? {} : { route: cursor.requestRoute })
-                                      })
+                                      }))
                                   })
                                 )
                               )
-                            )
-                          )
-                        )
-                      )
-                    )
+                            )))
+                        )))
+                    ))
                 })
               )
             )
-          )
-        )
-      )
+          )))
+      ))
 })
 
 /**
@@ -190,14 +191,14 @@ export default Flow.make("coding/Request", {
   payload: RequestInput,
   success: RequestResult,
   error: RequestError,
-  body: (input) => {
+  body: Node.capture({}, (input) => {
     const wiki = input.wiki === undefined ? {} : { wiki: input.wiki }
     // Every answer a person gave an earlier attempt reaches each planning pass.
     const answers = input.answers === undefined ? {} : { answers: input.answers }
     const implement = (feedback: string | Planned.Planned<string>, route?: Route | Planned.Planned<Route>) =>
       PrepareRequest.child({ prompt: input.prompt, feedback, ...wiki, ...answers }).pipe(
-        Node.bindPlanned((plan) => AdmitSource.call({ plan })),
-        Node.bindPlanned((preparedPlan) =>
+        Node.bindPlanned(Node.capture({}, (plan) => AdmitSource.call({ plan }))),
+        Node.bindPlanned(Node.capture({}, (preparedPlan) =>
           Coordinate.child({
             requestInput: input,
             ...(route === undefined ? {} : { requestRoute: route }),
@@ -209,31 +210,38 @@ export default Flow.make("coding/Request", {
             maxRounds: input.maxRounds ?? 3,
             revision: 0,
             preparedPlan
-          })
-        )
+          })))
       )
     // A stack request is a TODO: it stands on a fresh working change on the
     // tip, and factory/Todo routes it before it is planned. Its result and
     // its failure both carry the route, which the stack keeps.
     // The dependency pages the stack published reach this checkout first.
     const dependencyPages = Node.succeed(input.wiki?.pages ?? []).pipe(
-      Node.map((pages) => pages.filter(isDependencyPage))
+      Node.map(Node.capture({}, (pages) => pages.filter(isDependencyPage)))
     )
     // Receive already-committed input before the first planning model call,
     // including a new implementation launch under a retained TODO run.
     return RequestFeedback.child({ prompt: input.prompt, feedback: input.feedback ?? "", ...wiki, ...answers }).pipe(
-      Node.bindPlanned((feedback) =>
-        input.base === undefined ? implement(feedback) : admitStackBase(input.base).pipe(
-          Node.andThen(dependencyPages.pipe(Node.bindPlanned((pages) => InstallDependencyPages.call({ pages })))),
-          Node.andThen(RouteRequest.child({ prompt: input.prompt, feedback })),
-          Node.bindPlanned((routed) =>
-            Node.all({ routed: Node.succeed(routed), result: implement(routed.feedback, routed.route) }).pipe(
-              Node.map(({ result, routed }) => ({ ...result, route: routed.route })),
-              Node.catch({ error: CodingError, onFailure: (error) => StampRoute.call({ error, route: routed.route }) })
-            )
-          )
-        )
+      Node.bindPlanned(
+        Node.capture({}, (feedback) =>
+          input.base === undefined ? implement(feedback) : admitStackBase(input.base).pipe(
+            Node.andThen(
+              dependencyPages.pipe(
+                Node.bindPlanned(Node.capture({}, (pages) => InstallDependencyPages.call({ pages })))
+              )
+            ),
+            Node.andThen(RouteRequest.child({ prompt: input.prompt, feedback })),
+            Node.bindPlanned(Node.capture({}, (routed) =>
+              Node.all({ routed: Node.succeed(routed), result: implement(routed.feedback, routed.route) }).pipe(
+                Node.map(Node.capture({}, ({ result, routed }) => ({ ...result, route: routed.route }))),
+                Node.catch({
+                  error: CodingError,
+                  onFailure: Node.capture({}, (error) =>
+                    StampRoute.call({ error, route: routed.route }))
+                })
+              )))
+          ))
       )
     )
-  }
+  })
 })

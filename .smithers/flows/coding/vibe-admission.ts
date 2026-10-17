@@ -26,7 +26,7 @@ export const VerifyVibe = Flow.make("coding/VerifyVibe", {
   payload: VibeEvidence,
   success: VibeAdmission,
   error: CodingError,
-  body: (evidence) => {
+  body: Node.capture({}, (evidence) => {
     const { plan, outcome } = evidence.request
     // ReadVibeRequest requires this domain outcome before graph construction.
     // Validate every retained atomic chain and exact check using existing gates.
@@ -47,9 +47,9 @@ export const VerifyVibe = Flow.make("coding/VerifyVibe", {
     return ValidatePlan.call({ plan }).pipe(
       Node.andThen(Node.all(Object.fromEntries(gates.map((gate, index) => [String(index), gate])))),
       Node.andThen(Assess.call({ plan, changes })),
-      Node.bindPlanned((assessment) => FenceVibeSource.call({ evidence, assessment }))
+      Node.bindPlanned(Node.capture({}, (assessment) => FenceVibeSource.call({ evidence, assessment })))
     )
-  }
+  })
 })
 /**
  * The backend lander retains the original source before any snapshot; a local
@@ -59,21 +59,20 @@ export const AdmitVibe = Flow.make("coding/AdmitVibe", {
   payload: VibeInput,
   success: VibeAdmission,
   error: CodingError,
-  body: (input) =>
+  body: Node.capture({}, (input) =>
     ReadVibeRequest.call(input).pipe(
-      Node.bindPlanned((evidence) =>
+      Node.bindPlanned(Node.capture({}, (evidence) =>
         ReadLander.call({ phase: "admission" }).pipe(
           Node.branch({
-            if: (lander) => lander === "backend",
-            then: () =>
+            if: Node.capture({}, (lander) => lander === "backend"),
+            then: Node.capture({}, () =>
               PublishVibeSource.child({ source: evidence.originalSource, phase: "original" }).pipe(
                 Node.andThen(VerifyVibe.child(evidence))
-              ),
-            else: () => VerifyVibe.child(evidence)
+              )),
+            else: Node.capture({}, () => VerifyVibe.child(evidence))
           })
-        )
-      )
-    )
+        )))
+    ))
 })
 
 export const fenceVibeSource = ({ evidence, assessment }: typeof FenceVibeSource.payloadSchema.Type) =>

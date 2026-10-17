@@ -1,5 +1,6 @@
 /** Revision checks are ordinary actions over Plue's read-only JJ tree export. */
 import { Action, Flow, Interpreter } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
 import * as Executable from "@smthrs/registry/Executable"
 import { Clock, Effect, Layer, Path, Schema, Semaphore } from "effect"
 import type { CommandReceipts } from "./command-receipts.ts"
@@ -75,7 +76,7 @@ export const checkDelegate = Flow.make("coding/CommandCheck", {
   payload: Executable.Invocation,
   success: Receipt,
   error: CodingError,
-  body: (invocation) => CheckCommand.call(invocation)
+  body: Node.capture({}, (invocation) => CheckCommand.call(invocation))
 })
 
 export type CheckHostOptions = ImmutableSourceOptions & {

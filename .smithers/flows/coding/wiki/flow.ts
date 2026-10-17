@@ -21,10 +21,10 @@ export default Flow.make("coding/Wiki", {
   payload: WikiRefreshInput,
   success: WikiRefreshResult,
   error: Schema.Union([PrepareStackBase.errorSchema, RefreshWiki.errorSchema]),
-  body: (input) =>
+  body: Node.capture({}, (input) =>
     admitStackBase(input.base).pipe(
       Node.andThen(ImportDocs.call({})),
       Node.andThen(RefreshWiki.child({ pool: input.prior ?? null })),
-      Node.bindPlanned((refreshed) => ReadPublishedWiki.call({ base: input.base, refreshed }))
-    )
+      Node.bindPlanned(Node.capture({}, (refreshed) => ReadPublishedWiki.call({ base: input.base, refreshed })))
+    ))
 })

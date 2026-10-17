@@ -75,11 +75,11 @@ const DescribeAtom = Flow.make("coding/DescribeFinalAtom", {
   payload: DescribeInput,
   success: Revision,
   error: Error,
-  body: (input) =>
+  body: Node.capture({}, (input) =>
     PrepareDescription.call(input).pipe(
-      Node.bindPlanned((operation) => ApplyNative.call({ operation })),
-      Node.bindPlanned((operation) => ConfirmDescription.call({ input, operation }))
-    )
+      Node.bindPlanned(Node.capture({}, (operation) => ApplyNative.call({ operation }))),
+      Node.bindPlanned(Node.capture({}, (operation) => ConfirmDescription.call({ input, operation })))
+    ))
 })
 const RefreshHistory = Action.make("coding/refresh-final-history", {
   payload: { admission: VibeAdmission, head: Revision },
@@ -92,7 +92,7 @@ const RecheckHistory = Flow.make("coding/RecheckFinalHistory", {
   payload: RecheckInput,
   success: Result,
   error: RunCheck.errorSchema,
-  body: ({ plan, implementations }) => {
+  body: Node.capture({}, ({ plan, implementations }) => {
     const changes = Object.fromEntries(plan.changes.map((change, index) => {
       const implementation = implementations[index]!
       const fast = Node.all(Object.fromEntries(
@@ -106,30 +106,28 @@ const RecheckHistory = Flow.make("coding/RecheckFinalHistory", {
       return [
         String(index),
         fast.pipe(
-          Node.bindPlanned((receipts) =>
+          Node.bindPlanned(Node.capture({}, (receipts) =>
             FastGate.call({
               change,
               parent: index === 0 ? plan.base : implementations[index - 1]!.head,
               implementation,
               receipts
-            })
-          ),
-          Node.bindPlanned((gated) =>
+            }))),
+          Node.bindPlanned(Node.capture({}, (gated) =>
             Node.all({ gated: Node.succeed(gated), slow }).pipe(
-              Node.map(({ gated, slow }) => ({
+              Node.map(Node.capture({}, ({ gated, slow }) => ({
                 implementation: gated.implementation,
                 receipts: [...gated.receipts, ...Object.values(slow)]
-              }))
-            )
-          )
+              })))
+            )))
         )
       ]
     }))
     return Node.all(changes).pipe(
-      Node.map((values) => Object.values(values)),
-      Node.bindPlanned((changes) => Assess.call({ plan, changes }))
+      Node.map(Node.capture({}, (values) => Object.values(values))),
+      Node.bindPlanned(Node.capture({}, (changes) => Assess.call({ plan, changes })))
     )
-  }
+  })
 })
 const Cleaned = VibeCleanup
 const FinishCleanup = Action.make("coding/finish-final-history", {
@@ -142,7 +140,7 @@ const RewriteHistory = Flow.make("coding/RewriteFinalHistory", {
   payload: { admission: VibeAdmission, proposal: Proposal },
   success: Cleaned,
   error: Error,
-  body: ({ admission, proposal }) => {
+  body: Node.capture({}, ({ admission, proposal }) => {
     const atoms = admission.request.outcome.result!.changes.flatMap((change) => change.implementation.atoms)
     let head: Node.Node<
       Revision,
@@ -151,47 +149,52 @@ const RewriteHistory = Flow.make("coding/RewriteFinalHistory", {
     > = Node.succeed(admission.validatedHead)
     for (const [index, atom] of atoms.entries()) {
       head = head.pipe(
-        Node.bindPlanned((previous) =>
-          DescribeAtom.child({ previous, atom, description: proposal.atoms[index]!.description })
+        Node.bindPlanned(
+          Node.capture(
+            {},
+            (previous) => DescribeAtom.child({ previous, atom, description: proposal.atoms[index]!.description })
+          )
         )
       )
     }
-    return head.pipe(Node.bindPlanned((head) =>
+    return head.pipe(Node.bindPlanned(Node.capture({}, (head) =>
       RefreshHistory.call({ admission, head }).pipe(
-        Node.bindPlanned((implementations) => RecheckHistory.child({ plan: admission.request.plan, implementations })),
-        Node.bindPlanned((result) => FinishCleanup.call({ admission, summary: proposal.summary, result, head }))
-      )
-    ))
-  }
+        Node.bindPlanned(
+          Node.capture({}, (implementations) => RecheckHistory.child({ plan: admission.request.plan, implementations }))
+        ),
+        Node.bindPlanned(
+          Node.capture({}, (result) => FinishCleanup.call({ admission, summary: proposal.summary, result, head }))
+        )
+      ))))
+  })
 })
 /** The reviewed proposal, repaired once when it is refused. */
 export const ProposeHistory = Flow.make("coding/ProposeFinalHistory", {
   payload: VibeAdmission,
   success: Proposal,
   error: Error,
-  body: (admission) =>
+  body: Node.capture({}, (admission) =>
     ReviewHistory.call(admission).pipe(
-      Node.bindPlanned((proposal) =>
+      Node.bindPlanned(Node.capture({}, (proposal) =>
         ValidateProposal.call({ admission, proposal }).pipe(Node.catch({
           error: CodingError,
-          onFailure: (refused) =>
+          onFailure: Node.capture({}, (refused) =>
             Node.succeed(refused).pipe(
-              Node.map((error) => error.message),
-              Node.bindPlanned((refusal) => RepairHistory.call({ admission, proposal, refusal })),
-              Node.bindPlanned((repaired) => ValidateProposal.call({ admission, proposal: repaired }))
-            )
-        }))
-      )
-    )
+              Node.map(Node.capture({}, (error) => error.message)),
+              Node.bindPlanned(Node.capture({}, (refusal) => RepairHistory.call({ admission, proposal, refusal }))),
+              Node.bindPlanned(Node.capture({}, (repaired) => ValidateProposal.call({ admission, proposal: repaired })))
+            ))
+        }))))
+    ))
 })
 export const CleanVibeHistory = Flow.make("coding/CleanVibeHistory", {
   payload: VibeAdmission,
   success: Cleaned,
   error: Error,
-  body: (admission) =>
+  body: Node.capture({}, (admission) =>
     ProposeHistory.child(admission).pipe(
-      Node.bindPlanned((proposal) => RewriteHistory.child({ admission, proposal }))
-    )
+      Node.bindPlanned(Node.capture({}, (proposal) => RewriteHistory.child({ admission, proposal })))
+    ))
 })
 const stale = (message: string) => new CodingError({ code: "stale_revision", message })
 /** The longest first line a final description may have. */

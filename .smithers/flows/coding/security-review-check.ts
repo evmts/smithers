@@ -10,6 +10,7 @@ import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as Model from "@smthrs/model/Model"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
+import { Node } from "@smthrs/plan"
 import * as Executable from "@smthrs/registry/Executable"
 import * as LlmLint from "@smthrs/targets/LlmLint"
 import { Effect, Layer, Schema } from "effect"
@@ -97,7 +98,7 @@ export const securityReviewCheckDelegate = Flow.make("coding/SecurityReviewCheck
   payload: Executable.Invocation,
   success: Receipt,
   error: CodingError,
-  body: (invocation) => ReviewSecurity.call(invocation)
+  body: Node.capture({}, (invocation) => ReviewSecurity.call(invocation))
 })
 
 /** A file's SHA-256, streamed so a large committed artifact is never held in memory. */
@@ -387,7 +388,7 @@ export const securityAuditDelegate = Flow.make("coding/SecurityAudit", {
   payload: Executable.Invocation,
   success: AuditResult,
   error: CodingError,
-  body: (invocation) => AuditSecurity.call(invocation)
+  body: Node.capture({}, (invocation) => AuditSecurity.call(invocation))
 })
 
 /** Why an audit whose labels select no included file fails. */

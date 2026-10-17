@@ -61,14 +61,15 @@ export const RefreshWiki = Flow.make("coding/RefreshWiki", {
   payload: { pool: Schema.optionalKey(Schema.NullOr(Pool)) },
   success: Refreshed,
   error: WikiError,
-  body: (input) =>
+  body: Node.capture({}, (input) =>
     Configure.call({}).pipe(
-      Node.bindPlanned((config) =>
+      Node.bindPlanned(Node.capture({}, (config) =>
         Prior.call({ config }).pipe(
-          Node.bindPlanned((priorRunId) => Generate.call({ config, priorRunId, pool: input.pool ?? null }))
-        )
-      )
-    )
+          Node.bindPlanned(
+            Node.capture({}, (priorRunId) => Generate.call({ config, priorRunId, pool: input.pool ?? null }))
+          )
+        )))
+    ))
 })
 
 const maximumCatalogBytes = 128 * 1024

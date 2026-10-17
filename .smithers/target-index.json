@@ -2005,6 +2005,10 @@
       },
       {
         "kind": "file",
+        "path": ".smithers/flows/test/coding-stable-plan.test.ts"
+      },
+      {
+        "kind": "file",
         "path": ".smithers/flows/test/learning.test.ts"
       },
       {

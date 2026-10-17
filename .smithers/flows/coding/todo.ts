@@ -98,18 +98,19 @@ export const TodoReview: ReviewFlow = Flow.make("coding/todo-review", {
   payload: ReviewPayload,
   success: VibeDelivered,
   error: ReviewError,
-  body: ({ input }: typeof ReviewPayload.Type) => {
+  body: Node.capture({}, ({ input }: typeof ReviewPayload.Type) => {
     const { base: _, ...continuation } = input
     return TodoReviewInput.call({}).pipe(
-      Node.bindPlanned((feedback) =>
+      Node.bindPlanned(Node.capture({}, (feedback) =>
         TodoBoundary.child({}).pipe(
           Node.andThen(Request.call({ ...continuation, feedback }))
-        )
-      ),
-      Node.bindPlanned((request) => TodoDelivery.call({ request })),
-      Node.bindPlanned((delivery) => Vibe.call(delivery)),
-      Node.bindPlanned((delivered) => Node.succeed(delivered).pipe(Node.andThen(TodoReview.child({ input }))))
+        ))),
+      Node.bindPlanned(Node.capture({}, (request) => TodoDelivery.call({ request }))),
+      Node.bindPlanned(Node.capture({}, (delivery) => Vibe.call(delivery))),
+      Node.bindPlanned(
+        Node.capture({}, (delivered) => Node.succeed(delivered).pipe(Node.andThen(TodoReview.child({ input }))))
+      )
     )
-  }
+  })
 })
 export const todoReviewLayer = Layer.merge(reviewInputLayer, Interpreter.layer(TodoReview))

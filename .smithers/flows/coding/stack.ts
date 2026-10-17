@@ -179,7 +179,7 @@ const transient = (error: CodingError | NativeCodingError) =>
 /** Imports the tip, creates the working change from the journaled operation, and checks it. */
 export const admitStackBase = (base: StackBase) =>
   PrepareStackBase.call({ base }).pipe(
-    Node.bindPlanned((operation) => CreateStackBase.call({ base, operation }))
+    Node.bindPlanned(Node.capture({}, (operation) => CreateStackBase.call({ base, operation })))
   )
 
 export const stackBaseLayer = Layer.mergeAll(

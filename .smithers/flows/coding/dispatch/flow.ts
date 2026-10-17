@@ -29,10 +29,10 @@ export default Flow.make("coding/Dispatch", {
   payload: DispatchInput,
   success: DispatchResult,
   error: DispatchError,
-  body: (input) =>
+  body: Node.capture({}, (input) =>
     DispatchTurn.call(input).pipe(
-      Node.bindPlanned((answer) => ObserveDispatch.call({ input, answer }))
-    )
+      Node.bindPlanned(Node.capture({}, (answer) => ObserveDispatch.call({ input, answer })))
+    ))
 })
 
 /** The non-model half of the door, plus the flow it drives. */

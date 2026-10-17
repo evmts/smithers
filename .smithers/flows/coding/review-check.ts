@@ -103,7 +103,7 @@ const ReviewCaptured = Flow.make("coding/ReviewCapturedChange", {
   payload: Captured,
   success: Receipt,
   error: Error,
-  body: (captured) =>
+  body: Node.capture({}, (captured) =>
     captured.refused !== null
       ? Finish.call({ captured, reviews: {} })
       : Node.all(
@@ -113,7 +113,7 @@ const ReviewCaptured = Flow.make("coding/ReviewCapturedChange", {
             ReviewLens.call({ change: captured.implementation.change, lens, diff: captured.diff })
           ])
         )
-      ).pipe(Node.bindPlanned((reviews) => Finish.call({ captured, reviews })))
+      ).pipe(Node.bindPlanned(Node.capture({}, (reviews) => Finish.call({ captured, reviews })))))
 })
 
 /** Ordinary registered check delegate; the child materializes the captured lens array before expanding its graph. */
@@ -121,7 +121,11 @@ export const reviewCheckDelegate = Flow.make("coding/ReviewCheck", {
   payload: Executable.Invocation,
   success: Receipt,
   error: Error,
-  body: (invocation) => Capture.call(invocation).pipe(Node.bindPlanned((captured) => ReviewCaptured.child(captured)))
+  body: Node.capture(
+    {},
+    (invocation) =>
+      Capture.call(invocation).pipe(Node.bindPlanned(Node.capture({}, (captured) => ReviewCaptured.child(captured))))
+  )
 })
 
 /** The lenses and the public diff one invocation reviews, read once from the immutable revisions. */

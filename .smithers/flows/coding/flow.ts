@@ -13,30 +13,36 @@ type Stages = Node.Node<ReadonlyArray<ValidatedChange>, typeof Implement.errorSc
 const stages = (plan: Plan, index: number, parent: Parameters<typeof Implement.call>[0]["parent"]): Stages => {
   const change = plan.changes[index]
   if (change === undefined) return Node.succeed([])
-  return Node.bindPlanned(Implement.call({ change, parent, ...recalled(plan) }), (implementation) => {
-    const fast = Object.fromEntries(
-      change.checks.filter((check) => check.tier === "fast")
-        .map((check) => [check.id, RunCheck.call({ implementation, check })])
-    )
-    return Node.bindPlanned(
-      Node.all(fast),
-      (receipts) =>
-        Node.bindPlanned(FastGate.call({ change, parent, implementation, receipts }), (gated) => {
-          const slow = Object.fromEntries(
-            change.checks.filter((check) => check.tier === "slow")
-              .map((check) => [check.id, RunCheck.call({ implementation, check })])
-          )
-          return Node.all({
-            current: Node.succeed(gated),
-            review: Node.all(slow),
-            next: stages(plan, index + 1, gated.implementation.head)
-          }).pipe(Node.map(({ current, review, next }) => [
-            { implementation: current.implementation, receipts: [...current.receipts, ...Object.values(review)] },
-            ...next
-          ]))
-        })
-    )
-  })
+  return Node.bindPlanned(
+    Implement.call({ change, parent, ...recalled(plan) }),
+    Node.capture({}, (implementation) => {
+      const fast = Object.fromEntries(
+        change.checks.filter((check) => check.tier === "fast")
+          .map((check) => [check.id, RunCheck.call({ implementation, check })])
+      )
+      return Node.bindPlanned(
+        Node.all(fast),
+        Node.capture({}, (receipts) =>
+          Node.bindPlanned(
+            FastGate.call({ change, parent, implementation, receipts }),
+            Node.capture({}, (gated) => {
+              const slow = Object.fromEntries(
+                change.checks.filter((check) => check.tier === "slow")
+                  .map((check) => [check.id, RunCheck.call({ implementation, check })])
+              )
+              return Node.all({
+                current: Node.succeed(gated),
+                review: Node.all(slow),
+                next: stages(plan, index + 1, gated.implementation.head)
+              }).pipe(Node.map(Node.capture({}, ({ current, review, next }) => [
+                { implementation: current.implementation, receipts: [...current.receipts, ...Object.values(review)] },
+                ...next
+              ])))
+            })
+          ))
+      )
+    })
+  )
 }
 
 export default Flow.make("coding/ImplementPlan", {
@@ -47,8 +53,8 @@ export default Flow.make("coding/ImplementPlan", {
   payload: { plan: Plan },
   success: Result,
   error: Implement.errorSchema,
-  body: ({ plan }) =>
+  body: Node.capture({}, ({ plan }) =>
     ValidatePlan.call({ plan }).pipe(Node.andThen(
-      stages(plan, 0, plan.base).pipe(Node.bindPlanned((changes) => Assess.call({ plan, changes })))
-    ))
+      stages(plan, 0, plan.base).pipe(Node.bindPlanned(Node.capture({}, (changes) => Assess.call({ plan, changes }))))
+    )))
 })

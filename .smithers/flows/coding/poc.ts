@@ -75,20 +75,16 @@ export const Poc = Flow.make("coding/Poc", {
   payload: PocInput,
   success: PocResult,
   error: Error,
-  body: (input) =>
+  body: Node.capture({}, (input) =>
     CapturePocSource.call(input).pipe(
-      Node.bindPlanned((source) =>
-        DraftPoc.call({ input, source }).pipe(Node.bindPlanned((draft) =>
-          MaterializePoc.call({ source, draft }).pipe(Node.bindPlanned((changes) =>
+      Node.bindPlanned(Node.capture({}, (source) =>
+        DraftPoc.call({ input, source }).pipe(Node.bindPlanned(Node.capture({}, (draft) =>
+          MaterializePoc.call({ source, draft }).pipe(Node.bindPlanned(Node.capture({}, (changes) =>
             ReviewPoc.call({ input, source: source.revision, draftExplanation: draft.explanation, changes }).pipe(
-              Node.bindPlanned((review) =>
-                RetainPoc.call({ source, changes, review })
-              )
-            )
-          ))
-        ))
-      )
-    )
+              Node.bindPlanned(Node.capture({}, (review) =>
+                RetainPoc.call({ source, changes, review })))
+            )))))))))
+    ))
 })
 
 const escape = (text: string) =>

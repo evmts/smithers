@@ -5,6 +5,7 @@
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import type * as Classifier from "@smthrs/model/Classifier"
 import type * as Evaluator from "@smthrs/model/Evaluator"
+import { Node } from "@smthrs/plan"
 import * as Executable from "@smthrs/registry/Executable"
 import { Effect, Layer, Result, Schema } from "effect"
 import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.ts"
@@ -52,7 +53,7 @@ export const jevCheckDelegate = Flow.make("coding/JevCheck", {
   payload: Executable.Invocation,
   success: Receipt,
   error: CodingError,
-  body: (invocation) => CheckRules.call(invocation)
+  body: Node.capture({}, (invocation) => CheckRules.call(invocation))
 })
 
 const gitHeader = "diff --git a/"

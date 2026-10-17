@@ -182,7 +182,7 @@ export const PreparePlan = Flow.make("coding/PreparePlan", {
   payload: PlanningInput,
   success: Plan,
   error: Error,
-  body: (planning) => {
+  body: Node.capture({}, (planning) => {
     // The supplied wiki reaches the model once, as gathered memory notes.
     // Carried answers reach it beside the feedback, as the steers do.
     const input = {
@@ -191,72 +191,85 @@ export const PreparePlan = Flow.make("coding/PreparePlan", {
       ...(planning.answers?.length ? { answers: planning.answers } : {})
     }
     return GatherContext.call(planning).pipe(
-      Node.bindPlanned((context) =>
-        ReviewRequest.call({ input, context }).pipe(Node.bindPlanned((review) =>
-          Node.branch(Node.succeed(review), {
-            // A declined request plans nothing: the reason is the visible refusal.
-            if: (review) => (review.decline ?? "").trim().length > 0,
-            then: (review) => DeclineRequest.call({ review }),
-            else: (review) =>
-              Node.branch(Node.succeed(review), {
-                if: (review) =>
-                  review.clarification.trim().length > 0 &&
-                  carriedAnswer(planning.answers, review.clarification) === undefined,
-                then: (review) =>
-                  HumanTask.action.call({
-                    name: "coding-clarification",
-                    kind: "ask",
-                    prompt: review.clarification,
-                    maxAttempts: 3
-                  }),
-                // A question a person already answered is not asked again.
-                else: (review) =>
-                  Node.succeed(review).pipe(
-                    Node.map((review) => carriedAnswer(planning.answers, review.clarification) ?? "")
-                  )
-              }).pipe(
-                // A TODO's messages committed before the answer reach the
-                // first model request after it (spec §10.7.3), not a turn later.
-                Node.bindPlanned((answer) =>
-                  // A person may Bring in a push while clarification is open.
-                  // Plan on the inspected current source after that checkpoint,
-                  // retaining the answered question and the same pinned flow.
-                  Node.succeed(answer).pipe(
-                    Node.andThen(
-                      GatherContext.call({ ...planning, checkpoint: "after-answer" }).pipe(
-                        Node.bindPlanned((current) => {
-                          const draft = (messages?: Planned.Planned<string>) =>
-                            DraftPlan.call({
-                              input,
-                              context: current,
-                              review,
-                              answer,
-                              ...(messages === undefined ? {} : { messages })
-                            })
-                          return ReceiveFeedback.call({ boundary: "plan", revision: 0 }).pipe(
-                            Node.branch({
-                              if: (receipt) => receipt.messages.length > 0,
-                              then: (receipt) =>
-                                Node.succeed(receipt).pipe(Node.map(renderFeedback), Node.bindPlanned(draft)),
-                              else: () => draft()
-                            }),
-                            Node.bindPlanned((draft) =>
-                              VerifyContext.call({ context: current, draft }).pipe(
-                                Node.bindPlanned((context) => FinalizePlan.call({ input, context, draft }))
-                              )
+      Node.bindPlanned(
+        Node.capture(
+          {},
+          (context) =>
+            ReviewRequest.call({ input, context }).pipe(
+              Node.bindPlanned(Node.capture({}, (review) =>
+                Node.branch(Node.succeed(review), {
+                  // A declined request plans nothing: the reason is the visible refusal.
+                  if: Node.capture({}, (review) => (review.decline ?? "").trim().length > 0),
+                  then: Node.capture({}, (review) => DeclineRequest.call({ review })),
+                  else: Node.capture({}, (review) =>
+                    Node.branch(Node.succeed(review), {
+                      if: Node.capture({}, (review) =>
+                        review.clarification.trim().length > 0 &&
+                        carriedAnswer(planning.answers, review.clarification) === undefined),
+                      then: Node.capture({}, (review) =>
+                        HumanTask.action.call({
+                          name: "coding-clarification",
+                          kind: "ask",
+                          prompt: review.clarification,
+                          maxAttempts: 3
+                        })),
+                      // A question a person already answered is not asked again.
+                      else: Node.capture({}, (review) =>
+                        Node.succeed(review).pipe(
+                          Node.map(
+                            Node.capture({}, (review) => carriedAnswer(planning.answers, review.clarification) ?? "")
+                          )
+                        ))
+                    }).pipe(
+                      // A TODO's messages committed before the answer reach the
+                      // first model request after it (spec §10.7.3), not a turn later.
+                      Node.bindPlanned(Node.capture({}, (answer) =>
+                        // A person may Bring in a push while clarification is open.
+                        // Plan on the inspected current source after that checkpoint,
+                        // retaining the answered question and the same pinned flow.
+                        Node.succeed(answer).pipe(
+                          Node.andThen(
+                            GatherContext.call({ ...planning, checkpoint: "after-answer" }).pipe(
+                              Node.bindPlanned(Node.capture({}, (current) => {
+                                const draft = (messages?: Planned.Planned<string>) =>
+                                  DraftPlan.call({
+                                    input,
+                                    context: current,
+                                    review,
+                                    answer,
+                                    ...(messages === undefined ? {} : { messages })
+                                  })
+                                return ReceiveFeedback.call({ boundary: "plan", revision: 0 }).pipe(
+                                  Node.branch({
+                                    if: Node.capture({}, (receipt) => receipt.messages.length > 0),
+                                    then: Node.capture(
+                                      {},
+                                      (receipt) =>
+                                        Node.succeed(receipt).pipe(
+                                          Node.map(Node.capture({}, renderFeedback)),
+                                          Node.bindPlanned(Node.capture({}, draft))
+                                        )
+                                    ),
+                                    else: Node.capture({}, () => draft())
+                                  }),
+                                  Node.bindPlanned(Node.capture({}, (draft) =>
+                                    VerifyContext.call({ context: current, draft }).pipe(
+                                      Node.bindPlanned(
+                                        Node.capture({}, (context) => FinalizePlan.call({ input, context, draft }))
+                                      )
+                                    )))
+                                )
+                              }))
                             )
                           )
-                        })
-                      )
-                    )
-                  )
-                )
-              )
-          })
-        ))
+                        )))
+                    ))
+                })))
+            )
+        )
       )
     )
-  }
+  })
 })
 
 /**

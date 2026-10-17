@@ -65,10 +65,10 @@ export const RouteRequest = Flow.make("factory/Todo", {
   payload: Schema.Struct({ prompt: PlanningInput.fields.prompt, feedback: Schema.String }),
   success: Schema.Struct({ route: Route, feedback: Schema.String }),
   error: CodingError,
-  body: ({ prompt, feedback }) =>
+  body: Node.capture({}, ({ prompt, feedback }) =>
     RouteTodo.call({ prompt }).pipe(
-      Node.map(({ route }) => ({ route, feedback: leafFeedback(route, feedback) }))
-    )
+      Node.map(Node.capture({}, ({ route }) => ({ route, feedback: leafFeedback(route, feedback) })))
+    ))
 })
 
 /** The most bytes of TODO text Jev reads; it keeps the route request small. */

@@ -260,6 +260,8 @@ const coding = Smithers.NodeTest({
     Smithers.file("//.smithers/flows/test/coding-state.test.ts"),
     Smithers.file("//.smithers/flows/test/coding-learnings.test.ts"),
     Smithers.file("//.smithers/flows/test/coding-recovery-policy.test.ts"),
+    // Every plan callback keeps its identity across rebuilds, so a parked TODO resumes.
+    Smithers.file("//.smithers/flows/test/coding-stable-plan.test.ts"),
     Smithers.file("//.smithers/flows/test/learning.test.ts"),
     // The local landers over a real colocated jj repository and a recording `gh`.
     Smithers.file("//.smithers/flows/test/coding-local-landing.test.ts"),

@@ -29,16 +29,15 @@ export default Flow.make("todo", {
   payload: Schema.Struct({ ...RequestInput.fields, base: StackBase }),
   success: VibeDelivered,
   error: Schema.Union([Request.errorSchema, VibeError, WaitFor.WaitForRequestInvalid]),
-  body: (input) =>
+  body: Node.capture({}, (input) =>
     TodoBoundary.call({}).pipe(
       Node.andThen(Request.call(input)),
-      Node.bindPlanned((request) =>
-        Node.succeed(request).pipe(Node.andThen(TodoBoundary.call({})), Node.andThen(Node.succeed(request)))
-      ),
-      Node.bindPlanned((request) => TodoDelivery.call({ request })),
-      Node.bindPlanned((delivery) => Vibe.call(delivery)),
-      Node.bindPlanned((delivered) =>
-        Node.succeed(delivered).pipe(Node.andThen(TodoBoundary.call({})), Node.andThen(Node.succeed(delivered)))
-      )
-    )
+      Node.bindPlanned(Node.capture({}, (request) =>
+        Node.succeed(request).pipe(Node.andThen(TodoBoundary.call({})), Node.andThen(Node.succeed(request))))),
+      Node.bindPlanned(Node.capture({}, (request) =>
+        TodoDelivery.call({ request }))),
+      Node.bindPlanned(Node.capture({}, (delivery) => Vibe.call(delivery))),
+      Node.bindPlanned(Node.capture({}, (delivered) =>
+        Node.succeed(delivered).pipe(Node.andThen(TodoBoundary.call({})), Node.andThen(Node.succeed(delivered)))))
+    ))
 })

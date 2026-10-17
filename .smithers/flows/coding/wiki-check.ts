@@ -64,29 +64,28 @@ const Error = Schema.Union([CodingError, WikiError, AgentAction.AgentFailure])
 const reviewOne = (evidence: Evidence, captured: typeof Captured.Type) =>
   Node.bindPlanned(
     Select.call({ evidence, pool: captured.pool, reviewer: captured.reviewer }),
-    (selection) =>
+    Node.capture({}, (selection) =>
       Node.bindPlanned(
         Node.branch(Node.succeed(selection), {
-          if: (value) => value.review !== null,
-          then: (value) => Node.succeed(value.review),
-          else: () => ReviewPage.call({ evidence })
+          if: Node.capture({}, (value) => value.review !== null),
+          then: Node.capture({}, (value) => Node.succeed(value.review)),
+          else: Node.capture({}, () => ReviewPage.call({ evidence }))
         }),
-        (review) =>
+        Node.capture({}, (review) =>
           validateOrRepairReview(evidence, review).pipe(
-            Node.bindPlanned((review) =>
-              Bind.call({ evidence, review, reviewer: captured.reviewer, provenance: selection.provenance })
-            )
-          )
-      )
+            Node.bindPlanned(Node.capture({}, (review) =>
+              Bind.call({ evidence, review, reviewer: captured.reviewer, provenance: selection.provenance })))
+          ))
+      ))
   )
 const ReviewCaptured = Flow.make("coding/ReviewCapturedWiki", {
   payload: Captured,
   success: Receipt,
   error: Error,
-  body: (captured) =>
+  body: Node.capture({}, (captured) =>
     Node.all(
       Object.fromEntries(captured.pages.map((evidence, index) => [`page-${index}`, reviewOne(evidence, captured)]))
-    ).pipe(Node.bindPlanned((pages) => Finish.call({ captured, pages })))
+    ).pipe(Node.bindPlanned(Node.capture({}, (pages) => Finish.call({ captured, pages })))))
 })
 
 /** Ordinary registered check delegate, using the existing model action and receipts. */
@@ -95,7 +94,11 @@ export const wikiCheckDelegate = Flow.make("coding/WikiCheck", {
   success: Receipt,
   error: Error,
   // The child materializes the captured page array before expanding its graph.
-  body: (invocation) => Capture.call(invocation).pipe(Node.bindPlanned((captured) => ReviewCaptured.child(captured)))
+  body: Node.capture(
+    {},
+    (invocation) =>
+      Capture.call(invocation).pipe(Node.bindPlanned(Node.capture({}, (captured) => ReviewCaptured.child(captured))))
+  )
 })
 
 const invalid = (message: string) => new CodingError({ code: "invalid_receipt", message })

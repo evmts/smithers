@@ -17,5 +17,5 @@ export default Flow.make("coding/FlowLoad", {
   payload: FlowLoadInput,
   success: FlowLoadResult,
   error: PrepareStackBase.errorSchema,
-  body: (input) => admitStackBase(input.base).pipe(Node.andThen(LoadFlows.call({ base: input.base })))
+  body: Node.capture({}, (input) => admitStackBase(input.base).pipe(Node.andThen(LoadFlows.call({ base: input.base }))))
 })

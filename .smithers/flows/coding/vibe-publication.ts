@@ -1,5 +1,6 @@
 /** Finalization uses the existing guest publication route and native receipt. */
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
 import { Effect, Layer } from "effect"
 import { NativeCoding, NativeCodingError, requestIdFor, SourcePublication } from "./native.ts"
 import { CodingError } from "./schema.ts"
@@ -18,7 +19,7 @@ export const PublishVibeSource = Flow.make("coding/PublishVibeSource", {
   payload: PublicationInput,
   success: SourcePublication,
   error: CodingError,
-  body: (input) => RetainSource.call(input)
+  body: Node.capture({}, (input) => RetainSource.call(input))
 })
 
 export const publicationLayers = Layer.mergeAll(
