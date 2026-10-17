@@ -51,7 +51,7 @@ const Gated = Flow.make("agent/test/ports/gated", {
   error: WaitFor.WaitForRequestInvalid,
   body: ({ name }) =>
     Mark.call({}).pipe(
-      Node.bindPlanned(() => WaitFor.action.call({ name }))
+      Node.bindPlanned(Node.capture({ name }, () => WaitFor.action.call({ name })))
     )
 })
 

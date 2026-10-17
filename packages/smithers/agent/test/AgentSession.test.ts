@@ -818,7 +818,7 @@ const unansweredAsk = () => {
     error: moduleResult,
     body: () =>
       HumanTask.action.call({ name: "ship-it", kind: "confirm", prompt: "Ship the change?", maxAttempts: 1 }).pipe(
-        Node.bindPlanned((answer) => Answered.call({ answer }))
+        Node.bindPlanned(Node.capture({}, (answer) => Answered.call({ answer })))
       )
   })
   const catalog: Executable.Catalog = {
@@ -2175,7 +2175,7 @@ describe("AgentSession", () => {
       error: moduleResult,
       body: () =>
         HumanTask.action.call({ name: "ship-it", kind: "confirm", prompt: "Ship the change?", maxAttempts: 1 }).pipe(
-          Node.bindPlanned((answer) => Answered.call({ answer }))
+          Node.bindPlanned(Node.capture({}, (answer) => Answered.call({ answer })))
         )
     })
     const executable: Executable.Executable = {
@@ -2313,7 +2313,8 @@ describe("AgentSession", () => {
       payload: Executable.Payload,
       success: moduleResult,
       error: moduleResult,
-      body: () => Sleep.action.call({ millis: 60 }).pipe(Node.bindPlanned(() => Woke.call({ at: true })))
+      body: () =>
+        Sleep.action.call({ millis: 60 }).pipe(Node.bindPlanned(Node.capture({}, () => Woke.call({ at: true }))))
     })
     const observed = await Effect.runPromise(
       moduleRun({
@@ -2365,7 +2366,7 @@ describe("AgentSession", () => {
       payload: Executable.Payload,
       success: moduleResult,
       error: moduleResult,
-      body: () => sleeper.child({}).pipe(Node.bindPlanned(() => Woke.call({ at: true })))
+      body: () => sleeper.child({}).pipe(Node.bindPlanned(Node.capture({}, () => Woke.call({ at: true }))))
     })
     const observed = await Effect.runPromise(
       moduleRun({
