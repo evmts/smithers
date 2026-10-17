@@ -603,7 +603,9 @@ A bound that unrolls into a sequenced chain is capped a second way. Core
 refuses a plan nested past the exported `Graph.maximumGraphDepth` (currently
 1,000 levels). The declaration limit for a chain with `callsPerUnit` nested
 calls per unit is `Math.floor((Graph.maximumGraphDepth - 1) / callsPerUnit) - 1`:
-the root and settled value also spend depth. Constructors using this bound
+the root and settled value also spend depth. Eager branch construction also
+obeys `Node.maximumArmDepth`: `Loop.ralph` accepts at most 512 iterations,
+or 256 with a stall breaker. Constructors using these bounds
 check refuse oversized options at declaration with an `invalid_decorator`
 `PatternError` naming the option and limit. This includes `Loop.make`,
 `Optimizer.make`, and `WithRetry.make`; see the boundary assertions in

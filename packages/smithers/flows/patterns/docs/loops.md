@@ -93,10 +93,11 @@ reads `previous`. See [Inline callbacks and inference](#inline-callbacks-and-inf
 `invalid_decorator` at declaration; `run` fails with the same error before the
 first body runs.
 
-`make` unrolls the bound, so it is capped a second time by
-`Graph.maximumGraphDepth` (currently 1,000). For a shallow body, the
-deepest accepted bound is 998 body-only iterations (`Loop.ralph`) or 498
-iterations with an `until` flow; the next bound is refused at declaration
+`make` unrolls the bound, so it also obeys `Graph.maximumGraphDepth`
+(currently 1,000) and `Node.maximumArmDepth` (512 eager branch arms).
+For a shallow body, the deepest accepted bound is 512 body-only iterations
+(`Loop.ralph`), 256 with a stall breaker, or 498 with an `until` flow and no
+stall breaker; the next bound is refused at declaration
 with `invalid_decorator`, naming the limit. These boundaries are exercised
 in `Loop.test.ts`. Deeper body or `until` flows and enclosing calls consume
 the same depth budget, so even an accepted bound can fail at `Graph.build`
