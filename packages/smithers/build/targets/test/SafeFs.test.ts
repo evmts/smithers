@@ -39,7 +39,7 @@ const unprivileged = process.getuid?.() !== 0
 const posixOnly = process.platform !== "win32"
 
 beforeEach(async () => {
-  root = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-safefs-"))
+  root = await Fs.realpath(await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-safefs-")))
   outside = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-outside-"))
 })
 

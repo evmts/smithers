@@ -25,7 +25,7 @@ const unprivileged = process.getuid?.() !== 0
 const posixOnly = process.platform !== "win32"
 
 beforeEach(async () => {
-  root = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-input-"))
+  root = await Fs.realpath(await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-input-")))
   outside = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-outside-"))
   await write("src/index.ts", "export const a = 1\n")
   await write("src/nested/deep.ts", "export const b = 2\n")
