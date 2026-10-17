@@ -88,6 +88,9 @@ func workingConversationWithContext(t *testing.T, reader chat.ContextRepository,
 			return
 		}
 		answer := "[]"
+		if strings.Contains(string(raw), "observed_reply") {
+			answer = `{"prompt":"Summarize shared work","answer":"Reply recorded"}`
+		}
 		if body.Model == "answer" {
 			prompt := ""
 			for _, message := range body.Messages {
@@ -461,7 +464,16 @@ func TestBranchConversationSummaryThroughSealedHost(t *testing.T) {
 		if json.Unmarshal(f.call(t, "ben", "GET", "/api/conversations/main", "", 200), &shared) != nil || len(shared.Entries) != 1 {
 			return false
 		}
-		return shared.Entries[0].Summary != nil && *shared.Entries[0].Summary == "[]" && shared.Entries[0].SummaryRevision > 0
+		if shared.Entries[0].Summary == nil || shared.Entries[0].SummaryRevision <= 0 {
+			return false
+		}
+		var summary struct {
+			Version int    `json:"v"`
+			Recipe  int    `json:"recipe"`
+			Prompt  string `json:"prompt"`
+			Answer  string `json:"answer"`
+		}
+		return json.Unmarshal([]byte(*shared.Entries[0].Summary), &summary) == nil && summary.Version == 2 && summary.Recipe == 2 && summary.Prompt == "Summarize shared work" && summary.Answer == "Reply recorded"
 	}, 20*time.Second, 100*time.Millisecond)
 	ben := f.call(t, "ben", "GET", "/api/conversations/main", "", 200)
 	alice := f.call(t, "alice", "GET", "/api/conversations/main", "", 200)
@@ -470,7 +482,7 @@ func TestBranchConversationSummaryThroughSealedHost(t *testing.T) {
 	defer f.mu.Unlock()
 	var summaryCall bool
 	for _, raw := range f.requests {
-		if strings.Contains(raw, "Summarize the recorded work") {
+		if strings.Contains(raw, "observed_reply") {
 			summaryCall = true
 			require.Contains(t, raw, `"model":"selector"`)
 			require.NotContains(t, raw, `"tools"`)
