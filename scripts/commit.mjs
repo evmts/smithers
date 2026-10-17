@@ -62,8 +62,8 @@ try {
   if (push) {
     // Mandatory even with --no-test; shared by both publication paths.
     run("go", ["test", "-run", "TestMigrationGate|TestMigrationRegistry", "./packages/backend/db/product/"], false, gateEnvironment)
-    if (!existsSync(join(root, "scripts/check-sqlc-drift.sh"))) throw new Error("Required sqlc drift gate is unavailable")
-    run("bash", ["scripts/check-sqlc-drift.sh"], false, gateEnvironment)
+    if (!existsSync(join(root, "packages/backend/scripts/check-sqlc-drift.sh"))) throw new Error("Required sqlc drift gate is unavailable")
+    run("bash", ["packages/backend/scripts/check-sqlc-drift.sh"], false, gateEnvironment)
   }
   run(process.execPath, ["scripts/check-tracked-hygiene.mjs", "--include-untracked"], true, gateEnvironment)
   if (push) {

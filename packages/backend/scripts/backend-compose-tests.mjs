@@ -69,7 +69,7 @@ export async function runFiles(groups, { binary, cwd, workers = 4, timeout = "40
 }
 
 async function main() {
-  const root = join(dirname(fileURLToPath(import.meta.url)), "..")
+  const root = join(dirname(fileURLToPath(import.meta.url)), "../../..")
   const cwd = join(root, "packages/backend/internal/compose")
   const scratch = mkdtempSync(join(tmpdir(), "compose-binary-"))
   try {

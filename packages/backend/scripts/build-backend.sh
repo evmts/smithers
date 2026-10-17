@@ -2,7 +2,7 @@
 set -eu
 
 if [ "$#" -ne 2 ]; then
-  printf 'usage: sh scripts/build-backend.sh OUTPUT BUILD_SHA\n' >&2
+  printf 'usage: sh packages/backend/scripts/build-backend.sh OUTPUT BUILD_SHA\n' >&2
   exit 2
 fi
 

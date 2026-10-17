@@ -161,7 +161,7 @@ export const readSources = (directory) =>
       .map((name) => [name, readFileSync(join(directory, name), "utf8")])
   )
 
-const apiDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "../docs/api")
+const apiDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "../../../docs/api")
 
 /** The source directory and published bundle this repository commits. */
 export const layout = { sources: join(apiDirectory, "openapi"), output: join(apiDirectory, "openapi.yaml") }

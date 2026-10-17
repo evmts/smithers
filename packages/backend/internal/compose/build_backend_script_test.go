@@ -29,7 +29,7 @@ func TestBackendReleaseBuildStampsCLIVersion(t *testing.T) {
 	require.NoError(t, os.Mkdir(bin, 0755))
 	fakeExecutable(t, filepath.Join(bin, "go"), `printf '%s\n' "$@" > "$GO_ARGS_FILE"`)
 	argsFile := filepath.Join(root, "go-args")
-	script, err := filepath.Abs("../../../../scripts/build-backend.sh")
+	script, err := filepath.Abs("../../scripts/build-backend.sh")
 	require.NoError(t, err)
 	cmd := exec.Command("sh", script, filepath.Join(root, "backend"), strings.Repeat("a", 40))
 	cmd.Dir = root

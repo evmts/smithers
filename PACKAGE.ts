@@ -1,5 +1,5 @@
 import { nativeFfiInputs, nativeFfiLib, rehearsalNative } from "./packages/smithers-ffi/native-targets.ts"
-import { backendSQLC } from "./scripts/backend-sqlc.ts"
+import { backendSQLC } from "./packages/backend/sqlc.ts"
 import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
 import { ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "@smthrs/repo-targets"
 import { Smithers } from "@smthrs/targets"
@@ -395,7 +395,7 @@ const machinedWire = Smithers.Shell.Test({
 // on PATH (`postgres` in the go-backend job, pkgs.postgresql_18 on the Cloud
 // machine); without them the suite fails instead of skipping them.
 const backendGo = Smithers.Shell.Test({
-  shell: rehearsalNativeEnv + "export PATH=\"$PWD/.backend-sqlc:$PATH\"; if [ -z \"${SMITHERS_POSTGRES_TEST_BIN:-}\" ]; then pg_ctl_path=$(command -v pg_ctl) || { echo 'PostgreSQL 18 programs (pg_ctl, initdb, pg_dump, psql) must be on PATH for the backend backup and restore tests' >&2; exit 1; }; export SMITHERS_POSTGRES_TEST_BIN=\"${pg_ctl_path%/*}\"; fi; export SMITHERS_FFI_LIBRARY_PATH=\"$PWD/.native-ffi/target/debug/libsmithers_ffi.so\"; export SMITHERS_WIKI_TEST_FFI=\"$SMITHERS_FFI_LIBRARY_PATH\"; export GOMODCACHE=\"$PWD/.backend-go-modcache\"; bash scripts/check-sqlc-drift.sh || exit $?; go test -run '^$' ./packages/backend/db/product || exit $?; python3 -B -m unittest scripts/test_check_go_boundaries.py packages/backend/db/product/test_adopt_unit.py || exit $?; bash scripts/check-public-backend-boundary.sh || exit $?; sh scripts/test-backend-consumer.sh || exit $?; unformatted=$(gofmt -l packages/backend apps/backend docs/api) || exit $?; test -z \"$unformatted\" || { printf 'gofmt -w needed:\\n%s\\n' \"$unformatted\"; exit 1; }; go build ./packages/backend/... ./apps/backend/... ./docs/api/... || exit $?; go vet ./packages/backend/... ./apps/backend/... ./docs/api/... || exit $?; log=$(mktemp) || exit $?; packages=$(go list ./packages/backend/... ./apps/backend/... ./docs/api/...) || exit $?; packages=$(printf '%s\\n' \"$packages\" | grep -v '/internal/compose$') || exit $?; go test -p 4 -count=1 -timeout 40m $packages >\"$log\" 2>&1; status=$?; node scripts/backend-compose-tests.mjs >>\"$log\" 2>&1 || status=1; cat \"$log\"; if [ $status -ne 0 ]; then printf 'go test failures:\\n' >&2; grep -E -A30 '^[[:space:]]*--- FAIL|^panic:|^FAIL' \"$log\" | head -n 400 >&2; printf 'go test summary:\\n' >&2; grep -E '^(ok|FAIL)[[:space:]]|^[[:space:]]*--- FAIL|^panic: test timed out|^[[:space:]]+running tests:|^[[:space:]]+Test[^[:space:]]+ \([0-9]' \"$log\" >&2; fi; rm -f \"$log\"; exit $status",
+  shell: rehearsalNativeEnv + "export PATH=\"$PWD/.backend-sqlc:$PATH\"; if [ -z \"${SMITHERS_POSTGRES_TEST_BIN:-}\" ]; then pg_ctl_path=$(command -v pg_ctl) || { echo 'PostgreSQL 18 programs (pg_ctl, initdb, pg_dump, psql) must be on PATH for the backend backup and restore tests' >&2; exit 1; }; export SMITHERS_POSTGRES_TEST_BIN=\"${pg_ctl_path%/*}\"; fi; export SMITHERS_FFI_LIBRARY_PATH=\"$PWD/.native-ffi/target/debug/libsmithers_ffi.so\"; export SMITHERS_WIKI_TEST_FFI=\"$SMITHERS_FFI_LIBRARY_PATH\"; export GOMODCACHE=\"$PWD/.backend-go-modcache\"; bash packages/backend/scripts/check-sqlc-drift.sh || exit $?; go test -run '^$' ./packages/backend/db/product || exit $?; python3 -B -m unittest packages/backend/scripts/test_check_go_boundaries.py packages/backend/db/product/test_adopt_unit.py || exit $?; bash packages/backend/scripts/check-public-backend-boundary.sh || exit $?; sh packages/backend/scripts/test-backend-consumer.sh || exit $?; unformatted=$(gofmt -l packages/backend apps/backend docs/api) || exit $?; test -z \"$unformatted\" || { printf 'gofmt -w needed:\\n%s\\n' \"$unformatted\"; exit 1; }; go build ./packages/backend/... ./apps/backend/... ./docs/api/... || exit $?; go vet ./packages/backend/... ./apps/backend/... ./docs/api/... || exit $?; log=$(mktemp) || exit $?; packages=$(go list ./packages/backend/... ./apps/backend/... ./docs/api/...) || exit $?; packages=$(printf '%s\\n' \"$packages\" | grep -v '/internal/compose$') || exit $?; go test -p 4 -count=1 -timeout 40m $packages >\"$log\" 2>&1; status=$?; node packages/backend/scripts/backend-compose-tests.mjs >>\"$log\" 2>&1 || status=1; cat \"$log\"; if [ $status -ne 0 ]; then printf 'go test failures:\\n' >&2; grep -E -A30 '^[[:space:]]*--- FAIL|^panic:|^FAIL' \"$log\" | head -n 400 >&2; printf 'go test summary:\\n' >&2; grep -E '^(ok|FAIL)[[:space:]]|^[[:space:]]*--- FAIL|^panic: test timed out|^[[:space:]]+running tests:|^[[:space:]]+Test[^[:space:]]+ \([0-9]' \"$log\" >&2; fi; rm -f \"$log\"; exit $status",
   env: {
     GOFLAGS: "-buildvcs=false -mod=readonly",
     GOMAXPROCS: "2",
@@ -408,12 +408,12 @@ const backendGo = Smithers.Shell.Test({
     backendGoModules,
     backendSQLC,
     rehearsalNative,
-    Smithers.file("//scripts/check-sqlc-drift.sh"),
-    Smithers.file("//scripts/check-go-boundaries.py"),
-    Smithers.file("//scripts/check-public-backend-boundary.sh"),
-    Smithers.file("//scripts/test-backend-consumer.sh"),
-    Smithers.file("//scripts/backend-compose-tests.mjs"),
-    Smithers.file("//scripts/test_check_go_boundaries.py"),
+    Smithers.file("//packages/backend/scripts/check-sqlc-drift.sh"),
+    Smithers.file("//packages/backend/scripts/check-go-boundaries.py"),
+    Smithers.file("//packages/backend/scripts/check-public-backend-boundary.sh"),
+    Smithers.file("//packages/backend/scripts/test-backend-consumer.sh"),
+    Smithers.file("//packages/backend/scripts/backend-compose-tests.mjs"),
+    Smithers.file("//packages/backend/scripts/test_check_go_boundaries.py"),
     nativeFfiLib,
     modelHostPackage.lib,
     integrationsPackage.lib,
@@ -448,12 +448,12 @@ const backendGo = Smithers.Shell.Test({
 // The access-control tests (member, admission, authorization, credential and
 // person-only files of compose, services, identity and middleware), on their own
 // budget so a hang elsewhere in backendGo cannot hide them (#3071). The list is
-// file-derived and committed in scripts/backend-access-tests.json; each file runs
+// file-derived and committed in packages/backend/scripts/backend-access-tests.json; each file runs
 // as its own `go test` process, so a hang panics one file, not the package.
 // backendGo still runs these tests too.
 const backendAccessTestSources = [
-  Smithers.file("//scripts/backend-access-tests.mjs"),
-  Smithers.file("//scripts/backend-access-tests.json"),
+  Smithers.file("//packages/backend/scripts/backend-access-tests.mjs"),
+  Smithers.file("//packages/backend/scripts/backend-access-tests.json"),
   Smithers.Filegroup({
     cwd: "packages/backend",
     srcs: ["compose", "services", "identity", "middleware"].map((directory) =>
@@ -463,14 +463,14 @@ const backendAccessTestSources = [
 
 // Fails when a matching test file or Test func is missing from the committed list.
 const backendAccessTests = Smithers.Shell.Diff({
-  shell: "node scripts/backend-access-tests.mjs --check",
+  shell: "node packages/backend/scripts/backend-access-tests.mjs --check",
   data: backendAccessTestSources,
   changes: [],
   timeout: "2m"
 })
 
 const backendGoAccess = Smithers.Shell.Test({
-  shell: rehearsalNativeEnv + "export PATH=\"$PWD/.backend-sqlc:$PATH\"; export SMITHERS_FFI_LIBRARY_PATH=\"$PWD/.native-ffi/target/debug/libsmithers_ffi.so\"; export SMITHERS_WIKI_TEST_FFI=\"$SMITHERS_FFI_LIBRARY_PATH\"; export GOMODCACHE=\"$PWD/.backend-go-modcache\"; runs=$(mktemp) || exit $?; log=$(mktemp) || exit $?; node scripts/backend-access-tests.mjs --runs >\"$runs\" || exit $?; status=0; while read -r pkg pattern; do go test -count=1 -timeout 30m -run \"$pattern\" \"./$pkg/\" >>\"$log\" 2>&1 || status=1; done <\"$runs\"; cat \"$log\"; if [ $status -ne 0 ]; then printf 'go test failures:\\n' >&2; grep -E -A30 '^[[:space:]]*--- FAIL|^panic:|^FAIL' \"$log\" | head -n 400 >&2; printf 'go test summary:\\n' >&2; grep -E '^(ok|FAIL)[[:space:]]|^[[:space:]]*--- FAIL|^panic: test timed out|^[[:space:]]+running tests:|^[[:space:]]+Test[^[:space:]]+ \([0-9]' \"$log\" >&2; fi; rm -f \"$runs\" \"$log\"; exit $status",
+  shell: rehearsalNativeEnv + "export PATH=\"$PWD/.backend-sqlc:$PATH\"; export SMITHERS_FFI_LIBRARY_PATH=\"$PWD/.native-ffi/target/debug/libsmithers_ffi.so\"; export SMITHERS_WIKI_TEST_FFI=\"$SMITHERS_FFI_LIBRARY_PATH\"; export GOMODCACHE=\"$PWD/.backend-go-modcache\"; runs=$(mktemp) || exit $?; log=$(mktemp) || exit $?; node packages/backend/scripts/backend-access-tests.mjs --runs >\"$runs\" || exit $?; status=0; while read -r pkg pattern; do go test -count=1 -timeout 30m -run \"$pattern\" \"./$pkg/\" >>\"$log\" 2>&1 || status=1; done <\"$runs\"; cat \"$log\"; if [ $status -ne 0 ]; then printf 'go test failures:\\n' >&2; grep -E -A30 '^[[:space:]]*--- FAIL|^panic:|^FAIL' \"$log\" | head -n 400 >&2; printf 'go test summary:\\n' >&2; grep -E '^(ok|FAIL)[[:space:]]|^[[:space:]]*--- FAIL|^panic: test timed out|^[[:space:]]+running tests:|^[[:space:]]+Test[^[:space:]]+ \([0-9]' \"$log\" >&2; fi; rm -f \"$runs\" \"$log\"; exit $status",
   env: {
     GOFLAGS: "-buildvcs=false -mod=readonly",
     GOMAXPROCS: "2",
@@ -499,7 +499,7 @@ const backendGoAccess = Smithers.Shell.Test({
 // the committed docs/api/openapi.yaml is stale.
 const openapiBundle = Smithers.Generate({
   summary: "Bundle docs/api/openapi.yaml from its per-tag sources and drift-check it.",
-  script: Smithers.file("//scripts/openapi-bundle.mjs"),
+  script: Smithers.file("//packages/backend/scripts/openapi-bundle.mjs"),
   data: [Smithers.glob("//docs/api/openapi/*.yaml")],
   changes: ["docs/api/openapi.yaml"]
 })
@@ -508,7 +508,7 @@ const openapiBundle = Smithers.Generate({
 // `run` regenerates both; `lint` fails when either is stale.
 const openapiClients = Smithers.Generate({
   summary: "Generate the Go and TypeScript product API clients from docs/api/openapi.yaml and drift-check them.",
-  script: Smithers.file("//scripts/openapi-clients.mjs"),
+  script: Smithers.file("//packages/backend/scripts/openapi-clients.mjs"),
   data: [Smithers.file("//docs/api/openapi.yaml")],
   changes: ["packages/backend/apiclient/client.gen.go", "packages/smithers/src/internal/backend/ProductApi.ts"]
 })

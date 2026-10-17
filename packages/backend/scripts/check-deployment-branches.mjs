@@ -53,7 +53,7 @@ export const checkDeploymentBranches = (root) => {
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    const result = checkDeploymentBranches(resolve(process.argv[2] ?? new URL("..", import.meta.url).pathname))
+    const result = checkDeploymentBranches(resolve(process.argv[2] ?? new URL("../../..", import.meta.url).pathname))
     console.log(JSON.stringify(result))
     process.exitCode = result.errors.length ? 1 : 0
   } catch (error) { console.error(error.message); process.exitCode = 2 }

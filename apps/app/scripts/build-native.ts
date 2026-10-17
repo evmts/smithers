@@ -251,7 +251,7 @@ cpSync(installedJj, join(nativeDir, "bin", "jj"))
 rmSync(jjInstallRoot, { recursive: true, force: true })
 await run(
   "Go backend",
-  ["sh", "scripts/build-backend.sh", join(nativeDir, "bin", "smithers-backend"), revision]
+  ["sh", "packages/backend/scripts/build-backend.sh", join(nativeDir, "bin", "smithers-backend"), revision]
 )
 signHardenedBackend(join(nativeDir, "bin", "smithers-backend"))
 await run("Node buildchain", [nodeBinary, "--version"], root, nodeEnvironment)

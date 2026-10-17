@@ -3,12 +3,12 @@
 //
 // The selection is by file name, never by test-name keyword: every top-level
 // `func TestX(t *testing.T)` in a matching `_test.go` file of the four access
-// packages. The committed list (scripts/backend-access-tests.json) is checked
+// packages. The committed list (packages/backend/scripts/backend-access-tests.json) is checked
 // against the files, so a new security test file cannot be silently left out.
 //
-//   node scripts/backend-access-tests.mjs --write   regenerate the list
-//   node scripts/backend-access-tests.mjs --check   exit 1 when the list drifted
-//   node scripts/backend-access-tests.mjs --runs    print "<package dir>\t<regex>" per file
+//   node packages/backend/scripts/backend-access-tests.mjs --write   regenerate the list
+//   node packages/backend/scripts/backend-access-tests.mjs --check   exit 1 when the list drifted
+//   node packages/backend/scripts/backend-access-tests.mjs --runs    print "<package dir>\t<regex>" per file
 //
 // `--runs` emits one anchored alternation per file, so the target runs each
 // file as its own `go test` process: a hang in one file panics only that
@@ -64,7 +64,7 @@ export const runPattern = (tests) => `^(${tests.join("|")})$`
 export const render = (entries) => `${JSON.stringify(entries, null, 2)}\n`
 
 const drift =
-  "scripts/backend-access-tests.json drifted from the access test files; run `node scripts/backend-access-tests.mjs --write` and commit it"
+  "packages/backend/scripts/backend-access-tests.json drifted from the access test files; run `node packages/backend/scripts/backend-access-tests.mjs --write` and commit it"
 
 const read = (path) => {
   try {
@@ -75,8 +75,8 @@ const read = (path) => {
 }
 
 const main = () => {
-  const root = join(dirname(fileURLToPath(import.meta.url)), "..")
-  const listPath = join(root, "scripts/backend-access-tests.json")
+  const root = join(dirname(fileURLToPath(import.meta.url)), "../../..")
+  const listPath = join(root, "packages/backend/scripts/backend-access-tests.json")
   const [mode] = process.argv.slice(2)
   const current = render(collect(root))
   if (mode === "--write") {

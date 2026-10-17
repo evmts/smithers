@@ -11,13 +11,12 @@
  * The interpreter comes from the root runtime declaration. Nothing here spells
  * `node`.
  */
-import { backendSQLC } from "./backend-sqlc.ts"
+import { backendSQLC } from "../packages/backend/sqlc.ts"
 import { Smithers } from "@smthrs/targets"
 import { existsSync, readdirSync } from "node:fs"
 import { listFiles } from "./check-tracked-hygiene.mjs"
 import { libraryPackages, repoRoot } from "./workspace-packages.mjs"
 import { Package as backendPackage } from "../packages/backend/PACKAGE.ts"
-import { Package as appPackage } from "../apps/app/PACKAGE.ts"
 
 /**
  * Everything under `scripts/`, digested as the input of every gate here.
@@ -47,8 +46,6 @@ const repositoryInputs = Smithers.Filegroup({ srcs: Object.values(repositoryPack
 
 const engineeringScriptRegressions = Smithers.NodeTest({
   runner: Smithers.testRunner([
-    Smithers.file("//scripts/backend-access-tests.test.mjs"),
-    Smithers.file("//scripts/backend-compose-tests.test.mjs"),
     Smithers.file("//scripts/check-bindings.test.mjs"),
     Smithers.file("//scripts/lane-gates.test.mjs"),
     Smithers.file("//scripts/lane-checks.test.mjs"),
@@ -74,7 +71,6 @@ const engineeringScriptRegressions = Smithers.NodeTest({
 const engineeringChecks = Smithers.Filegroup({ cwd: ".specs/engineering", srcs: [Smithers.glob("checks/*.md")] })
 const integrationSources = Smithers.Filegroup({ cwd: "packages/smithers/agent/integrations", srcs: [Smithers.glob("src/**/*.ts")] })
 const gatewaySources = Smithers.Filegroup({ cwd: "packages/smithers/gateway", srcs: [Smithers.glob("src/**/*.ts"), Smithers.glob("test/**/*.ts")] })
-const apiSchemas = Smithers.Filegroup({ cwd: "docs/api/openapi", srcs: [Smithers.glob("*.yaml")] })
 const workflowSources = Smithers.Filegroup({ cwd: ".github", srcs: [Smithers.glob("workflows/*.yml")] })
 const machineSources = Smithers.Filegroup({ cwd: "packages/smithers-machined", srcs: [Smithers.glob("**/*")] })
 const ffiSources = Smithers.Filegroup({ cwd: "packages/smithers-ffi", srcs: [Smithers.glob("src/**")] })
@@ -379,19 +375,6 @@ const trackedHygieneUnit = Smithers.NodeTest({
   deps: []
 })
 
-/** Hosting drift gate and CLI fixtures, required by the script CI tier. */
-const gates = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//scripts/check-deployment-branches.test.mjs")]),
-  srcs: [
-    ...sources,
-    Smithers.file("//scripts/deployment-composition-baseline.json"),
-    ...readdirSync(`${repoRoot}/docs/api/openapi`).filter((name) => name.endsWith(".yaml"))
-      .map((name) => Smithers.file(`//docs/api/openapi/${name}`)),
-    Smithers.file("//docs/api/openapi.yaml")
-  ],
-  deps: [backendPackage.buildInputs, appPackage.solidCodegenInputs]
-})
-
 /**
  * The conflict-marker check's own contract: every git and jj marker form, the
  * look-alikes it leaves, binary and untracked files, and a failed search.
@@ -405,26 +388,6 @@ const conflictMarkersUnit = Smithers.NodeTest({
   deps: []
 })
 
-// The per-tag OpenAPI bundler: ordering, refusals, merge-freedom across tags,
-// and that the committed bundle matches its sources.
-const openapiBundle = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//scripts/openapi-bundle.test.mjs")]),
-  srcs: [...sources, Smithers.file("//docs/api/openapi.yaml")],
-  deps: [apiSchemas]
-})
-
-// The product API client generator: naming, schema mapping, refusals, the
-// --check drift report, and that the committed clients match the spec.
-const openapiClients = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//scripts/openapi-clients.test.mjs")]),
-  srcs: [
-    ...sources,
-    Smithers.file("//docs/api/openapi.yaml"),
-    Smithers.file("//packages/backend/apiclient/client.gen.go"),
-    Smithers.file("//packages/smithers/src/internal/backend/ProductApi.ts")
-  ],
-  deps: []
-})
 
 const privateEffectAdapters = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//scripts/private-effect-adapters.test.mjs")]),
@@ -890,8 +853,6 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "commit.mjs",
         "ci/check-known-red-coverage.mjs",
-        "build-backend.sh",
-        "test-backend-consumer.sh",
         "generate-changelog.mjs",
         "bun-coverage/**"
       ]
@@ -950,8 +911,7 @@ export const Package = Smithers.Package({
     ...repositoryPackages,
     repositoryInputs,
     engineeringScriptRegressions,
-    engineeringChecks, integrationSources, gatewaySources, apiSchemas, workflowSources, machineSources, ffiSources,
-    gates,
+    engineeringChecks, integrationSources, gatewaySources, workflowSources, machineSources, ffiSources,
     apiBaseline,
     conflictMarkers,
     conflictMarkersUnit,
@@ -961,8 +921,6 @@ export const Package = Smithers.Package({
     packageDocs,
     publishedLinksUnit,
     driftJob,
-    openapiBundle,
-    openapiClients,
     nativeWindowsWorkflow,
     bunCoverage,
     commit,

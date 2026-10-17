@@ -51,6 +51,6 @@ test("missing inputs fail closed", (t) => {
   assert.equal(run(root).status, 2)
 })
 test("repository passes the CLI gate", () => {
-  const result = run(fileURLToPath(new URL("..", import.meta.url)))
+  const result = run(fileURLToPath(new URL("../../..", import.meta.url)))
   assert.equal(result.status, 0, result.stdout + result.stderr)
 })

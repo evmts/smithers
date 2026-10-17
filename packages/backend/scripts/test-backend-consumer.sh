@@ -2,7 +2,7 @@
 # Compile the public app API as a module outside this repository. A local
 # replace points at this source checkout; there is no Plue or sibling checkout.
 set -eu
-repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
 consumer_dir=$(mktemp -d)
 trap 'rm -rf "$consumer_dir"' EXIT HUP INT TERM
 cat > "$consumer_dir/go.mod" <<EOF

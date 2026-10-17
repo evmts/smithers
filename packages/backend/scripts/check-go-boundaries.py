@@ -6,7 +6,7 @@ import re
 import subprocess
 import sys
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[3]
 FORBIDDEN_SOURCE = (
     "github.com/smithersai/plue",
     "github.com/smithers-ai/smithers",  # old Plue module identity

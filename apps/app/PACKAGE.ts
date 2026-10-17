@@ -35,7 +35,7 @@ const serverBundle = Smithers.Shell.Build({
   shell: 'SMITHERS_BUILD_SHA="$(git rev-parse HEAD)" bun apps/app/scripts/build-native.ts',
   data: [Smithers.glob("//apps/app/scripts/**/*"), Smithers.glob("//apps/app/src/**/*"),
     Smithers.file("//packages/smithers/src/internal/backend/HostService.ts"), Smithers.glob("//apps/app/licenses/*"), crateInputs,
-    backendPackage.buildInputs, Smithers.file("//scripts/build-backend.sh"),
+    backendPackage.buildInputs, Smithers.file("//packages/backend/scripts/build-backend.sh"),
     Smithers.file("//package.json"), Smithers.file("//pnpm-lock.yaml"), Smithers.file("//rust-toolchain.toml")],
   outDirs: ["//apps/app/.native", "//apps/app/.native-archive"],
   sandbox: "none",
