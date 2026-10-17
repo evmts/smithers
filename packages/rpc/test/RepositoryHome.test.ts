@@ -1,5 +1,5 @@
 import { describe, expect, it, test } from "vitest"
-import { RepositoryHomeBlockSchema, RepositoryHomeSchema } from "../src/RepositoryHome.ts"
+import { FlowViewSchema, RepositoryHomeBlockSchema, RepositoryHomeSchema } from "../src/RepositoryHome.ts"
 
 describe("resolved repository homepage blocks (unit)", () => {
   test.each([
@@ -12,7 +12,8 @@ describe("resolved repository homepage blocks (unit)", () => {
     { type: "text", text: "Ready", title: "Status" },
     { type: "stack" },
     { type: "stack", title: "Changes" },
-    { type: "links", title: "Docs", links: [{ label: "Guide", url: "https://example.com/guide" }] }
+    { type: "links", title: "Docs", links: [{ label: "Guide", url: "https://example.com/guide" }] },
+    { type: "view", flow: "triage" }
   ])("decodes the resolved block without changing its presentation: %j", (block) => {
     expect(RepositoryHomeBlockSchema.parse(block)).toEqual(block)
   })
@@ -336,5 +337,25 @@ describe("resolved homepage links", () => {
         "/relative"
       ]
     ) expect(decode(url).success).toBe(false)
+  })
+})
+
+describe("a flow's declared view (unit)", () => {
+  it("holds the blocks that need no server resolution", () => {
+    const view = [{ type: "text", text: "Oldest first." }, { type: "stack" }, {
+      type: "app",
+      flow: "triage",
+      title: "Triage",
+      picture: "issue"
+    }]
+    expect(FlowViewSchema.parse(view)).toEqual(view)
+  })
+
+  test.each([
+    [],
+    [{ type: "markdown", path: "README.md", markdown: "# Readme" }],
+    [{ type: "view", flow: "triage" }]
+  ])("refuses an empty view, an unresolved file, and a view inside a view: %j", (view) => {
+    expect(FlowViewSchema.safeParse(view).success).toBe(false)
   })
 })

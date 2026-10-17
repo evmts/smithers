@@ -12,7 +12,7 @@
 import type { ReactNode } from "react"
 import type { MarkdownEditorHandle } from "@smthrs/ui/adapters/markdown-editor"
 import type { FlowName } from "../flows/FlowName"
-import type { Card, FlowDurationsRow, WorldDocument } from "../state/AppState"
+import type { Card, FlowDurationsRow, RepositoryFlowsRow, WorldDocument } from "../state/AppState"
 import type { AppStore } from "../state/AppStore"
 
 /**
@@ -78,6 +78,8 @@ export interface CardActions {
   readonly triggerCatalogs?: ReadonlyArray<Extract<Card, { kind: "trigger-list" }>>
   /** What the gateway measured for each flow's action tags; a card reads its own flow's rows. */
   readonly flowDurations?: ReadonlyArray<FlowDurationsRow>
+  /** The repository-flows rows the session holds; a run card draws its flow's declared view from them. */
+  readonly repositoryFlows?: ReadonlyArray<RepositoryFlowsRow>
   /** The files already read into this conversation; a graph card's Code tab renders one inline. */
   readonly fileCards?: ReadonlyArray<Extract<Card, { kind: "file" }>>
   /*

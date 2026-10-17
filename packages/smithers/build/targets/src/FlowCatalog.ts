@@ -19,6 +19,7 @@
 
 import * as Schema from "effect/Schema"
 import type * as Flow from "./Flow.ts"
+import * as Home from "./Home.ts"
 
 /**
  * The entry file a flow was discovered from: a `flow.ts` module, a
@@ -56,7 +57,8 @@ export const DiscoveredFlow = Schema.Struct({
   modelInvocable: Schema.Boolean,
   inputSchema: Schema.optional(Schema.Json),
   flows: Schema.optional(Schema.Array(Schema.String)),
-  budget: Schema.optional(Schema.Json)
+  budget: Schema.optional(Schema.Json),
+  view: Schema.optional(Home.FlowView)
 })
 
 /**
@@ -166,7 +168,8 @@ export const rows = (
     modelInvocable: flow.modelInvocable,
     ...(flow.flows === undefined ? {} : { flows: flow.flows }),
     ...(flow.budget === undefined ? {} : { budget: flow.budget }),
-    ...(flow.inputSchema === undefined ? {} : { inputSchema: flow.inputSchema })
+    ...(flow.inputSchema === undefined ? {} : { inputSchema: flow.inputSchema }),
+    ...(declaration?.view === undefined ? {} : { view: declaration.view })
   })
   const featured: Array<Row> = []
   const declaredOnly: Array<Row> = []

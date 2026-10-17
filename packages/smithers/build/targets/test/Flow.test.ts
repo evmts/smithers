@@ -48,6 +48,25 @@ describe("Smithers.Flow", () => {
     expect(() => Flow.Flow({ flow: "review", featured: "yes" as never })).toThrow(/featured must be a boolean/)
   })
 
+  it("declares the view the flow draws and carries it onto its catalog row", () => {
+    const view = [{ type: "text" as const, text: "Open issues, oldest first." }, { type: "stack" as const }]
+    const triage = Flow.Flow({ flow: "triage", view })
+    expect(triage.view).toEqual(view)
+    expect(Object.isFrozen(triage.view)).toBe(true)
+    const [row] = FlowCatalog.rows([discovered("triage")], [triage])
+    expect(row?.view).toEqual(view)
+    expect("view" in FlowCatalog.rows([discovered("lint")], [Flow.Flow({ flow: "lint" })])[0]!).toBe(false)
+  })
+
+  it("refuses a view block a flow view cannot hold", () => {
+    expect(() => Flow.Flow({ flow: "triage", view: [] })).toThrow(/view/)
+    expect(() => Flow.Flow({ flow: "triage", view: [{ type: "markdown", path: "README.md" } as never] })).toThrow(
+      /view/
+    )
+    expect(() => Flow.Flow({ flow: "triage", view: [{ type: "view", flow: "triage" } as never] })).toThrow(/view/)
+    expect(() => Flow.Flow({ flow: "triage", view: [{ type: "text", text: "<b>bold</b>" }] })).toThrow(/HTML/)
+  })
+
   it("refuses an id that is not a directory path below flows/", () => {
     expect(() => Flow.Flow({ flow: "" })).toThrow(/directory path below flows/)
     expect(() => Flow.Flow({ flow: "/review" })).toThrow(/directory path below flows/)

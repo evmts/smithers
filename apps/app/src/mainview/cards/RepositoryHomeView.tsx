@@ -1,10 +1,12 @@
 import { Button, Markdown, StatusPill } from "@smthrs/ui"
 import { useContext, useState, useSyncExternalStore } from "react"
-import type { RepositoryHome } from "@smthrs/rpc/RepositoryHome"
+import type { FlowView, RepositoryHome } from "@smthrs/rpc/RepositoryHome"
 import type { MythicalStack } from "@smthrs/rpc/Mythical"
 import { itemReason, itemStateLabel, itemTitle, stackCounts, stackRows } from "@smthrs/rpc/StackView"
 import { ControllerContext } from "../ControllerContext"
 import type { RepositorySnapshot, RepositorySnapshots } from "../state/seams/RepositoryHistorySeam"
+import type { RepositoryFlowsRow } from "../state/AppState"
+import { flowViewOf } from "../state/seams/RepositoryFlowsSeam"
 import { dynamicFlowProps } from "../flows/FlowAction"
 import type { RunDynamicCommand } from "./CardFamily"
 import "./RepositoryHomeView.css"
@@ -167,6 +169,65 @@ const FilesAction = ({ treeCopyId, onRunCommand }: Pick<RepositoryHomeViewProps,
   >Files</Button>
 
 /**
+ * Declared blocks, drawn from data: a repository's homepage, or a flow's own
+ * view (`Smithers.Flow({ view })`) on its runs' monitor. A `view` block never
+ * reaches here: the repository-flows seam draws the named flow's blocks in
+ * its place (`resolveFlowViews`).
+ */
+const DeclaredBlocks = ({ repo, blocks, onRunCommand }: {
+  readonly repo: string
+  readonly blocks: ReadonlyArray<Extract<RepositoryHome, { kind: "blocks" }>["blocks"][number]> | FlowView
+  readonly onRunCommand: RunDynamicCommand
+}) => <>
+  {blocks.map((block, index) => {
+    const key = `${block.type}:${index}`
+    switch (block.type) {
+      case "stack":
+        return <StackBlock key={key} repo={repo} title={block.title} />
+      case "markdown":
+        return <div className="repository-home-block" key={key}>
+          {block.title === undefined ? null : <h2>{block.title}</h2>}
+          <Markdown content={block.markdown} />
+        </div>
+      case "text":
+        return <div className="repository-home-block" key={key}>
+          {block.title === undefined ? null : <h2>{block.title}</h2>}
+          <p>{block.text}</p>
+        </div>
+      case "links":
+        return <div className="repository-home-block" key={key}>
+          {block.title === undefined ? null : <h2>{block.title}</h2>}
+          <ul className="repository-home-links">
+            {block.links.map((link) => <li key={link.url}>
+              <a href={link.url} rel="noreferrer noopener" target="_blank">{link.label}</a>
+            </li>)}
+          </ul>
+        </div>
+      /*
+       * A declared flow is an offer, not a launch: the press runs it
+       * through the registry, where its actor, role and confirmation live.
+       */
+      case "app":
+        return <Button variant="outline" className="repository-home-app" key={key}
+          {...dynamicFlowProps(block.flow)} onClick={() => onRunCommand(block.flow)}>{block.title}</Button>
+      case "prompt":
+        return <div className="repository-home-block" key={key}>
+          {block.title === undefined ? null : <h2>{block.title}</h2>}
+          <Button variant="outline" {...dynamicFlowProps(block.flow ?? "chat.open")}
+            onClick={() => onRunCommand(block.flow ?? "chat.open")}>{block.placeholder ?? "Ask Smithers"}</Button>
+        </div>
+      case "flows":
+        return <div className="repository-home-block" key={key}>
+          <h2>{block.title ?? "Flows"}</h2>
+          <Button variant="outline" {...dynamicFlowProps("flows")} onClick={() => onRunCommand("flows")}>All flows</Button>
+        </div>
+      default:
+        return null
+    }
+  })}
+</>
+
+/**
  * The repository's declared default view, or nothing when it declares none
  * (the tree is then the view, as it always was).
  */
@@ -184,52 +245,30 @@ export function RepositoryHomeView({ repo, home, treeCopyId, onRunCommand }: Rep
     : home.blocks
   if (blocks.length === 0) return null
   return <section className="repository-home" data-testid="repository-home" data-home={home.kind} aria-label={`${repo} home`}>
-    {blocks.map((block, index) => {
-      const key = `${block.type}:${index}`
-      switch (block.type) {
-        case "stack":
-          return <StackBlock key={key} repo={repo} title={block.title} />
-        case "markdown":
-          return <div className="repository-home-block" key={key}>
-            {block.title === undefined ? null : <h2>{block.title}</h2>}
-            <Markdown content={block.markdown} />
-          </div>
-        case "text":
-          return <div className="repository-home-block" key={key}>
-            {block.title === undefined ? null : <h2>{block.title}</h2>}
-            <p>{block.text}</p>
-          </div>
-        case "links":
-          return <div className="repository-home-block" key={key}>
-            {block.title === undefined ? null : <h2>{block.title}</h2>}
-            <ul className="repository-home-links">
-              {block.links.map((link) => <li key={link.url}>
-                <a href={link.url} rel="noreferrer noopener" target="_blank">{link.label}</a>
-              </li>)}
-            </ul>
-          </div>
-        /*
-         * A declared flow is an offer, not a launch: the press runs it
-         * through the registry, where its actor, role and confirmation live.
-         */
-        case "app":
-          return <Button variant="outline" className="repository-home-app" key={key}
-            {...dynamicFlowProps(block.flow)} onClick={() => onRunCommand(block.flow)}>{block.title}</Button>
-        case "prompt":
-          return <div className="repository-home-block" key={key}>
-            {block.title === undefined ? null : <h2>{block.title}</h2>}
-            <Button variant="outline" {...dynamicFlowProps(block.flow ?? "chat.open")}
-              onClick={() => onRunCommand(block.flow ?? "chat.open")}>{block.placeholder ?? "Ask Smithers"}</Button>
-          </div>
-        case "flows":
-          return <div className="repository-home-block" key={key}>
-            <h2>{block.title ?? "Flows"}</h2>
-            <Button variant="outline" {...dynamicFlowProps("flows")} onClick={() => onRunCommand("flows")}>All flows</Button>
-          </div>
-        default:
-          return null
-      }
-    })}
+    <DeclaredBlocks repo={repo} blocks={blocks} onRunCommand={onRunCommand} />
     <FilesAction treeCopyId={treeCopyId} onRunCommand={onRunCommand} />
+  </section>
+}
+
+/**
+ * A run's flow-declared view on its monitor (mvp.md §6.14, #4025): the view
+ * the run's flow declares in the repository's catalog, drawn by the same
+ * blocks as the homepage. Nothing is read or run to draw it, and a flow that
+ * declares no view adds nothing to the monitor.
+ */
+export function RunFlowView({ repo, flow, rows, onRunCommand }: {
+  readonly repo: string
+  readonly flow: string
+  /** The repository-flows rows the session holds; the run's own repository is the one read. */
+  readonly rows: ReadonlyArray<RepositoryFlowsRow> | undefined
+  readonly onRunCommand: RunDynamicCommand
+}) {
+  const declared = rows?.find((row) => row.id.toLowerCase() === repo.toLowerCase())?.flows.find((row) => row.id === flow)
+  const view = declared === undefined ? "none" : flowViewOf(declared)
+  if (view === "none") return null
+  return <section className="repository-home run-flow-view" data-testid="run-flow-view" aria-label={`${flow} view`}>
+    {view === "unreadable"
+      ? <p className="repository-home-notice" role="status">{`The ${flow} view is invalid.`}</p>
+      : <DeclaredBlocks repo={repo} blocks={view} onRunCommand={onRunCommand} />}
   </section>
 }

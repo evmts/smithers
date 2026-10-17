@@ -552,7 +552,7 @@ export const Docs = Object.freeze({
 })
 
 /**
- * The declared homepage blocks: `Prompt`, `Flows`, `Markdown`, `Text`, `Links`, `Stack`, and `App`.
+ * The declared homepage blocks: `Prompt`, `Flows`, `Markdown`, `Text`, `Links`, `Stack`, `App`, and `View`.
  *
  * @category namespace exports
  * @since 1.0.0
@@ -564,7 +564,8 @@ export const Home = Object.freeze({
   Prompt: HomeModule.Prompt,
   Markdown: HomeModule.Markdown,
   Stack: HomeModule.Stack,
-  App: HomeModule.App
+  App: HomeModule.App,
+  View: HomeModule.View
 })
 
 /**

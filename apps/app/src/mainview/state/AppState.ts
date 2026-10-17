@@ -99,7 +99,9 @@ export const RepositoryFlowSchema = z.object({
   /** The model seat the flow declares, as written (`sol`, `openai:gpt-6.1-sol`); a flow with one is an agent (controller/agents.ts). */
   model: z.string().nullable(),
   modelInvocable: z.boolean(),
-  inputSchema: z.unknown().optional()
+  inputSchema: z.unknown().optional(),
+  /** The view the flow declares, as the projection carried it; read through `flowViewOf`. */
+  view: z.unknown().optional()
 })
 export type RepositoryFlow = z.infer<typeof RepositoryFlowSchema>
 export const RepositoryFlowsRowSchema = z.object({

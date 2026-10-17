@@ -142,3 +142,47 @@ test("disposing a controller retires its pending homepage", async () => {
     expect(t.published).toEqual([])
   } finally { await t.dispose() }
 })
+
+/* #4025: a repository names the flow that owns its default view, and the seam draws that flow's declared view. */
+const flowRow = (id: string, view?: unknown) => ({
+  id, description: `${id} flow`, summary: null, featured: false, kind: "ts", path: `flows/${id}/flow.ts`,
+  capabilities: [], model: null, modelInvocable: false, ...(view === undefined ? {} : { view })
+})
+const loadWithFlowView = async (factory: Response, declared: RepositoryHome) => {
+  const storage = memoryStorage()
+  const store = await createAppStore({ kind: "localStorage", storage })
+  await identity(store, "alice")
+  const context = createControllerContext(store, unavailableAgent, { fetchImpl: async input => {
+    const path = String(input)
+    if (path.endsWith("/home")) return json(200, declared)
+    if (path.endsWith("/contents/.smithers/factory.json")) return factory
+    return json(404, {})
+  } })
+  const seam = createRepositoryFlowsSeam({
+    store, baseUrl: "https://app.test", http: context.boundedFetch, dispatch: store.dispatch,
+    actor: () => "user", nextOrdinal: store.nextOrdinal, isDisposed: () => context.disposed
+  })
+  await seam.load(repo)
+  const home = store.collections.repositoryFlows.get(repo)?.home
+  await context.dispose()
+  await settled()
+  await store.dispose?.()
+  return home
+}
+const projection = (...flows: unknown[]) => json(200, { content: JSON.stringify({ on: [], flows }) })
+const namesTriage: RepositoryHome = { kind: "blocks", blocks: [{ type: "text", text: "Above" }, { type: "view", flow: "triage" }] }
+
+test("a home view block draws the named flow's declared view in its place", async () => {
+  const view = [{ type: "text", text: "Oldest issues first" }, { type: "app", flow: "triage", title: "Triage", picture: "issue" }] as const
+  expect(await loadWithFlowView(projection(flowRow("triage", view)), namesTriage))
+    .toEqual({ kind: "blocks", blocks: [{ type: "text", text: "Above" }, ...view] })
+})
+
+test.each([
+  ["a flow the catalog lacks", () => projection(flowRow("lint")), "The triage view is unavailable: this repository has no flow triage"],
+  ["a flow that declares no view", () => projection(flowRow("triage")), "The triage view is unavailable: triage declares no view"],
+  ["a view this build cannot draw", () => projection(flowRow("triage", [{ type: "markdown", path: "README.md" }])), "The triage view is invalid"],
+  ["an unreadable catalog", () => json(500, {}), "The triage view is unavailable: the flow catalog could not be read"]
+] as const)("a view block naming %s fails the homepage with a sentence naming the flow", async (_, factory, message) => {
+  expect(await loadWithFlowView(factory(), namesTriage)).toEqual({ kind: "error", message })
+})

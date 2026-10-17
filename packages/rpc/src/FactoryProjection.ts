@@ -75,7 +75,13 @@ export const FactoryFlowSchema = z.object({
   capabilities: z.array(z.string()),
   model: z.string().nullable(),
   modelInvocable: z.boolean(),
-  inputSchema: z.unknown().optional()
+  inputSchema: z.unknown().optional(),
+  /**
+   * The view the flow draws (`Smithers.Flow({ view })`), read through
+   * `@smthrs/rpc/RepositoryHome` `FlowViewSchema` where it is drawn, so one
+   * unreadable view never refuses the whole catalog.
+   */
+  view: z.unknown().optional()
 })
 
 /**

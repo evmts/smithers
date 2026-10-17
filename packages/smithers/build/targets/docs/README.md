@@ -179,6 +179,29 @@ factory projection writes `.smithers/home.json`; the server resolves Markdown
 files at `main`. When that file is absent, the chat shows `README.md` if
 present.
 
+### A flow's own view
+
+A repository flow can declare the view it draws, from the same blocks except
+`Markdown`, and a homepage can hand its place to that flow with
+`Smithers.Home.View({ flow })`:
+
+```ts
+export const triage = Smithers.Flow({
+  flow: "triage",
+  view: [Smithers.Home.Text({ text: "Open issues, oldest first." }), Smithers.Home.Stack()]
+})
+
+export const factory = Smithers.Factory({ flows: [triage] /* … */ })
+export const home = Smithers.Factory.Home({ blocks: [Smithers.Home.View({ flow: "triage" })] })
+```
+
+The view rides the flow's row in `.smithers/factory.json`. The app draws it at
+`/owner/repo` in place of the `view` block, and on the monitor of every run of
+that flow. The view is data like every block: arriving runs nothing, and a
+flow button starts only when pressed. A `view` block that names a flow the
+catalog lacks, or a flow with no view, leaves the file tree in place with a
+notice naming the flow. Files stays one press away either way.
+
 ## Where to go next
 
 - [API reference](./api.md), the module surface and what each layer owns.

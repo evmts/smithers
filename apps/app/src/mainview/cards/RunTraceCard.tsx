@@ -5,6 +5,7 @@ import { flowProps } from "../flows/FlowAction"
 import type { UserFailure } from "@smthrs/rpc/UserFailure"
 import type { CardFamily } from "./CardFamily"
 import { RunResult } from "./RunResult.tsx"
+import { RunFlowView } from "./RepositoryHomeView"
 import { type ReactNode } from "react"
 import { flowArgs } from "../flows/FlowArgs"
 import { flowAction } from "../flows/FlowAction"
@@ -1075,6 +1076,10 @@ const LIVE_RUN_PHASES: ReadonlySet<string> = new Set(["launching", "running", "w
 export const runTraceCardFamily: CardFamily<"run-trace"> = {
   "run-trace": {
     render: (card, actions) => (
+      <>
+      {/* The run's flow-declared view (mvp.md §6.14), the same blocks a homepage draws. */}
+      <RunFlowView repo={card.payload.repo} flow={card.payload.workflow} rows={actions.repositoryFlows}
+        onRunCommand={actions.onRunCommand} />
       <WorkflowRunCardBody
         card={card}
         onStopRun={actions.onStopRun}
@@ -1087,6 +1092,7 @@ export const runTraceCardFamily: CardFamily<"run-trace"> = {
         childCards={actions.projectionStore?.collections.cards}
         presentation={actions.presentation}
       />
+      </>
     ),
     pill: (card) => {
       if (card.payload.phase === "completed") return "done"

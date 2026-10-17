@@ -23,8 +23,8 @@
  * avoids repeat reads.
  */
 import type { RepositoryFlow } from "../AppState"
-import { RepositoryHomeSchema } from "@smthrs/rpc/RepositoryHome"
-import type { RepositoryHome } from "@smthrs/rpc/RepositoryHome"
+import { FlowViewSchema, RepositoryHomeSchema } from "@smthrs/rpc/RepositoryHome"
+import type { FlowView, RepositoryHome } from "@smthrs/rpc/RepositoryHome"
 import { resolveTargetRepo } from "../RepoContext"
 import type { SeamContext } from "./SeamContext"
 import { captureCloudOwner } from "./SeamContext"
@@ -47,12 +47,54 @@ export const repositoryFlowsOf = (
     readonly model: string | null
     readonly modelInvocable: boolean
     readonly inputSchema?: unknown
+    readonly view?: unknown
   }>
 ): Array<RepositoryFlow> =>
   [...flows]
     .sort((left, right) => Number(right.featured) - Number(left.featured))
-    .map(({ id, description, summary, featured, model, modelInvocable, inputSchema }) => ({ id, description, summary, featured, model, modelInvocable,
-      ...(inputSchema === undefined ? {} : { inputSchema }) }))
+    .map(({ id, description, summary, featured, model, modelInvocable, inputSchema, view }) => ({ id, description, summary, featured, model, modelInvocable,
+      ...(inputSchema === undefined ? {} : { inputSchema }), ...(view === undefined ? {} : { view }) }))
+
+/** The view a catalog flow declares: its blocks, none, or a declaration this build cannot read. */
+export const flowViewOf = (flow: RepositoryFlow): FlowView | "none" | "unreadable" => {
+  if (flow.view === undefined) return "none"
+  // A block kind this build does not draw is left out, as on the homepage.
+  const parsed = FlowViewSchema.safeParse((knownBlocks({ blocks: flow.view }) as { readonly blocks: unknown }).blocks)
+  return parsed.success ? parsed.data : "unreadable"
+}
+
+type HomeAnswer = RepositoryHome | { readonly kind: "error"; readonly message: string }
+
+/**
+ * Draws each `view` block of a homepage as the named flow's declared view
+ * (`Smithers.Home.View`), from the catalog read beside it. A view that cannot
+ * be drawn fails the homepage with a sentence naming the flow, so the tree
+ * stays the view and says why; it never renders an empty frame.
+ */
+export const resolveFlowViews = (
+  home: HomeAnswer,
+  flows: ReadonlyArray<RepositoryFlow>,
+  catalog: "read" | "absent" | "unreadable"
+): HomeAnswer => {
+  if (home.kind !== "blocks" || !home.blocks.some((block) => block.type === "view")) return home
+  const blocks: Array<Extract<RepositoryHome, { kind: "blocks" }>["blocks"][number]> = []
+  for (const block of home.blocks) {
+    if (block.type !== "view") {
+      blocks.push(block)
+      continue
+    }
+    const named = `The ${block.flow} view`
+    const flow = flows.find((row) => row.id === block.flow)
+    if (flow === undefined) {
+      return { kind: "error", message: catalog === "unreadable" ? `${named} is unavailable: the flow catalog could not be read` : `${named} is unavailable: this repository has no flow ${block.flow}` }
+    }
+    const view = flowViewOf(flow)
+    if (view === "none") return { kind: "error", message: `${named} is unavailable: ${block.flow} declares no view` }
+    if (view === "unreadable") return { kind: "error", message: `${named} is invalid` }
+    blocks.push(...view)
+  }
+  return blocks.length > 32 ? { kind: "error", message: "Homepage is invalid" } : { kind: "blocks", blocks }
+}
 
 export const createRepositoryFlowsSeam = (
   ctx: SeamContext,
@@ -66,7 +108,7 @@ export const createRepositoryFlowsSeam = (
   const load: RepositoryFlowsSeam["load"] = async (repo) => {
     const current = captureCloudOwner(ctx, false)
     read.set(repo, current)
-    const [answer, home] = await Promise.all([readFactoryProjection(ctx, repo), readRepositoryHome(ctx, repo)])
+    const [answer, declared] = await Promise.all([readFactoryProjection(ctx, repo), readRepositoryHome(ctx, repo)])
     if (disposed || !current() || read.get(repo) !== current) return
     const flows = "error" in answer || answer.absent ? [] : repositoryFlowsOf(answer.projection.flows ?? [])
     /*
@@ -76,6 +118,7 @@ export const createRepositoryFlowsSeam = (
      * verdict the read never reached (controller/agents.ts, #3831).
      */
     const catalog = "error" in answer ? "unreadable" : answer.absent ? "absent" : "read"
+    const home = resolveFlowViews(declared, flows, catalog)
     ctx.dispatch({ type: "repository-flows.loaded", actor: "system", repo, flows, home, catalog })
     onHome?.(repo, home)
   }
@@ -108,7 +151,7 @@ export const createRepositoryFlowsSeam = (
   return { load, subscribe }
 }
 
-const KNOWN_BLOCKS = new Set(["prompt", "flows", "markdown", "text", "links", "stack", "app"])
+const KNOWN_BLOCKS = new Set(["prompt", "flows", "markdown", "text", "links", "stack", "app", "view"])
 /** A block kind this build does not render is left out, never the whole homepage. */
 const knownBlocks = (body: unknown): unknown => {
   if (typeof body !== "object" || body === null || !Array.isArray((body as { blocks?: unknown }).blocks)) return body

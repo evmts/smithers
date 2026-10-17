@@ -563,7 +563,9 @@ func (h *RepoHandler) GetRepositoryHome(w http.ResponseWriter, r *http.Request) 
 		for i := range parsed.Blocks {
 			block := &parsed.Blocks[i]
 			switch block.Type {
-			case "prompt", "flows", "text", "links", "stack", "app":
+			// A view block names a repository flow; the app draws that flow's
+			// declared view from .smithers/factory.json in its place.
+			case "prompt", "flows", "text", "links", "stack", "app", "view":
 			case "markdown":
 				if !validHomePath(block.Path) {
 					errors.WriteError(w, errors.BadRequest("repository homepage has an invalid markdown path"))

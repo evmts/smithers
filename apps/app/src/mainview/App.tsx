@@ -495,6 +495,7 @@ function AppContent() {
       workflowCatalogs={workflowCatalogs}
       triggerCatalogs={triggerCatalogs}
       flowDurations={flowDurations}
+      repositoryFlows={repositoryFlowRows}
       fileCards={fileCards}
       {...cardActions(controller, entry.card)}
     /> : <TranscriptMessage key={entry.message.id} entry={entry} streamingMessageId={streamingMessageId} />}

@@ -56,6 +56,10 @@ describe("the home blocks", () => {
     expect(Home.Stack({ title: "Stack" })).toEqual({ type: "stack", title: "Stack" })
     expect(() => Home.Stack({ title: "<b>x</b>" })).toThrow(/must not contain HTML/)
     expect(() => Home.Stack({ rows: [] } as never)).toThrow(/unknown option "rows"/)
+    expect(Home.View({ flow: "triage" })).toEqual({ type: "view", flow: "triage" })
+    expect(() => Home.View({ flow: "https://x" })).toThrow()
+    expect(() => Home.View({ flow: "triage", blocks: [] } as never)).toThrow(/unknown option "blocks"/)
+    expect(Home.Home({ blocks: [Home.View({ flow: "triage" })] }).blocks).toEqual([{ type: "view", flow: "triage" }])
   })
 
   it("refuse raw HTML in text, titles, and labels, and keep plain comparisons", () => {

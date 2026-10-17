@@ -240,12 +240,55 @@ export const StackBlock = Schema.Struct({
 })
 
 /**
+ * The view a repository flow declares (`Smithers.Flow({ view })`), drawn here
+ * in its place. This is how a repository names the flow that owns its
+ * default view: `Factory.Home({ blocks: [Smithers.Home.View({ flow })] })`.
+ * The app resolves the flow's view from the `flows` rows of
+ * `.smithers/factory.json`; a flow that is missing or declares no view leaves
+ * the file tree in place with a notice naming the flow.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const ViewBlock = Schema.Struct({
+  type: Schema.Literal("view"),
+  flow: PromptFlow
+})
+
+/**
  * One declared block.
  *
  * @category schemas
  * @since 1.0.0
  */
-export const Block = Schema.Union([TextBlock, LinksBlock, FlowsBlock, PromptBlock, MarkdownBlock, StackBlock, AppBlock])
+export const Block = Schema.Union([
+  TextBlock,
+  LinksBlock,
+  FlowsBlock,
+  PromptBlock,
+  MarkdownBlock,
+  StackBlock,
+  AppBlock,
+  ViewBlock
+])
+
+/**
+ * One block of a flow's own view: every block that needs no server
+ * resolution. A markdown block reads a file at main, which only the
+ * homepage route resolves, and a view block inside a view would recurse.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const FlowViewBlock = Schema.Union([TextBlock, LinksBlock, FlowsBlock, PromptBlock, StackBlock, AppBlock])
+
+/**
+ * The view a flow declares: its blocks, in declaration order.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const FlowView = Schema.NonEmptyArray(FlowViewBlock).check(Schema.isMaxLength(maximumBlocks))
 
 /**
  * One declared block.
@@ -440,6 +483,16 @@ export interface StackOptions {
 }
 
 /**
+ * What a `FACTORY.ts` writes for a view block.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface ViewOptions {
+  readonly flow: string
+}
+
+/**
  * What a `FACTORY.ts` writes for the home declaration.
  *
  * @category models
@@ -534,6 +587,18 @@ export const Stack = (options: StackOptions = {}): typeof StackBlock.Type =>
   }))
 
 /**
+ * Draws a repository flow's declared view in this place.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const View = (options: ViewOptions): typeof ViewBlock.Type =>
+  freezeDeep(decode("Home.View", ViewBlock, {
+    type: "view",
+    ...plainOptions("Home.View", options, new Set(["flow"]))
+  }))
+
+/**
  * Declares the repository's homepage from declared blocks.
  *
  * Every block has to be a value one of the block constructors returned, or
@@ -563,7 +628,7 @@ export const Home = (options: HomeOptions): Declaration => {
   blocks.forEach((block, index) => {
     if (typeof block !== "object" || block === null) {
       throw new TypeError(
-        `Factory.Home block ${index} must be a declared block (Smithers.Home.Text, Links, Flows, Prompt, Markdown, Stack, App), not ${
+        `Factory.Home block ${index} must be a declared block (Smithers.Home.Text, Links, Flows, Prompt, Markdown, Stack, App, View), not ${
           typeof block === "string" ? "a string" : typeof block
         }`
       )

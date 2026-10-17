@@ -21,6 +21,7 @@
 
 import * as Schema from "effect/Schema"
 import * as NodeUtil from "node:util/types"
+import * as Home from "./Home.ts"
 import * as Target from "./Target.ts"
 
 /**
@@ -57,7 +58,9 @@ export const Declaration = Schema.TaggedStruct("FlowDeclaration", {
   /** The one-line summary a listing shows under the id. */
   summary: Schema.optional(Schema.NonEmptyString),
   /** Whether the repository recommends this flow first. */
-  featured: Schema.Boolean
+  featured: Schema.Boolean,
+  /** The view the flow draws: on the run's monitor, and as the repository's default view when the home names it. */
+  view: Schema.optional(Home.FlowView)
 })
 
 /**
@@ -77,9 +80,11 @@ export type Declaration = typeof Declaration.Type
 export interface Options extends Target.Presentation {
   /** The flow id, the directory path below `flows/`. */
   readonly flow: string
+  /** The view the flow draws, from the declared blocks a view may hold (`Home.FlowViewBlock`). */
+  readonly view?: ReadonlyArray<typeof Home.FlowViewBlock.Type> | undefined
 }
 
-const optionKeys: ReadonlySet<string> = new Set(["flow", "summary", "featured"])
+const optionKeys: ReadonlySet<string> = new Set(["flow", "summary", "featured", "view"])
 
 /**
  * Reports whether a value is a flow declaration.
@@ -139,9 +144,11 @@ export const Flow = (options: Options): Declaration => {
       }`
     )
   }
-  return Object.freeze(Declaration.make({
+  const view = (split.attrs as Record<string, unknown>)["view"]
+  return Home.freezeDeep(Declaration.make({
     flow,
     ...(split.presentation.summary === undefined ? {} : { summary: split.presentation.summary }),
-    featured: split.presentation.featured
+    featured: split.presentation.featured,
+    ...(view === undefined ? {} : { view: Home.decode(`Flow ${JSON.stringify(flow)} view`, Home.FlowView, view) })
   }))
 }
