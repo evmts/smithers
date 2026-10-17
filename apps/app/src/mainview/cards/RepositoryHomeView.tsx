@@ -1,5 +1,5 @@
 import { Button, Markdown, StatusPill } from "@smthrs/ui"
-import { useContext, useSyncExternalStore } from "react"
+import { useContext, useState, useSyncExternalStore } from "react"
 import type { RepositoryHome } from "@smthrs/rpc/RepositoryHome"
 import type { MythicalStack } from "@smthrs/rpc/Mythical"
 import { itemReason, itemStateLabel, itemTitle, stackCounts, stackRows } from "@smthrs/rpc/StackView"
@@ -81,10 +81,21 @@ const STACK_ROWS = 5
  * work not yet on the stack above the stack's own changes, exactly the order
  * `stackRows` already defines. Every row is text: nothing here is a control,
  * so this view holds no workflow UI of its own.
+ *
+ * The bound hides nothing in silence: when the projection has more rows than
+ * are shown, the count of the rest is stated and a shipped Button shows them,
+ * from the snapshot already read. The registered `stack` flow is NOT that
+ * door: it opens the install's own main (`openBranch("main")`), not an
+ * arbitrary repository's stack, and `history.bootstrap` is a hidden write. So
+ * this expands in place and asks the host for nothing: no request, no command,
+ * no model or agent admission, on arrival or on press.
  */
 const StackSummary = ({ stack }: { readonly stack: MythicalStack }) => {
+  const [all, setAll] = useState(false)
   const counts = stackCounts(stack)
-  const rows = stackRows(stack).slice(0, STACK_ROWS)
+  const projected = stackRows(stack)
+  const rows = all ? projected : projected.slice(0, STACK_ROWS)
+  const hidden = projected.length - rows.length
   return <>
     <p className="repository-home-stack-counts" data-testid="repository-home-stack-counts">
       {`${counts.busy} of ${counts.maxParallel} lanes working · ${counts.queued} queued · ${counts.open} to decide · ${counts.changes} changes, ${counts.landed} landed`}
@@ -104,6 +115,14 @@ const StackSummary = ({ stack }: { readonly stack: MythicalStack }) => {
           </li>
         })}
       </ul>}
+    {hidden === 0 && !all ? null : <p className="repository-home-stack-more" data-testid="repository-home-stack-more">
+      {all
+        ? `All ${projected.length} ${projected.length === 1 ? "row" : "rows"} shown.`
+        : `${hidden} more ${hidden === 1 ? "row" : "rows"} on the stack.`}
+      {" "}
+      <Button variant="outline" className="repository-home-stack-open" aria-expanded={all}
+        onClick={() => setAll(!all)}>{all ? "Show fewer" : `Show all ${projected.length}`}</Button>
+    </p>}
   </>
 }
 

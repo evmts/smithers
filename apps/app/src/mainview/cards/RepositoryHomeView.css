@@ -52,3 +52,12 @@
 .repository-home-stack-reason {
   color: var(--sui-color-text-muted, inherit);
 }
+.repository-home-stack-more {
+  align-items: center;
+  color: var(--sui-color-text-muted, inherit);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: var(--sui-font-size-sm, 0.875rem);
+  gap: var(--sui-space-2, 0.5rem);
+  margin: 0;
+}

@@ -6,6 +6,7 @@ import type { RepositoryHomeAnswer } from "./RepositoryHomeView"
 import { RepositoryHomeSchema } from "@smthrs/rpc/RepositoryHome"
 import type { MythicalStack } from "@smthrs/rpc/Mythical"
 import { MythicalStackSchema } from "@smthrs/rpc/Mythical"
+import { stackRows } from "@smthrs/rpc/StackView"
 import { ControllerContext } from "../ControllerContext"
 import type { AppController } from "../state/AppController"
 import type { RepositorySnapshot } from "../state/seams/RepositoryHistorySeam"
@@ -270,4 +271,46 @@ test("another repository's snapshot is not this repository's stack", () => {
   expect(stack.dataset.stack).toBe("unavailable")
   expect(stack.textContent).not.toContain("#12 Resize widgets")
   expect(host.querySelector(".repository-home-files")).not.toBeNull()
+})
+
+test("a stack larger than the shown rows states how many are left and offers the read-only stack view", () => {
+  // Eight projected rows: six pending items and two changes.
+  const big = MythicalStackSchema.parse({
+    ...STACK,
+    changes: [
+      { changeId: "c1", commitId: "0".repeat(40), title: "Widget sizes", kind: "item", state: "landed", itemId: "i90" },
+      { changeId: "c2", commitId: "1".repeat(40), title: "Widget colours", kind: "item", state: "pending", itemId: "i91" }
+    ],
+    items: Array.from({ length: 6 }, (_, index) => ({
+      id: `q${index}`, state: "queued", attempt: 0, runs: {}, dependsOn: [], updatedAt: "2026-10-16T10:00:00Z",
+      issue: { number: 20 + index, title: `Queued ${index}`, url: `https://github.com/ada/widgets/issues/${20 + index}` }
+    }))
+  })
+  const { host, calls, stack } = withSnapshot({ stack: big, error: null })
+  expect(stackRows(big)).toHaveLength(8)
+  expect(stack.querySelectorAll(".repository-home-stack-row")).toHaveLength(5)
+  const more = stack.querySelector<HTMLElement>('[data-testid="repository-home-stack-more"]')!
+  expect(more.textContent).toContain("3 more rows on the stack.")
+  const open = more.querySelector<HTMLButtonElement>(".repository-home-stack-open")!
+  expect(open.textContent).toBe("Show all 8")
+  expect(open.getAttribute("aria-expanded")).toBe("false")
+  // The rest are already in the snapshot: showing them asks the host for nothing.
+  expect(calls).toEqual([])
+  act(() => { open.click() })
+  expect(stack.querySelectorAll(".repository-home-stack-row")).toHaveLength(8)
+  const expanded = stack.querySelector<HTMLElement>('[data-testid="repository-home-stack-more"]')!
+  expect(expanded.textContent).toContain("All 8 rows shown.")
+  expect(expanded.querySelector(".repository-home-stack-open")!.getAttribute("aria-expanded")).toBe("true")
+  expect(calls).toEqual([])
+  // And back, still without a request.
+  act(() => { expanded.querySelector<HTMLButtonElement>(".repository-home-stack-open")!.click() })
+  expect(stack.querySelectorAll(".repository-home-stack-row")).toHaveLength(5)
+  expect(calls).toEqual([])
+  expect(host.querySelector(".repository-home-files")).not.toBeNull()
+})
+
+test("a stack that fits claims nothing is left and offers no extra door", () => {
+  const { stack } = withSnapshot({ stack: STACK, error: null })
+  expect(stack.querySelectorAll(".repository-home-stack-row")).toHaveLength(4)
+  expect(stack.querySelector('[data-testid="repository-home-stack-more"]')).toBeNull()
 })
