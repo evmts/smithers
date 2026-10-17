@@ -108,6 +108,7 @@ describe("LlmLint.review finding store", () => {
     await write("src/a.ts", "export const a = 1\n")
     await write("src/b.ts", "export const b = 1\n")
     await Fs.chmod(Path.join(root, "src/a.ts"), 0o755)
+    execFileSync("git", ["update-index", "--chmod=+x", "src/a.ts"], { cwd: root })
     const present = await engine({ fail: ["src/a.ts"] })
     await Effect.runPromise(Effect.flip(review(present.executable)))
     await Fs.rm(Path.join(root, "src/a.ts"))
@@ -360,8 +361,18 @@ describe("LlmLint.review provenance manifest", () => {
   it("names every security seat and fails closed on an unreadable executable or base", async () => {
     const cli = await engine({})
     await Fs.chmod(cli.executable, 0o111)
-    const unreadable = await Effect.runPromise(Effect.flip(review(cli.executable)))
-    expect(unreadable.message).toContain("Review executable identity")
+    const createReadStream = NodeFs.createReadStream
+    const denied = process.platform === "win32"
+      ? vi.spyOn(NodeFs, "createReadStream").mockImplementationOnce((path, options) =>
+        createReadStream(path, options).destroy(Object.assign(new Error("read denied"), { code: "EACCES" }))
+      )
+      : undefined
+    try {
+      const unreadable = await Effect.runPromise(Effect.flip(review(cli.executable)))
+      expect(unreadable.message).toContain("Review executable identity")
+    } finally {
+      denied?.mockRestore()
+    }
     const missing = await Effect.runPromise(Effect.flip(review(Path.join(root, "absent-engine"))))
     expect(missing).toBeInstanceOf(LlmLint.ModelCliMissing)
     const onPath = await Effect.runPromise(Effect.flip(review("smithers-absent-engine")))
@@ -612,10 +623,29 @@ describe("LlmLint.review containment follow-up", () => {
   it("refuses a FIFO record without waiting for a writer", async () => {
     const cli = await engine({ findings: { "src/a.ts": [danger] } })
     await Effect.runPromise(review(cli.executable))
-    execFileSync("mkfifo", [Path.join(store, "findings", `${"e".repeat(64)}.json`)])
-    expect((await Effect.runPromise(Effect.flip(LlmLint.storedFindings(store)))).message).toContain(
-      "not a regular file"
-    )
+    const fifo = Path.join(store, "findings", `${"e".repeat(64)}.json`)
+    const lstat = NodeFs.lstatSync
+    // Windows has no filesystem FIFO. Report that native type at the stat seam;
+    // the POSIX case still uses a real FIFO with no writer.
+    const synthetic = process.platform === "win32"
+      ? vi.spyOn(NodeFs, "lstatSync").mockImplementation((path, options) => {
+        const stats = lstat(path, options)
+        if (String(path) === fifo && stats !== undefined) {
+          Object.defineProperty(stats, "isFile", { value: () => false })
+          Object.defineProperty(stats, "isFIFO", { value: () => true })
+        }
+        return stats
+      })
+      : undefined
+    if (synthetic === undefined) execFileSync("mkfifo", [fifo])
+    else await Fs.writeFile(fifo, "not readable as a record")
+    try {
+      expect((await Effect.runPromise(Effect.flip(LlmLint.storedFindings(store)))).message).toContain(
+        "not a regular file"
+      )
+    } finally {
+      synthetic?.mockRestore()
+    }
   })
 })
 

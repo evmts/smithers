@@ -59,14 +59,15 @@ export const write = (directory: string, name: string, value: unknown): void => 
   NodeFs.renameSync(temporary, path)
 }
 
+/** One refusal for every way an opened record can fail its identity check. */
+const invalidRecord = (name: string, cause?: unknown): Error =>
+  new Error(`Review finding store record is not a regular file: ${name}`, { cause })
+
 /**
  * Reads one record, or undefined when it does not exist. A symbolic link or other non-file fails.
  * @category store
  * @since 1.0.0
  */
-const invalidRecord = (name: string, cause?: unknown): Error =>
-  new Error(`Review finding store record is not a regular file: ${name}`, { cause })
-
 export const read = (directory: string, name: string): unknown => {
   const path = recordPath(directory, name)
   if (collection(directory, NodePath.dirname(name)) === undefined) return undefined
