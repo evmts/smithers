@@ -66,11 +66,17 @@ for (const pinnedAdmission of [false, true]) {
         ".smithers/flows/todo/flow.ts": source.replace("Request.call(input)", "Request.call(input")
       })
       const undiscoverable = await tree("undiscoverable", {
-        ".smithers/flows/todo/flow.ts": source.replace("description: \"Route, plan, implement and deliver one TODO.\",", ""),
+        ".smithers/flows/todo/flow.ts": source.replace(
+          "description: \"Route, plan, implement and deliver one TODO.\",",
+          ""
+        ),
         ".smithers/flows/merge/flow.ts": "export default {}\n"
       })
       const rejectedAgain = await tree("undiscoverable-lock", {
-        ".smithers/flows/todo/flow.ts": source.replace("description: \"Route, plan, implement and deliver one TODO.\",", ""),
+        ".smithers/flows/todo/flow.ts": source.replace(
+          "description: \"Route, plan, implement and deliver one TODO.\",",
+          ""
+        ),
         "pnpm-lock.yaml": "lockfileVersion: 9\n"
       })
       // A composition that imports a helper; the helper's bytes are its version.
@@ -207,7 +213,9 @@ export default Flow.make("prompted", {
         timeout: 240_000,
         stdio: ["ignore", "pipe", "pipe"]
       })
-      const loads = lines.split("\n").filter((line) => line.startsWith("load ")).map((line) => JSON.parse(line.slice(5)))
+      const loads = lines.split("\n").filter((line) => line.startsWith("load ")).map((line) =>
+        JSON.parse(line.slice(5))
+      )
       const diagnostics = loads.map((load) => load.diagnostics ?? [])
       const [
         atCopy,
@@ -314,7 +322,10 @@ export default Flow.make("prompted", {
       const line = source.split("\n").findIndex((text) => text.includes("Request.call(input)")) + 1
       assert.ok(line > 0)
       assert.match(atBroken[0].error, /^\.smithers\/flows\/todo\/flow\.ts:\d+: /)
-      assert.ok(Number(atBroken[0].error.match(/^\.smithers\/flows\/todo\/flow\.ts:(\d+)/)![1]) >= line, atBroken[0].error)
+      assert.ok(
+        Number(atBroken[0].error.match(/^\.smithers\/flows\/todo\/flow\.ts:(\d+)/)![1]) >= line,
+        atBroken[0].error
+      )
       // A changed helper the composition imports is a new version; both load.
       assert.equal(atHelperA[0].status, "loaded", atHelperA[0].error)
       assert.equal(atHelperB[0].status, "loaded", atHelperB[0].error)
@@ -350,7 +361,10 @@ export default Flow.make("prompted", {
       assert.equal(atUndiscoverable[0].name, "todo")
       assert.equal(atUndiscoverable[0].path, ".smithers/flows/todo/flow.ts")
       assert.equal(atUndiscoverable[0].status, "failed")
-      assert.match(atUndiscoverable[0].error, /\.smithers\/flows\/todo\/flow\.ts: Module flows require a literal description/)
+      assert.match(
+        atUndiscoverable[0].error,
+        /\.smithers\/flows\/todo\/flow\.ts: Module flows require a literal description/
+      )
       assert.match(atUndiscoverable[0].digest, /^[0-9a-f]{64}$/)
       assert.equal(atRejectedAgain[0].status, "failed")
       assert.notEqual(atRejectedAgain[0].digest, atUndiscoverable[0].digest)

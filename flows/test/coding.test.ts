@@ -385,7 +385,11 @@ test(
     const executables = await Effect.runPromise(
       Effect.gen(function*() {
         const discovery = yield* Discovery.Discovery
-        const found = yield* discovery.scan({ source: "project", root: join(repo.root, ".smithers", "flows"), naming: "path" })
+        const found = yield* discovery.scan({
+          source: "project",
+          root: join(repo.root, ".smithers", "flows"),
+          naming: "path"
+        })
         assert.equal(found.entries.length, 4)
         return yield* Effect.forEach(
           found.entries,

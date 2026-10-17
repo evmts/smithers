@@ -352,7 +352,10 @@ const boundary = async (
     }).pipe(Effect.provide(platform), Effect.runPromise)
   const write = async (name: string, topLevel = "") => {
     await mkdir(join(repositoryPath, ".smithers", "flows", name), { recursive: true })
-    await writeFile(join(repositoryPath, ".smithers", "flows", name, "flow.ts"), moduleSource(name, `Repository ${name}`, topLevel))
+    await writeFile(
+      join(repositoryPath, ".smithers", "flows", name, "flow.ts"),
+      moduleSource(name, `Repository ${name}`, topLevel)
+    )
   }
   return { catalog, write, repositoryPath }
 }
