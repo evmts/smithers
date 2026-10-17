@@ -403,11 +403,17 @@ func installAuthorityUnbound(s *GitHubSyncedRepoService, credentials GitHubAppCr
 
 // BindInstallAuthority activates reads only for the sealed installation on an
 // unprivileged install runtime with the real storage and credential providers.
-// A declined bind refuses every fetched-state read for the life of the process,
-// and the only evidence was the downstream no_install_authority fence on each
-// read: a composed install answered its issues card 503 on a privileged runtime
-// and named the bind nowhere. The decision is unchanged; it reports the
-// provider it does not have, once, from a closed set, with no id or credential.
+// A bind that is declined and never re-made refuses every fetched-state read
+// until one succeeds, and the only evidence was the downstream
+// no_install_authority fence on each read: a composed install answered its
+// issues card 503 on a privileged runtime and named the bind nowhere. The
+// decision is unchanged; a declined bind reports the provider it does not have
+// ONCE PER INVOCATION, from a closed set, with no id or credential. Callers may
+// bind more than once, so the count of these records is the count of declined
+// binds and nothing else: it is not a per-process record, and it is not the
+// number of reads the fence later refuses. The privileged composed rehearsal
+// measured exactly that distinction -- one declined bind, nine refused
+// github.fetched_state_closed reads.
 func (s *GitHubSyncedRepoService) BindInstallAuthority(credentials GitHubAppCredentialReader, runtimeReady bool) {
 	if provider := installAuthorityUnbound(s, credentials, runtimeReady); provider != "" {
 		slog.Warn("github.install_authority_unbound", "provider", provider)
