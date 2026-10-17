@@ -917,7 +917,8 @@
     "tests": [
       "TestMemberAddSlowStageNamesItself",
       "TestMemberAddNamesTheBlockedStageOfARealRequestPostgres",
-      "TestMemberAddNamesAStarvedPoolAsItsOwnStagePostgres"
+      "TestMemberAddNamesAStarvedPoolAsItsOwnStagePostgres",
+      "TestMemberAddUnderRosterContentionNamesAnExhaustedPoolPostgres"
     ]
   },
   {

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -401,4 +402,207 @@ func TestMemberAddNamesAStarvedPoolAsItsOwnStagePostgres(t *testing.T) {
 	require.Contains(t, text, "caller="+memberAddCallerCanceled,
 		"the record must say the caller had given up, which is what the reported stall looked like")
 	require.NotContains(t, text, "newmember", "a stage record carries no login")
+}
+
+// The starved-pool case above holds the pool's only connection from the test
+// itself. This one holds none: every connection beyond the first is held by a
+// real roster add on the real path, and the single transaction the test does
+// open is the product's own ordering lock — the one `lockRoster` takes for
+// every roster change and every session a sign-in mints, held here as a
+// concurrent sign-in holds it.
+//
+// What that arrangement separates is the whole point of the pool counters. All
+// four adds report the same stage waiting past its budget, so the stage name
+// alone cannot say why. On a pool as wide as the product's default the adds are
+// waiting on the ordering lock, with connections still to spare. On a pool four
+// connections wide — pgxpool's own default on a four-CPU host, the width at
+// which a composed install's listeners and transactions already starved each
+// other (postgresfixture.DefaultMaxConns) — one of those adds never reaches the
+// database at all: it parks in Go with every connection the pool has acquired,
+// which is the shape #4075 was reported in, and the record says so.
+//
+// What the record still does not say, and what nothing here asserts: WHICH of
+// the four waiters is the one parked in Go. Every add in flight reads the same
+// pool, so an exhausted pool is recorded by the three waiting on the lock as
+// well as by the one that never reached the database. The counters name the
+// pool's state, not the waiter's.
+//
+// This is discrimination, not a cause: it establishes what the published
+// record can tell apart under contention, not what #4075's install was doing.
+// Nothing in production changes.
+func TestMemberAddUnderRosterContentionNamesAnExhaustedPoolPostgres(t *testing.T) {
+	if testing.Short() {
+		t.Skip("the roster add's real boundary needs PostgreSQL")
+	}
+	const concurrent = 4
+	for _, tc := range []struct {
+		name          string
+		width         int32
+		wantMax       string
+		wantExhausted bool
+	}{
+		{
+			name:          "four concurrent adds on a four-connection pool exhaust it, and the record says so",
+			width:         concurrent,
+			wantMax:       "pool_max=4",
+			wantExhausted: true,
+		},
+		{
+			name:    "the same four adds on the product's own pool width wait on the lock with connections to spare",
+			width:   0,
+			wantMax: "pool_max=" + strconv.Itoa(int(postgresfixture.DefaultMaxConns)),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pool, _ := postgresfixture.NewProductDatabase(t, tc.width)
+			ctx := t.Context()
+			q := db.New(pool)
+			owner, err := q.CreateUser(ctx, db.CreateUserParams{Username: "owner", LowerUsername: "owner"})
+			require.NoError(t, err)
+			_, err = pool.Exec(ctx, `INSERT INTO self_host_owners(user_id) VALUES($1)`, owner.ID)
+			require.NoError(t, err)
+			repo, err := q.CreateRepo(ctx, db.CreateRepoParams{UserID: pgtype.Int8{Int64: owner.ID, Valid: true}, Name: "app", LowerName: "app", DefaultBookmark: "main"})
+			require.NoError(t, err)
+			binding, _ := json.Marshal(map[string]any{"owner_login": "acme", "repository_name": "app", "repository_id": repo.ID})
+			require.NoError(t, q.UpsertInstallSetting(ctx, db.UpsertInstallSettingParams{Key: "github.repository", Value: binding}))
+
+			// The upstream answers every path each add reaches, promptly: the
+			// wait under test is the install's own, not GitHub's.
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch {
+				case r.URL.Path == "/repos/acme/app/installation":
+					fmt.Fprint(w, `{"id":91}`)
+				case r.URL.Path == "/repos/acme/app":
+					fmt.Fprint(w, `{"id":500,"full_name":"acme/app"}`)
+				case r.URL.Path == "/installation/repositories":
+					fmt.Fprint(w, `{"total_count":1,"repositories":[{"id":500}]}`)
+				case strings.HasPrefix(r.URL.Path, "/users/"):
+					login := strings.TrimPrefix(r.URL.Path, "/users/")
+					fmt.Fprintf(w, `{"id":%d,"login":%q}`, contentionMemberID(login), login)
+				case strings.HasSuffix(r.URL.Path, "/permission"):
+					login := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/repos/acme/app/collaborators/"), "/permission")
+					fmt.Fprintf(w, `{"user":{"id":%d},"permission":"write","role_name":"write"}`, contentionMemberID(login))
+				default:
+					fmt.Fprint(w, `{}`)
+				}
+			}))
+			t.Cleanup(server.Close)
+			t.Setenv(envGitHubAppAPIBaseURL, server.URL)
+
+			records, restore := captureMemberAddRecords(t)
+			t.Cleanup(restore)
+			members := &Members{
+				Pool: pool, Credentials: memberCredentials{},
+				// Four adds mint at once, before the ordering lock is even
+				// contended, so the fixture minter must hold no mutable state.
+				// This one is a value with a single immutable field and a value
+				// receiver. The upstream above answers the installation lookup
+				// with 91 and memberToken refuses a token that does not match
+				// that id or is empty, so a drift here fails the add loudly
+				// rather than passing silently.
+				Minter:         memberResultMinter{GitHubInstallationToken{InstallationID: 91, Token: "contended-token"}},
+				addStageBudget: 100 * time.Millisecond,
+			}
+			request := registerTestInstallCredential(t, pool,
+				middleware.ContextWithAuthInfo(ctx, &middleware.AuthInfo{User: &owner, SessionHash: "member-add-contended-session"}), repo.ID)
+			request, cancelRequests := context.WithCancel(request)
+
+			// One ordinary roster-ordering transaction, exactly the lock the
+			// product's own lockRoster takes, held while the adds run.
+			ordering, err := pool.Begin(ctx)
+			require.NoError(t, err)
+			_, err = ordering.Exec(ctx, `SELECT user_id FROM self_host_owners FOR UPDATE`)
+			require.NoError(t, err)
+			var releaseOrdering sync.Once
+			release := func() { releaseOrdering.Do(func() { _ = ordering.Rollback(ctx) }) }
+			t.Cleanup(release)
+
+			var running sync.WaitGroup
+			failures := make(chan error, concurrent)
+			for i := range concurrent {
+				running.Add(1)
+				go func() {
+					defer running.Done()
+					failures <- members.Add(request, fmt.Sprintf("member%d", i+1))
+				}()
+			}
+			// However this case ends, the lock is released, the requests are
+			// cancelled and every goroutine this test owns is joined before the
+			// upstream is closed.
+			t.Cleanup(func() {
+				release()
+				cancelRequests()
+				joined := make(chan struct{})
+				go func() { running.Wait(); close(joined) }()
+				select {
+				case <-joined:
+				case <-time.After(20 * time.Second):
+					t.Error("a contended roster add never returned after the lock was released and its request was cancelled")
+				}
+			})
+
+			require.Eventually(t, func() bool {
+				return memberAddRecord(records.String(),
+					"stage="+memberAddStageMutation, "phase="+memberAddPhaseInFlight, tc.wantMax) != ""
+			}, 20*time.Second, 20*time.Millisecond,
+				"every contended add must name the stage it is waiting in")
+			waiting := memberAddRecord(records.String(),
+				"stage="+memberAddStageMutation, "phase="+memberAddPhaseInFlight, tc.wantMax)
+			require.Contains(t, waiting, "caller="+memberAddCallerLive)
+			exhausted := memberAddRecord(records.String(),
+				"stage="+memberAddStageMutation, "phase="+memberAddPhaseInFlight,
+				tc.wantMax, "pool_acquired="+strings.TrimPrefix(tc.wantMax, "pool_max="))
+			if tc.wantExhausted {
+				require.NotEmpty(t, exhausted,
+					"a request that could not get a connection at all must record the pool with every connection acquired")
+			} else {
+				require.Empty(t, exhausted,
+					"waiting on the lock with connections to spare must not look like an exhausted pool")
+			}
+			require.NotContains(t, records.String(), "member1", "a stage record carries no login")
+
+			// Released, every add completes on the real path and writes its row.
+			release()
+			for range concurrent {
+				select {
+				case err = <-failures:
+					require.NoError(t, err)
+				case <-time.After(30 * time.Second):
+					t.Fatalf("a contended roster add did not return after the lock was released; stages recorded: %q", records.String())
+				}
+			}
+			var rows int
+			require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM collaborators WHERE repository_id=$1`, repo.ID).Scan(&rows))
+			require.Equal(t, concurrent, rows, "every contended add still writes its own row")
+		})
+	}
+}
+
+// contentionMemberID gives each concurrent add its own GitHub id.
+func contentionMemberID(login string) int64 {
+	suffix, err := strconv.Atoi(strings.TrimPrefix(login, "member"))
+	if err != nil {
+		return 0
+	}
+	return int64(200 + suffix)
+}
+
+// memberAddRecord returns the first record carrying every part, or "". The
+// records share one buffer, so a part found anywhere in the text proves
+// nothing about any single record.
+func memberAddRecord(text string, parts ...string) string {
+	for _, line := range strings.Split(text, "\n") {
+		found := true
+		for _, part := range parts {
+			if !strings.Contains(line, part) {
+				found = false
+				break
+			}
+		}
+		if found && line != "" {
+			return line
+		}
+	}
+	return ""
 }
