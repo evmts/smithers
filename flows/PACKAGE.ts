@@ -1531,7 +1531,7 @@ const securityReview = Smithers.SecurityReview({
 
 /**
  * The shared issue-claim convention and the machine's GitHub proxy it calls
- * GitHub through, and the T-PRC-03 check receipts it closes issues with. The
+ * GitHub through. The
  * issue-claim suite fakes the proxy and proves that a live claim blocks other
  * agents, a stale one can be taken over, racing claimants agree on the first,
  * retries never re-post, a receipt carries the release, a command asks the

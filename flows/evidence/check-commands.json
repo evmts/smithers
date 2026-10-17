@@ -2337,83 +2337,8 @@
       "ticket": "T-PRC-02"
     },
     "C-PRC-03": {
-      "status": "pending-owner",
-      "reason": "Automation present (flows/evidence/check-receipts.test.mjs); awaiting smithers-22 mapping approval",
-      "ticket": "T-PRC-03",
-      "pendingBinding": {
-        "target": "//flows:issueClaim",
-        "files": [
-          "flows/evidence/check-receipts.test.mjs"
-        ],
-        "commands": [
-          {
-            "argv": [
-              "node",
-              "--test",
-              "flows/evidence/check-receipts.test.mjs"
-            ],
-            "files": [
-              "flows/evidence/check-receipts.test.mjs"
-            ],
-            "reporter": "node",
-            "expectedCaseIds": [
-              "target receipts preserve observed fields; all close variants close exactly once",
-              "invalid evidence refuses every variant before any remote write",
-              "receipt, log and parent symlinks, traversal and escapes are refused",
-              "runner refuses absent, unwritten, unparsable and mismatched Automation before CI reads",
-              "malformed JSON values and missing receipt arguments refuse without throwing or writing",
-              "each close variant consumes complete coverage and releases only when requested",
-              "caller-invented check IDs and omitted check fields cannot cover ticket checks",
-              "CLI invalid close variants exit 2 without proxy startup or remote writes",
-              "held claims retain action refused, distinct from evidence refusal",
-              "coverage comes from the ticket Issue field, with exact repository and issue identity",
-              "journey check IDs retain numeric stages in runner and ticket-derived coverage",
-              "dirty mapping and ticket edits cannot forge committed receipt command or coverage",
-              "suffixed committed tickets retain complete acceptance coverage",
-              "manual and pending-owner checks refuse closure as missing",
-              "unparsable receipts are attributed to their path without guessing a check",
-              "non-completion reasons close once with their literal state reason",
-              "invalid reasons and notes refuse before writes; explicit completed requires evidence",
-              "inventory covers every check exactly once and executable mappings require approval, target and host",
-              "replacement reasons accept a replacing issue URL or full commit SHA",
-              "forged local origin main cannot authorize an unlanded commit",
-              "unavailable remote main fails closed despite valid local ancestry",
-              "receipt command must deep-equal the approved landed mapping",
-              "an approved mapping cannot drop obligations its pending binding still lists open (4386fc25e review)",
-              "a run that executed no tests is empty for every reporter, and a run with tests is not",
-              "CI receipt passes on the label's own status in the latest attempt, when another target failed but the job succeeded",
-              "CI receipt refuses forged sha, app, branch, event and workflow path",
-              "CI receipt refuses a rerun that still fails, ignoring the earlier passing attempt",
-              "CI receipt refuses foreign or tampered artifacts, stopped jobs and an absent label",
-              "target mappings carry a label and no argv, and closure expects the CI receipt command",
-              "runner requires --landed and refuses argv mappings even with CI=true",
-              "artifact unpacking is confined: symlinks, nested paths and oversize zips refuse with fixed reasons (3f, #3663)",
-              "unreadable results JSON refuses with a fixed reason and no file contents",
-              "a partial rerun keeps each job leg at its newest attempt, and truncated listings refuse (Fable, #3663)",
-              "closure re-reads CI for a target receipt: a hand-written receipt that passes the local gate is refused",
-              "a rate-limited CI read during closure defers the close instead of crashing it (Fable N2)",
-              "an empty or non-JSON results file refuses the receipt (38L: a crashed run leaves 0 bytes)",
-              "a crashed latest attempt (empty results) refuses the label; it never inherits the earlier attempt's pass (38L)",
-              "executable CLI closes recorder-produced evidence through isolated transport",
-              "recorder retains failed CI labels as failed evidence",
-              "root-check-mapping-validation: markers refuse recorder and close without dispatch",
-              "CI check runs for a different SHA refuse closure with commit and no writes",
-              "the host sampler lives with packages/smithers and no duplicate check runner remains",
-              "completed closure requires the landed declaration to match the approved mapping",
-              "duplicate CI artifact identities refuse at recorder and completed-close boundaries",
-              "reference-host mappings accept only reviewed targets and keep all other rules",
-              "spike-verdict refuses non-spike checks before remote writes",
-              "spike-verdict accepts spike evidence only with the committed reviewer approval",
-              "GitHub check success authenticates artifact claims at recorder and close boundaries",
-              "mapping activation is required at recorder and close, including absent or false approval",
-              "successful unrelated check cannot authenticate the label job at recorder or closure",
-              "reference-host recorder and closure verify committed UUID, runner identity, labels and workflow",
-              "spike evidence cannot become a target receipt at the recorder boundary"
-            ]
-          }
-        ],
-        "provenance": "C-PRC-03 Automation and flows/PACKAGE.ts issueClaim runner; smithers-22 approval and smithers-3f security acceptance pending"
-      }
+      "status": "manual",
+      "reason": "Completed closure receipt policy retired; fixes close when landed on main"
     },
     "C-REL-01": {
       "status": "pending-owner",
@@ -3492,10 +3417,6 @@
           }
         ],
         "unboundSubcases": [
-          {
-            "name": "T-PRC-03-population",
-            "reason": "Both attempted targets failed before reporting named cases; expectedCaseIds require real execution"
-          },
           {
             "name": "T-UI-02-04-action-removal-and-callbacks",
             "reason": "Setup/Settings/TODO early returns bypass generic action removal; Setup/Settings do not assert other callback silence"

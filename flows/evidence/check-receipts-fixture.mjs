@@ -1,7 +1,7 @@
 import { execFileSync, spawnSync } from 'node:child_process'
 import { cpSync, existsSync, lstatSync, readdirSync, readlinkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { hostname, tmpdir } from 'node:os'
-import { basename, join } from 'node:path'
+import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { run } from '../issue-claim/issue-claim.mjs'
 
@@ -38,7 +38,7 @@ export const zipFixture = (directory, destination) => {
   writeFileSync(destination, Buffer.concat([...local, index, end]))
 }
 
-// Literal policy oracles from T-PRC-03 Tests / C-PRC-03 Pass when, not production data.
+// Isolated recorder and spike-verdict fixtures.
 export const fixture = () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'prc03-')))
   const put = (path, data) => { mkdirSync(join(root, path, '..'), { recursive: true }); writeFileSync(join(root, path), data) }
@@ -59,7 +59,7 @@ Automation: \`smthrs test //fixture:canary\` · Runs in: CI
   commit()
   const runner = (id = 'C-FIX-01') => spawnSync(process.execPath, ['flows/evidence/check-run.mjs', id, '--landed', sha], { cwd: root, encoding: 'utf8', env: { ...process.env, HOME: join(root, 'home'), CI: 'true' } })
   const hash = data => `sha256:${createHash('sha256').update(data).digest('hex')}`
-  // Literal CI responses and real artifact zip: closure uses the production verifier.
+  // Literal CI responses and real artifact zip for the production recorder.
   let reference = false
   let cachedCi
   const ci = (repo = 'o/r') => {
@@ -99,15 +99,7 @@ Automation: \`smthrs test //fixture:canary\` · Runs in: CI
     if (path.includes('/events?')) return '[[]]'
     return JSON.stringify({ state: closed ? 'closed' : 'open', labels: labeled ? ['in-progress'] : [] })
   }
-  const close = (receipts = [], extra = [], landed = sha) => run(['comment', 'o/r#7', '--by', 'fixture', '--body', 'Complete', '--close', ...(landed === null ? [] : ['--landed', landed]), ...receipts.flatMap(p => ['--receipt', p]), ...extra], { cwd: root, env: { SMITHERS_GITHUB_PROXY: 'http://fixture.test' }, ensure: () => {}, gh, ghBytes })
-  const ghBytes = args => { const path = args.find(a => a.startsWith('http://fixture.test/')); if (!path.endsWith('/actions/artifacts/10/zip')) throw new Error('unexpected binary read'); return ci().bytes }
-  const evidence = id => {
-    const started = new Date().toISOString(); const dir = `.artifacts/checks/${id}/${started.replace(/[:.]/g, '-')}`
-    const log = JSON.stringify({ label: '//fixture:canary', pass: true, reason: 'pass' }) + '\n'
-    put(`${dir}/log.txt`, log)
-    put(`${dir}/receipt.json`, JSON.stringify({ version: 1, check: id, commit: sha, layer: 'integration', command: ['smthrs-ci', '//fixture:canary'], exit: 0, started, ended: new Date().toISOString(), log_digest: hash(log) }))
-    return `${dir}/receipt.json`
-  }
+  const close = (receipts = [], extra = []) => run(['comment', 'o/r#7', '--by', 'fixture', '--body', 'Complete', '--close', '--landed', sha, ...receipts.flatMap(p => ['--receipt', p]), ...extra], { cwd: root, env: { SMITHERS_GITHUB_PROXY: 'http://fixture.test' }, ensure: () => {}, gh })
   // Replace only GitHub transport in child processes; parsing, zip extraction,
   // recorder publication and issue write admission remain production code.
   put('transport.mjs', `import child from 'node:child_process'
@@ -155,7 +147,6 @@ globalThis.fetch = async (url) => {
   }
   const transportEnv = () => ({ ...process.env, HOME: join(root, 'home'), NODE_OPTIONS: `--import=${join(root, 'transport.mjs')}`, PRC03_TRANSPORT: join(root, 'transport.json'), SMITHERS_GITHUB_PROXY: 'http://fixture.test' })
   const cliClose = (paths, extra = []) => spawnSync(process.execPath, ['flows/issue-claim/issue-claim.mjs', 'comment', 'o/r#7', '--by', 'fixture', '--body', 'Complete', '--close', '--landed', sha, ...paths.flatMap(p => ['--receipt', p]), ...extra], { cwd: root, encoding: 'utf8', env: transportEnv() })
-  const invoke = (argv) => run(argv,{cwd:root,env:{SMITHERS_GITHUB_PROXY:'http://fixture.test'},ensure:()=>{},gh,ghBytes})
-  return { referenceSetup, approval: comment => { approvalComment = comment }, root, put, git, get sha() { return sha }, commit, ci, runner, recorded, cliClose, close, writes, evidence, invoke, cleanup: () => { if (process.env.PRC03_EVIDENCE_DIR) cpSync(root, join(process.env.PRC03_EVIDENCE_DIR, 'fixtures', basename(root)), { recursive: true }); rmSync(root, { recursive: true, force: true }) } }
+  return { referenceSetup, approval: comment => { approvalComment = comment }, root, put, git, get sha() { return sha }, commit, ci, runner, recorded, cliClose, close, writes, cleanup: () => rmSync(root, { recursive: true, force: true }) }
 }
 

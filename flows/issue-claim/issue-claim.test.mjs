@@ -4,21 +4,18 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { createServer } from "node:http"
 import { hostname, tmpdir } from "node:os"
 import { join } from "node:path"
-import { after, describe, it } from "node:test"
+import { describe, it } from "node:test"
 
 import { claimBody, holder, LABEL, parseRef, proxied, releaseBody, run, splitResponse, TRANSIENT } from "./issue-claim.mjs"
 
-import { fixture } from "../evidence/check-receipts-fixture.mjs"
-
-// Close-policy input is literal, local and machine-written. No evidence bypass.
-const evidenceFixture = fixture()
-for (const [repo, number, tag] of [["smithersai/smithers",5,"A"], ["smithersai/smithers",6,"B"], ["smithersai/smithers",7,"C"], ["smithersai/plue",8,"D"]]) {
-  evidenceFixture.put(`.specs/engineering/tickets/T-${tag}-01.md`, `Issue: https://github.com/${repo}/issues/${number}\n## Acceptance\n- C-FIX-01\n- C-FIX-02\n`)
+const landed = "a".repeat(40)
+const closeArgs = ["--landed", landed]
+const jjCalls = []
+const jj = (args) => {
+  jjCalls.push(args)
+  if (args[0] === "git") return ""
+  return args.includes(`${landed} & ::main@origin`) ? landed : ""
 }
-evidenceFixture.commit()
-const closeReceipts = ["C-FIX-01", "C-FIX-02"].map(evidenceFixture.evidence)
-const closeArgs = ["--landed", evidenceFixture.sha, ...closeReceipts.flatMap(path => ["--receipt", path])]
-after(evidenceFixture.cleanup)
 
 const T0 = new Date("2026-09-29T00:00:00Z")
 const hours = (n) => new Date(T0.getTime() + n * 3600_000)
@@ -46,7 +43,7 @@ const viaProxy = (gh, state) => (args) => {
   return gh(args.map((arg) => arg.startsWith(`${PROXY}/`) ? arg.slice(PROXY.length + 1) : arg))
 }
 
-const runVia = (gh, state, argv, at = T0) => run(argv.includes("--close") ? [...argv, ...closeArgs] : argv, { cwd: evidenceFixture.root, gh: viaProxy(gh, state), ghBytes: viaProxy(gh, state), now: () => at, env: state.env, ensure: () => {} })
+const runVia = (gh, state, argv, at = T0) => run(argv, { jj, gh: viaProxy(gh, state), now: () => at, env: state.env, ensure: () => {} })
 
 // An in-memory GitHub issue behind the `gh api` calls the CLI makes.
 const fakeGitHub = (issue = {}) => {
@@ -54,11 +51,6 @@ const fakeGitHub = (issue = {}) => {
   const gh = (args) => {
     state.calls.push(args.join(" "))
     const path = args.find((arg) => arg.startsWith("repos/"))
-    if (path?.includes('/commits/') || path?.includes('/actions/')) {
-      const repo = /^repos\/([^/]+\/[^/]+)\//.exec(path)[1]
-      const ci = evidenceFixture.ci(repo)
-      return path.endsWith('/actions/artifacts/10/zip') ? ci.bytes : JSON.stringify(ci.responses[path])
-    }
     const field = (name) => args.find((arg) => arg.startsWith(`${name}=`))?.slice(name.length + 1)
     if (args.includes("PATCH")) {
       state.open = false
@@ -97,7 +89,7 @@ const fakeGitHub = (issue = {}) => {
 
 const cli = (github, argv, at = T0, by = "lane-1") => {
   github.state.clock = at
-  return runVia(github.gh, github.state, [...argv, "--by", by], at)
+  return runVia(github.gh, github.state, [...argv, ...(argv.includes("--close") ? closeArgs : []), "--by", by], at)
 }
 
 const writesOf = (github) => github.state.calls.filter((call) => / -f |--method/.test(call))
@@ -540,7 +532,7 @@ describe("issue-claim, gh and the GitHub proxy end to end", { skip: hasGh ? fals
       delete cliEnv.GH_TOKEN
       delete cliEnv.GITHUB_TOKEN
       const cli = (...argv) => new Promise((resolve) => {
-        const child = spawn(process.execPath, [new URL("./issue-claim.mjs", import.meta.url).pathname, ...argv, ...(argv.includes("--close") ? closeArgs : [])], { env: cliEnv, cwd: evidenceFixture.root })
+        const child = spawn(process.execPath, [new URL("./issue-claim.mjs", import.meta.url).pathname, ...argv, ...(argv.includes("--close") ? ["--reason", "not-planned", "--note", "test"] : [])], { env: cliEnv, cwd: dir })
         let stdout = ""
         let stderr = ""
         child.stdout.on("data", (chunk) => { stdout += chunk })
@@ -599,5 +591,54 @@ describe("issue-claim, gh and the GitHub proxy end to end", { skip: hasGh ? fals
         assert.equal(api.requests.length, seen, "the paused proxy sent nothing to GitHub")
       })
     } finally { await api.close() }
+  })
+})
+
+describe("completed close policy", () => {
+  const close = (github, flags = []) => runVia(github.gh, github.state,
+    ["comment", "smithers#7", "--body", "Fixed", "--close", ...flags])
+  it("fetches first and closes a reachable full SHA without receipts or a note", () => {
+    for (const flags of [[], ["--reason", "completed"]]) {
+      const github = fakeGitHub()
+      jjCalls.length = 0
+      assert.equal(close(github, [...flags, "--landed", landed]).code, 0)
+      assert.equal(github.state.open, false)
+      assert.deepEqual(jjCalls, [["git", "fetch", "--remote", "origin"],
+        ["log", "--no-graph", "-r", `${landed} & ::main@origin`, "-T", "commit_id"]])
+    }
+  })
+  it("refuses missing, short and unreachable SHAs before GitHub writes", () => {
+    for (const sha of [undefined, "abc123", "b".repeat(40)]) {
+      const github = fakeGitHub()
+      const result = close(github, sha ? ["--landed", sha] : [])
+      assert.equal(result.code, 2)
+      assert.equal(result.out.action, "evidence-refused")
+      assert.deepEqual(result.out.checks, [{check: "landed", reason: "landed"}])
+      assert.deepEqual(writesOf(github), [])
+    }
+  })
+  it("refuses a failed fetch before any GitHub write", () => {
+    const github = fakeGitHub()
+    const result = run(["comment", "smithers#7", "--body", "Fixed", "--close", "--landed", landed], {
+      gh: github.gh, ensure: () => {}, jj: () => { throw new Error("offline") }
+    })
+    assert.deepEqual(result, {code: 2, out: {issue: "smithersai/smithers#7", action: "evidence-refused", checks: [{check: "landed", reason: "landed"}]}})
+    assert.deepEqual(github.state.calls, [])
+  })
+  it("keeps non-completion reasons and replacement-note validation", () => {
+    for (const [reason, state] of [["not-planned", "not_planned"], ["duplicate", "duplicate"], ["superseded", "not_planned"]]) {
+      const github = fakeGitHub()
+      jjCalls.length = 0
+      assert.equal(close(github, ["--reason", reason, "--note", "o/r#8"]).code, 0)
+      assert.ok(github.state.calls.some(call => call.includes(`state_reason=${state}`)))
+      assert.deepEqual(jjCalls, [])
+      const refused = fakeGitHub()
+      assert.equal(close(refused, ["--reason", reason]).code, 2)
+      assert.deepEqual(writesOf(refused), [])
+      if (reason !== "not-planned") {
+        assert.equal(close(refused, ["--reason", reason, "--note", "text"]).code, 2)
+        assert.equal(close(refused, ["--reason", reason, "--note", "b".repeat(40)]).code, 0)
+      }
+    }
   })
 })

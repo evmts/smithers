@@ -17,7 +17,7 @@ const publish = ({ id, commit, layer, command, exit, started, ended, log }) => {
   writeFileSync(join(root, dir, 'log.txt'), log, { flag: 'wx' })
   writeFileSync(join(root, dir, 'receipt.json'), JSON.stringify({ version: 1, check: id, commit, layer, command, exit, started, ended, log_digest: hashLog(log) }, null, 2) + '\n', { flag: 'wx' })
   console.log(JSON.stringify({ check: id, receipt: join(dir, 'receipt.json'), exit }))
-  // The receipt records the observed exit; closure also refuses an empty run.
+  // The receipt records the observed exit; an empty run still fails.
   process.exitCode = exit === 0 && zeroTests(log) ? 1 : exit
 }
 const id = process.argv[2]

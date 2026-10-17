@@ -322,8 +322,7 @@ test("discovery narrows selected open issue after preserving all open workspaces
   assert.deepEqual(all, rows.map((row) => ({ id: String(row.number), ...row })).toSorted(byPriority))
 })
 
-// T-PRC-03: a sweep without named-check receipts releases, leaving closure to the owner.
-test("landed sweeps record their commit and release without attempting evidence-free closure", () => {
+test("landed sweeps record their commit and release", () => {
   const sha = "a".repeat(40)
   assert.deepEqual(releaseCommand("o/r#7", "sweep", "landed", sha), [
     "release",

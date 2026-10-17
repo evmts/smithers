@@ -23,7 +23,7 @@ export const validMapping = (mapping) => {
   return ['CI', 'reference-host'].includes(mapping.host) && targetLabel(mapping.target) && !('command' in mapping) && !('paths' in mapping)
 }
 
-/** Read the same landed declaration at recording and completed closure. */
+/** Read the same landed declaration at recording. */
 export const checkDeclaration = (root, landed, id) => {
   const doc = gitRead(root, ['show', `${landed}:.specs/engineering/checks/${id}.md`])
   const declaration = /^Automation: `([^`\n]+)`(?:[^\n]*?) · Runs in: ([^\n]+)$/m.exec(doc)
@@ -244,8 +244,6 @@ export const confined = (root, path, base = '.artifacts/checks') => {
   return target
 }
 
-const iso = (time) => typeof time === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(time) && Number.isFinite(Date.parse(time)) && new Date(time).toISOString() === time
-
 /** Derive coverage from the unique committed ticket naming this repository and issue. */
 export const ticketText = (root, issue, revision = 'refs/remotes/origin/main') => {
   const url = `https://github.com/${issue.repo}/issues/${issue.number}`
@@ -261,83 +259,6 @@ export const ticketChecks = (root, issue, revision = 'refs/remotes/origin/main')
   if (!checks.length) throw new Error('no declared coverage')
   return checks
 }
-
-/** Return all refusals before the caller may cross the remote write boundary. */
-export const evidenceGate = ({ root, issue, landed, receipts }) => {
-  let required
-  try { required = ticketChecks(root, issue, fullSha(landed) ? landed : 'refs/remotes/origin/main') } catch { return [{ check: 'ticket', reason: 'coverage' }] }
-  try {
-    if (!fullSha(landed)) throw new Error('full SHA required')
-    const remote = gitRead(root, ['ls-remote', '--exit-code', 'origin', 'refs/heads/main'])
-    const match = /^([a-f0-9]{40})\s+refs\/heads\/main$/.exec(remote)
-    if (!match) throw new Error('remote main unavailable')
-    gitRead(root, ['merge-base', '--is-ancestor', landed, match[1]])
-    if (gitRead(root, ['rev-parse', `${landed}^{commit}`]) !== landed) throw new Error('not a commit')
-  } catch { return required.map(check => ({ check, reason: 'commit' })) }
-  let mappings
-  try { mappings = inventoryAt(root, landed) } catch { return required.map(check => ({ check, reason: 'missing' })) }
-  const declarations = new Map()
-  const unavailable = required.filter(check => {
-    const mapping = mappingsActive(mappings) && mappings.checks?.[check]
-    if (!validMapping(mapping) || mapping.status) return true
-    try {
-      const declaration = checkDeclaration(root, landed, check)
-      declarations.set(check, declaration)
-      return !declaration.layer || mapping.automation !== declaration.automation || mapping.runsIn !== declaration.runsIn
-    } catch { return true }
-  })
-  if (unavailable.length) return unavailable.map(check => ({ check, reason: 'missing' }))
-  if (!receipts.length) return required.map(check => ({ check, reason: 'missing' }))
-  const failures = []; const covered = new Set()
-  for (const path of receipts) {
-    let r; let reason
-    try { r = JSON.parse(readFileSync(confined(root, path), 'utf8')) } catch { failures.push({ check: 'receipt', receipt: path, reason: 'digest' }); continue }
-    const check = typeof r?.check === 'string' ? r.check : required[0]
-    if (typeof r?.check !== 'string' || !required.includes(r.check)) reason = 'coverage'
-    else {
-      covered.add(check)
-      if (!fullSha(r.commit) || r.commit !== landed) reason = 'commit'
-      else if (!isDeepStrictEqual(r.command, expectedCommand(mappings.checks[check]))) reason = 'coverage'
-      else if (r.version !== 1 || !Number.isInteger(r.exit) || r.exit !== 0 || !iso(r.started) || !iso(r.ended) || r.started > r.ended || r.layer !== declarations.get(check).layer) reason = 'failed'
-      else {
-        try {
-          const log = confined(root, join(resolve(root, path), '..', 'log.txt'))
-          const bytes = readFileSync(log)
-          if (typeof r.log_digest !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(r.log_digest) || hashLog(bytes) !== r.log_digest) reason = 'digest'
-          else if (zeroTests(bytes)) reason = 'failed'
-        } catch { reason = 'digest' }
-      }
-    }
-    if (reason) failures.push({ check, receipt: path, reason })
-  }
-  for (const check of required) if (!covered.has(check)) failures.push({ check, reason: 'coverage' })
-  return failures
-}
-
-/**
- * Closure re-reads CI for every receipt of a target mapping: a receipt is a
- * cache of the CI verdict, never the verdict (Fable, #3663). `repo` is the
- * issue's repository, never the local `origin`, so a fork's run cannot close it.
- */
-export const reverifyCi = ({ root, repo, landed, receipts, github, unpack = unpackResults }) => {
-  let mappings
-  try { mappings = inventoryAt(root, landed) } catch { return [{ check: 'receipt', reason: 'missing' }] }
-  if (!mappingsActive(mappings)) return [{ check: 'receipt', reason: 'missing' }]
-  const failures = []
-  for (const path of receipts) {
-    let r
-    try { r = JSON.parse(readFileSync(confined(root, path), 'utf8')) } catch { failures.push({ check: 'receipt', receipt: path, reason: 'digest' }); continue }
-    const mapping = mappings.checks?.[r?.check]
-    if (!mapping || !('target' in mapping)) continue
-    const verdict = verifyCiRun({ github, unpack, repo, landed, label: mapping.target, host: mapping.host, hosts: mapping.host === 'reference-host' ? referenceHosts(root, landed) : null })
-    if (!verdict.pass) {
-      const reason = verdict.reason === 'commit' ? 'commit' : verdict.reason === 'artifact_digest' ? 'digest' : ['no_run', 'artifact_missing'].includes(verdict.reason) ? 'missing' : verdict.reason === 'label_absent' ? 'coverage' : 'failed'
-      failures.push({ check: r.check, receipt: path, reason })
-    }
-  }
-  return failures
-}
-
 
 /**
  * Spike evidence is data; approval is read from GitHub. The landed ticket's

@@ -5,10 +5,10 @@
 //   pnpm issue-claim claim   <repo>#<n> [--by NAME] [--note TEXT]
 //   pnpm issue-claim release <repo>#<n> [--by NAME] [--note TEXT] [--force]
 //   pnpm issue-claim comment <repo>#<n> (--body TEXT | --body-file PATH) [--close] [--pr]
-//                                        [--landed SHA --receipt PATH...] [--release [--by NAME] [--note TEXT] [--force]]
+//                                        [--landed SHA] [--release [--by NAME] [--note TEXT] [--force]]
 // Non-completion: --close --reason not-planned|duplicate|superseded --note <link>.
 // Spike: --close --reason spike-verdict --landed SHA --receipt verdict.json --note <approval URL>.
-// Every explicit reason needs a note; duplicate/superseded identify the replacement.
+// Every non-completion reason needs a note; duplicate/superseded identify the replacement.
 // <repo> is `name` (org smithersai) or `owner/name`. NAME defaults to ISSUE_CLAIM_BY,
 // then CLAUDE_SESSION_NAME, then `<user>-<parent pid>`; the host is os.hostname().
 //
@@ -40,7 +40,7 @@ import { homedir, hostname, userInfo } from "node:os"
 import { join } from "node:path"
 import process from "node:process"
 
-import { spikeGate, evidenceGate, reverifyCi } from "../evidence/check-evidence.mjs"
+import { spikeGate } from "../evidence/check-evidence.mjs"
 
 import { proxyUrl } from "./github-proxy.mjs"
 
@@ -126,12 +126,6 @@ const defaultGh = (args) => {
   return execFileSync(binary, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 << 20 })
 }
 
-/** `gh` for binary bodies such as artifact zips, which utf8 decoding would corrupt. */
-const defaultGhBytes = (args) => {
-  const binary = process.env.ISSUE_CLAIM_GH || "gh"
-  return execFileSync(binary, args, { encoding: "buffer", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 256 << 20 })
-}
-
 /** Starts the machine's GitHub proxy unless it answers. */
 const defaultEnsure = (env) => {
   execFileSync(process.execPath, [new URL("./github-proxy.mjs", import.meta.url).pathname, "--ensure"],
@@ -192,27 +186,32 @@ export const read = ({ repo, number }, gh = defaultGh) => {
 const mine = (claim, me) => claim && claim.by === me.by && claim.host === me.host
 
 /** Runs a command through the machine's GitHub proxy, starting it first when it is not running. */
-export const run = (argv, { gh = defaultGh, ghBytes = defaultGhBytes, now = () => new Date(), env = process.env, ensure = defaultEnsure, cwd = process.cwd() } = {}) => {
+export const run = (argv, { gh = defaultGh, now = () => new Date(), env = process.env, ensure = defaultEnsure, cwd = process.cwd(), jj = args => execFileSync("jj", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim() } = {}) => {
   const [command, ref, ...rest] = argv
   const option = (name) => { const at = rest.indexOf(name); return at < 0 ? undefined : rest[at + 1] }
   const flag = (name) => rest.includes(name)
   if (!["check", "claim", "release", "comment"].includes(command)) {
-    throw new Error("usage: issue-claim.mjs check|claim|release|comment <repo>#<n> [--by NAME] [--note TEXT] [--force] [--body TEXT | --body-file PATH] [--close --landed SHA --receipt PATH... | --close --reason not-planned|duplicate|superseded|spike-verdict --note LINK] [--pr] [--release]")
+    throw new Error("usage: issue-claim.mjs check|claim|release|comment <repo>#<n> [--by NAME] [--note TEXT] [--force] [--body TEXT | --body-file PATH] [--close --landed SHA | --close --reason not-planned|duplicate|superseded|spike-verdict --note LINK] [--pr] [--release]")
   }
   const issue = parseRef(ref)
   const me = { by: option("--by") || env.ISSUE_CLAIM_BY || env.CLAUDE_SESSION_NAME || `${userInfo().username}-${process.ppid}`, host: hostname() }
   const id = `${issue.repo}#${issue.number}`
   const closeReason = option("--reason")
   if (command === "comment" && flag("--close")) {
-    if (flag("--reason") && (!["completed", "not-planned", "duplicate", "superseded", "spike-verdict"].includes(closeReason) || !option("--note")?.trim() || (["duplicate", "superseded"].includes(closeReason) && !/(?:[\w.-]+\/[\w.-]+#\d+|https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/issues\/\d+|\b[a-f0-9]{40}\b)/.test(option("--note"))))) return { code: 2, out: { issue: id, action: "evidence-refused", checks: [{ check: "reason", reason: "coverage" }] } }
+    if (flag("--reason") && (!["completed", "not-planned", "duplicate", "superseded", "spike-verdict"].includes(closeReason) || (closeReason !== "completed" && !option("--note")?.trim()) || (["duplicate", "superseded"].includes(closeReason) && !/(?:[\w.-]+\/[\w.-]+#\d+|https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/issues\/\d+|\b[a-f0-9]{40}\b)/.test(option("--note"))))) return { code: 2, out: { issue: id, action: "evidence-refused", checks: [{ check: "reason", reason: "coverage" }] } }
     if (closeReason === "spike-verdict") {
       const checks = spikeGate({root:cwd, issue, landed:option("--landed"), note:option("--note"), receipts:rest.flatMap((arg,index) => arg === "--receipt" ? [rest[index+1]] : [])})
       if (checks.length) return {code:2,out:{issue:id,action:"evidence-refused",checks}}
     }
     if (!closeReason || closeReason === "completed") {
-      const receipts = rest.flatMap((arg, index) => arg === "--receipt" ? [rest[index + 1]] : [])
-      const checks = evidenceGate({ root: cwd, issue, landed: option("--landed"), receipts })
-      if (checks.length) return { code: 2, out: { issue: id, action: "evidence-refused", checks } }
+      const landed = option("--landed")
+      try {
+        if (!/^[a-f0-9]{40}$/.test(landed ?? "")) throw new Error("full SHA required")
+        jj(["git", "fetch", "--remote", "origin"])
+        if (jj(["log", "--no-graph", "-r", `${landed} & ::main@origin`, "-T", "commit_id"]) !== landed) throw new Error("not on main")
+      } catch {
+        return { code: 2, out: { issue: id, action: "evidence-refused", checks: [{ check: "landed", reason: "landed" }] } }
+      }
     }
   }
   ensure(env)
@@ -225,14 +224,6 @@ export const run = (argv, { gh = defaultGh, ghBytes = defaultGhBytes, now = () =
   const admit = (writes) => { identity = github.admit(issue.repo, writes) }
   const result = (code, out) => ({ code, out: { ...out, identity } })
   try {
-    // Inside the try: a rate-limited CI read defers the close instead of crashing it.
-    if (command === "comment" && flag("--close") && (!closeReason || closeReason === "completed")) {
-      const receipts = rest.flatMap((arg, index) => arg === "--receipt" ? [rest[index + 1]] : [])
-      const bytes = proxied({ gh: ghBytes, base: proxyUrl(env), now })
-      const checks = reverifyCi({ root: cwd, repo: issue.repo, landed: option("--landed"), receipts,
-        github: { json: (path) => JSON.parse(github.read(["api", path])), bytes: (path) => bytes.read(["api", path]) } })
-      if (checks.length) return { code: 2, out: { issue: id, action: "evidence-refused", checks } }
-    }
     if (command === "comment" && flag("--close") && closeReason === "spike-verdict") {
       const checks = spikeGate({root:cwd, issue, landed:option("--landed"), note:option("--note"), receipts:rest.flatMap((arg,index) => arg === "--receipt" ? [rest[index+1]] : []), github:{json:path => JSON.parse(github.read(["api",path]))}})
       if (checks.length) return {code:2,out:{issue:id,action:"evidence-refused",checks}}

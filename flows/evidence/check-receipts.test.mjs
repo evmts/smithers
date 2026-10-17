@@ -5,13 +5,12 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { expectedCommand, reverifyCi, unpackResults, validMapping, verifyCiRun, zeroTests } from './check-evidence.mjs'
+import { expectedCommand, unpackResults, validMapping, verifyCiRun, zeroTests } from './check-evidence.mjs'
 import { fixture, zipFixture } from './check-receipts-fixture.mjs'
-import { run as claimRun } from '../issue-claim/issue-claim.mjs'
 
 const digest = (data) => `sha256:${createHash('sha256').update(data).digest('hex')}`
 
-test('target receipts preserve observed fields; all close variants close exactly once', () => {
+test('target receipts preserve observed fields', () => {
   const f = fixture()
   try {
     const before = Date.now(); const paths = ['C-FIX-01','C-FIX-02'].map(id => {
@@ -25,46 +24,6 @@ test('target receipts preserve observed fields; all close variants close exactly
     assert.equal(r.log_digest, digest(readFileSync(join(f.root, paths[0], '..', 'log.txt'))))
     for (const time of [r.started, r.ended]) { assert.match(time, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/); assert.ok(Date.parse(time) >= before && Date.parse(time) <= after) }
     assert.ok(r.started <= r.ended)
-    for (const flags of [[], ['--release'], ['--force'], ['--release','--force'], ['--reason','completed','--note','verified']]) assert.equal(f.close(paths, flags).code, 0)
-    assert.equal(f.writes.filter(a => a.includes('PATCH')).length, 1)
-  } finally { f.cleanup() }
-})
-
-test('invalid evidence refuses every variant before any remote write', () => {
-  const f = fixture()
-  try {
-    const paths = ['C-FIX-01','C-FIX-02'].map(f.evidence)
-    const original = readFileSync(join(f.root, paths[0]), 'utf8')
-    const refused = (receipts, reason, flags = [], landed = f.sha) => {
-      for (const variant of [flags, [...flags,'--release'], [...flags,'--force'], [...flags,'--release','--force']]) {
-      const out = f.close(receipts, variant, landed)
-      assert.equal(out.code, 2); assert.equal(out.out.action, 'evidence-refused'); assert.ok(out.out.checks.some(c => c.reason === reason), JSON.stringify(out)); assert.equal(f.writes.length, 0)
-      }
-    }
-    for (const flags of [[], ['--release'], ['--force'], ['--release','--force']]) {
-      refused([], 'missing', flags); refused(paths.slice(0,1), 'coverage', flags)
-      refused(paths, 'commit', flags, null); refused(paths, 'commit', flags, 'abc'); refused(paths, 'commit', [...flags, '--note', f.sha], null)
-    }
-    f.put('second', 'x'); f.git('add','second'); f.git('commit','-m','not landed'); refused(paths,'commit',[],f.git('rev-parse','HEAD'))
-    for (const [field, value, reason] of [['version',2,'failed'],['exit',1,'failed'],['exit','0','failed'],['commit','0'.repeat(40),'commit'],['started','yesterday','failed'],['ended','2020-01-01T00:00:00.000Z','failed'],['layer',null,'failed'],['layer','unit','failed'],['command',[],'coverage'],['log_digest','sha256:no','digest']]) {
-      f.put(paths[0], JSON.stringify({ ...JSON.parse(original), [field]: value })); refused(paths,reason); assert.equal(f.close(paths).out.checks[0].receipt, paths[0])
-    }
-    f.put(paths[0], original); f.put(join(paths[0],'..','log.txt'),'altered'); refused(paths,'digest')
-    f.put(paths[0], JSON.stringify({ ...JSON.parse(original), check: 'C-INVENT-01' })); refused(paths,'coverage')
-  } finally { f.cleanup() }
-})
-
-test('receipt, log and parent symlinks, traversal and escapes are refused', () => {
-  const f = fixture()
-  try {
-    const paths = ['C-FIX-01','C-FIX-02'].map(f.evidence)
-    const refusal = (path) => { const out = f.close([path, paths[1]]); assert.equal(out.code,2); assert.equal(out.out.action,'evidence-refused'); assert.equal(f.writes.length,0) }
-    refusal(paths[0].replace('receipt.json','../receipt.json'))
-    f.put('outside.json',readFileSync(join(f.root,paths[0]))); refusal(join(f.root,'outside.json'))
-    symlinkSync(join(f.root,paths[0]), join(f.root,'.artifacts/checks/link.json')); refusal('.artifacts/checks/link.json')
-    symlinkSync(join(f.root,paths[0],'..'), join(f.root,'.artifacts/checks/parent')); refusal('.artifacts/checks/parent/receipt.json')
-    const log = join(f.root,paths[0],'..','log.txt'); rmSync(log); symlinkSync(join(f.root,'outside.json'),log); refusal(paths[0])
-    rmSync(join(f.root,'.artifacts/checks'),{recursive:true}); symlinkSync(join(f.root,'home'),join(f.root,'.artifacts/checks')); refusal(paths[0])
   } finally { f.cleanup() }
 })
 
@@ -78,147 +37,6 @@ test('runner refuses absent, unwritten, unparsable and mismatched Automation bef
     assert.equal(f.runner('C-ABS-01').status,2)
   } finally { f.cleanup() }
 })
-test('malformed JSON values and missing receipt arguments refuse without throwing or writing', () => {
-  const f = fixture()
-  try {
-    const paths = ['C-FIX-01','C-FIX-02'].map(f.evidence)
-    for (const text of ['null','[]','false','{','{}']) {
-      f.put(paths[0],text)
-      assert.equal(f.close(paths).code,2)
-      assert.equal(f.writes.length,0)
-    }
-    assert.equal(f.close([],['--receipt']).code,2)
-  } finally { f.cleanup() }
-})
-
-test('each close variant consumes complete coverage and releases only when requested', () => {
-  for (const flags of [[], ['--release'], ['--force'], ['--release','--force']]) {
-    const f = fixture()
-    try {
-      const paths = ['C-FIX-01','C-FIX-02'].map(f.evidence)
-      assert.equal(f.close(paths, flags).code,0)
-      assert.equal(f.writes.filter(a => a.includes('PATCH')).length,1)
-      assert.equal(f.writes.filter(a => a.includes('DELETE')).length,flags.includes('--release') ? 1 : 0)
-      assert.equal(f.writes.length,flags.includes('--release') ? 3 : 2)
-    } finally { f.cleanup() }
-  }
-})
-
-test('caller-invented check IDs and omitted check fields cannot cover ticket checks', () => {
-  const f = fixture()
-  try {
-    const paths = ['C-FIX-01','C-FIX-02'].map(f.evidence)
-    const receipt = JSON.parse(readFileSync(join(f.root,paths[0])))
-    delete receipt.check; f.put(paths[0],JSON.stringify(receipt))
-    const out = f.close(paths,['--checks','C-INVENT-01'])
-    assert.equal(out.code,2); assert.ok(out.out.checks.some(c => c.reason === 'coverage')); assert.equal(f.writes.length,0)
-  } finally { f.cleanup() }
-})
-
-// The executable CLI must refuse before even starting a publication proxy.
-test('CLI invalid close variants exit 2 without proxy startup or remote writes', () => {
-  const f = fixture()
-  try {
-    for (const flags of [[], ['--release'], ['--force'], ['--release','--force']]) {
-      const out = spawnSync(process.execPath,[new URL('../issue-claim/issue-claim.mjs',import.meta.url).pathname,'comment','o/r#7','--body','Complete','--close',...flags],{cwd:f.root,encoding:'utf8',env:{PATH:process.env.PATH,HOME:join(f.root,'home'),ISSUE_CLAIM_APP_CONFIG:join(f.root,'absent'),SMITHERS_GITHUB_PROXY:'http://127.0.0.1:1'}})
-      assert.equal(out.status,2,out.stderr); assert.equal(JSON.parse(out.stdout).action,'evidence-refused'); assert.equal(out.stderr,''); assert.equal(f.writes.length,0)
-    }
-  } finally { f.cleanup() }
-})
-
-test('held claims retain action refused, distinct from evidence refusal', () => {
-  const f = fixture()
-  try {
-    const out = f.invoke(['claim','o/r#7','--by','rival'])
-    assert.equal(out.code,2); assert.equal(out.out.action,'refused'); assert.equal(f.writes.length,0)
-  } finally { f.cleanup() }
-})
-
-test('coverage comes from the ticket Issue field, with exact repository and issue identity', () => {
-  const f = fixture()
-  try {
-    const paths = ['C-FIX-01','C-FIX-02'].map(f.evidence)
-    f.put('.specs/engineering/tickets/T-OTHER-01.md','Issue: https://github.com/o/r/issues/70\nSee https://github.com/o/r/issues/7\n## Acceptance\n- C-INVENT-01\n')
-    assert.equal(f.close(paths).code,0)
-  } finally { f.cleanup() }
-})
-
-
-test('journey check IDs retain numeric stages in runner and ticket-derived coverage', () => {
-  const f = fixture()
-  try {
-    f.put('.specs/engineering/tickets/T-FIX-01.md','Issue: https://github.com/o/r/issues/7\n## Acceptance\n- C-J1-01\n- C-FIX-02\n')
-    f.put('.specs/engineering/checks/C-J1-01.md','Layer: integration\nAutomation: `smthrs test //fixture:canary` · Runs in: CI\n')
-    f.put('flows/evidence/check-commands.json',JSON.stringify({version:1,activation:{mappingsApprovedBy:'smithers-22',coverageAcceptedBy:'smithers-8a'},checks:Object.fromEntries(['C-FIX-01','C-J1-01','C-FIX-02'].map(id=>[id,{approvedBy:'smithers-22',automation:'smthrs test //fixture:canary',runsIn:'CI',host:'CI',target:'//fixture:canary'}]))}))
-    f.commit(); assert.equal(f.close(['C-J1-01','C-FIX-02'].map(f.evidence)).code,0)
-  } finally { f.cleanup() }
-})
-
-// Expected committed input and coverage policy: T-PRC-03 Goal / spec §21.4a.
-test('dirty mapping and ticket edits cannot forge committed receipt command or coverage', () => {
-  const f = fixture()
-  try {
-    const receipt = f.evidence('C-FIX-01')
-    const original = JSON.parse(readFileSync(join(f.root,receipt)))
-    const mappings = JSON.parse(readFileSync(join(f.root,'flows/evidence/check-commands.json')))
-    mappings.checks['C-FIX-01'].target = '//fixture:dirty'
-    f.put('flows/evidence/check-commands.json',JSON.stringify(mappings))
-    f.put(receipt,JSON.stringify({...original,command:['smthrs-ci','//fixture:dirty']}))
-    const paths = [receipt,f.evidence('C-FIX-02')]
-    assert.deepEqual(f.close(paths).out.checks,[{check:'C-FIX-01',receipt,reason:'coverage'}])
-    f.put(receipt,JSON.stringify(original))
-    f.put('.specs/engineering/tickets/T-FIX-01.md','Issue: https://github.com/o/r/issues/7\n## Acceptance\n- C-FIX-01\n')
-    assert.deepEqual(f.close([receipt]).out.checks,[{check:'C-FIX-02',reason:'coverage'}])
-    assert.equal(f.writes.length,0)
-  } finally { f.cleanup() }
-})
-test('suffixed committed tickets retain complete acceptance coverage', () => {
-  const f = fixture()
-  try {
-    f.git('mv','.specs/engineering/tickets/T-FIX-01.md','.specs/engineering/tickets/T-FIX-01a.md'); f.commit()
-    assert.equal(f.close(['C-FIX-01','C-FIX-02'].map(f.evidence)).code,0)
-  } finally { f.cleanup() }
-})
-
-test('manual and pending-owner checks refuse closure as missing', () => {
-  for (const status of ['manual','pending-owner']) {
-    const f = fixture()
-    try {
-      const paths = ['C-FIX-01','C-FIX-02'].map(f.evidence)
-      const mappings = JSON.parse(readFileSync(join(f.root,'flows/evidence/check-commands.json')))
-      mappings.checks['C-FIX-02'] = {status,reason:'owner evidence pending',ticket:'T-FIX-01'}
-      f.put('flows/evidence/check-commands.json',JSON.stringify(mappings)); f.commit()
-      assert.deepEqual(f.close(paths).out.checks,[{check:'C-FIX-02',reason:'missing'}]); assert.equal(f.writes.length,0)
-    } finally { f.cleanup() }
-  }
-})
-
-test('unparsable receipts are attributed to their path without guessing a check', () => {
-  const f = fixture()
-  try {
-    const good = f.evidence('C-FIX-01'); f.put('.artifacts/checks/garbage.json','{')
-    const out = f.close(['.artifacts/checks/garbage.json',good])
-    assert.deepEqual(out.out.checks,[{check:'receipt',receipt:'.artifacts/checks/garbage.json',reason:'digest'},{check:'C-FIX-02',reason:'coverage'}])
-    assert.equal(f.writes.length,0)
-  } finally { f.cleanup() }
-})
-
-
-// Product, 20:07: non-completion reasons require a note; replacements require a link.
-test('non-completion reasons close once with their literal state reason', () => {
-  for (const [reason,state] of [['not-planned','not_planned'],['duplicate','duplicate'],['superseded','not_planned']]) {
-    const f = fixture()
-    try {
-      for (let i=0;i<2;i++) { const out=f.close([],['--reason',reason,'--note','o/r#8'],null); assert.equal(out.code,0); assert.equal(out.out.reason,reason) }
-      const writes=f.writes.filter(a=>a.includes('PATCH')); assert.equal(writes.length,1); assert.ok(writes[0].includes(`state_reason=${state}`))
-    } finally { f.cleanup() }
-  }
-})
-test('invalid reasons and notes refuse before writes; explicit completed requires evidence', () => {
-  for (const flags of [['--reason','unknown','--note','o/r#8'],['--reason','not-planned'],['--reason','completed'],['--reason','superseded','--note',' '],['--reason','duplicate','--note','text'],['--reason','superseded','--note','text'],['--reason','completed','--note','done']]) {
-    const f=fixture(); try { assert.equal(f.close([],flags,null).code,2); assert.equal(f.writes.length,0) } finally { f.cleanup() }
-  }
-})
 test('inventory covers every check exactly once and executable mappings require approval, target and host', () => {
   const root=new URL('../../', import.meta.url)
   const mappings=JSON.parse(readFileSync(new URL('flows/evidence/check-commands.json',root)))
@@ -230,49 +48,6 @@ test('inventory covers every check exactly once and executable mappings require 
   for(const m of [{command:['node'],host:'CI'},{approvedBy:'smithers-22',host:'CI'},{approvedBy:'smithers-22',command:['node']}]) assert.equal(validMapping(m),false)
 })
 
-test('replacement reasons accept a replacing issue URL or full commit SHA', () => {
-  for (const reason of ['duplicate','superseded']) for (const note of ['https://github.com/o/r/issues/8','a'.repeat(40)]) {
-    const f=fixture(); try { assert.equal(f.close([],['--reason',reason,'--note',note],null).code,0); assert.equal(f.writes.filter(a=>a.includes('PATCH')).length,1) } finally { f.cleanup() }
-  }
-})
-
-// smithers-3f, 22:2x: local refs and branch-controlled argv cannot confer authority.
-test('forged local origin main cannot authorize an unlanded commit', () => {
-  const f = fixture()
-  try {
-    const paths = ['C-FIX-01','C-FIX-02'].map(f.evidence)
-    f.put('second', 'unlanded'); f.git('add', 'second'); f.git('commit', '-m', 'unlanded')
-    const unlanded = f.git('rev-parse', 'HEAD')
-    f.git('update-ref', 'refs/remotes/origin/main', unlanded)
-    for (const path of paths) {
-      const r = JSON.parse(readFileSync(join(f.root,path))); r.commit = unlanded; f.put(path,JSON.stringify(r))
-    }
-    const out = f.close(paths, [], unlanded)
-    assert.equal(out.code,2); assert.deepEqual(out.out.checks,[{check:'C-FIX-01',reason:'commit'},{check:'C-FIX-02',reason:'commit'}]); assert.equal(f.writes.length,0)
-  } finally { f.cleanup() }
-})
-test('unavailable remote main fails closed despite valid local ancestry', () => {
-  const f = fixture()
-  try {
-    const paths = ['C-FIX-01','C-FIX-02'].map(f.evidence)
-    f.git('remote','set-url','origin',join(f.root,'absent.git'))
-    const out = f.close(paths)
-    assert.equal(out.code,2); assert.ok(out.out.checks.every(c=>c.reason==='commit')); assert.equal(f.writes.length,0)
-  } finally { f.cleanup() }
-})
-test('receipt command must deep-equal the approved landed mapping', () => {
-  const f = fixture()
-  try {
-    const paths = ['C-FIX-01','C-FIX-02'].map(f.evidence)
-    const r = JSON.parse(readFileSync(join(f.root,paths[0])))
-    for (const command of [[], null, ['smthrs-ci','//fixture:other'], ['smthrs-ci','//fixture:canary','extra'], ['//fixture:canary','smthrs-ci']]) {
-      f.put(paths[0],JSON.stringify({...r,command}))
-      const out = f.close(paths)
-      assert.equal(out.code,2); assert.deepEqual(out.out.checks,[{check:'C-FIX-01',receipt:paths[0],reason:'coverage'}]); assert.equal(f.writes.length,0)
-    }
-  } finally { f.cleanup() }
-})
-
 test('an approved mapping cannot drop obligations its pending binding still lists open (4386fc25e review)', () => {
   const approved = { approvedBy: 'smithers-22', host: 'CI', target: '//fixture:canary' }
   assert.equal(validMapping(approved), true)
@@ -280,7 +55,7 @@ test('an approved mapping cannot drop obligations its pending binding still list
   assert.equal(validMapping({ ...approved, pendingBinding: { commands: [{ expectedCaseIds: [] }] } }), false)
   assert.equal(validMapping({ ...approved, pendingBinding: { commands: [{}] } }), false)
   assert.equal(validMapping({ ...approved, pendingBinding: { commands: [{ expectedCaseIds: ['a'] }], unboundSubcases: [] } }), true)
-  // A pending entry may keep its open proposal; it is refused at closure as missing anyway.
+  // A pending entry may keep its open proposal.
   assert.equal(validMapping({ status: 'pending-owner', reason: 'r', ticket: 'T-UI-01', pendingBinding: { unboundSubcases: [{ name: 'x' }] } }), true)
 })
 
@@ -351,7 +126,7 @@ test('CI receipt refuses foreign or tampered artifacts, stopped jobs and an abse
   assert.equal(fallback.pass, true); assert.deepEqual(fallback.evidence.rows.map(row => row.artifact), ['smthrs-results-test-0-1'])
 })
 
-test('target mappings carry a label and no argv, and closure expects the CI receipt command', () => {
+test('target mappings carry a label and no argv; recorder uses the CI receipt command', () => {
   const target = { approvedBy: 'smithers-22', host: 'CI', target: '//apps/app:viewStories' }
   assert.equal(validMapping(target), true)
   for (const bad of [{ ...target, host: 'reference host' }, { ...target, command: ['node'] }, { ...target, paths: ['x'] }, { ...target, target: 'apps/app:viewStories' }, { ...target, target: '//apps/app' }]) assert.equal(validMapping(bad), false, JSON.stringify(bad))
@@ -432,48 +207,6 @@ test('a partial rerun keeps each job leg at its newest attempt, and truncated li
   for (const extra of [{ checks: { total_count: 101 } }, { jobs: { total_count: 150 } }, { artifacts: { total_count: 500 } }]) assert.equal(verify(extra).reason, 'truncated', JSON.stringify(extra))
 })
 
-test('closure re-reads CI for a target receipt: a hand-written receipt that passes the local gate is refused', () => {
-  const f = fixture()
-  try {
-    const mappings = JSON.parse(readFileSync(join(f.root, 'flows/evidence/check-commands.json')))
-    const { command, paths, ...rest } = mappings.checks['C-FIX-02']
-    mappings.checks['C-FIX-02'] = { ...rest, target: '//fixture:canary' }
-    f.put('flows/evidence/check-commands.json', JSON.stringify(mappings))
-    f.commit()
-    f.put('.artifacts/checks/C-FIX-02/forged/log.txt', 'ok')
-    f.put('.artifacts/checks/C-FIX-02/forged/receipt.json', JSON.stringify({ version: 1, check: 'C-FIX-02', commit: f.sha, layer: 'integration', command: ['smthrs-ci', '//fixture:canary'], exit: 0, started: '2026-10-03T00:00:00.000Z', ended: '2026-10-03T00:00:01.000Z', log_digest: digest('ok') }))
-    const L = f.sha; const calls = []
-    const github = { json: (p) => { calls.push(p); return p.includes('check-runs') ? { check_runs: [] } : {} }, bytes: () => Buffer.alloc(0) }
-    const failures = reverifyCi({ root: f.root, repo: 'o/r', landed: L, receipts: ['.artifacts/checks/C-FIX-02/forged/receipt.json'], github })
-    assert.deepEqual(failures, [{ check: 'C-FIX-02', receipt: '.artifacts/checks/C-FIX-02/forged/receipt.json', reason: 'missing' }])
-    assert.ok(calls[0].startsWith(`repos/o/r/commits/${L}/check-runs`))
-  } finally { f.cleanup() }
-})
-
-test('a rate-limited CI read during closure defers the close instead of crashing it (Fable N2)', () => {
-  const f = fixture()
-  try {
-    const mappings = JSON.parse(readFileSync(join(f.root, 'flows/evidence/check-commands.json')))
-    for (const id of ['C-FIX-01', 'C-FIX-02']) { const { command, paths, ...rest } = mappings.checks[id]; mappings.checks[id] = { ...rest, target: `//fixture:${id}` } }
-    f.put('flows/evidence/check-commands.json', JSON.stringify(mappings))
-    f.commit()
-    const receipts = ['C-FIX-01', 'C-FIX-02'].map(id => {
-      f.put(`.artifacts/checks/${id}/r/log.txt`, 'ok')
-      f.put(`.artifacts/checks/${id}/r/receipt.json`, JSON.stringify({ version: 1, check: id, commit: f.sha, layer: 'integration', command: ['smthrs-ci', `//fixture:${id}`], exit: 0, started: '2026-10-03T00:00:00.000Z', ended: '2026-10-03T00:00:01.000Z', log_digest: digest('ok') }))
-      return `.artifacts/checks/${id}/r/receipt.json`
-    })
-    const writes = []
-    const gh = (args) => {
-      if (args.includes('-i')) { writes.push(args); return '{}' }
-      const error = new Error('gh: API rate limit exceeded'); error.stderr = 'API rate limit exceeded (HTTP 429)'; throw error
-    }
-    const out = claimRun(['comment', 'o/r#7', '--by', 'fixture', '--body', 'Complete', '--close', '--landed', f.sha, ...receipts.flatMap(p => ['--receipt', p])], { cwd: f.root, env: { SMITHERS_GITHUB_PROXY: 'http://fixture.test' }, ensure: () => {}, gh, ghBytes: gh })
-    assert.equal(out.out.action, 'deferred', JSON.stringify(out))
-    assert.ok(out.out.retry_at)
-    assert.equal(writes.length, 0)
-  } finally { f.cleanup() }
-})
-
 test('an empty or non-JSON results file refuses the receipt (38L: a crashed run leaves 0 bytes)', () => {
   const L = 'a'.repeat(40); const bytes = Buffer.from('z')
   const api = {
@@ -511,22 +244,6 @@ test('a crashed latest attempt (empty results) refuses the label; it never inher
   assert.deepEqual(r.evidence.artifacts.map(a => a.name), ['smthrs-results-test-0-2'])
 })
 
-test('executable CLI closes recorder-produced evidence through isolated transport', () => {
-  const f = fixture()
-  try {
-    const paths = ['C-FIX-01', 'C-FIX-02'].map(id => {
-      const result = f.recorded(id); assert.equal(result.status, 0, result.stdout + result.stderr)
-      return JSON.parse(result.stdout).receipt
-    })
-    const out = f.cliClose(paths)
-    assert.equal(out.status, 0, out.stdout + out.stderr)
-    const writes = JSON.parse(readFileSync(join(f.root, 'transport.json'))).writes
-    assert.equal(writes.length, 2)
-    assert.equal(writes.filter(args => args.includes('PATCH')).length, 1)
-    assert.equal(writes.filter(args => args.includes('DELETE')).length, 0)
-  } finally { f.cleanup() }
-})
-
 test('recorder retains failed CI labels as failed evidence', () => {
   const f = fixture()
   try {
@@ -538,16 +255,14 @@ test('recorder retains failed CI labels as failed evidence', () => {
     assert.equal(log.label, '//fixture:canary')
     assert.equal(log.reason, 'label_failed')
     assert.equal(log.pass, false)
-    assert.deepEqual(f.close([path, f.evidence('C-FIX-02')]).out.checks, [{ check: 'C-FIX-01', receipt: path, reason: 'failed' }])
     assert.equal(f.writes.length, 0)
   } finally { f.cleanup() }
 })
 
-test('root-check-mapping-validation: markers refuse recorder and close without dispatch', () => {
+test('root-check-mapping-validation: markers refuse recorder without dispatch', () => {
   for (const status of ['manual', 'pending-owner']) {
     const f = fixture()
     try {
-      const paths = ['C-FIX-01', 'C-FIX-02'].map(f.evidence)
       f.put('flows/evidence/check-commands.json', JSON.stringify({ version: 1, activation: { mappingsApprovedBy: 'smithers-22' }, checks: {
         'C-FIX-01': { status, reason: 'root inputs lack owner-reviewed validation', ticket: 'T-SEC-01' },
         'C-FIX-02': { approvedBy: 'smithers-22', automation: 'smthrs test //fixture:canary', runsIn: 'CI', host: 'CI', target: '//fixture:canary' }
@@ -556,26 +271,9 @@ test('root-check-mapping-validation: markers refuse recorder and close without d
       const out = f.runner()
       assert.equal(out.status, 2)
       assert.deepEqual(JSON.parse(out.stdout), { action: 'check-refused', check: 'C-FIX-01', reason: 'no reviewed executable mapping' })
-      assert.deepEqual(f.close(paths).out.checks, [{ check: 'C-FIX-01', reason: 'missing' }])
       assert.equal(f.writes.length, 0)
     } finally { f.cleanup() }
   }
-})
-
-test('CI check runs for a different SHA refuse closure with commit and no writes', () => {
-  const f = fixture()
-  try {
-    const paths = ['C-FIX-01', 'C-FIX-02'].map(f.evidence)
-    f.ci().responses[`repos/o/r/commits/${f.sha}/check-runs?per_page=100`].check_runs[0].head_sha = 'b'.repeat(40)
-    const out = f.close(paths)
-    assert.equal(out.code, 2)
-    assert.equal(out.out.action, 'evidence-refused')
-    assert.deepEqual(out.out.checks, [
-      { check: 'C-FIX-01', receipt: paths[0], reason: 'commit' },
-      { check: 'C-FIX-02', receipt: paths[1], reason: 'commit' }
-    ])
-    assert.equal(f.writes.length, 0)
-  } finally { f.cleanup() }
 })
 
 test('the host sampler lives with packages/smithers and no duplicate check runner remains', () => {
@@ -585,38 +283,11 @@ test('the host sampler lives with packages/smithers and no duplicate check runne
 })
 
 
-test('completed closure requires the landed declaration to match the approved mapping', () => {
-  for (const doc of [
-    'Layer: integration\nAutomation: `smthrs test //fixture:other` · Runs in: CI\n',
-    'Layer: integration\nAutomation: `smthrs test //fixture:canary` · Runs in: reference host\n',
-    'Layer: integration\nAutomation: `smthrs test //fixture:canary` (to write) · Runs in: CI\n',
-    'Layer: integration\nAutomation: unavailable · Runs in: CI\n',
-    'Automation: `smthrs test //fixture:canary` · Runs in: CI\n'
-  ]) {
-    const f = fixture()
-    try {
-      f.put('.specs/engineering/checks/C-FIX-01.md', doc); f.commit()
-      const paths = ['C-FIX-01', 'C-FIX-02'].map(f.evidence)
-      for (const flags of [[], ['--release'], ['--force'], ['--release', '--force']]) {
-        const out = f.close(paths, flags)
-        assert.equal(out.code, 2)
-        assert.equal(out.out.action, 'evidence-refused')
-        assert.deepEqual(out.out.checks, [{ check: 'C-FIX-01', reason: 'missing' }])
-        assert.equal(f.writes.length, 0)
-      }
-    } finally { f.cleanup() }
-  }
-})
-
-// The transport can return duplicate artifact names; neither list order is trusted.
-test('duplicate CI artifact identities refuse at recorder and completed-close boundaries', () => {
+test('duplicate CI artifact identities refuse at recorder boundary', () => {
   const f = fixture()
   try {
-    const paths = ['C-FIX-01', 'C-FIX-02'].map(id => {
-      const out = f.recorded(id)
-      assert.equal(out.status, 0, out.stdout + out.stderr)
-      return JSON.parse(out.stdout).receipt
-    })
+    const recorded = f.recorded()
+    assert.equal(recorded.status, 0, recorded.stdout + recorded.stderr)
     const statePath = join(f.root, 'transport.json')
     const state = JSON.parse(readFileSync(statePath))
     const artifacts = state.responses['repos/o/r/actions/runs/7/artifacts?per_page=100'].artifacts
@@ -632,11 +303,6 @@ test('duplicate CI artifact identities refuse at recorder and completed-close bo
     assert.equal(receipt.exit, 1)
     const log = JSON.parse(readFileSync(join(f.root, JSON.parse(out.stdout).receipt, '..', 'log.txt')))
     assert.equal(log.reason, 'artifact_ambiguous')
-    const close = f.cliClose(paths)
-    assert.equal(close.status, 2, close.stdout + close.stderr)
-    assert.equal(JSON.parse(close.stdout).action, 'evidence-refused')
-    assert.deepEqual(JSON.parse(close.stdout).checks.map(row => [row.check, row.reason]),
-      [['C-FIX-01', 'failed'], ['C-FIX-02', 'failed']])
     assert.deepEqual(JSON.parse(readFileSync(statePath)).writes, [])
   } finally { f.cleanup() }
 })
@@ -691,7 +357,7 @@ test('spike-verdict accepts spike evidence only with the committed reviewer appr
 })
 
 
-test('GitHub check success authenticates artifact claims at recorder and close boundaries', () => {
+test('GitHub check success authenticates artifact claims at recorder boundary', () => {
   for (const change of [
     {status: 'in_progress'}, {status: undefined}, {conclusion: 'failure'},
     {conclusion: 'cancelled'}, {conclusion: 'neutral'}, {conclusion: 'skipped'},
@@ -701,7 +367,6 @@ test('GitHub check success authenticates artifact claims at recorder and close b
     try {
       // Keep both the artifact bytes and their GitHub digest valid. Only the
       // authenticated check-run record changes; neither boundary may trust it.
-      const paths = ['C-FIX-01', 'C-FIX-02'].map(f.evidence)
       Object.assign(f.ci().responses[`repos/o/r/commits/${f.sha}/check-runs?per_page=100`].check_runs[0], change)
       const recorded = f.recorded()
       assert.equal(recorded.status, 1, recorded.stdout + recorded.stderr)
@@ -709,18 +374,12 @@ test('GitHub check success authenticates artifact claims at recorder and close b
       assert.equal(JSON.parse(readFileSync(join(f.root, receipt))).exit, 1)
       const log = JSON.parse(readFileSync(join(f.root, receipt, '..', 'log.txt')))
       assert.equal(log.reason, 'check_not_successful')
-      const closed = f.close(paths)
-      assert.equal(closed.code, 2)
-      assert.deepEqual(closed.out.checks, [
-        {check: 'C-FIX-01', receipt: paths[0], reason: 'failed'},
-        {check: 'C-FIX-02', receipt: paths[1], reason: 'failed'}
-      ])
       assert.equal(f.writes.length, 0)
     } finally { f.cleanup() }
   }
 })
 
-test('mapping activation is required at recorder and close, including absent or false approval', () => {
+test('mapping activation is required at recorder, including absent or false approval', () => {
   for (const activation of [undefined, {}, { mappingsApprovedBy: null }, { mappingsApprovedBy: 'impostor' }]) {
     const f = fixture()
     try {
@@ -728,13 +387,12 @@ test('mapping activation is required at recorder and close, including absent or 
       mappings.activation = activation; f.put('flows/evidence/check-commands.json', JSON.stringify(mappings)); f.commit()
       const out = f.recorded(); assert.equal(out.status, 2, out.stdout + out.stderr)
       assert.equal(JSON.parse(out.stdout).receipt, undefined)
-      assert.equal(f.close(['C-FIX-01', 'C-FIX-02'].map(f.evidence)).code, 2)
       assert.equal(f.writes.length, 0)
     } finally { f.cleanup() }
   }
 })
 
-test('successful unrelated check cannot authenticate the label job at recorder or closure', () => {
+test('successful unrelated check cannot authenticate the label job at recorder', () => {
   const f = fixture()
   try {
     const data = f.ci().responses
@@ -742,12 +400,11 @@ test('successful unrelated check cannot authenticate the label job at recorder o
     data[`repos/o/r/actions/runs/7/attempts/1/jobs?per_page=100`].jobs[0].conclusion = 'failure'
     const out = f.recorded(); assert.equal(out.status, 1, out.stdout + out.stderr)
     assert.equal(JSON.parse(readFileSync(join(f.root, JSON.parse(out.stdout).receipt, '..', 'log.txt'))).reason, 'check_not_successful')
-    assert.equal(f.close(['C-FIX-01', 'C-FIX-02'].map(f.evidence)).code, 2)
     assert.equal(f.writes.length, 0)
   } finally { f.cleanup() }
 })
 
-test('reference-host recorder and closure verify committed UUID, runner identity, labels and workflow', () => {
+test('reference-host recorder verifies committed UUID, runner identity, labels and workflow', () => {
   for (const variant of ['pass', 'dispatch', 'empty', 'uuid', 'name', 'id', 'labels', 'workflow', 'event', 'branch', 'job', 'missingUuid', 'summaryName', 'uncommitted']) {
     const f = fixture()
     try {
@@ -783,12 +440,6 @@ test('reference-host recorder and closure verify committed UUID, runner identity
       const log = JSON.parse(readFileSync(join(f.root, receipt, '..', 'log.txt')))
       assert.equal(log.pass, passing, variant)
       if (!['workflow', 'event', 'branch'].includes(variant)) assert.equal(log.evidence.run, 7)
-      const paths = [receipt, f.evidence('C-FIX-02')]
-      const cli = f.cliClose(paths)
-      assert.equal(cli.status, passing ? 0 : 2, variant + cli.stdout + cli.stderr)
-      const close = f.close(paths)
-      assert.equal(close.code, passing ? 0 : 2, variant + JSON.stringify(close))
-      assert.equal(f.writes.filter(args => args.includes('PATCH')).length, passing ? 1 : 0, variant)
     } finally { f.cleanup() }
   }
 })
