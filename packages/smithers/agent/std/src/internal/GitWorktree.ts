@@ -156,8 +156,11 @@ const open = (root: string): Effect.Effect<Repository, StdError.StdError, ChildP
   })
 
 const temporaryRoot = (): string => {
-  const configured = globalThis.process?.env?.TMPDIR?.replace(/\/+$/, "")
-  return configured === undefined || configured === "" ? "/tmp" : configured
+  const env = globalThis.process?.env
+  const configured = [env?.TMPDIR, env?.TEMP, env?.TMP].find((value) => value !== undefined && value !== "")
+  // Git for Windows and its shell have different /tmp roots. An absolute
+  // drive path with forward slashes names the same directory to both.
+  return configured === undefined ? "/tmp" : configured.replace(/\\/g, "/").replace(/\/+$/, "")
 }
 
 const remove = (path: string) =>
