@@ -199,7 +199,10 @@ const host = (root: string, owner: Ownership.OwnerId, engineHost: string, clock?
         usage: timed(service.usage),
         usageOf: (runId) => timed(service.usageOf(runId)),
         suspend: timed(service.suspend),
-        resume: () => timed(service.resume())
+        resume: (at) =>
+          timed(service.resume(
+            at === undefined ? undefined : at + clock.currentTimeMillisUnsafe() - liveClock.currentTimeMillisUnsafe()
+          ))
       })))
     )
   }
