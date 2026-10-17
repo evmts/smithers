@@ -1,32 +1,3 @@
-vi.mock("node:fs/promises", async (load) => {
- const actual = await load<typeof import("node:fs/promises")>()
- const wrapped: Record<string, (...args: unknown[]) => Promise<unknown>> = {}
- for (const name of ["open", "rename", "chmod", "cp", "rm", "stat", "lstat", "readFile", "writeFile", "unlink"]) {
-  const original = (actual as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>)[name]!
-  wrapped[name] = async (...args) => {
-   const path = String(args[0])
-   const report = (operation: string, cause: unknown) => {
-    const code = (cause as { code?: string }).code
-    if (path.includes("smthrs-ci7-wal-") && (code !== "ENOENT" || path.endsWith("ci.tsx") || path.endsWith("out.txt"))) console.error("CI7_FS", operation, code, path)
-   }
-   try {
-    const result = await original(...args)
-    if (name === "open" && path.includes("smthrs-ci7-wal-")) {
-     const handle = result as Record<string, unknown>
-     for (const method of ["chmod", "sync", "datasync", "truncate", "writeFile"]) {
-      const fn = handle[method]
-      if (typeof fn === "function") {
-       const invoke = fn.bind(result)
-       handle[method] = async (...items: unknown[]) => {try {return await invoke(...items)} catch(cause) {report(method,cause);throw cause}}
-      }
-     }
-    }
-    return result
-   } catch(cause) { report(name,cause);throw cause }
-  }
- }
- return {...actual,...wrapped}
-})
 import * as NodeChildProcess from "node:child_process"
 import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
@@ -2258,7 +2229,7 @@ describe("generators beside a live runtime", () => {
   it.each(["success", "failure", "cancel", "credential", ...Array.from({ length: 40 }, () => "source")])(
     "preserves concurrent WAL and logs on %s",
     async (mode) => {
-      const root = await tracked(Fs.realpath(await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-ci7-wal-"))))
+      const root = await temporaryWorkspace()
       await write(root, "WORKSPACE.ts", workspaceModule())
       await write(root, "package.json", "{\"name\":\"fixture\",\"private\":true}")
       await write(root, "yarn.lock", "")

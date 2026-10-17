@@ -1198,6 +1198,19 @@ export const executeEffect = (
      * publishing. Declarative `runEmit` outputs use the confined generated-file
      * publishers instead of this snapshot-and-revert guard.
      */
+    const ci7Fixture = (label: string, writeSet: ReadonlyArray<string>): boolean =>
+      root.includes("smthrs-package-exec-") && label === "//:generated" && writeSet.length === 2 &&
+      writeSet.includes("out.txt") && writeSet.includes("entered.txt")
+    const ci7Trace = (phase: string, value: string): void => {
+      let text = value
+      for (const [name, secret] of Object.entries(options.environment ?? process.env)) {
+        if (secret && (secret.length >= 8 || /token|secret|password|credential|auth|key/i.test(name))) {
+          text = text.split(secret).join("[REDACTED]")
+        }
+      }
+      console.error("CI7_WRITE_" + phase, text)
+    }
+
     const enforceWriteSet = (
       label: string,
       writeSet: ReadonlyArray<string>,
@@ -1247,6 +1260,13 @@ export const executeEffect = (
           const ran: ExecOutcome = Exit.isSuccess(exit) ?
             exit.value
             : { ok: false, error: causeText(exit.cause, "write") }
+          if (ci7Fixture(label, writeSet)) {
+            ci7Trace("BODY", JSON.stringify({ ok: ran.ok, error: ran.ok ? undefined : ran.error }))
+            if (Exit.isFailure(exit)) {
+              const value = Cause.squash(exit.cause)
+              ci7Trace("BODY_CAUSE", value instanceof Error ? value.stack ?? value.message : String(value))
+            }
+          }
           const changed = PackageTree.judgedChanges(
             root,
             yield* joined(() => PackageTree.changedSinceSnapshot(snapshot, cacheDirectory)),
@@ -1290,6 +1310,7 @@ export const executeEffect = (
             const resolved = PackageTree.resolveChangedPath(root, path)
             if (resolved === undefined || !matchesWriteSet(resolved, writeSet)) outOfSet.push(path)
           }
+          if (ci7Fixture(label, writeSet)) ci7Trace("PATHS", JSON.stringify({ changed, changedIgnored, outOfSet }))
           for (const path of outOfSet) yield* joined(() => PackageTree.revertPath(snapshot, path, quarantine))
           const ignoredOutOfSet: Array<string> = []
           for (const path of changedIgnored) {
@@ -1314,7 +1335,13 @@ export const executeEffect = (
           }
           return ran
         })
-      ))
+      )).pipe(Effect.catchCause((cause) => {
+        if (ci7Fixture(label, writeSet)) {
+          const value = Cause.squash(cause)
+          ci7Trace("GUARD_CAUSE", value instanceof Error ? value.stack ?? value.message : String(value))
+        }
+        return Effect.failCause(cause)
+      }))
 
     /**
      * Where a spawned tool can write: the directories its confinement binds
