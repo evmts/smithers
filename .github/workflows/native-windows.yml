@@ -163,4 +163,8 @@ jobs:
           bun-version: "1.4.1"
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Focused Windows diagnostics
-        run: pnpm --dir packages/smithers/build/build-cli exec vitest run test/PackageTree.test.ts test/PackageExecution.test.ts --reporter=verbose --coverage.reportOnFailure
+        shell: bash
+        run: |
+          suite_status=0
+          pnpm --dir packages/smithers/build/build-cli exec vitest run test/PackageTree.test.ts test/PackageExecution.test.ts --reporter=verbose --coverage.reportOnFailure || suite_status=1
+          exit "$suite_status"
