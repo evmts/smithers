@@ -43,6 +43,7 @@ export interface Metadata {
    * rather than reading it as undeclared.
    */
   readonly budget?: Record<string, unknown>
+  readonly prompt?: true
   readonly declaresName: boolean
   /**
    * The name the module declares, when it is a readable string literal.
@@ -1163,6 +1164,9 @@ export const parse = (source: string): Metadata => {
 
   return {
     description: stringLiteral(properties.get("description")),
+    ...(properties.has("prompt") && !properties.has("body") && !parsedProperties.hasUnprojectableMembers
+      ? { prompt: true as const }
+      : {}),
     // Two declarations name the same two schemas. `@smthrs/core` calls them
     // `input` and `output`; `@smthrs/flow`, which a `.smithers/flows/<name>/flow.ts`
     // default-exports, calls them `payload` and `success`. Discovery reads the

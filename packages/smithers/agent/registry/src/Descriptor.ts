@@ -291,6 +291,8 @@ export class ModuleImport extends Schema.Class<ModuleImport>("flows/registry/Mod
  */
 export class BodyRefModule extends Schema.TaggedClass<BodyRefModule>("flows/registry/BodyRef/Module")("Module", {
   path: Schema.String,
+  /** The module declares a typed prompt rather than a graph body. */
+  prompt: Schema.optional(Schema.Literal(true)),
   /**
    * SHA-256 of the complete module source bytes measured during discovery.
    * Optional for older journaled descriptors to decode; Registry.loadBody and

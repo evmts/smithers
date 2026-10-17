@@ -45,6 +45,14 @@ describe("inputDocument", () => {
 })
 
 describe("FlowDescriptor", () => {
+  it("round-trips prompt module bodies and retains older module bodies", () => {
+    const prompt = new Descriptor.BodyRefModule({ path: "/review/flow.ts", prompt: true })
+    expect(Schema.decodeUnknownSync(Descriptor.BodyRef)(Schema.encodeSync(Descriptor.BodyRef)(prompt))).toEqual(prompt)
+    expect(Schema.decodeUnknownSync(Descriptor.BodyRef)({ _tag: "Module", path: "/review/flow.ts" }))
+      .toEqual(new Descriptor.BodyRefModule({ path: "/review/flow.ts" }))
+    expect(() => Schema.decodeUnknownSync(Descriptor.BodyRef)({ ...prompt, prompt: false })).toThrow()
+  })
+
   it("round-trips every descriptor field", () => {
     const descriptor = new Descriptor.FlowDescriptor({
       name: "review/read-pr",

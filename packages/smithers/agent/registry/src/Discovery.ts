@@ -471,6 +471,7 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
                 body: new BodyRefModule({
                   path: location,
                   contentDigest: contents.contentDigest,
+                  ...(metadata.prompt === true ? { prompt: true } : {}),
                   // Absent, not empty, when the entry loads nothing beside
                   // itself: such a module keeps the identity it had before a
                   // closure was recorded at all.

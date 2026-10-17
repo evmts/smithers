@@ -81,6 +81,40 @@ export default Flow.make("review", {
     })
   })
 
+  it("marks prompt-backed modules without importing their renderer", async () => {
+    await withTemporaryRoot(async (root) => {
+      const directory = join(root, "review")
+      mkdirSync(directory)
+      const file = join(directory, "flow.ts")
+      const source = `throw new Error("must never import");
+export default Flow.make("review", {
+  description: "Review",
+  capabilities: [],
+  prompt: render
+})`
+      writeFileSync(file, source)
+      const result = await scan({ source: "project", root, naming: "path" })
+      expect(result.entries[0]!.body).toMatchObject({ _tag: "Module", prompt: true })
+      writeFileSync(file, source.replace("prompt: render", "body: render"))
+      const graph = await scan({ source: "project", root, naming: "path" })
+      expect(graph.entries[0]!.body).not.toHaveProperty("prompt")
+      for (
+        const declaration of [
+          "prompt: render, body: render",
+          "prompt: render, ...options",
+          "prompt: render, [key]: render"
+        ]
+      ) {
+        writeFileSync(file, source.replace("prompt: render", declaration))
+        const ambiguous = await scan({ source: "project", root, naming: "path" })
+        expect(ambiguous.entries[0]!.body).not.toHaveProperty("prompt")
+      }
+      writeFileSync(file, source.replace("prompt: render", "prompt"))
+      const shorthand = await scan({ source: "project", root, naming: "path" })
+      expect(shorthand.entries[0]!.body).toMatchObject({ _tag: "Module", prompt: true })
+    })
+  })
+
   it("reads a module budget literal as the markdown frontmatter budget, and warns on an unreadable one", async () => {
     await withTemporaryRoot(async (root) => {
       const markdown = join(root, "markdown")
