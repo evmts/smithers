@@ -1,5 +1,6 @@
 import * as ScopedProcess from "@smthrs/platform-node/ScopedProcess"
 import * as Effect from "effect/Effect"
+import * as Sink from "effect/Sink"
 import { escape } from "minimatch"
 import { execFile, spawnSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
@@ -1404,26 +1405,49 @@ describe("LlmLint.promptEngine protocol boundary", () => {
     expect((failure as LlmLint.LlmReviewError).phase).toBe("parse")
   })
 
-  it("reports the exit code and stderr when the engine refuses a prompt it never reads", async () => {
-    // A model CLI that refuses (not logged in, bad flag, rate limited) exits
-    // before draining a multi-megabyte prompt, so the parent's queued stdin
-    // write raises EPIPE. That pipe failure says nothing about the refusal:
-    // the exit code and the stderr tail are the only diagnosis, so they must
-    // outrank it.
-    const executable = await scriptCli(
-      "prompt-refusal",
-      "import { writeSync } from \"node:fs\"\n" +
-        "writeSync(2, \"fake engine: not logged in\")\n" +
-        "process.exit(3)"
+  it.each([false, true])("reports an unread prompt refusal with Windows EOF=%s", async (windowsEof) => {
+    let closedPipe = 0
+    const spawn = ScopedProcess.spawn
+    const launched = vi.spyOn(ScopedProcess, "spawn").mockImplementation((options) =>
+      spawn(options).pipe(Effect.map((child) => ({
+        ...child,
+        stdin: child.stdin.pipe(Sink.mapError((error) => {
+          const cause = error.cause
+          if (
+            windowsEof && cause instanceof Error && "code" in cause &&
+            (cause.code === "EPIPE" || cause.code === "EOF")
+          ) {
+            Object.defineProperty(cause, "code", { value: "EOF", configurable: true })
+            closedPipe++
+          }
+          return error
+        }))
+      })))
     )
-    const failure = await Effect.runPromise(Effect.flip(LlmLint.promptEngine(
-      { workspaceRoot: root, executable },
-      { engine: "claude", model: "model", prompt: "x".repeat(4 * 1024 * 1024) }
-    )))
-    expect(failure._tag).toBe("smithers-build/LlmReviewError")
-    expect((failure as LlmLint.LlmReviewError).phase).toBe("review")
-    expect((failure as LlmLint.LlmReviewError).message).toContain("exited 3")
-    expect((failure as LlmLint.LlmReviewError).message).toContain("not logged in")
+    try {
+      // A model CLI that refuses (not logged in, bad flag, rate limited) exits
+      // before draining a multi-megabyte prompt, so the parent's queued stdin
+      // write raises EPIPE. That pipe failure says nothing about the refusal:
+      // the exit code and the stderr tail are the only diagnosis, so they must
+      // outrank it.
+      const executable = await scriptCli(
+        "prompt-refusal",
+        "import { writeSync } from \"node:fs\"\n" +
+          "writeSync(2, \"fake engine: not logged in\")\n" +
+          "process.exit(3)"
+      )
+      const failure = await Effect.runPromise(Effect.flip(LlmLint.promptEngine(
+        { workspaceRoot: root, executable },
+        { engine: "claude", model: "model", prompt: "x".repeat(4 * 1024 * 1024) }
+      )))
+      expect(failure._tag).toBe("smithers-build/LlmReviewError")
+      expect((failure as LlmLint.LlmReviewError).phase).toBe("review")
+      expect((failure as LlmLint.LlmReviewError).message).toContain("exited 3")
+      expect((failure as LlmLint.LlmReviewError).message).toContain("not logged in")
+      if (windowsEof) expect(closedPipe).toBeGreaterThan(0)
+    } finally {
+      launched.mockRestore()
+    }
   })
 
   it("bounds the malformed envelope excerpt in a protocol diagnostic", async () => {
