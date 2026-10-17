@@ -176,7 +176,7 @@ func (a *transactionalWorkspaceCleanup) lockFacts(ctx context.Context, tx pgx.Tx
 	return row, settled, nil
 }
 
-func (a *transactionalWorkspaceCleanup) WithFinalCapture(ctx context.Context, expected db.Workspace, lockRuntime func() func(), remove func(WorkspaceDiskReclaimCapture) error) error {
+func (a *transactionalWorkspaceCleanup) WithFinalCapture(ctx context.Context, expected db.Workspace, lockRuntime func() func(), remove func(WorkspaceDiskReclaimCapture, *db.Queries) error) error {
 	if a.transactions == nil || a.fence == nil {
 		return nil
 	}
@@ -269,7 +269,7 @@ func (a *transactionalWorkspaceCleanup) WithFinalCapture(ctx context.Context, ex
 				return err
 			}
 		}
-		if err := remove(capture); err != nil {
+		if err := remove(capture, db.New(removal)); err != nil {
 			return err
 		}
 		_, err = removal.Exec(ctx, `UPDATE workspaces SET cleanup_pending_head='',cleanup_pending_capture_id='',disk_reclaimed_at=$2,updated_at=$2 WHERE id=$1`, current.ID, a.now())

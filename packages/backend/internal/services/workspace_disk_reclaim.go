@@ -16,9 +16,11 @@ import (
 // and all writers until remove returns. No authority means no disk deletion.
 // Acquire the supplied lifecycle lock before closing runtime writer admission; hold both through
 // archive decision and removal. Scratch and TODO settlements share this authority.
+// Supply the held transaction's queries to the callback so validation never
+// borrows a second pool connection while removal holds the first.
 type WorkspaceDiskReclaimAuthority interface {
 	Candidates(context.Context) ([]string, error)
-	WithFinalCapture(context.Context, db.Workspace, func() func(), func(WorkspaceDiskReclaimCapture) error) error
+	WithFinalCapture(context.Context, db.Workspace, func() func(), func(WorkspaceDiskReclaimCapture, *db.Queries) error) error
 }
 
 // WorkspaceDiskReclaimCapture names the verified, complete retained capture.
@@ -85,10 +87,20 @@ func (s *WorkspaceService) reclaimAgentWorkspaceDisk(ctx context.Context, id str
 	if !ok {
 		return nil
 	}
-	return s.diskReclaimAuthority.WithFinalCapture(ctx, row, func() func() { return s.lockRuntimeWorkspace(id) }, func(capture WorkspaceDiskReclaimCapture) error {
+	// Resolve billing and runtime identity before the authority holds its SQL
+	// connection. Removal-time reads must share that connection, too.
+	operationCtx, err := s.workspaceRuntimeContext(ctx, row, row.UserID, workspaceLifecycleOperation(row, "reclaim"))
+	if err != nil {
+		return err
+	}
+	return s.diskReclaimAuthority.WithFinalCapture(ctx, row, func() func() { return s.lockRuntimeWorkspace(id) }, func(capture WorkspaceDiskReclaimCapture, queries *db.Queries) error {
+		q := s.q
+		if queries != nil {
+			q = queries
+		}
 		// The lifecycle lock covers this re-read and runtime removal; the authority
 		// keeps settlement/binding and quiet inventory fenced across the callback.
-		current, err := s.q.GetWorkspace(ctx, id)
+		current, err := q.GetWorkspace(ctx, id)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
@@ -107,7 +119,7 @@ func (s *WorkspaceService) reclaimAgentWorkspaceDisk(ctx context.Context, id str
 		}
 		// Re-check TODO binding even for injected capture authorities. Scratch
 		// workspaces have no lane and rely on the transactional archive authority.
-		if store, ok := s.q.(interface {
+		if store, ok := q.(interface {
 			GetMythicalLane(context.Context, string) (db.MythicalLane, error)
 			GetMythicalItem(context.Context, pgtype.UUID) (db.MythicalItem, error)
 		}); ok {
@@ -131,10 +143,6 @@ func (s *WorkspaceService) reclaimAgentWorkspaceDisk(ctx context.Context, id str
 			}
 		}
 		if err := ctx.Err(); err != nil {
-			return err
-		}
-		operationCtx, err := s.workspaceRuntimeContext(ctx, current, current.UserID, workspaceLifecycleOperation(current, "reclaim"))
-		if err != nil {
 			return err
 		}
 		return reclaimer.ReclaimWorkspaceDisk(operationCtx, id)

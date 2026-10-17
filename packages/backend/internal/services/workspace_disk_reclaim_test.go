@@ -164,7 +164,7 @@ type captureReclaimAuthority struct {
 }
 
 func (a *captureReclaimAuthority) Candidates(context.Context) ([]string, error) { return a.ids, nil }
-func (a *captureReclaimAuthority) WithFinalCapture(_ context.Context, _ db.Workspace, lockRuntime func() func(), remove func(WorkspaceDiskReclaimCapture) error) error {
+func (a *captureReclaimAuthority) WithFinalCapture(_ context.Context, _ db.Workspace, lockRuntime func() func(), remove func(WorkspaceDiskReclaimCapture, *db.Queries) error) error {
 	if a.failure != nil {
 		return a.failure
 	}
@@ -175,7 +175,7 @@ func (a *captureReclaimAuthority) WithFinalCapture(_ context.Context, _ db.Works
 	}
 	unlock := lockRuntime()
 	defer unlock()
-	return remove(a.capture)
+	return remove(a.capture, nil)
 }
 
 type authorizedReclaimRuntime struct {

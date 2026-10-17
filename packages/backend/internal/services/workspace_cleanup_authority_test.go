@@ -12,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/smithersai/smithers/packages/backend/internal/cleanup"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
@@ -560,4 +561,32 @@ func TestScratchArchiveRechecksMembershipAfterRuntimeWait(t *testing.T) {
 			require.Equal(t, "suspended", stored.Status)
 		})
 	}
+}
+
+func TestCleanupUsesHeldRemovalConnection(t *testing.T) {
+	pool := newProductTestPool(t)
+	_, repo := setupTestUserAndRepo(t, pool)
+	q := db.New(pool)
+	owner, err := q.GetBranchMachineOwner(t.Context())
+	require.NoError(t, err)
+	row, err := q.CreateWorkspace(t.Context(), db.CreateWorkspaceParams{RepositoryID: repo, UserID: owner, TargetBookmark: "scratch/member/cleanup", Kind: "container", Status: "suspended"})
+	require.NoError(t, err)
+	now := time.Now()
+	_, err = pool.Exec(t.Context(), `UPDATE workspaces SET head_commit_id='head',branch_archived_at=$2 WHERE id=$1`, row.ID, now.Add(-25*time.Hour))
+	require.NoError(t, err)
+	cfg := pool.Config().Copy()
+	cfg.MaxConns, cfg.MinConns = 1, 0
+	single, err := pgxpool.NewWithConfig(t.Context(), cfg)
+	require.NoError(t, err)
+	t.Cleanup(single.Close)
+	runtime := &cleanupPolicyRuntime{capture: WorkspaceDiskReclaimCapture{CandidateHead: "head", RetainedHead: "head", CaptureID: "capture", Settled: true, Quiet: true, BindingVerified: true, CaptureComplete: true, InventoryCurrent: true}}
+	svc := NewWorkspaceService(db.New(single), WithWorkspaceTransactions(single), WithWorkspaceRuntime(runtime), WithTransactionalWorkspaceCleanup(func() time.Time { return now }))
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	require.NoError(t, svc.CleanupStoppedAgentWorkspaceDisks(ctx))
+	require.Equal(t, []string{row.ID}, runtime.calls)
+	retained, err := q.GetWorkspace(t.Context(), row.ID)
+	require.NoError(t, err)
+	require.True(t, retained.DiskReclaimedAt.Valid)
+	require.False(t, retained.DeletedAt.Valid)
 }

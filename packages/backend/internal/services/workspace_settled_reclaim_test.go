@@ -24,7 +24,7 @@ type finalCaptureFixture struct {
 }
 
 func (f *finalCaptureFixture) Candidates(context.Context) ([]string, error) { return f.ids, nil }
-func (f *finalCaptureFixture) WithFinalCapture(ctx context.Context, row db.Workspace, lockRuntime func() func(), consume func(WorkspaceDiskReclaimCapture) error) error {
+func (f *finalCaptureFixture) WithFinalCapture(ctx context.Context, row db.Workspace, lockRuntime func() func(), consume func(WorkspaceDiskReclaimCapture, *db.Queries) error) error {
 	if f.err != nil {
 		return f.err
 	}
@@ -35,7 +35,7 @@ func (f *finalCaptureFixture) WithFinalCapture(ctx context.Context, row db.Works
 	}
 	unlock := lockRuntime()
 	defer unlock()
-	return consume(f.facts)
+	return consume(f.facts, nil)
 }
 
 type settledReclaimStore struct {
