@@ -2288,6 +2288,20 @@ export const promptRendered = (
 export const settlementFailure = (error: unknown): unknown => failureJson(error)
 
 /**
+ * The success the engine persists as this flow's settlement.
+ *
+ * `agent/run` declares `success: Schema.Unknown`, which `Schema.toCodecJson`
+ * reads as "any JSON value". A flow whose success is `Schema.Void` completes
+ * with `undefined`, which is not JSON: `engine-store` degraded the settlement
+ * into a projection and the run read `failed` although its flow completed.
+ * Absence settles as `null`; every JSON value settles unchanged.
+ *
+ * @category conversions
+ * @since 1.0.0
+ */
+export const settlementSuccess = (value: unknown): unknown => value === undefined ? null : value
+
+/**
  * The one durable flow every agent run executes. Its plan-time body is inert;
  * the behaviour is the `execute` registered by {@link make}, and the
  * execution id is the control run id. A host re-drives a run by resuming it
@@ -4826,6 +4840,7 @@ export const make = (
           )
           activeBodies.set(payload.runId, fiber)
           return yield* Fiber.join(fiber).pipe(
+            Effect.map(settlementSuccess),
             Effect.ensuring(Effect.sync(() => {
               if (activeBodies.get(payload.runId) === fiber) activeBodies.delete(payload.runId)
             }))
