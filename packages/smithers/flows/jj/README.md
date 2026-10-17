@@ -229,7 +229,7 @@ rather than to this layer. All of them are listed in
 
 The shipped Rust dependency inventory in `THIRD_PARTY_NOTICES.md` is generated
 from the locked Cargo graph for `wasm32-wasip1`. After a dependency change, run
-`node scripts/generate-third-party-notices.mjs` from the repository root;
+`node packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs` from the repository root;
 `--check` detects drift and runs in Rust CI. The template under `scripts/` keeps
 the attribution prose and license text; new license groups require review.
 MIT. See [LICENSE](./LICENSE).

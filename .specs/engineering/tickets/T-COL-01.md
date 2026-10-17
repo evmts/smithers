@@ -30,8 +30,8 @@ Out:
 
 ## Changes
 
-- `scripts/spikes/col-01/` (new): `run.sh` (one command), `relay-rtt/` (Go client), `echo/` (Rust guest server), `dochost/` (Rust Yrs host), `fanout/` (Go WebSocket fan-out), `keystrokes.spec.ts` (Playwright, two pages), `jj-snapshot/` (timing script run inside the VM). The prototype runs against `packages/backend/microsandbox/transport.go:67` (`DialWorkspacePort`) and `:126` (`startBridges`) without modifying them.
-- No change to `packages/` or `apps/`. Delete `scripts/spikes/col-01/` when ADR 0003 records the result. The evidence directory keeps the raw samples (AGENTS.md: benchmark methods and artifacts are retained).
+- `apps/backend/checks/C-SPK-03-07/` (new): `run.sh` (one command), `relay-rtt/` (Go client), `echo/` (Rust guest server), `dochost/` (Rust Yrs host), `fanout/` (Go WebSocket fan-out), `keystrokes.spec.ts` (Playwright, two pages), `jj-snapshot/` (timing script run inside the VM). The prototype runs against `packages/backend/microsandbox/transport.go:67` (`DialWorkspacePort`) and `:126` (`startBridges`) without modifying them.
+- No change to `packages/` or `apps/`. Delete `apps/backend/checks/C-SPK-03-07/` when ADR 0003 records the result. The evidence directory keeps the raw samples (AGENTS.md: benchmark methods and artifacts are retained).
 
 ## Tests
 

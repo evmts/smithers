@@ -162,7 +162,7 @@ allocation/growth rejection and successful operations after failures. It never
 passes arbitrary pointers or mismatched sizes to `free`. Every operation uses
 a temporary repository, and cleanup accounts for both buffers and host files.
 
-From the repository root, run `node scripts/run-jj-abi-campaign.mjs` for the
+From the repository root, run `node flows/bench/jj-abi-campaign/run-jj-abi-campaign.mjs` for the
 parser-only Rust target, native ABI sequences and exact WASM corpus replay.
 `SMITHERS_ABI_SEED`, `SMITHERS_ABI_CASES`, `SMITHERS_ABI_STEPS` and
 `SMITHERS_ABI_ARTIFACT_DIR` control replay and retained evidence. The default

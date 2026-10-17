@@ -1,7 +1,7 @@
 # C-SPK-02 virtiofs `/home` keeps guest uid, gid and 0700 across two uids
 
 Proves: mvp.md M-18, J6.1, J6.5 · spec.md §5.5.4, §8.7.1, §8.7.2 · Layer: spike · Stage: W0 · Tickets: T-MCH-02
-Automation: `scripts/spikes/mch-02-virtiofs-homes/run.sh --decision-evidence <evidence-dir>` · Runs in: reference host
+Automation: `packages/backend/checks/C-SPK-02/run.sh --decision-evidence <evidence-dir>` · Runs in: reference host
 
 ## Result (2026-10-02)
 

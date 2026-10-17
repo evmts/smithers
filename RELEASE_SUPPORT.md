@@ -70,7 +70,7 @@ and tested on `effect@4.0.4`, and the published packages declare it this way:
   its own `effect` at another release gets two copies under pnpm: the CLI and
   its packages run on the CLI's copy, the application on its own.
 
-`scripts/check-single-effect-version.mjs` holds every manifest and lockfile to
+`packages/repo-targets/contracts/check-single-effect-version.mjs` holds every manifest and lockfile to
 these declarations. The release consumer gate installs the Node profile and the
 Flows quickstart on `effect@latest` as the registry serves it that day, and
 checks that a strict install refuses an `effect` below the range. pnpm 11
@@ -152,13 +152,13 @@ within the existing host action; omitted timeouts preserve existing behavior.
 
 ## Reviewing changes before publication
 
-After `node scripts/build-release.mjs`, run
-`node scripts/check-api-baseline.mjs`. The baseline includes publication export
+After `node flows/release/build-release.mjs`, run
+`node flows/release/check-api-baseline.mjs`. The baseline includes publication export
 maps and every emitted declaration, including private declarations referenced
 by public types. It detects drift; it does not determine semantic compatibility.
 For a deliberate change, review the declaration diff and consumer examples,
 record the compatibility impact in release notes, then explicitly regenerate
-with `node scripts/check-api-baseline.mjs --update`. Never update a baseline just
+with `node flows/release/check-api-baseline.mjs --update`. Never update a baseline just
 to make a failed release gate green.
 
 Before a stable release, retain immutable databases, journals and artifact

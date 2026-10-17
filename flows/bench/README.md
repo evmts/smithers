@@ -5,8 +5,8 @@ before/after timings, filesystem operation counts, and descriptor equality
 receipts for #2837. Its deterministic regression tests count resolution probes;
 wall times on a shared developer machine are observations, not CI thresholds.
 
-`node scripts/bench/gate.mjs` is the required PR target
-`//scripts:benchmarkGate`. It executes 18 fixtures: scheduler chain, wide and
+`node flows/bench/gate/gate.mjs` is the required PR target
+`//flows:benchmarkGate`. It executes 18 fixtures: scheduler chain, wide and
 shared-write conflict graphs of 8, 32 and 64 nodes, and journal append, reopen
 replay and 31-entry paging over 32, 256 and 1,024 events.
 
@@ -59,7 +59,7 @@ change.
 ## Scheduled observations
 
 The `benchmark-observations` job runs
-`node --expose-gc scripts/bench/gate.mjs --measure` on Ubuntu and Node 26.4.0.
+`node --expose-gc flows/bench/gate/gate.mjs --measure` on Ubuntu and Node 26.4.0.
 One cold corpus records first-process/JIT observations. One corpus warms up
 without contributing to the repeated samples. Three subsequent warm corpora
 reuse loaded code and JIT state but each uses new SQLite files and connections.
@@ -86,7 +86,7 @@ CI uploads even on failure and retains results for 30 days. Temporary database
 directories are removed on both success and handled failure. Process termination
 can leave OS temporary files, but cannot write a completed result. The scheduled
 sync soak is a separate lifecycle/growth tier; its receipt verifier is
-`scripts/check-soak-campaign.mjs`.
+`flows/bench/soak-campaign/check-soak-campaign.mjs`.
 
 The upload-on-failure and 30-day retention policy above applies to the scheduled
 `benchmark-observations` job. The generated PR workflow collects and uploads
@@ -98,7 +98,7 @@ artifact and no error. Local failed receipts remain on disk.
 
 ## Rebase cache reuse
 
-`scripts/bench/rebase-cache.mjs` measures whether a rebased stack replays
+`flows/bench/rebase-cache/rebase-cache.mjs` measures whether a rebased stack replays
 every target whose inputs did not change. It is a manual measurement, not a PR
 gate; the deterministic gate is `build-cli/test/RebaseKeyStability.test.ts`.
 
@@ -113,12 +113,12 @@ signature is its ambient identity plus every declared input file digest in its
 dependency closure. A cacheable target whose key was stored earlier is a hit;
 a key that moved while the signature did not, or stayed while it moved, fails
 the run. `--execute` also runs labels for real through
-`scripts/ci/check-cache.mjs`, the persistence coding checks use, and fails when
+`flows/checks/check-cache.mjs`, the persistence coding checks use, and fails when
 the executor's hit/ran disagrees with the prediction from earlier effective
 keys, or a label fails outside `--allow-failed`.
 
 ```sh
-node scripts/bench/rebase-cache.mjs --out /tmp/rebase-inside \
+node flows/bench/rebase-cache/rebase-cache.mjs --out /tmp/rebase-inside \
   --insert packages/smithers/notifications \
   --execute //flows:codingPolicy,//flows:codingRuntime,//packages/smithers/notifications:docs \
   --allow-failed //flows:codingRuntime

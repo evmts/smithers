@@ -1,7 +1,7 @@
 # C-REL-06 Quiesce and backup make one consistent snapshot under concurrent work, and it restores on a second Mac
 
 Proves: mvp.md M-26, §12.6, §6.1 Restart · spec.md §8.2.1, §16.4, §16.5.1–§16.5.3, §17.4, §19.1, §19.2 · Layer: e2e and fault · Stage: R · Tickets: T-INS-07
-Automation: `scripts/release/backup-restore.mjs` (new) drives both Macs, the load and the comparison; `packages/smithers/test/host-backup.fault.test.ts` (new) drives the kill points; `packages/backend/internal/services/install_quiesce_integration_test.go` (new) covers the freeze gate · Runs in: reference host A and a second Mac B, recorded
+Automation: `flows/release/host/backup-restore.mjs` (new) drives both Macs, the load and the comparison; `packages/smithers/test/host-backup.fault.test.ts` (new) drives the kill points; `packages/backend/internal/services/install_quiesce_integration_test.go` (new) covers the freeze gate · Runs in: reference host A and a second Mac B, recorded
 
 ## Setup
 - Host A: the reference host with the release candidate at commit X installed from the tap, set up against the scratch repository `smithers-mvp-canary/<date>`, with members Ben and Alice.

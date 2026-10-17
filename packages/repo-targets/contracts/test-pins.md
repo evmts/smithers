@@ -4,7 +4,7 @@ This file is the register every test pin must appear in, and the one-page
 ledger of the 1.0.0-rc.0 posture and limits a reader would otherwise have to
 discover from the test tree. The release train packs the `engine`, `agent` and
 `tooling` groups at one synchronized version, and `publishedPackages` in
-`scripts/pack-release.mjs` is the roster. These are statements of current
+`flows/release/pack-release.mjs` is the roster. These are statements of current
 behavior, not promises of planned behavior.
 
 ## Support posture
@@ -70,7 +70,7 @@ after its failures are fixed and repeated main-branch runs are green.
 
 The release train packs the `engine`, `agent` and `tooling` groups together at
 one synchronized version: the 49 names `publishedPackages` restates in
-`scripts/pack-release.mjs` and checks against what the workspace declares. Four
+`flows/release/pack-release.mjs` and checks against what the workspace declares. Four
 tooling packages are public, `@smthrs/build`, `@smthrs/build-cli`,
 `@smthrs/targets`; deployment and repository-local
 tooling stays out of the roster through its manifest `private` flag.
@@ -87,7 +87,7 @@ is application-wired rather than a shipped default.
 ## Cutting a release
 
 Start from a clean `main` checkout and run
-`node scripts/cut-release.mjs <version> --commit`, without a `v` prefix.
+`node flows/release/cut-release.mjs <version> --commit`, without a `v` prefix.
 The cut refuses detached HEADs, existing release tags, and branches other than
 `main` unless `--allow-branch` explicitly permits a named branch.
 
@@ -95,7 +95,7 @@ The sequence bumps manifests and internal ranges, generates the changelog,
 refreshes `pnpm-lock.yaml` with `pnpm install --lockfile-only --ignore-scripts`,
 and refreshes a tracked `bun.lock` with
 `bun install --lockfile-only --ignore-scripts`. It then checks the version and
-runs `node scripts/generate-changelog.mjs --check --version <version>`.
+runs `node flows/release/generate-changelog.mjs --check --version <version>`.
 `--commit` records the manifests and lockfiles, checks the changelog again on
 the exact release commit, and creates an annotated `v<version>` tag locally.
 

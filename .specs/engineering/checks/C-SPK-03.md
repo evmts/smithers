@@ -7,10 +7,10 @@ Automation: to write, as a `smthrs test` target · Runs in: reference host
 
 - Reference host: the team's Mac mini, macOS 15+, whatever its size, with `msb` 0.6.16 and libkrun. Record the commit, `msb --version` and the host profile (spec §8.2.1).
 - One microVM booted from `DefaultImage` (`packages/backend/microsandbox/runtime.go:57`) with the machine memory and vCPUs §8.2.1 derives for that host, and no other VM running.
-- The Rust echo server from `scripts/spikes/col-01/echo/` listens on a guest loopback port, and a host listener is bridged into the guest.
+- The Rust echo server from `apps/backend/checks/C-SPK-03-07/echo/` listens on a guest loopback port, and a host listener is bridged into the guest.
 - No browser or network is involved: this check isolates the host↔guest leg.
 
-Candidate Automation declaration (unapproved): `scripts/spikes/col-01/relay-rtt/` (new; `scripts/spikes/col-01/run.sh rtt`) · Runs in: reference host
+Candidate Automation declaration (unapproved): `apps/backend/checks/C-SPK-03-07/relay-rtt/` (new; `apps/backend/checks/C-SPK-03-07/run.sh rtt`) · Runs in: reference host
 
 Receipt: CI's own check run at the landed SHA, or a `smthrs test` run on the reference host, recorded through `scripts/check-run.mjs` (minimal-code synthesis ruling 3).
 

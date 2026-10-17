@@ -90,7 +90,7 @@ and migrations without building a store.
 Workspace imports resolve to `src`. Run `pnpm run build` in this package to
 regenerate ESM, CommonJS, declarations, and source maps under `dist`.
 
-Repository release packing uses `scripts/pack-release.mjs`. Before staging each
+Repository release packing uses `flows/release/pack-release.mjs`. Before staging each
 package, it deletes `dist` and runs that package's build script. A failed or
 missing build script stops packing even when all export targets already exist.
 The release workflow also rebuilds clean artifacts before entering this gate.

@@ -7,7 +7,7 @@ Runs one JavaScript program as a test gate: the program's exit code is the
 verdict. Modelled on Bazel's `nodejs_test`.
 
 This is what a repository's shell-script gates become. `node --test
-scripts/pack-release.test.mjs`, `node scripts/browser-check.mjs`, and `bun
+flows/release/pack-release.test.mjs`, `node packages/repo-targets/browser/browser-check.mjs`, and `bun
 e2e/run.ts` are all the same shape, a program that passes or fails, and each one
 is a target here, planned, keyed, addressable by label, and runnable locally
 by the name CI uses.
@@ -17,7 +17,7 @@ import { Smithers } from "@smthrs/targets"
 
 const runtime = Smithers.Runtime.Node({ version: ">=26.4.0" })
 
-// node --test scripts/pack-release.test.mjs
+// node --test flows/release/pack-release.test.mjs
 const packManifest = Smithers.NodeTest({
   runtime,
   runner: Smithers.testRunner([Smithers.file("//scripts/pack-release.test.mjs")]),
@@ -25,7 +25,7 @@ const packManifest = Smithers.NodeTest({
   deps: []
 })
 
-// node scripts/smoke-release.mjs dist/release-packs
+// node flows/release/smoke-release.mjs dist/release-packs
 const releaseSmoke = Smithers.NodeTest({
   runtime,
   runner: Smithers.entrypoint(Smithers.file("//scripts/smoke-release.mjs"), ["dist/release-packs"]),

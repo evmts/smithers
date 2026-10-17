@@ -6,7 +6,7 @@ The existing app confirmation authority is the durable message action created by
 
 Updated both RPC docblocks and added the shared cancellation refusal constructor. Regression tests cover stale revisions, answered confirmations, missing confirmations, legacy history, pending success, the registered flow, repeat cancellation, and reload persistence. Updated the registry's person-only reason oracle.
 
-API: ran timeout 600 node scripts/check-api-baseline.mjs --build-declarations --update, then verified with timeout 600 node scripts/check-api-baseline.mjs --build-declarations. Both PASS (49 public packages). The regenerated baseline changed @smthrs/build-cli, @smthrs/cli, and @smthrs/targets. These are baseline refreshes; no source in those packages changed. @smthrs/rpc is currently private and is excluded by this script; its source declarations changed as requested.
+API: ran timeout 600 node flows/release/check-api-baseline.mjs --build-declarations --update, then verified with timeout 600 node flows/release/check-api-baseline.mjs --build-declarations. Both PASS (49 public packages). The regenerated baseline changed @smthrs/build-cli, @smthrs/cli, and @smthrs/targets. These are baseline refreshes; no source in those packages changed. @smthrs/rpc is currently private and is excluded by this script; its source declarations changed as requested.
 
 Validation (all typecheck/test commands used timeout 600):
 

@@ -23,15 +23,15 @@ Out:
 - New host-profile detection or sizing, a second check executor, capacity tuning, model selection policy, View changes, root provisioning code and TypeScript library public exports.
 
 ## Changes
-- Reuse `packages/backend/microsandbox/hostprofile.go:66` and `:126`, and `packages/backend/internal/services/install_capacity.go:20` through authenticated `GET /api/host`; no script runs `sysctl`, `statfs` or parses an ops health line. `scripts/perf/lib/host.mjs` (new) only reads and records that response.
+- Reuse `packages/backend/microsandbox/hostprofile.go:66` and `:126`, and `packages/backend/internal/services/install_capacity.go:20` through authenticated `GET /api/host`; no script runs `sysctl`, `statfs` or parses an ops health line. `flows/perf/lib/host.mjs` (new) only reads and records that response.
 - Reshape existing `packages/backend/internal/routes/metrics.go` and `metrics_http.go` to reuse their in-process collectors. Add `packages/backend/internal/routes/install_metrics.go` only for the owner-authorized `GET /api/install/metrics` adapter and missing §20.3 measurements; existing `/metrics` does not supply the owner-only install contract. Mount through `packages/backend/internal/compose/router.go` with T-ACC-03 authorization; extend `docs/api/openapi/install.yaml`.
 - Extend existing `scripts/PACKAGE.ts` with a `perf` run target in an exclusive tier, so CI wildcards never run it. Reuse `scripts/check-run.mjs` for check receipts; do not create another check executor.
-- `scripts/perf/run.mjs` (new): selects budgets, writes `.artifacts/perf/<date>/summary.json`. Existing `scripts/bench/gate.mjs` measures library counters, not the six installed-product boundaries; keep that gate unchanged.
-- `scripts/perf/lib/stats.mjs`, `scripts/perf/lib/artifact.mjs` (new): nearest-rank percentiles, sample validation and the per-check artifact format; the existing counter gate's result format has no per-sample clocks or C-PERF evidence copies.
-- `scripts/perf/{agent-first-token,projection-delta,keystroke,disk-write,warm-wake,rebase-hold}.mjs` and `scripts/perf/questions.json` (new): production-boundary drivers and 20 fixed no-machine questions. No existing `scripts/perf/` drivers implement these checks.
+- `flows/perf/run.mjs` (new): selects budgets, writes `.artifacts/perf/<date>/summary.json`. Existing `flows/bench/gate/gate.mjs` measures library counters, not the six installed-product boundaries; keep that gate unchanged.
+- `flows/perf/lib/stats.mjs`, `flows/perf/lib/artifact.mjs` (new): nearest-rank percentiles, sample validation and the per-check artifact format; the existing counter gate's result format has no per-sample clocks or C-PERF evidence copies.
+- `flows/perf/{agent-first-token,projection-delta,keystroke,disk-write,warm-wake,rebase-hold}.mjs` and `flows/perf/questions.json` (new): production-boundary drivers and 20 fixed no-machine questions. No existing `flows/perf/` drivers implement these checks.
 ## Tests
-- unit `scripts/perf/lib/stats.test.mjs`: nearest-rank p95 on known samples (n = 100: the 95th sorted value); refusal for n below the check's minimum; a sample missing its clock field is rejected.
-- unit `scripts/perf/lib/artifact.test.mjs`: the artifact schema includes the host profile and the origin.
+- unit `flows/perf/lib/stats.test.mjs`: nearest-rank p95 on known samples (n = 100: the 95th sorted value); refusal for n below the check's minimum; a sample missing its clock field is rejected.
+- unit `flows/perf/lib/artifact.test.mjs`: the artifact schema includes the host profile and the origin.
 - `TestPerfRunnerMissingProvider`: run the declared `perf` command against an install with each required contract unavailable; it names the skipped budget, reports incomplete and emits no passing receipt. Security/origin precondition failures refuse the affected budget before mutation.
 - `TestInstallMetricsOwnerBoundary`: real PostgreSQL and the production authenticated install router, `GET /api/install/metrics`; owner succeeds, anonymous returns 401, member/maintainer/delegated callers return 403. Literal fixtures assert the §20.3 metric fields. No direct handler acceptance test.
 - C-PERF-01: composer submission through `POST /api/conversations/{b}/prompt`, production turn dispatcher and Inspect, rendered first token/cards; use the configured `fast` role and include preflight.

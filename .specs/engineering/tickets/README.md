@@ -47,7 +47,7 @@ A ticket closes only with passing machine-written receipts for every named check
 
 ## Index
 
-Ready requires each new table’s `ownership.csv` row with `planned:<ticket>` and one owner (C-PRC-02). Assign numbers at landing through `scripts/renumber-migration.mjs`; the default Go gate runs without PostgreSQL. Landing runs the five-target drift set from §21.2 before push (C-PRC-01). Closing requires receipts for every named phase check at the landed commit (C-PRC-03).
+Ready requires each new table’s `ownership.csv` row with `planned:<ticket>` and one owner (C-PRC-02). Assign numbers at landing through `flows/land/renumber-migration.mjs`; the default Go gate runs without PostgreSQL. Landing runs the five-target drift set from §21.2 before push (C-PRC-01). Closing requires receipts for every named phase check at the landed commit (C-PRC-03).
 
 
 | ID | Title | Stage | Size | Depends on | Checks |

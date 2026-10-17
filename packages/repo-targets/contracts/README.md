@@ -2,7 +2,7 @@
 
 ## Resolved CI and runtime policy
 
-`node scripts/ci-inventory.mjs <output.json>` plans the actual commands in the
+`node packages/repo-targets/contracts/ci-inventory.mjs <output.json>` plans the actual commands in the
 generated CI workflow, with no target execution. The required
 `ci-inventory.test.mjs` gate checks those roots against the package/app/script/
 eval/fault requirements and retains a machine-readable row for each selected
@@ -64,7 +64,7 @@ never consult build-result caches. This establishes the current safe policy;
 it does not claim complete cacheability for all workspace rules.
 
 Workflow drift uses `pnpm exec smthrs lint '//:ci'`. Regeneration uses
-`node scripts/generate-ci.mjs`, which calls `GithubCiGen.render` in its declared
+`node packages/repo-targets/contracts/generate-ci.mjs`, which calls `GithubCiGen.render` in its declared
 `write` mode and the generated-file writer. This legacy rule keeps its explicit
 `mode: "check"` even when the CLI receives `target --write`; that command was
 verified to check drift without applying it. The YAML is never edited by hand.
@@ -120,8 +120,8 @@ obsolete checks were removed.
 | `barrels`, `umbrella-agent-exports` | Ported into `barrels.test.mjs`. The 0.x umbrella is now a migration notice that throws, so "re-exports the agent surface" became "refuses to run". |
 | `test-script-wiring-gate` | Ported into `test-script-wiring.test.mjs`. The 0.x version drove `scripts/check-smithers-test-script.mjs` against synthetic workspaces; the script is gone, so the claim is checked against the real tree. |
 | `fault-skip-audit-gate`, `fault-only-todo-audit` | Ported into `fault-skips.test.mjs`. The 0.x ratchet pinned a per-file skip *count*; this one requires a declared reason instead, which is the thing a reviewer can act on. It also refuses `.fails`, which the 0.x gate had no rule about, and it pins the required gates by title. The two rules are one rule: when the product does not meet a requirement the matrix covers, the sanctioned form is a plain test that fails, kept in the matrix with its owner cited and reported as a failure in the gate line. `.fails` turns that test into a pass and deletion turns it into prose; `requiredRedGates` refuses the deletion and the `.fails` rule refuses the marking. `fault-gaps.md` beside it records the shipped limitation next to the red gate, not instead of it. |
-| `effect-version-gate` | Dropped. It unit-tested `scripts/check-single-effect-version.mjs` against synthetic lockfiles. That script survived the migration and is executed against the real tree as `//scripts:effectVersion`, which is a stronger check than a fixture. |
-| `version-bump-propagation` | Dropped. It tested `scripts/bump.mjs`, which is gone; version propagation is now `scripts/set-release-version.mjs` and has its own suite at `//scripts:releaseVersion`. |
+| `effect-version-gate` | Dropped. It unit-tested `packages/repo-targets/contracts/check-single-effect-version.mjs` against synthetic lockfiles. That script survived the migration and is executed against the real tree as `//packages/repo-targets:effectVersion`, which is a stronger check than a fixture. |
+| `version-bump-propagation` | Dropped. It tested `scripts/bump.mjs`, which is gone; version propagation is now `flows/release/set-release-version.mjs` and has its own suite at `//scripts:releaseVersion`. |
 | `release-tag-guard` | Dropped. `scripts/release-tag-guard.mjs` has no successor: the RC release flow is `release.yml`, whose dry-run and tag-push paths are covered by `//scripts:releaseRehearsal`. |
 | `coverage-script-gate` | Dropped. It tested `scripts/coverage.mjs` and the Bun LCOV merge, neither of which exists. Coverage is vitest's, and the gate that keeps its denominator honest is `scripts/test/coverage.test.ts`. |
 | `workspace-test-sharding` | Dropped. `scripts/run-workspace-tests.mjs` and the Windows shard runner are gone; the Windows lane runs `//packages/...` directly. |

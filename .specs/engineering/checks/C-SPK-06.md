@@ -1,7 +1,7 @@
 # C-SPK-06 A Homebrew-installed `msb` keeps the hypervisor entitlement and boots a microVM
 
 Proves: mvp.md §6.1 Install on a Mac, §12.5, M-10 · spec.md §16.1.1 · Layer: spike · Stage: R · Tickets: T-INS-03
-Automation: `scripts/spikes/homebrew-hypervisor/run.sh` (new, disposable; deleted after the answer is recorded) · Runs in: reference host, new macOS user
+Automation: `apps/backend/checks/C-SPK-06/run.sh` (new, disposable; deleted after the answer is recorded) · Runs in: reference host, new macOS user
 
 ## Setup
 - Reference host (checks/README.md), macOS 15 or later. A new admin macOS user with no Homebrew state, Homebrew at `/opt/homebrew`, no global npm `microsandbox`, no nvm.

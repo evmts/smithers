@@ -1,7 +1,7 @@
 # C-SPK-08 Daemon sessions carry VS Code Remote; revocation in 5 s
 
 Proves: mvp.md §6.15 SSH into a branch (VS Code, Cursor and Zed remote editing; port forwarding), §6.8 Terminals, M-18, M-24 · spec.md §5.6, §8.10.3, §9.6 · Layer: spike · Stage: W0 · Tickets: T-TRM-06
-Automation: `scripts/spikes/trm-06/run.sh` (new), plus a recorded VS Code session · Runs in: reference host, VS Code on a second Mac
+Automation: `packages/smithers-machined/checks/C-SPK-08/run.sh` (new), plus a recorded VS Code session · Runs in: reference host, VS Code on a second Mac
 
 ## Setup
 

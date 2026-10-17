@@ -111,7 +111,7 @@ ordered product migrations, and product sqlc reads only that schema lineage.
 Plue maintains its private migrations and separate revision ledger. Public
 code reaches private state through injected stores and ports.
 
-`scripts/check-go-boundaries.py` rejects private packages, private-table SQL,
+`packages/backend/scripts/check-go-boundaries.py` rejects private packages, private-table SQL,
 cloud SDK dependencies, and deployment configuration in the public backend.
 Plue's ownership check compares its packages with its pinned public module and
 rejects duplicate product packages after the legacy cutover.

@@ -37,11 +37,11 @@ sessions.
 ## Coverage
 
 The TUI Bun suite remains assertion-only (see `PACKAGE.ts` and
-`scripts/repo-contract/README.md`): Bun's loaded-source LCOV denominator changes
+`packages/repo-targets/contracts/README.md`): Bun's loaded-source LCOV denominator changes
 on unchanged sources and cannot establish a whole-production floor. The explicit
 `coverage-roster.json` lists every `src/**/*.{ts,tsx}` owner source for the
-Istanbul collector (`scripts/bun-coverage`), including unimported files with
-zero hits. Use `node scripts/bun-coverage/run.mjs --root apps/tui --roster
+Istanbul collector (`packages/repo-targets/bun-coverage`), including unimported files with
+zero hits. Use `node packages/repo-targets/bun-coverage/run.mjs --root apps/tui --roster
 apps/tui/coverage-roster.json --run /tmp/tui-coverage-new -- test ./test` from
 the repository root to collect an LCOV/JSON report. This is measurement, not a
 release gate: TUI child-launch paths (including detached descendants and

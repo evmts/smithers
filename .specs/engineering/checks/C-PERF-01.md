@@ -1,12 +1,12 @@
 # C-PERF-01 App agent first token < 1.5 s; answer with cards < 8 s
 
 Proves: mvp.md §9 App agent, §6.5 Context preflight · spec.md §8.2.1, §11.5a, §15.1.1, §15.1.2, §18 · Layer: perf · Stage: R · Tickets: T-REL-01
-Automation: `scripts/perf/agent-first-token.mjs` (new) · Runs in: reference host plus a second Mac on the same network
+Automation: `flows/perf/agent-first-token.mjs` (new) · Runs in: reference host plus a second Mac on the same network
 
 ## Setup
 - Install at commit X on the reference host (the team's Mac mini, whatever its size); setup done through Source ready; no machine awake, and the run must not wake one.
 - The app agent and its preflight run on the `fast` role (§11.5a) as the owner set it in Settings; record provider and model id, and the `coding` model in case of fallback.
-- `scripts/perf/questions.json` (new): 20 fixed questions about the scratch repository's code and wiki that need no machine.
+- `flows/perf/questions.json` (new): 20 fixed questions about the scratch repository's code and wiki that need no machine.
 - Playwright Chromium on the second Mac B, signed in as a member, reaching the install through its configured public origin (record which origin and scheme).
 
 ## Steps

@@ -16,7 +16,7 @@ import { Smithers } from "@smthrs/targets"
 
 const runtime = Smithers.Runtime.Node({ version: ">=26.4.0" })
 
-// node scripts/pack-release.mjs dist/release-packs
+// node flows/release/pack-release.mjs dist/release-packs
 const releasePack = Smithers.NodeBinary({
   runtime,
   entry: Smithers.file("//scripts/pack-release.mjs"),

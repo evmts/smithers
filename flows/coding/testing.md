@@ -22,7 +22,7 @@ fixture's own timeout. The enclosing existing `Shell.Test` also bounds the entir
 gate. `Shell.Test` caches a green verdict in `execute` mode, but the JJ binary and
 native helper these gates spawn are not key material: only the Node or Bun
 runtime is. Coding checks bind those tools through the check cache partition
-(`scripts/ci/check-cache.mjs`); a direct `smthrs test` of these labels does not.
+(`flows/checks/check-cache.mjs`); a direct `smthrs test` of these labels does not.
 Gate output records measured preflight helper SHA256 and JJ version.
 
 `//flows:codingPolicy` and `//flows:codingRuntime` declare `cache: true`. Their

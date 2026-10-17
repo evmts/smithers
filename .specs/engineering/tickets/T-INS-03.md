@@ -16,7 +16,7 @@ Out: production tap and release publication (T-INS-05); production lifecycle, au
 - Record artifact hashes, backend commit, signing entitlements, loaded library realpath and the tested formula variant.
 - Preserve prior spike results as historical evidence on the issue. They do not authorize a different service.
 - Reuse the installed `msb` and `smithers-backend microvm doctor` (`apps/backend/main.go:71–74`, `apps/backend/isolation.go:239–270`), unchanged. Pins exist at `packages/backend/microsandbox/cli.go:19` (0.6.16) and `runtime.go:57` (image digest).
-- No product code. The C-SPK-06 disposable `scripts/spikes/homebrew-hypervisor/run.sh` is new: no Homebrew hypervisor harness exists today. Use the existing `scripts/check-run.mjs` receipt runner; do not add another runner. Remove the disposable harness after recording its answer.
+- No product code. The C-SPK-06 disposable `apps/backend/checks/C-SPK-06/run.sh` is new: no Homebrew hypervisor harness exists today. Use the existing `scripts/check-run.mjs` receipt runner; do not add another runner. Remove the disposable harness after recording its answer.
 
 ## Tests
 - C-SPK-06 `TestHomebrewSigningAndGUIBoot`: install A through `brew install --formula`, build/pour B through Homebrew, then invoke each installed absolute `msb` path for version, fresh-machine boot and in-machine `echo ok`; invoke the installed `smithers-backend microvm doctor`. Repeat under the disposable agent bootstrapped by `launchctl bootstrap gui/<uid>` and after logout/login. Record the literal plist, commands, process UIDs, signatures, entitlements, image/artifact digests and loaded library realpath. No fake CLI, direct adapter call or host echo supplies boot evidence.

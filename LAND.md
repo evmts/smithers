@@ -6,7 +6,7 @@ Reserve new tables in `packages/backend/db/ownership.csv` at Ready:
 installed tables. Set `SMITHERS_MIGRATION_TICKET` to the implementing ticket;
 the migration gate refuses another ticket's reservation.
 
-Fetch the landing branch, then run `node scripts/renumber-migration.mjs <file>`
+Fetch the landing branch, then run `node flows/land/renumber-migration.mjs <file>`
 for each unlanded product migration. The helper requires sqlc v1.30.0 from
 `PACKAGE.ts`, assigns max(origin/main)+1, updates the registry, converts implemented reservations,
 and regenerates sqlc. It refuses files already on `origin/main` before writes,
@@ -19,7 +19,7 @@ Run after renumbering and generation, without database credentials:
 go test -run 'TestMigrationGate|TestMigrationRegistry' ./packages/backend/db/product/
 ```
 
-`node scripts/commit.mjs --push --test '<required check>'` runs that mandatory
+`node flows/land/commit.mjs --push --test '<required check>'` runs that mandatory
 gate, sqlc drift, and the mandatory five-target drift set before either Git or jj publication. Missing or
 failed gates refuse publication, including with `--no-test`. The bootstrap
 helper publishes main; this authorized wave uses the lane's explicit Git

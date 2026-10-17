@@ -7,7 +7,7 @@ SMITHERS_ABI_SEED=20260904 \
 SMITHERS_ABI_CASES=5000 \
 SMITHERS_ABI_STEPS=32 \
 SMITHERS_ABI_ARTIFACT_DIR=/tmp/jj-abi-replay \
-node scripts/run-jj-abi-campaign.mjs
+node flows/bench/jj-abi-campaign/run-jj-abi-campaign.mjs
 ```
 
 Choose a new evidence directory for each run. Existing reports or logs are refused. The runner executes the parser-only test and native generated test directly, then replays the native test's exact malformed request bytes through the committed real WASM artifact. Cargo builds and Vitest workers are limited to one. Missing tools, missing WASM, nonzero tier exits, missing or incomplete reports, mismatched corpus/artifact hashes, and unbalanced allocations fail the campaign. The nightly reliability workflow runs these same 5,000 cases and 32 operation sequences, rotates the unsigned 32-bit seed by UTC day, and retains reports and logs even on failure. A dispatch can provide the seed explicitly. A local 2,000-case / 16-sequence run is a bounded local result, separate from completion of the scheduled declaration.

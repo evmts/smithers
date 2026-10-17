@@ -5,13 +5,13 @@ Automation: to write, as a `smthrs test` target · Runs in: reference host plus 
 
 ## Setup
 
-- Reference host: the team's Mac mini, whatever its size. Record its host profile (spec §8.2.1). The spike's Go fan-out (`scripts/spikes/col-01/fanout/`) listens on loopback plus the host's LAN address, the way the install serves a configured bind address (§1.4).
-- One microVM running the spike's Yrs document host (`scripts/spikes/col-01/dochost/`, `yrs =0.27.4`). It holds a 400-line seed file in the working copy and writes to disk with the §9.2.2 debounce.
+- Reference host: the team's Mac mini, whatever its size. Record its host profile (spec §8.2.1). The spike's Go fan-out (`apps/backend/checks/C-SPK-03-07/fanout/`) listens on loopback plus the host's LAN address, the way the install serves a configured bind address (§1.4).
+- One microVM running the spike's Yrs document host (`apps/backend/checks/C-SPK-03-07/dochost/`, `yrs =0.27.4`). It holds a 400-line seed file in the working copy and writes to disk with the §9.2.2 debounce.
 - The fan-out reaches the VM over the transport C-SPK-03 chose.
 - Second Mac on the same network: one Playwright process opens two Chromium pages, A and B, at the plain-HTTP LAN origin (`http://<host>.local:<port>`, an insecure context, §16.3.2). Each page has a `yjs 13.6.32` text bound to the document.
 - One clock: the Playwright runner's monotonic clock (`process.hrtime.bigint()`) stamps both send and receipt.
 
-Candidate Automation declaration (unapproved): `scripts/spikes/col-01/keystrokes.spec.ts` (new; `scripts/spikes/col-01/run.sh keystrokes`) · Runs in: reference host plus a second Mac on the same network
+Candidate Automation declaration (unapproved): `apps/backend/checks/C-SPK-03-07/keystrokes.spec.ts` (new; `apps/backend/checks/C-SPK-03-07/run.sh keystrokes`) · Runs in: reference host plus a second Mac on the same network
 
 Receipt: CI's own check run at the landed SHA, or a `smthrs test` run on the reference host, recorded through `scripts/check-run.mjs` (minimal-code synthesis ruling 3).
 

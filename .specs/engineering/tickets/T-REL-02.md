@@ -10,7 +10,7 @@ A recording on a fresh macOS user account on the reference mini plays J1 to J8, 
 ## Scope
 In:
 - The 24 h credential soak (C-REL-05) with Ben's independently created live Claude Code, Codex and `gh` logins on each machine, run on the same host before the recordings.
-- Reuse the real-install Playwright suites and their support to prepare a scratch repository, three GitHub accounts (owner, Ben as Maintainer, Alice as Member), and a step log with UTC timestamps. J1 is one Playwright spec; do not restore `scripts/journeys/`.
+- Reuse the real-install Playwright suites and their support to prepare a scratch repository, three GitHub accounts (owner, Ben as Maintainer, Alice as Member), and a step log with UTC timestamps. J1 is one Playwright spec; do not restore `flows/release/journeys/`.
 - Teammate actions on GitHub through the API as those accounts: a review comment (J10.2), a laptop push to a TODO branch (J10.3), an unrelated merge (J10.4), a merge on GitHub (J10.5), a network drop for the sync row (J10.6).
 - The §21 extras:
   - restart mid-run: `kill -9` of the backend while a TODO is working; the launcher restarts it (§1.2), and the recording shows no completed step re-run and the run's recovery receipt (§19.1);
@@ -37,7 +37,7 @@ After S1 passes J1 and J2, the owner enables New TODOs start pre-approved on Smi
 - Add `apps/app/e2e/real/j1.spec.ts` (new): one install-to-merge Playwright spec. Rejected reuse: the existing real suites do not cover fresh-user Homebrew installation through the first merged TODO. Keep the other journeys in their owning real specs; extend them for both themes and the release extras.
 - Extend the existing Playwright video/trace support. `apps/site/scripts/journeys/capture.mjs:92` already records a browser context, but its scripted-model host (`app-host.mjs:27–69`) cannot qualify a release. Reuse the Playwright recording configuration pattern, not that host or its marketing journey definitions.
 - Add only the C-UI-01 keyboard guard and real-install spec named by that check. Keep `apps/app/e2e/playwright/browser-keyboard.spec.ts` as supplemental control traversal coverage; it uses `page.setContent` and cannot qualify a journey.
-- Implement C-REL-05's `scripts/release/credential-soak.sh` as a thin caller of the production machine terminal/exec path, as Ben, with redacted logs. Rejected reuse: browser recording and the existing keyboard test do not perform the 24 h per-machine tool-login soak.
+- Implement C-REL-05's `flows/release/host/credential-soak.sh` as a thin caller of the production machine terminal/exec path, as Ben, with redacted logs. Rejected reuse: browser recording and the existing keyboard test do not perform the 24 h per-machine tool-login soak.
 - Prepare `smithers-mvp-canary/<date>` from a small reviewed template with a detectable check command and no `.smithers/` files. Keep fixed prompts and expected wiki decision text as reviewed literal test data; `JOURNEY.md` is data, never a runtime oracle loaded from a mutable branch.
 - Reuse `scripts/check-run.mjs` and T-PRC-03's approved command mappings for receipts. Do not recreate the deleted executor, qualifier or obligation manifest. No product code.
 

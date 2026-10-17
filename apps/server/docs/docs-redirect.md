@@ -14,14 +14,14 @@ https://flows.smithers.sh/
 
 | Piece | File |
 | --- | --- |
-| Slug roster, folder map and page map, from the workspace package list and each package's `docs/` | `scripts/package-docs.mjs` (`node scripts/package-docs.mjs` prints both maps) |
-| The Worker's copy of the maps (generated) | `src/docsRedirectMap.ts` (`node scripts/package-docs.mjs --write`; `pnpm docs:sync` runs it) |
-| Generator tests and the map's freshness against the docs | `scripts/package-docs-redirect.test.mjs` (`//scripts:packageDocs`; `pnpm docs:check` runs `--check`) |
+| Slug roster, folder map and page map, from the workspace package list and each package's `docs/` | `flows/docs-sync/package-docs.mjs` (`node flows/docs-sync/package-docs.mjs` prints both maps) |
+| The Worker's copy of the maps (generated) | `src/docsRedirectMap.ts` (`node flows/docs-sync/package-docs.mjs --write`; `pnpm docs:sync` runs it) |
+| Generator tests and the map's freshness against the docs | `flows/docs-sync/package-docs-redirect.test.mjs` (`//flows:packageDocs`; `pnpm docs:check` runs `--check`) |
 | Handler (pure decision, pass-through, DNS check) | `src/docsRedirect.ts` |
 | Entry (default export only; workerd refuses other exports) | `src/docsRedirectWorker.ts` |
 | Config: name, 48 routes, `UNKNOWN_SLUGS` switch | `wrangler.docs-redirect.jsonc` |
 | Unit and workerd tests | `src/docsRedirect.test.ts`, `src/docsRedirect.workerd.test.ts` |
-| Live acceptance probe (12 URLs: 301, exact Location, target 200) | `node scripts/package-docs-redirect-probe.mjs` |
+| Live acceptance probe (12 URLs: 301, exact Location, target 200) | `node apps/server/scripts/package-docs-redirect-probe.mjs` |
 
 This Worker is not `smithers-mvp-web`. The Deploy apps workflow does not deploy it,
 and deploying it never touches the shared edge.
@@ -90,7 +90,7 @@ lowercase `[a-z0-9_.-]` segments. That includes a `flows` page and a nested
 package's page that claim one path. `aggregateSites` in the generator lists the sites
 that answer for nested packages: `flows` only, because its barrel re-exports the engine
 packages under `packages/smithers/flows/`. A page added, renamed or removed changes the map:
-`pnpm docs:sync` regenerates it, and `pnpm docs:check` and `//scripts:packageDocs` fail
+`pnpm docs:sync` regenerates it, and `pnpm docs:check` and `//flows:packageDocs` fail
 while it is stale, so a Location never names a file that no longer exists.
 
 ## Hostname inventory, 2026-10-06

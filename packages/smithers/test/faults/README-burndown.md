@@ -34,7 +34,7 @@ FAULT_3367_RECEIPTS=/absolute/receipts \
 All current assertions are ordinary tests: fault identification, preserved work,
 caller recovery, admission refusal and cleanup. The former generic identity
 expected-failure pin is explicitly retired below; historical raw failures remain
-available. The pin register is [scripts/test-pins.md](../../../../scripts/test-pins.md).
+available. The pin register is [packages/repo-targets/contracts/test-pins.md](../../../repo-targets/contracts/test-pins.md).
 
 Run the added host-kill/restart cases serially:
 

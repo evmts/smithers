@@ -1,6 +1,6 @@
 # Working-together fault evidence
 
-`smthrs test //scripts:workingTogetherComponents` executes the existing Rust
+`smthrs test //flows:workingTogetherComponents` executes the existing Rust
 versions, outbox, capture, reconcile, barrier, documents, rebase, link and
 moved-off suites with
 `testing,killpoints`. K1/K2's process-exit test repeats ten times per point.
@@ -10,7 +10,7 @@ tests; suites compiled without those tests cannot qualify. Moved-off metadata
 fixtures run in the same campaign. These suites include real temporary disk/process boundaries and test-only
 service fixtures. They do not qualify the integrated C-DUR-04 matrix.
 
-`smthrs test //scripts:workingTogetherFaults` runs the same components, records
+`smthrs test //flows:workingTogetherFaults` runs the same components, records
 K1–K8 as blocked, and exits 2 after component success. A component failure or a
 suite with zero assertions exits 1. Both write fresh C-DUR-04 directories with
 commit, actual runner host profile, argv and complete logs. Symlink parents and
@@ -24,7 +24,7 @@ Mac's authenticated browser/SSH fixtures, sleep/wake, two typists during rebase,
 host restart, stale outside save, revocation and both themes. A component pass
 or an unavailable performance run never marks any of those as complete.
 
-`smthrs test //scripts:workingTogetherWikiFaults` runs the composed wiki
+`smthrs test //flows:workingTogetherWikiFaults` runs the composed wiki
 host crash/restart boundary ten times with real PostgreSQL and native document
 state. Create the untracked `.artifacts/working-together-host.json` with
 `databaseUrl` naming a dedicated test PostgreSQL server and `libraryPath` naming
@@ -68,7 +68,7 @@ held-inode base keeps the live edit and reports the outside version. This is
 Linux boundary evidence, not the installed broker/cgroup, microVM, browser,
 reference-host latency or complete C-COL-04/C-DUR-04 acceptance.
 
-`node scripts/working-together/faults.mjs --host-only` executes K4 and K4b's
+`node flows/perf/working-together/faults.mjs --host-only` executes K4 and K4b's
 production authenticated host dispatcher with real PostgreSQL and a bare Git
 object store. The untracked `.artifacts/working-together-host.json` needs only
 `databaseUrl` for a disposable test PostgreSQL server in this mode. K4 exits
@@ -85,7 +85,7 @@ an installed guest watcher, its durable outbox, a VM kill, working-copy recovery
 capture convergence or the complete per-run C-DUR-04 artifact inventory. The
 summary remains `incomplete`; the Mac/approved-image campaign is still required.
 
-`node scripts/working-together/faults.mjs --watcher-only` runs the composed Linux
+`node flows/perf/working-together/faults.mjs --watcher-only` runs the composed Linux
 watcher recovery campaign: K1, K2, K3, K3b and K5a–c, ten runs each. Build the
 `rehearsal_daemon` example with `--features killpoints`, then add its absolute
 path as `machinedFaultBinary` to `.artifacts/working-together-host.json`, alongside
@@ -107,7 +107,7 @@ Its empty broker census cannot qualify member-session attribution, guest init
 supervision, K4/K4b host faults or K6 VM kills. The summary stays `incomplete`;
 successful daemon and host modes must never be combined into a full-check pass.
 
-`node scripts/working-together/faults.mjs --watcher-host-only` runs ten real
+`node flows/perf/working-together/faults.mjs --watcher-host-only` runs ten real
 watcher/host repetitions each of K4 and K4b using the same private fixture and
 digest-bound daemon as `--watcher-only`. K4 exits a separate host process after
 the production burst transaction commits, before its wire ACK; the daemon
@@ -126,7 +126,7 @@ and the unchanged host PID. This is portable watcher/host evidence. Populated
 member cgroups, guest init and real VM force-stop still require the approved
 reference campaigns; the summary remains `incomplete`.
 
-On the reference Mac, `node scripts/working-together/faults.mjs --session-only`
+On the reference Mac, `node flows/perf/working-together/faults.mjs --session-only`
 runs K1–K3b and K5a–c against the composed approved microVM install, ten times
 each. `--vm-only` runs K6 at K1 and K5b, ten times each. The host fixture must
 also name an absolute `checkBundle` containing the approved debug daemon with
@@ -143,7 +143,7 @@ retains the writer hashes, outbox, heads, rows and host object checks. A green
 selected campaign remains incomplete evidence for C-DUR-04 until real watcher
 K4/K4b host crash/outage and the remaining campaigns qualify together.
 
-`node scripts/working-together/faults.mjs --member-host-only` runs K4 and
+`node flows/perf/working-together/faults.mjs --member-host-only` runs K4 and
 K4b ten times each on the approved reference guest. K4 opens its writer through
 the authenticated terminal route and records its member UID and broker cgroup.
 It then transfers the retained private daemon connection to a separate host
@@ -155,7 +155,7 @@ check every acknowledged byte, unique file row and retained versions object.
 K4b keeps the host alive during a thirty-second outage and fifty bursts.
 Neither case installs branch code as root or synthesizes a session census.
 
-`node scripts/working-together/faults.mjs --s2` orchestrates all S2 campaigns.
+`node flows/perf/working-together/faults.mjs --s2` orchestrates all S2 campaigns.
 Run it on the approved reference Mac. Its private
 `.artifacts/working-together-host.json` contains `databaseUrl`, `libraryPath`,
 `checkBundle`, a lane-specific `databaseNamespace` (at most fifteen characters)

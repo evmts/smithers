@@ -373,7 +373,7 @@ The tech lead's review read the engineering spec, product spec and code from wor
 | .specs/engineering/tickets/README.md | 6b46607be4e0606a16b506f82aa8b295f77d2e70c2c9113fccf1f666d5b411ef |
 | AGENTS.md | 4fadc7d97735f40fe433e97e7910ed6ecf538dd511aef5c3d2c0bab5e85a686e |
 
-Research and pepper reports are observations, not qualification. Review paths and scripts/journeys, scripts/perf and target names are declared/planned until verified present, registered and executor-bound in the nominated snapshot. Site screenshot helpers cannot substitute for activation automation. Baseline reports do not prove current green, available hardware or landed harnesses.
+Research and pepper reports are observations, not qualification. Review paths and flows/release/journeys, flows/perf and target names are declared/planned until verified present, registered and executor-bound in the nominated snapshot. Site screenshot helpers cannot substitute for activation automation. Baseline reports do not prove current green, available hardware or landed harnesses.
 
 ## Asks for the leads
 

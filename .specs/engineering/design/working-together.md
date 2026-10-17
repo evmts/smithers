@@ -213,7 +213,7 @@ Rules: an event is acknowledged only after the host commits objects, row and rec
 | Membership | keep | `B/identity/member_boundary.go` (roster members on member routes), `B/services/member_revocation.go`, `workspace_shares` queries |
 | Conversation | keep, cut over | `B/chat/{store,dispatcher,http,queue,shared,author,view_state,preflight}.go`, `0120`; delete `app_timelines`, the browser tool loop, `/api/agent/turn*` writes |
 | Attribution | reshape | `M/attrib.rs` participant-level candidates; kernel observation stays in `tickets/deferred/T-MCH-03.md` until the gate fails |
-| Spikes | keep as benchmark methods | `scripts/spikes/col-01/` (rerun on the reference host), `scripts/spikes/trm-06/` (README: "INCOMPLETE; activation refused") |
+| Spikes | keep as benchmark methods | `apps/backend/checks/C-SPK-03-07/` (rerun on the reference host), `packages/smithers-machined/checks/C-SPK-08/` (README: "INCOMPLETE; activation refused") |
 
 Net new, with why reuse fails: the daemon process layer (no production composition exists), the Go link and ingest (the reporter is connectionless), `codedoc.go` (the relay has no engine), the FFI handle API (the JSON call is O(document) per update), `branch_ssh_bridge.go` (the existing bridge targets a guest sshd that will not exist), `burst_files` and `machine_event_receipts` (job events cannot index per-file versions or dedupe by event id), `set_roster`.
 
@@ -223,7 +223,7 @@ Net new, with why reuse fails: the daemon process layer (no production compositi
 
 | Spike | What | Result that changes the design |
 | --- | --- | --- |
-| S-1 | `scripts/spikes/col-01/run.sh` on the idle reference Mac mini with browsers on a second Mac, both transports, guest idle and busy (C-SPK-03, C-SPK-07); plus the four kernel probes (`RENAME_EXCHANGE`, `openat2`, `cgroup.freeze`, `cgroup.kill`) and the 1,000-capture growth run from T-COL-11 | Decides relay vs bridge and the save-path batching; it cannot remove the document host (the wiki needs it). A failed `RENAME_EXCHANGE` probe moves the displaced check before a `NOREPLACE` rename. Growth over 2 GiB per 14 days shortens op-log retention. |
+| S-1 | `apps/backend/checks/C-SPK-03-07/run.sh` on the idle reference Mac mini with browsers on a second Mac, both transports, guest idle and busy (C-SPK-03, C-SPK-07); plus the four kernel probes (`RENAME_EXCHANGE`, `openat2`, `cgroup.freeze`, `cgroup.kill`) and the 1,000-capture growth run from T-COL-11 | Decides relay vs bridge and the save-path batching; it cannot remove the document host (the wiki needs it). A failed `RENAME_EXCHANGE` probe moves the displaced check before a `NOREPLACE` rename. Growth over 2 GiB per 14 days shortens op-log retention. |
 | S-2 | T-MCH-03 fanotify probe (one day): `fanotify_init` in the stock libkrunfw guest, writer pid → uid for short-lived writers | Tells us the fallback cost if the attribution gate fails: a day (stock kernel) or a week (rebuilt libkrunfw, T-INS-01/03). |
 | S-3 | In a Linux VM: a VS Code server, an idle Node process and a formatter in three cgroups as two uids; count 1.5 s windows where more than one participant's cgroups gain CPU | Over 10 % ambiguous windows with one person active means participant-level aggregation is not enough; kernel attribution enters launch now instead of after dogfood. |
 | S-4 | T-TRM-06 (two days): a real VS Code Remote-SSH session over daemon `pty|exec|sftp|tcp` sessions with a root supervisor and no sshd; revocation timing with background children | A missing channel capability adds a frame to §9.6 before W7–W9 land; revocation over 5 s with children in uninterruptible I/O lengthens the kill wait and shows the blocker. |
@@ -263,7 +263,7 @@ Net new, with why reuse fails: the daemon process layer (no production compositi
 | W17 | Conversation cutover: composer → `/prompt`, host tool loop, private queue, revocation; delete `app_timelines` and the browser executor (3) [T-APP-16] | — | `TestBranchConversationOrderedReplay`, `TestHostTurnAuthorRevocation` (≤ 5 s), `TestHostTurnPrivateContext` (canary never in a model request); e2e a turn survives closing the tab |
 | W18 | Moved-off detection, Return to Tn, Keep for now; agent note on outside change (2) [T-COL-05, T-COL-12] | W6, W2 | `moved_off.rs` predicate table; two Returns race → one 409; e2e C-J3-09, C-J3-03 |
 | W19 | Revocation fan-out end to end including `set_roster` on reconnect (2) [T-ACC-02] | W8, W9, W17 | partition the link, remove the member, restore the link: every descendant gone ≤ 5 s after the handshake; 20 runs |
-| W20 | Fault and perf suites as `smthrs test` targets (K1–K8, C-PERF-02..06, `scripts/perf/{keystroke,disk-write}.mjs`) and the reference-host rehearsal (3) | W3, W15 | artifacts under `.artifacts/checks/` and `.artifacts/perf/<date>/` with the host profile; sleep/wake, rebase while two type, host restart, stale outside save, revocation, both themes, second laptop |
+| W20 | Fault and perf suites as `smthrs test` targets (K1–K8, C-PERF-02..06, `flows/perf/{keystroke,disk-write}.mjs`) and the reference-host rehearsal (3) | W3, W15 | artifacts under `.artifacts/checks/` and `.artifacts/perf/<date>/` with the host profile; sleep/wake, rebase while two type, host restart, stale outside save, revocation, both themes, second laptop |
 
 ```
 day    0        1

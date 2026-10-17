@@ -39,7 +39,7 @@ Out:
 - GitHub OAuth for the install keeps reading the client id and secret from `auth.github_client_id` (`config.go:362-365`) on the thin path; T-GH-01 replaces that read with `OAuthClient()`.
 - CLI: delete `smthrs auth local login|bootstrap` (`packages/smithers/src/internal/backend/Auth.ts:233-280`), the `"auth local"` group (`Commands.ts:74`), and its local-auth calls in `ProductApi.ts`.
 - App: delete `apps/app/src/mainview/LocalAuthPanel.tsx` and its test, and its use in `SessionNavigation.tsx`. Remove the local branch of `state/IdentityProvider.ts` and `packages/rpc/src/ApplicationAuth.ts`. Sign-in is one "Sign in with GitHub" door.
-- OpenAPI: delete the `/api/auth/local/*` rows in `docs/api/openapi/authentication.yaml:425-592`, then re-bundle with `scripts/openapi-bundle.mjs`. `openapi_conformance_test.go:222` stays green.
+- OpenAPI: delete the `/api/auth/local/*` rows in `docs/api/openapi/authentication.yaml:425-592`, then re-bundle with `packages/backend/scripts/openapi-bundle.mjs`. `openapi_conformance_test.go:222` stays green.
 - Docs: replace the bootstrap-token steps in `apps/site/src/content/docs/docs/self-hosting.mdx` with the setup URL. Run `pnpm docs:sync` and `pnpm docs:check`.
 
 ## Tests

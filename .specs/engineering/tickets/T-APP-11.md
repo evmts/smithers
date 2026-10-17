@@ -49,7 +49,7 @@ Out:
 - Unit, same file (fake topic): after 50 writes 20 ms apart, the card's digest equals the file's.
 - Unit: every `Action.label` and `disabled.reason` the card files emit passes T-CAT-01's `lintText` (engineering's copy; the View's copy is T-UI-16's).
 - Integration (`apps/app/e2e/contracts/file-reload.spec.ts`, new, real backend and a machine): an SSH user's `rm` and `git mv` produce the two gone states; Restore puts the bytes back byte for byte; Restore this file after a formatter run restores one file and adds one activity entry by the presser; hover, definition and diagnostics answer on an awake branch through the daemon session, and a sleeping branch starts no language server and stays asleep.
-- e2e: `apps/app/e2e/real/file-gone.spec.ts` (C-J3-08 S2 steps 1–5) and Restore/Compare steps 2–3 of `apps/app/e2e/real/branch-outside-change.spec.ts` (C-J3-03), through the T-UI-16 Views. Perf: `scripts/perf/disk-write.mjs` (C-PERF-04), 200 writes over persistent SSH; the second Mac’s clock measures SSH submission to File DOM update, nearest-rank p95 < 1 s.
+- e2e: `apps/app/e2e/real/file-gone.spec.ts` (C-J3-08 S2 steps 1–5) and Restore/Compare steps 2–3 of `apps/app/e2e/real/branch-outside-change.spec.ts` (C-J3-03), through the T-UI-16 Views. Perf: `flows/perf/disk-write.mjs` (C-PERF-04), 200 writes over persistent SSH; the second Mac’s clock measures SSH submission to File DOM update, nearest-rank p95 < 1 s.
 - Scroll and line survival across a reload, the banners and the Compare layout are T-UI-16's.
 
 ## Acceptance

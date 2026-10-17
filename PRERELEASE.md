@@ -416,7 +416,7 @@ Also landed: 5e1a8748b5 moved tests off the removed guest read and write. 3fc44e
 
 ### F. Resume a failed publish
 
-If `NPM_TOKEN` may not create the new names: Will creates an npm token with read and write on the `@smthrs` scope and sets it with `gh secret set NPM_TOKEN --repo smithersai/smithers`. Then the same candidate is resumed. Do not re-run the failed run and do not push the tag again. From `scripts/release-resume.md` and `STATE.md`:
+If `NPM_TOKEN` may not create the new names: Will creates an npm token with read and write on the `@smthrs` scope and sets it with `gh secret set NPM_TOKEN --repo smithersai/smithers`. Then the same candidate is resumed. Do not re-run the failed run and do not push the tag again. From `flows/release/release-resume.md` and `STATE.md`:
 
 ```sh
 RUN=<failed run id>

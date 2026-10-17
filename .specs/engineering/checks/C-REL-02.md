@@ -1,7 +1,7 @@
 # C-REL-02 `brew install` and `smthrs host start` in a fresh macOS user account on the reference mini need no Smithers account or Smithers-run service
 
 Proves: mvp.md §12.5, §6.1 Install on a Mac, M-09 · spec.md §5.1.0, §16.1.0–§16.1.2, §16.2 · Layer: journey · Stage: R · Tickets: T-INS-05, T-INS-08
-Automation: `scripts/journeys/release-install.mjs` for timings and the connection log; the session is screen-recorded · Runs in: reference mini, fresh macOS user account with no prior Smithers state, recorded manual
+Automation: `flows/release/journeys/release-install.mjs` for timings and the connection log; the session is screen-recorded · Runs in: reference mini, fresh macOS user account with no prior Smithers state, recorded manual
 
 ## Setup
 - The reference host after Erase All Content and Settings, macOS 15 or later, one new admin user, Homebrew installed from brew.sh.
@@ -36,7 +36,7 @@ Automation: `scripts/journeys/release-install.mjs` for timings and the connectio
 
 ## Recorder
 Start the screen recording and logging DNS resolver before the recorder. Run
-`node scripts/journeys/release-install.mjs <owner-config.json>` as the installing
+`node flows/release/journeys/release-install.mjs <owner-config.json>` as the installing
 user. The config names a new absolute `evidence` directory, an absolute `dnsLog`
 export path, the release `version` and 40-character `commit`, and `hostnames`
 with exact hostname arrays under `distribution`, `provider`, `registry` and

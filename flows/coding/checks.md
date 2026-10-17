@@ -55,12 +55,12 @@ bounded timeout, and a host-supplied build environment. It does not inherit the
 gateway's environment by default. Dependency installation and runtime selection
 belong to the project's declared command and existing toolchain; this recipe
 does not borrow mutable `node_modules` from the editing checkout.
-This repository's `scripts/ci/coding-check.sh` gives each frozen Bun install
+This repository's `flows/checks/coding-check.sh` gives each frozen Bun install
 120 seconds, terminates a stalled installer, and retries it once. Other install
 failures retain their exit status; tests start only after installation succeeds.
 `SMITHERS_CHECK_INSTALL_TIMEOUT` can select a different GNU timeout duration
 for an operator or a bootstrap test. Coreutils is supplied by the workspace base.
-Each check starts in a fresh export, so `scripts/ci/check-cache.mjs` carries
+Each check starts in a fresh export, so `flows/checks/check-cache.mjs` carries
 target results between them: it seeds the export's `.flows/cache` from
 `$HOME/.cache/smithers-checks/cache` (or `SMITHERS_CHECK_CACHE_DIR`) before the
 run and saves new entries after it, pass or fail. The partition is named by the
@@ -224,7 +224,7 @@ the store on its next run.
 
 The command receives the Change's written paths in `SMITHERS_CHECK_FILES`,
 one per line. `checks/affected-lint` (fast) and `checks/affected-test` (slow)
-pass them to `smthrs affected` through `scripts/ci/coding-check.sh affected
+pass them to `smthrs affected` through `flows/checks/coding-check.sh affected
 <verb> <patterns>`, with `.github/ci-known-red.json` as the known-red list. A
 Change whose affected target is newly red fails its gate, so `FastGate` stops
 the next Change and correction feeds the failure back to the owning one. A

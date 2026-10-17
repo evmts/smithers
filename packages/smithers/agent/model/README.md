@@ -140,6 +140,6 @@ or the corresponding Cerebras or evaluator test file. Keep credentials out of co
 arguments and test output. The live tier is separate from deterministic coverage.
 
 For required Cerebras and Codex subscription evidence, run
-`bash scripts/ci/provider-live.sh` from the repository root with
+`bash packages/smithers/agent/model/scripts/provider-live.sh` from the repository root with
 `CEREBRAS_API_KEY` and the selected home's Codex ChatGPT login available.
 The runner fails on missing credentials; it never treats skipped tests as evidence.

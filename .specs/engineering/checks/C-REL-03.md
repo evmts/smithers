@@ -1,7 +1,7 @@
 # C-REL-03 A launch-day install upgrades to the next release with all data intact
 
 Proves: mvp.md M-26, §12.6 · spec.md §6.3 (quiesce), §16.4, §16.5, §19.1 · Layer: journey · Stage: R · Tickets: T-INS-07
-Automation: `scripts/journeys/upgrade.mjs` (new) computes digests and drives the CLI; the session is screen-recorded · Runs in: reference host, recorded manual
+Automation: `flows/release/journeys/upgrade.mjs` (new) computes digests and drives the CLI; the session is screen-recorded · Runs in: reference host, recorded manual
 
 ## Setup
 - Release N (the launch candidate tag) installed from the tap, claimed by the owner, set up against `smithers-mvp-canary/<date>`.

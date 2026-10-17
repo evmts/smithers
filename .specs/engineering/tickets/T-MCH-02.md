@@ -31,8 +31,8 @@ Out:
 
 ## Changes
 
-- Reshape existing `scripts/spikes/mch-02-virtiofs-homes/run.sh`, reusing `verdict.py`, `concurrent.py`, `concurrent-worker.cjs`, `test-verdict.py` and `test-concurrent.py`. The existing harness boots two VMs with pinned `msb`, runs the layout A and B matrices with `setpriv --reuid --regid --clear-groups`, and writes `results.json`. Retain that evidence path; do not build a second harness. Any rerun follows the root-input restrictions below.
-- No product code changes. Add a decision-completion mode to `scripts/spikes/mch-02-virtiofs-homes/run.sh` that validates the retained real-machine evidence and accepted NO without changing the shared-home hypothesis verdict. smithers-3f reviews its fail-closed completeness checks; smithers-8a accepts the decision receipt. C-SPK-02 uses that mode for this completed decision (§21.4).
+- Reshape existing `packages/backend/checks/C-SPK-02/run.sh`, reusing `verdict.py`, `concurrent.py`, `concurrent-worker.cjs`, `test-verdict.py` and `test-concurrent.py`. The existing harness boots two VMs with pinned `msb`, runs the layout A and B matrices with `setpriv --reuid --regid --clear-groups`, and writes `results.json`. Retain that evidence path; do not build a second harness. Any rerun follows the root-input restrictions below.
+- No product code changes. Add a decision-completion mode to `packages/backend/checks/C-SPK-02/run.sh` that validates the retained real-machine evidence and accepted NO without changing the shared-home hypothesis verdict. smithers-3f reviews its fail-closed completeness checks; smithers-8a accepts the decision receipt. C-SPK-02 uses that mode for this completed decision (§21.4).
 
 ## Tests
 

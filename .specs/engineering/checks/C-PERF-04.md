@@ -1,7 +1,7 @@
 # C-PERF-04 Outside disk write reaches an open File card < 1 s
 
 Proves: mvp.md §6.8 External changes and Live updates, §9 Live updates, M-27 · spec.md §9.2 (stage-2 reload rule), §9.3.4 (`file_written`), §18 · Layer: perf · Stage: S2 · Tickets: T-COL-04, T-APP-11, T-REL-01
-Automation: `scripts/perf/disk-write.mjs` (new) · Runs in: reference host plus a second Mac on the same network
+Automation: `flows/perf/disk-write.mjs` (new) · Runs in: reference host plus a second Mac on the same network
 
 ## Setup
 - Install at commit X on the reference host (the team's Mac mini, whatever its size), with a bind address and public origin set so the second Mac B reaches it (§16.3.1); one awake branch.

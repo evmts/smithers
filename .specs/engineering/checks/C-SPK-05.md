@@ -1,7 +1,7 @@
 # C-SPK-05 Host swap and memory pressure with 2 (24 GB) and 3 (32 GB) busy machines
 
 Proves: mvp.md M-06, §9 Branch wake · spec.md §8.2.1, §8.2.2, §18 · Layer: spike · Stage: W0 · Tickets: T-MCH-01
-Automation: `scripts/spikes/mch-01-memory/run.sh` (new) · Runs in: the reference host plus one Apple Silicon Mac with a different memory size
+Automation: `packages/backend/checks/C-SPK-05/run.sh` (new) · Runs in: the reference host plus one Apple Silicon Mac with a different memory size
 
 ## Setup
 

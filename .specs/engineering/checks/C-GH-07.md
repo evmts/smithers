@@ -1,7 +1,7 @@
 # C-GH-07 Freshness: PR, checks and `main` within 60 s, issues within 5 min, with ten pending PRs and webhooks off or dropped
 
 Proves: mvp.md §6.3 "No public address", §9 "GitHub freshness", J10.6, M-03 · spec.md §12.2, §12.2.1a, §12.2.3, §12.2.4, §18 · Layer: e2e · Stage: S1 · Tickets: T-GH-02
-Automation: `scripts/perf/github-freshness.ts` (new) · Runs in: reference host
+Automation: `flows/perf/github-freshness/github-freshness.mjs` (new) · Runs in: reference host
 
 ## Setup
 - Reference host, install at the commit under test, App installed on `smithers-mvp-canary/<date>`. The App's webhook is inactive and `github_webhook_jobs` is empty.

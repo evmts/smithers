@@ -78,7 +78,7 @@ A build file says what the workspace has. It never says how to run it.
 ```ts
 // Wrong. This is a gate outside the build graph.
 const ci = S.GithubCiGen({
-  jobs: [{ id: "test", steps: [{ run: "node --test scripts/pack-release.test.mjs" }] }]
+  jobs: [{ id: "test", steps: [{ run: "node --test flows/release/pack-release.test.mjs" }] }]
 })
 
 // Right. The gate is a target, and the pipeline names it.

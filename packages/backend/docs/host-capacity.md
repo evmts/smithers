@@ -43,7 +43,7 @@ From a fixed checkout, run the memory calibration with prepared layers and
 the host service running:
 
 ```sh
-sh scripts/spikes/mch-01-memory/run.sh --state "$STATE" \
+sh packages/backend/checks/C-SPK-05/run.sh --state "$STATE" \
   --out "$PWD/.artifacts/checks/C-SPK-05/$(date -u +%Y%m%dT%H%M%SZ)"
 ```
 

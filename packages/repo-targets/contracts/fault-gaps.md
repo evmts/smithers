@@ -49,7 +49,7 @@ The runner-absence descriptions for case 16 and cases 28/29 above predate
 `.github/workflows/reliability.yml`'s `sync-long-soak` job. That job now selects
 the real sync TCP/SQLite reconnect, stalled-consumer, compaction and retention
 workload for 60 minutes on Node 26.4.0 and 26.10.0. It requires completed JSON
-receipts through `scripts/check-soak-campaign.mjs`, checks resource growth and
+receipts through `flows/bench/soak-campaign/check-soak-campaign.mjs`, checks resource growth and
 cleanup, and retains artifacts and logs for 30 days even when the workload fails.
 
 This closes the missing sync runner wiring in the `sync-long-soak` job of

@@ -1,7 +1,7 @@
 # C-PERF-06 Rebase with people present holds writes < 2 s
 
 Proves: mvp.md §4.2 Rebase · spec.md §9.4.1, §10.5.2, §10.5.3, §18 · Layer: perf · Stage: S2 · Tickets: T-STK-08, T-REL-01
-Automation: `scripts/perf/rebase-hold.mjs` (new) · Runs in: reference host plus a second Mac on the same network
+Automation: `flows/perf/rebase-hold.mjs` (new) · Runs in: reference host plus a second Mac on the same network
 
 ## Setup
 - Install at commit X on the reference host (the team's Mac mini, whatever its size); the scratch repository on GitHub; T1 In review on its awake branch, with a change of about 20 files.

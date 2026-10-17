@@ -1,6 +1,6 @@
 # Installed-product performance evidence (#3592)
 
-`node scripts/perf/run.mjs` runs configured first-token and projection measurements on macOS
+`node flows/perf/run.mjs` runs configured first-token and projection measurements on macOS
 and names unavailable budgets. Exit 0 means all selected budgets passed; exit 1
 means a launched workload failed; exit 2 means the run is incomplete.
 Set `SMITHERS_PERF_ORIGIN` to the configured LAN/HTTPS origin and
@@ -35,7 +35,7 @@ directories are fresh and symlink parents are refused.
 Existing library counter benchmarks remain unchanged because they measure
 different boundaries.
 
-`node scripts/perf/keystroke.mjs` drives C-PERF-03 on the second Mac using
+`node flows/perf/keystroke.mjs` drives C-PERF-03 on the second Mac using
 the real File cards. Set `SMITHERS_PERF_PAGE` to the repository page,
 `SMITHERS_PERF_MEMBER_A` and `SMITHERS_PERF_MEMBER_C` to distinct authenticated
 Playwright storage-state files, and `SMITHERS_PERF_READ_ARGV` to the JSON argv
@@ -97,13 +97,13 @@ latency measurement or a microVM lifecycle qualification receipt.
 The standalone keystroke driver uses the same artifact writer as the full runner,
 including symlink checks for evidence directories and refusal to overwrite runs.
 
-W20 targets: `smthrs test //scripts:perfUnit`,
-`//scripts:perfKeystroke` (C-PERF-03), `//scripts:perfDiskWrite`
-(C-PERF-04), and `//scripts:perf` (C-PERF-01–06 availability report).
+W20 targets: `smthrs test //flows:perfUnit`,
+`//flows:perfKeystroke` (C-PERF-03), `//flows:perfDiskWrite`
+(C-PERF-04), and `//flows:perf` (C-PERF-01–06 availability report).
 The full run remains incomplete until every production driver and activation
 precondition is available.
 
-`node scripts/perf/disk-write.mjs` opens `src/a.ts` in the installed File
+`node flows/perf/disk-write.mjs` opens `src/a.ts` in the installed File
 card and appends 200 fixed markers through a persistent, pinned batch SSH
 connection. Run on the second Mac with an authorized scratch branch and a
 newline-terminated file without `// m<number>` lines. Set the common origin,
@@ -123,11 +123,11 @@ The persistent master is checked before every write; fallback handshakes are
 refused. Raw samples, activity and the authenticated host profile are retained
 under both perf and C-PERF-04 check directories. No real-stack pass is claimed.
 
-`//scripts:perfProjection`, `//scripts:perfWarmWake` and
-`//scripts:perfRebaseHold` select C-PERF-02, 05 and 06 respectively. C-PERF-02 runs its configured measurement; C-PERF-05 and C-PERF-06
+`//flows:perfProjection`, `//flows:perfWarmWake` and
+`//flows:perfRebaseHold` select C-PERF-02, 05 and 06 respectively. C-PERF-02 runs its configured measurement; C-PERF-05 and C-PERF-06
 remain availability reports (exit 2), with missing drivers named in evidence.
 
-`smthrs test //scripts:workingTogetherCodeFaults` runs the five composed
+`smthrs test //flows:workingTogetherCodeFaults` runs the five composed
 code-document link/recovery boundaries ten times each. HTTP authentication,
 live transport, native document state and PostgreSQL are real; the remote daemon
 is a scripted test peer. This is host-boundary evidence, never a K7 full-check
@@ -148,7 +148,7 @@ writer/head/row/client evidence matrix.
 and down), `SMITHERS_PERF_OWNER_COOKIE` (session and `__csrf` cookies),
 `SMITHERS_PERF_MEMBER_A` (Playwright storage-state file), and
 `SMITHERS_PERF_INSTALL_VERSION`. The reference install needs ten TODOs.
-Run `node scripts/perf/projection-delta.mjs` from the repository root.
+Run `node flows/perf/projection-delta.mjs` from the repository root.
 It opens two Node live sockets plus three Chromium Home tabs, performs 200
 idempotent moves, and records same-process monotonic timings and source cursors.
 Any gap, coalescing, duplicate, refusal or unrelated delta fails the workload;
@@ -157,7 +157,7 @@ snapshots may retain the current source cursor; a snapshot advancing it fails.
 The runner writes raw samples through the existing artifact writer. A Linux
 run cannot qualify the reference-host check.
 
-`node scripts/perf/warm-wake.mjs` is the C-PERF-05 reference-Mac workload.
+`node flows/perf/warm-wake.mjs` is the C-PERF-05 reference-Mac workload.
 It opens 100 terminals through `POST /api/terminals`, observes an `awake`
 Branch delta, closes each session through the retained session-destroy route,
 and waits for `asleep` before the next sample. Set `SMITHERS_PERF_ORIGIN`,
@@ -195,7 +195,7 @@ This driver is not a passing receipt. Qualified fresh/retained lifecycle and
 root-layer evidence, a reference Mac and the real 100-sample workload remain
 required. A client stopwatch or wake histogram cannot substitute for the host
 log.
-Run offline validation with `node --test scripts/perf/warm-wake.test.mjs`.
+Run offline validation with `node --test flows/perf/warm-wake.test.mjs`.
 
 `agent-first-token.mjs` drives the main conversation on the second Mac. It uses
 member A, the main conversation page, origin, owner cookie and install version.
@@ -306,7 +306,7 @@ contract and approved reference-host provenance; neither is supplied by a flag.
 and down), `SMITHERS_PERF_OWNER_COOKIE` (session and `__csrf` cookies),
 `SMITHERS_PERF_MEMBER_A` (Playwright storage-state file), and
 `SMITHERS_PERF_INSTALL_VERSION`. The reference install needs ten TODOs.
-Run `node scripts/perf/projection-delta.mjs` from the repository root.
+Run `node flows/perf/projection-delta.mjs` from the repository root.
 It opens two Node live sockets plus three Chromium Home tabs, performs 200
 idempotent moves, and records same-process monotonic timings and source cursors.
 Any gap, coalescing, duplicate, refusal or unrelated delta fails the workload;
@@ -315,7 +315,7 @@ snapshots may retain the current source cursor; a snapshot advancing it fails.
 The runner writes raw samples through the existing artifact writer. A Linux
 run cannot qualify the reference-host check.
 
-`node scripts/perf/warm-wake.mjs` is the C-PERF-05 reference-Mac workload.
+`node flows/perf/warm-wake.mjs` is the C-PERF-05 reference-Mac workload.
 It opens 100 terminals through `POST /api/terminals`, observes an `awake`
 Branch delta, closes each session through the retained session-destroy route,
 and waits for `asleep` before the next sample. Set `SMITHERS_PERF_ORIGIN`,
@@ -349,7 +349,7 @@ failed boots and missing heads retain failed observations. The reference-host
 run still needs authenticated lifecycle qualification and an export of the
 install's structured host log. A client stopwatch or wake histogram cannot
 substitute for that log.
-Run offline validation with `node --test scripts/perf/warm-wake.test.mjs`.
+Run offline validation with `node --test flows/perf/warm-wake.test.mjs`.
 
 The held-marker producer, interval verifier and immutable host member lookup
 are described in [rebase-seam.md](rebase-seam.md). Their Linux composed proof

@@ -31,5 +31,5 @@ listed as deployment-owned with a reason.
 Private admission usage (`admission.Usage`) adds its pending infrastructure
 allocations, including reserved but unpublished private repositories. Product code must not query those private tables directly.
 
-`scripts/check-go-boundaries.py` enforces the SQL and import boundary; its
+`packages/backend/scripts/check-go-boundaries.py` enforces the SQL and import boundary; its
 negative tests deliberately insert private-table queries and dependencies.

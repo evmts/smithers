@@ -569,5 +569,5 @@ BrowserJj status, diff, and restore refuse missing repositories with typed
 wasm `init` operation if the repository is absent.
 The published package includes a generated Rust dependency inventory in
 `THIRD_PARTY_NOTICES.md`. Maintainers regenerate it from the locked wasm Cargo
-graph with `node scripts/generate-third-party-notices.mjs`; Rust CI runs the
+graph with `node packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs`; Rust CI runs the
 script with `--check` to reject attribution drift.

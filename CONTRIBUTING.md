@@ -90,7 +90,7 @@ The cost is that one edit lands in several places. If you change:
 | `pnpm-workspace.yaml` package membership      | `packages/smithers/flows/test/vitestCoverageIsolation.test.ts` (the coverage-universe policy pin); lockfile inputs are derived automatically. Nesting a package inside another has its own recipe below                                                    |
 | root `package.json` scripts                   | `packages/smithers/flows/test/vitestCoverageIsolation.test.ts` (the aggregator roster)                                                                                                          |
 | root `PACKAGE.ts` CI jobs, steps, or triggers | the generated `.github/workflows/ci.yml` (`pnpm exec smithers-build build '//:ci'` with `mode: "write"`), `packages/smithers/flows/test/vitestCoverageIsolation.test.ts` (source-text pins), and the hand-written `.github/workflows/release.yml`, which copies the required `test` job's toolchain and gate steps verbatim |
-| `.github/workflows/release.yml`               | the same suite, plus `scripts/release-rehearsal.test.mjs` and `scripts/pack-release.test.mjs`, which compares the release workflow's steps against the generated `ci.yml`               |
+| `.github/workflows/release.yml`               | the same suite, plus `scripts/release-rehearsal.test.mjs` and `flows/release/pack-release.test.mjs`, which compares the release workflow's steps against the generated `ci.yml`               |
 | any `PACKAGE.ts` target set — adding, renaming or removing a target, or changing its declared inputs or outputs (a new test file reached by a glob counts) | `.smithers/target-index.json`, with `pnpm run target-index`. Nothing about it is hand-written: the script writes it and `smthrs lint '//:targetIndex'` drift-checks it. See “The target index” |
 | the product API (`docs/api/openapi.yaml`)     | the per-tag source under `docs/api/openapi/` instead: `<tag>.yaml` holds that tag's paths and `_root.yaml` everything else. `pnpm exec smithers-build run '//:openapiBundle'` writes the bundle and `lint '//:openapiBundle'` drift-checks it; then `run '//:openapiClients'` regenerates the Go (`packages/backend/apiclient`) and TypeScript (`packages/smithers/src/internal/backend/ProductApi.ts`) clients from it and `lint '//:openapiClients'` drift-checks them |
 | `CHANGELOG.md` release sections               | nothing by hand inside a `<!-- commits:… -->` block — `pnpm exec smithers-build run '//:changelog'` writes it and `lint '//:changelog'` drift-checks it. See “Cutting a release”         |
@@ -199,8 +199,8 @@ The CI declaration has several deliberate operational constraints:
   sharing the machine survives. `jj` is required on `PATH` for the two cases
   that drive a real workspace, which is why the job's toolchain installs it, and
   they throw rather than skip when `CI` is set. What the matrix does not cover
-  is `scripts/repo-contract/fault-gaps.md`, and
-  `scripts/repo-contract/fault-skips.test.mjs` refuses a focused, parked, or
+  is `packages/repo-targets/contracts/fault-gaps.md`, and
+  `packages/repo-targets/contracts/fault-skips.test.mjs` refuses a focused, parked, or
   inverted case and an undeclared skip.
 - Bun covers only the compatibility matrix: the packages that declare a
   `bunTest` target with `Smithers.BunSuite`. Those targets are `test`-kind
@@ -282,7 +282,7 @@ packages/
 
 Nesting is directories and nothing else. Every npm name, version, dist-tag,
 and the published set are what they were when the tree was flat; the roster is
-`publishedPackages` in `scripts/pack-release.mjs`, and
+`publishedPackages` in `flows/release/pack-release.mjs`, and
 only target labels move, from `//packages/canonical:test` to
 `//packages/smithers/flows/canonical:test`.
 
@@ -293,7 +293,7 @@ and the child's targets own them. A child's directory must be a sibling of the
 parent's `src`, never inside it.
 
 Nothing enumerates packages by hand. Every gate and release script reads
-membership through `scripts/workspace-packages.mjs`, which expands the
+membership through `packages/repo-targets/scripts/workspace-packages.mjs`, which expands the
 `pnpm-workspace.yaml` globs and returns `{ dir, name, manifestPath, manifest }`
 for each member; `libraryPackages()` narrows that to the members under
 `packages/`. Publication order tiebreaks on a directory's last segment, so a
@@ -376,7 +376,7 @@ To change jj, land the change with its tests on the fork's `smithers` branch, bu
 A release is one commit and one tag. The commit carries the version bump and
 the changelog section; the tag is what publishes. Pushing a `v*` tag starts
 `.github/workflows/release.yml`, which validates the tag, runs every gate,
-packs the publish set declared by `scripts/pack-release.mjs`, smoke-tests the tarballs, and publishes to npm.
+packs the publish set declared by `flows/release/pack-release.mjs`, smoke-tests the tarballs, and publishes to npm.
 npm versions are immutable, so everything that can be proved before the push
 is proved before the push.
 
@@ -384,7 +384,7 @@ is proved before the push.
 required CI `test` job installs — ripgrep, bubblewrap, Go, Foundry, the
 containerd image store — and then runs that job's `smithers-build` steps plus
 the fault matrix, copied verbatim out of the generated `ci.yml`. It is
-hand-written, so `scripts/pack-release.test.mjs` compares the two files and
+hand-written, so `flows/release/pack-release.test.mjs` compares the two files and
 fails when the copy goes stale. Bumping a toolchain pin in the root
 `PACKAGE.ts` therefore means regenerating `ci.yml` and copying the changed
 step into `release.yml` in the same commit.
@@ -401,14 +401,14 @@ left on. It runs every gate, packs, and smoke-tests, and publishes nothing:
 gh workflow run release.yml -f releaseTag=v<version> -f dryRun=true
 ```
 
-`node scripts/release-rehearsal.mjs --tag v<version>` runs the same workflow's
+`node flows/release/release-rehearsal.mjs --tag v<version>` runs the same workflow's
 `run:` bodies locally, against the tree you have. The workflow pins the
 supported floor, Node 26.4.0, for the gates and the smoke test, and each
 `setup-node` step switches PATH to the toolchain pinned for its version, so
 pass a bin directory for it:
 
 ```sh
-node scripts/release-rehearsal.mjs --tag v<version> \
+node flows/release/release-rehearsal.mjs --tag v<version> \
   --node 26.4.0=/path/to/node-26.4.0/bin
 ```
 
@@ -420,13 +420,13 @@ is the fast pass over the validation half.
 ### 2. Cut
 
 ```sh
-node scripts/cut-release.mjs <version>
+node flows/release/cut-release.mjs <version>
 ```
 
 That sets every workspace manifest, every internal `@smthrs/*` range, and the
 three sources that repeat the version as a literal
-(`scripts/set-release-version.mjs`), writes the commit section into
-`CHANGELOG.md` (`scripts/generate-changelog.mjs`), refreshes both lockfiles,
+(`flows/release/set-release-version.mjs`), writes the commit section into
+`CHANGELOG.md` (`flows/release/generate-changelog.mjs`), refreshes both lockfiles,
 and regenerates the site's CLI data, `.smithers/factory.json` and
 `.smithers/target-index.json`. It then verifies each with the same check
 `release.yml` runs, including `smthrs lint '//:factoryProjection'` and
@@ -509,7 +509,7 @@ argument: `ToolRun`'s `args` are fixed strings
 (`packages/smithers/build/targets/src/ToolRun.ts:30`), and the `Shell.*` rules
 take strings or `S.Flags` references, which resolve to fixed text the workspace
 declares (`packages/smithers/build/targets/src/WorkspaceDeclaration.ts:201`).
-The cut is an operator command, and `//scripts:releaseCut` is its gate.
+The cut is an operator command, and `//flows:releaseCut` is its gate.
 
 ## JSDoc convention
 

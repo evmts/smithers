@@ -48,7 +48,7 @@ Out:
   - `App.tsx` shell slots and toast actions that open billing or repository choice;
   - the shell slot that shows the anonymous-ceiling paywall (the card stays in source);
   - any triggers field on the Flow card (§14.3 lists none).
-- docs/api/openapi/*.yaml marks the listed trigger-management operations and every billing operation, including org billing, with x-composition: plue; re-bundle with scripts/openapi-bundle.mjs (C-ACC-01, C-CUT-01).
+- docs/api/openapi/*.yaml marks the listed trigger-management operations and every billing operation, including org billing, with x-composition: plue; re-bundle with packages/backend/scripts/openapi-bundle.mjs (C-ACC-01, C-CUT-01).
 - `packages/smithers/src/Cli.ts`: `tui`, `triggers` and `org` join the hidden list (mechanism from T-CAT-01), so skill sync and the generated MVP command page exclude them.
 - `apps/app/e2e/real/coverage/deferrals/{billing,triggers,repo,repos}.ts`: mark the reason "deferred: mvp.md §8/§16" so the real-e2e gate expects no door.
 - Preserve the completed `apps/tui-docs` removal and remove only the remaining docs paths listed in Scope; `cuts.json` records it as a `cut` entry with its docs paths.
