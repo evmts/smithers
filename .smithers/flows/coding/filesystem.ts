@@ -193,7 +193,7 @@ export const make = (
   const pinnedRoot = resolve(canonicalRoot)
   // The shipped broker's socket is bound to this fixed guest workspace. A
   // different root must never accidentally write into that machine's branch.
-  const provider = suppliedProvider ?? (pinnedRoot === "/workspace" ? daemonProvider(spawner) : undefined)
+  const provider = suppliedProvider ?? (pinnedRoot === resolve("/workspace") ? daemonProvider(spawner) : undefined)
   const ledgers = new Map<string, Map<string, string>>()
   const key = (path: string) => {
     const absolute = resolve(root, path)

@@ -16,7 +16,7 @@ import assert from "node:assert/strict"
 import { existsSync } from "node:fs"
 import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { join, resolve } from "node:path"
 import { test } from "vitest"
 import * as CodingFileSystem from "../../../../../.smithers/flows/coding/filesystem.ts"
 
@@ -362,7 +362,7 @@ test.skipIf(existsSync("/opt/smithers/bin/smithers-machined"))(
         const fs = yield* FileSystem.FileSystem
         const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
         const path = yield* Path.Path
-        const coding = CodingFileSystem.make({ repositoryPath: root }, fs, spawner, "/workspace")
+        const coding = CodingFileSystem.make({ repositoryPath: root }, fs, spawner, resolve("/workspace"))
         const bindings = yield* StandardFlows.filesystem(
           Context.make(FileSystem.FileSystem, coding).pipe(Context.add(Path.Path, path))
         ).bindings()
@@ -437,7 +437,7 @@ test("C-COL-01 production dispatcher stale batch/delete/move preflight", async (
       const fs = yield* FileSystem.FileSystem
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
       const path = yield* Path.Path
-      const coding = CodingFileSystem.make({ repositoryPath: root }, fs, spawner, "/workspace")
+      const coding = CodingFileSystem.make({ repositoryPath: root }, fs, spawner, resolve("/workspace"))
       const bindings = yield* StandardFlows.filesystem(
         Context.make(FileSystem.FileSystem, coding).pipe(Context.add(Path.Path, path))
       ).bindings()
