@@ -115,7 +115,7 @@ const commit = (root: string, message: string, files: Files = {}): string => {
 
 /** Writes a mythical note on `commitId` the way the stack service does. */
 const note = (root: string, commitId: string, text: string): void => {
-  sh(root, "/usr/bin/git", "notes", "--ref=refs/notes/mythical", "add", "-m", text, commitId)
+  sh(root, "git", "notes", "--ref=refs/notes/mythical", "add", "-m", text, commitId)
 }
 
 // ---------------------------------------------------------------------------
