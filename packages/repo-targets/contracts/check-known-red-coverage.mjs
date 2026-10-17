@@ -8,7 +8,7 @@
 // column of `gh run view --log` names `(windows-…)` or `(macos-…)`, and any
 // other line takes `--platform`.
 //
-//   gh run view <run> --log | node scripts/ci/check-known-red-coverage.mjs
+//   gh run view <run> --log | node packages/repo-targets/contracts/check-known-red-coverage.mjs
 //
 // `--issues <file>` reads `gh issue list --json title,state` output instead of
 // calling gh. Exit 1 lists the unowned targets; exit 2 means the inputs could

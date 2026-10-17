@@ -154,10 +154,10 @@ fi
 check migration-gate "go test -run 'TestMigrationGate|TestMigrationRegistry' ./packages/backend/db/product/"
 [ -f packages/backend/scripts/check-sqlc-drift.sh ] && check sqlc-drift "bash packages/backend/scripts/check-sqlc-drift.sh"
 check lane-gates "node --test scripts/lane-gates.test.mjs scripts/lane-prerequisites.test.mjs"
-check tracked-hygiene "node scripts/check-tracked-hygiene.mjs"
+check tracked-hygiene "node packages/repo-targets/contracts/check-tracked-hygiene.mjs"
 # A here-string, not a pipe: a piped function runs in a subshell and its newreds would be lost.
 [ $mode = gate ] && check_root_lint <<< "$changed"
-if command -v smthrs >/dev/null; then check drift "smthrs lint //:driftCi //:targetIndex //:ci //scripts:trackedHygiene //scripts:conflictMarkers"
+if command -v smthrs >/dev/null; then check drift "smthrs lint //:driftCi //:targetIndex //:ci //packages/repo-targets:trackedHygiene //packages/repo-targets:conflictMarkers"
 else echo "SKIP drift: smthrs unavailable on this host" >> "$log"; fi
 
 # 2. Go: map each changed .go file to its nearest go.mod; build and vet each touched module and test its touched packages

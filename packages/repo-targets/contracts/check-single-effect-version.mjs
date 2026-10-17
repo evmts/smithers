@@ -6,8 +6,8 @@ import { createRequire } from "node:module"
 import { readFileSync, realpathSync } from "node:fs"
 import { join, resolve } from "node:path"
 
-import { workspacePackages, isMain, repoRoot } from "./workspace-packages.mjs"
-import { readWorkspaceManifests } from "./pack-release.mjs"
+import { workspacePackages, isMain, repoRoot } from "../../../scripts/workspace-packages.mjs"
+import { readWorkspaceManifests } from "../../../scripts/pack-release.mjs"
 
 /**
  * The Effect release this repository is built and tested on. Update the family

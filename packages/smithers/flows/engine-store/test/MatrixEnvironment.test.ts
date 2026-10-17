@@ -11,7 +11,7 @@ import * as Exec from "@smthrs/targets/Exec"
 import { Smithers } from "@smthrs/targets"
 import { BuildAndCheckTypeScriptPackage } from "@smthrs/repo-targets"
 import { plannedCalls } from "@smthrs/targets/test-support/plan"
-import { suppliedEnv } from "./scripts/check-test-pins.mjs"
+import { suppliedEnv } from "./packages/repo-targets/contracts/check-test-pins.mjs"
 import { Package } from "./packages/smithers/flows/engine-store/PACKAGE.ts"
 const old = BuildAndCheckTypeScriptPackage({
   testProgram: Smithers.file("//packages/smithers/flows/database/scripts/test-matrix.mjs"),

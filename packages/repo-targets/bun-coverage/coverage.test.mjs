@@ -16,7 +16,7 @@ function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "smithers-coverage space's-"))
   t.after(() => rmSync(root, { recursive: true, force: true }))
   cpSync(join(here, "fixtures"), root, { recursive: true })
-  symlinkSync(join(here, "../../node_modules"), join(root, "node_modules"), "dir")
+  symlinkSync(join(here, "../../../node_modules"), join(root, "node_modules"), "dir")
   writeFileSync(join(root, "package.json"), '{"type":"module"}')
   return root
 }

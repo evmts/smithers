@@ -28,7 +28,7 @@ runs:
             if node is None:
                 raise RuntimeError('approved runner Node is unavailable')
             command = [node, '--test', '--test-name-pattern=root-ci-setup-input-validation',
-                       str(root / 'scripts/ci/drift-job.test.mjs')]
+                       str(root / 'packages/repo-targets/contracts/drift-job.test.mjs')]
             result = subprocess.run(command, cwd='/', stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             log, code = result.stdout, result.returncode
         except Exception as error:

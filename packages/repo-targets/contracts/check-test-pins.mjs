@@ -1,6 +1,6 @@
 /**
  * Fails when a test pin in any package group is not written down in
- * scripts/test-pins.md.
+ * test-pins.md beside it.
  *
  * A pin is a test the default gate never runs to a pass. Three forms count:
  * `it.fails`/`test.fails` (an assertion that current behavior is wrong),
@@ -26,13 +26,17 @@
  */
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs"
 import { join, relative, sep } from "node:path"
+import { fileURLToPath } from "node:url"
 
-import { libraryPackages, isMain, repoRoot } from "./workspace-packages.mjs"
+import { libraryPackages, isMain, repoRoot } from "../../../scripts/workspace-packages.mjs"
 
 /** The package groups whose pins this register covers. */
 export const guardedGroups = new Set(["engine", "agent", "tooling"])
 
-export const notesPath = join(repoRoot, "scripts", "test-pins.md")
+export const notesPath = join(repoRoot, "packages/repo-targets/contracts", "test-pins.md")
+
+/** This guard's own suite, which lives in a guarded package and spells every pin form as a fixture. */
+const ownSuite = fileURLToPath(new URL("./check-test-pins.test.mjs", import.meta.url))
 
 /**
  * Matches an outright pin and captures its title.
@@ -287,6 +291,7 @@ export const undocumentedPins = (notes = readFileSync(notesPath, "utf8"), packag
     const packageName = relative(join(repoRoot, "packages"), packageDirectory)
     const supplied = suppliedEnv(packageDirectory)
     for (const file of testFilesUnder(packageDirectory)) {
+      if (file === ownSuite) continue
       for (const pin of findPins(readFileSync(file, "utf8"), supplied)) {
         if (documented.has(`${packageName}\u0000${pin.title}`)) continue
         unexplained.push({ ...pin, file: relative(repoRoot, file) })
@@ -306,13 +311,13 @@ const main = () => {
     console.log("No undocumented test pins in any package group.")
     return
   }
-  console.error(`${unexplained.length} test pin(s) are not documented in scripts/test-pins.md:`)
+  console.error(`${unexplained.length} test pin(s) are not documented in packages/repo-targets/contracts/test-pins.md:`)
   for (const pin of unexplained) {
     console.error(`  ${pin.file}:${pin.line}  .${pin.form}  ${JSON.stringify(pin.title)}`)
   }
   console.error("")
   console.error("Fix the defect and unpin it, or add the pin to the \"Known test pins\" section")
-  console.error("of scripts/test-pins.md with a rationale. See that file's \"Adding a pin\".")
+  console.error("of packages/repo-targets/contracts/test-pins.md with a rationale. See that file's \"Adding a pin\".")
   process.exit(1)
 }
 

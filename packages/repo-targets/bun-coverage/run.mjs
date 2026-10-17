@@ -61,7 +61,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     root: { type: "string" }, roster: { type: "string" }, run: { type: "string" }
   } })
   if (!parsed.values.root || !parsed.values.roster || !parsed.values.run || !parsed.positionals.length) {
-    throw new Error("Usage: node scripts/bun-coverage/run.mjs --root ROOT --roster JSON --run NEW_DIRECTORY -- test ...")
+    throw new Error("Usage: node packages/repo-targets/bun-coverage/run.mjs --root ROOT --roster JSON --run NEW_DIRECTORY -- test ...")
   }
   const result = await runCoverage({ root: resolve(parsed.values.root),
     sources: JSON.parse(readFileSync(parsed.values.roster, "utf8")), run: resolve(parsed.values.run), args: parsed.positionals })

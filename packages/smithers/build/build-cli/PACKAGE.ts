@@ -41,7 +41,7 @@ const lib = Smithers.TsBuild({
     Smithers.file("//packages/repo-targets/scripts/private-effect-adapters.mjs"),
     Smithers.file("//packages/repo-targets/package.json"),
     Smithers.file("//packages/smithers/scripts/compile-commonjs.mjs"),
-    Smithers.file("//scripts/check-single-effect-version.mjs")
+    Smithers.file("//packages/repo-targets/contracts/check-single-effect-version.mjs")
   ],
   entries: [Smithers.file("src/index.ts")],
   deps: [],

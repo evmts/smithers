@@ -15,15 +15,15 @@ runs the candidate tarballs on `26.4.0`. That floor is the Node the published pa
 separate fact from the Node the toolchain runs: `.node-version` at the root
 holds one exact release, `ci.yml` reads it through `node-version-file`,
 `scripts/ci/cloud.sh` bootstraps a Cloud runner from it, and
-`scripts/check-toolchain-pins.mjs` fails when it drops below the declared
+`packages/repo-targets/contracts/check-toolchain-pins.mjs` fails when it drops below the declared
 floor or when a workflow names a release of its own. The durable database backend is
 `@effect/sql-sqlite-node`; see
-[SQLite only](../packages/smithers/flows/database/docs/concepts/sqlite-only.md)
+[SQLite only](../../../packages/smithers/flows/database/docs/concepts/sqlite-only.md)
 before placing a database file on disk.
 
 **PostgreSQL is supported; PGlite is not.** PostgreSQL is selected by
 `SMITHERS_POSTGRES_URL` or `DATABASE_URL`, per the
-[storage boundaries](../apps/site/docs/reference/support-matrix.md#storage).
+[storage boundaries](../../../apps/site/docs/reference/support-matrix.md#storage).
 
 Bun is a second runtime rather than a second support claim. `BunRuntime`
 composes the durable engine on the native Bun SQL driver, the adapter declares
@@ -32,23 +32,23 @@ composes the durable engine on the native Bun SQL driver, the adapter declares
 directions; that is package and parity evidence, not a claim that every
 application runs on Bun. Browsers bundle only and no browser execution suite
 exists, so bundling establishes no durable-engine support. The
-[support matrix](../apps/site/docs/reference/support-matrix.md#runtimes) states
+[support matrix](../../../apps/site/docs/reference/support-matrix.md#runtimes) states
 the status of each runtime, platform and storage combination.
 
 The repository is built and tested on one Effect release: every development
 dependency, both override blocks and both lockfiles pin `effect` to exactly
 `4.0.4`. A published library accepts the range `^4.0.4` from its application
-as a peer. `scripts/check-single-effect-version.mjs` enforces the one tested
+as a peer. `packages/repo-targets/contracts/check-single-effect-version.mjs` enforces the one tested
 version across the workspace and the range in the published peers, and a
 candidate that moves either records the move in
-[CHANGELOG.md](../CHANGELOG.md).
+[CHANGELOG.md](../../../CHANGELOG.md).
 
 The alpha control server defaults to loopback (`127.0.0.1`). A non-loopback
 bind requires the explicit `--listen`/`listen: true` opt-in and does not add
 TLS, token rotation, or multi-principal authorization. Keep ordinary alpha
 use localhost-only; if an operator opts into a network bind, they must provide
 the bearer-token and TLS/ingress protections described in the
-[serve beyond loopback](../packages/smithers/gateway/docs/guides/serve-beyond-loopback.md).
+[serve beyond loopback](../../../packages/smithers/gateway/docs/guides/serve-beyond-loopback.md).
 
 ### Advisory CI lanes
 
@@ -80,7 +80,7 @@ not be a release-candidate feature. `@smthrs/triggers`, `@smthrs/evals` and
 composes them. Memory semantic recall and observability OTLP export are not
 rc.0 features either, and `@smthrs/gateway` publishes because consumers need
 its wire schemas while its supervision runtime is still a noop. The
-[known limitations](../apps/site/docs/reference/support-matrix.md#known-limitations)
+[known limitations](../../../apps/site/docs/reference/support-matrix.md#known-limitations)
 table records what each limit rests on; in particular, the published OTLP layer
 is application-wired rather than a shipped default.
 
@@ -136,7 +136,7 @@ are all capability gates, and CI installs `jj`, so the jj-gated suites execute
 there. `process.env.CI` is a capability gate for the same reason.
 
 Every pin in every package group (`smthrs.group` in each manifest) must appear
-in the table below. `scripts/check-test-pins.mjs` enforces that and CI runs it,
+in the table below. `packages/repo-targets/contracts/check-test-pins.mjs` enforces that and CI runs it,
 so a new pin fails the build until it is either fixed or written down here. The
 1.0 release train packs the `engine` and `agent` groups together, so the
 register covers `agent` as well; before 1.0 it covered `engine` and `tooling`
@@ -247,7 +247,7 @@ Node-only dependency and nothing would notice until an edge deployment. Run it
 with `FLOWS_WORKERD_SMOKE=1 pnpm --filter @smthrs/harness test` after
 installing `workerd`. Closing it for the default gate means adding `workerd` to
 the toolchain the CI lane installs, which the RC does not claim (see the
-[support matrix](../apps/site/docs/reference/support-matrix.md#runtimes)).
+[support matrix](../../../apps/site/docs/reference/support-matrix.md#runtimes)).
 
 **`migrate` — the three live-model cases.** `MigrateFlow.live.e2e.test.ts`
 runs the migration flow against a real provider, and a real provider costs
@@ -379,7 +379,7 @@ provisions, grants SSH and deletes the way that double encodes. It needs a
 Cloud login and a disposable repository, and each run starts a billable
 workspace, so it never runs by default. What breaks if it regresses: scoped
 sandboxes stop provisioning or leak workspaces for a user first. Run it as the
-[Cloud sandbox guide](../packages/smithers/docs/guides/cloud-sandbox.md)
+[Cloud sandbox guide](../../../packages/smithers/docs/guides/cloud-sandbox.md)
 shows. Closing it for the default gate means a Cloud account and workspace
 spend on every run, which the RC does not do.
 
@@ -500,7 +500,7 @@ lives. The items an alpha operator hits first:
   older than the cutoff, the sweep re-drives at most 64 stale rows per
   one-second tick, and a caller-supplied `isAlive` can refuse the steal for
   unbounded time. See the
-  [known limitations](../apps/site/docs/reference/support-matrix.md#known-limitations)
+  [known limitations](../../../apps/site/docs/reference/support-matrix.md#known-limitations)
   table.
 - **Flow registrations are in-memory.** A restarted process resumes nothing
   until it re-registers the handlers for its stored runs, because registration
@@ -515,14 +515,14 @@ lives. The items an alpha operator hits first:
   `shutdownTimeoutMs`. A program that composes `layer` still owes `Crypto`,
   `FileSystem`, and `Jj`, and installs its own signal handlers.
   `packages/smithers/flows/src/test/TestNodeRuntime.ts` is the worked composition, and
-  [the barrel's API page](../packages/smithers/flows/docs/api.md) lists both
+  [the barrel's API page](../../../packages/smithers/flows/docs/api.md) lists both
   entry points.
 - **Detached child flows need a composed child port.** A host that composes
   `EngineChildren` runs `agent/spawn`, `agent/send` and `agent/await` as real
   linked runs; a composition that supplies no child port refuses all three with
   `ChildError` code `unsupported`, and `agent/await` polls the child's run row
   rather than parking the caller
-  ([subagents](../packages/smithers/agent/docs/guides/subagents.md)).
+  ([subagents](../../../packages/smithers/agent/docs/guides/subagents.md)).
 - **Cross-process wake is polled.** The in-process `WakeBus` completes a
   resume signal directly; a wake published from another process still lands
   through polling and the stale sweep.
@@ -530,7 +530,7 @@ lives. The items an alpha operator hits first:
   diff bundle to the host itself. The pending-diff review gate is a spec, not
   shipped behavior.
 
-The [support matrix](../apps/site/docs/reference/support-matrix.md) is the
+The [support matrix](../../../apps/site/docs/reference/support-matrix.md) is the
 authoritative list; this section names only the limits that change how an
 alpha pilot is operated.
 
@@ -544,7 +544,7 @@ Prefer fixing the defect. If a pin is genuinely the right call:
 3. Add a row to **Surviving pins** and a paragraph saying why it is pinned,
    what breaks if the behavior regresses, and the workaround.
 
-`node --test scripts/check-test-pins.test.mjs` enforces step 3. Steps 1 and 2
+`node --test packages/repo-targets/contracts/check-test-pins.test.mjs` enforces step 3. Steps 1 and 2
 are review conventions; nothing checks them.
 
 **`platform-bun` — nested runner guard.** The ordinary Node suite starts the
@@ -573,7 +573,7 @@ A separate status/error table covers suspended, pending, unknown and malformed
 refusals. Identity/capability admission is unchanged. This is replacement with
 owning-boundary acceptance, not conversion of the old raw failure into a pass.
 The original raw expected-failure receipts remain linked in
-[the suite README](../packages/smithers/test/faults/README-burndown.md).
+[the suite README](../../../packages/smithers/test/faults/README-burndown.md).
 
 The new host-SIGKILL/restart fixture joins one retained keyed ExternalJob without
 resume, and edits the entry/layer/imported helper to verify approved bytes survive

@@ -5,7 +5,7 @@ import { openPackageIndex } from "@smthrs/build-cli/Cli"
 import { resolveOutputPath, writeGeneratedFile } from "@smthrs/targets/GeneratedFile"
 import { render } from "@smthrs/targets/GithubCiGen"
 import * as Target from "@smthrs/targets/Target"
-import { repoRoot as root } from "./workspace-packages.mjs"
+import { repoRoot as root } from "../../../scripts/workspace-packages.mjs"
 
 const index = await openPackageIndex({ workspace: root })
 const declaration = index.targets().find((row) => row.label === "//:ci")

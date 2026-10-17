@@ -4,7 +4,7 @@ import { dirname, join, relative, resolve } from "node:path"
 import test from "node:test"
 
 import { findPins, guardedGroups, guardedPackages, notesPath, suppliedEnv, undocumentedPins } from "./check-test-pins.mjs"
-import { repoRoot } from "./workspace-packages.mjs"
+import { repoRoot } from "../../../scripts/workspace-packages.mjs"
 
 test("finds every outright pin form, whatever the runner prefix", () => {
   const source = [
@@ -84,7 +84,7 @@ test("a variable the package's own test program sets is not a pin", () => {
   assert.deepEqual(findPins(gated, new Set(["SMITHERS_TEST_PG_URL"])), [])
   assert.deepEqual(findPins(gated, new Set(["OTHER"])).map((pin) => pin.title), ["real database"])
 
-  const fixtureRoot = mkdtempSync(join(repoRoot, "scripts", ".check-test-pins-"))
+  const fixtureRoot = mkdtempSync(join(repoRoot, "packages/repo-targets/contracts", ".check-test-pins-"))
   try {
     const program = join(fixtureRoot, "matrix.mjs")
     writeFileSync(
@@ -109,7 +109,7 @@ test("a variable the package's own test program sets is not a pin", () => {
 })
 
 test("a variable the package's own test target sets in its env is not a pin", () => {
-  const fixtureRoot = mkdtempSync(join(repoRoot, "scripts", ".check-test-pins-"))
+  const fixtureRoot = mkdtempSync(join(repoRoot, "packages/repo-targets/contracts", ".check-test-pins-"))
   const declare = (source) => {
     writeFileSync(join(fixtureRoot, "PACKAGE.ts"), source)
     return [...suppliedEnv(fixtureRoot)]
@@ -167,7 +167,7 @@ test("a variable the package's own test target sets in its env is not a pin", ()
  * why `findPins` and `undocumentedPins` are exported at all.
  */
 const withPinnedPackage = (title, run) => {
-  const fixtureRoot = mkdtempSync(join(repoRoot, "scripts", ".check-test-pins-"))
+  const fixtureRoot = mkdtempSync(join(repoRoot, "packages/repo-targets/contracts", ".check-test-pins-"))
   const packageDirectory = join(fixtureRoot, "ledger")
   const testFile = join(packageDirectory, "test", "Ledger.test.mjs")
   try {
@@ -227,7 +227,7 @@ test("reads Surviving pins through ordinary z text and through end of input", ()
 })
 
 test("a resolved title does not authorize re-pinning a test", () => {
-  const fixtureRoot = mkdtempSync(join(repoRoot, "scripts", ".check-test-pins-"))
+  const fixtureRoot = mkdtempSync(join(repoRoot, "packages/repo-targets/contracts", ".check-test-pins-"))
   const packageDirectory = join(fixtureRoot, "capability")
   const title = "bounds wall time for adversarial repeated-star patterns against long non-matching resources"
   try {
@@ -256,7 +256,7 @@ test("every package group is guarded, read from the manifests", () => {
 })
 
 test("the register exists and every pin in the tree appears in it", () => {
-  assert.ok(existsSync(notesPath), "scripts/test-pins.md is the register the guard reads")
+  assert.ok(existsSync(notesPath), "test-pins.md is the register the guard reads")
   assert.match(readFileSync(notesPath, "utf8"), /## Known test pins/)
   assert.deepEqual(undocumentedPins(), [])
 })

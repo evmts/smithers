@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 
 import { createPlanner } from "./ci-planner.mjs"
-import { parseWorkflow } from "./release-rehearsal.mjs"
+import { parseWorkflow } from "../../../scripts/release-rehearsal.mjs"
 import { openPackageIndex } from "@smthrs/build-cli/Cli"
 import { installEffectResolution } from "@smthrs/build-cli/effect-resolution"
 import * as Cargo from "@smthrs/targets/Cargo"
@@ -12,7 +12,7 @@ import * as NodeBinary from "@smthrs/targets/NodeBinary"
 import * as NodeTest from "@smthrs/targets/NodeTest"
 import * as PackageManager from "@smthrs/targets/PackageManager"
 import * as PackageExec from "@smthrs/build-cli/PackageExec"
-import { isMain, repoRoot } from "./workspace-packages.mjs"
+import { isMain, repoRoot } from "../../../scripts/workspace-packages.mjs"
 
 export const root = repoRoot
 export const cli = resolve(root, "packages/smithers/src/bin.ts")

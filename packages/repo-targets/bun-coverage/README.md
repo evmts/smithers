@@ -16,14 +16,14 @@ artifacts or changed unimported sources refuse the report.
 Run the qualification suite with Node 26:
 
 ```sh
-node --test scripts/bun-coverage/{coverage,receipts,run}.test.mjs
+node --test packages/repo-targets/bun-coverage/{coverage,receipts,run}.test.mjs
 ```
 
 The CLI takes a JSON array of canonical paths relative to the owning root, a new
 receipt directory, and the original Bun arguments:
 
 ```sh
-node scripts/bun-coverage/run.mjs --root apps/tui --roster roster.json --run /tmp/new-run -- test ./test
+node packages/repo-targets/bun-coverage/run.mjs --root apps/tui --roster roster.json --run /tmp/new-run -- test ./test
 ```
 
 Do not use this draft as a release coverage gate yet. TUI/app owner wiring and full

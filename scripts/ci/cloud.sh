@@ -594,10 +594,10 @@ run_gate() {
       pnpm exec smthrs build '//scripts:apiBaseline' --known-red '.github/ci-known-red.json' --verbose
       ;;
     conflict-markers)
-      pnpm exec smthrs lint '//scripts:conflictMarkers' --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs lint '//packages/repo-targets:conflictMarkers' --known-red '.github/ci-known-red.json' --verbose
       ;;
     tracked-hygiene)
-      pnpm exec smthrs lint '//scripts:trackedHygiene' --known-red '.github/ci-known-red.json' --verbose
+      pnpm exec smthrs lint '//packages/repo-targets:trackedHygiene' --known-red '.github/ci-known-red.json' --verbose
       ;;
     drift-ci)
       pnpm exec smthrs lint '//:driftCi' --known-red '.github/ci-known-red.json' --verbose

@@ -253,7 +253,7 @@ const egressHttpClient = Smithers.NodeTest({
  */
 const ciInventory = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//scripts/repo-contract/ci-inventory.test.mjs")]),
-  srcs: [sources, Smithers.file("//scripts/ci-inventory.mjs"), Smithers.file("//scripts/ci-planner.mjs")],
+  srcs: [sources, Smithers.file("//packages/repo-targets/contracts/ci-inventory.mjs"), Smithers.file("//packages/repo-targets/contracts/ci-planner.mjs")],
   deps: []
 })
 

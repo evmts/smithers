@@ -147,7 +147,7 @@ const unitTests = Smithers.NodeTest({
     Smithers.file("bunfig.toml"),
     Smithers.file("//package.json"),
     Smithers.file("//pnpm-lock.yaml"),
-    Smithers.file("//scripts/require-toolchain.mjs"),
+    Smithers.file("//packages/repo-targets/contracts/require-toolchain.mjs"),
     Smithers.file("//packages/backend/internal/compose/bootstrap.go"),
     Smithers.file("//packages/rpc/fixtures/force/graph.json"),
     Smithers.file("//packages/rpc/fixtures/force/plan-typeCheck.json")
@@ -189,7 +189,7 @@ const conformance = Smithers.NodeTest({
     Smithers.file("bunfig.toml"),
     Smithers.file("//package.json"),
     Smithers.file("//pnpm-lock.yaml"),
-    Smithers.file("//scripts/require-toolchain.mjs")
+    Smithers.file("//packages/repo-targets/contracts/require-toolchain.mjs")
   ],
   // Globs cannot cross PACKAGE.ts boundaries; dependency keys carry these sources.
   deps: [rpcPackage.check, componentPackage.check, gatewayPackage.check, harnessDetectPackage.check],
@@ -218,7 +218,7 @@ const browserTier = (shard?: string) => Smithers.NodeTest({
     Smithers.file("playwright.config.ts"), Smithers.file("playwright.site.config.ts"), Smithers.file("playwright.graph.config.ts"),
     Smithers.file("playwright.showcase.config.ts"), Smithers.file("package.json"), Smithers.file("//pnpm-lock.yaml"),
     // `bun test` steps preload the toolchain floor.
-    Smithers.file("bunfig.toml"), Smithers.file("//package.json"), Smithers.file("//scripts/require-toolchain.mjs")],
+    Smithers.file("bunfig.toml"), Smithers.file("//package.json"), Smithers.file("//packages/repo-targets/contracts/require-toolchain.mjs")],
   deps: [],
   env: { SMITHERS_CHAT_STUB: "1" },
   exclusive: true,

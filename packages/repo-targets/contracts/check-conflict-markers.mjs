@@ -17,7 +17,7 @@
  * `--no-index --exclude-standard`, which honors every `.gitignore`, so it
  * reads the same files.
  *
- * Usage: node scripts/check-conflict-markers.mjs [repository root]
+ * Usage: node packages/repo-targets/contracts/check-conflict-markers.mjs [repository root]
  * Exits 0 when clean, 1 on a marker, and 2 when the search itself failed.
  */
 import { spawnSync } from "node:child_process"
@@ -59,7 +59,7 @@ export const findConflictMarkers = (root) => {
 }
 
 const main = () => {
-  const root = process.argv[2] ?? fileURLToPath(new URL("../", import.meta.url))
+  const root = process.argv[2] ?? fileURLToPath(new URL("../../../", import.meta.url))
   let found
   try {
     found = findConflictMarkers(root)

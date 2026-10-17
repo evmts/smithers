@@ -18,14 +18,14 @@
  * `Environment.Toolchain` row of `.smithers/target-index.json` pins;
  * `environmentFindings` holds that row to the same sources.
  *
- * Run as `node scripts/check-toolchain-pins.mjs`; `findings` is the pure
+ * Run as `node packages/repo-targets/contracts/check-toolchain-pins.mjs`; `findings` is the pure
  * comparison the test drives with fixtures.
  */
 import { readdirSync, readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { pathToFileURL } from "node:url"
 import { compare, floorOf } from "./require-toolchain.mjs"
-import { isMain, repoRoot } from "./workspace-packages.mjs"
+import { isMain, repoRoot } from "../../../scripts/workspace-packages.mjs"
 
 /**
  * A `with:` pin in the generated workflow, whose keys and values are quoted.

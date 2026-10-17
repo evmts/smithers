@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { classicCompilerTools, hooks } from "../.pnpmfile.mjs"
-import { publishedPackages, readWorkspaceManifests } from "./pack-release.mjs"
+import { classicCompilerTools, hooks } from "../../../.pnpmfile.mjs"
+import { publishedPackages, readWorkspaceManifests } from "../../../scripts/pack-release.mjs"
 
 test("the compiler compatibility hook only changes explicitly named dev tools", () => {
   for (const other of [{}, { name: "unrelated" }, { name: "madge" }]) {

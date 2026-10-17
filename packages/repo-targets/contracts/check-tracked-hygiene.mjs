@@ -27,7 +27,7 @@
  * existing node_modules directory. Tracked files and nested dependency
  * symlinks receive the ordinary checks.
  *
- * Usage: node scripts/check-tracked-hygiene.mjs [--files-from-stdin] [--include-untracked] [--projected-tree] [root]
+ * Usage: node packages/repo-targets/contracts/check-tracked-hygiene.mjs [--files-from-stdin] [--include-untracked] [--projected-tree] [root]
  * Exits 0 when clean, 1 on a finding, 2 when the check itself failed.
  */
 import { spawnSync } from "node:child_process"
@@ -300,7 +300,7 @@ export const scaffoldPatterns = [
 ]
 
 // The check's own files name the strings on purpose.
-const selfFiles = new Set(["scripts/check-tracked-hygiene.mjs", "scripts/check-tracked-hygiene.test.mjs"])
+const selfFiles = new Set(["packages/repo-targets/contracts/check-tracked-hygiene.mjs", "packages/repo-targets/contracts/check-tracked-hygiene.test.mjs"])
 
 /** Whether a tracked path is exempt from the scaffold rule: .specs/, docs, and the check itself. */
 export const scaffoldExempt = (file) =>
@@ -356,7 +356,7 @@ const main = () => {
   const fromStdin = args.includes("--files-from-stdin")
   const includeUntracked = args.includes("--include-untracked")
   const projectedTree = args.includes("--projected-tree")
-  const root = args.find((a) => !a.startsWith("--")) ?? fileURLToPath(new URL("../", import.meta.url))
+  const root = args.find((a) => !a.startsWith("--")) ?? fileURLToPath(new URL("../../../", import.meta.url))
   let found
   try {
     found = findings(fromStdin ? readStdin() : listFiles(root, { includeUntracked, projectedTree }), root)

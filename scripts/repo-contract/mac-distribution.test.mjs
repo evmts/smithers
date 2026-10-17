@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { parseIgnore, walkFiles } from "../check-tracked-hygiene.mjs"
+import { parseIgnore, walkFiles } from "../../packages/repo-targets/contracts/check-tracked-hygiene.mjs"
 const root = fileURLToPath(new URL("../../", import.meta.url))
 
 // Use the repository's existing ignore-aware walk: the lifecycle CI runner

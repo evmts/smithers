@@ -7,12 +7,12 @@ import { fileURLToPath } from 'node:url'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 
-const workflowPath = new URL('../../.github/workflows/drift.yml', import.meta.url)
-const ciPath = new URL('../../.github/workflows/ci.yml', import.meta.url)
-const scriptsPackagePath = new URL('../PACKAGE.ts', import.meta.url)
-const rootPackagePath = new URL('../../PACKAGE.ts', import.meta.url)
-const manifestPath = new URL('../../package.json', import.meta.url)
-const repositoryRoot = fileURLToPath(new URL('../../', import.meta.url))
+const workflowPath = new URL('../../../.github/workflows/drift.yml', import.meta.url)
+const ciPath = new URL('../../../.github/workflows/ci.yml', import.meta.url)
+const scriptsPackagePath = new URL('../../../scripts/PACKAGE.ts', import.meta.url)
+const rootPackagePath = new URL('../../../PACKAGE.ts', import.meta.url)
+const manifestPath = new URL('../../../package.json', import.meta.url)
+const repositoryRoot = fileURLToPath(new URL('../../../', import.meta.url))
 const runFile = promisify(execFile)
 const gateCommands = [
   "pnpm exec smthrs lint '//...:fmt' --known-red '.github/ci-known-red.json' --verbose",
@@ -25,8 +25,8 @@ const gateCommands = [
   "pnpm exec smthrs lint '//:openapiClients' --known-red '.github/ci-known-red.json' --verbose",
   "pnpm exec smthrs lint '//scripts:docsDrift' --known-red '.github/ci-known-red.json' --verbose",
   "pnpm exec smthrs build '//scripts:apiBaseline' --known-red '.github/ci-known-red.json' --verbose",
-  "pnpm exec smthrs lint '//scripts:conflictMarkers' --known-red '.github/ci-known-red.json' --verbose",
-  "pnpm exec smthrs lint '//scripts:trackedHygiene' --known-red '.github/ci-known-red.json' --verbose",
+  "pnpm exec smthrs lint '//packages/repo-targets:conflictMarkers' --known-red '.github/ci-known-red.json' --verbose",
+  "pnpm exec smthrs lint '//packages/repo-targets:trackedHygiene' --known-red '.github/ci-known-red.json' --verbose",
   "pnpm exec smthrs lint '//:driftCi' --known-red '.github/ci-known-red.json' --verbose",
   "pnpm exec smthrs lint '//:ci' --known-red '.github/ci-known-red.json' --verbose",
 ]
@@ -45,7 +45,7 @@ test('drift job concurrency group includes github.sha and runs only drift gates'
   assert.equal(workflow.jobs.drift.needs, 'trusted-drift')
   assert.equal(workflow.jobs.drift.if, '${{ always() }}')
   assert.deepEqual(workflow.jobs.drift.steps, [{ name: 'Trusted drift result', run: "test '${{ needs.trusted-drift.result }}' = 'success'", shell: 'bash' }])
-  const trusted = YAML.parse(await readFile(new URL('../../.github/workflows/trusted-drift.yml', import.meta.url), 'utf8'))
+  const trusted = YAML.parse(await readFile(new URL('../../../.github/workflows/trusted-drift.yml', import.meta.url), 'utf8'))
   assert.equal(trusted.jobs.drift['timeout-minutes'], 20, 'a clean run takes 7-10 minutes; a 10-minute cap cancels the last gates')
   assert.equal(workflow.concurrency['cancel-in-progress'], false)
   for (const part of ['github.workflow', 'github.event_name', 'github.ref', 'github.sha']) {
@@ -92,7 +92,7 @@ test('CI declares the retained document components using the moved native ABI ad
   const step = workflow.jobs.rust.steps.find((step) => step.name === 'Daemon document component tests')
   assert.ok(step)
   assert.match(step.run, /smthrs test '\/\/packages\/smithers-machined:documentComponents'/)
-  const source = await readFile(new URL('../../packages/smithers-machined/PACKAGE.ts', import.meta.url), 'utf8')
+  const source = await readFile(new URL('../../../packages/smithers-machined/PACKAGE.ts', import.meta.url), 'utf8')
   assert.ok(source.includes('cargo test --locked -p smithers-machined --test documents'))
   assert.ok(source.includes('cargo build --locked -p smithers-ffi --example live_document_interop'))
   assert.ok(source.includes('node packages/smithers-ffi/tests/yjs-interop.ts'))
@@ -118,7 +118,7 @@ test('API baseline and docs drift targets are check-only and independent of rele
   assert.match(manifest.scripts['docs:check'], /modelprice\/cmd\/generate -check/)
   assert.match(manifest.scripts['docs:check'], /node scripts\/package-docs\.test\.mjs/)
   assert.match(manifest.scripts['docs:check'], /node scripts\/package-docs\.mjs --check/)
-  const packageCheck = await readFile(new URL('../package-docs.test.mjs', import.meta.url), 'utf8')
+  const packageCheck = await readFile(new URL('../../../scripts/package-docs.test.mjs', import.meta.url), 'utf8')
   assert.match(packageCheck, /"pack", "--dry-run"/)
   for (const generator of ['ingest-reference.mjs', 'generate-llms.mjs']) {
     assert.match(docs, new RegExp(`${generator.replace('.', '\\.')}[\\s\\S]{0,100}--check`), `${generator} must run in check mode`)
@@ -158,7 +158,7 @@ const scratchOutputs = async () => (await readdir(tmpdir())).filter((name) => na
 
 test('declaration build matches normal TypeScript release emit and cleans isolated output', async () => {
   const { default: ts } = await import('typescript')
-  const { apiSurface, withDeclarationBuild } = await import('../check-api-baseline.mjs')
+  const { apiSurface, withDeclarationBuild } = await import('../../../scripts/check-api-baseline.mjs')
   const root = await mkdtemp(join(tmpdir(), 'smithers-api-fixture-'))
   const previousTmpdir = process.env.TMPDIR
   const previousTemp = process.env.TEMP
@@ -250,7 +250,7 @@ test('declaration build matches normal TypeScript release emit and cleans isolat
 
 test('public build declarations match release-style tsc for all source files', async () => {
   const { default: ts } = await import('typescript')
-  const { apiSurface, withDeclarationBuild } = await import('../check-api-baseline.mjs')
+  const { apiSurface, withDeclarationBuild } = await import('../../../scripts/check-api-baseline.mjs')
   const root = await mkdtemp(join(tmpdir(), 'smithers-api-build-parity-'))
   try {
     await write(root, 'pnpm-workspace.yaml', 'packages:\n  - "packages/*"\n')
@@ -276,7 +276,7 @@ declare function getB(): B
     const releaseRoot = join(root, 'release')
     const releaseDir = join(releaseRoot, 'packages/build/dist/esm')
     await runFile(process.execPath, [
-      fileURLToPath(new URL('../../node_modules/typescript/bin/tsc', import.meta.url)),
+      fileURLToPath(new URL('../../../node_modules/typescript/bin/tsc', import.meta.url)),
       '-p', join(root, 'packages/build/tsconfig.json'), '--outDir', releaseDir,
     ], { cwd: repositoryRoot, maxBuffer: 4 * 1024 * 1024 })
 
@@ -318,7 +318,7 @@ declare function getB(): B
 })
 
 test('CLI combines declaration build and baseline update from current source', async () => {
-  const { apiSurface, withDeclarationBuild } = await import('../check-api-baseline.mjs')
+  const { apiSurface, withDeclarationBuild } = await import('../../../scripts/check-api-baseline.mjs')
   const root = await realpath(await mkdtemp(join(tmpdir(), 'smithers-api-cli-fixture-')))
   const packageRoot = join(root, 'packages/example')
   const cli = join(root, 'scripts/check-api-baseline.mjs')
@@ -355,7 +355,7 @@ test('CLI combines declaration build and baseline update from current source', a
     assert.equal(baseline.format, 2)
     const releaseRoot = join(root, 'release')
     await runFile(process.execPath, [
-      fileURLToPath(new URL('../../node_modules/typescript/bin/tsc', import.meta.url)),
+      fileURLToPath(new URL('../../../node_modules/typescript/bin/tsc', import.meta.url)),
       '-p', join(packageRoot, 'tsconfig.json'), '--outDir', join(releaseRoot, 'packages/example/dist/esm'),
     ], { cwd: root })
     assert.deepEqual(baseline.packages, apiSurface(root, releaseRoot))
@@ -393,7 +393,7 @@ test('CLI combines declaration build and baseline update from current source', a
 })
 
 test('the Cloud drift check runs exactly the gates the generated drift workflow runs', async () => {
-  const script = await readFile(new URL('./coding-check.sh', import.meta.url), 'utf8')
+  const script = await readFile(new URL('../../../scripts/ci/coding-check.sh', import.meta.url), 'utf8')
   const gates = script.match(/drift_gates="([^"]*)"/)?.[1].split('\n')
   assert.ok(gates, 'coding-check.sh declares its drift gates')
   const expected = gateCommands.map((command) => {
@@ -401,13 +401,13 @@ test('the Cloud drift check runs exactly the gates the generated drift workflow 
     return `${verb} ${pattern}`
   })
   assert.deepEqual(gates, expected)
-  const body = await readFile(new URL('../../flows/checks/drift/flow.mdx', import.meta.url), 'utf8')
+  const body = await readFile(new URL('../../../flows/checks/drift/flow.mdx', import.meta.url), 'utf8')
   assert.match(body, /flows: \[coding\/CommandCheck\]/)
   assert.match(body, /\{"argv":\["sh","scripts\/ci\/coding-check\.sh","drift"\]/)
   assert.ok(gates.every((gate) => !gate.startsWith('test ')), 'the drift check runs no test target')
 })
 
-const trustedSetupPath = fileURLToPath(new URL('../../.github/actions/trusted-ci-setup/setup.py', import.meta.url))
+const trustedSetupPath = fileURLToPath(new URL('../../../.github/actions/trusted-ci-setup/setup.py', import.meta.url))
 const setupEnvironment = {
   ...process.env,
   RUNNER_ENVIRONMENT: 'github-hosted', RUNNER_OS: 'Linux', ImageOS: 'ubuntu24',
@@ -643,7 +643,7 @@ test('root-ci-setup-input-validation disposable Ubuntu positive and hostile cont
 test('trusted setup rejects branch-selected action inputs and pins its own context', async () => {
   const { default: YAML } = await import('yaml')
   for (const directory of ['trusted-ci-setup', 'trusted-ci-setup-campaign']) {
-    const action = YAML.parse(await readFile(new URL(`../../.github/actions/${directory}/action.yml`, import.meta.url), 'utf8'))
+    const action = YAML.parse(await readFile(new URL(`../../../.github/actions/${directory}/action.yml`, import.meta.url), 'utf8'))
     assert.equal(action.inputs, undefined)
     assert.equal(action.runs.using, 'composite')
     const step = action.runs.steps[0]
@@ -667,7 +667,7 @@ test('trusted setup rejects branch-selected action inputs and pins its own conte
 
 test('trusted drift and disposable setup campaign are main-pinned before branch execution', async () => {
   const { default: YAML } = await import('yaml')
-  const trusted = YAML.parse(await readFile(new URL('../../.github/workflows/trusted-drift.yml', import.meta.url), 'utf8'))
+  const trusted = YAML.parse(await readFile(new URL('../../../.github/workflows/trusted-drift.yml', import.meta.url), 'utf8'))
   assert.deepEqual(trusted.on, { workflow_call: null })
   assert.equal(trusted.concurrency['cancel-in-progress'], false)
   assert.equal(trusted.concurrency.group, 'trusted-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}-${{ github.sha }}')
@@ -679,11 +679,11 @@ test('trusted drift and disposable setup campaign are main-pinned before branch 
   assert.equal(trusted.jobs.drift.env, undefined)
   assert.deepEqual(trusted.permissions, { contents: 'read' })
   assert.deepEqual(trusted.jobs.drift.steps.filter((step) => step.run?.includes('pnpm exec smthrs ')).map((step) => step.run), gateCommands)
-  const campaign = YAML.parse(await readFile(new URL('../../.github/workflows/trusted-setup-validation.yml', import.meta.url), 'utf8'))
+  const campaign = YAML.parse(await readFile(new URL('../../../.github/workflows/trusted-setup-validation.yml', import.meta.url), 'utf8'))
   assert.deepEqual(campaign.on, {
     push: { branches: ['main'], paths: [
       '.github/actions/trusted-ci-setup/**', '.github/actions/trusted-ci-setup-campaign/**',
-      '.github/workflows/trusted-setup-validation.yml', 'scripts/ci/drift-job.test.mjs',
+      '.github/workflows/trusted-setup-validation.yml', 'packages/repo-targets/contracts/drift-job.test.mjs',
       'packages/smithers/build/targets/src/GithubCiGen.ts', 'PACKAGE.ts',
     ] },
     workflow_dispatch: null,
@@ -722,10 +722,10 @@ test('C-PRC-01 observes the literal required status and clean per-SHA check thro
 
 test('campaign bootstrap uses the real runner Node and retains launch failures before checkout', async () => {
   const { default: YAML } = await import('yaml')
-  const { engineeringGateEnvironment } = await import('../engineering-gate-environment.mjs')
+  const { engineeringGateEnvironment } = await import('../../../scripts/engineering-gate-environment.mjs')
   const { createHash } = await import('node:crypto')
   const { dirname } = await import('node:path')
-  const action = YAML.parse(await readFile(new URL('../../.github/actions/trusted-ci-setup-campaign/action.yml', import.meta.url), 'utf8'))
+  const action = YAML.parse(await readFile(new URL('../../../.github/actions/trusted-ci-setup-campaign/action.yml', import.meta.url), 'utf8'))
   const script = action.runs.steps[0].run
   const root = await mkdtemp(join(tmpdir(), 'smithers-campaign-bootstrap-'))
   const commit = '0123456789abcdef0123456789abcdef01234567'

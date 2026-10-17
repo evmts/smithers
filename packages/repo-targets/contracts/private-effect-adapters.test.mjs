@@ -13,9 +13,9 @@ import {
   buildPrivateEffectAdapters,
   privateEffectAdapters,
   relocatePrivateAdapterImports
-} from "../packages/repo-targets/scripts/private-effect-adapters.mjs"
+} from "../scripts/private-effect-adapters.mjs"
 
-const root = resolve(import.meta.dirname, "..")
+const root = resolve(import.meta.dirname, "../../..")
 const sourceRequire = createRequire(join(root, "packages/smithers/package.json"))
 const sourceManifest = JSON.parse(await readFile(join(root, "packages/smithers/package.json"), "utf8"))
 const version = sourceManifest.devDependencies.effect

@@ -173,7 +173,7 @@ test("scaffold: each scaffolding string in product code is named with file and l
 
 test("scaffold: product identities, .specs, docs, markdown, binary files and the check itself pass", () => {
   const dirty = "GOCACHE=/private/tmp/claude-1/go-build-x scratchpad/lanes"
-  for (const path of [".specs/a.json", "docs/a.ts", "apps/site/docs/x.txt", "README.md", "scripts/check-tracked-hygiene.test.mjs"]) {
+  for (const path of [".specs/a.json", "docs/a.ts", "apps/site/docs/x.txt", "README.md", "packages/repo-targets/contracts/check-tracked-hygiene.test.mjs"]) {
     assert.deepEqual(scaffold(path, dirty), [], path)
   }
   assert.deepEqual(scaffoldFindings(["a.png"], () => null), [])

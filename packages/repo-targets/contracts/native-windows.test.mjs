@@ -26,12 +26,12 @@ const portableSuites = [
 ]
 
 async function filesystemSteps() {
-  const workflow = YAML.parse(await readFile(new URL('../../.github/workflows/native-windows.yml', import.meta.url), 'utf8'))
+  const workflow = YAML.parse(await readFile(new URL('../../../.github/workflows/native-windows.yml', import.meta.url), 'utf8'))
   return workflow.jobs.filesystem.steps
 }
 
 test('Windows kernel suite runs independently of native and Node host failures', async () => {
-  const workflow = YAML.parse(await readFile(new URL('../../.github/workflows/native-windows.yml', import.meta.url), 'utf8'))
+  const workflow = YAML.parse(await readFile(new URL('../../../.github/workflows/native-windows.yml', import.meta.url), 'utf8'))
   for (const event of ['push', 'pull_request']) {
     assert.ok(workflow.on[event].paths.includes('packages/smithers/flows/kernel/**'))
   }

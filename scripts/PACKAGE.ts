@@ -14,7 +14,7 @@
 import { backendSQLC } from "../packages/backend/sqlc.ts"
 import { Smithers } from "@smthrs/targets"
 import { existsSync, readdirSync } from "node:fs"
-import { listFiles } from "./check-tracked-hygiene.mjs"
+import { listFiles } from "../packages/repo-targets/contracts/check-tracked-hygiene.mjs"
 import { libraryPackages, repoRoot } from "./workspace-packages.mjs"
 import { Package as backendPackage } from "../packages/backend/PACKAGE.ts"
 
@@ -28,7 +28,11 @@ import { Package as backendPackage } from "../packages/backend/PACKAGE.ts"
 const sources = [
   Smithers.glob("//scripts/**/*.mjs"),
   Smithers.glob("//scripts/**/*.ts"),
-  Smithers.glob("//scripts/fixtures/**/*.json")
+  Smithers.glob("//scripts/fixtures/**/*.json"),
+  // Repository contract modules these scripts import from their package.
+  Smithers.file("//packages/repo-targets/contracts/check-single-effect-version.mjs"),
+  Smithers.file("//packages/repo-targets/contracts/check-tracked-hygiene.mjs"),
+  Smithers.file("//packages/repo-targets/contracts/check-tracked-hygiene.d.mts")
 ]
 
 /** The whole checkout is the subject of repository-wide engineering gates. */
@@ -163,7 +167,6 @@ const releaseRehearsal = Smithers.NodeTest({
     Smithers.file("//scripts/build-release.test.mjs"),
     Smithers.file("//scripts/check-api-baseline.test.mjs"),
     Smithers.file("//scripts/release-consumers.test.mjs"),
-    Smithers.file("//scripts/installed-consumer-boundary.test.mjs"),
     Smithers.file("//scripts/release-npm-support.test.mjs"),
     Smithers.file("//scripts/release-node-support.test.mjs"),
     Smithers.file("//scripts/release-peer-ranges.test.mjs"),
@@ -172,9 +175,7 @@ const releaseRehearsal = Smithers.NodeTest({
     Smithers.file("//scripts/release-graph.test.mjs"),
     Smithers.file("//scripts/release-gates.test.mjs"),
     Smithers.file("//scripts/runtime-node-support.test.mjs"),
-    Smithers.file("//scripts/dev-compiler-isolation.test.mjs"),
     Smithers.file("//scripts/release-mcp-handshake.test.mjs"),
-    Smithers.file("//scripts/check-single-effect-version.test.mjs"),
     Smithers.file("//scripts/check-lockfile-parity.test.mjs")
   ]),
   srcs: [
@@ -197,48 +198,6 @@ const releaseVersion = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//scripts/set-release-version.test.mjs")]),
   srcs: sources,
   deps: []
-})
-
-/**
- * Fails on any pin in the engine or tooling groups that `scripts/test-pins.md`
- * does not explain.
- *
- * A test the default gate never runs to a pass is only acceptable when it is
- * written down.
- *
- * @since 0.1.0
- * @category test
- */
-const testPinRegister = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//scripts/check-test-pins.test.mjs")]),
-  srcs: [...sources, Smithers.file("//scripts/test-pins.md")],
-  deps: []
-})
-
-/**
- * The toolchain drift gate: package.json `engines` and `packageManager`,
- * flake.nix, and the generated CI workflow must agree with the runtimes and
- * package manager `.smithers/WORKSPACE.ts` declares, and every workflow,
- * script and image that names a Rust release must name the channel
- * `rust-toolchain.toml` pins. The gate reads both declarations itself, so a
- * version moves in one file.
- *
- * @since 0.1.0
- * @category test
- */
-const toolchainPins = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//scripts/check-toolchain-pins.test.mjs")]),
-  srcs: [
-    ...sources,
-    Smithers.file("//.smithers/WORKSPACE.ts"),
-    Smithers.file("//package.json"),
-    Smithers.file("//flake.nix"),
-    Smithers.file("//.node-version"),
-    Smithers.file("//rust-toolchain.toml"),
-    Smithers.file("//PACKAGE.ts"),
-    Smithers.file("//scripts/ci/cloud.sh")
-  ],
-  deps: [workflowSources]
 })
 
 /**
@@ -345,89 +304,6 @@ const mvpDocs = Smithers.NodeTest({
   deps: [repositoryInputs]
 })
 
-/**
- * Fails on a git or jj conflict marker committed into a tracked text file
- * (#3151). A per-commit drift gate: `git grep` over the tree takes a second.
- * Check mode runs it in a scratch copy with no `.git`, where it searches every
- * file no `.gitignore` excludes.
- *
- * @since 1.0.0
- * @category lint
- */
-const conflictMarkers = Smithers.Shell.Diff({
-  shell: "node scripts/check-conflict-markers.mjs",
-  changes: [],
-  timeout: "2m"
-})
-
-/** Tracked files must resolve declared paths and exclude local build and agent state. */
-const trackedHygiene = Smithers.Shell.Diff({
-  shell: "node scripts/check-tracked-hygiene.mjs --projected-tree",
-  data: [repositoryInputs],
-  changes: [],
-  timeout: "2m"
-})
-
-const trackedHygieneUnit = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//scripts/check-tracked-hygiene.test.mjs")]),
-  srcs: sources,
-  deps: []
-})
-
-/**
- * The conflict-marker check's own contract: every git and jj marker form, the
- * look-alikes it leaves, binary and untracked files, and a failed search.
- *
- * @since 1.0.0
- * @category test
- */
-const conflictMarkersUnit = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//scripts/check-conflict-markers.test.mjs")]),
-  srcs: sources,
-  deps: []
-})
-
-
-const privateEffectAdapters = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//scripts/private-effect-adapters.test.mjs")]),
-  srcs: [
-    ...sources,
-    Smithers.file("//packages/repo-targets/scripts/private-effect-adapters.mjs"),
-    Smithers.file("//packages/repo-targets/package.json"),
-    Smithers.file("//packages/repo-targets/scripts/build-library.mjs"),
-    Smithers.file("//packages/smithers/scripts/compile-commonjs.mjs"),
-    ...privateAdapterManifests,
-    Smithers.file("//package.json"),
-    Smithers.file("//pnpm-lock.yaml"),
-    Smithers.file("//pnpm-workspace.yaml")
-  ],
-  deps: []
-})
-
-const driftJob = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//scripts/ci/drift-job.test.mjs")]),
-  srcs: [
-    ...sources,
-    Smithers.file("//.github/actions/trusted-ci-setup/action.yml"),
-    Smithers.file("//.github/actions/trusted-ci-setup/setup.py"),
-    Smithers.file("//.github/actions/trusted-ci-setup-campaign/action.yml"),
-    Smithers.file("//.github/workflows/trusted-drift.yml"),
-    Smithers.file("//.github/workflows/trusted-setup-validation.yml"),
-    Smithers.file("//PACKAGE.ts"),
-    Smithers.file("//package.json"),
-    Smithers.file("//scripts/PACKAGE.ts"),
-    Smithers.file("//.github/workflows/drift.yml"),
-    Smithers.file("//.github/workflows/ci.yml")
-  ],
-  deps: []
-})
-
-/** The Windows kernel suite runs independently of the native and Node host jobs. */
-const nativeWindowsWorkflow = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//scripts/ci/native-windows.test.mjs")]),
-  srcs: [...sources, Smithers.file("//.github/workflows/native-windows.yml")],
-  deps: []
-})
 
 /**
  * Installs the packed artifacts into a scratch project and imports every
@@ -447,24 +323,6 @@ const releaseSmoke = Smithers.NodeTest({
   runner: Smithers.entrypoint(Smithers.file("//scripts/smoke-release.mjs"), [packDirectory]),
   srcs: sources,
   deps: [releasePack]
-})
-
-/**
- * One `effect` version across every manifest, both lockfiles, and the install.
- *
- * Two Effect instances do not share schema internals, so a duplicate is a
- * runtime defect rather than a size problem. The release pins one supported
- * version and this target proves the tree agrees.
- *
- * @since 0.1.0
- * @category test
- */
-const effectVersion = Smithers.NodeTest({
-  summary: "Exactly one effect version resolves across every manifest and both lockfiles.",
-  featured: true,
-  runner: Smithers.entrypoint(Smithers.file("//scripts/check-single-effect-version.mjs")),
-  srcs: [...sources, Smithers.file("//pnpm-lock.yaml"), Smithers.file("//bun.lock")],
-  deps: []
 })
 
 /**
@@ -660,10 +518,8 @@ const releaseIntegrity = Smithers.NodeTest({
 /** Real-runner sentinels and fail-closed gate regressions. */
 const tierContracts = Smithers.NodeTest({
   runner: Smithers.testRunner([
-    Smithers.file("//scripts/runner-contract.test.mjs"),
     Smithers.file("//scripts/ci/coding-check.test.mjs"),
-    Smithers.file("//scripts/ci/check-cache.test.mjs"),
-    Smithers.file("//scripts/ci/check-known-red-coverage.test.mjs")
+    Smithers.file("//scripts/ci/check-cache.test.mjs")
   ]),
   srcs: [
     ...sources,
@@ -729,18 +585,6 @@ const commit = Smithers.NodeTest({
   srcs: [Smithers.file("//scripts/commit.mjs")],
   deps: [backendSQLC],
   timeout: "30m"
-})
-
-/** Exercises real Bun coverage collection and sealed process receipts. */
-const bunCoverage = Smithers.NodeTest({
-  runner: Smithers.testRunner([
-    Smithers.file("//scripts/bun-coverage/coverage.test.mjs"),
-    Smithers.file("//scripts/bun-coverage/receipts.test.mjs"),
-    Smithers.file("//scripts/bun-coverage/run.test.mjs")
-  ]),
-  srcs: [Smithers.glob("//scripts/bun-coverage/**/*")],
-  timeout: "2m",
-  deps: []
 })
 
 /**
@@ -825,7 +669,7 @@ const securityReview = Smithers.SecurityReview({
         "A version read from a repository file used unvalidated in a URL or shell word.",
         "apt or npm installs that run lifecycle scripts or use sudo in a Cloud task."
       ],
-      paths: ["ci/cloud.sh", "ci/coding-check.sh", "require-toolchain.mjs"]
+      paths: ["ci/cloud.sh", "ci/coding-check.sh"]
     },
     {
       id: "check-cache-poisoning",
@@ -851,9 +695,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "commit.mjs",
-        "ci/check-known-red-coverage.mjs",
-        "generate-changelog.mjs",
-        "bun-coverage/**"
+        "generate-changelog.mjs"
       ]
     },
     {
@@ -865,7 +707,7 @@ const securityReview = Smithers.SecurityReview({
         "A spawn passing { ...process.env } to package installs or repository code without deleting SMITHERS_CACHE_TOKEN, SMITHERS_CACHE_READ_TOKEN, SMITHERS_CACHE_WRITE_TOKEN, NPM_TOKEN or GH_TOKEN.",
         "Environment dumps or error messages that print token-bearing variables."
       ],
-      paths: ["ci-planner.mjs", "ci-inventory.mjs", "release-consumers.mjs", "smoke-release.mjs"]
+      paths: ["release-consumers.mjs", "smoke-release.mjs"]
     }
   ]
 })
@@ -912,16 +754,9 @@ export const Package = Smithers.Package({
     engineeringScriptRegressions,
     engineeringChecks, integrationSources, gatewaySources, workflowSources, machineSources, ffiSources,
     apiBaseline,
-    conflictMarkers,
-    conflictMarkersUnit,
-    trackedHygiene,
-    trackedHygieneUnit,
     docsDrift,
     packageDocs,
     publishedLinksUnit,
-    driftJob,
-    nativeWindowsWorkflow,
-    bunCoverage,
     commit,
     conformanceCheck,
     repositoryConformance,
@@ -932,7 +767,6 @@ export const Package = Smithers.Package({
     changelog,
     dependencyBoundaries,
     dependencyBoundariesUnit,
-    effectVersion,
     issueClaim,
     lint,
     localSmithers,
@@ -941,14 +775,11 @@ export const Package = Smithers.Package({
     npmDedupe,
     npmDedupeUnit,
     packManifest,
-    privateEffectAdapters,
     releaseCut,
     releasePack,
     releaseRehearsal,
     releaseSmoke,
     releaseVersion,
-    testPinRegister,
-    toolchainPins,
     ...securityReview
   }
 })

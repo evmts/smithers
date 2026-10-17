@@ -51,7 +51,7 @@ const nodeOnPath = () => {
  * Stops the process with the refusal before any test runs. Under Bun,
  * `process.versions.node` is Bun's emulation, so Node is measured on PATH.
  */
-export const requireToolchain = (manifest = fileURLToPath(new URL("../package.json", import.meta.url))) => {
+export const requireToolchain = (manifest = fileURLToPath(new URL("../../../package.json", import.meta.url))) => {
   const { engines } = JSON.parse(readFileSync(manifest, "utf8"))
   const bun = process.versions.bun
   const refusal = toolchainRefusal(engines, { bun, node: bun === undefined ? process.versions.node : nodeOnPath() })

@@ -13,8 +13,8 @@ import {
   SUPPORTED_EFFECT_RANGE,
   UNSUPPORTED_EFFECT_VERSION
 } from "./check-single-effect-version.mjs"
-import { readWorkspaceManifests } from "./pack-release.mjs"
-import { repoRoot } from "./workspace-packages.mjs"
+import { readWorkspaceManifests } from "../../../scripts/pack-release.mjs"
+import { repoRoot } from "../../../scripts/workspace-packages.mjs"
 
 const pin = EXPECTED_EFFECT_VERSION
 const range = SUPPORTED_EFFECT_RANGE
