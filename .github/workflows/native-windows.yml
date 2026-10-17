@@ -119,6 +119,15 @@ jobs:
           pnpm --dir packages/smithers/flows/platform-bun exec bun scripts/run-bun-tests.mjs || suite_status=1
           pnpm --dir packages/smithers/ui exec bun test tests || suite_status=1
           exit "$suite_status"
+      - name: Test build and CLI package suites
+        if: inputs.portablePackages == true && !cancelled() && steps.atomic_helper.outcome == 'success'
+        shell: bash
+        run: |
+          suite_status=0
+          pnpm --dir packages/smthrs-deprecation exec vitest run --reporter=verbose --coverage.reportOnFailure --coverage.reportsDirectory "$RUNNER_TEMP/portable-package-coverage/deprecation" || suite_status=1
+          pnpm --dir packages/smithers/build/targets exec vitest run --reporter=verbose --coverage.reportOnFailure --coverage.reportsDirectory "$RUNNER_TEMP/portable-package-coverage/targets" || suite_status=1
+          pnpm --dir packages/smithers/build/build-cli exec vitest run --reporter=verbose --coverage.reportOnFailure --coverage.reportsDirectory "$RUNNER_TEMP/portable-package-coverage/build-cli" || suite_status=1
+          exit "$suite_status"
       - name: Preserve portable package coverage diagnostics
         if: always() && inputs.portablePackages == true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

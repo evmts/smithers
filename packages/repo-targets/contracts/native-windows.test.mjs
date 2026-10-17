@@ -22,6 +22,14 @@ const portableSuites = [
       '--dir packages/smithers/flows/platform-bun exec bun scripts/run-bun-tests.mjs',
       '--dir packages/smithers/ui exec bun test tests'
     ]
+  },
+  {
+    name: 'Test build and CLI package suites',
+    commands: [
+      '--dir packages/smthrs-deprecation exec vitest run --reporter=verbose --coverage.reportOnFailure --coverage.reportsDirectory "$RUNNER_TEMP/portable-package-coverage/deprecation"',
+      '--dir packages/smithers/build/targets exec vitest run --reporter=verbose --coverage.reportOnFailure --coverage.reportsDirectory "$RUNNER_TEMP/portable-package-coverage/targets"',
+      '--dir packages/smithers/build/build-cli exec vitest run --reporter=verbose --coverage.reportOnFailure --coverage.reportsDirectory "$RUNNER_TEMP/portable-package-coverage/build-cli"'
+    ]
   }
 ]
 
