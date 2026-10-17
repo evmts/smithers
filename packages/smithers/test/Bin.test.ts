@@ -614,7 +614,7 @@ describe("removed verbs and flags at the process boundary", processBudget, () =>
 
     expect(result.status).toBe(1)
     expect(result.stderr).toContain("smthrs rewind was removed in 1.0.0-rc.0")
-    expect(result.stderr).toContain(`${Unsupported.migrationUrl}#gateway`)
+    expect(result.stderr).toContain(`${Unsupported.migrationUrl}#rewind`)
   })
 
   it("names the sub-verb when a removed group is called with one", () => {
@@ -655,7 +655,7 @@ describe("removed verbs and flags at the process boundary", processBudget, () =>
 
     expect(status.status).toBe(1)
     expect(status.stderr).toContain("smthrs gateway status was removed in 1.0.0-rc.0")
-    expect(status.stderr).toContain(`${Unsupported.migrationUrl}#cli`)
+    expect(status.stderr).toContain(`${Unsupported.migrationUrl}#gateway`)
     expect(stop.status).toBe(1)
     expect(stop.stderr).toContain("smthrs gateway stop was removed in 1.0.0-rc.0")
   })
@@ -670,7 +670,7 @@ describe("removed verbs and flags at the process boundary", processBudget, () =>
     expect(result.status).toBe(1)
     expect(result.stderr).toContain("smthrs workflow path was removed in 1.0.0-rc.0")
     expect(result.stderr).toContain("JSX pack tooling is gone")
-    expect(result.stderr).toContain(`${Unsupported.migrationUrl}#cli`)
+    expect(result.stderr).toContain(`${Unsupported.migrationUrl}#workflow`)
   })
 
   it("keeps `workflow list` alive as the `ls` alias while removing the rest", () => {
