@@ -12,11 +12,16 @@ import { nativeTests } from "./coding-native-gate.mjs"
 const root = fileURLToPath(new URL("../", import.meta.url))
 const flowPath = (path: string, cwd = "flows") => path.startsWith("//") ? path.slice(2) : posix.join(cwd, path)
 
+const nestedMembers = new Set(["review/seeded-bugs"])
+
 const discoverTests = async (directory: string): Promise<string[]> => {
   const found: string[] = []
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     if (entry.name === "node_modules") continue
     const path = join(directory, entry.name)
+    // A nested workspace member with its own PACKAGE.ts, such as the review
+    // seeded-bug suite, declares and runs its own tests.
+    if (entry.isDirectory() && nestedMembers.has(relative(root, path).split(sep).join("/"))) continue
     if (entry.isDirectory()) found.push(...await discoverTests(path))
     else if (entry.isFile() && entry.name.endsWith(".test.ts")) {
       found.push(posix.join("flows", relative(root, path).split(sep).join("/")))

@@ -101,7 +101,10 @@ const recording = Smithers.NodeTest({
 // also scans packages/smithers, which owns its own sources; this target does
 // not re-declare another package's tree.
 const codingHostBundle = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//flows/test/coding-host-bundle.test.ts")]),
+  runner: Smithers.testRunner([
+    Smithers.file("//flows/test/coding-host-bundle.test.ts"),
+    Smithers.file("//flows/test/coding-default-files.test.ts")
+  ]),
   srcs: [sources, Smithers.file("//flows/coding/build.mjs")],
   deps: [],
   cwd
