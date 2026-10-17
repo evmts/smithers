@@ -26,7 +26,7 @@ const workspace = async (url: string): Promise<string> => {
   git(root, ["update-index", "--add", "--cacheinfo", `160000,${"a".repeat(40)},vendor/one`])
   await Fs.writeFile(
     NodePath.join(root, ".gitmodules"),
-    `[submodule "one"]\n\tpath = vendor/one\n\turl = ${url}\n`
+    `[submodule "one"]\n\tpath = vendor/one\n\turl = ${JSON.stringify(url)}\n`
   )
   return root
 }
@@ -45,6 +45,14 @@ const allow = (...directories: ReadonlyArray<string>) => ({
 })
 
 describe("Git submodule local sources", () => {
+  it.each([String.raw`C:\repos\one`, String.raw`C:\path with spaces\q"uote`])(
+    "preserves the literal Windows URL %s through Git config",
+    async (url) => {
+      const root = await workspace(url)
+      expect(git(root, ["config", "--file", ".gitmodules", "--get", "submodule.one.url"])).toBe(url)
+    }
+  )
+
   it("admits a local git repository inside the workspace as a sandbox read", async () => {
     const root = await workspace("./mirrors/one")
     const source = NodePath.join(root, "mirrors", "one")
@@ -52,7 +60,7 @@ describe("Git submodule local sources", () => {
     git(source, ["init", "-q"])
     await Fs.writeFile(
       NodePath.join(root, ".gitmodules"),
-      `[submodule "one"]\n\tpath = vendor/one\n\turl = ${source}\n`
+      `[submodule "one"]\n\tpath = vendor/one\n\turl = ${JSON.stringify(source)}\n`
     )
     const plan = await planFor(root)
     expect(plan.refusal).toBeUndefined()
