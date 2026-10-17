@@ -1340,6 +1340,11 @@ export const publicError = (error: LlmReviewError | ModelCliMissing) =>
     ...(error.attempts === undefined ? {} : { attempts: publicAttempts(error.attempts) })
   }
 
+/** Explicit Node modules use this host's Node, never Windows file associations or a shell. */
+const nodeModule = (path: string): boolean =>
+  NodePath.isAbsolute(path) && /\.(?:mjs|cjs|js)$/.test(path) &&
+  NodeFs.statSync(path, { throwIfNoEntry: false })?.isFile() === true
+
 /** Spawns git in the workspace and model CLIs in an isolated home, never through a shell. */
 const spawnText = (
   cwd: string,
@@ -1352,9 +1357,13 @@ const spawnText = (
       Effect.sync(() => NodeFs.mkdtempSync(NodePath.join(NodeOs.tmpdir(), "smithers-review-"))),
       (directory) => Effect.sync(() => NodeFs.rmSync(directory, { recursive: true, force: true }))
     )
+    const script = yield* Effect.try({
+      try: () => nodeModule(executable),
+      catch: (cause) => cause as NodeJS.ErrnoException
+    })
     const child = yield* ScopedProcess.spawn({
-      command: executable,
-      args,
+      command: script ? process.execPath : executable,
+      args: script ? [executable, ...args] : args,
       cwd: options.engine === undefined ? cwd : home,
       env: spawnEnvironment(options.sensitiveEnv, options.git, home, options.engine),
       stdin: options.stdin === undefined ? "ignore" : "pipe",
@@ -2630,21 +2639,35 @@ const workspaceRevisions = (
   )
 
 /**
- * The resolved path and SHA-256 of an explicit review executable, or nothing
- * when it is absent: the invocation then reports the missing executable.
+ * The resolved entrypoint and content identity of the command. Node modules
+ * bind both source and interpreter digests; native executables bind their own
+ * bytes. An absent entrypoint is reported by the invocation.
  */
 const executableIdentity = (
   executable: string
 ): Effect.Effect<{ readonly executable?: { readonly path: string; readonly sha256: string } }, LlmReviewError> =>
   Effect.tryPromise({
     try: async () => {
-      const path = (executable.includes("/") ? [NodePath.resolve(executable)] : (process.env["PATH"] ?? "")
-        .split(NodePath.delimiter).filter(Boolean).map((directory) => NodePath.join(directory, executable)))
+      const path = (NodePath.isAbsolute(executable) || executable.includes("/") ?
+        [NodePath.resolve(executable)] :
+        (process.env["PATH"] ?? "")
+          .split(NodePath.delimiter).filter(Boolean).map((directory) => NodePath.join(directory, executable)))
         .find((candidate) => NodeFs.statSync(candidate, { throwIfNoEntry: false })?.isFile() === true)
       if (path === undefined) return {}
       const hash = createHash("sha256")
       for await (const chunk of NodeFs.createReadStream(path)) hash.update(chunk as Buffer)
-      return { executable: { path: NodeFs.realpathSync(path), sha256: hash.digest("hex") } }
+      const identity = { path: NodeFs.realpathSync(path), sha256: hash.digest("hex") }
+      if (!nodeModule(path)) return { executable: identity }
+      const interpreter = createHash("sha256")
+      for await (const chunk of NodeFs.createReadStream(process.execPath)) interpreter.update(chunk as Buffer)
+      return {
+        executable: {
+          path: identity.path,
+          sha256: createHash("sha256").update(JSON.stringify([identity.sha256, interpreter.digest("hex")])).digest(
+            "hex"
+          )
+        }
+      }
     },
     catch: (cause) =>
       new LlmReviewError({ phase: "review", message: `Review executable identity: ${failureMessage(cause)}` })

@@ -1,3 +1,4 @@
+import * as ScopedProcess from "@smthrs/platform-node/ScopedProcess"
 import * as Effect from "effect/Effect"
 import { escape } from "minimatch"
 import { execFile, spawnSync } from "node:child_process"
@@ -5,7 +6,7 @@ import { randomUUID } from "node:crypto"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import * as ProcessTable from "../../../../testing/src/ProcessTable.ts"
 import { Smithers } from "../src/index.ts"
 import * as Input from "../src/Input.ts"
@@ -13,6 +14,12 @@ import * as LlmLint from "../src/LlmLint.ts"
 import * as SecurityReview from "../src/SecurityReview.ts"
 import * as Target from "../src/Target.ts"
 import { plannedCalls } from "./plan.ts"
+
+// These two git-output fault cases still run a real process. Select its Node
+// interpreter explicitly: Windows cannot execute an extensionless shebang shim.
+vi.mock("@smthrs/platform-node/ScopedProcess", async (original) => ({
+  ...await original<typeof import("@smthrs/platform-node/ScopedProcess")>()
+}))
 
 let root: string
 
@@ -145,7 +152,7 @@ const readPids = async (path: string, timeoutMs = 15_000): Promise<ReadonlyArray
   }
 }
 
-/** Runs one review with a real executable standing in for git on PATH. */
+/** Runs one review with a real process producing the selected git protocol fault. */
 const withGitProgram = async <A>(body: string, use: () => Promise<A>): Promise<A> => {
   const directory = NodePath.join(root, "git-bin")
   const executable = NodePath.join(directory, "git")
@@ -155,13 +162,18 @@ const withGitProgram = async <A>(body: string, use: () => Promise<A>): Promise<A
     "if (process.argv.includes('rev-parse')) { process.stdout.write('a'.repeat(40) + '\\n' + 'b'.repeat(40) + '\\n'); process.exit(0) }"
   await Fs.writeFile(executable, `#!/usr/bin/env node\n${resolve}\n${body}\n`, "utf8")
   await Fs.chmod(executable, 0o755)
-  const previous = process.env["PATH"]
-  process.env["PATH"] = `${directory}${NodePath.delimiter}${previous ?? ""}`
+  const spawn = ScopedProcess.spawn
+  const replacement = vi.spyOn(ScopedProcess, "spawn").mockImplementation((options) =>
+    spawn(
+      options.command === "git"
+        ? { ...options, command: process.execPath, args: [executable, ...options.args ?? []] }
+        : options
+    )
+  )
   try {
     return await use()
   } finally {
-    if (previous === undefined) delete process.env["PATH"]
-    else process.env["PATH"] = previous
+    replacement.mockRestore()
   }
 }
 
@@ -1299,6 +1311,20 @@ describe("LlmLint.review resource and filesystem boundaries", () => {
 })
 
 describe("LlmLint.promptEngine protocol boundary", () => {
+  it("runs an explicit Node module without relying on executable bits or a shebang", async () => {
+    const cli = await fakeCli(
+      "portable-node-module",
+      JSON.stringify({ type: "result", subtype: "success", result: "portable" })
+    )
+    await Fs.chmod(cli.executable, 0o644)
+    const output = await Effect.runPromise(LlmLint.promptEngine(
+      { workspaceRoot: root, executable: cli.executable },
+      { engine: "claude", model: "model", prompt: "prompt" }
+    ))
+    expect(output).toBe("portable")
+    expect((await cli.calls())[0]?.stdin).toBe("prompt")
+  })
+
   it("runs both engine adapters with their isolated argv and returns plain answer text", async () => {
     const claude = await fakeCli("prompt-claude", JSON.stringify({ type: "result", result: "claude answer" }))
     const claudeAnswer = await Effect.runPromise(LlmLint.promptEngine(
@@ -1378,7 +1404,10 @@ describe("LlmLint.promptEngine protocol boundary", () => {
 
   it("surfaces the same failure as review for a missing executable and a non-zero exit", async () => {
     await write("src/a.ts", "export const a = 3\n")
-    const refusing = await shellCli("prompt-parity-refusal", "printf 'fake engine: not logged in' >&2\nexit 5")
+    const refusing = await scriptCli(
+      "prompt-parity-refusal",
+      "process.stderr.write('fake engine: not logged in'); process.exit(5)"
+    )
     for (const executable of [NodePath.join(root, "absent-cli"), refusing]) {
       const prompted = await Effect.runPromise(Effect.flip(LlmLint.promptEngine(
         { workspaceRoot: root, executable },

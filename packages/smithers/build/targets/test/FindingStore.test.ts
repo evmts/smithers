@@ -311,7 +311,12 @@ describe("LlmLint.review provenance manifest", () => {
       engine: {
         transport: "cli",
         seats: [{ engine: "claude", model: "test" }],
-        executable: { path: cli.executable, sha256: sha(await Fs.readFile(cli.executable)) }
+        executable: {
+          path: cli.executable,
+          sha256: sha(
+            JSON.stringify([sha(await Fs.readFile(cli.executable)), sha(await Fs.readFile(process.execPath))])
+          )
+        }
       },
       context: [{ path: "docs/context.md", sha256: sha("context\n"), bytes: 8 }],
       batches: [
