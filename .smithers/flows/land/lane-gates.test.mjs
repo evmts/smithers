@@ -150,3 +150,101 @@ check flows 'cat "$FIXTURE/output"; exit 1'
   assert.equal(result.status, 1)
   assert.match(readFileSync(join(dir, 'log'), 'utf8'), /unreadable baseline/)
 })
+
+// File flows moved from flows/ to .smithers/flows/ (M-49); the gate kept sourcing
+// flows/land/lane-prerequisites.sh and refused every lane before running a check.
+test('a lane checkout reaches its prerequisites under .smithers/flows/land', t => {
+  const dir = fixture(t)
+  const repo = join(dir, 'repo'), home = join(dir, 'home'), bin = join(dir, 'bin')
+  for (const path of [join(repo, '.smithers/flows/land'), join(home, 'lanes'), bin]) mkdirSync(path, { recursive: true })
+  for (const file of ['lane-gates.sh', 'lane-prerequisites.sh']) copyFileSync(resolve(import.meta.dirname, file), join(repo, '.smithers/flows/land', file))
+  writeFileSync(join(home, 'lanes/main-baseline-failures.txt'), 'some test\n')
+  writeFileSync(join(bin, 'bun'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+  // Cargo writes to the workspace target at the repository root, whatever its working directory.
+  writeFileSync(join(bin, 'cargo'), `#!/bin/sh
+mkdir -p "$FIXTURE_REPO/target/release"
+printf '%s\\n' '#!/bin/sh' "echo '{\\"capabilities\\":[\\"trusted-process-binding/v1\\"]}'" > "$FIXTURE_REPO/target/release/smithers-jj-export"
+chmod +x "$FIXTURE_REPO/target/release/smithers-jj-export"
+`, { mode: 0o755 })
+  for (const tool of ['psql', 'pg_isready']) writeFileSync(join(bin, tool), '#!/bin/sh\nexit 1\n', { mode: 0o755 })
+  const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim()
+  git('init', '-q', '-b', 'main'); git('config', 'user.email', 'fixture@example.com'); git('config', 'user.name', 'Fixture')
+  writeFileSync(join(repo, '.gitignore'), 'target/\n'); git('add', '.'); git('commit', '-qm', 'base')
+  git('remote', 'add', 'origin', repo)
+  const env = { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}`, FIXTURE_REPO: repo, LANE: 'fixture' }
+  delete env.CARGO_TARGET_DIR; delete env.SMITHERS_TEST_DATABASE_URL
+  const result = spawnSync('bash', [join(repo, '.smithers/flows/land/lane-gates.sh')], { cwd: repo, encoding: 'utf8', env })
+  assert.equal(result.status, 1, result.stderr)
+  assert.doesNotMatch(result.stdout, /test prerequisites failed/, result.stderr)
+  assert.match(result.stdout, /BLOCKED: no PostgreSQL/)
+})
+
+test('changed paths under .smithers/flows select its tests and the first journey; stale root flows/ paths select nothing', () => {
+  const run = (fn, input) => spawnSync('bash', ['-c', `source "$1"; ${fn}`, '_', script], { input, encoding: 'utf8' })
+  assert.equal(run('changed_test_dirs', '.smithers/flows/land/lane-gates.sh\npackages/rpc/src/a.ts\nflows/coding/x.ts\nREADME.md\n').stdout,
+    '.smithers/flows\npackages/rpc\n')
+  for (const [path, expected] of [
+    ['.smithers/flows/coding/flow.ts', 0],
+    ['.smithers/flows/todo/flow.ts', 0],
+    ['packages/backend/internal/compose/a.go', 0],
+    ['packages/backend/internal/services/a.go', 0],
+    ['flows/coding/flow.ts', 1],
+    ['.smithers/flows/land/lane-gates.sh', 1]
+  ]) assert.equal(run('needs_j1', path + '\n').status, expected, path)
+})
+
+// J1's rehearsal confines processes with Linux bubblewrap (#3783). The gate assumed a Mac mini
+// dylib and skipped elsewhere; on macOS the rehearsal must run in a Linux VM instead.
+function j1Host(t, { os, bwrap, mode = 'gate' }) {
+  const dir = fixture(t)
+  const bin = join(dir, 'bin'), calls = join(dir, 'calls')
+  mkdirSync(bin)
+  writeFileSync(join(bin, 'uname'), `#!/bin/sh\necho ${os}\n`, { mode: 0o755 })
+  symlinkSync(execFileSync('bash', ['-c', 'command -v tee'], { encoding: 'utf8' }).trim(), join(bin, 'tee'))
+  if (bwrap) {
+    writeFileSync(join(bin, 'bwrap'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+    writeFileSync(join(bin, 'cargo'), `#!/bin/sh
+echo "cargo $*" >> "$CALLS"; mkdir -p "$ROOT/target/release"; : > "$ROOT/target/release/libsmithers_ffi.so"
+`, { mode: 0o755 })
+    writeFileSync(join(bin, 'node'), '#!/bin/sh\necho "node $* ffi=$SMITHERS_FFI_LIBRARY_PATH continue=$J1_REHEARSAL_CONTINUE" >> "$CALLS"\n', { mode: 0o755 })
+  }
+  // PATH holds only the stubs, so a host bwrap cannot leak into the missing-bwrap case.
+  const path = bwrap ? `${bin}:${process.env.PATH}` : bin
+  const result = spawnSync('/bin/bash', ['-c', `source "$1"; root=$ROOT; cd "$root"; mode=${mode}; log="$ROOT/log"; : > "$log"; newreds=(); check_j1; status=$?
+printf 'newreds=%s\\n' "\${newreds[*]:-}"; exit "$status"`, '_', script], {
+    encoding: 'utf8', env: { HOME: dir, PATH: path, ROOT: dir, CALLS: calls }
+  })
+  const read = file => { try { return readFileSync(file, 'utf8') } catch { return '' } }
+  return { ...result, log: read(join(dir, 'log')), calls: read(calls), dir }
+}
+
+test('J1 on macOS refuses the gate and names the Linux VM', t => {
+  const result = j1Host(t, { os: 'Darwin', bwrap: false })
+  assert.equal(result.status, 1, result.stderr)
+  assert.match(result.stdout, /Linux bubblewrap \(#3783\).*Linux VM/)
+  assert.match(result.stdout, /newreds=j1: needs a Linux host with bwrap/)
+  assert.doesNotMatch(result.log, /SKIP j1/)
+})
+
+test('J1 on macOS records nothing in a baseline run', t => {
+  const result = j1Host(t, { os: 'Darwin', bwrap: false, mode: 'baseline' })
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.log, /SKIP j1: the rehearsal needs Linux bubblewrap/)
+  assert.match(result.stdout, /newreds=$/m)
+})
+
+test('J1 on Linux without bwrap refuses the gate', t => {
+  const result = j1Host(t, { os: 'Linux', bwrap: false })
+  assert.equal(result.status, 1, result.stderr)
+  assert.match(result.stdout, /bwrap is missing/)
+  assert.match(result.stdout, /newreds=j1: bwrap missing/)
+})
+
+test('J1 on Linux with bwrap builds the .so library and runs the rehearsal against it', t => {
+  const result = j1Host(t, { os: 'Linux', bwrap: true })
+  assert.equal(result.status, 0, result.stdout + result.stderr)
+  assert.match(result.log, /PASS j1/)
+  assert.equal(result.calls, `cargo build --locked --release -p smithers-ffi --lib
+node packages/backend/run-journey-todo-label.mjs --j1 ffi=${join(result.dir, 'target/release/libsmithers_ffi.so')} continue=1
+`)
+})

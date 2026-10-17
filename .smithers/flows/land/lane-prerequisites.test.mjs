@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -69,3 +69,23 @@ chmod +x "$CARGO_TARGET_DIR/release/smithers-jj-export"
     assert.doesNotMatch(result.stdout, /tests-started/)
   })
 }
+// The script moved from flows/land to .smithers/flows/land (M-49). Its default target must
+// stay the repository's, where cargo builds, not .smithers/target.
+test('the default target is the repository root target', t => {
+  const root = mkdtempSync(join(tmpdir(), 'lane-prerequisites-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const land = join(root, '.smithers/flows/land'), bin = join(root, 'bin')
+  mkdirSync(land, { recursive: true }); mkdirSync(bin)
+  writeFileSync(join(land, 'lane-prerequisites.sh'), readFileSync(script))
+  writeFileSync(join(bin, 'bun'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+  writeFileSync(join(bin, 'cargo'), `#!/bin/sh
+mkdir -p "$FIXTURE_ROOT/target/release"
+printf '%s\\n' '#!/bin/sh' "echo '{\\"capabilities\\":[\\"trusted-process-binding/v1\\"]}'" > "$FIXTURE_ROOT/target/release/smithers-jj-export"
+chmod +x "$FIXTURE_ROOT/target/release/smithers-jj-export"
+`, { mode: 0o755 })
+  const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, SCRIPT: join(land, 'lane-prerequisites.sh'), FIXTURE_ROOT: realpathSync(root) }
+  delete env.CARGO_TARGET_DIR
+  const result = spawnSync('bash', ['-c', 'source "$SCRIPT" && printf "%s" "$SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"'], { encoding: 'utf8', env })
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(result.stdout, join(realpathSync(root), 'target/release/smithers-jj-export'))
+})

@@ -84,6 +84,35 @@ check_root_lint() {
   newreds+=("root-eslint"); return 1
 }
 
+# Package directories with their own test script that changed paths select. File flows live under .smithers/flows (M-49).
+changed_test_dirs() { grep -E '^(packages/[^/]+|\.smithers/flows)/' | sed -E 's#^(packages/[^/]+|\.smithers/flows)/.*#\1#' | sort -u; }
+
+# The first journey guards composition, services and the coding and TODO flows. Reads changed paths on stdin.
+needs_j1() { grep -qE '^(packages/backend/internal/(compose|services)/|\.smithers/flows/(coding|todo)/)'; }
+
+# J1's rehearsal confines processes with Linux bubblewrap (#3783), so it runs only on Linux with bwrap.
+# On macOS, run this gate inside a Linux VM, such as an OrbStack Ubuntu arm64 machine; no macOS host covers main.
+check_j1() {
+  local target ffi
+  if [ "$(uname -s)" != Linux ]; then
+    if [ $mode = baseline ]; then echo "SKIP j1: the rehearsal needs Linux bubblewrap (#3783)" >> "$log"; return 0; fi
+    echo "FAIL j1: the J1 rehearsal needs Linux bubblewrap (#3783); run lane-gates.sh in a Linux VM such as OrbStack Ubuntu arm64" | tee -a "$log"
+    newreds+=("j1: needs a Linux host with bwrap"); return 1
+  fi
+  if ! command -v bwrap >/dev/null 2>&1; then
+    echo "FAIL j1: bwrap is missing; install bubblewrap" | tee -a "$log"
+    newreds+=("j1: bwrap missing"); return 1
+  fi
+  target=${CARGO_TARGET_DIR:-$root/target}; [[ "$target" = /* ]] || target="$root/$target"
+  ffi=${SMITHERS_FFI_LIBRARY_PATH:-$target/release/libsmithers_ffi.so}
+  if [ ! -f "$ffi" ] && [ -z "${SMITHERS_FFI_LIBRARY_PATH:-}" ]; then
+    echo "Building J1 prerequisite libsmithers_ffi.so" >> "$log"
+    (cd "$root" && cargo build --locked --release -p smithers-ffi --lib) >> "$log" 2>&1 || {
+      echo "FAIL j1: could not build libsmithers_ffi.so" >> "$log"; newreds+=("j1: ffi build failed"); return 1; }
+  fi
+  check j1 "SMITHERS_FFI_LIBRARY_PATH=$(printf %q "$ffi") J1_REHEARSAL_CONTINUE=1 node packages/backend/run-journey-todo-label.mjs --j1"
+}
+
 # Sourcing exposes the same parser/check used by the executable to regression fixtures.
 if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then return 0; fi
 
@@ -140,7 +169,7 @@ else
   changed=$(git ls-files)   # every file: the baseline covers all suites
   allfails=$(mktemp)
 fi
-source "$root/flows/land/lane-prerequisites.sh" || { echo "BLOCKED: test prerequisites failed" | tee -a "$log"; exit 1; }
+source "$root/.smithers/flows/land/lane-prerequisites.sh" || { echo "BLOCKED: test prerequisites failed" | tee -a "$log"; exit 1; }
 newreds=()
 
 # PostgreSQL is required: database tests must run, never skip.
@@ -207,19 +236,15 @@ fi
 # The production site mounts the app as an island with its own Vite config; build it whenever either changes
 # (2026-10-06: #3559 added an app-only Vite plugin and every deploy failed at the site build).
 if printf '%s\n' "$changed" | grep -qE '^apps/(app|site)/'; then check site-build "cd apps/site && pnpm build"; fi
-for dir in $(printf '%s\n' "$changed" | grep -E '^(packages/[^/]+|flows)/' | sed -E 's#^(packages/[^/]+|flows)/.*#\1#' | sort -u); do
+for dir in $(printf '%s\n' "$changed" | changed_test_dirs); do
   [ "$dir" = packages/backend ] && continue
   [ -f "$dir/package.json" ] || continue
   if [ "$dir" = packages/rpc ]; then check rpc-tests "cd packages/rpc && pnpm exec vitest run"
   elif node -e "process.exit(require('./$dir/package.json').scripts?.test ? 0 : 1)" 2>/dev/null; then check "tests:$dir" "cd $dir && pnpm run test"; fi
 done
 
-# 4. The first journey when composition, services or the coding flows changed (needs the FFI library: Mac mini only).
-if printf '%s\n' "$changed" | grep -qE '^(packages/backend/internal/(compose|services)/|flows/(coding|todo)/)'; then
-  ffi=$HOME/lanes/f6-walk/ffi/libsmithers_ffi.dylib
-  if [ -f "$ffi" ]; then check j1 "SMITHERS_FFI_LIBRARY_PATH=$ffi J1_REHEARSAL_CONTINUE=1 node packages/backend/run-journey-todo-label.mjs --j1"
-  else echo "SKIP j1: no FFI library on this host; the mini's journey guard covers main" >> "$log"; fi
-fi
+# 4. The first journey when composition, services or the coding or TODO flows changed (Linux with bwrap only).
+if printf '%s\n' "$changed" | needs_j1; then check_j1; fi
 
 if [ $mode = baseline ]; then
   sort -u "$allfails" > "$baseline"; echo "BASELINE $(wc -l < "$baseline") failing names at $(git rev-parse --short HEAD) -> $baseline" | tee -a "$log"; exit 0
