@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/microsandbox"
@@ -143,4 +144,47 @@ func TestInstallParallelLegacyMigrationPostgres(t *testing.T) {
 	raw, err = db.New(pool).GetInstallParallel(t.Context())
 	require.NoError(t, err)
 	require.JSONEq(t, `8`, string(raw))
+}
+
+func TestInstallModelSettingsOwnerFencePostgres(t *testing.T) {
+	pool, _ := postgresfixture.NewProductDatabase(t)
+	var owner, successor int64
+	require.NoError(t, pool.QueryRow(t.Context(), `INSERT INTO users(username,lower_username) VALUES ('settings-owner','settings-owner') RETURNING id`).Scan(&owner))
+	require.NoError(t, pool.QueryRow(t.Context(), `INSERT INTO users(username,lower_username) VALUES ('settings-successor','settings-successor') RETURNING id`).Scan(&successor))
+	_, err := pool.Exec(t.Context(), `INSERT INTO self_host_owners(user_id) VALUES($1)`, owner)
+	require.NoError(t, err)
+	capacity := &InstallCapacityService{Queries: db.New(pool), Profile: microsandbox.HostProfile{MemoryBytes: 32 << 30, PerfCores: 10, DiskFreeBytes: 400 << 30}}
+	service := &InstallSetupService{Pool: pool, Capacity: capacity}
+	value := 1
+	t.Run("pending admission does not block settings", func(t *testing.T) {
+		held, err := pool.Begin(t.Context())
+		require.NoError(t, err)
+		defer held.Rollback(context.WithoutCancel(t.Context()))
+		_, err = held.Exec(t.Context(), `SELECT user_id FROM self_host_owners FOR SHARE`)
+		require.NoError(t, err)
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+		require.NoError(t, service.SetModelSettings(ctx, owner, &value, nil))
+	})
+	t.Run("owner change still fences settings", func(t *testing.T) {
+		held, err := pool.Begin(t.Context())
+		require.NoError(t, err)
+		defer held.Rollback(context.WithoutCancel(t.Context()))
+		_, err = held.Exec(t.Context(), `UPDATE self_host_owners SET user_id=$1`, successor)
+		require.NoError(t, err)
+		ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+		defer cancel()
+		done := make(chan error, 1)
+		go func() { next := 2; done <- service.SetModelSettings(ctx, owner, &next, nil) }()
+		require.Eventually(t, func() bool {
+			var n int
+			err := pool.QueryRow(t.Context(), `SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE 'SELECT user_id FROM self_host_owners FOR %'`).Scan(&n)
+			return err == nil && n > 0
+		}, time.Second, 10*time.Millisecond)
+		require.NoError(t, held.Commit(t.Context()))
+		require.ErrorContains(t, <-done, "install owner session required")
+	})
+	status, err := capacity.Read(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, 1, status.Machines.Capacity, "refused former owner cannot change saved capacity")
 }
