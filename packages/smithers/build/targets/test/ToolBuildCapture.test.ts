@@ -321,7 +321,9 @@ describe("a final-component swap", () => {
           )
       })
     })).rejects.toMatchObject({
-      message: expect.stringContaining("could not be opened")
+      message: expect.stringContaining(
+        process.platform === "win32" ? "was replaced while it was being captured" : "could not be opened"
+      )
     })
   })
 
@@ -488,9 +490,10 @@ describe("a traversed directory swap", () => {
     await expect(measureOutput(root, ".", "out", {
       io: seam({
         openFile: async (path) => {
-          const handle = await defaultCaptureIo.openFile(path)
+          // Windows cannot rename a directory with an open file in it.
+          // Move after the listing, then return a handle to the original file.
           await Fs.rename(at("out", "nested"), at("moved"))
-          return handle
+          return defaultCaptureIo.openFile(NodePath.join(root, "moved", NodePath.basename(path)))
         }
       })
     })).rejects.toMatchObject({
