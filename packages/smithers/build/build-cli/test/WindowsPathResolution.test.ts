@@ -17,10 +17,15 @@
  * Windows row is the confirmation.
  */
 import * as Exec from "@smthrs/targets/Exec"
+import { createHash } from "node:crypto"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import * as PackageDiscovery from "../src/PackageDiscovery.ts"
+import * as PackageExec from "../src/PackageExec.ts"
+import { PackageIndex } from "../src/PackageIndex.ts"
+import * as PackageLoader from "../src/PackageLoader.ts"
 import * as PackageTree from "../src/PackageTree.ts"
 
 let bin: string
@@ -112,4 +117,55 @@ describe("windows path resolution", () => {
     const probe = await PackageTree.probeCommand(process.execPath, ["-e", "process.stdout.write('ok')"])
     expect(probe).toEqual({ exitCode: 0, output: "ok" })
   })
+})
+
+it("plans the Windows POSIX shell as a measured host executable", async () => {
+  await Fs.writeFile(
+    NodePath.join(bin, "WORKSPACE.ts"),
+    `import { Smithers as S } from "@smthrs/targets"
+export const Workspace = S.Workspace("windows-shell", {
+  repository: "git+https://example.invalid/windows-shell.git",
+  cache: S.Cache({ directory: ".flows" }),
+  runtime: S.Runtime.Node({ version: "26" }),
+  packageManager: S.PackageManager.Yarn({ manifest: S.file("//package.json"), lockfile: S.file("//yarn.lock") }),
+  nodeModules: S.Npm.NodeModules({ packageJson: S.file("//package.json") }),
+  sandboxes: S.Sandboxes({ default: S.Sandbox.None() })
+})`
+  )
+  await Fs.writeFile(
+    NodePath.join(bin, "PACKAGE.ts"),
+    `import { Smithers as S } from "@smthrs/targets"
+export const Package = S.Package({ targets: {
+  check: S.Shell.Test({ shell: "printf portable" })
+} })`
+  )
+  const shell = NodePath.join(bin, "sh.exe")
+  await Fs.writeFile(NodePath.join(bin, "package.json"), "{}")
+  await Fs.writeFile(NodePath.join(bin, "yarn.lock"), "")
+  await Fs.copyFile(process.execPath, shell)
+  const loaded = await PackageLoader.load(await PackageDiscovery.discover(bin))
+  const platform = Object.getOwnPropertyDescriptor(process, "platform")!
+  try {
+    Object.defineProperty(process, "platform", { ...platform, value: "win32" })
+    const options = {
+      index: PackageIndex.make(loaded),
+      cacheDirectory: ".flows",
+      verb: "test" as const,
+      patterns: ["//:check"],
+      plan: true as const,
+      environment: { ...process.env, PATH: bin, PATHEXT: ".EXE" }
+    }
+    const plan = await PackageExec.plan(options)
+    const node = plan.nodes.get("//:check")!
+    expect(node.refusal).toBeUndefined()
+    expect(node.argv).toEqual([shell, "-c", "printf portable"])
+    expect(JSON.stringify(node.keyMaterial)).toContain(
+      createHash("sha256").update(await Fs.readFile(shell)).digest("hex")
+    )
+    await Fs.rm(shell)
+    const absent = await PackageExec.plan(options)
+    expect(absent.nodes.get("//:check")!.refusal).toMatch(/sh.*not present on PATH/)
+  } finally {
+    Object.defineProperty(process, "platform", platform)
+  }
 })
