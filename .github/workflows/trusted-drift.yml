@@ -53,7 +53,7 @@ jobs:
         run: "pnpm exec smthrs lint '//:openapiClients' --known-red '.github/ci-known-red.json' --verbose"
       - name: "Documentation drift"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs lint '//scripts:docsDrift' --known-red '.github/ci-known-red.json' --verbose"
+        run: "pnpm exec smthrs lint '//:docsDrift' --known-red '.github/ci-known-red.json' --verbose"
       - name: "Declaration baseline"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs build '//flows:apiBaseline' --known-red '.github/ci-known-red.json' --verbose"

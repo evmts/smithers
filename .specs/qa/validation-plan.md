@@ -49,7 +49,7 @@ Evaluate reviewed applicability before creating obligations. S3 learning creates
 | Codex gpt-6.1-sol workers | Implement clear test tasks, harnesses and every discovered product fix with regression evidence. QA reviews quality and results. |
 | Sonnet pepper workers | Explore each weak defect class and author adversarial test cases under Will's process ruling. Sol owns resulting fixes and qualification automation. |
 
-Future work claims its issue before starting and refreshes before expiry. Comments, labels and releases use scripts/issue-claim.mjs; exit 75 schedules retry_at. This document does not perform issue writes or launch workers.
+Future work claims its issue before starting and refreshes before expiry. Comments, labels and releases use flows/issue-claim/issue-claim.mjs; exit 75 schedules retry_at. This document does not perform issue writes or launch workers.
 
 ## 2. Closed requirement manifest
 

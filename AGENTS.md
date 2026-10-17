@@ -188,8 +188,9 @@ remain enforced for customer repositories.
 ## Claim an issue before working it (Will, 2026-09-29)
 
 Every agent, session, machine, and Cloud worker claims an issue before starting
-it, so work is never duplicated. Use `node scripts/issue-claim.mjs
-check|claim|release|comment <repo>#<n> --by <agent/session>`.
+it, so work is never duplicated. Use `pnpm issue-claim
+check|claim|release|comment <repo>#<n> --by <agent/session>` (the
+`issue-claim` flow runs the same module through `smthrs flow start`).
 
 - Claim: the `in-progress` label plus the comment `Claimed by <agent/session>
   on <host> at <UTC>; expires <UTC+6h>`. If another agent holds an unexpired
@@ -223,7 +224,7 @@ from their implementing ticket's landing and refuse closure until then. MANUAL
 checks need an owner-signed manual receipt bound to the commit SHA; a marker is
 never passing evidence. Nothing is waived.
 
-Every check has exactly one entry in `scripts/check-commands.json`: an approved
+Every check has exactly one entry in `flows/evidence/check-commands.json`: an approved
 executable mapping, or an explicit manual/pending-owner marker. Activating any
 real mapping requires authenticated provenance: for CI, the gate must verify a
 successful GitHub check-run for `landed`; for reference-host checks, it must use

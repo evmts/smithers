@@ -26,7 +26,7 @@ After stage 1, all of Smithers' own work runs as TODOs on the install by default
 
 Record exceptions in each ticket as `Runs outside the install: <owner>, <reason>, expires <date>`.
 
-Before starting a ticket, claim its GitHub issue with `node scripts/issue-claim.mjs claim` (AGENTS.md). Ticket files carry the issue number once filed; the lead engineer (smithers-22) files them as work starts. Each ticket issue has an "Absorbs …" comment listing the older issues it folds in, and implementers read those first. Deferred work is tracked in #3467 (Cloud, billing, plans), #3468 (TUI) and #3469 (triggers and the Machine view). Parked tickets live in `tickets/deferred/`.
+Before starting a ticket, claim its GitHub issue with `pnpm issue-claim claim` (AGENTS.md). Ticket files carry the issue number once filed; the lead engineer (smithers-22) files them as work starts. Each ticket issue has an "Absorbs …" comment listing the older issues it folds in, and implementers read those first. Deferred work is tracked in #3467 (Cloud, billing, plans), #3468 (TUI) and #3469 (triggers and the Machine view). Parked tickets live in `tickets/deferred/`.
 
 **First tickets.** C-J1-04 needs nine: T-INS-01, T-INS-02, T-INS-08, T-INS-06, T-ACC-01, T-STK-01, T-STK-04, T-APP-02, T-APP-03.
 

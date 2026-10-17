@@ -1,6 +1,9 @@
 {
   "name": "@smthrs/eval-agent",
   "private": true,
+  "smthrs": {
+    "group": "tooling"
+  },
   "type": "module",
   "version": "0.0.0",
   "description": "Offline flows-agent evaluation suite, gated on the committed baseline, and the character runner for agent profiles",

@@ -13,7 +13,7 @@
  * @since 1.0.0
  */
 import { Smithers } from "@smthrs/targets"
-import { Package as scriptPackage } from "../../scripts/PACKAGE.ts"
+import { Package as repoTargetsPackage } from "../../packages/repo-targets/PACKAGE.ts"
 import { Package as errorsPackage } from "../../packages/errors/PACKAGE.ts"
 import { Package as chainPackage } from "../../packages/smithers/agent/chain/PACKAGE.ts"
 import { Package as evalsPackage } from "../../packages/smithers/agent/evals/PACKAGE.ts"
@@ -366,7 +366,7 @@ const installPageTest = Smithers.Shell.Test({
     Smithers.file("src/data/project.json"),
     Smithers.glob("src/content/docs/docs/**/*"),
     cliPackage.docsSources,
-    scriptPackage.repositoryInputs
+    repoTargetsPackage.repositoryInputs
   ]
 })
 

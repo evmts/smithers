@@ -21,7 +21,7 @@ export default defineConfig({
       // SQLite/PostgreSQL matrix measures their combined coverage; neither
       // adapter alone exercises every adapter-specific path. Remaining branch
       // gaps keep this package in `coverageFloorDeferred` in
-      // scripts/test/coverage.test.ts. Raising the last floor to 100 must remove
+      // packages/repo-targets/conformance/coverage.test.ts. Raising the last floor to 100 must remove
       // that deferral in the same change.
       thresholds: {
         branches: 95,

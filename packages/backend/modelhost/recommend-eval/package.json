@@ -1,6 +1,9 @@
 {
   "name": "@smthrs/eval-recommend",
   "private": true,
+  "smthrs": {
+    "group": "tooling"
+  },
   "type": "module",
   "version": "0.0.0",
   "description": "Scorer for the command recommender: hit@5, top-1, and coverage over the server's recommendation log",

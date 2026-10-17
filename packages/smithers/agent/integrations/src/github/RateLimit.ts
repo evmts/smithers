@@ -4,7 +4,7 @@
  * GitHub's limits belong to a principal (a user or an App installation), not
  * to a process. The proxy is the one process on a machine that calls GitHub
  * for that principal, so one limiter in it sees every request: 32 agents, a
- * flow host, and `scripts/issue-claim.mjs` spend one budget. Before each
+ * flow host, and `flows/issue-claim/issue-claim.mjs` spend one budget. Before each
  * request the limiter waits for, in order:
  *
  * - for a `POST`, `PATCH`, `PUT`, or `DELETE`, a write slot: at least 1 s after

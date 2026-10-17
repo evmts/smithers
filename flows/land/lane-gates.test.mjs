@@ -113,24 +113,24 @@ test('unformatted Go in a touched package is refused even with a tool baseline',
 })
 
 
-// //scripts:lint and //:jsdocTree share the root eslint.config.js. Lanes that
+// //flows:moduleLint and //:jsdocTree share the root eslint.config.js. Lanes that
 // landed without it reddened both release steps twice in one day (#3765).
-test('a touched operator script or package source must pass the root ESLint config, and nothing else is linted', t => {
+test('a touched automation module or package source must pass the root ESLint config, and nothing else is linted', t => {
   const dir = fixture(t)
   const root = resolve(import.meta.dirname, '../..')
   symlinkSync(join(root, 'node_modules'), join(dir, 'node_modules'), 'dir')
   for (const file of ['eslint.config.js', 'eslint.jsdoc.js']) copyFileSync(join(root, file), join(dir, file))
-  mkdirSync(join(dir, 'scripts'))
-  writeFileSync(join(dir, 'scripts/bad.mjs'), 'export const bad = 1;\n')
-  writeFileSync(join(dir, 'scripts/good.mjs'), 'export const good = 1\n')
+  mkdirSync(join(dir, 'flows'))
+  writeFileSync(join(dir, 'flows/bad.mjs'), 'export const bad = 1;\n')
+  writeFileSync(join(dir, 'flows/good.mjs'), 'export const good = 1\n')
   writeFileSync(join(dir, 'notes.mjs'), 'export const outside = 1;\n')
   const lint = (changed) => spawnSync('bash', ['-c', 'source "$1"; cd "$2"; log="$2/log"; : > "$log"; newreds=(); check_root_lint <<< "$3"; status=$?; cat "$log"; printf "newreds=%s\\n" "${newreds[*]:-}"; exit "$status"', '_', script, dir, changed], {encoding: 'utf8'})
-  const refused = lint('scripts/bad.mjs\nscripts/good.mjs\nscripts/deleted.mjs')
+  const refused = lint('flows/bad.mjs\nflows/good.mjs\nflows/deleted.mjs')
   assert.equal(refused.status, 1, refused.stderr)
   assert.match(refused.stdout, /FAIL root-eslint/)
   assert.match(refused.stdout, /bad\.mjs[\s\S]*Extra semicolon/)
   assert.match(refused.stdout, /newreds=root-eslint/)
-  const passed = lint('scripts/good.mjs\nnotes.mjs\nREADME.md')
+  const passed = lint('flows/good.mjs\nnotes.mjs\nREADME.md')
   assert.equal(passed.status, 0, passed.stdout + passed.stderr)
   assert.match(passed.stdout, /PASS root-eslint \(1 files\)/)
   const none = lint('README.md\nnotes.mjs')

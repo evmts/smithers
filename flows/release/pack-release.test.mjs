@@ -167,7 +167,7 @@ test("workspaces covers every non-private engine and agent package under package
   )
   assert.deepEqual(
     tooling.filter(([, manifest]) => manifest.private === true).map(([, manifest]) => manifest.name).sort(),
-    ["@smthrs/build-infra", "@smthrs/repo-targets", "@smthrs/rpc"]
+    ["@smthrs/build-infra", "@smthrs/eval-agent", "@smthrs/repo-targets", "@smthrs/rpc"]
   )
 })
 
@@ -328,8 +328,7 @@ test("every gate in ci.yml also runs in release.yml", () => {
     "pnpm exec smthrs ci '//apps/tui/...' --verbose",
     "pnpm exec smthrs test '//apps/tui:e2eTests' --verbose",
     "pnpm exec smthrs test '//packages/...:faults' --jobs 1 --verbose",
-    "pnpm exec smthrs test '//packages/smithers/flows/engine-store:disasterRecovery' --verbose",
-    "pnpm exec smthrs test '//scripts:releaseVersion' --verbose"
+    "pnpm exec smthrs test '//packages/smithers/flows/engine-store:disasterRecovery' --verbose"
   ]
   const command = (step) => graphCommands([step])[0]
   const gate = (step) => command(step).replace(/ --results-file "\$RUNNER_TEMP\/smthrs-results\/\$GITHUB_ACTION.json"/g, "")
@@ -497,9 +496,13 @@ test("packsPath reads npm files globs the way npm packs them", () => {
 test("every published library takes Effect as a ranged peer and every executable installs the tested release", () => {
   const manifests = readWorkspaceManifests()
   const published = packedWorkspaces.map((directory) => manifests.get(directory))
-  const peers = new Set(published.filter((manifest) => manifest.bin === undefined).map((manifest) => manifest.peerDependencies?.effect).filter((range) => range !== undefined))
+  const peers = new Set(published.filter((manifest) => manifest.bin === undefined || manifest.name === "@smthrs/testing").map((manifest) => manifest.peerDependencies?.effect).filter((range) => range !== undefined))
   assert.deepEqual([...peers], [SUPPORTED_EFFECT_RANGE], "one supported Effect range across the published libraries")
-  const installed = published.filter((manifest) => manifest.bin !== undefined && manifest.peerDependencies?.effect !== undefined)
+  // `@smthrs/testing` is a library a consumer installs beside its own Effect;
+  // its `smthrs-model-server` bin runs inside that install, so it takes the
+  // ranged library peer like any other library.
+  const library = (manifest) => manifest.bin === undefined || manifest.name === "@smthrs/testing"
+  const installed = published.filter((manifest) => !library(manifest) && manifest.peerDependencies?.effect !== undefined)
   assert.deepEqual(
     installed.map((manifest) => [manifest.name, manifest.peerDependencies.effect, manifest.dependencies?.effect]).sort(),
     ["@smthrs/build-cli", "@smthrs/cli", "@smthrs/migrate"].map((name) => [name, EXPECTED_EFFECT_VERSION, undefined]),
@@ -530,7 +533,7 @@ test("published adapters remain optional while executable SQLite and Bun host pr
   const peerRanges = {
     // An optional Effect adapter has no range: the application picks it with
     // its own Effect, and npm --strict-peer-deps refused a pinned application
-    // over a ranged one (scripts/check-single-effect-version.mjs). The tested
+    // over a ranged one (packages/repo-targets/contracts/check-single-effect-version.mjs). The tested
     // release is what the package itself develops against.
     "@effect/sql-sqlite-node": undefined,
     "@effect/sql-sqlite-bun": EXPECTED_EFFECT_VERSION,

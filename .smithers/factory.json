@@ -174,8 +174,8 @@
       "path": "flows/issue-sweep/flow.ts",
       "capabilities": [
         "proc:spawn:gh api *",
-        "proc:spawn:node /*/scripts/github-proxy.mjs --ensure",
-        "proc:spawn:node /*/scripts/issue-claim.mjs *",
+        "proc:spawn:node /*/flows/issue-claim/github-proxy.mjs --ensure",
+        "proc:spawn:node /*/flows/issue-claim/issue-claim.mjs *",
         "proc:spawn:jj -R *",
         "proc:spawn:lockf *",
         "proc:spawn:pnpm *",
@@ -1048,7 +1048,7 @@
       "path": "flows/issue-sweep/work/flow.ts",
       "capabilities": [
         "proc:spawn:gh api *",
-        "proc:spawn:node /*/scripts/github-proxy.mjs --ensure",
+        "proc:spawn:node /*/flows/issue-claim/github-proxy.mjs --ensure",
         "proc:spawn:jj -R *",
         "proc:spawn:git --git-dir *",
         "proc:spawn:pnpm *",

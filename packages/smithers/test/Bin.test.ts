@@ -1225,7 +1225,7 @@ describe("the smithers bin shim", processBudget, () => {
   })
 
   it("runs the working-tree source when dist is absent", () => {
-    // The development path `scripts/check-local-smithers.mjs` requires: a fresh
+    // The development path `packages/smithers/test/support/check-local-smithers.mjs` requires: a fresh
     // checkout has no `dist`, and `pnpm exec smithers` must still run the code
     // under edit rather than a published build. The shim is copied into a
     // package root that has `src` and no `dist`, which is exactly that shape.

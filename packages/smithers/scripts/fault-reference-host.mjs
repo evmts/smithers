@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from 'node:fs'
 export function requireReferenceFaultHost({ platform, uuid, hosts, bundleExists }) {
   if (platform !== 'darwin') throw new Error('reference faults require the approved macOS reference host')
   if (!uuid || !hosts.some(host => host.ioPlatformUUID?.toLowerCase() === uuid.toLowerCase())) {
-    throw new Error('reference faults require an IOPlatformUUID in scripts/reference-host/hosts.json')
+    throw new Error('reference faults require an IOPlatformUUID in packages/smithers/test/support/reference-hosts.json')
   }
   if (!bundleExists) throw new Error('reference faults require the installed bundle at .artifacts/fault-install-bundle')
 }
@@ -17,7 +17,7 @@ if (process.argv[1]?.endsWith('/fault-reference-host.mjs')) {
     requireReferenceFaultHost({
       platform,
       uuid: hardware.match(/"IOPlatformUUID"\s*=\s*"([^"]+)"/)?.[1],
-      hosts: JSON.parse(readFileSync('scripts/reference-host/hosts.json', 'utf8')).hosts,
+      hosts: JSON.parse(readFileSync('packages/smithers/test/support/reference-hosts.json', 'utf8')).hosts,
       bundleExists: existsSync('.artifacts/fault-install-bundle')
     })
   } catch (error) {

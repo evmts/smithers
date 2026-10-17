@@ -419,7 +419,7 @@ const journeyTodoNeedsYou = Smithers.NodeTest({
 const journeyTodoEvidence = Smithers.NodeTest({
   runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
   runner: Smithers.entrypoint(Smithers.file("scripts/run-journey-j2.ts"), ["todo-evidence"]),
-  srcs: [suiteSources, harnessSources, Smithers.file("playwright.real.config.ts"), Smithers.file("//scripts/check-evidence.mjs")],
+  srcs: [suiteSources, harnessSources, Smithers.file("playwright.real.config.ts"), Smithers.file("//flows/evidence/check-evidence.mjs")],
   deps: [], exclusive: true, cache: false, timeout: "16m", cwd
 })
 

@@ -1,0 +1,3613 @@
+{
+  "version": 1,
+  "activation": {
+    "mappingsApprovedBy": null,
+    "coverageAcceptedBy": "smithers-8a"
+  },
+  "checks": {
+    "C-ACC-01": {
+      "status": "pending-owner",
+      "reason": "Automation present: packages/backend/internal/compose/access_matrix_integration_test.go; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-ACC-02",
+      "pendingBinding": {
+        "files": [
+          "packages/backend/internal/compose/access_matrix_integration_test.go"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "go",
+              "test",
+              "-json",
+              "-count=1",
+              "./internal/compose",
+              "-run",
+              "^(TestAccessMatrixConfirmationDispatchComposedInstall)$"
+            ],
+            "cwd": "packages/backend",
+            "files": [
+              "packages/backend/internal/compose/access_matrix_integration_test.go"
+            ],
+            "reporter": "go",
+            "expectedCaseIds": [
+              "TestAccessMatrixConfirmationDispatchComposedInstall"
+            ],
+            "prerequisites": [],
+            "env": {}
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-ACC-02": {
+      "status": "pending-owner",
+      "reason": "Automation present: packages/backend/internal/compose/confirmations_integration_test.go; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-ACC-04",
+      "pendingBinding": {
+        "files": [
+          "packages/backend/internal/compose/confirmations_integration_test.go"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "go",
+              "test",
+              "-json",
+              "-count=1",
+              "./internal/compose",
+              "-run",
+              "^(TestConfirmationsInstallBoundaryPostgres|TestConfirmationMergeSettlementInstallBoundaryPostgres)$"
+            ],
+            "cwd": "packages/backend",
+            "files": [
+              "packages/backend/internal/compose/confirmations_integration_test.go"
+            ],
+            "reporter": "go",
+            "expectedCaseIds": [
+              "TestConfirmationsInstallBoundaryPostgres",
+              "TestConfirmationMergeSettlementInstallBoundaryPostgres"
+            ],
+            "prerequisites": [
+              "PG18"
+            ],
+            "env": {
+              "SMITHERS_REQUIRE_DATABASE_TESTS": "1"
+            }
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-ACC-03": {
+      "status": "pending-owner",
+      "reason": "Automation present: packages/backend/internal/compose/member_revocation_integration_test.go; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-ACC-02",
+      "pendingBinding": {
+        "files": [
+          "packages/backend/internal/compose/member_revocation_integration_test.go"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "go",
+              "test",
+              "-json",
+              "-count=1",
+              "./internal/compose",
+              "-run",
+              "^TestMembersComposedInstallPostgres$"
+            ],
+            "cwd": "packages/backend",
+            "files": [
+              "packages/backend/internal/compose/member_revocation_integration_test.go",
+              "packages/backend/internal/compose/members_integration_test.go"
+            ],
+            "reporter": "go",
+            "expectedCaseIds": [
+              "TestMembersComposedInstallPostgres"
+            ],
+            "prerequisites": [
+              "PG18"
+            ],
+            "env": {
+              "SMITHERS_REQUIRE_DATABASE_TESTS": "1"
+            }
+          }
+        ],
+        "provenance": "exerciseMemberRevocation is invoked by TestMembersComposedInstallPostgres; helper file alone declares no runnable test"
+      }
+    },
+    "C-ACC-04": {
+      "status": "pending-owner",
+      "reason": "Composed owner OAuth and setup claim automation present; remaining check steps and authenticated owner approval of argv/host pending",
+      "ticket": "T-ACC-01",
+      "pendingBinding": {
+        "files": [
+          "packages/backend/internal/compose/owner_signin_integration_test.go"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "go",
+              "test",
+              "-json",
+              "-count=1",
+              "./internal/compose",
+              "-run",
+              "^(TestOwnerSignInHTTPPostgres|TestOwnerSignInRefusalLandsOnSetupCardPostgres)$"
+            ],
+            "cwd": "packages/backend",
+            "files": [
+              "packages/backend/internal/compose/owner_signin_integration_test.go"
+            ],
+            "reporter": "go",
+            "expectedCaseIds": [
+              "TestOwnerSignInHTTPPostgres",
+              "TestOwnerSignInRefusalLandsOnSetupCardPostgres"
+            ],
+            "prerequisites": [
+              "PG18"
+            ],
+            "env": {
+              "SMITHERS_REQUIRE_DATABASE_TESTS": "1"
+            }
+          },
+          {
+            "argv": [
+              "go",
+              "test",
+              "-json",
+              "-count=1",
+              "./internal/compose",
+              "-run",
+              "^TestMembersComposedInstallPostgres$"
+            ],
+            "cwd": "packages/backend",
+            "files": [
+              "packages/backend/internal/compose/member_revocation_integration_test.go",
+              "packages/backend/internal/compose/members_integration_test.go"
+            ],
+            "reporter": "go",
+            "expectedCaseIds": [
+              "TestMembersComposedInstallPostgres"
+            ],
+            "prerequisites": [
+              "PG18"
+            ],
+            "env": {
+              "SMITHERS_REQUIRE_DATABASE_TESTS": "1"
+            }
+          }
+        ],
+        "unboundSubcases": [
+          "Exact C-ACC-04 fixture matrix, both listeners and complete check-step qualification remain pending; existing member suite proves HTTP OAuth roster and GitHub-access refusals"
+        ],
+        "subcases": {
+          "owner-claim-and-refusals": {
+            "files": [
+              "packages/backend/internal/compose/owner_signin_integration_test.go"
+            ],
+            "commands": [
+              {
+                "argv": [
+                  "go",
+                  "test",
+                  "-json",
+                  "-count=1",
+                  "./internal/compose",
+                  "-run",
+                  "^(TestOwnerSignInHTTPPostgres|TestOwnerSignInRefusalLandsOnSetupCardPostgres)$"
+                ],
+                "cwd": "packages/backend",
+                "files": [
+                  "packages/backend/internal/compose/owner_signin_integration_test.go"
+                ],
+                "reporter": "go",
+                "expectedCaseIds": [
+                  "TestOwnerSignInHTTPPostgres",
+                  "TestOwnerSignInRefusalLandsOnSetupCardPostgres"
+                ],
+                "prerequisites": [
+                  "PG18"
+                ],
+                "env": {
+                  "SMITHERS_REQUIRE_DATABASE_TESTS": "1"
+                }
+              }
+            ]
+          },
+          "roster-signin": {
+            "commands": [
+              {
+                "argv": [
+                  "go",
+                  "test",
+                  "-json",
+                  "-count=1",
+                  "./internal/compose",
+                  "-run",
+                  "^TestMembersComposedInstallPostgres$"
+                ],
+                "cwd": "packages/backend",
+                "files": [
+                  "packages/backend/internal/compose/member_revocation_integration_test.go",
+                  "packages/backend/internal/compose/members_integration_test.go"
+                ],
+                "reporter": "go",
+                "expectedCaseIds": [
+                  "TestMembersComposedInstallPostgres"
+                ],
+                "prerequisites": [
+                  "PG18"
+                ],
+                "env": {
+                  "SMITHERS_REQUIRE_DATABASE_TESTS": "1"
+                }
+              }
+            ]
+          }
+        },
+        "provenance": "Actual TestOwnerSignInHTTPPostgres and TestOwnerSignInRefusalLandsOnSetupCardPostgres assertions inspected 2026-10-10; setup digests/rotation/restart in TestSetupClaimAtomicAndRestart; no invented test aliases; TestMembersComposedInstallPostgres exercises actual HTTP OAuth member/admission refusal and provider failure cases"
+      }
+    },
+    "C-AGT-01": {
+      "status": "pending-owner",
+      "reason": "Automation unavailable/unapproved; owner must supply argv and host",
+      "ticket": "T-AGT-01"
+    },
+    "C-AGT-02": {
+      "status": "pending-owner",
+      "reason": "Automation unavailable/unapproved; owner must supply argv and host",
+      "ticket": "T-AGT-02"
+    },
+    "C-APP-01": {
+      "status": "pending-owner",
+      "reason": "Absent: apps/app/e2e/real/todo-takeover.spec.ts",
+      "ticket": "T-ACC-06"
+    },
+    "C-APP-02": {
+      "status": "pending-owner",
+      "reason": "Absent: apps/app/e2e/real/todo-edit-queued.spec.ts",
+      "ticket": "T-APP-02"
+    },
+    "C-APP-03": {
+      "status": "pending-owner",
+      "reason": "Absent: apps/app/e2e/real/machine-image.spec.ts",
+      "ticket": "T-APP-02"
+    },
+    "C-APP-04": {
+      "status": "pending-owner",
+      "reason": "Absent: packages/backend/internal/services/conversations_db_test.go, packages/backend/internal/routes/conversations_test.go, apps/app/src/mainview/cards/containers/EarlierContainer.test.tsx",
+      "ticket": "T-APP-16"
+    },
+    "C-APP-05": {
+      "status": "pending-owner",
+      "reason": "Absent: packages/backend/internal/chat/cutover_integration_test.go",
+      "ticket": "T-APP-23"
+    },
+    "C-CAT-01": {
+      "status": "pending-owner",
+      "reason": "Absent: apps/app/src/mainview/flows/catalog-allowlist.test.ts, packages/rpc/src/catalog/AppendixA.test.ts",
+      "ticket": "T-CAT-01"
+    },
+    "C-CAT-02": {
+      "status": "pending-owner",
+      "reason": "Automation present: packages/smithers/test/CatalogCli.test.ts; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-CAT-02",
+      "pendingBinding": {
+        "files": [
+          "packages/smithers/test/CatalogCli.test.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "vitest",
+              "run",
+              "packages/smithers/test/CatalogCli.test.ts",
+              "--reporter=json"
+            ],
+            "files": [
+              "packages/smithers/test/CatalogCli.test.ts"
+            ],
+            "reporter": "vitest",
+            "expectedCaseIds": []
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-CAT-03": {
+      "status": "pending-owner",
+      "reason": "Absent: packages/smithers/test/CatalogSkill.test.ts",
+      "ticket": "T-CAT-02"
+    },
+    "C-COL-01": {
+      "status": "pending-owner",
+      "reason": "Automation present: packages/backend/internal/compose/cocontracts_test.go; authenticated owner approval of argv/host and qualification receipts pending; Absent: apps/app/src/mainview/cards/CodeSurface.test.tsx",
+      "ticket": "T-COL-10",
+      "pendingBinding": {
+        "files": [
+          "packages/backend/internal/compose/cocontracts_test.go"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "go",
+              "test",
+              "-json",
+              "-count=1",
+              "./internal/compose",
+              "-run",
+              "^(TestMachinedWireGoldenFrames|TestMachinedWireProofs|TestMachinedWireRefusals|TestWireContentLimit|TestMachinedSkeletonDisabled|TestMachinedWireFixturesMatchGenerator|TestMachinedFakeGoldenReplay|TestMachinedFakeFaultReplay|TestMachinedFakeUnscriptedRefusal|TestWorkingTogetherWireContract|TestMachinedPresenceRow4LocationExpansion)$"
+            ],
+            "cwd": "packages/backend",
+            "files": [
+              "packages/backend/internal/compose/cocontracts_test.go"
+            ],
+            "reporter": "go",
+            "expectedCaseIds": [
+              "TestMachinedWireGoldenFrames",
+              "TestMachinedWireProofs",
+              "TestMachinedWireRefusals",
+              "TestWireContentLimit",
+              "TestMachinedSkeletonDisabled",
+              "TestMachinedWireFixturesMatchGenerator",
+              "TestMachinedFakeGoldenReplay",
+              "TestMachinedFakeFaultReplay",
+              "TestMachinedFakeUnscriptedRefusal",
+              "TestWorkingTogetherWireContract",
+              "TestMachinedPresenceRow4LocationExpansion"
+            ],
+            "prerequisites": [],
+            "env": {}
+          }
+        ],
+        "unboundSubcases": [
+          "Missing automation: apps/app/src/mainview/cards/CodeSurface.test.tsx"
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-COL-02": {
+      "status": "pending-owner",
+      "reason": "Automation present: packages/backend/internal/live/live_resubscribe_fault_test.go; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-COL-02",
+      "pendingBinding": {
+        "files": [
+          "packages/backend/internal/live/live_resubscribe_fault_test.go"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "go",
+              "test",
+              "-json",
+              "-count=1",
+              "./internal/live",
+              "-run",
+              "^(TestLiveResubscribeSourceCursorsFault)$"
+            ],
+            "cwd": "packages/backend",
+            "files": [
+              "packages/backend/internal/live/live_resubscribe_fault_test.go"
+            ],
+            "reporter": "go",
+            "expectedCaseIds": [
+              "TestLiveResubscribeSourceCursorsFault"
+            ],
+            "prerequisites": [],
+            "env": {}
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-COL-03": {
+      "status": "pending-owner",
+      "reason": "Automation present: packages/smithers-machined/tests/barrier.rs; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-COL-03",
+      "pendingBinding": {
+        "files": [
+          "packages/smithers-machined/tests/barrier.rs"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "cargo",
+              "test",
+              "--manifest-path",
+              "packages/smithers-machined/Cargo.toml",
+              "--test",
+              "barrier"
+            ],
+            "files": [
+              "packages/smithers-machined/tests/barrier.rs"
+            ],
+            "reporter": "cargo",
+            "prerequisites": [
+              "native-runtime"
+            ]
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-COL-04": {
+      "status": "pending-owner",
+      "reason": "Automation present: packages/smithers-machined/tests/confinement.rs, packages/backend/internal/machined/confinement_integration_test.go; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-COL-03",
+      "pendingBinding": {
+        "files": [
+          "packages/smithers-machined/tests/confinement.rs",
+          "packages/backend/internal/machined/confinement_integration_test.go"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "cargo",
+              "test",
+              "--manifest-path",
+              "packages/smithers-machined/Cargo.toml",
+              "--test",
+              "confinement"
+            ],
+            "files": [
+              "packages/smithers-machined/tests/confinement.rs"
+            ],
+            "reporter": "cargo",
+            "prerequisites": [
+              "native-runtime"
+            ]
+          },
+          {
+            "argv": [
+              "go",
+              "test",
+              "-json",
+              "-count=1",
+              "./internal/machined",
+              "-run",
+              "^(TestLspRootInputsValidatedBeforeUse)$"
+            ],
+            "cwd": "packages/backend",
+            "files": [
+              "packages/backend/internal/machined/confinement_integration_test.go"
+            ],
+            "reporter": "go",
+            "expectedCaseIds": [
+              "TestLspRootInputsValidatedBeforeUse"
+            ],
+            "prerequisites": [],
+            "env": {}
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-COL-05": {
+      "status": "pending-owner",
+      "reason": "Automation present: packages/smithers-machined/tests/versions.rs, packages/smithers-machined/tests/overflow.rs, packages/backend/internal/machined/events_integration_test.go; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-COL-04",
+      "pendingBinding": {
+        "files": [
+          "packages/smithers-machined/tests/versions.rs",
+          "packages/smithers-machined/tests/overflow.rs",
+          "packages/backend/internal/machined/events_integration_test.go"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "cargo",
+              "test",
+              "--manifest-path",
+              "packages/smithers-machined/Cargo.toml",
+              "--test",
+              "versions"
+            ],
+            "files": [
+              "packages/smithers-machined/tests/versions.rs"
+            ],
+            "reporter": "cargo",
+            "prerequisites": [
+              "native-runtime"
+            ]
+          },
+          {
+            "argv": [
+              "cargo",
+              "test",
+              "--manifest-path",
+              "packages/smithers-machined/Cargo.toml",
+              "--test",
+              "overflow"
+            ],
+            "files": [
+              "packages/smithers-machined/tests/overflow.rs"
+            ],
+            "reporter": "cargo",
+            "prerequisites": [
+              "native-runtime"
+            ]
+          },
+          {
+            "argv": [
+              "go",
+              "test",
+              "-json",
+              "-count=1",
+              "./internal/machined",
+              "-run",
+              "^(TestBurstIngestProductionBoundary|TestBurstMultipartProductionBoundary|TestChangeIntegrationLandsDark|TestBurstAttributionDoesNotHoldSpawnReceiptLock|TestBurstAdmissionWorkspaceIdentityLock|TestBurstWaitingForWorkspaceLeavesRosterUsable|TestBurstPreparationAllowsBootReplacement|TestBurstWorkspaceAuthorityDoesNotHoldRegistry|TestBurstWorkspaceLockDoesNotBlockBootRevocation)$"
+            ],
+            "cwd": "packages/backend",
+            "files": [
+              "packages/backend/internal/machined/events_integration_test.go"
+            ],
+            "reporter": "go",
+            "expectedCaseIds": [
+              "TestBurstIngestProductionBoundary",
+              "TestBurstMultipartProductionBoundary",
+              "TestChangeIntegrationLandsDark",
+              "TestBurstAttributionDoesNotHoldSpawnReceiptLock",
+              "TestBurstAdmissionWorkspaceIdentityLock",
+              "TestBurstWaitingForWorkspaceLeavesRosterUsable",
+              "TestBurstPreparationAllowsBootReplacement",
+              "TestBurstWorkspaceAuthorityDoesNotHoldRegistry",
+              "TestBurstWorkspaceLockDoesNotBlockBootRevocation"
+            ],
+            "prerequisites": [
+              "PG18"
+            ],
+            "env": {
+              "SMITHERS_REQUIRE_DATABASE_TESTS": "1"
+            }
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-COL-06": {
+      "status": "pending-owner",
+      "reason": "Machined wire target requires smithers-22 mapping approval and authenticated CI evidence",
+      "ticket": "T-COL-03r",
+      "pendingBinding": {
+        "target": "//:machinedWire",
+        "host": "CI"
+      }
+    },
+    "C-CUT-01": {
+      "status": "pending-owner",
+      "reason": "Absent: packages/rpc/src/catalog/Cuts.test.ts, packages/backend/internal/compose/cut_routes_test.go",
+      "ticket": "T-CUT-01"
+    },
+    "C-CUT-02": {
+      "status": "pending-owner",
+      "reason": "Absent: packages/rpc/test/cards/LegacyCards.test.ts, apps/app/e2e/playwright/legacy-archive.spec.ts",
+      "ticket": "T-APP-22"
+    },
+    "C-DUR-01": {
+      "status": "pending-owner",
+      "reason": "Host/start controls exist; complete install-recovery qualification and owner-approved argv/host mapping are still required",
+      "ticket": "T-FLW-09"
+    },
+    "C-DUR-02": {
+      "status": "pending-owner",
+      "reason": "Machine controls exist; approved Apple Silicon bundle, reference-host qualification and owner-approved argv/host mapping are still required",
+      "ticket": "T-FLW-09"
+    },
+    "C-DUR-03": {
+      "status": "pending-owner",
+      "reason": "Automation unavailable/unapproved; owner must supply argv and host",
+      "ticket": "T-GH-09"
+    },
+    "C-DUR-04": {
+      "status": "pending-owner",
+      "reason": "Host-ingest controls and composed reference rebase automation (internal/compose/rebase_fault_test.go) exist; full K1\u2013K6, mini rebase/root-input execution and authenticated owner-approved host mapping are still required",
+      "ticket": "T-COL-03"
+    },
+    "C-DUR-05": {
+      "status": "pending-owner",
+      "reason": "T-COL-13 outbox version compatibility requires owner-approved executable mapping and authenticated evidence",
+      "ticket": "T-COL-13"
+    },
+    "C-FM-01": {
+      "status": "pending-owner",
+      "reason": "Requires smithers-22 approved target and authenticated qualification evidence.",
+      "ticket": "T-FM-01"
+    },
+    "C-FM-02": {
+      "status": "pending-owner",
+      "reason": "Requires smithers-22 approved target and authenticated qualification evidence.",
+      "ticket": "T-FM-02"
+    },
+    "C-GH-01": {
+      "status": "manual",
+      "reason": "Person/hardware required: recorded manual (W0), reference host (S1); Automation unavailable/unapproved; owner must supply argv and host"
+    },
+    "C-GH-07": {
+      "status": "pending-owner",
+      "reason": "Runner present: flows/perf/github-freshness/github-freshness.mjs; requires aggregate check/review projections, two-phase reference-host evidence and owner-approved argv/host",
+      "ticket": "T-GH-02"
+    },
+    "C-GH-08": {
+      "status": "pending-owner",
+      "reason": "Production composition tests present in packages/backend/internal/compose/github_polling_integration_test.go; native/unprivileged reference-host evidence and owner-approved argv/host remain required",
+      "ticket": "T-GH-02"
+    },
+    "C-GH-09": {
+      "status": "pending-owner",
+      "reason": "Automation present: packages/backend/internal/compose/github_outbound_kill_test.go (reference production dispatcher/worker; historical Linux controls supplemental); reference-host/native-dispatch evidence, authenticated executable mapping and owner approval pending",
+      "ticket": "T-GH-09"
+    },
+    "C-GH-13": {
+      "status": "pending-owner",
+      "reason": "Absent: packages/backend/internal/services/github_inbound_test.go, packages/backend/internal/services/github_inbound_db_test.go",
+      "ticket": "T-GH-04"
+    },
+    "C-INS-01": {
+      "status": "manual",
+      "reason": "Person/hardware required: reference host plus a second Mac on the same network (a proxy certificate the browser trusts, WebKit, the installed process tree). Automation present: apps/app/e2e/real/install-origins.spec.ts and apps/app/e2e/real/support/listeners.ts; the loopback, LAN, .local and HTTPS proxy origins pass in Chromium on the composed install (packages/backend TestInstallOriginsBrowser with SMITHERS_INSTALL_ORIGINS_BROWSER=1)"
+    },
+    "C-INS-03": {
+      "status": "pending-owner",
+      "reason": "Automation present: packages/backend/internal/compose/serving_integration_test.go, packages/smithers/test/host-service.integration.test.ts; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-INS-04",
+      "pendingBinding": {
+        "files": [
+          "packages/backend/internal/compose/serving_integration_test.go",
+          "packages/smithers/test/host-service.integration.test.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "go",
+              "test",
+              "-json",
+              "-count=1",
+              "./internal/compose",
+              "-run",
+              "^(TestInstallServingOriginBoundaryPostgres|TestInstallServingOwnerAddressUpdatePostgres|TestInstallServingLiveOriginReconnectPostgres)$"
+            ],
+            "cwd": "packages/backend",
+            "files": [
+              "packages/backend/internal/compose/serving_integration_test.go"
+            ],
+            "reporter": "go",
+            "expectedCaseIds": [
+              "TestInstallServingOriginBoundaryPostgres",
+              "TestInstallServingOwnerAddressUpdatePostgres",
+              "TestInstallServingLiveOriginReconnectPostgres"
+            ],
+            "prerequisites": [
+              "PG18"
+            ],
+            "env": {
+              "SMITHERS_REQUIRE_DATABASE_TESTS": "1"
+            }
+          },
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "vitest",
+              "run",
+              "packages/smithers/test/host-service.integration.test.ts",
+              "--reporter=json"
+            ],
+            "files": [
+              "packages/smithers/test/host-service.integration.test.ts"
+            ],
+            "reporter": "vitest",
+            "expectedCaseIds": []
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-INS-05": {
+      "status": "pending-owner",
+      "reason": "Bundle integration test exists; positive readiness, offline boot and PostgreSQL persistence require a current owner-approved install and signed reference-host receipt",
+      "ticket": "T-INS-01",
+      "pendingBinding": {
+        "commands": [
+          {
+            "argv": [
+              "bun",
+              "test",
+              "./apps/app/scripts/server-bundle.integration.test.ts"
+            ],
+            "files": [
+              "apps/app/scripts/server-bundle.integration.test.ts"
+            ],
+            "reporter": "bun",
+            "prerequisites": [
+              "darwin-arm64",
+              "PG18",
+              "msb",
+              "build-budget"
+            ],
+            "env": {
+              "SMITHERS_REQUIRE_DATABASE_TESTS": "1",
+              "SMITHERS_REQUIRE_MICROVM_TESTS": "1"
+            }
+          }
+        ],
+        "provenance": "T-INS-01 integration file; apps/app bun:test runner contract"
+      }
+    },
+    "C-INS-06": {
+      "status": "pending-owner",
+      "reason": "Automation present: packages/smithers/test/host-service.integration.test.ts; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-INS-08",
+      "pendingBinding": {
+        "files": [
+          "packages/smithers/test/host-service.integration.test.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "vitest",
+              "run",
+              "packages/smithers/test/host-service.integration.test.ts",
+              "--reporter=json"
+            ],
+            "files": [
+              "packages/smithers/test/host-service.integration.test.ts"
+            ],
+            "reporter": "vitest",
+            "expectedCaseIds": []
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-J1-01": {
+      "status": "manual",
+      "reason": "Person/hardware required: reference mini, fresh macOS user account with no prior Smithers state, recorded manual"
+    },
+    "C-J1-02": {
+      "status": "pending-owner",
+      "reason": "Automation present: apps/app/e2e/real/setup.spec.ts, packages/backend/internal/compose/install_setup_integration_test.go; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-INS-06",
+      "pendingBinding": {
+        "files": [
+          "apps/app/e2e/real/setup.spec.ts",
+          "packages/backend/internal/compose/install_setup_integration_test.go"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "playwright",
+              "test",
+              "--config",
+              "playwright.real.config.ts",
+              "e2e/real/setup.spec.ts",
+              "--reporter=json"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/e2e/real/setup.spec.ts"
+            ],
+            "reporter": "playwright",
+            "expectedCaseIds": [],
+            "prerequisites": [
+              "reference-host",
+              "installed-bundle"
+            ]
+          },
+          {
+            "argv": [
+              "go",
+              "test",
+              "-json",
+              "-count=1",
+              "./internal/compose",
+              "-run",
+              "^(TestInstallSetupCookieBoundaryPostgres|TestInstallMachineLeaseRecoveryHTTPPostgres)$"
+            ],
+            "cwd": "packages/backend",
+            "files": [
+              "packages/backend/internal/compose/install_setup_integration_test.go"
+            ],
+            "reporter": "go",
+            "expectedCaseIds": [
+              "TestInstallSetupCookieBoundaryPostgres",
+              "TestInstallMachineLeaseRecoveryHTTPPostgres"
+            ],
+            "prerequisites": [
+              "PG18"
+            ],
+            "env": {
+              "SMITHERS_REQUIRE_DATABASE_TESTS": "1"
+            }
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-J1-03": {
+      "status": "pending-owner",
+      "reason": "Automation present: apps/app/e2e/real/first-answer.spec.ts; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-INS-06",
+      "pendingBinding": {
+        "files": [
+          "apps/app/e2e/real/first-answer.spec.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "playwright",
+              "test",
+              "--config",
+              "playwright.real.config.ts",
+              "e2e/real/first-answer.spec.ts",
+              "--reporter=json"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/e2e/real/first-answer.spec.ts"
+            ],
+            "reporter": "playwright",
+            "expectedCaseIds": [],
+            "prerequisites": [
+              "reference-host",
+              "installed-bundle"
+            ]
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-J1-04": {
+      "status": "pending-owner",
+      "reason": "Automation present; awaiting first-merge tickets and smithers-22 approval",
+      "ticket": "T-INS-06",
+      "pendingBinding": {
+        "target": "//apps/app:journeyJ1Activation"
+      }
+    },
+    "C-J1-05": {
+      "status": "pending-owner",
+      "reason": "Automation present: apps/app/e2e/real/members.spec.ts; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-ACC-02",
+      "pendingBinding": {
+        "files": [
+          "apps/app/e2e/real/members.spec.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "playwright",
+              "test",
+              "--config",
+              "playwright.real.config.ts",
+              "e2e/real/members.spec.ts",
+              "--reporter=json"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/e2e/real/members.spec.ts"
+            ],
+            "reporter": "playwright",
+            "expectedCaseIds": [],
+            "prerequisites": [
+              "reference-host",
+              "installed-bundle"
+            ]
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-J1-06": {
+      "status": "pending-owner",
+      "reason": "Automation present: apps/app/e2e/real/fresh-repository.spec.ts; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-MCH-10",
+      "pendingBinding": {
+        "files": [
+          "apps/app/e2e/real/fresh-repository.spec.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "playwright",
+              "test",
+              "--config",
+              "playwright.real.config.ts",
+              "e2e/real/fresh-repository.spec.ts",
+              "--reporter=json"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/e2e/real/fresh-repository.spec.ts"
+            ],
+            "reporter": "playwright",
+            "expectedCaseIds": [],
+            "prerequisites": [
+              "reference-host",
+              "installed-bundle"
+            ]
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-J10-01": {
+      "status": "pending-owner",
+      "reason": "Spec: apps/app/e2e/real/github-j10/pr-shape.spec.ts; composed driver: TestJ10PRShapeBrowser (SMITHERS_J10_BROWSER=1); reference-host qualification and executable mapping approval pending",
+      "ticket": "T-GH-03"
+    },
+    "C-J10-02": {
+      "status": "pending-owner",
+      "reason": "Automation present: apps/app/e2e/real/github-j10/review-steer.spec.ts; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-GH-04",
+      "pendingBinding": {
+        "files": [
+          "apps/app/e2e/real/github-j10/review-steer.spec.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "playwright",
+              "test",
+              "--config",
+              "playwright.real.config.ts",
+              "e2e/real/github-j10/review-steer.spec.ts",
+              "--reporter=json"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/e2e/real/github-j10/review-steer.spec.ts"
+            ],
+            "reporter": "playwright",
+            "expectedCaseIds": [],
+            "prerequisites": [
+              "reference-host",
+              "installed-bundle"
+            ]
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-J10-03": {
+      "status": "pending-owner",
+      "reason": "Spec: apps/app/e2e/real/github-j10/foreign-push.spec.ts; composed driver: TestJ10ForeignPushBrowser (SMITHERS_J10_BROWSER=1); reference-host qualification and executable mapping approval pending",
+      "ticket": "T-GH-06"
+    },
+    "C-J10-04": {
+      "status": "pending-owner",
+      "reason": "Automation present: TestRebaseNowRehearsal and TestRebaseNowBrowserRehearsal (apps/app/e2e/real/github-j10/rebase-now.spec.ts); checkpoint, presence and departure execute on the trusted-process install. Reference microVM, complete writer freeze matrix and owner-approved mapping remain pending",
+      "ticket": "T-STK-08"
+    },
+    "C-J10-05": {
+      "status": "pending-owner",
+      "reason": "Spec: apps/app/e2e/real/github-j10/merge-on-github.spec.ts; composed driver: TestJ10MergeOnGitHubBrowser (SMITHERS_J10_BROWSER=1); reference-host qualification and executable mapping approval pending",
+      "ticket": "T-GH-03"
+    },
+    "C-J10-06": {
+      "status": "pending-owner",
+      "reason": "Automation present: apps/app/e2e/real/github-j10/sync-health.spec.ts; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-GH-08",
+      "pendingBinding": {
+        "files": [
+          "apps/app/e2e/real/github-j10/sync-health.spec.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "playwright",
+              "test",
+              "--config",
+              "playwright.real.config.ts",
+              "e2e/real/github-j10/sync-health.spec.ts",
+              "--reporter=json"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/e2e/real/github-j10/sync-health.spec.ts"
+            ],
+            "reporter": "playwright",
+            "expectedCaseIds": [],
+            "prerequisites": [
+              "reference-host",
+              "installed-bundle"
+            ]
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-J10-07": {
+      "status": "pending-owner",
+      "reason": "Automation present: packages/backend/internal/services/github_main_pull_force_push_test.go; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-GH-07",
+      "pendingBinding": {
+        "files": [
+          "packages/backend/internal/services/github_main_pull_force_push_test.go"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "go",
+              "test",
+              "-json",
+              "-count=1",
+              "./internal/services",
+              "-run",
+              "^(TestInstallMainPullAlwaysFollowsWithoutDeclaration|TestInstallMainPullForcePushBindsTipsWithoutWriting)$"
+            ],
+            "cwd": "packages/backend",
+            "files": [
+              "packages/backend/internal/services/github_main_pull_force_push_test.go"
+            ],
+            "reporter": "go",
+            "expectedCaseIds": [
+              "TestInstallMainPullAlwaysFollowsWithoutDeclaration",
+              "TestInstallMainPullForcePushBindsTipsWithoutWriting"
+            ],
+            "prerequisites": [],
+            "env": {}
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-J10-08": {
+      "status": "pending-owner",
+      "reason": "Spec: packages/backend/internal/services/github_inbound_pulls_integration_test.go; composed lifecycle drivers: TestTODOGitHubCloseReopenComposedInstall and TestTODOGitHubReopenWindowComposedInstall (SMITHERS_GH03_REHEARSAL=1); real-microVM reference-host qualification and executable mapping approval pending",
+      "ticket": "T-GH-03"
+    },
+    "C-J10-09": {
+      "status": "pending-owner",
+      "reason": "Automation present: apps/app/e2e/real/github-j10/review-any-pr.spec.ts; real-microVM reference-host run, its evidence and owner-approved argv/host pending",
+      "ticket": "T-FLW-13"
+    },
+    "C-J11-01": {
+      "status": "pending-owner",
+      "reason": "Automation present: apps/app/e2e/playwright/spec/C-J11-01.spec.ts, packages/backend/internal/services/run_summaries_test.go and packages/backend/internal/compose/run_monitor_summaries_integration_test.go; reference actors/host and authenticated owner-approved argv/host pending",
+      "ticket": "T-FLW-07"
+    },
+    "C-J11-02": {
+      "status": "pending-owner",
+      "reason": "Production-door flow-source-run.spec.ts exists; reference Mac execution and authenticated owner approval of argv/host remain pending. Composed Linux Source/Plan/Run proof is supplemental.",
+      "ticket": "T-APP-05"
+    },
+    "C-J11-03": {
+      "status": "pending-owner",
+      "reason": "needs ticket extension",
+      "ticket": "T-FLW-08"
+    },
+    "C-J11-04": {
+      "status": "pending-owner",
+      "reason": "Automation present: packages/backend/internal/compose/live_run_thrash_integration_test.go and apps/app/e2e/playwright/spec/C-J11-04.spec.ts; authenticated owner-approved argv/host and CI check-run provenance pending",
+      "ticket": "T-FLW-07"
+    },
+    "C-J2-01": {
+      "status": "pending-owner",
+      "reason": "Automation present; awaiting T-STK-09, T-APP-02, T-REL-02 and smithers-22 approval",
+      "ticket": "T-STK-09",
+      "pendingBinding": {
+        "target": "//apps/app:journeyTodoFromIssue"
+      }
+    },
+    "C-J2-02": {
+      "status": "pending-owner",
+      "reason": "Automation present; awaiting T-STK-09 and smithers-22 approval",
+      "ticket": "T-STK-09",
+      "pendingBinding": {
+        "target": "//packages/backend:journeyTodoLabel"
+      }
+    },
+    "C-J2-03": {
+      "status": "pending-owner",
+      "reason": "Automation present; awaiting T-STK-01 and smithers-22 approval",
+      "ticket": "T-STK-07",
+      "pendingBinding": {
+        "target": "//apps/app:journeyTodoNeedsYou"
+      }
+    },
+    "C-J2-04": {
+      "status": "pending-owner",
+      "reason": "Automation present; awaiting T-STK-01, T-GH-03 and smithers-22 approval",
+      "ticket": "T-STK-10",
+      "pendingBinding": {
+        "target": "//apps/app:journeyTodoEvidence"
+      }
+    },
+    "C-J2-05": {
+      "status": "pending-owner",
+      "reason": "Automation present; awaiting T-STK-04, T-FLW-06, T-REL-02 and smithers-22 approval",
+      "ticket": "T-STK-04",
+      "pendingBinding": {
+        "target": "//apps/app:journeyTodoMerge"
+      }
+    },
+    "C-J3-01": {
+      "status": "pending-owner",
+      "reason": "Automation present: apps/app/e2e/real/branch-presence.spec.ts; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-COL-06",
+      "pendingBinding": {
+        "files": [
+          "apps/app/e2e/real/branch-presence.spec.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "playwright",
+              "test",
+              "--config",
+              "playwright.real.config.ts",
+              "e2e/real/branch-presence.spec.ts",
+              "--reporter=json"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/e2e/real/branch-presence.spec.ts"
+            ],
+            "reporter": "playwright",
+            "expectedCaseIds": [],
+            "prerequisites": [
+              "reference-host",
+              "installed-bundle"
+            ]
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-J3-02": {
+      "status": "pending-owner",
+      "reason": "Automation present: apps/app/e2e/real/terminal-ownership.spec.ts; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-TRM-01",
+      "pendingBinding": {
+        "files": [
+          "apps/app/e2e/real/terminal-ownership.spec.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "playwright",
+              "test",
+              "--config",
+              "playwright.real.config.ts",
+              "e2e/real/terminal-ownership.spec.ts",
+              "--reporter=json"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/e2e/real/terminal-ownership.spec.ts"
+            ],
+            "reporter": "playwright",
+            "expectedCaseIds": [],
+            "prerequisites": [
+              "reference-host",
+              "installed-bundle"
+            ]
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-J3-03": {
+      "status": "pending-owner",
+      "reason": "Automation present: apps/app/e2e/real/branch-outside-change.spec.ts; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-COL-04",
+      "pendingBinding": {
+        "files": [
+          "apps/app/e2e/real/branch-outside-change.spec.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "playwright",
+              "test",
+              "--config",
+              "playwright.real.config.ts",
+              "e2e/real/branch-outside-change.spec.ts",
+              "--reporter=json"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/e2e/real/branch-outside-change.spec.ts"
+            ],
+            "reporter": "playwright",
+            "expectedCaseIds": [],
+            "prerequisites": [
+              "reference-host",
+              "installed-bundle"
+            ]
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-J3-04": {
+      "status": "manual",
+      "reason": "Person/hardware required: reference host, browsers on a second Mac on the same network at the install's public origin; Automation present: apps/app/e2e/real/file-coedit.spec.ts; authenticated owner approval of argv/host and qualification receipts pending",
+      "pendingBinding": {
+        "files": [
+          "apps/app/e2e/real/file-coedit.spec.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "playwright",
+              "test",
+              "--config",
+              "playwright.real.config.ts",
+              "e2e/real/file-coedit.spec.ts",
+              "--reporter=json"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/e2e/real/file-coedit.spec.ts"
+            ],
+            "reporter": "playwright",
+            "expectedCaseIds": [],
+            "prerequisites": [
+              "reference-host",
+              "installed-bundle"
+            ]
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-J3-05": {
+      "status": "pending-owner",
+      "reason": "Automation present: apps/app/e2e/real/todo-steer.spec.ts; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-STK-06",
+      "pendingBinding": {
+        "files": [
+          "apps/app/e2e/real/todo-steer.spec.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "playwright",
+              "test",
+              "--config",
+              "playwright.real.config.ts",
+              "e2e/real/todo-steer.spec.ts",
+              "--reporter=json"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/e2e/real/todo-steer.spec.ts"
+            ],
+            "reporter": "playwright",
+            "expectedCaseIds": [],
+            "prerequisites": [
+              "reference-host",
+              "installed-bundle"
+            ]
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-J3-06": {
+      "status": "manual",
+      "reason": "Person/hardware required: reference host; the VS Code step is recorded manual; Automation present: apps/app/e2e/real/ssh-branch.spec.ts; authenticated owner approval of argv/host and qualification receipts pending",
+      "pendingBinding": {
+        "files": [
+          "apps/app/e2e/real/ssh-branch.spec.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "playwright",
+              "test",
+              "--config",
+              "playwright.real.config.ts",
+              "e2e/real/ssh-branch.spec.ts",
+              "--reporter=json"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/e2e/real/ssh-branch.spec.ts"
+            ],
+            "reporter": "playwright",
+            "expectedCaseIds": [],
+            "prerequisites": [
+              "reference-host",
+              "installed-bundle"
+            ]
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-J3-08": {
+      "status": "pending-owner",
+      "reason": "Automation present: apps/app/e2e/real/file-gone.spec.ts; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-APP-11",
+      "pendingBinding": {
+        "files": [
+          "apps/app/e2e/real/file-gone.spec.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "playwright",
+              "test",
+              "--config",
+              "playwright.real.config.ts",
+              "e2e/real/file-gone.spec.ts",
+              "--reporter=json"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/e2e/real/file-gone.spec.ts"
+            ],
+            "reporter": "playwright",
+            "expectedCaseIds": [],
+            "prerequisites": [
+              "reference-host",
+              "installed-bundle"
+            ]
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-J3-09": {
+      "status": "pending-owner",
+      "reason": "Automation present: apps/app/e2e/real/branch-moved-off.spec.ts; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-COL-05",
+      "pendingBinding": {
+        "files": [
+          "apps/app/e2e/real/branch-moved-off.spec.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "playwright",
+              "test",
+              "--config",
+              "playwright.real.config.ts",
+              "e2e/real/branch-moved-off.spec.ts",
+              "--reporter=json"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/e2e/real/branch-moved-off.spec.ts"
+            ],
+            "reporter": "playwright",
+            "expectedCaseIds": [],
+            "prerequisites": [
+              "reference-host",
+              "installed-bundle"
+            ]
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-J3-10": {
+      "status": "pending-owner",
+      "reason": "Automation present: apps/app/e2e/real/agent-terminal.spec.ts and installed-guest agent PTY tests; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-TRM-05",
+      "pendingBinding": {
+        "files": [
+          "apps/app/e2e/real/agent-terminal.spec.ts",
+          "packages/backend/internal/machined/session_native_agent_pty_linux_test.go"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "playwright",
+              "test",
+              "--config",
+              "playwright.real.config.ts",
+              "e2e/real/agent-terminal.spec.ts",
+              "--reporter=json"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/e2e/real/agent-terminal.spec.ts"
+            ],
+            "reporter": "playwright",
+            "expectedCaseIds": [],
+            "prerequisites": [
+              "reference-host",
+              "installed-bundle"
+            ]
+          },
+          {
+            "argv": [
+              "go",
+              "test",
+              "-json",
+              "./internal/machined",
+              "-run",
+              "^(TestAgentPtyDropsPrivilegesBeforePayload|TestAgentPtyRootInputsValidated|TestAgentPtyHostWatcherSeesTheCommandFromItsFirstByte)$"
+            ],
+            "cwd": "packages/backend",
+            "files": [
+              "packages/backend/internal/machined/session_native_agent_pty_linux_test.go"
+            ],
+            "reporter": "go",
+            "expectedCaseIds": [
+              "TestAgentPtyDropsPrivilegesBeforePayload",
+              "TestAgentPtyRootInputsValidated",
+              "TestAgentPtyHostWatcherSeesTheCommandFromItsFirstByte"
+            ],
+            "prerequisites": [
+              "installed-guest",
+              "SMITHERS_SESSION_ACCEPTANCE_CONFIG",
+              "SMITHERS_REQUIRE_SESSION_ACCEPTANCE=1"
+            ]
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-J4-01": {
+      "status": "pending-owner",
+      "reason": "Automation present: apps/app/e2e/real/home.spec.ts; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-APP-01",
+      "pendingBinding": {
+        "files": [
+          "apps/app/e2e/real/home.spec.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "playwright",
+              "test",
+              "--config",
+              "playwright.real.config.ts",
+              "e2e/real/home.spec.ts",
+              "--reporter=json"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/e2e/real/home.spec.ts"
+            ],
+            "reporter": "playwright",
+            "expectedCaseIds": [],
+            "prerequisites": [
+              "reference-host",
+              "installed-bundle"
+            ]
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-J4-02": {
+      "status": "pending-owner",
+      "reason": "Automation present: apps/app/e2e/real/todo-stack-actions.spec.ts (reference install, pending on the mini); the Move step passes on the composed install (packages/backend TestTodoStackMoveJourneyComposedInstall, apps/app/e2e/real/todo-stack-actions.browser.ts)",
+      "ticket": "T-STK-02",
+      "pendingBinding": {
+        "target": "//apps/app:journeyTodoStackActions"
+      }
+    },
+    "C-J4-03": {
+      "status": "pending-owner",
+      "reason": "Requires an approved mapping: integration packages/backend/internal/services/todo_merge_db_test.go (CI, real PostgreSQL) and reference-host e2e apps/app/e2e/real/todo-merge-order.spec.ts",
+      "ticket": "T-STK-04"
+    },
+    "C-J5-01": {
+      "status": "pending-owner",
+      "reason": "Automation present: apps/app/e2e/real/flow-edit.spec.ts; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-FLW-03",
+      "pendingBinding": {
+        "files": [
+          "apps/app/e2e/real/flow-edit.spec.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "playwright",
+              "test",
+              "--config",
+              "playwright.real.config.ts",
+              "e2e/real/flow-edit.spec.ts",
+              "--reporter=json"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/e2e/real/flow-edit.spec.ts"
+            ],
+            "reporter": "playwright",
+            "expectedCaseIds": [],
+            "prerequisites": [
+              "reference-host",
+              "installed-bundle"
+            ]
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-J5-02": {
+      "status": "pending-owner",
+      "reason": "Automation present: packages/backend/internal/services/flow_load_integration_test.go; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-FLW-03",
+      "pendingBinding": {
+        "files": [
+          "packages/backend/internal/services/flow_load_integration_test.go"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "go",
+              "test",
+              "-json",
+              "-count=1",
+              "./internal/services",
+              "-run",
+              "^(TestFlowLoadProductionPollKeepsPreviousAndCoalesces|TestFlowLoadProposalsUseCandidateDiffNotWorkingCopy|TestFlowLoadProjectionRollsBackWithActivation|TestFlowLoadProposalFactsReplayAndDeduplicate)$"
+            ],
+            "cwd": "packages/backend",
+            "files": [
+              "packages/backend/internal/services/flow_load_integration_test.go"
+            ],
+            "reporter": "go",
+            "expectedCaseIds": [
+              "TestFlowLoadProductionPollKeepsPreviousAndCoalesces",
+              "TestFlowLoadProposalsUseCandidateDiffNotWorkingCopy",
+              "TestFlowLoadProjectionRollsBackWithActivation",
+              "TestFlowLoadProposalFactsReplayAndDeduplicate"
+            ],
+            "prerequisites": [],
+            "env": {}
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-J5-03": {
+      "status": "manual",
+      "reason": "Person/hardware required: reference host, recorded manual on a fresh macOS user account on the reference mini; Automation present: apps/app/e2e/real/learning-journey.spec.ts; authenticated owner approval of argv/host and qualification receipts pending",
+      "pendingBinding": {
+        "files": [
+          "apps/app/e2e/real/learning-journey.spec.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "playwright",
+              "test",
+              "--config",
+              "playwright.real.config.ts",
+              "e2e/real/learning-journey.spec.ts",
+              "--reporter=json"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/e2e/real/learning-journey.spec.ts"
+            ],
+            "reporter": "playwright",
+            "expectedCaseIds": [],
+            "prerequisites": [
+              "reference-host",
+              "installed-bundle"
+            ]
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-J6-01": {
+      "status": "pending-owner",
+      "reason": "Independent S1/S1-no-consumer/S2 Claude skill, answer/steer, placement, private confirmation, merge cancellation and presence driver authored in apps/app/e2e/real/terminal-signin.spec.ts; full acceptance still requires the host person-command channel, guest bearer/isolation inspection and approved reference-host bundle/root-input/revocation execution with person model login",
+      "ticket": "T-TRM-02"
+    },
+    "C-J6-02": {
+      "status": "pending-owner",
+      "reason": "Automation present: packages/smithers/test/DelegatedLogin.integration.test.ts; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-ACC-04",
+      "pendingBinding": {
+        "files": [
+          "packages/smithers/test/DelegatedLogin.integration.test.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "vitest",
+              "run",
+              "packages/smithers/test/DelegatedLogin.integration.test.ts",
+              "--reporter=json"
+            ],
+            "files": [
+              "packages/smithers/test/DelegatedLogin.integration.test.ts"
+            ],
+            "reporter": "vitest",
+            "expectedCaseIds": []
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-J7-01": {
+      "status": "pending-owner",
+      "reason": "Automation present: apps/app/e2e/real/todo-placement.spec.ts (reference install, pending on the mini); the Before placement passes on the composed install (packages/backend TestTodoPlacementJourneyComposedInstall, apps/app/e2e/real/todo-placement.browser.ts)",
+      "ticket": "T-STK-02"
+    },
+    "C-J7-02": {
+      "status": "pending-owner",
+      "reason": "Automation present: apps/app/e2e/real/fork-add-to-stack.spec.ts; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-MCH-08",
+      "pendingBinding": {
+        "files": [
+          "apps/app/e2e/real/fork-add-to-stack.spec.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "playwright",
+              "test",
+              "--config",
+              "playwright.real.config.ts",
+              "e2e/real/fork-add-to-stack.spec.ts",
+              "--reporter=json"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/e2e/real/fork-add-to-stack.spec.ts"
+            ],
+            "reporter": "playwright",
+            "expectedCaseIds": [],
+            "prerequisites": [
+              "reference-host",
+              "installed-bundle"
+            ]
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-J7-03": {
+      "status": "pending-owner",
+      "reason": "Automation present: TestRebaseManualConflictRehearsal, TestRebaseZeroConflictAttemptsRehearsal and apps/app/e2e/real/github-j10/rebase-done.spec.ts; native TODO and Scratch Done exercise the composed install. Reference microVM, root-input validation and owner-approved mapping remain pending",
+      "ticket": "T-STK-08"
+    },
+    "C-J8-01": {
+      "status": "pending-owner",
+      "reason": "Automation present: packages/backend/internal/services/learning_integration_test.go; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-FLW-06",
+      "pendingBinding": {
+        "files": [
+          "packages/backend/internal/services/learning_integration_test.go"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "go",
+              "test",
+              "-json",
+              "-count=1",
+              "./internal/services",
+              "-run",
+              "^(TestLearningPostgresSignatureSuppression)$"
+            ],
+            "cwd": "packages/backend",
+            "files": [
+              "packages/backend/internal/services/learning_integration_test.go"
+            ],
+            "reporter": "go",
+            "expectedCaseIds": [
+              "TestLearningPostgresSignatureSuppression"
+            ],
+            "prerequisites": [
+              "PG18"
+            ],
+            "env": {
+              "SMITHERS_REQUIRE_DATABASE_TESTS": "1"
+            }
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-J8-02": {
+      "status": "manual",
+      "reason": "Person/hardware required: reference host, browsers on a second Mac on the same network at the install's public origin; Automation present: apps/app/e2e/real/wiki-coedit.spec.ts; authenticated owner approval of argv/host and qualification receipts pending",
+      "pendingBinding": {
+        "files": [
+          "apps/app/e2e/real/wiki-coedit.spec.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "playwright",
+              "test",
+              "--config",
+              "playwright.real.config.ts",
+              "e2e/real/wiki-coedit.spec.ts",
+              "--reporter=json"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/e2e/real/wiki-coedit.spec.ts"
+            ],
+            "reporter": "playwright",
+            "expectedCaseIds": [],
+            "prerequisites": [
+              "reference-host",
+              "installed-bundle"
+            ]
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-J8-03": {
+      "status": "pending-owner",
+      "reason": "Automation present: apps/app/e2e/real/wiki-obsidian.spec.ts; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-FLW-12",
+      "pendingBinding": {
+        "files": [
+          "apps/app/e2e/real/wiki-obsidian.spec.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "playwright",
+              "test",
+              "--config",
+              "playwright.real.config.ts",
+              "e2e/real/wiki-obsidian.spec.ts",
+              "--reporter=json"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/e2e/real/wiki-obsidian.spec.ts"
+            ],
+            "reporter": "playwright",
+            "expectedCaseIds": [],
+            "prerequisites": [
+              "reference-host",
+              "installed-bundle"
+            ]
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-J8-04": {
+      "status": "pending-owner",
+      "reason": "Automation present: packages/backend/internal/compose/plan_wiki_citations_integration_test.go; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-FLW-10",
+      "pendingBinding": {
+        "files": [
+          "packages/backend/internal/compose/plan_wiki_citations_integration_test.go"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "go",
+              "test",
+              "-json",
+              "-count=1",
+              "-timeout",
+              "60m",
+              "./internal/compose",
+              "-run",
+              "^(TestPlanWikiCitationsReferenceHost)$"
+            ],
+            "cwd": "packages/backend",
+            "files": [
+              "packages/backend/internal/compose/plan_wiki_citations_integration_test.go"
+            ],
+            "reporter": "go",
+            "expectedCaseIds": [
+              "TestPlanWikiCitationsReferenceHost"
+            ],
+            "prerequisites": [
+              "PG18",
+              "reference-host",
+              "installed-bundle"
+            ],
+            "env": {
+              "SMITHERS_REQUIRE_DATABASE_TESTS": "1",
+              "SMITHERS_C_J8_04_REFERENCE_HOST": "1"
+            }
+          }
+        ],
+        "provenance": "Production dispatcher and real-microVM automation verified against origin/main b7e9c44692; service fixtures are component coverage only. Pending owner argv/host approval and reference-host receipts; no mapping approval or qualification inferred"
+      }
+    },
+    "C-J8-05": {
+      "status": "pending-owner",
+      "reason": "Automation present: apps/app/e2e/real/wiki-decision-follow.spec.ts; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-FLW-10",
+      "pendingBinding": {
+        "files": [
+          "apps/app/e2e/real/wiki-decision-follow.spec.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "playwright",
+              "test",
+              "--config",
+              "playwright.real.config.ts",
+              "e2e/real/wiki-decision-follow.spec.ts",
+              "--reporter=json"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/e2e/real/wiki-decision-follow.spec.ts"
+            ],
+            "reporter": "playwright",
+            "expectedCaseIds": [],
+            "prerequisites": [
+              "reference-host",
+              "installed-bundle"
+            ]
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-J8-06": {
+      "status": "pending-owner",
+      "reason": "Automation present: apps/app/e2e/real/wiki-generated-refresh.spec.ts; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-FLW-02",
+      "pendingBinding": {
+        "files": [
+          "apps/app/e2e/real/wiki-generated-refresh.spec.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "playwright",
+              "test",
+              "--config",
+              "playwright.real.config.ts",
+              "e2e/real/wiki-generated-refresh.spec.ts",
+              "--reporter=json"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/e2e/real/wiki-generated-refresh.spec.ts"
+            ],
+            "reporter": "playwright",
+            "expectedCaseIds": [],
+            "prerequisites": [
+              "reference-host",
+              "installed-bundle"
+            ]
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-J9-01": {
+      "status": "pending-owner",
+      "reason": "Automation present: apps/app/e2e/real/ask-repository.spec.ts; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-APP-02",
+      "pendingBinding": {
+        "files": [
+          "apps/app/e2e/real/ask-repository.spec.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "playwright",
+              "test",
+              "--config",
+              "playwright.real.config.ts",
+              "e2e/real/ask-repository.spec.ts",
+              "--reporter=json"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/e2e/real/ask-repository.spec.ts"
+            ],
+            "reporter": "playwright",
+            "expectedCaseIds": [],
+            "prerequisites": [
+              "reference-host",
+              "installed-bundle"
+            ]
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-MCH-01": {
+      "status": "pending-owner",
+      "reason": "Absent: packages/backend/internal/services/branch_machine_integration_test.go",
+      "ticket": "T-MCH-04"
+    },
+    "C-MCH-02": {
+      "status": "pending-owner",
+      "reason": "Automation present: packages/backend/microsandbox/capacity_unit_test.go, packages/backend/internal/compose/parallel_admission_integration_test.go; full check qualification and authenticated owner approval of argv/host pending",
+      "ticket": "T-MCH-06",
+      "pendingBinding": {
+        "files": [
+          "packages/backend/microsandbox/capacity_unit_test.go",
+          "packages/backend/internal/compose/parallel_admission_integration_test.go"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "go",
+              "test",
+              "-json",
+              "-count=1",
+              "./microsandbox",
+              "-run",
+              "^(TestMachineSizingMustBeExplicitIncludingPrepare|TestPrepareAndReleasingMachinesCountAgainstCapacity|TestCapacityReadOnEveryAdmissionAndLoweringDoesNotStopHeldVM|TestPrepareFailedRemovalKeepsCapacityUntilConfirmed|TestCachedLayerCapacityRefusalPreservesSnapshotAndRecovers|TestCloseRetriesOnlyFailedAuxiliaryCleanup|TestMissingMachineDoesNotHoldCapacity|TestSlowCapacityReadDoesNotBlockUsage|TestSlowAuxCleanupDoesNotBlockUsage|TestCachedLayerVerificationCleanupFailurePreservesSnapshot|TestRunningWorkspaceStartDoesNotReadCapacity|TestCachedLayerMarkerFailureClassification|TestAdmissionCoalescingPromotionAndConfirmedStop|TestAdmissionMissingProvidersFailsClosed|TestAdmissionDiskRecheckAndLoweredOwnerCapacity|TestAdmissionPrepareTransferCountsOneSlot|TestAdmissionUnknownSafetyBlocksRelease|TestAdmissionConcurrentGrantsAndCancellationDuringProviderRead|TestAdmissionIdleTimeoutsAndLongestIdle|TestMachineCapacityRefusalIsTyped|TestFailedBootRetainsCapacityUntilConfirmedStop|TestAdmissionSlotDrivesRealAuxiliaryReservation|TestAdmissionWaitWakesOnConfirmedStop|TestAdmissionOverdueStopWaitsForObservation|TestAdmissionWaitCancellationAndMissingProviders|TestAdmissionUnusedGrantCancelledWithoutReleasingBoundVM|TestAdmissionExistingVMReusesOneSlot|TestAdmissionWaitsForPublishedBinding|TestAdmissionCancelledPrepareReleasesAfterConfirmedRemoval|TestAdmissionOperationFailureNeverStopsAwakeWork|TestAdmissionExternalCancellationEndsWait|TestAdmissionReleaseObservedWithoutWaitingCaller|TestAdmissionCancelledBootHonorsStartupGrace|TestAdmissionOrdinaryStopRequiresRuntimeObservation|TestAdmissionAuxiliaryRemovalRequiresRuntimeObservation|TestAdmissionMachineMetricsFollowRuntimeQueueAndBoots|TestAdmissionIdleCaptureFailureNeverForceStops|TestAdmissionIdlePreparedStopRetainsSlot|TestAdmissionIdleProviderAndSafetyRefusals|TestAdmissionIdleDoesNotReleaseWithSpareCapacity|TestAdmissionConfiguredIdleReleaseWakesWaitingPerson|TestAdmissionIdleFailurePreservesWaitingDemand|TestAdmissionIdleCaptureFailureNotifiesOnlyChangedDemand|TestAdmissionIdleConfiguredClockPreservesStartupGrace|TestAdmissionIdleConcurrentPreparationDoesNotBlockCancellation|TestAdmissionHeldUntilObservedStop|TestAdmissionStackReorderPreservesPersonAndGrants|TestAdmissionCancellationHonorsStartupWindow)$"
+            ],
+            "cwd": "packages/backend",
+            "files": [
+              "packages/backend/microsandbox/capacity_unit_test.go"
+            ],
+            "reporter": "go",
+            "expectedCaseIds": [
+              "TestMachineSizingMustBeExplicitIncludingPrepare",
+              "TestPrepareAndReleasingMachinesCountAgainstCapacity",
+              "TestCapacityReadOnEveryAdmissionAndLoweringDoesNotStopHeldVM",
+              "TestPrepareFailedRemovalKeepsCapacityUntilConfirmed",
+              "TestCachedLayerCapacityRefusalPreservesSnapshotAndRecovers",
+              "TestCloseRetriesOnlyFailedAuxiliaryCleanup",
+              "TestMissingMachineDoesNotHoldCapacity",
+              "TestSlowCapacityReadDoesNotBlockUsage",
+              "TestSlowAuxCleanupDoesNotBlockUsage",
+              "TestCachedLayerVerificationCleanupFailurePreservesSnapshot",
+              "TestRunningWorkspaceStartDoesNotReadCapacity",
+              "TestCachedLayerMarkerFailureClassification",
+              "TestAdmissionCoalescingPromotionAndConfirmedStop",
+              "TestAdmissionMissingProvidersFailsClosed",
+              "TestAdmissionDiskRecheckAndLoweredOwnerCapacity",
+              "TestAdmissionPrepareTransferCountsOneSlot",
+              "TestAdmissionUnknownSafetyBlocksRelease",
+              "TestAdmissionConcurrentGrantsAndCancellationDuringProviderRead",
+              "TestAdmissionIdleTimeoutsAndLongestIdle",
+              "TestMachineCapacityRefusalIsTyped",
+              "TestFailedBootRetainsCapacityUntilConfirmedStop",
+              "TestAdmissionSlotDrivesRealAuxiliaryReservation",
+              "TestAdmissionWaitWakesOnConfirmedStop",
+              "TestAdmissionOverdueStopWaitsForObservation",
+              "TestAdmissionWaitCancellationAndMissingProviders",
+              "TestAdmissionUnusedGrantCancelledWithoutReleasingBoundVM",
+              "TestAdmissionExistingVMReusesOneSlot",
+              "TestAdmissionWaitsForPublishedBinding",
+              "TestAdmissionCancelledPrepareReleasesAfterConfirmedRemoval",
+              "TestAdmissionOperationFailureNeverStopsAwakeWork",
+              "TestAdmissionExternalCancellationEndsWait",
+              "TestAdmissionReleaseObservedWithoutWaitingCaller",
+              "TestAdmissionCancelledBootHonorsStartupGrace",
+              "TestAdmissionOrdinaryStopRequiresRuntimeObservation",
+              "TestAdmissionAuxiliaryRemovalRequiresRuntimeObservation",
+              "TestAdmissionMachineMetricsFollowRuntimeQueueAndBoots",
+              "TestAdmissionIdleCaptureFailureNeverForceStops",
+              "TestAdmissionIdlePreparedStopRetainsSlot",
+              "TestAdmissionIdleProviderAndSafetyRefusals",
+              "TestAdmissionIdleDoesNotReleaseWithSpareCapacity",
+              "TestAdmissionConfiguredIdleReleaseWakesWaitingPerson",
+              "TestAdmissionIdleFailurePreservesWaitingDemand",
+              "TestAdmissionIdleCaptureFailureNotifiesOnlyChangedDemand",
+              "TestAdmissionIdleConfiguredClockPreservesStartupGrace",
+              "TestAdmissionIdleConcurrentPreparationDoesNotBlockCancellation",
+              "TestAdmissionHeldUntilObservedStop",
+              "TestAdmissionStackReorderPreservesPersonAndGrants",
+              "TestAdmissionCancellationHonorsStartupWindow"
+            ],
+            "prerequisites": [],
+            "env": {}
+          },
+          {
+            "argv": [
+              "go",
+              "test",
+              "-json",
+              "-count=1",
+              "./internal/compose",
+              "-run",
+              "^(TestParallelAdmissionInstallBoundary|TestTodoBeforeAdmittedWhenCapacityFrees|TestTodoBeforeAdmittedWhenHolderStops|TestTenBranchTerminalAdmissionInstallBoundary|TestMixedClassAdmissionInstallBoundary|TestMixedConcurrentClassAdmissionInstallBoundary|TestMixedResumedClassAdmissionInstallBoundary)$"
+            ],
+            "cwd": "packages/backend",
+            "files": [
+              "packages/backend/internal/compose/parallel_admission_integration_test.go"
+            ],
+            "reporter": "go",
+            "expectedCaseIds": [
+              "TestParallelAdmissionInstallBoundary",
+              "TestTodoBeforeAdmittedWhenCapacityFrees",
+              "TestTodoBeforeAdmittedWhenHolderStops",
+              "TestTenBranchTerminalAdmissionInstallBoundary",
+              "TestMixedClassAdmissionInstallBoundary",
+              "TestMixedConcurrentClassAdmissionInstallBoundary",
+              "TestMixedResumedClassAdmissionInstallBoundary"
+            ],
+            "prerequisites": [
+              "PG18"
+            ],
+            "env": {
+              "SMITHERS_REQUIRE_DATABASE_TESTS": "1"
+            }
+          }
+        ],
+        "provenance": "Actual source assertions verified 2026-10-10; replaces nonexistent planned test paths/names; native/reference-host cases still require their named host"
+      }
+    },
+    "C-MCH-03": {
+      "status": "pending-owner",
+      "reason": "Absent: packages/backend/internal/services/branch_sleep_reads_integration_test.go",
+      "ticket": "T-MCH-07"
+    },
+    "C-MCH-04": {
+      "status": "pending-owner",
+      "reason": "Automation present (packages/backend/microsandbox/hostprofile_test.go, packages/backend/internal/services/install_capacity_integration_test.go); awaiting smithers-22 mapping approval",
+      "ticket": "T-MCH-01"
+    },
+    "C-MCH-05": {
+      "status": "pending-owner",
+      "reason": "Automation unavailable/unapproved; owner must supply argv and host",
+      "ticket": "T-MCH-09"
+    },
+    "C-MCH-06": {
+      "status": "pending-owner",
+      "reason": "Absent: packages/backend/microsandbox/real_users_test.go",
+      "ticket": "T-MCH-11"
+    },
+    "C-MCH-07": {
+      "status": "pending-owner",
+      "reason": "Absent: apps/app/e2e/real/secrets-machines.spec.ts",
+      "ticket": "T-MCH-12"
+    },
+    "C-MCH-08": {
+      "status": "pending-owner",
+      "reason": "Automation present: apps/app/e2e/real/fork-add-to-stack.spec.ts; full check qualification and authenticated owner approval of argv/host pending",
+      "ticket": "T-MCH-08",
+      "pendingBinding": {
+        "files": [
+          "apps/app/e2e/real/fork-add-to-stack.spec.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "playwright",
+              "test",
+              "--config",
+              "playwright.real.config.ts",
+              "e2e/real/fork-add-to-stack.spec.ts",
+              "--reporter=json"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/e2e/real/fork-add-to-stack.spec.ts"
+            ],
+            "reporter": "playwright",
+            "expectedCaseIds": [],
+            "prerequisites": [
+              "reference-host",
+              "installed-bundle"
+            ]
+          }
+        ],
+        "provenance": "Actual source assertions verified 2026-10-10; replaces nonexistent planned test paths/names; native/reference-host cases still require their named host"
+      }
+    },
+    "C-MCH-09": {
+      "status": "pending-owner",
+      "reason": "Absent: packages/backend/microsandbox/real_users_test.go",
+      "ticket": "T-MCH-11"
+    },
+    "C-MCH-10": {
+      "status": "pending-owner",
+      "reason": "Absent: packages/backend/microsandbox/real_credentials_test.go",
+      "ticket": "T-MCH-11"
+    },
+    "C-MCH-11": {
+      "status": "pending-owner",
+      "reason": "Automation present: packages/backend/microsandbox/capacity_unit_test.go, packages/backend/internal/compose/parallel_admission_integration_test.go; full check qualification and authenticated owner approval of argv/host pending",
+      "ticket": "T-MCH-06",
+      "pendingBinding": {
+        "files": [
+          "packages/backend/microsandbox/capacity_unit_test.go",
+          "packages/backend/internal/compose/parallel_admission_integration_test.go"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "go",
+              "test",
+              "-json",
+              "-count=1",
+              "./microsandbox",
+              "-run",
+              "^(TestMachineSizingMustBeExplicitIncludingPrepare|TestPrepareAndReleasingMachinesCountAgainstCapacity|TestCapacityReadOnEveryAdmissionAndLoweringDoesNotStopHeldVM|TestPrepareFailedRemovalKeepsCapacityUntilConfirmed|TestCachedLayerCapacityRefusalPreservesSnapshotAndRecovers|TestCloseRetriesOnlyFailedAuxiliaryCleanup|TestMissingMachineDoesNotHoldCapacity|TestSlowCapacityReadDoesNotBlockUsage|TestSlowAuxCleanupDoesNotBlockUsage|TestCachedLayerVerificationCleanupFailurePreservesSnapshot|TestRunningWorkspaceStartDoesNotReadCapacity|TestCachedLayerMarkerFailureClassification|TestAdmissionCoalescingPromotionAndConfirmedStop|TestAdmissionMissingProvidersFailsClosed|TestAdmissionDiskRecheckAndLoweredOwnerCapacity|TestAdmissionPrepareTransferCountsOneSlot|TestAdmissionUnknownSafetyBlocksRelease|TestAdmissionConcurrentGrantsAndCancellationDuringProviderRead|TestAdmissionIdleTimeoutsAndLongestIdle|TestMachineCapacityRefusalIsTyped|TestFailedBootRetainsCapacityUntilConfirmedStop|TestAdmissionSlotDrivesRealAuxiliaryReservation|TestAdmissionWaitWakesOnConfirmedStop|TestAdmissionOverdueStopWaitsForObservation|TestAdmissionWaitCancellationAndMissingProviders|TestAdmissionUnusedGrantCancelledWithoutReleasingBoundVM|TestAdmissionExistingVMReusesOneSlot|TestAdmissionWaitsForPublishedBinding|TestAdmissionCancelledPrepareReleasesAfterConfirmedRemoval|TestAdmissionOperationFailureNeverStopsAwakeWork|TestAdmissionExternalCancellationEndsWait|TestAdmissionReleaseObservedWithoutWaitingCaller|TestAdmissionCancelledBootHonorsStartupGrace|TestAdmissionOrdinaryStopRequiresRuntimeObservation|TestAdmissionAuxiliaryRemovalRequiresRuntimeObservation|TestAdmissionMachineMetricsFollowRuntimeQueueAndBoots|TestAdmissionIdleCaptureFailureNeverForceStops|TestAdmissionIdlePreparedStopRetainsSlot|TestAdmissionIdleProviderAndSafetyRefusals|TestAdmissionIdleDoesNotReleaseWithSpareCapacity|TestAdmissionConfiguredIdleReleaseWakesWaitingPerson|TestAdmissionIdleFailurePreservesWaitingDemand|TestAdmissionIdleCaptureFailureNotifiesOnlyChangedDemand|TestAdmissionIdleConfiguredClockPreservesStartupGrace|TestAdmissionIdleConcurrentPreparationDoesNotBlockCancellation|TestAdmissionHeldUntilObservedStop|TestAdmissionStackReorderPreservesPersonAndGrants|TestAdmissionCancellationHonorsStartupWindow)$"
+            ],
+            "cwd": "packages/backend",
+            "files": [
+              "packages/backend/microsandbox/capacity_unit_test.go"
+            ],
+            "reporter": "go",
+            "expectedCaseIds": [
+              "TestMachineSizingMustBeExplicitIncludingPrepare",
+              "TestPrepareAndReleasingMachinesCountAgainstCapacity",
+              "TestCapacityReadOnEveryAdmissionAndLoweringDoesNotStopHeldVM",
+              "TestPrepareFailedRemovalKeepsCapacityUntilConfirmed",
+              "TestCachedLayerCapacityRefusalPreservesSnapshotAndRecovers",
+              "TestCloseRetriesOnlyFailedAuxiliaryCleanup",
+              "TestMissingMachineDoesNotHoldCapacity",
+              "TestSlowCapacityReadDoesNotBlockUsage",
+              "TestSlowAuxCleanupDoesNotBlockUsage",
+              "TestCachedLayerVerificationCleanupFailurePreservesSnapshot",
+              "TestRunningWorkspaceStartDoesNotReadCapacity",
+              "TestCachedLayerMarkerFailureClassification",
+              "TestAdmissionCoalescingPromotionAndConfirmedStop",
+              "TestAdmissionMissingProvidersFailsClosed",
+              "TestAdmissionDiskRecheckAndLoweredOwnerCapacity",
+              "TestAdmissionPrepareTransferCountsOneSlot",
+              "TestAdmissionUnknownSafetyBlocksRelease",
+              "TestAdmissionConcurrentGrantsAndCancellationDuringProviderRead",
+              "TestAdmissionIdleTimeoutsAndLongestIdle",
+              "TestMachineCapacityRefusalIsTyped",
+              "TestFailedBootRetainsCapacityUntilConfirmedStop",
+              "TestAdmissionSlotDrivesRealAuxiliaryReservation",
+              "TestAdmissionWaitWakesOnConfirmedStop",
+              "TestAdmissionOverdueStopWaitsForObservation",
+              "TestAdmissionWaitCancellationAndMissingProviders",
+              "TestAdmissionUnusedGrantCancelledWithoutReleasingBoundVM",
+              "TestAdmissionExistingVMReusesOneSlot",
+              "TestAdmissionWaitsForPublishedBinding",
+              "TestAdmissionCancelledPrepareReleasesAfterConfirmedRemoval",
+              "TestAdmissionOperationFailureNeverStopsAwakeWork",
+              "TestAdmissionExternalCancellationEndsWait",
+              "TestAdmissionReleaseObservedWithoutWaitingCaller",
+              "TestAdmissionCancelledBootHonorsStartupGrace",
+              "TestAdmissionOrdinaryStopRequiresRuntimeObservation",
+              "TestAdmissionAuxiliaryRemovalRequiresRuntimeObservation",
+              "TestAdmissionMachineMetricsFollowRuntimeQueueAndBoots",
+              "TestAdmissionIdleCaptureFailureNeverForceStops",
+              "TestAdmissionIdlePreparedStopRetainsSlot",
+              "TestAdmissionIdleProviderAndSafetyRefusals",
+              "TestAdmissionIdleDoesNotReleaseWithSpareCapacity",
+              "TestAdmissionConfiguredIdleReleaseWakesWaitingPerson",
+              "TestAdmissionIdleFailurePreservesWaitingDemand",
+              "TestAdmissionIdleCaptureFailureNotifiesOnlyChangedDemand",
+              "TestAdmissionIdleConfiguredClockPreservesStartupGrace",
+              "TestAdmissionIdleConcurrentPreparationDoesNotBlockCancellation",
+              "TestAdmissionHeldUntilObservedStop",
+              "TestAdmissionStackReorderPreservesPersonAndGrants",
+              "TestAdmissionCancellationHonorsStartupWindow"
+            ],
+            "prerequisites": [],
+            "env": {}
+          },
+          {
+            "argv": [
+              "go",
+              "test",
+              "-json",
+              "-count=1",
+              "./internal/compose",
+              "-run",
+              "^(TestParallelAdmissionInstallBoundary|TestTodoBeforeAdmittedWhenCapacityFrees|TestTodoBeforeAdmittedWhenHolderStops|TestTenBranchTerminalAdmissionInstallBoundary|TestMixedClassAdmissionInstallBoundary|TestMixedConcurrentClassAdmissionInstallBoundary|TestMixedResumedClassAdmissionInstallBoundary)$"
+            ],
+            "cwd": "packages/backend",
+            "files": [
+              "packages/backend/internal/compose/parallel_admission_integration_test.go"
+            ],
+            "reporter": "go",
+            "expectedCaseIds": [
+              "TestParallelAdmissionInstallBoundary",
+              "TestTodoBeforeAdmittedWhenCapacityFrees",
+              "TestTodoBeforeAdmittedWhenHolderStops",
+              "TestTenBranchTerminalAdmissionInstallBoundary",
+              "TestMixedClassAdmissionInstallBoundary",
+              "TestMixedConcurrentClassAdmissionInstallBoundary",
+              "TestMixedResumedClassAdmissionInstallBoundary"
+            ],
+            "prerequisites": [
+              "PG18"
+            ],
+            "env": {
+              "SMITHERS_REQUIRE_DATABASE_TESTS": "1"
+            }
+          }
+        ],
+        "provenance": "Actual source assertions verified 2026-10-10; replaces nonexistent planned test paths/names; native/reference-host cases still require their named host"
+      }
+    },
+    "C-MCH-12": {
+      "status": "pending-owner",
+      "reason": "Requires smithers-22 approved target and authenticated qualification evidence.",
+      "ticket": "T-MCH-16"
+    },
+    "C-MNT-01": {
+      "status": "pending-owner",
+      "reason": "Automation unavailable/unapproved; owner must supply argv and host",
+      "ticket": "T-MNT-01"
+    },
+    "C-MNT-02": {
+      "status": "pending-owner",
+      "reason": "Automation unavailable/unapproved; owner must supply argv and host",
+      "ticket": "T-MNT-02"
+    },
+    "C-MNT-03": {
+      "status": "pending-owner",
+      "reason": "Automation unavailable/unapproved; owner must supply argv and host",
+      "ticket": "T-MNT-03"
+    },
+    "C-MNT-04": {
+      "status": "pending-owner",
+      "reason": "Automation unavailable/unapproved; owner must supply argv and host",
+      "ticket": "T-MNT-04"
+    },
+    "C-MNT-05": {
+      "status": "pending-owner",
+      "reason": "Automation unavailable/unapproved; owner must supply argv and host",
+      "ticket": "T-MNT-05"
+    },
+    "C-MNT-06": {
+      "status": "pending-owner",
+      "reason": "Automation unavailable/unapproved; owner must supply argv and host",
+      "ticket": "T-MNT-01"
+    },
+    "C-PERF-01": {
+      "status": "manual",
+      "reason": "Runner present: flows/perf/agent-first-token.mjs; requires production Inspect binding, reference host and second Mac and owner-approved evidence"
+    },
+    "C-PERF-02": {
+      "status": "manual",
+      "reason": "Runner present: flows/perf/projection-delta.mjs; requires reference host and second Mac and owner-approved evidence"
+    },
+    "C-PERF-03": {
+      "status": "manual",
+      "reason": "Runner present: flows/perf/keystroke.mjs; requires production document relay, qualified lifecycle, reference host and second Mac and owner-approved evidence"
+    },
+    "C-PERF-04": {
+      "status": "manual",
+      "reason": "Runner present: flows/perf/disk-write.mjs; requires qualified lifecycle, reference host and authenticated browser/SSH fixtures and owner-approved evidence"
+    },
+    "C-PERF-05": {
+      "status": "pending-owner",
+      "reason": "Runner and terminal host observations present: flows/perf/warm-wake.mjs; requires qualified lifecycle, reference host, real 100-sample evidence and owner-approved evidence",
+      "ticket": "T-MCH-06"
+    },
+    "C-PERF-06": {
+      "status": "manual",
+      "reason": "Runner present: flows/perf/rebase-hold.mjs; requires production Rebase now binding, qualified lifecycle, reference host and second Mac and owner-approved evidence"
+    },
+    "C-PRC-01": {
+      "status": "pending-owner",
+      "reason": "Automation present (flows/land/commit.test.mjs, packages/repo-targets/contracts/drift-job.test.mjs and packages/smithers/build/build-cli/test/TargetIndexExecution.test.ts); ubuntu-latest root setup, clean per-SHA drift, required-status verification and owner mapping approval remain outstanding",
+      "ticket": "T-PRC-01"
+    },
+    "C-PRC-02": {
+      "status": "pending-owner",
+      "reason": "Automation present (packages/backend/db/product/migration_registry_test.go and flows/land/migration-landing.test.mjs); approved machine identity/security receipts and owner mapping approval remain outstanding",
+      "ticket": "T-PRC-02"
+    },
+    "C-PRC-03": {
+      "status": "pending-owner",
+      "reason": "Automation present (flows/evidence/check-receipts.test.mjs); awaiting smithers-22 mapping approval",
+      "ticket": "T-PRC-03",
+      "pendingBinding": {
+        "target": "//flows:issueClaim",
+        "files": [
+          "flows/evidence/check-receipts.test.mjs"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "node",
+              "--test",
+              "flows/evidence/check-receipts.test.mjs"
+            ],
+            "files": [
+              "flows/evidence/check-receipts.test.mjs"
+            ],
+            "reporter": "node",
+            "expectedCaseIds": [
+              "target receipts preserve observed fields; all close variants close exactly once",
+              "invalid evidence refuses every variant before any remote write",
+              "receipt, log and parent symlinks, traversal and escapes are refused",
+              "runner refuses absent, unwritten, unparsable and mismatched Automation before CI reads",
+              "malformed JSON values and missing receipt arguments refuse without throwing or writing",
+              "each close variant consumes complete coverage and releases only when requested",
+              "caller-invented check IDs and omitted check fields cannot cover ticket checks",
+              "CLI invalid close variants exit 2 without proxy startup or remote writes",
+              "held claims retain action refused, distinct from evidence refusal",
+              "coverage comes from the ticket Issue field, with exact repository and issue identity",
+              "journey check IDs retain numeric stages in runner and ticket-derived coverage",
+              "dirty mapping and ticket edits cannot forge committed receipt command or coverage",
+              "suffixed committed tickets retain complete acceptance coverage",
+              "manual and pending-owner checks refuse closure as missing",
+              "unparsable receipts are attributed to their path without guessing a check",
+              "non-completion reasons close once with their literal state reason",
+              "invalid reasons and notes refuse before writes; explicit completed requires evidence",
+              "inventory covers every check exactly once and executable mappings require approval, target and host",
+              "replacement reasons accept a replacing issue URL or full commit SHA",
+              "forged local origin main cannot authorize an unlanded commit",
+              "unavailable remote main fails closed despite valid local ancestry",
+              "receipt command must deep-equal the approved landed mapping",
+              "an approved mapping cannot drop obligations its pending binding still lists open (4386fc25e review)",
+              "a run that executed no tests is empty for every reporter, and a run with tests is not",
+              "CI receipt passes on the label's own status in the latest attempt, when another target failed but the job succeeded",
+              "CI receipt refuses forged sha, app, branch, event and workflow path",
+              "CI receipt refuses a rerun that still fails, ignoring the earlier passing attempt",
+              "CI receipt refuses foreign or tampered artifacts, stopped jobs and an absent label",
+              "target mappings carry a label and no argv, and closure expects the CI receipt command",
+              "runner requires --landed and refuses argv mappings even with CI=true",
+              "artifact unpacking is confined: symlinks, nested paths and oversize zips refuse with fixed reasons (3f, #3663)",
+              "unreadable results JSON refuses with a fixed reason and no file contents",
+              "a partial rerun keeps each job leg at its newest attempt, and truncated listings refuse (Fable, #3663)",
+              "closure re-reads CI for a target receipt: a hand-written receipt that passes the local gate is refused",
+              "a rate-limited CI read during closure defers the close instead of crashing it (Fable N2)",
+              "an empty or non-JSON results file refuses the receipt (38L: a crashed run leaves 0 bytes)",
+              "a crashed latest attempt (empty results) refuses the label; it never inherits the earlier attempt's pass (38L)",
+              "executable CLI closes recorder-produced evidence through isolated transport",
+              "recorder retains failed CI labels as failed evidence",
+              "root-check-mapping-validation: markers refuse recorder and close without dispatch",
+              "CI check runs for a different SHA refuse closure with commit and no writes",
+              "the host sampler lives with packages/smithers and no duplicate check runner remains",
+              "completed closure requires the landed declaration to match the approved mapping",
+              "duplicate CI artifact identities refuse at recorder and completed-close boundaries",
+              "reference-host mappings accept only reviewed targets and keep all other rules",
+              "spike-verdict refuses non-spike checks before remote writes",
+              "spike-verdict accepts spike evidence only with the committed reviewer approval",
+              "GitHub check success authenticates artifact claims at recorder and close boundaries",
+              "mapping activation is required at recorder and close, including absent or false approval",
+              "successful unrelated check cannot authenticate the label job at recorder or closure",
+              "reference-host recorder and closure verify committed UUID, runner identity, labels and workflow",
+              "spike evidence cannot become a target receipt at the recorder boundary"
+            ]
+          }
+        ],
+        "provenance": "C-PRC-03 Automation and flows/PACKAGE.ts issueClaim runner; smithers-22 approval and smithers-3f security acceptance pending"
+      }
+    },
+    "C-REL-01": {
+      "status": "pending-owner",
+      "reason": "Automation unavailable/unapproved; owner must supply argv and host",
+      "ticket": "T-DOC-01"
+    },
+    "C-REL-02": {
+      "status": "manual",
+      "reason": "Person/hardware required: reference mini, fresh macOS user account with no prior Smithers state, recorded manual"
+    },
+    "C-REL-03": {
+      "status": "manual",
+      "reason": "Person/hardware required: reference host, recorded manual"
+    },
+    "C-REL-04": {
+      "status": "pending-owner",
+      "reason": "PostgreSQL literal scorecard fixture covers steps 1, 2 and 5 through the composed install router; qualified owner authorization and sampled-session evidence remain pending.",
+      "ticket": "T-REL-03",
+      "pendingBinding": {
+        "files": [
+          "packages/backend/internal/compose/install_scorecard_literal_integration_test.go"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "go",
+              "test",
+              "-json",
+              "./internal/compose",
+              "-run",
+              "^TestInstallScorecardLiteralAlphaFixture$"
+            ],
+            "cwd": "packages/backend",
+            "files": [
+              "packages/backend/internal/compose/install_scorecard_literal_integration_test.go"
+            ],
+            "reporter": "go",
+            "expectedCaseIds": [
+              "TestInstallScorecardLiteralAlphaFixture"
+            ],
+            "prerequisites": [
+              "postgresql"
+            ]
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; landed PostgreSQL fixture 848de03cee; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-REL-05": {
+      "status": "manual",
+      "reason": "Person/hardware required: reference mini, fresh macOS user account, with Ben's live Claude Code, Codex and `gh` logins; Automation present: flows/release/host/credential-soak.sh; authenticated owner approval of argv/host and qualification receipts pending",
+      "pendingBinding": {
+        "files": [
+          "flows/release/host/credential-soak.sh"
+        ],
+        "commands": [],
+        "unboundSubcases": [
+          "Owner must supply approved invocation for non-test automation; file presence is not a passing receipt"
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-REL-06": {
+      "status": "manual",
+      "reason": "Person/hardware required: reference host A and a second Mac B, recorded; Automation present: flows/release/host/backup-restore.mjs, packages/smithers/test/host-backup.fault.test.ts, packages/backend/internal/services/install_quiesce_integration_test.go; authenticated owner approval of argv/host and qualification receipts pending",
+      "pendingBinding": {
+        "files": [
+          "flows/release/host/backup-restore.mjs",
+          "packages/smithers/test/host-backup.fault.test.ts",
+          "packages/backend/internal/services/install_quiesce_integration_test.go"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "vitest",
+              "run",
+              "packages/smithers/test/host-backup.fault.test.ts",
+              "--reporter=json"
+            ],
+            "files": [
+              "packages/smithers/test/host-backup.fault.test.ts"
+            ],
+            "reporter": "vitest",
+            "expectedCaseIds": []
+          },
+          {
+            "argv": [
+              "go",
+              "test",
+              "-json",
+              "-count=1",
+              "./internal/services",
+              "-run",
+              "^(TestInstallQuiesceFreezesOneConsistentSnapshot|TestInstallQuiesceReopensAfterAKilledCommand|TestInstallQuiesceMarkerOutlivesTheLease|TestInstallQuiesceCaptureFailureReopens|TestInstallQuiesceRefusesBeforeFreezingWithoutCapture)$"
+            ],
+            "cwd": "packages/backend",
+            "files": [
+              "packages/backend/internal/services/install_quiesce_integration_test.go"
+            ],
+            "reporter": "go",
+            "expectedCaseIds": [
+              "TestInstallQuiesceFreezesOneConsistentSnapshot",
+              "TestInstallQuiesceReopensAfterAKilledCommand",
+              "TestInstallQuiesceMarkerOutlivesTheLease",
+              "TestInstallQuiesceCaptureFailureReopens",
+              "TestInstallQuiesceRefusesBeforeFreezingWithoutCapture"
+            ],
+            "prerequisites": [],
+            "env": {}
+          }
+        ],
+        "unboundSubcases": [
+          "Owner must supply approved invocation for non-test automation; file presence is not a passing receipt"
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-RMT-01": {
+      "status": "pending-owner",
+      "reason": "No approved CI target; remote-host validation and smithers-22 mapping approval required",
+      "ticket": "T-RMT-01"
+    },
+    "C-RMT-02": {
+      "status": "pending-owner",
+      "reason": "No approved CI target; remote-host validation and smithers-22 mapping approval required",
+      "ticket": "T-RMT-02"
+    },
+    "C-RMT-03": {
+      "status": "pending-owner",
+      "reason": "No approved CI target; remote-host validation and smithers-22 mapping approval required",
+      "ticket": "T-RMT-03"
+    },
+    "C-RMT-04": {
+      "status": "pending-owner",
+      "reason": "No approved CI target; remote-host validation and smithers-22 mapping approval required",
+      "ticket": "T-RMT-04"
+    },
+    "C-RMT-05": {
+      "status": "pending-owner",
+      "reason": "No approved CI target; remote-host validation and smithers-22 mapping approval required",
+      "ticket": "T-RMT-05"
+    },
+    "C-RMT-06": {
+      "status": "pending-owner",
+      "reason": "No approved CI target; remote-host validation and smithers-22 mapping approval required",
+      "ticket": "T-RMT-04"
+    },
+    "C-SEC-01": {
+      "status": "pending-owner",
+      "reason": "Automation present: packages/backend/internal/services/machine_secret_scan_integration_test.go; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-MCH-12",
+      "pendingBinding": {
+        "files": [
+          "packages/backend/internal/services/machine_secret_scan_integration_test.go"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "go",
+              "test",
+              "-json",
+              "-count=1",
+              "./internal/services",
+              "-run",
+              "^(TestMachineSecretScanRealMicroVM)$"
+            ],
+            "cwd": "packages/backend",
+            "files": [
+              "packages/backend/internal/services/machine_secret_scan_integration_test.go"
+            ],
+            "reporter": "go",
+            "expectedCaseIds": [
+              "TestMachineSecretScanRealMicroVM"
+            ],
+            "prerequisites": [],
+            "env": {}
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-SEC-02": {
+      "status": "pending-owner",
+      "reason": "existing negative boundary only",
+      "ticket": "T-FLW-01"
+    },
+    "C-SEC-03": {
+      "status": "pending-owner",
+      "reason": "Absent: packages/backend/internal/services/todo_trust_db_test.go",
+      "ticket": "T-STK-09"
+    },
+    "C-SEC-04": {
+      "status": "pending-owner",
+      "reason": "Composed owner OAuth and setup claim automation present; remaining check steps and authenticated owner approval of argv/host pending",
+      "ticket": "T-ACC-01",
+      "pendingBinding": {
+        "files": [
+          "packages/backend/internal/services/setup_claim_integration_test.go",
+          "apps/app/scripts/server-bundle.integration.test.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "go",
+              "test",
+              "-json",
+              "-count=1",
+              "./internal/compose",
+              "-run",
+              "^(TestOwnerSignInHTTPPostgres|TestOwnerSignInRefusalLandsOnSetupCardPostgres)$"
+            ],
+            "cwd": "packages/backend",
+            "files": [
+              "packages/backend/internal/compose/owner_signin_integration_test.go"
+            ],
+            "reporter": "go",
+            "expectedCaseIds": [
+              "TestOwnerSignInHTTPPostgres",
+              "TestOwnerSignInRefusalLandsOnSetupCardPostgres"
+            ],
+            "prerequisites": [
+              "PG18"
+            ],
+            "env": {
+              "SMITHERS_REQUIRE_DATABASE_TESTS": "1"
+            }
+          },
+          {
+            "argv": [
+              "bun",
+              "test",
+              "./apps/app/scripts/server-bundle.integration.test.ts"
+            ],
+            "files": [
+              "apps/app/scripts/server-bundle.integration.test.ts"
+            ],
+            "reporter": "bun",
+            "prerequisites": [
+              "darwin-arm64",
+              "PG18",
+              "msb",
+              "build-budget"
+            ],
+            "env": {
+              "SMITHERS_REQUIRE_DATABASE_TESTS": "1",
+              "SMITHERS_REQUIRE_MICROVM_TESTS": "1"
+            }
+          }
+        ],
+        "unboundSubcases": [
+          "native-startup (T-ACC-07)",
+          "provisional-owner-and-setup-session-refusals (T-ACC-01)",
+          "Owner write-access refusal and full roster sign-in cases are not proven by TestOwnerSignInHTTPPostgres",
+          "Full check steps require qualification; the composed test proves token refusal, one owner under contention, invalidation, provisional boundary and local-route removal"
+        ],
+        "subcases": {
+          "setup-claim": {
+            "files": [
+              "packages/backend/internal/compose/owner_signin_integration_test.go"
+            ],
+            "commands": [
+              {
+                "argv": [
+                  "go",
+                  "test",
+                  "-json",
+                  "-count=1",
+                  "./internal/compose",
+                  "-run",
+                  "^(TestOwnerSignInHTTPPostgres|TestOwnerSignInRefusalLandsOnSetupCardPostgres)$"
+                ],
+                "cwd": "packages/backend",
+                "files": [
+                  "packages/backend/internal/compose/owner_signin_integration_test.go"
+                ],
+                "reporter": "go",
+                "expectedCaseIds": [
+                  "TestOwnerSignInHTTPPostgres",
+                  "TestOwnerSignInRefusalLandsOnSetupCardPostgres"
+                ],
+                "prerequisites": [
+                  "PG18"
+                ],
+                "env": {
+                  "SMITHERS_REQUIRE_DATABASE_TESTS": "1"
+                }
+              }
+            ]
+          },
+          "setup-token-digests": {
+            "commands": [
+              {
+                "argv": [
+                  "go",
+                  "test",
+                  "-json",
+                  "-count=1",
+                  "./internal/services",
+                  "-run",
+                  "^(TestSetupClaimAtomicAndRestart|TestVerifyOwnerLivePermissionPostgres|TestGitHubOwnerMigrationPreservesOwner|TestSetupMintFailureRecoveryPostgres|TestSetupMintClaimLockOrdersPostgres)$"
+                ],
+                "cwd": "packages/backend",
+                "files": [
+                  "packages/backend/internal/services/setup_claim_integration_test.go"
+                ],
+                "reporter": "go",
+                "expectedCaseIds": [
+                  "TestSetupClaimAtomicAndRestart",
+                  "TestVerifyOwnerLivePermissionPostgres",
+                  "TestGitHubOwnerMigrationPreservesOwner",
+                  "TestSetupMintFailureRecoveryPostgres",
+                  "TestSetupMintClaimLockOrdersPostgres"
+                ],
+                "prerequisites": [
+                  "PG18"
+                ],
+                "env": {
+                  "SMITHERS_REQUIRE_DATABASE_TESTS": "1"
+                }
+              }
+            ]
+          },
+          "native-startup": {
+            "files": [
+              "packages/backend/internal/services/setup_claim_integration_test.go"
+            ],
+            "commands": []
+          },
+          "packaged-relay": {
+            "commands": [
+              {
+                "argv": [
+                  "bun",
+                  "test",
+                  "./apps/app/scripts/server-bundle.integration.test.ts"
+                ],
+                "files": [
+                  "apps/app/scripts/server-bundle.integration.test.ts"
+                ],
+                "reporter": "bun",
+                "prerequisites": [
+                  "darwin-arm64",
+                  "PG18",
+                  "msb",
+                  "build-budget"
+                ],
+                "env": {
+                  "SMITHERS_REQUIRE_DATABASE_TESTS": "1",
+                  "SMITHERS_REQUIRE_MICROVM_TESTS": "1"
+                }
+              }
+            ]
+          }
+        },
+        "provenance": "Actual TestOwnerSignInHTTPPostgres and TestOwnerSignInRefusalLandsOnSetupCardPostgres assertions inspected 2026-10-10; setup digests/rotation/restart in TestSetupClaimAtomicAndRestart; no invented test aliases"
+      }
+    },
+    "C-SEC-05": {
+      "status": "pending-owner",
+      "reason": "Composed-router compiled CLI scope, confirmation and session lifecycle tests present in internal/compose/terminal_token_scope_test.go; production native root-input, retained guest, ownership and physical revocation receipts plus authenticated owner approval of argv/host remain pending",
+      "ticket": "T-TRM-02"
+    },
+    "C-SPK-02": {
+      "status": "pending-owner",
+      "reason": "Decision CLI implemented; awaiting retained reference-host evidence, security review and authenticated owner approval of argv/host",
+      "ticket": "T-MCH-02"
+    },
+    "C-SPK-03": {
+      "status": "pending-owner",
+      "reason": "Automation unavailable/unapproved; owner must supply argv and host",
+      "ticket": "T-COL-01"
+    },
+    "C-SPK-05": {
+      "status": "manual",
+      "reason": "Person/hardware required: the reference host plus one Apple Silicon Mac with a different memory size; Automation present: packages/backend/checks/C-SPK-05/run.sh; authenticated owner approval of argv/host and qualification receipts pending",
+      "pendingBinding": {
+        "files": [
+          "packages/backend/checks/C-SPK-05/run.sh"
+        ],
+        "commands": [],
+        "unboundSubcases": [
+          "Owner must supply approved invocation for non-test automation; file presence is not a passing receipt"
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-SPK-06": {
+      "status": "pending-owner",
+      "reason": "Input preflight exists; fresh-user Homebrew signing/pour, GUI login and relocation evidence plus approved reference-host binding remain outstanding",
+      "ticket": "T-INS-03"
+    },
+    "C-SPK-07": {
+      "status": "manual",
+      "reason": "Person/hardware required: reference host plus a second Mac on the same network; Automation unavailable/unapproved; owner must supply argv and host"
+    },
+    "C-SPK-08": {
+      "status": "manual",
+      "reason": "Person/hardware required: reference host, VS Code on a second Mac; Automation present: packages/smithers-machined/checks/C-SPK-08/run.sh; authenticated owner approval of argv/host and qualification receipts pending",
+      "pendingBinding": {
+        "files": [
+          "packages/smithers-machined/checks/C-SPK-08/run.sh"
+        ],
+        "commands": [],
+        "unboundSubcases": [
+          "Owner must supply approved invocation for non-test automation; file presence is not a passing receipt"
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-STK-01": {
+      "status": "pending-owner",
+      "reason": "Automation present: packages/backend/internal/services/mythical_todo_state_test.go, packages/backend/internal/compose/todo_literal_projection_integration_test.go; full check qualification and authenticated owner approval of argv/host pending",
+      "ticket": "T-STK-01",
+      "pendingBinding": {
+        "files": [
+          "packages/backend/internal/services/mythical_todo_state_test.go",
+          "packages/backend/internal/compose/todo_literal_projection_integration_test.go"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "go",
+              "test",
+              "-json",
+              "-count=1",
+              "./internal/services",
+              "-run",
+              "^(TestTodoStateLiteralProjection|TestTodoReviewWorkQueuesNextAttemptWithOpenPR|TestTodoWaitPriorityAndSettlement|TestTodoPrimaryWaitLiteralOrder|TestTodoQueuedRetryDoesNotProjectThePreviousRunOrPR|TestTodoPendingRetryIsOnlyTheQueuedSuccessor)$"
+            ],
+            "cwd": "packages/backend",
+            "files": [
+              "packages/backend/internal/services/mythical_todo_state_test.go"
+            ],
+            "reporter": "go",
+            "expectedCaseIds": [
+              "TestTodoStateLiteralProjection",
+              "TestTodoReviewWorkQueuesNextAttemptWithOpenPR",
+              "TestTodoWaitPriorityAndSettlement",
+              "TestTodoPrimaryWaitLiteralOrder",
+              "TestTodoQueuedRetryDoesNotProjectThePreviousRunOrPR",
+              "TestTodoPendingRetryIsOnlyTheQueuedSuccessor"
+            ],
+            "prerequisites": [],
+            "env": {}
+          },
+          {
+            "argv": [
+              "go",
+              "test",
+              "-json",
+              "-count=1",
+              "./internal/compose",
+              "-run",
+              "^(TestTodoLiteralProjectionComposedInstall|TestTodoDropEngineTransitionLiteralCases|TestTodoRetryTransitionLiteralCases|TestTodoRetryCurrentFlowTransitionLiteralCases)$"
+            ],
+            "cwd": "packages/backend",
+            "files": [
+              "packages/backend/internal/compose/todo_literal_projection_integration_test.go"
+            ],
+            "reporter": "go",
+            "expectedCaseIds": [
+              "TestTodoLiteralProjectionComposedInstall",
+              "TestTodoDropEngineTransitionLiteralCases",
+              "TestTodoRetryTransitionLiteralCases",
+              "TestTodoRetryCurrentFlowTransitionLiteralCases"
+            ],
+            "prerequisites": [
+              "PG18"
+            ],
+            "env": {
+              "SMITHERS_REQUIRE_DATABASE_TESTS": "1"
+            }
+          }
+        ],
+        "provenance": "Actual source assertions verified 2026-10-10; replaces nonexistent planned test paths/names; native/reference-host cases still require their named host",
+        "unboundSubcases": [
+          "C-STK-01 guest qualification still requires TestTodoApprovalManagedHostMicroVM on the approved reference bundle, plus human/GitHub and attachment latency receipts"
+        ]
+      }
+    },
+    "C-STK-02": {
+      "status": "pending-owner",
+      "reason": "Absent: packages/backend/internal/services/todo_admission_db_test.go",
+      "ticket": "T-STK-03"
+    },
+    "C-STK-03": {
+      "status": "pending-owner",
+      "reason": "Automation present: packages/backend/internal/compose/todo_four_step_integration_test.go; full check qualification and authenticated owner approval of argv/host pending",
+      "ticket": "T-STK-05",
+      "pendingBinding": {
+        "files": [
+          "packages/backend/internal/compose/todo_four_step_integration_test.go"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "go",
+              "test",
+              "-json",
+              "-count=1",
+              "./internal/compose",
+              "-run",
+              "^TestTodoFourStepComposedInstall$",
+              "-timeout=20m"
+            ],
+            "cwd": "packages/backend",
+            "files": [
+              "packages/backend/internal/compose/todo_four_step_integration_test.go"
+            ],
+            "reporter": "go",
+            "expectedCaseIds": [
+              "TestTodoFourStepComposedInstall"
+            ],
+            "prerequisites": [],
+            "env": {
+              "SMITHERS_TODO_FOUR_STEP": "1"
+            }
+          },
+          {
+            "argv": [
+              "go",
+              "test",
+              "-json",
+              "-count=1",
+              "./internal/compose",
+              "-run",
+              "^TestTodoFourStepMicroVM$",
+              "-timeout=20m"
+            ],
+            "cwd": "packages/backend",
+            "files": [
+              "packages/backend/internal/compose/todo_four_step_integration_test.go"
+            ],
+            "reporter": "go",
+            "expectedCaseIds": [
+              "TestTodoFourStepMicroVM"
+            ],
+            "prerequisites": [
+              "reference-host",
+              "approved-installed-bundle"
+            ],
+            "env": {
+              "SMITHERS_TODO_FOUR_STEP_MICROVM": "1",
+              "SMITHERS_REQUIRE_MICROVM_TESTS": "1"
+            }
+          }
+        ],
+        "provenance": "Actual source assertions verified 2026-10-10; replaces nonexistent planned test paths/names; native/reference-host cases still require their named host",
+        "unboundSubcases": [
+          "Reference-host command requires SMITHERS_CHECK_BUNDLE supplied by the owner; Linux component evidence cannot qualify guest isolation or physical receipts"
+        ]
+      }
+    },
+    "C-STK-04": {
+      "status": "pending-owner",
+      "reason": "Absent: packages/backend/internal/services/stack_order_attention_test.go",
+      "ticket": "T-GH-05"
+    },
+    "C-STK-05": {
+      "status": "pending-owner",
+      "reason": "Retention/replay fixtures present; real machine, stack delivery and approved provenance receipts pending",
+      "ticket": "T-MCH-14"
+    },
+    "C-STK-06": {
+      "status": "pending-owner",
+      "reason": "Automation present: packages/backend/internal/services/todo_candidate_flow_db_test.go; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-STK-12",
+      "pendingBinding": {
+        "files": [
+          "packages/backend/internal/services/todo_candidate_flow_db_test.go"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "go",
+              "test",
+              "-json",
+              "-count=1",
+              "./internal/services",
+              "-run",
+              "^(TestCandidatePushRevalidatesUnderOwningClaim|TestCandidatePushHoldsStackMutationUntilEffectReturns|TestReservedCandidateProposesVerifiedTree|TestReservedCandidateWithoutProposeReleasesLane|TestReservedCandidateBindsExistingCapture|TestReservedCandidateVerifiesUnderForeignHold|TestReservedCandidateSteerBeforeProposalAcknowledgment|TestReservedFirstCandidateRetainsMovedPrefix|TestTodoRunAwaitsProposal)$"
+            ],
+            "cwd": "packages/backend",
+            "files": [
+              "packages/backend/internal/services/todo_candidate_flow_db_test.go"
+            ],
+            "reporter": "go",
+            "expectedCaseIds": [
+              "TestCandidatePushRevalidatesUnderOwningClaim",
+              "TestCandidatePushHoldsStackMutationUntilEffectReturns",
+              "TestReservedCandidateProposesVerifiedTree",
+              "TestReservedCandidateWithoutProposeReleasesLane",
+              "TestReservedCandidateBindsExistingCapture",
+              "TestReservedCandidateVerifiesUnderForeignHold",
+              "TestReservedCandidateSteerBeforeProposalAcknowledgment",
+              "TestReservedFirstCandidateRetainsMovedPrefix",
+              "TestTodoRunAwaitsProposal"
+            ],
+            "prerequisites": [],
+            "env": {}
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-STK-07": {
+      "status": "pending-owner",
+      "reason": "Implemented in mythical_merge_todo_test.go, github_outbound_fault_test.go and compose/todo_merge_integration_test.go; authenticated owner approval of argv and host remains pending",
+      "ticket": "T-STK-04"
+    },
+    "C-STK-08": {
+      "status": "pending-owner",
+      "reason": "Automation present: packages/backend/internal/services/mythical_todo_state_test.go, packages/backend/internal/compose/todo_folded_paused_conflict_integration_test.go; full check qualification and authenticated owner approval of argv/host pending",
+      "ticket": "T-STK-07",
+      "pendingBinding": {
+        "files": [
+          "packages/backend/internal/services/mythical_todo_state_test.go",
+          "packages/backend/internal/compose/todo_folded_paused_conflict_integration_test.go"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "go",
+              "test",
+              "-json",
+              "-count=1",
+              "./internal/services",
+              "-run",
+              "^(TestTodoStateLiteralProjection|TestTodoReviewWorkQueuesNextAttemptWithOpenPR|TestTodoWaitPriorityAndSettlement|TestTodoPrimaryWaitLiteralOrder|TestTodoQueuedRetryDoesNotProjectThePreviousRunOrPR|TestTodoPendingRetryIsOnlyTheQueuedSuccessor)$"
+            ],
+            "cwd": "packages/backend",
+            "files": [
+              "packages/backend/internal/services/mythical_todo_state_test.go"
+            ],
+            "reporter": "go",
+            "expectedCaseIds": [
+              "TestTodoStateLiteralProjection",
+              "TestTodoReviewWorkQueuesNextAttemptWithOpenPR",
+              "TestTodoWaitPriorityAndSettlement",
+              "TestTodoPrimaryWaitLiteralOrder",
+              "TestTodoQueuedRetryDoesNotProjectThePreviousRunOrPR",
+              "TestTodoPendingRetryIsOnlyTheQueuedSuccessor"
+            ],
+            "prerequisites": [],
+            "env": {}
+          },
+          {
+            "argv": [
+              "go",
+              "test",
+              "-json",
+              "-count=1",
+              "./internal/compose",
+              "-run",
+              "^TestTodoFoldedPausedConflictResumeComposedInstall$",
+              "-timeout=20m"
+            ],
+            "cwd": "packages/backend",
+            "files": [
+              "packages/backend/internal/compose/todo_folded_paused_conflict_integration_test.go"
+            ],
+            "reporter": "go",
+            "expectedCaseIds": [
+              "TestTodoFoldedPausedConflictResumeComposedInstall"
+            ],
+            "prerequisites": [],
+            "env": {
+              "SMITHERS_TODO_FOLDED_CONFLICT": "1"
+            }
+          },
+          {
+            "argv": [
+              "go",
+              "test",
+              "-json",
+              "-count=1",
+              "./internal/compose",
+              "-run",
+              "^TestTodoFoldedPausedConflictResumeMicroVM$",
+              "-timeout=20m"
+            ],
+            "cwd": "packages/backend",
+            "files": [
+              "packages/backend/internal/compose/todo_folded_paused_conflict_integration_test.go"
+            ],
+            "reporter": "go",
+            "expectedCaseIds": [
+              "TestTodoFoldedPausedConflictResumeMicroVM"
+            ],
+            "prerequisites": [
+              "reference-host",
+              "approved-installed-bundle"
+            ],
+            "env": {
+              "SMITHERS_TODO_FOLDED_CONFLICT_MICROVM": "1",
+              "SMITHERS_REQUIRE_MICROVM_TESTS": "1"
+            }
+          }
+        ],
+        "provenance": "Actual source assertions verified 2026-10-10; replaces nonexistent planned test paths/names; native/reference-host cases still require their named host",
+        "unboundSubcases": [
+          "Reference-host command requires SMITHERS_CHECK_BUNDLE supplied by the owner; Linux component evidence cannot qualify guest isolation or physical receipts"
+        ]
+      }
+    },
+    "C-STK-13": {
+      "status": "pending-owner",
+      "reason": "Implemented in mythical_merge_todo_test.go and mythical_automerge_label_integration_test.go, with composed preapproval routes; folded into T-STK-04, authenticated owner approval of argv and host remains pending",
+      "ticket": "T-STK-04"
+    },
+    "C-UI-01": {
+      "status": "manual",
+      "reason": "Person/hardware required: reference host plus a second Mac on the same network. Keyboard journey specs and native guards exist; full Chromium/WebKit journey qualification and owner-signed receipts remain pending."
+    },
+    "C-UI-02": {
+      "status": "pending-owner",
+      "reason": "Automation present: apps/app/src/mainview/cards/productWords.ts; authenticated owner approval of argv/host and qualification receipts pending; Absent: apps/app/src/mainview/cards/ProductWords.test.tsx",
+      "ticket": "T-CAT-01",
+      "pendingBinding": {
+        "files": [
+          "apps/app/src/mainview/cards/productWords.ts"
+        ],
+        "commands": [],
+        "unboundSubcases": [
+          "Missing automation: apps/app/src/mainview/cards/ProductWords.test.tsx",
+          "Owner must supply approved invocation for non-test automation; file presence is not a passing receipt"
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-UI-03": {
+      "status": "pending-owner",
+      "reason": "Automation present: apps/app/e2e/playwright/notifications.spec.ts; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-APP-18",
+      "pendingBinding": {
+        "files": [
+          "apps/app/e2e/playwright/notifications.spec.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "playwright",
+              "test",
+              "--config",
+              "playwright.config.ts",
+              "e2e/playwright/notifications.spec.ts",
+              "--reporter=json"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/e2e/playwright/notifications.spec.ts"
+            ],
+            "reporter": "playwright",
+            "expectedCaseIds": [],
+            "prerequisites": [
+              "build-budget"
+            ]
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-UI-04": {
+      "status": "pending-owner",
+      "reason": "Automation present: apps/app/e2e/real/timeline.spec.ts, packages/backend/internal/services/conversation_summaries_test.go; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-APP-07",
+      "pendingBinding": {
+        "files": [
+          "apps/app/e2e/real/timeline.spec.ts",
+          "packages/backend/internal/services/conversation_summaries_test.go"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "playwright",
+              "test",
+              "--config",
+              "playwright.real.config.ts",
+              "e2e/real/timeline.spec.ts",
+              "--reporter=json"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/e2e/real/timeline.spec.ts"
+            ],
+            "reporter": "playwright",
+            "expectedCaseIds": [],
+            "prerequisites": [
+              "reference-host",
+              "installed-bundle"
+            ]
+          },
+          {
+            "argv": [
+              "go",
+              "test",
+              "-json",
+              "-count=1",
+              "./internal/services",
+              "-run",
+              "^(TestConversationSummariesDurabilityAndStaleResult)$"
+            ],
+            "cwd": "packages/backend",
+            "files": [
+              "packages/backend/internal/services/conversation_summaries_test.go"
+            ],
+            "reporter": "go",
+            "expectedCaseIds": [
+              "TestConversationSummariesDurabilityAndStaleResult"
+            ],
+            "prerequisites": [
+              "PG18"
+            ],
+            "env": {
+              "SMITHERS_REQUIRE_DATABASE_TESTS": "1"
+            }
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-UI-05": {
+      "status": "pending-owner",
+      "reason": "Absent: packages/backend/internal/live/honest_state_integration_test.go, apps/app/e2e/real/honest-state.spec.ts",
+      "ticket": "T-COL-02"
+    },
+    "C-UI-06": {
+      "status": "pending-owner",
+      "reason": "Automation present: apps/app/e2e/playwright/branch-conversation.spec.ts; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-APP-16",
+      "pendingBinding": {
+        "files": [
+          "apps/app/e2e/playwright/branch-conversation.spec.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "playwright",
+              "test",
+              "--config",
+              "playwright.config.ts",
+              "e2e/playwright/branch-conversation.spec.ts",
+              "--reporter=json"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/e2e/playwright/branch-conversation.spec.ts"
+            ],
+            "reporter": "playwright",
+            "expectedCaseIds": [],
+            "prerequisites": [
+              "build-budget"
+            ]
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-UI-07": {
+      "status": "pending-owner",
+      "reason": "Automation present: packages/backend/internal/chat/preflight_integration_test.go, apps/app/e2e/playwright/branch-conversation.spec.ts; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-APP-17",
+      "pendingBinding": {
+        "files": [
+          "packages/backend/internal/chat/preflight_integration_test.go",
+          "apps/app/e2e/playwright/branch-conversation.spec.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "go",
+              "test",
+              "-json",
+              "-count=1",
+              "./internal/chat",
+              "-run",
+              "^(TestContextPreflightPostgresJournalReplay)$"
+            ],
+            "cwd": "packages/backend",
+            "files": [
+              "packages/backend/internal/chat/preflight_integration_test.go"
+            ],
+            "reporter": "go",
+            "expectedCaseIds": [
+              "TestContextPreflightPostgresJournalReplay"
+            ],
+            "prerequisites": [],
+            "env": {}
+          },
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "playwright",
+              "test",
+              "--config",
+              "playwright.config.ts",
+              "e2e/playwright/branch-conversation.spec.ts",
+              "--reporter=json"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/e2e/playwright/branch-conversation.spec.ts"
+            ],
+            "reporter": "playwright",
+            "expectedCaseIds": [],
+            "prerequisites": [
+              "build-budget"
+            ]
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-UI-08": {
+      "status": "pending-owner",
+      "reason": "Absent: packages/rpc/test/cards/<Card>Card.test.ts, packages/rpc/test/cards/CardContracts.test.ts, scripts/spec-card-fields.mjs",
+      "ticket": "T-APP-19"
+    },
+    "C-UI-09": {
+      "status": "pending-owner",
+      "reason": "Automation present: apps/app/e2e/playwright/docs.spec.ts; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-APP-20",
+      "pendingBinding": {
+        "files": [
+          "apps/app/e2e/playwright/docs.spec.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "playwright",
+              "test",
+              "--config",
+              "playwright.config.ts",
+              "e2e/playwright/docs.spec.ts",
+              "--reporter=json"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/e2e/playwright/docs.spec.ts"
+            ],
+            "reporter": "playwright",
+            "expectedCaseIds": [],
+            "prerequisites": [
+              "build-budget"
+            ]
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-UI-10": {
+      "status": "pending-owner",
+      "reason": "Automation present: apps/app/e2e/playwright/debug-api.spec.ts; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-APP-21",
+      "pendingBinding": {
+        "files": [
+          "apps/app/e2e/playwright/debug-api.spec.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "playwright",
+              "test",
+              "--config",
+              "playwright.config.ts",
+              "e2e/playwright/debug-api.spec.ts",
+              "--reporter=json"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/e2e/playwright/debug-api.spec.ts"
+            ],
+            "reporter": "playwright",
+            "expectedCaseIds": [],
+            "prerequisites": [
+              "build-budget"
+            ]
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-UI-11": {
+      "status": "pending-owner",
+      "reason": "Automation present: apps/app/e2e/real/file-intelligence.spec.ts; authenticated owner approval of argv/host and qualification receipts pending",
+      "ticket": "T-APP-15",
+      "pendingBinding": {
+        "files": [
+          "apps/app/e2e/real/file-intelligence.spec.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "playwright",
+              "test",
+              "--config",
+              "playwright.real.config.ts",
+              "e2e/real/file-intelligence.spec.ts",
+              "--reporter=json"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/e2e/real/file-intelligence.spec.ts"
+            ],
+            "reporter": "playwright",
+            "expectedCaseIds": [],
+            "prerequisites": [
+              "reference-host",
+              "installed-bundle"
+            ]
+          }
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-UI-12": {
+      "status": "pending-owner",
+      "reason": "Automation present (apps/app/src/mainview/cards/views/Views.test.tsx, apps/app/e2e/playwright/view-stories.spec.ts); awaiting smithers-22 mapping approval",
+      "ticket": "T-UI-01",
+      "pendingBinding": {
+        "commands": [
+          {
+            "argv": [
+              "bun",
+              "test",
+              "--isolate",
+              "src/mainview/cards/views/Views.test.tsx"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/src/mainview/cards/views/Views.test.tsx"
+            ],
+            "reporter": "bun",
+            "expectedCaseIds": []
+          },
+          {
+            "argv": [
+              "pnpm",
+              "exec",
+              "playwright",
+              "test",
+              "--config",
+              "playwright.config.ts",
+              "e2e/playwright/view-stories.spec.ts",
+              "--reporter=json"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/e2e/playwright/view-stories.spec.ts",
+              "apps/app/playwright.config.ts"
+            ],
+            "reporter": "playwright",
+            "expectedCaseIds": [],
+            "prerequisites": [
+              "build-budget"
+            ],
+            "env": {
+              "SMITHERS_VIEW_STORIES": "1",
+              "SMITHERS_E2E_BROWSER": "chromium"
+            }
+          }
+        ],
+        "unboundSubcases": [
+          {
+            "name": "T-PRC-03-population",
+            "reason": "Both attempted targets failed before reporting named cases; expectedCaseIds require real execution"
+          },
+          {
+            "name": "T-UI-02-04-action-removal-and-callbacks",
+            "reason": "Setup/Settings/TODO early returns bypass generic action removal; Setup/Settings do not assert other callback silence"
+          },
+          {
+            "name": "T-UI-02-copy-effect-isolation",
+            "reason": "Clipboard fallback cases assert one copy but do not assert absence of setup/key-storage effects"
+          },
+          {
+            "name": "T-UI-03-full-draft-input",
+            "reason": "No Draft View story or full Draft input/callback assertions"
+          },
+          {
+            "name": "T-UI-11-editor-updates-and-pins",
+            "reason": "No identity/scroll/cursor preservation across model updates or approved export/pin receipt assertion"
+          },
+          {
+            "name": "T-UI-12-monitor-replay-and-custom-slot",
+            "reason": "No Monitor story or replay-only callback/custom-slot security assertions"
+          },
+          {
+            "name": "T-UI-13-agent-draft-opening",
+            "reason": "No Agent View story"
+          }
+        ],
+        "subcases": {
+          "unit": {
+            "commands": [
+              {
+                "argv": [
+                  "bun",
+                  "test",
+                  "--isolate",
+                  "src/mainview/cards/views/Views.test.tsx"
+                ],
+                "cwd": "apps/app",
+                "files": [
+                  "apps/app/src/mainview/cards/views/Views.test.tsx"
+                ],
+                "reporter": "bun",
+                "expectedCaseIds": []
+              }
+            ]
+          },
+          "playwright": {
+            "commands": [
+              {
+                "argv": [
+                  "pnpm",
+                  "exec",
+                  "playwright",
+                  "test",
+                  "--config",
+                  "playwright.config.ts",
+                  "e2e/playwright/view-stories.spec.ts",
+                  "--reporter=json"
+                ],
+                "cwd": "apps/app",
+                "files": [
+                  "apps/app/e2e/playwright/view-stories.spec.ts",
+                  "apps/app/playwright.config.ts"
+                ],
+                "reporter": "playwright",
+                "expectedCaseIds": [],
+                "prerequisites": [
+                  "build-budget"
+                ],
+                "env": {
+                  "SMITHERS_VIEW_STORIES": "1",
+                  "SMITHERS_E2E_BROWSER": "chromium"
+                }
+              }
+            ]
+          }
+        },
+        "provenance": "qa-c12 2026-10-03: ran Views.test.tsx with bun from apps/app and view-stories.spec.ts via playwright.config.ts with JSON reporter; both failed before named population; REPORT-qa-c12.md records gaps"
+      }
+    },
+    "C-UI-13": {
+      "status": "pending-owner",
+      "reason": "Automation present: apps/app/src/mainview/cards/ViewReachability.test.ts; authenticated owner approval of argv/host and qualification receipts pending; Absent: apps/app/src/mainview/cards/containers/<Card>Container.integration.test.ts",
+      "ticket": "T-APP-01",
+      "pendingBinding": {
+        "files": [
+          "apps/app/src/mainview/cards/ViewReachability.test.ts"
+        ],
+        "commands": [
+          {
+            "argv": [
+              "bun",
+              "test",
+              "--isolate",
+              "src/mainview/cards/ViewReachability.test.ts"
+            ],
+            "cwd": "apps/app",
+            "files": [
+              "apps/app/src/mainview/cards/ViewReachability.test.ts"
+            ],
+            "reporter": "bun",
+            "expectedCaseIds": []
+          }
+        ],
+        "unboundSubcases": [
+          "Missing automation: apps/app/src/mainview/cards/containers/<Card>Container.integration.test.ts"
+        ],
+        "provenance": "Source inventory verified against origin/main 2026-10-10; pending only, no mapping approval or full-check qualification inferred"
+      }
+    },
+    "C-UI-14": {
+      "status": "pending-owner",
+      "reason": "Requires smithers-22 approved target and authenticated qualification evidence.",
+      "ticket": "T-UI-19"
+    }
+  }
+}

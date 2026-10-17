@@ -14,7 +14,7 @@ manifests declare `engines.node` as `>=26.4.0`, and the release workflow
 runs the candidate tarballs on `26.4.0`. That floor is the Node the published packages support, and it is a
 separate fact from the Node the toolchain runs: `.node-version` at the root
 holds one exact release, `ci.yml` reads it through `node-version-file`,
-`scripts/ci/cloud.sh` bootstraps a Cloud runner from it, and
+`.smithers/ci/cloud.sh` bootstraps a Cloud runner from it, and
 `packages/repo-targets/contracts/check-toolchain-pins.mjs` fails when it drops below the declared
 floor or when a workflow names a release of its own. The durable database backend is
 `@effect/sql-sqlite-node`; see
@@ -113,9 +113,8 @@ publication; 429 and 5xx responses retry, while other precheck failures stop.
 Publication and transient prechecks get an initial attempt followed by at most
 three retries after 10, 30, and 60 seconds.
 
-The Script gates invocation (`smithers-build test '//scripts/...'`) builds
-the site before checking shipped links: `//scripts/repo-contract:smithersLinks`
-depends on `//apps/site:build`. The link gate can also run by its own label
+The shipped-links gate builds the site before checking links:
+`//apps/site:smithersLinks` depends on `//apps/site:build`. The link gate can also run by its own label
 from a clean checkout; no earlier workflow step must supply `apps/site/dist`.
 
 ## Known test pins

@@ -2,7 +2,7 @@
  * The GitHub proxy: the one process on a machine that calls GitHub.
  *
  * Every GitHub client on the machine (the {@link GitHubClient}, `gh api`
- * given an absolute proxy URL, `scripts/issue-claim.mjs`, agents in
+ * given an absolute proxy URL, `flows/issue-claim/issue-claim.mjs`, agents in
  * sandboxes and microVMs) sends its requests here instead of to
  * `api.github.com`. The proxy owns two things no caller has to hold:
  *

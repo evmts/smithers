@@ -4,11 +4,11 @@ import { randomUUID } from "node:crypto"
 import { mkdir, readFile, unlink } from "node:fs/promises"
 import { join } from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
-import { releaseGateArgs, releaseGateSetForHost } from "../../scripts/release-gates.mjs"
 import { chooseTemplate } from "../release-content/jev-template.ts"
 import * as Content from "../release-content/workflow.ts"
 import { readWorkspaceManifests } from "../release/pack-release.mjs"
 import { candidateIntegrity, preflight, publishCandidate, verifyLocalCandidate } from "../release/publish-release.mjs"
+import { releaseGateArgs, releaseGateSetForHost } from "../release/release-gates.mjs"
 import { readVersionedManifests, retarget, retargetSource, versionedSources } from "../release/set-release-version.mjs"
 import * as Release from "../release/workflow.ts"
 import { evaluatorLayer } from "../repository/jev-checks.ts"
@@ -51,7 +51,7 @@ type Manifest = Parameters<typeof candidateIntegrity>[0]
 
 /**
  * The release inventory the checks step runs and the exceptions it reports.
- * Defaults to `scripts/release-gates.mjs`; tests inject a mutated copy to
+ * Defaults to `flows/release/release-gates.mjs`; tests inject a mutated copy to
  * prove the receipt without running the real gates.
  */
 export type ReleaseGateSet = ReturnType<typeof releaseGateSetForHost>

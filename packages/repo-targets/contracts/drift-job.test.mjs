@@ -9,7 +9,6 @@ import { promisify } from 'node:util'
 
 const workflowPath = new URL('../../../.github/workflows/drift.yml', import.meta.url)
 const ciPath = new URL('../../../.github/workflows/ci.yml', import.meta.url)
-const scriptsPackagePath = new URL('../../../scripts/PACKAGE.ts', import.meta.url)
 const flowsPackagePath = new URL('../../../flows/PACKAGE.ts', import.meta.url)
 const rootPackagePath = new URL('../../../PACKAGE.ts', import.meta.url)
 const manifestPath = new URL('../../../package.json', import.meta.url)
@@ -24,7 +23,7 @@ const gateCommands = [
   "pnpm exec smthrs lint '//:backendAccessTests' --known-red '.github/ci-known-red.json' --verbose",
   "pnpm exec smthrs lint '//:openapiBundle' --known-red '.github/ci-known-red.json' --verbose",
   "pnpm exec smthrs lint '//:openapiClients' --known-red '.github/ci-known-red.json' --verbose",
-  "pnpm exec smthrs lint '//scripts:docsDrift' --known-red '.github/ci-known-red.json' --verbose",
+  "pnpm exec smthrs lint '//:docsDrift' --known-red '.github/ci-known-red.json' --verbose",
   "pnpm exec smthrs build '//flows:apiBaseline' --known-red '.github/ci-known-red.json' --verbose",
   "pnpm exec smthrs lint '//packages/repo-targets:conflictMarkers' --known-red '.github/ci-known-red.json' --verbose",
   "pnpm exec smthrs lint '//packages/repo-targets:trackedHygiene' --known-red '.github/ci-known-red.json' --verbose",
@@ -111,7 +110,7 @@ test('API baseline and docs drift targets are check-only and independent of rele
   const release = source.match(/const releasePack\s*=\s*Smithers\.NodeBinary\(\{([\s\S]*?)\n\}\)/)?.[1]
   assert.ok(release, 'releasePack must use NodeBinary')
   assert.match(release, /deps:\s*\[\s*apiBaseline\s*,/, 'releasePack must depend on apiBaseline')
-  const docs = (await readFile(scriptsPackagePath, 'utf8')).match(/const docsDrift\s*=\s*Smithers\.Shell\.Diff\(\{([\s\S]*?)\n\}\)/)?.[1]
+  const docs = (await readFile(rootPackagePath, 'utf8')).match(/const docsDrift\s*=\s*Smithers\.Shell\.Diff\(\{([\s\S]*?)\n\}\)/)?.[1]
   assert.ok(docs, 'docsDrift must use Shell.Diff')
   assert.match(docs, /changes:\s*\[\]/)
   assert.match(docs, /pnpm run docs:check/)
@@ -768,7 +767,7 @@ test('campaign bootstrap uses the real runner Node and retains launch failures b
 
 
 test('documentation drift checks every current site generator', async () => {
-  const source = await readFile(scriptsPackagePath, 'utf8')
+  const source = await readFile(rootPackagePath, 'utf8')
   const docs = source.match(/const docsDrift\s*=\s*Smithers\.Shell\.Diff\(\{([\s\S]*?)\n\}\)/)?.[1]
   const manifest = JSON.parse(await readFile(join(repositoryRoot, 'apps/site/package.json'), 'utf8'))
   const generators = manifest.scripts['sync:docs'].split(' && ')

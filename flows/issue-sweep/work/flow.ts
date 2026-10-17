@@ -225,7 +225,7 @@ export default Flow.make("issue-sweep/work", {
   description: "One coding agent fixes one issue in its own jj workspace.",
   capabilities: [
     "proc:spawn:gh api *",
-    "proc:spawn:node /*/scripts/github-proxy.mjs --ensure",
+    "proc:spawn:node /*/flows/issue-claim/github-proxy.mjs --ensure",
     "proc:spawn:jj -R *",
     "proc:spawn:git --git-dir *",
     "proc:spawn:pnpm *",
@@ -274,7 +274,7 @@ export default Flow.make("issue-sweep/work", {
 // The brief and the agent's answer (pure)
 // ---------------------------------------------------------------------------
 
-// Comments scripts/issue-claim.mjs posts; they tell an agent nothing about the bug.
+// Comments flows/issue-claim/issue-claim.mjs posts; they tell an agent nothing about the bug.
 const claimBookkeeping = /^(Claimed by|Released by|Took over) /
 
 export const brief = (repo: string, issue: number, text: typeof IssueText.Type) =>

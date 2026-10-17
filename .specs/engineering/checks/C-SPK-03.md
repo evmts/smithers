@@ -12,7 +12,7 @@ Automation: to write, as a `smthrs test` target · Runs in: reference host
 
 Candidate Automation declaration (unapproved): `apps/backend/checks/C-SPK-03-07/relay-rtt/` (new; `apps/backend/checks/C-SPK-03-07/run.sh rtt`) · Runs in: reference host
 
-Receipt: CI's own check run at the landed SHA, or a `smthrs test` run on the reference host, recorded through `scripts/check-run.mjs` (minimal-code synthesis ruling 3).
+Receipt: CI's own check run at the landed SHA, or a `smthrs test` run on the reference host, recorded through `flows/evidence/check-run.mjs` (minimal-code synthesis ruling 3).
 
 ## Steps
 

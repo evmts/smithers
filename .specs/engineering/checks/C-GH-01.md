@@ -12,7 +12,7 @@ Automation: to write, as a `smthrs test` target · Runs in: recorded manual (W0)
 
 Candidate Automation declaration (unapproved): W0: the disposable T-GH-01 form, recorded manually. S1: `apps/app/e2e/real/github-j10/app-manifest.spec.ts` (new), driving a signed-in GitHub profile · Runs in: recorded manual (W0), reference host (S1)
 
-Receipt: CI's own check run at the landed SHA, or a `smthrs test` run on the reference host, recorded through `scripts/check-run.mjs` (minimal-code synthesis ruling 3).
+Receipt: CI's own check run at the landed SHA, or a `smthrs test` run on the reference host, recorded through `flows/evidence/check-run.mjs` (minimal-code synthesis ruling 3).
 
 ## Steps
 - Adopted T-GH-01 boundary cases: Use production setup/callback routes and independent GitHub request counts. Expired and claim-invalidated durable setup sessions, foreign/replayed state and invalid origin each make zero outbound exchanges. Race two starts, crash after durable CAS and around callback conversion/local commit, and assert one begin, single-use state and all-or-none sealed credentials/configuration/completion/projection; restart preserves done and prevents overwrites

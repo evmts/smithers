@@ -23,8 +23,8 @@ Existing engine/library crash tests are not C-DUR acceptance evidence.
 | C-DUR-04 | backend machined `fault_test.go`; compose `rebase_fault_test.go`                                                                                                                              | Linux CI (daemon), approved reference Mac (VM) |
 
 These are required paths, not claims of implemented coverage. The approved
-mapping in `scripts/check-commands.json` and authenticated CI results determine
-whether `node scripts/check-run.mjs C-DUR-0N --landed <full-sha>` can issue a
+mapping in `flows/evidence/check-commands.json` and authenticated CI results determine
+whether `node flows/evidence/check-run.mjs C-DUR-0N --landed <full-sha>` can issue a
 receipt. Pending-owner mappings refuse; do not replace them with direct
 journal/service calls, skipped cases or a passing availability test. The serial matrix runs in the scheduled reliability workflow rather than
 ordinary push/PR CI, without known-red allowances or cache credentials. The

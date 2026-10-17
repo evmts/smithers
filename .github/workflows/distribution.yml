@@ -34,4 +34,4 @@ jobs:
         with:
           node-version: 26.4.0
       - name: Distribution release contracts
-        run: node --test scripts/repo-contract/mac-distribution.test.mjs distribution/fake-todo-turns.test.mjs
+        run: node --test packages/repo-targets/contracts/mac-distribution.test.mjs distribution/fake-todo-turns.test.mjs

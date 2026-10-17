@@ -4,7 +4,7 @@ const packageJson = S.file("//package.json")
 const workspaceConfig = S.file("//pnpm-workspace.yaml")
 
 // The toolchain, declared once. Targets read the runtime and package manager
-// from this declaration at plan time, and `scripts/check-toolchain-pins.mjs`
+// from this declaration at plan time, and `packages/repo-targets/contracts/check-toolchain-pins.mjs`
 // fails when package.json `engines` and `packageManager`, flake.nix, or the
 // generated CI workflow disagree with what is declared here.
 export const runtime = S.Runtime.Node({ version: ">=26.4.0" })

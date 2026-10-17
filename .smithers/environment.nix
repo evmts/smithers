@@ -7,7 +7,7 @@
 # `nix/README.md`); it adds to the base and never replaces it. Only the file
 # itself reaches the builder, so it carries no relative imports.
 #
-# Everything `scripts/ci/cloud.sh` and `.github/workflows/ci.yml` install at run
+# Everything `.smithers/ci/cloud.sh` and `.github/workflows/ci.yml` install at run
 # time is pinned here instead, at the exact release the repository declares, so
 # a gate starts with its toolchain already on PATH and downloads nothing:
 #
@@ -22,7 +22,7 @@
 #   Foundry    PACKAGE.ts `CiToolchain.Foundry` / cloud.sh ensure_foundry
 #   ripgrep    PACKAGE.ts `CiToolchain.Ripgrep` (the base pin already matches)
 #
-# `scripts/ci/environment-nix.test.ts` reads those files and this one and fails
+# `.smithers/ci/environment-nix.test.ts` reads those files and this one and fails
 # on drift, so a version moves in one place.
 #
 # The base module already ships bash, coreutils, curl, git, jq, python3,
@@ -107,7 +107,7 @@ let
   };
 
   # Bun runs `//apps/app:unitTests`, the app's e2e web server, and the
-  # `cloud-contract` gate (`bun test scripts/ci/cloud.test.ts`). The zip is the
+  # `cloud-contract` gate (`bun test .smithers/ci/cloud.test.ts`). The zip is the
   # release oven-sh publishes, which is what nixpkgs repackages too.
   bun = pkgs.stdenv.mkDerivation rec {
     pname = "bun";

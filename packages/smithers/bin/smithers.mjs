@@ -11,7 +11,7 @@
  * entry. A source checkout always runs `src/bin.ts`, even when stale `dist`
  * output is present, through Node's type stripping — the same path the tests use. That
  * is what makes `pnpm exec smthrs` run the working tree during development
- * with no build step, which `scripts/check-local-smithers.mjs` requires.
+ * with no build step, which `packages/smithers/test/support/check-local-smithers.mjs` requires.
  */
 import { existsSync } from "node:fs"
 import { dirname } from "node:path"

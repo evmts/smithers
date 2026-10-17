@@ -67,13 +67,13 @@ check_go_format() {
   echo "PASS gofmt:$target" >> "$log"
 }
 
-# //scripts:lint and //:jsdocTree share the root eslint.config.js. A lane owns the lint of every operator
-# script and package source it touches, so this is never grandfathered by a baseline (#3765).
+# //flows:moduleLint and //:jsdocTree share the root eslint.config.js. A lane owns the lint of every automation
+# module and package source it touches, so this is never grandfathered by a baseline (#3765).
 # Reads changed paths on stdin; files outside those trees, and deleted files, are skipped.
 check_root_lint() {
   local files=() f out
   while IFS= read -r f; do
-    [[ "$f" =~ ^scripts/.*\.mjs$ || "$f" =~ ^packages/([^/]+/){1,3}src/.*\.ts$ ]] && [ -f "$f" ] && files+=("$f")
+    [[ "$f" =~ ^flows/.*\.mjs$ || "$f" =~ ^packages/([^/]+/){1,3}src/.*\.ts$ ]] && [ -f "$f" ] && files+=("$f")
   done
   [ ${#files[@]} -eq 0 ] && return 0
   # The workspace's own ESLint binary: `pnpm exec` may verify or install dependencies first.

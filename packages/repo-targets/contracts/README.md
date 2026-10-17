@@ -90,19 +90,20 @@ pnpm exec smithers-build test '//packages/repo-targets/...'
 ```
 
 `ci-inventory.test.mjs`, `test-script-wiring.test.mjs`,
-`egress-http-client.test.mjs` and `mac-distribution.test.mjs` still live in
-`scripts/repo-contract/` and run as `//scripts/repo-contract/...`;
-`smithers-links.test.mjs` is the site's own gate, `//apps/site:smithersLinks`.
+`egress-http-client.test.mjs`, `mac-distribution.test.mjs`, the
+dependency-boundary and lockfile-parity gates and the repository conformance
+suites under `../conformance/` run here too. `smithers-links.test.mjs` is the
+site's own gate, `//apps/site:smithersLinks`.
 
 | Suite | What it guards |
 | --- | --- |
 | `package-contract.test.mjs` | One version across the release line, a declared publishable surface, the `next` dist-tag, the scripts every gate invokes, and no published dependency on a private package. |
 | `barrels.test.mjs` | `@smthrs/flows` re-exports exactly the namespaces it lists, declares every package it re-exports, and every published root export points at a file that exists. |
 | `public-export-maps.test.mjs` | Explicit development/publication allowlists retain reviewed entrypoints, deny internal migrations and future files, and resolve equivalently through Node's ESM and CommonJS resolvers. |
-| `scripts/repo-contract/test-script-wiring.test.mjs` | Every workspace member with tests has a `test` script, and the pnpm workspace and the root manifest name the same members. |
+| `packages/repo-targets/contracts/test-script-wiring.test.mjs` | Every workspace member with tests has a `test` script, and the pnpm workspace and the root manifest name the same members. |
 | `ui-ci-tier.test.mjs` | The required PR workflow selects the apps/app typecheck, units and Playwright once each in their own Ubuntu job; the Playwright wrapper propagates failure; the real scheduler skips TypeScript when strict devkit preparation fails. |
 | `reliability-workflow.test.mjs` | The scheduled `signal-state-machine` job in `reliability.yml` records its seed, preserves histories and results on failure, verifies the evidence and proves mutation sensitivity. |
-| `scripts/repo-contract/ci-inventory.test.mjs` | The planned CI commands cover every package, app, script, eval and fault root, with a retained row per selected target and platform. |
+| `packages/repo-targets/contracts/ci-inventory.test.mjs` | The planned CI commands cover every package, app, script, eval and fault root, with a retained row per selected target and platform. |
 | `cli-verbs.test.mjs` | The CLI reference indexes every canonical command, retains the compatibility pages, and documents only flags the public parser accepts. |
 | `apps/site/scripts/smithers-links.test.mjs` | Every smithers.sh URL a published package ships or prints lands on a built page about the URL's own path, fragment included; a redirect that drops a path segment fails. Rules: `apps/site/scripts/published-links.mjs`. |
 | `fault-skips.test.mjs` | No focused, parked, or inverted test in any package's `test/faults` tree, every conditional skip declared with its reason, every required gate still in the matrix — including the ones that are red — and every package carrying fault cases wired to a `faults` target, a serial fault config, and the CI step that runs them. |
@@ -123,6 +124,6 @@ obsolete checks were removed.
 | `effect-version-gate` | Dropped. It unit-tested `packages/repo-targets/contracts/check-single-effect-version.mjs` against synthetic lockfiles. That script survived the migration and is executed against the real tree as `//packages/repo-targets:effectVersion`, which is a stronger check than a fixture. |
 | `version-bump-propagation` | Dropped. It tested `scripts/bump.mjs`, which is gone; version propagation is now `flows/release/set-release-version.mjs` and has its own suite at `//scripts:releaseVersion`. |
 | `release-tag-guard` | Dropped. `scripts/release-tag-guard.mjs` has no successor: the RC release flow is `release.yml`, whose dry-run and tag-push paths are covered by `//scripts:releaseRehearsal`. |
-| `coverage-script-gate` | Dropped. It tested `scripts/coverage.mjs` and the Bun LCOV merge, neither of which exists. Coverage is vitest's, and the gate that keeps its denominator honest is `scripts/test/coverage.test.ts`. |
+| `coverage-script-gate` | Dropped. It tested `scripts/coverage.mjs` and the Bun LCOV merge, neither of which exists. Coverage is vitest's, and the gate that keeps its denominator honest is `packages/repo-targets/conformance/coverage.test.ts`. |
 | `workspace-test-sharding` | Dropped. `scripts/run-workspace-tests.mjs` and the Windows shard runner are gone; the Windows lane runs `//packages/...` directly. |
 | `bin-smithers-delegation`, `bin-dangling-workspace-link-hint`, `dangling-many-links` | The dangling-workspace-link diagnosis is `packages/smithers/bin/dangling-workspace-links.mjs`, driven by `packages/smithers/test/DanglingWorkspaceLinks.test.ts`, and the executable resolution order is pinned by `packages/smithers/test/Bin.test.ts`. Delegation to a locally installed CLI has no successor because `@smthrs/cli` runs `dist/esm/bin.js` or `src/bin.ts` in its own package and delegates to nothing. |

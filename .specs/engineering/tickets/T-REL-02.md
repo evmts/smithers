@@ -39,7 +39,7 @@ After S1 passes J1 and J2, the owner enables New TODOs start pre-approved on Smi
 - Add only the C-UI-01 keyboard guard and real-install spec named by that check. Keep `apps/app/e2e/playwright/browser-keyboard.spec.ts` as supplemental control traversal coverage; it uses `page.setContent` and cannot qualify a journey.
 - Implement C-REL-05's `flows/release/host/credential-soak.sh` as a thin caller of the production machine terminal/exec path, as Ben, with redacted logs. Rejected reuse: browser recording and the existing keyboard test do not perform the 24 h per-machine tool-login soak.
 - Prepare `smithers-mvp-canary/<date>` from a small reviewed template with a detectable check command and no `.smithers/` files. Keep fixed prompts and expected wiki decision text as reviewed literal test data; `JOURNEY.md` is data, never a runtime oracle loaded from a mutable branch.
-- Reuse `scripts/check-run.mjs` and T-PRC-03's approved command mappings for receipts. Do not recreate the deleted executor, qualifier or obligation manifest. No product code.
+- Reuse `flows/evidence/check-run.mjs` and T-PRC-03's approved command mappings for receipts. Do not recreate the deleted executor, qualifier or obligation manifest. No product code.
 
 ## Tests
 - Real-install `apps/app/e2e/real/j1.spec.ts`: run `brew install smithersai/tap/smithers` and `smthrs host start`, open the printed setup URL and drive setup, `/todo.new` and `/merge` through the rendered app and production dispatcher. Observe the merged PR on real GitHub. Record the fresh user, version, manifest, origin and timestamps.

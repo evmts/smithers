@@ -124,10 +124,10 @@ const Rounds = Burndown.make({
   signal: accountsReset
 })
 
-// scripts/issue-claim.mjs: exit 0 done, 2 held by someone else, 75 rate limited.
+// flows/issue-claim/issue-claim.mjs: exit 0 done, 2 held by someone else, 75 rate limited.
 // The copy beside this flow, never the shared checkout's: another session's
 // half-made edit there failed every claim and release of a running sweep.
-export const claimTool = fileURLToPath(new URL("../../scripts/issue-claim.mjs", import.meta.url))
+export const claimTool = fileURLToPath(new URL("../issue-claim/issue-claim.mjs", import.meta.url))
 
 // Discovery reads capabilities only as a string-literal array with no
 // comments, so the checkout path in the GitHub proxy and claim tool grants is a
@@ -136,8 +136,8 @@ export default Flow.make("issue-sweep", {
   description: "Work every open GitHub issue that no other machine holds.",
   capabilities: [
     "proc:spawn:gh api *",
-    "proc:spawn:node /*/scripts/github-proxy.mjs --ensure",
-    "proc:spawn:node /*/scripts/issue-claim.mjs *",
+    "proc:spawn:node /*/flows/issue-claim/github-proxy.mjs --ensure",
+    "proc:spawn:node /*/flows/issue-claim/issue-claim.mjs *",
     "proc:spawn:jj -R *",
     "proc:spawn:lockf *",
     "proc:spawn:pnpm *",

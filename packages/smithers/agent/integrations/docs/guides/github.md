@@ -93,10 +93,10 @@ and [Best practices for using the REST API](https://docs.github.com/en/rest/usin
 | No more than 80 content-generating requests per minute and 500 per hour                                     | Counts every write against both windows.                                              |
 | On a limit: wait `retry-after`, or until `x-ratelimit-reset`, else at least a minute, growing exponentially | Pauses every caller of the principal, doubling the pause while limits persist.        |
 
-The repository runs it as `scripts/github-proxy.mjs`:
+The repository runs it as `flows/issue-claim/github-proxy.mjs`:
 
 ```bash
-node scripts/github-proxy.mjs --ensure
+node flows/issue-claim/github-proxy.mjs --ensure
 ```
 
 `--ensure` starts the proxy in the background unless one already answers at
@@ -138,7 +138,7 @@ they reach and require a capability, the first line of
 ```bash
 SMITHERS_GITHUB_PROXY=http://192.168.64.1:47821 \
 SMITHERS_GITHUB_PROXY_CAPABILITY_FILE=~/.config/smithers/github-proxy-capability \
-  node scripts/github-proxy.mjs
+  node flows/issue-claim/github-proxy.mjs
 ```
 
 The `SMITHERS_GITHUB_*` variables listed under `RateLimit.resolveLimits` in

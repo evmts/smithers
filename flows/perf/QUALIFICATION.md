@@ -3,7 +3,7 @@
 The composed owner-session `GET /api/install/metrics` authenticates qualification
 before publishing it. It does not execute checks or approve their mappings.
 The nine lifecycle/root/broker receipts and `smithers-3f` inventory review remain
-prerequisites. Performance receipts still come from `scripts/check-run.mjs`.
+prerequisites. Performance receipts still come from `flows/evidence/check-run.mjs`.
 
 The reference-host reviewer delivers a JSON data file to
 `$STATE/machine-qualification.json` on the install. The packaged launcher already

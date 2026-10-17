@@ -141,7 +141,7 @@ test("an affected check without its check host's written paths refuses instead o
 // The driftCi steps in PACKAGE.ts, in order (packages/repo-targets/contracts/drift-job.test.mjs pins that list).
 const driftGates = [
   ["lint", "//...:fmt"], ["lint", "//:targetIndex"], ["lint", "//:factoryProjection"], ["lint", "//:backendAccessTests"],
-  ["lint", "//:openapiBundle"], ["lint", "//:openapiClients"], ["lint", "//scripts:docsDrift"],
+  ["lint", "//:openapiBundle"], ["lint", "//:openapiClients"], ["lint", "//:docsDrift"],
   ["build", "//flows:apiBaseline"], ["lint", "//packages/repo-targets:conflictMarkers"], ["lint", "//packages/repo-targets:trackedHygiene"],
   ["lint", "//:driftCi"], ["lint", "//:ci"]
 ]

@@ -32,6 +32,7 @@
   ],
   "scripts": {
     "commit": "node flows/land/commit.mjs",
+    "issue-claim": "node flows/issue-claim/issue-claim.mjs",
     "deploy": "pnpm --filter smithers-server run deploy",
     "tui": "bun apps/tui/src/main.tsx",
     "release:workflow": "node --experimental-strip-types flows/release-support/main.ts release",

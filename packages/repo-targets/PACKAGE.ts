@@ -1,6 +1,7 @@
 import { Smithers } from "@smthrs/targets"
 import { ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "./src/index.ts"
-import { Package as scriptPackage } from "../../scripts/PACKAGE.ts"
+import { listFiles } from "./contracts/check-tracked-hygiene.mjs"
+import { repoRoot } from "./scripts/workspace-packages.mjs"
 
 const cwd = "packages/repo-targets"
 const sources = Smithers.glob("src/**/*.ts")
@@ -35,6 +36,20 @@ const test = Smithers.Vitest({
   passWithNoTests: false,
   cwd
 })
+
+/** The whole checkout is the subject of repository-wide engineering gates. */
+const repositoryPackages = Object.fromEntries(
+  [...new Set(["", ...listFiles(repoRoot, { includeUntracked: true })
+    .filter((path) => path === "PACKAGE.ts" || path.endsWith("/PACKAGE.ts"))
+    .map((path) => path === "PACKAGE.ts" ? "" : path.slice(0, -"/PACKAGE.ts".length))])]
+    .sort()
+    .map((directory) => [
+      `repositoryInputs_${Buffer.from(directory).toString("hex") || "root"}`,
+      Smithers.Filegroup({ cwd: directory === "" ? "./" : directory, srcs: [Smithers.glob("**/*")] })
+    ])
+)
+const repositoryInputs = Smithers.Filegroup({ srcs: Object.values(repositoryPackages) })
+const workflowSources = Smithers.Filegroup({ cwd: ".github", srcs: [Smithers.glob("workflows/*.yml")] })
 
 /**
  * The repository contract gates under `contracts/`, digested as the input of
@@ -77,7 +92,7 @@ const conflictMarkersUnit = Smithers.NodeTest({
 /** Tracked files must resolve declared paths and exclude local build and agent state. */
 const trackedHygiene = Smithers.Shell.Diff({
   shell: "node packages/repo-targets/contracts/check-tracked-hygiene.mjs --projected-tree",
-  data: [scriptPackage.repositoryInputs],
+  data: [repositoryInputs],
   changes: [],
   timeout: "2m"
 })
@@ -109,9 +124,9 @@ const toolchainPins = Smithers.NodeTest({
     Smithers.file("//.node-version"),
     Smithers.file("//rust-toolchain.toml"),
     Smithers.file("//PACKAGE.ts"),
-    Smithers.file("//scripts/ci/cloud.sh")
+    Smithers.file("//.smithers/ci/cloud.sh")
   ],
-  deps: [scriptPackage.workflowSources]
+  deps: [workflowSources]
 })
 
 /**
@@ -148,7 +163,7 @@ const releaseContracts = Smithers.NodeTest({
   srcs: [
     ...contracts,
     Smithers.file("//flows/release/pack-release.mjs"),
-    Smithers.file("//scripts/check-dependency-boundaries.mjs"),
+    Smithers.file("//packages/repo-targets/contracts/check-dependency-boundaries.mjs"),
     Smithers.file("//flows/release/fixtures/installed-consumer/consumer-boundary.mjs"),
     Smithers.file("//flows/release/fixtures/installed-consumer/dependency-adapters.mjs"),
     Smithers.file("//packages/repo-targets/scripts/private-effect-adapters.mjs"),
@@ -211,7 +226,6 @@ const driftJob = Smithers.NodeTest({
     Smithers.file("//.github/workflows/trusted-setup-validation.yml"),
     Smithers.file("//PACKAGE.ts"),
     Smithers.file("//package.json"),
-    Smithers.file("//scripts/PACKAGE.ts"),
     Smithers.file("//flows/release/check-api-baseline.mjs"),
     Smithers.file("//flows/PACKAGE.ts"),
     Smithers.file("//flows/land/engineering-gate-environment.mjs"),
@@ -470,6 +484,155 @@ const reviewDocsAgainstCode = ReviewDocsAgainstCode({ cwd, context: [Smithers.fi
  */
 const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd })
 
+/**
+ * `bun.lock` records the dependency ranges the manifests declare.
+ *
+ * A manifest change is required to refresh both lockfiles, but only
+ * `pnpm-lock.yaml` was ever proved: every CI job installs with pnpm and
+ * `--frozen-lockfile` rejects a stale one on the spot, while no job runs `bun
+ * install` at all. Bun still executes `apps/*`, the `//packages/...:bunTest`
+ * matrix, and `packages/smithers/agent/regression`, so a stale entry resolves a
+ * real package at the wrong version on exactly those surfaces and nowhere else.
+ *
+ * The target compares rather than installs. It reads the lockfile's own
+ * `workspaces` table against the manifests on disk, which is offline,
+ * deterministic, and needs no Bun on the machine.
+ *
+ * @since 0.1.0
+ * @category test
+ */
+const lockfileParity = Smithers.NodeTest({
+  runner: Smithers.entrypoint(Smithers.file("//packages/repo-targets/contracts/check-lockfile-parity.mjs")),
+  srcs: [...contracts, Smithers.file("//bun.lock"), Smithers.pnpmWorkspace("//pnpm-workspace.yaml")],
+  deps: []
+})
+
+/**
+ * The lockfile parity gate's own cases.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const lockfileParityUnit = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//packages/repo-targets/contracts/check-lockfile-parity.test.mjs")]),
+  srcs: [...contracts],
+  deps: []
+})
+
+/**
+ * Every import a workspace source makes is declared by that workspace.
+ *
+ * pnpm links the whole workspace under one `node_modules`, so an undeclared
+ * import of a sibling still resolves locally and then fails for a consumer who
+ * installs the tarball. The sources it reads live in other packages, and a
+ * declared glob may not cross a package boundary, so the gate is not cacheable
+ * and re-runs regardless.
+ *
+ * @since 0.1.0
+ * @category test
+ */
+const dependencyBoundaries = Smithers.NodeTest({
+  summary: "No package imports cross declared workspace boundaries.",
+  featured: true,
+  runner: Smithers.entrypoint(Smithers.file("//packages/repo-targets/contracts/check-dependency-boundaries.mjs")),
+  srcs: [...contracts, Smithers.file("//packages/repo-targets/scripts/private-effect-adapters.mjs")],
+  deps: []
+})
+
+/**
+ * The literal-blanking step of the dependency-boundaries gate: single-pass
+ * blanking matches the reduce it replaced byte for byte, its cost stays linear
+ * in the file size, and only a manifest's declared private Effect adapters
+ * count as runtime imports.
+ *
+ * @since 0.1.0
+ * @category test
+ */
+const dependencyBoundariesUnit = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//packages/repo-targets/contracts/check-dependency-boundaries.test.mjs")]),
+  srcs: [...contracts, Smithers.file("//packages/repo-targets/scripts/private-effect-adapters.mjs")],
+  deps: []
+})
+
+/** The repository conformance suites and the workspace reader they share. */
+const conformanceSources = [Smithers.glob("//packages/repo-targets/conformance/**/*.ts")]
+
+/** Typecheck the repository conformance suites. */
+const conformanceCheck = Smithers.Typecheck({
+  srcs: conformanceSources,
+  tsconfig: Smithers.file("conformance/tsconfig.conformance.json"),
+  cwd,
+  buildMode: false,
+  incremental: false,
+  deps: []
+})
+
+/**
+ * Repository-wide CI, publication, coverage and containment policy.
+ *
+ * These checks read other packages and root configuration, so they run
+ * uncached. One runner imports the suites to keep filesystem scans in one
+ * process.
+ */
+const repositoryConformance = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//packages/repo-targets/conformance/repositoryConformance.test.ts")]),
+  srcs: conformanceSources,
+  deps: [conformanceCheck]
+})
+
+/**
+ * Every workspace member with tests is reachable from the command CI runs.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const testScriptWiring = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//packages/repo-targets/contracts/test-script-wiring.test.mjs")]),
+  srcs: [
+    ...contracts,
+    Smithers.file("//flows/release/release-rehearsal.mjs"),
+    Smithers.file("//PACKAGE.ts"),
+    Smithers.file("//.smithers/target-index.json"),
+    Smithers.file("//.github/workflows/ci.yml"),
+    Smithers.file("//package.json"),
+    Smithers.file("//pnpm-workspace.yaml")
+  ],
+  deps: [repositoryInputs]
+})
+
+/** Mac distribution deletion and lifecycle handoff contract. */
+const macDistribution = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//packages/repo-targets/contracts/mac-distribution.test.mjs")]),
+  srcs: [...contracts],
+  deps: [repositoryInputs]
+})
+
+/**
+ * No shipped Node composition installs an HTTP client that ignores the egress
+ * proxy its environment names. The gate reads shipped source across
+ * `packages/`, `apps/` and `flows/`, which a declared glob may not cross, so it
+ * re-runs regardless: its subject is the whole workspace.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const egressHttpClient = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//packages/repo-targets/contracts/egress-http-client.test.mjs")]),
+  srcs: [...contracts],
+  deps: []
+})
+
+/**
+ * Actual planner selection, runtime policy, sentinels and cache behavior. It
+ * only plans commands, so it stays independent of builds and can run beside a
+ * release gate; the NodeTest stays uncached.
+ */
+const ciInventory = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//packages/repo-targets/contracts/ci-inventory.test.mjs")]),
+  srcs: [...contracts],
+  deps: []
+})
+
 const securityReview = Smithers.SecurityReview({
   cwd,
   include: ["src/**",
@@ -481,7 +644,8 @@ const securityReview = Smithers.SecurityReview({
     // The repository-contract suites carry their own review checks below.
     "contracts/barrels.test.mjs", "contracts/cli-verbs.test.mjs", "contracts/fault-skips.test.mjs", "contracts/fault-gaps.md",
     "contracts/machine-paths.test.mjs", "contracts/package-contract.test.mjs", "contracts/public-export-maps.test.mjs",
-    "contracts/reliability-workflow.test.mjs", "contracts/scratch-artifacts.test.mjs", "contracts/ui-ci-tier.test.mjs"],
+    "contracts/reliability-workflow.test.mjs", "contracts/scratch-artifacts.test.mjs", "contracts/ui-ci-tier.test.mjs",
+    "contracts/egress-http-client.test.mjs", "contracts/ci-inventory.test.mjs", "contracts/test-script-wiring.test.mjs"],
   checks: [
     {
       id: "review-gate-strength",
@@ -626,6 +790,56 @@ const securityReview = Smithers.SecurityReview({
         "A skip or todo in the fault matrix accepted without a declared reason row in fault-gaps.md."
       ],
       paths: ["contracts/ui-ci-tier.test.mjs", "contracts/reliability-workflow.test.mjs", "contracts/fault-skips.test.mjs", "contracts/fault-gaps.md"]
+    },
+    {
+      id: "egress-gate-coverage",
+      title: "The egress gate reads every shipped source that could install a proxy-blind HTTP client",
+      threat: "A contributor ships a Node host that dials origins directly past the sandbox egress proxy, letting a sandboxed run exfiltrate data, while the gate stays green.",
+      lookFor: [
+        "A shipped source extension (.js, .cjs, .mts, .cts, .jsx) that isSource drops, so layerUndici or makeDispatcher in it is never scanned.",
+        "A skippedDirectories or skippedPaths entry that prunes a directory holding shipped, non-test source.",
+        "An isComment rule that exempts a code line (for example one starting with `*` inside an expression, or code after a `/* */` on the same line).",
+        "A banned spelling reachable without matching the regex, such as a renamed import or a computed property access on NodeHttpClient.",
+        "The defines allowlist or install-count floor changed so the ban can pass with the replacement absent."
+      ],
+      paths: ["contracts/egress-http-client.test.mjs"]
+    },
+    {
+      id: "inventory-child-process-containment",
+      title: "Gate child processes run fixed code with bounded time and no inherited secrets they do not need",
+      threat: "A repository file or environment value controls code a gate evaluates, or a hung child survives the gate, running attacker-chosen code or holding CI runner resources.",
+      lookFor: [
+        "A spawn or spawnSync `--eval`/`-e` string built by interpolating file contents, package names or environment values instead of passing data on stdin or IPC.",
+        "A shell: true spawn or an exec() of a string assembled from repository data.",
+        "A child spawned without timeout, SIGKILL fallback or t.after cleanup.",
+        "A child env built from `...process.env` that forwards cache tokens or credentials (SMITHERS_CACHE_TOKEN, NPM_TOKEN) to a stub it does not need them for.",
+        "A PATH prefix pointing at a directory that is not a fresh mkdtemp owned by the test."
+      ],
+      paths: ["contracts/ci-inventory.test.mjs"]
+    },
+    {
+      id: "inventory-temp-file-safety",
+      title: "Gates write only inside fresh temporary directories they create and remove",
+      threat: "Another local user on a shared CI runner pre-plants a symlink at a predictable temp path so a gate overwrites or reads a file it should not.",
+      lookFor: [
+        "A writeFileSync to a predictable tmpdir() path (fixed name or pid) instead of a mkdtemp directory, such as the default smithers-ci-inventory-<pid>.json artifact.",
+        "An environment-supplied output path (SMITHERS_CI_INVENTORY) written without checking it stays inside the workspace or a temp directory.",
+        "rmSync(..., { recursive: true, force: true }) on a path not returned by mkdtemp in the same test.",
+        "symlinkSync into a fixture that points outside the fixture root."
+      ],
+      paths: ["contracts/ci-inventory.test.mjs"]
+    },
+    {
+      id: "inventory-ci-workflow-gates",
+      title: "Workflow gates keep required CI jobs failing on real failures",
+      threat: "A contributor edits ci.yml or reliability.yml so a required security or test job passes on failure, letting vulnerable code merge to main.",
+      lookFor: [
+        "An assertion that tolerates continue-on-error: true, `|| true`, or an allow-failure known-red list on a required job.",
+        "A regex match on a workflow run string loose enough to accept an extra command that skips or neuters the suite.",
+        "A test file excluded from every target in test-script-wiring without a stated reason.",
+        "A skip or todo in the fault matrix accepted without a declared reason row in fault-gaps.md."
+      ],
+      paths: ["contracts/test-script-wiring.test.mjs", "contracts/ci-inventory.test.mjs"]
     }
   ]
 })
@@ -651,7 +865,7 @@ const mvpDocs = Smithers.NodeTest({
     Smithers.file("//.specs/design/README.md"),
     Smithers.file("//.specs/engineering/spec.md")
   ],
-  deps: [scriptPackage.repositoryInputs]
+  deps: [repositoryInputs]
 })
 
-export const Package = Smithers.Package({ targets: { check, test, workspacePackages, conflictMarkers, mvpDocs, conflictMarkersUnit, trackedHygiene, trackedHygieneUnit, toolchainPins, effectVersion, releaseContracts, privateEffectAdapters, driftJob, nativeWindowsWorkflow, runnerContract, webBundleContract, knownRedCoverage, bunCoverage, testPinRegister, contractsLint, packageContract, publicExportMaps, barrels, uiCiTier, reliabilityWorkflow, faultSkips, machinePaths, scratchArtifacts, cliVerbs, reviewDocsAgainstCode, reviewJsdocAgainstCode, ...securityReview } })
+export const Package = Smithers.Package({ targets: { ...repositoryPackages, repositoryInputs, workflowSources, lockfileParity, lockfileParityUnit, dependencyBoundaries, dependencyBoundariesUnit, conformanceCheck, repositoryConformance, testScriptWiring, macDistribution, egressHttpClient, ciInventory, check, test, workspacePackages, conflictMarkers, mvpDocs, conflictMarkersUnit, trackedHygiene, trackedHygieneUnit, toolchainPins, effectVersion, releaseContracts, privateEffectAdapters, driftJob, nativeWindowsWorkflow, runnerContract, webBundleContract, knownRedCoverage, bunCoverage, testPinRegister, contractsLint, packageContract, publicExportMaps, barrels, uiCiTier, reliabilityWorkflow, faultSkips, machinePaths, scratchArtifacts, cliVerbs, reviewDocsAgainstCode, reviewJsdocAgainstCode, ...securityReview } })

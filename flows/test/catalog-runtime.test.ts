@@ -5,8 +5,8 @@ import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
-import appendixC from "../../apps/app/src/mainview/flows/fixtures/AppendixC.json" with { type: "json" }
 import { auditRuntimeTags } from "../../apps/app/scripts/catalog-policy.mts"
+import appendixC from "../../apps/app/src/mainview/flows/fixtures/AppendixC.json" with { type: "json" }
 import { policyRegistration, withProductionRegistries } from "./fixtures/catalog-runtime.ts"
 
 test("built native and coding hosts expose their actual private registrations", { timeout: 120_000 }, async () => {

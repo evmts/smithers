@@ -127,7 +127,7 @@ it("browser typecheck executes after security validation and propagates compiler
       projected.add(path)
       pending.push(...localImports(path))
     }
-    // scripts/PACKAGE.ts (imported by packages/smithers and apps/site) lists the
+    // packages/repo-targets/PACKAGE.ts (imported by packages/smithers and apps/site) lists the
     // API schemas and each library package's docs as it loads. Package manifests
     // stay out: a copied manifest would shadow the workspace package it names.
     const files = (directory) => existsSync(join(root, directory))

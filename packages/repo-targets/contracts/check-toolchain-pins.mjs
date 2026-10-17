@@ -77,7 +77,7 @@ export const findings = ({ workspace, packageJson, flake, ci, nodeVersion }) => 
     if (Number(major) !== nodeMajor) out.push(`flake.nix uses nodejs_${major}; WORKSPACE.ts declares Node ${runtime.version}`)
   }
   // The Node the runners install is `.node-version`, which every other
-  // environment reads too: `scripts/ci/cloud.sh` bootstraps from it and fnm,
+  // environment reads too: `.smithers/ci/cloud.sh` bootstraps from it and fnm,
   // nvm and asdf read it on a developer's machine. So ci.yml must point at that
   // file and carry no literal of its own, and the file must hold one exact
   // release at or above the declared floor. A literal in the workflow is the
@@ -132,7 +132,7 @@ const rustPins = [
 ]
 
 /** The files outside `.github/workflows` that name a Rust release. */
-export const rustPinFiles = ["PACKAGE.ts", "scripts/ci/cloud.sh"]
+export const rustPinFiles = ["PACKAGE.ts", ".smithers/ci/cloud.sh"]
 
 /**
  * Every Rust release `files` (path to text) names that is not the channel

@@ -60,7 +60,7 @@ test("an unparseable expiry is treated as expired", () => {
 // A peer's half-made edit to the shared checkout's issue-claim.mjs failed every claim of a running sweep.
 test("the claim tool is the copy in this flow's own checkout", () => {
   const root = fileURLToPath(new URL("../../../", import.meta.url))
-  assert.equal(claimTool, `${root}scripts/issue-claim.mjs`)
+  assert.equal(claimTool, `${root}flows/issue-claim/issue-claim.mjs`)
 })
 
 // run-4: a requeued row's release removed the workspaces its resumed children landed from.

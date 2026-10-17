@@ -69,7 +69,7 @@ const appTargets = (job: DeployJob): ReadonlyArray<string> =>
  * from the workflow's push branches, `missingGates` refuses a gate only the
  * publisher performs, and the root PACKAGE.ts leaves the publisher out of
  * `requiredJobs`, so the guard cannot make a required check disappear.
- * scripts/test/ci.test.ts carves out the same job. Both halves are read from
+ * packages/repo-targets/conformance/ci.test.ts carves out the same job. Both halves are read from
  * the workflow: the guard must be exactly the declared push branches, and the
  * job must hold the write credential.
  */

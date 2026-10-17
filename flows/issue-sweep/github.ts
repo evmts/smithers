@@ -1,5 +1,5 @@
 /**
- * GitHub through the machine's GitHub proxy (`scripts/github-proxy.mjs`).
+ * GitHub through the machine's GitHub proxy (`flows/issue-claim/github-proxy.mjs`).
  *
  * Every GitHub call the sweep makes, listing issues and reading claim
  * comments as much as claiming and releasing, spends the one budget per
@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url"
 import { HostFailed, output } from "./host.ts"
 
 // The copy beside this flow, like the claim tool.
-export const proxyTool = fileURLToPath(new URL("../../scripts/github-proxy.mjs", import.meta.url))
+export const proxyTool = fileURLToPath(new URL("../issue-claim/github-proxy.mjs", import.meta.url))
 
 const Ensured = Schema.fromJsonString(Schema.Struct({ proxy: Schema.String }))
 

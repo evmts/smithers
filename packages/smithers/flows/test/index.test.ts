@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect"
 import { readFileSync, statSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { describe, expect, it } from "vitest"
-import { readWorkspaceInventory } from "../../../../scripts/readWorkspaceInventory.ts"
+import { readWorkspaceInventory } from "../../../repo-targets/conformance/readWorkspaceInventory.ts"
 import * as Flows from "../src/index.ts"
 
 /**

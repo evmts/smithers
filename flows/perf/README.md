@@ -61,7 +61,7 @@ machine-budget activation, reference-host browser/SSH fixture qualification
 and remaining document/rebase §20.3 latency observations,
 qualified network/machine security evidence,
 real raw-sample artifacts, second-Mac runs, and
-C-PERF-01–06 results. Receipt approval remains with `scripts/check-run.mjs`;
+C-PERF-01–06 results. Receipt approval remains with `flows/evidence/check-run.mjs`;
 no check mapping is activated here. Keep #3592 open.
 
 `questions.json` contains the fixed twenty-question C-PERF-01 workload. The

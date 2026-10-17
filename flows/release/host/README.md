@@ -28,7 +28,7 @@ Record B's sleep and wake every four hours through the install, with UTC times
 and owner-signed evidence. Also retain the candidate commit/version, host
 profile, Ben's account and independently created login attestations, and
 C-MCH-10 evidence. These remain manual prerequisites. This recorder neither
-creates check receipts nor qualifies a run: `scripts/check-run.mjs` and its
+creates check receipts nor qualifies a run: `flows/evidence/check-run.mjs` and its
 approved reference-host mapping own qualification. Terminal completion alone
 is not proof that any call succeeded. Inspect every redacted call and both
 machines' complete duration, including the first observation after every wake.

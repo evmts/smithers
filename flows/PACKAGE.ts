@@ -4,8 +4,8 @@ import { existsSync, readdirSync } from "node:fs"
 import codingProject from "../.smithers/coding-project.json" with { type: "json" }
 import { Package as backendPackage } from "../packages/backend/PACKAGE.ts"
 import { backendSQLC } from "../packages/backend/sqlc.ts"
+import { Package as repoTargetsPackage } from "../packages/repo-targets/PACKAGE.ts"
 import { libraryPackages, repoRoot } from "../packages/repo-targets/scripts/workspace-packages.mjs"
-import { Package as scriptPackage } from "../scripts/PACKAGE.ts"
 
 const pack = Smithers.NodeTest({
   runner: Smithers.testRunner([Smithers.file("//flows/pack.test.mjs")]),
@@ -20,7 +20,9 @@ const pack = Smithers.NodeTest({
 
 const cwd = "flows"
 const sources = Smithers.glob("//flows/**/*.ts")
-const scripts = Smithers.Filegroup({ cwd: "scripts", srcs: [Smithers.glob("*.mjs")] })
+// The repository automation modules flows import and run (release, evidence,
+// issue claims, landing).
+const automationModules = Smithers.Filegroup({ cwd: "flows", srcs: [Smithers.glob("**/*.mjs")] })
 
 // The real-run model stand-in's script, which the scripted wiki reviewer suite runs.
 const todoTurns = [
@@ -30,7 +32,7 @@ const todoTurns = [
 
 const check = Smithers.Typecheck({
   srcs: [sources, ...todoTurns],
-  deps: [scripts],
+  deps: [automationModules],
   tsconfig: Smithers.file("tsconfig.json"),
   buildMode: false,
   incremental: false,
@@ -69,7 +71,7 @@ const suite = Smithers.NodeTest({
     Smithers.file("//apps/app/scripts/catalog-policy.mts"),
     Smithers.file("//apps/bug-worker/package.json")
   ],
-  deps: [scripts],
+  deps: [automationModules],
   cwd
 })
 
@@ -223,7 +225,7 @@ const codingBackend = codingPackages.map((cwd) =>
     srcs: [Smithers.glob("src/**"), Smithers.file("package.json"), Smithers.file("tsconfig.json")]
   })
 )
-const codingScripts = scripts
+const codingScripts = automationModules
 const codingWiki = Smithers.Filegroup({ cwd: "flows/wiki", srcs: [Smithers.glob("**/*.ts")] })
 const codingFiles = [
   sources,
@@ -866,7 +868,7 @@ const land = Smithers.NodeTest({
     Smithers.file("//flows/land/migration-landing.test.mjs")
   ]),
   srcs: [sources, ...landSources],
-  deps: [scriptPackage.repositoryInputs, backendSQLC],
+  deps: [repoTargetsPackage.repositoryInputs, backendSQLC],
   cwd
 })
 
@@ -1131,7 +1133,7 @@ const releaseTools = Smithers.NodeTest({
     Smithers.file("//flows/release/host/host-maintenance-evidence.test.mjs")
   ]),
   srcs: releaseSources,
-  deps: [scriptPackage.repositoryInputs, backendSQLC]
+  deps: [repoTargetsPackage.repositoryInputs, backendSQLC]
 })
 
 /**
@@ -1527,9 +1529,135 @@ const securityReview = Smithers.SecurityReview({
   ]
 })
 
+/**
+ * The shared issue-claim convention and the machine's GitHub proxy it calls
+ * GitHub through, and the T-PRC-03 check receipts it closes issues with. The
+ * issue-claim suite fakes the proxy and proves that a live claim blocks other
+ * agents, a stale one can be taken over, racing claimants agree on the first,
+ * retries never re-post, a receipt carries the release, a command asks the
+ * proxy for all its writes before the first, and every rate limit exits 75
+ * with its retry instant. End to end, with the real `gh`, the real proxy
+ * daemon and a fake GitHub, it proves concurrent processes' writes are spaced
+ * by the one proxy, a secondary limit defers every caller without reaching
+ * GitHub, and the operator's token never leaves the proxy. The proxy suite
+ * proves `--ensure` starts one daemon, a capability gates every caller beyond
+ * loopback, and a missing credential is a typed 502. The App suite proves
+ * installation tokens are minted with an App JWT, cached 0600, and refreshed
+ * before expiry.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const issueClaim = Smithers.NodeTest({
+  summary:
+    "Agents claim an issue before work and release it after, through the machine's GitHub proxy; a live claim blocks others and a stale one can be taken over.",
+  runner: Smithers.testRunner([
+    Smithers.file("//flows/issue-claim/issue-claim.test.mjs"),
+    Smithers.file("//flows/evidence/check-receipts.test.mjs"),
+    Smithers.file("//flows/issue-claim/github-proxy.test.mjs"),
+    Smithers.file("//flows/issue-claim/github-app-auth.test.mjs"),
+    Smithers.file("//flows/issue-claim/flow.test.ts")
+  ]),
+  srcs: [
+    sources,
+    Smithers.glob("//flows/issue-claim/*.mjs"),
+    Smithers.glob("//flows/evidence/*.mjs"),
+    Smithers.file("//flows/evidence/check-commands.json"),
+    Smithers.file("//packages/smithers/test/support/reference-hosts.json"),
+    Smithers.file("//packages/smithers/scripts/host-process-sampler.mjs"),
+    // The proxy imports `@smthrs/integrations` through this export map.
+    Smithers.file("//packages/smithers/agent/integrations/package.json")
+  ],
+  deps: [
+    Smithers.Filegroup({ cwd: ".specs/engineering", srcs: [Smithers.glob("checks/*.md")] }),
+    Smithers.Filegroup({ cwd: "packages/smithers/agent/integrations", srcs: [Smithers.glob("src/**/*.ts")] })
+  ],
+  cwd
+})
+
+/**
+ * Every check in `evidence/check-commands.json` binds to files and test
+ * declarations that exist in the checkout.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const evidenceBindings = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//flows/evidence/check-bindings.test.mjs")]),
+  srcs: [Smithers.glob("//flows/evidence/*.mjs"), Smithers.file("//flows/evidence/check-commands.json")],
+  // Bindings name argv files relative to the checkout root, so the suite runs there.
+  deps: [repoTargetsPackage.repositoryInputs, backendSQLC]
+})
+
+/**
+ * Checks the release workflow's rehearsal driver, the gate inventory and the
+ * release graph, and that the dry-run path skips publication while a tag push
+ * does not. The assertions read `release.yml` itself, so an edit that breaks
+ * either half fails here instead of at the next release.
+ *
+ * @since 0.1.0
+ * @category test
+ */
+const releaseRehearsal = Smithers.NodeTest({
+  runner: Smithers.testRunner([
+    Smithers.file("//flows/release/release-rehearsal.test.mjs"),
+    Smithers.file("//flows/release/release-graph.test.mjs"),
+    Smithers.file("//flows/release/release-gates.test.mjs")
+  ]),
+  srcs: [
+    Smithers.glob("//flows/release/*.mjs"),
+    Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs"),
+    Smithers.file("//.pnpmfile.mjs"),
+    Smithers.file("//.github/workflows/release.yml"),
+    Smithers.file("//.github/workflows/ci.yml")
+  ],
+  deps: [],
+  cwd
+})
+
+/**
+ * Checks that publishing at a new version retargets the exact internal ranges
+ * too, and that the tree is coherent at whatever version it currently carries.
+ *
+ * @since 0.1.0
+ * @category test
+ */
+const releaseVersion = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//flows/release/set-release-version.test.mjs")]),
+  srcs: [
+    Smithers.file("//flows/release/set-release-version.mjs"),
+    Smithers.file("//flows/release/set-release-version.test.mjs"),
+    Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs")
+  ],
+  deps: [],
+  cwd
+})
+
+/**
+ * Lints the repository automation modules: every `.mjs` under this directory,
+ * against the root config's operator-script block (statement style only, no
+ * semicolons). `lint` covers the TypeScript flows with this directory's own
+ * config.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const moduleLint = Smithers.EsLint({
+  sources: [Smithers.glob("//flows/**/*.mjs")],
+  configs: [Smithers.file("//eslint.config.js")],
+  deps: [],
+  maxWarnings: 0,
+  fix: false
+})
+
 export const Package = Smithers.Package({
   targets: {
-    scripts,
+    issueClaim,
+    evidenceBindings,
+    releaseRehearsal,
+    releaseVersion,
+    moduleLint,
+    automationModules,
     codingHostInputs,
     coding,
     codingPolicy,

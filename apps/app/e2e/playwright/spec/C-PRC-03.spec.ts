@@ -8,7 +8,7 @@ test("C-PRC-03: recorder-to-close refuses invalid evidence before publication", 
   test.setTimeout(120_000)
   const root = resolve(__dirname, "../../../../..")
   const { stdout } = await promisify(execFile)(process.execPath,
-    ["--test", "--test-reporter=tap", "scripts/check-receipts.test.mjs"],
+    ["--test", "--test-reporter=tap", "flows/evidence/check-receipts.test.mjs"],
     { cwd: root, timeout: 110_000, maxBuffer: 4 * 1024 * 1024 })
   expect(stdout).toMatch(/# fail 0\b/)
   expect(stdout).toMatch(/# skipped 0\b/)

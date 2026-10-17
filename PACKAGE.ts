@@ -72,8 +72,6 @@ const tsconfig = Smithers.Tsconfig({
     // depth globs below reach `regression` and `recommend-eval`.
     Smithers.glob("packages/smithers/agent/harness/benchmarks/*/PACKAGE.ts"),
     Smithers.file("flows/review/seeded-bugs/PACKAGE.ts"),
-    Smithers.file("scripts/PACKAGE.ts"),
-    Smithers.glob("scripts/*/PACKAGE.ts"),
     Smithers.file("flows/PACKAGE.ts"),
     // One entry per nesting depth, spelled out. Packages nest: a granular
     // package lives inside the product package it belongs to, so
@@ -124,7 +122,7 @@ const nodeModules = Smithers.Install({
 
 /**
  * The tool releases a prepared microVM environment installs, each pinned to
- * its linux/arm64 artifact and reviewed SHA-256. `scripts/check-toolchain-pins.mjs`
+ * its linux/arm64 artifact and reviewed SHA-256. `packages/repo-targets/contracts/check-toolchain-pins.mjs`
  * fails when a version here disagrees with `.node-version`, WORKSPACE.ts,
  * go.mod or rust-toolchain.toml. Domain rules match the name a connection
  * resolved through, so CDN CNAME targets are listed beside their aliases.
@@ -289,7 +287,7 @@ const targetIndex = Smithers.TargetIndex({
 const ubuntu = "ubuntu-latest"
 
 // One Node for every environment, named once in `.node-version` at the root:
-// setup-node reads it here through `node-version-file`, `scripts/ci/cloud.sh`
+// setup-node reads it here through `node-version-file`, `.smithers/ci/cloud.sh`
 // reads it to bootstrap a Cloud runner, and fnm, nvm and asdf read it on a
 // developer's machine. Before this the same fact was spelled three ways and
 // three different releases came out: package.json said >=22.19.0, ci.yml
@@ -541,7 +539,7 @@ const driftJob = {
     { name: "Backend access test list drift", verb: Smithers.Verb.Lint, pattern: "//:backendAccessTests" },
     { name: "OpenAPI bundle drift", verb: Smithers.Verb.Lint, pattern: "//:openapiBundle" },
     { name: "OpenAPI client drift", verb: Smithers.Verb.Lint, pattern: "//:openapiClients" },
-    { name: "Documentation drift", verb: Smithers.Verb.Lint, pattern: "//scripts:docsDrift" },
+    { name: "Documentation drift", verb: Smithers.Verb.Lint, pattern: "//:docsDrift" },
     { name: "Declaration baseline", verb: Smithers.Verb.Build, pattern: "//flows:apiBaseline" },
     { name: "Conflict markers", verb: Smithers.Verb.Lint, pattern: "//packages/repo-targets:conflictMarkers" },
     { name: "Tracked file hygiene", verb: Smithers.Verb.Lint, pattern: "//packages/repo-targets:trackedHygiene" },
@@ -701,7 +699,7 @@ const ci = Smithers.GithubCiGen({
         // ESLint and dprint over the flows tree: `//flows:lint` and `//flows:fmt`.
         { name: "Repository flows lint", verb: Smithers.Verb.Lint, pattern: "//flows/..." },
         { name: "Public export JSDoc", verb: Smithers.Verb.Lint, pattern: "//:jsdocTree" },
-        { name: "Script lint", verb: Smithers.Verb.Lint, pattern: "//scripts:lint" },
+        { name: "Repository automation lint", verb: Smithers.Verb.Lint, pattern: "//flows:moduleLint" },
         { name: "JSDoc rule harness", verb: Smithers.Verb.Test, pattern: "//:jsdocRules" },
         { name: "Reference-host runner hooks", verb: Smithers.Verb.Test, pattern: "//:referenceHostHooks" },
         // Each eval suite lives in the package it measures and is its own
@@ -807,7 +805,12 @@ const ci = Smithers.GithubCiGen({
         })
       }),
       steps: [
-        { name: "Script gates", verb: Smithers.Verb.Test, pattern: "//scripts/..." },
+        // The issue-claim convention, check receipts and their bindings, and the
+        // release rehearsal and version gates: flows-owned repository automation.
+        { name: "Issue claims and check receipts", verb: Smithers.Verb.Test, pattern: "//flows:issueClaim" },
+        { name: "Check bindings", verb: Smithers.Verb.Test, pattern: "//flows:evidenceBindings" },
+        { name: "Release rehearsal and gate inventory", verb: Smithers.Verb.Test, pattern: "//flows:releaseRehearsal" },
+        { name: "Release version suite", verb: Smithers.Verb.Test, pattern: "//flows:releaseVersion" },
         { name: "Command check runner", verb: Smithers.Verb.Test, pattern: "//flows:checkRunner" },
         // The benchmark, mutation and campaign gates live with their flows in
         // flows/bench and flows/perf; the evidence collected above is theirs.
@@ -821,7 +824,7 @@ const ci = Smithers.GithubCiGen({
         { name: "Landing helper", verb: Smithers.Verb.Test, pattern: "//flows:land" },
         { name: "Landing helper end to end", verb: Smithers.Verb.Test, pattern: "//flows:landCommit" },
         { name: "GitHub triage publisher", verb: Smithers.Verb.Test, pattern: "//flows:triagePublish" },
-        // The release tooling moved beside the Release flow; `//scripts/...` ran these.
+        // The release tooling lives beside the Release flow.
         { name: "Release manifest", verb: Smithers.Verb.Test, pattern: "//flows:packManifest" },
         { name: "Changelog generator", verb: Smithers.Verb.Test, pattern: "//flows:changelog" },
         { name: "Release cut", verb: Smithers.Verb.Test, pattern: "//flows:releaseCut" },
@@ -1240,7 +1243,7 @@ export const packageDefaults = Smithers.PackageDefaults({
 
 // Security review of the files the root owns and no nested PACKAGE.ts does:
 // the GitHub workflows, the native FFI crate, install-time hooks and patches, and the public
-// `.smithers` projections. `packages/smithers/flows/jj-wasm`, `scripts`, `flows`,
+// `.smithers` projections. `packages/smithers/flows/jj-wasm`, `flows`,
 // `apps`, `evals`, and `packages` have their own reviewers.
 const securityReview = Smithers.SecurityReview({
   cwd: ".",
@@ -1388,8 +1391,24 @@ const securityReview = Smithers.SecurityReview({
   ]
 })
 
+/**
+ * Documentation drift: package docs tarballs and every generated site page
+ * match their sources. The site generators and the package docs check run
+ * from the checkout root.
+ *
+ * @since 1.0.0
+ * @category lint
+ */
+const docsDrift = Smithers.Shell.Diff({
+  shell:
+    "pnpm run docs:check && cd apps/site && node scripts/sync-support-docs.mjs --check && node scripts/gen-cli-data.mjs --check && node scripts/sync-api-docs.mjs --check && node scripts/ingest-reference.mjs --check && node scripts/generate-llms.mjs --check",
+  changes: [],
+  timeout: "5m"
+})
+
 export const Package = Smithers.Package({
   targets: {
+    docsDrift,
     ...securityReview,
     backendGoModules,
     backendSQLC,

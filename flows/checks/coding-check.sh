@@ -15,7 +15,7 @@ lint //:factoryProjection
 lint //:backendAccessTests
 lint //:openapiBundle
 lint //:openapiClients
-lint //scripts:docsDrift
+lint //:docsDrift
 build //flows:apiBaseline
 lint //packages/repo-targets:conflictMarkers
 lint //packages/repo-targets:trackedHygiene

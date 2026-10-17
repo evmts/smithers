@@ -5,7 +5,7 @@
   # and hands it to the Microsandbox sandbox declaration, so a sandboxed
   # session plants this flake in its microVM and runs every command under
   # `nix develop` of it. `nix develop` at the root enters the same shell on a
-  # host. `scripts/check-toolchain-pins.mjs` asserts the pnpm and Node pins
+  # host. `packages/repo-targets/contracts/check-toolchain-pins.mjs` asserts the pnpm and Node pins
   # below against the workspace declaration, so a pin here and a pin there
   # cannot drift apart silently.
   #

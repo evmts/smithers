@@ -8,7 +8,6 @@ import { execFile } from "node:child_process"
 import { join } from "node:path"
 import { test } from "node:test"
 import { promisify } from "node:util"
-import { releaseGateArgs, releaseGateCommand, releaseGates } from "../../scripts/release-gates.mjs"
 import ReleaseContent from "../release-content/flow.ts"
 import * as Content from "../release-content/workflow.ts"
 import { contentInput, releaseInput } from "../release-support/input.ts"
@@ -17,6 +16,7 @@ import { actionLayers, operations } from "../release-support/operations.ts"
 import { agentLayers } from "../release-support/runtime.ts"
 import { type Candidate, ReleaseError } from "../release-support/schema.ts"
 import ReleaseFlow from "../release/flow.ts"
+import { releaseGateArgs, releaseGateCommand, releaseGates } from "../release/release-gates.mjs"
 import * as Release from "../release/workflow.ts"
 import { evidence, repository, scriptedSeats, scriptedTemplate } from "./fixtures.ts"
 
@@ -374,7 +374,10 @@ test("the checks gate runs the whole shared release inventory and returns a rece
   for (
     const command of [
       "ci //packages/... --jobs 2 --verbose",
-      "test //scripts/... --verbose",
+      "test //flows:issueClaim --verbose",
+      "test //flows:evidenceBindings --verbose",
+      "test //flows:releaseRehearsal --verbose",
+      "test //flows:releaseVersion --verbose",
       "lint //:jsdocTree --verbose",
       "build //apps/app:check --verbose",
       "test //apps/app:unitTests --verbose",

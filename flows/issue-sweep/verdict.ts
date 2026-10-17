@@ -106,7 +106,7 @@ export interface TimelineEntry {
   readonly body?: string | null | undefined
 }
 
-// Comments scripts/issue-claim.mjs and the sweep post, whichever identity posts them.
+// Comments flows/issue-claim/issue-claim.mjs and the sweep post, whichever identity posts them.
 export const bookkeeping = /^(?:Claimed by|Released by|Took over|Landed on main by issue-sweep)/
 
 const ours = (person: Person | null | undefined) =>

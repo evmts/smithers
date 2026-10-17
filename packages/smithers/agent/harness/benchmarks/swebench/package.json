@@ -1,6 +1,9 @@
 {
   "name": "@smthrs/eval-swebench",
   "private": true,
+  "smthrs": {
+    "group": "tooling"
+  },
   "type": "module",
   "version": "0.0.0",
   "description": "SWE-bench benchmark rig: the operator-run wave scripts and the scorecard generator that grades their output",

@@ -9,7 +9,7 @@ Reference host with process-execution auditing; host-only canary file, teammate 
 
 Candidate Automation declaration (unapproved): apps/app/e2e/real/maintainer-trust.spec.ts (new) · Runs in: reference Apple Silicon host, real install and microVMs, second-laptop browser, scratch GitHub repository
 
-Receipt: CI's own check run at the landed SHA, or a `smthrs test` run on the reference host, recorded through `scripts/check-run.mjs` (minimal-code synthesis ruling 3).
+Receipt: CI's own check run at the landed SHA, or a `smthrs test` run on the reference host, recorded through `flows/evidence/check-run.mjs` (minimal-code synthesis ruling 3).
 
 ## Steps
 

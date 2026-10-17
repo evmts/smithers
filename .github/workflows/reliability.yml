@@ -264,7 +264,7 @@ jobs:
         run: |
           node --input-type=module <<'JS'
           import { readFileSync } from 'node:fs'
-          const mapping = JSON.parse(readFileSync('scripts/check-commands.json', 'utf8'))
+          const mapping = JSON.parse(readFileSync('flows/evidence/check-commands.json', 'utf8'))
           for (const id of ['C-SEC-02', 'C-DUR-02', 'C-DUR-04']) {
             if (mapping.checks[id]?.status || !mapping.checks[id]?.target) {
               throw new Error(`Reference-host case refused: ${id} has no approved target`)

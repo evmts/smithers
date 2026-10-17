@@ -68,7 +68,7 @@ Regeneration does not publish the app's repository Wiki; [the wiki recipe](.smit
 tracks its distinct generation, review, and Cloud publication receipts.
 
 Cloud's gates use `.github/ci-known-red.json` with `--known-red` where declared
-in `scripts/ci/cloud.sh`. A successful gate with that option means no new
+in `.smithers/ci/cloud.sh`. A successful gate with that option means no new
 unlisted failures, not that every target passed. Keep listed failures tied to
 their issues and inspect the reported results. See the
 [build CLI policy](packages/smithers/build/build-cli/docs/cli.md).
@@ -90,7 +90,7 @@ The cost is that one edit lands in several places. If you change:
 | `pnpm-workspace.yaml` package membership      | `packages/smithers/flows/test/vitestCoverageIsolation.test.ts` (the coverage-universe policy pin); lockfile inputs are derived automatically. Nesting a package inside another has its own recipe below                                                    |
 | root `package.json` scripts                   | `packages/smithers/flows/test/vitestCoverageIsolation.test.ts` (the aggregator roster)                                                                                                          |
 | root `PACKAGE.ts` CI jobs, steps, or triggers | the generated `.github/workflows/ci.yml` (`pnpm exec smithers-build build '//:ci'` with `mode: "write"`), `packages/smithers/flows/test/vitestCoverageIsolation.test.ts` (source-text pins), and the hand-written `.github/workflows/release.yml`, which copies the required `test` job's toolchain and gate steps verbatim |
-| `.github/workflows/release.yml`               | the same suite, plus `scripts/release-rehearsal.test.mjs` and `flows/release/pack-release.test.mjs`, which compares the release workflow's steps against the generated `ci.yml`               |
+| `.github/workflows/release.yml`               | the same suite, plus `flows/release/release-rehearsal.test.mjs` and `flows/release/pack-release.test.mjs`, which compares the release workflow's steps against the generated `ci.yml`               |
 | any `PACKAGE.ts` target set — adding, renaming or removing a target, or changing its declared inputs or outputs (a new test file reached by a glob counts) | `.smithers/target-index.json`, with `pnpm run target-index`. Nothing about it is hand-written: the script writes it and `smthrs lint '//:targetIndex'` drift-checks it. See “The target index” |
 | the product API (`docs/api/openapi.yaml`)     | the per-tag source under `docs/api/openapi/` instead: `<tag>.yaml` holds that tag's paths and `_root.yaml` everything else. `pnpm exec smithers-build run '//:openapiBundle'` writes the bundle and `lint '//:openapiBundle'` drift-checks it; then `run '//:openapiClients'` regenerates the Go (`packages/backend/apiclient`) and TypeScript (`packages/smithers/src/internal/backend/ProductApi.ts`) clients from it and `lint '//:openapiClients'` drift-checks them |
 | `CHANGELOG.md` release sections               | nothing by hand inside a `<!-- commits:… -->` block — `pnpm exec smithers-build run '//:changelog'` writes it and `lint '//:changelog'` drift-checks it. See “Cutting a release”         |
@@ -116,7 +116,7 @@ That is `smthrs target '//:targetIndex' --write`. `smthrs lint '//:targetIndex'`
 is the check half, and it is what CI runs.
 
 Running the gate by hand does the repair for you:
-`bash scripts/ci/cloud.sh target-index` regenerates and then verifies when it
+`bash .smithers/ci/cloud.sh target-index` regenerates and then verifies when it
 is not under an inherited `CI=true`, so the file is already in your working
 tree by the time the gate is green. Under inherited CI the same gate only
 checks, because repairing there would hide the stale commit it exists to catch.
@@ -324,7 +324,7 @@ To move `packages/<child>` under `packages/<parent>`:
    `packages/*/*`: a built package writes a generated `dist/cjs/package.json`
    two levels down, and a two-wildcard pattern would enrol build output as a
    workspace member. `pnpm-workspace.yaml` records that reasoning above the
-   list, and `scripts/repo-contract/test-script-wiring.test.mjs` checks the two
+   list, and `packages/repo-targets/contracts/test-script-wiring.test.mjs` checks the two
    lists agree.
 6. Update the coverage-universe pin in
    `packages/smithers/flows/test/vitestCoverageIsolation.test.ts`, as any
@@ -343,7 +343,7 @@ To move `packages/<child>` under `packages/<parent>`:
    layout, and the pnpm install after it reports "Already up to date" instead
    of restoring it.
 10. Run `pnpm exec smithers-build ci '//packages/<parent>/...'`, which covers
-    both packages, `pnpm exec smithers-build test '//scripts/...'`, and
+    both packages, `pnpm exec smithers-build test '//packages/repo-targets/...'`, and
     `pnpm exec dprint fmt` in every package whose docs quote a path that moved
     — a markdown table's padding is part of its formatting.
 

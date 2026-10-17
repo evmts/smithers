@@ -4,7 +4,7 @@ import { nativeFfiLib, rehearsalNative } from "../smithers-ffi/native-targets.ts
 import { Smithers } from "@smthrs/targets"
 import { Package as flowsJjPackage } from "../../packages/smithers/flows/jj-wasm/PACKAGE.ts"
 import { Package as machinedPackage } from "../../packages/smithers-machined/PACKAGE.ts"
-import { Package as scriptPackage } from "../../scripts/PACKAGE.ts"
+import { Package as repoTargetsPackage } from "../repo-targets/PACKAGE.ts"
 import { Package as backendPackage } from "../backend/PACKAGE.ts"
 
 const tuiSources = Smithers.Filegroup({
@@ -134,7 +134,7 @@ const test = Smithers.Shell.Test({
     Smithers.file("//packages/repo-targets/test-utils/effect-property.mjs"),
     Smithers.file("//packages/repo-targets/test-utils/effect-property.d.mts"),
     // `EvaluationCli.test.ts` lists the repository's shipped suites.
-    scriptPackage.repositoryInputs,
+    repoTargetsPackage.repositoryInputs,
     // `ProductApi.test.ts` checks the generated client against the spec.
     Smithers.file("//docs/api/openapi.yaml")
   ],
@@ -363,7 +363,7 @@ const faultsReference = Smithers.Shell.Test({
     Smithers.file("vitest.faults-long.config.ts"),
     Smithers.file("vitest.faults.config.ts"),
     Smithers.file("scripts/fault-reference-host.mjs"),
-    Smithers.file("//scripts/reference-host/hosts.json")
+    Smithers.file("//packages/smithers/test/support/reference-hosts.json")
   ],
   env: {
     ...faultEnv,
@@ -589,8 +589,46 @@ const securityReview = Smithers.SecurityReview({
   ]
 })
 
+/**
+ * Internal scripts execute the Smithers working tree, never an installed copy.
+ *
+ * A published-CLI invocation inside this repository silently runs a release
+ * build instead of the code under edit. The guard scans only positions that
+ * actually spawn a process, so the documentation's own `bunx smithers-build`
+ * prose stays legal. It reads other trees, so it re-runs regardless.
+ *
+ * @since 0.1.0
+ * @category test
+ */
+const localSmithers = Smithers.NodeTest({
+  runner: Smithers.entrypoint(Smithers.file("//packages/smithers/test/support/check-local-smithers.mjs")),
+  srcs: [
+    Smithers.file("//packages/smithers/test/support/check-local-smithers.mjs"),
+    Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs")
+  ],
+  deps: []
+})
+
+/**
+ * The local-Smithers guard's own unit suite: the violation patterns, the
+ * allowlist, and the scanned execution surfaces.
+ *
+ * @since 0.1.0
+ * @category test
+ */
+const localSmithersUnit = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//packages/smithers/test/support/check-local-smithers.test.mjs")]),
+  srcs: [
+    Smithers.file("//packages/smithers/test/support/check-local-smithers.mjs"),
+    Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs")
+  ],
+  deps: []
+})
+
 export const Package = Smithers.Package({
   targets: {
+    localSmithers,
+    localSmithersUnit,
     tuiSources,
     check,
     circular,

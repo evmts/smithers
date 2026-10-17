@@ -188,7 +188,7 @@ test("the release consumer matrix and the package contract declare no Effect ver
 // consumer, so release logic that lived there ran unlinted and unchecked.
 test("no release script imports a module from flows/release/fixtures", () => {
   const importers = []
-  for (const directory of [".", "../../scripts/repo-contract", "../../packages/repo-targets/contracts"]) {
+  for (const directory of [".", "../../packages/repo-targets/contracts"]) {
     for (const entry of readdirSync(join(import.meta.dirname, directory))) {
       if (!entry.endsWith(".mjs")) continue
       const source = readFileSync(join(import.meta.dirname, directory, entry), "utf8")

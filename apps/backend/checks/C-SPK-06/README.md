@@ -23,7 +23,7 @@ MSB, SMITHERS and loader variables refuse before verification.
 
 Pending proof: fresh macOS user, A/B signing and boot, GUI service, relocated
 keg, logout/login repeat, owner-selected signing alternative and C-SPK-06 receipt.
-Use the existing scripts/check-run.mjs for qualification after its reference-host
+Use the existing flows/evidence/check-run.mjs for qualification after its reference-host
 binding is approved; its current refusal is retained.
 
 Real harness: `run.sh --bundle <absolute-approved-bundle> --execute`. The entry
@@ -37,7 +37,7 @@ not a passing receipt from a second check runner.
 
 After logout/login, repeat from the fresh user with the same approved bundle;
 remove the disposable tap/keg from the previous run first. Keep both evidence
-directories and bind them to the landed SHA using `scripts/check-run.mjs` only
+directories and bind them to the landed SHA using `flows/evidence/check-run.mjs` only
 when its reference-host mapping is approved. Fresh-user and logout/login state
 are owner-observed requirements, not asserted by this harness. No Mac execution
 or C-SPK-06 qualification has been recorded on the Linux lane.

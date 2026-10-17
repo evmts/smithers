@@ -457,9 +457,30 @@ jobs:
         run: |
           go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-      - name: Script gates
+      - name: Issue claims and check receipts
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
-        run: pnpm exec smthrs test '//scripts/...' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
+        run: pnpm exec smthrs test '//flows:issueClaim' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Check bindings
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
+        run: pnpm exec smthrs test '//flows:evidenceBindings' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Release rehearsal and gate inventory
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
+        run: pnpm exec smthrs test '//flows:releaseRehearsal' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
+        env:
+          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
+          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: Release version suite
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
+        run: pnpm exec smthrs test '//flows:releaseVersion' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
         env:
           SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
           SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
@@ -639,9 +660,9 @@ jobs:
           SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
           SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      - name: Script lint
+      - name: Repository automation lint
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
-        run: pnpm exec smthrs lint '//scripts:lint' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
+        run: pnpm exec smthrs lint '//flows:moduleLint' --results-file "$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json" --verbose
         env:
           SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
           SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
@@ -764,7 +785,7 @@ jobs:
           SMITHERS_POSTGRES_TEST_MAJOR: "18"
       - name: Distribution release contracts
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
-        run: node --test scripts/repo-contract/mac-distribution.test.mjs
+        run: node --test packages/repo-targets/contracts/mac-distribution.test.mjs
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 26.4.0
@@ -920,20 +941,12 @@ jobs:
           SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
           SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      # Release-only gates. Neither is in the required CI roster: the
+      # Release-only gate, outside the required CI roster: the
       # disaster-recovery suite is a pinned target rather than part of its
-      # package's `ci`, and the version-coherence suite is named here so a
-      # rehearsal can run it alone.
+      # package's `ci`.
       - name: Disaster-recovery script test
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
         run: pnpm exec smthrs test '//packages/smithers/flows/engine-store:disasterRecovery' --verbose
-        env:
-          SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
-          SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
-          SMITHERS_CACHE_NAMESPACE: "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
-      - name: Release version coherence
-        if: ${{ !cancelled() && steps.setup.conclusion == 'success' && matrix.lane != 'backend' }}
-        run: pnpm exec smthrs test '//scripts:releaseVersion' --verbose
         env:
           SMITHERS_CACHE_URL: "${{ secrets.SMITHERS_CACHE_URL }}"
           SMITHERS_CACHE_READ_TOKEN: "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
