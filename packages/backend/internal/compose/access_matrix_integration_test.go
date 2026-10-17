@@ -552,10 +552,18 @@ func TestAccessMatrixConfirmationDispatchComposedInstall(t *testing.T) {
 	// Issue filing consumes the same person-bound immutable read receipt as
 	// direct Make TODO. This adapter performs no network IO for that receipt.
 	todos.SetOrchestration(services.NewMythicalGitHub(q, nil, nil, nil), nil, nil)
+	issueDigests := map[int64]string{}
 	for i := range users {
 		for _, number := range []int64{23, 24} {
-			thread := services.InstallIssueThread{Issue: services.InstallIssue{Number: number, Title: "Keep issue context", Body: "Exact issue body", State: "open", HTMLURL: "https://github.com/maya/demo/issues/23"}}
-			read, err := json.Marshal(map[string]any{"issue": number, "digest": strings.Repeat("a", 64), "thread": thread, "outsider": number == 23})
+			thread := services.InstallIssueThread{Issue: services.InstallIssue{Number: number, Title: "Keep issue context", Body: "Exact issue body", State: "open", HTMLURL: fmt.Sprintf("https://github.com/maya/demo/issues/%d", number)}}
+			snapshot, err := json.Marshal(struct {
+				Issue    services.InstallIssue
+				Comments []services.InstallIssueComment
+			}{thread.Issue, thread.Comments})
+			require.NoError(t, err)
+			sum := sha256.Sum256(snapshot)
+			issueDigests[number] = hex.EncodeToString(sum[:])
+			read, err := json.Marshal(map[string]any{"issue": number, "digest": issueDigests[number], "thread": thread, "outsider": number == 23, "read_at": time.Now().UTC()})
 			require.NoError(t, err)
 			tx, err := pool.Begin(ctx)
 			require.NoError(t, err)
@@ -565,7 +573,11 @@ func TestAccessMatrixConfirmationDispatchComposedInstall(t *testing.T) {
 		}
 	}
 	payloadIssue := func(number int) string {
-		return fmt.Sprintf(`{"title":"From issue","prompt":"Resolve issue","issue":%d,"issue_digest":"%s"}`, number, strings.Repeat("a", 64))
+		digest, ok := issueDigests[int64(number)]
+		if !ok {
+			digest = strings.Repeat("a", 64)
+		}
+		return fmt.Sprintf(`{"title":"From issue","prompt":"Resolve issue","issue":%d,"issue_digest":"%s"}`, number, digest)
 	}
 	status, mismatched := call(1, false, "/api/confirmations", "issue-mismatch", fmt.Sprintf(`{"command":"todo.new","payload":%s}`, payloadIssue(23)))
 	require.Equal(t, 400, status, mismatched)
@@ -617,7 +629,7 @@ func TestAccessMatrixConfirmationDispatchComposedInstall(t *testing.T) {
 		var source, digest, revisions string
 		require.NoError(t, pool.QueryRow(ctx, `SELECT source,issue_digest,revisions::text FROM mythical_items WHERE issue_number=$1`, tc.number).Scan(&source, &digest, &revisions))
 		require.Equal(t, "issue", source)
-		require.Equal(t, strings.Repeat("a", 64), digest)
+		require.Equal(t, issueDigests[int64(tc.number)], digest)
 		require.Contains(t, revisions, `"reason": "from-issue"`)
 		if tc.number == 23 {
 			_, err = pool.Exec(ctx, `UPDATE collaborators SET permission='write' WHERE user_id=$1`, users[tc.member].ID)
