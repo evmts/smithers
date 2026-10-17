@@ -123,7 +123,7 @@ describe("one project, from init to gc", processBudget, () => {
 
     expect(scaffolded).toMatchObject({ flow: { name: "hello", created: true } })
     expect(scaffolded.created).toEqual(expect.arrayContaining(["WORKSPACE.ts", "PACKAGE.ts"]))
-    expect(existsSync(join(project, ".smithers", "flows", "hello", "flow.mdx"))).toBe(true)
+    expect(existsSync(join(project, ".smithers", "flows", "hello", "flow.ts"))).toBe(true)
     // Catalog entries expose the declared input contract so callers can form
     // a valid plan request before executing the scaffolded flow.
     expect(json("ls")).toEqual({
@@ -135,8 +135,7 @@ describe("one project, from init to gc", processBudget, () => {
           dialect: "draft-2020-12",
           schema: {
             type: "object",
-            properties: { args: { type: "string" } },
-            required: ["args"],
+            properties: { args: { anyOf: [{ type: "string" }, { type: "null" }] } },
             additionalProperties: true
           },
           definitions: {}
