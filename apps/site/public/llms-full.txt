@@ -4721,6 +4721,16 @@ round-tripped through JSON so their enumerable fields, `_tag` above all,
 survive; anything else falls back to a text rendering. The mapper never throws:
 a cycle, a `BigInt` field, or excessive depth still settles as text.
 
+### AgentSession.settlementSuccess
+
+```ts
+const settlementSuccess: (value: unknown) => unknown
+```
+
+Renders the success the engine persists as the agent flow's settlement. A flow
+whose success is `Schema.Void` completes with `undefined`, which is not JSON, so
+absence settles as `null`; every JSON value settles unchanged.
+
 ### Wait and driver helpers
 
 `AgentSession.readExecution(runId)` returns `Missing` when no engine execution
@@ -6507,9 +6517,9 @@ host whose flows are laid out differently replaces both through `Options`.
 
 ### PromoteFlows flow declarations and schemas
 
-| Export                                                                        | Declaration                                                                                                                                                                                                                                                                                                                                                                |
-| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `showScriptFlow`, `ShowScriptInput`, `ShowScriptOutput`                       | `flows/show-script`: return the source of every cell this turn has executed, plus the rules and the skeleton. Input `{ bestPractices? }` (extra guidance appended after the house rules). Output `{ cells, bestPractices, template }`.                                                                                                                                     |
+| Export                                                                        | Declaration                                                                                                                                                                                                                                                                                                                                                                                              |
+| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `showScriptFlow`, `ShowScriptInput`, `ShowScriptOutput`                       | `flows/show-script`: return the source of every cell this turn has executed, plus the rules and the skeleton. Input `{ bestPractices? }` (extra guidance appended after the house rules). Output `{ cells, bestPractices, template }`.                                                                                                                                                                   |
 | `writeFlowFlow`, `writeFlowCapabilities`, `WriteFlowInput`, `WriteFlowOutput` | `flows/write-flow`: write `flow.ts`, `flow.e2e.ts`, and the fixture under `.smithers/flows/<id>/`. Input `{ id, description, flowSource, testSource, fixtureJson }`. Output `{ files }`, the root-relative paths written. Declares `writes: [".smithers/flows/**"]` and `capabilities: writeFlowCapabilities` (`["fs:write:/.smithers/flows/**"]`), so a run whose envelope lacks that write is refused. |
 
 ## FlowStore
@@ -7094,7 +7104,7 @@ calls `extract`, `judge` and `write` over a finished run's journal.
 | `reading`, `judge(task, candidates)`  | One `memory/mine` reading: `durable` and `issue` per candidate, each accepted when `accepts(p)` (τ 0.70).                                                                               |
 | `write(store, { bank, runId, text })` | The one fact writer: redacted, keyed by `noteId(bank, text)`, `source:transcript`; a stored fact is kept as it is.                                                                      |
 | `settle(input)`                       | The run-end reading as the `memory-mine` boundary; returns its `decision-settled` or `decision-unjudged` rows and a `supervisor-memory-failed` row per refused write or engine failure. |
-| `decisionsDirectory`                  | `.smithers/wiki/decisions`: where `memory/mine` appends `<item>.md` and where the `memory` wiki source reads decisions pages.                                                             |
+| `decisionsDirectory`                  | `.smithers/wiki/decisions`: where `memory/mine` appends `<item>.md` and where the `memory` wiki source reads decisions pages.                                                           |
 
 A Jev or engine failure writes nothing and never fails the run. A replayed run
 is served the recorded reading.
@@ -32204,7 +32214,7 @@ give a new identity. A path outside the root is hashed as recorded.
 
 The repository host also binds its own policy identity to reserved job
 descriptors. In source mode it measures every TypeScript file in
-`flows/repository`, including the semantic judge and its helpers, together with
+`.smithers/flows/repository`, including the semantic judge and its helpers, together with
 the other host sources and prompt bodies. A change to those bytes changes the
 job's execution digest; without an admitted source snapshot, `Registry.loadBody`
 refuses a previously approved digest with `execution_changed`. A compiled host uses its bundled artifact digest.

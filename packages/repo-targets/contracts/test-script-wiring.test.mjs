@@ -8,7 +8,7 @@
  * `check-smithers-test-script.mjs` against synthetic fixtures; the script is
  * gone, so what survives is the claim itself, checked against the real tree.
  *
- * Run it with `node --test "scripts/repo-contract/*.test.mjs"`.
+ * Run it with `node --test packages/repo-targets/contracts/test-script-wiring.test.mjs`.
  */
 import assert from "node:assert/strict"
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"

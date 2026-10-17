@@ -25,7 +25,7 @@
  * direct pool should be spelled out. `@effect/platform-node` itself, under
  * `node_modules`, is not read.
  *
- * Run it with `node --test "scripts/repo-contract/*.test.mjs"`.
+ * Run it with `node --test packages/repo-targets/contracts/egress-http-client.test.mjs`.
  */
 import assert from "node:assert/strict"
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs"

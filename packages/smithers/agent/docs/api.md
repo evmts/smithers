@@ -442,6 +442,16 @@ round-tripped through JSON so their enumerable fields, `_tag` above all,
 survive; anything else falls back to a text rendering. The mapper never throws:
 a cycle, a `BigInt` field, or excessive depth still settles as text.
 
+### AgentSession.settlementSuccess
+
+```ts
+const settlementSuccess: (value: unknown) => unknown
+```
+
+Renders the success the engine persists as the agent flow's settlement. A flow
+whose success is `Schema.Void` completes with `undefined`, which is not JSON, so
+absence settles as `null`; every JSON value settles unchanged.
+
 ### Wait and driver helpers
 
 `AgentSession.readExecution(runId)` returns `Missing` when no engine execution
