@@ -649,7 +649,7 @@ describe("an agent execution quarantined by the durable engine", () => {
               const engine = yield* FlowRuntime.FlowRuntime
               const result = yield* engine.actionExecute(sealed, 1).pipe(Effect.provide(NodeCrypto.layer))
               return result._tag === "Complete" && Exit.isFailure(result.exit)
-                ? Stream.die(Cause.squash(result.exit.cause))
+                ? Stream.failCause(result.exit.cause)
                 : completed
             }))
         })

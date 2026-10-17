@@ -3350,7 +3350,12 @@ export const make = (
           : settleInterrupted(runId)
         : exit.cause.reasons.some((
             reason
-          ) => (Cause.isDieReason(reason) && reason.defect instanceof AttemptEvidenceQuarantined)
+          ) =>
+            Option.isSome(
+              Schema.decodeUnknownOption(AttemptEvidenceQuarantined)(
+                Cause.isDieReason(reason) ? reason.defect : Cause.isFailReason(reason) ? reason.error : undefined
+              )
+            )
           )
         ? writeStatus(runId, "parked", Cause.pretty(exit.cause))
         : Effect.andThen(
