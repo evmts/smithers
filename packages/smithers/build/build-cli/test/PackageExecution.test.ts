@@ -2289,7 +2289,7 @@ export const Package = S.Package({ targets: {
         expect(await Fs.readFile(NodePath.join(root, ".smithers/logs/run.log"), "utf8")).toBe(
           "initial\n" + "live\n".repeat(count)
         )
-        expect(await Fs.readFile(NodePath.join(root, "out.txt"), "utf8")).toBe(
+        expect(await Fs.readFile(NodePath.join(root, "out.txt"), "utf8"), result.output + result.logs).toBe(
           mode === "failure" || mode === "cancel" ? "before" : "after"
         )
         expect(await Fs.readFile(NodePath.join(root, ".env"), "utf8")).toBe("secret")
