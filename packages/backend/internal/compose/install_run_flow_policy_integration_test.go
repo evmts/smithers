@@ -27,7 +27,7 @@ func TestInstallOwnRunFlowPolicyPostgres(t *testing.T) {
 	stored, err := f.q.GetAuthInfoByTokenHash(f.ctx, hash)
 	require.NoError(t, err)
 	info := &middleware.AuthInfo{User: &f.owner, IsTokenAuth: true, TokenSystemIssued: true, TokenID: stored.TokenID, TokenHash: hash, RawScopes: scopes, Scopes: middleware.ParseTokenScopes(scopes)}
-	subject := services.InstallSubject{RepositoryID: f.repoID, WorkspaceID: ws.ID, TodoNumber: number, RunID: "parent-run", Attempt: 1, Generation: generation, Resource: "flows/check/flow.ts", PayloadDigest: strings.Repeat("a", 64)}
+	subject := services.InstallSubject{RepositoryID: f.repoID, WorkspaceID: ws.ID, TodoNumber: number, RunID: "parent-run", Attempt: 1, Generation: generation, Resource: ".smithers/flows/check/flow.ts", PayloadDigest: strings.Repeat("a", 64)}
 	for _, name := range []string{"own", "unbound", "other workspace", "other run", "other attempt", "other generation", "no payload", "no flow", "system flow", "malformed flow", "malformed digest"} {
 		t.Run(name, func(t *testing.T) {
 			requested := subject
@@ -47,7 +47,7 @@ func TestInstallOwnRunFlowPolicyPostgres(t *testing.T) {
 			case "no flow":
 				requested.Resource = ""
 			case "system flow":
-				requested.Resource = "flows/merge/flow.ts"
+				requested.Resource = ".smithers/flows/merge/flow.ts"
 			case "malformed flow":
 				requested.Resource = "../../merge"
 			case "malformed digest":

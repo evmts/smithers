@@ -1,0 +1,6 @@
+---
+description: Run the existing //flows:codingRuntime acceptance target.
+flows: [coding/CommandCheck]
+capabilities: ["fs:read:**", "proc:spawn:sh flows/checks/coding-check.sh *"]
+---
+{"argv":["sh","flows/checks/coding-check.sh","//flows:codingRuntime"],"cwd":".","timeoutMs":600000}

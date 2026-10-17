@@ -71,7 +71,7 @@ func TestFlowLoadGuestRehearsal(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		commit, err := r.pushGitHubMain("Copy the TODO flow", map[string]string{"flows/todo/flow.ts": string(source) + "\n// Repository version.\n"})
+		commit, err := r.pushGitHubMain("Copy the TODO flow", map[string]string{".smithers/flows/todo/flow.ts": string(source) + "\n// Repository version.\n"})
 		if err != nil {
 			return err
 		}
@@ -111,7 +111,7 @@ func TestFlowLoadGuestRehearsal(t *testing.T) {
 		return
 	}
 	if !r.step("2 Broken flow retains Active", "GitHub main; POST /api/github/sync; GET /api/flows", "merged-failed with a file error; prior version stays Active", "T-FLW-03", func() error {
-		commit, err := r.pushGitHubMain("Break the TODO flow", map[string]string{"flows/todo/flow.ts": "export default (\n"})
+		commit, err := r.pushGitHubMain("Break the TODO flow", map[string]string{".smithers/flows/todo/flow.ts": "export default (\n"})
 		if err != nil {
 			return err
 		}
@@ -127,7 +127,7 @@ func TestFlowLoadGuestRehearsal(t *testing.T) {
 				if version.State != "merged-failed" {
 					continue
 				}
-				if !strings.Contains(version.Error, "flows/todo/flow.ts") {
+				if !strings.Contains(version.Error, ".smithers/flows/todo/flow.ts") {
 					return fmt.Errorf("failure has no source diagnostic: %+v", version)
 				}
 				var source, status string

@@ -1,0 +1,192 @@
+package compose
+
+import (
+	"context"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/stretchr/testify/require"
+
+	"github.com/smithersai/smithers/packages/backend/internal/chat"
+	"github.com/smithersai/smithers/packages/backend/internal/config"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	"github.com/smithersai/smithers/packages/backend/ports"
+)
+
+type unusedChatHost struct{}
+
+func TestPrivateChatAPIForwardingUsesControlOriginAndRetainsBearer(t *testing.T) {
+	runtime := &chat.Runtime{Handler: &chat.Handler{}}
+	api := middleware.EffectiveOrigin(func() []string { return []string{"https://team.example"} })(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer person" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		require.Equal(t, "localhost:4000", r.Host)
+		origin, ok := middleware.EffectiveOriginFromContext(r.Context())
+		require.True(t, ok)
+		require.Equal(t, "http://localhost:4000", origin)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	server := httptest.NewServer(chatCallbackHandler(runtime, api))
+	defer server.Close()
+	for _, token := range []string{"", "Bearer person"} {
+		request, err := http.NewRequest(http.MethodGet, server.URL+"/api/todos", nil)
+		require.NoError(t, err)
+		request.Header.Set("Authorization", token)
+		request.Header.Set("X-Forwarded-Host", "foreign.example")
+		response, err := server.Client().Do(request)
+		require.NoError(t, err)
+		response.Body.Close()
+		want := http.StatusUnauthorized
+		if token != "" {
+			want = http.StatusNoContent
+		}
+		require.Equal(t, want, response.StatusCode)
+	}
+}
+
+func (unusedChatHost) RunChatTurn(context.Context, ports.ChatTurnGrant) error { return nil }
+
+func TestChatCompositionRequiresPrivateCallbackBoundary(t *testing.T) {
+	_, err := newChatComposition(runOptions{Options: Options{ChatProducerBaseURL: "http://127.0.0.1:1000"}}, nil, chat.RuntimeOptions{})
+	require.ErrorContains(t, err, "requires a chat host")
+	worker, err := newChatComposition(runOptions{topology: hostedWorkerTopology, Options: Options{
+		ChatHost: unusedChatHost{}, ChatProducerBaseURL: "https://api.example.test",
+	}}, &pgxpool.Pool{}, chat.RuntimeOptions{})
+	require.NoError(t, err)
+	require.Nil(t, worker.listener)
+
+	publicListener, err := net.Listen("tcp", "0.0.0.0:0")
+	require.NoError(t, err)
+	_, err = newChatComposition(runOptions{topology: localTopology, Options: Options{
+		ChatHost: unusedChatHost{}, ChatCallbackListener: publicListener,
+	}}, nil, chat.RuntimeOptions{})
+	require.ErrorContains(t, err, "must bind loopback")
+}
+
+func TestHostedAPICallbackUsesSharedListenerWhenPrivateListenerIsAbsent(t *testing.T) {
+	runtime, err := newChatComposition(runOptions{topology: hostedAPITopology, Options: Options{
+		ChatHost: unusedChatHost{}, ChatProducerBaseURL: "https://api.example.test",
+	}}, &pgxpool.Pool{}, chat.RuntimeOptions{})
+	require.NoError(t, err)
+	require.NotNil(t, runtime)
+	require.Nil(t, runtime.listener)
+	router := chi.NewRouter()
+	mountChatProducerOnSharedListener(router, runtime)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, chat.CommitPath, strings.NewReader(`{}`)))
+	require.Equal(t, http.StatusUnauthorized, response.Code)
+	// The source read and API callbacks ride the same listener behind the
+	// producer capability: no bearer, or one naming no turn, is fenced before
+	// any read.
+	for path, body := range map[string]string{
+		chat.SourceReadPath: `{"turnId":"not-a-turn","generation":1,"path":"JOURNEY.md"}`,
+	} {
+		for _, authorization := range []string{"", "Bearer producer-capability"} {
+			request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+			if authorization != "" {
+				request.Header.Set("Authorization", authorization)
+			}
+			response = httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			require.Equal(t, http.StatusUnauthorized, response.Code, path+" "+authorization)
+			require.Contains(t, response.Body.String(), `"producer_fenced"`)
+		}
+	}
+}
+
+func TestSingleOwnerServesSourceReadsOnlyOnThePrivateCallbackListener(t *testing.T) {
+	runtime := &chat.Runtime{Handler: &chat.Handler{}}
+	public := chi.NewRouter()
+	mountChatPublic(public, runtime, nil, &config.Config{})
+	for _, path := range []string{chat.SourceReadPath} {
+		private := httptest.NewRecorder()
+		chatCallbackHandler(runtime).ServeHTTP(private, httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`)))
+		// Mounted: the handler answers, here that it has no journal store.
+		require.Equal(t, http.StatusServiceUnavailable, private.Code, path)
+		require.Contains(t, private.Body.String(), `"storage_failed"`, path)
+		response := httptest.NewRecorder()
+		public.ServeHTTP(response, httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`)))
+		require.Equal(t, http.StatusNotFound, response.Code, path)
+	}
+}
+
+func TestChatStreamingRoutesRequireAuthentication(t *testing.T) {
+	router := chi.NewRouter()
+	// The product's ordinary /api subtree is registered first. The chat route
+	// must still win and must not inherit that subtree's JSON request timeout.
+	router.Route("/api", func(api chi.Router) {
+		api.Post("/agent/turn/replay", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusTeapot)
+		})
+	})
+	mountChatPublic(router, &chat.Runtime{Handler: &chat.Handler{}}, nil, &config.Config{})
+	for _, path := range []string{"/api/conversations/main/prompt", chat.ReplayPath, chat.AccountReplayPath} {
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, path, nil))
+		require.Equal(t, http.StatusUnauthorized, response.Code, path)
+	}
+	for _, path := range []string{"/api/agent/turn/cancel", "/api/agent/turn/retire", "/api/chat/turn", "/api/chat/cancel"} {
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, path, nil))
+		require.Equal(t, http.StatusNotFound, response.Code, path)
+	}
+	history := httptest.NewRecorder()
+	router.ServeHTTP(history, httptest.NewRequest(http.MethodGet, chat.HistoryPath, nil))
+	require.Equal(t, http.StatusUnauthorized, history.Code, chat.HistoryPath)
+	for _, path := range []string{chat.CommitPath, chat.ProviderStartedPath, chat.SourceReadPath} {
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, path, nil))
+		require.Equal(t, http.StatusNotFound, response.Code, path)
+	}
+}
+
+func TestChatErasureRouteSurvivesSignoutAndRejectsForeignOrigin(t *testing.T) {
+	router := chi.NewRouter()
+	mountChatPublic(router, &chat.Runtime{Handler: &chat.Handler{}}, nil, &config.Config{})
+	// No AuthLoader identity or CSRF cookie is available after sign-out. A 503
+	// from the handler proves the proof-only request passed the route stack.
+	request := httptest.NewRequest(http.MethodPost, chat.ErasePath, strings.NewReader(`{"runId":"run","legId":"leg","retirementProof":"`+strings.Repeat("a", 64)+`"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	require.Equal(t, http.StatusServiceUnavailable, response.Code)
+	foreign := request.Clone(request.Context())
+	foreign.Header.Set("Origin", "https://foreign.invalid")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, foreign)
+	require.Equal(t, http.StatusForbidden, response.Code)
+}
+
+func TestChatSizingDefaultsByRoleAndHonorsConfiguration(t *testing.T) {
+	hosted, err := chatRuntimeOptions(config.ChatConfig{}, true, nil)
+	require.NoError(t, err)
+	require.Equal(t, hostedChatConcurrency, hosted.Concurrency)
+	require.Equal(t, hostedChatQueueSize, hosted.QueueSize)
+	local, err := chatRuntimeOptions(config.ChatConfig{}, false, nil)
+	require.NoError(t, err)
+	require.Zero(t, local.Concurrency, "single owner keeps the chat runtime default")
+	configured, err := chatRuntimeOptions(config.ChatConfig{Concurrency: 64, QueueSize: 16, LeaseSeconds: 90}, true, nil)
+	require.NoError(t, err)
+	require.Equal(t, 64, configured.Concurrency)
+	require.Equal(t, 16, configured.QueueSize)
+	require.Equal(t, 90*time.Second, configured.Lease)
+	_, err = chatRuntimeOptions(config.ChatConfig{Concurrency: -1}, true, nil)
+	require.Error(t, err)
+}
+
+func TestChatSizingLoadsFromEnvironment(t *testing.T) {
+	t.Setenv("SMITHERS_CHAT_CONCURRENCY", "48")
+	t.Setenv("SMITHERS_CHAT_QUEUE_SIZE", "512")
+	t.Setenv("SMITHERS_CHAT_LEASE_SECONDS", "60")
+	cfg, err := config.Load("")
+	require.NoError(t, err)
+	require.Equal(t, config.ChatConfig{Concurrency: 48, QueueSize: 512, LeaseSeconds: 60}, cfg.Chat)
+}

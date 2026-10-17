@@ -1768,10 +1768,10 @@ const isUnregisteredAgent = (failure: ExecutableError, options: Options): boolea
 /**
  * Makes every discovered flow runnable, reporting the ones it could not.
  *
- * A project's `flows/` directory is a mixed set: some entries delegate to a
+ * A project's `.smithers/flows/` directory is a mixed set: some entries delegate to a
  * flow this host registered, others name a delegate only another host has, and
  * one may simply be broken. None of those is a reason to withhold the rest.
- * `flows/` is a directory a person edits, so at any moment one file in it is
+ * It is a directory a person edits, so at any moment one file in it is
  * mid-edit or wrong, and a catalog that failed on it would take down `ls`,
  * `ps`, and every unrelated `up` with it.
  *
@@ -1910,8 +1910,8 @@ export const Refresh: Context.Service<Refresh, Refresh> = Context.Service("flows
  * inside the runtime.
  *
  * The catalog it provides is not frozen. It used to be, and that was wrong for
- * a host whose own runs write into its `flows/` directory: an agent that
- * authors `flows/<id>/flow.ts` produced a file nothing on the host could plan
+ * a host whose own runs write into its `.smithers/flows/` directory: an agent
+ * that authors `.smithers/flows/<id>/flow.ts` produced a file nothing on the host could plan
  * or execute, because the descriptor existed and the executable behind it did
  * not, and only a restart closed the gap. {@link Refresh} is the one operation
  * that closes it instead. Two properties make it safe to call on a serving

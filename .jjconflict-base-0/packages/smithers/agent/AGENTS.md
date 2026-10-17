@@ -1,0 +1,5 @@
+# Agent packages
+
+For `Agent.Service` loop or host composition work, read the [agent runtime skill](../../../.agents/skills/smithers-agent-runtime/SKILL.md) and its source guide. For registry, memory, or chain changes, follow the deeper scoped `AGENTS.md` and skills in those packages.
+
+Native child recovery retains the control parent's ownership through a park. A released execution, including roots and approved modules, retries automatically only when every unfinished action is genuinely keyed; legacy or unkeyed unfinished effects require explicit resume even after owner death ([#3409](https://github.com/smithersai/smithers/issues/3409), Will, 2026-10-02). Lease expiry must not silently restart unkeyed external work. Background approval and wake notifications are not recovery consent. Unknown cross-machine liveness requires explicit resume; a parked timestamp is not a renewable lease. Preserve heartbeat fencing, cancellation, and recovery of non-released executions after confirmed owner death.

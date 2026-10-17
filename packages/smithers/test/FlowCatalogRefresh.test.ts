@@ -36,14 +36,14 @@ const fixtures = fileURLToPath(new URL("./fixtures/.catalog-refresh", import.met
 const modulesRoot = fileURLToPath(new URL("../agent/node_modules", import.meta.url))
 
 /** The registry entry the run writes, named by the directory it sits in. */
-const AUTHORED = "flows/authored/flow.ts"
+const AUTHORED = ".smithers/flows/authored/flow.ts"
 
 /**
  * The `@smthrs/flow` GRAPH file a run writes, named by the directory it sits
  * in. A declaration names a delegate the host already holds; a graph file IS
  * the body, and nothing has a delegate for it.
  */
-const GRAPH = "flows/review/flow.ts"
+const GRAPH = ".smithers/flows/review/flow.ts"
 
 /** The action that file's body names. The project implements it by name. */
 const REVIEW_STEP = "example/Review/Read"
@@ -201,12 +201,15 @@ const project = async (authored?: string) => {
   const root = mkdtempSync(join(fixtures, "root-"))
   await writeFile(join(root, "package.json"), "{\"type\":\"module\"}\n")
   await symlink(modulesRoot, join(root, "node_modules"), "dir")
-  await mkdir(join(root, "flows", "author"), { recursive: true })
-  await writeFile(join(root, "flows", "author", "flow.ts"), declaration("author", "catalog/Author", ["flows/**"]))
+  await mkdir(join(root, ".smithers", "flows", "author"), { recursive: true })
+  await writeFile(
+    join(root, ".smithers", "flows", "author", "flow.ts"),
+    declaration("author", "catalog/Author", ["flows/**"])
+  )
   await writeFile(join(root, "delegate.ts"), delegates)
   if (authored !== undefined) {
-    await mkdir(join(root, "flows", "authored"), { recursive: true })
-    await writeFile(join(root, "flows", "authored", "flow.ts"), authored)
+    await mkdir(join(root, ".smithers", "flows", "authored"), { recursive: true })
+    await writeFile(join(root, ".smithers", "flows", "authored", "flow.ts"), authored)
   }
   return root
 }
@@ -546,9 +549,9 @@ it("plans and runs the @smthrs/flow graph file the scaffold teaches, whose nodes
   try {
     // The authoring half: a declaration naming the delegate that writes a
     // graph file, standing where the project's own flows stand.
-    await mkdir(join(root, "flows", "author-graph"), { recursive: true })
+    await mkdir(join(root, ".smithers", "flows", "author-graph"), { recursive: true })
     await writeFile(
-      join(root, "flows", "author-graph", "flow.ts"),
+      join(root, ".smithers", "flows", "author-graph", "flow.ts"),
       declaration("author-graph", "catalog/AuthorGraph", ["flows/**"])
     )
     const registered = await import(pathToFileURL(join(root, "delegate.ts")).href) as unknown as Delegates

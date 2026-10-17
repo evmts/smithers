@@ -1,0 +1,28 @@
+import { readFileSync } from "node:fs"
+import { describe, expect, it } from "vitest"
+import manifest from "../package.json" with { type: "json" }
+
+const guide = readFileSync(new URL("../docs/installation.md", import.meta.url), "utf8")
+
+describe("Installation dependency contract", () => {
+  it("identifies the Effect range the manifest peers", () => {
+    const effect = `effect@${manifest.peerDependencies.effect}`
+    // A range an application's own effect has to fall in, never one version.
+    expect(manifest.peerDependencies.effect).toMatch(/^\^\d+\.\d+\.\d+$/)
+
+    // The package is on npm under `next`, which carries the 1.0 release candidates.
+    expect(guide).toContain("npm install @smthrs/core@next effect")
+    expect(guide).not.toMatch(/not on npm/i)
+    expect(guide).toContain(`\`${effect}\` as a peer dependency`)
+    expect(guide).not.toContain("exact peer")
+    expect(guide).not.toContain("it is a dependency, not a peer")
+  })
+
+  it("lists only the manifest's runtime dependencies", () => {
+    const section = guide.split("runtime dependencies install with it:")[1]?.split("## ")[0] ?? ""
+    const dependencies = [...section.matchAll(/^- \[`([^`]+)`\]/gm)].map((match) => match[1])
+
+    expect(dependencies.sort()).toEqual(Object.keys(manifest.dependencies).sort())
+    expect(guide).toContain("Five runtime dependencies install with it:")
+  })
+})

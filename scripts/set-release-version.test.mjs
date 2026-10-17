@@ -104,7 +104,7 @@ test("this workspace is internally coherent at its current version", () => {
 test("workspace discovery follows every pnpm-workspace package glob", () => {
   const directories = new Set(readManifests().map(({ directory }) => directory))
   assert.equal(directories.has("packages/smithers/build/infra"), true)
-  assert.equal(directories.has("examples"), true)
+  assert.equal(directories.has("flows/coding"), true)
   assert.equal(directories.has("apps/server"), true)
   assert.equal(directories.has("packages/rpc"), true)
   assert.equal(directories.has("apps/app"), true)

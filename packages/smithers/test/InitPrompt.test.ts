@@ -19,7 +19,7 @@ it("scaffolds a typed imported prompt included in the approved source closure", 
       Effect.runPromise(
         Effect.gen(function*() {
           const discovery = yield* Discovery.Discovery
-          return yield* discovery.scan({ source: "project", root: join(root, "flows"), naming: "path" })
+          return yield* discovery.scan({ source: "project", root: join(root, ".smithers", "flows"), naming: "path" })
         }).pipe(Effect.provide(Discovery.layer.pipe(Layer.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer)))))
       )
     const result = await scan()
@@ -28,7 +28,7 @@ it("scaffolds a typed imported prompt included in the approved source closure", 
     expect(descriptor.body._tag).toBe("Module")
     if (descriptor.body._tag !== "Module") throw new Error("Expected a module")
     expect(descriptor.body.imports?.some((entry) => entry.path === "prompt.mdx")).toBe(true)
-    const prompt = join(root, "flows/draft/prompt.mdx")
+    const prompt = join(root, ".smithers/flows/draft/prompt.mdx")
     const authored = "Custom instructions.\n"
     writeFileSync(prompt, authored)
     expect(Init.scaffold(root, "draft", {}).created).toBe(false)
@@ -36,7 +36,9 @@ it("scaffolds a typed imported prompt included in the approved source closure", 
     const refreshed = (await scan()).entries[0]!
     expect(refreshed.body).not.toEqual(descriptor.body)
     expect(readFileSync(created.flowFile, "utf8")).toContain("import Instructions from \"./prompt.mdx\"")
-    expect(readFileSync(join(root, "flows/draft/prompt.d.mdx.ts"), "utf8")).toContain("readonly args?: string")
+    expect(readFileSync(join(root, ".smithers/flows/draft/prompt.d.mdx.ts"), "utf8")).toContain(
+      "readonly args?: string"
+    )
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

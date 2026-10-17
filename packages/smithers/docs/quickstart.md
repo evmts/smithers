@@ -9,7 +9,7 @@ This quickstart takes one directory from empty to a settled run. Every command
 here is a real `smthrs` process against one real project.
 
 By the end you will have a project with `.flows/control.db` and
-`.flows/engine.db` on disk, one flow discovered from `flows/`, and one durable
+`.flows/engine.db` on disk, one flow discovered from `.smithers/flows/`, and one durable
 run you can list, read, and delete.
 
 ## Before you start
@@ -34,7 +34,7 @@ smthrs init hello
 ```
 
 `init` creates workspace declarations, a package manifest when absent, and
-`flows/hello/flow.ts`. Existing declarations and any single `flow.ts`,
+`.smithers/flows/hello/flow.ts`. Existing declarations and any single `flow.ts`,
 `flow.mdx` or `SKILL.md` entry are retained. Conflicting entry files are refused.
 It adds `.flows/` to `.gitignore` in a repository; execution databases are acquired by runtime
 commands, not by generating a flow.

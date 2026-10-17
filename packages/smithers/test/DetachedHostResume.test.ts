@@ -33,7 +33,7 @@ const executable = fileURLToPath(new URL("../src/bin.ts", import.meta.url))
 const judge = new URL("./fixtures/scripted-native-host.ts", import.meta.url).href
 const root = realpathSync(mkdtempSync(join(tmpdir(), "smithers-detached-resume-")))
 const home = join(root, "isolated-home")
-mkdirSync(join(root, "flows", "external-peer"), { recursive: true })
+mkdirSync(join(root, ".smithers", "flows", "external-peer"), { recursive: true })
 mkdirSync(join(root, ".flows"), { recursive: true })
 mkdirSync(home, { recursive: true })
 symlinkSync(fileURLToPath(new URL("../../../node_modules", import.meta.url)), join(root, "node_modules"), "dir")
@@ -45,7 +45,7 @@ for (
 ) {
   copyFileSync(
     fileURLToPath(new URL(`./fixtures/${fixture}`, import.meta.url)),
-    join(root, "flows", "external-peer", target)
+    join(root, ".smithers", "flows", "external-peer", target)
   )
 }
 

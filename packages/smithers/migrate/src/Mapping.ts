@@ -90,14 +90,14 @@ const table: ReadonlyArray<MappingRow> = [
     "createSmithers",
     "Flow.make(tag, { payload, success, error, body })",
     "@smthrs/flow/Flow",
-    "One file `flows/<name>/flow.ts` per old workflow. `schemas.input` becomes `payload`, the last task's output schema becomes `success`, and `dbPath`, `backend`, and `journalMode` are dropped because storage belongs to the host.",
+    "One file `.smithers/flows/<name>/flow.ts` per old workflow. `schemas.input` becomes `payload`, the last task's output schema becomes `success`, and `dbPath`, `backend`, and `journalMode` are dropped because storage belongs to the host.",
     "automatic"
   ),
   row(
     "Workflow",
     "Flow.make(tag, { description, capabilities, effects, payload, success, error, body })",
     "@smthrs/flow/Flow",
-    "The `name` prop becomes the flow tag and the directory name under `flows/`, the last step's output schema becomes `success`, and an agent step gives the flow `AgentAction.AgentFailure` as its `error`. The flow is the module's default export, which is what registry discovery reads and what the engine runs, so the contract the control plane admits is the one that executes. Its `description` comes from the `// smithers-description:` or `// smithers-display-name:` header, or from the workflow name.",
+    "The `name` prop becomes the flow tag and the directory name under `.smithers/flows/`, the last step's output schema becomes `success`, and an agent step gives the flow `AgentAction.AgentFailure` as its `error`. The flow is the module's default export, which is what registry discovery reads and what the engine runs, so the contract the control plane admits is the one that executes. Its `description` comes from the `// smithers-description:` or `// smithers-display-name:` header, or from the workflow name.",
     "automatic"
   ),
   row(
@@ -522,7 +522,7 @@ const table: ReadonlyArray<MappingRow> = [
   ),
   row(
     "mdx-prompt",
-    "prompt: (payload) => string, or flows/<name>/flow.mdx",
+    "prompt: (payload) => string, or .smithers/flows/<name>/flow.mdx",
     "@smthrs/agent/AgentAction, @smthrs/registry/MarkdownFlow",
     "`{props.x}` becomes `${payload.x}`. An MDX file with imports or JSX components is guided.",
     "automatic"
@@ -550,7 +550,7 @@ const table: ReadonlyArray<MappingRow> = [
   ),
   row(
     "docs",
-    "Text pointing at flows/, smthrs flow start, and report.md",
+    "Text pointing at .smithers/flows/, smthrs flow start, and report.md",
     null,
     "Documentation that teaches `smithers up` or JSX authoring is rewritten.",
     "guided"
@@ -604,7 +604,7 @@ const familyRow = (construct: Constructs.Construct): MappingRow => {
         construct.name,
         "A seat resolved by SeatResolver from the model this agent already names",
         "@smthrs/agent/SeatResolver, @smthrs/model/Route",
-        "`agents.ts` becomes `flows/seats.ts`. The seat comes from the model literal in the source, never from a default; `OpenAIAgent({ baseURL })` becomes `Route.openaiCompatible`.",
+        "`agents.ts` becomes `.smithers/flows/seats.ts`. The seat comes from the model literal in the source, never from a default; `OpenAIAgent({ baseURL })` becomes `Route.openaiCompatible`.",
         "guided"
       )
     }

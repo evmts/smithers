@@ -39,7 +39,7 @@ const settled = (overrides: Record<string, unknown> = {}) => ({
 describe("matching a settled copy-back to the bundle it applied", () => {
   it("names the flow only once both halves of the receipt are in", () => {
     const matcher = AuthoredSources.make()
-    expect(matcher.observe(captured(["flows/authored/flow.ts"]), 0)).toEqual([])
+    expect(matcher.observe(captured([".smithers/flows/authored/flow.ts"]), 0)).toEqual([])
     expect(matcher.observe(settled(), 0)).toEqual(["authored"])
   })
 
@@ -49,53 +49,62 @@ describe("matching a settled copy-back to the bundle it applied", () => {
 
   it("names nothing when the settled bundle is not the captured one", () => {
     const matcher = AuthoredSources.make()
-    matcher.observe(captured(["flows/authored/flow.ts"]), 0)
+    matcher.observe(captured([".smithers/flows/authored/flow.ts"]), 0)
     expect(matcher.observe(settled({ bundleIdentity: "bundle-2" }), 0)).toEqual([])
   })
 
   it("names nothing when the settlement belongs to another attempt", () => {
     const matcher = AuthoredSources.make()
-    matcher.observe(captured(["flows/authored/flow.ts"]), 0)
+    matcher.observe(captured([".smithers/flows/authored/flow.ts"]), 0)
     expect(matcher.observe(settled({ attempt: 2 }), 0)).toEqual([])
   })
 
   it("names nothing when the journal rewound between the two halves", () => {
     const matcher = AuthoredSources.make()
-    matcher.observe(captured(["flows/authored/flow.ts"]), 0)
+    matcher.observe(captured([".smithers/flows/authored/flow.ts"]), 0)
     expect(matcher.observe(settled(), 1)).toEqual([])
   })
 
   it("consumes the capture, so a rewound settlement cannot replay it", () => {
     const matcher = AuthoredSources.make()
-    matcher.observe(captured(["flows/authored/flow.ts"]), 0)
+    matcher.observe(captured([".smithers/flows/authored/flow.ts"]), 0)
     expect(matcher.observe(settled(), 0)).toEqual(["authored"])
     expect(matcher.observe(settled(), 0)).toEqual([])
   })
 
   it("reads a nested directory as the nested flow name discovery gives it", () => {
     const matcher = AuthoredSources.make()
-    matcher.observe(captured(["flows/coding/request/flow.ts", "flows/skill/SKILL.md", "flows/prompt/flow.mdx"]), 0)
+    matcher.observe(
+      captured([
+        ".smithers/flows/coding/request/flow.ts",
+        ".smithers/flows/skill/SKILL.md",
+        ".smithers/flows/prompt/flow.mdx"
+      ]),
+      0
+    )
     expect(matcher.observe(settled(), 0)).toEqual(["coding/request", "skill", "prompt"])
   })
 
   it("names each flow once however many of its files one bundle changed", () => {
     const matcher = AuthoredSources.make()
-    matcher.observe(captured(["flows/authored/flow.ts", "flows/authored/SKILL.md"]), 0)
+    matcher.observe(captured([".smithers/flows/authored/flow.ts", ".smithers/flows/authored/SKILL.md"]), 0)
     expect(matcher.observe(settled(), 0)).toEqual(["authored"])
   })
 
   for (
     const path of [
-      "../flows/escape/flow.ts",
-      "flows/../../elsewhere/flow.ts",
-      "flows//flow.ts",
-      "flows/./flow.ts",
-      "flows/authored/flow.ts\u0000",
-      "flows\\authored\\flow.ts",
-      "/flows/absolute/flow.ts",
-      "flows/authored/helper.ts",
-      "flows/authored/flow.tsx",
-      "docs/authored/flow.ts"
+      "../.smithers/flows/escape/flow.ts",
+      ".smithers/flows/../../elsewhere/flow.ts",
+      ".smithers/flows//flow.ts",
+      ".smithers/flows/./flow.ts",
+      ".smithers/flows/authored/flow.ts\u0000",
+      ".smithers/flows\\authored\\flow.ts",
+      "/.smithers/flows/absolute/flow.ts",
+      ".smithers/flows/authored/helper.ts",
+      ".smithers/flows/authored/flow.tsx",
+      "docs/authored/flow.ts",
+      "flows/authored/flow.ts",
+      ".smithers/other/authored/flow.ts"
     ]
   ) {
     it(`refuses ${JSON.stringify(path)} as a flow to rebuild`, () => {
@@ -107,7 +116,7 @@ describe("matching a settled copy-back to the bundle it applied", () => {
 
   it("ignores a record whose identity fields are not what the engine writes", () => {
     const matcher = AuthoredSources.make()
-    matcher.observe(captured(["flows/authored/flow.ts"], { attempt: "1" }), 0)
+    matcher.observe(captured([".smithers/flows/authored/flow.ts"], { attempt: "1" }), 0)
     expect(matcher.observe(settled(), 0)).toEqual([])
   })
 
@@ -138,29 +147,29 @@ describe("closing a capture the attempt never applied", () => {
 
   it("drops a capture whose attempt finished, so a later settlement names nothing", () => {
     const matcher = AuthoredSources.make()
-    matcher.observe(captured(["flows/authored/flow.ts"]), 0)
+    matcher.observe(captured([".smithers/flows/authored/flow.ts"]), 0)
     expect(matcher.observe(finished(), 0)).toEqual([])
     expect(matcher.observe(settled(), 0)).toEqual([])
   })
 
   it("leaves a capture its own attempt has not finished yet", () => {
     const matcher = AuthoredSources.make()
-    matcher.observe(captured(["flows/authored/flow.ts"]), 0)
+    matcher.observe(captured([".smithers/flows/authored/flow.ts"]), 0)
     matcher.observe(finished({ attempt: 2 }), 0)
     expect(matcher.observe(settled(), 0)).toEqual(["authored"])
   })
 
   it("keeps the other bundles of an attempt that applied one of them", () => {
     const matcher = AuthoredSources.make()
-    matcher.observe(captured(["flows/first/flow.ts"]), 0)
-    matcher.observe(captured(["flows/second/flow.ts"], { bundleIdentity: "bundle-2" }), 0)
+    matcher.observe(captured([".smithers/flows/first/flow.ts"]), 0)
+    matcher.observe(captured([".smithers/flows/second/flow.ts"], { bundleIdentity: "bundle-2" }), 0)
     expect(matcher.observe(settled(), 0)).toEqual(["first"])
     expect(matcher.observe(settled({ bundleIdentity: "bundle-2" }), 0)).toEqual(["second"])
   })
 
   it("ignores an attempt-finished record whose identity is not what the engine writes", () => {
     const matcher = AuthoredSources.make()
-    matcher.observe(captured(["flows/authored/flow.ts"]), 0)
+    matcher.observe(captured([".smithers/flows/authored/flow.ts"]), 0)
     expect(matcher.observe(finished({ attempt: "1" }), 0)).toEqual([])
     expect(matcher.observe(settled(), 0)).toEqual(["authored"])
   })

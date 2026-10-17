@@ -43,7 +43,7 @@ const composedRegistry = (repositoryPath: string, stateRoot: string) =>
   Effect.gen(function*() {
     const builtins = yield* provisionBuiltins(stateRoot, "a".repeat(64))
     const project = yield* Registry.make({
-      sources: [{ root: join(repositoryPath, "flows"), source: "project", naming: "path" }]
+      sources: [{ root: join(repositoryPath, ".smithers", "flows"), source: "project", naming: "path" }]
     })
       .pipe(Effect.provide(Discovery.layer))
     return bindRepositoryRegistry(project, builtins.registry, "a".repeat(64), systemFlows)
@@ -53,10 +53,10 @@ const workspace = async (t: TestContext, options: { readonly ownFlows?: Record<s
   const temporary = await mkdtemp(join(tmpdir(), "create-flow-registry-"))
   t.after(() => rm(temporary, { recursive: true, force: true }))
   const repositoryPath = join(temporary, "repo"), stateRoot = join(temporary, "state")
-  await mkdir(join(repositoryPath, "flows"), { recursive: true })
+  await mkdir(join(repositoryPath, ".smithers", "flows"), { recursive: true })
   for (const [name, text] of Object.entries(options.ownFlows ?? {})) {
-    await mkdir(join(repositoryPath, "flows", name), { recursive: true })
-    await writeFile(join(repositoryPath, "flows", name, "flow.mdx"), text)
+    await mkdir(join(repositoryPath, ".smithers", "flows", name), { recursive: true })
+    await writeFile(join(repositoryPath, ".smithers", "flows", name, "flow.mdx"), text)
   }
   return { repositoryPath, stateRoot }
 }

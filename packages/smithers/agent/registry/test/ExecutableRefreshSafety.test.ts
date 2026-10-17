@@ -143,8 +143,8 @@ const withProject = <A, E>(
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const root = yield* fs.makeTempDirectoryScoped({ directory: modulesRoot, prefix: ".safety-" })
-    yield* fs.makeDirectory(`${root}/flows/early`, { recursive: true })
-    yield* fs.writeFileString(`${root}/flows/early/flow.ts`, declaration)
+    yield* fs.makeDirectory(`${root}/.smithers/flows/early`, { recursive: true })
+    yield* fs.writeFileString(`${root}/.smithers/flows/early/flow.ts`, declaration)
     return yield* use(root).pipe(
       Effect.provide(
         Executable.layer({ delegates: [] }).pipe(

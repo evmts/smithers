@@ -1,6 +1,6 @@
 # Custom UI example
 
-`flows/release-plan/flow.mdx` is a custom agent whose `metadata.tui` adds a
+`.smithers/flows/release-plan/flow.mdx` is a custom agent whose `metadata.tui` adds a
 key and a status item, and whose cells publish a live card and a footer item
 with `ui.publish`. Nothing here is imported: the TUI reads the frontmatter.
 

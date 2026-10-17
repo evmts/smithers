@@ -1,6 +1,6 @@
 import * as Log from "./log.ts"
 /**
- * The user's own file flows (`flows/<name>/flow.ts`), run in background tabs.
+ * The user's own file flows (`.smithers/flows/<name>/flow.ts`), run in background tabs.
  *
  * Shares `lifecycle.ts` with `workspace.ts`: a request persists before any
  * work, returns a `requested` or `queued` receipt, and settles only from the
@@ -75,6 +75,8 @@ export interface Port {
   readonly loaded?: () => Promise<Loaded | undefined>
   /** Registry only; never imports a flow module. */
   readonly discover: () => Promise<ReadonlyArray<Listed>>
+  /** The newest discovery's registry notices a person acts on, such as flows left in a retired root. */
+  readonly notices?: () => ReadonlyArray<string>
   readonly input: (flow: string) => Promise<Schema.Top | undefined>
   /** A markdown flow's body; a module flow is refused. */
   readonly body: (flow: string) => Promise<Body>
@@ -344,6 +346,7 @@ export class FlowRuns {
   private historyFailures = new Map<string, string>()
   private cache: ReadonlyArray<Listed> = []
   private discoveryFailure: FlowDiscoveryFailed | undefined
+  private discoveryNotices: ReadonlyArray<string> = []
   private discovered = false
   /** Runs in the store this session did not start (`smthrs flow start`); read-only. */
   private recorded: ReadonlyArray<Recorded> = []
@@ -439,6 +442,8 @@ export class FlowRuns {
   history = (): ReadonlyArray<Recorded> => this.recorded
   /** Why the newest discovery failed; cleared by the next one that succeeds. */
   failure = (): FlowDiscoveryFailed | undefined => this.discoveryFailure
+  /** The newest successful discovery's notices. */
+  notices = (): ReadonlyArray<string> => this.discoveryNotices
   private discover(): Promise<ReadonlyArray<Listed>> {
     const version = ++this.discovery
     this.discoveredAt = -Infinity
@@ -456,6 +461,7 @@ export class FlowRuns {
       }
       if (version === this.discovery && !this.closed) {
         this.cache = listed
+        this.discoveryNotices = this.options.port!.notices?.() ?? []
         this.discoveryFailure = undefined
         this.discovered = true
         this.discoveredAt = Date.now()

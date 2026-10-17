@@ -82,7 +82,7 @@ describe("local diagnostics off the registry snapshot", () => {
     ], [])
     expect(check(report, "registry")).toMatchObject({ level: "ok", detail: "2 flows discovered" })
     // The snapshot is authoritative: no filesystem fallback ran against a root
-    // that holds no `flows/` directory at all.
+    // that holds no `.smithers/flows/` directory at all.
     expect(existsSync(Project.flowsDirectory(root))).toBe(false)
   })
 
@@ -98,9 +98,9 @@ describe("local diagnostics off the registry snapshot", () => {
   it("carries each discovery warning into its own check", async () => {
     const root = project()
     const report = await run(root, [descriptor("review", "Review the working copy")], [
-      warning("flows/broken/flow.mdx", "missing_description", "A flow needs a description")
+      warning(".smithers/flows/broken/flow.mdx", "missing_description", "A flow needs a description")
     ])
-    expect(check(report, "registry flows/broken/flow.mdx")).toMatchObject({
+    expect(check(report, "registry .smithers/flows/broken/flow.mdx")).toMatchObject({
       level: "warn",
       detail: "missing_description: A flow needs a description"
     })

@@ -1,0 +1,31 @@
+[package]
+name = "smithers-machined"
+version = "0.1.0"
+edition = "2021"
+publish = false
+[features]
+default = []
+testing = []
+# Fault hooks are stripped even if a release build enables this feature.
+killpoints = []
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+flows-jj = { path = "../smithers/flows/jj-wasm" }
+gix = { version = "0.89", default-features = false }
+jj-lib = { workspace = true, features = ["git"] }
+pollster = "1"
+futures = "0.3"
+yrs = { version = "=0.27.4", features = ["small-client"] }
+sha2 = "0.10"
+similar = "=2.7.0"
+tokio = { version = "1", features = ["sync", "rt", "macros"] }
+hmac = "0.12"
+getrandom = "0.3"
+rustix = { version = "=1.1.4", features = ["fs", "net", "process", "pty", "termios", "thread", "mount", "rand", "time"] }
+[dev-dependencies]
+gix = "0.89"
+tempfile = "3"
+base64 = "0.22"
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"

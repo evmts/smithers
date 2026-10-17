@@ -13,7 +13,7 @@ to rewrite against, not a symbol to swap in.
 
 | Removed from `smthrs`                                                       | Replacement in 1.0                                                                                                                                                                                                                                 |
 | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `smthrs/jsx-runtime`, `smthrs/jsx-dev-runtime`, `jsxImportSource: "smthrs"` | No JSX authoring API. Author a flow in TypeScript with `Flow` and `Action` from [`@smthrs/flow`](/api/flow), or, with current discovery support, as `flows/<name>/flow.mdx`. The chosen TypeScript-entry/imported-MDX direction is not landed yet. |
+| `smthrs/jsx-runtime`, `smthrs/jsx-dev-runtime`, `jsxImportSource: "smthrs"` | No JSX authoring API. Author a flow in TypeScript with `Flow` and `Action` from [`@smthrs/flow`](/api/flow), or, with current discovery support, as `.smithers/flows/<name>/flow.mdx`. The chosen TypeScript-entry/imported-MDX direction is not landed yet. |
 | `Workflow` and `Task` components                                            | `Flow.make(tag, { payload, success, error, body })` and `Action.make` ([`@smthrs/flow`](/api/flow)). A model-backed step is `AgentAction.make` ([`@smthrs/agent`](/api/agent)).                                                                    |
 | `Sequence`, `Parallel`, `Branch` components                                 | `Node.andThen`, `Node.all`, and `Node.branch` ([`@smthrs/plan`](/api/plan)).                                                                                                                                                                       |
 | `Loop`, `Ralph`, `ReviewLoop` components                                    | `ReviewLoop.run`, or `Recursion.recurse` with an explicit fuel, depth, and fanout envelope ([`@smthrs/patterns`](/api/smithers-patterns)).                                                                                                         |
@@ -25,7 +25,7 @@ to rewrite against, not a symbol to swap in.
 | The `smithers` binary published by `smthrs`                                 | [`@smthrs/cli`](/api/cli), which owns both the `smthrs` and `smithers` spellings of one executable.                                                                                                                                                |
 
 Workflow files move with the API. `.smithers/workflows/pipelines/ci-fast.tsx`
-becomes `flows/pipelines/ci-fast/flow.ts`, keeping its position, and
+becomes `.smithers/flows/pipelines/ci-fast/flow.ts`, keeping its position, and
 `smithers.config.ts` has no 1.0 equivalent.
 
 ## The mapping the tool applies is larger than this

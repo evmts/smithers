@@ -38,7 +38,7 @@ const run = agent.run({
   `ctx.flows` on the next frame. Supply the same registry to `Agent.run` and
   the promotion binding's context. Refresh is best effort; a failed refresh
   leaves the files saved and discovery waits for a later successful refresh.
-  It declares `fs:write:/flows/**`, so the run's `capabilityEnvelope` must
+  It declares `fs:write:/.smithers/flows/**`, so the run's `capabilityEnvelope` must
   grant that write; a run without it gets `capability_refused` and nothing is
   saved.
 
@@ -59,8 +59,8 @@ satisfy:
 
 | Layer                             | Where files go                                                                                                                                              |
 | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `FlowStore.layerFileSystem(root)` | `<root>/flows/<id>/{flow.ts,flow.e2e.ts,fixtures/<id>.json}`, through Effect's `FileSystem`.                                                                |
-| `FlowStore.layerMemory(map)`      | A caller-owned `Map<string, string>` keyed by path, so a test reads the bytes back without a filesystem. Every key must be a file path under `flows/<id>/`. |
+| `FlowStore.layerFileSystem(root)` | `<root>/.smithers/flows/<id>/{flow.ts,flow.e2e.ts,fixtures/<id>.json}`, through Effect's `FileSystem`.                                                       |
+| `FlowStore.layerMemory(map)`      | A caller-owned `Map<string, string>` keyed by path, so a test reads the bytes back without a filesystem. Every key must be a file path under `.smithers/flows/<id>/`. |
 | `FlowStore.layerNoop()`           | Nowhere: refuses with `FlowStoreError { code: "unsupported" }` and a message the model can read.                                                            |
 
 Every message a store returns is written for the model that will read it back

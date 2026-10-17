@@ -15,7 +15,7 @@ The overridable flows are `todo`, `learning`, `review` and repository flows. Bui
 
 Use `/flow.edit todo` with your requested change, or ask the app agent to propose it. The change becomes an ordinary TODO. Review its evidence and merge it as you would any other change.
 
-A file flow lives at `flows/<name>/flow.ts`. Its default export uses the path's name as the first argument to `Flow.make` from `@smthrs/flow`:
+A file flow lives at `.smithers/flows/<name>/flow.ts`. Its default export uses the path's name as the first argument to `Flow.make` from `@smthrs/flow`:
 
 ```ts
 import { Flow } from "@smthrs/flow"

@@ -123,7 +123,7 @@ describe("one project, from init to gc", processBudget, () => {
 
     expect(scaffolded).toMatchObject({ flow: { name: "hello", created: true } })
     expect(scaffolded.created).toEqual(expect.arrayContaining(["WORKSPACE.ts", "PACKAGE.ts"]))
-    expect(existsSync(join(project, "flows", "hello", "flow.mdx"))).toBe(true)
+    expect(existsSync(join(project, ".smithers", "flows", "hello", "flow.mdx"))).toBe(true)
     // Catalog entries expose the declared input contract so callers can form
     // a valid plan request before executing the scaffolded flow.
     expect(json("ls")).toEqual({
@@ -166,9 +166,9 @@ describe("one project, from init to gc", processBudget, () => {
   it("launches a real module detached and returns its durable admission receipt", async () => {
     // Written here rather than beside the scaffold so the `ls` assertion above
     // still sees exactly what `init` created.
-    mkdirSync(join(project, "flows", "idle"), { recursive: true })
+    mkdirSync(join(project, ".smithers", "flows", "idle"), { recursive: true })
     symlinkSync(nodeModules, join(project, "node_modules"), "dir")
-    copyFileSync(idleFixture, join(project, "flows", "idle", "flow.ts"))
+    copyFileSync(idleFixture, join(project, ".smithers", "flows", "idle", "flow.ts"))
     const launched = launchIdle()
     const marker = join(project, `idle-entered-${launchCount}`)
     const deadline = Date.now() + 30_000

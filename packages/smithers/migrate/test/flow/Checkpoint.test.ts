@@ -708,6 +708,26 @@ describe("Checkpoint.take on jj", () => {
   })
 })
 
+describe("Checkpoint.carveRoots", () => {
+  it.effect("replaces a root holding the flows directory with its other entries", () =>
+    Effect.gen(function*() {
+      const root = mkdtempSync(join(tmpdir(), "migrate-carve-"))
+      write(root, ".smithers/smithers.db", "0.x")
+      write(root, ".smithers/workflows/ship.tsx", "export default null\n")
+      write(root, ".smithers/flows/ship/flow.ts", "export default 1\n")
+      write(root, "state/run.log", "log\n")
+      const carved = yield* Checkpoint.carveRoots(root, [".smithers", "state", "/outside/gateway"], ".smithers/flows")
+      expect(carved).toEqual([".smithers/smithers.db", ".smithers/workflows", "/outside/gateway", "state"])
+      expect(yield* Checkpoint.carveRoots(root, [".smithers"], undefined)).toEqual([".smithers"])
+      const digests = yield* Checkpoint.digest(root, carved.filter((entry) => !entry.startsWith("/")))
+      expect(digests.map((entry) => entry.path)).toEqual([
+        ".smithers/smithers.db",
+        ".smithers/workflows/ship.tsx",
+        "state/run.log"
+      ])
+    }).pipe(Effect.provide(NodeServices.layer)))
+})
+
 describe("Checkpoint.tree", () => {
   it.effect("digests the project, and finds every change afterwards including the ones nobody declared", () =>
     Effect.gen(function*() {

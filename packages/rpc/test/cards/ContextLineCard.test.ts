@@ -27,7 +27,7 @@ describe("context line", () => {
   })
   test("retains item and Inspect actions and allows inert items", () => {
     const decoded = ContextLineCardSchema.parse(base)
-    expect(decoded.items[0]?.action).toEqual({ tag: "file", label: "flow.ts", args: { path: "flows/todo/flow.ts" } })
+    expect(decoded.items[0]?.action).toEqual({ tag: "file", label: "flow.ts", args: { path: ".smithers/flows/todo/flow.ts" } })
     expect(decoded.items[1]?.action).toBeUndefined()
     expect(decoded.actions).toEqual([{
       tag: "run.inspect",

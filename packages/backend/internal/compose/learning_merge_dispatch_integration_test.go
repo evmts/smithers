@@ -91,9 +91,9 @@ func proveLearningMergedDispatch(t *testing.T, pool *pgxpool.Pool, service *serv
 	require.Equal(t, item.PRMergeCommit, admitted.Commit)
 	require.Equal(t, int64(7), admitted.Todo)
 	// Publication after admission must retain the first qualified Active pin.
-	digest := "f50ffd4ba0b0c7f9e4ecb81ecf3065c9a23ba39a700608fcccf9c36b49f5e0ea"
+	digest := "6f73f2e26a141141681fb8ca2f375c65454a38232b14c5eb450e0e6119bb7752"
 	replacementDigest := strings.Repeat("d", 64)
-	_, err = q.InsertFlowVersion(ctx, item.RepositoryID, "learning", "flows/learning/flow.ts", item.PRMergeCommit, replacementDigest, "loaded", "", json.RawMessage(`{}`))
+	_, err = q.InsertFlowVersion(ctx, item.RepositoryID, "learning", ".smithers/flows/learning/flow.ts", item.PRMergeCommit, replacementDigest, "loaded", "", json.RawMessage(`{}`))
 	require.NoError(t, err)
 	_, err = q.ActivateFlowVersion(ctx, item.RepositoryID, "learning", replacementDigest)
 	require.NoError(t, err)

@@ -147,6 +147,12 @@ describe("SmithersPlugin", () => {
     }
   })
 
+  it("teaches flows at .smithers/flows/<name>/ and never the retired root flows/", () => {
+    const taught = [SmithersPlugin.brief, ...Object.values(SmithersPlugin.knowledge).flat().map((fact) => fact.about)]
+    expect(SmithersPlugin.brief).toContain(".smithers/flows/<name>/flow.ts")
+    for (const text of taught) expect(text).not.toMatch(/(^|[\s(`])flows\/<name>/)
+  })
+
   it("never names a version control system: the host says which one the repository uses", () => {
     const taught = [SmithersPlugin.brief, ...Object.values(SmithersPlugin.knowledge).flat().map((fact) => fact.about)]
     for (const text of taught) expect(text).not.toMatch(/\b(jj|git)\b/)

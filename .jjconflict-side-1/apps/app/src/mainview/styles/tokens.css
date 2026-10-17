@@ -1,0 +1,301 @@
+/* Paper is the retained palette. Light/dark semantic tokens feed shared
+ * typography, geometry and the @smthrs/ui bridge below. */
+
+:root {
+	color-scheme: light;
+	--lane-0: #9b4d31;
+	--lane-1: #376f91;
+	--lane-2: #78639a;
+	--lane-3: #82651e;
+	--lane-4: #387667;
+	--lane-5: #a24f6b;
+	--g-accent: #3a756b;
+	--lane-6: var(--brand);
+	--lane-7: var(--text-muted);
+	--avatar-ink: var(--surface);
+	--attention: var(--warning);
+	--attention-text: var(--warning);
+	--attention-border: color-mix(in srgb, var(--attention) 30%, var(--border));
+	--attention-wash: color-mix(in srgb, var(--attention) 10%, var(--surface));
+
+	/* ── Paper raw scale (the brand palette's source; still named directly by a few surfaces) ── */
+	--paper-0: #fffefa;
+	--paper-1: #f7f4ee;
+	--paper-2: #efeae0;
+	--paper-3: #e4ddcf;
+	--ink-900: #211d18;
+	--ink-700: #4a443b;
+	--ink-500: #6e675c;
+	--ink-400: #9a9284;
+	--water-300: #7fbfb3;
+	--water-400: #3e9e90;
+	--water-500: #0f766e;
+	--water-600: #0b5b57;
+	--water-700: #134e4a;
+	--sediment-300: #f0c169;
+	--sediment-400: #e8a33d;
+	--sediment-500: #d08a1d;
+	--sediment-600: #8c5a08;
+	--ember-600: #a4442a;
+	--ember-400: #d97757;
+	--slate-600: #3c6879;
+	--slate-400: #82a8b8;
+
+	/* ── Type & app scale ────────────────────────────────────── */
+	--font-ui: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+	--font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	--fs-caption: 0.75rem;
+	--fs-small: 0.875rem;
+	--fs-body: 1rem;
+	--fs-md: 1.125rem;
+	--chat-max-width: 900px;
+	--r-sm: 8px;
+	--r-bubble: 18px;
+	--r-full: 999px;
+	--ease-current: cubic-bezier(0.22, 0.61, 0.21, 1);
+	--dur: 180ms;
+	--dur-slow: 260ms;
+
+	/* ── paper · light (the retained brand palette) ── */
+	--bg: var(--paper-1);
+	--text: var(--ink-900);
+	--text-muted: #665f54;
+	--text-faint: #6c655a;
+	--text-placeholder: #6d665b;
+	--surface: var(--paper-0);
+	--surface-2: var(--paper-2);
+	--surface-3: var(--paper-0);
+	--surface-glass: rgb(255 254 250 / 72%);
+	--surface-glass-strong: rgb(255 254 250 / 85%);
+	--border: rgb(33 29 24 / 8%);
+	--border-strong: rgb(33 29 24 / 14%);
+	--border-solid: var(--paper-3);
+	--hover: var(--paper-2);
+	--hover-subtle: rgb(33 29 24 / 3%);
+	--inverse-bg: var(--ink-900);
+	--inverse-text: var(--paper-1);
+	--brand: var(--water-500);
+	--action-primary: #0d6760;
+	--success: var(--water-600);
+	--warning: var(--sediment-600);
+	--danger: var(--ember-600);
+	--info: var(--slate-600);
+	--code-bg: var(--paper-2);
+	--code-text: var(--ink-900);
+	--inline-code-bg: rgb(33 29 24 / 6%);
+	--shadow-rgb: 33 29 24;
+
+	/* Action colors are audited against tinted/solid controls, separately from decoration. */
+	--on-action-primary: var(--inverse-text);
+	--on-confluence: var(--ink-900);
+
+	/* ── Focus (derived from the palette's brand) ────────────── */
+	--ring-border: var(--brand);
+	--ring: color-mix(in srgb, var(--brand) 45%, transparent);
+
+	/* ── Chat bubbles (light) — recipes over the semantic tokens ── */
+	--bubble-incoming: #fff;
+	--bubble-outgoing: #d9fdd3;
+	--bubble-outgoing-text: #172217;
+	--bubble-meta: #748476;
+
+	/* ── Confluence (light) — the gold axis, over the warning hue ── */
+	--confluence: var(--sediment-400);
+	--confluence-hover: var(--sediment-500);
+	--confluence-text: var(--sediment-600);
+	--confluence-wash: rgb(232 163 61 / 16%);
+	--golden-border: var(--sediment-300);
+
+	/* ── Smithers' own choice (light): violet, reserved for answers the workflow chose ── */
+	--ai: #6a5ce0;
+	--ai-text: #4d3fc2;
+	--ai-wash: #efedff;
+	--ai-ring: #e4e0ff;
+	--ai-border: #8a7cf0;
+
+	/* ── Elevation (light) — the palette contributes --shadow-rgb ── */
+	--shadow-1: 0 1px 2px rgb(var(--shadow-rgb) / 4%), 0 1px 3px rgb(var(--shadow-rgb) / 6%);
+	--shadow-2: 0 1px 2px rgb(var(--shadow-rgb) / 4%), 0 12px 32px rgb(var(--shadow-rgb) / 10%);
+	--shadow-3: 0 4px 12px rgb(var(--shadow-rgb) / 10%), 0 16px 48px rgb(var(--shadow-rgb) / 14%);
+
+	/* ── @smthrs/ui bridge: tints (self-adapting color-mix) ──── */
+	--brand-soft: color-mix(in srgb, var(--brand) 10%, var(--surface));
+	--brand-soft-strong: color-mix(in srgb, var(--brand) 16%, var(--surface));
+	--brand-border: color-mix(in srgb, var(--brand) 40%, transparent);
+	--success-soft: color-mix(in srgb, var(--success) 12%, var(--surface));
+	--success-border: color-mix(in srgb, var(--success) 40%, transparent);
+	--warning-soft: color-mix(in srgb, var(--warning) 12%, var(--surface));
+	--warning-border: color-mix(in srgb, var(--warning) 40%, transparent);
+	--danger-soft: color-mix(in srgb, var(--danger) 10%, var(--surface));
+	--danger-border: color-mix(in srgb, var(--danger) 40%, transparent);
+	--info-soft: color-mix(in srgb, var(--info) 10%, var(--surface));
+	--info-border: color-mix(in srgb, var(--info) 40%, transparent);
+
+	/* ── @smthrs/ui bridge: geometry & type ──────────────────── */
+	--font-sans: var(--font-ui);
+	--sp-1: 4px;
+	--sp-2: 8px;
+	--sp-3: 12px;
+	--sp-4: 16px;
+	--sp-5: 20px;
+	--sp-6: 24px;
+	--sp-7: 28px;
+	--sp-8: 32px;
+	--fs-1: var(--fs-caption);
+	--fs-2: var(--fs-small);
+	--fs-3: var(--fs-body);
+	--fs-4: var(--fs-md);
+	--fs-5: 1.25rem;
+	--fs-6: 1.5rem;
+	--fs-7: 1.75rem;
+	--lh-tight: 1.35;
+	--lh-body: 1.5;
+	--r-1: var(--r-sm);
+	--r-2: 10px;
+	--r-3: 12px;
+	--r-4: 16px;
+	--ctl-h: 36px;
+	--ctl-h-sm: 32px;
+	--ctl-h-lg: 44px;
+
+	/* ── @smthrs/ui bridge: legacy workflow-UI aliases ───────── */
+	--panel: var(--surface);
+	--card: var(--surface);
+	--line: var(--border-solid);
+	--muted: var(--text-muted);
+	--primary: var(--brand);
+	/*
+	 * shadcn's --accent is the SUBTLE hover surface (the gray a row takes on
+	 * hover), never the saturated brand — the bridge mapped it to --brand,
+	 * and every consumer that wrote var(--accent) for a quiet fill painted
+	 * purple: the targets card's hovers, the workflow highlight, and the
+	 * devtools JSON block, each with a beige fallback documenting the intent.
+	 * Point it at the stepped hover so shadcn-semantic code behaves as named.
+	 */
+	--accent: var(--hover);
+	--ok: var(--success);
+	--warn: var(--warning);
+	--warning-color: var(--warning);
+	--bad: var(--danger);
+	--err: var(--danger);
+	--error: var(--danger);
+	--blue: var(--info);
+	--run: var(--brand);
+	--crit: var(--danger);
+	--major: var(--warning);
+	--minor: var(--info);
+	--nit: var(--muted);
+	--me: var(--brand-soft);
+	--ink: var(--inverse-bg);
+
+	background: var(--bg);
+	color: var(--text);
+	font-family: var(--font-ui);
+	font-synthesis: none;
+	text-rendering: optimizeLegibility;
+	-webkit-font-smoothing: antialiased;
+
+}
+
+:root[data-theme="dark"] {
+	color-scheme: dark;
+	--lane-0: #eda381;
+	--lane-1: #8cc5e8;
+	--lane-2: #bea6e6;
+	--lane-3: #d9be70;
+	--lane-4: #8acaba;
+	--lane-5: #e5a1b8;
+	--avatar-ink: var(--bg);
+	--g-accent: #9bd5c6;
+
+	/* ── Paper · dark ───── */
+	--bg: #0d1514;
+	--text: #ece7db;
+	--text-muted: #a8a193;
+	--text-faint: #969083;
+	--text-placeholder: #958f82;
+	--surface: #131b1a;
+	--surface-2: #1a2422;
+	--surface-3: #202b29;
+	--surface-glass: rgb(19 27 26 / 72%);
+	--surface-glass-strong: rgb(19 27 26 / 85%);
+	--border: rgb(236 231 219 / 10%);
+	--border-strong: rgb(236 231 219 / 18%);
+	--border-solid: #293532;
+	--hover: #1a2422;
+	--hover-subtle: rgb(236 231 219 / 5%);
+	--inverse-bg: #ece7db;
+	--inverse-text: var(--ink-900);
+	--brand: #45c4b2;
+	--action-primary: var(--brand);
+	--success: var(--water-300);
+	--warning: var(--sediment-300);
+	--danger: var(--ember-400);
+	--info: var(--slate-400);
+	--code-bg: #101917;
+	--code-text: #ece7db;
+	--inline-code-bg: rgb(236 231 219 / 8%);
+	--shadow-rgb: 0 0 0;
+
+	/*
+	 * Paper chat bubbles (dark).
+	 */
+	--bubble-incoming: #182321;
+	--bubble-outgoing: #0f5f58;
+	--bubble-outgoing-text: #f0f8f5;
+	--bubble-meta: #a3b4af;
+
+	/* ── Confluence (dark) ───────────────────────────────────── */
+	--confluence: var(--sediment-400);
+	--confluence-hover: var(--sediment-300);
+	--confluence-text: var(--sediment-300);
+	--confluence-wash: rgb(232 163 61 / 14%);
+	--golden-border: var(--sediment-600);
+
+	/* ── Smithers' own choice (dark) ─────────────────────────── */
+	--ai: #a99ff7;
+	--ai-text: #c9c2ff;
+	--ai-wash: color-mix(in srgb, #8a7cf0 22%, transparent);
+	--ai-ring: color-mix(in srgb, #8a7cf0 30%, transparent);
+	--ai-border: #8a7cf0;
+
+	/* ── Elevation (dark) ────────────────────────────────────── */
+	--shadow-1: 0 1px 2px rgb(var(--shadow-rgb) / 24%), 0 1px 3px rgb(var(--shadow-rgb) / 32%);
+	--shadow-2: 0 1px 2px rgb(var(--shadow-rgb) / 24%), 0 12px 32px rgb(var(--shadow-rgb) / 40%);
+	--shadow-3: 0 4px 12px rgb(var(--shadow-rgb) / 45%), 0 16px 48px rgb(var(--shadow-rgb) / 50%);
+
+}
+
+
+
+
+
+
+
+
+
+
+:root {
+	--muted-foreground: var(--text-muted);
+	--popover: var(--surface);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+	}
+}
+
+/* App action pairs override the library's decorative-brand defaults, including portals. */
+.sui-button.sui-button-default { color: var(--action-primary); }
+.sui-button.sui-button-solid {
+	border-color: var(--action-primary);
+	background: var(--action-primary);
+	color: var(--on-action-primary);
+}
+.sui-button.sui-button-solid:hover { background: color-mix(in srgb, var(--action-primary) 88%, var(--text)); }
+.sui-button.sui-button-solid:active:not(:disabled) { background: color-mix(in srgb, var(--action-primary) 80%, var(--text)); }

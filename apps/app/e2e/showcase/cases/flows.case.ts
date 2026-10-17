@@ -50,7 +50,7 @@ export default showcase({
     const triggerOperations: Array<string | undefined> = []
     await backend.cloud({ capabilities: ["agent", "identity", "cloud", "cloud.pat"], workspaces: [runningBox(REPO)] })
     await backend.json("/api/workflow/provision", { status: "ready", repo: REPO, gatewayId: "gw-1" })
-    await backend.route(url => url.pathname.startsWith(`/api/repos/${REPO}/contents/flows/`), async route => {
+    await backend.route(url => url.pathname.startsWith(`/api/repos/${REPO}/contents/.smithers/flows/`), async route => {
       const url = new URL(route.request().url())
       expect(url.searchParams.get("ref")).toBe(REVISION)
       declarationReads.push(url.pathname)
@@ -102,7 +102,7 @@ export default showcase({
           if (planned === "repository/trigger") triggerOperations.push(call.payload.input?.operation)
           return ok({
           planId: `${planned}-plan`, flowId: planned, digest: DIGEST, inputSummary: "{}", envelope: ENVELOPE, deployClass: false, nodes: NODES,
-          graph: { sourceRevision: REVISION, nodes: NODES.map(node => ({ id: node.id, declaredAt: { path: `flows/${node.id}/flow.ts`, line: 1 } })),
+          graph: { sourceRevision: REVISION, nodes: NODES.map(node => ({ id: node.id, declaredAt: { path: `.smithers/flows/${node.id}/flow.ts`, line: 1 } })),
             edges: [{ from: "read-diff", to: "check", reason: "value" }, { from: "read-diff", to: "comment", reason: "value" }, { from: "check", to: "comment", reason: "value" }] },
           approval: { target: { _tag: "Plan", planId: `${planned}-plan`, digest: DIGEST, envelope: ENVELOPE }, scope: "run", idempotencyKey: `approve:${planned}-plan` }
         })
@@ -190,10 +190,10 @@ export default showcase({
       await check.focus()
       await page.keyboard.press("Enter")
       await expect(drawer.getByRole("tab", { name: "Code", exact: true })).toHaveAttribute("aria-selected", "true")
-      await expect(drawer.locator(".flow-graph-code-error")).toContainText("flows/check/flow.ts")
+      await expect(drawer.locator(".flow-graph-code-error")).toContainText(".smithers/flows/check/flow.ts")
       declarationReceipt.resolve()
       await expect.poll(() => firstDeclarationFinished).toBe(true)
-      await expect(drawer.locator(".flow-graph-code-error")).toContainText("flows/check/flow.ts")
+      await expect(drawer.locator(".flow-graph-code-error")).toContainText(".smithers/flows/check/flow.ts")
       await drawer.getByRole("button", { name: "Open file", exact: true }).focus()
       await page.keyboard.press("Enter")
       await expect(drawer.locator(".flow-graph-code")).toContainText("export const check = true")

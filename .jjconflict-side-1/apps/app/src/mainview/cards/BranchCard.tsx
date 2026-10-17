@@ -1,0 +1,315 @@
+import { useSyncExternalStore } from "react"
+import { useLiveQuery } from "@tanstack/react-db"
+import { GitBranch } from "lucide-react"
+/* T-APP-10: live topics map to BranchView; demo projections remain isolated. */
+import type { CatalogTag } from "@smthrs/rpc/CardAction"
+import type { BranchCard as BranchModel } from "@smthrs/rpc/BranchCard"
+import type { MachineState } from "@smthrs/rpc/CardPrimitives"
+import type { CloudWorkspaceRow } from "../state/AppState"
+import { cloudBoxesHeld } from "../flows/entries/Declare"
+import { useBranchPresence, useTopic } from "../state/useTopic"
+import { branchCardStage, branchModel, branchSeedAvailable, hostWithoutTopic, projectBranch, projectBranchActivity, topicRefusalOf, type BranchCardStage } from "../state/seams/BranchSeam"
+import { useController } from "../ControllerContext"
+import { cardActions, type CardActionDefinition, type CardCommandDispatch } from "../flows/cardActions"
+import type { CardActions, CardFamily, CardOf } from "./CardFamily"
+import { BranchView } from "./views/BranchView"
+import { useDesignWorld } from "../state/seams/DesignWorld/hooks"
+import { designBranchModel } from "../state/seams/DesignWorld/branch"
+import { branchOf, todoOf, type DesignBranch, type DesignWorldRows } from "../state/seams/DesignWorld"
+
+type Gesture = "item" | "file" | "terminal" | "run"
+type Definition = CardActionDefinition<CatalogTag, Gesture>
+
+/**
+ * The viewer-filtered presses for one branch, in the footer's order. A closed branch offers Fork only; the
+ * gestures (the item, a file, a terminal) are reads and stay bound on every branch.
+ */
+export const branchActionDefinitions = (world: DesignWorldRows, branch: DesignBranch, model: BranchModel): Definition[] => {
+  const item = branch.item === undefined ? undefined : todoOf(world, branch.item)
+  const n = model.item?.n
+  const asking = item?.state === "needs-you" && item.question !== undefined && item.question.answer === undefined
+  const definitions: Definition[] = []
+  if (n !== undefined) definitions.push({ tag: "todo", label: model.item!.title, gesture: "item", command_input: { n }, resolve_input: () => ({ n }) })
+  definitions.push(
+    { tag: "file", label: "Open", gesture: "file", command_input: { path: "" }, resolve_input: input => ({ path: input.path ?? "" }) },
+    { tag: "terminal.watch", label: "Watch", gesture: "terminal", command_input: { id: "" }, resolve_input: input => ({ id: input.id ?? "" }) }
+  )
+  /* S1 forks name their source as main or the item (CardAction BranchForkInputSchema, T-MCH-08); the branch rides the dispatch. */
+  const fork: Definition = { tag: "branch.fork", label: "Fork", command_input: { from: n === undefined ? "main" : `T${n}` } }
+  if (branch.machine === "closed") return [...definitions, fork]
+  if (branch.rebasePending !== undefined) definitions.push({ tag: "branch.rebase", label: "Rebase now", primary: true, command_input: { branch: branch.id } })
+  if (n !== undefined && asking) definitions.push({ tag: "todo.answer", label: "Answer", primary: true,
+    input: [{ name: "answer", label: "Answer the coding agent", kind: "text", required: true, multiline: true }],
+    command_input: { n, answer: "" }, resolve_input: input => ({ n, answer: input.answer ?? "" }) })
+  if (n !== undefined) definitions.push({ tag: "todo.steer", label: "Steer",
+    input: [{ name: "text", label: "Steer the coding agent", kind: "text", required: true, multiline: true }],
+    command_input: { n, text: "" }, resolve_input: input => ({ n, text: input.text ?? "" }) })
+  if (model.scratch !== undefined) definitions.push({ tag: "branch.add-to-stack", label: "Add to stack", primary: !asking, command_input: { text: branch.name } })
+  definitions.push({ tag: "terminal", label: "New terminal", command_input: { branch: branch.id } }, fork)
+  return definitions
+}
+
+/** Only composed providers bind live presses; topic payloads carry no command authority. */
+export const liveBranchActionDefinitions = (model: BranchModel, providers: ReadonlySet<CatalogTag>, questionWait?: string, movedWait?: string): Definition[] => {
+  const definitions: Definition[] = []
+  if (model.terminals.length) definitions.push({ tag: "terminal.watch", label: "Watch", gesture: "terminal",
+    command_input: { id: "" }, resolve_input: input => ({ id: input.id ?? "" }) })
+  if (model.presence.some(row => row.where.kind === "step" && row.actor.kind === "agent" && row.actor.run_id)) definitions.push({
+    tag: "run", label: "Open", gesture: "run", command_input: { id: "" },
+    resolve_input: input => ({ id: input.id ?? "" })
+  })
+  const n = model.item?.n
+  if (n !== undefined) definitions.push({ tag: "todo", label: model.item!.title, gesture: "item",
+    command_input: { n }, resolve_input: () => ({ n }) })
+  definitions.push({ tag: "file", label: "Open", gesture: "file", args: { navigation: "file" },
+    command_input: { path: "", branch: model.name },
+    resolve_input: input => ({ path: input.path ?? "", branch: model.name,
+      ...(input.line === undefined ? {} : { line: Number(input.line) }) }) })
+  if (model.machine.state !== "closed") {
+    if (model.machine.state === "awake") definitions.push({ tag: "box.suspend", label: "Sleep", command_input: { branch: model.name } })
+    if (model.machine.state === "failed") definitions.push({ tag: "box.resume", label: "Retry", command_input: { branch: model.name } })
+    if (model.machine.state === "asleep") definitions.push({ tag: "box.resume", label: "Wake", command_input: { branch: model.name } })
+    if (model.moved_off) definitions.push(
+      { tag: "todo.return-to-item", label: `Return to T${model.moved_off.item}`, command_input: { n: model.moved_off.item, ...(movedWait ? { id: movedWait } : {}) }, resolve_input: () => ({ n: model.moved_off!.item, ...(movedWait ? { id: movedWait } : {}) }) },
+      { tag: "todo.keep-moved", label: "Keep for now", command_input: { n: model.moved_off.item, ...(movedWait ? { id: movedWait } : {}) }, resolve_input: () => ({ n: model.moved_off!.item, ...(movedWait ? { id: movedWait } : {}) }) }
+    )
+    if (model.scratch && model.rebase?.state === "conflict") {
+      for (const path of model.rebase.paths) definitions.push({
+        tag: "file", label: "Resolve", args: { conflict_path: path },
+        command_input: { branch: model.name, path }
+      })
+    }
+    if (model.scratch && model.rebase?.state === "conflict" && model.rebase.conflict_change && model.rebase.onto_revision) definitions.push({
+      tag: "branch.rebase", label: "Done", command_input: { branch: model.name, conflict_change: model.rebase.conflict_change, onto_revision: model.rebase.onto_revision }
+    })
+    if (model.rebase?.state === "pending") definitions.push({ tag: "branch.rebase-now", label: "Rebase now", command_input: { branch: model.name } })
+  }
+  if (model.machine.state !== "closed" && n !== undefined) {
+    const question = [...model.activity].reverse().find(entry => entry.kind === "question" || entry.kind === "answer")
+    if (model.item?.state === "needs_you" && (questionWait !== undefined || question?.kind === "question")) definitions.push({
+      tag: "todo.answer", label: "Answer", primary: true,
+      input: [{ name: "answer", label: "Answer the coding agent", kind: "text", required: true, multiline: true }],
+      command_input: { n, answer: "", ...(questionWait === undefined ? {} : { wait: questionWait }) },
+      resolve_input: input => ({ n, answer: input.answer ?? "", ...(questionWait === undefined ? {} : { wait: questionWait }) })
+    })
+    definitions.push({ tag: "todo.steer", label: "Steer",
+      input: [{ name: "text", label: "Steer the coding agent", kind: "text", required: true, multiline: true }],
+      command_input: { n, text: "" }, resolve_input: input => ({ n, text: input.text ?? "" }) })
+  }
+  if (model.machine.state !== "closed" && model.scratch) definitions.push({ tag: "branch.add-to-stack", label: "Add to stack", command_input: { text: model.name } })
+  if (model.machine.state !== "closed") definitions.push({ tag: "terminal", label: "New terminal", command_input: { branch: model.name }, resolve_input: () => ({ branch: model.name }) })
+  if (n !== undefined || model.name === "main" || model.scratch) {
+    const from = n === undefined ? model.name : `T${n}`
+    definitions.push({ tag: "branch.fork", label: "Fork", command_input: { from }, resolve_input: () => ({ from }) })
+  }
+  return definitions.filter(definition => providers.has(definition.tag))
+}
+
+/** Each change burst's Diff; the burst id rides as `args` so the View tells rows apart. */
+export const changeActionDefinitions = (model: BranchModel): CardActionDefinition[] =>
+  model.activity.filter(entry => entry.kind === "change")
+    .map(entry => ({ tag: "diff", label: "Diff", args: { burst: entry.id }, command_input: { branch: model.name, entry: entry.id } }))
+
+/** View selections use the same durable card transition on installs and demos. */
+function persistBranchView(controller: ReturnType<typeof useController>, card: CardOf<"branch">, patch: { tab?: string }) {
+  if (patch.tab !== "activity" && patch.tab !== "files" && patch.tab !== "terminals") return
+  controller.setCardTab(card.id, patch.tab)
+}
+
+const STAGE_WORD: Record<BranchCardStage["kind"], string> = { loading: "Loading", absent: "Not available", failed: "Failed" }
+
+/**
+ * The card's body when it holds no branch: the stage of the source that would
+ * have answered it, and the box it names.
+ *
+ * Every path that used to answer `null` comes here. A branch card with a
+ * heading and no body at all told root's native retest nothing — not the box's
+ * id, not whether the inventory was still loading, not that a `workspaces.loaded`
+ * prune had already deleted the row the card points at
+ * ([#3882](https://github.com/smithersai/smithers/issues/3882)).
+ *
+ * It states only what is known. No machine state, no seed branch and no
+ * same-named row from another repository stands in for the box, and it binds no
+ * act: `data-branch-stage` and `data-branch-source` carry the classification
+ * for a native retest, so the next recurrence names its own stage.
+ */
+const BranchStageBody = ({ card, stage, source }: {
+  readonly card: CardOf<"branch">
+  readonly stage: BranchCardStage
+  readonly source: "cloud-row" | "live-topic" | "design-seed"
+}) => (
+  <section className="smithers-card branch-view" data-kind="branch" data-machine="unknown"
+    data-branch-stage={stage.kind} data-branch-source={source} data-branch-id={card.payload.id}>
+    <header className="smithers-card-header">
+      <GitBranch size={16} aria-hidden="true" />
+      <h2>{card.title}</h2>
+      <span className="branch-machine" data-state={stage.kind}>
+        {stage.kind === "loading" ? <span className="branch-spin" aria-hidden="true" /> : null}
+        {STAGE_WORD[stage.kind]}
+      </span>
+    </header>
+    <div className="smithers-card-body">
+      <div className="branch-notice" data-tone={stage.kind === "failed" ? "failed" : "quiet"}>
+        <span>{stage.kind === "failed" ? stage.error : stage.kind === "loading" ? "Loading this box." : "This box is not available."}</span>
+        <code>{card.payload.id}</code>
+      </div>
+    </div>
+  </section>
+)
+
+const DesignBranchBody = ({ card, actions }: { readonly card: CardOf<"branch">; readonly actions: CardActions }) => {
+  const controller = useController()
+  const world = useDesignWorld()
+  const branch = branchOf(world, card.payload.id)
+  /*
+   * The seeded world answers for a branch only where it IS the authority. Off
+   * an install with the design fixture off — a hosted page whose bootstrap has
+   * not answered — it holds no rows at all, and reading that silence as the
+   * box's absence would tell a native retest "This box is not available."
+   * about a box nothing has looked for yet (#3882).
+   */
+  if (branch === undefined) return <BranchStageBody card={card} source="design-seed"
+    stage={branchSeedAvailable(controller) ? { kind: "absent" } : { kind: "loading" }} />
+  const item = branch.item === undefined ? undefined : todoOf(world, branch.item)
+  const submit = (name: string, payload: Record<string, unknown>) =>
+    controller.submitCommand({ name, payload, actor: "user", originCardId: card.id })
+  /* Every press names its branch; a flow decodes the keys it declares and ignores the rest. */
+  const dispatch: CardCommandDispatch = (tag, input) => submit(tag, { branch: branch.id, ...(input ?? {}) })
+  /* MOCK: a burst's Diff opens the branch's diff (its item's ref) until `snapshot_before`/`snapshot_after` land. */
+  const diffDispatch: CardCommandDispatch = (tag, input) => submit(tag, { branch: branch.id, subject: item?.ref ?? branch.name, ...(input ?? {}) })
+  const base = designBranchModel(world, branch)
+  const bindings = cardActions<Gesture>(dispatch, branchActionDefinitions(world, branch, base))
+  const changes = cardActions(diffDispatch, changeActionDefinitions(base))
+  const model: BranchModel = { ...base, activity: base.activity.map(entry => entry.kind !== "change" ? entry
+    : { ...entry, actions: changes.actions.filter(action => action.args?.burst === entry.id) }) }
+  return <BranchView model={model} actions={bindings.actions} gestures={bindings.gestures}
+    onAction={(tag, input) => (tag === "diff" ? changes : bindings).onAction(tag, input)}
+    view={{ maximized: actions.presentation === "maximized", ...(card.payload.tab === undefined ? {} : { tab: card.payload.tab }) }}
+    onView={patch => persistBranchView(controller, card, patch)} />
+}
+
+/**
+ * A box's state as Smithers Cloud already answered it, under an unserved
+ * `branch:<id>`.
+ *
+ * The hosted app opens real boxes (`cloud`, no `install`, design FIXTURE off)
+ * and `POST /api/repos/{repo}/workspaces` plus the seam's own completion watch
+ * keep this row current, but `branch:<id>` is the composed install's live
+ * topic. With nothing to read there the card rendered its heading and no body
+ * at all — no state, no failure — while the seam's sentence promises "the card
+ * tracks it"
+ * ([#3865](https://github.com/smithersai/smithers/issues/3865)).
+ *
+ * The row is facts, never authority: this body binds no act, so every press
+ * stays with the live projection that composes one. A served `branch:<id>`
+ * takes over, because the caller reaches here only when it answered nothing.
+ */
+const cloudBoxMachine = (row: CloudWorkspaceRow): MachineState =>
+  row.status === "running" ? { state: "awake" }
+    : row.status === "suspended" ? { state: "asleep" }
+    : row.status === "stopped" ? { state: "closed" }
+    : row.status === "failed"
+      ? { state: "failed", error: { class: row.failureCode ?? "workspace_failed",
+        // plue's own words where it recorded them; a failure with no reason is a fact, not a blank.
+        message: row.failureMessage ?? "Smithers Cloud recorded no reason for this failure." } }
+      : { state: "waking" }
+
+const CloudBoxBody = ({ card, actions }: { readonly card: CardOf<"branch">; readonly actions: CardActions }) => {
+  const controller = useController()
+  const { data: boxes } = useLiveQuery(controller.store.collections.cloudWorkspaces)
+  const { data: sessions } = useLiveQuery(controller.store.collections.cloudSessions)
+  const row = boxes.find(box => box.id === card.payload.id)
+  if (row === undefined) {
+    return <BranchStageBody card={card} source="cloud-row"
+      stage={branchCardStage(sessions.find(session => session.id === "cloud")?.workspaceLists)} />
+  }
+  const model: BranchModel = { id: row.id, name: row.name, machine: cloudBoxMachine(row),
+    presence: [], terminals: [], activity: [], changed_files: [], ssh_line: "" }
+  return <BranchView model={model} actions={[]} gestures={{}} onAction={() => {}}
+    view={{ maximized: actions.presentation === "maximized", ...(card.payload.tab === undefined ? {} : { tab: card.payload.tab }) }}
+    onView={patch => persistBranchView(controller, card, patch)} />
+}
+
+/** Live facts never inherit seed rows or server-supplied command authority. Dependent actions stay dark. */
+export const LiveBranchBody = ({ card, actions }: { readonly card: CardOf<"branch">; readonly actions: CardActions }) => {
+  const controller = useController()
+  const topic = controller.live ? `branch:${card.payload.id}` : undefined
+  if (topic) {
+    controller.live?.registerProjection?.(topic, projectBranch)
+    controller.live?.registerProjection?.(`${topic}:activity`, projectBranchActivity)
+  }
+  const roster = useSyncExternalStore(controller.membersRoster?.subscribe ?? (() => () => {}),
+    controller.membersRoster?.get ?? (() => undefined), controller.membersRoster?.get ?? (() => undefined))
+  const branch = useTopic(topic, controller.live)
+  const activity = useTopic(topic && `${topic}:activity`, controller.live)
+  const files = useTopic(topic && `${topic}:files`, controller.live)
+  // An unserved optional stream must not hide the composed branch roster.
+  // Permission failures and malformed snapshots still refuse the projection;
+  // no seed rows stand in for unavailable activity or changed files. A stream
+  // that has not answered yet is empty for now, exactly like one whose topic
+  // the host does not serve at all — #3865: holding the whole card back for it rendered a
+  // served branch as nothing at all. Subscribed and silent is one of those
+  // not-yet answers: the channel holds a snapshot with no data for it, and
+  // reading that as the rows refused the projection just the same (#3882).
+  const optionalData = (snapshot: typeof activity) =>
+    snapshot === undefined || hostWithoutTopic(snapshot.error) || snapshot.data === undefined ? [] : snapshot.data
+  const refused = (snapshot: typeof activity) => topicRefusalOf(snapshot?.error) !== undefined
+  const base = branch?.error || refused(activity) || refused(files) ? undefined
+    : branchModel(branch?.data, optionalData(activity), optionalData(files), card.payload.id, { roster: roster?.model?.members.map(member => ({ ...member, id: member.login })) })
+  const todos = useSyncExternalStore(controller.todoList?.subscribe ?? (() => () => {}),
+    controller.todoList?.get ?? (() => undefined), controller.todoList?.get ?? (() => undefined))
+  const questionWait = todos?.todos?.find(todo => todo.n === base?.item?.n)?.waits
+    .find(wait => wait.kind === "question" && wait.actions.some(action => action.tag === "todo.answer"))?.id
+  const movedWait = todos?.todos?.find(todo => todo.n === base?.moved_off?.item)?.waits.find(wait => wait.kind === "moved_off")
+  useBranchPresence(card.payload.id, controller.live)
+  // Outside an install, an unanswered or absent provider keeps the existing seed visible.
+  if (branchSeedAvailable(controller) && branch?.data === undefined
+    && topicRefusalOf(branch?.error) === undefined) return <DesignBranchBody card={card} actions={actions} />
+  const providers = new Set<CatalogTag>()
+  if (typeof controller.showTodo === "function") providers.add("todo")
+  if (controller.branchFiles?.available()) providers.add("file")
+  if (controller.terminalCards?.available()) providers.add("terminal.watch")
+  if (controller.openBranchTerminal) providers.add("terminal")
+  if (controller.forkBranch) providers.add("branch.fork")
+  if (controller.runMonitors && typeof controller.openRunMonitor === "function") providers.add("run")
+  const controls = controller.branchControls
+  if (controls?.available("sleep")) providers.add("box.suspend")
+  if (controls?.available("wake")) providers.add("box.resume")
+  if (controls?.available("rebase")) { providers.add("branch.rebase-now"); providers.add("branch.rebase") }
+  for (const action of movedWait?.actions ?? []) if (action.tag === "todo.return-to-item" || action.tag === "todo.keep-moved") providers.add(action.tag)
+  if (controller.addBranchToStack) providers.add("branch.add-to-stack")
+  if (typeof controller.answerTodo === "function" && questionWait !== undefined) providers.add("todo.answer")
+  if (typeof controller.steerTodo === "function") providers.add("todo.steer")
+  const dispatch: CardCommandDispatch = (tag, input) => controller.submitCommand({
+    name: tag, payload: { branch: base?.name ?? card.payload.id, ...(input ?? {}) }, actor: "user", originCardId: card.id
+  })
+  const changes = cardActions(dispatch, base && typeof controller.branchDiff === "function" ? changeActionDefinitions(base) : [])
+  const model: BranchModel | undefined = base && { ...base, activity: base.activity.map(entry => entry.kind !== "change" ? entry
+    : { ...entry, actions: changes.actions.filter(action => action.args?.burst === entry.id) }) }
+  const bindings = cardActions<Gesture>(dispatch, model ? liveBranchActionDefinitions(model, providers, questionWait, movedWait?.id) : [])
+  if (!model) {
+    if (branchSeedAvailable(controller)) return <DesignBranchBody card={card} actions={actions} />
+    if (cloudBoxesHeld(controller) && controller.store !== undefined) return <CloudBoxBody card={card} actions={actions} />
+    /*
+     * An install's own `branch:<id>`, or a bootstrap that has not answered yet.
+     * A stream that refused for its own reason outranks a code that only says
+     * this host does not serve the topic, so `forbidden` on the activity stream
+     * reads failed with its own word instead of pending forever (#3882).
+     */
+    const refusal = topicRefusalOf(branch?.error) ?? topicRefusalOf(activity?.error) ?? topicRefusalOf(files?.error) ?? branch?.error
+    return <BranchStageBody card={card} source="live-topic" stage={branchCardStage([], refusal)} />
+  }
+  return <BranchView model={model} actions={bindings.actions} gestures={bindings.gestures}
+    onAction={(tag, input) => (tag === "diff" ? changes : bindings).onAction(tag, input)} view={{ maximized: actions.presentation === "maximized", tab: card.payload.tab }}
+    onView={patch => persistBranchView(controller, card, patch)} />
+}
+
+const BranchBody = (props: { readonly card: CardOf<"branch">; readonly actions: CardActions }) => {
+  const controller = useController()
+  return controller.live || controller.bootstrap ? <LiveBranchBody {...props} /> : <DesignBranchBody {...props} />
+}
+
+/** The `branch` kind: a subject-only card (card-kinds.md), one per branch. */
+export const branchCardFamily: CardFamily<"branch"> = {
+  branch: { render: (card, actions) => <BranchBody card={card} actions={actions} />, pill: () => "" }
+}

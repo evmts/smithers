@@ -409,7 +409,7 @@ func testTodoRetrySourceMatrix(t *testing.T, op string) {
 		})
 	})
 	activeSource, activeDigest := strings.Repeat("d", 40), strings.Repeat("e", 64)
-	_, err := h.pool.Exec(t.Context(), `INSERT INTO workflow_definitions(repository_id,name,path,config,is_active,source_commit,digest,status) VALUES($1,'todo','flows/todo/flow.ts','{}',true,$2,$3,'loaded')`, h.item.RepositoryID, activeSource, activeDigest)
+	_, err := h.pool.Exec(t.Context(), `INSERT INTO workflow_definitions(repository_id,name,path,config,is_active,source_commit,digest,status) VALUES($1,'todo','.smithers/flows/todo/flow.ts','{}',true,$2,$3,'loaded')`, h.item.RepositoryID, activeSource, activeDigest)
 	require.NoError(t, err)
 	body := fmt.Sprintf(`{"op":%q}`, op)
 	ctx := t.Context()

@@ -1,0 +1,1670 @@
+name: "CI"
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+permissions:
+  contents: read
+jobs:
+  "test":
+    name: "workspace graph (coverage gates enforced)"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 180
+    steps:
+      - name: "Start smthrs results"
+        run: "mkdir -p \"$RUNNER_TEMP/smthrs-results\" && printf '%s\\n' '{\"version\":1,\"results\":[]}' > \"$RUNNER_TEMP/smthrs-results/attempt.json\""
+        shell: "bash"
+      - uses: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+        with:
+          "persist-credentials": "false"
+      - name: "Validate GitHub Actions workflows"
+        uses: "docker://rhysd/actionlint@sha256:6f03470d0152251d7f07f7c4dc019dbe7024c72cd952f839544c7798843efa8f"
+        with:
+          "args": ".github/workflows/ci.yml .github/workflows/release.yml .github/workflows/release-auth.yml .github/workflows/npm-dist-tag.yml .github/workflows/apps-deploy.yml .github/workflows/distribution.yml .github/workflows/canary.yml .github/workflows/reliability.yml .github/workflows/native-windows.yml .github/workflows/mirror-sync.yml .github/workflows/drift.yml .github/workflows/reference-host.yml .github/workflows/trusted-drift.yml .github/workflows/trusted-setup-validation.yml"
+      - name: "Install Go"
+        uses: "actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff"
+        with:
+          "go-version": "1.26.8"
+      - name: "Install Foundry"
+        uses: "foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09"
+        with:
+          "version": "v1.8.1"
+      - name: "Enable the containerd image store"
+        run: |
+          if command -v docker >/dev/null 2>&1 && [ "$(uname -s)" = Linux ]; then
+            current='{}'
+            if [ -f /etc/docker/daemon.json ]; then current="$(cat /etc/docker/daemon.json)"; fi
+            merged="$(printf '%s\n' "$current" | jq --argjson mirrors '["https://mirror.gcr.io"]' '.features["containerd-snapshotter"] = true | (.["registry-mirrors"] // []) as $have | .["registry-mirrors"] = $have + ($mirrors - $have)')"
+            if [ "$(printf '%s\n' "$current" | jq -cS .)" != "$(printf '%s\n' "$merged" | jq -cS .)" ]; then
+              printf '%s\n' "$merged" | sudo tee /etc/docker/daemon.json >/dev/null
+              sudo systemctl restart docker
+            fi
+            docker info --format 'docker storage driver: {{.Driver}}; registry mirrors: {{.RegistryConfig.Mirrors}}'
+          fi
+        shell: "bash"
+      - uses: "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
+      - uses: "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020"
+        with:
+          "node-version-file": ".node-version"
+          "cache": "pnpm"
+      - name: "Install certified npm"
+        run: |
+          npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
+          test "$(npm --version)" = '11.16.0'
+        shell: "bash"
+      - uses: "oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6"
+        with:
+          "bun-version": "1.4.1"
+      - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - uses: "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+      - name: "Install native smithers-jj-export"
+        run: |
+          case "$(uname -s)" in Linux|Darwin|MINGW*|MSYS*)
+            native_suffix=''
+            case "$(uname -s)" in MINGW*|MSYS*) native_suffix='.exe';; esac
+            rustup toolchain install '1.98.0' --profile minimal
+            cargo +1.98.0 build --locked -p 'smithers-ffi' --bin 'smithers-jj-export'
+            mkdir -p "$RUNNER_TEMP/smithers-native"
+            native_path="$RUNNER_TEMP/smithers-native/smithers-jj-export$native_suffix"
+            install -m 755 "target/debug/smithers-jj-export$native_suffix" "$native_path"
+            if [ "$native_suffix" = '.exe' ]; then native_path="$(cygpath -w "$native_path")"; fi
+            printf '%s=%s\n' 'SMITHERS_WORKSPACE_JJ_EXPORT_BINARY' "$native_path" >> "$GITHUB_ENV"
+          esac
+        shell: "bash"
+      - name: "Install jj"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
+        with:
+          "tool": "jj-cli@0.39.0"
+      - name: "Initialize colocated jj repository"
+        run: "jj git init --colocate"
+      - name: "Install ripgrep"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
+        with:
+          "tool": "ripgrep@14.1.1"
+      - name: "Install system packages"
+        run: |
+          if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
+            if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+              sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            fi
+          fi
+        shell: "bash"
+      - name: "Install PostgreSQL"
+        id: setup
+        run: |
+          case "$(uname -s)" in
+            Linux)
+              sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends postgresql-common
+              sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null
+              echo 'create_main_cluster = false' | sudo tee -a /etc/postgresql-common/createcluster.conf >/dev/null
+              sudo apt-get install -y -qq --no-install-recommends 'postgresql-18'
+              pg_bin=/usr/lib/postgresql/18/bin path_entry="$pg_bin" floor=18
+              ;;
+            Darwin)
+              HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 brew install --quiet 'postgresql@18'
+              pg_bin="$(brew --prefix 'postgresql@18')/bin" path_entry="$pg_bin" floor=18
+              ;;
+            MINGW*|MSYS*)
+              pg_bin="$(cygpath -u "${PGBIN:?the runner image names no PostgreSQL in PGBIN}")" path_entry="$PGBIN" floor=17
+              ;;
+            *) echo "no PostgreSQL install for $(uname -s)" >&2; exit 1 ;;
+          esac
+          version="$("$pg_bin/initdb" --version)"
+          major="${version#*) }"
+          major="${major%%[!0-9]*}"
+          if [ -z "$major" ] || [ "$major" -lt "$floor" ]; then
+            echo "$version is not PostgreSQL $floor or later" >&2
+            exit 1
+          fi
+          echo "$version"
+          printf '%s\n' "$path_entry" >> "$GITHUB_PATH"
+        shell: "bash"
+      - name: "Workspace targets"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs ci '//packages/...' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Upload smthrs results"
+        if: always()
+        uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+        with:
+          "name": "smthrs-results-test-0-${{ github.run_attempt }}"
+          "path": "${{ runner.temp }}/smthrs-results"
+          "if-no-files-found": "error"
+  "repository":
+    name: "repository flows, apps and evals"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 60
+    steps:
+      - name: "Start smthrs results"
+        run: "mkdir -p \"$RUNNER_TEMP/smthrs-results\" && printf '%s\\n' '{\"version\":1,\"results\":[]}' > \"$RUNNER_TEMP/smthrs-results/attempt.json\""
+        shell: "bash"
+      - uses: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+        with:
+          "persist-credentials": "false"
+      - name: "Install Go"
+        uses: "actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff"
+        with:
+          "go-version": "1.26.8"
+      - name: "Install Foundry"
+        uses: "foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09"
+        with:
+          "version": "v1.8.1"
+      - name: "Enable the containerd image store"
+        run: |
+          if command -v docker >/dev/null 2>&1 && [ "$(uname -s)" = Linux ]; then
+            current='{}'
+            if [ -f /etc/docker/daemon.json ]; then current="$(cat /etc/docker/daemon.json)"; fi
+            merged="$(printf '%s\n' "$current" | jq --argjson mirrors '["https://mirror.gcr.io"]' '.features["containerd-snapshotter"] = true | (.["registry-mirrors"] // []) as $have | .["registry-mirrors"] = $have + ($mirrors - $have)')"
+            if [ "$(printf '%s\n' "$current" | jq -cS .)" != "$(printf '%s\n' "$merged" | jq -cS .)" ]; then
+              printf '%s\n' "$merged" | sudo tee /etc/docker/daemon.json >/dev/null
+              sudo systemctl restart docker
+            fi
+            docker info --format 'docker storage driver: {{.Driver}}; registry mirrors: {{.RegistryConfig.Mirrors}}'
+          fi
+        shell: "bash"
+      - uses: "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
+      - uses: "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020"
+        with:
+          "node-version-file": ".node-version"
+          "cache": "pnpm"
+      - name: "Install certified npm"
+        run: |
+          npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
+          test "$(npm --version)" = '11.16.0'
+        shell: "bash"
+      - uses: "oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6"
+        with:
+          "bun-version": "1.4.1"
+      - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - uses: "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+      - name: "Install native smithers-jj-export"
+        run: |
+          case "$(uname -s)" in Linux|Darwin|MINGW*|MSYS*)
+            native_suffix=''
+            case "$(uname -s)" in MINGW*|MSYS*) native_suffix='.exe';; esac
+            rustup toolchain install '1.98.0' --profile minimal
+            cargo +1.98.0 build --locked -p 'smithers-ffi' --bin 'smithers-jj-export'
+            mkdir -p "$RUNNER_TEMP/smithers-native"
+            native_path="$RUNNER_TEMP/smithers-native/smithers-jj-export$native_suffix"
+            install -m 755 "target/debug/smithers-jj-export$native_suffix" "$native_path"
+            if [ "$native_suffix" = '.exe' ]; then native_path="$(cygpath -w "$native_path")"; fi
+            printf '%s=%s\n' 'SMITHERS_WORKSPACE_JJ_EXPORT_BINARY' "$native_path" >> "$GITHUB_ENV"
+          esac
+        shell: "bash"
+      - name: "Install jj"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
+        with:
+          "tool": "jj-cli@0.39.0"
+      - name: "Initialize colocated jj repository"
+        run: "jj git init --colocate"
+      - name: "Install ripgrep"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
+        with:
+          "tool": "ripgrep@14.1.1"
+      - name: "Install system packages"
+        run: |
+          if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
+            if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+              sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            fi
+          fi
+        shell: "bash"
+      - name: "Install PostgreSQL"
+        id: setup
+        run: |
+          case "$(uname -s)" in
+            Linux)
+              sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends postgresql-common
+              sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null
+              echo 'create_main_cluster = false' | sudo tee -a /etc/postgresql-common/createcluster.conf >/dev/null
+              sudo apt-get install -y -qq --no-install-recommends 'postgresql-18'
+              pg_bin=/usr/lib/postgresql/18/bin path_entry="$pg_bin" floor=18
+              ;;
+            Darwin)
+              HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 brew install --quiet 'postgresql@18'
+              pg_bin="$(brew --prefix 'postgresql@18')/bin" path_entry="$pg_bin" floor=18
+              ;;
+            MINGW*|MSYS*)
+              pg_bin="$(cygpath -u "${PGBIN:?the runner image names no PostgreSQL in PGBIN}")" path_entry="$PGBIN" floor=17
+              ;;
+            *) echo "no PostgreSQL install for $(uname -s)" >&2; exit 1 ;;
+          esac
+          version="$("$pg_bin/initdb" --version)"
+          major="${version#*) }"
+          major="${major%%[!0-9]*}"
+          if [ -z "$major" ] || [ "$major" -lt "$floor" ]; then
+            echo "$version is not PostgreSQL $floor or later" >&2
+            exit 1
+          fi
+          echo "$version"
+          printf '%s\n' "$path_entry" >> "$GITHUB_PATH"
+        shell: "bash"
+      - name: "Repository flows"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//flows:pack' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Judge egress"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//flows:egress' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Repository flow fixtures"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//flows:repository' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Wiki and release fixtures"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//flows:fixtures' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Repository flows lint"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs lint '//flows/...' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Public export JSDoc"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs lint '//:jsdocTree' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Script lint"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs lint '//scripts:lint' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "JSDoc rule harness"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//:jsdocRules' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Reference-host runner hooks"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//:referenceHostHooks' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Factory harness"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//:factoryHarness' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Agent eval suite (offline, baseline-gated)"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//packages/smithers/agent/regression:test' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Agent eval typecheck"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs build '//packages/smithers/agent/regression:check' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Authoring eval dataset (offline)"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//evals/authoring:test' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Authoring eval typecheck"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs build '//evals/authoring:check' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "SWE-bench offline fixtures"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//packages/smithers/agent/harness/benchmarks/swebench:offline' --jobs 1 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "SWE-bench rig typecheck"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs build '//packages/smithers/agent/harness/benchmarks/swebench:check' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "SWE-bench rig lint"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs lint '//packages/smithers/agent/harness/benchmarks/swebench/...' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Server typecheck and tests"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs ci '//apps/server/...' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Review flow"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs ci '//flows/review/...' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Bug worker"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs ci '//apps/bug-worker/...' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Project copy drift"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs lint '//:projectCopy' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Site"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs ci '//apps/site/...' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Review eval suite (offline, baseline-gated)"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//flows/review/seeded-bugs/...' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Review eval typecheck"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs build '//flows/review/seeded-bugs:check' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Recommend eval suite (offline, baseline-gated)"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//packages/backend/modelhost/recommend-eval/...' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Recommend eval typecheck"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs build '//packages/backend/modelhost/recommend-eval:check' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Generated workflow drift"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs lint '//:ci' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Factory projection drift"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs lint '//:factoryProjection' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Target index drift"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs lint '//:targetIndex' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Upload smthrs results"
+        if: always()
+        uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+        with:
+          "name": "smthrs-results-repository-0-${{ github.run_attempt }}"
+          "path": "${{ runner.temp }}/smthrs-results"
+          "if-no-files-found": "error"
+  "scripts":
+    name: "script gates"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 60
+    steps:
+      - name: "Start smthrs results"
+        run: "mkdir -p \"$RUNNER_TEMP/smthrs-results\" && printf '%s\\n' '{\"version\":1,\"results\":[]}' > \"$RUNNER_TEMP/smthrs-results/attempt.json\""
+        shell: "bash"
+      - uses: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+        with:
+          "persist-credentials": "false"
+      - name: "Install Go"
+        uses: "actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff"
+        with:
+          "go-version": "1.26.8"
+      - name: "Install Foundry"
+        uses: "foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09"
+        with:
+          "version": "v1.8.1"
+      - name: "Enable the containerd image store"
+        run: |
+          if command -v docker >/dev/null 2>&1 && [ "$(uname -s)" = Linux ]; then
+            current='{}'
+            if [ -f /etc/docker/daemon.json ]; then current="$(cat /etc/docker/daemon.json)"; fi
+            merged="$(printf '%s\n' "$current" | jq --argjson mirrors '["https://mirror.gcr.io"]' '.features["containerd-snapshotter"] = true | (.["registry-mirrors"] // []) as $have | .["registry-mirrors"] = $have + ($mirrors - $have)')"
+            if [ "$(printf '%s\n' "$current" | jq -cS .)" != "$(printf '%s\n' "$merged" | jq -cS .)" ]; then
+              printf '%s\n' "$merged" | sudo tee /etc/docker/daemon.json >/dev/null
+              sudo systemctl restart docker
+            fi
+            docker info --format 'docker storage driver: {{.Driver}}; registry mirrors: {{.RegistryConfig.Mirrors}}'
+          fi
+        shell: "bash"
+      - uses: "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
+      - uses: "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020"
+        with:
+          "node-version-file": ".node-version"
+          "cache": "pnpm"
+      - name: "Install certified npm"
+        run: |
+          npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
+          test "$(npm --version)" = '11.16.0'
+        shell: "bash"
+      - uses: "oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6"
+        with:
+          "bun-version": "1.4.1"
+      - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - uses: "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+      - name: "Install native smithers-jj-export"
+        run: |
+          case "$(uname -s)" in Linux|Darwin|MINGW*|MSYS*)
+            native_suffix=''
+            case "$(uname -s)" in MINGW*|MSYS*) native_suffix='.exe';; esac
+            rustup toolchain install '1.98.0' --profile minimal
+            cargo +1.98.0 build --locked -p 'smithers-ffi' --bin 'smithers-jj-export'
+            mkdir -p "$RUNNER_TEMP/smithers-native"
+            native_path="$RUNNER_TEMP/smithers-native/smithers-jj-export$native_suffix"
+            install -m 755 "target/debug/smithers-jj-export$native_suffix" "$native_path"
+            if [ "$native_suffix" = '.exe' ]; then native_path="$(cygpath -w "$native_path")"; fi
+            printf '%s=%s\n' 'SMITHERS_WORKSPACE_JJ_EXPORT_BINARY' "$native_path" >> "$GITHUB_ENV"
+          esac
+        shell: "bash"
+      - name: "Install jj"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
+        with:
+          "tool": "jj-cli@0.39.0"
+      - name: "Initialize colocated jj repository"
+        run: "jj git init --colocate"
+      - name: "Install ripgrep"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
+        with:
+          "tool": "ripgrep@14.1.1"
+      - name: "Install system packages"
+        run: |
+          if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
+            if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+              sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            fi
+          fi
+        shell: "bash"
+      - name: "Install PostgreSQL"
+        id: setup
+        run: |
+          case "$(uname -s)" in
+            Linux)
+              sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends postgresql-common
+              sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null
+              echo 'create_main_cluster = false' | sudo tee -a /etc/postgresql-common/createcluster.conf >/dev/null
+              sudo apt-get install -y -qq --no-install-recommends 'postgresql-18'
+              pg_bin=/usr/lib/postgresql/18/bin path_entry="$pg_bin" floor=18
+              ;;
+            Darwin)
+              HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 brew install --quiet 'postgresql@18'
+              pg_bin="$(brew --prefix 'postgresql@18')/bin" path_entry="$pg_bin" floor=18
+              ;;
+            MINGW*|MSYS*)
+              pg_bin="$(cygpath -u "${PGBIN:?the runner image names no PostgreSQL in PGBIN}")" path_entry="$PGBIN" floor=17
+              ;;
+            *) echo "no PostgreSQL install for $(uname -s)" >&2; exit 1 ;;
+          esac
+          version="$("$pg_bin/initdb" --version)"
+          major="${version#*) }"
+          major="${major%%[!0-9]*}"
+          if [ -z "$major" ] || [ "$major" -lt "$floor" ]; then
+            echo "$version is not PostgreSQL $floor or later" >&2
+            exit 1
+          fi
+          echo "$version"
+          printf '%s\n' "$path_entry" >> "$GITHUB_PATH"
+        shell: "bash"
+      - name: "Script gates"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//scripts/...' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Command check runner"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//flows:checkRunner' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Benchmark cost gate"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//flows:benchmarkGate' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Mutation gate"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//flows:mutationGate' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Campaign verifiers"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//flows:campaignVerifiers' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Signal campaign verifier"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//flows:signalCampaign' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Performance and fault drivers"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//flows:perfUnit' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Landing helper"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//flows:land' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Landing helper end to end"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//flows:landCommit' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Collect ci-test-tier-evidence"
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/ci-test-tier-evidence"
+          for f in '/tmp/smithers-ci-inventory-'*'.json'; do if [ -e "$f" ]; then cp -R -- "$f" "$RUNNER_TEMP/ci-test-tier-evidence"; fi; done
+          for f in '/tmp/smithers-mutations-'*''; do if [ -e "$f" ]; then cp -R -- "$f" "$RUNNER_TEMP/ci-test-tier-evidence"; fi; done
+          for f in '/tmp/smithers-benchmark-'*''; do if [ -e "$f" ]; then cp -R -- "$f" "$RUNNER_TEMP/ci-test-tier-evidence"; fi; done
+          for f in '/tmp/smithers-runner-'*'.log'; do if [ -e "$f" ]; then cp -R -- "$f" "$RUNNER_TEMP/ci-test-tier-evidence"; fi; done
+          for f in '/tmp/smithers-runner-'*'.json'; do if [ -e "$f" ]; then cp -R -- "$f" "$RUNNER_TEMP/ci-test-tier-evidence"; fi; done
+      - name: "Upload ci-test-tier-evidence"
+        if: always()
+        uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+        with:
+          "name": "ci-test-tier-evidence"
+          "path": "${{ runner.temp }}/ci-test-tier-evidence"
+          "if-no-files-found": "ignore"
+      - name: "Upload smthrs results"
+        if: always()
+        uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+        with:
+          "name": "smthrs-results-scripts-0-${{ github.run_attempt }}"
+          "path": "${{ runner.temp }}/smthrs-results"
+          "if-no-files-found": "error"
+  "docs":
+    name: "published package documentation"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 45
+    steps:
+      - name: "Start smthrs results"
+        run: "mkdir -p \"$RUNNER_TEMP/smthrs-results\" && printf '%s\\n' '{\"version\":1,\"results\":[]}' > \"$RUNNER_TEMP/smthrs-results/attempt.json\""
+        shell: "bash"
+      - uses: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+        with:
+          "persist-credentials": "false"
+      - uses: "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
+      - uses: "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020"
+        with:
+          "node-version-file": ".node-version"
+          "cache": "pnpm"
+      - name: "Install certified npm"
+        run: |
+          npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
+          test "$(npm --version)" = '11.16.0'
+        shell: "bash"
+      - uses: "oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6"
+        with:
+          "bun-version": "1.4.1"
+      - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - name: "Install system packages"
+        id: setup
+        run: |
+          if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
+            if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+              sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            fi
+          fi
+        shell: "bash"
+      - name: "Package documentation tarballs"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//flows:packageDocs' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Upload smthrs results"
+        if: always()
+        uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+        with:
+          "name": "smthrs-results-docs-0-${{ github.run_attempt }}"
+          "path": "${{ runner.temp }}/smthrs-results"
+          "if-no-files-found": "error"
+  "apps-e2e":
+    name: "apps e2e (Playwright T1)"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 70
+    steps:
+      - name: "Start smthrs results"
+        run: "mkdir -p \"$RUNNER_TEMP/smthrs-results\" && printf '%s\\n' '{\"version\":1,\"results\":[]}' > \"$RUNNER_TEMP/smthrs-results/attempt.json\""
+        shell: "bash"
+      - uses: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+        with:
+          "persist-credentials": "false"
+      - uses: "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
+      - uses: "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020"
+        with:
+          "node-version-file": ".node-version"
+          "cache": "pnpm"
+      - name: "Install certified npm"
+        run: |
+          npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
+          test "$(npm --version)" = '11.16.0'
+        shell: "bash"
+      - uses: "oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6"
+        with:
+          "bun-version": "1.4.1"
+      - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - uses: "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+      - name: "Install native smithers-jj-export"
+        run: |
+          case "$(uname -s)" in Linux|Darwin|MINGW*|MSYS*)
+            native_suffix=''
+            case "$(uname -s)" in MINGW*|MSYS*) native_suffix='.exe';; esac
+            rustup toolchain install '1.98.0' --profile minimal
+            cargo +1.98.0 build --locked -p 'smithers-ffi' --bin 'smithers-jj-export'
+            mkdir -p "$RUNNER_TEMP/smithers-native"
+            native_path="$RUNNER_TEMP/smithers-native/smithers-jj-export$native_suffix"
+            install -m 755 "target/debug/smithers-jj-export$native_suffix" "$native_path"
+            if [ "$native_suffix" = '.exe' ]; then native_path="$(cygpath -w "$native_path")"; fi
+            printf '%s=%s\n' 'SMITHERS_WORKSPACE_JJ_EXPORT_BINARY' "$native_path" >> "$GITHUB_ENV"
+          esac
+        shell: "bash"
+      - name: "Install jj"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
+        with:
+          "tool": "jj-cli@0.39.0"
+      - name: "Initialize colocated jj repository"
+        run: "jj git init --colocate"
+      - name: "Install ripgrep"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
+        with:
+          "tool": "ripgrep@14.1.1"
+      - name: "Install system packages"
+        id: setup
+        run: |
+          if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
+            if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+              sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            fi
+          fi
+        shell: "bash"
+      - name: "UI typecheck"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs build '//apps/app:check' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "UI unit tests"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//apps/app:unitTests' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "UI conformance lint"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//apps/app:conformance' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "TUI typecheck, lint and tests"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs ci '//apps/tui/...' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "TUI end-to-end suite"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//apps/tui:e2eTests' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Collect apps-e2e-artifacts"
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/apps-e2e-artifacts"
+          for f in '/tmp/smithers-'*'.png'; do if [ -e "$f" ]; then cp -R -- "$f" "$RUNNER_TEMP/apps-e2e-artifacts"; fi; done
+          if [ -e 'apps/reports' ]; then cp -R -- 'apps/reports' "$RUNNER_TEMP/apps-e2e-artifacts/reports"; fi
+          if [ -e 'apps/app/test-results' ]; then cp -R -- 'apps/app/test-results' "$RUNNER_TEMP/apps-e2e-artifacts/playwright-test-results"; fi
+          if [ -e 'apps/app/playwright-report' ]; then cp -R -- 'apps/app/playwright-report' "$RUNNER_TEMP/apps-e2e-artifacts/playwright-report"; fi
+      - name: "Upload apps-e2e-artifacts"
+        if: always()
+        uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+        with:
+          "name": "apps-e2e-artifacts"
+          "path": "${{ runner.temp }}/apps-e2e-artifacts"
+          "if-no-files-found": "ignore"
+      - name: "Upload smthrs results"
+        if: always()
+        uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+        with:
+          "name": "smthrs-results-apps-e2e-0-${{ github.run_attempt }}"
+          "path": "${{ runner.temp }}/smthrs-results"
+          "if-no-files-found": "error"
+  "apps-browser-1":
+    name: "UI browser end-to-end shard 1"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 45
+    steps:
+      - name: "Start smthrs results"
+        run: "mkdir -p \"$RUNNER_TEMP/smthrs-results\" && printf '%s\\n' '{\"version\":1,\"results\":[]}' > \"$RUNNER_TEMP/smthrs-results/attempt.json\""
+        shell: "bash"
+      - uses: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+        with:
+          "persist-credentials": "false"
+      - uses: "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
+      - uses: "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020"
+        with:
+          "node-version-file": ".node-version"
+          "cache": "pnpm"
+      - name: "Install certified npm"
+        run: |
+          npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
+          test "$(npm --version)" = '11.16.0'
+        shell: "bash"
+      - uses: "oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6"
+        with:
+          "bun-version": "1.4.1"
+      - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - uses: "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+      - name: "Install native smithers-jj-export"
+        run: |
+          case "$(uname -s)" in Linux|Darwin|MINGW*|MSYS*)
+            native_suffix=''
+            case "$(uname -s)" in MINGW*|MSYS*) native_suffix='.exe';; esac
+            rustup toolchain install '1.98.0' --profile minimal
+            cargo +1.98.0 build --locked -p 'smithers-ffi' --bin 'smithers-jj-export'
+            mkdir -p "$RUNNER_TEMP/smithers-native"
+            native_path="$RUNNER_TEMP/smithers-native/smithers-jj-export$native_suffix"
+            install -m 755 "target/debug/smithers-jj-export$native_suffix" "$native_path"
+            if [ "$native_suffix" = '.exe' ]; then native_path="$(cygpath -w "$native_path")"; fi
+            printf '%s=%s\n' 'SMITHERS_WORKSPACE_JJ_EXPORT_BINARY' "$native_path" >> "$GITHUB_ENV"
+          esac
+        shell: "bash"
+      - name: "Install jj"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
+        with:
+          "tool": "jj-cli@0.39.0"
+      - name: "Initialize colocated jj repository"
+        run: "jj git init --colocate"
+      - name: "Install ripgrep"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
+        with:
+          "tool": "ripgrep@14.1.1"
+      - name: "Install system packages"
+        id: setup
+        run: |
+          if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
+            if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+              sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            fi
+          fi
+        shell: "bash"
+      - name: "UI browser end-to-end shard 1"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//apps/app:browserE2eShard1' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Collect apps-browser-1-artifacts"
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/apps-browser-1-artifacts"
+          for f in '/tmp/smithers-'*'.png'; do if [ -e "$f" ]; then cp -R -- "$f" "$RUNNER_TEMP/apps-browser-1-artifacts"; fi; done
+          if [ -e 'apps/reports' ]; then cp -R -- 'apps/reports' "$RUNNER_TEMP/apps-browser-1-artifacts/reports"; fi
+          if [ -e 'apps/app/test-results' ]; then cp -R -- 'apps/app/test-results' "$RUNNER_TEMP/apps-browser-1-artifacts/playwright-test-results"; fi
+          if [ -e 'apps/app/playwright-report' ]; then cp -R -- 'apps/app/playwright-report' "$RUNNER_TEMP/apps-browser-1-artifacts/playwright-report"; fi
+          if [ -e 'apps/app/stage-evidence' ]; then cp -R -- 'apps/app/stage-evidence' "$RUNNER_TEMP/apps-browser-1-artifacts/stage-evidence"; fi
+      - name: "Upload apps-browser-1-artifacts"
+        if: always()
+        uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+        with:
+          "name": "apps-browser-1-artifacts"
+          "path": "${{ runner.temp }}/apps-browser-1-artifacts"
+          "if-no-files-found": "ignore"
+      - name: "Upload smthrs results"
+        if: always()
+        uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+        with:
+          "name": "smthrs-results-apps-browser-1-0-${{ github.run_attempt }}"
+          "path": "${{ runner.temp }}/smthrs-results"
+          "if-no-files-found": "error"
+  "apps-browser-2":
+    name: "UI browser end-to-end shard 2"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 45
+    steps:
+      - name: "Start smthrs results"
+        run: "mkdir -p \"$RUNNER_TEMP/smthrs-results\" && printf '%s\\n' '{\"version\":1,\"results\":[]}' > \"$RUNNER_TEMP/smthrs-results/attempt.json\""
+        shell: "bash"
+      - uses: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+        with:
+          "persist-credentials": "false"
+      - uses: "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
+      - uses: "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020"
+        with:
+          "node-version-file": ".node-version"
+          "cache": "pnpm"
+      - name: "Install certified npm"
+        run: |
+          npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
+          test "$(npm --version)" = '11.16.0'
+        shell: "bash"
+      - uses: "oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6"
+        with:
+          "bun-version": "1.4.1"
+      - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - uses: "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+      - name: "Install native smithers-jj-export"
+        run: |
+          case "$(uname -s)" in Linux|Darwin|MINGW*|MSYS*)
+            native_suffix=''
+            case "$(uname -s)" in MINGW*|MSYS*) native_suffix='.exe';; esac
+            rustup toolchain install '1.98.0' --profile minimal
+            cargo +1.98.0 build --locked -p 'smithers-ffi' --bin 'smithers-jj-export'
+            mkdir -p "$RUNNER_TEMP/smithers-native"
+            native_path="$RUNNER_TEMP/smithers-native/smithers-jj-export$native_suffix"
+            install -m 755 "target/debug/smithers-jj-export$native_suffix" "$native_path"
+            if [ "$native_suffix" = '.exe' ]; then native_path="$(cygpath -w "$native_path")"; fi
+            printf '%s=%s\n' 'SMITHERS_WORKSPACE_JJ_EXPORT_BINARY' "$native_path" >> "$GITHUB_ENV"
+          esac
+        shell: "bash"
+      - name: "Install jj"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
+        with:
+          "tool": "jj-cli@0.39.0"
+      - name: "Initialize colocated jj repository"
+        run: "jj git init --colocate"
+      - name: "Install ripgrep"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
+        with:
+          "tool": "ripgrep@14.1.1"
+      - name: "Install system packages"
+        id: setup
+        run: |
+          if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
+            if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+              sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            fi
+          fi
+        shell: "bash"
+      - name: "UI browser end-to-end shard 2"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//apps/app:browserE2eShard2' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Collect apps-browser-2-artifacts"
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/apps-browser-2-artifacts"
+          for f in '/tmp/smithers-'*'.png'; do if [ -e "$f" ]; then cp -R -- "$f" "$RUNNER_TEMP/apps-browser-2-artifacts"; fi; done
+          if [ -e 'apps/reports' ]; then cp -R -- 'apps/reports' "$RUNNER_TEMP/apps-browser-2-artifacts/reports"; fi
+          if [ -e 'apps/app/test-results' ]; then cp -R -- 'apps/app/test-results' "$RUNNER_TEMP/apps-browser-2-artifacts/playwright-test-results"; fi
+          if [ -e 'apps/app/playwright-report' ]; then cp -R -- 'apps/app/playwright-report' "$RUNNER_TEMP/apps-browser-2-artifacts/playwright-report"; fi
+          if [ -e 'apps/app/stage-evidence' ]; then cp -R -- 'apps/app/stage-evidence' "$RUNNER_TEMP/apps-browser-2-artifacts/stage-evidence"; fi
+      - name: "Upload apps-browser-2-artifacts"
+        if: always()
+        uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+        with:
+          "name": "apps-browser-2-artifacts"
+          "path": "${{ runner.temp }}/apps-browser-2-artifacts"
+          "if-no-files-found": "ignore"
+      - name: "Upload smthrs results"
+        if: always()
+        uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+        with:
+          "name": "smthrs-results-apps-browser-2-0-${{ github.run_attempt }}"
+          "path": "${{ runner.temp }}/smthrs-results"
+          "if-no-files-found": "error"
+  "apps-browser-3":
+    name: "UI browser end-to-end shard 3"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 45
+    steps:
+      - name: "Start smthrs results"
+        run: "mkdir -p \"$RUNNER_TEMP/smthrs-results\" && printf '%s\\n' '{\"version\":1,\"results\":[]}' > \"$RUNNER_TEMP/smthrs-results/attempt.json\""
+        shell: "bash"
+      - uses: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+        with:
+          "persist-credentials": "false"
+      - uses: "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
+      - uses: "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020"
+        with:
+          "node-version-file": ".node-version"
+          "cache": "pnpm"
+      - name: "Install certified npm"
+        run: |
+          npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
+          test "$(npm --version)" = '11.16.0'
+        shell: "bash"
+      - uses: "oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6"
+        with:
+          "bun-version": "1.4.1"
+      - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - uses: "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+      - name: "Install native smithers-jj-export"
+        run: |
+          case "$(uname -s)" in Linux|Darwin|MINGW*|MSYS*)
+            native_suffix=''
+            case "$(uname -s)" in MINGW*|MSYS*) native_suffix='.exe';; esac
+            rustup toolchain install '1.98.0' --profile minimal
+            cargo +1.98.0 build --locked -p 'smithers-ffi' --bin 'smithers-jj-export'
+            mkdir -p "$RUNNER_TEMP/smithers-native"
+            native_path="$RUNNER_TEMP/smithers-native/smithers-jj-export$native_suffix"
+            install -m 755 "target/debug/smithers-jj-export$native_suffix" "$native_path"
+            if [ "$native_suffix" = '.exe' ]; then native_path="$(cygpath -w "$native_path")"; fi
+            printf '%s=%s\n' 'SMITHERS_WORKSPACE_JJ_EXPORT_BINARY' "$native_path" >> "$GITHUB_ENV"
+          esac
+        shell: "bash"
+      - name: "Install jj"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
+        with:
+          "tool": "jj-cli@0.39.0"
+      - name: "Initialize colocated jj repository"
+        run: "jj git init --colocate"
+      - name: "Install ripgrep"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
+        with:
+          "tool": "ripgrep@14.1.1"
+      - name: "Install system packages"
+        id: setup
+        run: |
+          if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
+            if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+              sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            fi
+          fi
+        shell: "bash"
+      - name: "UI browser end-to-end shard 3"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//apps/app:browserE2eShard3' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Collect apps-browser-3-artifacts"
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/apps-browser-3-artifacts"
+          for f in '/tmp/smithers-'*'.png'; do if [ -e "$f" ]; then cp -R -- "$f" "$RUNNER_TEMP/apps-browser-3-artifacts"; fi; done
+          if [ -e 'apps/reports' ]; then cp -R -- 'apps/reports' "$RUNNER_TEMP/apps-browser-3-artifacts/reports"; fi
+          if [ -e 'apps/app/test-results' ]; then cp -R -- 'apps/app/test-results' "$RUNNER_TEMP/apps-browser-3-artifacts/playwright-test-results"; fi
+          if [ -e 'apps/app/playwright-report' ]; then cp -R -- 'apps/app/playwright-report' "$RUNNER_TEMP/apps-browser-3-artifacts/playwright-report"; fi
+          if [ -e 'apps/app/stage-evidence' ]; then cp -R -- 'apps/app/stage-evidence' "$RUNNER_TEMP/apps-browser-3-artifacts/stage-evidence"; fi
+      - name: "Upload apps-browser-3-artifacts"
+        if: always()
+        uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+        with:
+          "name": "apps-browser-3-artifacts"
+          "path": "${{ runner.temp }}/apps-browser-3-artifacts"
+          "if-no-files-found": "ignore"
+      - name: "Upload smthrs results"
+        if: always()
+        uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+        with:
+          "name": "smthrs-results-apps-browser-3-0-${{ github.run_attempt }}"
+          "path": "${{ runner.temp }}/smthrs-results"
+          "if-no-files-found": "error"
+  "rust":
+    name: "rust fmt + clippy + test"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 30
+    steps:
+      - name: "Start smthrs results"
+        run: "mkdir -p \"$RUNNER_TEMP/smthrs-results\" && printf '%s\\n' '{\"version\":1,\"results\":[]}' > \"$RUNNER_TEMP/smthrs-results/attempt.json\""
+        shell: "bash"
+      - uses: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+        with:
+          "persist-credentials": "false"
+      - uses: "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
+      - uses: "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020"
+        with:
+          "node-version-file": ".node-version"
+          "cache": "pnpm"
+      - name: "Install certified npm"
+        run: |
+          npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
+          test "$(npm --version)" = '11.16.0'
+        shell: "bash"
+      - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - name: "Install pinned Rust toolchain"
+        run: "rustup toolchain install"
+      - id: setup
+        uses: "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+      - name: "Cargo lint gates"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs lint '//packages/smithers/flows/jj-wasm/...' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Third-party notices"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//packages/smithers/flows/jj:thirdPartyNotices' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Cargo test suite"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//packages/smithers/flows/jj-wasm:cargoTest' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Daemon document component tests"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//packages/smithers-machined:documentComponents' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Upload smthrs results"
+        if: always()
+        uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+        with:
+          "name": "smthrs-results-rust-0-${{ github.run_attempt }}"
+          "path": "${{ runner.temp }}/smthrs-results"
+          "if-no-files-found": "error"
+  "rust-ffi":
+    name: "native FFI compiler and tests"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 60
+    steps:
+      - name: "Start smthrs results"
+        run: "mkdir -p \"$RUNNER_TEMP/smthrs-results\" && printf '%s\\n' '{\"version\":1,\"results\":[]}' > \"$RUNNER_TEMP/smthrs-results/attempt.json\""
+        shell: "bash"
+      - uses: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+        with:
+          "persist-credentials": "false"
+      - uses: "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
+      - uses: "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020"
+        with:
+          "node-version-file": ".node-version"
+          "cache": "pnpm"
+      - name: "Install certified npm"
+        run: |
+          npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
+          test "$(npm --version)" = '11.16.0'
+        shell: "bash"
+      - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - name: "Install pinned Rust toolchain"
+        run: "rustup toolchain install"
+      - name: "Install jj"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
+        with:
+          "tool": "jj-cli@0.39.0"
+      - name: "Initialize colocated jj repository"
+        run: "jj git init --colocate"
+      - name: "Install ripgrep"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
+        with:
+          "tool": "ripgrep@14.1.1"
+      - name: "Install system packages"
+        id: setup
+        run: |
+          if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
+            if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+              sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            fi
+          fi
+        shell: "bash"
+      - name: "Native FFI clippy and tests"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs build '//:nativeFfi' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Upload smthrs results"
+        if: always()
+        uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+        with:
+          "name": "smthrs-results-rust-ffi-0-${{ github.run_attempt }}"
+          "path": "${{ runner.temp }}/smthrs-results"
+          "if-no-files-found": "error"
+  "wasm-repro":
+    name: "wasm reproducibility"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 30
+    steps:
+      - name: "Start smthrs results"
+        run: "mkdir -p \"$RUNNER_TEMP/smthrs-results\" && printf '%s\\n' '{\"version\":1,\"results\":[]}' > \"$RUNNER_TEMP/smthrs-results/attempt.json\""
+        shell: "bash"
+      - uses: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+        with:
+          "persist-credentials": "false"
+      - uses: "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
+      - uses: "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020"
+        with:
+          "node-version-file": ".node-version"
+          "cache": "pnpm"
+      - name: "Install certified npm"
+        run: |
+          npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
+          test "$(npm --version)" = '11.16.0'
+        shell: "bash"
+      - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - name: "Install pinned Rust toolchain"
+        id: setup
+        run: "rustup toolchain install"
+      - name: "Build-script unit tests"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//packages/smithers/flows/jj-wasm:buildScript' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Rebuild and byte-compare flows_jj.wasm"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//packages/smithers/flows/jj-wasm:wasmReproducibility' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Upload smthrs results"
+        if: always()
+        uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+        with:
+          "name": "smthrs-results-wasm-repro-0-${{ github.run_attempt }}"
+          "path": "${{ runner.temp }}/smthrs-results"
+          "if-no-files-found": "error"
+  "browser":
+    name: "web bundle compatibility"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 10
+    steps:
+      - name: "Start smthrs results"
+        run: "mkdir -p \"$RUNNER_TEMP/smthrs-results\" && printf '%s\\n' '{\"version\":1,\"results\":[]}' > \"$RUNNER_TEMP/smthrs-results/attempt.json\""
+        shell: "bash"
+      - uses: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+        with:
+          "persist-credentials": "false"
+      - uses: "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
+      - uses: "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020"
+        with:
+          "node-version-file": ".node-version"
+          "cache": "pnpm"
+      - name: "Install certified npm"
+        run: |
+          npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
+          test "$(npm --version)" = '11.16.0'
+        shell: "bash"
+      - id: setup
+        run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - name: "Web bundle compilation guard"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//scripts:webBundleContract' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Upload smthrs results"
+        if: always()
+        uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+        with:
+          "name": "smthrs-results-browser-0-${{ github.run_attempt }}"
+          "path": "${{ runner.temp }}/smthrs-results"
+          "if-no-files-found": "error"
+  "packages":
+    name: "package suites (${{ matrix.os }})"
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ["ubuntu-latest", "macos-latest", "windows-latest"]
+        include:
+          - os: "ubuntu-latest"
+            advisory: false
+          - os: "macos-latest"
+            advisory: true
+          - os: "windows-latest"
+            advisory: true
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    continue-on-error: ${{ matrix.advisory }}
+    steps:
+      - name: "Start smthrs results"
+        run: "mkdir -p \"$RUNNER_TEMP/smthrs-results\" && printf '%s\\n' '{\"version\":1,\"results\":[]}' > \"$RUNNER_TEMP/smthrs-results/attempt.json\""
+        shell: "bash"
+      - uses: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+        with:
+          "persist-credentials": "false"
+      - name: "Install Go"
+        uses: "actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff"
+        with:
+          "go-version": "1.26.8"
+      - name: "Install Foundry"
+        uses: "foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09"
+        with:
+          "version": "v1.8.1"
+      - name: "Enable the containerd image store"
+        run: |
+          if command -v docker >/dev/null 2>&1 && [ "$(uname -s)" = Linux ]; then
+            current='{}'
+            if [ -f /etc/docker/daemon.json ]; then current="$(cat /etc/docker/daemon.json)"; fi
+            merged="$(printf '%s\n' "$current" | jq --argjson mirrors '["https://mirror.gcr.io"]' '.features["containerd-snapshotter"] = true | (.["registry-mirrors"] // []) as $have | .["registry-mirrors"] = $have + ($mirrors - $have)')"
+            if [ "$(printf '%s\n' "$current" | jq -cS .)" != "$(printf '%s\n' "$merged" | jq -cS .)" ]; then
+              printf '%s\n' "$merged" | sudo tee /etc/docker/daemon.json >/dev/null
+              sudo systemctl restart docker
+            fi
+            docker info --format 'docker storage driver: {{.Driver}}; registry mirrors: {{.RegistryConfig.Mirrors}}'
+          fi
+        shell: "bash"
+      - uses: "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
+      - uses: "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020"
+        with:
+          "node-version-file": ".node-version"
+          "cache": "pnpm"
+      - name: "Install certified npm"
+        run: |
+          npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
+          test "$(npm --version)" = '11.16.0'
+        shell: "bash"
+      - uses: "oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6"
+        with:
+          "bun-version": "1.4.1"
+      - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - uses: "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+      - name: "Install native smithers-jj-export"
+        run: |
+          case "$(uname -s)" in Linux|Darwin|MINGW*|MSYS*)
+            native_suffix=''
+            case "$(uname -s)" in MINGW*|MSYS*) native_suffix='.exe';; esac
+            rustup toolchain install '1.98.0' --profile minimal
+            cargo +1.98.0 build --locked -p 'smithers-ffi' --bin 'smithers-jj-export'
+            mkdir -p "$RUNNER_TEMP/smithers-native"
+            native_path="$RUNNER_TEMP/smithers-native/smithers-jj-export$native_suffix"
+            install -m 755 "target/debug/smithers-jj-export$native_suffix" "$native_path"
+            if [ "$native_suffix" = '.exe' ]; then native_path="$(cygpath -w "$native_path")"; fi
+            printf '%s=%s\n' 'SMITHERS_WORKSPACE_JJ_EXPORT_BINARY' "$native_path" >> "$GITHUB_ENV"
+          esac
+        shell: "bash"
+      - name: "Install jj"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
+        with:
+          "tool": "jj-cli@0.39.0"
+      - name: "Initialize colocated jj repository"
+        run: "jj git init --colocate"
+      - name: "Install ripgrep"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
+        with:
+          "tool": "ripgrep@14.1.1"
+      - name: "Install system packages"
+        run: |
+          if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'openssh-server'
+            if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+              sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            fi
+            sudo install -d -m 0755 /run/sshd
+          fi
+        shell: "bash"
+      - name: "Install PostgreSQL"
+        id: setup
+        run: |
+          case "$(uname -s)" in
+            Linux)
+              sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends postgresql-common
+              sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null
+              echo 'create_main_cluster = false' | sudo tee -a /etc/postgresql-common/createcluster.conf >/dev/null
+              sudo apt-get install -y -qq --no-install-recommends 'postgresql-18'
+              pg_bin=/usr/lib/postgresql/18/bin path_entry="$pg_bin" floor=18
+              ;;
+            Darwin)
+              HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 brew install --quiet 'postgresql@18'
+              pg_bin="$(brew --prefix 'postgresql@18')/bin" path_entry="$pg_bin" floor=18
+              ;;
+            MINGW*|MSYS*)
+              pg_bin="$(cygpath -u "${PGBIN:?the runner image names no PostgreSQL in PGBIN}")" path_entry="$PGBIN" floor=17
+              ;;
+            *) echo "no PostgreSQL install for $(uname -s)" >&2; exit 1 ;;
+          esac
+          version="$("$pg_bin/initdb" --version)"
+          major="${version#*) }"
+          major="${major%%[!0-9]*}"
+          if [ -z "$major" ] || [ "$major" -lt "$floor" ]; then
+            echo "$version is not PostgreSQL $floor or later" >&2
+            exit 1
+          fi
+          echo "$version"
+          printf '%s\n' "$path_entry" >> "$GITHUB_PATH"
+        shell: "bash"
+      - name: "Package test targets"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//packages/...' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Upload smthrs results"
+        if: always()
+        uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+        with:
+          "name": "smthrs-results-packages-${{ strategy.job-index }}-${{ github.run_attempt }}"
+          "path": "${{ runner.temp }}/smthrs-results"
+          "if-no-files-found": "error"
+  "go-backend":
+    name: "shared Go backend (PostgreSQL)"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 190
+    steps:
+      - name: "Start smthrs results"
+        run: "mkdir -p \"$RUNNER_TEMP/smthrs-results\" && printf '%s\\n' '{\"version\":1,\"results\":[]}' > \"$RUNNER_TEMP/smthrs-results/attempt.json\""
+        shell: "bash"
+      - uses: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+        with:
+          "persist-credentials": "false"
+      - name: "Install Go"
+        uses: "actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff"
+        with:
+          "go-version": "1.26.8"
+      - name: "Enable the containerd image store"
+        run: |
+          if command -v docker >/dev/null 2>&1 && [ "$(uname -s)" = Linux ]; then
+            current='{}'
+            if [ -f /etc/docker/daemon.json ]; then current="$(cat /etc/docker/daemon.json)"; fi
+            merged="$(printf '%s\n' "$current" | jq --argjson mirrors '["https://mirror.gcr.io"]' '.features["containerd-snapshotter"] = true | (.["registry-mirrors"] // []) as $have | .["registry-mirrors"] = $have + ($mirrors - $have)')"
+            if [ "$(printf '%s\n' "$current" | jq -cS .)" != "$(printf '%s\n' "$merged" | jq -cS .)" ]; then
+              printf '%s\n' "$merged" | sudo tee /etc/docker/daemon.json >/dev/null
+              sudo systemctl restart docker
+            fi
+            docker info --format 'docker storage driver: {{.Driver}}; registry mirrors: {{.RegistryConfig.Mirrors}}'
+          fi
+        shell: "bash"
+      - uses: "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
+      - uses: "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020"
+        with:
+          "node-version-file": ".node-version"
+          "cache": "pnpm"
+      - name: "Install certified npm"
+        run: |
+          npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
+          test "$(npm --version)" = '11.16.0'
+        shell: "bash"
+      - uses: "oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6"
+        with:
+          "bun-version": "1.4.1"
+      - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - uses: "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+      - name: "Install native smithers-jj-export"
+        run: |
+          case "$(uname -s)" in Linux|Darwin|MINGW*|MSYS*)
+            native_suffix=''
+            case "$(uname -s)" in MINGW*|MSYS*) native_suffix='.exe';; esac
+            rustup toolchain install '1.98.0' --profile minimal
+            cargo +1.98.0 build --locked -p 'smithers-ffi' --bin 'smithers-jj-export'
+            mkdir -p "$RUNNER_TEMP/smithers-native"
+            native_path="$RUNNER_TEMP/smithers-native/smithers-jj-export$native_suffix"
+            install -m 755 "target/debug/smithers-jj-export$native_suffix" "$native_path"
+            if [ "$native_suffix" = '.exe' ]; then native_path="$(cygpath -w "$native_path")"; fi
+            printf '%s=%s\n' 'SMITHERS_WORKSPACE_JJ_EXPORT_BINARY' "$native_path" >> "$GITHUB_ENV"
+          esac
+        shell: "bash"
+      - name: "Install jj"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
+        with:
+          "tool": "jj-cli@0.39.0"
+      - name: "Initialize colocated jj repository"
+        run: "jj git init --colocate"
+      - name: "Install ripgrep"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
+        with:
+          "tool": "ripgrep@14.1.1"
+      - name: "Install system packages"
+        run: |
+          if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
+            if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+              sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            fi
+          fi
+        shell: "bash"
+      - name: "Install PostgreSQL"
+        id: setup
+        run: |
+          case "$(uname -s)" in
+            Linux)
+              sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends postgresql-common
+              sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null
+              echo 'create_main_cluster = false' | sudo tee -a /etc/postgresql-common/createcluster.conf >/dev/null
+              sudo apt-get install -y -qq --no-install-recommends 'postgresql-18'
+              pg_bin=/usr/lib/postgresql/18/bin path_entry="$pg_bin" floor=18
+              ;;
+            Darwin)
+              HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 brew install --quiet 'postgresql@18'
+              pg_bin="$(brew --prefix 'postgresql@18')/bin" path_entry="$pg_bin" floor=18
+              ;;
+            MINGW*|MSYS*)
+              pg_bin="$(cygpath -u "${PGBIN:?the runner image names no PostgreSQL in PGBIN}")" path_entry="$PGBIN" floor=17
+              ;;
+            *) echo "no PostgreSQL install for $(uname -s)" >&2; exit 1 ;;
+          esac
+          version="$("$pg_bin/initdb" --version)"
+          major="${version#*) }"
+          major="${major%%[!0-9]*}"
+          if [ -z "$major" ] || [ "$major" -lt "$floor" ]; then
+            echo "$version is not PostgreSQL $floor or later" >&2
+            exit 1
+          fi
+          echo "$version"
+          printf '%s\n' "$path_entry" >> "$GITHUB_PATH"
+        shell: "bash"
+      - name: "Build and test shared backend"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//:backendGo' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Upload smthrs results"
+        if: always()
+        uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+        with:
+          "name": "smthrs-results-go-backend-0-${{ github.run_attempt }}"
+          "path": "${{ runner.temp }}/smthrs-results"
+          "if-no-files-found": "error"
+  "go-backend-access":
+    name: "backend access-control tests (PostgreSQL)"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 90
+    steps:
+      - name: "Start smthrs results"
+        run: "mkdir -p \"$RUNNER_TEMP/smthrs-results\" && printf '%s\\n' '{\"version\":1,\"results\":[]}' > \"$RUNNER_TEMP/smthrs-results/attempt.json\""
+        shell: "bash"
+      - uses: "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
+        with:
+          "persist-credentials": "false"
+      - name: "Install Go"
+        uses: "actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff"
+        with:
+          "go-version": "1.26.8"
+      - name: "Enable the containerd image store"
+        run: |
+          if command -v docker >/dev/null 2>&1 && [ "$(uname -s)" = Linux ]; then
+            current='{}'
+            if [ -f /etc/docker/daemon.json ]; then current="$(cat /etc/docker/daemon.json)"; fi
+            merged="$(printf '%s\n' "$current" | jq --argjson mirrors '["https://mirror.gcr.io"]' '.features["containerd-snapshotter"] = true | (.["registry-mirrors"] // []) as $have | .["registry-mirrors"] = $have + ($mirrors - $have)')"
+            if [ "$(printf '%s\n' "$current" | jq -cS .)" != "$(printf '%s\n' "$merged" | jq -cS .)" ]; then
+              printf '%s\n' "$merged" | sudo tee /etc/docker/daemon.json >/dev/null
+              sudo systemctl restart docker
+            fi
+            docker info --format 'docker storage driver: {{.Driver}}; registry mirrors: {{.RegistryConfig.Mirrors}}'
+          fi
+        shell: "bash"
+      - uses: "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
+      - uses: "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020"
+        with:
+          "node-version-file": ".node-version"
+          "cache": "pnpm"
+      - name: "Install certified npm"
+        run: |
+          npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
+          test "$(npm --version)" = '11.16.0'
+        shell: "bash"
+      - uses: "oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6"
+        with:
+          "bun-version": "1.4.1"
+      - run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - uses: "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+      - name: "Install native smithers-jj-export"
+        run: |
+          case "$(uname -s)" in Linux|Darwin|MINGW*|MSYS*)
+            native_suffix=''
+            case "$(uname -s)" in MINGW*|MSYS*) native_suffix='.exe';; esac
+            rustup toolchain install '1.98.0' --profile minimal
+            cargo +1.98.0 build --locked -p 'smithers-ffi' --bin 'smithers-jj-export'
+            mkdir -p "$RUNNER_TEMP/smithers-native"
+            native_path="$RUNNER_TEMP/smithers-native/smithers-jj-export$native_suffix"
+            install -m 755 "target/debug/smithers-jj-export$native_suffix" "$native_path"
+            if [ "$native_suffix" = '.exe' ]; then native_path="$(cygpath -w "$native_path")"; fi
+            printf '%s=%s\n' 'SMITHERS_WORKSPACE_JJ_EXPORT_BINARY' "$native_path" >> "$GITHUB_ENV"
+          esac
+        shell: "bash"
+      - name: "Install jj"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
+        with:
+          "tool": "jj-cli@0.39.0"
+      - name: "Initialize colocated jj repository"
+        run: "jj git init --colocate"
+      - name: "Install ripgrep"
+        uses: "taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b"
+        with:
+          "tool": "ripgrep@14.1.1"
+      - name: "Install system packages"
+        run: |
+          if command -v apt-get >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
+            if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+              sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+            fi
+          fi
+        shell: "bash"
+      - name: "Install PostgreSQL"
+        id: setup
+        run: |
+          case "$(uname -s)" in
+            Linux)
+              sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends postgresql-common
+              sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y >/dev/null
+              echo 'create_main_cluster = false' | sudo tee -a /etc/postgresql-common/createcluster.conf >/dev/null
+              sudo apt-get install -y -qq --no-install-recommends 'postgresql-18'
+              pg_bin=/usr/lib/postgresql/18/bin path_entry="$pg_bin" floor=18
+              ;;
+            Darwin)
+              HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 brew install --quiet 'postgresql@18'
+              pg_bin="$(brew --prefix 'postgresql@18')/bin" path_entry="$pg_bin" floor=18
+              ;;
+            MINGW*|MSYS*)
+              pg_bin="$(cygpath -u "${PGBIN:?the runner image names no PostgreSQL in PGBIN}")" path_entry="$PGBIN" floor=17
+              ;;
+            *) echo "no PostgreSQL install for $(uname -s)" >&2; exit 1 ;;
+          esac
+          version="$("$pg_bin/initdb" --version)"
+          major="${version#*) }"
+          major="${major%%[!0-9]*}"
+          if [ -z "$major" ] || [ "$major" -lt "$floor" ]; then
+            echo "$version is not PostgreSQL $floor or later" >&2
+            exit 1
+          fi
+          echo "$version"
+          printf '%s\n' "$path_entry" >> "$GITHUB_PATH"
+        shell: "bash"
+      - name: "Backend access-control tests"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs test '//:backendGoAccess' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+      - name: "Upload smthrs results"
+        if: always()
+        uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+        with:
+          "name": "smthrs-results-go-backend-access-0-${{ github.run_attempt }}"
+          "path": "${{ runner.temp }}/smthrs-results"
+          "if-no-files-found": "error"

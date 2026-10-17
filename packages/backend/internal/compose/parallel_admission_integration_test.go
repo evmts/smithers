@@ -1645,7 +1645,7 @@ func exerciseMixedClassAdmission(t *testing.T, pool *pgxpool.Pool, stack *servic
 	learningItem, err = q.GetMythicalItemByNumber(ctx, repo, 2)
 	require.NoError(t, err)
 	digest := strings.Repeat("b", 64)
-	_, err = q.InsertFlowVersion(ctx, repo, "learning", "flows/learning/flow.ts", commit, digest, "loaded", "", json.RawMessage(`{}`))
+	_, err = q.InsertFlowVersion(ctx, repo, "learning", ".smithers/flows/learning/flow.ts", commit, digest, "loaded", "", json.RawMessage(`{}`))
 	require.NoError(t, err)
 	_, err = q.ActivateFlowVersion(ctx, repo, "learning", digest)
 	require.NoError(t, err)

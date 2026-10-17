@@ -2,7 +2,7 @@ import type { DiffCard } from "../../src/DiffCard.ts"
 import { at, claude_code } from "./_shared.ts"
 import { type Story, story } from "./_story.ts"
 
-const path = "flows/todo/flow.ts"
+const path = ".smithers/flows/todo/flow.ts"
 const hunk: DiffCard["hunks"][number] = {
   old_start: 2,
   new_start: 2,
@@ -52,8 +52,8 @@ export const fixtures = {
   ),
   renamed: story(
     "Renamed without edits",
-    { ...base, change: "renamed", renamed_to: "flows/todo-next/flow.ts", hunks: [] },
-    { expect: ["flows/todo-next/flow.ts"] }
+    { ...base, change: "renamed", renamed_to: ".smithers/flows/todo-next/flow.ts", hunks: [] },
+    { expect: [".smithers/flows/todo-next/flow.ts"] }
   ),
   binary: story(
     "Binary sizes",

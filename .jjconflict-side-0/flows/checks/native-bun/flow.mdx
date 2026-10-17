@@ -1,0 +1,6 @@
+---
+description: Run the existing //flows:codingNativeBun acceptance target.
+flows: [coding/CommandCheck]
+capabilities: ["fs:read:**", "proc:spawn:sh flows/checks/coding-check.sh *"]
+---
+{"argv":["sh","flows/checks/coding-check.sh","//flows:codingNativeBun"],"cwd":".","timeoutMs":2700000}

@@ -27,7 +27,7 @@ const flow = Flow.make("fixture", {
 const fixture = Effect.gen(function*() {
   const fs = yield* FileSystem.FileSystem
   const root = yield* fs.makeTempDirectoryScoped({ prefix: "smithers-module-layer-" })
-  const directory = join(root, "flows", "fixture")
+  const directory = join(root, ".smithers", "flows", "fixture")
   yield* fs.makeDirectory(directory, { recursive: true })
   yield* fs.writeFileString(
     join(directory, "flow.ts"),
@@ -43,7 +43,11 @@ export default Flow.make("fixture", {
 `
   )
   const discovery = yield* Discovery.Discovery
-  const discovered = yield* discovery.scan({ source: "project", root: join(root, "flows"), naming: "path" })
+  const discovered = yield* discovery.scan({
+    source: "project",
+    root: join(root, ".smithers", "flows"),
+    naming: "path"
+  })
   expect(discovered.entries).toHaveLength(1)
   return { root, descriptor: discovered.entries[0]! }
 })
@@ -72,7 +76,7 @@ describe("module layer exports", () => {
         const { root } = yield* fixture
         const fs = yield* FileSystem.FileSystem
         yield* fs.writeFileString(
-          join(root, "flows", "fixture", "flow.ts"),
+          join(root, ".smithers", "flows", "fixture", "flow.ts"),
           `
 import { Flow } from "@smthrs/core"
 import { Schema } from "effect"
@@ -80,7 +84,11 @@ export default Flow.make({ name: "fixture", description: "Retained fixture", inp
 `
         )
         const discovery = yield* Discovery.Discovery
-        const discovered = yield* discovery.scan({ source: "project", root: join(root, "flows"), naming: "path" })
+        const discovered = yield* discovery.scan({
+          source: "project",
+          root: join(root, ".smithers", "flows"),
+          naming: "path"
+        })
         const result = yield* Effect.result(Executable.fromDescriptor(discovered.entries[0]!, { delegates: [] }))
         expect(result._tag).toBe("Failure")
         if (result._tag === "Failure") {
@@ -368,8 +376,8 @@ export default Flow.make({ name: "fixture", description: "Retained fixture", inp
           for (const next of ["second", "third"]) {
             version = next
             yield* fs.writeFileString(
-              join(root, "flows", "fixture", "flow.ts"),
-              `${yield* fs.readFileString(join(root, "flows", "fixture", "flow.ts"))}\n// ${next}\n`
+              join(root, ".smithers", "flows", "fixture", "flow.ts"),
+              `${yield* fs.readFileString(join(root, ".smithers", "flows", "fixture", "flow.ts"))}\n// ${next}\n`
             )
             const refreshed = yield* refresh.flow("fixture")
             if (refreshed._tag === "Refused") {

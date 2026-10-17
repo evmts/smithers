@@ -342,7 +342,7 @@ describe("the sweep", () => {
       PRIMARY KEY (run_id, step_key_digest, attempt)
     )`)
       engine.close()
-      const flowDirectory = join(root, "flows", "pinned")
+      const flowDirectory = join(root, ".smithers", "flows", "pinned")
       mkdirSync(flowDirectory, { recursive: true })
       symlinkSync(join(import.meta.dirname, "..", "node_modules"), join(root, "node_modules"), "dir")
       writeFileSync(join(flowDirectory, "value.ts"), "export const value = \"retained implementation\"\n")
@@ -364,7 +364,11 @@ describe("the sweep", () => {
       const pinned = await Effect.runPromise(
         Effect.gen(function*() {
           const discovery = yield* Discovery.Discovery
-          const found = yield* discovery.scan({ source: "project", root: join(root, "flows"), naming: "path" })
+          const found = yield* discovery.scan({
+            source: "project",
+            root: join(root, ".smithers", "flows"),
+            naming: "path"
+          })
           expect(found.entries).toHaveLength(1)
           const executable = yield* Executable.fromDescriptor(found.entries[0]!, { delegates: [] })
           const snapshots = yield* ExecutionSnapshot.ExecutionSnapshot

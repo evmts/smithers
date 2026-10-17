@@ -483,9 +483,10 @@ describe("NodeControl.layerRegistry failures", () => {
   it("dies on a source root that exists but cannot be scanned", async () => {
     const broken = await mkdtemp(join(tmpdir(), "flows-cli-broken-"))
     try {
-      // A file where the `flows/` directory belongs is a real misconfiguration,
-      // and it must not be mistaken for "this project has no flows".
-      await writeFile(join(broken, "flows"), "not a directory")
+      // A file where the `.smithers/flows/` directory belongs is a real
+      // misconfiguration, and it must not be mistaken for "this project has no flows".
+      await mkdir(join(broken, ".smithers"))
+      await writeFile(join(broken, ".smithers", "flows"), "not a directory")
       const exit = await Effect.runPromise(
         Effect.exit(
           Effect.flatMap(Registry.Registry, (registry) => registry.list()).pipe(
@@ -510,9 +511,9 @@ describe("NodeControl.engineDurable with a registry", () => {
   it("knows every discovered project flow as well as the reserved catalog", async () => {
     const project = await mkdtemp(join(tmpdir(), "flows-cli-discovered-"))
     try {
-      await mkdir(join(project, "flows", "review"), { recursive: true })
+      await mkdir(join(project, ".smithers", "flows", "review"), { recursive: true })
       await writeFile(
-        join(project, "flows", "review", "SKILL.md"),
+        join(project, ".smithers", "flows", "review", "SKILL.md"),
         ["---", "description: Reviews a proposed change.", "---", "", "# Review", ""].join("\n")
       )
       const registry = NodeControl.layerRegistry(project)

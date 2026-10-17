@@ -18,7 +18,7 @@ it("an invalid agent effort fails before execution, exposes its refusal, and ret
   const cwd = join(root, "project")
   const home = join(root, "home")
   const sessions = join(root, "sessions")
-  const directory = join(cwd, "flows", "review")
+  const directory = join(cwd, ".smithers", "flows", "review")
   mkdirSync(directory, { recursive: true })
   mkdirSync(home)
   const source = join(directory, "flow.mdx")

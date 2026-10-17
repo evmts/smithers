@@ -58,9 +58,9 @@ test("native wiki check captures immutable pages, returns owner findings, reuses
   await writeFile(join(root, ".gitignore"), ".flows/\n")
   await writeFile(join(root, "answer.ts"), "export const answer = 42\n")
   await writeFile(join(root, "guide.md"), "# Answer\n\nThe answer is 42.\n")
-  await mkdir(join(root, "flows", "checks", "wiki"), { recursive: true })
+  await mkdir(join(root, ".smithers", "flows", "checks", "wiki"), { recursive: true })
   await writeFile(
-    join(root, "flows", "checks", "wiki", "flow.mdx"),
+    join(root, ".smithers", "flows", "checks", "wiki", "flow.mdx"),
     "---\ndescription: Semantic wiki check.\nflows: [coding/WikiCheck]\ncapabilities: ['*']\nsmithersCodingWikiPolicy: modeled-override\n---\nReview the configured wiki.\n"
   )
   const platform = process.versions.bun ? (await import("@effect/platform-bun/BunServices")).layer : NodeServices.layer
@@ -97,7 +97,7 @@ test("native wiki check captures immutable pages, returns owner findings, reuses
     hostPolicy
   })
   const baseRegistry = await Effect.runPromise(
-    Registry.make({ sources: [{ source: "project", root: join(root, "flows"), naming: "path" }] })
+    Registry.make({ sources: [{ source: "project", root: join(root, ".smithers", "flows"), naming: "path" }] })
       .pipe(Effect.provide(Discovery.layer), Effect.provide(platform))
   )
   let registry = bindWikiRegistry(baseRegistry, wikiCheckPolicy(options()))

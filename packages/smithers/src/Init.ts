@@ -5,7 +5,7 @@
  */
 
 import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
-import { isAbsolute, join } from "node:path"
+import { dirname, isAbsolute, join } from "node:path"
 import * as CliError from "./CliError.ts"
 import * as Environment from "./Environment.ts"
 import * as Project from "./Project.ts"
@@ -198,7 +198,7 @@ export interface Scaffolded {
 }
 
 /**
- * Scaffolds `flows/<name>/flow.ts` and ignores `.flows/`.
+ * Scaffolds `.smithers/flows/<name>/flow.ts` and ignores `.flows/`.
  *
  * An existing flow file is left exactly as it is: `init` is a starting point,
  * not an overwrite, and a second `init` in a project that already has flows
@@ -214,9 +214,10 @@ export const scaffold = (
 ): Scaffolded => {
   const problem = nameProblem(name)
   if (problem !== undefined) throw new CliError.UsageError({ message: problem })
-  const directory = join(root, "flows", name)
+  const flowsDirectory = Project.flowsDirectory(root)
+  const directory = join(flowsDirectory, name)
   const stateDirectory = Project.stateDirectory(root)
-  for (const path of [join(root, "flows"), directory, stateDirectory]) {
+  for (const path of [dirname(flowsDirectory), flowsDirectory, directory, stateDirectory]) {
     const stat = statIfPresent(path)
     if (stat !== undefined && (!stat.isDirectory() || stat.isSymbolicLink())) {
       throw new CliError.Refused({
@@ -284,7 +285,7 @@ export const scaffold = (
     writeFileSync(flowFile, template(name, seat), { encoding: "utf8", flag: "wx" })
   }
   // The empty state directory is the project's anchor. `Project.root` treats
-  // `.flows/` as proof on its own and a bare `flows/` only beside a project
+  // `.flows/` as proof on its own and `.smithers/flows/` only beside a project
   // marker, so a scaffold in a plain directory that is neither a package nor a
   // repository would otherwise resolve a different root from every
   // subdirectory, which is the one failure `init` exists to prevent.

@@ -17,7 +17,7 @@ renders the prompt an agent would run.
 ## Write two flows
 
 Discovery walks a source root looking for one entry file per directory, and
-`flow.mdx` is the markdown form. Create `flows/review/flow.mdx`:
+`flow.mdx` is the markdown form. Create `.smithers/flows/review/flow.mdx`:
 
 ```md
 ---
@@ -28,7 +28,7 @@ capabilities: ["fs:read:**"]
 Review the supplied change. Report only findings you can point at a line for.
 ```
 
-Then create `flows/draft/flow.mdx` with the description left out, so the scan
+Then create `.smithers/flows/draft/flow.mdx` with the description left out, so the scan
 has something to refuse:
 
 ```md
@@ -63,14 +63,14 @@ const discovery = Discovery.layer.pipe(Layer.provide(platform))
 
 /** One source: this project's own flows, named by their path below the root. */
 export const registry = Registry.layer({
-  sources: [{ source: "project", root: join(process.cwd(), "flows"), naming: "path" }]
+  sources: [{ source: "project", root: join(process.cwd(), ".smithers", "flows"), naming: "path" }]
 }).pipe(Layer.provide([discovery, platform]))
 ```
 
 `source` is opaque metadata the registry carries onto each descriptor's
 provenance, so a catalog entry can say where it came from. `naming: "path"`
 makes the directory path below the root the flow's name, which is what a
-project wants: `flows/review/flow.mdx` is the flow `review`. The other mode,
+project wants: `.smithers/flows/review/flow.mdx` is the flow `review`. The other mode,
 `frontmatter`, reads the name out of the file and is how a foreign Agent Skills
 directory is scanned. See
 [Sources and naming](./concepts/sources.md).
@@ -108,13 +108,13 @@ plus the fixed block that tells a model where the flow's own files live:
 ```text
 review: Reviews a proposed change and reports concrete correctness and maintainability risks.
   tier=sealed invocable=true
-warning missing_description at /repo/flows/draft/flow.mdx: Markdown flows require a non-empty frontmatter description
-warning name_field_ignored at /repo/flows/draft/flow.mdx: Ignoring frontmatter name because this source uses path-derived names
+warning missing_description at /repo/.smithers/flows/draft/flow.mdx: Markdown flows require a non-empty frontmatter description
+warning name_field_ignored at /repo/.smithers/flows/draft/flow.mdx: Ignoring frontmatter name because this source uses path-derived names
 Review the supplied change. Report only findings you can point at a line for.
 
 Supporting skill resources are available relative to this skill directory but are not loaded into context unless needed:
 <skill_resources>
-- Base directory: /repo/flows/review
+- Base directory: /repo/.smithers/flows/review
 - Resolve relative resource paths from this directory and read only the files you need.
 </skill_resources>
 

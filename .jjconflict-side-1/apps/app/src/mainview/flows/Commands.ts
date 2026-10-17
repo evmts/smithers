@@ -1,0 +1,1021 @@
+import { preloadViewModule } from "../ViewModules"
+import { FlowGesture, type CommandGesture } from "./CommandGesture"
+import { FlowOrigin, type CommandOrigin } from "./CommandOrigin"
+import type { CommandLifecycle, PendingCommandInput, PendingFieldInput, PendingFormInput } from "./CommandLifecycle"
+/*
+ * The registry runtime: one dispatch path for every trigger.
+ *
+ * Every interactive affordance in the app is a registered flow, and every
+ * trigger — button, pill, slash menu, agent call — resolves to the SAME
+ * `FlowBinding` and invokes it the same way. Launch law: a button with no flow
+ * behind it is a launch blocker (parity.test.ts gates this).
+ *
+ * The catalog disclosed to the agent is not a second projection of this
+ * registry; it is this registry narrowed to model-invocable entries, and the
+ * same bindings answer the calls. That is why `CommandCatalog.ts` no longer
+ * exists: a parallel projection is exactly the drift the one-door law forbids.
+ */
+import { Authorize } from "@smthrs/chain"
+import { canonicalCommandName } from "@smthrs/ui/command-line"
+import { FlowCancellation } from "./FlowCancellation"
+import { commandFailureSentence } from "./CommandFailureCopy"
+import type { AgentInvocation } from "./AgentInvocation"
+import { formFlows } from "./entries/form"
+import * as Cell from "@smthrs/harness/Cell"
+import type * as Descriptor from "@smthrs/registry/Descriptor"
+import { Effect } from "effect"
+import { hasCapability } from "@smthrs/rpc/AppBootstrap"
+import type { AgentCommandDiscovery, AgentToolCall, AgentToolSpec } from "./agentTools"
+import { agentFailureText, agentToolSpecs, executeAgentToolCall, userOnlyError } from "./agentTools"
+import type { AppTransition } from "../state/AppState"
+import type { CommandActions } from "./Flows"
+import { adminFlows, baseFlows, guideFlows } from "./Flows"
+import { repositoryFlowLeaves } from "./entries/flow"
+import type { CatalogItem, CommandState, FlowEntry, MissingDoor, SlashItem, SlashRow } from "./registry"
+import {
+  flowCapabilityHeld,
+  absentDoor,
+  confirmLabel,
+  disclosedToAgent,
+  flowRequirements,
+  itemOf,
+  modelInvocable,
+  viewerAdmitted,
+  nameOf,
+  namespaceOf,
+  parseSubmit,
+  recommendedNames,
+  slashItems,
+  slashTree,
+  unmetRequirements,
+  requirementIds,
+  visible
+} from "./registry"
+import { doorFamilyAbsent } from "./DoorAvailability"
+import type { Parsed } from "./SlashPayload"
+import { payloadFor, unknownFlag } from "./SlashPayload"
+import { assembleArgs, formFieldsFor, publicFormPayload } from "@smthrs/ui/flow-form"
+
+export type { CommandActions, CommandResult } from "./Flows"
+
+export type CommandOutcome =
+  | { readonly status: "executed"; readonly value?: string }
+  /** A name no host has. */
+  | { readonly status: "unknown-command" }
+  /**
+   * A declared flow this host lacks the door for (`explainAbsent`): `reason`
+   * is the one sentence every trigger says. When the native app is the answer
+   * (`door` cloud.pat) the registry has already rendered the refusal
+   * card through the named action; for the other doors nothing is rendered
+   * and the sentence is the whole answer.
+   */
+  | {
+    readonly status: "unavailable"
+    readonly door: AbsentDoor
+    readonly reason: string
+    readonly action: null
+  }
+  | {
+    readonly status: "failed"
+    readonly error: string
+    readonly persistenceFailed?: true
+    /** This browser would not keep the write, so the loss is stated rather than swallowed. */
+    readonly writeRefused?: true
+    /**
+     * A refusal the APP decided, carried as what it is rather than as prose
+     * the surfaces would have to read back. `error` is always its sentence
+     * (`refusalSentence`), so a surface with nothing to add renders it like
+     * any other failure and one that answers a refusal differently — the
+     * transcript, for a misunderstanding the person has to see after a
+     * notification would have gone — matches on the kind exhaustively.
+     */
+    readonly refusal?: CommandRefusal
+  }
+  /**
+   * THE FORM LAW (apps/app/AGENTS.md): the invocation lacked required input,
+   * so nothing ran and the flow's form card is rendered instead — prefilled
+   * from what the line gave, asking for `fields`. Only the agent and slash
+   * doors reach this; a button always carries its args.
+   */
+  | { readonly status: "form"; readonly flow: string; readonly cardId: string; readonly fields: ReadonlyArray<string> }
+
+/**
+ * A refusal the app itself decided about a typed line, before any flow ran.
+ *
+ * It carries the door and the thing refused, never a rendered sentence: the
+ * fault is the PERSON'S INPUT — nothing failed, nothing is retryable, and the
+ * way on is to type it differently — which is a different thing from a seam
+ * that refused, and the surfaces have to be able to tell them apart without
+ * reading English.
+ */
+export type CommandRefusal = {
+  /** A `--flag` the door never declared. */
+  readonly kind: "unknown-flag"
+  readonly flow: string
+  readonly flag: string
+}
+
+/**
+ * The one sentence each refusal gets. Exhaustive over the union, so a refusal
+ * added without copy is a compile error rather than a blank line in front of
+ * a person.
+ */
+export const refusalSentence = (refusal: CommandRefusal): string => {
+  switch (refusal.kind) {
+    case "unknown-flag":
+      return `/${refusal.flow} takes no --${refusal.flag} — nothing ran. Send /${refusal.flow} without it.`
+  }
+}
+
+/**
+ * The door classes an exact miss resolves to. `cloud.session` refines
+ * `cloud.pat`: the flows that ARE the PAT session (the `cloud.` namespace),
+ * which on the web the GitHub sign-in already answers.
+ */
+export type AbsentDoor = MissingDoor | "cloud.session"
+
+export interface AbsentExplanation {
+  readonly door: AbsentDoor
+  /** The one sentence every trigger says. */
+  readonly reason: string
+}
+
+/** Whether the native app is the answer to a miss of this door: the refusal card carries the download. */
+
+/** The sentence a miss of each door gets, after the flow it names. */
+export const absentReason = (name: string, door: AbsentDoor): string => {
+  switch (door) {
+    case "cloud.pat":
+      return `/${name} is not in the web app — it needs a local Smithers Cloud session.`
+    case "cloud.session":
+      return `/${name} is not in the web app — on the web your GitHub sign-in is your Smithers Cloud sign-in.`
+    case "origin":
+      return `/${name} is not available on this origin yet.`
+  }
+}
+
+/** The flow the registry renders for a native-only miss on the web. */
+
+
+/**
+ * One flow invoked with its input ALREADY NAMED — the door a form submits
+ * through.
+ *
+ * `payload` is the record the declaration's input schema validates, so no
+ * field can shift onto its neighbour on the way in; `display` is the
+ * equivalent slash line, kept for the trace, the confirmation message and the
+ * card's echo, and never parsed back into the payload. Availability, the
+ * requirement axis, the confirmation axis and the agent authorization are the
+ * ones every other trigger meets: this is the same `runAs` path with the
+ * text-shaped step already done.
+ */
+export interface FlowSubmission {
+  readonly name: string
+  readonly payload: Record<string, unknown>
+  readonly actor: "user" | "agent"
+  /** The equivalent slash line, for display and the trace only. */
+  readonly display?: string
+  readonly invocation?: AgentInvocation
+  /** A form's original browser gesture, never serialized into its card. */
+  readonly gesture?: CommandGesture
+  /** Presentation context only; it conveys no command authority. */
+  readonly originCardId?: string
+  /**
+   * Ask with the flow's form whatever the payload names: the payload is the
+   * form's draft, and nothing confirms or runs. A host's request to its
+   * author's screen for a flow that is not UI-only comes through this door
+   * (@smthrs/rpc/UiInstruction, #3823).
+   */
+  readonly ask?: true
+}
+
+export interface CommandRegistry {
+  /** Every registered flow as UI-catalog records, admin entries included only for admin sessions. */
+  readonly all: () => ReadonlyArray<CatalogItem>
+  /** Shared, authoritative viewer projection; undefined while authority is unavailable. */
+  readonly viewerCatalog: () => ReadonlyArray<CatalogItem> | undefined
+  /** The same flows as executable entries. */
+  readonly entries: () => ReadonlyArray<FlowEntry>
+  readonly find: (name: string) => FlowEntry | undefined
+  /**
+   * Why an exact name is absent from THIS host, classified against the
+   * unfiltered catalog by the door the host lacks (registry.ts `absentDoor`):
+   * the native app (`cloud.pat`), the session flows the GitHub
+   * sign-in already answers on the web (`cloud.session`), or a door this
+   * origin could grow (`origin`). Undefined for a present flow, for a name no
+   * host has, and for a flow about the other host. A prerequisite (sign-in)
+   * is never a reason here — it is the requirement axis, resolved by `run`.
+   */
+  readonly explainAbsent: (name: string) => AbsentExplanation | undefined
+  readonly state: () => CommandState
+  readonly slashItems: (needle: string) => Array<SlashItem<CatalogItem>>
+  /** The slash menu as a tree: leaves and namespace rows (registry.slashTree). */
+  readonly slashTree: (needle: string) => Array<SlashRow<CatalogItem>>
+  readonly recommended: () => CatalogItem
+  readonly preload?: (name: string, args?: string) => Promise<void>
+  /** Continue only the pending, revision-bound message the person pressed. */
+  readonly confirm: (id: string, revision: string) => Promise<CommandOutcome>
+  readonly run: (name: string, args?: string, source?: "automatic", originCardId?: string) => Promise<CommandOutcome>
+  /**
+   * `run` at the agent boundary (requirement axis): an unmet requirement is an
+   * honest failure carrying the reason — never a deferral, because a model must
+   * not enqueue work that fires after its turn ends.
+   */
+  readonly runAsAgent: (name: string, args?: string, httpCall?: AgentToolCall["httpCall"]) => Promise<CommandOutcome>
+  /**
+   * The agent's entry point: one call through the identical run path buttons
+   * and slash use. The result is an honest string that round-trips to the model.
+   */
+  readonly executeForAgent: (call: AgentToolCall, discover?: AgentCommandDiscovery) => Promise<string>
+  /**
+   * One flow as the agent actor, answered as a TYPED outcome. The string
+   * channel executeForAgent returns cannot distinguish a failure from a success
+   * value that happens to start with a failure prefix; this path never sniffs
+   * strings.
+   */
+  readonly runForAgent: (name: string, args?: string, invocation?: AgentInvocation, signal?: AbortSignal) => Promise<CommandOutcome>
+  /**
+   * One flow run from a payload the caller already named (the form door):
+   * the same path, entered past the composer boundary rather than through it.
+   */
+  readonly submit: (submission: FlowSubmission) => Promise<CommandOutcome>
+  /** The flows the agent may call: the registry narrowed to model-invocable entries. */
+  readonly callable: () => ReadonlyArray<FlowEntry>
+  /** What the prompt's catalog block teaches: callable flows that are not hidden. */
+  readonly disclosed: () => ReadonlyArray<Descriptor.FlowDescriptor>
+  readonly toolSpecs: () => ReadonlyArray<AgentToolSpec>
+}
+
+/**
+ * Chain calls carry their lineage, script digest and ordinal into the binding
+ * so a handler opening a durable boundary can key it to the same invocation.
+ * Buttons and slash calls have no replay frame and retain the app identity.
+ */
+const callFor = (entry: FlowEntry, payload: Record<string, unknown>, invocation?: AgentInvocation): Cell.Call =>
+  new Cell.Call({
+    flowName: nameOf(entry),
+    input: payload as Cell.Call["input"],
+    capabilities: entry.binding.descriptor.capabilities,
+    effects: entry.binding.descriptor.effects,
+    placement: entry.binding.descriptor.placement,
+    identity: new Cell.CallIdentity({
+      session: invocation?.lineage === undefined ? "app" : `${invocation.lineage}/${invocation.slot.chain}`,
+      frame: invocation?.slot.link ?? 0,
+      cell: invocation?.slot.key?.scriptDigest ?? "app",
+      ordinal: invocation?.slot.ordinal ?? 0,
+      declaration: Cell.declarationDigest(entry.binding.descriptor),
+      layers: []
+    })
+  })
+
+/*
+ * FlowBinding frames a handler refusal for the cell that will read it next
+ * ("Flow x failed: …"). The app surfaces the same refusal to a human, where the
+ * frame is noise, so the deterministic prefix comes back off. The honest fix is
+ * for CallResult to carry the failure as typed data instead of a sentence.
+ */
+const unframe = (name: string, message: string | undefined): string => {
+  if (message === undefined || message === `Flow ${name} failed.`) return `/${name} failed`
+  const failed = `Flow ${name} failed: `
+  if (message.startsWith(failed)) return message.slice(failed.length)
+  return message
+}
+
+/** The one string an app flow's success may carry back to the model. */
+const valueOf = (value: unknown): string | undefined => {
+  if (typeof value !== "object" || value === null) return undefined
+  const carried = (value as { readonly value?: unknown }).value
+  return typeof carried === "string" ? carried : undefined
+}
+
+/** Chrome commands that render no card, so they leave a maximized card in place. */
+const OVER_MAXIMIZED_CARD: ReadonlySet<string> = new Set(["chat.open", "palette.open", "palette.actions", "theme", "input.mode"])
+
+
+export const createCommandRegistry = (actions: CommandActions, agentActions: CommandActions = actions, lifecycle?: CommandLifecycle, resolveConfirmation?: (id: string, revision: string) => { name: string; args?: string } | undefined, authorizeClientCommand?: (name: string, signal?: AbortSignal) => Promise<CommandOutcome | undefined>): CommandRegistry => {
+  // Nested form dispatch borrows the same reservation. Its outer submission
+  // releases write-only input after the complete continuation, exactly once.
+  const gestureSubmissions = new WeakMap<CommandGesture["release"], number>()
+  /*
+   * The app's own invocation carries no host authority. Approval is a
+   * host-injected decorator over typed capabilities (a GrantStore the cell
+   * loop will hand in), never something a flow declaration claims, so an
+   * invocation nobody scoped is authorized by nobody and passes.
+   */
+  const unscopedInvocation: AgentInvocation = {
+    slot: { chain: "app", link: 0, ordinal: 0 },
+    authorize: Authorize.make({ authorize: () => Effect.void }),
+    refused: () => {}
+  }
+  const base = baseFlows(actions)
+  const admin = adminFlows(actions)
+  const guide = guideFlows(actions)
+  /*
+   * The repository's own flows, derived from its factory projection each
+   * time the projection lands (entries/flow.ts `repositoryFlowLeaves`) and
+   * gone with it. Cached on the row's identity because the slash tree reads
+   * the registry per keystroke. A declared flow keeps its name: a projection
+   * row that shares one (`chat`, `flow.list`) gets no leaf, so no name ever
+   * resolves to two entries.
+   */
+  // #3612 (42a4fa17b0) names review's run; its authorized host door is never a leaf.
+  const standsIn = (entry: FlowEntry): boolean => nameOf(entry) !== "review" && entry.metadata.workflow === nameOf(entry)
+  let leafCache: { readonly repo: string; readonly loadedAt: number; readonly leaves: ReadonlyArray<FlowEntry> } | undefined
+  const leaves = (): ReadonlyArray<FlowEntry> => {
+    const catalog = actions.repositoryFlows()
+    if (catalog === undefined) return []
+    if (leafCache !== undefined && leafCache.repo === catalog.repo && leafCache.loadedAt === catalog.loadedAt) return leafCache.leaves
+    // A declared flow that stands in for the repository's leaf (`workflow` is its own name) yields to that leaf.
+    const taken = new Set([...base, ...guide, ...admin].filter((entry) => !standsIn(entry)).map(nameOf))
+    const built = repositoryFlowLeaves(actions, catalog.repo, catalog.flows, base).filter((entry) => !taken.has(nameOf(entry)))
+    leafCache = { repo: catalog.repo, loadedAt: catalog.loadedAt, leaves: built }
+    return built
+  }
+  let agentEntries: ReadonlyArray<FlowEntry> | undefined
+  const agentEntry = (name: string): FlowEntry | undefined => {
+    agentEntries ??= agentActions === actions ? [...base, ...guide, ...admin] : [...baseFlows(agentActions), ...guideFlows(agentActions), ...adminFlows(agentActions)]
+    const declared = agentEntries.find((candidate) => nameOf(candidate) === name)
+    if (declared !== undefined && !standsIn(declared)) return declared
+    if (agentActions === actions) return leaves().find((candidate) => nameOf(candidate) === name) ?? declared
+    const catalog = agentActions.repositoryFlows()
+    return (catalog === undefined
+      ? undefined
+      : repositoryFlowLeaves(agentActions, catalog.repo, catalog.flows, agentEntries).find((candidate) => nameOf(candidate) === name)) ?? declared
+  }
+
+  const available = (entry: FlowEntry): boolean => {
+    // Session authority comes from the admitted daemon host, never a terminal tunnel.
+    if (["code.hover", "code.definition", "code.diagnostics"].includes(nameOf(entry)) && actions.codeIntelligenceAvailable?.() !== true) return false
+    const bootstrap = actions.bootstrap
+    const { hosts } = entry.metadata
+    /*
+     * A route family this origin does not mount (flows/DoorAvailability.ts).
+     * Asked BEFORE the loading shortcut below, because a refusal this origin
+     * already answered is true whether or not a bootstrap has arrived — and
+     * answered only as `absent`, so a family nothing has settled stays offered.
+     */
+    if (doorFamilyAbsent(entry.metadata.door, { bootstrap, refused: actions.doorFamilyAbsent, seeded: actions.design.enabled })) return false
+    // A host-scoped flow exists only where the bootstrap names its host: no bootstrap, no host, no flow.
+    if (hosts !== undefined && (bootstrap === undefined || !hosts.includes(bootstrap.host))) return false
+    if (bootstrap === undefined) return true
+    const { runtime = [], runtimeAny } = entry.metadata
+    return runtime.every((capability) => hasCapability(bootstrap, capability)) &&
+      (runtimeAny === undefined || runtimeAny.some((capability) => flowCapabilityHeld(bootstrap, capability)))
+  }
+
+  const entries = (): ReadonlyArray<FlowEntry> => {
+    const leafEntries = leaves()
+    const leafNames = new Set(leafEntries.map(nameOf))
+    return [...base, ...guide, ...(actions.snapshot().admin ? admin : [])]
+      .filter((entry) => !(standsIn(entry) && leafNames.has(nameOf(entry))))
+      .concat(leafEntries).filter(available)
+  }
+
+  const items = (): ReadonlyArray<CatalogItem> => entries().map(entry => {
+    const item = itemOf(entry)
+    return item.name === "debug-api" && !actions.debugApi.available()
+      ? { ...item, visibility: "hidden", hidden: true } : item
+  })
+
+  const listingItems = (): ReadonlyArray<CatalogItem> => {
+    const catalog = items()
+    const admitted = new Set(viewerAdmitted(actions.snapshot(), catalog).map(item => item.name))
+    return catalog.filter(item => item.visibility === undefined || admitted.has(item.name))
+  }
+
+  /** A registered name, else the flow that lists `name` as an alias. */
+  const find = (name: string): FlowEntry | undefined => {
+    const all = entries()
+    return all.find((entry) => nameOf(entry) === name) ?? all.find((entry) => entry.metadata.aliases?.includes(name) === true)
+  }
+
+  /*
+   * The honest refusal (docs/web-mode/PLAN.md §1). The enabled catalog stays
+   * the only executable surface; an exact miss is classified against the
+   * UNFILTERED declarations by the door this bootstrap lacks, so the flow is
+   * never reported as nonexistent when it is this origin that lacks the door.
+   * Only a name absent from the declarations stays unknown-command.
+   */
+  const explainAbsent = (name: string): AbsentExplanation | undefined => {
+    const bootstrap = actions.bootstrap
+    if (bootstrap === undefined || find(name) !== undefined) return undefined
+    const declared = base.find((entry) => nameOf(entry) === name) ?? leaves().find((entry) => nameOf(entry) === name)
+    if (declared === undefined) return undefined
+    const missing = absentDoor(declared.metadata, bootstrap, actions.doorFamilyAbsent, actions.design.enabled)
+    if (missing === undefined) return undefined
+    const door: AbsentDoor = missing === "cloud.pat" && namespaceOf(name) === "cloud" ? "cloud.session" : missing
+    // A flow that knows the working neighbour on this origin says so itself (`FlowMetadata.absentHere`).
+    return { door, reason: declared.metadata.absentHere ?? absentReason(name, door) }
+  }
+
+  /** Invokes one flow through its binding — the single door every trigger shares. */
+  const invoke = async (
+    entry: FlowEntry,
+    payload: Record<string, unknown>,
+    invocation?: AgentInvocation,
+    gesture?: CommandGesture,
+    /** The door this invocation came through (CommandOrigin.ts), fixed for its lifetime. */
+    origin?: CommandOrigin
+  ): Promise<CommandOutcome> => {
+    const name = nameOf(entry)
+    const settled = await Effect.runPromise(
+      Effect.result(entry.binding.run(callFor(entry, payload, invocation))).pipe(
+        Effect.provideService(FlowCancellation, invocation?.signal),
+        Effect.provideService(FlowGesture, gesture),
+        Effect.provideService(FlowOrigin, origin)
+      ),
+      // Controller promises receive the signal but retain their result when a
+      // write cannot abort. Effect-native bindings use fiber interruption.
+      { signal: entry.cooperativeCancellation === true ? undefined : invocation?.signal }
+    )
+    if (settled._tag === "Failure") {
+      // A permission park or an assembly failure is not the human's business
+      // to catch; surfaced honestly, it is still a failed invocation.
+      return { status: "failed", error: commandFailureSentence(name, settled.failure) }
+    }
+    const result = settled.success
+    if (result.outcome === "failure") {
+      return { status: "failed", error: unframe(name, result.message) }
+    }
+    const value = valueOf(result.value)
+    return value === undefined ? { status: "executed" } : { status: "executed", value }
+  }
+
+  /**
+   * The one execution path every trigger (button, pill, slash, agent) shares.
+   * The requirement axis resolves FIRST: a user-invoked flow with an unmet
+   * requirement parks durably (actions.deferCommand) and the requirement's
+   * fulfilling flow runs in its place — the controller resumes the parked flow
+   * when the requirement's predicate flips true. Requirements resolve one at a
+   * time against live state, so a flow needing sign-in AND a repo selection
+   * steps through both. `seen` guards a misconfigured requirement table (a
+   * fulfill cycle) with an honest failure instead of recursion.
+   */
+  /*
+   * The /verbose trace: every invocation that passes this door is recorded
+   * as one `flow.invoked` transition — actor, name, args, outcome, duration —
+   * whichever trigger sent it and whether or not the flow is listed. The
+   * store renders the record only while verbose is on.
+   */
+  const trace = (
+    invoker: "user" | "agent" | "system",
+    name: string,
+    args: string | undefined,
+    startedAt: number,
+    outcome: Extract<AppTransition, { type: "flow.invoked" }>["outcome"],
+    detail: string | null
+  ): void => {
+    // Diagnostics are persisted even with verbose off. Keep execution input
+    // untouched, but never hand environment or form values to the trace sink.
+    let tracedArgs = args ?? null
+    if (args !== undefined && (name === "env.set" || name === "form.set" || name === "debug-api")) {
+      const parsed = payloadFor(name, args, undefined, actions.knownRepositories())
+      tracedArgs = "[REDACTED]"
+      if (!("error" in parsed)) {
+        if (name === "form.set") {
+          // Mask every form.set value, including arbitrary card/field targets.
+          // Write-only controls never enter this path in the first place.
+          tracedArgs = `${parsed.payload.cardId} ${parsed.payload.field} [REDACTED]`
+        }
+      }
+    }
+    // Both errors and success text can echo input; form.submit also carries
+    // the nested flow's assembled arguments even though its own args are an id.
+    const sensitive = name === "env.set" || name === "form.set" || name === "form.submit" || name === "debug-api"
+    actions.traceFlow({
+      type: "flow.invoked",
+      actor: invoker === "agent" ? "smithers" : invoker,
+      name,
+      args: tracedArgs,
+      hidden: find(name)?.metadata.hidden === true,
+      outcome,
+      detail: sensitive && detail ? "[REDACTED]" : detail,
+      durationMs: Math.max(0, Math.round(Date.now() - startedAt))
+    })
+  }
+
+  const runAs = async (
+    invoker: "user" | "agent" | "system",
+    name: string,
+    args?: string,
+    seen: ReadonlySet<string> = new Set(),
+    invocation?: AgentInvocation,
+    named?: Record<string, unknown>,
+    httpCall?: AgentToolCall["httpCall"],
+    inheritedGesture?: CommandGesture,
+    originCardId?: string,
+    confirmed = false,
+    ask = false,
+    /**
+     * The door, when the caller knows it. An agent invocation that names none
+     * is the browser agent loop's own tool call: that is the only agent door
+     * whose VALUE is read, and the one §6 keeps cardless.
+     */
+    origin?: CommandOrigin
+  ): Promise<CommandOutcome> => {
+    const door: CommandOrigin = origin ?? (invoker === "agent" ? "tool" : "person")
+    invocation?.signal?.throwIfAborted()
+    const request = { name, actor: invoker === "agent" ? "smithers" as const : invoker,
+      source: named !== undefined ? "form" as const : invoker === "system" ? "automatic" as const : "command" as const, invocation, httpCall }
+    const early = lifecycle?.before?.(request, args, named)
+    if (early !== undefined) return early
+    const declared = find(name)
+    if (named !== undefined && declared !== undefined) {
+      const fields = formFieldsFor(declared.input, declared.metadata.form)
+      named = publicFormPayload(fields, named)
+      if (fields.some(field => field.kind === "write-only")) args = assembleArgs(fields, declared.metadata.form, named)
+    }
+    const gesture = inheritedGesture?.name === name ? inheritedGesture
+      : invoker === "user" && find(name) !== undefined ? lifecycle?.reserveGesture?.(request, args, named) : undefined
+    // A new human command is a return to the transcript. A stale maximized
+    // card from an earlier session must not hide the card this command renders.
+    // Commands raised by a maximized card itself keep that presentation until
+    // their own frame or card handler decides where to go. Chrome commands
+    // render no card: Chat opens over the card and closes back to it.
+    // A recognized slash submission only transports the inner command. Its
+    // own registry invocation decides whether to return to the transcript.
+    const submitted = name === "chat.send" && declared !== undefined
+      ? named === undefined ? payloadFor(name, args, declared.metadata.grammar, actions.knownRepositories()) : { payload: named }
+      : undefined
+    const transportsCommand = submitted !== undefined && !("error" in submitted) &&
+      typeof submitted.payload.text === "string" && parseSubmit(submitted.payload.text, items()).kind === "command"
+    const maximizedCardId = actions.snapshot().maximizedCardId
+    const staysInMaximizedCard = (originCardId !== undefined && originCardId === maximizedCardId) ||
+      name === "card.maximize" || name === "card.minimize" || name.startsWith("card.history.") ||
+      name.startsWith("frame.") || OVER_MAXIMIZED_CARD.has(name) || transportsCommand
+    if (invoker === "user" && maximizedCardId != null && !staysInMaximizedCard && gesture?.presentationCurrent?.() !== false) actions.minimizeCard()
+    // Only the human's local field edit has a synchronous recovery preparation.
+    // Agent input waits for capability authorization in settle before dispatch.
+    let pendingFieldInput: PendingFieldInput | PendingFormInput | undefined
+    if (invoker === "user" && name === "form.set") {
+      const entry = find(name)
+      if (entry !== undefined && unmetRequirements(entry.metadata, actions.snapshot(), flowRequirements).length === 0) {
+        const parsed = named === undefined ? payloadFor(name, args, entry.metadata.grammar, actions.knownRepositories()) : { payload: named }
+        if (!("error" in parsed)) {
+          const { cardId, field, value } = parsed.payload
+          if (typeof field === "string" && typeof value === "string") {
+            if (typeof cardId === "string") pendingFieldInput = { cardId, field, value }
+          }
+        }
+      }
+    }
+    let pendingInput: PendingCommandInput | undefined
+    try {
+    const acceptance = lifecycle === undefined ? undefined : await lifecycle.accept(request, pendingFieldInput)
+    if (acceptance !== undefined && "receipt" in acceptance) pendingInput = acceptance.pendingInput
+    if (acceptance !== undefined && "refusal" in acceptance) return {
+      status: "failed", error: acceptance.refusal, ...(acceptance.persistenceFailed ? { persistenceFailed: true } : {}),
+      ...(acceptance.writeRefused ? { writeRefused: true } : {})
+    }
+    if (acceptance !== undefined && lifecycle?.canExecute?.(acceptance.receipt, request) === false) {
+      return { status: "failed", error: "The command's controller, account, or turn closed before execution.", persistenceFailed: true }
+    }
+    // Cancellation while the intent commit was pending must not reach a binding.
+    invocation?.signal?.throwIfAborted()
+    const startedAt = Date.now()
+    let authorizationRefused = false
+    const execution = { invoked: false }
+    const scopedInvocation = invocation === undefined ? undefined : { ...invocation, refused: (error: Parameters<AgentInvocation["refused"]>[0]) => {
+      authorizationRefused = true
+      invocation.refused(error)
+    } }
+    const canPublish = (): boolean => acceptance === undefined || lifecycle?.canPublish?.(acceptance.receipt, request) !== false
+    let outcome: CommandOutcome
+    try { outcome = await settle(invoker, name, args, seen, startedAt, scopedInvocation, named, gesture, execution, canPublish, confirmed, ask, door) }
+    catch { outcome = { status: "failed", error: "The command did not finish. Check its result before trying again." } }
+    const retryableAuthorization = authorizationRefused && (!execution.invoked || name === "form.submit")
+    if (acceptance !== undefined && lifecycle !== undefined && !await lifecycle.settle(acceptance.receipt, outcome, retryableAuthorization)) {
+      return { status: "failed", error: "The command's outcome could not be saved. Check its result before trying again.", persistenceFailed: true }
+    }
+    if (canPublish()) trace(
+      invoker,
+      name,
+      args,
+      startedAt,
+      // The trace's outcome vocabulary predates the host boundary: an unavailable flow is recorded as the miss it is, with the reason as its detail.
+      outcome.status === "unavailable" ? "unknown-command" : outcome.status,
+      outcome.status === "failed"
+        ? outcome.error
+        : outcome.status === "unavailable"
+        ? outcome.reason
+        : outcome.status === "form"
+        ? `rendered a form for ${outcome.fields.join(", ")}`
+        : outcome.status === "executed"
+        ? outcome.value ?? null
+        : null
+    )
+    return outcome
+    } finally {
+      pendingInput?.clear()
+      if (gesture !== inheritedGesture) gesture?.release()
+    }
+  }
+
+  const settle = async (
+    invoker: "user" | "agent" | "system",
+    name: string,
+    args: string | undefined,
+    seen: ReadonlySet<string>,
+    startedAt: number,
+    invocation?: AgentInvocation,
+    /** The payload a named submission already carries; absent for a text invocation. */
+    named?: Record<string, unknown>,
+    gesture?: CommandGesture,
+    execution?: { invoked: boolean },
+    canPublish: () => boolean = () => true,
+    confirmed = false,
+    /** FlowSubmission.ask: the form is the whole answer, whatever the payload names. */
+    ask = false,
+    /** The door runAs resolved for this invocation; it travels with it and never changes. */
+    door: CommandOrigin = "person"
+  ): Promise<CommandOutcome> => {
+    const entry = find(name)
+    if (entry === undefined) {
+      const absent = explainAbsent(name)
+      if (absent === undefined) return { status: "unknown-command" }
+      const { door, reason } = absent
+      return { status: "unavailable", door, reason, action: null }
+
+    }
+    let target = invoker === "agent" ? agentEntry(nameOf(entry)) ?? entry : entry
+    // Automatic callers carry no person's authorization (#3736), including
+    // incomplete inputs which would otherwise open a form or defer execution.
+    if (invoker !== "user" && invoker !== "agent" && target.metadata.confirm !== undefined) {
+      return { status: "failed", error: `/${nameOf(target)} requires a person's confirmation.` }
+    }
+
+    // personOnly: the target refuses agents whatever the host decides, so a
+    // required approval must not park the run for a grant that cannot help.
+    const authorizeTarget = async (personOnly = false): Promise<CommandOutcome | undefined> => {
+      if (invocation !== undefined && invocation.authorized !== Cell.declarationDigest(target.binding.descriptor)) {
+        const decision = await Effect.runPromise(Effect.result(invocation.authorize.authorize({
+          name: nameOf(target),
+          capabilities: target.binding.descriptor.capabilities,
+          slot: invocation.slot
+        })), { signal: invocation.signal })
+        if (decision._tag === "Failure") {
+          if (personOnly && decision.failure.code === "approval_required") return undefined
+          invocation.refused(decision.failure)
+          return { status: "failed", error: commandFailureSentence(nameOf(target), decision.failure) }
+        }
+      }
+    }
+    if (invoker === "agent" && !modelInvocable(target)) {
+      // Host authority takes precedence over the person-only policy. Neither
+      // decision invokes the binding or opens a card.
+      const denied = await authorizeTarget(true) ?? await authorizeClientCommand?.(nameOf(target), invocation?.signal)
+      return denied ?? { status: "failed", error: userOnlyError(nameOf(target), target.metadata.agentReason) }
+    }
+    // A user-only flow refuses every non-person actor, automatic `system` calls
+    // included (#3717): a future automatic caller that forwards a name from data
+    // must not bypass the person gate.
+    if (invoker !== "user" && target.metadata.agent === "never") {
+      return { status: "failed", error: userOnlyError(nameOf(target), target.metadata.agentReason) }
+    }
+    const acting = invoker === "agent" ? agentActions : actions
+    /*
+     * A flag the flow never declared (SlashPayload.unknownFlag) is refused
+     * before anything runs, and NOT through the form law: the form collects
+     * input a flow asks for, and a flow with no reading for `--summarize` has
+     * no field to offer — rendering one would answer a refused flag with a
+     * door to the very option that was refused.
+     */
+    const stray = named === undefined ? unknownFlag(args, target.metadata.args) : undefined
+    if (stray !== undefined) {
+      const refusal: CommandRefusal = { kind: "unknown-flag", flow: nameOf(target), flag: stray }
+      return { status: "failed", error: refusalSentence(refusal), refusal }
+    }
+    /*
+     * A door this origin has no way to serve, answered before anything is
+     * parsed, prefilled, deferred or asked for.
+     *
+     * THE FORM LAW below asks for the input a flow is MISSING; it was never a
+     * licence to collect input that cannot be spent. `preflight` could not do
+     * this job: it reads the DECODED payload, so it can only run once the form
+     * has already collected one, and `/issue.new` on a Smithers Cloud origin
+     * opened Title / Body / "Open on GitHub" and named the door that writes
+     * this host's issues only on the submit, folded into a generic failure's
+     * Details. `unavailable` is the half of that answer which does not depend
+     * on the payload (entries/Declare.ts), so the slash line, a bare slash, a
+     * card button's named submit and the agent all reach the same sentence at
+     * the same moment — and none of them reaches a live form or a write.
+     *
+     * It is NOT the catalog's `explainAbsent`: these doors are declared here
+     * and the host serves a sibling that does the work, so the flow stays
+     * listed and says which door is its own, the way `issues.create` names
+     * `/issue.new` back on an install.
+     */
+    const unserved = await target.unavailable?.(invoker)
+    if (unserved !== undefined) return { status: "failed", error: unserved }
+    // Parse once before prerequisites: an explicit public repository is a
+    // read source even when the current URL could not be opened.
+    const parsed: Parsed = named === undefined
+      ? payloadFor(nameOf(target), args, target.metadata.grammar, actions.knownRepositories())
+      : { payload: named }
+    /*
+     * A named payload survives as text only where the text reads back as that
+     * payload. A deferred command and a confirmation button re-run the LINE
+     * through the grammar, and a form value carrying a binding (`from:x`, a
+     * trailing `owner/repo`) or a withheld value would otherwise run with a
+     * field the payload never held, or without one it did. `extra` names the
+     * fields the line may add: a confirmation's `confirmArgs` binds the
+     * implicit repository.
+     */
+    const lineCarries = (line: string | undefined, extra: ReadonlySet<string> = new Set()): boolean =>
+      named === undefined || carriesPayload(
+        payloadFor(nameOf(target), line, target.metadata.grammar, actions.knownRepositories()),
+        named,
+        extra
+      )
+    const repo = "payload" in parsed && typeof parsed.payload.repo === "string" ? parsed.payload.repo : undefined
+    const readsRepository = requirementIds(target.metadata, "payload" in parsed ? parsed.payload : {}).includes("repo-source")
+    const sourcePath = readsRepository
+      ? "payload" in parsed && typeof parsed.payload.path === "string" ? parsed.payload.path : ""
+      : undefined
+    const snapshot = actions.snapshot(repo, sourcePath)
+    // Repository prerequisites use the resolved payload target; display text
+    // cannot authorize a different repository.
+    const readiness = snapshot.repositoryReadiness
+    const pendingPayload = "payload" in parsed ? parsed.payload : !args?.trim() ? {} : undefined
+    if (readsRepository && readiness && pendingPayload !== undefined) {
+      if (invoker !== "user") return { status: "failed", error: readiness.phase !== "pending" ? readiness.error ?? "The repository catalog is unavailable." : "The repository is still loading. Try again when it is ready." }
+      const prefix = `/${readiness.repo}`
+      const globalPath = repo === undefined && sourcePath !== undefined && (sourcePath.toLowerCase() === prefix.toLowerCase() || sourcePath.toLowerCase().startsWith(`${prefix.toLowerCase()}/`))
+      await actions.deferRepositoryCommand(nameOf(target), {
+        ...pendingPayload,
+        ...(globalPath ? { path: sourcePath!.slice(prefix.length).replace(/^\/+/, "") } : {}),
+        repo: repo ?? readiness.repo
+      }, { refresh: readiness.phase !== "pending", scope: readiness.scope })
+      if (canPublish()) trace(invoker, name, args, startedAt, "deferred", "waits on repository catalog")
+      return { status: "executed", value: "Requested" }
+    }
+    const unmet = unmetRequirements(target.metadata, snapshot, flowRequirements, "payload" in parsed ? parsed.payload : {})[0]
+    if (unmet !== undefined) {
+      if (invoker === "agent") {
+        /*
+         * The machinery renders the missing sign-in step ITSELF — a model told
+         * about auth.prompt sometimes writes the name as prose instead of
+         * invoking it, and prose is not a button.
+         */
+        if (unmet.fulfill === "auth.prompt") {
+          acting.promptSignIn(false, { name: nameOf(target), args })
+          return {
+            status: "failed",
+            error: `${unmet.reason} — the sign-in step is already rendered in the chat; point the user at it`
+          }
+        }
+        return { status: "failed", error: `${unmet.reason} — /${nameOf(target)} waits on that` }
+      }
+      if (!lineCarries(args)) {
+        return { status: "failed", error: `${unmet.reason}. Submit the form again once that is done.` }
+      }
+      if (unmet.fulfill === undefined) {
+        /*
+         * A pure wait: the app is already settling this prerequisite, so there
+         * is nothing to ask and nothing to run. The command parks and the seam
+         * that settles the prerequisite resumes it — Chat answers now.
+         */
+        actions.deferCommand(nameOf(target), args ?? null, unmet.id)
+        if (canPublish()) trace(invoker, name, args, startedAt, "deferred", `waits on ${unmet.id}`)
+        return { status: "executed", value: "Requested" }
+      }
+      if (seen.has(unmet.fulfill)) {
+        return {
+          status: "failed",
+          error: `${unmet.reason} — and /${unmet.fulfill} could not fulfill it`
+        }
+      }
+      actions.deferCommand(nameOf(target), args ?? null, unmet.id)
+      // The deferral is its own trace; the fulfilling flow traces itself below.
+      if (canPublish()) trace(invoker, name, args, startedAt, "deferred", `waits on ${unmet.id}`)
+      return runAs(invoker, unmet.fulfill, undefined, new Set([...seen, unmet.fulfill]), undefined, undefined, undefined,
+        gesture?.presentationCurrent === undefined ? undefined : { name: unmet.fulfill, presentationCurrent: gesture.presentationCurrent, release: () => {} },
+        undefined, false, false, door)
+    }
+    // JSON can parse successfully while omitting a required schema field.
+    // Let the form collect it before the binding can produce an input error.
+    const fields = formFieldsFor(target.input, target.metadata.form, "payload" in parsed ? parsed.payload : {})
+    // A field the named input makes required (FormHints.requires) is asked for like a schema-required one.
+    const requires = "error" in parsed ? [] : target.metadata.form?.requires?.(parsed.payload) ?? []
+    if (ask || "error" in parsed || fields.some(field => (field.required || requires.includes(field.name)) && (field.kind === "write-only"
+      ? invoker !== "agent" && gesture?.hasWriteOnly?.(field.name) !== true
+      : parsed.payload[field.name] === undefined))) {
+      /*
+       * THE FORM LAW: a line without the flow's required input renders the
+       * flow's form — derived from its input schema, prefilled with what the
+       * line gave — and nothing else. No door answers with a usage sentence;
+       * the grammar's own reason stays the fallback only for a flow with no
+       * fields to ask for (none today). A submission that only asks takes
+       * this branch whatever it names, and this branch always returns: it
+       * never reaches the confirmation or the binding below.
+       */
+      // A form is a new transcript card: a maximized card must not hide it.
+      if (invoker === "user" && actions.snapshot().maximizedCardId != null && gesture?.presentationCurrent?.() !== false) actions.minimizeCard()
+      const rendered = acting.renderFlowForm({
+        name: nameOf(target),
+        args,
+        ...(named === undefined ? {} : { payload: named }),
+        via: invoker === "agent" ? "agent" : "user",
+        invocation: invocation === undefined ? undefined : { ...invocation, authorized: undefined, signal: undefined },
+        input: target.input,
+        ...(target.metadata.form === undefined ? {} : { hints: target.metadata.form })
+      })
+      if (rendered === undefined) return { status: "failed", error: "error" in parsed ? parsed.error : "Required input is missing" }
+      return { status: "form", flow: nameOf(target), cardId: rendered.cardId, fields: rendered.missing }
+    }
+    /*
+     * A `confirm` flow asked for by the model (or person when declared): consequential acts (land a
+     * PR, remove a credential, launch a harness) are invocable by the agent
+     * — every listed flow is — but never performed by it. The invocation
+     * posts a confirmation message whose button runs the flow as the user.
+     * The label may depend on the payload (registry.ts `confirm`).
+     */
+    const refusal = await target.preflight?.(parsed.payload, invoker)
+    if (refusal !== undefined) return { status: "failed", error: refusal }
+    const confirmation = invoker === "agent" || target.metadata.confirmPerson && !confirmed
+      ? confirmLabel(target.metadata, parsed.payload) : undefined
+    if (confirmation !== undefined) {
+      /*
+       * The line the button will run. A flow whose bare form resolves an
+       * implicit target binds it here (registry.ts `confirmArgs`), so the
+       * confirmation cannot drift to a different target while it waits.
+       */
+      const bound = target.metadata.confirmArgs?.(parsed.payload) ?? args
+      if (!lineCarries(bound, target.metadata.confirmArgs === undefined ? undefined : new Set(["repo"]))) {
+        return {
+          status: "failed",
+          error: `/${nameOf(target)} cannot be confirmed from this input: its command line would not run the same values`
+        }
+      }
+      acting.requestFlowConfirmation(nameOf(target), bound ?? null, confirmation, target.metadata.confirmQuestion)
+      trace(invoker, name, bound, startedAt, "confirm-requested", confirmation)
+      return {
+        status: "executed",
+        value:
+          `asked the user to confirm "/${nameOf(target)}${bound === undefined ? "" : ` ${bound}`}" — it runs only when they confirm, and nothing has happened yet`
+      }
+    }
+    if (invoker === "agent") {
+      const denied = await authorizeTarget()
+      if (denied !== undefined) return denied
+      // Bind this continuation explicitly. No shared mutable actor or authority
+      // can leak into another concurrent command, and card metadata grants nothing.
+      if (nameOf(target) === "form.submit") {
+        const continuation = invocation === undefined ? unscopedInvocation : { ...invocation, authorized: undefined }
+        target = formFlows(acting, continuation).find((candidate) => nameOf(candidate) === "form.submit")!
+      }
+    }
+    invocation?.signal?.throwIfAborted()
+    if (execution !== undefined) execution.invoked = true
+    const settledOutcome = await invoke(target, parsed.payload, invocation, gesture, door)
+    /*
+     * The agent reads a refusal as its next act: a handler that points the
+     * human at a slash the model cannot run (`/cloud.sign-in`) points the
+     * model at the prompt flow that renders that button instead.
+     */
+    const outcome: CommandOutcome = invoker === "agent" && settledOutcome.status === "failed"
+      ? { status: "failed", error: agentFailureText(settledOutcome.error) }
+      : settledOutcome
+    // A successful, user-invoked, LISTED flow feeds the slash menu's recency
+    // ranking; hidden id-scoped acts never rank.
+    if (canPublish() && outcome.status === "executed" && invoker === "user" && target.metadata.hidden !== true) {
+      actions.noteCommandRun(nameOf(target))
+    }
+    return outcome
+  }
+
+  const run: CommandRegistry["run"] = (name, args, source, originCardId) =>
+    runAs(source === "automatic" ? "system" : "user", name, args, new Set(), undefined, undefined, undefined, undefined, originCardId)
+
+  const callable = (): ReadonlyArray<FlowEntry> => entries().filter(modelInvocable)
+
+  const preload = async (name: string, args?: string): Promise<void> => {
+    const entry = find(name)
+    if (!entry) return
+    const parsed = payloadFor(nameOf(entry), args, entry.metadata.grammar, actions.knownRepositories())
+    if ("error" in parsed) return
+    // Speculation resolves the same target the run will: an explicit repository
+    // is never authorized by the selection behind it.
+    const repo = typeof parsed.payload.repo === "string" ? parsed.payload.repo : undefined
+    if (unmetRequirements(entry.metadata, actions.snapshot(repo), flowRequirements, parsed.payload).length) return
+    try { await Promise.all([preloadViewModule(nameOf(entry), parsed.payload), entry.prepare?.(parsed.payload)]) } catch { /* Speculation must never interrupt the user. */ }
+  }
+
+  const registry: CommandRegistry = {
+    preload,
+    all: items,
+    viewerCatalog: () => {
+      const state = actions.snapshot()
+      const catalog = items()
+      return state.viewerRole === undefined || !catalog.some(item => item.visibility !== undefined)
+        ? undefined : viewerAdmitted(state, catalog)
+    },
+    entries,
+    find,
+    explainAbsent,
+    state: actions.snapshot,
+    slashItems: (needle) => slashItems(actions.snapshot(), needle, listingItems()),
+    slashTree: (needle) => slashTree(actions.snapshot(), needle, listingItems()),
+    recommended: () => {
+      const name = recommendedNames(actions.snapshot())[0]
+      const command = name === undefined ? undefined : items().find((item) => item.name === name)
+      if (command === undefined) throw new Error("The recommended flow is not registered")
+      return command
+    },
+    run,
+    confirm: (id, revision) => {
+      const action = resolveConfirmation?.(id, revision)
+      if (!action) return Promise.resolve({ status: "failed", error: "Confirmation is stale." })
+      return runAs("user", action.name, action.args, new Set(), undefined, undefined, undefined, undefined, undefined, true)
+    },
+    // Preserve the native host's direct tool path. Form continuations
+    // still enter runForAgent below and must bring authority or fail closed.
+    runAsAgent: (name, args, httpCall) => runAs("agent", name, args, new Set(), undefined, undefined, httpCall),
+    executeForAgent: (call, discover) => executeAgentToolCall(registry, call, discover),
+    runForAgent: async (name, args, invocation, signal) => {
+      const clean = canonicalCommandName(name)
+      const early = lifecycle?.before?.({ name: clean, actor: "smithers", source: "command", invocation }, args)
+      if (early !== undefined) return early
+      return runAs("agent", clean, args, new Set(), {
+        ...(invocation ?? unscopedInvocation),
+        signal: signal ?? invocation?.signal
+      })
+    },
+    submit: async ({ name, payload, actor, display, invocation, gesture, originCardId, ask }) => {
+      const clean = canonicalCommandName(name)
+      if (actor === "user") {
+        const release = gesture?.release
+        if (release) gestureSubmissions.set(release, (gestureSubmissions.get(release) ?? 0) + 1)
+        try { return await runAs("user", clean, display, new Set(), invocation, payload, undefined, gesture, originCardId, false, ask) }
+        finally {
+          if (release) {
+            const remaining = (gestureSubmissions.get(release) ?? 1) - 1
+            if (remaining > 0) gestureSubmissions.set(release, remaining)
+            else { gestureSubmissions.delete(release); release.call(gesture) }
+          }
+        }
+      }
+      const early = lifecycle?.before?.({ name: clean, actor: "smithers", source: "form", invocation }, display, payload)
+      if (early !== undefined) return early
+      /*
+       * The agent's SCREEN door: a hosted turn's UI instruction, or a form or
+       * card control submitted as the agent. Nothing reads the returned value
+       * here, so a handler that only answers data has done nothing (#3878).
+       */
+      return runAs("agent", clean, display, new Set(), { ...(invocation ?? unscopedInvocation) }, payload, undefined, undefined, undefined, false, ask, "screen")
+    },
+    callable,
+    /*
+     * Callable vs disclosed mirrors the tool contract exactly: the agent may
+     * EXECUTE every model-invocable flow (hidden id-scoped actions like
+     * world.new-note included — hidden means unlisted to the human, not barred
+     * to the agent), while the DISCLOSED set the prompt's catalog block
+     * teaches follows the declaration's model-disclosure setting.
+     */
+    disclosed: () =>
+      callable()
+        .filter((entry) => disclosedToAgent(entry.metadata))
+        .map((entry) => entry.binding.descriptor),
+    toolSpecs: () => agentToolSpecs
+  }
+  return registry
+}
+
+/** Re-exported so surfaces can name the catalog record without reaching for registry.ts. */
+export type { CatalogItem } from "./registry"
+
+/** The visible catalog, for the "/flows" answer and the slash menu. */
+export const visibleItems = (registry: CommandRegistry): Array<CatalogItem> => visible(registry.all())
+
+/** A form value as the grammar compares it: whitespace-collapsed text, or JSON for a structure; blank is absent. */
+const comparable = (value: unknown): string | undefined => {
+  if (value === undefined || value === null || value === false) return undefined
+  const text = Array.isArray(value) ? value.map(String).join(" ")
+    : typeof value === "object" ? JSON.stringify(value) : String(value)
+  const collapsed = text.trim().split(/\s+/).join(" ")
+  return collapsed === "" ? undefined : collapsed
+}
+
+/**
+ * Whether a re-parsed line holds exactly the named payload: every field the
+ * payload holds, read back as itself, and no other field except those in
+ * `extra` the payload left unset.
+ *
+ * @internal
+ */
+export const carriesPayload = (
+  reread: Parsed,
+  named: Readonly<Record<string, unknown>>,
+  extra: ReadonlySet<string>
+): boolean => {
+  if ("error" in reread) return false
+  const fields = new Set([...Object.keys(named), ...Object.keys(reread.payload)])
+  for (const field of fields) {
+    const want = comparable(named[field])
+    const got = comparable(reread.payload[field])
+    if (want === got) continue
+    if (want === undefined && extra.has(field)) continue
+    return false
+  }
+  return true
+}

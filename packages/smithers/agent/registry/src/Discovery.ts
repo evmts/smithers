@@ -27,6 +27,7 @@ import {
   FlowDescriptor,
   type ModuleImport,
   Provenance,
+  retiredRootMessage,
   SchemaRefModule,
   SchemaRefNone,
   type Source,
@@ -206,6 +207,44 @@ const directoryIdentity = (info: FileSystem.File.Info, location: string): string
   `${info.dev}:${Option.getOrElse(info.ino, () => location)}`
 
 /**
+ * Whether a retired root still holds an entry file a scan would select.
+ *
+ * The walk skips what a path-named scan skips (`node_modules`, dot
+ * directories, reserved root directories), stops at the first entry, and
+ * stays within {@link maximumTraversalDepth}. Anything it cannot read counts
+ * as holding nothing: the probe only decides whether to warn.
+ */
+const holdsEntry = (
+  fs: FileSystem.FileSystem,
+  path: Path.Path,
+  directory: string,
+  depth: number
+): Effect.Effect<boolean> =>
+  Effect.gen(function*() {
+    if (depth > maximumTraversalDepth) return false
+    const listed = yield* Effect.result(fs.readDirectory(directory))
+    if (Result.isFailure(listed)) return false
+    const stats = yield* Effect.forEach(
+      [...listed.success].sort().filter((entry) =>
+        entry !== "node_modules" && !entry.startsWith(".") &&
+        !(depth === 0 && hostReservedRootDirectories.has(entry))
+      ),
+      (entry) => Effect.map(Effect.result(fs.stat(path.join(directory, entry))), (info) => [entry, info] as const),
+      { concurrency: statConcurrency }
+    )
+    const children: Array<string> = []
+    for (const [entry, info] of stats) {
+      if (Result.isFailure(info)) continue
+      if (info.success.type === "File" && (entryPrecedence as ReadonlyArray<string>).includes(entry)) return true
+      if (info.success.type === "Directory") children.push(path.join(directory, entry))
+    }
+    for (const child of children) {
+      if (yield* holdsEntry(fs, path, child, depth + 1)) return true
+    }
+    return false
+  })
+
+/**
  * Creates a discovery service from portable file-system and path services.
  *
  * @category constructors
@@ -254,6 +293,10 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
           }
           return true
         })
+
+        if (source.retiredRoot !== undefined && (yield* holdsEntry(fs, path, source.retiredRoot, 0))) {
+          warnings.push(warning("retired_root", source.retiredRoot, retiredRootMessage))
+        }
 
         const exists = yield* fs.exists(source.root).pipe(
           Effect.mapError((cause) =>

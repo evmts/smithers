@@ -72,10 +72,10 @@ export const evidence = (outcomes: Snapshot["outcomes"]) => {
  * configuration; verification and review remain engine launches.
  */
 const lintPrompt =
-  "Change flows/todo/flow.ts to require lint as a fast required check for every planned change before review; start from the built-in composition when no override exists."
+  "Change .smithers/flows/todo/flow.ts to require lint as a fast required check for every planned change before review; start from the built-in composition when no override exists."
 const lintDiff = [
-  "--- a/flows/todo/flow.ts",
-  "+++ b/flows/todo/flow.ts",
+  "--- a/.smithers/flows/todo/flow.ts",
+  "+++ b/.smithers/flows/todo/flow.ts",
   "@@ -34,1 +34,4 @@",
   "-      Node.andThen(Request.call(input)),",
   "+      Node.andThen(Request.call({",

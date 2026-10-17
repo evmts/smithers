@@ -135,8 +135,8 @@ const withProject = <A, E>(
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const root = yield* fs.makeTempDirectoryScoped({ directory: modulesRoot, prefix: ".refresh-" })
-    yield* fs.makeDirectory(`${root}/flows/early`, { recursive: true })
-    yield* fs.writeFileString(`${root}/flows/early/flow.ts`, declaration("early", chained))
+    yield* fs.makeDirectory(`${root}/.smithers/flows/early`, { recursive: true })
+    yield* fs.writeFileString(`${root}/.smithers/flows/early/flow.ts`, declaration("early", chained))
     return yield* use(root).pipe(
       Effect.provide(
         Executable.layer({ delegates: [Delegate, Other] }).pipe(
@@ -161,8 +161,8 @@ describe("rebuilding one catalog entry without restarting the host", () => {
         expect(catalog.executables.map((entry) => entry.descriptor.name)).toEqual(["early"])
         expect(registered).toEqual(["system/human-task", "system/sleep", "system/wait-for", "early", "refresh/early"])
 
-        yield* fs.makeDirectory(`${root}/flows/late`, { recursive: true })
-        yield* fs.writeFileString(`${root}/flows/late/flow.ts`, declaration("late", chained))
+        yield* fs.makeDirectory(`${root}/.smithers/flows/late`, { recursive: true })
+        yield* fs.writeFileString(`${root}/.smithers/flows/late/flow.ts`, declaration("late", chained))
         // Nothing has looked at the disk yet, so the snapshot is unchanged.
         expect(catalog.executables.map((entry) => entry.descriptor.name)).toEqual(["early"])
 
@@ -204,7 +204,7 @@ describe("rebuilding one catalog entry without restarting the host", () => {
         // edit moves is the body, and only new bytes can show it moved.
         expect(before.delegate).toBeUndefined()
 
-        yield* fs.writeFileString(`${root}/flows/early/flow.ts`, declaration("early", single))
+        yield* fs.writeFileString(`${root}/.smithers/flows/early/flow.ts`, declaration("early", single))
         expect((yield* refresh.flow("early"))._tag).toBe("Registered")
 
         const after = catalog.executables.find((entry) => entry.descriptor.name === "early")!
@@ -225,13 +225,13 @@ describe("rebuilding one catalog entry without restarting the host", () => {
         const fs = yield* FileSystem.FileSystem
         const catalog = yield* Executable.Catalog
         const refresh = yield* Executable.Refresh
-        yield* fs.makeDirectory(`${root}/flows/moved`, { recursive: true })
-        yield* fs.writeFileString(`${root}/flows/moved/flow.mdx`, markdown("refresh/Delegate"))
+        yield* fs.makeDirectory(`${root}/.smithers/flows/moved`, { recursive: true })
+        yield* fs.writeFileString(`${root}/.smithers/flows/moved/flow.mdx`, markdown("refresh/Delegate"))
         expect((yield* refresh.flow("moved"))._tag).toBe("Registered")
         const before = catalog.executables.find((entry) => entry.descriptor.name === "moved")!
         expect(before.delegate).toBe("refresh/Delegate")
 
-        yield* fs.writeFileString(`${root}/flows/moved/flow.mdx`, markdown("refresh/Other"))
+        yield* fs.writeFileString(`${root}/.smithers/flows/moved/flow.mdx`, markdown("refresh/Other"))
         expect((yield* refresh.flow("moved"))._tag).toBe("Registered")
 
         const after = catalog.executables.find((entry) => entry.descriptor.name === "moved")!
@@ -252,8 +252,8 @@ describe("rebuilding one catalog entry without restarting the host", () => {
         const fs = yield* FileSystem.FileSystem
         const catalog = yield* Executable.Catalog
         const refresh = yield* Executable.Refresh
-        yield* fs.makeDirectory(`${root}/flows/orphan`, { recursive: true })
-        yield* fs.writeFileString(`${root}/flows/orphan/flow.mdx`, markdown("refresh/Nobody"))
+        yield* fs.makeDirectory(`${root}/.smithers/flows/orphan`, { recursive: true })
+        yield* fs.writeFileString(`${root}/.smithers/flows/orphan/flow.mdx`, markdown("refresh/Nobody"))
 
         const outcome = yield* refresh.flow("orphan")
         expect(outcome._tag).toBe("Refused")
@@ -271,13 +271,13 @@ describe("rebuilding one catalog entry without restarting the host", () => {
     return Effect.gen(function*() {
       const fs = yield* FileSystem.FileSystem
       const root = yield* fs.makeTempDirectoryScoped({ directory: modulesRoot, prefix: ".refresh-" })
-      yield* fs.makeDirectory(`${root}/flows/early`, { recursive: true })
-      yield* fs.writeFileString(`${root}/flows/early/flow.ts`, declaration("early", chained))
+      yield* fs.makeDirectory(`${root}/.smithers/flows/early`, { recursive: true })
+      yield* fs.writeFileString(`${root}/.smithers/flows/early/flow.ts`, declaration("early", chained))
       yield* Effect.gen(function*() {
         const catalog = yield* Executable.Catalog
         const refresh = yield* Executable.Refresh
         const before = catalog.executables.find((entry) => entry.descriptor.name === "early")!
-        yield* fs.writeFileString(`${root}/flows/early/flow.ts`, declaration("early", single))
+        yield* fs.writeFileString(`${root}/.smithers/flows/early/flow.ts`, declaration("early", single))
 
         // A host serving part of its catalog out of its own measured bundle
         // answers `false` for those entries: the working tree is not where
@@ -307,14 +307,14 @@ describe("rebuilding one catalog entry without restarting the host", () => {
           const fs = yield* FileSystem.FileSystem
           const catalog = yield* Executable.Catalog
           const refresh = yield* Executable.Refresh
-          yield* fs.makeDirectory(`${root}/flows/other`, { recursive: true })
-          yield* fs.writeFileString(`${root}/flows/other/flow.ts`, declaration("other", single))
+          yield* fs.makeDirectory(`${root}/.smithers/flows/other`, { recursive: true })
+          yield* fs.writeFileString(`${root}/.smithers/flows/other/flow.ts`, declaration("other", single))
           expect((yield* refresh.flow("other"))._tag).toBe("Registered")
           const other = catalog.executables.find((entry) => entry.descriptor.name === "other")!
 
           // A refusal records why and keeps the entry the host was serving.
           const served = catalog.executables.find((entry) => entry.descriptor.name === "early")!
-          yield* fs.writeFileString(`${root}/flows/early/flow.ts`, halfWritten("early"))
+          yield* fs.writeFileString(`${root}/.smithers/flows/early/flow.ts`, halfWritten("early"))
           const refusal = yield* refresh.flow("early")
           expect(refusal._tag).toBe("Refused")
           if (refusal._tag !== "Refused") return
@@ -324,14 +324,14 @@ describe("rebuilding one catalog entry without restarting the host", () => {
           expect(catalog.refused.map((failure) => failure.flow)).toEqual(["early"])
 
           // Repairing the file puts it back and drops the refusal with it.
-          yield* fs.writeFileString(`${root}/flows/early/flow.ts`, declaration("early", chained))
+          yield* fs.writeFileString(`${root}/.smithers/flows/early/flow.ts`, declaration("early", chained))
           expect((yield* refresh.flow("early"))._tag).toBe("Registered")
           expect(catalog.refused).toEqual([])
           expect(catalog.executables.map((entry) => entry.descriptor.name).sort()).toEqual(["early", "other"])
 
           // And rebuilding it again replaces only itself: every other entry is
           // the same object the host was already serving.
-          yield* fs.writeFileString(`${root}/flows/early/flow.ts`, declaration("early", single))
+          yield* fs.writeFileString(`${root}/.smithers/flows/early/flow.ts`, declaration("early", single))
           expect((yield* refresh.flow("early"))._tag).toBe("Registered")
           expect(catalog.executables.find((entry) => entry.descriptor.name === "other")).toBe(other)
           expect(drafts(catalog.executables.find((entry) => entry.descriptor.name === "early")!.flow))
@@ -352,7 +352,7 @@ describe("rebuilding one catalog entry without restarting the host", () => {
         const first = catalog.executables.find((entry) => entry.descriptor.name === "early")!
         const digest = first.descriptor.body.contentDigest
 
-        yield* fs.writeFileString(`${root}/flows/early/flow.ts`, halfWritten("early"))
+        yield* fs.writeFileString(`${root}/.smithers/flows/early/flow.ts`, halfWritten("early"))
         const outcome = yield* refresh.flow("early")
         expect(outcome._tag).toBe("Refused")
         if (outcome._tag !== "Refused") return
@@ -379,7 +379,7 @@ describe("rebuilding one catalog entry without restarting the host", () => {
         const fs = yield* FileSystem.FileSystem
         const catalog = yield* Executable.Catalog
         const refresh = yield* Executable.Refresh
-        yield* fs.remove(`${root}/flows/early`, { recursive: true })
+        yield* fs.remove(`${root}/.smithers/flows/early`, { recursive: true })
 
         expect((yield* refresh.flow("early"))._tag).toBe("Removed")
         expect(catalog.executables).toEqual([])

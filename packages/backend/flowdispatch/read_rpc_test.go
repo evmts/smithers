@@ -119,9 +119,9 @@ func TestCallRPCRefusesTheTodoComposition(t *testing.T) {
 		refusal            error
 	}{
 		{"Plan", `{"flowId":"todo","input":{}}`, ErrTodoOutsideStack},
-		{"Plan", `{"flowId":"flows/todo/flow.ts","input":{}}`, ErrTodoOutsideStack},
-		{"Plan", `{"flowId":"./flows/todo/flow.ts","input":{}}`, ErrTodoOutsideStack},
-		{"Plan", `{"flowId":"flows/todo/","input":{}}`, ErrTodoOutsideStack},
+		{"Plan", `{"flowId":".smithers/flows/todo/flow.ts","input":{}}`, ErrTodoOutsideStack},
+		{"Plan", `{"flowId":"./.smithers/flows/todo/flow.ts","input":{}}`, ErrTodoOutsideStack},
+		{"Plan", `{"flowId":".smithers/flows/todo/","input":{}}`, ErrTodoOutsideStack},
 		{"Plan", `{"flowId":"todo","flowid":"coding/dispatch","input":{}}`, ErrTodoOutsideStack},
 		{"Plan", `{"flowId":"coding/dispatch","flowId":"todo","input":{}}`, ErrRelayPayload},
 		{"Plan", `{"flowid":"todo","input":{}}`, ErrRelayPayload},

@@ -44,14 +44,14 @@ export const quickstart = (): Promise<{
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const root = yield* fs.makeTempDirectoryScoped({ prefix: "registry-quickstart-" })
-    yield* fs.makeDirectory(`${root}/flows/review`, { recursive: true })
-    yield* fs.makeDirectory(`${root}/flows/draft`, { recursive: true })
-    yield* fs.writeFileString(`${root}/flows/review/flow.mdx`, review)
-    yield* fs.writeFileString(`${root}/flows/draft/flow.mdx`, draft)
+    yield* fs.makeDirectory(`${root}/.smithers/flows/review`, { recursive: true })
+    yield* fs.makeDirectory(`${root}/.smithers/flows/draft`, { recursive: true })
+    yield* fs.writeFileString(`${root}/.smithers/flows/review/flow.mdx`, review)
+    yield* fs.writeFileString(`${root}/.smithers/flows/draft/flow.mdx`, draft)
 
     // One source: the project's own flows, named by their path below the root.
     const registry = Registry.layer({
-      sources: [{ source: "project", root: `${root}/flows`, naming: "path" }]
+      sources: [{ source: "project", root: `${root}/.smithers/flows`, naming: "path" }]
     }).pipe(Layer.provide([discovery, platform]))
 
     return yield* Effect.gen(function*() {

@@ -103,8 +103,8 @@ describe("module round execution authority", () => {
     const accounting: Array<{ stage: string; tokens: number; decision?: string }> = []
     let requests = 0
     try {
-      await mkdir(join(root, "flows", "authority"), { recursive: true })
-      await writeFile(join(root, "flows", "authority", "flow.ts"), source(capabilities))
+      await mkdir(join(root, ".smithers", "flows", "authority"), { recursive: true })
+      await writeFile(join(root, ".smithers", "flows", "authority", "flow.ts"), source(capabilities))
       agent.disableNetConnect()
       agent.get("https://api.openai.com").intercept({ method: "POST", path: "/v1/responses" }).reply(200, () => {
         requests++

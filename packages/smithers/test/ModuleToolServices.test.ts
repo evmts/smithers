@@ -63,12 +63,12 @@ describe("module AgentAction tool services", () => {
     const agent = new MockAgent()
     const bodies: Array<string> = []
     try {
-      await mkdir(join(root, "flows", "tools"), { recursive: true })
+      await mkdir(join(root, ".smithers", "flows", "tools"), { recursive: true })
       await mkdir(join(root, "allowed"))
       await writeFile(join(root, "allowed", "note.txt"), "approved-note\n")
       const capabilities = ["fs:read:/**", "proc:spawn:*", "model:call:*"]
       await writeFile(
-        join(root, "flows", "tools", "flow.ts"),
+        join(root, ".smithers", "flows", "tools", "flow.ts"),
         `
 import { Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"

@@ -1,0 +1,6 @@
+---
+description: Lint every target the Change's written files affect; a known red does not fail it.
+flows: [coding/CommandCheck]
+capabilities: ["fs:read:**", "proc:spawn:sh flows/checks/coding-check.sh *"]
+---
+{"argv":["sh","flows/checks/coding-check.sh","affected","lint","//..."],"cwd":".","timeoutMs":1800000}

@@ -41,8 +41,8 @@ describe("native body CLI refusal", () => {
         mkdtempSync(join(process.env.SMITHERS_TEST_SCRATCH ?? tmpdir(), "smithers-native-body-"))
       )
       try {
-        mkdirSync(join(cwd, "flows/native"), { recursive: true })
-        writeFileSync(join(cwd, "flows/native/flow.ts"), source)
+        mkdirSync(join(cwd, ".smithers/flows/native"), { recursive: true })
+        writeFileSync(join(cwd, ".smithers/flows/native/flow.ts"), source)
         // A compact missing absolute path exposes both credentials before the diagnostic field bound.
         // The first credential remains visible; nested segments move the second beyond the field bound.
         const missing = length === "short"

@@ -65,7 +65,7 @@ describe("package manifest and README", () => {
     // `docs/*.md` shipped the four top-level pages and none of the `guides/`
     // and `concepts/` pages they link to, so the tarball carried a docs tree
     // whose own links were broken. Every public package now ships its whole
-    // `docs/` tree (`scripts/package-docs.test.mjs`), so those links resolve.
+    // `docs/` tree (`flows/docs-sync/package-docs.test.mjs`), so those links resolve.
     expect(manifest.files.filter((pattern) => pattern.startsWith("docs"))).toEqual(["docs/"])
     expect(manifest.files).toContain("README.md")
   })

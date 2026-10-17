@@ -1,0 +1,915 @@
+{
+  "name": "@smthrs/cli",
+  "type": "module",
+  "version": "1.0.0-rc.12",
+  "license": "MIT",
+  "smthrs": {
+    "group": "agent",
+    "privateEffectAdapters": [
+      "@effect/platform-bun",
+      "@effect/platform-node",
+      "@effect/platform-node-shared"
+    ]
+  },
+  "description": "Node command-line interface for Smithers control",
+  "homepage": "https://github.com/smithersai/smithers",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/smithers"
+  },
+  "bugs": {
+    "url": "https://github.com/smithersai/smithers/issues"
+  },
+  "tags": [
+    "typescript",
+    "effect",
+    "cli",
+    "flow"
+  ],
+  "keywords": [
+    "typescript",
+    "effect",
+    "cli",
+    "flow"
+  ],
+  "engines": {
+    "node": ">=26.4.0"
+  },
+  "sideEffects": [
+    "./src/bin.ts",
+    "./src/cli/LegacyBin.ts",
+    "./src/Version.ts",
+    "./dist/esm/bin.js",
+    "./dist/esm/cli/LegacyBin.js",
+    "./dist/esm/Version.js",
+    "./dist/cjs/bin.js",
+    "./dist/cjs/cli/LegacyBin.js",
+    "./dist/cjs/Version.js"
+  ],
+  "bin": {
+    "smithers": "./bin/smithers.mjs",
+    "smthrs": "./bin/smithers.mjs"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null,
+    "./*/index": null,
+    "./McpServer": null,
+    "./Agents": "./src/Agents.ts",
+    "./Application": "./src/Application.ts",
+    "./Audience": "./src/Audience.ts",
+    "./Bug": "./src/Bug.ts",
+    "./BunControl": "./src/BunControl.ts",
+    "./ClaudeMirror": "./src/ClaudeMirror.ts",
+    "./Cli": "./src/Cli.ts",
+    "./CliError": "./src/CliError.ts",
+    "./CodexAuth": null,
+    "./Command": "./src/Command.ts",
+    "./Detached": "./src/Detached.ts",
+    "./Doctor": "./src/Doctor.ts",
+    "./Environment": "./src/Environment.ts",
+    "./ExecutionEnvironment": "./src/ExecutionEnvironment.ts",
+    "./ExecutorOwnership": "./src/ExecutorOwnership.ts",
+    "./Forensics": "./src/Forensics.ts",
+    "./Gc": "./src/Gc.ts",
+    "./Init": "./src/Init.ts",
+    "./Legacy": "./src/Legacy.ts",
+    "./NodeControl": "./src/NodeControl.ts",
+    "./NodeOutput": "./src/NodeOutput.ts",
+    "./Output": "./src/Output.ts",
+    "./Project": "./src/Project.ts",
+    "./Providers": "./src/Providers.ts",
+    "./CloudSession": "./src/CloudSession.ts",
+    "./Serve": "./src/Serve.ts",
+    "./Suggest": "./src/Suggest.ts",
+    "./Ui": "./src/Ui.ts",
+    "./Unsupported": "./src/Unsupported.ts",
+    "./Update": "./src/Update.ts",
+    "./Verb": "./src/Verb.ts",
+    "./Version": "./src/Version.ts",
+    "./bin": "./src/bin.ts",
+    "./cli/Arguments": "./src/cli/Arguments.ts",
+    "./cli/Compatibility": "./src/cli/Compatibility.ts",
+    "./cli/ControlBridge": "./src/cli/ControlBridge.ts",
+    "./cli/ControlCommands": "./src/cli/ControlCommands.ts",
+    "./cli/Entry": "./src/cli/Entry.ts",
+    "./cli/EnvironmentCommands": "./src/cli/EnvironmentCommands.ts",
+    "./cli/Generate": "./src/cli/Generate.ts",
+    "./cli/HistoryCommands": "./src/cli/HistoryCommands.ts",
+    "./cli/LegacyBin": "./src/cli/LegacyBin.ts",
+    "./cli/Presentation": "./src/cli/Presentation.ts",
+    "./cli/RunProgress": "./src/cli/RunProgress.ts",
+    "./cli/TokenCommands": "./src/cli/TokenCommands.ts",
+    "./evaluation/EvalCli": "./src/evaluation/EvalCli.ts",
+    "./evaluation/Evaluation": "./src/evaluation/Evaluation.ts",
+    "./history/History": "./src/history/History.ts",
+    "./history/ExecutionTarget": "./src/history/ExecutionTarget.ts",
+    "./history/Workspace": "./src/history/Workspace.ts",
+    "./index": "./src/index.ts",
+    "./operator/Credentials": "./src/operator/Credentials.ts",
+    "./operator/Integrations": "./src/operator/Integrations.ts",
+    "./operator/Memory": "./src/operator/Memory.ts",
+    "./operator/Store": "./src/operator/Store.ts",
+    "./operator/TriggerPlans": "./src/operator/TriggerPlans.ts",
+    "./operator/Triggers": "./src/operator/Triggers.ts",
+    "./suggest/Brief": "./src/suggest/Brief.ts",
+    "./suggest/Checklist": "./src/suggest/Checklist.ts",
+    "./suggest/SuggestFlow": "./src/suggest/SuggestFlow.ts",
+    "./CloudSandbox": "./src/CloudSandbox.ts",
+    "./tui-native": {
+      "types": "./vendor/opentui-native/runtime.d.ts",
+      "bun": "./vendor/opentui-native/runtime.bun.mjs",
+      "default": "./vendor/opentui-native/runtime.node.mjs"
+    },
+    "./CatalogRequest": "./src/CatalogRequest.ts",
+    "./Catalog": "./src/Catalog.ts",
+    "./BackendCommands": "./src/BackendCommands.ts",
+    "./IssueTodoDraft": "./src/IssueTodoDraft.ts"
+  },
+  "files": [
+    "bin/**/*.mjs",
+    "src/**/*.ts",
+    "skills/**",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/package.json",
+    "dist/**/catalog.mvp.json",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "vendor/opentui-native/**",
+    "dist/vendor/**",
+    "docs/"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next",
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./internal/*": null,
+      "./*/index": null,
+      "./McpServer": null,
+      "./Agents": {
+        "import": {
+          "types": "./dist/esm/Agents.d.ts",
+          "default": "./dist/esm/Agents.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Agents.d.ts",
+          "default": "./dist/cjs/Agents.js"
+        }
+      },
+      "./Application": {
+        "import": {
+          "types": "./dist/esm/Application.d.ts",
+          "default": "./dist/esm/Application.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Application.d.ts",
+          "default": "./dist/cjs/Application.js"
+        }
+      },
+      "./Audience": {
+        "import": {
+          "types": "./dist/esm/Audience.d.ts",
+          "default": "./dist/esm/Audience.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Audience.d.ts",
+          "default": "./dist/cjs/Audience.js"
+        }
+      },
+      "./Bug": {
+        "import": {
+          "types": "./dist/esm/Bug.d.ts",
+          "default": "./dist/esm/Bug.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Bug.d.ts",
+          "default": "./dist/cjs/Bug.js"
+        }
+      },
+      "./BunControl": {
+        "import": {
+          "types": "./dist/esm/BunControl.d.ts",
+          "default": "./dist/esm/BunControl.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BunControl.d.ts",
+          "default": "./dist/cjs/BunControl.js"
+        }
+      },
+      "./ClaudeMirror": {
+        "import": {
+          "types": "./dist/esm/ClaudeMirror.d.ts",
+          "default": "./dist/esm/ClaudeMirror.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ClaudeMirror.d.ts",
+          "default": "./dist/cjs/ClaudeMirror.js"
+        }
+      },
+      "./Cli": {
+        "import": {
+          "types": "./dist/esm/Cli.d.ts",
+          "default": "./dist/esm/Cli.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Cli.d.ts",
+          "default": "./dist/cjs/Cli.js"
+        }
+      },
+      "./CliError": {
+        "import": {
+          "types": "./dist/esm/CliError.d.ts",
+          "default": "./dist/esm/CliError.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CliError.d.ts",
+          "default": "./dist/cjs/CliError.js"
+        }
+      },
+      "./CodexAuth": null,
+      "./Command": {
+        "import": {
+          "types": "./dist/esm/Command.d.ts",
+          "default": "./dist/esm/Command.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Command.d.ts",
+          "default": "./dist/cjs/Command.js"
+        }
+      },
+      "./Detached": {
+        "import": {
+          "types": "./dist/esm/Detached.d.ts",
+          "default": "./dist/esm/Detached.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Detached.d.ts",
+          "default": "./dist/cjs/Detached.js"
+        }
+      },
+      "./Doctor": {
+        "import": {
+          "types": "./dist/esm/Doctor.d.ts",
+          "default": "./dist/esm/Doctor.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Doctor.d.ts",
+          "default": "./dist/cjs/Doctor.js"
+        }
+      },
+      "./Environment": {
+        "import": {
+          "types": "./dist/esm/Environment.d.ts",
+          "default": "./dist/esm/Environment.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Environment.d.ts",
+          "default": "./dist/cjs/Environment.js"
+        }
+      },
+      "./ExecutorOwnership": {
+        "import": {
+          "types": "./dist/esm/ExecutorOwnership.d.ts",
+          "default": "./dist/esm/ExecutorOwnership.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ExecutorOwnership.d.ts",
+          "default": "./dist/cjs/ExecutorOwnership.js"
+        }
+      },
+      "./Forensics": {
+        "import": {
+          "types": "./dist/esm/Forensics.d.ts",
+          "default": "./dist/esm/Forensics.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Forensics.d.ts",
+          "default": "./dist/cjs/Forensics.js"
+        }
+      },
+      "./Gc": {
+        "import": {
+          "types": "./dist/esm/Gc.d.ts",
+          "default": "./dist/esm/Gc.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Gc.d.ts",
+          "default": "./dist/cjs/Gc.js"
+        }
+      },
+      "./Init": {
+        "import": {
+          "types": "./dist/esm/Init.d.ts",
+          "default": "./dist/esm/Init.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Init.d.ts",
+          "default": "./dist/cjs/Init.js"
+        }
+      },
+      "./Legacy": {
+        "import": {
+          "types": "./dist/esm/Legacy.d.ts",
+          "default": "./dist/esm/Legacy.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Legacy.d.ts",
+          "default": "./dist/cjs/Legacy.js"
+        }
+      },
+      "./NodeControl": {
+        "import": {
+          "types": "./dist/esm/NodeControl.d.ts",
+          "default": "./dist/esm/NodeControl.js"
+        },
+        "require": {
+          "types": "./dist/cjs/NodeControl.d.ts",
+          "default": "./dist/cjs/NodeControl.js"
+        }
+      },
+      "./NodeOutput": {
+        "import": {
+          "types": "./dist/esm/NodeOutput.d.ts",
+          "default": "./dist/esm/NodeOutput.js"
+        },
+        "require": {
+          "types": "./dist/cjs/NodeOutput.d.ts",
+          "default": "./dist/cjs/NodeOutput.js"
+        }
+      },
+      "./Output": {
+        "import": {
+          "types": "./dist/esm/Output.d.ts",
+          "default": "./dist/esm/Output.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Output.d.ts",
+          "default": "./dist/cjs/Output.js"
+        }
+      },
+      "./Project": {
+        "import": {
+          "types": "./dist/esm/Project.d.ts",
+          "default": "./dist/esm/Project.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Project.d.ts",
+          "default": "./dist/cjs/Project.js"
+        }
+      },
+      "./Providers": {
+        "import": {
+          "types": "./dist/esm/Providers.d.ts",
+          "default": "./dist/esm/Providers.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Providers.d.ts",
+          "default": "./dist/cjs/Providers.js"
+        }
+      },
+      "./CloudSession": {
+        "import": {
+          "types": "./dist/esm/CloudSession.d.ts",
+          "default": "./dist/esm/CloudSession.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CloudSession.d.ts",
+          "default": "./dist/cjs/CloudSession.js"
+        }
+      },
+      "./Serve": {
+        "import": {
+          "types": "./dist/esm/Serve.d.ts",
+          "default": "./dist/esm/Serve.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Serve.d.ts",
+          "default": "./dist/cjs/Serve.js"
+        }
+      },
+      "./Suggest": {
+        "import": {
+          "types": "./dist/esm/Suggest.d.ts",
+          "default": "./dist/esm/Suggest.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Suggest.d.ts",
+          "default": "./dist/cjs/Suggest.js"
+        }
+      },
+      "./Ui": {
+        "import": {
+          "types": "./dist/esm/Ui.d.ts",
+          "default": "./dist/esm/Ui.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Ui.d.ts",
+          "default": "./dist/cjs/Ui.js"
+        }
+      },
+      "./Unsupported": {
+        "import": {
+          "types": "./dist/esm/Unsupported.d.ts",
+          "default": "./dist/esm/Unsupported.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Unsupported.d.ts",
+          "default": "./dist/cjs/Unsupported.js"
+        }
+      },
+      "./Update": {
+        "import": {
+          "types": "./dist/esm/Update.d.ts",
+          "default": "./dist/esm/Update.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Update.d.ts",
+          "default": "./dist/cjs/Update.js"
+        }
+      },
+      "./Verb": {
+        "import": {
+          "types": "./dist/esm/Verb.d.ts",
+          "default": "./dist/esm/Verb.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Verb.d.ts",
+          "default": "./dist/cjs/Verb.js"
+        }
+      },
+      "./Version": {
+        "import": {
+          "types": "./dist/esm/Version.d.ts",
+          "default": "./dist/esm/Version.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Version.d.ts",
+          "default": "./dist/cjs/Version.js"
+        }
+      },
+      "./bin": {
+        "import": {
+          "types": "./dist/esm/bin.d.ts",
+          "default": "./dist/esm/bin.js"
+        },
+        "require": {
+          "types": "./dist/cjs/bin.d.ts",
+          "default": "./dist/cjs/bin.js"
+        }
+      },
+      "./cli/Arguments": {
+        "import": {
+          "types": "./dist/esm/cli/Arguments.d.ts",
+          "default": "./dist/esm/cli/Arguments.js"
+        },
+        "require": {
+          "types": "./dist/cjs/cli/Arguments.d.ts",
+          "default": "./dist/cjs/cli/Arguments.js"
+        }
+      },
+      "./cli/Compatibility": {
+        "import": {
+          "types": "./dist/esm/cli/Compatibility.d.ts",
+          "default": "./dist/esm/cli/Compatibility.js"
+        },
+        "require": {
+          "types": "./dist/cjs/cli/Compatibility.d.ts",
+          "default": "./dist/cjs/cli/Compatibility.js"
+        }
+      },
+      "./cli/ControlBridge": {
+        "import": {
+          "types": "./dist/esm/cli/ControlBridge.d.ts",
+          "default": "./dist/esm/cli/ControlBridge.js"
+        },
+        "require": {
+          "types": "./dist/cjs/cli/ControlBridge.d.ts",
+          "default": "./dist/cjs/cli/ControlBridge.js"
+        }
+      },
+      "./cli/ControlCommands": {
+        "import": {
+          "types": "./dist/esm/cli/ControlCommands.d.ts",
+          "default": "./dist/esm/cli/ControlCommands.js"
+        },
+        "require": {
+          "types": "./dist/cjs/cli/ControlCommands.d.ts",
+          "default": "./dist/cjs/cli/ControlCommands.js"
+        }
+      },
+      "./cli/Entry": {
+        "import": {
+          "types": "./dist/esm/cli/Entry.d.ts",
+          "default": "./dist/esm/cli/Entry.js"
+        },
+        "require": {
+          "types": "./dist/cjs/cli/Entry.d.ts",
+          "default": "./dist/cjs/cli/Entry.js"
+        }
+      },
+      "./cli/Generate": {
+        "import": {
+          "types": "./dist/esm/cli/Generate.d.ts",
+          "default": "./dist/esm/cli/Generate.js"
+        },
+        "require": {
+          "types": "./dist/cjs/cli/Generate.d.ts",
+          "default": "./dist/cjs/cli/Generate.js"
+        }
+      },
+      "./cli/HistoryCommands": {
+        "import": {
+          "types": "./dist/esm/cli/HistoryCommands.d.ts",
+          "default": "./dist/esm/cli/HistoryCommands.js"
+        },
+        "require": {
+          "types": "./dist/cjs/cli/HistoryCommands.d.ts",
+          "default": "./dist/cjs/cli/HistoryCommands.js"
+        }
+      },
+      "./cli/LegacyBin": {
+        "import": {
+          "types": "./dist/esm/cli/LegacyBin.d.ts",
+          "default": "./dist/esm/cli/LegacyBin.js"
+        },
+        "require": {
+          "types": "./dist/cjs/cli/LegacyBin.d.ts",
+          "default": "./dist/cjs/cli/LegacyBin.js"
+        }
+      },
+      "./cli/Presentation": {
+        "import": {
+          "types": "./dist/esm/cli/Presentation.d.ts",
+          "default": "./dist/esm/cli/Presentation.js"
+        },
+        "require": {
+          "types": "./dist/cjs/cli/Presentation.d.ts",
+          "default": "./dist/cjs/cli/Presentation.js"
+        }
+      },
+      "./cli/RunProgress": {
+        "import": {
+          "types": "./dist/esm/cli/RunProgress.d.ts",
+          "default": "./dist/esm/cli/RunProgress.js"
+        },
+        "require": {
+          "types": "./dist/cjs/cli/RunProgress.d.ts",
+          "default": "./dist/cjs/cli/RunProgress.js"
+        }
+      },
+      "./cli/TokenCommands": {
+        "import": {
+          "types": "./dist/esm/cli/TokenCommands.d.ts",
+          "default": "./dist/esm/cli/TokenCommands.js"
+        },
+        "require": {
+          "types": "./dist/cjs/cli/TokenCommands.d.ts",
+          "default": "./dist/cjs/cli/TokenCommands.js"
+        }
+      },
+      "./evaluation/EvalCli": {
+        "import": {
+          "types": "./dist/esm/evaluation/EvalCli.d.ts",
+          "default": "./dist/esm/evaluation/EvalCli.js"
+        },
+        "require": {
+          "types": "./dist/cjs/evaluation/EvalCli.d.ts",
+          "default": "./dist/cjs/evaluation/EvalCli.js"
+        }
+      },
+      "./evaluation/Evaluation": {
+        "import": {
+          "types": "./dist/esm/evaluation/Evaluation.d.ts",
+          "default": "./dist/esm/evaluation/Evaluation.js"
+        },
+        "require": {
+          "types": "./dist/cjs/evaluation/Evaluation.d.ts",
+          "default": "./dist/cjs/evaluation/Evaluation.js"
+        }
+      },
+      "./history/History": {
+        "import": {
+          "types": "./dist/esm/history/History.d.ts",
+          "default": "./dist/esm/history/History.js"
+        },
+        "require": {
+          "types": "./dist/cjs/history/History.d.ts",
+          "default": "./dist/cjs/history/History.js"
+        }
+      },
+      "./history/ExecutionTarget": {
+        "import": {
+          "types": "./dist/esm/history/ExecutionTarget.d.ts",
+          "default": "./dist/esm/history/ExecutionTarget.js"
+        },
+        "require": {
+          "types": "./dist/cjs/history/ExecutionTarget.d.ts",
+          "default": "./dist/cjs/history/ExecutionTarget.js"
+        }
+      },
+      "./history/Workspace": {
+        "import": {
+          "types": "./dist/esm/history/Workspace.d.ts",
+          "default": "./dist/esm/history/Workspace.js"
+        },
+        "require": {
+          "types": "./dist/cjs/history/Workspace.d.ts",
+          "default": "./dist/cjs/history/Workspace.js"
+        }
+      },
+      "./index": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./operator/Credentials": {
+        "import": {
+          "types": "./dist/esm/operator/Credentials.d.ts",
+          "default": "./dist/esm/operator/Credentials.js"
+        },
+        "require": {
+          "types": "./dist/cjs/operator/Credentials.d.ts",
+          "default": "./dist/cjs/operator/Credentials.js"
+        }
+      },
+      "./operator/Integrations": {
+        "import": {
+          "types": "./dist/esm/operator/Integrations.d.ts",
+          "default": "./dist/esm/operator/Integrations.js"
+        },
+        "require": {
+          "types": "./dist/cjs/operator/Integrations.d.ts",
+          "default": "./dist/cjs/operator/Integrations.js"
+        }
+      },
+      "./operator/Memory": {
+        "import": {
+          "types": "./dist/esm/operator/Memory.d.ts",
+          "default": "./dist/esm/operator/Memory.js"
+        },
+        "require": {
+          "types": "./dist/cjs/operator/Memory.d.ts",
+          "default": "./dist/cjs/operator/Memory.js"
+        }
+      },
+      "./operator/Store": {
+        "import": {
+          "types": "./dist/esm/operator/Store.d.ts",
+          "default": "./dist/esm/operator/Store.js"
+        },
+        "require": {
+          "types": "./dist/cjs/operator/Store.d.ts",
+          "default": "./dist/cjs/operator/Store.js"
+        }
+      },
+      "./operator/TriggerPlans": {
+        "import": {
+          "types": "./dist/esm/operator/TriggerPlans.d.ts",
+          "default": "./dist/esm/operator/TriggerPlans.js"
+        },
+        "require": {
+          "types": "./dist/cjs/operator/TriggerPlans.d.ts",
+          "default": "./dist/cjs/operator/TriggerPlans.js"
+        }
+      },
+      "./operator/Triggers": {
+        "import": {
+          "types": "./dist/esm/operator/Triggers.d.ts",
+          "default": "./dist/esm/operator/Triggers.js"
+        },
+        "require": {
+          "types": "./dist/cjs/operator/Triggers.d.ts",
+          "default": "./dist/cjs/operator/Triggers.js"
+        }
+      },
+      "./suggest/Brief": {
+        "import": {
+          "types": "./dist/esm/suggest/Brief.d.ts",
+          "default": "./dist/esm/suggest/Brief.js"
+        },
+        "require": {
+          "types": "./dist/cjs/suggest/Brief.d.ts",
+          "default": "./dist/cjs/suggest/Brief.js"
+        }
+      },
+      "./suggest/Checklist": {
+        "import": {
+          "types": "./dist/esm/suggest/Checklist.d.ts",
+          "default": "./dist/esm/suggest/Checklist.js"
+        },
+        "require": {
+          "types": "./dist/cjs/suggest/Checklist.d.ts",
+          "default": "./dist/cjs/suggest/Checklist.js"
+        }
+      },
+      "./suggest/SuggestFlow": {
+        "import": {
+          "types": "./dist/esm/suggest/SuggestFlow.d.ts",
+          "default": "./dist/esm/suggest/SuggestFlow.js"
+        },
+        "require": {
+          "types": "./dist/cjs/suggest/SuggestFlow.d.ts",
+          "default": "./dist/cjs/suggest/SuggestFlow.js"
+        }
+      },
+      "./ExecutionEnvironment": {
+        "import": {
+          "types": "./dist/esm/ExecutionEnvironment.d.ts",
+          "default": "./dist/esm/ExecutionEnvironment.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ExecutionEnvironment.d.ts",
+          "default": "./dist/cjs/ExecutionEnvironment.js"
+        }
+      },
+      "./cli/EnvironmentCommands": {
+        "import": {
+          "types": "./dist/esm/cli/EnvironmentCommands.d.ts",
+          "default": "./dist/esm/cli/EnvironmentCommands.js"
+        },
+        "require": {
+          "types": "./dist/cjs/cli/EnvironmentCommands.d.ts",
+          "default": "./dist/cjs/cli/EnvironmentCommands.js"
+        }
+      },
+      "./CloudSandbox": {
+        "import": {
+          "types": "./dist/esm/CloudSandbox.d.ts",
+          "default": "./dist/esm/CloudSandbox.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CloudSandbox.d.ts",
+          "default": "./dist/cjs/CloudSandbox.js"
+        }
+      },
+      "./tui-native": {
+        "types": "./vendor/opentui-native/runtime.d.ts",
+        "bun": "./vendor/opentui-native/runtime.bun.mjs",
+        "default": "./vendor/opentui-native/runtime.node.mjs"
+      },
+      "./CatalogRequest": {
+        "import": {
+          "types": "./dist/esm/CatalogRequest.d.ts",
+          "default": "./dist/esm/CatalogRequest.js"
+        },
+        "require": {
+          "types": "./dist/cjs/CatalogRequest.d.ts",
+          "default": "./dist/cjs/CatalogRequest.js"
+        }
+      },
+      "./Catalog": {
+        "import": {
+          "types": "./dist/esm/Catalog.d.ts",
+          "default": "./dist/esm/Catalog.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Catalog.d.ts",
+          "default": "./dist/cjs/Catalog.js"
+        }
+      },
+      "./BackendCommands": {
+        "import": {
+          "types": "./dist/esm/BackendCommands.d.ts",
+          "default": "./dist/esm/BackendCommands.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BackendCommands.d.ts",
+          "default": "./dist/cjs/BackendCommands.js"
+        }
+      },
+      "./IssueTodoDraft": {
+        "import": {
+          "types": "./dist/esm/IssueTodoDraft.d.ts",
+          "default": "./dist/esm/IssueTodoDraft.js"
+        },
+        "require": {
+          "types": "./dist/cjs/IssueTodoDraft.d.ts",
+          "default": "./dist/cjs/IssueTodoDraft.js"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint src --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "circular": "node scripts/circular.mjs",
+    "test": "vitest",
+    "bench": "vitest bench --run --coverage.enabled=false --reporter=verbose",
+    "coverage": "vitest --coverage"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.283",
+    "@clack/prompts": "1.7.0",
+    "@opentui/core": "0.5.11",
+    "@opentui/react": "0.5.11",
+    "@smthrs/agent": "1.0.0-rc.12",
+    "@smthrs/build-cli": "1.0.0-rc.12",
+    "@smthrs/canonical": "1.0.0-rc.12",
+    "@smthrs/capability": "1.0.0-rc.12",
+    "@smthrs/control": "1.0.0-rc.12",
+    "@smthrs/crypto": "1.0.0-rc.12",
+    "@smthrs/database": "1.0.0-rc.12",
+    "@smthrs/engine": "1.0.0-rc.12",
+    "@smthrs/engine-store": "1.0.0-rc.12",
+    "@smthrs/evals": "1.0.0-rc.12",
+    "@smthrs/flow": "1.0.0-rc.12",
+    "@smthrs/flows": "1.0.0-rc.12",
+    "@smthrs/gateway": "1.0.0-rc.12",
+    "@smthrs/harness": "1.0.0-rc.12",
+    "@smthrs/integrations": "1.0.0-rc.12",
+    "@smthrs/jj": "1.0.0-rc.12",
+    "@smthrs/journal": "1.0.0-rc.12",
+    "@smthrs/kernel": "1.0.0-rc.12",
+    "@smthrs/mcp": "1.0.0-rc.12",
+    "@smthrs/memory": "1.0.0-rc.12",
+    "@smthrs/migrate": "1.0.0-rc.12",
+    "@smthrs/model": "1.0.0-rc.12",
+    "@smthrs/notifications": "1.0.0-rc.12",
+    "@smthrs/observability": "1.0.0-rc.12",
+    "@smthrs/plan": "1.0.0-rc.12",
+    "@smthrs/platform-node": "1.0.0-rc.12",
+    "@smthrs/registry": "1.0.0-rc.12",
+    "@smthrs/run-store": "1.0.0-rc.12",
+    "@smthrs/scorers": "1.0.0-rc.12",
+    "@smthrs/std": "1.0.0-rc.12",
+    "@smthrs/step-cache": "1.0.0-rc.12",
+    "@smthrs/sync": "1.0.0-rc.12",
+    "@smthrs/targets": "1.0.0-rc.12",
+    "@smthrs/time-travel": "1.0.0-rc.12",
+    "@smthrs/triggers": "1.0.0-rc.12",
+    "diff": "9.0.0",
+    "incur": "0.5.1",
+    "react": "19.2.8",
+    "smol-toml": "1.8.0",
+    "tar": "7.5.22",
+    "typescript": "5.9.3",
+    "yaml": "2.9.0",
+    "@smthrs/sandbox": "1.0.0-rc.12",
+    "undici": "8.11.2",
+    "redis": "6.2.1",
+    "@types/ws": "8.18.2",
+    "ws": "8.22.0",
+    "@effect/sql-sqlite-node": "4.0.4"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@effect/sql-sqlite-node": "4.0.4",
+    "@effect/vitest": "4.0.4",
+    "@eslint/js": "9.39.5",
+    "@smthrs/artifacts": "1.0.0-rc.12",
+    "@smthrs/testing": "1.0.0-rc.12",
+    "@types/node": "26.4.1",
+    "@vitest/coverage-v8": "5.0.0",
+    "dprint": "0.57.1",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "madge": "8.0.0",
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0",
+    "@effect/platform-node": "4.0.4",
+    "@effect/platform-node-shared": "4.0.4",
+    "effect": "4.0.4",
+    "fast-check": "4.9.0",
+    "@effect/sql-pg": "4.0.4",
+    "@effect/platform-bun": "4.0.4"
+  },
+  "peerDependencies": {
+    "effect": "4.0.4",
+    "@effect/sql-pg": "4.0.4",
+    "@effect/sql-sqlite-node": "4.0.4"
+  },
+  "peerDependenciesMeta": {
+    "@effect/sql-pg": {
+      "optional": true
+    }
+  }
+}

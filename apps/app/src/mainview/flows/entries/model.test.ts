@@ -14,7 +14,7 @@ const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => { for (const close of cleanups.splice(0)) await close() })
 const binding = { protocol: "openai-responses", modelId: "model-a", credential: "OPENAI_API_KEY" }
 const payload = (owner = true, model = "model-a") => ({ native: false, canAssign: owner, roleBindings: { fast: binding, coding: binding, jev: { protocol: "evaluation", modelId: "typesafe-ai/jev", credential: "AI_GATEWAY_API_KEY" } }, agents: [
- { id: "reviewer", label: "Reviewer agent", purpose: "", model: { provider: "openai-responses", id: model, label: model }, binding: { ...binding, modelId: model }, source: "owner", instructions: "flows/todo/flow.ts", builtin: true, available: false, reason: "", account: "" }
+ { id: "reviewer", label: "Reviewer agent", purpose: "", model: { provider: "openai-responses", id: model, label: model }, binding: { ...binding, modelId: model }, source: "owner", instructions: ".smithers/flows/todo/flow.ts", builtin: true, available: false, reason: "", account: "" }
 ] })
 const harness = async (owner = true, read?: Promise<Response>, save?: Promise<Response>, probe?: Promise<Response>) => {
  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })

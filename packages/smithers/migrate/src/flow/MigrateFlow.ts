@@ -142,10 +142,15 @@ export const layoutConflict = (
   const report = Options.reportDir(options)
   const flows = Options.flowsDir(options)
   const under = (inner: string, outer: string): boolean => inner === outer || inner.startsWith(`${outer}/`)
-  const guarded = [...new Set([...RunState.roots(result.runState), ...Transform.runStatePaths(result)])].sort()
+  const paths = Transform.runStatePaths(result)
+  const guarded = [...new Set([...RunState.roots(result.runState), ...paths])].sort()
   for (const [label, directory] of [["reportDir", report], ["layout.flowsDir", flows]] as const) {
     for (const root of guarded) {
-      if (under(directory, root) || under(root, directory)) {
+      // The flows directory may sit inside a root that is only a database's or
+      // a state file's parent directory: the checkpoint carves it out of that
+      // root (`Checkpoint.carveRoots`). It may not sit inside run state itself.
+      const inside = label === "layout.flowsDir" && !paths.includes(root) ? false : under(directory, root)
+      if (inside || under(root, directory)) {
         return `${label} "${directory}" overlaps the 0.x run-state path "${root}"`
       }
     }
@@ -839,6 +844,7 @@ export const finish = (payload: typeof finishAction.payloadSchema.Type): Effect.
         sources,
         digests: new Map(checkpoint.digests.map((entry) => [entry.path, entry.digest] as const)),
         runStateRoots: payload.runStateRoots,
+        carve: Options.flowsDir(options),
         owned
       }
       const checks = [
@@ -1343,7 +1349,10 @@ export const unit = Flow.make(unitTag, {
         // What the whole-tree manifest leaves out: the tool's own directory,
         // the 1.0 runtime state a migrated project writes, and the run-state
         // roots, which the digests and their own check already cover.
-        treeExclude: [Options.reportDir(options), Options.defaultReportDir, ".flows"]
+        treeExclude: [Options.reportDir(options), Options.defaultReportDir, ".flows"],
+        // The flows directory the units write sits under `.smithers/`, which a
+        // 0.x database there makes a run-state root.
+        carve: Options.flowsDir(options)
       }),
       (checkpoint) => {
         const settleWith = (
@@ -1580,7 +1589,7 @@ export const outlines = (
   const flowsDir = Options.flowsDir(options)
   const writesFlows = (unit: Units.UnitPlan): boolean =>
     unit.targets.some((target) => target === flowsDir || target.startsWith(`${flowsDir}/`))
-  // A project with no workflow never grows a `flows/` directory, and the unit
+  // A project with no workflow never grows a `.smithers/flows/` directory, and the unit
   // that only adds packages runs before the one that does. Demanding registry
   // discovery of either would fail a unit for doing exactly what it was asked.
   const anyFlows = result.units.some(writesFlows)

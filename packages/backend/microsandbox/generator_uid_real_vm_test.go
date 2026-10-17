@@ -14,7 +14,7 @@ import (
 const generatorIdentityProbe = `import os
 print('uid=%d gid=%d groups=%s' % (os.getuid(),os.getgid(),os.getgroups()),flush=True)
 assert (os.getuid(),os.getgid(),os.getgroups()) == (19999,19999,[20000]), 'generator identity differs from C-PRC-02'
-for name in ('scripts/renumber-migration.mjs','scripts/engineering-gate-environment.mjs','packages/backend/db/product/migration_registry_test.go','packages/backend/db/product/migrations/0001_things.sql','packages/backend/db/ownership.csv','packages/backend/db/product/sqlc.yaml'):
+for name in ('flows/land/renumber-migration.mjs','flows/land/engineering-gate-environment.mjs','packages/backend/db/product/migration_registry_test.go','packages/backend/db/product/migrations/0001_things.sql','packages/backend/db/ownership.csv','packages/backend/db/product/sqlc.yaml'):
  with open(name,'rb') as f: assert f.read(),name
 print('repository-inputs-read-after-identity')`
 
@@ -58,7 +58,7 @@ var migrationRegistry=[]migrationSpec{
 func registeredMigrations()([]fs.DirEntry,error){return migrations.ReadDir("migrations")}
 `,
 	}
-	for _, name := range []string{"scripts/renumber-migration.mjs", "scripts/engineering-gate-environment.mjs", "packages/backend/db/product/migration_registry_test.go"} {
+	for _, name := range []string{"flows/land/renumber-migration.mjs", "flows/land/engineering-gate-environment.mjs", "packages/backend/db/product/migration_registry_test.go"} {
 		body, readErr := os.ReadFile(filepath.Join("../../..", name))
 		require.NoError(t, readErr)
 		files[name] = string(body)
@@ -101,7 +101,7 @@ git update-ref refs/remotes/origin/main HEAD
 printf 'CREATE TABLE reserved(id bigint PRIMARY KEY);\n' > packages/backend/db/product/migrations/0009_reserved.sql
 sed -i '/^}/i\ {9, "migrations/0009_reserved.sql"},' packages/backend/db/product/migrate.go
 printf 'reserved,product,planned:T-PRC-02;owner:smithers-8a\n' >> packages/backend/db/ownership.csv
-node scripts/renumber-migration.mjs packages/backend/db/product/migrations/0009_reserved.sql
+node flows/land/renumber-migration.mjs packages/backend/db/product/migrations/0009_reserved.sql
 test -f packages/backend/db/product/migrations/0002_reserved.sql
 grep -F '{2, "migrations/0002_reserved.sql"},' packages/backend/db/product/migrate.go
 grep -F 'type Reserved struct' packages/backend/internal/db/models.go

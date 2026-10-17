@@ -62,7 +62,7 @@ describe("the shipped Node executor's supervisor memory", () => {
   it("recalls a note run 1 remembered into run 2's supervisor snapshot and delivers it", async () => {
     const root = await realpath(await mkdtemp(join(tmpdir(), "smithers-native-memory-")))
     roots.add(root)
-    const directory = join(root, "flows", "tox")
+    const directory = join(root, ".smithers", "flows", "tox")
     await mkdir(directory, { recursive: true })
     await writeFile(
       join(directory, "flow.mdx"),
@@ -235,15 +235,15 @@ describe("the shipped Node executor's supervisor memory", () => {
     const probe = async (environment: Record<string, string>, processOnly = false) => {
       const root = await realpath(await mkdtemp(join(tmpdir(), "smithers-native-memory-sealed-")))
       roots.add(root)
-      await mkdir(join(root, "flows", "probe"), { recursive: true })
+      await mkdir(join(root, ".smithers", "flows", "probe"), { recursive: true })
       await mkdir(join(root, "notes"))
       await writeFile(join(root, "notes", "secret.txt"), "host-only-secret\n")
       if (processOnly) {
-        await mkdir(join(root, ".smithers"))
+        await mkdir(join(root, ".smithers"), { recursive: true })
         await writeFile(join(root, ".smithers", "memory-thresholds.json"), "{\"version\":1}")
       }
       await writeFile(
-        join(root, "flows", "probe", "flow.mdx"),
+        join(root, ".smithers", "flows", "probe", "flow.mdx"),
         [
           "---",
           "name: probe",

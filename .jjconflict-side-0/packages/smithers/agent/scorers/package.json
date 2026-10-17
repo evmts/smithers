@@ -1,0 +1,259 @@
+{
+  "name": "@smthrs/scorers",
+  "type": "module",
+  "version": "1.0.0-rc.12",
+  "license": "MIT",
+  "smthrs": {
+    "group": "agent"
+  },
+  "description": "Flow-native scoring, durable observations, and asynchronous score runners for flows",
+  "homepage": "https://github.com/smithersai/smithers",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/smithers/agent/scorers"
+  },
+  "bugs": {
+    "url": "https://github.com/smithersai/smithers/issues"
+  },
+  "tags": [
+    "typescript",
+    "effect",
+    "flow",
+    "scorers"
+  ],
+  "keywords": [
+    "typescript",
+    "effect",
+    "flow",
+    "scorers"
+  ],
+  "engines": {
+    "node": ">=26.4.0"
+  },
+  "sideEffects": [],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null,
+    "./migrations/*": null,
+    "./*/index": null,
+    "./Binding": "./src/Binding.ts",
+    "./Checks": "./src/Checks.ts",
+    "./Rubric": "./src/Rubric.ts",
+    "./Runner": "./src/Runner.ts",
+    "./RunnerLive": "./src/RunnerLive.ts",
+    "./Sampling": "./src/Sampling.ts",
+    "./ScoreGate": "./src/ScoreGate.ts",
+    "./ScoreStore": "./src/ScoreStore.ts",
+    "./Scorer": "./src/Scorer.ts",
+    "./ScorerError": "./src/ScorerError.ts",
+    "./SqlScoreStore": "./src/SqlScoreStore.ts",
+    "./index": "./src/index.ts",
+    "./Scorers": "./src/Scorers.ts"
+  },
+  "files": [
+    "src/**/*.ts",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/package.json",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next",
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./internal/*": null,
+      "./migrations/*": null,
+      "./*/index": null,
+      "./Binding": {
+        "import": {
+          "types": "./dist/esm/Binding.d.ts",
+          "default": "./dist/esm/Binding.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Binding.d.ts",
+          "default": "./dist/cjs/Binding.js"
+        }
+      },
+      "./Checks": {
+        "import": {
+          "types": "./dist/esm/Checks.d.ts",
+          "default": "./dist/esm/Checks.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Checks.d.ts",
+          "default": "./dist/cjs/Checks.js"
+        }
+      },
+      "./Rubric": {
+        "import": {
+          "types": "./dist/esm/Rubric.d.ts",
+          "default": "./dist/esm/Rubric.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Rubric.d.ts",
+          "default": "./dist/cjs/Rubric.js"
+        }
+      },
+      "./Runner": {
+        "import": {
+          "types": "./dist/esm/Runner.d.ts",
+          "default": "./dist/esm/Runner.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Runner.d.ts",
+          "default": "./dist/cjs/Runner.js"
+        }
+      },
+      "./RunnerLive": {
+        "import": {
+          "types": "./dist/esm/RunnerLive.d.ts",
+          "default": "./dist/esm/RunnerLive.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RunnerLive.d.ts",
+          "default": "./dist/cjs/RunnerLive.js"
+        }
+      },
+      "./Sampling": {
+        "import": {
+          "types": "./dist/esm/Sampling.d.ts",
+          "default": "./dist/esm/Sampling.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Sampling.d.ts",
+          "default": "./dist/cjs/Sampling.js"
+        }
+      },
+      "./ScoreGate": {
+        "import": {
+          "types": "./dist/esm/ScoreGate.d.ts",
+          "default": "./dist/esm/ScoreGate.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ScoreGate.d.ts",
+          "default": "./dist/cjs/ScoreGate.js"
+        }
+      },
+      "./ScoreStore": {
+        "import": {
+          "types": "./dist/esm/ScoreStore.d.ts",
+          "default": "./dist/esm/ScoreStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ScoreStore.d.ts",
+          "default": "./dist/cjs/ScoreStore.js"
+        }
+      },
+      "./Scorer": {
+        "import": {
+          "types": "./dist/esm/Scorer.d.ts",
+          "default": "./dist/esm/Scorer.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Scorer.d.ts",
+          "default": "./dist/cjs/Scorer.js"
+        }
+      },
+      "./ScorerError": {
+        "import": {
+          "types": "./dist/esm/ScorerError.d.ts",
+          "default": "./dist/esm/ScorerError.js"
+        },
+        "require": {
+          "types": "./dist/cjs/ScorerError.d.ts",
+          "default": "./dist/cjs/ScorerError.js"
+        }
+      },
+      "./SqlScoreStore": {
+        "import": {
+          "types": "./dist/esm/SqlScoreStore.d.ts",
+          "default": "./dist/esm/SqlScoreStore.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SqlScoreStore.d.ts",
+          "default": "./dist/cjs/SqlScoreStore.js"
+        }
+      },
+      "./index": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./Scorers": {
+        "import": {
+          "types": "./dist/esm/Scorers.d.ts",
+          "default": "./dist/esm/Scorers.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Scorers.d.ts",
+          "default": "./dist/cjs/Scorers.js"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint src --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "circular": "node scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "node ../../flows/database/scripts/test-matrix.mjs",
+    "test:matrix": "node ../../flows/database/scripts/test-matrix.mjs"
+  },
+  "dependencies": {
+    "@smthrs/core": "1.0.0-rc.12",
+    "@smthrs/database": "1.0.0-rc.12",
+    "@smthrs/journal": "1.0.0-rc.12",
+    "@smthrs/sandbox": "1.0.0-rc.12"
+  },
+  "peerDependencies": {
+    "effect": "^4.0.4"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@effect/vitest": "4.0.4",
+    "@eslint/js": "9.39.5",
+    "@types/node": "26.4.1",
+    "@vitest/coverage-v8": "5.0.0",
+    "dprint": "0.57.1",
+    "effect": "4.0.4",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "madge": "8.0.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0",
+    "@effect/platform-node": "4.0.4",
+    "@smthrs/kernel": "1.0.0-rc.12",
+    "@smthrs/platform-node": "1.0.0-rc.12"
+  }
+}

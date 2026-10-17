@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/smithersai/smithers/packages/backend/flowdispatch"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/internal/repohost"
@@ -68,7 +69,7 @@ func (s InstallSource) activatedAppInstructions(ctx context.Context, owner strin
 func AgentInstructionsPath(role string) (string, bool) {
 	switch role {
 	case "planner", "implementer", "reviewer":
-		return "flows/todo/flow.ts", true
+		return flowdispatch.RepositoryFlowPath(flowdispatch.TodoFlow), true
 	case "app":
 		return ".smithers/instructions/app.md", true
 	default:

@@ -1,0 +1,333 @@
+{
+  "name": "@smthrs/sync",
+  "type": "module",
+  "version": "1.0.0-rc.12",
+  "license": "MIT",
+  "smthrs": {
+    "group": "engine"
+  },
+  "description": "Workspace read-path sync protocol, server, and client for flows",
+  "homepage": "https://github.com/smithersai/smithers",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smithersai/smithers.git",
+    "directory": "packages/smithers/flows/sync"
+  },
+  "bugs": {
+    "url": "https://github.com/smithersai/smithers/issues"
+  },
+  "tags": [
+    "typescript",
+    "effect",
+    "journal",
+    "durability"
+  ],
+  "keywords": [
+    "typescript",
+    "effect",
+    "journal",
+    "durability"
+  ],
+  "engines": {
+    "node": ">=26.4.0"
+  },
+  "sideEffects": [],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null,
+    "./*/index": null,
+    "./BranchCommands": "./src/BranchCommands.ts",
+    "./BranchIds": "./src/BranchIds.ts",
+    "./BranchPresence": "./src/BranchPresence.ts",
+    "./BranchProjection": "./src/BranchProjection.ts",
+    "./BranchProtocol": "./src/BranchProtocol.ts",
+    "./BranchRpcs": "./src/BranchRpcs.ts",
+    "./BranchServer": "./src/BranchServer.ts",
+    "./BranchShare": "./src/BranchShare.ts",
+    "./RunCatalog": "./src/RunCatalog.ts",
+    "./SyncAuth": "./src/SyncAuth.ts",
+    "./SyncClient": "./src/SyncClient.ts",
+    "./SyncError": "./src/SyncError.ts",
+    "./SyncPrincipal": "./src/SyncPrincipal.ts",
+    "./SyncProtocol": "./src/SyncProtocol.ts",
+    "./SyncRpcs": "./src/SyncRpcs.ts",
+    "./SyncServer": "./src/SyncServer.ts",
+    "./WorkspaceShare": "./src/WorkspaceShare.ts",
+    "./index": "./src/index.ts",
+    "./test/TestSocket": "./src/test/TestSocket.ts",
+    "./test/TestSync": "./src/test/TestSync.ts"
+  },
+  "files": [
+    "src/**/*.ts",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.ts.map",
+    "dist/**/package.json",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "tag": "next",
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./internal/*": null,
+      "./*/index": null,
+      "./BranchCommands": {
+        "import": {
+          "types": "./dist/esm/BranchCommands.d.ts",
+          "default": "./dist/esm/BranchCommands.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BranchCommands.d.ts",
+          "default": "./dist/cjs/BranchCommands.js"
+        }
+      },
+      "./BranchIds": {
+        "import": {
+          "types": "./dist/esm/BranchIds.d.ts",
+          "default": "./dist/esm/BranchIds.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BranchIds.d.ts",
+          "default": "./dist/cjs/BranchIds.js"
+        }
+      },
+      "./BranchPresence": {
+        "import": {
+          "types": "./dist/esm/BranchPresence.d.ts",
+          "default": "./dist/esm/BranchPresence.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BranchPresence.d.ts",
+          "default": "./dist/cjs/BranchPresence.js"
+        }
+      },
+      "./BranchProjection": {
+        "import": {
+          "types": "./dist/esm/BranchProjection.d.ts",
+          "default": "./dist/esm/BranchProjection.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BranchProjection.d.ts",
+          "default": "./dist/cjs/BranchProjection.js"
+        }
+      },
+      "./BranchProtocol": {
+        "import": {
+          "types": "./dist/esm/BranchProtocol.d.ts",
+          "default": "./dist/esm/BranchProtocol.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BranchProtocol.d.ts",
+          "default": "./dist/cjs/BranchProtocol.js"
+        }
+      },
+      "./BranchRpcs": {
+        "import": {
+          "types": "./dist/esm/BranchRpcs.d.ts",
+          "default": "./dist/esm/BranchRpcs.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BranchRpcs.d.ts",
+          "default": "./dist/cjs/BranchRpcs.js"
+        }
+      },
+      "./BranchServer": {
+        "import": {
+          "types": "./dist/esm/BranchServer.d.ts",
+          "default": "./dist/esm/BranchServer.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BranchServer.d.ts",
+          "default": "./dist/cjs/BranchServer.js"
+        }
+      },
+      "./BranchShare": {
+        "import": {
+          "types": "./dist/esm/BranchShare.d.ts",
+          "default": "./dist/esm/BranchShare.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BranchShare.d.ts",
+          "default": "./dist/cjs/BranchShare.js"
+        }
+      },
+      "./RunCatalog": {
+        "import": {
+          "types": "./dist/esm/RunCatalog.d.ts",
+          "default": "./dist/esm/RunCatalog.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RunCatalog.d.ts",
+          "default": "./dist/cjs/RunCatalog.js"
+        }
+      },
+      "./SyncAuth": {
+        "import": {
+          "types": "./dist/esm/SyncAuth.d.ts",
+          "default": "./dist/esm/SyncAuth.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SyncAuth.d.ts",
+          "default": "./dist/cjs/SyncAuth.js"
+        }
+      },
+      "./SyncClient": {
+        "import": {
+          "types": "./dist/esm/SyncClient.d.ts",
+          "default": "./dist/esm/SyncClient.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SyncClient.d.ts",
+          "default": "./dist/cjs/SyncClient.js"
+        }
+      },
+      "./SyncError": {
+        "import": {
+          "types": "./dist/esm/SyncError.d.ts",
+          "default": "./dist/esm/SyncError.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SyncError.d.ts",
+          "default": "./dist/cjs/SyncError.js"
+        }
+      },
+      "./SyncPrincipal": {
+        "import": {
+          "types": "./dist/esm/SyncPrincipal.d.ts",
+          "default": "./dist/esm/SyncPrincipal.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SyncPrincipal.d.ts",
+          "default": "./dist/cjs/SyncPrincipal.js"
+        }
+      },
+      "./SyncProtocol": {
+        "import": {
+          "types": "./dist/esm/SyncProtocol.d.ts",
+          "default": "./dist/esm/SyncProtocol.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SyncProtocol.d.ts",
+          "default": "./dist/cjs/SyncProtocol.js"
+        }
+      },
+      "./SyncRpcs": {
+        "import": {
+          "types": "./dist/esm/SyncRpcs.d.ts",
+          "default": "./dist/esm/SyncRpcs.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SyncRpcs.d.ts",
+          "default": "./dist/cjs/SyncRpcs.js"
+        }
+      },
+      "./SyncServer": {
+        "import": {
+          "types": "./dist/esm/SyncServer.d.ts",
+          "default": "./dist/esm/SyncServer.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SyncServer.d.ts",
+          "default": "./dist/cjs/SyncServer.js"
+        }
+      },
+      "./WorkspaceShare": {
+        "import": {
+          "types": "./dist/esm/WorkspaceShare.d.ts",
+          "default": "./dist/esm/WorkspaceShare.js"
+        },
+        "require": {
+          "types": "./dist/cjs/WorkspaceShare.d.ts",
+          "default": "./dist/cjs/WorkspaceShare.js"
+        }
+      },
+      "./index": {
+        "import": {
+          "types": "./dist/esm/index.d.ts",
+          "default": "./dist/esm/index.js"
+        },
+        "require": {
+          "types": "./dist/cjs/index.d.ts",
+          "default": "./dist/cjs/index.js"
+        }
+      },
+      "./test/TestSocket": {
+        "import": {
+          "types": "./dist/esm/test/TestSocket.d.ts",
+          "default": "./dist/esm/test/TestSocket.js"
+        },
+        "require": {
+          "types": "./dist/cjs/test/TestSocket.d.ts",
+          "default": "./dist/cjs/test/TestSocket.js"
+        }
+      },
+      "./test/TestSync": {
+        "import": {
+          "types": "./dist/esm/test/TestSync.d.ts",
+          "default": "./dist/esm/test/TestSync.js"
+        },
+        "require": {
+          "types": "./dist/cjs/test/TestSync.d.ts",
+          "default": "./dist/cjs/test/TestSync.js"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint src --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
+    "circular": "node scripts/circular.mjs",
+    "test": "vitest",
+    "bench": "vitest bench --run --coverage.enabled=false --reporter=verbose",
+    "coverage": "vitest --coverage"
+  },
+  "dependencies": {
+    "@smthrs/journal": "1.0.0-rc.12"
+  },
+  "devDependencies": {
+    "@effect/language-service": "0.87.2",
+    "@effect/platform-node": "4.0.4",
+    "@effect/vitest": "4.0.4",
+    "@eslint/js": "9.39.5",
+    "@smthrs/database": "1.0.0-rc.12",
+    "@smthrs/engine-store": "1.0.0-rc.12",
+    "@types/node": "26.4.1",
+    "@vitest/coverage-v8": "5.0.0",
+    "dprint": "0.57.1",
+    "effect": "4.0.4",
+    "esbuild": "0.28.2",
+    "eslint": "9.39.5",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-jsdoc": "64.3.4",
+    "eslint-plugin-unicorn": "65.0.0",
+    "madge": "8.0.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0",
+    "@smthrs/time-travel": "1.0.0-rc.12",
+    "fast-check": "4.9.0"
+  },
+  "peerDependencies": {
+    "effect": "^4.0.4"
+  }
+}

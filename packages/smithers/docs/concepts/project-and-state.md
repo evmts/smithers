@@ -20,10 +20,10 @@ handler as the `Project.ProjectRoot` service.
 3. Otherwise the invocation directory itself.
 
 A directory anchors a project when it holds `.flows/`, or when it holds
-`flows/` beside a `package.json`, `.git`, or `.jj`. The two rules differ
-because `.flows/` is written by Smithers and nothing else, while `flows` is an
-ordinary directory name: requiring a project marker next to a bare `flows/`
-keeps the anchor on the directory a project actually starts at.
+`.smithers/flows/` beside a `package.json`, `.git`, or `.jj`. The two rules
+differ because Smithers writes `.flows/` on its own, while a person writes
+`.smithers/flows/`: requiring a project marker next to it keeps the anchor on
+the directory a project actually starts at. A root `flows/` anchors nothing.
 
 The upward walk stops at the repository root, inclusive, on `.git` or `.jj`.
 Without that bound, a command run in a repository under `$HOME` would keep
@@ -33,7 +33,7 @@ climbing into the home directory, and rc.0 reads no global state at all.
 
 | Path | What it holds |
 | --- | --- |
-| `flows/` | The flow sources this project discovers. One directory per flow. |
+| `.smithers/flows/` | The flow sources this project discovers. One directory per flow. |
 | `.flows/` | Everything Smithers writes. Add it to `.gitignore`; `smthrs init` does that for you in a repository. |
 | `.flows/control.db` | The control plane: runs, plans, approvals, memory, and the journal. |
 | `.flows/engine.db` | The durable engine: executions, attempts, cache entries, and wake state. |
@@ -70,9 +70,12 @@ command is acting on the project you think it is.
 
 ## Discovery
 
-`NodeControl.layerRegistry` discovers flows from one source: `flows/` under
-the project root, named by path. A project with no `flows/` directory simply
-has no flows, and `smthrs flow list` says so. Any other discovery failure, such as an
+`NodeControl.layerRegistry` discovers flows from one source: `.smithers/flows/`
+under the project root, named by path. A project with no `.smithers/flows/`
+directory simply has no flows, and `smthrs flow list` says so. Smithers never
+reads a root `flows/`. If one still holds flow files, none of them load, and
+discovery reports one `retired_root` warning, which `smthrs flow list` prints:
+`Flows in flows/ are not loaded; move them to .smithers/flows/.` Any other discovery failure, such as an
 unreadable root or a malformed entry, is a startup failure rather than a
 silently empty catalog.
 

@@ -57,7 +57,7 @@ const project = (names: ReadonlyArray<string>) =>
     const fs = yield* FileSystem.FileSystem
     const root = yield* fs.makeTempDirectoryScoped({ prefix: "registry-layer-composition-" })
     for (const name of names) {
-      const directory = join(root, "flows", name)
+      const directory = join(root, ".smithers", "flows", name)
       yield* fs.makeDirectory(directory, { recursive: true })
       yield* fs.writeFileString(
         join(directory, "flow.ts"),
@@ -254,7 +254,7 @@ describe("module layer composition", () => {
               })
             ).toEqual(expected)
             const fs = yield* FileSystem.FileSystem
-            const path = join(root, "flows", "fixture", "flow.ts")
+            const path = join(root, ".smithers", "flows", "fixture", "flow.ts")
             yield* fs.writeFileString(path, `${yield* fs.readFileString(path)}\n// durable staged refresh\n`)
             const refreshing = yield* refresh.flow("fixture").pipe(Effect.forkChild)
             yield* Deferred.await(entered)
@@ -762,7 +762,7 @@ describe("module layer composition", () => {
           expect(released).toBe(0)
           for (const version of [2, 3]) {
             const retired = catalog.executables[0]!
-            const path = join(root, "flows", "fixture", "flow.ts")
+            const path = join(root, ".smithers", "flows", "fixture", "flow.ts")
             yield* fs.writeFileString(path, `${yield* fs.readFileString(path)}\n// refresh ${version}\n`)
             const refreshed = yield* refresh.flow("fixture").pipe(Effect.scoped)
             expect(refreshed._tag).toBe("Registered")
@@ -789,7 +789,7 @@ describe("module layer composition", () => {
             ).toBe(`open:${version}:resource`)
           }
           const removed = catalog.executables[0]!
-          yield* fs.remove(join(root, "flows", "fixture"), { recursive: true })
+          yield* fs.remove(join(root, ".smithers", "flows", "fixture"), { recursive: true })
           expect((yield* refresh.flow("fixture"))._tag).toBe("Removed")
           expect(released).toBe(acquired)
           const adapterExit = yield* Effect.exit(runtime.execute(removed.flow, {
@@ -980,7 +980,7 @@ describe("module layer composition", () => {
       Effect.gen(function*() {
         const root = yield* project(["fixture"])
         const fs = yield* FileSystem.FileSystem
-        const path = join(root, "flows", "fixture", "flow.ts")
+        const path = join(root, ".smithers", "flows", "fixture", "flow.ts")
         const original = yield* fs.readFileString(path)
         const registrations = Executable.layer({
           delegates: [],
@@ -1151,7 +1151,7 @@ describe("module layer composition", () => {
           const catalog = yield* Executable.Catalog
           const refresh = yield* Executable.Refresh
           const fs = yield* FileSystem.FileSystem
-          const path = join(root, "flows", "fixture", "flow.ts")
+          const path = join(root, ".smithers", "flows", "fixture", "flow.ts")
           let liveVersion = acquired
           let retained = 0
           let committed = 0
