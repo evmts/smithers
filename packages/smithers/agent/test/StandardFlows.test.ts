@@ -346,7 +346,7 @@ describe("the standard capability catalog", () => {
       {
         flow: "glob",
         input: { pattern: "**/add.mjs", limit: 10 },
-        value: { paths: ["add.mjs", "nested/add.mjs"], total: 2, truncated: false }
+        value: { paths: ["add.mjs", join("nested", "add.mjs")], total: 2, truncated: false }
       },
       {
         flow: "grep",
@@ -354,7 +354,7 @@ describe("the standard capability catalog", () => {
         value: {
           matches: [
             expect.objectContaining({ file: "add.mjs", line: 1 }),
-            expect.objectContaining({ file: "nested/add.mjs", line: 1 })
+            expect.objectContaining({ file: join("nested", "add.mjs"), line: 1 })
           ],
           filesSearched: 2,
           truncated: false
