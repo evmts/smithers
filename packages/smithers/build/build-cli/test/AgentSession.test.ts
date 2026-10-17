@@ -129,9 +129,9 @@ describe("expandDiffSlice", () => {
     ["src/space file.ts", "true"],
     ["src/révision.ts", "true"],
     ["src/révision.ts", "false"],
-    ["src/tab\tfile.ts", "true"],
-    ["src/quote\"file.ts", "true"],
-    ["src/back\\slash.ts", "true"]
+    [process.platform === "win32" ? "src/tab\u2003file.ts" : "src/tab\tfile.ts", "true"],
+    [process.platform === "win32" ? "src/quote\u201cfile.ts" : "src/quote\"file.ts", "true"],
+    [process.platform === "win32" ? "src/back/slash.ts" : "src/back\\slash.ts", "true"]
   ])("reviews added TODO in %s with core.quotePath=%s", async (path, quotePath) => {
     await write(path, "export const value = 1\n")
     git("add", "--", path)
@@ -1798,6 +1798,8 @@ describe("gate report identity mapping", () => {
 describe("atomic candidate publication", () => {
   it("preserves executable permissions and removes temporary siblings", async () => {
     await Fs.chmod(NodePath.join(root, "src/a.ts"), 0o755)
+    const permissions = (await Fs.stat(NodePath.join(root, "src/a.ts"))).mode & 0o777
+    expect(permissions).toBe(process.platform === "win32" ? 0o666 : 0o755)
     const applier = AgentSession.makeLocalWriteSetApplier(root)
     const overlay = await Effect.runPromise(
       applier.apply([{ path: "src/a.ts", contents: "replacement" }, { path: "src/new/file.ts", contents: "new" }], [
@@ -1805,7 +1807,7 @@ describe("atomic candidate publication", () => {
       ])
     )
     await Effect.runPromise(applier.commit(overlay))
-    expect((await Fs.stat(NodePath.join(root, "src/a.ts"))).mode & 0o777).toBe(0o755)
+    expect((await Fs.stat(NodePath.join(root, "src/a.ts"))).mode & 0o777).toBe(permissions)
     expect(await read("src/new/file.ts")).toBe("new")
     expect((await Fs.readdir(NodePath.join(root, "src"))).sort()).toEqual(["a.ts", "new"])
   })

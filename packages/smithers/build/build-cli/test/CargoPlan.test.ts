@@ -157,7 +157,7 @@ describe.skipIf(!hasCargo)("cargo build-system planning", () => {
     expect(format.mode).toBe("check")
     expect(commandsOf(format)).toHaveLength(1)
     expect(commandsOf(format)[0]!.slice(1)).toEqual(["fmt", "--all", "--", "--check"])
-    expect(NodePath.basename(commandsOf(format)[0]![0]!)).toBe("cargo")
+    expect(commandsOf(format)[0]![0]).toBe(PackageTree.findOnPath("cargo"))
     expect(NodePath.isAbsolute(commandsOf(format)[0]![0]!)).toBe(true)
   })
 
