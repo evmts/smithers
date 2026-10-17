@@ -427,7 +427,7 @@ describe("what the summary costs a large value", () => {
 })
 
 describe("inherited plan observations", () => {
-  it.each(["absent", "ancestor", "unrelated", "other-sequence", "paged"])(
+  it.each(["absent", "ancestor", "ancestor-no-revision", "unrelated", "other-sequence", "paged"])(
     "preserves only attested ancestor metadata: %s",
     async (scenario) => {
       const observed = await runPromise(
@@ -459,7 +459,8 @@ describe("inherited plan observations", () => {
           const seedScope = {
             runId,
             sourceId: "fork-plan",
-            lineageId: scenario === "unrelated" ? "stranger" : inherited
+            lineageId: scenario === "unrelated" ? "stranger" : inherited,
+            ...(scenario === "ancestor-no-revision" ? {} : { sourceRevision: "ancestor-revision" })
           }
           // Ownerless historical fixture admission; re-emission below remains fenced.
           if (scenario === "paged") {
@@ -469,7 +470,9 @@ describe("inherited plan observations", () => {
           }
           if (scenario !== "absent") {
             const entry = NodeJournal.entry(seedScope, record)
-            yield* real.emitDurableUnfenced(scenario === "other-sequence" ? { ...entry, sourceSeq: JournalEvent.SourceSeq.make(1) } : entry)
+            yield* real.emitDurableUnfenced(
+              scenario === "other-sequence" ? { ...entry, sourceSeq: JournalEvent.SourceSeq.make(1) } : entry
+            )
           }
           const writes: Array<JournalEvent.Input> = []
           const journal: Journal.Service = {
@@ -479,7 +482,11 @@ describe("inherited plan observations", () => {
               return Effect.fail(new Journal.JournalError({ code: "read_failed", message: "write refused" }))
             }
           }
-          const engine = yield* EngineStore.make({ owner: { hostId: "fork-plan" }, journalSource: "fork-plan" }).pipe(
+          const engine = yield* EngineStore.make({
+            owner: { hostId: "fork-plan" },
+            journalSource: "fork-plan",
+            sourceRevision: "current-revision"
+          }).pipe(
             Effect.provideService(Journal.Journal, journal)
           )
           const exit = yield* engine.recordNode!(record).pipe(
@@ -488,7 +495,15 @@ describe("inherited plan observations", () => {
           )
           expect(Exit.isFailure(exit) && Cause.hasDies(exit.cause)).toBe(true)
           expect(writes).toHaveLength(1)
-          return { entry: writes[0]!, payload: NodeJournal.entry(seedScope, record).payload, root, inherited }
+          const attested = scenario === "ancestor" || scenario === "ancestor-no-revision" || scenario === "paged"
+          return {
+            entry: writes[0]!,
+            payload:
+              NodeJournal.entry(attested ? seedScope : { ...seedScope, sourceRevision: "current-revision" }, record)
+                .payload,
+            root,
+            inherited
+          }
         })).pipe(
           Effect.provide(jj),
           Effect.provide(StepBoundary.layerTest()),
@@ -496,7 +511,9 @@ describe("inherited plan observations", () => {
         )
       )
       expect(observed.entry.meta).toEqual({
-        lineageId: scenario === "ancestor" || scenario === "paged" ? observed.inherited : observed.root
+        lineageId: scenario === "ancestor" || scenario === "ancestor-no-revision" || scenario === "paged"
+          ? observed.inherited
+          : observed.root
       })
       expect(observed.entry.payload).toEqual(observed.payload)
     }
