@@ -12,7 +12,7 @@
  * repository — which is the whole of that host's shape.
  */
 import { NodeServices } from "@effect/platform-node"
-import { Effect, Layer, type Schema } from "effect"
+import { Cause, Effect, Exit, Layer, type Schema } from "effect"
 import { execFileSync } from "node:child_process"
 import { mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -49,20 +49,26 @@ const inDirectory = [
 ].join("\n")
 
 /** A container named `task` whose working directory is `workdir`. */
-const task = (workdir: string): Container.Container =>
+const task = (workdir: string, shellPreamble = ""): Container.Container =>
   Container.make({
     exec: (request) =>
       request.container === "task"
         ? Effect.succeed({
           file: process.execPath,
-          args: ["--eval", inDirectory, request.cwd ?? workdir, request.file, ...request.args],
+          args: [
+            "--eval",
+            inDirectory,
+            request.cwd ?? workdir,
+            request.file,
+            ...request.args.map((arg, index) => request.file === "sh" && index === 1 ? shellPreamble + arg : arg)
+          ],
           env: request.env
         })
         : Effect.fail(Container.unavailable(request.container))
   })
 
-const services = (workdir: string) =>
-  Layer.mergeAll(NodeServices.layer, Layer.succeed(Container.Container)(task(workdir)))
+const services = (workdir: string, shellPreamble = "") =>
+  Layer.mergeAll(NodeServices.layer, Layer.succeed(Container.Container)(task(workdir, shellPreamble)))
 
 /** Runs `call` at checkpoint `id` through the store and the relocation the harness uses. */
 const at = (checkpoints: Checkpoints.Checkpoints, id: string, call: Bash.Input & Schema.Json) =>
@@ -83,7 +89,29 @@ describe("Checkpoints in a container with a filesystem of its own", () => {
         .pipe(Effect.provide(NodeServices.layer))
     )
     expect(exit._tag).toBe("Failure")
-    expect(JSON.stringify(exit)).toContain(`${host} is not a git work tree`)
+    if (Exit.isFailure(exit)) {
+      expect(Cause.squash(exit.cause)).toMatchObject({
+        message: expect.stringContaining(`${host} is not a git work tree`)
+      })
+    }
+  }, 60_000)
+
+  it("uses Git's object directory when the shell names the directory differently", async () => {
+    const app = repository()
+    const before = await Effect.runPromise(
+      Effect.gen(function*() {
+        const checkpoints = yield* Checkpoints.makeContainer({ container: "task" })
+        return yield* at(checkpoints, Checkpoints.baseId, {
+          mode: "unhermetic",
+          container: "task",
+          cwd: app,
+          command: "cat mod.py"
+        })
+      }).pipe(Effect.provide(services(app, "pwd() { printf '/unusable/msys/path\\n'; };\n")))
+    )
+    expect(before.exitCode, before.stderr).toBe(0)
+    expect(before.stdout).toBe("value = 'pristine'\n")
+    expect(readdirSync(join(app, Checkpoints.scratchDirectory))).toEqual([])
   }, 60_000)
 
   it("runs a container-bound bash call at the opening tree after an edit, inside the container", async () => {

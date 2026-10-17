@@ -10,7 +10,7 @@ import { Cause, Effect, Exit, Layer, Option, Sink, Stream } from "effect"
 import type * as ChildProcess from "effect/process/ChildProcess"
 import { ExitCode, makeHandle, ProcessId } from "effect/process/ChildProcessSpawner"
 import { readFileSync } from "node:fs"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import * as Checkpoints from "../src/Checkpoints.ts"
 import * as Container from "../src/Container.ts"
 import { GitWorktree } from "../src/internal/GitWorktree.ts"
@@ -133,9 +133,11 @@ const checkout = (path: string, commit: string) => {
 }
 
 /** The host cache the stage falls back to, from this process's environment. */
-const cacheRoot = process.env.XDG_CACHE_HOME?.startsWith("/")
-  ? `${process.env.XDG_CACHE_HOME.replace(/\/+$/, "")}/smithers`
-  : `${process.env.HOME?.replace(/\/+$/, "")}/.cache/smithers`
+const cacheRoot = "/host-cache/smithers"
+beforeEach(() => {
+  vi.stubEnv("XDG_CACHE_HOME", "/host-cache")
+})
+afterEach(() => vi.unstubAllEnvs())
 
 /** Finds which staging directory shares the checkout parent's filesystem. */
 const measureScript = [
