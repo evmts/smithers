@@ -10,8 +10,10 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	workspaceapi "github.com/smithersai/smithers/packages/backend/workspace"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -141,7 +143,7 @@ echo "GUEST_SEES_OWN_SENTINEL=$(seen_cmdline "$6")"
 echo "GUEST_READS_OWN_SENTINEL_ENV=$(seen_environ "$6")"
 
 # ProcessSandbox.bubblewrap's posture, unchanged, including its own --proc.
-/usr/bin/bwrap --tmpfs / \
+bwrap --tmpfs / \
   --ro-bind /usr /usr --ro-bind /lib /lib --ro-bind /lib64 /lib64 --symlink usr/bin /bin \
   --dev /dev --proc /proc --tmpfs /tmp --dir /tmp/home --dir /tmp/cache \
   --remount-ro / --unshare-all --new-session --die-with-parent \
@@ -254,18 +256,23 @@ func TestConfinedRehearsalGuestNestsAConfinedChild(t *testing.T) {
 	// guest: both needles ARE findable in the witness's own procfs entries. A
 	// negative from inside the guest is only meaningful after this holds.
 	witnessProc := filepath.Join("/proc", strconv.Itoa(witness.Process.Pid))
-	cmdline, err := os.ReadFile(filepath.Join(witnessProc, "cmdline"))
-	require.NoError(t, err, "the witness's command line reads from this process")
-	require.Contains(t, string(cmdline), witnessMark, "the witness carries its command-line marker")
-	environ, err := os.ReadFile(filepath.Join(witnessProc, "environ"))
-	require.NoError(t, err, "the witness's environment reads from this process")
-	require.Contains(t, string(environ), witnessEnv,
-		"the witness carries its nonce in the environment it was exec'd with")
+	require.EventuallyWithT(t, func(ready *assert.CollectT) {
+		cmdline, err := os.ReadFile(filepath.Join(witnessProc, "cmdline"))
+		assert.NoError(ready, err, "the witness's command line reads from this process")
+		assert.Contains(ready, string(cmdline), witnessMark, "the witness carries its command-line marker")
+		environ, err := os.ReadFile(filepath.Join(witnessProc, "environ"))
+		assert.NoError(ready, err, "the witness's environment reads from this process")
+		assert.Contains(ready, string(environ), witnessEnv,
+			"the witness carries its nonce in the environment it was exec'd with")
+	}, 3*time.Second, 10*time.Millisecond, "the host witness becomes observable before isolation checks")
 
 	// The open-only fixture, built into the directory `confined` already binds
 	// read-only and puts on the guest's PATH. No new bind, no new tool: the
 	// repository's own pinned Go toolchain compiles it from the source above.
 	tools := t.TempDir()
+	bwrapBinary, err := os.ReadFile(bwrap)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(tools, "bwrap"), bwrapBinary, 0o755))
 	fixture := filepath.Join(t.TempDir(), "openw.go")
 	require.NoError(t, os.WriteFile(fixture, []byte(openWriteProbe), 0o600))
 	build := exec.Command("go", "build", "-o", filepath.Join(tools, "openw"), fixture)

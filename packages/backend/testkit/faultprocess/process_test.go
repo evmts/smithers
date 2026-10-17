@@ -92,3 +92,17 @@ func TestCrashMarkerOutcomeProtocol(t *testing.T) {
 	require.True(t, found)
 	require.Equal(t, []string{"true"}, fields)
 }
+
+func TestIdentityInNonColocatedJjWorkspace(t *testing.T) {
+	directory := t.TempDir()
+	command := exec.Command("jj", "git", "init", "--no-colocate", directory)
+	output, err := command.CombinedOutput()
+	require.NoError(t, err, string(output))
+	t.Chdir(directory)
+	expected, err := exec.Command("jj", "log", "-r", "@", "--no-graph", "-T", "commit_id").Output()
+	require.NoError(t, err)
+	identity := Identity(t)
+	require.Equal(t, strings.TrimSpace(string(expected)), identity["commit"])
+	require.Equal(t, false, identity["approved_bundle"])
+	require.NotEmpty(t, identity["test_executable_sha256"])
+}

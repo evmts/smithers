@@ -171,7 +171,11 @@ func Identity(t *testing.T) map[string]any {
 	raw, err := os.ReadFile(executable)
 	require.NoError(t, err)
 	digest := sha256.Sum256(raw)
-	commit, err := exec.Command("git", "rev-parse", "HEAD").Output()
+	commit, err := exec.Command("jj", "log", "-r", "@", "--no-graph", "-T", "commit_id").Output()
+	if err != nil {
+		// Git-only CI checkouts do not have a jj workspace.
+		commit, err = exec.Command("git", "rev-parse", "HEAD").Output()
+	}
 	require.NoError(t, err)
 	return map[string]any{"commit": strings.TrimSpace(string(commit)), "test_executable": executable, "test_executable_sha256": hex.EncodeToString(digest[:]), "uid": os.Getuid(), "gid": os.Getgid(), "goos": runtime.GOOS, "goarch": runtime.GOARCH, "approved_bundle": false}
 }
