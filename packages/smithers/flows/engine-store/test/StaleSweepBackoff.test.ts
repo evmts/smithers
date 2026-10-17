@@ -312,6 +312,8 @@ describe("the stale-running sweep backs off refused rows (B-04)", () => {
         const sql = yield* Effect.service(SqlClient.SqlClient)
         const writer = yield* DurableWriter.DurableWriter
         const probed: Array<number> = []
+        const engineState = yield* DurableEngineState.DurableEngineState
+        let ticks = 0
         const driver = yield* RunDriver.make({
           owner: { hostId: "sweep-host", pid: 1, nonce: "sweeper" },
           journalSource: "stale-sweep-backoff",
@@ -321,13 +323,34 @@ describe("the stale-running sweep backs off refused rows (B-04)", () => {
               return true
             }),
           engine: Effect.succeed(fakeEngine)
-        })
+        }).pipe(Effect.provideService(DurableEngineState.DurableEngineState, {
+          ...engineState,
+          pendingRunTail: (flowName, eligibleBeforeMs) =>
+            engineState.pendingRunTail(flowName, eligibleBeforeMs).pipe(
+              // Model a hosted database read still in flight after the refusal
+              // has been journaled. Advancing virtual time cannot finish it.
+              Effect.andThen(
+                (eligibleBeforeMs ?? 0) > 0
+                  ? Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 25)))
+                  : Effect.void
+              ),
+              Effect.ensuring(Effect.sync(() => {
+                if ((eligibleBeforeMs ?? 0) > 0) ticks = ticks + 1
+              }))
+            )
+        }))
         yield* driver.register(TestFlow, () => Effect.succeed("never reached"))
         yield* insertStaleRun(1)
 
+        const beforeTick = ticks
         yield* TestClock.adjust(staleAfterMs + heartbeatMs)
         yield* TestDatabase.until(Effect.sync(() => probed.length >= 1))
         yield* TestDatabase.until(refusalsOf(runIdOf(1)).pipe(Effect.map((rows) => rows.length === 1)))
+
+        // A refusal receipt precedes the rest of the sweep's database work.
+        // Wait for that tick before advancing time, or its next sleep starts
+        // after the new clock value and no second tick can run.
+        yield* TestDatabase.until(Effect.sync(() => ticks > beforeTick))
 
         // The owner pulses and stalls again before the next tick, so no read
         // ever finds the row outside the stale window. Its lease still moved.
