@@ -57,6 +57,54 @@ describe("invalid process identifiers", () => {
   })
 })
 
+describe("process group syscall boundary", () => {
+  it("waits until the observed parent changes", async () => {
+    const query = vi.spyOn(ProcessTable, "query")
+      .mockReturnValueOnce("123\n")
+      .mockReturnValueOnce("456\n")
+    try {
+      await expect(waitForReparent(12345, 123)).resolves.toBe(456)
+      expect(query).toHaveBeenCalledTimes(2)
+      expect(query).toHaveBeenLastCalledWith({ pid: 12345, columns: ["ppid"] })
+    } finally {
+      query.mockRestore()
+    }
+  })
+
+  it("distinguishes a live group, absence, and denied inspection", () => {
+    const kill = vi.spyOn(process, "kill").mockReturnValue(true)
+    try {
+      expect(isGroupAlive(12345)).toBe(true)
+      kill.mockImplementationOnce(() => {
+        throw Object.assign(new Error("gone"), { code: "ESRCH" })
+      })
+      expect(isGroupAlive(12345)).toBe(false)
+      kill.mockImplementationOnce(() => {
+        throw Object.assign(new Error("denied"), { code: "EPERM" })
+      })
+      expect(isGroupAlive(12345)).toBe(true)
+      expect(kill.mock.calls).toEqual([[-12345, 0], [-12345, 0], [-12345, 0]])
+    } finally {
+      kill.mockRestore()
+    }
+  })
+
+  it("uses the default and requested group signals and contains teardown errors", () => {
+    const kill = vi.spyOn(process, "kill").mockReturnValue(true)
+    try {
+      killGroup(12345)
+      killGroup(12345, "SIGTERM")
+      kill.mockImplementationOnce(() => {
+        throw Object.assign(new Error("denied"), { code: "EPERM" })
+      })
+      expect(() => killGroup(12345)).not.toThrow()
+      expect(kill.mock.calls).toEqual([[-12345, "SIGKILL"], [-12345, "SIGTERM"], [-12345, "SIGKILL"]])
+    } finally {
+      kill.mockRestore()
+    }
+  })
+})
+
 describe("killProcess", () => {
   it("kills a real process and waits for the operating system to reap it", async () => {
     const child = sleeper()
