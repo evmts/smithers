@@ -368,7 +368,7 @@ export class Control {
     this.disconnect()
     const cause = this.fault ??
       processFault("outcome_missing", "Process supervisor closed before reporting its outcome")
-    if (this.activationSent && !this.targetDone && !this.spawnFailed) this.lost.reject(cause)
+    if (this.activationSent && !this.targetDone && !this.spawnFailed) { console.error("CI7_LOST_EXIT", this.ownerDone, this.fault); this.lost.reject(cause) }
     this.ready.reject(cause)
     this.requestsReady.reject(cause)
     this.started.reject(cause)
@@ -385,7 +385,7 @@ export class Control {
     // A late write may fail after the owner has sent its last status frames.
     // Destroying this socket must never discard those frames on the reader.
     socket.on("error", (cause) => {
-      console.error("CI7_RESET_CONTROL", socket === this.requestSocket ? "request" : "status", (cause as NodeJS.ErrnoException).code, this.targetDone)
+      if (!this.targetDone) console.error("CI7_RESET_CONTROL", socket === this.requestSocket ? "request" : "status", (cause as NodeJS.ErrnoException).code, this.targetDone)
       this.fault = cause
     })
     this.requestsReady.resolve()
@@ -418,7 +418,7 @@ export class Control {
       }
     })
     socket.on("error", (cause) => {
-      console.error("CI7_RESET_CONTROL", socket === this.requestSocket ? "request" : "status", (cause as NodeJS.ErrnoException).code, this.targetDone)
+      if (!this.targetDone) console.error("CI7_RESET_CONTROL", socket === this.requestSocket ? "request" : "status", (cause as NodeJS.ErrnoException).code, this.targetDone)
       this.fault = cause
     })
     socket.once("close", () => this.closed())
