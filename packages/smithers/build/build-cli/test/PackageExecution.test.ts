@@ -1459,22 +1459,23 @@ export const Package = S.Package({ targets: { dist } })
 
   it("re-keys a target when the resolved node_modules package version changes", async () => {
     const root = await temporaryWorkspace()
+    const bin = process.platform === "win32" ? "mytool.exe" : "mytool"
     await write(root, "WORKSPACE.ts", workspaceModule())
     await write(
       root,
       "PACKAGE.ts",
       `import { Smithers as S } from "@smthrs/targets"
-export const Package = S.Package({ targets: { tool: S.Shell.Test({ bin: S.NodeModule.Bin("mytool") }) } })
+export const Package = S.Package({ targets: { tool: S.Shell.Test({ bin: S.NodeModule.Bin("mytool", ${JSON.stringify(bin)}) }) } })
 `
     )
     await write(root, "node_modules/mytool/package.json", `{ "name": "mytool", "version": "1.0.0" }\n`)
     await writeExecutable(NodePath.join(root, "node_modules", ".bin", "mytool"), "#!/usr/bin/env node\n")
     commitAll(root)
     const first = await serve(root, ["//:tool", "--plan"])
-    expect(first.exitCode).toBe(0)
+    expect(first.exitCode, first.output + first.logs).toBe(0)
     await write(root, "node_modules/mytool/package.json", `{ "name": "mytool", "version": "2.0.0" }\n`)
     const second = await serve(root, ["//:tool", "--plan"])
-    expect(second.exitCode).toBe(0)
+    expect(second.exitCode, second.output + second.logs).toBe(0)
     expect(keyOf(first.output, "//:tool")).not.toBe(keyOf(second.output, "//:tool"))
   })
 
