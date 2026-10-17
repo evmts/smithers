@@ -906,7 +906,7 @@ describe("deploy wrapper remote state", () => {
     expect(stderr).toContain("CLOUDFLARE_API_TOKEN is required")
   })
 
-  it.each([["SIGTERM", 143], ["SIGINT", 130]] as const)(
+  it.each([["SIGHUP", 129], ["SIGTERM", 143], ["SIGINT", 130]] as const)(
     "honors %s that arrives while remote state is pulled, without starting Alchemy",
     async (signal, exitCode) => {
       const bucket = memoryStateBucket()

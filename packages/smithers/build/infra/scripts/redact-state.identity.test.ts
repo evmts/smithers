@@ -39,7 +39,7 @@ const { fault, initialFault } = vi.hoisted(() => {
       closeFails: false
     },
     /** Synthetic entries `opendir` yields for `target` instead of reading it. */
-    entries: { target: undefined as string | undefined, count: 0 }
+    entries: { target: undefined as string | undefined, count: 0, symbolicLink: false }
   })
   return { fault: initialFault(), initialFault }
 })
@@ -96,7 +96,7 @@ vi.mock("node:fs/promises", async (importOriginal) => {
       const count = fault.entries.count
       const entries = async function*() {
         for (let index = 0; index < count; index += 1) {
-          yield { name: `entry-${index}`, isSymbolicLink: () => false, isDirectory: () => false, isFile: () => true }
+          yield { name: `entry-${index}`, isSymbolicLink: () => fault.entries.symbolicLink, isDirectory: () => false, isFile: () => true }
         }
       }
       return entries() as unknown as Dir
@@ -438,6 +438,15 @@ describe("Alchemy state file identity", () => {
    * code, or one that is not even an object, is not a reason to report
    * success over state that was never inspected.
    */
+  it("refuses a symbolic link returned by the directory listing before reading state", async () => {
+    await withFixture(async (root) => {
+      fault.entries.target = root
+      fault.entries.count = 1
+      fault.entries.symbolicLink = true
+      await expect(redactAlchemyState({ directory: root })).rejects.toThrow("symbolic links are not allowed in Alchemy state")
+    })
+  })
+
   it("refuses Windows ENOENT beneath an existing file", async () => {
     await withFixture(async (root) => {
       const file = NodePath.join(root, "state.json")
