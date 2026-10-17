@@ -30,6 +30,12 @@ import {
   waitFor,
   waitForReparent
 } from "../src/Faults.ts"
+import * as ProcessTable from "../src/ProcessTable.ts"
+
+vi.mock(
+  "../src/ProcessTable.ts",
+  async (original) => ({ ...await original<typeof import("../src/ProcessTable.ts")>() })
+)
 
 const sleeper = () => spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" })
 
@@ -151,10 +157,12 @@ describe("killProcess", () => {
   it("gives up on a reparenting that never happens, naming the parent it kept", async () => {
     const child = sleeper()
     const pid = child.pid as number
-    const clock = vi.spyOn(Date, "now").mockReturnValue(0)
+    // Confirm the real parent separately. Windows' synchronous PowerShell
+    // probe can exceed this test's entire deadline, so the timeout contract
+    // uses a fixed parent observation while the real monotonic wait runs.
+    expect(parentPid(pid)).toBe(process.pid)
+    const probe = vi.spyOn(ProcessTable, "query").mockReturnValue(`${process.pid}\n`)
     try {
-      // Keep a slow native parent observation from consuming the entire
-      // deadline before the polling contract has made even one retry.
       const waiting = waitForReparent(pid, process.pid, 100)
       let settled = false
       void waiting.then(() => {
@@ -164,12 +172,12 @@ describe("killProcess", () => {
       })
       await Promise.resolve()
       expect(settled).toBe(false)
-      clock.mockReturnValue(100)
       await expect(waiting).rejects.toThrow(
         new RegExp(`still reports parent ${process.pid} after 100ms`)
       )
     } finally {
-      clock.mockRestore()
+      expect(probe.mock.calls.length).toBeGreaterThan(1)
+      probe.mockRestore()
       await killProcess(child)
     }
   })
