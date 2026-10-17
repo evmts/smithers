@@ -48,6 +48,20 @@ export const writeExecutable = async (
   const executable = `${path}.exe`
   try {
     const code = `use std::{env, fs, process::{Command, exit}};
+fn close_input() {
+  // The child inherited stdin; the waiting dispatcher must not retain a reader.
+  #[cfg(unix)] {
+    use std::os::fd::FromRawFd;
+    unsafe { drop(fs::File::from_raw_fd(0)); }
+  }
+  #[cfg(windows)] {
+    use std::os::windows::io::{AsRawHandle, FromRawHandle};
+    let handle = std::io::stdin().as_raw_handle();
+    if !handle.is_null() && handle as isize != -1 {
+      unsafe { drop(fs::File::from_raw_handle(handle)); }
+    }
+  }
+}
 fn main() {
   if fs::read_to_string(${literal(path)}).ok().as_deref() != Some(${literal(programSource)}) {
     eprintln!("fixture source changed without recompilation"); exit(95);
@@ -63,7 +77,11 @@ fn main() {
   } else {
     command.args(env::args_os().skip(1));
   }
-  match command.status() { Ok(status) => exit(status.code().unwrap_or(1)), Err(error) => { eprintln!("{}", error); exit(96); } }
+  let status = match command.spawn() {
+    Ok(mut child) => { close_input(); child.wait() },
+    Err(error) => Err(error)
+  };
+  match status { Ok(status) => exit(status.code().unwrap_or(1)), Err(error) => { eprintln!("{}", error); exit(96); } }
 }
 `
     const program = Path.join(directory, "fixture.rs")

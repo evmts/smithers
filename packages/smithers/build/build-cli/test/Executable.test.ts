@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process"
+import { spawn, spawnSync } from "node:child_process"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
@@ -42,4 +42,56 @@ it("writes the POSIX script unchanged and rejects an unknown Windows interpreter
   expect(await writeExecutable(path, source, "darwin")).toBe(path)
   expect(await Fs.readFile(path, "utf8")).toBe(source)
   await expect(writeExecutable(path, "unrecognized", "win32")).rejects.toThrow("Unknown fixture interpreter")
+})
+
+it("releases the wrapper stdin when its live child closes stdin", async () => {
+  const executable = await writeExecutable(
+    Path.join(root, "close-input"),
+    "#!/usr/bin/env node\nimport { closeSync } from \"node:fs\"; closeSync(0); process.stderr.write(`CLOSED ${process.pid}\\n`); setInterval(() => {}, 1000)\n",
+    "win32"
+  )
+  const child = spawn(executable, [], { stdio: ["pipe", "ignore", "pipe"] })
+  const closed = new Promise<void>((resolve) => child.once("close", () => resolve()))
+  child.stdin.on("error", () => {})
+  let pid: number | undefined
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let output = ""
+  try {
+    await Promise.race([
+      new Promise<void>((resolve, reject) => {
+        child.on("error", reject)
+        child.stderr.on("data", (chunk: Buffer) => {
+          output += chunk.toString("utf8")
+          const observed = /CLOSED (\d+)\n/.exec(output)
+          if (observed !== null) {
+            pid = Number(observed[1])
+            resolve()
+          }
+        })
+      }),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("child did not close stdin")), 10_000)
+      })
+    ])
+    clearTimeout(timer)
+    const error = await Promise.race([
+      new Promise<Error | null | undefined>((resolve) => child.stdin.write(Buffer.alloc(2 * 1024 * 1024), resolve)),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("wrapper retained stdin")), 2_000)
+      })
+    ])
+    expect(error).toMatchObject({ code: expect.stringMatching(/^(EPIPE|ECONNRESET|EOF)$/) })
+    expect(child.exitCode).toBeNull()
+  } finally {
+    clearTimeout(timer)
+    if (pid !== undefined) {
+      try {
+        process.kill(pid, "SIGKILL")
+      } catch (cause) {
+        if ((cause as NodeJS.ErrnoException).code !== "ESRCH") throw cause
+      }
+    }
+    child.kill("SIGKILL")
+    await closed
+  }
 })
