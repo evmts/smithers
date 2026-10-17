@@ -1755,7 +1755,7 @@ importers:
         version: 26.4.1
       dprint:
         specifier: 0.57.1
-        version: 0.57.1(patch_hash=4d1658d5607d04c4bcb50cc49d97cbbac9f97b6cfae74ce3f1c6be779edf081e)
+        version: 0.57.1
       eslint:
         specifier: 9.39.5
         version: 9.39.5(jiti@2.7.0)(supports-color@10.2.2)
