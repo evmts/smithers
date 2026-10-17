@@ -2226,7 +2226,7 @@ export const Package = S.Package({ targets: { dist } })
 })
 
 describe("generators beside a live runtime", () => {
-  it.each(["success", "failure", "cancel", "credential", "source"])(
+  it.each(["success", "failure", "cancel", "credential", ...Array.from({ length: 120 }, () => "source")])(
     "preserves concurrent WAL and logs on %s",
     async (mode) => {
       const root = await temporaryWorkspace()
