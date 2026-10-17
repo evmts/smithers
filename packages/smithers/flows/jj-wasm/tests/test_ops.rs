@@ -58,7 +58,7 @@ fn read(root: &Path, name: &str) -> String {
 fn description(root: &Path, change_id: &str) -> String {
     let mut config = StackedConfig::with_defaults();
     config.add_layer(ConfigLayer::parse(ConfigSource::User, USER_CONFIG).unwrap());
-    let settings = UserSettings::from_config(config).unwrap();
+    let settings = UserSettings::from_config_and_home_dir(config, None).unwrap();
     let workspace = Workspace::load(
         &settings,
         root,
@@ -73,7 +73,8 @@ fn description(root: &Path, change_id: &str) -> String {
         .block_on()
         .unwrap();
     let prefix = HexPrefix::try_from_reverse_hex(change_id).unwrap();
-    let PrefixResolution::SingleMatch(targets) = repo.resolve_change_id_prefix(&prefix).unwrap()
+    let PrefixResolution::SingleMatch(targets) =
+        repo.resolve_change_id_prefix(&prefix).block_on().unwrap()
     else {
         panic!("change id {change_id:?} does not resolve to one change");
     };
@@ -424,7 +425,7 @@ fn diff_rename_shows_as_delete_plus_add() {
 fn open_change(root: &Path) {
     let mut config = StackedConfig::with_defaults();
     config.add_layer(ConfigLayer::parse(ConfigSource::User, USER_CONFIG).unwrap());
-    let settings = UserSettings::from_config(config).unwrap();
+    let settings = UserSettings::from_config_and_home_dir(config, None).unwrap();
     let mut workspace = Workspace::load(
         &settings,
         root,
@@ -602,7 +603,7 @@ fn op_restore_preserves_current_remote_and_git_metadata() {
     ops::snapshot(&root, None).unwrap();
     let mut config = StackedConfig::with_defaults();
     config.add_layer(ConfigLayer::parse(ConfigSource::User, USER_CONFIG).unwrap());
-    let settings = UserSettings::from_config(config).unwrap();
+    let settings = UserSettings::from_config_and_home_dir(config, None).unwrap();
     let workspace = Workspace::load(
         &settings,
         &root,
@@ -628,7 +629,8 @@ fn op_restore_preserves_current_remote_and_git_metadata() {
     view.remote_views.insert("origin".into(), remote_view);
     view.git_refs
         .insert("refs/heads/main".into(), target.clone());
-    view.git_head = target;
+    view.git_heads
+        .insert(workspace.workspace_name().to_owned(), target);
     let expected = view.clone();
     let mut tx = repo.start_transaction();
     tx.repo_mut().set_view(view);
@@ -642,7 +644,7 @@ fn op_restore_preserves_current_remote_and_git_metadata() {
     let restored_view = restored.view().store_view();
     assert_eq!(restored_view.remote_views, expected.remote_views);
     assert_eq!(restored_view.git_refs, expected.git_refs);
-    assert_eq!(restored_view.git_head, expected.git_head);
+    assert_eq!(restored_view.git_heads, expected.git_heads);
     assert_ne!(restored_view.wc_commit_ids, expected.wc_commit_ids);
 }
 
@@ -652,7 +654,7 @@ fn op_restore_preserves_current_remote_and_git_metadata() {
 fn squash_working_copy_into(root: &Path, closed_commit: &str) {
     let mut config = StackedConfig::with_defaults();
     config.add_layer(ConfigLayer::parse(ConfigSource::User, USER_CONFIG).unwrap());
-    let settings = UserSettings::from_config(config).unwrap();
+    let settings = UserSettings::from_config_and_home_dir(config, None).unwrap();
     // Record the edits on @ first, through the contract.
     ops::status(root).unwrap();
     let workspace = Workspace::load(
@@ -675,8 +677,11 @@ fn squash_working_copy_into(root: &Path, closed_commit: &str) {
         .clone();
     let wc = repo.store().get_commit(&wc_id).unwrap();
     let prefix = HexPrefix::try_from_hex(closed_commit).unwrap();
-    let PrefixResolution::SingleMatch(closed_id) =
-        repo.index().resolve_commit_id_prefix(&prefix).unwrap()
+    let PrefixResolution::SingleMatch(closed_id) = repo
+        .index()
+        .resolve_commit_id_prefix(&prefix)
+        .block_on()
+        .unwrap()
     else {
         panic!("commit {closed_commit:?} does not resolve");
     };

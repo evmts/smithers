@@ -140,7 +140,10 @@ impl oplog::Repository for Cleanup<'_> {
                 .map_err(invalid)?;
             // Git's GC retains refs/smithers/pending/*, including captures and
             // versions that no longer occur in the retained operation history.
-            repo.store().gc(repo.index(), keep_newer).map_err(invalid)
+            jj_lib::git::get_git_backend(repo.store())
+                .map_err(invalid)?
+                .gc(repo.index(), keep_newer)
+                .map_err(invalid)
         })()
         .map_err(hook)
     }

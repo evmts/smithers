@@ -8,8 +8,8 @@ package's own `LICENSE` (MIT).
 `wasm/flows_jj.wasm` is a `wasm32-wasip1` reactor module built from
 `packages/smithers/flows/jj-wasm` (`cargo build --release --target wasm32-wasip1 --package
 flows-jj`). That crate statically links `jj-lib` — taken from a fork of
-Jujutsu that `packages/smithers/flows/jj-wasm/Cargo.toml` pins as a git dependency at one
-rev — and every crate in `jj-lib`'s and `flows-jj`'s Rust closure. This
+Jujutsu that the root `Cargo.toml` pins as a git dependency at one
+commit — and every crate in `jj-lib`'s and `flows-jj`'s Rust closure. This
 file enumerates that closure, resolved from the repo's `Cargo.lock` with
 `cargo metadata` / `cargo tree -e normal,build --target wasm32-wasip1
 --package flows-jj`, and groups it by license. Dev-only dependencies (for
@@ -24,19 +24,20 @@ as part of, the artifact.
 ## jj-lib (Apache-2.0)
 
 - Upstream repository: <https://github.com/jj-vcs/jj>
-- Fork: <https://github.com/smithersai/jj>, branch `flows-wasm`, pinned as a
-  cargo git dependency at rev `47589ada70c12b3e829b5c98ab32503abad49eac`
-  (see `packages/smithers/flows/jj-wasm/Cargo.toml` and `Cargo.lock`)
-- Crates: `jj-lib` and `jj-lib-proc-macros`, both under `lib/` in that fork
-- Version statically linked into `wasm/flows_jj.wasm`: 0.44.0
+- Fork: <https://github.com/smithersai/jj>, branch `smithers` (its
+  `SMITHERS.md` lists the changes), pinned as a cargo git dependency at the
+  commit the root `Cargo.toml` and `Cargo.lock` name
+- Crates: `jj-lib` (`lib/`), `jj-core` and `jj-core-proc-macros` (`core/`),
+  and `jj-dsl` (`dsl/`) in that fork
+- Version statically linked into `wasm/flows_jj.wasm`: 0.46.0
 - Copyright 2020–2026 The Jujutsu Authors (per-file copyright headers
-  throughout the fork's `lib/src`; its `AUTHORS` file additionally credits
+  throughout the fork's sources; its `AUTHORS` file additionally credits
   Google LLC as a significant contributor)
 - The fork ships no separate `NOTICE` file; there is no attribution
   content beyond the per-file copyright headers and the Apache License 2.0
   text below.
 
-jj-lib and jj-lib-proc-macros are distributed under the Apache License,
+These crates are distributed under the Apache License,
 Version 2.0. Apache-2.0 §4(a) requires that any redistribution of the Work
 give recipients a copy of the License; the full text is reproduced below.
 

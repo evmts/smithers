@@ -3,7 +3,7 @@
  * `BrowserJj` — and copies it to `packages/smithers/flows/jj/wasm/flows_jj.wasm`.
  *
  * The Rust side lives in this crate (`packages/smithers/flows/jj-wasm`), which depends on the
- * single vendored jj fork pinned to one upstream revision. The build runs through
+ * smithersai/jj fork as a git dependency pinned to one commit. The build runs through
  * the repo-root Cargo workspace so native tests and the wasm artifact share one
  * lockfile, and it builds `--locked` so the artifact always reflects the
  * committed Cargo.lock.

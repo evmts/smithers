@@ -362,7 +362,7 @@ fn refs(git_dir: &Path) -> Result<BTreeMap<String, String>> {
 
 fn native_refs(repo: &Path) -> Result<(BTreeMap<String, String>, Option<String>)> {
     let settings = create_settings(&UserConfig::default());
-    let (_, loaded) = load_repo_at_head(repo, &settings)
+    let (workspace, loaded) = load_repo_at_head(repo, &settings)
         .map_err(|_| Failure::new("unsupported_jj", "native repository is unavailable"))?;
     let refs = loaded
         .view()
@@ -380,7 +380,7 @@ fn native_refs(repo: &Path) -> Result<(BTreeMap<String, String>, Option<String>)
         .collect();
     let head = loaded
         .view()
-        .git_head()
+        .git_head(workspace.workspace_name())
         .as_resolved()
         .ok_or_else(|| Failure::new("source_changed", "native Git HEAD is conflicted"))?
         .as_ref()

@@ -100,6 +100,7 @@ macro_rules! impl_from_unknown {
 
 impl_from_unknown!(
     jj_lib::backend::BackendError,
+    jj_lib::backend::BackendLoadError,
     jj_lib::config::ConfigGetError,
     jj_lib::config::ConfigLoadError,
     jj_lib::diff_presentation::unified::UnifiedDiffError,

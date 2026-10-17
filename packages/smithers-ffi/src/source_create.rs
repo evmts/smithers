@@ -357,11 +357,20 @@ fn record_valid(
         .map_err(|_| receipt_invalid())?;
     let id = CommitId::try_from_hex(&record.source.commit_id).ok_or_else(receipt_invalid)?;
     let base_id = CommitId::try_from_hex(&record.base.commit_id).ok_or_else(receipt_invalid)?;
-    if before.index().has_id(&id).map_err(|_| receipt_invalid())?
-        || !after.index().has_id(&id).map_err(|_| receipt_invalid())?
+    if before
+        .index()
+        .has_id(&id)
+        .block_on()
+        .map_err(|_| receipt_invalid())?
+        || !after
+            .index()
+            .has_id(&id)
+            .block_on()
+            .map_err(|_| receipt_invalid())?
         || !before
             .index()
             .has_id(&base_id)
+            .block_on()
             .map_err(|_| receipt_invalid())?
     {
         return Err(receipt_invalid());
@@ -595,7 +604,12 @@ fn create_with_hook(
     }
     let previous_head = head(&repo, &workspace)?;
     let base_id = CommitId::try_from_hex(&request.base.commit_id).ok_or_else(invalid)?;
-    if !repo.index().has_id(&base_id).map_err(|_| unavailable())? {
+    if !repo
+        .index()
+        .has_id(&base_id)
+        .block_on()
+        .map_err(|_| unavailable())?
+    {
         return Err(Failure {
             code: "source_missing",
             message: "The exact main source is not available in the native store",

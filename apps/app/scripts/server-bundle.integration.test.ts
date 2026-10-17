@@ -4,6 +4,7 @@ import { createHash, randomUUID } from "node:crypto"
 import { constants, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join, resolve } from "node:path"
+import { readJjPin } from "./jj-pin"
 
 // This is a real release assembly, not a fixture that mocks compilers or tools.
 // Opt in on the reference builder with Zig installed: the assembler
@@ -69,7 +70,7 @@ test.skipIf(process.env.SMITHERS_SERVER_BUNDLE_INTEGRATION !== "1")("production 
     for (const [path, release] of [
       ["bin/node", /^v26\.(?:[4-9]|[1-9]\d+)\./],
       ["bin/git", /^git version /],
-      ["bin/jj", /^jj 0\.44\.0-47589ada70c12b3e829b5c98ab32503abad49eac$/],
+      ["bin/jj", new RegExp(`^${readJjPin(root).version.replaceAll(".", "\\.")}$`)],
       [`postgres/${postgres.bin}/postgres`, /PostgreSQL\)?\s+18\./]
     ] as const) {
       const result = spawnSync(join(relocated, path), ["--version"], { encoding: "utf8" })

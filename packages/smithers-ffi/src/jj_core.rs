@@ -42,7 +42,7 @@ pub fn create_settings(config: &UserConfig) -> UserSettings {
     toml["user"]["name"] = toml_edit::value(config.name.as_str());
     toml["user"]["email"] = toml_edit::value(config.email.as_str());
     stacked_config.add_layer(ConfigLayer::with_data(ConfigSource::User, toml));
-    UserSettings::from_config(stacked_config).expect("valid config")
+    UserSettings::from_config_and_home_dir(stacked_config, None).expect("valid config")
 }
 
 /// Load a jj workspace and repository at the HEAD operation.
@@ -89,7 +89,7 @@ pub fn resolve_change_id(repo: &Arc<ReadonlyRepo>, change_id: &str) -> ChangeIdR
         return ChangeIdResolution::NotFound;
     };
 
-    match repo.resolve_change_id_prefix(&prefix) {
+    match repo.resolve_change_id_prefix(&prefix).block_on() {
         Ok(PrefixResolution::SingleMatch(targets)) => {
             let mut visible = targets.visible_with_offsets();
             match (visible.next(), visible.next()) {
@@ -109,7 +109,7 @@ pub fn resolve_commit_id(repo: &Arc<ReadonlyRepo>, commit_id_str: &str) -> Chang
         return ChangeIdResolution::NotFound;
     };
 
-    match repo.index().resolve_commit_id_prefix(&prefix) {
+    match repo.index().resolve_commit_id_prefix(&prefix).block_on() {
         Ok(PrefixResolution::SingleMatch(commit_id)) => ChangeIdResolution::Found(commit_id),
         Ok(PrefixResolution::AmbiguousMatch) => ChangeIdResolution::Ambiguous,
         Ok(PrefixResolution::NoMatch) | Err(_) => ChangeIdResolution::NotFound,
@@ -124,8 +124,15 @@ pub fn collect_tree_diff(stream: TreeDiffStream) -> Vec<TreeDiffEntry> {
 
 /// Format a jj timestamp to RFC3339 string.
 pub fn format_timestamp(ts: &jj_lib::backend::Timestamp) -> String {
-    match ts.to_datetime() {
-        Ok(dt) => dt.to_rfc3339(),
+    match ts.to_zoned() {
+        // RFC 3339, with milliseconds only when present (jj stores milliseconds).
+        Ok(zoned) => zoned
+            .strftime(if zoned.subsec_nanosecond() == 0 {
+                "%Y-%m-%dT%H:%M:%S%:z"
+            } else {
+                "%Y-%m-%dT%H:%M:%S%.3f%:z"
+            })
+            .to_string(),
         Err(_) => {
             let sign = if ts.tz_offset >= 0 { '+' } else { '-' };
             let hours = ts.tz_offset.abs() / 60;
@@ -588,7 +595,16 @@ mod tests {
             tz_offset: 0,
         };
         let formatted = format_timestamp(&ts);
-        assert!(formatted.contains("2024-01-01"), "got: {formatted}");
+        assert_eq!(formatted, "2024-01-01T00:00:00+00:00");
+    }
+
+    #[test]
+    fn test_format_timestamp_keeps_milliseconds() {
+        let ts = Timestamp {
+            timestamp: MillisSinceEpoch(1704067200050),
+            tz_offset: -300,
+        };
+        assert_eq!(format_timestamp(&ts), "2023-12-31T19:00:00.050-05:00");
     }
 
     #[test]
@@ -598,10 +614,7 @@ mod tests {
             tz_offset: 120,
         };
         let formatted = format_timestamp(&ts);
-        assert!(
-            formatted.contains("+02:00") || formatted.contains("2024"),
-            "got: {formatted}"
-        );
+        assert_eq!(formatted, "2024-01-01T02:00:00+02:00");
     }
 
     #[test]
@@ -611,10 +624,7 @@ mod tests {
             tz_offset: -300,
         };
         let formatted = format_timestamp(&ts);
-        assert!(
-            formatted.contains("-05:00") || formatted.contains("2024"),
-            "got: {formatted}"
-        );
+        assert_eq!(formatted, "2023-12-31T19:00:00-05:00");
     }
 
     // ---- parent_tree tests ----

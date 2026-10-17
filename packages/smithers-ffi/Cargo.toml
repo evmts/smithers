@@ -30,7 +30,7 @@ anyhow = "1"
 base64 = "0.22"
 futures = "0.3"
 globset = "0.4.20"
-gix = "0.85"
+gix = "0.89"
 libc = "0.2"
 pollster = "1"
 serde = { version = "1", features = ["derive"] }

@@ -417,7 +417,7 @@ impl RepoHandle {
             self.repo
                 .view()
                 .local_bookmarks()
-                .filter(|(_, target)| target.added_ids().next().is_some())
+                .filter(|(_, target)| target.present_adds().next().is_some())
                 .map(|(name, _)| name)
         };
         let total_count = names().count();
@@ -437,7 +437,7 @@ impl RepoHandle {
 
         let ref_name = RefName::new(name);
         let target = self.repo.view().get_local_bookmark(ref_name);
-        let Some(commit_id) = target.added_ids().next() else {
+        let Some(commit_id) = target.present_adds().next() else {
             return Ok(None);
         };
         let commit = self.repo.store().get_commit(commit_id).map_err(|err| {
@@ -580,7 +580,7 @@ impl RepoHandle {
             .repo
             .view()
             .get_local_bookmark(RefName::new(bookmark))
-            .added_ids()
+            .present_adds()
             .cloned()
             .collect();
         let destination_id = match destination_ids.as_slice() {
@@ -606,7 +606,7 @@ impl RepoHandle {
         let base = base.trim();
         let reverted_parent_tree = if base.is_empty() {
             reverted
-                .parent_tree(self.repo.as_ref())
+                .parent_tree(self.repo.index())
                 .block_on()
                 .map_err(|err| {
                     JjError::Internal(format!("failed to load reverted revision parents: {err}"))
@@ -668,8 +668,8 @@ impl RepoHandle {
     fn bookmark_heads(&self, name: &str) -> Vec<CommitId> {
         let target = self.repo.view().get_local_bookmark(RefName::new(name));
         target
-            .added_ids()
-            .chain(target.removed_ids())
+            .present_adds()
+            .chain(target.present_removes())
             .cloned()
             .collect()
     }
@@ -779,7 +779,7 @@ impl RepoHandle {
         }
 
         let parent_tree = original
-            .parent_tree(self.repo.as_ref())
+            .parent_tree(self.repo.index())
             .block_on()
             .map_err(|err| {
                 JjError::Internal(format!("failed to load split change parents: {err}"))
@@ -925,7 +925,7 @@ impl RepoHandle {
             let from_commit = self.repo.store().get_commit(&from_id).map_err(|err| {
                 JjError::Internal(format!("failed to load source revision for diff: {err}"))
             })?;
-            jj_lib::rewrite::rebase_to_dest_parent(self.repo.as_ref(), &[from_commit], &to_commit)
+            jj_lib::rewrite::rebase_to_dest_parent(self.repo.index(), &[from_commit], &to_commit)
                 .block_on()
                 .map_err(|err| {
                     JjError::Internal(format!("failed to rebase source revision for diff: {err}"))
@@ -1008,7 +1008,7 @@ impl RepoHandle {
             .map(|value| value.trim_matches('/').to_string());
 
         let mut files = Vec::new();
-        for (path, value) in commit.tree().entries() {
+        for (path, value) in futures::executor::block_on_stream(commit.tree().entries_stream()) {
             let path = path.as_internal_file_string().to_string();
             if let Some(prefix) = prefix.as_deref() {
                 if path != prefix && !path.starts_with(&(prefix.to_string() + "/")) {
@@ -1057,8 +1057,7 @@ impl RepoHandle {
             .trees()
             .block_on()
             .map_err(|err| JjError::Internal(format!("failed to read tree: {err}")))?;
-        let Some(trees) = trees
-            .sub_tree_recursive(&dir)
+        let Some(trees) = jj_lib::tree::TreeMergeExt::sub_tree_recursive(&trees, &dir)
             .block_on()
             .map_err(|err| JjError::Internal(format!("failed to read tree: {err}")))?
         else {
@@ -1110,7 +1109,7 @@ impl RepoHandle {
 
         let mut conflicts = Vec::new();
         let store = self.repo.store();
-        for (path, value) in commit.tree().conflicts() {
+        for (path, value) in futures::executor::block_on_stream(commit.tree().conflicts_stream()) {
             let Ok(merged_value) = value else {
                 continue;
             };
@@ -1151,7 +1150,7 @@ impl RepoHandle {
         commit: &jj_lib::commit::Commit,
     ) -> Result<Vec<SuperprojectMember>, JjError> {
         let mut members = Vec::new();
-        for (path, value) in commit.tree().entries() {
+        for (path, value) in futures::executor::block_on_stream(commit.tree().entries_stream()) {
             let value = value.map_err(|err| {
                 JjError::Internal(format!("failed to read superproject tree entry: {err}"))
             })?;
@@ -1242,7 +1241,7 @@ impl RepoHandle {
             self.repo
                 .view()
                 .get_local_bookmark(RefName::new(request.bookmark.trim()))
-                .added_ids()
+                .present_adds()
                 .next()
                 .cloned()
                 .unwrap_or_else(|| store.root_commit_id().clone())
@@ -1611,7 +1610,7 @@ impl RepoHandle {
         }
         let bookmark_name = RefName::new(bookmark);
         let target = self.repo.view().get_local_bookmark(bookmark_name);
-        if target.has_conflict() {
+        if !target.is_resolved() {
             return Err(JjError::Conflict(
                 "target bookmark is conflicted".to_string(),
             ));
@@ -2498,7 +2497,7 @@ const MAX_REVISION_DIFF_BLOB_BYTES: u64 = 1 << 20;
 fn revision_diff_content(
     store: &jj_lib::store::Store,
     path: &jj_lib::repo_path::RepoPath,
-    value: &jj_lib::merge::MergedTreeValue,
+    value: &jj_lib::backend::MergedTreeValue,
 ) -> Result<RevisionDiffContent, JjError> {
     let Some(resolved) = value.as_resolved() else {
         return Ok(RevisionDiffContent {
@@ -2644,7 +2643,7 @@ fn change_from_commit(repo: &Arc<ReadonlyRepo>, commit: &jj_lib::commit::Commit)
         author_email: author.email.clone(),
         timestamp: format_timestamp(&author.timestamp),
         has_conflict: commit.has_conflict(),
-        is_empty: commit.is_empty(repo.as_ref()).block_on().unwrap_or(false),
+        is_empty: commit.is_empty(repo.index()).block_on().unwrap_or(false),
         parent_change_ids,
     }
 }
@@ -2671,9 +2670,9 @@ fn read_tree_value_content(
 fn materialize_conflict_hunks(
     store: &jj_lib::store::Store,
     path: &RepoPathBuf,
-    merged_value: &jj_lib::merge::MergedTreeValue,
+    merged_value: &jj_lib::backend::MergedTreeValue,
 ) -> Option<String> {
-    let file_merge = merged_value.to_file_merge()?;
+    let file_merge = jj_lib::backend::MergedTreeValueExt::to_file_merge(merged_value)?;
     // extract_as_single_hunk buffers every conflict side in memory with no
     // size limit, so verify each side fits the blob cap first and skip hunk
     // rendering when one does not.
@@ -3320,7 +3319,7 @@ fn current_branch(repo: &Arc<ReadonlyRepo>, wc_commit: &jj_lib::commit::Commit) 
         .collect();
     let mut best: Option<String> = None;
     for (name, target) in repo.view().local_bookmarks() {
-        for commit_id in target.added_ids() {
+        for commit_id in target.present_adds() {
             if candidates.iter().any(|c| c == commit_id) {
                 let name = name.as_str().to_string();
                 // Prefer a bookmark on the parent (the branch we're working on)
@@ -6592,6 +6591,7 @@ mod tests {
             .expect("full change ID is a valid prefix");
         let PrefixResolution::SingleMatch(targets) = reconciled
             .resolve_change_id_prefix(&prefix)
+            .block_on()
             .expect("resolve reconciled change")
         else {
             panic!("full change ID must resolve to its target set");

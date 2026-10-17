@@ -12,19 +12,24 @@
  * `//packages/smithers/flows/jj-wasm` under the test verb would pull it into both.
  */
 import { Smithers } from "@smthrs/targets"
-import { Package as jjRuntimePackage } from "../../../../third_party/jj/PACKAGE.ts"
 
-/** Package-owned Rust sources consumed by the root native FFI gate. */
+/**
+ * The crate's Rust sources plus the workspace manifest and lockfile, consumed
+ * by every native and WASM gate. jj-lib is a git dependency on one
+ * smithersai/jj commit; `//Cargo.toml` and `//Cargo.lock` name that commit, so
+ * they carry the jj source identity into each consumer's key.
+ */
 const nativeSources = Smithers.Filegroup({
   cwd: "packages/smithers/flows/jj-wasm",
-  srcs: [Smithers.glob("src/**/*.rs"), jjRuntimePackage.sources]
+  srcs: [Smithers.glob("src/**/*.rs"), Smithers.file("//Cargo.toml"), Smithers.file("//Cargo.lock")]
 })
 
 /**
  * The crate sources, the workspace manifest, and the lockfile.
  *
- * The sole jj fork is pinned and vendored, including its path representation.
- * Its source and manifests participate in every native and WASM input identity.
+ * jj-lib is a cargo git dependency on the smithersai/jj fork pinned to one
+ * commit, so the manifest and lockfile are the whole of its declaration here
+ * and a fresh checkout needs nothing beyond `cargo fetch`.
  */
 const sources = [
   Smithers.glob("//packages/smithers/flows/jj-wasm/**/*.rs"),
@@ -224,7 +229,7 @@ const securityReview = Smithers.SecurityReview({
       title: "The committed wasm is built only from locked, pinned inputs",
       threat: "A tampered dependency or ambient build environment injects code into flows_jj.wasm that every browser user then runs.",
       lookFor: [
-        "cargo invoked without --locked, or a jj source omitted from the nativeSources input identity.",
+        "cargo invoked without --locked, or the jj-lib git dependency in //Cargo.toml not pinned to a full rev.",
         "buildEnvironment inheriting RUSTC_WRAPPER, RUSTC, CARGO_BUILD_RUSTC_WRAPPER or CARGO_TARGET_*_LINKER from the ambient env.",
         "The --verify path writing over the committed artifact instead of comparing."
       ],

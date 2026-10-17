@@ -146,9 +146,11 @@ fn credential(config: &Config) -> Result<String> {
         programs: vec![gix::credentials::Program::from_custom_definition(format!(
             "cache --socket {}",
             config.credential_socket
-        ))],
+        ))
+        .map_err(|_| unavailable())?],
         stderr: false,
         use_http_path: true,
+        context_options: Default::default(),
         query_user_only: false,
     };
     let outcome = cascade
@@ -510,7 +512,8 @@ mod tests {
         let mut program = gix::credentials::Program::from_custom_definition(format!(
             "cache --timeout=5 --socket {}",
             config.credential_socket
-        ));
+        ))
+        .unwrap();
         program.stderr = false;
         let entry = "protocol=https\nhost=example.test\npath=acme/widgets.git\nusername=x-access-token\npassword=sentinel-private-token\n\n";
         gix::credentials::helper::invoke(

@@ -286,7 +286,7 @@ operation.username = "flows"
     fn committed_trees(root: &Path, ids: &[&str]) -> (Arc<Store>, Vec<MergedTree>) {
         let mut config = StackedConfig::with_defaults();
         config.add_layer(ConfigLayer::parse(ConfigSource::User, USER_CONFIG).unwrap());
-        let settings = UserSettings::from_config(config).unwrap();
+        let settings = UserSettings::from_config_and_home_dir(config, None).unwrap();
         let workspace = Workspace::load(
             &settings,
             root,

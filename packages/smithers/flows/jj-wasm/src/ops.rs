@@ -36,8 +36,6 @@ use jj_lib::settings::UserSettings;
 use jj_lib::working_copy::SnapshotOptions;
 use jj_lib::working_copy::WorkingCopyFreshness;
 use jj_lib::workspace::Workspace;
-use jj_lib::workspace_store::SimpleWorkspaceStore;
-use jj_lib::workspace_store::WorkspaceStore as _;
 use pollster::FutureExt as _;
 
 use crate::diff_render;
@@ -64,7 +62,7 @@ fn user_settings() -> Result<UserSettings, OpError> {
     let mut config = StackedConfig::with_defaults();
     let layer = ConfigLayer::parse(ConfigSource::User, USER_CONFIG)?;
     config.add_layer(layer);
-    Ok(UserSettings::from_config(config)?)
+    Ok(UserSettings::from_config_and_home_dir(config, None)?)
 }
 
 /// Snapshot options matching jj's defaults for a repo with no user config:
@@ -173,7 +171,7 @@ fn resolve_revision(
         return Err(OpError::invalid_ref("empty revision string"));
     }
     if let Some(prefix) = HexPrefix::try_from_reverse_hex(symbol) {
-        match repo.resolve_change_id_prefix(&prefix)? {
+        match repo.resolve_change_id_prefix(&prefix).block_on()? {
             PrefixResolution::NoMatch => {}
             PrefixResolution::AmbiguousMatch => {
                 return Err(OpError::invalid_ref(format!(
@@ -198,7 +196,7 @@ fn resolve_revision(
         }
     }
     if let Some(prefix) = HexPrefix::try_from_hex(symbol) {
-        match repo.index().resolve_commit_id_prefix(&prefix)? {
+        match repo.index().resolve_commit_id_prefix(&prefix).block_on()? {
             PrefixResolution::NoMatch => {}
             PrefixResolution::AmbiguousMatch => {
                 return Err(OpError::invalid_ref(format!(
@@ -319,7 +317,7 @@ pub fn op_restore(root: &Path, operation_id: &str) -> Result<(), OpError> {
     }
     view.remote_views = now.remote_views.clone();
     view.git_refs = now.git_refs.clone();
-    view.git_head = now.git_head.clone();
+    view.git_heads = now.git_heads.clone();
     let mut tx = repo.start_transaction();
     tx.repo_mut().merge_index(&target)?;
     tx.repo_mut().set_view(view);
@@ -382,7 +380,7 @@ pub fn status(root: &Path) -> Result<String, OpError> {
     let settings = user_settings()?;
     let (mut workspace, mut repo) = load(&settings, root)?;
     let commit = snapshot_working_copy(&mut workspace, &mut repo)?;
-    let parent_tree = commit.parent_tree(repo.as_ref()).block_on()?;
+    let parent_tree = commit.parent_tree(repo.index()).block_on()?;
     status_render::status(&parent_tree, &commit.tree(), &short_change_id(&commit))
 }
 
@@ -503,19 +501,18 @@ pub fn workspace_add(root: &Path, name: &str, path: &str) -> Result<(), OpError>
 pub fn workspace_forget(root: &Path, name: &str) -> Result<(), OpError> {
     validate_workspace_name(name)?;
     let settings = user_settings()?;
-    let (workspace, repo) = load(&settings, root)?;
+    let (_workspace, repo) = load(&settings, root)?;
     let name_buf: WorkspaceNameBuf = name.into();
     if repo.view().get_wc_commit_id(&name_buf).is_none() {
         return Ok(());
     }
     let mut tx = repo.start_transaction();
     let mut_repo = tx.repo_mut();
-    mut_repo.remove_wc_commit(&name_buf).block_on()?;
+    mut_repo.remove_workspace(&name_buf).block_on()?;
     // Removing the working-copy commit may abandon it (a rewrite), which must
     // be propagated before the transaction commits.
     mut_repo.rebase_descendants().block_on()?;
-    let workspace_store = SimpleWorkspaceStore::load(workspace.repo_path())?;
-    workspace_store.forget(&[&*name_buf])?;
+    repo.loader().workspace_store().forget(&[&*name_buf])?;
     tx.commit(format!("forget workspace {name}")).block_on()?;
     Ok(())
 }

@@ -36,7 +36,7 @@ fn settings() -> io::Result<UserSettings> {
     config.add_layer(ConfigLayer::parse(ConfigSource::User,
         "user.name='Smithers'\nuser.email='smithers@localhost'\noperation.username='machined'\noperation.hostname='machine'\n")
         .map_err(invalid)?);
-    UserSettings::from_config(config).map_err(invalid)
+    UserSettings::from_config_and_home_dir(config, None).map_err(invalid)
 }
 fn oid(bytes: &[u8]) -> io::Result<Oid> {
     bytes
@@ -52,7 +52,12 @@ fn write_reconciled(
     builder: DetachedCommitBuilder,
 ) -> io::Result<Commit> {
     let candidate = builder.write_hidden().block_on().map_err(invalid)?;
-    if repo.index().has_id(candidate.id()).map_err(invalid)? {
+    if repo
+        .index()
+        .has_id(candidate.id())
+        .block_on()
+        .map_err(invalid)?
+    {
         if candidate.id() != source.id() {
             // A descendant cannot replace its own ancestor without a cycle.
             if repo
@@ -197,11 +202,20 @@ impl Repository {
         // otherwise checkout would look like an edit of the item's change.
         let (mut workspace, repo) = self.load()?;
         let mut tx = repo.start_transaction();
-        jj_lib::git::import_head(tx.repo_mut())
-            .block_on()
-            .map_err(invalid)?;
+        jj_lib::git::import_head(
+            tx.repo_mut(),
+            workspace.workspace_name(),
+            workspace.workspace_root(),
+        )
+        .block_on()
+        .map_err(invalid)?;
         if tx.repo().has_changes() {
-            let head = tx.repo().view().git_head().as_normal().cloned();
+            let head = tx
+                .repo()
+                .view()
+                .git_head(workspace.workspace_name())
+                .as_normal()
+                .cloned();
             if let Some(head) = head {
                 let commit = tx.repo().store().get_commit(&head).map_err(invalid)?;
                 let wc = tx
@@ -258,7 +272,11 @@ impl Repository {
             .view()
             .get_wc_commit_id(workspace.workspace_name())
             .ok_or_else(|| invalid("missing working-copy commit"))?;
-        match repo.resolve_change_id_prefix(&prefix).map_err(invalid)? {
+        match repo
+            .resolve_change_id_prefix(&prefix)
+            .block_on()
+            .map_err(invalid)?
+        {
             PrefixResolution::NoMatch => Ok(false),
             PrefixResolution::AmbiguousMatch => Err(invalid("ambiguous item change identity")),
             PrefixResolution::SingleMatch(targets) => {
@@ -443,9 +461,7 @@ impl Repository {
     }
     pub fn conflict_paths(&self, head: Oid) -> io::Result<Vec<String>> {
         let (_, repo) = self.load()?;
-        Self::commit(&repo, head)?
-            .tree()
-            .conflicts()
+        futures::executor::block_on_stream(Self::commit(&repo, head)?.tree().conflicts_stream())
             .map(|(path, value)| {
                 value.map_err(invalid)?;
                 Ok(path.as_internal_file_string().to_owned())
@@ -583,9 +599,14 @@ impl Repository {
             .ok_or_else(|| invalid("missing restored working-copy commit"))?;
         let current = repo.store().get_commit(current_id).map_err(invalid)?;
         let mut tx = repo.start_transaction();
-        jj_lib::git::reset_head(tx.repo_mut(), &current)
-            .block_on()
-            .map_err(invalid)?;
+        jj_lib::git::reset_head(
+            tx.repo_mut(),
+            workspace.workspace_name(),
+            workspace.workspace_root(),
+            &current,
+        )
+        .block_on()
+        .map_err(invalid)?;
         tx.commit("machined restore Git HEAD")
             .block_on()
             .map_err(invalid)?;
@@ -626,9 +647,14 @@ impl Repository {
             .rebase_descendants()
             .block_on()
             .map_err(invalid)?;
-        jj_lib::git::reset_head(tx.repo_mut(), &target)
-            .block_on()
-            .map_err(invalid)?;
+        jj_lib::git::reset_head(
+            tx.repo_mut(),
+            workspace.workspace_name(),
+            workspace.workspace_root(),
+            &target,
+        )
+        .block_on()
+        .map_err(invalid)?;
         let updated = tx
             .commit("machined reconcile working copy")
             .block_on()
@@ -645,7 +671,12 @@ impl Repository {
     fn load_rebase_target(&self, onto: Oid) -> io::Result<(Workspace, Arc<ReadonlyRepo>)> {
         let (workspace, repo) = self.load()?;
         let target = Self::commit(&repo, onto)?;
-        if repo.index().has_id(target.id()).map_err(invalid)? {
+        if repo
+            .index()
+            .has_id(target.id())
+            .block_on()
+            .map_err(invalid)?
+        {
             return Ok((workspace, repo));
         }
         let mut tx = repo.start_transaction();
@@ -762,8 +793,10 @@ impl Repository {
             }
             let prefix = HexPrefix::try_from_reverse_hex(change)
                 .ok_or_else(|| invalid("invalid item change identity"))?;
-            let PrefixResolution::SingleMatch(targets) =
-                repo.resolve_change_id_prefix(&prefix).map_err(invalid)?
+            let PrefixResolution::SingleMatch(targets) = repo
+                .resolve_change_id_prefix(&prefix)
+                .block_on()
+                .map_err(invalid)?
             else {
                 return Err(invalid("owning item unavailable"));
             };
@@ -873,9 +906,14 @@ impl Repository {
             )
             .block_on()
             .map_err(invalid)?;
-        jj_lib::git::reset_head(tx.repo_mut(), &rebased)
-            .block_on()
-            .map_err(invalid)?;
+        jj_lib::git::reset_head(
+            tx.repo_mut(),
+            workspace.workspace_name(),
+            workspace.workspace_root(),
+            &rebased,
+        )
+        .block_on()
+        .map_err(invalid)?;
         let updated = tx
             .commit("machined rebase item")
             .block_on()
@@ -918,9 +956,14 @@ impl Repository {
             .set_wc_commit(workspace.workspace_name().to_owned(), rebased.id().clone())
             .map_err(|e| invalid(format!("native delta: {e}")))?;
         reconcile_descendants(tx.repo_mut(), &snapshot)?;
-        jj_lib::git::reset_head(tx.repo_mut(), &rebased)
-            .block_on()
-            .map_err(invalid)?;
+        jj_lib::git::reset_head(
+            tx.repo_mut(),
+            workspace.workspace_name(),
+            workspace.workspace_root(),
+            &rebased,
+        )
+        .block_on()
+        .map_err(invalid)?;
         let updated = tx
             .commit("machined reconcile local delta")
             .block_on()
@@ -1038,6 +1081,7 @@ pub(crate) mod tests {
         assert!(!repo
             .index()
             .has_id(Repository::commit(&repo, target).unwrap().id())
+            .block_on()
             .unwrap());
         native.validate_rebase(target, None).unwrap();
         assert_eq!(native.current().unwrap().0, item);
@@ -1249,7 +1293,7 @@ pub(crate) mod tests {
         let (mut workspace, repo) = native.load().unwrap();
         let source = Repository::commit(&repo, local).unwrap();
         let expected = Repository::commit(&repo, first).unwrap();
-        assert!(repo.index().has_id(expected.id()).unwrap());
+        assert!(repo.index().has_id(expected.id()).block_on().unwrap());
         let mut tx = repo.start_transaction();
         let builder = tx
             .repo_mut()
@@ -1370,9 +1414,14 @@ pub(crate) mod tests {
         tx.repo_mut()
             .set_wc_commit(workspace.workspace_name().to_owned(), child.id().clone())
             .unwrap();
-        jj_lib::git::reset_head(tx.repo_mut(), &child)
-            .block_on()
-            .unwrap();
+        jj_lib::git::reset_head(
+            tx.repo_mut(),
+            workspace.workspace_name(),
+            workspace.workspace_root(),
+            &child,
+        )
+        .block_on()
+        .unwrap();
         let updated = tx.commit("test branch change").block_on().unwrap();
         workspace
             .check_out(updated.op_id().clone(), Some(&parent.tree()), &child)

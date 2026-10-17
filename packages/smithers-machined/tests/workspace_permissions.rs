@@ -120,7 +120,8 @@ fn workspace_permissions_child() {
     assert!(smithers_machined::installed::run().is_err());
     let mask = rustix::process::umask(rustix::fs::Mode::from_raw_mode(0o002));
     assert_eq!(mask.as_raw_mode(), 0o002);
-    let settings = UserSettings::from_config(StackedConfig::with_defaults()).unwrap();
+    let settings =
+        UserSettings::from_config_and_home_dir(StackedConfig::with_defaults(), None).unwrap();
     Workspace::init_colocated_git(&settings, workspace, gix::hash::Kind::Sha1)
         .block_on()
         .unwrap();

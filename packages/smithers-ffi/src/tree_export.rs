@@ -108,7 +108,7 @@ pub(crate) fn materialize(
     }
     let store = tree.store();
     let mut file_count = 0;
-    for (path, value) in tree.entries() {
+    for (path, value) in futures::executor::block_on_stream(tree.entries_stream()) {
         let value = value.map_err(|err| {
             JjError::Internal(format!("failed to read snapshot tree entry: {err}"))
         })?;

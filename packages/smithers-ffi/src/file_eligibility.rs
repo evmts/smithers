@@ -12,8 +12,9 @@ use jj_lib::default_backend_factories::{
 use jj_lib::fileset::{self, FilesetAliasesMap, FilesetDiagnostics, FilesetParseContext};
 use jj_lib::gitignore::GitIgnoreFile;
 use jj_lib::matchers::{Matcher, PrefixMatcher};
-use jj_lib::repo_path::{RepoPath, RepoPathUiConverter};
+use jj_lib::repo_path::RepoPath;
 use jj_lib::settings::HumanByteSize;
+use jj_lib::ui_path::RepoPathUiConverter;
 use jj_lib::workspace::Workspace;
 use pollster::FutureExt as _;
 use serde::{Deserialize, Serialize};
@@ -208,7 +209,10 @@ fn base_ignores(
         Some(value) => {
             let value =
                 std::str::from_utf8(&value).context("non-UTF-8 excludesFile is unsupported")?;
-            Some(repository.join(jj_lib::file_util::expand_home_path(value)))
+            Some(repository.join(jj_lib::file_util::expand_home_path(
+                value,
+                std::env::home_dir().as_deref(),
+            )))
         }
         None => std::env::var_os("XDG_CONFIG_HOME")
             .filter(|v| !v.is_empty())

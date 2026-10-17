@@ -107,8 +107,9 @@ pub(crate) fn read(repo: &ReadonlyRepo, request: Request) -> Result<Receipt, Ffi
         .ok_or(FfiError::WorkspaceSourceMissing)?;
     let target = reference
         .try_id()
-        .ok_or_else(|| FfiError::Conflict("workspace source ref must be direct".into()))?;
-    if target.to_string() != request.source.commit_id {
+        .ok_or_else(|| FfiError::Conflict("workspace source ref must be direct".into()))?
+        .to_string();
+    if target != request.source.commit_id {
         return Err(FfiError::Conflict(
             "workspace source ref target mismatch".into(),
         ));
@@ -175,8 +176,8 @@ mod tests {
             .block_on()
             .unwrap();
         drop(transaction);
-        assert!(!repo.index().has_id(source_commit.id()).unwrap());
-        assert!(!repo.index().has_id(unpinned.id()).unwrap());
+        assert!(!repo.index().has_id(source_commit.id()).block_on().unwrap());
+        assert!(!repo.index().has_id(unpinned.id()).block_on().unwrap());
         let source = Source::from_commit(&source_commit).unwrap();
         let workspace = "0f8fad5b-d9cb-469f-a165-70867728950e";
         let request = || Request {
@@ -210,7 +211,8 @@ mod tests {
         wrong.source.tree_id = "a".repeat(40);
         assert!(matches!(read(&repo, wrong), Err(FfiError::Conflict(_))));
         // Remove transient JJ keep refs and prune every unindexed old object.
-        repo.store()
+        jj_lib::git::get_git_backend(repo.store())
+            .unwrap()
             .gc(
                 repo.index(),
                 std::time::SystemTime::now() + std::time::Duration::from_secs(2),
