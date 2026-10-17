@@ -2,11 +2,8 @@
  * @since 1.0.0-rc.0
  */
 
-import { NodeChildProcessSpawner, NodeFileSystem, NodePath } from "@effect/platform-node"
 import * as ScopedProcess from "@smthrs/platform-node/ScopedProcess"
-import { Cause, Data, Effect, Exit, Layer, Stream } from "effect"
-import * as ChildProcess from "effect/process/ChildProcess"
-import { type ChildProcessHandle, ChildProcessSpawner, makeHandle } from "effect/process/ChildProcessSpawner"
+import { Cause, Data, Effect, Exit, Stream } from "effect"
 
 /** A bounded process operation failed, with its original cause retained.
  * @category errors
@@ -23,39 +20,6 @@ export class ProcessError extends Data.TaggedError("smithers-build/ProcessError"
 }
 
 const graceMs = 5000
-
-const windowsLayer = NodeChildProcessSpawner.layer.pipe(
-  Layer.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer))
-)
-
-// Windows discovery/watch already used Effect's taskkill /T implementation.
-// Preserve that native path; the POSIX owner protocol requires UNIX sockets.
-const spawn = (options: ScopedProcess.Options) => {
-  if (process.platform !== "win32") return ScopedProcess.spawn(options)
-  return Effect.gen(function*() {
-    const spawner = yield* ChildProcessSpawner
-    const handle = yield* spawner.spawn(ChildProcess.make(options.command, options.args ?? [], {
-      cwd: options.cwd,
-      env: options.env,
-      extendEnv: options.env === undefined,
-      detached: false,
-      stdin: options.stdin ?? "ignore",
-      stdout: "pipe",
-      stderr: "pipe",
-      killSignal: "SIGTERM",
-      forceKillAfter: graceMs
-    }))
-    const kill: ChildProcessHandle["kill"] = (options) =>
-      Effect.flatMap(handle.isRunning, (running) => running ? handle.kill(options) : Effect.void).pipe(
-        Effect.timeoutOrElse({
-          duration: graceMs * 2,
-          orElse: () => Effect.fail(new ProcessError("cleanup_failed", `could not stop process ${handle.pid}`))
-        }),
-        Effect.orDie
-      )
-    return makeHandle({ ...handle, kill })
-  }).pipe(Effect.provide(windowsLayer))
-}
 
 /** One bounded process invocation.
  * @category models
@@ -89,7 +53,7 @@ export const runEffect = (options: Omit<Options, "signal">): Effect.Effect<numbe
     const program = Effect.gen(function*() {
       const handle = yield* Effect.uninterruptibleMask(() =>
         Effect.gen(function*() {
-          const handle = yield* spawn({
+          const handle = yield* ScopedProcess.spawn({
             command: options.command,
             args: options.args,
             cwd: options.cwd,
@@ -135,16 +99,17 @@ export const runEffect = (options: Omit<Options, "signal">): Effect.Effect<numbe
           })))
       }
       const [code] = yield* Effect.all([
-        process.platform === "win32"
-          ? handle.exitCode.pipe(Effect.catch(() => Effect.succeed(1)))
-          : ScopedProcess.status(handle).pipe(Effect.map((status) => status.code ?? 1)),
+        ScopedProcess.status(handle).pipe(Effect.map((status) => status.code ?? 1)),
         consume(handle.stdout, options.stdout),
         consume(handle.stderr, options.stderr),
         // A command may exit without reading its input; its exit status, not the broken pipe, is the result.
         options.stdin === undefined ? Effect.void : Stream.make(new TextEncoder().encode(options.stdin)).pipe(
           Stream.run(handle.stdin),
           Effect.catchIf(
-            (error) => (error.cause as NodeJS.ErrnoException | undefined)?.code === "EPIPE",
+            (error) => {
+              const code = (error.cause as NodeJS.ErrnoException | undefined)?.code
+              return code === "EPIPE" || code === "EOF"
+            },
             () => Effect.void
           )
         )
