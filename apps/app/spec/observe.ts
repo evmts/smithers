@@ -21,7 +21,7 @@ export const element = (page: Page, target: Element): Locator => {
 export const observe = async (page: Page, assertion: Assertion, exchanges: ReadonlyArray<Exchange>, decode: Decode, timeoutMs = 5000): Promise<AssertionResult> => {
   const check = expect.configure({ timeout: timeoutMs })
   const kind = ["see", "absent", "text", "url", "sent", "shape", "fuzzy", "rubric"].find(kind => kind in assertion)!
-  if ("fuzzy" in assertion || "rubric" in assertion) return { kind, ok: null, expected: assertion, actual: null, reason: "skipped: judges arrive in spec4" }
+  if ("fuzzy" in assertion || "rubric" in assertion) return { kind, ok: null, expected: assertion, actual: null, verdict: "inconclusive", reason: "Judged assertions require the journey judge context" }
   let actual: unknown = null
   try {
     if ("see" in assertion) {

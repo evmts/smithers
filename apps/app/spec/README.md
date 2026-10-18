@@ -86,3 +86,9 @@ bun test --isolate spec/d2.test.ts
 The D2 tests retain the complete canonical journey result, including PM header
 gaps, and check shipped README assertions. They remove the real React click
 handler and corrupt a fixture response to prove the same read fails.
+
+`judge --record <journey>` records mock sidecars through the node-configured seat
+under ReviewBudget; `judge --record --live` records separate live artifacts.
+CI replays through CachedEvaluator and never records. Missing/stale evidence
+fails; no policy or an exhausted budget is inconclusive (exit 5). See JUDGES.md
+for seat configuration, labels, agreement reporting and eval baseline commands.
