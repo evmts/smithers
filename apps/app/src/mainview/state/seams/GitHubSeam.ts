@@ -10,7 +10,7 @@ import { refuseCloudSignIn, SIGN_OUT_REFUSAL } from "./CloudSignIn"
  *   GET  /api/repos/{owner}/{repo}/github-app-status  — the GitHub App install
  *        state, with the rate-limit facts when the wire carries them
  *        ({github_rate_limit_limit/remaining/reset}); renders the
- *        connector-setup card, never a transcript line.
+ *        shared status card, beside the bounded model result.
  *   POST /api/repos/{owner}/{repo}/github/reconcile   — re-derive the App's
  *        wiring for ONE repository (plue#490). It is gated on repository
  *        write, not on the admin scope, so every writer may run it; the
@@ -76,7 +76,7 @@ export const MIRROR_LOST_STREAM_TRIGGER = "lost the run stream — /github.sync 
 const RUN_SETTLED = new Set(["succeeded", "failed"])
 
 export interface GitHubSeam {
-  /** `github.app [repo]`: read the App status and render the connector-setup card. */
+  /** `github.app [repo]`: read the App status and render the shared status card. */
   readonly app: (repo?: string) => Promise<string | void | { readonly value: string }>
   /** Hidden, card-scoped: open the App's install page in the browser. */
   readonly openInstall: (repo?: string) => Promise<string | void>
@@ -132,7 +132,12 @@ export const INSTALL_VERIFY_PATH = "/api/user/github-app/installations"
 /** The lesson that waits on the install, keyed by its signal. */
 
 /** Only the github.com https install origin is worth linking (multi githubInstallUrl.ts). */
-export const trustedInstallUrl = (value: string): string | null => trustedHttpsUrl(value, "github.com")
+export const trustedInstallUrl = (value: string): string | null => {
+  const trusted = trustedHttpsUrl(value, "github.com")
+  if (trusted === null) return null
+  const url = new URL(trusted)
+  return url.username === "" && url.password === "" ? trusted : null
+}
 
 /** What GitHub's setup-URL return carries, once. */
 export type InstallReturn =
@@ -318,15 +323,28 @@ export const createGitHubSeam = (ctx: SeamContext, deps: GitHubSeamDeps = {}): G
     const target = resolveTargetRepo(ctx.store, explicit)
     if ("error" in target) return target.error
     const current = captureCloudOwner(ctx)
+    const selection = ctx.store.session().activeRepoKey
+    const selected = () => ctx.store.session().activeRepoKey === selection
     const answer = await readStatus(target.repo)
     if (!current()) return SIGN_OUT_REFUSAL
+    if (!selected()) return
     if ("status" in answer) dispatchStatus(target.repo, answer.status)
     if ("refusal" in answer) return answer.refusal.line
-    return {
-      value: answer.status.installed && answer.status.configured
-        ? `The Smithers GitHub App is installed on ${target.repo} — see Settings.`
-        : `The Smithers GitHub App is not installed on ${target.repo} — see Setup.`
-    }
+    const status = answer.status
+    const installUrl = status.installUrl === null ? null : trustedInstallUrl(status.installUrl)
+    const facts = `Installed: ${status.installed ? "Yes" : "No"}\n\nConfigured: ${status.configured ? "Yes" : "No"}`
+    const body = installUrl !== null && (!status.installed || !status.configured)
+      ? `${facts}\n\n[${status.installed ? "Configure" : "Install"} the Smithers GitHub App](${installUrl.replace(/[()]/g, c => c === "(" ? "%28" : "%29")})`
+      : facts
+    const id = `github-status-${target.repo}`
+    const existing = ctx.store.collections.cards.get(id)
+    await ctx.dispatch({ type: "card.upsert", actor: ctx.actor(), card: {
+      id, kind: "status", title: `GitHub · ${target.repo}`, status: "acted", viewRepo: target.repo,
+      body, payload: {}, createdAt: existing?.createdAt ?? Date.now(), ordinal: existing?.ordinal ?? ctx.nextOrdinal()
+    } }).isPersisted.promise
+    if (!current()) return SIGN_OUT_REFUSAL
+    if (!selected()) return
+    return { value: `GitHub · ${target.repo}\n\n${body}` }
   }
 
   const installNotice = async (text: string | undefined, status: "ok" | "failed" = "failed", current = captureCloudOwner(ctx, false)): Promise<void> => {

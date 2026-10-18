@@ -17,7 +17,7 @@ import type { SeamContext } from "./SeamContext"
 
 /*
  * The GitHub seam (lane sync, ADR 0005; lane L5 against the live routes):
- * github.app renders the connector-setup card from the status DTO (and
+ * github.app renders the shared status card from the status DTO (and
  * files the row in the collection), reconcile posts the repository write route and
  * surfaces its answer verbatim, mirror-sync starts a RUN and tracks its
  * per-ref results while the repository DTO's `mirror_status` word rides the
@@ -353,7 +353,7 @@ describe("createGitHubSeam", () => {
 
     const result = await seam.app()
 
-    expect(textOf(result)).toBe("The Smithers GitHub App is installed on will/smithers — see Settings.")
+    expect(textOf(result)).toBe("GitHub · will/smithers\n\nInstalled: Yes\n\nConfigured: Yes")
     const row = store.collections.githubAppStatuses.get("will/smithers")
     expect(row?.installed).toBe(true)
     expect(row?.configured).toBe(true)
@@ -372,7 +372,7 @@ describe("createGitHubSeam", () => {
     const result = await seam.app()
 
     expect(textOf(result)).toBe(
-      "The Smithers GitHub App is not installed on will/smithers — see Setup."
+      "GitHub · will/smithers\n\nInstalled: No\n\nConfigured: No\n\n[Install the Smithers GitHub App](https://github.com/apps/smithers/installations/new)"
     )
     const payload = statusOf(store)
     expect(payload?.installed).toBe(false)
@@ -1285,7 +1285,7 @@ describe("GitHub public admission and recovery", () => {
     await settled(store)
     expect(store.collections.githubAppStatuses.has("will/smithers")).toBe(false)
     answer = json(200, INSTALLED)
-    expect(textOf(await seam.app())).toBe("The Smithers GitHub App is installed on will/smithers — see Settings.")
+    expect(textOf(await seam.app())).toBe("GitHub · will/smithers\n\nInstalled: Yes\n\nConfigured: Yes")
     await settled(store)
     expect(store.collections.githubAppStatuses.get("will/smithers")?.installationId).toBe(5511)
     expect(statusOf(store)?.installed).toBe(true)
@@ -1686,5 +1686,42 @@ describe("GitHub run-ID caller controls", () => {
       installed: true, installationId: 5511, mirror: undefined,
       requests: [`POST ${RECONCILE_PATH}`, `GET ${STATUS_PATH}`]
     })
+  })
+})
+
+
+describe("GitHub status presentation ownership", () => {
+  test("a held status result cannot appear after repository navigation", async () => {
+    const read = ownedRead()
+    const { store, seam, requests } = await harness({ [STATUS_PATH]: () => read.promise })
+    await store.dispatch({ type: "repo.selected", actor: "user", id: "will/smithers" }).isPersisted.promise
+    const pending = seam.app()
+    await waitUntil(() => requests.length === 1)
+    await store.dispatch({ type: "repository.upserted", actor: "system", repository: { id: "other/repository", org: "other", name: "repository", ownerKind: "user", head: null } }).isPersisted.promise
+    await store.dispatch({ type: "repo.selected", actor: "user", id: "other/repository" }).isPersisted.promise
+    read.resolve(json(200, INSTALLED)())
+    expect(await pending).toBeUndefined()
+    expect(store.collections.cards.has("github-status-will/smithers")).toBe(false)
+    expect(statusOf(store)).toBeUndefined()
+  })
+
+  test("status cards retain their repository and refresh the same visible result", async () => {
+    let answer = INSTALLED
+    const { store, seam } = await harness({ [STATUS_PATH]: () => json(200, answer)() })
+    await seam.app()
+    const card = store.collections.cards.get("github-status-will/smithers")
+    expect(card?.kind).toBe("status")
+    expect(card?.viewRepo).toBe("will/smithers")
+    expect(card?.body).toBe("Installed: Yes\n\nConfigured: Yes")
+    await store.dispatch({ type: "repository.upserted", actor: "system", repository: { id: "other/repository", org: "other", name: "repository", ownerKind: "user", head: null } }).isPersisted.promise
+    await store.dispatch({ type: "repo.selected", actor: "user", id: "other/repository" }).isPersisted.promise
+    await store.dispatch({ type: "repo.selected", actor: "user", id: "will/smithers" }).isPersisted.promise
+    expect(store.collections.cards.get("github-status-will/smithers")).toEqual(card)
+    answer = { ...INSTALLED, github_app_configured: false }
+    await seam.app()
+    const refreshed = store.collections.cards.get("github-status-will/smithers")
+    expect(refreshed?.ordinal).toBe(card?.ordinal)
+    expect(refreshed?.body).toContain("Configured: No")
+    expect(refreshed?.body).toContain("[Configure the Smithers GitHub App]")
   })
 })
