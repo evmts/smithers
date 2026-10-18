@@ -142,6 +142,14 @@ describe("css contract", () => {
     }
   });
 
+  test("badges are sentence case: 12px at weight 650, no uppercase or tracking", () => {
+    const rule = smithersUiCss.match(/\.sui-badge \{[^}]+\}/)?.[0] ?? "";
+    expect(rule).toContain("font-size:12px");
+    expect(rule).toContain("font-weight:650");
+    expect(rule).not.toContain("text-transform");
+    expect(rule).not.toContain("letter-spacing");
+  });
+
   test("composes the agent output block into the shipped stylesheet", () => {
     expect(agentOutputCss).toContain(".sui-agent-output {");
     expect(agentOutputCss).toContain(".sui-agent-output-tools {");

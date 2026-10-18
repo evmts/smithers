@@ -27,6 +27,13 @@ describe("ui styleguide", () => {
     expect(workflowUiThemeCss).toContain(".pill { border-color:var(--brand-border); background:var(--brand-soft);");
   });
 
+  test("badges are sentence case at --fs-2 and weight 650, matching @smthrs/ui's .sui-badge", () => {
+    const rule = workflowUiPrimitiveCss.match(/\.badge \{[^}]+\}/)?.[0] ?? "";
+    expect(rule).toContain("font-size:var(--fs-2)");
+    expect(rule).toContain("font-weight:650");
+    expect(rule).not.toContain("text-transform");
+  });
+
   test("routes every tinted fill through a named recipe, never an inline color-mix", () => {
     // The two states that used to hard-code `color-mix(in srgb, var(--brand)
     // 22%, ...)` and `var(--danger) 16%` bypassed the audited recipe list and

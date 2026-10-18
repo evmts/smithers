@@ -93,7 +93,7 @@ export const workflowUiPrimitiveCss = [
   ".pill,.badge,.chip { display:inline-flex; align-items:center; gap:6px; min-width:0; max-width:100%; min-height:22px; padding:0 10px; border:1px solid var(--border); border-radius:var(--r-full); color:var(--text-muted); font-family:var(--font-mono); font-size:var(--fs-1); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }",
   ".pill { border-color:var(--brand-border); background:var(--brand-soft); color:var(--brand); }",
   ".pill.muted,.badge.muted,.chip { border-color:var(--border); background:var(--surface-2); color:var(--text-muted); }",
-  ".badge { font-family:inherit; font-weight:650; text-transform:uppercase; }",
+  ".badge { font-family:inherit; font-size:var(--fs-2); font-weight:650; }",
   ".badge.ok,.badge.finished,.badge.success { color:var(--success); border-color:var(--success-border); background:var(--success-soft); }",
   ".badge.warn,.badge.waiting { color:var(--warning); border-color:var(--warning-border); background:var(--warning-soft); }",
   ".badge.running,.badge.run { color:var(--brand); border-color:var(--brand-border); background:var(--brand-soft); }",

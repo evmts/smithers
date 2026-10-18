@@ -32,8 +32,8 @@ export type BadgeProps = ComponentProps<"span"> &
   };
 
 /**
- * Small uppercase pill, pixel-compatible with the styleguide
- * `.badge`/`.pill`/`.chip` vocabulary (22px, 11px mono-ish, rounded-full).
+ * Small sentence-case pill, pixel-compatible with the styleguide
+ * `.badge` (22px, 12px at weight 650, rounded-full).
  */
 export function Badge({ className, variant, asChild = false, ...props }: BadgeProps) {
   useInjectUiCss();
