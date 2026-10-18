@@ -62,6 +62,11 @@ export const FORM_INSTRUCTION_FIELDS = {
     "changeId",
     "path"
   ],
+  "convert": [
+    "source",
+    "idempotencyKey",
+    "sourceLabel"
+  ],
   "diff": [
     "subject",
     "branch",
@@ -125,6 +130,9 @@ export const FORM_INSTRUCTION_FIELDS = {
   "github": [
     "repo",
     "installationId"
+  ],
+  "guest.chat": [
+    "text"
   ],
   "image.add": [
     "name"
