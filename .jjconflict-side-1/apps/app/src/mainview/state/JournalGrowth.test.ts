@@ -1,0 +1,812 @@
+import { afterEach, describe, expect, spyOn, test } from "bun:test"
+import { Database } from "bun:sqlite"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import type { ControlEvent } from "@smthrs/control/ControlSchema"
+import type { ApprovalRow, RunSummaryRow, TranscriptRow } from "@smthrs/gateway/GatewayProjection"
+import { createAppStore, PERSISTED_COLLECTION_SPECS, type AppStore } from "./AppStore"
+import type { Card } from "./AppState"
+import { APP_SCHEMA_VERSION } from "../chain/SchemaVersion"
+import { openSqliteRowStorage, ROW_TABLE_NAME } from "../chain/SqliteRowStorage"
+import { decodeEventValue } from "./EventValue"
+import { runtimeRunKey, type RuntimeRunObservation } from "./RuntimeProjection"
+import { createControllerContext, type ControllerContext } from "./controller/context"
+import { createWorkflowPumpController } from "./controller/workflow-pump"
+import { reconcileRunApprovals } from "./controller/approval-reconciliation"
+import { unavailableAgent } from "./TestFixtures"
+import * as Y from "yjs"
+import { encodeWikiState, wikiDocumentId } from "../wiki/CloudWiki"
+import { createCloudWikiController } from "./controller/cloud-wiki"
+import { encodeLiveDocBinary } from "@smthrs/rpc/LiveDoc"
+import * as sync from "y-protocols/sync"
+import * as encoding from "lib0/encoding"
+import { LiveChannel, type LiveSocket } from "../runtime/LiveChannel"
+
+// Accepted commands remain immutable facts. Idle transport reads must never
+// manufacture those facts; diagnostic truncation cannot bound the event stream.
+const stores: AppStore[] = [], contexts: ControllerContext[] = []
+const directories: string[] = []
+afterEach(async () => {
+  for (const context of contexts.splice(0)) await context.dispose()
+  for (const store of stores.splice(0)) await store.dispose?.()
+  for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
+})
+const open = async (path?: string) => {
+  if (path === undefined) {
+    const directory = mkdtempSync(join(tmpdir(), "smithers-journal-growth-"))
+    directories.push(directory)
+    path = join(directory, "state.sqlite")
+  }
+  const db = new Database(path)
+  let writes = 0
+  let held: { enter(): void; wait: Promise<void> } | undefined
+  const pauseNextWrite = () => {
+    let enter!: () => void, release!: () => void, fail!: (error: Error) => void
+    const entered = new Promise<void>(resolve => { enter = resolve })
+    const wait = new Promise<void>((resolve, reject) => { release = resolve; fail = reject })
+    held = { enter, wait }
+    return { entered, release, fail }
+  }
+  const adapter = await openSqliteRowStorage({
+    execute: async <Row>(sql: string, params: ReadonlyArray<unknown> = []) => {
+      if (held !== undefined && /^\s*INSERT INTO/i.test(sql) && sql.includes(ROW_TABLE_NAME)) {
+        const pause = held; held = undefined; pause.enter(); await pause.wait
+      }
+      const statement = db.query(sql)
+      if (/^\s*(SELECT|PRAGMA)/i.test(sql)) return statement.all(...params as []) as ReadonlyArray<Row>
+      statement.run(...params as [])
+      if (/^\s*(INSERT|UPDATE|DELETE|REPLACE)/i.test(sql)) writes++
+      return []
+    }, close: () => db.close()
+  }, { collections: PERSISTED_COLLECTION_SPECS, schemaVersion: APP_SCHEMA_VERSION })
+  const store = await createAppStore({ kind: "opfs", ...adapter,
+    storageEventApi: { addEventListener: () => {}, removeEventListener: () => {} }
+  })
+  stores.push(store)
+  const footprint = () => ({
+    rowBytes: (db.query(`SELECT SUM(LENGTH(CAST(value AS BLOB))) AS bytes FROM ${ROW_TABLE_NAME}`).get() as { bytes: number }).bytes,
+    pages: (db.query("PRAGMA page_count").get() as { page_count: number }).page_count,
+    freePages: (db.query("PRAGMA freelist_count").get() as { freelist_count: number }).freelist_count,
+    pageSize: (db.query("PRAGMA page_size").get() as { page_size: number }).page_size,
+    writes
+  })
+  return { store, db, path, footprint, pauseNextWrite }
+}
+const scope = { repo: "owner/repo", workspaceId: "83e75ae5-0920-4000-8000-000000000001", runId: "run-growth" }
+const card: Extract<Card, { kind: "run-trace" }> = {
+  id: "growth-run-card", kind: "run-trace", title: "Coding", status: "active", ordinal: 1, createdAt: 1,
+  payload: { ...scope, gatewayBindingVersion: 1, workflow: "coding", phase: "launching", steps: [], result: null, lastSeq: 0, follow: true }
+}
+const summary: RunSummaryRow = { runId: scope.runId, flowId: "coding", status: "running", createdAt: 1, updatedAt: 2,
+  turns: 1, calls: 1, callsFailed: 0, editsAttempted: 0, editsSucceeded: 0, inputTokens: 0, outputTokens: 0,
+  verdict: "running", diagnosis: "moving" }
+const event = (sequence: number): ControlEvent => ({ sequence, kind: "control.signal.delivered", runId: scope.runId,
+  occurredAt: sequence, payload: { text: "t".repeat(400) } })
+const line = (sequence: number): TranscriptRow => ({ sequence, runId: scope.runId, turn: 1, at: sequence, kind: "model", text: "x".repeat(400) })
+const gate = (status: ApprovalRow["status"] = "pending"): ApprovalRow => ({ runId: scope.runId, requestId: "gate", requestedAt: 1,
+  title: "Deploy?", request: {}, status, payload: { target: { _tag: "Node", runId: scope.runId, requestId: "gate", digest: "reviewed",
+    envelope: { capabilities: [], flows: [], budget: {} } }, scope: "once", idempotencyKey: "gate" } })
+type Snapshot = { events: ReadonlyArray<ControlEvent>; transcript: ReadonlyArray<TranscriptRow>; summary?: RunSummaryRow; approvals?: ReadonlyArray<ApprovalRow> }
+const poll = async (store: AppStore, snapshots: ReadonlyArray<Snapshot>, afterCycle: () => void, journalAfter: unknown[] = [], beforeJournal?: (cycle: number) => Promise<void>) => {
+  let cycle = -1, transcriptReads = 0, approvalReads = 0
+  const base = createControllerContext(store, unavailableAgent, {
+    baseUrl: "https://gateway.test", workflowPollMs: 1, workflowQuietMs: 60_000,
+    fetchImpl: async (_url, init) => {
+      const request = JSON.parse(String(init?.body)) as { payload: { selector: { _tag: string }; after?: { value: number; offset: number } } }
+      const projection = request.payload.selector._tag
+      if (projection === "run-summary") cycle++
+      const snapshot = snapshots[cycle]!
+      let rows: ReadonlyArray<unknown> = [snapshot.summary ?? summary]
+      if (projection === "transcript") { transcriptReads++; rows = snapshot.transcript }
+      if (projection === "approvals") { approvalReads++; rows = snapshot.approvals ?? [] }
+      if (projection === "run-events") {
+        journalAfter.push(request.payload.after)
+        rows = snapshot.events.filter(row => request.payload.after === undefined || row.sequence > request.payload.after.value)
+        await beforeJournal?.(cycle)
+      }
+      // No revision hint: idle cycles exercise full transcript reads through
+      // the real gateway decoder, plus suffix requests for the event journal.
+      return Response.json({ ok: true, payload: { rows } })
+    }
+  })
+  const context: ControllerContext = { ...base, get disposed() { return base.disposed }, unref: timer => {
+    clearTimeout(timer)
+    queueMicrotask(() => {
+      afterCycle()
+      if (cycle === snapshots.length - 1) for (const active of context.runPumps.values()) active.stopped = true
+      context.pumpPokes.get(card.id)?.()
+    })
+  } }
+  const pump = createWorkflowPumpController(context, () => 2)
+  base.onDispose(() => { pump.stopWorkflowPumps() })
+  // Match the AppController lifetime: a poisoned SQLite writer stops the
+  // observer instead of claiming it can persist a retry through that writer.
+  base.onDispose(store.onStorageFailure(() => { void base.dispose().catch(() => {}) }))
+  contexts.push(base)
+  await pump.pumpWorkflowRun(card.id)
+  return { journalAfter, transcriptReads, approvalReads }
+}
+
+describe("normalized run polling has no idle SQLite growth", () => {
+  test.each([
+    { name: "identical pending evidence", append: false, fail: false },
+    { name: "a suffix beyond pending evidence", append: true, fail: false },
+    { name: "a rejected pending observation", append: false, fail: true }
+  ])("committed cursor and receipt survive $name", async scenario => {
+    const fixture = await open()
+    await fixture.store.dispatch({ type: "card.upsert", actor: "system", card }).isPersisted.promise
+    const first: Snapshot = { events: [event(0)], transcript: [line(0)] }
+    const second: Snapshot = { events: [...first.events, event(1)], transcript: [...first.transcript, line(1)] }
+    const response: Snapshot = scenario.append ? { events: [...second.events, event(2)], transcript: [...second.transcript, line(2)] } : second
+    await fixture.store.dispatch({ type: "gateway.run.observed", actor: "system", observation: {
+      scope, summary, transcript: [...first.transcript], journal: { mode: "full", events: [...first.events] }
+    } }).isPersisted.promise
+    const before = await fixture.store.eventHistory()
+    const failures: Error[] = []
+    fixture.store.onStorageFailure(error => { failures.push(error) })
+    const pause = fixture.pauseNextWrite()
+    const owner = fixture.store.dispatch({ type: "gateway.run.observed", actor: "system", observation: {
+      scope, summary, transcript: [...second.transcript], journal: { mode: "full", events: [...second.events] }
+    } }).isPersisted.promise.then(() => true, () => false)
+    await pause.entered
+    expect(fixture.store.collections.runtimeRuns.get(runtimeRunKey(scope))?.events).toHaveLength(2)
+    expect(fixture.store.committedRuntimeRun(runtimeRunKey(scope))?.events).toHaveLength(1)
+    const queried: unknown[] = []
+    let finished = false
+    const watching = poll(fixture.store, [response], () => {}, queried).then(() => { finished = true; return true }, () => { finished = true; return false })
+    for (let turn = 0; queried.length === 0 && turn < 100; turn++) await new Promise(resolve => setTimeout(resolve, 1))
+    expect(queried[0]).toMatchObject({ value: 0, offset: 0 })
+    await new Promise(resolve => setTimeout(resolve, 5))
+    expect(finished).toBe(false)
+    expect(fixture.store.committedRuntimeRun(runtimeRunKey(scope))?.events).toHaveLength(1)
+    if (scenario.fail) pause.fail(new Error("held observation failed"))
+    else pause.release()
+    expect(await owner).toBe(!scenario.fail)
+    // The observer shuts down without rejecting into its unawaited caller.
+    expect(await watching).toBe(true)
+    if (scenario.fail) {
+      expect(failures).toMatchObject([{ message: "Changes could not be saved." }])
+      expect(queried).toHaveLength(1)
+      expect(fixture.store.committedRuntimeRun(runtimeRunKey(scope))?.events).toEqual([...first.events])
+    }
+    if (!scenario.fail) {
+      expect(fixture.store.committedRuntimeRun(runtimeRunKey(scope))?.events).toEqual([...response.events])
+      expect((await fixture.store.eventHistory()).head.sequence).toBe(before.head.sequence + 2)
+    }
+    if (scenario.fail) await expect(Promise.resolve(fixture.store.dispose?.())).rejects.toThrow("held observation failed")
+    else await fixture.store.dispose?.()
+    stores.splice(stores.indexOf(fixture.store), 1)
+    const reopened = await open(fixture.path)
+    expect(reopened.store.committedRuntimeRun(runtimeRunKey(scope))?.events).toEqual([...(scenario.fail ? first.events : response.events)])
+    if (scenario.fail) expect((await reopened.store.eventHistory()).head).toEqual(before.head)
+    expect((await reopened.store.verifyState()).valid).toBe(true)
+  }, 120_000)
+
+  test("a terminal observation racing a journal read retries from committed evidence", async () => {
+    const fixture = await open()
+    await fixture.store.dispatch({ type: "card.upsert", actor: "system", card }).isPersisted.promise
+    const first: Snapshot = { events: [event(0)], transcript: [line(0)] }
+    const terminal: RunSummaryRow = { ...summary, status: "completed", updatedAt: 3, verdict: "done" }
+    const final: Snapshot = { events: [...first.events, event(1)], transcript: [...first.transcript, line(1)], summary: terminal }
+    await fixture.store.dispatch({ type: "gateway.run.observed", actor: "system", observation: {
+      scope, summary, transcript: [...first.transcript], journal: { mode: "full", events: [...first.events] }
+    } }).isPersisted.promise
+    const reads = await poll(fixture.store, [first, final], () => {}, [], async cycle => {
+      if (cycle !== 0) return
+      await fixture.store.dispatch({ type: "gateway.run.observed", actor: "system", observation: {
+        scope, summary: terminal
+      } }).isPersisted.promise
+      expect(fixture.store.collections.cards.get(card.id)).toMatchObject({ payload: { phase: "completed" } })
+    })
+    expect(reads.journalAfter).toHaveLength(2)
+    for (const after of reads.journalAfter) expect(after).toMatchObject({ value: 0, offset: 0 })
+    expect(reads.transcriptReads).toBe(2)
+    expect(fixture.store.committedRuntimeRun(runtimeRunKey(scope))).toMatchObject({
+      summary: terminal, events: final.events, transcript: final.transcript
+    })
+    expect((await fixture.store.verifyState()).valid).toBe(true)
+    await fixture.store.dispose?.()
+    const reopened = await open(fixture.path)
+    expect(reopened.store.committedRuntimeRun(runtimeRunKey(scope))).toMatchObject({
+      summary: terminal, events: final.events, transcript: final.transcript
+    })
+    expect((await reopened.store.verifyState()).valid).toBe(true)
+  }, 120_000)
+
+  test("full idle reads write nothing; real appends store suffixes and reopen identically", async () => {
+    const first = await open()
+    await first.store.dispatch({ type: "card.upsert", actor: "system", card }).isPersisted.promise
+    const initial: Snapshot = { events: Array.from({ length: 600 }, (_, index) => event(index)), transcript: Array.from({ length: 600 }, (_, index) => line(index)) }
+    const appended: Snapshot = { events: [...initial.events, event(600)], transcript: [...initial.transcript, line(600)] }
+    expect(JSON.stringify(initial).length).toBeGreaterThan(500_000)
+    const snapshots = [...Array.from({ length: 20 }, () => initial), ...Array.from({ length: 20 }, () => appended)]
+    const measured: ReturnType<typeof first.footprint>[] = []
+    const reads = await poll(first.store, snapshots, () => measured.push(first.footprint()))
+    expect(measured).toHaveLength(40)
+    for (const size of measured.slice(1, 20)) expect(size).toEqual(measured[0]!)
+    for (const size of measured.slice(21)) expect(size).toEqual(measured[20]!)
+    expect(reads.transcriptReads).toBe(40)
+    expect(reads.journalAfter[0]).toBeUndefined()
+    expect(reads.journalAfter[1]).toMatchObject({ value: 599, offset: 0 })
+    // The first full-looking page needs one extra empty read to close it;
+    // subsequent cycles continue from persisted cursors without idle writes.
+    expect(reads.journalAfter).toHaveLength(41)
+    for (const after of reads.journalAfter.slice(1, 22)) expect(after).toMatchObject({ value: 599, offset: 0 })
+    for (const after of reads.journalAfter.slice(22)) expect(after).toMatchObject({ value: 600, offset: 0 })
+    const history = await first.store.eventHistory()
+    const observations = history.events.map(row => decodeEventValue(row.input))
+      .filter((value): value is { type: "gateway.run.observed"; observation: RuntimeRunObservation } =>
+        typeof value === "object" && value !== null && "type" in value && value.type === "gateway.run.observed")
+    expect(observations).toHaveLength(2)
+    expect(observations[0]!.observation.journal?.events).toHaveLength(600)
+    expect(observations[0]!.observation.transcript).toHaveLength(600)
+    expect(observations[1]!.observation.journal).toMatchObject({ mode: "suffix", after: { value: 599, offset: 0 }, events: [event(600)] })
+    expect(observations[1]!.observation.transcriptAfter).toMatchObject({ length: 600 })
+    expect(observations[1]!.observation.transcript).toEqual([line(600)])
+    expect(JSON.stringify(observations[1]).length).toBeLessThan(4_000)
+    const retained = await first.store.verifyState()
+    expect(retained.valid).toBe(true)
+    await first.store.dispose?.()
+    const reopened = await open(first.path)
+    expect(reopened.store.collections.runtimeRuns.get(runtimeRunKey(scope))).toMatchObject({ events: appended.events, transcript: appended.transcript, summary })
+    expect((await reopened.store.eventHistory()).head).toEqual(history.head)
+    const restored = await reopened.store.verifyState()
+    expect(restored.valid).toBe(true)
+    expect(restored.actualHash).toBe(retained.actualHash)
+    const resumed: ReturnType<typeof reopened.footprint>[] = []
+    const again = await poll(reopened.store, Array.from({ length: 5 }, () => appended), () => resumed.push(reopened.footprint()))
+    expect(again.journalAfter[0]).toMatchObject({ value: 600, offset: 0 })
+    for (const size of resumed.slice(1)) expect(size).toEqual(resumed[0]!)
+    expect((await reopened.store.eventHistory()).head).toEqual(history.head)
+  }, 120_000)
+
+  test("waiting approval polls write nothing; learned decisions and conflicting batches remain meaningful", async () => {
+    const fixture = await open()
+    await fixture.store.dispatch({ type: "card.upsert", actor: "system", card }).isPersisted.promise
+    const waiting: Snapshot = { events: [event(1)], transcript: [], approvals: [gate()], summary: { ...summary, status: "waiting-approval", waitingReason: "approval" } }
+    const measured: ReturnType<typeof fixture.footprint>[] = []
+    const result = await poll(fixture.store, Array.from({ length: 12 }, () => waiting), () => measured.push(fixture.footprint()))
+    expect(result.approvalReads).toBe(12)
+    for (const size of measured.slice(1)) expect(size).toEqual(measured[0]!)
+    const before = await fixture.store.eventHistory()
+    await reconcileRunApprovals(fixture.store, scope, [gate("approved")])
+    const accepted = await fixture.store.eventHistory()
+    expect(accepted.head.sequence).toBe(before.head.sequence + 1)
+    await reconcileRunApprovals(fixture.store, scope, [gate("approved"), gate()])
+    expect((await fixture.store.eventHistory()).head).toEqual(accepted.head)
+    await expect(reconcileRunApprovals(fixture.store, scope, [gate(), gate("denied")])).rejects.toThrow("conflict")
+    expect((await fixture.store.eventHistory()).head).toEqual(accepted.head)
+    expect((await fixture.store.verifyState()).valid).toBe(true)
+  }, 120_000)
+
+  test("explicit repeated commands remain complete accepted facts", async () => {
+    const { store } = await open()
+    const before = await store.eventHistory()
+    for (let index = 0; index < 2; index++) await store.dispatch({ type: "theme.changed", actor: "user", theme: "dark" }).isPersisted.promise
+    const after = await store.eventHistory()
+    expect(after.head.sequence).toBe(before.head.sequence + 2)
+    expect(after.events.slice(-2).map(row => decodeEventValue(row.input))).toEqual([
+      { type: "theme.changed", actor: "user", theme: "dark" }, { type: "theme.changed", actor: "user", theme: "dark" }
+    ])
+    expect((await store.verifyState()).valid).toBe(true)
+  })
+})
+
+test("identical repository-import polls do not grow the committed journal or SQLite rows", async () => {
+  const { createRepoImportSeam, repoImportPolling } = await import("./seams/RepoImportSeam")
+  const fixture = await open()
+  const store = fixture.store
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "owner", admin: false, scopesPlain: null }).isPersisted.promise
+  const previousDelay = repoImportPolling.delayMs
+  repoImportPolling.delayMs = 1
+  let disposed = false
+  const reads: Array<ReturnType<typeof Promise.withResolvers<Response>>> = []
+  const waitFor = async (predicate: () => boolean) => {
+    const deadline = Date.now() + 2_000
+    while (!predicate()) {
+      if (Date.now() >= deadline) throw new Error("Import observation did not settle")
+      await new Promise(resolve => setTimeout(resolve, 1))
+    }
+  }
+  const answer = (stage = "cloning_github", status = "cloning") => Response.json({
+    importJobId: "import-growth", repoOwner: "owner", repoName: "repo", status, stage,
+    target_bookmark: "main", created_at: "2026-09-26T00:00:00Z", updated_at: "2026-09-26T00:00:00Z"
+  })
+  const seam = createRepoImportSeam({ store, dispatch: store.dispatch, baseUrl: "", actor: () => "user", nextOrdinal: () => 1,
+    isDisposed: () => disposed, http: async (_input, init) => {
+      if (init?.method === "POST") return answer()
+      const read = Promise.withResolvers<Response>(); reads.push(read); return read.promise
+    }
+  })
+  try {
+    await seam.importRepository("owner/repo")
+    await waitFor(() => reads.length === 1)
+    reads[0]!.resolve(answer())
+    await waitFor(() => reads.length === 2)
+    const before = await store.eventHistory(), physical = fixture.footprint()
+    for (let index = 1; index <= 10; index++) {
+      reads[index]!.resolve(answer())
+      await waitFor(() => reads.length === index + 2)
+    }
+    expect((await store.eventHistory()).head).toEqual(before.head)
+    expect(fixture.footprint()).toEqual(physical)
+    const held = fixture.pauseNextWrite()
+    reads[11]!.resolve(answer("pushing_mirror"))
+    await held.entered
+    expect(store.committedRepositoryImport("repo-import-owner/repo")).toMatchObject({ payload: { stage: "cloning_github" } })
+    expect(reads).toHaveLength(12)
+    held.release()
+    await waitFor(() => reads.length === 13)
+    expect((await store.eventHistory()).head.sequence).toBe(before.head.sequence + 1)
+    reads[12]!.resolve(answer("provisioning_workspace", "ready"))
+    await waitFor(() => {
+      const card = store.session().repositoryImports?.find(row => row.id === "repo-import-owner/repo")
+      return card?.payload.phase === "done"
+    })
+    // The terminal phase also states itself in the transcript (RepoImportSeam stateOutcome): two receipts, one message.
+    await waitFor(() => [...store.collections.messages.values()].some(message => message.text === "Imported owner/repo."))
+    await store.settled?.()
+    expect((await store.eventHistory()).head.sequence).toBe(before.head.sequence + 3)
+    const reopened = await open(fixture.path)
+    expect(reopened.store.session().repositoryImports?.find(row => row.id === "repo-import-owner/repo")).toMatchObject({ payload: { phase: "done", stage: "provisioning_workspace" } })
+    expect((await reopened.store.verifyState()).valid).toBe(true)
+  } finally {
+    disposed = true
+    for (const read of reads) read.resolve(answer())
+    repoImportPolling.delayMs = previousDelay
+  }
+})
+
+/** A live socket the test drives: it opens, drops and answers frames by hand. */
+class WikiSocket implements LiveSocket {
+  readyState = 0
+  binaryType = "arraybuffer"
+  onopen: (() => void) | null = null
+  onclose: (() => void) | null = null
+  onmessage: ((event: { data: unknown }) => void) | null = null
+  readonly frames: Array<{ readonly t?: string; readonly id?: number; readonly topic?: string }> = []
+  send(raw: string | Uint8Array) { if (typeof raw === "string") this.frames.push(JSON.parse(raw)) }
+  close() {}
+  open() { this.readyState = 1; this.onopen?.() }
+  drop() { this.readyState = 3; this.onclose?.() }
+  receive(frame: unknown) { this.onmessage?.({ data: frame instanceof Uint8Array ? frame : JSON.stringify(frame) }) }
+}
+
+/*
+ * The Wiki's live replica (LiveDocProvider over the live channel; 263c41d3d8
+ * retired the SSE revision stream) saves on every channel event. A dropped
+ * socket that keeps failing to reconnect, or a document the host keeps
+ * refusing, must not add a journal event or SQLite bytes per attempt.
+ */
+test.each(["closed", "refused"] as const)("Wiki live reconnects after a %s document channel keep the page without growing SQLite", async (failure) => {
+  const fixture = await open(), { store } = fixture
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "will", admin: false, scopesPlain: null })
+  const doc = new Y.Doc(), id = wikiDocumentId("owner/repo", 42)
+  doc.getText("markdown").insert(0, "# Page")
+  const sockets: WikiSocket[] = [], timers: Array<() => void> = []
+  const live = new LiveChannel({ documentFrames: true, random: () => 1,
+    socket: () => { const socket = new WikiSocket(); sockets.push(socket); return socket },
+    schedule: run => { timers.push(run); return run }, cancel: () => {} })
+  const ctx = createControllerContext(store, unavailableAgent, { live, fetchImpl: async () =>
+    Response.json({ page: { id: 42, slug: "home", title: "Page", body: "# Page", revision: 1,
+      author: { id: 1, login: "will" }, created_at: "2026-09-08T00:00:00Z", updated_at: "2026-09-08T00:00:00Z" },
+      state: encodeWikiState(Y.encodeStateAsUpdate(doc)), state_vector: encodeWikiState(Y.encodeStateVector(doc)) }) })
+  contexts.push(ctx)
+  const settle = async () => {
+    for (let tick = 0; tick < 5; tick++) { await store.settled?.(); await new Promise(resolve => setTimeout(resolve, 5)) }
+  }
+  const subscription = () => {
+    const sub = sockets.at(-1)?.frames.find(frame => frame.t === "sub" && frame.topic === "doc:wiki:42")
+    if (sub?.id === undefined) throw new Error("The Wiki page never subscribed to its live document")
+    return sub.id
+  }
+  /** The host admits the page: an assignment, then its replica as sync step 2. */
+  const admit = async () => {
+    const socket = sockets.at(-1)!, sub = subscription()
+    socket.receive({ t: "snap", id: sub, cursor: 0, data: { epoch: "00112233445566778899aabbccddeeff", client_id: 7 } })
+    const step = encoding.createEncoder()
+    sync.writeSyncStep2(step, doc)
+    socket.receive(encodeLiveDocBinary({ kind: 1, id: sub, payload: encoding.toUint8Array(step) }))
+    await settle()
+  }
+  /** One failed attempt: the socket drops and its reconnect opens unanswered, or the host refuses the retried document. */
+  const fail = async () => {
+    if (failure === "closed") sockets.at(-1)!.drop()
+    else sockets.at(-1)!.receive({ t: "err", id: subscription(), code: "unsupported" })
+    for (const run of timers.splice(0)) run()
+    if (failure === "closed") sockets.at(-1)!.open()
+    await settle()
+  }
+  try {
+    const wiki = createCloudWikiController(ctx, () => 1)
+    await wiki.openCloudWiki("owner/repo", "home")
+    sockets[0]!.open()
+    await admit()
+    expect(store.collections.worldDocuments.get(id)?.cloud?.phase).toBe("live")
+    // A refusal records once that the page is no longer live; nothing after it is news.
+    await fail()
+    const before = await store.eventHistory(), physical = fixture.footprint()
+    for (let index = 0; index < 3; index++) await fail()
+    expect(sockets.length).toBe(failure === "closed" ? 5 : 1)
+    expect((await store.eventHistory()).head).toEqual(before.head)
+    expect(fixture.footprint()).toEqual(physical)
+    expect(store.collections.worldDocuments.get(id)?.body).toBe("# Page")
+    // The host comes back with a newer replica: the page records it once it is live again.
+    doc.getText("markdown").insert(6, "\n\nRecovered")
+    await admit()
+    expect((await store.eventHistory()).head.sequence).toBeGreaterThan(before.head.sequence)
+    const reopened = await open(fixture.path)
+    expect(reopened.store.collections.worldDocuments.get(id)).toMatchObject({ body: "# Page\n\nRecovered", cloud: { phase: "live" } })
+    expect((await reopened.store.verifyState()).valid).toBe(true)
+  } finally {
+    await ctx.dispose()
+    live.dispose()
+    doc.destroy()
+  }
+}, 15_000)
+
+test("unchanged workspace provisioning polls do not grow SQLite and await changed receipts", async () => {
+  const { createWorkspaceSeam } = await import("./seams/WorkspaceSeam")
+  const fixture = await open(), { store } = fixture
+  await store.dispatch({ type: "cloud.session.loaded", actor: "system", state: "signed-in", username: "owner", expiresAt: null, scopes: null }).isPersisted.promise
+  const reads: Array<ReturnType<typeof Promise.withResolvers<Response>>> = []
+  const waitFor = async (predicate: () => boolean) => {
+    const deadline = Date.now() + 2_000
+    while (!predicate()) {
+      if (Date.now() >= deadline) throw new Error("Workspace observation did not settle")
+      await new Promise(resolve => setTimeout(resolve, 1))
+    }
+  }
+  const answer = (stage = "boot", status = "starting") => Response.json({
+    id: "ws-growth", repo_full_name: "owner/repo", name: "Provisioning", target_bookmark: null,
+    kind: "container", status, provisioning_stage: stage, suspended_at: null, created_at: "2026-09-26T00:00:00Z"
+  })
+  const seam = createWorkspaceSeam({ store, dispatch: store.dispatch, baseUrl: "", actor: () => "user", nextOrdinal: () => 1,
+    http: async (input, init) => {
+      if (init?.method === "POST") return answer()
+      if (input.endsWith("/workspaces/ws-growth")) {
+        const read = Promise.withResolvers<Response>(); reads.push(read); return read.promise
+      }
+      return Response.json([])
+    }
+  }, { pollMs: 1 })
+  try {
+    await seam.openWorkspace(undefined, "owner/repo", "container")
+    await waitFor(() => reads.length === 1)
+    await store.settled?.()
+    reads[0]!.resolve(answer())
+    await waitFor(() => reads.length === 2)
+    const before = await store.eventHistory(), physical = fixture.footprint()
+    for (let index = 1; index <= 10; index++) {
+      reads[index]!.resolve(answer())
+      await waitFor(() => reads.length === index + 2)
+    }
+    expect((await store.eventHistory()).head).toEqual(before.head)
+    expect(fixture.footprint()).toEqual(physical)
+    const held = fixture.pauseNextWrite()
+    reads[11]!.resolve(answer("starting_services"))
+    await held.entered
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(reads).toHaveLength(12)
+    held.release()
+    await waitFor(() => reads.length === 13)
+    expect((await store.eventHistory()).head.sequence).toBe(before.head.sequence + 1)
+    reads[12]!.resolve(answer("ready", "running"))
+    await waitFor(() => store.collections.cloudWorkspaces.get("ws-growth")?.status === "running")
+    await store.settled?.()
+    expect((await store.eventHistory()).head.sequence).toBe(before.head.sequence + 2)
+    const reopened = await open(fixture.path)
+    expect(reopened.store.collections.cloudWorkspaces.get("ws-growth")).toMatchObject({ status: "running", provisioningStage: "ready" })
+    expect((await reopened.store.verifyState()).valid).toBe(true)
+  } finally {
+    seam.dispose()
+    for (const read of reads) read.resolve(answer("ready", "running"))
+  }
+})
+
+
+test.each(["commit", "reject"] as const)("unchanged mirror polls do not grow SQLite and await changed receipts: %s", async outcome => {
+  const { createGitHubSeam, mirrorSyncPolling } = await import("./seams/GitHubSeam")
+  const previous = { ...mirrorSyncPolling }
+  mirrorSyncPolling.delayMs = 1
+  const fixture = await open(), { store } = fixture
+  await store.dispatch({ type: "cloud.session.loaded", actor: "system", state: "signed-in", username: "owner", expiresAt: null, scopes: null }).isPersisted.promise
+  const reads: Array<ReturnType<typeof Promise.withResolvers<Response>>> = []
+  const waitFor = async (predicate: () => boolean) => {
+    const deadline = Date.now() + 2_000
+    while (!predicate()) {
+      if (Date.now() >= deadline) throw new Error("Mirror observation did not settle")
+      await new Promise(resolve => setTimeout(resolve, 1))
+    }
+  }
+  let terminal = false, launches = 0
+  const answer = (state = "running", status = "pending") => Response.json({ state,
+    refs: [{ name: "refs/heads/main", from: "aa", to: "bb", status, error: status === "failed" ? "Push refused" : null }]
+  })
+  const seam = createGitHubSeam({ store, dispatch: store.dispatch, baseUrl: "", actor: () => "user", nextOrdinal: () => 1,
+    http: async (input, init) => {
+      if (init?.method === "POST") { launches++; return Response.json({ run_id: 91 }) }
+      if (input.endsWith("/mirror-sync/91")) {
+        const read = Promise.withResolvers<Response>(); reads.push(read); return read.promise
+      }
+      return Response.json({ mirror_status: terminal ? "failed" : "behind", behind_refs: 1, failed_refs: terminal ? 1 : 0 })
+    }
+  })
+  const failures: Error[] = []
+  store.onStorageFailure(error => { failures.push(error) })
+  const id = "sync-ops-mirror-owner/repo"
+  const payload = () => { const card = store.committedCard(id); return card?.kind === "sync-ops" ? card.payload : undefined }
+  try {
+    await seam.mirrorSync("owner/repo")
+    await waitFor(() => reads.length === 1)
+    reads[0]!.resolve(answer())
+    await waitFor(() => reads.length === 2)
+    const before = await store.eventHistory(), physical = fixture.footprint()
+    for (let index = 1; index <= 10; index++) {
+      reads[index]!.resolve(answer())
+      await waitFor(() => reads.length === index + 2)
+    }
+    expect((await store.eventHistory()).head).toEqual(before.head)
+    expect(fixture.footprint()).toEqual(physical)
+    const held = fixture.pauseNextWrite()
+    reads[11]!.resolve(answer("running", "succeeded"))
+    await held.entered
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(reads).toHaveLength(12)
+    if (outcome === "reject") {
+      held.fail(new Error("Mirror write refused"))
+      await waitFor(() => failures.length === 1)
+      await new Promise(resolve => setTimeout(resolve, 20))
+      expect(reads).toHaveLength(12)
+      expect(launches).toBe(1)
+      expect(failures).toMatchObject([{ message: "Changes could not be saved." }])
+      await expect(Promise.resolve(store.dispose?.())).rejects.toThrow("Mirror write refused")
+      stores.splice(stores.indexOf(store), 1)
+      const reopened = await open(fixture.path)
+      expect(reopened.store.committedCard(id)).toMatchObject({ payload: { runState: "running", ops: [{ status: "pending" }] } })
+      expect((await reopened.store.verifyState()).valid).toBe(true)
+      return
+    }
+    held.release()
+    await waitFor(() => reads.length === 13)
+    expect((await store.eventHistory()).head.sequence).toBe(before.head.sequence + 1)
+    terminal = true
+    reads[12]!.resolve(answer("failed", "failed"))
+    await waitFor(() => payload()?.mirrorStatus === "failed")
+    await store.settled?.()
+    expect((await store.eventHistory()).head.sequence).toBe(before.head.sequence + 3)
+    expect(launches).toBe(1)
+    const reopened = await open(fixture.path)
+    expect(reopened.store.committedCard(id)).toMatchObject({ payload: { runState: "failed", mirrorStatus: "failed", ops: [{ status: "failed", error: "Push refused" }] } })
+    expect((await reopened.store.verifyState()).valid).toBe(true)
+  } finally {
+    // Terminal replies retire outstanding test polls even when a regression fails.
+    for (const read of reads) read.resolve(answer("failed", "failed"))
+    await new Promise(resolve => setTimeout(resolve, 20))
+    Object.assign(mirrorSyncPolling, previous)
+  }
+})
+
+
+test.each(["adopt", "notice", "open"] as const)("GitHub installation %s stops across a held write and account replacement", async phase => {
+  const { createGitHubSeam } = await import("./seams/GitHubSeam")
+  const fixture = await open(), { store } = fixture
+  const identity = (login: string) => ({ type: "identity.session.loaded" as const, actor: "system" as const, state: "signed-in" as const,
+    login, admin: false, scopesPlain: null })
+  await store.dispatch(identity("owner")).isPersisted.promise
+  const dispatched: string[] = [], opened: string[] = []
+  const seam = createGitHubSeam({ store, baseUrl: "", actor: () => "user", nextOrdinal: () => 1,
+    dispatch: input => { dispatched.push(input.type); return store.dispatch(input) },
+    http: async () => phase === "notice" ? Response.json({ message: "Private install refusal" }, { status: 403 }) :
+      Response.json({ repos: phase === "open" ? [] : [{ fullName: "owner/private", installationId: 1 }] })
+  }, { openExternal: async url => { opened.push(url); return true } })
+  const held = fixture.pauseNextWrite()
+  const pending = phase === "open" ? seam.openInstall() : seam.chooseInstallation("1")
+  await held.entered
+  const replacement = store.dispatch(identity("other"))
+  held.release()
+  await replacement.isPersisted.promise
+  await pending
+  await store.settled?.()
+  expect(dispatched).not.toContain("repo.selected")
+  expect(dispatched).not.toContain("toast.resolved")
+  expect(opened).toEqual([])
+  const reopened = await open(fixture.path)
+  expect(reopened.store.collections.repositories.has("owner/private")).toBe(false)
+  expect(reopened.store.collections.githubAppStatuses.has("owner/private")).toBe(false)
+  expect(reopened.store.session().activeRepoKey).not.toBe("owner/private")
+  expect((await reopened.store.verifyState()).valid).toBe(true)
+})
+
+
+for (const kind of ["diagnostics", "waiting", "closed"] as const) {
+  test.each(["commit", "reject"] as const)(`unchanged language-server ${kind} observations keep SQLite flat: %s`, async outcome => {
+    const { createCodeIntelSeam } = await import("./seams/CodeIntelSeam")
+    const fixture = await open(), { store } = fixture
+    const id = "file-owner/repo-index.ts", content = "const value = 1"
+    await store.dispatch({ type: "cloud.session.loaded", actor: "system", state: "signed-in", username: "owner", expiresAt: null, scopes: null }).isPersisted.promise
+    await store.dispatch({ type: "workspace.updated", actor: "system", workspace: { id: "ws-lsp", repoId: "owner/repo", name: "LSP", status: "running", targetBookmark: null, provisioningStage: null, suspendedAt: null, createdAt: null } }).isPersisted.promise
+    await store.dispatch({ type: "card.upsert", actor: "system", card: { id, kind: "file", title: "File", status: "active", ordinal: 1, createdAt: 1, payload: { repo: "owner/repo", path: "index.ts", content, truncated: false } } }).isPersisted.promise
+    type Event = import("./CloudLspClient").CloudLspEvent
+    let publish: ((event: Event) => void) | undefined
+    let accepted = 0
+    const seam = createCodeIntelSeam({ store, baseUrl: "", actor: () => "user", nextOrdinal: () => 1,
+      http: async () => { throw new Error("Unexpected HTTP") }, dispatch: input => { accepted++; return store.dispatch(input) }
+    }, { validatedGuestExecution: () => true, readFile: async () => { throw new Error("The file already exists") }, createCloudLsp: () => ({
+      hover: async () => ({ ok: { hover: null } }), definition: async () => ({ ok: { locations: [], total: 0, omitted: 0 } }),
+      diagnostics: async () => ({ ok: { items: null, total: null } }), dispose: () => {},
+      subscribe: listener => { publish = listener; return () => { publish = undefined } }
+    }) })
+    const failures: Error[] = []
+    store.onStorageFailure(error => { failures.push(error); seam.dispose() })
+    const event = (message: string): Event => {
+      const scope = { repo: "owner/repo", workspaceId: "ws-lsp", language: "typescript" as const }
+      if (kind === "waiting") return { ...scope, type: kind, paths: ["index.ts"], note: message }
+      if (kind === "closed") return { ...scope, type: kind, paths: ["index.ts"], code: message === "changed" ? 1009 : 1008, reason: message }
+      return { ...scope, type: kind, path: "index.ts", content, total: message === "" ? 0 : 5,
+        items: message === "" ? [] : [{ line: 1, character: 1, endLine: 1, endCharacter: 2, severity: "error", message }] }
+    }
+    try {
+      await seam.hover("index.ts", 1, 1, "owner/repo")
+      publish!(event("original")); await store.settled?.()
+      const before = await store.eventHistory(), physical = fixture.footprint(), initial = accepted
+      for (let index = 0; index < 20; index++) publish!(event("original"))
+      await store.settled?.()
+      expect((await store.eventHistory()).head).toEqual(before.head)
+      expect(accepted).toBe(initial)
+      expect(fixture.footprint()).toEqual(physical)
+      const held = fixture.pauseNextWrite()
+      publish!(event("changed"))
+      await held.entered
+      for (let index = 0; index < 20; index++) publish!(event("changed"))
+      expect(accepted).toBe(initial + 1)
+      if (outcome === "reject") {
+        held.fail(new Error("LSP observation refused"))
+        await new Promise(resolve => setTimeout(resolve, 20))
+        expect(failures).toMatchObject([{ message: "Changes could not be saved." }])
+        expect(publish).toBeUndefined()
+        await expect(Promise.resolve(store.dispose?.())).rejects.toThrow("LSP observation refused")
+        stores.splice(stores.indexOf(store), 1)
+        const reopened = await open(fixture.path)
+        const card = reopened.store.committedCard(id)
+        expect(card?.kind).toBe("file")
+        if (card?.kind === "file") {
+          if (kind === "closed") {
+            expect(card.payload.intel?.note).toBe("the box language server closed (1008)")
+            expect(JSON.stringify(card.payload)).not.toContain("original")
+            expect(JSON.stringify(card.payload)).not.toContain("changed")
+          } else expect(JSON.stringify(card.payload)).toContain("original")
+        }
+        expect((await reopened.store.verifyState()).valid).toBe(true)
+        return
+      }
+      // A queued edit must not be hidden by our matching pending observation.
+      const current = store.collections.cards.get(id)!
+      if (current.kind !== "file") throw new Error("Missing file")
+      const fields = kind === "diagnostics" ? { diagnostics: [], diagnosticsTotal: undefined } : { intel: { state: "ready" as const } }
+      store.dispatch({ type: "card.updated", actor: "user", id, patch: { payload: { ...current.payload, ...fields } } })
+      publish!(event("changed"))
+      expect(accepted).toBe(initial + 2)
+      held.release(); await store.settled?.()
+      expect((await store.eventHistory()).head.sequence).toBe(before.head.sequence + 3)
+      if (kind === "closed") {
+        const committed = store.committedCard(id)
+        if (committed?.kind !== "file") throw new Error("Missing committed file")
+        expect(committed.payload.intel?.note).toBe("the box language server closed (1009)")
+        expect(JSON.stringify(committed.payload)).not.toContain("changed")
+      }
+      publish!(event("")); await store.settled?.()
+      const settled = await store.eventHistory()
+      publish!(event("")); await store.settled?.()
+      expect((await store.eventHistory()).head).toEqual(settled.head)
+      const reopened = await open(fixture.path)
+      const card = reopened.store.committedCard(id)
+      if (card?.kind !== "file") throw new Error("Missing persisted file")
+      if (kind === "diagnostics") { expect(card.payload.diagnostics).toEqual([]); expect(card.payload.diagnosticsTotal).toBeUndefined() }
+      else expect(card.payload.intel?.state).toBe("unavailable")
+      expect((await reopened.store.verifyState()).valid).toBe(true)
+      // Explicit repeated commands remain accepted acts, even when their answer is identical.
+      const commands = (await store.eventHistory()).head.sequence
+      await seam.hover("index.ts", 1, 1, "owner/repo")
+      await seam.hover("index.ts", 1, 1, "owner/repo")
+      expect((await store.eventHistory()).head.sequence).toBe(commands + 2)
+    } finally { seam.dispose() }
+  })
+}
+
+test.each(["commit", "reject"] as const)("identical quiet issue-poll failures do not grow the committed journal or SQLite: %s", async outcome => {
+  const { createIssuesSeam } = await import("./seams/IssuesSeam")
+  const { createFailureController } = await import("./controller/failures")
+  const fixture = await open(), { store } = fixture
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "will", admin: false, scopesPlain: null }).isPersisted.promise
+  const issue: Extract<Card, { kind: "issue" }> = { id: "issue-growth", kind: "issue", title: "Growth", status: "active", createdAt: 1, ordinal: 1, payload: {
+    repo: "will/flows", number: 8, kind: "chat", visibility: "private", title: "Growth", state: "open", author: "will", issueBody: "", labels: [], comments: []
+  } }
+  await store.dispatch({ type: "card.upsert", actor: "user", card: issue }).isPersisted.promise
+  // The seam reschedules its read every two seconds; the test drives each read.
+  const polls: Array<() => void> = []
+  const realSetTimeout = globalThis.setTimeout
+  const timers = spyOn(globalThis, "setTimeout").mockImplementation(((work: () => void, delay?: number, ...rest: unknown[]) => {
+    if (delay === 2_000) { polls.push(work); return 0 as unknown as ReturnType<typeof setTimeout> }
+    return realSetTimeout(work, delay, ...rest)
+  }) as typeof setTimeout)
+  const ctx = createControllerContext(store, unavailableAgent, {})
+  contexts.push(ctx)
+  const failures = createFailureController(ctx)
+  // A 5xx body never reaches the toast, so the status is what distinguishes one failure from the next.
+  let status = 503, reads = 0
+  const releases: Array<() => void> = []
+  const seam = createIssuesSeam({ store, dispatch: store.dispatch, baseUrl: "", actor: () => "user", nextOrdinal: () => 2,
+    withToast: failures.withToast, isDisposed: () => ctx.disposed,
+    http: async () => { reads++; return Response.json({ message: "Issues unavailable" }, { status }) } })
+  const waitFor = async (predicate: () => boolean) => {
+    const deadline = Date.now() + 2_000
+    while (!predicate()) {
+      if (Date.now() >= deadline) throw new Error("Issue poll did not settle")
+      await new Promise(resolve => realSetTimeout(resolve, 1))
+    }
+  }
+  const poll = async () => {
+    const count = reads, work = polls.shift()!
+    work()
+    await waitFor(() => reads === count + 1 && polls.length === 1)
+  }
+  const toastId = "toast-issue.sync:issue-growth"
+  const storageFailures: Error[] = []
+  store.onStorageFailure(error => { storageFailures.push(error) })
+  try {
+    seam.subscribe(release => { releases.push(release) })
+    await waitFor(() => polls.length === 1)
+    await poll()
+    await store.settled?.()
+    const first = store.committedToast(toastId)
+    expect(first).toMatchObject({ status: "failed", title: "Syncing messages" })
+    expect(first?.detail).toContain("failed (503)")
+    expect(first?.detail).not.toContain("Issues unavailable")
+    const before = await store.eventHistory(), physical = fixture.footprint()
+    for (let index = 0; index < 10; index++) await poll()
+    await store.settled?.()
+    expect((await store.eventHistory()).head).toEqual(before.head)
+    expect(fixture.footprint()).toEqual(physical)
+    // A changed failure is a new fact; identical reads during its held write add nothing.
+    status = 502
+    const held = fixture.pauseNextWrite()
+    await poll()
+    await held.entered
+    for (let index = 0; index < 3; index++) await poll()
+    expect(store.committedToast(toastId)?.detail).toContain("failed (503)")
+    expect(store.collections.toasts.get(toastId)?.detail).toContain("failed (502)")
+    if (outcome === "reject") {
+      held.fail(new Error("Toast write refused"))
+      await waitFor(() => storageFailures.length === 1)
+      await expect(Promise.resolve(store.dispose?.())).rejects.toThrow("Toast write refused")
+      stores.splice(stores.indexOf(store), 1)
+      // Toasts never survive a restart; the journal up to the refused write does.
+      const reopened = await open(fixture.path)
+      expect(reopened.store.committedToast(toastId)).toBeUndefined()
+      expect((await reopened.store.eventHistory()).head.sequence).toBeGreaterThanOrEqual(before.head.sequence)
+      expect((await reopened.store.verifyState()).valid).toBe(true)
+      return
+    }
+    held.release()
+    await store.settled?.()
+    const changed = await store.eventHistory()
+    expect(changed.head.sequence).toBe(before.head.sequence + 2)
+    for (let index = 0; index < 3; index++) await poll()
+    await store.settled?.()
+    expect((await store.eventHistory()).head).toEqual(changed.head)
+    // A dismissed failure is shown again by the next failed read.
+    failures.dismissToast(toastId)
+    await poll()
+    await store.settled?.()
+    expect(store.committedToast(toastId)).toMatchObject({ status: "failed" })
+    expect(store.committedToast(toastId)?.detail).toContain("failed (502)")
+    expect((await store.eventHistory()).head.sequence).toBe(changed.head.sequence + 3)
+    const reopened = await open(fixture.path)
+    expect((await reopened.store.verifyState()).valid).toBe(true)
+  } finally {
+    for (const release of releases) release()
+    timers.mockRestore()
+  }
+})

@@ -1,0 +1,412 @@
+paths:
+  /api/gateways/{hostID}/file-write-grants:
+    x-composition: install
+    post:
+      x-composition: install
+      summary: Issue an exact-batch coding file credential
+      operationId: post_api_gateways_host_file_write_grants
+      tags:
+        - Gateways
+      description: Private S1 coding-host callback. The bearer is the live host control credential, never a browser session or a repository token. The host asserts the run identity. The returned credential expires after two minutes and admits only the exact SHA-256-bound PUT body at the bound workspace file-content route. Guest qualification remains independently required.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: hostID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [run_id, batch_digest]
+              properties:
+                run_id:
+                  type: string
+                  pattern: '^[A-Za-z0-9._:-]{1,256}$'
+                batch_digest:
+                  type: string
+                  pattern: '^[0-9a-f]{64}$'
+      responses:
+        '201':
+          description: Ephemeral credential; response is never cached.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [token_id, token, run_id, workspace_id, repository_slug, expires_at, batch_digest]
+                properties:
+                  token_id:
+                    type: integer
+                    format: int64
+                    minimum: 1
+                  token:
+                    type: string
+                  run_id:
+                    type: string
+                  workspace_id:
+                    type: string
+                    format: uuid
+                  repository_slug:
+                    type: string
+                  expires_at:
+                    type: integer
+                    format: int64
+                    description: Expiration in Unix milliseconds.
+                  batch_digest:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '409':
+          description: Coding workspace is no longer running.
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: Credential issuer unavailable.
+  /api/gateways/{hostID}/file-write-grants/{tokenID}:
+    x-composition: install
+    delete:
+      x-composition: install
+      summary: Revoke a coding file credential
+      operationId: delete_api_gateways_host_file_write_grants_token
+      tags:
+        - Gateways
+      description: Private idempotent cleanup authenticated by the grant's own bearer. It cannot remove another token. Cleanup remains available after host rotation or stop, and waits for any admitted file batch to settle.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: hostID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: tokenID
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        '204':
+          description: Matching credential revoked or already absent.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: Credential issuer unavailable.
+  /api/gateways/{hostID}/repository-jobs/ci/check-receipts/{requestID}:
+    put:
+      x-composition: plue
+      summary: PUT /api/gateways/{hostID}/repository-jobs/ci/check-receipts/{requestID}
+      operationId: put_api_gateways_host_repository_jobs_ci_check_receipts_request
+      tags:
+        - Gateways
+      parameters:
+        - name: hostID
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: requestID
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnyJSON'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/gateways/{hostID}/repository-jobs/{job}:
+    put:
+      x-composition: plue
+      summary: PUT /api/gateways/{hostID}/repository-jobs/{job}
+      operationId: put_api_gateways_host_repository_jobs_job
+      tags:
+        - Gateways
+      parameters:
+        - name: hostID
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: job
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnyJSON'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/gateways/{hostID}/repository-jobs/{job}/comments/{step}:
+    put:
+      x-composition: plue
+      summary: PUT /api/gateways/{hostID}/repository-jobs/{job}/comments/{step}
+      operationId: put_api_gateways_host_repository_jobs_job_comments_step
+      tags:
+        - Gateways
+      parameters:
+        - name: hostID
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: job
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: step
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnyJSON'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/gateways/{hostID}/repository-jobs/{job}/manual/{requestID}:
+    put:
+      x-composition: plue
+      summary: PUT /api/gateways/{hostID}/repository-jobs/{job}/manual/{requestID}
+      operationId: put_api_gateways_host_repository_jobs_job_manual_request
+      tags:
+        - Gateways
+      parameters:
+        - name: hostID
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: job
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: requestID
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnyJSON'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/gateways/{hostID}/repository-jobs/{job}/trials/{requestID}:
+    put:
+      x-composition: plue
+      summary: PUT /api/gateways/{hostID}/repository-jobs/{job}/trials/{requestID}
+      operationId: put_api_gateways_host_repository_jobs_job_trials_request
+      tags:
+        - Gateways
+      parameters:
+        - name: hostID
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: job
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: requestID
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnyJSON'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/gateways/{hostID}/learning/{runID}/evidence:
+    x-composition: install
+    get:
+      x-composition: install
+      summary: Read run-bound Learning evidence
+      operationId: get_api_gateways_host_learning_run_evidence
+      tags:
+        - Gateways
+      description: Private isolated-host callback. Requires the live Learning host control credential and a persisted nonterminal Learning dispatch with the same run, workspace, repository, source pin and host generation. Returns the merged TODO's retained attempts, steers, review comments and the last 20 merged TODO outcomes. No write authority is granted.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: hostID
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+        - name: runID
+          in: path
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 512}
+      responses:
+        '200':
+          description: Evidence for the dispatch's bound merged TODO
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [repository, todo, run, state, change, commit, attempts, journal, outcomes]
+                properties:
+                  repository: {type: string}
+                  todo: {type: integer, minimum: 1}
+                  run: {type: string}
+                  state: {type: string, enum: [merged]}
+                  change: {type: string}
+                  commit: {type: string}
+                  attempts:
+                    type: array
+                    items: {type: string}
+                  journal:
+                    type: array
+                    items:
+                      type: object
+                      required: [seq, eventType, payload]
+                      properties:
+                        seq: {type: integer}
+                        eventType: {type: string}
+                        payload: {$ref: '#/components/schemas/AnyJSON'}
+                  outcomes:
+                    type: array
+                    maxItems: 20
+                    items:
+                      type: object
+                      required: [todo, failures]
+                      properties:
+                        todo: {type: integer, minimum: 1}
+                        failures:
+                          type: array
+                          items:
+                            type: object
+                            required: [signature, text]
+                            properties:
+                              signature: {type: string}
+                              text: {type: string}
+        '403': {$ref: '#/components/responses/AuthorizationForbidden'}
+        '500': {$ref: '#/components/responses/InternalError'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}

@@ -1,3 +1,4 @@
+import { validateFixtures } from "./spec/validate"
 import { openApiChunk } from "./scripts/openapi-chunk"
 import react from "@vitejs/plugin-react"
 import { dirname, resolve } from "node:path"
@@ -47,8 +48,16 @@ const entryChunkGuard = (): Plugin => ({
 
 export default defineConfig(({ mode }) => ({
   server: devBackendProxy(process.env.SMITHERS_DEV_BACKEND_ORIGIN),
-  plugins: [...(mode === "spec" ? [{
+  plugins: [...(mode !== "spec" ? [{
+    name: "smithers-production-spec-exclusion",
+    generateBundle() {
+      for (const id of this.getModuleIds()) {
+        if (id.replaceAll("\\", "/").includes("/apps/app/spec/")) this.error(`Production imports spec fixture: ${id}`)
+      }
+    }
+  } satisfies Plugin] : []), ...(mode === "spec" ? [{
     name: "smithers-spec-entry",
+    buildStart() { validateFixtures() },
     transformIndexHtml: { order: "pre" as const, handler(html: string) {
       return html.replace('<head>', '<head><meta http-equiv="Content-Security-Policy" content="connect-src \'self\'">')
         .replace('src="/main.tsx"', 'src="/spec-entry"')

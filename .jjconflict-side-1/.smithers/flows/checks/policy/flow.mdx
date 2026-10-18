@@ -1,0 +1,6 @@
+---
+description: Run the existing //.smithers/flows:codingPolicy acceptance target.
+flows: [coding/CommandCheck]
+capabilities: ["fs:read:**", "proc:spawn:sh .smithers/flows/checks/coding-check.sh *"]
+---
+{"argv":["sh",".smithers/flows/checks/coding-check.sh","//.smithers/flows:codingPolicy"],"cwd":".","timeoutMs":600000}

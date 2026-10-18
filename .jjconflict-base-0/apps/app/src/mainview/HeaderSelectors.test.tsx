@@ -1,0 +1,449 @@
+/*
+ * The mounted header: the repository and branch selectors read real state on
+ * a hosted page and on an install, and the seeded crumbs appear only where
+ * the design fixture is enabled. The controller, store and flows are real;
+ * the HTTP door answers the wire shapes production serves.
+ */
+import { GlobalRegistrator } from "@happy-dom/global-registrator"
+import { afterAll, afterEach, describe, expect, test } from "bun:test"
+import type { ReactNode } from "react"
+import { flushSync } from "react-dom"
+import { createRoot } from "react-dom/client"
+import { ControllerTestProvider } from "./ControllerContext"
+import { SessionNavigation } from "./SessionNavigation"
+import { createAppStore } from "./state/AppStore"
+import { scopedControllers } from "./state/ControllerTestScope"
+import { memoryStorage, silentAgent, waitFor } from "./state/TestFixtures"
+import { installFixture } from "./state/seams/InstallFixtures.test-support"
+import { BRANCH_PICKS_STORAGE_KEY } from "./state/seams/RepositoryBranchesSeam"
+
+GlobalRegistrator.register()
+afterAll(async () => {
+  for (let tick = 0; tick < 3; tick++) await new Promise(resolve => setTimeout(resolve, 0))
+  await GlobalRegistrator.unregister()
+})
+const cleanups: Array<() => void> = []
+// Picks are kept in this browser's storage: one test's pick must not open the next test's header.
+afterEach(() => { while (cleanups.length) cleanups.pop()?.(); localStorage.removeItem(BRANCH_PICKS_STORAGE_KEY) })
+const createAppController = scopedControllers()
+
+const mount = (node: ReactNode): HTMLElement => {
+  const host = document.createElement("div")
+  document.body.append(host)
+  const root = createRoot(host)
+  flushSync(() => root.render(node))
+  cleanups.push(() => { flushSync(() => root.unmount()); host.remove() })
+  return host
+}
+/* happy-dom sets no window.event, so React cannot see the click as discrete: flush its update here. */
+const click = (element: Element | null | undefined): void => { flushSync(() => { (element as HTMLButtonElement).click() }) }
+const key = (element: Element | null | undefined, name: string): void => {
+  flushSync(() => { element?.dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true })) })
+}
+const settle = async (): Promise<void> => { for (let tick = 0; tick < 6; tick++) await new Promise(resolve => setTimeout(resolve, 0)); flushSync(() => {}) }
+
+const cloud = { apiVersion: 1 as const, host: "cloud" as const, version: "test", buildSha: "test", capabilities: ["identity" as const, "agent" as const, "github" as const, "cloud" as const], authFlow: "redirect" as const, sandbox: null }
+const bookmark = (name: string) => ({ name, target_change_id: `change-${name}`, target_commit_id: `commit-${name}`, is_tracking_remote: true })
+const repository = (id: string, defaultBranch: string | null) => {
+  const [org = "", name = ""] = id.split("/")
+  return { id, org, ownerKind: "org" as const, name, head: defaultBranch === null ? null : { bookmark: defaultBranch, changeId: "c", commitId: "k" } }
+}
+
+const hosted = async (options: { readonly repositories?: ReadonlyArray<ReturnType<typeof repository>>; readonly branches?: Readonly<Record<string, ReadonlyArray<string> | number>> } = {}) => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const reads: string[] = []
+  const controller = createAppController(store, silentAgent, {
+    bootstrap: cloud,
+    fetchImpl: async input => {
+      const url = new URL(String(input), "https://cloud.test")
+      const match = /^\/api\/repos\/([^/]+)\/([^/]+)\/bookmarks$/.exec(url.pathname)
+      const listed = match ? options.branches?.[`${match[1]}/${match[2]}`] : undefined
+      if (match) reads.push(`${match[1]}/${match[2]}`)
+      if (typeof listed === "number") return Response.json({ message: "unavailable" }, { status: listed })
+      return listed ? Response.json({ items: listed.map(bookmark), next_cursor: "" }) : Response.json({ code: "not_found", class: "user", message: "not found" }, { status: 404 })
+    }
+  })
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "maya", admin: false, scopesPlain: null }).isPersisted.promise
+  if (options.repositories) await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: options.repositories }).isPersisted.promise
+  const host = mount(<ControllerTestProvider controller={controller}><SessionNavigation /></ControllerTestProvider>)
+  const header = () => host.querySelector(".session-navigation")!
+  const select = (flow: "repo.select" | "branch") => host.querySelector<HTMLElement>(`[data-header-select="${flow}"]`)
+  const trigger = (flow: "repo.select" | "branch") => select(flow)?.querySelector<HTMLButtonElement>("button.crumb-here") ?? null
+  const options_ = (flow: "repo.select" | "branch") => [...(select(flow)?.querySelectorAll<HTMLButtonElement>(".tree .tree-row") ?? [])]
+  return { store, controller, host, header, select, trigger, rows: options_, reads }
+}
+const crumbText = (header: Element): string => (header.querySelector(".crumbs-host")?.textContent ?? "").replace(/\s+/g, " ").trim()
+
+describe("the header on a hosted page", () => {
+  test("with no repositories it names nothing: no repository, no branch, no made-up main", async () => {
+    const h = await hosted()
+    await settle()
+    expect(h.host.querySelector(".crumbs-host")).toBeNull()
+    expect(h.header().textContent).not.toContain("main")
+    expect(h.header().textContent).not.toContain("acme/api")
+  })
+
+  test("with repositories and none selected it offers the repository selector alone", async () => {
+    const h = await hosted({ repositories: [repository("zeta/web", "develop"), repository("acme/api", "trunk")] })
+    await settle()
+    expect(crumbText(h.header())).toBe("Repository")
+    expect(h.trigger("repo.select")?.getAttribute("aria-label")).toBe("Repository")
+    expect(h.trigger("repo.select")?.getAttribute("aria-expanded")).toBe("false")
+    expect(h.select("branch")).toBeNull()
+    expect(h.rows("repo.select")).toEqual([])
+  })
+
+  test("the repository selector lists the account's repositories and repo.select names the one picked with its own default branch", async () => {
+    const h = await hosted({ repositories: [repository("zeta/web", "develop"), repository("acme/api", "trunk")], branches: { "acme/api": ["trunk", "docs"] } })
+    await settle()
+    click(h.trigger("repo.select"))
+    expect(h.trigger("repo.select")?.getAttribute("aria-expanded")).toBe("true")
+    expect(h.select("repo.select")?.querySelector("nav.tree")?.getAttribute("aria-label")).toBe("Repositories")
+    expect(h.rows("repo.select").map(row => row.textContent?.trim())).toEqual(["acme/api", "zeta/web"])
+    expect(h.rows("repo.select").map(row => row.dataset.flow)).toEqual(["repo.select", "repo.select"])
+
+    click(h.rows("repo.select")[0])
+    await waitFor(() => h.store.session().activeRepoKey === "acme/api")
+    await settle()
+    expect(h.rows("repo.select")).toEqual([])
+    expect(crumbText(h.header())).toBe("acme/api/trunk")
+    expect(h.trigger("repo.select")?.getAttribute("aria-label")).toBe("Repository acme/api")
+    expect(h.trigger("branch")?.getAttribute("aria-label")).toBe("Branch trunk")
+    click(h.trigger("repo.select"))
+    expect(h.rows("repo.select").map(row => row.getAttribute("aria-current"))).toEqual(["true", null])
+  })
+
+  test("the branch selector reads the repository's branches when opened, default first, and branch picks one", async () => {
+    const h = await hosted({ repositories: [repository("acme/api", "trunk")], branches: { "acme/api": ["zed", "docs", "trunk", "alpha"] } })
+    await h.controller.commands.run("repo.select", "acme/api")
+    await waitFor(() => h.controller.repositoryBranches.rows.get("acme/api")?.state === "ready")
+    await settle()
+    const before = h.reads.length
+    click(h.trigger("branch"))
+    expect(h.reads.length).toBe(before + 1)
+    await waitFor(() => h.controller.repositoryBranches.rows.get("acme/api")?.state === "ready")
+    await settle()
+    expect(h.select("branch")?.querySelector("nav.tree")?.getAttribute("aria-label")).toBe("Branches")
+    expect(h.rows("branch").map(row => row.textContent?.trim())).toEqual(["trunk", "alpha", "docs", "zed"])
+    expect(h.rows("branch").map(row => row.getAttribute("aria-current"))).toEqual(["true", null, null, null])
+
+    click(h.rows("branch")[2])
+    await waitFor(() => h.controller.repositoryBranches.pickOf("acme/api") === "docs")
+    await settle()
+    expect(crumbText(h.header())).toBe("acme/api/docs")
+    // The pick names a repository branch; the conversation's branch is untouched.
+    expect(h.store.session().branchNavigation).toBeUndefined()
+    expect(h.rows("branch")).toEqual([])
+  })
+
+  test("a repository whose default is not loaded shows the Branch selector unnamed, never a guess", async () => {
+    const h = await hosted({ repositories: [repository("acme/api", null)], branches: { "acme/api": ["docs"] } })
+    await h.controller.commands.run("repo.select", "acme/api")
+    await settle()
+    expect(crumbText(h.header())).toBe("acme/api/Branch")
+    expect(h.trigger("branch")?.getAttribute("aria-label")).toBe("Branch")
+  })
+
+  test("a failed branch read is shown in the open list and the selection stands", async () => {
+    const h = await hosted({ repositories: [repository("acme/api", "trunk")], branches: { "acme/api": 503 } })
+    await h.controller.commands.run("repo.select", "acme/api")
+    await waitFor(() => h.controller.repositoryBranches.rows.get("acme/api")?.state === "failed")
+    await settle()
+    click(h.trigger("branch"))
+    await waitFor(() => h.controller.repositoryBranches.rows.get("acme/api")?.state === "failed")
+    await settle()
+    expect(h.select("branch")?.querySelector('[role="alert"]')?.textContent).toContain("Branches for acme/api couldn't be listed")
+    expect(h.rows("branch").map(row => row.textContent?.trim())).toEqual(["trunk"])
+    expect(crumbText(h.header())).toContain("acme/api/trunk")
+  })
+
+  test("arrow keys move through the open list, Escape closes it and returns focus, and a press outside closes it", async () => {
+    const h = await hosted({ repositories: [repository("acme/api", "trunk"), repository("zeta/web", "develop")] })
+    await settle()
+    click(h.trigger("repo.select"))
+    const [first, second] = h.rows("repo.select")
+    h.trigger("repo.select")?.focus()
+    key(h.trigger("repo.select"), "ArrowDown")
+    expect(document.activeElement).toBe(first!)
+    key(first, "ArrowDown")
+    expect(document.activeElement).toBe(second!)
+    key(second, "ArrowDown")
+    expect(document.activeElement).toBe(first!)
+    key(first, "ArrowUp")
+    expect(document.activeElement).toBe(second!)
+    key(second, "Escape")
+    expect(h.rows("repo.select")).toEqual([])
+    expect(document.activeElement).toBe(h.trigger("repo.select"))
+
+    click(h.trigger("repo.select"))
+    expect(h.rows("repo.select").length).toBe(2)
+    click(h.select("repo.select")?.querySelector(".crumb-backdrop"))
+    expect(h.rows("repo.select")).toEqual([])
+    expect(h.store.session().activeRepoKey ?? null).toBeNull()
+  })
+
+  test("each repository keeps its own pick, and a page opened later in this browser restores it", async () => {
+    const h = await hosted({ repositories: [repository("acme/api", "trunk"), repository("zeta/web", "develop")], branches: { "acme/api": ["trunk", "docs"], "zeta/web": ["develop"] } })
+    await h.controller.commands.run("repo.select", "acme/api")
+    await h.controller.commands.run("branch", "docs")
+    await settle()
+    expect(crumbText(h.header())).toBe("acme/api/docs")
+    click(h.trigger("repo.select"))
+    click(h.rows("repo.select")[1])
+    await waitFor(() => h.store.session().activeRepoKey === "zeta/web")
+    await settle()
+    expect(crumbText(h.header())).toBe("zeta/web/develop")
+    click(h.trigger("repo.select"))
+    click(h.rows("repo.select")[0])
+    await waitFor(() => h.store.session().activeRepoKey === "acme/api")
+    await settle()
+    expect(crumbText(h.header())).toBe("acme/api/docs")
+
+    const later = await hosted({ repositories: [repository("acme/api", "trunk")], branches: { "acme/api": ["trunk", "docs"] } })
+    await later.controller.commands.run("repo.select", "acme/api")
+    await settle()
+    expect(crumbText(later.header())).toBe("acme/api/docs")
+  })
+})
+
+describe("the header on other hosts", () => {
+  test("an install names its one repository as text and its real branch tree, with nothing to select between", async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "smithersai", admin: false, scopesPlain: null }).isPersisted.promise
+    const controller = createAppController(store, silentAgent, {
+      bootstrap: { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: ["install"], authFlow: "none", sandbox: null },
+      fetchImpl: async input => {
+        const path = new URL(String(input), "https://install.test").pathname
+        return path === "/api/auth/session" ? Response.json({ id: 1, username: "smithersai", is_admin: false })
+          : path === "/api/install" ? Response.json(installFixture())
+          : path === "/api/branches" ? Response.json([{ name: "retry-webhooks", kind: "item", state: "open", machine: { id: "m-1" } }])
+          : new Response("", { status: 404 })
+      }
+    })
+    const host = mount(<ControllerTestProvider controller={controller}><SessionNavigation /></ControllerTestProvider>)
+    await waitFor(() => controller.installSnapshots.get().model?.repository !== undefined)
+    await settle()
+    expect(host.querySelector(".crumb-repo")?.textContent).toBe("smithersai/smithers")
+    expect(host.querySelector("[data-header-select]")).toBeNull()
+    expect(host.querySelector(".crumb-here")?.textContent).toBe("main")
+
+    await controller.listBookmarks()
+    await waitFor(() => (store.session().branchNavigation?.nodes[0]?.children.length ?? 0) === 1)
+    await settle()
+    click(host.querySelector(".crumb-here"))
+    expect([...host.querySelectorAll(".crumbs .tree .tree-name")].map(node => node.textContent)).toEqual(["main", "retry-webhooks"])
+  })
+
+  test("the seeded crumbs render only where the design fixture is enabled", async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const controller = createAppController(store, silentAgent, { fetchImpl: async () => new Response("", { status: 404 }) })
+    expect(controller.design.enabled).toBe(true)
+    const host = mount(<ControllerTestProvider controller={controller}><SessionNavigation /></ControllerTestProvider>)
+    await settle()
+    expect(host.querySelector(".crumb-repo")?.textContent).toBe("acme/api")
+    expect(host.querySelector(".crumb-here")?.textContent).toBe("main")
+    expect(host.querySelector("[data-header-select]")).toBeNull()
+  })
+})
+
+import { CodeHome, signInToAskLabel } from "./repository/CodeHome"
+
+describe("repository Code home availability", () => {
+  test("slash default branches preserve separators in file and folder links", () => {
+    const tree = { id:"copy:", copyId:"copy", path:"", state:"loaded" as const,
+      entries:[{name:"a b.ts",kind:"file" as const},{name:"src",kind:"dir" as const}], expanded:true, loadedAt:1 }
+    const host = mount(<CodeHome onRunCommand={() => false} repo="maya/tinyhttp" branch="release/1.2" tree={tree}/>)
+    expect(host.querySelector('a[href="/maya/tinyhttp/blob/release/1.2/a%20b.ts"]')?.textContent).toContain("a b.ts")
+    expect(host.querySelector('a[href="/maya/tinyhttp/tree/release/1.2/src"]')?.textContent).toContain("src")
+    expect(host.querySelector('a[href*="release%2F"]')).toBeNull()
+  })
+  test("files wait for an authoritative default branch before becoming links", () => {
+    const tree = { id:"copy:", copyId:"copy", path:"", state:"loaded" as const, entries:[{name:"README.md",kind:"file" as const}], expanded:true, loadedAt:1 }
+    const unknown = mount(<CodeHome onRunCommand={() => false} repo="maya/tinyhttp" tree={tree}/>)
+    expect(unknown.textContent).toContain("README.md")
+    expect(unknown.querySelector('a[href*="/HEAD/"]')).toBeNull()
+    expect(unknown.querySelector('a[href*="/blob/"]')).toBeNull()
+    const known = mount(<CodeHome onRunCommand={() => false} repo="maya/tinyhttp" branch="trunk" tree={tree}/>)
+    expect(known.querySelector('a[href="/maya/tinyhttp/blob/trunk/README.md"]')).not.toBeNull()
+  })
+  test("a missing tree copy is an unavailable state rather than an endless spinner", () => {
+    const host = mount(<CodeHome onRunCommand={() => false} repo="maya/tinyhttp" treeAvailable={false}/>)
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe("Couldn't load repository files.")
+    expect(host.querySelector('[role="status"]')).toBeNull()
+  })
+})
+
+import { ControllerContext } from "./ControllerContext"
+import type { AppController } from "./state/AppController"
+
+const declared = { kind:"blocks" as const, blocks:[
+  { type:"links" as const, links:[{ label:"Documentation", url:"https://example.com/docs" }, { label:"Report a bug", url:"/bug" }] },
+  { type:"app" as const, flow:"issue.implement", title:"Fix an issue", picture:"issue" as const },
+  { type:"app" as const, flow:"chat.open", title:"Ask the codebase", picture:"wiki" as const },
+  { type:"prompt" as const, title:"Ask about tinyhttp", placeholder:"What does it do?" },
+  { type:"markdown" as const, title:"Fixed by agents", path:"docs/fixed-by-agents.md", markdown:"- #12 landed as abc1234" },
+  { type:"text" as const, text:"Repository introduction" },
+  { type:"markdown" as const, path:"README.md", markdown:"# Project README" }
+] }
+const tree = { id:"copy:", copyId:"copy", path:"", state:"loaded" as const, entries:[{ name:"README.md", kind:"file" as const }], expanded:true, loadedAt:1 }
+/** The frame's registry, as the Code home reads it: `flows` are the names this host serves. */
+const withRegistry = (flows: ReadonlyArray<string>, view: ReactNode) => {
+  const controller = { commands: { find: (name: string) => flows.includes(name) ? { metadata: { name } } : undefined } } as unknown as AppController
+  return <ControllerContext value={controller}>{view}</ControllerContext>
+}
+const order = (host: HTMLElement, selectors: ReadonlyArray<string>) => {
+  const nodes = selectors.map(selector => host.querySelector(selector)!)
+  for (const node of nodes) expect(node).not.toBeNull()
+  for (let i = 1; i < nodes.length; i++) expect(nodes[i - 1]!.compareDocumentPosition(nodes[i]!) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+}
+
+// Design (A)-(D): toolbar, then text, prompt, links, Fixed by agents, then Files and README; no Files button; app blocks for members in one row.
+test("a declared home renders below the toolbar in spec order, with Files and the README after it and no Files button", () => {
+  const host = mount(<CodeHome repo="maya/tinyhttp" onRunCommand={() => false} branch="main" tree={tree} home={declared}/>)
+  order(host, [".repo-code-home-toolbar", ".repo-code-home-intro", ".repo-ui-box-header", ".repo-code-home-links", '[aria-label="Files"]', '[aria-label="README"]'])
+  const headers = [...host.querySelectorAll(".repo-ui-box-header")].map(node => node.textContent)
+  expect(headers).toEqual(["Ask about tinyhttp", "Fixed by agents", "README.md"])
+  expect(host.querySelector(".repo-code-home-intro p")?.textContent).toBe("Repository introduction")
+  expect(host.querySelector('[aria-label="README"] h1')?.textContent).toBe("Project README")
+  // The README block is the README region, never a second copy above Files.
+  expect(host.querySelectorAll('[aria-label="README"]')).toHaveLength(1)
+  expect([...host.querySelectorAll("h1")].map(node => node.textContent)).toEqual(["Project README"])
+  expect(host.querySelector(".repository-home-files")).toBeNull()
+  expect([...host.querySelectorAll("button")].map(node => node.textContent)).not.toContain("Files")
+})
+
+test("links open their own host's pages in place and other sites in a new tab", () => {
+  const host = mount(<CodeHome repo="maya/tinyhttp" onRunCommand={() => false} branch="main" tree={tree} home={declared}/>)
+  const docs = host.querySelector<HTMLAnchorElement>('.repo-code-home-links a[href="https://example.com/docs"]')!
+  expect(docs.textContent).toBe("Documentation")
+  expect(docs.target).toBe("_blank")
+  expect(docs.rel).toContain("noopener")
+  const bug = host.querySelector<HTMLAnchorElement>('.repo-code-home-links a[href="/bug"]')!
+  expect(bug.textContent).toBe("Report a bug")
+  expect(bug.target).toBe("")
+})
+
+// Design (B): the prompt carries the home's title; signed out it is one quiet sign-in button, signed in an input plus Send.
+test("the prompt block is one quiet sign-in button for a visitor and an input plus Send for a viewer who can Ask", () => {
+  const visitorCommands: Array<[string, string | undefined]> = []
+  const visitor = mount(<CodeHome repo="maya/tinyhttp" onRunCommand={(name, args) => { visitorCommands.push([name, args]); return true }} branch="main" tree={tree} home={declared}/>)
+  const door = visitor.querySelector<HTMLButtonElement>('.repo-code-home-block button[data-flow="sign-in"]')!
+  expect(door.textContent).toBe("Sign in to ask about tinyhttp")
+  expect(door.classList.contains("repo-ui-btn-primary")).toBe(false)
+  expect(visitor.querySelector(".repo-code-home-block input")).toBeNull()
+  door.click()
+  expect(visitorCommands).toEqual([["sign-in", undefined]])
+  const memberCommands: Array<[string, string | undefined]> = []
+  const member = mount(<CodeHome repo="maya/tinyhttp" canAsk onRunCommand={(name, args) => { memberCommands.push([name, args]); return true }} branch="main" tree={tree} home={declared}/>)
+  const input = member.querySelector<HTMLInputElement>(".repo-code-home-block input")!
+  expect(input.placeholder).toBe("What does it do?")
+  expect(member.querySelector('.repo-code-home-block button[data-flow="sign-in"]')).toBeNull()
+  const send = member.querySelector<HTMLButtonElement>('.repo-code-home-block button[type="submit"]')!
+  expect(send.textContent).toBe("Send")
+  input.value = "  What does it do?  "
+  input.form!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }))
+  expect(memberCommands).toEqual([["chat.open", undefined], ["chat.send", "What does it do?"]])
+  expect(input.value).toBe("")
+  expect(signInToAskLabel("Ask about Smithers")).toBe("Sign in to ask about Smithers")
+  expect(signInToAskLabel("Questions")).toBe("Sign in to ask")
+})
+
+// Design (C) and app-spec row 6: members see the served app blocks in one row; visitors and unserved flows see none.
+test("app blocks render for members only, only when the host serves the flow, in one row", () => {
+  const visitor = mount(withRegistry(["chat.open", "issue.implement"], <CodeHome repo="maya/tinyhttp" onRunCommand={() => false} branch="main" tree={tree} home={declared}/>))
+  expect(visitor.querySelector('[aria-label="Repository apps"]')).toBeNull()
+  const member = mount(withRegistry(["chat.open"], <CodeHome repo="maya/tinyhttp" member canAsk onRunCommand={() => false} branch="main" tree={tree} home={declared}/>))
+  const row = member.querySelector('[aria-label="Repository apps"]')!
+  expect(row.classList.contains("repo-code-home-apps")).toBe(true)
+  // A labelled container carries a role, so the label is not on a generic div.
+  expect(row.getAttribute("role")).toBe("group")
+  expect([...row.querySelectorAll(".repo-code-home-app")].map(node => node.textContent)).toEqual(["Ask the codebase"])
+  expect(member.querySelector('[data-flow="issue.implement"]')).toBeNull()
+  // After the other blocks and before Files.
+  order(member, [".repo-code-home-links", '[aria-label="Repository apps"]', '[aria-label="Files"]'])
+  // Outside a controller nothing is known about the host: unknown is offered, never hidden.
+  const unknown = mount(<CodeHome repo="maya/tinyhttp" member canAsk onRunCommand={() => false} branch="main" tree={tree} home={declared}/>)
+  expect([...unknown.querySelectorAll(".repo-code-home-app")].map(node => node.textContent)).toEqual(["Fix an issue", "Ask the codebase"])
+})
+
+// A declared home without a README block shows the tree's README below Files, in its own region, named by its file.
+test("a declared home without a README block renders the repository README read from the tree below Files", () => {
+  const home = { kind:"blocks" as const, blocks:[{ type:"text" as const, text:"Repository introduction" }] }
+  const read = mount(<CodeHome repo="maya/tinyhttp" onRunCommand={() => false} branch="main" tree={tree} home={home} readme={{ state:"ready", name:"README.md", markdown:"# Read me from the tree" }}/>)
+  const files = read.querySelector('[aria-label="Files"]')!
+  const readme = read.querySelector('[aria-label="README"]')!
+  expect(readme).not.toBeNull()
+  expect(files.compareDocumentPosition(readme) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+  expect(readme.querySelector(".repo-ui-box-header")?.textContent).toBe("README.md")
+  expect(readme.querySelector("h1")?.textContent).toBe("Read me from the tree")
+  // Nothing read, or still reading: no region and no placeholder.
+  const none = mount(<CodeHome repo="maya/tinyhttp" onRunCommand={() => false} branch="main" tree={tree} home={home}/>)
+  expect(none.querySelector('[aria-label="README"]')).toBeNull()
+  expect(none.textContent).not.toContain("Read me")
+  const loading = mount(<CodeHome repo="maya/tinyhttp" onRunCommand={() => false} branch="main" tree={tree} home={home} readme={{ state:"loading", name:"README.md" }}/>)
+  expect(loading.querySelector('[aria-label="README"]')).toBeNull()
+  // The home's own README block outranks the tree's read.
+  const own = mount(<CodeHome repo="maya/tinyhttp" onRunCommand={() => false} branch="main" tree={tree} readme={{ state:"ready", name:"README.md", markdown:"# From the tree" }}
+    home={{ kind:"blocks", blocks:[{ type:"markdown", path:"docs/README.md", markdown:"# Declared README" }] }}/>)
+  expect(own.querySelector('[aria-label="README"] h1')?.textContent).toBe("Declared README")
+  expect(own.querySelectorAll('[aria-label="README"]')).toHaveLength(1)
+})
+
+// An error is never shown as empty: a README the tree lists but the read could not deliver is a failure in the README region, with its reason behind Details.
+test("a failed README read renders the README region's failure with the reason, never nothing", () => {
+  const home = { kind:"blocks" as const, blocks:[{ type:"text" as const, text:"Repository introduction" }] }
+  const failed = mount(<CodeHome repo="maya/tinyhttp" onRunCommand={() => false} branch="main" tree={tree} home={home} readme={{ state:"failed", name:"README.md", error:"RepositoryFileReadFailed: File read failed (500)" }}/>)
+  const region = failed.querySelector('[aria-label="README"]')!
+  expect(region).not.toBeNull()
+  order(failed, ['[aria-label="Files"]', '[aria-label="README"]'])
+  expect(region.querySelector(".repo-ui-box-header")?.textContent).toBe("README.md")
+  const notice = region.querySelector('[role="alert"]')!
+  expect(notice.querySelector("p")?.textContent).toBe("Couldn’t load this file.")
+  expect(notice.querySelector(".failure-detail")?.textContent).toContain("File read failed (500)")
+  expect(failed.querySelectorAll('[aria-label="README"]')).toHaveLength(1)
+  // A file with nothing to show (binary) states the failure without a reason line.
+  const binary = mount(<CodeHome repo="maya/tinyhttp" onRunCommand={() => false} branch="main" tree={tree} home={home} readme={{ state:"failed", name:"README.md" }}/>)
+  expect(binary.querySelector('[aria-label="README"] [role="alert"] p')?.textContent).toBe("Couldn’t load this file.")
+  expect(binary.querySelector('[aria-label="README"] .failure-detail')).toBeNull()
+})
+
+// repo-ui-spec view 1: the latest commit is its message, author and age with the short id beside them; a commit id alone is not a latest commit.
+describe("repository Code home metadata", () => {
+  const latest = { sha:"a".repeat(40), shortSha:"aaaaaaa", title:"Fix parser", author:"Maya", committedAt:"2026-10-18T10:00:00Z" }
+  test("the head's record supplies message, author, short id and age, never a bare commit id", () => {
+    const host = mount(<CodeHome onRunCommand={() => false} repo="maya/tinyhttp" branch="main" latestCommit={latest}/>)
+    const row = host.querySelector('[aria-label="Latest commit"]')!
+    expect(row.getAttribute("role")).toBe("group")
+    expect(row.querySelector("strong")?.textContent).toBe("Maya")
+    expect(row.querySelector(".repo-code-home-latest-title")?.textContent).toBe("Fix parser")
+    expect(row.querySelector(".repo-code-home-sha")?.textContent).toBe("aaaaaaa")
+    // No commit view on this host: the id is text, not a link to nowhere.
+    expect(row.querySelector("a")).toBeNull()
+    expect(row.querySelector("time")?.dateTime).toBe(latest.committedAt)
+    expect(row.textContent).not.toMatch(/[0-9a-f]{40}/i)
+  })
+  test("a record without an author or time still shows what it has", () => {
+    const host = mount(<CodeHome onRunCommand={() => false} repo="maya/tinyhttp" branch="main" latestCommit={{ ...latest, author:null, committedAt:null }}/>)
+    const row = host.querySelector('[aria-label="Latest commit"]')!
+    expect(row.querySelector("strong")).toBeNull()
+    expect(row.querySelector("time")).toBeNull()
+    expect(row.querySelector(".repo-code-home-latest-title")?.textContent).toBe("Fix parser")
+  })
+  test("no record, no row", () => {
+    const host = mount(<CodeHome onRunCommand={() => false} repo="maya/tinyhttp" branch="main" branches={{ id:"maya/tinyhttp", state:"ready", names:["main"], commits:{ main:"b".repeat(40) } }}/>)
+    expect(host.querySelector('[aria-label="Latest commit"]')).toBeNull()
+    expect(host.querySelector('[aria-label="Files"]')?.textContent).not.toMatch(/[0-9a-f]{40}/i)
+  })
+  test("a complete bookmark read supplies names and branch count; failures stay visible", () => {
+    const host = mount(<CodeHome onRunCommand={() => false} repo="maya/tinyhttp" branch="main" branches={{ id:"maya/tinyhttp", state:"ready", names:["main", "docs/ui"] }}/>)
+    expect(host.textContent).toContain("2 branches")
+    expect(host.querySelector('a[href="/maya/tinyhttp/tree/docs/ui"]')?.textContent).toBe("docs/ui")
+    const failed = mount(<CodeHome onRunCommand={() => false} repo="maya/tinyhttp" branch="main" branches={{ id:"maya/tinyhttp", state:"failed", names:["stale"], error:"Permission denied" }}/>)
+    const failure = failed.querySelector('[role="alert"]')!
+    expect(failure.querySelector("p")?.textContent).toBe("Couldn’t load branches.")
+    expect(failure.querySelector("details")?.hasAttribute("open")).toBe(false)
+    expect(failure.querySelector('[aria-label="Failure details"]')?.textContent).toBe("Permission denied")
+    expect(failed.textContent).not.toContain("stale")
+    expect(failed.textContent).not.toContain("1 branch")
+  })
+})
