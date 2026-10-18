@@ -25,8 +25,12 @@ test("resolved seat gets the pinned model and temperature zero through layerFrom
   expect(() => seatEvaluator({ id: "openai:pinned", modelId: "pinned", model }, "pinned", "claude")).toThrow(
     "policy engine"
   )
+  for (const id of ["anthropic:pinned", "claude-code:other"]) {
+    expect(() => seatEvaluator({ id, modelId: "pinned", model }, "pinned", "claude", "claude-code:pinned")).toThrow("policy seat")
+  }
+  expect(() => seatEvaluator({ id: "claude-code:pinned", modelId: "wrong", model }, "pinned", "claude", "claude-code:pinned")).toThrow("policy model")
   const evaluator = await Effect.runPromise(
-    seatEvaluator({ id: "anthropic:pinned", modelId: "pinned", model }, "pinned", "claude")
+    seatEvaluator({ id: "claude-code:pinned", modelId: "pinned", model }, "pinned", "claude", "claude-code:pinned")
   )
   const response = await Effect.runPromise(
     evaluator.evaluate({

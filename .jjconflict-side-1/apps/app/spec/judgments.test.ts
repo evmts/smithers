@@ -78,6 +78,9 @@ test("record and replay sidecar through CachedEvaluator with zero further evalua
       engines: { ...policy.engines, rubric: { engine: "claude", model: "changed" } }
     })).verdict
   ).toBe("stale")
+  expect((await replay(options.path, request, {
+    ...policy, engines: { ...policy.engines, rubric: { ...policy.engines.rubric, seat: "claude-code:test-model" } }
+  })).verdict).toBe("stale")
   await unlink(options.path)
   expect((await replay(options.path, request, policy)).verdict).toBe("missing")
 })

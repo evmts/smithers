@@ -3,16 +3,18 @@ import * as Model from "@smthrs/model/Model"
 import { ModelRequest } from "@smthrs/model/ModelRequest"
 import { Effect } from "effect"
 
-/** Node configuration resolves the account; this adapter pins the model and sampling. */
+/** Node configuration resolves the account; this adapter pins the seat/model and requests temperature zero. */
 export const seatEvaluator = (
   seat: { readonly modelId: string; readonly model: Model.Model; readonly id?: string },
   expectedModel: string,
-  engine?: "claude" | "codex"
+  engine?: "claude" | "codex",
+  expectedSeat?: string
 ): Effect.Effect<Evaluator.Evaluator> => {
+  if (expectedSeat !== undefined && seat.id !== expectedSeat) throw new Error("Configured seat does not match policy seat")
   if (seat.modelId !== expectedModel) throw new Error("Configured seat does not match policy model")
   if (engine !== undefined) {
     const provider = seat.id?.split(":")[0]
-    const actual = provider === "anthropic" || provider === "claude"
+    const actual = provider === "anthropic" || provider === "claude" || provider === "claude-code"
       ? "claude"
       : provider === "openai" || provider === "codex"
       ? "codex"

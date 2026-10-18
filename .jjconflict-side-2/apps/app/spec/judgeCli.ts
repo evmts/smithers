@@ -25,7 +25,7 @@ export const judgeCli = async (args: readonly string[]): Promise<number> => {
   }
   const { seat } = await import(pathToFileURL(resolve(seatConfig)).href)
   const evaluator = await Effect.runPromise(
-    seatEvaluator(seat, policy.engines[request.kind].model, policy.engines[request.kind].engine)
+    seatEvaluator(seat, policy.engines[request.kind].model, policy.engines[request.kind].engine, policy.engines[request.kind].seat)
   )
   const result = await record({
     path: sidecar,

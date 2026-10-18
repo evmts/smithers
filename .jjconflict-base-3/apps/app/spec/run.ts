@@ -200,10 +200,10 @@ export const main = async (argv: string[]): Promise<number> => {
     const { Effect } = await import("effect")
     try {
       evaluator = await Effect.runPromise(
-        seatEvaluator(seats?.rubric ?? seat, policy.engines.rubric.model, policy.engines.rubric.engine)
+        seatEvaluator(seats?.rubric ?? seat, policy.engines.rubric.model, policy.engines.rubric.engine, policy.engines.rubric.seat)
       )
       fuzzyEvaluator = await Effect.runPromise(
-        seatEvaluator(seats?.fuzzy ?? seat, policy.engines.fuzzy.model, policy.engines.fuzzy.engine)
+        seatEvaluator(seats?.fuzzy ?? seat, policy.engines.fuzzy.model, policy.engines.fuzzy.engine, policy.engines.fuzzy.seat)
       )
     } catch {
       console.error("Judgment inconclusive: seat does not match policy")

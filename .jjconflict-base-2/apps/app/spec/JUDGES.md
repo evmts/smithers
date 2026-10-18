@@ -7,8 +7,9 @@ before hashing; counts are retained unless the journey explicitly marks them.
 No raw DOM, hidden text, credentials or page scripts enter the observation.
 
 `record` runs Rubric.make three times through a supplied Evaluator. The real
-seat adapter uses Evaluator.layerFromSeat and forces temperature zero; node
+seat adapter uses Evaluator.layerFromSeat and requests temperature zero; node
 configuration chooses the account and must resolve the policy's exact model.
+The Claude Code subscription route does not forward temperature to its SDK; zero is not guaranteed. Stability must be measured.
 Requests fence all page evidence as untrusted data. A score question returns a
 zero-based integer which is converted to Rubric's 1–5 scale. Reasons summarize
 the recorded scores rather than free-form model explanations.
@@ -46,7 +47,7 @@ keyed by zero-based `step:assertion`. Live sidecars stay under the output direct
 and never overwrite committed mock evidence. `judge --record` selects mock;
 `judge --record --live` selects read-only live capture. `SPEC_JUDGE_SEAT` names a
 trusted node module exporting `seat` or `seats: {rubric, fuzzy}`; each seat must
-match its policy model and engine (Anthropic/Claude or OpenAI/Codex). `SPEC_JUDGE_POLICY` optionally names a factory projection.
+match its policy model, engine and optional exact seat. This repository pins `claude-code:claude-opus-5-5`; `CLAUDE_CONFIG_DIR` chooses the subscription login with `ANTHROPIC_API_KEY` unset. `SPEC_JUDGE_POLICY` optionally names a factory projection.
 The existing journeyMock target depends on specSite and replays only.
 `judgeLive` is exclusive and cache false: NodeTest does not support maxAge or
 keyScope on this build CLI. Live writes fresh evidence on each invocation.
