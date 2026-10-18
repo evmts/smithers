@@ -2,7 +2,7 @@
  * Repository reads use the application's existing authentication, transport and typed errors.
  * @since 0.1.0
  */
-import { RepositoryCodeSearchSchema, RepositoryIssueSearchSchema, RepositoryCommitDetailSchema, RepositoryCommitPageSchema } from "@smthrs/rpc/RepositoryReads"
+import { RepositoryBranchPageSchema, RepositoryCodeSearchSchema, RepositoryIssueSearchSchema, RepositoryCommitDetailSchema, RepositoryCommitPageSchema } from "@smthrs/rpc/RepositoryReads"
 import type { ApplicationClient } from "./ApplicationClient.ts"
 
 const repositoryPath = (owner: string, repo: string): string =>
@@ -54,3 +54,14 @@ export const searchRepositoryCode = async (client: ApplicationClient, owner: str
  */
 export const searchRepositoryIssues = async (client: ApplicationClient, owner: string, repo: string, q: string, options: SearchOptions = {}) =>
   RepositoryIssueSearchSchema.parse(await repositorySearch(client, owner, repo, "issues", q, options))
+
+/** List branches using the backend's existing bookmark pagination and immutable head metadata.
+ * @category services
+ * @since 0.1.0
+ */
+export const listRepositoryBranches = async (client: ApplicationClient, owner: string, repo: string, options: SearchOptions = {}) => {
+  const query = new URLSearchParams()
+  if (options.cursor !== undefined) query.set("cursor", options.cursor)
+  if (options.limit !== undefined) query.set("limit", String(options.limit))
+  return RepositoryBranchPageSchema.parse(await client.request(`${repositoryPath(owner, repo)}/branches?${query}`, { signal: options.signal }))
+}
