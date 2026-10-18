@@ -689,6 +689,9 @@ const ci = Smithers.GithubCiGen({
         // keeps the approved spelling and hands it an environment naming no
         // proxy passes that gate and fails this one.
         { name: "Judge egress", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:egress" },
+        // Builds the real coding host: Plue refuses to stage one over its
+        // limit, and every hosted coding turn failed when it did (plue#863).
+        { name: "Coding host size", verb: Smithers.Verb.Test, pattern: "//.smithers/flows:codingHostSize" },
         // The repository, wiki and release-content fixtures.
         // `//.smithers/flows:pack` reaches none of them and neither did any other job, so
         // until these two steps existed the only thing that ran them was
