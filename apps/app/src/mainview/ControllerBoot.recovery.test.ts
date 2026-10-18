@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { spawnSync } from "../../scripts/test-child"
 
 /** The child's own last lines, bounded: a broken fixture says why it exited, never a transcript. */
 const tail = (stream: Uint8Array): string => {
@@ -10,18 +11,12 @@ const tail = (stream: Uint8Array): string => {
 
 /** Run in its own process so module mocks cannot leak into unrelated app tests. */
 test("a failed recorded store stops boot before repository, identity, or URL-triggered work", () => {
-  const run = Bun.spawnSync({
-    cmd: [process.execPath, `${import.meta.dir}/ControllerBoot.recovery.fixture.ts`],
-    cwd: `${import.meta.dir}/../..`,
-    timeout: 30_000,
-    stdout: "pipe",
-    stderr: "pipe"
-  })
+  const run = spawnSync(process.execPath, [`${import.meta.dir}/ControllerBoot.recovery.fixture.ts`], { cwd: `${import.meta.dir}/../..`, timeout: 30_000 })
   // Without the child's own output a module-graph failure in the fixture — a
   // missing export, a throwing double — is indistinguishable from boot having
   // started the work this test forbids. Both assertions need it, and neither
   // needs more than the end of it.
-  const why = `fixture exited ${run.exitCode}${run.signalCode ? ` on ${run.signalCode}` : ""}\nstdout:\n${tail(run.stdout)}\nstderr:\n${tail(run.stderr)}`
-  expect(run.exitCode, why).toBe(0)
+  const why = `fixture exited ${run.status}${run.signal ? ` on ${run.signal}` : ""}\nstdout:\n${tail(run.stdout)}\nstderr:\n${tail(run.stderr)}`
+  expect(run.status, why).toBe(0)
   expect(new TextDecoder().decode(run.stdout), why).toContain("recovery boot stopped before repository")
 })

@@ -1,17 +1,18 @@
 import { expect, test } from "bun:test"
-import { execFileSync } from "node:child_process"
 import { spawnSync } from "./test-child"
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 test("the unit target collects proof tests without collecting Playwright's sibling proof directory", () => {
-  const argv: string[] = JSON.parse(execFileSync("node", ["--input-type=module", "-e", `
+  const listed = spawnSync("node", ["--input-type=module", "-e", `
     import { Package } from "./PACKAGE.ts"
     import { metadata } from "@smthrs/targets/Target"
     import { runArgv } from "@smthrs/targets/NodeTest"
     console.log(JSON.stringify(runArgv(metadata(Package.unitTests).attrs)))
-  `], { cwd: join(import.meta.dir, ".."), encoding: "utf8", timeout: 120_000 }))
+  `], { cwd: join(import.meta.dir, ".."), encoding: "utf8", timeout: 120_000 })
+  expect(listed.status, listed.stderr).toBe(0)
+  const argv: string[] = JSON.parse(listed.stdout)
   const proofPath = argv.find(path => path.replace(/^\.\//, "") === "proof")!
   const root = mkdtempSync(join(tmpdir(), "unit-proof-selection-"))
   try {

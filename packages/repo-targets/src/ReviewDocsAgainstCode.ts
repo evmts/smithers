@@ -8,27 +8,19 @@ import * as Input from "@smthrs/targets/Input"
 import { review } from "./ReviewLint.ts"
 import type { Options, ReviewLint } from "./ReviewLint.ts"
 
-// The characters `Input.glob` treats as pattern syntax.
-const globMagic = /[*?[\]{}!()|@+]/
-
 /**
  * Reviews changed public APIs against the prose that documents them.
  *
- * `context` defaults to the package's own `README.md` and `docs/*.md` plus the
- * site API reference page at
- * `//apps/site/src/content/docs/docs/reference/api/<package>.mdx`, where
- * `<package>` is the last directory in `cwd`. The page name is exact, so the
- * `plan` review does not read `plan-store.mdx`. At the workspace root only the
- * local prose is selected. Override `context` to opt into concept or guide
- * sections. Context crosses package boundaries and is read into every batch
- * whether or not it changed; the set must fit LlmLint's 2 MiB aggregate cap.
- * Findings report at `warning` while the rubric is tuned. The call returns a
- * declaration and runs no review; see "Failure contracts" in the package
- * README for declaration and execution failures.
- *
- * @throws TypeError when the last directory in `cwd` contains a glob
- * metacharacter (`*`, `?`, `[`, `]`, `{`, `}`, `!`, `(`, `)`, `|`, `@`, `+`),
- * because the page glob built from it would select other packages' pages.
+ * `context` defaults to the package's own `README.md`, `docs/*.md`, and
+ * `docs/reference/*.md`. Those are the sources of the package's site API
+ * reference page: `apps/site` projects `docs/api.md` and ingests
+ * `docs/reference/*.md`, so the default reads them without declaring an input
+ * in another package. Override `context` to opt into concept or guide
+ * sections. Context is read into every batch whether or not it changed; the
+ * set must fit LlmLint's 2 MiB aggregate cap. Findings report at `warning`
+ * while the rubric is tuned. The call returns a declaration and runs no
+ * review; see "Failure contracts" in the package README for declaration and
+ * execution failures.
  *
  * @example
  * ```ts
@@ -40,23 +32,11 @@ const globMagic = /[*?[\]{}!()|@+]/
  * @category macros
  * @since 0.1.0
  */
-export const ReviewDocsAgainstCode = (options: Options): ReviewLint => {
-  const packageName = Input.resolvePath("", options.cwd).replace(/\/$/, "").split("/").at(-1)!
-  if (globMagic.test(packageName)) {
-    throw new TypeError(
-      `ReviewDocsAgainstCode: package directory ${JSON.stringify(packageName)} contains a glob metacharacter`
-    )
-  }
-  return review(options, {
+export const ReviewDocsAgainstCode = (options: Options): ReviewLint =>
+  review(options, {
     summary: "A cheap Codex review of changed public APIs against package prose and matching site API references.",
     include: [Input.glob("src/**")],
-    context: [
-      Input.glob("README.md"),
-      Input.glob("docs/*.md"),
-      ...(packageName === "." || packageName === "" ? [] : [
-        Input.glob(`//apps/site/src/content/docs/docs/reference/api/${packageName}.mdx`)
-      ])
-    ],
+    context: [Input.glob("README.md"), Input.glob("docs/*.md"), Input.glob("docs/reference/*.md")],
     batchSize: 3,
     failOn: "warning",
     rubric: [
@@ -71,4 +51,3 @@ export const ReviewDocsAgainstCode = (options: Options): ReviewLint => {
       "Private helpers, tests, and internal modules are out of scope."
     ].join("\n")
   })
-}

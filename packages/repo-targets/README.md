@@ -11,7 +11,7 @@ Private build defaults and AI review rules used by this repository’s `PACKAGE.
 
 The review functions declare `LlmLint` targets. They run under `smthrs review`, compare against `origin/main` by default, and run on the `codex` engine with `gpt-6-luna`. Every macro requires `cwd`, the package directory its default globs resolve against; a workspace-wide review passes `"."` with `//`-rooted globs. Pass `engine` and `model` together to run another engine, for example `{ engine: "claude", model: "claude-opus-5" }`; `model` alone names another Codex tier. They do not modify files. The shared prompt and review helper live in `src/ReviewLint.ts` and each rubric lives in the module named after its macro; the build defaults live in `src/BuildAndCheckTypeScriptPackage.ts`.
 
-`ReviewDocsAgainstCode({ cwd })` selects the site page at `//apps/site/src/content/docs/docs/reference/api/<package>.mdx`, where `<package>` is the last directory in `cwd`. The name is exact, so the `plan` review does not read `plan-store.mdx`. A workspace-root declaration selects only `README.md` and `docs/*.md` by default. Pass `context` to replace the set or opt into specific concept and guide sections. The featured root review uses package READMEs, site concepts, and selected runtime and build API references. Context expands across `PACKAGE.ts` boundaries, must match at least one file when declared, and must fit LlmLint's 512-file and 2 MiB aggregate limits. Each file is limited to 1 MiB. Regression tests check the default and root selections against the workspace files.
+`ReviewDocsAgainstCode({ cwd })` selects the package's `README.md`, `docs/*.md`, and `docs/reference/*.md`. Those are the sources `apps/site` builds the package's API reference page from, so the default declares no input in another package and `//:targetIndex` sees no package crossing. Pass `context` to replace the set or opt into specific concept and guide sections. The featured root review uses package READMEs, site concepts, and selected runtime and build API references. Context expands across `PACKAGE.ts` boundaries, must match at least one file when declared, and must fit LlmLint's 512-file and 2 MiB aggregate limits. Each file is limited to 1 MiB. Regression tests check the default and root selections against the workspace files.
 
 Root development dependencies make this package available to repository declarations. Published packages must not depend on it or re-export it.
 
@@ -31,7 +31,6 @@ Declaration-time rejections happen while `PACKAGE.ts` loads:
 
 - TypeScript rejects a call without `cwd`, and a review whose `engine` is not `codex` but names no `model`.
 - The emitted target's constructor validates its attributes and throws an `Error` reading `<target> declaration at <site> is invalid: <reason>`. Examples: an empty review `model`, an `engine` outside LlmLint's engine set, or a non-integer `testTimeoutMs`.
-- `ReviewDocsAgainstCode` throws a `TypeError` when the last directory in `cwd` contains a glob metacharacter (`*?[]{}!()|@+`), because the site page glob built from that name would select other packages' pages.
 
 Execution failures belong to the emitted targets. The [`@smthrs/targets` error table](../smithers/build/targets/docs/reference/targets.md#errors) documents each one:
 

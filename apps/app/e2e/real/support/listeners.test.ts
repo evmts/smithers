@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test"
-import { spawnSync } from "node:child_process"
+import { spawnSync } from "../../../scripts/test-child"
 import { createServer as createHttpServer } from "node:http"
 import { createServer, type AddressInfo, type Server } from "node:net"
 import { connect, descendants, exchange, listenerReport, listeners, loopbackOnly, parseListeners, PROBE_TIMEOUT_MS, processTree } from "./listeners"

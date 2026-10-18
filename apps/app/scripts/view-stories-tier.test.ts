@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { spawnSync } from "node:child_process"
+import { spawnSync } from "./test-child"
 import { resolve } from "node:path"
 
 test("View stories are collected only with SMITHERS_VIEW_STORIES=1", () => {

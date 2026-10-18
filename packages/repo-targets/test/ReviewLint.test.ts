@@ -127,61 +127,46 @@ describe("ReviewTagsMigrationsAndKeys", () => {
 describe("ReviewDocsAgainstCode", () => {
   const attrs = attrsOf(ReviewDocsAgainstCode({ cwd: "packages/smithers/flows/journal" }))
 
-  it("reads the package prose and the site pages into every batch", () => {
+  it("reads the package prose and the sources of its site reference pages into every batch", () => {
     expect(attrs.context).toEqual([
       { _tag: "Glob", pattern: "//packages/smithers/flows/journal/README.md", exclude: [] },
       { _tag: "Glob", pattern: "//packages/smithers/flows/journal/docs/*.md", exclude: [] },
-      { _tag: "Glob", pattern: "//apps/site/src/content/docs/docs/reference/api/journal.mdx", exclude: [] }
+      { _tag: "Glob", pattern: "//packages/smithers/flows/journal/docs/reference/*.md", exclude: [] }
     ])
   })
 
-  it("omits site context at the workspace root", () => {
-    expect(attrsOf(ReviewDocsAgainstCode({ cwd: "." })).context).toEqual([
-      Input.glob("//README.md"), Input.glob("//docs/*.md")
-    ])
+  it("declares no default context outside the package, so //:targetIndex sees no crossing", () => {
+    // A glob into `apps/site` made every package whose site page exists a
+    // `declared_input_crosses_package` red (#3967).
+    for (const cwd of ["packages/smithers/flows/journal", "packages/smithers/flows/patterns", "packages/smithers/flows/flow"]) {
+      for (const entry of attrsOf(ReviewDocsAgainstCode({ cwd })).context) {
+        expect((entry as Input.Glob).pattern.startsWith(`//${cwd}/`)).toBe(true)
+      }
+    }
   })
 
-  it("omits site context however the workspace root is spelled", () => {
-    // `./` normalizes to an empty path, whose last segment is no package.
-    for (const cwd of ["./", "", "packages/.."]) {
+  it("selects the colocated source of the package's site API page under package-scoped expansion", async () => {
+    // `reference/api/<package>.mdx` is projected from `docs/api.md` or
+    // ingested from `docs/reference/*.md`; the review reads the source.
+    for (const [cwd, page] of [
+      ["packages/smithers/flows/journal", "docs/api.md"],
+      ["packages/smithers/flows/flow", "docs/reference/flow.md"]
+    ] as const) {
+      const files = new Set<string>()
+      for (const entry of attrsOf(ReviewDocsAgainstCode({ cwd })).context) {
+        for (const file of await Input.expandGlob(workspaceRoot, cwd, entry as Input.Glob, { packageScoped: true })) {
+          files.add(file)
+        }
+      }
+      expect(files).toContain(`${cwd}/${page}`)
+    }
+  })
+
+  it("selects only the local prose at the workspace root", () => {
+    for (const cwd of [".", "./", "", "packages/.."]) {
       expect(attrsOf(ReviewDocsAgainstCode({ cwd })).context.map((entry) => (entry as Input.Glob).pattern))
-        .toEqual(["//README.md", "//docs/*.md"])
+        .toEqual(["//README.md", "//docs/*.md", "//docs/reference/*.md"])
     }
-  })
-
-  it("derives the reference prefix from a normalized cwd", () => {
-    expect(attrsOf(ReviewDocsAgainstCode({ cwd: "./packages/smithers/flows/journal/" })).context)
-      .toEqual(attrs.context)
-  })
-
-  it("expands the default context across real package boundaries", async () => {
-    const files = await expandContext(attrs.context)
-    expect(files).toContain("packages/smithers/flows/journal/README.md")
-    expect(files).toContain("apps/site/src/content/docs/docs/reference/api/journal.mdx")
-  })
-
-  it("reads its own reference page and not a sibling package's that shares the prefix", async () => {
-    // `plan-store.mdx` documents `@smthrs/plan-store`; a `plan*.mdx` selection
-    // handed it to the plan review, whose rubric then reports exports missing
-    // from a page that never documents them.
-    const files = await expandContext(attrsOf(ReviewDocsAgainstCode({ cwd: "packages/smithers/flows/plan" })).context)
-    const pages = files.filter((file) => file.startsWith("apps/site/"))
-    expect(pages).toEqual(["apps/site/src/content/docs/docs/reference/api/plan.mdx"])
-  })
-
-  it.each(["p*", "p?an", "[pq]lan", "{plan,agent}", "!(plan)", "@(plan)", "+(plan)", "plan|agent"])(
-    "rejects a package directory %s whose name would widen the site page glob",
-    (name) => {
-      // The name becomes `<name>.mdx` under the site reference directory, so a
-      // `*` or a brace set would hand the model other packages' pages.
-      expect(() => ReviewDocsAgainstCode({ cwd: `packages/${name}` })).toThrow(TypeError)
-    }
-  )
-
-  it("accepts a package directory with dots and dashes", () => {
-    expect(attrsOf(ReviewDocsAgainstCode({ cwd: "packages/plan-store.v2" })).context).toContainEqual(
-      Input.glob("//apps/site/src/content/docs/docs/reference/api/plan-store.v2.mdx")
-    )
   })
 
   it("keeps the default context within the executor limits", async () => {
@@ -201,8 +186,8 @@ describe("ReviewDocsAgainstCode", () => {
   }, 60_000)
 
   it("gives this package's own review a context that exists", async () => {
-    // The default context names `repo-targets.mdx`, a page this private
-    // package does not have, so its declaration narrows context to the README.
+    // This private package has no docs, so its declaration narrows context
+    // to the README.
     const { Package } = await import(new URL("../PACKAGE.ts", import.meta.url).href)
     expect(await expandContext(attrsOf(Package.reviewDocsAgainstCode).context))
       .toEqual(["packages/repo-targets/README.md"])

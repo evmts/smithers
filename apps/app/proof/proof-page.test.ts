@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { spawnSync } from "node:child_process"
+import { spawnSync } from "../scripts/test-child"
 import { mkdtempSync, readFileSync, existsSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"

@@ -1,5 +1,4 @@
-// Native, not scripts/test-child: Playwright loads this module as CommonJS, where that wrapper's import.meta does not parse.
-import { spawnSync } from "node:child_process"
+import { spawnSync } from "./child-executor"
 import { request } from "node:http"
 import { connect as tcpConnect } from "node:net"
 
@@ -72,11 +71,12 @@ export const descendants = (root: number, table: string): number[] => {
   return tree.sort((a, b) => a - b)
 }
 
-/** An install's process tree: its root process and everything it started, without the `ps` that read it. */
+/** An install's process tree: its root process and everything it started, without the `ps` that read it or its supervisor. */
 export const processTree = (root: number): number[] => {
   const ps = spawnSync("/bin/ps", ["-axo", "pid=,ppid="], { encoding: "utf8", timeout: PROBE_TIMEOUT_MS, killSignal: "SIGKILL" })
   if (ps.error || ps.status !== 0) throw ps.error ?? new Error(`ps exited ${ps.status}: ${ps.stderr}`)
-  return descendants(root, ps.stdout).filter(pid => pid !== ps.pid)
+  const reader = (ps as { readonly supervisorPid?: number }).supervisorPid
+  return descendants(root, ps.stdout).filter(pid => pid !== ps.pid && pid !== reader)
 }
 
 /** Whether a listener accepts loopback connections only. */

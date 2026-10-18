@@ -1,4 +1,4 @@
-import { spawnSync as nativeSpawnSync } from "node:child_process"
+import { spawnSync } from "../support/child-executor"
 import { existsSync, readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import type { Page, TestInfo } from "@playwright/test"
@@ -43,30 +43,6 @@ export type DeployedSourceFact =
 export const CHILD_BUDGET_MS = 30_000
 
 /**
- * The child executor this runtime can actually wait on, resolved once.
- *
- * Under Bun, `node:child_process`'s synchronous spawn can miss the exit of a
- * child that already finished: on GitHub's runners `git show` answered in
- * milliseconds and the call still raised `spawnSync git ETIMEDOUT` after the
- * whole budget, so a git-only clone read as a machine with no git and the
- * jj-then-git fallback failed with a refusal nobody had actually made
- * (#3763; AppsDeploy 38957448693, unit shard). `scripts/test-child` is the
- * repair for that family: a Node supervisor waits for the exit, publishes
- * the answer by rename, and kills the child's own process group at the
- * budget.
- *
- * Node keeps the native synchronous pipe. It never had the fault, and the
- * boundary is an ES module whose `import.meta` is a syntax error in the
- * CommonJS Playwright transpiles this tier's specs to — a static import
- * takes `run-inspection.spec.ts` out of the suite entirely. `require` is
- * lazy, so a Playwright run never loads it.
- */
-let executor: typeof nativeSpawnSync | undefined
-const childExecutor = (): typeof nativeSpawnSync => executor ??= typeof Bun === "undefined"
-  ? nativeSpawnSync
-  : (require("../../../scripts/test-child") as { readonly spawnSync: typeof nativeSpawnSync }).spawnSync
-
-/**
  * One bounded child read: its stdout, or a throw naming the refusal.
  *
  * A non-zero exit throws and carries the child's own stderr, exactly as
@@ -87,7 +63,7 @@ export const childRead = (
   args: readonly string[],
   options: { readonly cwd?: string } = {}
 ): string => {
-  const result = childExecutor()(command, [...args], {
+  const result = spawnSync(command, [...args], {
     encoding: "utf8", timeout: CHILD_BUDGET_MS, killSignal: "SIGKILL",
     stdio: ["ignore", "pipe", "pipe"], env: { ...process.env },
     ...(options.cwd === undefined ? {} : { cwd: options.cwd })

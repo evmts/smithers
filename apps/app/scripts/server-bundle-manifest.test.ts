@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createHash } from "node:crypto"
 import { codeSignatureFlags, signHardenedBackend, writeBundleManifest, verifyBundleManifest } from "./server-bundle-manifest"
+import { runSync } from "./test-child"
 const roots: string[] = []
 const fixture = (): string => {
   const root = mkdtempSync(join(tmpdir(), "smithers-manifest-")); roots.push(root)
@@ -63,7 +64,7 @@ beforeAll(() => {
   const source = join(dir, "main.c")
   writeFileSync(source, "int main(void) { return 0; }\n")
   compiledBackend = join(dir, "smithers-backend")
-  expect(Bun.spawnSync(["/usr/bin/cc", "-o", compiledBackend, source]).exitCode).toBe(0)
+  expect(runSync(["/usr/bin/cc", "-o", compiledBackend, source], { timeout: 80_000 }).exitCode).toBe(0)
 }, 84_000)
 afterAll(() => { if (compiledBackend) rmSync(join(compiledBackend, ".."), { recursive: true, force: true }) })
 requiresMacOS("signs the backend with the hardened runtime and records it", () => {
@@ -72,14 +73,14 @@ requiresMacOS("signs the backend with the hardened runtime and records it", () =
   cpSync(compiledBackend, backend)
   signHardenedBackend(backend)
   expect(codeSignatureFlags(backend)).toBe("adhoc,runtime")
-  const entitlements = new TextDecoder().decode(Bun.spawnSync(["/usr/bin/codesign", "-d", "--entitlements", ":-", backend]).stdout)
+  const entitlements = new TextDecoder().decode(runSync(["/usr/bin/codesign", "-d", "--entitlements", ":-", backend]).stdout)
   expect(entitlements).toContain("com.apple.security.cs.disable-library-validation")
   expect(entitlements).not.toContain("allow-dyld-environment-variables")
   writeBundleManifest(root, "e".repeat(40))
   const manifest = JSON.parse(readFileSync(join(root, "manifest.json"), "utf8"))
   expect(manifest.files.find((entry: { path: string }) => entry.path === "bin/smithers-backend").codeSignature).toBe("adhoc,runtime")
   expect(() => verifyBundleManifest(root)).not.toThrow()
-  expect(Bun.spawnSync(["/usr/bin/codesign", "--force", "--sign", "-", backend]).exitCode).toBe(0)
+  expect(runSync(["/usr/bin/codesign", "--force", "--sign", "-", backend]).exitCode).toBe(0)
   expect(codeSignatureFlags(backend)).toBe("adhoc")
   expect(() => verifyBundleManifest(root)).toThrow("Bundle manifest mismatch: bin/smithers-backend")
 })

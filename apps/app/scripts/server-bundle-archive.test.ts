@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { archiveBundle, normalizeImageArchive } from "./server-bundle-archive"
 import { writeBundleManifest, verifyBundleManifest } from "./server-bundle-manifest"
+import { runSync } from "./test-child"
 
 test("archive survives unpacking and ignores build mtimes", () => {
   const root = mkdtempSync(join(tmpdir(), "bundle-archive-"))
@@ -17,9 +18,9 @@ test("archive survives unpacking and ignores build mtimes", () => {
     symlinkSync("smthrs", join(bundle, "bin/alias"))
     writeBundleManifest(bundle, "a".repeat(40))
     const image = join(root, "image.tar"), laterImage = join(root, "later-image.tar")
-    expect(Bun.spawnSync(["/usr/bin/tar", "-cf", image, "-C", bundle, "."]).exitCode).toBe(0)
+    expect(runSync(["/usr/bin/tar", "-cf", image, "-C", bundle, "."]).exitCode).toBe(0)
     utimesSync(join(bundle, "bin/smthrs"), 22222, 33333)
-    expect(Bun.spawnSync(["/usr/bin/tar", "-cf", laterImage, "-C", bundle, "."]).exitCode).toBe(0)
+    expect(runSync(["/usr/bin/tar", "-cf", laterImage, "-C", bundle, "."]).exitCode).toBe(0)
     normalizeImageArchive(image)
     normalizeImageArchive(laterImage)
     expect(readFileSync(image)).toEqual(readFileSync(laterImage))
@@ -29,7 +30,7 @@ test("archive survives unpacking and ignores build mtimes", () => {
     expect(readFileSync(first)).toEqual(readFileSync(second))
     const unpacked = join(root, "unpacked")
     mkdirSync(unpacked)
-    expect(Bun.spawnSync(["/usr/bin/tar", "-xzf", first, "-C", unpacked]).exitCode).toBe(0)
+    expect(runSync(["/usr/bin/tar", "-xzf", first, "-C", unpacked]).exitCode).toBe(0)
     verifyBundleManifest(unpacked)
     expect(readFileSync(join(unpacked, "bin/alias"), "utf8")).toBe("executable\n")
     const manifest = JSON.parse(readFileSync(join(root, "first/manifest.json"), "utf8"))
