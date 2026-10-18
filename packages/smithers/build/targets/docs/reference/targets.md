@@ -103,7 +103,7 @@ const factory = S.Factory({ summary: "Repository checks", judges, spec })
 
 | Field                             | Contract                                                                                                   |
 | --------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `engines.rubric`, `engines.fuzzy` | `engine`: `"claude"` or `"codex"`; nonempty pinned `model`. Seat credentials are host configuration.       |
+| `engines.rubric`, `engines.fuzzy` | `engine`: `"claude"` or `"codex"`; nonempty pinned `model`; optional exact `seat` such as `claude-code:claude-opus-5-5`. Seat credentials are host configuration.       |
 | `budget.perRun`                   | `ReviewBudget`: optional positive integer `modelCalls`, `promptTokens`, `wallMs`.                          |
 | `budget.perDay.modelCalls`        | Positive integer daily call limit.                                                                         |
 | `trials`                          | Positive integer trial count.                                                                              |

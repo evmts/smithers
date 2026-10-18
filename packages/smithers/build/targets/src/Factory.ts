@@ -596,10 +596,10 @@ export const Lifecycle = Object.freeze({
 })
 
 const positiveInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))
-const judgeEngine = Schema.Struct({ engine: Engine, model: Schema.NonEmptyString })
+const judgeEngine = Schema.Struct({ engine: Engine, model: Schema.NonEmptyString, seat: Schema.optionalKey(Schema.NonEmptyString) })
 
 /**
- * Explicit judge limits and promotion rules. Every field is required; no policy runs no judges.
+ * Explicit judge limits and promotion rules. No policy runs no judges.
  * @category schemas
  * @since 0.1.0
  */
@@ -631,7 +631,7 @@ const decodeJudgePolicy = (value: unknown): typeof JudgePolicy.Type => {
   )
   const engines = Home.plainOptions("Judge.Policy engines", plain["engines"], new Set(["rubric", "fuzzy"]))
   for (const kind of ["rubric", "fuzzy"]) {
-    Home.plainOptions(`Judge.Policy engines.${kind}`, engines[kind], new Set(["engine", "model"]))
+    Home.plainOptions(`Judge.Policy engines.${kind}`, engines[kind], new Set(["engine", "model", "seat"]))
   }
   const budget = Home.plainOptions("Judge.Policy budget", plain["budget"], new Set(["perRun", "perDay"]))
   Home.plainOptions("Judge.Policy budget.perRun", budget["perRun"], new Set(["modelCalls", "promptTokens", "wallMs"]))

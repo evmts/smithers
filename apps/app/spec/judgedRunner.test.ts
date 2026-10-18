@@ -176,7 +176,7 @@ test("judge --record CLI persists inconclusive results and exits 5 under a one-c
   )
   await writeFile(
     seatFile,
-    `export const seat = { id: "anthropic:judge", modelId: ${
+    `export const seat = { id: "claude-code:claude-opus-5-5", modelId: ${
       JSON.stringify(policy.engines.rubric.model)
     }, model: { stream() { throw new Error("Budget must prevent dispatch") } } }`
   )
@@ -204,4 +204,20 @@ test("judge --record CLI persists inconclusive results and exits 5 under a one-c
   expect(await child.exited).toBe(5)
   const stored = results(JSON.parse(await readFile(resultsFile, "utf8")))
   expect(stored[0]?.steps[0]?.assertions[0]).toMatchObject({ verdict: "inconclusive", ok: null })
+}, 60000)
+
+
+test("judge --record CLI refuses a different provider before dispatch", async () => {
+  const policyFile = join(directory, "seat-policy.json")
+  const seatFile = join(directory, "wrong-seat.ts")
+  const journeyFile = join(directory, "wrong-seat.journey.ts")
+  await writeFile(policyFile, JSON.stringify({ judges: policy }))
+  await writeFile(seatFile, `export const seat = { id: "anthropic:claude-opus-5-5", modelId: "claude-opus-5-5", model: { stream() { throw new Error("Must not dispatch") } } }`)
+  await writeFile(journeyFile, `export default ${JSON.stringify(definition)}`)
+  const child = Bun.spawn([process.execPath, new URL("./run.ts", import.meta.url).pathname, "judge", "--record", journeyFile], {
+    env: { ...process.env, SPEC_JUDGE_SEAT: seatFile, SPEC_JUDGE_POLICY: policyFile }, stdout: "pipe", stderr: "pipe"
+  })
+  const [, stderr] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text()])
+  expect(await child.exited).toBe(5)
+  expect(stderr).toContain("seat does not match policy")
 }, 60000)
