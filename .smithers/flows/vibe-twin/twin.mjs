@@ -29,6 +29,53 @@ export const normalizeDts = (text) =>
     .replaceAll(/^\/\/# sourceMappingURL=.*$/gm, "")
     .trim()
 
+/**
+ * The exports of a compiler-emitted .d.ts, one entry per name: `value` (const,
+ * function, let, default), `class`, `type` (interface, type alias, enum,
+ * namespace) or `reexport` (keyed by its normalized text). Overloads group under
+ * one name. Each entry carries its text, with the JSDoc above it.
+ */
+export const parseDts = (text) => {
+  const statements = []
+  let current = ""
+  let depth = 0
+  let quote = ""
+  for (const line of text.split("\n")) {
+    const opens = depth === 0 && quote === "" && current.trim() !== "" && !current.trimEnd().endsWith("*/")
+      && /^(?:\/\*\*|export |declare |import |interface |type )/.test(line)
+    if (opens) {
+      statements.push(current)
+      current = ""
+    }
+    current += `${line}\n`
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i]
+      if (quote) {
+        if (c === "\\") i++
+        else if (c === quote) quote = ""
+      } else if (c === "\"" || c === "'" || c === "`") quote = c
+      else if (c === "{" || c === "(" || c === "[") depth++
+      else if (c === "}" || c === ")" || c === "]") depth--
+    }
+  }
+  statements.push(current)
+  const byName = new Map()
+  for (const statement of statements.map((s) => s.trim()).filter(Boolean)) {
+    const body = statement.replace(/^\/\*\*[\s\S]*?\*\/\s*/, "")
+    if (!body.startsWith("export ") || /^export \{\s*\};?$/.test(body)) continue
+    const m = body.match(/^export (?:declare )?(?:abstract )?(const|let|var|function|class|interface|type|enum|namespace|default)\b\s*([A-Za-z_$][\w$]*)?/)
+    const entry = m === null
+      ? { name: normalizeDts(body), kind: "reexport" }
+      : m[1] === "default"
+      ? { name: "default", kind: "value" }
+      : { name: m[2], kind: m[1] === "class" ? "class" : ["interface", "type", "enum", "namespace"].includes(m[1]) ? "type" : "value" }
+    const generic = entry.kind === "type" && new RegExp(`^export (?:declare )?(?:interface|type) ${entry.name}<`).test(body)
+    const previous = byName.get(entry.name)
+    byName.set(entry.name, previous ? { ...previous, text: `${previous.text}\n${statement}` } : { ...entry, generic, text: statement })
+  }
+  return [...byName.values()]
+}
+
 /** The twin's compiled module for a resolved `src/` file, or undefined. */
 export const twinFor = (resolved, pkg) => {
   const file = resolved.split("?")[0]
@@ -99,6 +146,89 @@ const vitest = (pkg, config, outputFile) => {
   }
 }
 
+/**
+ * Compares the API of every module that src/ and the twin both declare. Export
+ * names must match. A type declaration must keep its text or, when it is not
+ * generic, be the identical type. A value's type, and a class's constructor and
+ * instance types, must be identical (checked by the compiler).
+ */
+const apiCheck = (pkg, work) => {
+  const twinDts = new Set(walk(join(work, "out")).filter((f) => f.endsWith(".d.ts")))
+  const api = {
+    modules: 0, identicalFiles: 0, checked: 0, missingModules: [], missingExports: [], extraExports: [],
+    typeDiffers: [], valueDiffers: [], errors: []
+  }
+  const lines = ["type Eq<A, B> = (<G>() => G extends A ? 1 : 2) extends (<G>() => G extends B ? 1 : 2) ? true : false"]
+  const checks = new Map()
+  const check = (label, left, right) => {
+    lines.push(`export const _${checks.size}: Eq<${left}, ${right}> = true`)
+    checks.set(lines.length, label)
+  }
+  walk(join(work, "ts-dts")).filter((f) => f.endsWith(".d.ts")).forEach((file, i) => {
+    if (!twinDts.has(file)) {
+      api.missingModules.push(file)
+      return
+    }
+    api.modules++
+    const tsText = readFileSync(join(work, "ts-dts", file), "utf8")
+    const vbText = readFileSync(join(work, "out", file), "utf8")
+    if (normalizeDts(tsText) === normalizeDts(vbText)) {
+      api.identicalFiles++
+      return
+    }
+    const ts = new Map(parseDts(tsText).map((e) => [e.name, e]))
+    const vb = new Map(parseDts(vbText).map((e) => [e.name, e]))
+    for (const name of vb.keys()) if (!ts.has(name)) api.extraExports.push(`${file}: ${name}`)
+    const mod = file.replace(/\.d\.ts$/, "")
+    const srcFile = ["ts", "tsx", "mts"].map((x) => `${mod}.${x}`).find((f) => existsSync(join(pkg, "src", f)))
+    const vbFile = ["vibe", "ts", "tsx"].map((x) => `${mod}.${x}`).find((f) => existsSync(join(pkg, "src-vibe", f)))
+    let imported = false
+    const need = () => {
+      if (imported) return
+      lines.push(`import type * as T${i} from ${JSON.stringify(`../src/${srcFile}`)}`)
+      lines.push(`import type * as V${i} from ${JSON.stringify(`../src-vibe/${vbFile}`)}`)
+      imported = true
+    }
+    for (const [name, e] of ts) {
+      const v = vb.get(name)
+      if (v === undefined) {
+        api.missingExports.push(`${file}: ${name}`)
+        continue
+      }
+      if (normalizeDts(e.text) === normalizeDts(v.text)) continue
+      if (e.kind === "type") {
+        if (e.generic) api.typeDiffers.push(`${file}: ${name} (generic: keep its text)`)
+        else {
+          need()
+          check(`${file}: type ${name}`, `T${i}.${name}`, `V${i}.${name}`)
+        }
+        continue
+      }
+      need()
+      check(`${file}: ${name}`, `typeof T${i}.${name}`, `typeof V${i}.${name}`)
+      if (e.kind === "class") check(`${file}: instances of ${name}`, `(typeof T${i}.${name})["prototype"]`, `(typeof V${i}.${name})["prototype"]`)
+    }
+  })
+  api.checked = checks.size
+  if (checks.size > 0) {
+    writeFileSync(join(work, "api-check.ts"), lines.join("\n") + "\n")
+    tsconfig(pkg, join(work, "tsconfig.api.json"), {
+      ...common, noEmit: true, rootDir: "..", allowImportingTsExtensions: true, declaration: false
+    }, ["api-check.ts"])
+    for (const line of compile(join(work, "tsconfig.api.json")).errors) {
+      const at = line.match(/api-check\.ts\((\d+),\d+\)/)
+      const label = at ? checks.get(Number(at[1])) : undefined
+      if (label === undefined) api.errors.push(line)
+      else if (label.includes(": type ")) api.typeDiffers.push(label)
+      else api.valueDiffers.push(label)
+    }
+  }
+  return api
+}
+
+const apiOk = (api) =>
+  api.missingExports.length + api.extraExports.length + api.typeDiffers.length + api.valueDiffers.length + api.errors.length === 0
+
 export const run = (pkgArg) => {
   const pkg = resolve(pkgArg)
   if (!existsSync(join(pkg, "src-vibe"))) throw new Error(`${pkg}: no src-vibe/ twin`)
@@ -126,17 +256,7 @@ export const run = (pkgArg) => {
   const twin = compile(join(work, "tsconfig.twin.json"))
   const ts = compile(join(work, "tsconfig.ts.json"))
 
-  const twinDts = new Set(walk(join(work, "out")).filter((f) => f.endsWith(".d.ts")))
-  const dts = { identical: [], differs: [], missing: [] }
-  for (const file of walk(join(work, "ts-dts")).filter((f) => f.endsWith(".d.ts"))) {
-    if (!twinDts.has(file)) {
-      dts.missing.push(file)
-      continue
-    }
-    const same = normalizeDts(readFileSync(join(work, "ts-dts", file), "utf8"))
-      === normalizeDts(readFileSync(join(work, "out", file), "utf8"))
-    ;(same ? dts.identical : dts.differs).push(file)
-  }
+  const api = apiCheck(pkg, work)
 
   const baseConfig = ["vitest.config.ts", "vitest.config.mts", "vitest.config.js", "vitest.config.mjs"]
     .map((f) => join(pkg, f)).find(existsSync)
@@ -170,12 +290,13 @@ export default mergeConfig(base, {
     package: relative(root, pkg),
     twinFiles: walk(join(pkg, "src-vibe")).length,
     compile: { twinErrors: twin.errors, twinWarnings: twin.warnings, tsErrors: ts.errors.length },
-    dts,
+    api,
     tests: { ts: { ...baseline, failed: undefined }, vibe: { ...vibe, failed: undefined } },
     regressions,
-    ok: twin.errors.length === 0 && dts.differs.length === 0 && dts.missing.length === 0 && vibe.ran && regressions.length === 0
-      && vibe.pass >= baseline.pass
+    ok: twin.errors.length === 0 && apiOk(api) && vibe.ran && regressions.length === 0 && vibe.pass >= baseline.pass,
+    complete: false
   }
+  receipt.complete = receipt.ok && api.missingModules.length === 0
   writeFileSync(join(work, "receipt.json"), JSON.stringify(receipt, null, 2) + "\n")
   return receipt
 }
@@ -188,16 +309,17 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     const t = receipt.tests
     process.stdout.write(
       [
-        `${receipt.package}: ${receipt.ok ? "OK" : "NOT OK"}`,
+        `${receipt.package}: ${receipt.complete ? "COMPLETE" : receipt.ok ? "OK (partial)" : "NOT OK"}`,
         `  compile: ${receipt.compile.twinErrors.length} errors, ${receipt.compile.twinWarnings.length} warnings`,
-        `  d.ts: ${receipt.dts.identical.length} identical, ${receipt.dts.differs.length} differ, ${receipt.dts.missing.length} missing`,
+        `  api: ${receipt.api.modules} modules twinned (${receipt.api.identicalFiles} with identical .d.ts), ${receipt.api.missingModules.length} not yet, ${receipt.api.checked} type checks`,
         `  tests: ts ${t.ts.pass} pass ${t.ts.fail} fail ${t.ts.skip} skip | vibe ${t.vibe.pass} pass ${t.vibe.fail} fail ${t.vibe.skip} skip`,
         ...receipt.compile.twinErrors.slice(0, 20).map((e) => `  ${e}`),
-        ...receipt.dts.differs.map((f) => `  d.ts differs: ${f}`),
-        ...receipt.dts.missing.map((f) => `  d.ts missing: ${f}`),
+        ...["missingExports", "extraExports", "typeDiffers", "valueDiffers", "errors"].flatMap((k) =>
+          receipt.api[k].slice(0, 30).map((x) => `  api ${k}: ${x}`)
+        ),
         ...receipt.regressions.slice(0, 40).map((r) => `  regression: ${r}`)
       ].join("\n") + "\n"
     )
   }
-  process.exit(receipt.ok ? 0 : 1)
+  process.exit(receipt.complete ? 0 : receipt.ok ? 3 : 1)
 }

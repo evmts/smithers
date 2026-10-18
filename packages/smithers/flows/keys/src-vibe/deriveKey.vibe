@@ -1,0 +1,56 @@
+// Deep reviewed and polished by a human on 2026-08-31.
+
+/**
+ * Derivation of the current flow-key format from structured input.
+ *
+ * @since 0.1.0
+ */
+
+import { Canonical } from "@smthrs/canonical"
+import { digest as sha256 } from "@smthrs/crypto"
+import type * as Crypto from "effect/Crypto"
+import * as Effect from "effect/Effect"
+import * as Schema from "effect/Schema"
+import { KeyDerivationError, type KeyDerivationErrorCode } from "./KeyDerivationError.ts"
+import type { KeyV1 } from "./KeyV1.vibe"
+
+const derivationFailure = (
+  code: KeyDerivationErrorCode,
+  message: string,
+  cause: unknown
+): KeyDerivationError => new KeyDerivationError({ code, message, cause })
+
+/**
+ * Derives the current flow-key format from structured input.
+ *
+ * The input is serialized with {@link Canonical}, hashed as UTF-8 SHA-256
+ * through the injected Effect `Crypto` service, and prefixed with `key1_`.
+ * Callers should include a stable domain and version in structured key
+ * material when identities from different protocols must not overlap.
+ *
+ * Execution reads the input lazily; rerunning the effect canonicalizes it
+ * again. Keep mutable input stable when the same identity is required.
+ * Failures use `canonicalization_failed` for unsupported input and
+ * `digest_failed` for a failed hash. Interruption is preserved.
+ *
+ * @param input - Material accepted by Canonical, including its JSON erasure rules.
+ * @returns An effect requiring Crypto that produces a validated version-one key
+ * or fails with KeyDerivationError. A missing Crypto service is a defect.
+ * @category derivation
+ * @since 1.0.0
+ */
+export function deriveKey(input: unknown): KeyV1!KeyDerivationError!Crypto.Crypto {
+  let serialized: string
+  try {
+    serialized = Schema.decodeUnknownEffect(Canonical)(input, { reportInput: false })
+  } catch (cause) {
+    throw derivationFailure("canonicalization_failed", "Key input could not be canonicalized", cause)
+  }
+  let hash: string
+  try {
+    hash = sha256(serialized)
+  } catch (cause) {
+    throw derivationFailure("digest_failed", "Canonical key material could not be hashed", cause)
+  }
+  return `key1_${hash}` as KeyV1
+}
