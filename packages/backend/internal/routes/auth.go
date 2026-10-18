@@ -53,8 +53,8 @@ type AuthHandler struct {
 	RepoListingWarmer GitHubRepoListingWarmer
 }
 
-const oauthStateCookieName = "smithers_oauth_state"
-const cliCallbackCookieName = "smithers_cli_callback"
+const oauthStateCookieName = "__Host-smithers_oauth_state"
+const cliCallbackCookieName = "__Host-smithers_cli_callback"
 
 type postKeyAuthVerifyRequest struct {
 	Message   string `json:"message"`
@@ -413,7 +413,7 @@ func (h *AuthHandler) GetGitHubOAuthCallback(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	stateVerifier := oauthStateVerifierFromRequest(r)
+	stateVerifier := oauthStateVerifierFromRequest(r, h.cookieSecure(r))
 	ctx := r.Context()
 	if cookie, err := r.Cookie(GitHubAppSetupSessionCookie); err == nil {
 		ctx = services.WithInstallSetupSession(ctx, cookie.Value)
@@ -452,7 +452,7 @@ func (h *AuthHandler) GetGitHubOAuthCallback(w http.ResponseWriter, r *http.Requ
 	// verifier that just completed this OAuth flow. A cookie left over from
 	// an earlier CLI login attempt fails the binding and is discarded, so it
 	// cannot hijack a browser login into minting a CLI token.
-	if portStr, ok := cliCallbackPortFromRequest(r); ok {
+	if portStr, ok := cliCallbackPortFromRequest(r, h.cookieSecure(r)); ok {
 		h.completeCLIOAuth(w, r, result, portStr)
 		return
 	}
@@ -551,7 +551,7 @@ func (h *AuthHandler) GetAuth0Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stateVerifier := oauthStateVerifierFromRequest(r)
+	stateVerifier := oauthStateVerifierFromRequest(r, h.cookieSecure(r))
 	result, err := h.Service.CompleteAuth0OAuth(r.Context(), code, state, stateVerifier)
 	if err != nil {
 		clearOAuthStateCookie(w, h.cookieSecure(r))
@@ -562,7 +562,7 @@ func (h *AuthHandler) GetAuth0Callback(w http.ResponseWriter, r *http.Request) {
 	// CLI login flow: only when the callback cookie is bound to the state
 	// verifier that just completed this OAuth flow (see
 	// GetGitHubOAuthCallback).
-	if portStr, ok := cliCallbackPortFromRequest(r); ok {
+	if portStr, ok := cliCallbackPortFromRequest(r, h.cookieSecure(r)); ok {
 		h.completeCLIOAuth(w, r, result, portStr)
 		return
 	}
@@ -613,8 +613,9 @@ func (h *AuthHandler) GetAuth0Callback(w http.ResponseWriter, r *http.Request) {
 // completeCLIOAuth handles the OAuth callback for CLI logins. It creates an
 // access token and redirects to the CLI's local HTTP server.
 func (h *AuthHandler) completeCLIOAuth(w http.ResponseWriter, r *http.Request, result services.OAuthCallbackResult, portStr string) {
-	// Clear both cookies.
-	clearOAuthStateCookie(w, false)
+	// Clear both cookies. A __Host- verifier is cleared only by a Secure
+	// Set-Cookie of the same name.
+	clearOAuthStateCookie(w, h.cookieSecure(r))
 	clearCLICallbackCookie(w, h.cookieSecure(r))
 
 	// Re-validate the CLI callback port from the (non-Secure, injectable)
@@ -632,7 +633,7 @@ func (h *AuthHandler) completeCLIOAuth(w http.ResponseWriter, r *http.Request, r
 	tokenResult, err := h.Service.CreateToken(r.Context(), result.User.ID, services.CreateTokenRequest{
 		Name:   "smithers-cli",
 		Scopes: result.TokenScopes,
-		Via:    cliAgentFromRequest(r),
+		Via:    cliAgentFromRequest(r, h.cookieSecure(r)),
 	})
 	if err != nil {
 		writeRouteError(w, r, err)
@@ -658,7 +659,7 @@ func (h *AuthHandler) completeCLIOAuth(w http.ResponseWriter, r *http.Request, r
 	callbackParams := url.Values{}
 	callbackParams.Set("token", tokenResult.Token)
 	callbackParams.Set("username", result.User.Username)
-	if _, callbackState, ok := cliCallbackFromRequest(r); ok && callbackState != "" {
+	if _, callbackState, ok := cliCallbackFromRequest(r, h.cookieSecure(r)); ok && callbackState != "" {
 		callbackParams.Set("callback_state", callbackState)
 	}
 	if result.User.Email.Valid && strings.TrimSpace(result.User.Email.String) != "" {
@@ -815,7 +816,7 @@ func setSessionCookie(w http.ResponseWriter, configuredName, sessionKey string, 
 
 func setOAuthStateCookie(w http.ResponseWriter, stateVerifier string, expiresAt time.Time, secure bool) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     oauthStateCookieName,
+		Name:     isolatedAuthCookieName(oauthStateCookieName, secure),
 		Value:    stateVerifier,
 		Path:     "/",
 		HttpOnly: true,
@@ -845,7 +846,7 @@ func clearCSRFCookie(w http.ResponseWriter, secure bool, mode ...http.SameSite) 
 
 func clearOAuthStateCookie(w http.ResponseWriter, secure bool) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     oauthStateCookieName,
+		Name:     isolatedAuthCookieName(oauthStateCookieName, secure),
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
@@ -856,8 +857,10 @@ func clearOAuthStateCookie(w http.ResponseWriter, secure bool) {
 	})
 }
 
-func oauthStateVerifierFromRequest(r *http.Request) string {
-	cookie, err := r.Cookie(oauthStateCookieName)
+// Readers pick the cookie name with the writer's Secure flag (cookieSecure),
+// so a start and its callback always agree on __Host- or smithers_local_.
+func oauthStateVerifierFromRequest(r *http.Request, secure bool) string {
+	cookie, err := r.Cookie(isolatedAuthCookieName(oauthStateCookieName, secure))
 	if err != nil {
 		return ""
 	}
@@ -879,7 +882,7 @@ func setCLICallbackCookie(w http.ResponseWriter, portStr, stateVerifier string, 
 		value += ":" + callbackState[1]
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name:     cliCallbackCookieName,
+		Name:     isolatedAuthCookieName(cliCallbackCookieName, secure),
 		Value:    value,
 		Path:     "/",
 		HttpOnly: true,
@@ -892,7 +895,7 @@ func setCLICallbackCookie(w http.ResponseWriter, portStr, stateVerifier string, 
 
 func clearCLICallbackCookie(w http.ResponseWriter, secure bool) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     cliCallbackCookieName,
+		Name:     isolatedAuthCookieName(cliCallbackCookieName, secure),
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
@@ -908,8 +911,8 @@ func clearCLICallbackCookie(w http.ResponseWriter, secure bool) {
 // the OAuth flow completing in this request. A cookie with a missing or
 // mismatched verifier (e.g. left over from an earlier CLI login attempt) is
 // reported as absent so the callback completes as a normal browser login.
-func cliCallbackPortFromRequest(r *http.Request) (string, bool) {
-	port, _, ok := cliCallbackFromRequest(r)
+func cliCallbackPortFromRequest(r *http.Request, secure bool) (string, bool) {
+	port, _, ok := cliCallbackFromRequest(r, secure)
 	return port, ok
 }
 
@@ -927,8 +930,8 @@ func validCLICallbackState(value string) bool {
 
 // The native callback state is honored only with the same OAuth verifier as
 // the port. Legacy CLI callers keep the original two-field cookie contract.
-func cliCallbackFromRequest(r *http.Request) (string, string, bool) {
-	cookie, err := r.Cookie(cliCallbackCookieName)
+func cliCallbackFromRequest(r *http.Request, secure bool) (string, string, bool) {
+	cookie, err := r.Cookie(isolatedAuthCookieName(cliCallbackCookieName, secure))
 	if err != nil || cookie.Value == "" {
 		return "", "", false
 	}
@@ -944,7 +947,7 @@ func cliCallbackFromRequest(r *http.Request) (string, string, bool) {
 	if hasCallbackState && !(hasAgent && callbackState == "") && !validCLICallbackState(callbackState) {
 		return "", "", false
 	}
-	stateVerifier := oauthStateVerifierFromRequest(r)
+	stateVerifier := oauthStateVerifierFromRequest(r, secure)
 	if stateVerifier == "" ||
 		subtle.ConstantTimeCompare([]byte(boundVerifier), []byte(stateVerifier)) != 1 {
 		return "", "", false
@@ -1079,11 +1082,11 @@ func (h *AuthHandler) csrfSameSite() http.SameSite {
 	return http.SameSiteStrictMode
 }
 
-func cliAgentFromRequest(r *http.Request) string {
-	if _, _, ok := cliCallbackFromRequest(r); !ok {
+func cliAgentFromRequest(r *http.Request, secure bool) string {
+	if _, _, ok := cliCallbackFromRequest(r, secure); !ok {
 		return "cli"
 	}
-	cookie, _ := r.Cookie(cliCallbackCookieName)
+	cookie, _ := r.Cookie(isolatedAuthCookieName(cliCallbackCookieName, secure))
 	parts := strings.Split(cookie.Value, ":")
 	if len(parts) == 4 && services.ValidExternalAgent(parts[3]) {
 		return parts[3]

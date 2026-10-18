@@ -194,11 +194,38 @@ func TestOwnerSignInHTTPPostgres(t *testing.T) {
 			denied := httptest.NewRecorder()
 			router.ServeHTTP(denied, request("/api/auth/github"))
 			require.Equal(t, 401, denied.Code)
+			// Every OAuth binding cookie the composed router sets uses the
+			// namespace of the address the browser used: smithers_local_ on
+			// HTTP, __Host-smithers_ on HTTPS. Returns the state verifier.
+			oauthPrefix := "smithers_local_"
+			if strings.HasPrefix(origin, "https://") {
+				oauthPrefix = "__Host-smithers_"
+			}
+			requireOAuthCookies := func(response *httptest.ResponseRecorder) *http.Cookie {
+				t.Helper()
+				var state *http.Cookie
+				for _, cookie := range response.Result().Cookies() {
+					for _, name := range []string{"oauth_state", "return_to", "cli_callback"} {
+						if strings.HasSuffix(cookie.Name, name) {
+							require.Equal(t, oauthPrefix+name, cookie.Name)
+							require.Equal(t, oauthPrefix == "__Host-smithers_", cookie.Secure, cookie.Name)
+							require.Empty(t, cookie.Domain, cookie.Name)
+							require.Equal(t, "/", cookie.Path, cookie.Name)
+						}
+					}
+					if cookie.Name == oauthPrefix+"oauth_state" {
+						state = cookie
+					}
+				}
+				require.NotNil(t, state, oauthPrefix+"oauth_state")
+				return state
+			}
 			prepareCallback := func(session, code string, id int64) *http.Request {
 				t.Helper()
 				start := httptest.NewRecorder()
 				router.ServeHTTP(start, request("/api/auth/github", &http.Cookie{Name: routes.GitHubAppSetupSessionCookie, Value: session}))
 				require.Equal(t, 302, start.Code, start.Body.String())
+				require.NotEmpty(t, requireOAuthCookies(start).Value)
 				redirect, err := url.Parse(start.Header().Get("Location"))
 				require.NoError(t, err)
 				require.Equal(t, origin+"/api/auth/github/callback", redirect.Query().Get("redirect_uri"))
@@ -307,6 +334,7 @@ func TestOwnerSignInHTTPPostgres(t *testing.T) {
 			result, callback := results[winner], callbacks[winner]
 			require.Equal(t, http.StatusFound, result.Code, result.Body.String())
 			require.Equal(t, origin+"/", result.Header().Get("Location"))
+			require.Equal(t, -1, requireOAuthCookies(result).MaxAge, "the callback read and clears the verifier the start set")
 			require.Equal(t, http.StatusUnauthorized, results[loser].Code, results[loser].Body.String())
 			require.Contains(t, results[loser].Body.String(), `"code":"setup_closed"`)
 			for _, cookie := range results[loser].Result().Cookies() {

@@ -242,9 +242,10 @@ paths:
         - Authentication
       description: Consumes durable, single-use consent bound to the OAuth verifier cookie and CSRF token. Rechecks administrator membership, atomically creates an expiring smithers-cli-admin PAT and auth.cli_admin_login audit row, and redirects to the state-bound loopback port. Authenticates with OAuth state rather than an existing PAT or browser session.
       parameters:
-        - name: smithers_oauth_state
+        - name: __Host-smithers_oauth_state
           in: cookie
           required: true
+          description: Host-only OAuth verifier. A self-hosted install on plain HTTP uses smithers_local_oauth_state instead.
           schema:
             type: string
       requestBody:

@@ -1,0 +1,118 @@
+import { settingsControl } from "../flows/settingsControl"
+import { ModelRoles } from "./ModelCards"
+import { useMemo, useSyncExternalStore, type ComponentType } from "react"
+import { useController } from "../ControllerContext"
+import type { CardActions, CardFamily } from "./CardFamily"
+import { SettingsView, type SettingsViewProps } from "./views/SettingsView"
+// MOCK SEAM: the seeded install until GET /api/install serves a model (InstallSeam.snapshots replaces it).
+import { designInstall, designViewerRole, setSettingsView, settingsViewsOf } from "../state/seams/DesignWorld/settings"
+import { useLiveQuery } from "@tanstack/react-db"
+import type { CardProps } from "@smthrs/rpc/CardAction"
+import type { SettingsCard } from "@smthrs/rpc/SettingsCard"
+import { cardActions, type CardActionDefinition } from "../flows/cardActions"
+import { installKeyAction, type InstallCardDispatch } from "./installKeyAction"
+import { limitFix, plainHttpOffLoopback, settingsCardModel, type InstallModel } from "../state/seams/InstallModel"
+import type { InstallSnapshots } from "../state/seams/InstallSeam"
+import { addressPort as port, parseOrigins as origins, roleKeyActions, fastModelAction } from "./SetupCard"
+
+export interface SettingsContainerProps {
+  readonly View: ComponentType<SettingsViewProps>
+  readonly modelSlot?: SettingsViewProps["modelSlot"]
+  readonly install: InstallSnapshots
+  readonly dispatch: InstallCardDispatch
+  readonly docsAvailable?: () => boolean
+  readonly owner: boolean
+  readonly origin: string
+  readonly view: CardProps<SettingsCard>["view"]
+  readonly onView: CardProps<SettingsCard>["onView"]
+}
+/**
+ * mvp.md J1 2.1 / §6.15 Address: "This Mac only" binds loopback at this Mac's own address; "Network" shows Bind (prefilled
+ * with every interface when the install is loopback-bound now) and Origins, the addresses teammates use.
+ */
+export const addressActions = (address: InstallModel["address"]): CardActionDefinition<"settings">[] => {
+  const retry: CardActionDefinition<"settings">[] = []
+  if (address.change_failed) {
+    const failed = address.change_failed
+    const bind = failed.bind ?? address.bind
+    retry.push(settingsControl("address", { tag: "settings", label: "Retry", args: { step: "address", field: "address" },
+      command_input: { listen: /^(127\.|localhost:|\[::1\]:)/.test(bind) ? "mac" : "network", bind, origins: failed.origins ?? [failed.to] } }))
+  }
+  const mac = { listen: "mac" as const, bind: `127.0.0.1:${port(address.bind)}`, origins: [`http://localhost:${port(address.bind)}`] }
+  const network = { listen: "network" as const, bind: address.listen === "network" ? address.bind.replace(/:\d+$/, `:${port(address.bind)}`) : `0.0.0.0:${port(address.bind)}`, origins: address.origins }
+  return [
+    ...retry,
+    settingsControl("address", { tag: "settings", label: "Save", args: { field: "address", listen: "mac" }, command_input: mac }),
+    settingsControl("address", { tag: "settings", label: "Save", args: { field: "address", listen: "network" }, command_input: network,
+      input: [
+        { name: "bind", label: "Bind", kind: "text", required: true, value: network.bind },
+        { name: "origins", label: "Origins", kind: "text", multiline: true, required: true, value: network.origins.join("\n") }
+      ],
+      resolve_input: input => ({ listen: "network", bind: input.bind?.trim() || network.bind,
+        origins: input.origins === undefined ? network.origins : origins(input.origins) }) })
+  ]
+}
+
+export const SettingsContainer = ({ View, install, dispatch, owner, origin, view, onView, modelSlot, docsAvailable = () => false }: SettingsContainerProps) => {
+  const snapshot = useSyncExternalStore(install.subscribe, install.get, install.get)
+  const model = snapshot.model
+  // The viewer origin alone decides this; parsing the whole Settings card here would throw before the health guard below.
+  const needsHttps = model ? plainHttpOffLoopback(origin) : false
+  const dispatchAvailable: InstallCardDispatch = (tag, input, gesture) => {
+    if (tag === "docs" && (!owner || !needsHttps || !docsAvailable())) return
+    return dispatch(tag, input, gesture)
+  }
+  const key = model ? installKeyAction(dispatchAvailable, model) : undefined
+  const definitions: CardActionDefinition[] = owner && model ? [
+    /* Each control sits on its row (SettingsView rowFor reads args.field) with its own input, so a press changes the value. */
+    ...addressActions(model.address),
+    { tag: "image.add", label: "Add to machine image", command_input: { name: "" },
+      input: [{ name: "name", label: "Package", kind: "text", required: true }],
+      resolve_input: input => ({ name: input.name ?? "" }) },
+    ...(needsHttps && docsAvailable() ? [{ tag: "docs" as const, label: "Notifications need HTTPS ↗",
+      args: { page: "quickstart#put-https-in-front" }, command_input: { page: "quickstart#put-https-in-front" } }] : []),
+    settingsControl("capacity", { tag: "settings", label: "Machines", args: { field: "capacity", min: "1", max: String(model.this_mac.capacity) }, command_input: { capacity: model.capacity },
+      input: [{ name: "value", label: "Machines", kind: "text", required: true, value: String(model.capacity) }],
+      resolve_input: input => ({ capacity: Number(input.value ?? input.capacity ?? model.capacity) }) }),
+    ...(model.todo_preapprove_default === undefined ? [] : [settingsControl("preapprove-default", { tag: "settings" as const, label: "New TODOs start pre-approved", command_input: { todo_preapprove_default: model.todo_preapprove_default },
+      resolve_input: (input: Record<string, string>) => ({ todo_preapprove_default: input.enabled === "true" }) })]),
+    ...(model.todo_daily_admissions === undefined ? [] : [settingsControl("daily-admissions", { tag: "settings" as const, label: "TODOs per day", args: { field: "todo_daily_admissions", min: "1" }, command_input: { todo_daily_admissions: model.todo_daily_admissions },
+      input: [{ name: "value", label: "TODOs per day", kind: "text" as const, required: true, value: String(model.todo_daily_admissions) }],
+      resolve_input: (input: Record<string, string>) => ({ todo_daily_admissions: Number(input.value ?? model.todo_daily_admissions) }) })]),
+    ...(model.parallel === undefined ? [] : [settingsControl("parallel", { tag: "settings" as const, label: "At once", args: { field: "parallel", min: "1", max: "8" }, command_input: { parallel: model.parallel },
+      input: [{ name: "value", label: "TODOs at once", kind: "text" as const, required: true, value: String(model.parallel) }],
+      resolve_input: (input: Record<string, string>) => ({ parallel: Number(input.value ?? input.parallel ?? model.parallel) }) })]),
+    ...(model.wiki_sync === undefined ? [] : [settingsControl("obsidian", { tag: "settings" as const, label: "Change", args: { field: "obsidian" },
+      command_input: { path: model.wiki_sync.obsidian?.path ?? "" },
+      input: [{ name: "path", label: "Obsidian folder", kind: "text" as const, required: true, value: model.wiki_sync.obsidian?.path ?? "" }],
+      resolve_input: (input: Record<string, string>) => ({ path: input.path ?? model.wiki_sync?.obsidian?.path ?? "" }) })]),
+    ...fastModelAction(model),
+    ...roleKeyActions(key!.definition, model, { field: "key" }, !snapshot.seed),
+    ...(!snapshot.seed ? model.models.map(role => ({ tag: "settings.model.set" as const, label: "Save", args: { role: role.role }, command_input: { role: role.role, model: role.model ?? "" },
+      input: [{ name: "model", label: "Model", kind: "text" as const, required: true }],
+      resolve_input: (input: Record<string, string>) => ({ role: role.role, model: input.model ?? "" }) })) : [])
+  ] : []
+  /* This Mac's fix renders inside its row (model.this_mac.limit): it binds for onAction but stays out of the listed actions. */
+  const fix: CardActionDefinition[] = owner && model?.this_mac.limit ? [{ ...limitFix(model.this_mac.limit.fix), command_input: undefined }] : []
+  const listed = cardActions(key?.dispatch ?? dispatchAvailable, definitions)
+  const bindings = cardActions(key?.dispatch ?? dispatchAvailable, [...definitions, ...fix])
+  if (!owner || !model?.health) return null
+  return <View modelSlot={modelSlot ?? <ModelRoles model={settingsCardModel(model, origin)} actions={listed.actions} onAction={bindings.onAction} />} model={settingsCardModel(model, origin)} actions={listed.actions} gestures={bindings.gestures} onAction={bindings.onAction} view={view} onView={onView} />
+}
+
+/* The settings card (card-kinds.md L5): subject only; the body reads the install and binds through cardActions. */
+const SettingsBody = ({ presentation }: { readonly presentation: CardActions["presentation"] }) => {
+  const controller = useController()
+  const install = useMemo(() => designInstall(controller.design, controller.installSnapshots), [controller])
+  // A served /api/install projection is owner-only after claim; until one is served the seeded viewer's role decides.
+  const live = useSyncExternalStore(controller.installSnapshots.subscribe, controller.installSnapshots.get, controller.installSnapshots.get).model
+  const owner = live === undefined ? designViewerRole(controller.design) === "owner" : live.can_assign_models === true
+  // MOCK SEAM: the seed's per-member view state holds the Address choice until the `view:<member>` topic lands.
+  const viewer = controller.design.viewer()
+  const listen = useLiveQuery(settingsViewsOf(controller.design)).data.find(row => row.id === viewer)?.listen
+  return <SettingsContainer View={SettingsView} install={install} owner={owner} docsAvailable={() => controller.docsTargetAvailable("quickstart#put-https-in-front")}
+    origin={typeof window === "undefined" ? "http://localhost" : window.location.origin}
+    view={{ maximized: presentation === "maximized", ...(listen === undefined ? {} : { tab: listen }) }} onView={patch => setSettingsView(controller.design, viewer, patch)}
+    dispatch={(name, payload, gesture) => controller.commands.submit({ name, payload: (payload ?? {}) as Record<string, unknown>, actor: "user", gesture })} />
+}
+export const settingsCardFamily: CardFamily<"settings"> = { settings: { render: (_card, { presentation }) => <SettingsBody presentation={presentation} />, pill: () => "" } }

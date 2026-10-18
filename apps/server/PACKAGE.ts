@@ -152,6 +152,17 @@ const securityReview = Smithers.SecurityReview({
 export const Package = Smithers.Package({
   targets: {
     check, unitTests, ...securityReview,
+    oauthDocs: Smithers.Docs.Check({
+      output: Smithers.file("docs/oauth-cookie-isolation.md"),
+      stamp: Smithers.file("docs/oauth-cookie-isolation.stamp.json"),
+      inputs: [
+        Smithers.file("//packages/backend/internal/routes/auth.go"),
+        Smithers.file("//packages/backend/internal/routes/auth_return.go"),
+        Smithers.file("//packages/backend/internal/routes/auth_cookie_names.go"),
+        Smithers.file("//packages/backend/internal/routes/auth_cookie_workerd_test.go"),
+        Smithers.file("scripts/cutover/host-cookie-workerd.mjs")
+      ]
+    }),
     docs: Smithers.Docs.Check({
       output: Smithers.file("docs/host-cookie-isolation.md"),
       stamp: Smithers.file("docs/host-cookie-isolation.stamp.json"),
