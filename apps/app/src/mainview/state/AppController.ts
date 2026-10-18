@@ -137,7 +137,7 @@ import { createDiffFilesSeam, createBranchDiffReader } from "./seams/DiffFilesSe
 import type { EgressSeam } from "./seams/EgressSeam"
 import { createEgressSeam } from "./seams/EgressSeam"
 import type { BranchFileOptions, FilesSeam } from "./seams/FilesSeam"
-import { createFilesSeam, resolveFileTarget } from "./seams/FilesSeam"
+import { createFilesSeam, readFilePage, resolveFileTarget } from "./seams/FilesSeam"
 import type { GitHubSeam } from "./seams/GitHubSeam"
 import { createGitHubSeam } from "./seams/GitHubSeam"
 import type { IssuesSeam } from "./seams/IssuesSeam"
@@ -585,6 +585,8 @@ export interface AppController extends IssueFlowsController {
   readonly flowCards: (name?: string) => Promise<ReadonlyArray<import("@smthrs/rpc/FlowCard").FlowCard> | undefined>
   /** branch.fork on an install: POST /api/branches {from, name?} (spec §8.5); its value is the new scratch branch. A string is the refusal. Absent off an install, where the flow acts on the seeded world. */
   readonly selectConversationBranch: (name: string) => Promise<void>
+  /** Complete repository file page, separate from the bounded transcript read. */
+  readonly readRepositoryFilePage: (repo: string, path: string, ref: string) => ReturnType<typeof readFilePage>
   /** A Cloud repository's branch names as last read and the branch picked in each (RepositoryBranchesSeam): the header's branch selector reads both and asks for a read when it opens. */
   readonly repositoryBranches: { readonly rows: RepositoryBranchRows; readonly picks: RepositoryBranchPicks; readonly load: (repo: string) => Promise<unknown>; readonly pickOf: (repo: string) => string | undefined }
   readonly setBranchNavigationView: (patch: { selected_branch?: string; selected_archive?: string; previous_branch?: string; open?: boolean }) => Promise<void>
@@ -3139,6 +3141,7 @@ export const createAppController = (
     ...sharedActions,
     observeReviewConfirmation: issueFlows.observeReviewConfirmation,
     fileDocuments,
+    readRepositoryFilePage: (repo, path, ref) => readFilePage(seamCtx, repo, path, ref),
     repositoryBranches: { rows: repositoryBranches.rows, picks: repositoryBranches.picks, load: repositoryBranches.load, pickOf: repositoryBranches.pickOf },
     store,
     privacyNotices: privacyActions.notices,

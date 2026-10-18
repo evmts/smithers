@@ -6,7 +6,6 @@ import { payloadFor } from "../flows/SlashPayload"
 import { createRoot } from "../cards/views/testDom"
 import { act, type ReactNode } from "react"
 import { afterEach, expect, mock, test } from "bun:test"
-import type { Card } from "../state/AppState"
 import { CodeHome, REPOSITORY_CLONE_HOST } from "./CodeHome"
 import { RepositoryCodeView } from "./RepositoryCodeView"
 import { codeReadKey, repositoryCodeReads, setCodeRead } from "./RepositoryCodeRead"
@@ -51,10 +50,11 @@ const render = async (action: typeof actions[number]) => {
     expected = `git clone ${REPOSITORY_CLONE_HOST}/${repo}.git`
   } else {
     window.history.replaceState(null, "", `/${repo}/blob/main/src/file%20name.ts?L=2-3`)
-    setCodeRead(codeReadKey(repo, "blob", "main/src/file%20name.ts", "current"), "ready")
-    const card: Extract<Card, { kind: "file" }> = { id: "file", kind: "file", title: "File", status: "active", createdAt: 1, ordinal: 1,
-      payload: { repo, path: "src/file name.ts", ref: "main", content, truncated: false, readAt: { commitId: commit, changeId: null, source: "head" } } }
-    element = <RepositoryCodeView onRunCommand={onRunCommand} repo={repo} cards={[card]} refs={["main"]} admitted requestId="current" onAsk={() => {}} />
+    setCodeRead(codeReadKey(repo, "blob", "main/src/file%20name.ts", "current"), "ready", undefined, {
+      content, size: new TextEncoder().encode(content).length, binary: false, tooLarge: false,
+      commitSha: commit, rawUrl: `/api/repos/${repo}/contents/src/file%20name.ts?raw=1&ref=${commit}`
+    })
+    element = <RepositoryCodeView onRunCommand={onRunCommand} repo={repo} cards={[]} refs={["main"]} admitted requestId="current" onAsk={() => {}} />
     label = action === "contents" ? "Copy file contents" : "Copy permalink"
     expected = action === "contents" ? content : `${window.location.origin}/${repo}/blob/${commit}/src/file%20name.ts?L=2-3`
   }

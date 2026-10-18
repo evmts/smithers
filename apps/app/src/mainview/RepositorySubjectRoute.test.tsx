@@ -8,6 +8,7 @@ import App from "./App"
 import { RepositoryCodeView } from "./repository/RepositoryCodeView"
 import { ControllerTestProvider } from "./ControllerContext"
 import { beginRepositoryEntry, openRequestedRepo, requestedTarget, signInReturnTo } from "./RepoLink"
+import { codeReadKey, repositoryCodeReads } from "./repository/RepositoryCodeRead"
 import { openRequestedSubject } from "./RepositorySubjectEntry"
 import type { AppController as AppControllerType } from "./state/AppController"
 import { createAppStore } from "./state/AppStore"
@@ -358,7 +359,14 @@ test("signed out, the subject parks on sign-in and the whole target is the retur
 const bookmarks = (...names: ReadonlyArray<string>) =>
   json(200, { items: names.map((name, index) => ({ name, target_change_id: `chg-${index}` })), next_cursor: "" })
 
-const fileContents = (content: string) => json(200, { path: "x", content, type: "file", encoding: "utf-8" })
+const fileContents = (content: string) => json(200, { path: "x", content, size: new TextEncoder().encode(content).length, commit_sha: "b".repeat(40), raw_url: ROOT + "/contents/x?raw=1", type: "file", encoding: "utf-8" })
+
+const filePageOf = (store: Awaited<ReturnType<typeof createAppStore>>) => {
+  const entry = store.session().repositoryEntry!
+  const subject = requestedTarget(window.location)!.subject
+  if (subject?.kind !== "blob") return undefined
+  return repositoryCodeReads.get(codeReadKey(REPO, "blob", subject.location, entry.requestId))?.page
+}
 
 const fileListCardOf = (store: Awaited<ReturnType<typeof createAppStore>>) =>
   [...store.collections.cards.values()].find(card => card.kind === "file-list")
@@ -378,10 +386,8 @@ test("a blob URL opens that file at the branch it names, through the registered 
   })
   const { store, refusal } = await enter(`/${REPO}/blob/main/apps/server/src/edge.ts`, backend)
   expect(refusal).toBeUndefined()
-  const card = fileCardOf(store)
-  expect(card?.kind === "file" ? card.payload : undefined).toMatchObject({
-    repo: REPO, path: "apps/server/src/edge.ts", content: "export const edge = 1\n", ref: "main"
-  })
+  expect(filePageOf(store)).toMatchObject({ content: "export const edge = 1\n", commitSha: "b".repeat(40) })
+  expect(fileCardOf(store)).toBeUndefined()
   // The read asked the contents route for that revision, on the URL's repository.
   expect(backend.seen).toContain(`${ROOT}/contents/apps/server/src/edge.ts?ref=main`)
 })
@@ -413,8 +419,7 @@ test("the ref and the path keep their case, and an encoded segment is decoded ex
   })
   const { store, refusal } = await enter(`/${REPO}/blob/Release/2.0/docs/My%20Notes.md`, backend)
   expect(refusal).toBeUndefined()
-  const card = fileCardOf(store)
-  expect(card?.kind === "file" ? card.payload : undefined).toMatchObject({ path: "docs/My Notes.md", ref: "Release/2.0" })
+  expect(filePageOf(store)?.content).toBe("# My Notes\n")
   expect(backend.seen).toContain(`${ROOT}/contents/docs/My%20Notes.md?ref=Release%2F2.0`)
 })
 
@@ -507,7 +512,7 @@ test("a file read the platform refuses is reported as that read's own refusal", 
     [`${ROOT}/contents/apps/missing.ts`]: json(404, { status: "error", code: "not_found" })
   })
   const { store, refusal } = await enter(`/${REPO}/blob/main/apps/missing.ts`, backend)
-  expect(refusal ?? noticeTexts(store).join(" ")).toContain("apps/missing.ts")
+  expect(refusal).toBe("Could not read file.")
   expect(fileCardOf(store)).toBeUndefined()
 })
 
@@ -528,10 +533,7 @@ test("a commit permalink opens that file at that revision, through the same cont
   })
   const { store, refusal } = await enter(`/${REPO}/blob/${COMMIT}/apps/server/src/edge.ts`, backend)
   expect(refusal).toBeUndefined()
-  const card = fileCardOf(store)
-  expect(card?.kind === "file" ? card.payload : undefined).toMatchObject({
-    repo: REPO, path: "apps/server/src/edge.ts", content: "export const edge = 1\n", ref: COMMIT
-  })
+  expect(filePageOf(store)?.content).toBe("export const edge = 1\n")
   expect(backend.seen).toContain(`${ROOT}/contents/apps/server/src/edge.ts?ref=${COMMIT}`)
 })
 
@@ -563,8 +565,7 @@ test("signed out, a commit permalink opens even though the bookmark list refuses
   })
   const { store, refusal } = await enter(`/${REPO}/blob/${COMMIT}/README.md`, backend)
   expect(refusal).toBeUndefined()
-  const card = fileCardOf(store)
-  expect(card?.kind === "file" ? card.payload : undefined).toMatchObject({ path: "README.md", ref: COMMIT })
+  expect(filePageOf(store)?.content).toBe("# e2e\n")
   expect(backend.seen).toContain(`${ROOT}/contents/README.md?ref=${COMMIT}`)
 })
 
@@ -601,7 +602,7 @@ test("a commit the platform cannot read is that read's own refusal, never a diff
         : fileContents("export const edge = 1\n")
   })
   const { store, refusal } = await enter(`/${REPO}/blob/${missing}/apps/server/src/edge.ts`, backend)
-  expect(refusal ?? noticeTexts(store).join(" ")).toContain("apps/server/src/edge.ts")
+  expect(refusal).toBe("Could not read file.")
   expect(fileCardOf(store)).toBeUndefined()
   // No second read at another revision: the URL named one, and only it was asked for.
   expect(backend.seen.filter(path => path.includes("src/edge.ts")))
@@ -791,4 +792,56 @@ test("an unresolved file ref keeps the repository breadcrumb as text", async () 
   expect(breadcrumb.textContent).toBe("e2e-verify")
   expect(breadcrumb.querySelector("a")).toBeNull()
   expect(host.querySelector('[role="status"]')?.textContent).toContain("Loading")
+})
+
+test("a superseded admission cannot publish a pending full-page response", async () => {
+  const backend = ownedRepository({ [`${ROOT}/bookmarks`]: bookmarks("main") })
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  window.history.replaceState(null, "", `/${REPO}/blob/main/pending.ts`)
+  const controller = createAppController(store, silentAgent, { bootstrap: WEB, repositoryApp: REPO, ...backend.services })
+  await controller.loadSession()
+  const requestId = beginRepositoryEntry(store, REPO)
+  await openRequestedRepo(controller, backend.fetchImpl, REPO, requestId)
+  let resolve!: (page: Awaited<ReturnType<AppControllerType["readRepositoryFilePage"]>>) => void
+  let started!: () => void
+  const reading = new Promise<void>(ready => { started = ready })
+  const pending = openRequestedSubject({ ...controller, readRepositoryFilePage: async () => {
+    started()
+    return new Promise(ready => { resolve = ready })
+  } }, REPO, { kind: "blob", location: "main/pending.ts" }, { requestId })
+  await reading
+  beginRepositoryEntry(store, REPO)
+  resolve({ content: "old bytes", size: 9, commitSha: "a".repeat(40), rawUrl: ROOT + "/contents/pending.ts?raw=1", binary: false, tooLarge: false })
+  await pending
+  expect(repositoryCodeReads.get(codeReadKey(REPO, "blob", "main/pending.ts", requestId))?.page).toBeUndefined()
+})
+
+test("whole-file controls retain registry dispatch and exact bytes after page admission", async () => {
+  const { setCodeRead } = await import("./repository/RepositoryCodeRead")
+  const content = "const value = 1\r\n\r\n"
+  const requestId = "whole-file-controls"
+  window.history.replaceState(null, "", `/${REPO}/blob/main/controls.ts`)
+  const key = codeReadKey(REPO, "blob", "main/controls.ts", requestId)
+  const page = { content, size: content.length, binary: false, tooLarge: false, commitSha: "b".repeat(40), rawUrl: "/raw/controls.ts" }
+  setCodeRead(key, "ready", undefined, page)
+  const calls: Array<[string, unknown]> = []
+  const host = document.createElement("div")
+  document.body.append(host)
+  const root = createRoot(host)
+  mounted.push(() => { flushSync(() => root.unmount()); host.remove() })
+  flushSync(() => root.render(<RepositoryCodeView repo={REPO} cards={[]} refs={["main"]} admitted requestId={requestId} onAsk={() => {}} onRunCommand={(name, args) => { calls.push([name, args]) }} />))
+  await settled()
+  const copy = host.querySelector<HTMLButtonElement>('button[aria-label="Copy file contents"]')!
+  expect(copy).not.toBeNull()
+  copy.click()
+  expect(calls.at(-1)).toEqual(["chat.copy-message", content])
+  const raw = [...host.querySelectorAll("button")].find(button => button.textContent === "Raw")!
+  raw.click()
+  expect(calls.at(-1)).toEqual(["code.view", JSON.stringify({ pathname: window.location.pathname, field: "raw", value: "1" })])
+  flushSync(() => setCodeRead(key, "ready", undefined, { ...page, content: null, size: 524289, tooLarge: true }))
+  await settled()
+  expect(host.querySelector('button[aria-label="Copy file contents"]')).toBeNull()
+  expect(host.querySelector('[aria-label="Source of controls.ts"]')).toBeNull()
+  expect(host.querySelector('a[href="/raw/controls.ts"]')?.textContent).toBe("Raw")
+  expect(host.textContent).toContain("524,289 B")
 })
