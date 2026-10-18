@@ -1,18 +1,16 @@
 import { installConversationFixture } from "./conversationFixture"
 import { expect,test,type Page } from "./browserTest"
 
-// The summoned composer softly blurs the content behind its crisp card and
-// dismisses to the same readable transcript without making it inert.
+// The summoned composer is transparent around its card and dismisses to the
+// same readable transcript, without a modal backdrop or an inert conversation.
 const expectReadableTurn = async (page: Page, text: string) => {
   const overlay = page.getByTestId('composer-overlay')
   const transcript = page.locator('.smithers-transcript')
-  expect(await overlay.evaluate(element => getComputedStyle(element).backdropFilter)).toBe('blur(1px)')
-  expect(await overlay.locator('.composer-wrap').evaluate(element => getComputedStyle(element).filter)).toBe('none')
+  expect(await overlay.evaluate(element => getComputedStyle(element).backdropFilter)).toBe('none')
   expect(await overlay.evaluate(element => getComputedStyle(element).backgroundColor)).toBe('rgba(0, 0, 0, 0)')
   expect(await transcript.evaluate(element => element.closest('[inert]') === null)).toBe(true)
   await page.getByTestId('composer-input').press('Escape')
   await expect(overlay).toBeHidden()
-  expect(await overlay.evaluate(element => getComputedStyle(element).display)).toBe('none')
   for (const role of ['user', 'assistant']) {
     const bubble = transcript.locator(`.smithers-chat-message[data-role="${role}"]`, { hasText: text }).last()
     await expect(bubble).toBeInViewport({ ratio: 1 })
