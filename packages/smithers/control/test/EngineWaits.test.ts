@@ -215,7 +215,7 @@ const waitingOn = (
     let token: string | undefined
     yield* TestDatabase.until(Effect.gen(function*() {
       const waiting = yield* state.waiting(runId)
-      if (Option.isNone(waiting)) return false
+      if (Option.isNone(waiting) || waiting.value.token === null) return false
       const parsed = yield* Schema.decodeEffect(DurableDeferred.TokenParsed.FromString)(waiting.value.token).pipe(
         Effect.orDie
       )
