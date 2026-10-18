@@ -10,7 +10,7 @@ import { fixture, id, open, privateRow, roster } from "./confirmation-fixtures"
 // Written before implementation: mvp.md §6.3, §14, Appendix A /review; lands with T-FLW-13, T-MCH-06, T-REL-02
 test("C-J10-09: review shows teammate findings and confirms delegated review", async ({ page }) => {
   await owner(page)
-  await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [{ name: "smithers-mvp-canary/node" }] } }))
+  await page.route("**/api/repos/smithers-mvp-canary/node", route => route.fulfill({ json: { full_name: "smithers-mvp-canary/node", is_public: true, default_bookmark: "main" } }))
   let launches = 0, refusals = 0
   await page.route("**/api/reviews", route => {
     const input = route.request().postDataJSON()
@@ -60,7 +60,7 @@ test("C-J10-09: installed Confirm observes the admitted review only after approv
     card: { ...row.payload.card, action: { tag: "review", verb: "Run review" }, text: "/review #50", subject: { kind: "branch", ref: "main", revision: row.revision } } } }
   const publish = await fixture(page, topic => topic === "confirmations:1" ? [row] : topic === "members" ? roster("member") : undefined)
   await page.route("**/api/auth/session", route => route.fulfill({ json: { id: 1, username: "canary-owner", is_admin: false } }))
-  await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [{ name: "smithers-mvp-canary/node" }] } }))
+  await page.route("**/api/repos/smithers-mvp-canary/node", route => route.fulfill({ json: { full_name: "smithers-mvp-canary/node", is_public: true, default_bookmark: "main" } }))
   await page.route("**/api/reviews", route => { launches++; return route.fulfill({ status: 500, json: { message: "Duplicate launch" } }) })
   await page.route("**/api/reviews/confirmed-review", route => {
     observations++
@@ -92,7 +92,7 @@ test("C-J10-09: installed Confirm observes the admitted review only after approv
 
 test("C-J10-09: loading reviews can be retried and failed reviews retain their cause", async ({ page }) => {
   await owner(page)
-  await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [{ name: "smithers-mvp-canary/node" }] } }))
+  await page.route("**/api/repos/smithers-mvp-canary/node", route => route.fulfill({ json: { full_name: "smithers-mvp-canary/node", is_public: true, default_bookmark: "main" } }))
   const keys: string[] = []
   await page.route("**/api/reviews", route => {
     keys.push(route.request().headers()["idempotency-key"]!)

@@ -316,8 +316,7 @@ test("a superseded admission request opens nothing, so one URL's subject never l
 test("signed out, the subject parks on sign-in and the whole target is the return path", async () => {
   const backend = recordingBackend({
     "/api/user": json(401, { status: "error", code: "unauthorized" }),
-    "/api/public/repos": json(200, { repos: [{ name: REPO, title: "e2e-verify", url: `https://github.com/${REPO}`, stats: null }] }),
-    [ROOT]: json(200, { full_name: REPO, default_bookmark: "main" })
+    [ROOT]: json(200, { full_name: REPO, default_bookmark: "main", is_public: true })
   })
   const { store, refusal } = await enter(`/${REPO}/pull/2/files`, backend)
   expect(store.session().repositoryEntry?.phase).toBe("ready")
@@ -435,8 +434,7 @@ test("a branch no read can confirm opens nothing and says which part it could no
 test("signed out, the default branch still divides its own links and any other says so", async () => {
   const signedOut = (extra: Record<string, Response | ((request: Request) => Response)>) => recordingBackend({
     "/api/user": json(401, { status: "error", code: "unauthorized" }),
-    "/api/public/repos": json(200, { repos: [{ name: REPO, title: "e2e-verify", url: `https://github.com/${REPO}`, stats: null }] }),
-    [ROOT]: json(200, { full_name: REPO, default_bookmark: "main" }),
+    [ROOT]: json(200, { full_name: REPO, default_bookmark: "main", is_public: true }),
     [`${ROOT}/bookmarks`]: json(401, { status: "error", code: "unauthorized" }),
     ...extra
   })
@@ -552,8 +550,7 @@ test("a commit permalink to a folder lists it at that revision, not at the head"
 test("signed out, a commit permalink opens even though the bookmark list refuses", async () => {
   const backend = recordingBackend({
     "/api/user": json(401, { status: "error", code: "unauthorized" }),
-    "/api/public/repos": json(200, { repos: [{ name: REPO, title: "e2e-verify", url: `https://github.com/${REPO}`, stats: null }] }),
-    [ROOT]: json(200, { full_name: REPO, default_bookmark: "main" }),
+    [ROOT]: json(200, { full_name: REPO, default_bookmark: "main", is_public: true }),
     [`${ROOT}/bookmarks`]: json(401, { status: "error", code: "unauthorized" }),
     [`${ROOT}/contents/README.md`]: fileContents("# e2e\n")
   })
