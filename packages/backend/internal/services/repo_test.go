@@ -1829,13 +1829,13 @@ func TestRepoService_GetRepoContents(t *testing.T) {
 			return []repohost.Bookmark{{
 				Name:           "main",
 				TargetChangeID: "change-abc",
-				TargetCommitID: "commit-def",
+				TargetCommitID: strings.Repeat("a", 40),
 			}}, "", nil
 		},
 		getFileAtChangeFn: func(ctx context.Context, owner, repo, changeID, path string) (repohost.FileContent, error) {
 			assert.Equal(t, "alice", owner)
 			assert.Equal(t, "demo", repo)
-			assert.Equal(t, "change-abc", changeID, "bookmark name should be resolved to change ID")
+			assert.Equal(t, strings.Repeat("a", 40), changeID, "bookmark should be pinned to its commit")
 			assert.Equal(t, "README.md", path)
 			return repohost.FileContent{
 				Path:    "README.md",
@@ -1971,7 +1971,7 @@ func TestRepoService_GetRepoContents_PassesContextToRepoHost(t *testing.T) {
 	}
 	rh := &mockRepoHostClient{
 		listBookmarksFn: func(ctx context.Context, owner, repo, cursor string, limit int) ([]repohost.Bookmark, string, error) {
-			return []repohost.Bookmark{{Name: "main", TargetChangeID: "change-abc"}}, "", nil
+			return []repohost.Bookmark{{Name: "main", TargetChangeID: "change-abc", TargetCommitID: strings.Repeat("a", 40)}}, "", nil
 		},
 		getFileAtChangeFn: func(gotCtx context.Context, owner, repo, changeID, path string) (repohost.FileContent, error) {
 			assert.Equal(t, "trace-repo-content", gotCtx.Value(ctxKey("trace_id")))
@@ -2390,12 +2390,12 @@ func TestRepoService_GetRepoContents_ResolvesBookmark(t *testing.T) {
 		rh := &mockRepoHostClient{
 			listBookmarksFn: func(ctx context.Context, owner, repo, cursor string, limit int) ([]repohost.Bookmark, string, error) {
 				return []repohost.Bookmark{
-					{Name: "main", TargetChangeID: "change-main"},
-					{Name: "feature", TargetChangeID: "change-feat"},
+					{Name: "main", TargetChangeID: "change-main", TargetCommitID: strings.Repeat("a", 40)},
+					{Name: "feature", TargetChangeID: "change-feat", TargetCommitID: strings.Repeat("b", 40)},
 				}, "", nil
 			},
 			getFileAtChangeFn: func(ctx context.Context, owner, repo, changeID, path string) (repohost.FileContent, error) {
-				assert.Equal(t, "change-feat", changeID, "should resolve feature bookmark to its change ID")
+				assert.Equal(t, strings.Repeat("b", 40), changeID, "should pin feature bookmark to its commit")
 				return repohost.FileContent{Path: "src/app.ts", Content: "export {}"}, nil
 			},
 		}
@@ -2411,7 +2411,7 @@ func TestRepoService_GetRepoContents_ResolvesBookmark(t *testing.T) {
 		rh := &mockRepoHostClient{
 			listBookmarksFn: func(ctx context.Context, owner, repo, cursor string, limit int) ([]repohost.Bookmark, string, error) {
 				return []repohost.Bookmark{
-					{Name: "main", TargetChangeID: "change-main"},
+					{Name: "main", TargetChangeID: "change-main", TargetCommitID: strings.Repeat("a", 40)},
 				}, "", nil
 			},
 			getFileAtChangeFn: func(ctx context.Context, owner, repo, changeID, path string) (repohost.FileContent, error) {
@@ -2652,4 +2652,29 @@ func (m *mockRepoHostClient) GetBookmark(ctx context.Context, owner, repo, name 
 		}
 	}
 	return repohost.Bookmark{}, &repohost.StatusError{StatusCode: 404, Code: "bookmark_not_found"}
+}
+
+func TestRepoService_PageFileIdentityAndAccess(t *testing.T) {
+	for _, public := range []bool{true, false} {
+		repository := testRepo(func(r *db.Repository) { r.IsPublic = public; r.DefaultBookmark = "main" })
+		q := &mockRepoQuerier{getRepoByOwnerAndLowerNameFn: func(context.Context, db.GetRepoByOwnerAndLowerNameParams) (db.Repository, error) {
+			return repository, nil
+		}}
+		commit := strings.Repeat("a", 40)
+		host := &mockRepoHostClient{getBookmarkFn: func(context.Context, string, string, string) (repohost.Bookmark, error) {
+			return repohost.Bookmark{TargetCommitID: commit}, nil
+		}, getFileAtChangeFn: func(_ context.Context, _, _, ref, _ string) (repohost.FileContent, error) {
+			require.Equal(t, commit, ref)
+			return repohost.FileContent{Content: strings.Repeat("x", 300*1024), Encoding: "utf8"}, nil
+		}}
+		content, err := NewRepoService(q, host, "s1").GetRepoContents(context.Background(), nil, "alice", "demo", "main", "x")
+		if !public {
+			require.Error(t, err)
+			require.Equal(t, 403, apiStatus(t, err))
+			continue
+		}
+		require.NoError(t, err)
+		require.Equal(t, commit, content.CommitSHA)
+		require.Len(t, content.Content, 300*1024)
+	}
 }
