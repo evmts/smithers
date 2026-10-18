@@ -311,6 +311,7 @@ export const CloudRepositorySchema = z.object({
    * `issueWriteTarget`). Never derived from a display name or a number.
    */
   issueTracker: z.enum(["github", "smithers-cloud"]).optional(),
+  githubSource: z.object({ owner: z.string(), repo: z.string() }).optional(),
   updatedAt: z.number(),
   revision: z.number().int().nonnegative()
 })
@@ -2033,7 +2034,7 @@ type AppTransitionBody =
   | {
     type: "repository.upserted"
     actor: "system"
-    repository: Pick<CloudRepository, "id" | "org" | "ownerKind" | "name" | "head" | "catalog" | "documentOwner" | "summary" | "issueTracker" | "guest">
+    repository: Pick<CloudRepository, "id" | "org" | "ownerKind" | "name" | "head" | "catalog" | "documentOwner" | "summary" | "issueTracker" | "githubSource" | "guest">
   }
   | {
     type: "workingcopies.workspaces.loaded"

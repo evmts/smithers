@@ -358,7 +358,7 @@ func (s *UserService) ListAuthenticatedUserRepos(ctx context.Context, userID int
 	if err != nil {
 		return RepoListResult{}, err
 	}
-	trackers := s.issueTrackersOf(ctx, repos)
+	trackers := issueTrackersOf(ctx, s.queries, repos)
 
 	items := make([]RepoSummary, 0, len(repos))
 	for _, repo := range repos {
@@ -901,8 +901,8 @@ const (
 // source addresses GitHub's issues; one without keeps its own Smithers Cloud
 // tracker. Nothing is inferred from a display name, a number or a summary,
 // and a failed read answers no trackers rather than a wrong one.
-func (s *UserService) issueTrackersOf(ctx context.Context, repos []db.Repository) map[int64]string {
-	reader, ok := s.queries.(repositoryGitHubSourceReader)
+func issueTrackersOf(ctx context.Context, queries any, repos []db.Repository) map[int64]string {
+	reader, ok := queries.(repositoryGitHubSourceReader)
 	if !ok {
 		return nil
 	}

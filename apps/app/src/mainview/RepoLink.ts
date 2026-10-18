@@ -315,6 +315,7 @@ export const openRequestedRepo = async (
     } else controller.store.dispatch({ type: "repository.entry.changed", actor: "system", entry: result })
     return error
   }
+  let tracking: { issueTracker?: "github" | "smithers-cloud"; githubSource?: { owner: string; repo: string } } = {}
   let catalog: unknown
   let memberDocument: { full_name: string; description?: unknown; default_bookmark?: unknown } | undefined
   let guest: { sessionId: string; landingId:string; revision: string } | undefined
@@ -326,8 +327,16 @@ export const openRequestedRepo = async (
     const backendRequestId = response.headers.get("x-request-id")
     if (backendRequestId !== null && /^[\w/.-]{1,160}$/.test(backendRequestId)) diagnostics.documentRequestId = backendRequestId
     if (!response.ok && ![401, 403, 404].includes(response.status)) return finish(`Repository unavailable (HTTP ${response.status}).`)
-    const document = response.ok ? await response.json() as { is_public?: unknown; description?: unknown; full_name?:unknown; default_bookmark?: unknown } : undefined
+    const document = response.ok ? await response.json() as { is_public?: unknown; description?: unknown; full_name?:unknown; default_bookmark?: unknown; issue_tracker?: unknown; github_source?: { owner?: unknown; repo?: unknown } } : undefined
     if (!current()) return
+    if (typeof document?.full_name === "string" && document.full_name.toLowerCase() === requested.toLowerCase()) {
+      const source = document.github_source
+      tracking = {
+        issueTracker: undefined, githubSource: undefined,
+        ...(document.issue_tracker === "github" || document.issue_tracker === "smithers-cloud" ? { issueTracker: document.issue_tracker } : {}),
+        ...(typeof source?.owner === "string" && typeof source.repo === "string" && REPO_NAME.test(`${source.owner}/${source.repo}`) ? { githubSource: { owner: source.owner, repo: source.repo } } : {})
+      }
+    }
     const canonical = typeof document?.full_name === "string" && document.full_name.toLowerCase() === requested.toLowerCase() ? document.full_name : requested
     catalog = { repos: document?.is_public === true ? [{ name: canonical, summary: document.description }] : [] }
     if (document?.is_public === false && typeof document.full_name === "string" &&
@@ -365,7 +374,7 @@ export const openRequestedRepo = async (
     const existing = controller.store.collections.repositories.get(member.id)
     const bookmark = typeof memberDocument.default_bookmark === "string" && memberDocument.default_bookmark !== "" ? memberDocument.default_bookmark : undefined
     controller.store.dispatch({ type: "repository.upserted", actor: "system", repository: {
-      ...existing, ...member, ownerKind: existing?.ownerKind ?? "user", catalog: false, guest: undefined,
+      ...existing, ...member, ...tracking, ownerKind: existing?.ownerKind ?? "user", catalog: false, guest: undefined,
       documentOwner: identityAtStart!.login!,
       head: bookmark === undefined || existing?.head?.bookmark === bookmark ? existing?.head ?? null : { bookmark, changeId: null, commitId: null }
     } })
@@ -427,7 +436,7 @@ export const openRequestedRepo = async (
   diagnostics.source = "public-document"
   const { repositories } = controller.store.collections
   const existing = repositories.get(repository.id)
-  if (existing?.catalog !== true || JSON.stringify(existing.guest) !== JSON.stringify(guest)) {
+  if (existing?.catalog !== true || JSON.stringify(existing.guest) !== JSON.stringify(guest) || existing.issueTracker !== tracking.issueTracker || JSON.stringify(existing.githubSource) !== JSON.stringify(tracking.githubSource)) {
     controller.store.dispatch({
       type: "repository.upserted",
       actor: "system",
@@ -437,7 +446,7 @@ export const openRequestedRepo = async (
        * treats it as "no org changesets", never as a fabricated org.
        * `catalog` records where the row came from: readable signed out.
        */
-      repository: { ...existing, ...repository, guest, ownerKind: existing?.ownerKind ?? "user", head: existing?.head ?? null, catalog: true }
+      repository: { ...existing, ...repository, ...tracking, guest, ownerKind: existing?.ownerKind ?? "user", head: existing?.head ?? null, catalog: true }
     })
   }
   if (options.activate === false || options.scope === "command") return finish()
