@@ -1,3 +1,5 @@
+import { HistoryRoute, isHistorySubject } from "./repository/HistoryRoute"
+import { getSnapshot as historySnapshot, subscribe as subscribeHistory } from "./RepositoryRouter"
 import { RepoFrame } from "./repository/RepoFrame"
 import { CodeHome } from "./repository/CodeHome"
 import { RepositoryCodeView } from "./repository/RepositoryCodeView"
@@ -25,7 +27,7 @@ SmithersUiStyles
 } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import type { ReactNode, PointerEvent as ReactPointerEvent } from "react"
-import { useMemo,useRef,useState } from "react"
+import { useMemo,useRef,useState,useSyncExternalStore } from "react"
 import { controllerCardActions as cardActions } from "./cards/controllerCardActions"
 import { LoginScreen } from "./cards/LoginScreen"
 import { CardView } from "./ChatCards"
@@ -256,6 +258,7 @@ function AppContent() {
   // pending/failed request, or reject a repository added since this build.
   const bootEntry = session.repositoryEntry?.repo.toLowerCase() === bootRepository?.toLowerCase()
     ? session.repositoryEntry : undefined
+  const historyTarget = useSyncExternalStore(subscribeHistory, historySnapshot, () => null)
   const codeTarget = typeof window === "undefined" ? null : codePathTarget(window.location.pathname)
   const codeBranches = codeBranchRows.find(row => row.id.toLowerCase() === codeTarget?.repo.toLowerCase())
   const codeDefaultRef = repositoryRows.find(row => row.id.toLowerCase() === codeTarget?.repo.toLowerCase())?.head?.bookmark
@@ -762,12 +765,13 @@ function AppContent() {
   const repository = repositoryRows.find(row => row.id.toLowerCase() === bootRepository.toLowerCase())
   const rootRoute = window.location.pathname.replace(/\/$/, "") === `/${bootRepository}`
   const codeRoute = codeTarget?.subject?.kind === "tree" || codeTarget?.subject?.kind === "blob"
-  if (!rootRoute && !codeRoute) return chat
+  const historyRoute = isHistorySubject(historyTarget?.subject)
+  if (!rootRoute && !codeRoute && !historyRoute) return chat
   return <RepoFrame repo={bootRepository} publicRepo={repository?.catalog === true}
     login={identity?.state === "signed-in" ? identity.login ?? undefined : undefined}
     member={identity?.state === "signed-in" && repository !== undefined && repository.catalog !== true}
     onAsk={() => controller.runCommand("chat.open")} onSignIn={() => controller.runCommand("sign-in")} ask={chat}>
-    {codeRoute ? <RepositoryCodeView repo={bootRepository} cards={cardRows} refs={codeRefs} commits={codeBranches?.commits}
+    {historyRoute ? <HistoryRoute defaultBranch={codeDefaultRef} refs={codeRefs}/> : codeRoute ? <RepositoryCodeView repo={bootRepository} cards={cardRows} refs={codeRefs} commits={codeBranches?.commits}
       admitted={true} requestId={bootEntry.requestId} onAsk={text => controller.changeDraft(text)} /> : <CodeHome repo={bootRepository} branch={repository?.head?.bookmark}
       tree={repoTreeRows.find(row => row.copyId === homeTreeCopy && row.path === "")}
       home={repositoryHome} summary={repository?.summary}/>}
