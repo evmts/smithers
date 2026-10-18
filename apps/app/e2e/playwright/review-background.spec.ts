@@ -1,11 +1,23 @@
-import { expect, test } from "./browserTest"
-import { owner, say } from "./spec/j1-fixtures"
+import { expect, test, type Page } from "./browserTest"
+import { installCloudFixture } from "./cloudFixture"
+import { say } from "./spec/j1-fixtures"
+
+// The canary repository is the owner's own. No public catalog admits it:
+// signed-out catalog admission ended with guest chat (68f1d894).
+const canaryNode = {
+  owner: "smithers-mvp-canary", name: "node", full_name: "smithers-mvp-canary/node",
+  default_bookmark: "main", owner_type: "Organization"
+} as const
+
+async function canaryOwner(page: Page) {
+  await installCloudFixture(page, { repos: [canaryNode] })
+  await page.route(url => url.pathname === "/api/user" || url.pathname === "/api/auth/session", route => route.fulfill({ json: { id: 1, username: "canary-owner", is_admin: false } }))
+}
 
 // Browser/host-contract proof only. Machine head, pin, cleanup and zero GitHub
 // writes still require C-J10-09 on the reference host's real microVM.
 test("review acknowledges before launch and reconnects findings after reload", async ({ page }) => {
-  await owner(page)
-  await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [{ name: "smithers-mvp-canary/node" }] } }))
+  await canaryOwner(page)
   let launches = 0, observations = 0, completed = false
   let release!: () => void
   const launch = new Promise<void>(resolve => { release = resolve })
@@ -43,8 +55,7 @@ test("review acknowledges before launch and reconnects findings after reload", a
 })
 
 test("outsider review refusal is visible and can be requested again", async ({ page }) => {
-  await owner(page)
-  await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [{ name: "smithers-mvp-canary/node" }] } }))
+  await canaryOwner(page)
   let requests = 0
   await page.route("**/api/reviews", route => {
     requests++
