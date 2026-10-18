@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/memory",
   "type": "module",
-  "version": "1.0.0-rc.13",
+  "version": "1.0.0-rc.14",
   "license": "MIT",
   "smthrs": {
     "group": "agent"
@@ -292,10 +292,10 @@
     "test:matrix": "node ../../flows/database/scripts/test-matrix.mjs"
   },
   "dependencies": {
-    "@smthrs/core": "1.0.0-rc.13",
-    "@smthrs/database": "1.0.0-rc.13",
-    "@smthrs/flow": "1.0.0-rc.13",
-    "@smthrs/patterns": "1.0.0-rc.13"
+    "@smthrs/core": "1.0.0-rc.14",
+    "@smthrs/database": "1.0.0-rc.14",
+    "@smthrs/flow": "1.0.0-rc.14",
+    "@smthrs/patterns": "1.0.0-rc.14"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",

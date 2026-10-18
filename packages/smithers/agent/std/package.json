@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/std",
   "type": "module",
-  "version": "1.0.0-rc.13",
+  "version": "1.0.0-rc.14",
   "license": "MIT",
   "smthrs": {
     "group": "agent"
@@ -461,20 +461,20 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@smthrs/capability": "1.0.0-rc.13",
-    "@smthrs/control": "1.0.0-rc.13",
-    "@smthrs/core": "1.0.0-rc.13",
-    "@smthrs/kernel": "1.0.0-rc.13",
-    "@smthrs/model": "1.0.0-rc.13"
+    "@smthrs/capability": "1.0.0-rc.14",
+    "@smthrs/control": "1.0.0-rc.14",
+    "@smthrs/core": "1.0.0-rc.14",
+    "@smthrs/kernel": "1.0.0-rc.14",
+    "@smthrs/model": "1.0.0-rc.14"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
     "@effect/platform-node": "4.0.5",
     "@effect/vitest": "4.0.5",
     "@eslint/js": "9.39.5",
-    "@smthrs/flow": "1.0.0-rc.13",
-    "@smthrs/patterns": "1.0.0-rc.13",
-    "@smthrs/plan": "1.0.0-rc.13",
+    "@smthrs/flow": "1.0.0-rc.14",
+    "@smthrs/patterns": "1.0.0-rc.14",
+    "@smthrs/plan": "1.0.0-rc.14",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",

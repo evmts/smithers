@@ -5,6 +5,31 @@ release (what changed and why it matters, with screenshots and examples), see
 the release notes at
 [smithers.sh/changelogs/1.0.0-rc.0](https://smithers.sh/changelogs/1.0.0-rc.0).
 
+## 1.0.0-rc.14 (2026-10-18)
+
+<!-- commits:1.0.0-rc.14 -->
+
+8 commits since [v1.0.0-rc.13](https://github.com/smithersai/smithers/commit/bace5a3067).
+
+### ✨ Features
+
+- **egressrelay:** sign with a given CA and forward through an upstream proxy (smithersai/plue#840) ([ba3c6dcb55](https://github.com/smithersai/smithers/commit/ba3c6dcb550eb353ff7f320660b640817275096e))
+
+### 🐛 Bug fixes
+
+- **flows:** resume uncaptured callbacks after host restart ([bceaa7ea58](https://github.com/smithersai/smithers/commit/bceaa7ea58a19c64bcb0096e49874d9d302ebd23))
+- **cli:** finish log following after terminal settlement ([6cb89c588b](https://github.com/smithersai/smithers/commit/6cb89c588b9c526aee2119cf7f3e0fbe133f8a43))
+- **cli:** return parked status for unapproved plans ([36f677f74e](https://github.com/smithersai/smithers/commit/36f677f74e0dee3c12f633efa970a1b4fdb0ff7e))
+- **egressrelay:** swap only whole placeholders and mask value runs (smithersai/plue#840) ([881787a56d](https://github.com/smithersai/smithers/commit/881787a56dae9f63704b1e51ece6f94822800379))
+
+### 📝 Documentation
+
+- **cli:** resolve public GitHub reference links ([588ffe52df](https://github.com/smithersai/smithers/commit/588ffe52dfcb516f556d1fb281d0d6a5a43325a7))
+- **cli:** make quickstart guide examples runnable ([ede16b7c77](https://github.com/smithersai/smithers/commit/ede16b7c77713ee59cf3666ed6975e99ec8e8e13))
+- **cli:** guide subscription coding through a human push ([6e0f692701](https://github.com/smithersai/smithers/commit/6e0f692701cdb0c476b63bc7c36b81784dbd696c))
+
+<!-- /commits:1.0.0-rc.14 -->
+
 ## 1.0.0-rc.13 (2026-10-18)
 
 <!-- commits:1.0.0-rc.13 -->

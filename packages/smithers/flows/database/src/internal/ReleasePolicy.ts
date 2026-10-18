@@ -13,7 +13,7 @@
  * @category models
  * @since 1.0.0
  */
-export const releaseVersion = "1.0.0-rc.13"
+export const releaseVersion = "1.0.0-rc.14"
 
 /**
  * The Node.js floor, mirroring `engines.node` in this package's manifest.

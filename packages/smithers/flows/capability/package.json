@@ -1,7 +1,7 @@
 {
   "name": "@smthrs/capability",
   "type": "module",
-  "version": "1.0.0-rc.13",
+  "version": "1.0.0-rc.14",
   "license": "MIT",
   "smthrs": {
     "group": "engine"
@@ -147,6 +147,6 @@
     "effect": "4.0.5"
   },
   "dependencies": {
-    "@smthrs/canonical": "1.0.0-rc.13"
+    "@smthrs/canonical": "1.0.0-rc.14"
   }
 }
