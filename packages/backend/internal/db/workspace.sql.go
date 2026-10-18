@@ -1201,6 +1201,25 @@ func (q *Queries) GetRepoOwnerSlugAndNameByID(ctx context.Context, repositoryID 
 	return i, err
 }
 
+const getWorkflowTaskBillingOwner = `-- name: GetWorkflowTaskBillingOwner :one
+SELECT r.user_id,r.org_id FROM repositories r JOIN workflow_tasks t ON t.repository_id=r.id
+WHERE t.id=$1::bigint
+`
+
+type GetWorkflowTaskBillingOwnerRow struct {
+	UserID pgtype.Int8 `json:"user_id"`
+	OrgID  pgtype.Int8 `json:"org_id"`
+}
+
+// A CI task guest's retained grant follows its repository's billing like a
+// workspace's (plue#839).
+func (q *Queries) GetWorkflowTaskBillingOwner(ctx context.Context, taskID int64) (GetWorkflowTaskBillingOwnerRow, error) {
+	row := q.db.QueryRow(ctx, getWorkflowTaskBillingOwner, taskID)
+	var i GetWorkflowTaskBillingOwnerRow
+	err := row.Scan(&i.UserID, &i.OrgID)
+	return i, err
+}
+
 const getWorkspace = `-- name: GetWorkspace :one
 SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at, rebuild_required_at, client_lease_secs, client_lease_expires_at, source_commit, vcpu_count, memory_mb, disk_mb, forked_from_item, forked_from_base, capture_pending, moved_off, branch_archived_at, cleanup_pending_head, cleanup_pending_capture_id, disk_reclaimed_at
 FROM workspaces

@@ -981,3 +981,9 @@ SELECT id FROM users WHERE lower_username = 'smithers-machines'
 -- A retained hosted grant follows repository billing, never the machine owner.
 SELECT r.user_id,r.org_id FROM repositories r JOIN workspaces w ON w.repository_id=r.id
 WHERE w.id=sqlc.arg(workspace_id)::uuid AND w.deleted_at IS NULL;
+
+-- name: GetWorkflowTaskBillingOwner :one
+-- A CI task guest's retained grant follows its repository's billing like a
+-- workspace's (plue#839).
+SELECT r.user_id,r.org_id FROM repositories r JOIN workflow_tasks t ON t.repository_id=r.id
+WHERE t.id=sqlc.arg(task_id)::bigint;

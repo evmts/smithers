@@ -2747,9 +2747,9 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		launchWorker(func() {
 			services.RunRuntimeMetricsCollector(workerCtx, queries, smithersMetrics, services.RuntimeMetricsInterval)
 		})
-		launchWorker(func() {
-			services.RunServicePayerUsageCollector(workerCtx, billingPolicy, queries, cfg.Billing.ServicePayerOrgIDs, smithersMetrics, services.RuntimeMetricsInterval)
-		})
+		if duty := servicePayerUsageDuty(workerCtx, cfg, billingPolicy, queries, smithersMetrics); duty != nil {
+			launchWorker(duty)
+		}
 		if config.IsSingleOwner(cfg.Auth) || cfg.FeatureFlags.SubscriptionConnections {
 			launchWorker(func() { providerConnectionRefreshWorker.Start(workerCtx) })
 		}

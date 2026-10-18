@@ -256,4 +256,32 @@ func TestServicePayerBillsOnlyListedOrganizations(t *testing.T) {
 			require.ErrorContains(t, err, "1 running sandbox", "a second machine on the outside organization is refused under its own plan")
 		})
 	}
+
+	// A listed organization that buys a plan pays for its own machines on
+	// that plan (RepositorySandboxPayer, plue#839 review).
+	t.Run("listed organization with a paid plan", func(t *testing.T) {
+		var paid, paidRepo, account int64
+		require.NoError(t, pool.QueryRow(ctx, `INSERT INTO organizations(name,lower_name) VALUES ('paid-listed','paid-listed') RETURNING id`).Scan(&paid))
+		require.NoError(t, pool.QueryRow(ctx, `INSERT INTO repositories(org_id,name,lower_name) VALUES ($1,'paid','paid') RETURNING id`, paid).Scan(&paidRepo))
+		require.NoError(t, pool.QueryRow(ctx, `INSERT INTO billing_accounts(owner_type,owner_id,stripe_customer_id) VALUES ('org',$1,'cus_paid_listed') RETURNING id`, paid).Scan(&account))
+		_, err := pool.Exec(ctx, `INSERT INTO billing_subscriptions(billing_account_id,stripe_subscription_id,plan_key,billing_interval,status,quantity) VALUES ($1,'sub_paid_listed','team','monthly','active',1)`, account)
+		require.NoError(t, err)
+		svc := NewWorkspaceService(q, WithWorkspaceTransactions(pool), WithBranchMachineProviders(branchMachineTestProviders()), WithWorkspaceBillingPolicy(billing), WithWorkspaceServicePayerOrgs([]int64{listed, paid}))
+		row, err := svc.createWorkspaceRow(ctx, db.CreateWorkspaceParams{UserID: actor, RepositoryID: paidRepo, TargetBookmark: "main", Kind: "container", Status: "starting"})
+		require.NoError(t, err)
+		policy, err := svc.workspaceEgressProxy(ctx, paidRepo, row.ID)
+		require.NoError(t, err)
+		require.NotNil(t, policy.Quota)
+		assert.Equal(t, sandbox.EgressQuota{BillingUserID: paid, BillingOwnerType: "org", DailyBytes: 100 << 30}, *policy.Quota, "the listed organization's own team plan")
+		runtimeCtx, err := svc.workspaceRuntimeContext(ctx, row, actor, "billing-paid")
+		require.NoError(t, err)
+		assert.Equal(t, sandbox.BillingOwner{Type: "org", ID: paid}, sandbox.BillingOwnerFromContext(runtimeCtx, 0))
+		entitlement, err := billing.SandboxEntitlement(runtimeCtx, paid)
+		require.NoError(t, err)
+		assert.Equal(t, BillingPlanTeam, entitlement.PlanKey)
+		assert.EqualValues(t, 1, entitlement.ConcurrentInUse, "the organization counts its own machine")
+		ciRequest, err := svc.workspaceEgressProxy(ctx, paidRepo, "")
+		require.NoError(t, err)
+		assert.Equal(t, policy.Quota, ciRequest.Quota, "its CI guests bill it too")
+	})
 }
