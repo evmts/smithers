@@ -1,3 +1,4 @@
+import { play } from "./play"
 import type { Journey } from "../journey"
 import type { RunResult } from "../results"
 
@@ -15,6 +16,8 @@ const main = async () => {
   const response = await fetch("/__spec/data")
   if (!response.ok) throw new Error("Results unavailable")
   const data = await response.json() as Data
+  const picked = data.journeys.find(journey => journey.id === new URLSearchParams(location.search).get("journey"))
+  if (picked) { play(app, data, picked); return }
   const header = node("header"); header.append(node("h1", "Spec")); app.replaceChildren(header)
   if (data.drift) header.append(node("small", `built ${data.drift.builtMinutes ?? "?"} min ago · ahead ${data.drift.ahead ?? 0} · regressed ${data.drift.regressed ?? 0}`))
   const filters = node("nav"); filters.setAttribute("aria-label", "Results")
