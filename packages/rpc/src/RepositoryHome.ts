@@ -30,10 +30,22 @@ const markdown = z.object({
   title: title.optional(),
   markdown: z.string().max(256 * 1024)
 })
-const text = z.object({ type: z.literal("text"), title: title.optional(), text: z.string().min(1).max(4096) })
+/** Plain repository-owned text, rendered without HTML.
+ * @category schemas
+ * @since 0.1.0
+ */
+export const RepositoryHomeText = z.object({
+  type: z.literal("text"),
+  title: title.optional(),
+  text: z.string().min(1).max(4096)
+})
 /* The repository's live mythical stack; the app reads it from `@smthrs/rpc/Mythical`. */
 const stack = z.object({ type: z.literal("stack"), title: title.optional() })
-const links = z.object({
+/** Repository-owned links with validated HTTP(S) destinations.
+ * @category schemas
+ * @since 0.1.0
+ */
+export const RepositoryHomeLinks = z.object({
   type: z.literal("links"),
   title: title.optional(),
   links: z.array(z.object({
@@ -53,9 +65,9 @@ export const RepositoryHomeBlockSchema = z.discriminatedUnion("type", [
   app,
   flows,
   markdown,
-  text,
+  RepositoryHomeText,
   stack,
-  links,
+  RepositoryHomeLinks,
   view
 ])
 
@@ -63,7 +75,9 @@ export const RepositoryHomeBlockSchema = z.discriminatedUnion("type", [
  * @category schemas
  * @since 1.0.0
  */
-export const FlowViewSchema = z.array(z.discriminatedUnion("type", [prompt, app, flows, text, stack, links])).min(1)
+export const FlowViewSchema = z.array(
+  z.discriminatedUnion("type", [prompt, app, flows, RepositoryHomeText, stack, RepositoryHomeLinks])
+).min(1)
   .max(32)
 /** The view a repository flow declares.
  * @category models

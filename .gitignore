@@ -119,6 +119,7 @@ worktrees/
 !/.smithers/FACTORY.ts
 !/.smithers/factory.json
 !/.smithers/home.json
+!/.smithers/front-door.json
 !/.smithers/target-index.json
 !/.smithers/environment.nix
 !/.smithers/memory-thresholds.json

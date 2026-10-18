@@ -7,5 +7,6 @@ export const applicationTarget = {
   apiOrigin: "",
   auth: { kind: "session" },
   cors: "same-origin",
-  developerExternal: false
+  developerExternal: false,
+  frontDoor: { repo: "smithers-canary/smithers", path: ".smithers/front-door.json" }
 } satisfies ApplicationTargetDocument

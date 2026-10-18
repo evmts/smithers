@@ -72,7 +72,8 @@ const harness = async (
     actor: () => "user",
     nextOrdinal: () => 0
   }
-  return { store, seam: createRepositoriesSeam(ctx), requests, writes }
+  const inventory: import("@smthrs/rpc/FrontDoor").Known<number>[] = []
+  return { store, seam: createRepositoriesSeam(ctx, count => inventory.push(count)), requests, writes, inventory }
 }
 
 const backend = (path: string): Response => {
@@ -530,4 +531,20 @@ describe("repositories seam", () => {
       commitId: "c0ffee1"
     })
   })
+})
+
+test("front-door inventory observes the existing read: only a completed valid empty inventory is zero", async () => {
+  for (const [response, expected] of [
+    [json(200, { repos: [] }), { state: "known", value: 0 }],
+    [json(403, { message: "Refused" }), { state: "unknown" }],
+    [json(200, {}), { state: "unknown" }],
+    [json(200, { repos: [null] }), { state: "unknown" }]
+  ] as const) {
+    const h = await harness(path => path === "api/user/repos" ? response.clone() : json(200, []))
+    await h.seam.loadRepositories()
+    expect(h.inventory[0]).toEqual({ state: "unknown" })
+    expect(h.inventory.at(-1)).toEqual(expected)
+    expect(h.requests.filter(path => path.includes("user/repos"))).toHaveLength(1)
+    await h.store.dispose?.()
+  }
 })

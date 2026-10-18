@@ -208,14 +208,15 @@ const nextPage = (response: Response): NextPage => {
   return { kind: "none" }
 }
 
-export const createRepositoriesSeam = (ctx: SeamContext): RepositoriesSeam => {
+export const createRepositoriesSeam = (ctx: SeamContext, onInventory?: (count: import("@smthrs/rpc/FrontDoor").Known<number>) => void): RepositoriesSeam => {
   const { get: getJson, send } = createCloudClient(ctx)
 
   const readAllPages = async (
     first: string,
     key: string
-  ): Promise<{ readonly rows: ReadonlyArray<unknown> } | { readonly error: string; readonly status: number | null }> => {
+  ): Promise<{ readonly rows: ReadonlyArray<unknown>; readonly readable: boolean } | { readonly error: string; readonly status: number | null }> => {
     const rows: unknown[] = []
+    let readable = true
     const seen = new Set<string>()
     let path = first
     for (let page = 0; page < MAX_INVENTORY_PAGES; page += 1) {
@@ -223,9 +224,11 @@ export const createRepositoriesSeam = (ctx: SeamContext): RepositoriesSeam => {
       seen.add(path)
       const answer = await getJson(path)
       if ("error" in answer) return { error: answer.error, status: answer.status }
-      rows.push(...arrayOf(answer.body, key))
+      const body = answer.body
+      readable &&= Array.isArray(body) || isRecord(body) && (Array.isArray(body[key]) || Array.isArray(body.items))
+      rows.push(...arrayOf(body, key))
       const next = nextPage(answer.response)
-      if (next.kind === "none") return { rows }
+      if (next.kind === "none") return { rows, readable }
       if (next.kind === "invalid") return { error: "Inventory pagination returned an invalid next page.", status: null }
       path = next.path
     }
@@ -282,6 +285,7 @@ export const createRepositoriesSeam = (ctx: SeamContext): RepositoriesSeam => {
     loadRepositories: async () => {
       const currentOwner = captureCloudOwner(ctx, false)
       if (!currentOwner()) return
+      onInventory?.({ state: "unknown" })
       const [reposAnswer, orgsAnswer] = await Promise.all([
         readAllPages("/user/repos?limit=100", "repos"),
         readAllPages("/user/orgs?limit=100", "orgs")
@@ -292,6 +296,8 @@ export const createRepositoriesSeam = (ctx: SeamContext): RepositoriesSeam => {
         const parsed = parseRepo(entry)
         return parsed === null ? [] : [parsed]
       })
+      onInventory?.(reposAnswer.readable && repos.length === reposAnswer.rows.length
+        ? { state: "known", value: repos.length } : { state: "unknown" })
       const orgLogins = new Set(
         "error" in orgsAnswer
           ? []

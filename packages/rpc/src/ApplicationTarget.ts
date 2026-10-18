@@ -61,7 +61,15 @@ export const ApplicationTargetDocumentSchema = z.object({
   /** Required when a web page deliberately calls a different Plue origin. */
   cors: z.enum(["same-origin", "credentialed"]).default("same-origin"),
   /** Cross-origin Plue is a developer-only topology and must be opted into explicitly. */
-  developerExternal: z.boolean().default(false)
+  developerExternal: z.boolean().default(false),
+  /** Optional public rules reference. Omitted on self-hosted installs. */
+  frontDoor: z.object({
+    repo: z.string().regex(/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/),
+    path: z.string().min(1).max(1024).refine((value) =>
+      !/[\\%:?#\x00-\x1f]/.test(value) &&
+      value.split("/").every((part) => part !== "" && part !== "." && part !== "..")
+    )
+  }).strict().optional()
 }).strict()
 /** A serializable, secret-free runtime target document.
  * @since 1.0.0

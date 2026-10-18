@@ -67,3 +67,16 @@
 .repository-launcher-sign-in {
   align-self: flex-start;
 }
+
+/* Reserve one bounded slot for the visit; late responses never resize it. */
+.repository-launcher-lead {
+  block-size: 9rem;
+  flex-shrink: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sui-space-2, 0.5rem);
+}
+.repository-launcher-lead h2,
+.repository-launcher-lead p { margin: 0; }
