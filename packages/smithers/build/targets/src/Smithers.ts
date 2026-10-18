@@ -218,6 +218,8 @@ export { isFlowDeclaration } from "./Flow.ts"
 /** @category errors @since 1.0.0 */
 export { FlowCatalogError } from "./FlowCatalog.ts"
 /** @category targets @since 1.0.0 */
+export { Judge, judgePolicyOf, Lifecycle } from "./Factory.ts"
+
 export { FactoryProjection } from "./Factory.ts"
 /** @category targets @since 1.0.0 */
 export { TargetIndex } from "./TargetIndex.ts"

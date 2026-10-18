@@ -243,6 +243,8 @@ export type WorkspaceAttr = "packageManager" | "runtime"
 export interface Presentation {
   readonly summary?: string | undefined
   readonly featured?: boolean | undefined
+  /** Captured history requires a summary; omitted means evergreen. */
+  readonly lifecycle?: "evergreen" | "artifact" | undefined
 }
 
 /**
@@ -255,10 +257,11 @@ export interface Presentation {
 export interface DeclaredPresentation {
   readonly summary: string | undefined
   readonly featured: boolean
+  readonly lifecycle?: "evergreen" | "artifact" | undefined
 }
 
 /** The keys a declaration may carry beside its attrs. */
-const presentationKeys: ReadonlySet<string> = new Set(["summary", "featured"])
+const presentationKeys: ReadonlySet<string> = new Set(["summary", "featured", "lifecycle"])
 
 /**
  * Separates the presentation from the attrs of one snapshotted declaration,
@@ -278,7 +281,7 @@ export const splitPresentation = (
     return { attrs: snapshot, presentation: none }
   }
   const record = snapshot as Record<string, unknown>
-  if (!("summary" in record) && !("featured" in record)) return { attrs: snapshot, presentation: none }
+  if (![...presentationKeys].some((key) => key in record)) return { attrs: snapshot, presentation: none }
   const attrs: Record<string, unknown> = {}
   for (const key of Object.keys(record)) {
     if (!presentationKeys.has(key)) ownDataProperty(attrs, key, record[key])
@@ -295,7 +298,14 @@ export const splitPresentation = (
     if (typeof record.featured !== "boolean") return "featured must be a boolean"
     featured = record.featured
   }
-  return { attrs, presentation: { summary, featured } }
+  const lifecycle = record.lifecycle
+  if (lifecycle !== undefined && lifecycle !== "evergreen" && lifecycle !== "artifact") {
+    return "lifecycle must be \"evergreen\" or \"artifact\""
+  }
+  if (lifecycle === "artifact" && summary === undefined) {
+    return "lifecycle: \"artifact\" requires a summary describing the captured behavior"
+  }
+  return { attrs, presentation: { summary, featured, ...(lifecycle === "artifact" ? { lifecycle } : {}) } }
 }
 
 /**
@@ -361,6 +371,7 @@ export interface Metadata {
   readonly summary: string | undefined
   /** Whether the declaration marks the target featured; see {@link Presentation}. */
   readonly featured: boolean
+  readonly lifecycle?: "evergreen" | "artifact" | undefined
   readonly forKind: (kind: Kind) => KindView
 }
 
@@ -1537,6 +1548,7 @@ export const make = <
       sourceFile: declarationSourceFile,
       summary: presentation.summary,
       featured: presentation.featured,
+      ...(presentation.lifecycle === undefined ? {} : { lifecycle: presentation.lifecycle }),
       forKind
     })
     Object.defineProperty(target, TargetTypeId, {
