@@ -10,6 +10,7 @@ import { SharedConversationFailure } from "../seams/SharedConversationSeam"
 import type { ControllerContext } from "./context"
 import type { FailureController } from "./failures"
 import { latestOrdinal } from "./spokenLines"
+import { guestRepository } from "./guestChat"
 
 export interface TurnControllerDependencies {
   readonly settleTurnBilling: () => void
@@ -53,6 +54,7 @@ export const createTurnController = (ctx: ControllerContext, dependencies: TurnC
     const parsed = parseSubmit(text, ctx.commands.all())
     if (parsed.kind === "empty") return
     if (parsed.kind === "prompt") {
+      if (guestRepository(ctx)) return ctx.commands.run("guest.chat", text).then(outcome => outcome.status === "executed")
       // The installed composer uses createSharedPrompts. A runtime without
       // conversation admission must never fall back to browser execution.
       if (store.collections.identitySessions.get("identity")?.state === "signed-out") {

@@ -202,6 +202,7 @@ export const FLOW_NAMES = [
   "chat.reload",
   "chat.retry",
   "chat.send",
+  "guest.chat",
   "stop",
   "cloud.prompt",
   "cloud.sign-in",

@@ -7,6 +7,7 @@ import { projectHome } from "../runtime/HomeProjection"
 import { projectTodoCard } from "../runtime/TodoProjection"
 import { flowArgs } from "../flows/FlowArgs"
 import { createSharedPrompts } from "./controller/sharedPrompts"
+import { createGuestChat, guestRepository } from "./controller/guestChat"
 import { createSharedConversationSeam, type SharedConversationSeam } from "./seams/SharedConversationSeam"
 import { TranscriptOrder } from "./TranscriptOrder"
 import { createChatArchiveSeam, type ArchiveLabel, type ChatArchiveSeam } from "./seams/ChatArchiveSeam"
@@ -236,6 +237,7 @@ export interface AppController extends IssueFlowsController {
   readonly debugReset: () => Promise<string | void>
   readonly stop: () => void
   readonly send: TurnController["send"]
+  readonly askGuest: (text: string) => Promise<boolean>
   readonly enqueuePrompt: (text: string, draftCurrent?: () => boolean) => void
   readonly removeQueuedPrompt: (id: string, edit?: boolean) => void
   readonly restoreQueuedPrompts: () => void
@@ -1979,6 +1981,7 @@ export const createAppController = (
     forwardInboxApprovalDecision
   })
   const sharedPrompts = sharedConversation ? createSharedPrompts(ctx, sharedConversation) : undefined
+  const guestChat = createGuestChat(ctx)
   const promptQueue = createPromptQueueController(ctx, send)
   const decideApproval: typeof decideRunApproval = (id, decision, answer, question) => {
     if (id.startsWith("confirmation:")) {
@@ -2522,8 +2525,9 @@ export const createAppController = (
     debugReset,
     askReset,
     cancelReset,
-    stop: sharedPrompts?.stop ?? stop,
+    stop: () => guestRepository(ctx) ? guestChat.stop() : (sharedPrompts?.stop ?? stop)(),
     send: designSend,
+    askGuest: text => guestChat.submit(text),
     enqueuePrompt: sharedPrompts ? (text, draftCurrent) => { void designSend(text, undefined, draftCurrent) } : enqueuePrompt,
     removeQueuedPrompt: sharedPrompts ? (id, edit) => { void sharedPrompts.remove(id, edit) } : removeQueuedPrompt,
     restoreQueuedPrompts: sharedPrompts?.restore ?? restoreQueuedPrompts,

@@ -14,8 +14,8 @@ import { randomUuid } from "./runtime/RandomUuid"
  * (RepositorySubjectEntry.ts opens them after admission).
  * The landing page's older "Open in Smithers" link lands on `/?repo=owner/name`.
  * The path wins; the parameter is read only at `/`. The name is honoured only
- * when the signed-in inventory or public catalog (GET /api/public/repos)
- * carries it: a catalog row enters the repositories collection
+ * when the signed-in inventory or a direct public repository read
+ * carries it: the public row enters the repositories collection
  * and becomes the active selection, so the first turn is about that
  * repository. The path stays in the address bar, so a reload reselects; the
  * parameter is removed from the URL either way, so a reload does not.
@@ -336,8 +336,8 @@ export const beginRepositoryEntry = (store: AppStore, requested: string | null):
 }
 
 /**
- * Select the requested repository from the signed-in inventory or public catalog. The
- * catalog row joins the repositories collection beside whatever the cloud
+ * Select the requested repository from the signed-in inventory or its public API. The
+ * public row joins the repositories collection beside whatever the cloud
  * inventory already loaded, then `repo.select` makes it the active one.
  * The repository's shared read-only copy (WorkspaceViews.ts)
  * opens its root in the sidebar on this first paint, and the mirror's
@@ -368,16 +368,29 @@ export const openRequestedRepo = async (
     return error
   }
   let catalog: unknown
+  let guest: { sessionId: string; landingId:string; revision: string } | undefined
   try {
-    const response = await http(PUBLIC_REPOS_PATH, { headers: { accept: "application/json" } })
-    if (!response.ok) return finish(`The public repository catalog answered HTTP ${response.status}.`)
-    catalog = await response.json()
+    const path = `/api/repos/${requested.split("/").map(encodeURIComponent).join("/")}`
+    const response = await http(path, { headers: { accept: "application/json" }, credentials: "same-origin" })
+    if (!current()) return
+    if (!response.ok && ![401, 403, 404].includes(response.status)) return finish(`Repository unavailable (HTTP ${response.status}).`)
+    const document = response.ok ? await response.json() as { is_public?: unknown; description?: unknown; full_name?:unknown } : undefined
+    const canonical = typeof document?.full_name === "string" && document.full_name.toLowerCase() === requested.toLowerCase() ? document.full_name : requested
+    catalog = { repos: document?.is_public === true ? [{ name: canonical, summary: document.description }] : [] }
+    if (document?.is_public === true) {
+      // Public readability alone never authorizes sponsored compute.
+      const admission = await http(`/api/repos/${canonical.split("/").map(encodeURIComponent).join("/")}/guest`, { credentials: "same-origin", headers: { accept: "application/json" } }).catch(() => undefined)
+      if (admission?.ok) {
+        const projection = await admission.json().catch(() => undefined) as { allowed?: unknown; sessionId?: unknown; landingId?:unknown; revision?: unknown } | undefined
+        if (projection?.allowed === true && typeof projection.sessionId === "string" && typeof projection.landingId === "string" && typeof projection.revision === "string") guest = { sessionId: projection.sessionId, landingId:projection.landingId, revision: projection.revision }
+      }
+    }
   } catch {
     // A dropped request or an unreadable body: its thrown text is never copy.
-    return finish("The public repository catalog could not be read.")
+    return finish("Repository unavailable.")
   }
   if (!current()) return
-  if (typeof catalog !== "object" || catalog === null || !Array.isArray((catalog as { repos?: unknown }).repos)) return finish("The public repository catalog could not be read.")
+  
   const repository = catalogRepository(catalog, requested)
   if (repository === null) {
     // A URL grants no access. A signed-in user's inventory is the authority
@@ -417,12 +430,12 @@ export const openRequestedRepo = async (
       }
     }
     // App's route welcome names this path and owns its sign-in door.
-    return finish(`${requested} is not in the public repository catalog.`, "not-public",
+    return finish(`${requested} is not available publicly.`, "not-public",
       catalogRepositories(catalog).map(repo => repo.id).filter(id => id.toLowerCase() !== requested.toLowerCase()))
   }
   const { repositories } = controller.store.collections
   const existing = repositories.get(repository.id)
-  if (existing?.catalog !== true) {
+  if (existing?.catalog !== true || JSON.stringify(existing.guest) !== JSON.stringify(guest)) {
     controller.store.dispatch({
       type: "repository.upserted",
       actor: "system",
@@ -432,7 +445,7 @@ export const openRequestedRepo = async (
        * treats it as "no org changesets", never as a fabricated org.
        * `catalog` records where the row came from: readable signed out.
        */
-      repository: { ...existing, ...repository, ownerKind: existing?.ownerKind ?? "user", head: existing?.head ?? null, catalog: true }
+      repository: { ...existing, ...repository, guest, ownerKind: existing?.ownerKind ?? "user", head: existing?.head ?? null, catalog: true }
     })
   }
   if (options.activate === false || options.scope === "command") return finish()

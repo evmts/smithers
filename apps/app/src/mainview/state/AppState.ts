@@ -290,6 +290,8 @@ export const CloudRepositorySchema = z.object({
    * Absent on the signed-in inventory.
    */
   catalog: z.boolean().optional(),
+  /** Server admission for the fixed guest flow; the cookie stays HttpOnly. */
+  guest: z.object({ sessionId: z.string(), landingId:z.string(), revision: z.string() }).optional(),
   /**
    * The catalog's curated one-sentence explanation of the repository, the
    * welcome's source (controller/onboarding.ts). Absent on the signed-in
@@ -1229,6 +1231,8 @@ export const SessionSchema = z.object({
    * sidebar highlights and the name the composer's selector shows.
    */
   activeRepoKey: z.string().nullable().optional(),
+  /** Guests have one transcript namespace per repository session. */
+  guestConversation: z.string().optional(),
   /** An explicit entry URL blocks ambient repository fallback until it resolves. */
   repositoryEntry: RepositoryEntrySchema.nullable().optional(),
   repositoryCommandEntry: RepositoryCommandEntrySchema.optional(),
@@ -1285,8 +1289,8 @@ export type Tab = TabRow extends infer Row ? (Row extends TabRow ? Omit<Row, "or
  * writing where it started, and so a persisted row that carries a `tabId`
  * from an earlier build still parses.
  */
-export const conversationTabIdOf = (session: Pick<Session, "phase" | "turnTabId">): string | undefined =>
-  session.phase === "responding" ? session.turnTabId ?? undefined : undefined
+export const conversationTabIdOf = (session: Pick<Session, "phase" | "turnTabId" | "guestConversation">): string | undefined =>
+  session.phase === "responding" ? session.turnTabId ?? undefined : session.guestConversation
 
 /** Whether a row (message or card) belongs to the given conversation. */
 export const inConversation = (row: { readonly tabId?: string | undefined }, tabId: string | undefined): boolean =>
@@ -1483,7 +1487,7 @@ type AppTransitionBody =
   | { type: "prompt.removed"; actor: "user"; id: string; edit?: boolean }
   | { type: "prompt.queue.paused"; actor: Actor; paused: boolean }
   | { type: "composer.changed"; actor: Actor; draft: string; recoveryScope?: PendingRecoveryScope }
-  | { type: "chat.sign-in.required"; actor: "system"; draft: string; provider: "github" | "local"; turnId?: string; attemptId?: string }
+  | { type: "chat.sign-in.required"; actor: "system"; draft: string; provider: "github" | "local"; turnId?: string; attemptId?: string; failed?:boolean }
   | { type: "message.submitted"; actor: "user" | "smithers"; turnId: string; text: string; preserveDraft?: boolean }
   | {
     type: "message.response.delta"
@@ -2010,7 +2014,7 @@ type AppTransitionBody =
   | {
     type: "repository.upserted"
     actor: "system"
-    repository: Pick<CloudRepository, "id" | "org" | "ownerKind" | "name" | "head" | "catalog" | "summary" | "issueTracker">
+    repository: Pick<CloudRepository, "id" | "org" | "ownerKind" | "name" | "head" | "catalog" | "summary" | "issueTracker" | "guest">
   }
   | {
     type: "workingcopies.workspaces.loaded"

@@ -36,6 +36,10 @@ const catalog = {
   ]
 }
 
+const publicDocument = { is_public: true, full_name: "smithersai/smithers", description: SUMMARY }
+const publicHTTP = async (input: RequestInfo | URL) => String(input).toLowerCase() === "/api/repos/smithersai/smithers"
+  ? jsonResponse(publicDocument) : jsonResponse({}, 404)
+
 const jsonResponse = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
 
@@ -88,14 +92,14 @@ describe("public catalog suggestions", () => {
     }
   })
 
-  test("a missing route retains only the current catalog's valid alternatives without selecting one", async () => {
+  test("a missing direct repository read selects nothing and invents no catalog alternatives", async () => {
     const { store, controller } = await fixture()
     try {
       expect(await openRequestedRepo(controller, async () => jsonResponse({ repos: [
         { name: "Live/Mirror" }, { name: "live/mirror" }, { name: "../secret" }
-      ] }), "smithersai/smithers")).toBe("smithersai/smithers is not in the public repository catalog.")
+      ] }), "smithersai/smithers")).toBe("smithersai/smithers is not available publicly.")
       expect(store.session().repositoryEntry).toMatchObject({
-        repo: "smithersai/smithers", phase: "failed", failureKind: "not-public", publicRepositories: ["Live/Mirror"]
+        repo: "smithersai/smithers", phase: "failed", failureKind: "not-public", publicRepositories: []
       })
       expect(store.session().activeRepoKey ?? null).toBeNull()
       expect(store.collections.repositories.size).toBe(0)
@@ -117,7 +121,7 @@ describe("public catalog suggestions", () => {
       oldCatalog.resolve(jsonResponse({ repos: [{ name: "retired/mirror" }] }))
       await earlier
       expect(store.session().repositoryEntry).toEqual(current)
-      expect(store.session().repositoryEntry?.publicRepositories).toEqual(["current/mirror"])
+      expect(store.session().repositoryEntry?.publicRepositories).toEqual([])
     } finally {
       oldCatalog.resolve(jsonResponse({ repos: [] }))
       await earlier
@@ -335,10 +339,9 @@ describe("openRequestedRepo", () => {
     const { store, controller } = await fixture()
     const old = Promise.withResolvers<Response>(), fresh = Promise.withResolvers<Response>()
     const oldStarted = Promise.withResolvers<void>(), freshStarted = Promise.withResolvers<void>()
-    const http = (reply: typeof old, started: typeof oldStarted) => async (input: RequestInfo | URL) => {
-      if (String(input) === "/api/public/repos") return jsonResponse(catalog)
+    const http = (reply: typeof old, started: typeof oldStarted) => async (_input: RequestInfo | URL) => {
       started.resolve()
-      return reply.promise
+      return reply.promise.then(response => response.clone())
     }
     const earlier = openRequestedRepo(controller, http(old, oldStarted), "smithersai/smithers")
     await oldStarted.promise
@@ -346,11 +349,11 @@ describe("openRequestedRepo", () => {
     await freshStarted.promise
     try {
       const before = await store.eventHistory()
-      old.resolve(jsonResponse({ default_bookmark: "retired" }))
+      old.resolve(jsonResponse({ ...publicDocument, default_bookmark: "retired" }))
       await earlier
       expect((await store.eventHistory()).head).toEqual(before.head)
-      expect(store.collections.repositories.get("smithersai/smithers")?.head).toBeNull()
-      fresh.resolve(jsonResponse({ default_bookmark: "current" }))
+      expect(store.collections.repositories.get("smithersai/smithers")?.head ?? null).toBeNull()
+      fresh.resolve(jsonResponse({ ...publicDocument, default_bookmark: "current" }))
       await current
       expect(store.collections.repositories.get("smithersai/smithers")?.head?.bookmark).toBe("current")
       expect(store.collections.workingCopies.get("shared:smithersai/smithers")?.bookmark).toBe("current")
@@ -361,31 +364,30 @@ describe("openRequestedRepo", () => {
     }
   })
 
-  test("a bookmark response respects a retired caller after its repository entry is ready", async () => {
+  test("a repository response respects a retired caller while its entry is pending", async () => {
     const { store, controller } = await fixture()
     let owned = true
     const reply = Promise.withResolvers<Response>(), started = Promise.withResolvers<void>()
-    const opening = openRequestedRepo(controller, async input => {
-      if (String(input) === "/api/public/repos") return jsonResponse(catalog)
+    const opening = openRequestedRepo(controller, async _input => {
       started.resolve()
-      return reply.promise
+      return reply.promise.then(response => response.clone())
     }, "smithersai/smithers", undefined, { isCurrent: () => owned })
     try {
       await started.promise
-      expect(store.session().repositoryEntry?.phase).toBe("ready")
+      expect(store.session().repositoryEntry?.phase).toBe("pending")
       owned = false
       const before = await store.eventHistory()
-      reply.resolve(jsonResponse({ default_bookmark: "retired" }))
+      reply.resolve(jsonResponse({ ...publicDocument, default_bookmark: "retired" }))
       await opening
       expect((await store.eventHistory()).head).toEqual(before.head)
-      expect(store.collections.repositories.get("smithersai/smithers")?.head).toBeNull()
+      expect(store.collections.repositories.get("smithersai/smithers")?.head ?? null).toBeNull()
       expect(store.collections.workingCopies.get("shared:smithersai/smithers")?.bookmark).toBeUndefined()
     } finally { reply.resolve(jsonResponse({})); await opening; await store.dispose?.() }
   })
 
   test("an unresolved URL blocks the saved selection and lone-repository fallback without blocking explicit targets", async () => {
     const { store, controller } = await fixture()
-    await openRequestedRepo(controller, async () => jsonResponse(catalog), "smithersai/smithers")
+    await openRequestedRepo(controller, publicHTTP, "smithersai/smithers")
     let answer!: (response: Response) => void
     const catalogRead = new Promise<Response>(resolve => { answer = resolve })
     const opening = openRequestedRepo(controller, () => catalogRead, "missing/repository")
@@ -393,18 +395,18 @@ describe("openRequestedRepo", () => {
     expect(store.collections.repositories.size).toBe(1)
     expect(resolveTargetRepo(store, undefined)).toEqual({ error: "Opening missing/repository. Try again when it is ready." })
     expect(resolveTargetRepo(store, "smithersai/smithers")).toEqual({ repo: "smithersai/smithers" })
-    answer(jsonResponse(catalog))
+    answer(jsonResponse({}, 404))
     const refusal = await opening
-    expect(refusal).toBe("missing/repository is not in the public repository catalog.")
-    expect(resolveTargetRepo(store, undefined)).toEqual({ error: "missing/repository is not in the public repository catalog." })
+    expect(refusal).toBe("missing/repository is not available publicly.")
+    expect(resolveTargetRepo(store, undefined)).toEqual({ error: "missing/repository is not available publicly." })
     expect(resolveTargetRepo(store, "smithersai/smithers")).toEqual({ repo: "smithersai/smithers" })
   })
 
   test("a failed catalog read cannot revive a previous selection, and a root entry clears the URL constraint", async () => {
     const { store, controller } = await fixture()
-    await openRequestedRepo(controller, async () => jsonResponse(catalog), "smithersai/smithers")
+    await openRequestedRepo(controller, publicHTTP, "smithersai/smithers")
     await openRequestedRepo(controller, async () => jsonResponse({}, 503), "missing/repository")
-    expect(resolveTargetRepo(store, undefined)).toEqual({ error: "The public repository catalog answered HTTP 503." })
+    expect(resolveTargetRepo(store, undefined)).toEqual({ error: "Repository unavailable (HTTP 503)." })
     beginRepositoryEntry(store, null)
     expect(store.session().repositoryEntry).toBeNull()
     expect(resolveTargetRepo(store, undefined)).toEqual({ repo: "smithersai/smithers" })
@@ -413,7 +415,7 @@ describe("openRequestedRepo", () => {
   test("a thrown catalog read answers a product sentence, never the thrown text", async () => {
     const { store, controller } = await fixture()
     const refusal = await openRequestedRepo(controller, async () => { throw new TypeError("ECONNRESET secret-socket-detail") }, "smithersai/smithers")
-    expect(refusal).toBe("The public repository catalog could not be read.")
+    expect(refusal).toBe("Repository unavailable.")
     expect(JSON.stringify(store.session().repositoryEntry)).not.toContain("secret-socket-detail")
   })
 
@@ -422,8 +424,8 @@ describe("openRequestedRepo", () => {
     let answer!: (response: Response) => void
     const catalogRead = new Promise<Response>(resolve => { answer = resolve })
     const earlier = openRequestedRepo(controller, () => catalogRead, "smithersai/smithers")
-    await openRequestedRepo(controller, async () => jsonResponse(catalog), "missing/repository")
-    answer(jsonResponse(catalog))
+    await openRequestedRepo(controller, publicHTTP, "missing/repository")
+    answer(jsonResponse({}, 404))
     await earlier
     expect(store.session().activeRepoKey).toBeNull()
     expect(store.session().repositoryEntry).toMatchObject({ repo: "missing/repository", phase: "failed" })
@@ -437,20 +439,20 @@ describe("openRequestedRepo", () => {
     const requestId = beginRepositoryEntry(store, "smithersai/smithers")
     expect(store.session().activeRepoKey).toBeNull()
     expect(resolveTargetRepo(store, undefined)).toHaveProperty("error")
-    await openRequestedRepo(controller, async () => jsonResponse(catalog), "smithersai/smithers", requestId)
+    await openRequestedRepo(controller, publicHTTP, "smithersai/smithers", requestId)
     expect(store.session().repositoryEntry).toMatchObject({ requestId, phase: "ready" })
     expect(resolveTargetRepo(store, undefined)).toEqual({ repo: "smithersai/smithers" })
   })
 
   test("reopening the repository URL keeps its selected cloud computer", async () => {
     const { store, controller } = await fixture()
-    await openRequestedRepo(controller, async () => jsonResponse(catalog), "smithersai/smithers")
+    await openRequestedRepo(controller, publicHTTP, "smithersai/smithers")
     await store.dispatch({ type: "workspace.updated", actor: "system", workspace: {
       id: "coding", repoId: "smithersai/smithers", name: "Coding", status: "running", targetBookmark: "main",
       provisioningStage: null, suspendedAt: null, createdAt: null, head: null
     } }).isPersisted.promise
     await controller.selectRepo("smithersai/smithers#workspace:coding")
-    await openRequestedRepo(controller, async () => jsonResponse(catalog), "smithersai/smithers")
+    await openRequestedRepo(controller, publicHTTP, "smithersai/smithers")
     expect(store.session().activeRepoKey).toBe("smithersai/smithers#workspace:coding")
   })
 
@@ -459,11 +461,11 @@ describe("openRequestedRepo", () => {
     const requests: Array<string> = []
     const http = async (input: RequestInfo | URL) => {
       requests.push(String(input))
-      return jsonResponse(catalog)
+      return jsonResponse(publicDocument)
     }
     expect(await openRequestedRepo(controller, http, "SmithersAI/Smithers")).toBeUndefined()
     // The catalog, then the mirror's repository document for the shared copy's bookmark.
-    expect(requests).toEqual(["/api/public/repos", "/api/repos/smithersai/smithers"])
+    expect(requests).toEqual(["/api/repos/SmithersAI/Smithers", "/api/repos/smithersai/smithers/guest", "/api/repos/smithersai/smithers"])
     expect(store.session().activeRepoKey).toBe("smithersai/smithers")
     expect(store.collections.repositories.get("smithersai/smithers")).toMatchObject({
       org: "smithersai",
@@ -489,10 +491,10 @@ describe("openRequestedRepo", () => {
     const requests: Array<string> = []
     const http = async (input: RequestInfo | URL) => {
       requests.push(String(input))
-      return String(input) === "/api/repos/smithersai/smithers" ? jsonResponse({ default_bookmark: "main" }) : jsonResponse(catalog)
+      return String(input) === "/api/repos/smithersai/smithers" ? jsonResponse({ ...publicDocument, default_bookmark: "main" }) : jsonResponse(publicDocument)
     }
     expect(await openRequestedRepo(controller, http, "smithersai/smithers")).toBeUndefined()
-    expect(requests).toEqual(["/api/public/repos", "/api/repos/smithersai/smithers"])
+    expect(requests).toEqual(["/api/repos/smithersai/smithers", "/api/repos/smithersai/smithers/guest", "/api/repos/smithersai/smithers"])
     expect(store.collections.repositories.get("smithersai/smithers")?.head).toEqual({ bookmark: "main", changeId: null, commitId: null })
     expect(store.collections.workingCopies.get("shared:smithersai/smithers")).toMatchObject({ kind: "shared", access: "read", bookmark: "main" })
     expect(ran).toEqual(['files {"operation":"tree","copy":"shared:smithersai/smithers"}'])
@@ -505,16 +507,16 @@ describe("openRequestedRepo", () => {
   test("a mirror that answers no bookmark leaves the row's head alone: nothing invented", async () => {
     const { store, controller } = await fixture()
     const http = async (input: RequestInfo | URL) =>
-      String(input) === "/api/repos/smithersai/smithers" ? jsonResponse({ message: "unavailable" }, 502) : jsonResponse(catalog)
+      String(input) === "/api/repos/smithersai/smithers" ? jsonResponse(publicDocument) : jsonResponse({}, 403)
     expect(await openRequestedRepo(controller, http, "smithersai/smithers")).toBeUndefined()
-    expect(store.collections.repositories.get("smithersai/smithers")?.head).toBeNull()
+    expect(store.collections.repositories.get("smithersai/smithers")?.head ?? null).toBeNull()
     expect(store.collections.workingCopies.get("shared:smithersai/smithers")?.bookmark).toBeUndefined()
   })
 
   test("a name outside the catalog is refused and selects nothing", async () => {
     const { store, controller, ran } = await fixture()
-    const refusal = await openRequestedRepo(controller, async () => jsonResponse(catalog), "someone/else")
-    expect(refusal).toBe("someone/else is not in the public repository catalog.")
+    const refusal = await openRequestedRepo(controller, publicHTTP, "someone/else")
+    expect(refusal).toBe("someone/else is not available publicly.")
     expect(store.session().activeRepoKey ?? null).toBeNull()
     expect(store.collections.repositories.size).toBe(0)
     expect(ran).toEqual([]) // The route shell owns the single prompt naming the requested path.
@@ -523,7 +525,7 @@ describe("openRequestedRepo", () => {
   test("an unreachable catalog is a refusal, not a selection", async () => {
     const { store, controller } = await fixture()
     expect(await openRequestedRepo(controller, async () => jsonResponse({}, 503), "smithersai/smithers")).toMatch(/HTTP 503/)
-    expect(await openRequestedRepo(controller, async () => { throw new Error("offline") }, "smithersai/smithers")).toBe("The public repository catalog could not be read.")
+    expect(await openRequestedRepo(controller, async () => { throw new Error("offline") }, "smithersai/smithers")).toBe("Repository unavailable.")
     expect(store.session().activeRepoKey ?? null).toBeNull()
   })
 
@@ -550,7 +552,7 @@ describe("openRequestedRepo", () => {
     })
     const before = structuredClone(store.collections.repositories.get("acme/widgets"))
     const http = async (input: RequestInfo | URL) =>
-      String(input) === "/api/repos/smithersai/smithers" ? jsonResponse({ default_bookmark: "main" }) : jsonResponse(catalog)
+      String(input) === "/api/repos/smithersai/smithers" ? jsonResponse({ ...publicDocument, default_bookmark: "main" }) : jsonResponse(publicDocument)
     expect(await openRequestedRepo(controller, http, "smithersai/smithers")).toBeUndefined()
     // Neither the catalog row's insert nor the mirror bookmark's landing touches it.
     expect(structuredClone(store.collections.repositories.get("acme/widgets"))).toEqual(before)
@@ -570,7 +572,7 @@ describe("openRequestedRepo", () => {
       actor: "system",
       repositories: [{ id: "acme/widgets", org: "acme", ownerKind: "org", name: "widgets", head: null }]
     })
-    await openRequestedRepo(controller, async () => jsonResponse(catalog), "smithersai/smithers")
+    await openRequestedRepo(controller, publicHTTP, "smithersai/smithers")
     expect([...store.collections.repositories.keys()].sort()).toEqual(["acme/widgets", "smithersai/smithers"])
     expect(store.collections.repositories.get("acme/widgets")?.ownerKind).toBe("org")
     expect(store.session().activeRepoKey).toBe("smithersai/smithers")
@@ -592,7 +594,7 @@ test("a signed-in repository URL waits for the user's inventory, selects its row
     loaded = true
     store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: "codeplanesmithers/canary-sandbox", org: "codeplanesmithers", name: "canary-sandbox", ownerKind: "user", head: null }] })
   }
-  expect(await openRequestedRepo(controller, async () => jsonResponse(catalog), "CodePlaneSmithers/Canary-Sandbox")).toBeUndefined()
+  expect(await openRequestedRepo(controller, publicHTTP, "CodePlaneSmithers/Canary-Sandbox")).toBeUndefined()
   expect(loaded).toBe(true)
   expect(store.session().activeRepoKey).toBe("codeplanesmithers/canary-sandbox")
   expect(store.collections.repositories.get("codeplanesmithers/canary-sandbox")?.catalog).not.toBe(true)
@@ -603,7 +605,7 @@ test("a signed-in catalog visitor keeps the shared tree without waiting on priva
   const { store, controller, ran } = await fixture()
   store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "codeplanesmithers", admin: false, scopesPlain: null })
   controller.loadRepositories = async () => { throw new Error("private inventory unavailable") }
-  expect(await openRequestedRepo(controller, async () => jsonResponse(catalog), "smithersai/smithers")).toBeUndefined()
+  expect(await openRequestedRepo(controller, publicHTTP, "smithersai/smithers")).toBeUndefined()
   expect(store.session().activeRepoKey).toBe("smithersai/smithers")
   expect(ran).toEqual(['files {"operation":"tree","copy":"shared:smithersai/smithers"}'])
 })
@@ -611,7 +613,7 @@ test("a signed-in catalog visitor keeps the shared tree without waiting on priva
 
 test("a late private inventory refresh retains the URL's public repository and shared tree", async () => {
   const { store, controller } = await fixture()
-  await openRequestedRepo(controller, async () => jsonResponse(catalog), "smithersai/smithers")
+  await openRequestedRepo(controller, publicHTTP, "smithersai/smithers")
   await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [
     { id: "codeplanesmithers/canary-sandbox", org: "codeplanesmithers", name: "canary-sandbox", ownerKind: "user", head: null }
   ] }).isPersisted.promise
@@ -625,7 +627,7 @@ test("opening a public URL records catalog provenance even when private inventor
   await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [
     { id: "smithersai/smithers", org: "smithersai", name: "smithers", ownerKind: "org", head: null }
   ] }).isPersisted.promise
-  await openRequestedRepo(controller, async () => jsonResponse(catalog), "smithersai/smithers")
+  await openRequestedRepo(controller, publicHTTP, "smithersai/smithers")
   await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [] }).isPersisted.promise
   expect(store.collections.repositories.get("smithersai/smithers")).toMatchObject({ catalog: true, ownerKind: "org" })
 })
@@ -646,7 +648,7 @@ for (const search of ["?tutorial", "?tutorial=", "?repo=a/b&tutorial&tab=issues"
 test("a narrow repository entry opens the file tree, the repository's default view", async () => {
   const { controller, store, ran } = await fixture()
   try {
-    const refusal = await openRequestedRepo(controller, async () => jsonResponse(catalog), "smithersai/smithers")
+    const refusal = await openRequestedRepo(controller, publicHTTP, "smithersai/smithers")
     expect(refusal).toBeUndefined()
     expect(store.session().activeRepoKey).toBe("smithersai/smithers")
     expect(store.session().repositoryEntry?.phase).toBe("ready")
@@ -700,7 +702,7 @@ describe("the App coverage a signed-in URL miss records", () => {
       expect(store.collections.githubAppStatuses.get("ada/widgets")).toMatchObject({
         repo: "ada/widgets", installed: true, configured: true, installationId: 42, installUrl: INSTALL_URL
       })
-      expect(asked).toEqual(["/api/public/repos", "/api/user/github-access/ada/widgets?surface=issues"])
+      expect(asked).toEqual(["/api/repos/ada/widgets", "/api/user/github-access/ada/widgets?surface=issues"])
     } finally { await store.dispose?.() }
   })
 
@@ -742,7 +744,7 @@ describe("the App coverage a signed-in URL miss records", () => {
     try {
       const refusal = await openRequestedRepo(controller, route(jsonResponse({ install_url: INSTALL_URL,
         repos: [{ fullName: "Ada/Widgets", installationId: 42 }] })), "ada/widgets")
-      expect(refusal).toBe("ada/widgets is not in the public repository catalog.")
+      expect(refusal).toBe("ada/widgets is not available publicly.")
       expect(store.collections.githubAppStatuses.get("ada/widgets")).toMatchObject({
         repo: "ada/widgets", installed: true, configured: true, installationId: 42, installUrl: INSTALL_URL
       })
@@ -774,7 +776,7 @@ describe("the App coverage a signed-in URL miss records", () => {
     const asked: Array<string> = []
     try {
       await openRequestedRepo(controller, route(jsonResponse({ repos: [] }), asked), "ada/widgets")
-      expect(asked).toEqual(["/api/public/repos"])
+      expect(asked).toEqual(["/api/repos/ada/widgets"])
       expect(store.collections.githubAppStatuses.size).toBe(0)
     } finally { await store.dispose?.() }
   })
@@ -807,7 +809,7 @@ describe("the App coverage a signed-in URL miss records", () => {
     const asked: Array<string> = []
     try {
       await openRequestedRepo(controller, route(jsonResponse({ repos: [] }), asked), "ada/widgets", undefined, { scope: "command" })
-      expect(asked).toEqual(["/api/public/repos"])
+      expect(asked).toEqual(["/api/repos/ada/widgets"])
       expect(store.collections.githubAppStatuses.size).toBe(0)
     } finally { await store.dispose?.() }
   })

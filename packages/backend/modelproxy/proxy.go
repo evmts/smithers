@@ -51,6 +51,9 @@ type Handler struct {
 	// Upstreams overrides a provider's origin (UpstreamsEnv).
 	Upstreams map[string]string
 	Client    *http.Client
+	// CancelWithCaller is for bounded sponsored guest calls: disconnects and
+	// the operator switch cancel upstream while the reservation stays charged.
+	CancelWithCaller bool
 	// MaxBodyBytes caps the request body; 0 means 16 MiB.
 	MaxBodyBytes int64
 	// OwnerPaid serves an install's own keys (engineering spec §15.2.1): the owner
@@ -206,9 +209,20 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return result, err
 		})
 		if answered {
+			if caller.Source == "guest" {
+				slog.Info("guest model call", "provider", provider, "model", parsed.model, "status", result.Status,
+					"outcome", string(result.Outcome), "reservation_id", caller.Reference)
+				return
+			}
 			slog.Info("owner model call", "provider", provider, "path", path, "model", parsed.model, "status", result.Status,
 				"outcome", string(result.Outcome), "input_tokens", result.Usage.InputTokens, "output_tokens", result.Usage.OutputTokens,
 				"source", caller.Source, "reference", caller.Reference, "workspace_id", caller.WorkspaceID, "error", err)
+			return
+		}
+		var refusal interface{ ModelRefusal() (int, string, string) }
+		if errors.As(err, &refusal) {
+			status, code, message := refusal.ModelRefusal()
+			WriteError(w, provider, status, code, message)
 			return
 		}
 		if errors.Is(err, ErrDailyTokenBudget) {
@@ -279,7 +293,11 @@ func (h *Handler) forward(ctx context.Context, w http.ResponseWriter, r *http.Re
 	if override, ok := h.Upstreams[provider]; ok {
 		upstream = override
 	}
-	upstreamCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), upstreamTimeout)
+	base := context.WithoutCancel(ctx)
+	if h.CancelWithCaller {
+		base = ctx
+	}
+	upstreamCtx, cancel := context.WithTimeout(base, upstreamTimeout)
 	defer cancel()
 	var written atomic.Bool
 	upstreamCtx = httptrace.WithClientTrace(upstreamCtx, &httptrace.ClientTrace{

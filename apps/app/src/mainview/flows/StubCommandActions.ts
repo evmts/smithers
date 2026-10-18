@@ -24,6 +24,7 @@ export const stubCommandActions = (overrides: Partial<CommandActions> = {}): Com
   debugReset: unexpected,
   stop: unexpected,
   send: unexpected,
+  askGuest: unexpected,
   enqueuePrompt: unexpected,
   removeQueuedPrompt: unexpected,
   restoreQueuedPrompts: unexpected,

@@ -446,8 +446,15 @@ func defaultRouter(gitHandler *routes.GitSmartHandler, lfsHandlers ...*routes.LF
 	if len(lfsHandlers) > 0 {
 		lfsHandler = lfsHandlers[0]
 	}
+	return defaultRouterForConfig(testConfigAllFlagsOn(), gitHandler, lfsHandler)
+}
+
+func defaultRouterForConfig(cfg *config.Config, gitHandler *routes.GitSmartHandler, lfsHandler *routes.LFSHandler) http.Handler {
+	if gitHandler == nil {
+		gitHandler = &routes.GitSmartHandler{Service: &mockRouterGitService{}}
+	}
 	return buildRouterCompat(
-		testConfigAllFlagsOn(),
+		cfg,
 		nil,
 		nil, // pool
 		&routes.RepoHandler{},

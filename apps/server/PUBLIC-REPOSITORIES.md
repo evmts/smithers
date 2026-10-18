@@ -114,35 +114,28 @@ sign-in requirements are independent of this API policy.
 
 ## Anonymous turns
 
-A signed-out visitor at `https://smithers.sh/smithersai/smithers` talks to
-Smithers about that repository without an account. `POST /api/agent/turn`
-admits a request with no valid session only when the turn's runtime context
-names a catalog repository (`context.activeRepository`, the selection the
-`/owner/name` path made); any other such turn keeps its `401` sign-in
-refusal. The turn carries no login, so the chat upstream meters it to the
-deployment and it never reaches a user's billing account.
+The shared backend serves sponsored guest chat in both install compositions.
+Public readability does not grant compute. `SMITHERS_GUEST_REPOSITORIES` is an
+operator allowlist, empty by default. `GET /api/repos/{owner}/{repo}/guest`
+returns admission and a repo-scoped HttpOnly session cookie only for an
+allowlisted public repository. The app invokes the fixed `guest.chat` flow at
+`POST /api/repos/{owner}/{repo}/guest/chat`; it streams a text-only answer with
+main-tip app instructions after the built-in instructions. Guests are never
+users or roster members and receive no tools, workspace, secrets or writes.
 
-Anonymous turns spend from two buckets in the same `TURN_LIMITS` Durable
-Object as the per-login ceiling, and either refuses. One is keyed by a
-salted SHA-256 of the client address (`cf-connecting-ip`, salted with the
-`ANONYMOUS_TURN_SALT` secret; an IPv6 address is masked to its /64 first, so
-one visitor's allocation is one bucket) with a ceiling of
-`ANONYMOUS_TURN_MAX` turns per day. The other is the deployment-wide
-`anonymous:all` bucket with a ceiling of `ANONYMOUS_ALL_TURN_MAX` turns per
-day (`turnLimit.ts`), which caps what exploring can cost when a caller
-rotates addresses. The refusal is the existing `429 turn_rate_limited`
-response, worded to name sign-in as the way to keep going. `POST /api/agent/turn/cancel` answers the same
-callers too, because cancelling spends nothing and an owned turn refuses
-anyone but its owner.
+The backend atomically reserves priced input/output cost before dispatch.
+Defaults are $0.10/request, $100/UTC day, $500 for the configured launch window,
+and ten requests/IP/UTC day. Unknown pricing, exhausted limits, disabled access
+and missing guest sessions refuse with a sign-in prompt. Duplicate keys never
+buy another call, and uncertain calls retain their reservation after disconnect
+or restart. The operator can suspend admissions and cancel active calls through
+`PUT /api/admin/guest`. A 50% daily alert is a durable notification record;
+delivery is separate.
 
-The model's tool calls run in the browser, against this Worker. What a
-signed-out turn can therefore reach is exactly the anonymous surface above:
-the public repository reads. The model relay (`/api/model/stream`), the
-workflow seam, the browser tool, and every write method through the
-platform proxy still answer `401` without a session. In the web app the
-visitor's file reads (`files.list`, `files.read`) are open on the selected
-catalog repository; every flow that writes keeps its sign-in requirement and
-renders the sign-in step instead.
+The Worker forwards these requests and streams responses. The retired
+`/api/agent/turn`, `TURN_LIMITS`, anonymous turn environment variables and
+browser-executed model tools do not implement this policy. See the shared
+backend's [guest design and operator runbook](../../packages/backend/docs/guest-chat.md).
 
 ## Checks
 

@@ -340,8 +340,9 @@ func buildLogAttrs(r *http.Request, lrw *loggingResponseWriter, latency time.Dur
 		slog.String("latency", formatLatency(latency)),
 	)
 
-	// Add remote IP if available
-	if remoteIP := r.RemoteAddr; remoteIP != "" {
+	// Guest correlation emits a keyed hash at its own boundary; never repeat
+	// its raw peer address in the shared access log.
+	if remoteIP := r.RemoteAddr; remoteIP != "" && !strings.Contains(r.URL.Path, "/guest") {
 		httpRequestAttrs = append(httpRequestAttrs, slog.String("remoteIp", remoteIPFromAddr(remoteIP)))
 	}
 

@@ -1427,7 +1427,8 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
             if (turn?.status !== "active" || turn.turnId !== transition.turnId) return
             reduce({ type: "http.turn.interrupted", actor: "system", attemptId: turn.id, status: "failed", detail: "Sign in required.", silent: true }, 0)
           } else if (transition.turnId !== undefined) {
-            reduce({ type: "message.response.completed", actor: "smithers", turnId: transition.turnId }, 0)
+            reduce(transition.failed ? { type:"message.response.failed",actor:"system",turnId:transition.turnId,message:"Sign in to continue." }
+              : { type: "message.response.completed", actor: "smithers", turnId: transition.turnId }, 0)
           }
           // The refusal and both recovery outputs share one durable receipt.
           if (current.draft === "" && transition.draft !== "") {
@@ -2799,6 +2800,7 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
         case "identity.session.loaded": {
           const existing = collections.identitySessions.get("identity")
           if (existing === undefined) return
+          if (transition.state === "signed-in") collections.sessions.update(SESSION_ID,draft => { delete draft.guestConversation })
           // Availability is transient; ownership lasts until a definitive answer.
           // Legacy signed-in rows still name their owner. A legacy outage has
           // lost that name, so undefined conservatively means unknown owner.
@@ -3272,6 +3274,9 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
             })
           }
           settleSignupRepo(true)
+          if (current.activeRepoKey && parseRepoSelection(current.activeRepoKey)?.repoId===repository.id && collections.identitySessions.get("identity")?.state==="signed-out") {
+            collections.sessions.update(SESSION_ID,draft => { draft.guestConversation=repository.guest ? `guest:${repository.id}:${repository.guest.sessionId}` : undefined })
+          }
           break
         }
         case "workingcopies.workspaces.loaded": {
@@ -3504,6 +3509,8 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           ) return
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.activeRepoKey = transition.id
+            const guest=collections.repositories.get(selection.repoId)?.guest
+            draft.guestConversation=collections.identitySessions.get("identity")?.state==="signed-out" && guest ? `guest:${selection.repoId}:${guest.sessionId}` : undefined
           })
           break
         }

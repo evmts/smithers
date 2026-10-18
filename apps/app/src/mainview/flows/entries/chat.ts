@@ -38,6 +38,9 @@ export const chatFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
     }
   }
   return [
+  flow({ name: "guest.chat", summary: "Ask this repository", args: "<text>",
+    agent: "run", input: Schema.Struct({ text: Schema.String }),
+    handler: async ({ text }) => { await actions.askGuest(text) } }),
   flow({
     /*
      * The three surface switches (chat, world, connect) are the app's own top

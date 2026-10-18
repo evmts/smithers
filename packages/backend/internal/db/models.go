@@ -990,6 +990,23 @@ type GithubWebhookJob struct {
 	UpdatedAt          time.Time          `json:"updated_at"`
 }
 
+type GuestReservation struct {
+	ID           string             `json:"id"`
+	RepositoryID int64              `json:"repository_id"`
+	SponsorID    int64              `json:"sponsor_id"`
+	SessionHash  string             `json:"session_hash"`
+	IpHash       string             `json:"ip_hash"`
+	RequestKey   string             `json:"request_key"`
+	LandingID    string             `json:"landing_id"`
+	Revision     string             `json:"revision"`
+	Model        string             `json:"model"`
+	BoundNanos   int64              `json:"bound_nanos"`
+	ChargedNanos int64              `json:"charged_nanos"`
+	State        string             `json:"state"`
+	CreatedAt    time.Time          `json:"created_at"`
+	FinishedAt   pgtype.Timestamptz `json:"finished_at"`
+}
+
 type ImportJob struct {
 	ID                       string             `json:"id"`
 	UserID                   int64              `json:"user_id"`

@@ -40,6 +40,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/database"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/email"
+	"github.com/smithersai/smithers/packages/backend/internal/guest"
 	"github.com/smithersai/smithers/packages/backend/internal/identity"
 	"github.com/smithersai/smithers/packages/backend/internal/lfsauth"
 	"github.com/smithersai/smithers/packages/backend/internal/live"
@@ -2012,6 +2013,12 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	sshKeyService.SetRevocationPublisher(revocationPublisher)
 	deployKeyService.SetRevocationPublisher(revocationPublisher)
 	publicCatalog := routes.NewPublicRepositoryCatalog(queries)
+	guestKeys, _ := options.proxyKeys()
+	guestChat := &guest.Handler{DB: pool, Config: cfg.Guest, Keys: guestKeys,
+		Source: guestRepositorySource{queries: queries, host: repoHostClient}, Upstreams: options.ModelProxyUpstreams, CookieSecure: cfg.Auth.CookieSecure}
+	if err := guestChat.Validate(); options.topology.servesHTTP() && err != nil {
+		return fmt.Errorf("initialize guest chat: %w", err)
+	}
 	// Every platform-key model call is charged in the deployment's ledger,
 	// so a first call creates the account with its signup grant.
 	modelLedger := credits.Ledger{DB: pool}
@@ -2428,6 +2435,9 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		// multi-user deployment, so hosted readers come through this one
 		// (#4032). Same monitors, same checkpoint authority.
 		mountRepositoryRunMonitors(router, cfg, queries, monitors)
+	}
+	if options.topology.servesHTTP() {
+		mountGuestPublic(router, guestChat, queries, cfg)
 	}
 	var modelTests *modelhost.OwnerModels
 	if chatService != nil && options.topology.servesHTTP() {

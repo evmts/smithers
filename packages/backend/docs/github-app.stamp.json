@@ -5,7 +5,7 @@
     "path": "packages/backend/docs/github-app.md",
     "digest": "6bbc95f21027cf379cdaa49535cc5d831546f6d23fa75681342a4607aac54fbc"
   },
-  "closure": "48c607cd68a7aea5709fa4bfe15babc02a848291861373610b308cf5523ce562",
+  "closure": "34598b5fbd498423a897763dcc8b76d8b97266e6ea02c96ff7ea6eaaaf129bc3",
   "inputs": [
     {
       "path": "docs/api/openapi/install.yaml",
@@ -49,7 +49,7 @@
     },
     {
       "path": "packages/backend/internal/compose/main.go",
-      "digest": "406fa6139edceef8d3c486c8526f6c0c4a950a89d802e2c241b22b9502ef38a5"
+      "digest": "f4cbef3143232b338ca26698b76af844c0cef94232cf88017c1de3c130ca3661"
     },
     {
       "path": "packages/backend/internal/compose/runtime_helpers.go",
@@ -89,11 +89,11 @@
     },
     {
       "path": "packages/backend/internal/services/flow_catalog.go",
-      "digest": "63c7456c19804829f8aadfa420065fe07c19a598476b248a90dfb27482954efb"
+      "digest": "b70a496f7ceedf449371c3ccdeb9024aae85b86cd4666217c620442156bd5026"
     },
     {
       "path": "packages/backend/internal/services/flow_versions.go",
-      "digest": "c0130769c189222187c12ebc91cb1d34feac0654d790fa81ceb09b48064cb5f1"
+      "digest": "7ff92a5b29eb321cac22b4beb887beaebe271d9b853739434b613a7eba493276"
     },
     {
       "path": "packages/backend/internal/services/github_access_diagnosis.go",
@@ -253,7 +253,7 @@
     },
     {
       "path": "packages/backend/internal/services/mythical_items.go",
-      "digest": "cb3aabcb3c7ff45d35c07da6d4a435b4665f3cc36e3edf2ced93ae325d194958"
+      "digest": "1195d6b1433a754a9e47c6842927a2cef7f28bc7734e8fbf34f199da4ecf66fc"
     },
     {
       "path": "packages/backend/internal/services/mythical_outbound.go",

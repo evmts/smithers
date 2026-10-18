@@ -35,6 +35,7 @@ type Config struct {
 	FeatureFlags        FeatureFlagsConfig        `mapstructure:"feature_flags"`
 	RateLimit           RateLimitConfig           `mapstructure:"rate_limit"`
 	Chat                ChatConfig                `mapstructure:"chat"`
+	Guest               GuestConfig               `mapstructure:"guest"`
 	WikiSync            WikiSyncConfig            `mapstructure:"wiki_sync"`
 }
 
@@ -616,6 +617,15 @@ func Load(configFile string) (*Config, error) {
 	v.SetDefault("chat.concurrency", 0)
 	v.SetDefault("chat.queue_size", 0)
 	v.SetDefault("chat.lease_seconds", 0)
+	for key, value := range map[string]any{
+		"repositories": []string{}, "provider": "", "model": "", "sponsor_id": 0,
+		"ip_secret": "", "disabled": false, "request_nanos": int64(100_000_000),
+		"daily_nanos": int64(100_000_000_000), "window_nanos": int64(500_000_000_000),
+		"window_start": "", "window_end": "", "requests_per_ip": 10, "output_tokens": 1024,
+	} {
+		v.SetDefault("guest."+key, value)
+		_ = v.BindEnv("guest."+key, "SMITHERS_GUEST_"+strings.ToUpper(key))
+	}
 
 	// iOS + remote-sandbox rollout flags (ticket 0112) — all default false.
 	v.SetDefault("feature_flags.remote_sandbox_enabled", false)
@@ -900,6 +910,7 @@ func Load(configFile string) (*Config, error) {
 	cfg.Auth.LFSSigningSecret = strings.TrimSpace(cfg.Auth.LFSSigningSecret)
 	cfg.Server.AllowedOrigins = splitCommaSeparatedList(cfg.Server.AllowedOrigins)
 	cfg.Server.PublicMirrors = splitCommaSeparatedList(cfg.Server.PublicMirrors)
+	cfg.Guest.Repositories = splitCommaSeparatedList(cfg.Guest.Repositories)
 	if err := normalizeAgentAvailability(&cfg); err != nil {
 		return nil, err
 	}

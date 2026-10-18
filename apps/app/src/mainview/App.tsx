@@ -101,6 +101,7 @@ function AppContent() {
     q.from({ session: collections.sessions }).select(({ session }) => ({
       id: session.id,
       phase: session.phase,
+      guestConversation: session.guestConversation,
       theme: session.theme,
       surface: session.surface,
       maximizedCardId: session.maximizedCardId,
@@ -154,7 +155,7 @@ function AppContent() {
   const earlier = session.branchNavigation?.open && session.branchNavigation.owner === (accountOwnerOf(identityRows[0]) ?? null) && session.branchNavigation.selected_branch === "earlier"
   const conversationTabId = conversationTabIdOf(session)
   // A recovery door is an acknowledgment only once its journal receipt exists.
-  const messages = messageRows.filter((message) => (!controller.sharedConversation || message.action !== undefined || diagnosticVisible(message, identityRows[0]?.login, session.branchNavigation?.selected_branch ?? "main")) && inConversation(message, conversationTabId) &&
+  const messages = messageRows.filter((message) => (!controller.sharedConversation || session.guestConversation !== undefined || message.action !== undefined || diagnosticVisible(message, identityRows[0]?.login, session.branchNavigation?.selected_branch ?? "main")) && inConversation(message, conversationTabId) &&
     (message.action?.flow !== "sign-in" || savedSignInPrompts.some(receipt => receipt.id === message.id)))
   const conversationRows = cardRows.filter((card) => inConversation(card, conversationTabId))
   // Admin chrome follows the same capability-filtered registry as every act.
@@ -230,7 +231,8 @@ function AppContent() {
    *
    * With a public catalog repository selected (the /owner/name path,
    * apps/server/PUBLIC-REPOSITORIES.md) the signed-out visitor is not gated:
-   * reads and chat work, and writes render the sign-in step when needed.
+   * public reads work. Chat requires the server's guest allowlist admission;
+   * other chat and writes render the sign-in step when needed.
    */
   /*
    * The sign-in door, named once: the hosted GitHub session is the provider
