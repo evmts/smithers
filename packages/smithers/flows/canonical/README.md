@@ -2,8 +2,8 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as a `^4.0.4` peer dependency. Install one
-`effect` release in that range so all Smithers packages share one Effect
+This package declares `effect` as an exact `4.0.5` peer dependency. Install one
+`effect` release at that version so all Smithers packages share one Effect
 runtime.
 
 <!-- Deep reviewed and polished by a human. -->
@@ -20,7 +20,7 @@ RFC 8785 canonical JSON for TypeScript, as a plain function and as an Effect `Sc
 npm install @smthrs/canonical@next effect
 ```
 
-`effect` is a peer dependency in the range `^4.0.4`. Node.js 26.4.0 or later. Ships as ESM and CommonJS with TypeScript declarations.
+`effect` is a peer dependency at exactly `4.0.5`. Node.js 26.4.0 or later. Ships as ESM and CommonJS with TypeScript declarations.
 
 ## Use it
 

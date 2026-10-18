@@ -60,7 +60,7 @@ const info = (stats: ZenFsStatsLike): FileSystem.File.Info => ({
   mtime: Number.isFinite(stats.mtimeMs) ? Option.some(new Date(stats.mtimeMs)) : Option.none(),
   atime: Option.none(),
   birthtime: Option.none(),
-  dev: 0,
+  dev: 0n,
   ino: Option.none(),
   mode: stats.mode,
   nlink: Option.none(),

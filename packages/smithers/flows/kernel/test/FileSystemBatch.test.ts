@@ -9,7 +9,7 @@ import * as GrantStore from "../src/GrantStore.ts"
 import * as BatchContract from "../src/test/FileSystemBatchContract.ts"
 import * as Workspace from "../src/Workspace.ts"
 
-const info = { type: "Directory", dev: 7, ino: Option.some(9) } as FileSystem.File.Info
+const info = { type: "Directory", dev: 7n, ino: Option.some(9n) } as FileSystem.File.Info
 
 type BatchOperation = Extract<Batch.AtomicRequest, { readonly operation: "batch" }>
 

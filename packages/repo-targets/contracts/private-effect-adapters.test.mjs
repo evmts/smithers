@@ -33,11 +33,11 @@ const manifest = () => ({
   dependencies: { effect: version, ...ordinary },
   devDependencies: Object.fromEntries(adapters.map((name) => [name, version]))
 })
-/** A library owner: Effect is its application's, as a ranged peer, and one exact release in development. */
+/** A library owner shares the exact Effect release used to build its adapters. */
 const library = () => {
   const input = manifest()
   delete input.dependencies.effect
-  input.peerDependencies = { effect: "^" + version }
+  input.peerDependencies = { effect: version }
   input.devDependencies.effect = version
   return input
 }
@@ -83,7 +83,7 @@ test("private adapter declarations reject incomplete, mutable, and consumer reso
   peerExecutable.peerDependencies.effect = version
   assert.deepEqual(privateEffectAdapters(peerExecutable), adapters)
   peerExecutable.peerDependencies.effect = "^" + version
-  assert.throws(() => privateEffectAdapters(peerExecutable), /Effect peer that starts at their build release/)
+  assert.throws(() => privateEffectAdapters(peerExecutable), /exact Effect peer matching their build release/)
   for (const name of ["packages/smithers", "packages/smithers/build/build-cli", "packages/smithers/migrate"]) {
     const published = JSON.parse(readFileSync(join(root, name, "package.json"), "utf8"))
     assert.deepEqual(privateEffectAdapters(published), published.smthrs.privateEffectAdapters, name)
@@ -95,13 +95,11 @@ test("private adapter declarations reject incomplete, mutable, and consumer reso
     input.devDependencies.effect = value
     assert.throws(() => privateEffectAdapters(input), /exact Effect/, String(value))
   }
-  // Its peer starts at that release: the reverse, an exact peer, would refuse
-  // every later Effect the bundled adapter accepts, and a lower floor would
-  // run the adapter on an Effect it was not built for.
-  for (const value of [undefined, version, "^4.0.0", "~" + version, ">=" + version, "*"]) {
+  // A missing, ranged or mismatched peer cannot share the tested runtime.
+  for (const value of [undefined, "^" + version, "^4.0.0", "~" + version, ">=" + version, "*"]) {
     const input = library()
     input.peerDependencies.effect = value
-    assert.throws(() => privateEffectAdapters(input), /Effect peer that starts at their build release/, String(value))
+    assert.throws(() => privateEffectAdapters(input), /exact Effect peer matching their build release/, String(value))
   }
   // An executable installs the release itself, so a peer beside it is not read.
   const executable = manifest()

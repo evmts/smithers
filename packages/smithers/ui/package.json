@@ -158,7 +158,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "d3-force": "3.0.0",
-    "effect": "4.0.4",
+    "effect": "4.0.5",
     "radix-ui": "^1.6.7",
     "recharts": "^3.10.1",
     "@codemirror/autocomplete": "6.20.3",

@@ -5,16 +5,16 @@ import manifest from "../package.json" with { type: "json" }
 const guide = readFileSync(new URL("../docs/installation.md", import.meta.url), "utf8")
 
 describe("Installation dependency contract", () => {
-  it("identifies the Effect range the manifest peers", () => {
+  it("identifies the exact Effect version the manifest peers", () => {
     const effect = `effect@${manifest.peerDependencies.effect}`
-    // A range an application's own effect has to fall in, never one version.
-    expect(manifest.peerDependencies.effect).toMatch(/^\^\d+\.\d+\.\d+$/)
+    // The application and Smithers require the same exact Effect version.
+    expect(manifest.peerDependencies.effect).toMatch(/^\d+\.\d+\.\d+$/)
 
     // The package is on npm under `next`, which carries the 1.0 release candidates.
     expect(guide).toContain("npm install @smthrs/core@next effect")
     expect(guide).not.toMatch(/not on npm/i)
     expect(guide).toContain(`\`${effect}\` as a peer dependency`)
-    expect(guide).not.toContain("exact peer")
+    expect(manifest.peerDependencies.effect).toBe(manifest.devDependencies.effect)
     expect(guide).not.toContain("it is a dependency, not a peer")
   })
 

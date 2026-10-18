@@ -17,23 +17,23 @@ import { readWorkspaceManifests } from "../../../.smithers/flows/release/pack-re
 import { repoRoot } from "../scripts/workspace-packages.mjs"
 
 const pin = EXPECTED_EFFECT_VERSION
-const range = SUPPORTED_EFFECT_RANGE
+const range = "^" + pin
 const manifests = (entries) =>
   new Map(entries.map((manifest, index) => [`packages/fixture-${index}`, { name: `@fixture/${index}`, ...manifest }]))
 
-test("the supported range starts at the tested release and excludes the last release candidate", () => {
+test("the supported version is exactly the tested release", () => {
   assert.match(pin, /^\d+\.\d+\.\d+$/, "the tested release is one exact stable version")
   // An adapter a library installs at the tested release peers `effect` from
   // that release up, so a lower floor would promise an install that fails.
-  assert.equal(range, "^" + pin)
+  assert.equal(SUPPORTED_EFFECT_RANGE, pin)
   assert.match(UNSUPPORTED_EFFECT_VERSION, /^4\.0\.0-rc\.\d+$/)
   assert.notEqual(UNSUPPORTED_EFFECT_VERSION, pin)
 })
 
-test("a published library's Effect peers are the range and everything else is the tested release", () => {
+test("published libraries and executables require the tested release", () => {
   const library = { peerDependencies: { effect: range } }
   const executable = { dependencies: { effect: pin } }
-  assert.equal(expectedEffectDeclaration(library, "peerDependencies"), range)
+  assert.equal(expectedEffectDeclaration(library, "peerDependencies"), pin)
   for (const section of ["dependencies", "devDependencies", "optionalDependencies"]) {
     assert.equal(expectedEffectDeclaration(library, section), pin, section)
     assert.equal(expectedEffectDeclaration(executable, section), pin, section)
@@ -44,21 +44,21 @@ test("a published library's Effect peers are the range and everything else is th
   // Executables' private adapters are built on the tested release. Their
   // peer must select it even when npm publishes a newer Effect.
   assert.equal(expectedEffectDeclaration({ ...library, bin: { cli: "bin.js" } }, "peerDependencies"), pin)
-  assert.throws(() => assertEffectPins(effectDeclarations({ ...library, bin: { cli: "bin.js" } }, "fixture")), /effect@.* must be 4\.0\.4/)
+  assert.throws(() => assertEffectPins(effectDeclarations({ ...library, bin: { cli: "bin.js" } }, "fixture")), /effect@.* must be 4\.0\.5/)
   // A private package is never installed by an application.
   assert.equal(expectedEffectDeclaration({ ...library, private: true }, "peerDependencies"), pin)
 })
 
-test("the checker requires the range in published library peers and refuses an exact peer", () => {
+test("the checker requires exact published library peers and refuses ranges", () => {
   for (const name of ["effect", "@effect/sql-pg", "@effect/vitest", "@effect/new-adapter"]) {
-    const peers = (version) => ({ peerDependencies: { effect: range, [name]: version } })
-    assert.doesNotThrow(() => assertEffectPins(effectDeclarations(peers(range), "fixture")), name)
-    for (const version of [pin, "~" + pin, ">=" + pin, "^4.0.0", "*", UNSUPPORTED_EFFECT_VERSION, "^" + UNSUPPORTED_EFFECT_VERSION]) {
+    const peers = (version) => ({ peerDependencies: { effect: pin, [name]: version } })
+    assert.doesNotThrow(() => assertEffectPins(effectDeclarations(peers(pin), "fixture")), name)
+    for (const version of [range, "~" + pin, ">=" + pin, "^4.0.0", "*", UNSUPPORTED_EFFECT_VERSION, "^" + UNSUPPORTED_EFFECT_VERSION]) {
       const records = effectDeclarations(peers(version), "fixture").filter((record) => record.name === name)
       assert.equal(records.length, 1, `${name}@${version} is read`)
       assert.throws(
         () => assertEffectPins(records),
-        new RegExp(`fixture \\(peerDependencies\\): ${name.replace("/", "\\/")}@.* must be \\^`),
+        new RegExp(`fixture \\(peerDependencies\\): ${name.replace("/", "\\/")}@.* must be ${pin}`),
         `${name}@${version}`
       )
     }
@@ -66,13 +66,13 @@ test("the checker requires the range in published library peers and refuses an e
 })
 
 test("the checker requires the tested release everywhere else and refuses a range there", () => {
-  const owners = [{ peerDependencies: { effect: range } }, { dependencies: { effect: pin } }, { private: true }]
+  const owners = [{ peerDependencies: { effect: pin } }, { dependencies: { effect: pin } }, { private: true }]
   for (const owner of owners) {
     for (const section of ["dependencies", "devDependencies", "optionalDependencies"]) {
       for (const name of ["effect", "@effect/platform-node", "@effect/sql-sqlite-node", "@effect/sql-pg", "@effect/new-adapter"]) {
         const manifest = (version) => ({ ...owner, [section]: { ...owner[section], [name]: version } })
         assert.doesNotThrow(() => assertEffectPins(effectDeclarations(manifest(pin), "fixture")), `${section} ${name}`)
-        for (const version of [range, "~" + pin, "4.0.3", "4.0.5", UNSUPPORTED_EFFECT_VERSION, "latest"]) {
+        for (const version of [range, "~" + pin, "4.0.3", "4.0.4", UNSUPPORTED_EFFECT_VERSION, "latest"]) {
           const records = effectDeclarations(manifest(version), "fixture")
             .filter((record) => record.name === name && record.source.includes(section))
           assert.equal(records.length, 1, `${section} ${name}@${version} is read`)
@@ -139,11 +139,11 @@ test("rejects a platform dependency without an exact node-shared dependency", ()
 test("rejects a platform peer without node-shared among its dependencies or peers", () => {
   const library = { "@effect/platform-bun": range, "@effect/platform-node": range, effect: range }
   const message =
-    `packages/fixture-0 (@fixture/0): peerDependencies declares @effect/platform-bun and @effect/platform-node without @effect/platform-node-shared at ${pin} in dependencies or ${range} in peerDependencies`
+    `packages/fixture-0 (@fixture/0): peerDependencies declares @effect/platform-bun and @effect/platform-node without @effect/platform-node-shared at ${pin} in dependencies or ${pin} in peerDependencies`
   assert.deepEqual(nodeSharedPinProblems(manifests([{ peerDependencies: library }])), [message])
   // A library's peer on the shared adapter is the range, like its other peers.
   assert.deepEqual(
-    nodeSharedPinProblems(manifests([{ peerDependencies: { ...library, "@effect/platform-node-shared": pin } }])),
+    nodeSharedPinProblems(manifests([{ peerDependencies: { ...library, "@effect/platform-node-shared": range } }])),
     [message]
   )
   // An executable pins the platform it asks for, and the shared adapter with it.
@@ -164,7 +164,7 @@ test("accepts the pinned shapes and packages without a platform", () => {
     {
       dependencies: { "@effect/platform-bun": pin, "@effect/platform-node": pin, "@effect/platform-node-shared": pin }
     },
-    { peerDependencies: { "@effect/platform-node": range, "@effect/platform-node-shared": range, effect: range } },
+    { peerDependencies: { "@effect/platform-node": pin, "@effect/platform-node-shared": pin, effect: pin } },
     { peerDependencies: { "@effect/platform-bun": range, effect: range }, dependencies: { "@effect/platform-node-shared": pin } },
     { dependencies: { effect: pin }, peerDependencies: { "@effect/platform-node": pin, "@effect/platform-node-shared": pin } },
     { dependencies: { effect: pin }, devDependencies: { "@effect/platform-node": pin } },
@@ -193,8 +193,8 @@ test("every published workspace manifest follows the declaration policy", () => 
   // Executables pin their shared peer; libraries accept the supported range.
   const effectPeers = peers.filter((record) => record.name === "effect")
   assert.equal(effectPeers.length, published.size - 1, "every published runtime package except the notice")
-  assert.equal(effectPeers.filter((record) => record.version === pin).length, 3)
-  assert.equal(effectPeers.filter((record) => record.version === range).length, published.size - 4)
+  assert.equal(effectPeers.filter((record) => record.version === pin).length, published.size - 1)
+  assert.equal(effectPeers.filter((record) => record.version === range).length, 0)
 })
 
 // npm --strict-peer-deps loads an optional peer's newest version into the peer

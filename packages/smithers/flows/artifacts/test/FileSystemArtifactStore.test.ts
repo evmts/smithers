@@ -131,8 +131,8 @@ const memoryFs = (options: {
         return directory || files.has(path)
           ? Effect.succeed({
             type: directory ? "Directory" : "File",
-            dev: 1,
-            ino: Option.some(1),
+            dev: 1n,
+            ino: Option.some(1n),
             mtime: Option.fromUndefinedOr(options.mtimes?.[path]).pipe(Option.map((ms) => new Date(ms)))
           })
           : Effect.fail(PlatformError.systemError({ _tag: "NotFound", module: "test", method: "stat" }))

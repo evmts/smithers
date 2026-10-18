@@ -26,7 +26,7 @@
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "alchemy": "2.0.0-beta.82",
-    "effect": "4.0.4",
+    "effect": "4.0.5",
     "typescript": "5.9.3",
     "vitest": "5.0.0",
     "eslint": "9.39.1",

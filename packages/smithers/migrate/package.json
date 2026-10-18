@@ -413,7 +413,7 @@
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/vitest": "4.0.4",
+    "@effect/vitest": "4.0.5",
     "@eslint/js": "9.39.5",
     "@types/node": "26.4.1",
     "@typescript/typescript6": "6.0.2",
@@ -428,11 +428,11 @@
     "madge": "8.0.0",
     "typescript-eslint": "8.69.0",
     "vitest": "5.0.0",
-    "@effect/platform-node": "4.0.4",
-    "@effect/platform-node-shared": "4.0.4",
-    "effect": "4.0.4"
+    "@effect/platform-node": "4.0.5",
+    "@effect/platform-node-shared": "4.0.5",
+    "effect": "4.0.5"
   },
   "peerDependencies": {
-    "effect": "4.0.4"
+    "effect": "4.0.5"
   }
 }

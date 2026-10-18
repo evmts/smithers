@@ -16,7 +16,7 @@ The `next` tag carries the 1.0 release candidates.
 `@effect/platform-node` provides `NodeCrypto` for the example below and is
 optional if you supply your own `Crypto` implementation.
 
-[`effect`](https://effect.website) is a peer dependency in the range `^4.0.4`,
+[`effect`](https://effect.website) is a peer dependency at exactly `4.0.5`,
 because the schemas this package exports have to be the ones your own code
 composes with. Two more dependencies install with the package and are the only
 ones: [`@smthrs/canonical`](/api/canonical) for the serialization and

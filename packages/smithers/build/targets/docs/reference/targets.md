@@ -16,7 +16,7 @@ directly. Both packages are on npm under the `next` tag.
   "devDependencies": {
     "@smthrs/build-cli": "1.0.0-rc.12",
     "@smthrs/targets": "1.0.0-rc.12",
-    "effect": "4.0.4"
+    "effect": "4.0.5"
   }
 }
 ```
@@ -33,7 +33,7 @@ The `exports` map publishes the index, every module under `src` through the `./*
 
 The second row stands for every public module. The subpaths `./internal/*` and
 `./index` map to `null`, so neither resolves. Registry installs use the built
-ESM/CommonJS distribution, and `effect` is a peer in the range `^4.0.4`.
+ESM/CommonJS distribution, and `effect` is a peer at exactly `4.0.5`.
 
 ## Namespaces
 

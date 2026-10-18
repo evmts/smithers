@@ -2,9 +2,9 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as an exact `4.0.4` peer dependency.
-It bundles the private `@effect/platform-node` adapter pinned to `4.0.4` as a development dependency. `@effect/sql-sqlite-node` is a direct
-dependency, at `4.0.4`; `@effect/sql-pg` is an optional peer for PostgreSQL. Keep the application on that version so
+This package declares `effect` as an exact `4.0.5` peer dependency.
+It bundles the private `@effect/platform-node` adapter pinned to `4.0.5` as a development dependency. `@effect/sql-sqlite-node` is a direct
+dependency, at `4.0.5`; `@effect/sql-pg` is an optional peer for PostgreSQL. Keep the application on that version so
 all Smithers packages share one Effect runtime.
 
 **Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/docs

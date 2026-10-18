@@ -13,8 +13,8 @@ npm install @smthrs/platform-browser@next effect
 
 The `next` tag carries the 1.0 release candidates.
 
-`effect` is a peer dependency in the range `^4.0.4`, so install it
-yourself in that range. The services these adapters implement live in Effect 4
+`effect` is a peer dependency at exactly `4.0.5`, so install it
+yourself at that version. The services these adapters implement live in Effect 4
 (`effect/FileSystem`, `effect/Path`, and `effect/process`), Effect 3
 does not satisfy the peer range, and two copies of `effect` in one program are
 two sets of service tags.

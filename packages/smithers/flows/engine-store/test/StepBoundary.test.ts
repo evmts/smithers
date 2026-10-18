@@ -277,8 +277,8 @@ describe("StepBoundary.layer (filesystem-backed)", () => {
               type: "File",
               size: ByteSize.bytes(files.get(path)!.length),
               mtime: Option.some(new Date(mtimes.get(path) ?? Date.now())),
-              dev: 1,
-              ino: Option.some(1)
+              dev: 1n,
+              ino: Option.some(1n)
             }
             if (vanishAfterStat.delete(path)) files.delete(path)
             return info
@@ -639,7 +639,7 @@ describe("StepBoundary.layer (filesystem-backed)", () => {
             type: "File",
             size: ByteSize.bytes(8),
             mtime: Option.none(),
-            dev: 1,
+            dev: 1n,
             ino: Option.none()
           })) as never,
         readFile: (() =>

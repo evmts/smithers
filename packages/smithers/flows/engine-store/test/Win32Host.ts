@@ -22,7 +22,7 @@ export const win32Host = (root: string) => {
           ? Effect.succeed(path)
           : Effect.fail(PlatformError.systemError({ _tag: "NotFound", module: "test", method: "realPath" }))
       }),
-    stat: () => Effect.succeed({ type: "Directory", dev: 7, ino: Option.some(42) } as unknown as FileSystem.File.Info)
+    stat: () => Effect.succeed({ type: "Directory", dev: 7n, ino: Option.some(42n) } as unknown as FileSystem.File.Info)
   })
   const fs = KernelFileSystem.withAtomicFileSystem(inner, {
     execute: (request) => {

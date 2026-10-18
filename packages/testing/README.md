@@ -2,8 +2,8 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as a `^4.0.4` peer dependency. Install one
-`effect` release in that range so all Smithers packages share one Effect
+This package declares `effect` as an exact `4.0.5` peer dependency. Install one
+`effect` release at that version so all Smithers packages share one Effect
 runtime.
 
 **Documentation:** https://github.com/smithersai/smithers/tree/main/packages/testing/docs
@@ -25,7 +25,7 @@ constructor identity, tags, fields, and existing test imports are preserved.
 npm install @smthrs/testing@next effect
 ```
 
-`effect` is a required peer in the range `^4.0.4`. `vitest` and
+`effect` is a required peer at exactly `4.0.5`. `vitest` and
 `@effect/vitest` are optional peers, needed only by the `Vitest` adapter.
 Everything else runs under any runner, because an assertion is an ordinary
 `Effect` and a conformance case is a plain value. Node.js 26.4.0 or later is

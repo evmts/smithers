@@ -10,7 +10,7 @@ sidebar:
 Published on npm under the `next` tag. Install it with its `effect` peer:
 
 ```sh
-npm install @smthrs/capability@next effect@^4.0.4
+npm install @smthrs/capability@next effect@4.0.5
 ```
 
 Name `@next` explicitly: `latest` still points at an older release candidate.
@@ -20,9 +20,9 @@ CommonJS with TypeScript declarations. It has one runtime dependency,
 [`@smthrs/canonical`](/api/canonical), which supplies the record guard
 `Permission.isPermissionError` validates payloads with.
 
-[`effect`](https://effect.website) is a peer dependency in the range
-`effect@^4.0.4`. It supplies the `Schema`, `Option`, and `PlatformError`
-types on the exported surface. Install one `effect` in that range: two copies of
+[`effect`](https://effect.website) requires the exact peer
+`effect@4.0.5`. It supplies the `Schema`, `Option`, and `PlatformError`
+types on the exported surface. Install one `effect` at that version: two copies of
 `effect` in one program are two sets of service tags.
 
 ## Import forms

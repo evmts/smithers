@@ -140,7 +140,21 @@ describe("atomic helper response validation", () => {
 
   it("accepts numeric sizes and absent optional stat fields", async () => {
     const result = await Effect.runPromise(convert("stat", info))
-    expect(result).toMatchObject({ size: 3n, birthtime: Option.none(), blksize: Option.none(), blocks: Option.none() })
+    expect(result).toMatchObject({
+      dev: 1n,
+      ino: Option.some(2n),
+      nlink: Option.some(1n),
+      rdev: Option.some(0n),
+      size: 3n,
+      birthtime: Option.none(),
+      blksize: Option.none(),
+      blocks: Option.none()
+    })
+  })
+
+  it("preserves safe integer metadata as bigint values", async () => {
+    const result = await Effect.runPromise(convert("stat", { ...info, dev: Number.MAX_SAFE_INTEGER, blocks: 4 }))
+    expect(result).toMatchObject({ dev: 9007199254740991n, blocks: Option.some(4n) })
   })
 
   it.each([null, undefined])(

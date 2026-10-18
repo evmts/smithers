@@ -8,7 +8,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^4.0.45",
+    "@ai-sdk/anthropic": "4.0.55",
     "@ai-sdk/openai": "^4.0.51",
     "@linear/sdk": "^92.0.0",
     "@mdx-js/esbuild": "^3.1.1",

@@ -2,8 +2,8 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as a `^4.0.4` peer dependency. Install one
-`effect` release in that range so all Smithers packages share one Effect
+This package declares `effect` as an exact `4.0.5` peer dependency. Install one
+`effect` release at that version so all Smithers packages share one Effect
 runtime.
 
 **Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/keys/docs
@@ -22,7 +22,7 @@ npm install @smthrs/keys@next effect
 `@effect/platform-node` provides `NodeCrypto` for the example below and is
 optional if you supply your own `Crypto` implementation.
 
-`effect` is a peer dependency in the range `^4.0.4`; [`@smthrs/canonical`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/canonical/docs) and
+`effect` is a peer dependency at exactly `4.0.5`; [`@smthrs/canonical`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/canonical/docs) and
 [`@smthrs/crypto`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/crypto/docs) install with the package and are
 the only other runtime dependencies. Node.js 26.4.0 or later; the package
 imports no `node:` built-in, so the same code runs under Bun and in a browser.

@@ -33,6 +33,7 @@ import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import type * as HttpClientResponse from "effect/http/HttpClientResponse"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
+import * as Redacted from "effect/Redacted"
 import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
@@ -114,7 +115,7 @@ const redactedRequestUrl = (request: HttpClientRequest.HttpClientRequest): strin
   if (value === REDACTED) return value
   const url = new URL(value)
   for (const [key, item] of request.urlParams) {
-    url.searchParams.append(key, isSensitiveQueryName(key) ? REDACTED : item)
+    url.searchParams.append(key, isSensitiveQueryName(key) || Redacted.isRedacted(item) ? REDACTED : item)
   }
   return url.toString()
 }
@@ -401,7 +402,8 @@ const secretValues = (
     })
   }
   for (const [key, value] of request.urlParams) {
-    if (isSensitiveQueryName(key)) addSecret(values, value)
+    if (Redacted.isRedacted(value)) addSecret(values, Redacted.value(value))
+    else if (isSensitiveQueryName(key)) addSecret(values, value)
   }
 
   if (request.body._tag === "Uint8Array") {

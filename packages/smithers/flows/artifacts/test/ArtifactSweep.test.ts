@@ -121,8 +121,8 @@ const memoryFs = (options: {
         ) {
           return Effect.succeed({
             type: "Directory",
-            dev: 1,
-            ino: Option.some(1),
+            dev: 1n,
+            ino: Option.some(1n),
             mtime: Option.some(new Date(0)),
             size: BigInt(0)
           })
@@ -130,8 +130,8 @@ const memoryFs = (options: {
         return files.has(path)
           ? Effect.succeed({
             type: "File",
-            dev: 1,
-            ino: Option.some(1),
+            dev: 1n,
+            ino: Option.some(1n),
             mtime: path === options.withoutMtimeFor
               ? Option.none()
               : Option.some(new Date(mtimes.get(path) ?? 0)),
@@ -711,8 +711,8 @@ describe("stale lock reclamation", () => {
               const file = files.get(path)
               const info = {
                 type: file === undefined ? "Directory" : "File",
-                dev: 1,
-                ino: Option.some(1),
+                dev: 1n,
+                ino: Option.some(1n),
                 mtime: Option.some(new Date(file?.mtime ?? 0)),
                 size: BigInt(file?.bytes.length ?? 0)
               } as FileSystem.File.Info

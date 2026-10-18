@@ -65,7 +65,7 @@
     "@babel/plugin-transform-nullish-coalescing-operator": "^7.29.7",
     "@babel/plugin-transform-optional-chaining": "^7.29.7",
     "@babel/plugin-transform-typescript": "^7.29.9",
-    "@effect/platform-node": "4.0.4",
+    "@effect/platform-node": "4.0.5",
     "@playwright/test": "1.62.1",
     "@smthrs/build-cli": "workspace:*",
     "@smthrs/cli": "workspace:*",
@@ -83,7 +83,7 @@
     "@smthrs/targets": "workspace:*",
     "@smthrs/ui": "workspace:*",
     "@types/node": "26.4.1",
-    "effect": "4.0.4",
+    "effect": "4.0.5",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-plugin-jsdoc": "64.3.4",
@@ -106,15 +106,15 @@
     "yaml": "2.9.0"
   },
   "overrides": {
-    "effect": "4.0.4",
-    "@effect/opentelemetry": "4.0.4",
-    "@effect/platform-bun": "4.0.4",
-    "@effect/platform-node": "4.0.4",
-    "@effect/platform-node-shared": "4.0.4",
-    "@effect/sql-d1": "4.0.4",
-    "@effect/sql-sqlite-bun": "4.0.4",
-    "@effect/sql-sqlite-do": "4.0.4",
-    "@effect/sql-sqlite-node": "4.0.4",
-    "@effect/vitest": "4.0.4"
+    "effect": "4.0.5",
+    "@effect/opentelemetry": "4.0.5",
+    "@effect/platform-bun": "4.0.5",
+    "@effect/platform-node": "4.0.5",
+    "@effect/platform-node-shared": "4.0.5",
+    "@effect/sql-d1": "4.0.5",
+    "@effect/sql-sqlite-bun": "4.0.5",
+    "@effect/sql-sqlite-do": "4.0.5",
+    "@effect/sql-sqlite-node": "4.0.5",
+    "@effect/vitest": "4.0.5"
   }
 }

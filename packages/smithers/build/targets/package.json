@@ -1119,7 +1119,7 @@
     "yaml": "2.9.0"
   },
   "peerDependencies": {
-    "effect": "^4.0.4"
+    "effect": "4.0.5"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
@@ -1127,7 +1127,7 @@
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.4",
+    "effect": "4.0.5",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",

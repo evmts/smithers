@@ -48,13 +48,13 @@ verifyDepsBeforeRun: false
 
 # Keep transitive prerelease adapters on the same tested Effect family.
 overrides:
-  "effect": "4.0.4"
-  "@effect/opentelemetry": "4.0.4"
-  "@effect/platform-bun": "4.0.4"
-  "@effect/platform-node": "4.0.4"
-  "@effect/platform-node-shared": "4.0.4"
-  "@effect/sql-d1": "4.0.4"
-  "@effect/sql-sqlite-bun": "4.0.4"
-  "@effect/sql-sqlite-do": "4.0.4"
-  "@effect/sql-sqlite-node": "4.0.4"
-  "@effect/vitest": "4.0.4"
+  "effect": "4.0.5"
+  "@effect/opentelemetry": "4.0.5"
+  "@effect/platform-bun": "4.0.5"
+  "@effect/platform-node": "4.0.5"
+  "@effect/platform-node-shared": "4.0.5"
+  "@effect/sql-d1": "4.0.5"
+  "@effect/sql-sqlite-bun": "4.0.5"
+  "@effect/sql-sqlite-do": "4.0.5"
+  "@effect/sql-sqlite-node": "4.0.5"
+  "@effect/vitest": "4.0.5"

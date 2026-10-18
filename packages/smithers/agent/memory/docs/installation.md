@@ -17,7 +17,7 @@ The `next` tag carries the 1.0 release candidates. `latest` still carries the
 ## Requirements
 
 - Node.js 26.4.0 or later. The package's `engines` field enforces this floor.
-- [Effect](https://effect.website) in the range `^4.0.4`. It is a peer
+- [Effect](https://effect.website) at exactly `4.0.5`. It is a peer
   dependency so the application and Smithers share one Effect runtime.
 
 The package ships as ESM and CommonJS with TypeScript declarations. Its

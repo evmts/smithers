@@ -12,7 +12,7 @@ All 49 `next` tags are rc.12; every `latest` matches the pre-cut snapshot
 
 Verified on Williams-MacBook-Pro-3.local (darwin/arm64), Node 26.10.0,
 npm 11.19.1, at 2026-10-16T17:26:32Z: a new directory and empty npm cache,
-`npm install @smthrs/flows@next @smthrs/cli@next`, one physical Effect 4.0.4,
+`npm install @smthrs/flows@next @smthrs/cli@next`, one physical Effect 4.0.5,
 CLI version/help, init, targets, flow discovery and MCP initialization passed.
 The documented durable quickstart printed `the note` twice after changing the
 input between runs, using the packaged helper with no workspace override.
@@ -78,13 +78,13 @@ Published     1.0.0-rc.6 on npm `next`, 2026-10-14. Release run 38558094192,
               publish lane passed. pnpm 11 holds a version back for a day, so
               `pnpm add <name>@next` installs rc.5 until 10-15; add
               `--config.minimumReleaseAge=0` or `@1.0.0-rc.6` to get it now.
-Effect        Stable Effect 4 (#3839). Every package accepts `effect ^4.0.4`;
+Effect        Stable Effect 4 (#3839). Every package accepts `effect 4.0.5`;
               rc.115 is refused at install. Step identity carries over from
               rc.5 except the three repository declarations that use
               `Sha256.Digest`, which get new keys once.
 Flows         The quickstart runs from an empty directory on one line:
               `npm install @smthrs/flows@next effect`. Run from npm after the
-              publish: npm installs effect 4.0.4, one copy, prints, then
+              publish: npm installs effect 4.0.5, one copy, prints, then
               replays. pnpm 11.25 does the same after
               `pnpm approve-builds esbuild`; without it `pnpm add` exits 1 with
               ERR_PNPM_IGNORED_BUILDS (docs and gate fixed in 6f56cc0f71,

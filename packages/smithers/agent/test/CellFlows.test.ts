@@ -247,7 +247,7 @@ const fileInfo = (size: number): FileSystem.File.Info => ({
   mtime: Option.none(),
   atime: Option.none(),
   birthtime: Option.none(),
-  dev: 0,
+  dev: 0n,
   ino: Option.none(),
   mode: 0o644,
   nlink: Option.none(),

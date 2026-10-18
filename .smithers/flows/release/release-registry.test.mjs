@@ -14,8 +14,8 @@ test("loopback registry serves packed metadata and verified bytes, and nothing e
     const manifest = {
       name: "@smthrs/example",
       version: "1.0.0-rc.0",
-      dependencies: { "@effect/sql-sqlite-node": "4.0.4" },
-      peerDependencies: { effect: "^4.0.4" }
+      dependencies: { "@effect/sql-sqlite-node": "4.0.5" },
+      peerDependencies: { effect: "4.0.5" }
     }
     await mkdir(join(root, "package"))
     await writeFile(join(root, "package/package.json"), JSON.stringify(manifest))

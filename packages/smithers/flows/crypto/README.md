@@ -2,8 +2,8 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as a `^4.0.4` peer dependency. Install one
-`effect` release in that range so all Smithers packages share one Effect
+This package declares `effect` as an exact `4.0.5` peer dependency. Install one
+`effect` release at that version so all Smithers packages share one Effect
 runtime.
 
 **Documentation:** https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/crypto/docs

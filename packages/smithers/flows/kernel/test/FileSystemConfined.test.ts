@@ -30,9 +30,9 @@ const recordingHost = (ino: Option.Option<number> = Option.some(42)) => {
     stat: () =>
       Effect.succeed({
         type: "Directory",
-        dev: 7,
+        dev: 7n,
         ino,
-        nlink: Option.some(1)
+        nlink: Option.some(1n)
       } as unknown as EffectFileSystem.File.Info)
   })
   const host = FileSystem.withAtomicFileSystem(inner, {

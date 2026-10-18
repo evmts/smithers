@@ -29,8 +29,8 @@ const directoryInfo = {
   type: "Directory",
   mtime: Option.none(),
   size: BigInt(0),
-  dev: 1,
-  ino: Option.some(1)
+  dev: 1n,
+  ino: Option.some(1n)
 } as unknown as FileSystem.File.Info
 
 /** Answers the lock directory's own identity check; `overrides.stat` scripts the lock files. */

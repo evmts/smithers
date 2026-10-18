@@ -43,10 +43,10 @@ describe("container native filesystem", () => {
     Effect.gen(function*() {
       const { fs } = fixture()
       const info = yield* fs.stat!("/workspace/a")
-      expect(info).toMatchObject({ type: "File", mode: 0o100640, size: 3n, dev: 9 })
+      expect(info).toMatchObject({ type: "File", mode: 0o100640, size: 3n, dev: 9n })
       expect(Option.getOrThrow(info.uid)).toBe(1000)
       expect(Option.getOrThrow(info.gid)).toBe(100)
-      expect(Option.getOrThrow(info.ino)).toBe(123)
+      expect(Option.getOrThrow(info.ino)).toBe(123n)
       expect(Option.getOrThrow(info.mtime).getTime()).toBe(1700000000000)
     }))
   it.effect.each([

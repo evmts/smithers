@@ -306,7 +306,7 @@ describe("the workspace package contract", () => {
       } else {
         assert.equal(manifest.peerDependencies?.effect, effectRange)
         assert.equal(manifest.devDependencies?.effect, effectVersion)
-        assert.equal(effectRange, "^" + effectVersion)
+        assert.equal(effectRange, effectVersion)
       }
       assert.ok(manifest.smthrs.privateEffectAdapters.includes("@effect/platform-node-shared"))
       assert.ok(manifest.files.includes("dist/vendor/**"))

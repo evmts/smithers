@@ -31,8 +31,8 @@ mkdir -p workspace && echo "the note" > workspace/note.txt
 The project is `"type": "module"` because the program ends in a top-level
 `await`. `@smthrs/flows` installs the Node host and its SQLite driver. `effect`
 is on the line because the program imports it directly. `@smthrs/flows` accepts
-any `effect` in `^4.0.4`, so the line names no version and a project that
-already has one in that range keeps it.
+any `effect` in `4.0.5`, so the line names no version and a project that
+already has one at that version keeps it.
 
 With pnpm 11, replace the `npm install` line with
 `pnpm add @smthrs/flows@1.0.0-rc.12 effect`, then run

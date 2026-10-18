@@ -1925,7 +1925,7 @@ export class Resolved extends Schema.TaggedClass<Resolved>(
  * @since 0.1.0
  * @slop
  */
-export const AgentEvent = Schema.Union([
+const agentEventUnion = Schema.Union([
   DisciplineArmed,
   TurnOpened,
   ModelDelta,
@@ -1974,7 +1974,18 @@ export const AgentEvent = Schema.Union([
   PermissionRequired,
   Aborted,
   Resolved
-]).pipe(Schema.toTaggedUnion("_tag"))
+])
+
+/** All normalized harness events, indexed by their persisted tag.
+ * @category events
+ * @since 0.1.0
+ */
+// Effect 4.0.5's duplicate-tag type check exceeds TypeScript's recursion limit
+// for this tuple. Widen only that check; runtime validation still checks every
+// member, and the result retains the original tuple's public types.
+export const AgentEvent = Schema.toTaggedUnion("_tag")<ReadonlyArray<(typeof agentEventUnion.members)[number]>>(
+  agentEventUnion
+) as unknown as Schema.toTaggedUnion<"_tag", typeof agentEventUnion.members>
 
 /**
  * All normalized events emitted by a harness adapter.

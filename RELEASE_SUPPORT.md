@@ -39,47 +39,24 @@ does not provide that adapter's confinement contract. Browser and Bun support
 must be claimed per capability, not inferred from the native Node tests.
 
 Effect and its adapters are one compatibility unit. This repository is built
-and tested on `effect@4.0.4`, and the published packages declare it this way:
+and tested on `effect@4.0.5`, and the published packages declare it this way:
 
-- Every published library declares `effect` as a peer in the range `^4.0.4`.
-  An Effect application resolves one `effect`, so it adds Smithers without
-  changing its own version. Upstream Effect adapters peer `effect` the same
-  way.
-- A library's optional Effect adapters, such as `@effect/sql-sqlite-node`,
-  `@effect/sql-sqlite-bun` and `@effect/sql-pg` in `@smthrs/database` and
-  `@effect/vitest` in `@smthrs/kernel` and `@smthrs/testing`, are named in
-  `peerDependenciesMeta` alone, with no version. The application chooses them
-  with its `effect`, and each adapter's own `effect` peer holds it to that
-  release. A ranged optional peer is not used because
-  `npm install --strict-peer-deps` resolves its newest version even when
-  nothing installs it, which refused an application pinned at `4.0.4` once a
-  newer adapter existed.
-- An Effect adapter a package always needs is a regular dependency at exactly
-  `4.0.4`, never a peer: `@effect/sql-sqlite-node` in `@smthrs/flows` and
-  `@smthrs/cli`, and `@effect/opentelemetry` in `@smthrs/observability`. An
-  adapter at `4.0.4` peers `effect@^4.0.4`, so it is valid with any later
-  4.x the application picks. A range there would let a fresh install select
-  an adapter newer than the application's `effect`.
-- Development dependencies, the workspace overrides and both lockfiles are
-  exactly `4.0.4`, the version the repository is tested on. Adapters a
-  package bundles privately (`smthrs.privateEffectAdapters`) are built from
-  that version.
-- The executables `@smthrs/cli`, `@smthrs/build-cli` and `@smthrs/migrate`
-  install `effect` themselves at exactly `4.0.4`, and the CLI's optional
-  `@effect/sql-pg` peer is exact with it. An application that installs `@smthrs/cli` beside
-  its own `effect` at another release gets two copies under pnpm: the CLI and
-  its packages run on the CLI's copy, the application on its own.
+- Every published library declares `effect` as a peer at exactly `4.0.5`.
+  An application must use that same version. A wider supported range is tracked
+  in [#4238](https://github.com/smithersai/smithers/issues/4238).
+- Required Effect adapters and explicit optional adapter peers are pinned to
+  `4.0.5`. Metadata-only optional peers leave adapter selection to the application.
+- Development dependencies, workspace overrides and both lockfiles use exactly
+  `4.0.5`. Privately bundled adapters use that cohort too.
+- Executables and authoring libraries require the same physical Effect runtime.
+  Install the CLI and authoring packages locally alongside `effect@4.0.5`.
 
-`packages/repo-targets/contracts/check-single-effect-version.mjs` holds every manifest and lockfile to
-these declarations. The release consumer gate installs the Node profile and the
-Flows quickstart on `effect@latest` as the registry serves it that day, and
-checks that a strict install refuses an `effect` below the range. pnpm 11
-holds a release younger than its `minimumReleaseAge` (one day), so on the day
-upstream publishes, `effect@latest` under pnpm is still the previous release;
-the gate reads the tag with npm and installs that exact version.
+`packages/repo-targets/contracts/check-single-effect-version.mjs` checks these
+manifest, lockfile and installed-runtime declarations. Release consumer gates
+exercise the supported version and reject unsupported versions.
 
 Step and declaration identity do not depend on the installed Effect version,
-so moving an application within `^4.0.4` re-runs no completed step. The one
+so reinstalling the supported `4.0.5` runtime re-runs no completed step. The one
 exception is this upgrade from `4.0.0-rc.115`: a declaration that uses
 `Schema.brand` on a schema with a definition, and the action key of a branded
 schema, re-key once.

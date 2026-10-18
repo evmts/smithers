@@ -76,12 +76,13 @@ describe("installation contract", () => {
 
   it("names each Effect package under the kind package.json declares it as", () => {
     const contract = unwrapped(readme).match(
-      /This package takes `effect` as a `([^`]+)` peer and keeps its Node platform adapters at `([^`]+)`/
+      /This package takes `effect` as an exact `([^`]+)` peer and keeps its Node platform adapters at `([^`]+)`/
     )
     expect(contract).toBeDefined()
     expect(effectPackages(manifest.dependencies)).toEqual([])
     expect(effectPackages(manifest.peerDependencies ?? {})).toEqual(["effect"])
     expect(contract?.[1]).toBe(manifest.peerDependencies?.["effect"])
+    expect(contract?.[1]).toBe(manifest.devDependencies["effect"])
     for (const adapter of manifest.smthrs.privateEffectAdapters) {
       expect(contract?.[2]).toBe(manifest.devDependencies[adapter])
     }

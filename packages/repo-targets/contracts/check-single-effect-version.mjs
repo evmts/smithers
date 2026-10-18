@@ -13,18 +13,13 @@ import { readWorkspaceManifests } from "../../../.smithers/flows/release/pack-re
  * The Effect release this repository is built and tested on. Update the family
  * atomically with manifests and both package-manager locks.
  */
-export const EXPECTED_EFFECT_VERSION = "4.0.4"
+export const EXPECTED_EFFECT_VERSION = "4.0.5"
 
 /**
- * The Effect range a published library accepts from the application that
- * installs it.
- *
- * The floor is the tested release, never lower. `@smthrs/flows` installs
- * `@effect/sql-sqlite-node` at exactly that release, and the adapter peers
- * `effect` from its own version up, so a lower floor would promise an install
- * the adapter refuses.
+ * The exact Effect peer every published library requires. Wider supported
+ * ranges are tracked in #4238.
  */
-export const SUPPORTED_EFFECT_RANGE = `^${EXPECTED_EFFECT_VERSION}`
+export const SUPPORTED_EFFECT_RANGE = EXPECTED_EFFECT_VERSION
 
 /**
  * The last release candidate this repository ran on. It is below the supported
@@ -45,33 +40,8 @@ const sections = ["dependencies", "devDependencies", "peerDependencies", "option
  */
 const isFamily = (name) => name === "effect" || name.startsWith("@effect/") && !offReleaseLine.has(name)
 
-/**
- * What one Effect-family entry of a manifest must declare.
- *
- * A published library takes `effect` from the application that installs it,
- * so its Effect peers are the supported range: the application picks one
- * `effect` and the adapters that go with it. Everything a package installs for
- * itself is the tested release: development dependencies, an adapter a library
- * lists as a regular dependency, and every entry of an executable. Executables
- * ship private adapters built against the tested release, so their peer selects that
- * release too. Keeping it a peer shares one runtime with workspace libraries
- * without a nested dependency copy (#4002). Optional adapters with an explicit
- * peer contract also select the tested release; metadata-only peers leave the
- * application free to select its own adapter.
- */
-/**
- * `@smthrs/testing` is a library a consumer installs beside its own Effect; its
- * `smthrs-model-server` bin runs inside that install, so it takes the ranged
- * library peer like any other library.
- */
-const library = (manifest) => manifest.bin === undefined || manifest.name === "@smthrs/testing"
-
-export const expectedEffectDeclaration = (manifest, section, name) =>
-  section === "peerDependencies" && manifest.private !== true && library(manifest) &&
-    manifest.peerDependenciesMeta?.[name]?.optional !== true &&
-    manifest.peerDependencies?.effect !== undefined
-    ? SUPPORTED_EFFECT_RANGE
-    : EXPECTED_EFFECT_VERSION
+/** Every dependency and explicit peer selects the approved Effect cohort. */
+export const expectedEffectDeclaration = () => EXPECTED_EFFECT_VERSION
 
 export const effectDeclarations = (manifest, source) => sections.flatMap((section) =>
   Object.entries(manifest[section] ?? {}).filter(([name]) => isFamily(name))
@@ -88,13 +58,7 @@ export const effectLockVersions = (text, format) => {
     .map((match) => ({ name: match[1], version: match[2], source: format === "pnpm" ? "pnpm-lock.yaml" : "bun.lock" }))
 }
 
-/**
- * Fails unless every record carries what it must: the range for a published
- * library's peer, the tested release for everything else. A locked or
- * installed version has no `expected` and is always the tested release. The
- * comparison is exact both ways, so an exact pin in a library peer is refused
- * the same as a range in a dependency.
- */
+/** Exact declarations, lock entries and installed versions must all agree. */
 export const assertEffectPins = (records) => {
   const wrong = records.filter(({ version, expected = EXPECTED_EFFECT_VERSION }) => version !== expected)
   if (wrong.length > 0) throw new Error(

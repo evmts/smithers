@@ -490,9 +490,9 @@
     "@smthrs/canonical": "1.0.0-rc.12"
   },
   "peerDependencies": {
-    "effect": "^4.0.4",
+    "effect": "4.0.5",
     "vitest": "^5.0.0",
-    "@effect/vitest": "4.0.4"
+    "@effect/vitest": "4.0.5"
   },
   "peerDependenciesMeta": {
     "@effect/vitest": {
@@ -504,13 +504,13 @@
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/vitest": "4.0.4",
+    "@effect/vitest": "4.0.5",
     "@eslint/js": "9.39.5",
     "@smthrs/platform-node": "1.0.0-rc.12",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.4",
+    "effect": "4.0.5",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
