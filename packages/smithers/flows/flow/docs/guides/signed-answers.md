@@ -28,8 +28,14 @@ present; otherwise it is `String(requestedAt)`, the current ask's Unix timestamp
 in milliseconds received in the approval snapshot. The gateway's outer
 `requestId` / `payload.target.requestId` is a synthesized wait name and attempt,
 which may repeat in a loop: it is not a per-ask request ID and is never used here.
-The HumanTask snapshot already carries its ask time; no new backend field is
-needed. Cards carry the chosen identity as `question.askId`.
+Cards carry the chosen identity as `question.askId`.
+
+A flow that verifies its own answers should set HumanTask
+`requestId` to a per-ask identity it knows, for example `requestId: "release-ask-1"`.
+It can then recompute the challenge without reading runtime state. Each new ask
+using the same wait name must have its own requestId; retain that identity across
+replay of the same ask. The optional field is nonempty, well-formed text bounded
+to 1024 JSON-encoded UTF-8 bytes (including quotes and escapes).
 Missing ask identity refuses signing. `issuedAt` is ISO UTC from
 `new Date().toISOString()`.
 

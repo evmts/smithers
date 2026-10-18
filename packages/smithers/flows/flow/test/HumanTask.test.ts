@@ -288,6 +288,18 @@ describe("HumanTask as a declaration", () => {
     })
   })
 
+  it("admits only nonempty request ids within the task-name encoded byte bound", () => {
+    const decode = Schema.decodeUnknownSync(HumanTask.action.payloadSchema)
+    const payload = { name: "release", kind: "confirm", prompt: "Ship it?" }
+    expect(decode({ ...payload, requestId: "ask-α" })).toMatchObject({ requestId: "ask-α" })
+    const boundary = "é".repeat((HumanTask.maxTaskNameBytes - 2) / 2)
+    expect(decode({ ...payload, requestId: boundary })).toMatchObject({ requestId: boundary })
+    for (const requestId of ["", boundary + "é", "x".repeat(HumanTask.maxTaskNameBytes), "\ud800"]) {
+      expect(() => decode({ ...payload, requestId })).toThrow()
+    }
+    expect(decode(payload)).not.toHaveProperty("requestId")
+  })
+
   it("bounds persisted request text and option lists in the payload schema", () => {
     const decode = Schema.decodeUnknownSync(HumanTask.action.payloadSchema)
     expect(() =>
@@ -684,6 +696,26 @@ describe("HumanTask parks", () => {
           attempt: 1,
           maxAttempts: HumanTask.defaultMaxAttempts
         })
+      })
+    }).pipe(
+      Effect.provideService(FlowRuntime.FlowInstance, instance),
+      Effect.provide(wired())
+    )
+  })
+
+  effect("carries a flow-supplied request id unchanged in the approval request", () => {
+    const instance = makeInstance(Host, "human-request-id")
+    const requestId = "release/ask-α"
+    return Effect.gen(function*() {
+      const result = yield* Flow.intoResult(
+        Interpreter.interpret(HumanTask.action.call({
+          name: "release", requestId, kind: "confirm", prompt: "Ship it?"
+        }))
+      )
+      expect(result._tag).toBe("Suspended")
+      expect(instance.waiting?.reason).toBe("approval")
+      expect(JSON.parse(instance.waiting!.request!)).toMatchObject({
+        name: "release", requestId, attempt: 1
       })
     }).pipe(
       Effect.provideService(FlowRuntime.FlowInstance, instance),
