@@ -202,7 +202,12 @@ test("a declaration that cannot be read falls back to the tree and says what fai
   const { host } = await openRepository(json(503, { status: "error" }))
   const view = host.querySelector<HTMLElement>("[data-testid=repository-home]")!
   expect(view.dataset.home).toBe("error")
-  expect(view.textContent).toContain("Homepage unavailable")
+  const notice = view.querySelector("[role=status]")!
+  expect(notice.textContent).toBe("Homepage unavailable. Showing smithersai/smithers's files instead.")
+  expect(host.textContent!.match(/Homepage unavailable/g)).toHaveLength(1)
+  const files = host.querySelector("section[aria-label=Files]")!
+  expect(files).not.toBeNull()
+  expect(view.compareDocumentPosition(files) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
   expect(view.querySelector(".repository-home-files")).not.toBeNull()
 })
 
