@@ -2,7 +2,7 @@ import { realpath } from "node:fs/promises"
 import { startNativeBackend } from "./NativeBackendProcess"
 import { nativeStateDirectory } from "./NativeState"
 import { connectLocalGateway } from "./LocalWorkflowGateway"
-import { basename, resolve, relative, isAbsolute } from "node:path"
+import { basename, resolve, relative, isAbsolute, sep } from "node:path"
 
 const stateDir = nativeStateDirectory()
 const argument = (name: string) => { const at = process.argv.indexOf(name); return at < 0 ? undefined : process.argv[at + 1] }
@@ -16,7 +16,7 @@ const startGateway = async () => {
   const distDir = await realpath(argument("--dist") ?? defaultDistDir(import.meta.dir))
   const tokenPath = await realpath(tokenFile)
   const within = relative(distDir, tokenPath)
-  if (within === "" || (!within.startsWith("..") && !isAbsolute(within))) {
+  if (within === "" || (within !== ".." && !within.startsWith(".." + sep) && !isAbsolute(within))) {
     throw new Error("--gateway-token-file must be outside --dist.")
   }
   const root = resolve(argument("--root") ?? process.cwd())
@@ -29,7 +29,7 @@ const startGateway = async () => {
     throw new Error("Local gateway mode requires a localhost HTTP app origin.")
   }
   return startLocalServer({
-    stateDir, localGateway, cloudMode: "offline",
+    localGateway, cloudMode: "offline",
     distDir, privateFiles: [tokenPath],
     port: Number(origin.port || 80), publicHostname: origin.hostname as "localhost" | "127.0.0.1",
     log: (line) => { if (!line.startsWith("SMITHERS_LOCAL_ORIGIN=")) console.log(line) }

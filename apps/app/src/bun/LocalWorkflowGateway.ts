@@ -117,22 +117,11 @@ export const createLocalWorkflowRelay = (
   }
 }
 
-/** Minimal local inventory: no cloud workspace or person is fabricated. */
-export const localGatewayApi = async (config: LocalWorkflowGateway, request: Request): Promise<Response> => {
+/** The browser identity is the local deliverer, never a hosted person. */
+export const localGatewayApi = async (_config: LocalWorkflowGateway, request: Request): Promise<Response> => {
   const path = new URL(request.url).pathname
   if (request.method === "GET") {
     if (path === "/api/user") return json({ id: 0, username: "local-operator", display_name: "Local operator", is_admin: false })
-    const prefix = `/api/repos/${config.repo}`
-    if (path === `${prefix}/contents/.smithers/factory.json`) {
-      try {
-        const content = await readFile(resolve(config.root, ".smithers/factory.json"), "utf8")
-        return json({ content, encoding: "utf-8" })
-      } catch (error) {
-        return (error as NodeJS.ErrnoException).code === "ENOENT"
-          ? jsonError("not_found", "No flow catalog in this workspace.")
-          : jsonError("internal", "The local flow catalog could not be read.")
-      }
-    }
   }
   return json({ message: "Not available in local mode." }, 409)
 }

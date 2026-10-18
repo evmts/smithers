@@ -1,5 +1,5 @@
 import { expect, mock, test } from "bun:test"
-import { mkdtemp, writeFile, rm, mkdir } from "node:fs/promises"
+import { mkdtemp, writeFile, rm, mkdir, symlink } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createHash } from "node:crypto"
@@ -26,6 +26,7 @@ test("gateway entrypoint uses the token file, binds health, and never spawns Go"
     await writeFile(join(root, "token"), token, { mode: 0o600 })
     await mkdir(join(root, "dist"))
     await writeFile(join(root, "dist/index.html"), "<!doctype html><head></head>")
+    await symlink(join(root, "token"), join(root, "dist/credential-alias"))
     process.chdir(root)
     process.argv.push("--root", root, "--gateway", `http://127.0.0.1:${serve.port}`, "--gateway-token-file", join(root, "token"), "--dist", join(root, "dist"), "--origin", "http://localhost:0")
     const entry = import("../../../src/bun/serve")
@@ -53,7 +54,7 @@ test("gateway entrypoint uses the token file, binds health, and never spawns Go"
     expect(html).not.toContain(token)
     expect(JSON.stringify(bootstrap)).not.toContain(token)
     expect(logs.join("\n")).not.toContain(token)
-    expect((await fetch(`${origin}/token`)).status).toBe(404)
+    for (const path of ["/token", "/credential-alias"]) expect((await fetch(origin! + path)).status).toBe(404)
     process.emit("SIGTERM")
     await entry
   } finally {

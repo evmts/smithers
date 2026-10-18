@@ -669,7 +669,7 @@ test("gateway mode refuses all remote routes without backend, identity or cloud 
   const upstream = `http://127.0.0.1:${fake.port}`
   const local = await startLocalServer({
     port: 0, distDir: dist, cloudMode: "hybrid", backendApi: upstream,
-    identityUpstream: upstream, cloudUpstream: upstream,
+    identityUpstream: upstream, cloudApi: upstream,
     localGateway: { url: upstream, repo: "local/project", workspaceId: "0123456789abcdef", gatewayId: "test", root: dist, operatorToken: "private" }
   })
   try {

@@ -16,8 +16,7 @@ test.each(cases)('serve entrypoint %s lifecycle runs in an isolated process', (s
     env: {
       ...process.env,
       SMITHERS_SERVE_SCENARIO: scenario,
-      SMITHERS_API_ORIGIN: scenario === 'hostile-origin' ? 'https://plue.example' : '',
-      SMITHERS_LOCAL_STATE_DIR: scenario === 'hostile-origin' ? '/configured' : ''
+      SMITHERS_API_ORIGIN: scenario === 'hostile-origin' ? 'https://plue.example' : ''
     },
     encoding: 'utf8',
     timeout: 10_000
@@ -49,9 +48,10 @@ test('gateway startup refuses real and symlinked token paths inside real dist', 
     const dist = join(root, 'dist')
     await mkdir(dist)
     await writeFile(join(dist, 'token'), 'private', { mode: 0o600 })
+    await writeFile(join(dist, '..token'), 'private', { mode: 0o600 })
     await symlink(dist, join(root, 'dist-alias'))
     await symlink(join(dist, 'token'), join(root, 'token-alias'))
-    for (const [directory, token] of [[dist, join(dist, 'token')], [join(root, 'dist-alias'), join(root, 'token-alias')]]) {
+    for (const [directory, token] of [[dist, join(dist, 'token')], [dist, join(dist, '..token')], [join(root, 'dist-alias'), join(root, 'token-alias')]]) {
       const result = spawnSync(process.execPath, [fileURLToPath(new URL('./serve.ts', import.meta.url)), '--gateway', 'http://127.0.0.1:1', '--gateway-token-file', token!, '--dist', directory!], { env: process.env, encoding: 'utf8', timeout: 5000 })
       expect(result.status).not.toBe(0)
       expect(result.stderr).toContain('outside --dist')

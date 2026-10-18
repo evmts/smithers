@@ -167,6 +167,10 @@ export type GatewayBinding =
   | { readonly workspaceId: string }
   | { readonly error: string; readonly choices?: ReadonlyArray<CloudWorkspaceRow>; readonly noBox?: true }
 
+/** Persist the local transport only when this host owns the repository binding. */
+export const localGatewayCardFields = (store: AppStore, repo: string): { readonly localGateway?: true } =>
+  gatewayHosts.get(store)?.repo === repo ? { localGateway: true } : {}
+
 /** The statuses a box passes through before it runs. */
 const SETTLING: ReadonlySet<string> = new Set(["pending", "starting"])
 

@@ -1,3 +1,4 @@
+import { localGatewayCardFields } from "../RepoContext"
 import { runsArgs } from "../../flows/RunsPayload"
 /*
  * Lane runs — the run lifecycle beyond launch and cancel.
@@ -324,7 +325,7 @@ export const createRunsController = (
     const saving = store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card: {
       id: cardId, kind: "run-list", title: `${args.status === "attention" ? "Needs attention" : "Runs"} — ${repo}`, status: "active",
       createdAt: existing?.createdAt ?? Date.now(), ordinal: existing?.ordinal ?? nextTranscriptOrdinal(),
-      payload: { ...filters, gatewayBindingVersion: 1, listRequest: request, runs: [], statuses: existing?.payload.statuses ?? [] }
+      payload: { ...filters, gatewayBindingVersion: 1, ...localGatewayCardFields(store, repo), listRequest: request, runs: [], statuses: existing?.payload.statuses ?? [] }
     } }).isPersisted.promise
     listReads.persisting.set(cardId, saving)
     try { await saving } finally { if (listReads.persisting.get(cardId) === saving) listReads.persisting.delete(cardId) }
@@ -1016,7 +1017,7 @@ export const createRunsController = (
       createdAt: existing?.createdAt ?? Date.now(),
       ordinal: existing?.ordinal ?? nextTranscriptOrdinal(),
       payload: {
-        repo, ...binding, gatewayBindingVersion: 1,
+        repo, ...binding, gatewayBindingVersion: 1, ...localGatewayCardFields(store, repo),
         approvals: pending.map((row) => {
           // A row's recorded decision survives a refresh: the freeze is the
           // server's answer, not something a re-list may thaw.
@@ -1251,7 +1252,7 @@ export const createRunsController = (
           requestId: approval.requestId,
           approval: approval.payload as Record<string, unknown>,
           ...(questionOf(approval) === undefined ? {} : { question: questionOf(approval)! }),
-          repo, ...binding, gatewayBindingVersion: 1
+          repo, ...binding, gatewayBindingVersion: 1, ...localGatewayCardFields(store, repo)
         }
       }
       store.dispatch({ type: "card.upsert", actor: "system", card })
