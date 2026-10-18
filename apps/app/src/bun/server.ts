@@ -60,6 +60,7 @@ import type { CloudAuth, CloudKeychain } from "./CloudAuth"
 import { createModelProbe } from "@smthrs/model-host/ModelProbe"
 import { machineReadableRefusal, upstreamRefusalMessage } from "@smthrs/rpc/UpstreamProse"
 import { decodePath, invalidPath, json, jsonError, readJson, refuse, Router } from "./routes"
+import { createLocalWorkflowRelay, localGatewayFromEnvironment, type LocalWorkflowGateway } from "./LocalWorkflowGateway"
 
 /** The deployed identity seam the sign-in device flow talks to. */
 export const DEFAULT_IDENTITY_UPSTREAM = "https://canary.smithers.sh"
@@ -135,6 +136,8 @@ const MAX_CLOUD_WS_UPSTREAM_BUFFER = 1024 * 1024
 const MAX_WS_BACKPRESSURE_BYTES = 4 * 1024 * 1024
 
 export interface LocalServerOptions {
+  /** L7 prototype: explicit local project binding; null disables the environment override. */
+  readonly localGateway?: LocalWorkflowGateway | null
   /** 0 (the default) picks a free port. */
   readonly port?: number
   /** The built SPA: index.html plus assets/. */
@@ -645,6 +648,8 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
   const distDir = resolve(options.distDir)
   const version = options.version ?? APP_VERSION
   const upstreamTimeoutMs = options.upstreamTimeoutMs ?? DEFAULT_UPSTREAM_TIMEOUT_MS
+  const localGateway = options.localGateway === undefined ? localGatewayFromEnvironment(Bun.env) : options.localGateway
+  const localWorkflowRelay = localGateway == null ? undefined : createLocalWorkflowRelay(localGateway, upstreamTimeoutMs)
   const remoteEnabled = options.cloudMode === "hybrid"
   const identityUpstream = !remoteEnabled
     ? null
@@ -1120,6 +1125,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
           : proxyCloud(request, url, cloudUpstream, cloudAuth?.token(), upstreamTimeoutMs, log)
       }
       if (pathname === "/api/auth/session") return jsonError("not_found", `No route for ${request.method} ${pathname}.`)
+      if (localWorkflowRelay !== undefined && pathname.startsWith("/api/workflow/")) return localWorkflowRelay(request)
       if (pathname.startsWith(AUTH_ROUTE_PREFIX) || pathname.startsWith(IDENTITY_ROUTE_PREFIX)) {
         return identityUpstream === null ? stubIdentity() : proxyIdentity(request, url, identityUpstream, upstreamTimeoutMs, log)
       }
