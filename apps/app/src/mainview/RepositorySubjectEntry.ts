@@ -9,8 +9,8 @@ import type { AppStore } from "./state/AppStore"
 import type { Message } from "./state/AppState"
 
 /*
- * The subject a GitHub-shaped repository URL asks for, opened through the
- * flows that already read it. The URL names a target; it carries no authority
+ * The subject a GitHub-shaped repository URL asks for, opened through its
+ * admitted read. Blob pages use the full-page seam; chat keeps its bounded card. The URL names a target; it carries no authority
  * and no second reader: `/owner/repo/pull/2/files` runs the registered `pr`
  * read for that repository and then the registered tab choice (`prs.tab`), exactly as the
  * slash door and the Activity card do.
@@ -231,7 +231,7 @@ const unresolvedNotice = (
  * repository.
  */
 const openRequestedFile = async (
-  controller: Pick<AppController, "store" | "runCommandForResult" | "repositoryBranches">,
+  controller: Pick<AppController, "store" | "runCommandForResult" | "repositoryBranches" | "readRepositoryFilePage">,
   repo: string,
   subject: Extract<RepositorySubject, { readonly kind: "tree" | "blob" }>,
   owner: string | null | undefined,
@@ -271,6 +271,18 @@ const openRequestedFile = async (
     })
     return
   }
+  if (subject.kind === "blob") {
+    try {
+      const page = await controller.readRepositoryFilePage(target, located.path, located.ref)
+      if (!options.signal?.aborted && admitted(controller.store, repo, options.requestId, owner)) setCodeRead(readKey, "ready", undefined, page)
+    } catch {
+      if (!options.signal?.aborted && admitted(controller.store, repo, options.requestId, owner)) {
+        setCodeRead(readKey, "failed", "Could not read file.")
+        return "Could not read file."
+      }
+    }
+    return
+  }
   const { name, args } = fileSubjectCommand(target, subject.kind, located)
   const outcome = await controller.runCommandForResult(name, args)
   if (admitted(controller.store, repo, options.requestId, owner)) {
@@ -287,7 +299,7 @@ const openRequestedFile = async (
  * when the URL named no subject or when the admission is not this request's.
  */
 export const openRequestedSubject = async (
-  controller: Pick<AppController, "store" | "runCommandForResult" | "repositoryBranches">,
+  controller: Pick<AppController, "store" | "runCommandForResult" | "repositoryBranches" | "readRepositoryFilePage">,
   repo: string,
   subject: RepositorySubject | undefined,
   options: SubjectEntryOptions

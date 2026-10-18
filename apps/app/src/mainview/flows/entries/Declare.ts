@@ -39,6 +39,8 @@ export type CommandActions =
     | "fileDocuments"
     // The header's branch rows are view data; the `branch` flow reaches the seam through openBranch.
     | "repositoryBranches"
+    // Repository page bytes are view data, independent of the bounded chat read.
+    | "readRepositoryFilePage"
     // The History card reads archived chats and the header's label; `archive` and `history` are the acts.
     | "chatArchives"
     | "archiveLabel"

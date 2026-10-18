@@ -183,6 +183,7 @@ describe("the controller's command surface", () => {
       "installSnapshots",
       "todoList",
       "fileDocuments",
+      "readRepositoryFilePage",
       "repositoryBranches",
       "chatArchives",
       "archiveLabel",
