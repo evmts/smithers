@@ -1,6 +1,13 @@
 import { expect, test } from "../browserTest"
 import { say } from "./j1-fixtures"
 import { installCloudFixture } from "../cloudFixture"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
+import { TOC } from "../../../src/docs/toc"
+
+// The docs nav lists every page toc.ts lists, by its title.
+const titles = TOC.flatMap(section => section.pages)
+  .map(slug => /^title: "([^"]+)"$/m.exec(readFileSync(join(__dirname, "../../../src/docs/pages", `${slug}.md`), "utf8"))![1]!)
 
 // The real app docs dispatcher, bundled loader and Docs renderer behind the
 // branch HTTP/live seams. The agent case (the app agent answers "how do I"
@@ -30,25 +37,27 @@ test("C-UI-09: Bundled docs open pages and anchors through every door", async ({
   const origin = new URL(page.url()).origin
   page.on("request", request => { if (new URL(request.url()).origin !== origin) outside.push(request.url()) })
   await say(page, "/docs")
-  const quickstart = page.getByRole("article", { name: "Docs", exact: true }).filter({ has: page.getByRole("heading", { name: "Quickstart", exact: true }) })
-  await expect(quickstart.getByRole("navigation", { name: "Docs pages" }).getByRole("link")).toHaveText(["Quickstart", "Flows reference"])
+  const docsArticle = (title: string) => page.getByRole("article", { name: "Docs", exact: true }).filter({ has: page.getByRole("heading", { name: title, exact: true }) })
+  const welcome = docsArticle("Welcome to Smithers")
+  await expect(welcome.getByRole("navigation", { name: "Docs pages" }).getByRole("link")).toHaveText(titles)
   await expect(page.getByTestId("composer-input")).toBeEditable()
-  await quickstart.getByRole("link", { name: "Flows reference", exact: true }).last().press("Enter")
+  await welcome.getByRole("link", { name: "What a flow is", exact: true }).last().press("Enter")
   const reference = page.getByRole("article", { name: "Docs", exact: true }).filter({ has: page.getByRole("heading", { name: "Flows reference", exact: true }) })
   await expect(reference.locator("#find-a-command")).toBeVisible()
-  await reference.getByRole("link", { name: "Quickstart", exact: true }).last().press("Enter")
-  await expect(quickstart.locator("#first-todo-to-merged")).toBeInViewport()
-  await quickstart.getByRole("link", { name: "Flows reference", exact: true }).first().press("Enter")
+  await reference.getByRole("link", { name: "Self-host Smithers", exact: true }).last().press("Enter")
+  const selfHost = docsArticle("Self-host Smithers")
+  await expect(selfHost.locator("#first-todo-to-merged")).toBeInViewport()
+  await selfHost.getByRole("link", { name: "Flows reference", exact: true }).first().press("Enter")
   await expect(reference.getByRole("heading", { name: "Find a command", exact: true })).toBeVisible()
-  await reference.getByRole("navigation", { name: "Docs pages" }).getByRole("link", { name: "Quickstart", exact: true }).press("Enter")
-  await expect(quickstart).toBeVisible()
-  await say(page, "/docs quickstart#put-https-in-front")
-  await expect(quickstart.locator("#put-https-in-front")).toBeInViewport()
+  await reference.getByRole("navigation", { name: "Docs pages" }).getByRole("link", { name: "Self-host Smithers", exact: true }).press("Enter")
+  await expect(selfHost).toBeVisible()
+  await say(page, "/docs self-host#put-https-in-front")
+  await expect(selfHost.locator("#put-https-in-front")).toBeInViewport()
   await say(page, "/docs no-such-page")
-  await expect(quickstart).toContainText("Page not found: no-such-page")
+  await expect(welcome).toContainText("Page not found: no-such-page")
   await expect(page.locator(".mvp-docs-missing")).toHaveCount(1)
   await page.reload()
-  await expect(quickstart).toContainText("Page not found: no-such-page")
+  await expect(welcome).toContainText("Page not found: no-such-page")
   await expect(page.getByTestId("composer-input")).toBeEditable()
   expect(retired).toEqual([])
   expect(outside).toEqual([])

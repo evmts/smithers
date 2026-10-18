@@ -301,6 +301,29 @@ test("retired docs URLs reach Install while live page anchors remain checked", (
   assert.equal(checkBuiltSite(root, ["/docs/installation/#missing"]).failures.length, 1)
 })
 
+test("a docs page's Markdown copy reaches its screenshots and linked pages in the build", (t) => {
+  const copy = "# Flows\n\n![The Flow card](https://smithers.sh/images/docs/flow-card.light.webp)\n\nSee [Quickstart](https://smithers.sh/docs/quickstart/#sign-in) and [GitHub](https://github.com/smithersai/smithers).\n"
+  const root = fixture(t, {
+    "docs/flows.md": copy,
+    "docs/flows/index.html": '<link rel="alternate" type="text/markdown" href="/docs/flows.md"><img src="/images/docs/flow-card.dark.webp" alt="The Flow card">',
+    "docs/quickstart/index.html": '<h2 id="sign-in">Sign in</h2>',
+    "images/docs/flow-card.light.webp": "light",
+    "images/docs/flow-card.dark.webp": "dark"
+  })
+  assert.deepEqual(checkBuiltSite(root).failures, [])
+  rmSync(join(root, "images/docs/flow-card.light.webp"))
+  rmSync(join(root, "images/docs/flow-card.dark.webp"))
+  writeFileSync(join(root, "docs/quickstart/index.html"), "<h2>Sign in</h2>")
+  rmSync(join(root, "docs/flows.md"))
+  writeFileSync(join(root, "docs/index.md"), copy)
+  assert.deepEqual(checkBuiltSite(root).failures.sort(), [
+    "docs/flows/index.html: missing /docs/flows.md (resolved to /docs/flows.md)",
+    "docs/flows/index.html: missing /images/docs/flow-card.dark.webp (resolved to /images/docs/flow-card.dark.webp)",
+    "docs/index.md: missing anchor https://smithers.sh/docs/quickstart/#sign-in (resolved to /docs/quickstart/#sign-in)",
+    "docs/index.md: missing https://smithers.sh/images/docs/flow-card.light.webp (resolved to /images/docs/flow-card.light.webp)"
+  ])
+})
+
 test("origin robots allows crawlers and advertises the sitemap", () => {
   const robots = readFileSync(new URL("../public/robots.txt", import.meta.url), "utf8")
   assert.match(robots, /^User-agent: \*$/m)

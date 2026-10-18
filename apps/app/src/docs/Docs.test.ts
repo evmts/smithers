@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test"
+import { existsSync } from "node:fs"
+import { fileURLToPath } from "node:url"
 import { headingLine } from "../mainview/cards/MarkdownLinks"
-import { diskPageFiles } from "./DiskPages"
-import { docsLinkTarget, docsPage, loadDocs, parsePage } from "./Docs"
+import { diskImageFiles, diskPageFiles } from "./DiskPages"
+import { docsLinkTarget, docsPage, loadDocs, parsePage, type Docs } from "./Docs"
 import { TOC } from "./toc"
 
 /*
@@ -13,24 +15,70 @@ import { TOC } from "./toc"
  */
 
 const files = diskPageFiles()
+const imageFiles = diskImageFiles()
 const slugOf = (path: string): string => path.replace(/^\.\/pages\//, "").replace(/\.md$/, "")
 
-/** Every link target in a page's Markdown, outside fenced code: inline `[text](href)` and reference `[id]: href`. */
-const hrefsOf = (markdown: string): Array<string> => {
-  const hrefs: Array<string> = []
+/** The lines of a page's Markdown outside fenced code. */
+const proseLines = (markdown: string): Array<string> => {
+  const lines: Array<string> = []
   let fenced = false
   for (const line of markdown.split("\n")) {
     if (/^\s*(```|~~~)/.test(line)) {
       fenced = !fenced
       continue
     }
-    if (fenced) continue
-    for (const match of line.matchAll(/\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g)) hrefs.push(match[1]!)
+    if (!fenced) lines.push(line)
+  }
+  return lines
+}
+
+/**
+ * Every link target in a page's Markdown, outside fenced code: inline
+ * `[text](href)` and reference `[id]: href`. An image, `![alt](src)`, is not
+ * a link: imagesOf checks it.
+ */
+const hrefsOf = (markdown: string): Array<string> => {
+  const hrefs: Array<string> = []
+  for (const line of proseLines(markdown)) {
+    for (const match of line.matchAll(/(!?)\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g)) {
+      if (match[1] === "") hrefs.push(match[2]!)
+    }
     const reference = /^\s{0,3}\[[^\]]+\]:\s*<?(\S+?)>?(?:\s|$)/.exec(line)
     if (reference !== null) hrefs.push(reference[1]!)
   }
   return hrefs
 }
+
+/** Every image in a page's Markdown, outside fenced code, with its alt text and source. */
+const imagesOf = (markdown: string): Array<{ readonly alt: string; readonly src: string; readonly block: boolean }> =>
+  proseLines(markdown).flatMap((line) =>
+    [...line.matchAll(/!\[([^\]]*)\]\(\s*<?([^)\s>]+)>?\s*\)/g)].map((match) => ({
+      alt: match[1]!,
+      src: match[2]!,
+      block: match[0] === line.trim()
+    })))
+
+/**
+ * What is wrong with the pages' screenshots: each is a block image on its own
+ * line, `![Alt text](images/<id>.webp)`, with alt text, and both of its theme
+ * files exist on disk.
+ */
+const imageProblems = (docs: Docs, onDisk: Readonly<Record<string, string>>): Array<string> =>
+  docs.pages.flatMap((page) => imagesOf(page.markdown).flatMap(({ alt, src, block }) => {
+    const where = `${page.slug}.md → ${src}`
+    const problems: Array<string> = []
+    if (!block) problems.push(`${where}: not on a line of its own`)
+    if (alt.trim() === "") problems.push(`${where}: no alt text`)
+    const id = /^images\/([a-z0-9]+(?:-[a-z0-9]+)*)\.webp$/.exec(src)?.[1]
+    if (id === undefined) return [...problems, `${where}: not images/<id>.webp`]
+    for (const variant of ["light", "dark"] as const) {
+      const file = onDisk[`./images/${id}.${variant}.webp`]
+      if (docs.images[src]?.[variant] === undefined || file === undefined || !existsSync(file)) {
+        problems.push(`${where}: no images/${id}.${variant}.webp`)
+      }
+    }
+    return problems
+  }))
 
 describe("the shipped pages", () => {
   test("every toc slug has a page, and every page is in the toc exactly once", () => {
@@ -77,6 +125,52 @@ describe("the shipped pages", () => {
     // The seed pages link to each other, so this test is never vacuous.
     expect(checked).toBeGreaterThan(0)
   })
+
+  test("every screenshot is a block image with alt text and both theme files", () => {
+    expect(imageProblems(loadDocs(files, TOC, imageFiles), imageFiles)).toEqual([])
+    for (const path of Object.keys(imageFiles)) expect(path).toMatch(/^\.\/images\/[a-z0-9]+(?:-[a-z0-9]+)*\.(light|dark)\.webp$/)
+  })
+})
+
+describe("page screenshots", () => {
+  // The fixture page lives here because the shipped pages change. A real file
+  // stands in for both theme files, so the on-disk check runs for real.
+  const file = fileURLToPath(new URL("./Docs.ts", import.meta.url))
+  const pair = { "./images/home.light.webp": file, "./images/home.dark.webp": file }
+
+  test("an image is not a link, and a link to an image file stays blocked", () => {
+    expect(hrefsOf("![The home](images/home.webp)\n\nSee [Flows](flows.md) and [the logo](logo.png).")).toEqual(["flows.md", "logo.png"])
+    expect(imagesOf("![The home](images/home.webp)\n\nSee [Flows](flows.md).")).toEqual([{ alt: "The home", src: "images/home.webp", block: true }])
+    expect(imagesOf("```\n![Not an image](images/home.webp)\n```")).toEqual([])
+  })
+
+  test("names each screenshot without alt text, off its own line, outside images/, or missing a theme file", () => {
+    const page = (markdown: string) => `---\ntitle: Fixture\nsummary: A page with screenshots.\n---\n${markdown}\n`
+    const docs = loadDocs({ "./pages/fixture.md": page([
+      "![The repository home](images/home.webp)",
+      "",
+      "![](images/home.webp)",
+      "",
+      "Inline ![The home](images/home.webp) here.",
+      "",
+      "![The logo](logo.png)",
+      "",
+      "![Half a pair](images/gone.webp)"
+    ].join("\n")) }, [{ label: "One", pages: ["fixture"] }], pair)
+    expect(imageProblems(docs, pair)).toEqual([
+      "fixture.md → images/home.webp: no alt text",
+      "fixture.md → images/home.webp: not on a line of its own",
+      "fixture.md → logo.png: not images/<id>.webp",
+      "fixture.md → images/gone.webp: no images/gone.light.webp",
+      "fixture.md → images/gone.webp: no images/gone.dark.webp"
+    ])
+    // The same page passes once the pair is on disk and the prose is fixed.
+    const fixed = loadDocs({ "./pages/fixture.md": page("![The repository home](images/home.webp)") },
+      [{ label: "One", pages: ["fixture"] }], pair)
+    expect(imageProblems(fixed, pair)).toEqual([])
+    expect(imageProblems(fixed, { ...pair, "./images/home.dark.webp": `${file}.missing` }))
+      .toEqual(["fixture.md → images/home.webp: no images/home.dark.webp"])
+  })
 })
 
 describe("parsePage", () => {
@@ -108,6 +202,24 @@ describe("parsePage", () => {
 describe("loadDocs", () => {
   const page = (title: string): string => `---\ntitle: ${title}\nsummary: About ${title}.\n---\n# ${title}\n`
   const pages = { "./pages/b.md": page("B"), "./pages/a.md": page("A") }
+  const toc = [{ label: "One", pages: ["a", "b"] }]
+
+  test("pairs each screenshot's light and dark files under the source a page writes", () => {
+    const docs = loadDocs(pages, toc, {
+      "./images/repo-home.dark.webp": "/assets/repo-home.dark-2.webp",
+      "./images/repo-home.light.webp": "/assets/repo-home.light-1.webp"
+    })
+    expect(docs.images).toEqual({ "images/repo-home.webp": { light: "/assets/repo-home.light-1.webp", dark: "/assets/repo-home.dark-2.webp" } })
+    expect(loadDocs(pages, toc).images).toEqual({})
+  })
+
+  test("refuses a screenshot file that is not <id>.light.webp or <id>.dark.webp, or lacks its other theme", () => {
+    for (const name of ["Home.light.webp", "home.webp", "home.dim.webp", "home.light.png"]) {
+      expect(() => loadDocs(pages, toc, { [`./images/${name}`]: "/x" })).toThrow(`images/${name} is not named <id>.light.webp or <id>.dark.webp.`)
+    }
+    expect(() => loadDocs(pages, toc, { "./images/home.light.webp": "/x" })).toThrow("images/home.light.webp has no images/home.dark.webp.")
+    expect(() => loadDocs(pages, toc, { "./images/home.dark.webp": "/x" })).toThrow("images/home.dark.webp has no images/home.light.webp.")
+  })
 
   test("orders the pages by the toc, whatever order the files arrive in", () => {
     const docs = loadDocs(pages, [{ label: "One", pages: ["a"] }, { label: "Two", pages: ["b"] }])

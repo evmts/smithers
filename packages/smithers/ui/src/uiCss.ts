@@ -562,6 +562,15 @@ export const markdownCss = `
 .sui-md-alert-label > svg { flex:0 0 16px; }
 .sui-md-blockquote > :first-child, .sui-md-alert-label + * { margin-top:0; }
 .sui-md-blockquote > :last-child, .sui-md-alert > :last-child { margin-bottom:0; }
+.sui-md-figure { margin:12px 0; }
+.sui-md-image { display:block; width:100%; height:auto; border:1px solid ${t.border}; border-radius:${t.radiusControl}; background:${t.card}; }
+.sui-md-image[data-variant='dark'] { display:none; }
+html[data-theme='dark'] .sui-md-image[data-variant='light'] { display:none; }
+html[data-theme='dark'] .sui-md-image[data-variant='dark'] { display:block; }
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme='light']) .sui-md-image[data-variant='light'] { display:none; }
+  html:not([data-theme='light']) .sui-md-image[data-variant='dark'] { display:block; }
+}
 `;
 
 export const agenticResponseCss = `

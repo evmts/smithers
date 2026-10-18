@@ -31,7 +31,7 @@ test("pages have title and summary frontmatter only", () => {
 
 test("relative links and anchors resolve", () => {
   for (const [name, markdown] of pages) {
-    for (const match of withoutFences(body(markdown)).matchAll(/\[[^\]]*\]\(([^)]+)\)/g)) {
+    for (const match of withoutFences(body(markdown)).matchAll(/(?<!!)\[[^\]]*\]\(([^)]+)\)/g)) {
       const href = match[1]!
       if (/^https?:\/\//.test(href)) continue
       const target = new URL(href, new URL(name, directory))
@@ -39,6 +39,23 @@ test("relative links and anchors resolve", () => {
       if (target.hash) expect(anchors(destination).has(decodeURIComponent(target.hash.slice(1)))).toBe(true)
     }
   }
+})
+
+// One source for alt text: capture-docs.mjs writes each screenshot's alt into
+// captures.json, and a page shows it with exactly that text. A capture no page
+// shows is a stale image.
+test("every screenshot's alt text is its capture's, and every capture is shown", () => {
+  const captures = JSON.parse(readFileSync(new URL("./images/captures.json", import.meta.url), "utf8")) as ReadonlyArray<{ id: string; alt: string }>
+  const alts = new Map(captures.map(capture => [capture.id, capture.alt]))
+  const shown = new Set<string>()
+  for (const [name, markdown] of pages) {
+    for (const [, alt, id] of withoutFences(body(markdown)).matchAll(/^!\[([^\]]*)\]\(images\/([a-z0-9-]+)\.webp\)$/gm)) {
+      shown.add(id!)
+      expect({ name, id, alt: alts.get(id!) }).toEqual({ name, id, alt })
+    }
+  }
+  expect(shown.size).toBeGreaterThan(0)
+  expect([...alts.keys()].filter(id => !shown.has(id))).toEqual([])
 })
 
 // M-49: a repository's flows live under `.smithers/flows/`; a root `flows/` is never read.
@@ -60,8 +77,8 @@ const member: CommandState = {
 const discovery = {
   debugApi: { available: () => false },
   /*
-   * These pages are the INSTALL's quickstart and flows reference (M-09: the
-   * hosted origin is post-MVP), and an install's own bootstrap says `install`.
+   * The self-host page and the flows reference document the INSTALL's
+   * commands, and an install's own bootstrap says `install`.
    * The row is what makes the TODO family a door at all
    * (flows/DoorAvailability.ts), so a fixture without it would withdraw the
    * very flows these pages document.
@@ -102,49 +119,51 @@ test("slash references resolve against the generated MVP catalog and source regi
 
 
 test("the docs index and release links are exact", () => {
-  expect([...pages.keys()].sort()).toEqual(["flows.md", "quickstart.md"])
+  expect([...pages.keys()].sort()).toEqual(["flows.md", "quickstart.md", "self-host.md", "welcome.md"])
+  expect(pages.get("welcome.md")).toMatch(/^---\ntitle: "Welcome to Smithers"/ )
   expect(pages.get("quickstart.md")).toMatch(/^---\ntitle: "Quickstart"/ )
+  expect(pages.get("self-host.md")).toMatch(/^---\ntitle: "Self-host Smithers"/ )
   expect(pages.get("flows.md")).toMatch(/^---\ntitle: "Flows reference"/ )
-  const quickstart = pages.get("quickstart.md")!
-  const https = quickstart.split("## Put HTTPS in front\n")[1]!.split("\n## ")[0]!
+  const selfHost = pages.get("self-host.md")!
+  const https = selfHost.split("## Put HTTPS in front\n")[1]!.split("\n## ")[0]!
   expect(https).toContain("Tailscale")
   expect(https).toContain("Caddy")
-  expect(quickstart.replace(https, "")).not.toMatch(/tailscale|caddy/i)
+  expect(selfHost.replace(https, "")).not.toMatch(/tailscale|caddy/i)
   for (const markdown of pages.values()) {
     for (const match of markdown.matchAll(/\]\((https:\/\/smithers\.sh\/docs\/[^)]+)\)/g)) {
       const path = new URL(match[1]!).pathname
       expect(path === "/docs/installation/" || path === "/docs/reference/http-api/" || path.startsWith("/docs/reference/api/")).toBe(true)
     }
   }
-  expect(quickstart).toContain("https://smithers.sh/docs/reference/http-api/")
-  expect(anchors(quickstart).has("put-https-in-front")).toBe(true)
-  expect(quickstart).toContain("tailscale serve --bg --https=443 http://127.0.0.1:4000")
-  expect(quickstart).toContain("--tcp=2222")
-  expect(quickstart).toContain("header_up Host {http.request.host}")
-  expect(quickstart).toContain("proxy on another host must pass the original `Host`")
-  expect(quickstart).toContain("Hypervisor.framework")
-  expect(quickstart).toContain("automatic login")
-  expect(quickstart).toContain("stop the original install first")
+  expect(selfHost).toContain("https://smithers.sh/docs/reference/http-api/")
+  expect(anchors(selfHost).has("put-https-in-front")).toBe(true)
+  expect(selfHost).toContain("tailscale serve --bg --https=443 http://127.0.0.1:4000")
+  expect(selfHost).toContain("--tcp=2222")
+  expect(selfHost).toContain("header_up Host {http.request.host}")
+  expect(selfHost).toContain("proxy on another host must pass the original `Host`")
+  expect(selfHost).toContain("Hypervisor.framework")
+  expect(selfHost).toContain("automatic login")
+  expect(selfHost).toContain("stop the original install first")
   expect(pages.get("flows.md")).not.toMatch(/tailscale|caddy/i)
 })
 
 
-test("quickstart includes shipped LAN commands without duplicate sections", () => {
-  const quickstart = pages.get("quickstart.md")!
-  for (const command of ["brew install smithersai/tap/smithers", "smthrs host start --bind 0.0.0.0 --origin http://studio-mini.local:4000"]) expect(quickstart).toContain(command)
-  const headings = [...quickstart.matchAll(/^## (.+)$/gm)].map(match => match[1])
+test("self-host includes shipped LAN commands without duplicate sections", () => {
+  const selfHost = pages.get("self-host.md")!
+  for (const command of ["brew install smithersai/tap/smithers", "smthrs host start --bind 0.0.0.0 --origin http://studio-mini.local:4000"]) expect(selfHost).toContain(command)
+  const headings = [...selfHost.matchAll(/^## (.+)$/gm)].map(match => match[1])
   expect(new Set(headings).size).toBe(headings.length)
 })
 
 
 test("recovery examples name the backup directory and report provider refusal honestly", () => {
-  const quickstart = pages.get("quickstart.md")!
-  for (const command of ["smthrs host backup", "smthrs host upgrade", "smthrs host restore /Users/will/Backups/smithers"]) expect(quickstart).toContain(command)
-  expect(quickstart.indexOf("smthrs host stop")).toBeLessThan(quickstart.indexOf("smthrs host restore"))
-  expect(quickstart).toContain("host_maintenance_unavailable")
-  expect(quickstart).toContain("A refusal is not a completed backup or upgrade")
-  expect(quickstart).toContain("directory printed by a successful backup")
-  expect(quickstart).toContain("$STATE/backups/<version>-<UTC ts>/")
-  expect(quickstart).toContain("never a `.partial-` directory")
-  expect(quickstart).toContain("Stop the destination install too before running restore")
+  const selfHost = pages.get("self-host.md")!
+  for (const command of ["smthrs host backup", "smthrs host upgrade", "smthrs host restore /Users/will/Backups/smithers"]) expect(selfHost).toContain(command)
+  expect(selfHost.indexOf("smthrs host stop")).toBeLessThan(selfHost.indexOf("smthrs host restore"))
+  expect(selfHost).toContain("host_maintenance_unavailable")
+  expect(selfHost).toContain("A refusal is not a completed backup or upgrade")
+  expect(selfHost).toContain("directory printed by a successful backup")
+  expect(selfHost).toContain("$STATE/backups/<version>-<UTC ts>/")
+  expect(selfHost).toContain("never a `.partial-` directory")
+  expect(selfHost).toContain("Stop the destination install too before running restore")
 })

@@ -34,7 +34,7 @@ const check = (root, script) =>
 
 test("generate-llms --check names the stale file and the fix command", () => {
   withCopy((root) => {
-    for (const rel of ["scripts/generate-llms.mjs", "scripts/docs-text.mjs", "src/content/docs/docs", "src/data", "public/llms.txt", "public/llms-full.txt"]) {
+    for (const rel of ["scripts/generate-llms.mjs", "scripts/docs-text.mjs", "src/content/docs/docs", "src/data", "public/docs", "public/llms.txt", "public/llms-full.txt"]) {
       copy(root, join("apps/site", rel))
     }
     copyPackageRoster(root)
@@ -127,10 +127,12 @@ test("no check ends with process.exit()", () => {
   for (const script of [
     "check-docs.mjs",
     "gen-cli-data.mjs",
+    "gen-cli-reference.mjs",
     "generate-llms.mjs",
     "generate-project-copy.mjs",
     "ingest-reference.mjs",
     "sync-api-docs.mjs",
+    "sync-app-docs.mjs",
     "sync-support-docs.mjs"
   ]) {
     const source = readFileSync(join(site, "scripts", script), "utf8")

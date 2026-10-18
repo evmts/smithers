@@ -23,6 +23,9 @@ export function DocsView({ model, actions, gestures, onAction }: DocsViewProps) 
   })
   collectLinks(markdownBlockParser.render(body))
   const follow = (href: string) => { if (pages[href] !== undefined) go(pages[href]) }
+  // A page's screenshot is drawn only from the build's files; any other source renders its alt text.
+  const images = model.images
+  const resolveImage = useCallback((src: string) => images && Object.hasOwn(images, src) ? images[src] : undefined, [images])
   // The shared renderer owns parsing. A commit ref decorates its headings and
   // reveals the supplied anchor when the page or anchor changes, without effects.
   const reveal = useCallback((node: HTMLDivElement | null) => {
@@ -67,7 +70,7 @@ export function DocsView({ model, actions, gestures, onAction }: DocsViewProps) 
       {model.not_found && <p className="mvp-docs-missing">Page not found: <code>{model.not_found}</code></p>}
       <header><h2>{model.page.title}</h2><p>{model.page.summary}</p></header>
       <div className="mvp-docs-markdown" data-flow={open?.tag} data-inert={!open || !!open.disabled || undefined}>
-        <div ref={reveal}><Markdown content={body} onLinkClick={follow} /></div>
+        <div ref={reveal}><Markdown content={body} onLinkClick={follow} resolveImage={resolveImage} /></div>
       </div>
       {actions.length > 0 && <footer className="draft-actions">{actions.map((action, index) => <DiffAction key={index} action={action} onAction={onAction} />)}</footer>}
     </section>

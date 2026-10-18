@@ -305,6 +305,8 @@ export interface AppController extends IssueFlowsController {
   readonly contextAvailable: () => boolean
   readonly inspectContext: (branch: string, answer: string) => Promise<import("../flows/entries/Declare").CommandResult>
   readonly docsAvailable: () => boolean
+  /** Each docs screenshot's light and dark file URLs, keyed `images/<id>.webp`; the Docs card draws them. */
+  readonly docsImages: () => Docs["images"]
   readonly openDocsPage: (page?: string) => string | { readonly value: string }
   /** `docs {mode:"read", page}`: the page's title, summary and Markdown as JSON, for the agent. */
   readonly readDocsPage: (page: string) => string | { readonly value: string }
@@ -2138,7 +2140,7 @@ export const createAppController = (
       const epoch = context.accountEpoch
       return () => !context.disposed && context.accountEpoch === epoch
     }, () => context.commandActor))
-  const { docsTargetAvailable, docsAvailable, openDocsPage, readDocsPage } = actors.pair(ctx, (context) =>
+  const { docsTargetAvailable, docsAvailable, docsImages, openDocsPage, readDocsPage } = actors.pair(ctx, (context) =>
     createDocsController(context, { nextOrdinal: store.nextOrdinal, docs: services.docs ?? bundledDocs, available: services.docsCatalogAvailable ?? (() => true) }))
 
   const { askWorldDelete } = actors.pair(ctx, (_context, select) => ({
@@ -3233,6 +3235,7 @@ export const createAppController = (
     presentCard,
     chatArchives,
     archiveLabel,
+    docsImages,
     runMonitors,
     openRunMonitor,
     listRunMonitors,

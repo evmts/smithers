@@ -49,6 +49,8 @@ export type CommandActions =
     // The History card reads archived chats and the header's label; `archive` and `history` are the acts.
     | "chatArchives"
     | "archiveLabel"
+    // Docs screenshots are the Docs card's view data; `docs` is the act.
+    | "docsImages"
     // Control focus is the composition root's DOM-owned projection, never a flow's act.
     | "controlFocus"
     | "formFocus"

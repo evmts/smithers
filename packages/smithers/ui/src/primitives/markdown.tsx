@@ -21,6 +21,11 @@ const LINK = /^\[([^\]]+)\]\(([^)]+)\)$/;
 const DOCUMENT_INLINE = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*\n]+\*|\[!\[[^\]]*\]\([^)]*\)\]\([^)]+\)|!\[[^\]]*\]\([^)]*\)|\[[^\]]+\]\([^)]+\))/g;
 const LINKED_IMAGE = /^\[!\[([^\]]*)\]\([^)]*\)\]\(([^)]+)\)$/;
 const IMAGE = /^!\[([^\]]*)\]\([^)]*\)$/;
+/** A whole line that is one image, `![alt](src)`: the image block a host may draw through `resolveImage`. */
+const IMAGE_BLOCK = /^!\[([^\]]*)\]\(([^)\s]+)\)$/;
+
+/** Handler that maps an image source to its light and dark files, or `undefined` when it has none. */
+export type MarkdownImageResolver = (src: string) => { readonly light: string; readonly dark: string } | undefined;
 
 /** Handler invoked when a rendered link is activated. */
 export type MarkdownLinkClick = (href: string, event: MouseEvent<HTMLAnchorElement>) => void;
@@ -350,8 +355,11 @@ const tableAt = (lines: ReadonlyArray<string>, index: number): number | undefine
   return rowCells(header).length === cells.length ? cells.length : undefined;
 };
 
+/** A line that is exactly one image: an image block, which `resolveImage` may draw. */
+const isImageLine = (line: string) => IMAGE_BLOCK.test(line.trim());
+
 /** The block kinds the scanner recognizes; `comment`, `pre`, `html` and `blockquote` exist only in document mode. */
-type BlockKind = "fence" | "table" | "heading" | "bullet" | "ordered" | "paragraph" | "comment" | "pre" | "html" | "blockquote";
+type BlockKind = "fence" | "table" | "heading" | "image" | "bullet" | "ordered" | "paragraph" | "comment" | "pre" | "html" | "blockquote";
 
 /*
  * Document mode's blockquotes, after CommonMark: a `>` line opens one, and it
@@ -412,7 +420,7 @@ type BlockSpan = { readonly kind: BlockKind; readonly lines: ReadonlyArray<strin
  * completed-block cache is keyed by their text, so a boundary rule is stated
  * once and a streaming block boundary cannot disagree with what is drawn.
  *
- * Priority is fence, table, heading, bullet, ordered, paragraph (document mode
+ * Priority is fence, table, heading, image, bullet, ordered, paragraph (document mode
  * adds blockquote, comment, `<pre>` and HTML right after fence). A table wins
  * over a list because the delimiter row is the stronger signal: `- a | b` above
  * `--- | ---` is a header row, not a bullet.
@@ -478,6 +486,9 @@ function scanBlocks(content: string, variant: MarkdownVariant = "chat"): BlockSp
     } else if (isHeading(lines[i]!)) {
       kind = "heading";
       i += 1;
+    } else if (isImageLine(lines[i]!)) {
+      kind = "image";
+      i += 1;
     } else if (isBullet(lines[i]!)) {
       kind = "bullet";
       while (i < lines.length && isBullet(lines[i]!)) i += 1;
@@ -491,6 +502,7 @@ function scanBlocks(content: string, variant: MarkdownVariant = "chat"): BlockSp
         lines[i]!.trim() !== "" &&
         !isFence(lines[i]!) &&
         !isHeading(lines[i]!) &&
+        !isImageLine(lines[i]!) &&
         !isBullet(lines[i]!) &&
         !isOrdered(lines[i]!) &&
         tableAt(lines, i) === undefined &&
@@ -527,6 +539,7 @@ function renderSpan(
   onLinkClick?: MarkdownLinkClick,
   variant: MarkdownVariant = "chat",
   quoted = false,
+  resolveImage?: MarkdownImageResolver,
 ): ReactNode {
   const lines = span.lines;
   const inline =
@@ -660,6 +673,39 @@ function renderSpan(
         </ol>
       );
 
+    case "image": {
+      const image = IMAGE_BLOCK.exec(lines[0]!.trim())!;
+      // Only the resolver's files reach an <img>; a source from the text never does.
+      const files = resolveImage?.(image[2]!);
+      if (files === undefined) {
+        // A host that draws images but has none for this source shows the alt text, never a link to the file;
+        // without a resolver the line reads exactly as it would as a paragraph in this variant.
+        if (resolveImage === undefined) return renderSpan({ ...span, kind: "paragraph" }, key, onLinkClick, variant, quoted);
+        return (
+          <p className="sui-md-p" key={key}>
+            {image[1]!}
+          </p>
+        );
+      }
+      return (
+        <figure className="sui-md-figure" key={key}>
+          {(["light", "dark"] as const).map((theme) => (
+            <img
+              className="sui-md-image"
+              data-variant={theme}
+              key={theme}
+              src={files[theme]}
+              alt={image[1]!}
+              width={1440}
+              height={900}
+              loading="lazy"
+              decoding="async"
+            />
+          ))}
+        </figure>
+      );
+    }
+
     case "paragraph":
       // A document joins its lines (GitHub's soft break); chat keeps each line on its own.
       if (variant === "document") return flowBlocks(renderFlow(documentParagraph(lines), `p${key}`, onLinkClick, true), key);
@@ -677,8 +723,13 @@ function renderSpan(
 }
 
 /** Parse the source into block-level React nodes. */
-function renderBlocks(content: string, onLinkClick?: MarkdownLinkClick, variant: MarkdownVariant = "chat"): ReactNode[] {
-  return scanBlocks(content, variant).map((span, index) => renderSpan(span, index, onLinkClick, variant));
+function renderBlocks(
+  content: string,
+  onLinkClick?: MarkdownLinkClick,
+  variant: MarkdownVariant = "chat",
+  resolveImage?: MarkdownImageResolver,
+): ReactNode[] {
+  return scanBlocks(content, variant).map((span, index) => renderSpan(span, index, onLinkClick, variant, false, resolveImage));
 }
 
 /** @internal Exposed so parser reuse can be verified without mocking Markdown output. */
@@ -694,6 +745,12 @@ export type MarkdownProps = Omit<ComponentProps<"div">, "children" | "onClick"> 
   onLinkClick?: MarkdownLinkClick;
   /** `chat` (default) for model output; `document` for a repository file such as a README. */
   variant?: MarkdownVariant;
+  /**
+   * Draw a line that is exactly `![alt](src)` as the light and dark files this
+   * returns, one shown per `html[data-theme]`. When it returns `undefined` the
+   * line shows its alt text; without it the line renders as it would as a paragraph.
+   */
+  resolveImage?: MarkdownImageResolver;
 };
 
 /**
@@ -706,18 +763,18 @@ export type MarkdownProps = Omit<ComponentProps<"div">, "children" | "onClick"> 
  * Wrapped in `React.memo`, with completed blocks cached by source so streaming
  * updates only re-parse the trailing block.
  */
-function MarkdownImpl({ content, onLinkClick, variant = "chat", className, ...props }: MarkdownProps) {
+function MarkdownImpl({ content, onLinkClick, variant = "chat", resolveImage, className, ...props }: MarkdownProps) {
   useInjectUiCss();
-  const completedBlocks = useMemo(() => new Map<string, ReactNode[]>(), [onLinkClick, variant]);
+  const completedBlocks = useMemo(() => new Map<string, ReactNode[]>(), [onLinkClick, variant, resolveImage]);
   const spans = scanBlocks(content, variant);
   const live = new Set<string>();
   const rendered = spans.map((span, index) => {
-    if (index === spans.length - 1) return markdownBlockParser.render(span.text, onLinkClick, variant);
+    if (index === spans.length - 1) return markdownBlockParser.render(span.text, onLinkClick, variant, resolveImage);
 
     live.add(span.text);
     let block = completedBlocks.get(span.text);
     if (!block) {
-      block = markdownBlockParser.render(span.text, onLinkClick, variant);
+      block = markdownBlockParser.render(span.text, onLinkClick, variant, resolveImage);
       completedBlocks.set(span.text, block);
     }
     return block;

@@ -9,6 +9,19 @@
 - [Install Smithers](https://smithers.sh/docs/installation/): Install the CLI from npm, or check the planned Mac host setup.
 - [Change your code with a flow](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/guides/change-code.md): Run a coding agent on your subscription, review its diff, and commit it yourself.
 
+## Get started
+
+- [Welcome to Smithers](https://smithers.sh/docs/index.md): What Smithers is, and the two ways to use it.
+- [Quickstart](https://smithers.sh/docs/quickstart.md): Open a repository on smithers.sh, read its files and sign in with GitHub.
+
+## On your own Mac
+
+- [Self-host Smithers](https://smithers.sh/docs/self-host.md): Run your own install on a Mac, merge your first TODO and invite your team.
+
+## Flows
+
+- [Flows reference](https://smithers.sh/docs/flows.md): Find, customize and run the factory's flows.
+
 ## Reference
 
 - [Library API](https://smithers.sh/docs/reference/api/): One page per @smthrs package: what it exports, with the types and defaults stitched from the api.md colocated with its source.
@@ -63,6 +76,7 @@
 - [@smthrs/testing](https://smithers.sh/docs/reference/api/testing/): Testing and conformance library for flows
 - [@smthrs/time-travel](https://smithers.sh/docs/reference/api/time-travel/): Durable replay, fork, and rewind primitives for flows
 - [@smthrs/triggers](https://smithers.sh/docs/reference/api/triggers/): Durable cron triggers and channel contracts for flows
+- [CLI reference](https://smithers.sh/docs/reference/cli.md): Every smthrs command with its usage, arguments, options and defaults, generated from the CLI's own help.
 - [HTTP and RPC endpoints](https://smithers.sh/docs/reference/http-api/): The routes smthrs serve mounts, their protocols, their authentication rules, and the RPC groups each one serves.
 
 ## Package documentation

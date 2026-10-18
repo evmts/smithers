@@ -889,8 +889,6 @@
 /docs/learn/sync-a-conversation/  /docs/installation/  301
 
 # M-35: removed public docs lead to the install page.
-/docs  /docs/installation/  301
-/docs/  /docs/installation/  301
 /docs/app  /docs/installation/  301
 /docs/app/  /docs/installation/  301
 /docs/guides/cloud-ci  /docs/installation/  301
@@ -929,8 +927,6 @@
 /docs/learn/watch-an-agent/  /docs/installation/  301
 /docs/model-prices  /docs/installation/  301
 /docs/model-prices/  /docs/installation/  301
-/docs/quickstart  /docs/installation/  301
-/docs/quickstart/  /docs/installation/  301
 /docs/reference/cli/admin  /docs/installation/  301
 /docs/reference/cli/admin/  /docs/installation/  301
 /docs/reference/cli/artifact  /docs/installation/  301
@@ -1306,8 +1302,6 @@
 /docs/reference/cli/init/  /docs/installation/  301
 /docs/reference/cli/targets  /docs/installation/  301
 /docs/reference/cli/targets/  /docs/installation/  301
-/docs/reference/cli  /docs/installation/  301
-/docs/reference/cli/  /docs/installation/  301
 /docs/reference/cli/explain  /docs/installation/  301
 /docs/reference/cli/explain/  /docs/installation/  301
 /docs/reference/cli/bookmark  /docs/installation/  301

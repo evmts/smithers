@@ -54,7 +54,7 @@ const owner: Action[] = [
 const https: Action = {
   tag: "docs",
   label: "Notifications need HTTPS ↗",
-  args: { page: "quickstart#put-https-in-front" }
+  args: { page: "self-host#put-https-in-front" }
 }
 
 export const fixtures = {

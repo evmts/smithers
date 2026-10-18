@@ -15,6 +15,8 @@ export type DocsCard = {
   page: { slug: string; title: string; summary: string; markdown: string }
   anchor?: string
   not_found?: string
+  /** Each screenshot's light and dark file URLs, keyed by the source a page writes (`images/<id>.webp`). */
+  images?: Record<string, { light: string; dark: string }>
 }
 
 /**
