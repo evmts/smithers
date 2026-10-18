@@ -337,9 +337,9 @@ const specJourneyInputs = [Smithers.file("//.smithers/factory.json"), Smithers.g
   Smithers.file("package.json"), Smithers.file("//pnpm-lock.yaml")]
 const journeyMock = Smithers.NodeTest({
   runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
-  runner: Smithers.entrypoint(Smithers.file("spec/run.ts"), ["mock", "default/repo-read-signed-out"]),
+  runner: Smithers.entrypoint(Smithers.file("spec/run.ts"), ["mock", "--all"]),
   // Fail closed until browser identity and capture outputs have complete cache contracts.
-  cache: false, timeout: "10m", srcs: specJourneyInputs, deps: [rpcPackage.check, specSite], cwd
+  cache: false, timeout: "20m", srcs: specJourneyInputs, deps: [rpcPackage.check, specSite], cwd
 })
 const specLiveJourney = (id: string) => Smithers.NodeTest({
   runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),

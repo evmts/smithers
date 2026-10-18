@@ -13,7 +13,12 @@ names are accessibility contracts for subjects, not pinned visible copy.
 | D7 | Empty, slow (750 ms), error, signed-out and denied variants exist at read transport. Slow can settle before observation; it does not prove a loading checkpoint. Status/alert assertions require state-specific reason text patterns without pinning draft prose. Ask uses the file context and Terminal its branch path. | apps/app/spec/boot.ts:57; apps/app/spec/routes/reads.ts; apps/app/spec/journeys/default/states.journey.ts |
 
 `states.journey.ts` exports 80 zero-step `cells`; `settings-models.journey.ts`
-exports two `modelCases`. Their default exports are the first case, for the
-single-definition runner CLI. `spec/p1.test.ts` runs the complete collections,
-with SPEC_P1_LIVE=1 selecting signed-out live reads and recording member cases
-as unverified. No journey steps branch on execution mode.
+exports two `modelCases`. Each default export is the complete case array.
+`spec/p1.test.ts` runs the mock CLI over the complete collections; the manual
+SPEC_P1_LIVE=1 run selects signed-out live reads and records member cases as
+unverified. No journey steps branch on execution mode.
+
+The CLI and player now expand all cases from each module. Models has stable
+`settings-models-no` / `settings-models-yes` IDs; states use
+`states-<view number>-<kind>` IDs. Receipts and labels cannot collide across cases.
+The collection test invokes the mock CLI and counts 86 definitions / 124 checkpoints.
