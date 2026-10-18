@@ -1,0 +1,32 @@
+[
+  {
+    "name": "bug",
+    "tone": "danger",
+    "description": "Unexpected behavior"
+  },
+  {
+    "name": "bug-bash-2026-10-17",
+    "tone": "danger",
+    "description": "bug bash 2026 10 17"
+  },
+  {
+    "name": "canary:deploy-compat",
+    "tone": "neutral",
+    "description": "canary · deploy compat"
+  },
+  {
+    "name": "in-progress",
+    "tone": "warning",
+    "description": "Work is claimed"
+  },
+  {
+    "name": "needs-will",
+    "tone": "neutral",
+    "description": "needs will"
+  },
+  {
+    "name": "security",
+    "tone": "danger",
+    "description": "security"
+  }
+]

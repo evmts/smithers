@@ -1,0 +1,20 @@
+.app-card-view { width: 100%; max-width: 800px; min-width: 0; margin: 0; }
+.app-card-view > *, .app-card-view .app-field, .app-card-view .app-preview { min-width: 0; max-width: 100%; }
+.app-card-title { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+.app-card-view pre { max-width: 100%; overflow-x: auto; }
+.app-card-view .app-context-chip { max-width: 100%; overflow-wrap: anywhere; }
+
+.app-card-view .app-field-req { color: var(--text-muted); }
+.app-card-view #bug-happened { line-height: 20px; min-height: 138px; }
+.app-card-view .app-form-foot { gap: 8px; }
+@media (max-width: 600px) {
+  .app-card-view .app-context-chip { font-size: 11px; }
+}
+
+/* Keep action links legible inside repo frames and transcript cards. */
+a.app-btn.app-btn-primary:link,
+a.app-btn.app-btn-primary:visited,
+a.app-btn.app-btn-primary:hover { color: var(--on-action-primary); }
+
+.app-bug-external { white-space: nowrap; }
+.app-bug-public-body { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.6 var(--font-mono); }

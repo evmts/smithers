@@ -1,0 +1,28 @@
+/**
+ * Deep freezing for the presentation realm.
+ *
+ * @since 0.1.0
+ * @private
+ */
+
+/**
+ * Freezes every object and function reachable from `root`, prototypes and accessors included.
+ *
+ * @since 0.1.0
+ * @private
+ */
+export const harden = (root: unknown): void => {
+  const seen = new Set<unknown>()
+  const pending: Array<unknown> = [root]
+  while (pending.length > 0) {
+    const value = pending.pop()
+    if ((typeof value !== "object" && typeof value !== "function") || value === null || seen.has(value)) continue
+    seen.add(value)
+    Object.freeze(value)
+    pending.push(Object.getPrototypeOf(value))
+    for (const key of Reflect.ownKeys(value)) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key)!
+      pending.push(descriptor.value, descriptor.get, descriptor.set)
+    }
+  }
+}

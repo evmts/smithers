@@ -1,0 +1,106 @@
+{
+  "targets": {
+    "http://localhost:1337": {
+      "source": "results/2026-10-20T00-25-19Z.json",
+      "commit": "7f41caf1ab2f59d76a496e00390f576690b1bc42",
+      "machine": {
+        "model": "Mac15,8",
+        "cpu": "Apple M3 Max",
+        "cores": 16,
+        "memoryGiB": 64
+      },
+      "server": "vite-dev",
+      "n": 10,
+      "metrics": {
+        "load.cold.ttfb": {
+          "p50": 9,
+          "p95": 11.8
+        },
+        "load.cold.fcp": {
+          "p50": 284,
+          "p95": 290.2
+        },
+        "load.cold.usable": {
+          "p50": 598.3,
+          "p95": 604.2
+        },
+        "load.cold.newest": {
+          "p50": 598.3,
+          "p95": 604.2
+        },
+        "load.warm.ttfb": {
+          "p50": 9.1,
+          "p95": 11.7
+        },
+        "load.warm.fcp": {
+          "p50": 136,
+          "p95": 142.2
+        },
+        "load.warm.usable": {
+          "p50": 447.8,
+          "p95": 451.9
+        },
+        "load.warm.newest": {
+          "p50": 447.8,
+          "p95": 451.9
+        },
+        "cmdk.focus": {
+          "p50": 1.2,
+          "p95": 5.5
+        },
+        "shape.initial_sync": {
+          "p50": 15.5,
+          "p95": 18.4
+        },
+        "question.accepted": {
+          "p50": 26.3,
+          "p95": 39.8
+        },
+        "question.confirmed": {
+          "p50": 30.1,
+          "p95": 51
+        },
+        "question.first_text": {
+          "p50": 2533.5,
+          "p95": 8891.6
+        },
+        "question.done": {
+          "p50": 2540.6,
+          "p95": 8914.2
+        },
+        "answer.question": {
+          "p50": 10.2,
+          "p95": 15.6
+        },
+        "answer.first_text": {
+          "p50": 1912.4,
+          "p95": 2685.8
+        },
+        "answer.done": {
+          "p50": 1931,
+          "p95": 2707
+        },
+        "sync.question": {
+          "p50": 40.2,
+          "p95": 57.3
+        },
+        "sync.answer_done": {
+          "p50": 687.2,
+          "p95": 1325.5
+        },
+        "concurrent.accepted": {
+          "p50": 39.5,
+          "p95": 72.8
+        },
+        "concurrent.confirmed": {
+          "p50": 40.4,
+          "p95": 74.3
+        },
+        "concurrent.done": {
+          "p50": 2106.5,
+          "p95": 4530.9
+        }
+      }
+    }
+  }
+}

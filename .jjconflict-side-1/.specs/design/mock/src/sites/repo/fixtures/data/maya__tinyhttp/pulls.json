@@ -1,0 +1,1957 @@
+[
+  {
+    "n": 12,
+    "title": "Parse empty query values as empty strings",
+    "state": "open",
+    "kind": "pull",
+    "author": "smithers-agent",
+    "agent": {
+      "run": "run-512",
+      "flow": "implement-issue",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    },
+    "base": "main",
+    "head": "smithers/empty-query-values",
+    "opened": "2026-10-17T20:57:00.000Z",
+    "updated": "2026-10-17T20:58:00.000Z",
+    "body": "`parseQuery` dropped a key whose value was empty, so `?a=` and a missing `a` looked the same. An empty value now parses to `\"\"`; a key without `=` is still dropped. Two regressions pin both cases.\n\nFixes #11. Verification is still running.",
+    "reviewers": [
+      "maya"
+    ],
+    "reviews": [],
+    "reviewComments": [],
+    "comments": [
+      {
+        "author": "smithers-agent",
+        "date": "2026-10-17T20:58:00.000Z",
+        "body": "The patch is pushed. I am running the final regression set now.",
+        "agent": {
+          "run": "run-512",
+          "flow": "implement-issue",
+          "harness": "Claude Code · claude-opus-5-5",
+          "for": "maya"
+        }
+      }
+    ],
+    "checks": [
+      {
+        "name": "Typecheck",
+        "state": "success",
+        "duration": "12 s",
+        "detail": "tsc --noEmit · no errors",
+        "run": "run-512"
+      },
+      {
+        "name": "Unit tests",
+        "state": "pending",
+        "duration": "34 s",
+        "detail": "Running the two empty-value regressions and the full query suite.",
+        "run": "run-512"
+      },
+      {
+        "name": "Lint",
+        "state": "success",
+        "duration": "8 s",
+        "detail": "biome check · 0 errors",
+        "run": "run-512"
+      }
+    ],
+    "commits": [
+      "9c1e2ab0f3212bcb126ae780c2cda73b39c0d2b3"
+    ],
+    "files": [
+      {
+        "path": "src/query.ts",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 1,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -10,7 +10,7 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "  for (const pair of query.split(\"&\")) {",
+            "old": 10,
+            "new": 10
+          },
+          {
+            "kind": "ctx",
+            "text": "    if (pair === \"\") continue",
+            "old": 11,
+            "new": 11
+          },
+          {
+            "kind": "ctx",
+            "text": "    const eq = pair.indexOf(\"=\")",
+            "old": 12,
+            "new": 12
+          },
+          {
+            "kind": "del",
+            "text": "    if (eq === -1 || eq === pair.length - 1) continue",
+            "old": 13
+          },
+          {
+            "kind": "add",
+            "text": "    if (eq === -1) continue",
+            "new": 13
+          },
+          {
+            "kind": "ctx",
+            "text": "    const key = decode(pair.slice(0, eq))",
+            "old": 14,
+            "new": 14
+          },
+          {
+            "kind": "ctx",
+            "text": "    Object.defineProperty(params, key, {",
+            "old": 15,
+            "new": 15
+          },
+          {
+            "kind": "ctx",
+            "text": "      value: decode(pair.slice(eq + 1)),",
+            "old": 16,
+            "new": 16
+          }
+        ]
+      },
+      {
+        "path": "test/query.test.ts",
+        "status": "modified",
+        "additions": 8,
+        "deletions": 0,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -24,3 +24,11 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "test(\"keeps the last value for a repeated key\", () => {",
+            "old": 24,
+            "new": 24
+          },
+          {
+            "kind": "ctx",
+            "text": "  expect(parseQuery(\"tag=a&tag=b\")).toEqual({ tag: \"b\" })",
+            "old": 25,
+            "new": 25
+          },
+          {
+            "kind": "ctx",
+            "text": "})",
+            "old": 26,
+            "new": 26
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 27
+          },
+          {
+            "kind": "add",
+            "text": "test(\"parses an empty value as an empty string\", () => {",
+            "new": 28
+          },
+          {
+            "kind": "add",
+            "text": "  expect(parseQuery(\"?a=&b=2\")).toEqual({ a: \"\", b: \"2\" })",
+            "new": 29
+          },
+          {
+            "kind": "add",
+            "text": "})",
+            "new": 30
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 31
+          },
+          {
+            "kind": "add",
+            "text": "test(\"drops a bare key\", () => {",
+            "new": 32
+          },
+          {
+            "kind": "add",
+            "text": "  expect(parseQuery(\"?a&b=2\")).toEqual({ b: \"2\" })",
+            "new": 33
+          },
+          {
+            "kind": "add",
+            "text": "})",
+            "new": 34
+          }
+        ]
+      }
+    ],
+    "fixes": [
+      11
+    ],
+    "labels": [
+      "bug"
+    ]
+  },
+  {
+    "n": 34,
+    "title": "Reject wildcard origins with credentials",
+    "state": "open",
+    "kind": "pull",
+    "author": "smithers-agent",
+    "agent": {
+      "run": "run-511",
+      "flow": "implement-issue",
+      "harness": "Codex · gpt-6.1-sol",
+      "for": "maya"
+    },
+    "base": "main",
+    "head": "cora/cors-credentials",
+    "opened": "2026-10-17T20:13:00.000Z",
+    "updated": "2026-10-17T20:29:00.000Z",
+    "body": "Reject wildcard origins at construction when credentials is true. Explicit origins continue to work.\n\nFixes #33. Maya needs to confirm the configuration error policy before the compatibility note is final.",
+    "reviewers": [
+      "cora"
+    ],
+    "reviews": [
+      {
+        "author": "cora",
+        "date": "2026-10-17T20:32:00.000Z",
+        "state": "changes_requested",
+        "body": "Reject this configuration before the first request, and assert the default-with-credentials case in the test."
+      }
+    ],
+    "reviewComments": [
+      {
+        "path": "src/middleware/cors.ts",
+        "line": 14,
+        "author": "cora",
+        "date": "2026-10-17T20:32:00.000Z",
+        "body": "Please validate this before returning middleware. A runtime-only rejection would miss startup configuration checks.",
+        "resolved": false
+      },
+      {
+        "path": "test/cors.test.ts",
+        "line": 32,
+        "author": "cora",
+        "date": "2026-10-17T20:32:00.000Z",
+        "body": "Add the omitted-origin case: credentials true still defaults the origin to a wildcard.",
+        "resolved": false
+      }
+    ],
+    "comments": [],
+    "checks": [
+      {
+        "name": "Typecheck",
+        "state": "success",
+        "duration": "12 s",
+        "detail": "tsc --noEmit · no errors",
+        "run": "run-511"
+      },
+      {
+        "name": "Unit tests",
+        "state": "failure",
+        "duration": "34 s",
+        "detail": "test/cors.test.ts:32 · expected an explicit origin when credentials is true; received *",
+        "run": "run-511"
+      },
+      {
+        "name": "Lint",
+        "state": "success",
+        "duration": "8 s",
+        "detail": "biome check · 0 errors",
+        "run": "run-511"
+      }
+    ],
+    "commits": [
+      "d36e2c209d0e25809dc611ee7c4eeb4c3c40c7e4"
+    ],
+    "files": [
+      {
+        "path": "src/middleware/cors.ts",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 0,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -11,6 +11,7 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "/** Add CORS headers and answer browser preflight requests. */",
+            "old": 11,
+            "new": 11
+          },
+          {
+            "kind": "ctx",
+            "text": "export function cors(options: CorsOptions = {}): Middleware {",
+            "old": 12,
+            "new": 12
+          },
+          {
+            "kind": "ctx",
+            "text": "  const origins = options.origin ?? \"*\"",
+            "old": 13,
+            "new": 13
+          },
+          {
+            "kind": "add",
+            "text": "  if (options.credentials && options.origin === \"*\") throw new TypeError(\"Credentials need an explicit origin\")",
+            "new": 14
+          },
+          {
+            "kind": "ctx",
+            "text": "  const methods = options.methods ?? [\"GET\", \"POST\", \"PUT\", \"PATCH\", \"DELETE\", \"OPTIONS\"]",
+            "old": 14,
+            "new": 15
+          },
+          {
+            "kind": "ctx",
+            "text": "  return async (request, next) => {",
+            "old": 15,
+            "new": 16
+          },
+          {
+            "kind": "ctx",
+            "text": "    const incoming = request.headers.get(\"origin\")",
+            "old": 16,
+            "new": 17
+          }
+        ]
+      },
+      {
+        "path": "test/cors.test.ts",
+        "status": "modified",
+        "additions": 4,
+        "deletions": 0,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -20,3 +20,7 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "  expect(response.status).toBe(204)",
+            "old": 20,
+            "new": 20
+          },
+          {
+            "kind": "ctx",
+            "text": "  expect(response.headers.get(\"access-control-allow-methods\")).toBe(\"POST\")",
+            "old": 21,
+            "new": 21
+          },
+          {
+            "kind": "ctx",
+            "text": "})",
+            "old": 22,
+            "new": 22
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 23
+          },
+          {
+            "kind": "add",
+            "text": "test(\"requires explicit origins for credentials\", () => {",
+            "new": 24
+          },
+          {
+            "kind": "add",
+            "text": "  expect(() => cors({ credentials: true })).toThrow(\"explicit origin\")",
+            "new": 25
+          },
+          {
+            "kind": "add",
+            "text": "})",
+            "new": 26
+          }
+        ]
+      }
+    ],
+    "fixes": [
+      33
+    ],
+    "labels": [
+      "bug"
+    ]
+  },
+  {
+    "n": 35,
+    "title": "Document adapter shutdown with examples",
+    "state": "open",
+    "kind": "landing",
+    "author": "smithers-agent",
+    "agent": {
+      "run": "run-509",
+      "flow": "docs-sync",
+      "harness": "Codex · gpt-6.1-sol",
+      "for": "maya"
+    },
+    "base": "main",
+    "head": "docs/adapter-examples",
+    "opened": "2026-10-17T19:25:00.000Z",
+    "updated": "2026-10-17T19:57:00.000Z",
+    "body": "Add a graceful shutdown example for the Node adapter and show how to wait for active requests.\n\nFixes #44. The docs-sync run resumed from its saved checkpoint after the browser tab closed.",
+    "reviewers": [
+      "cora"
+    ],
+    "reviews": [
+      {
+        "author": "cora",
+        "date": "2026-10-17T20:10:00.000Z",
+        "state": "approved",
+        "body": "The shutdown example waits for the server and leaves process ownership in the app."
+      }
+    ],
+    "reviewComments": [],
+    "comments": [],
+    "checks": [
+      {
+        "name": "Typecheck",
+        "state": "success",
+        "duration": "12 s",
+        "detail": "tsc --noEmit · no errors",
+        "run": "run-509"
+      },
+      {
+        "name": "Unit tests",
+        "state": "success",
+        "duration": "34 s",
+        "detail": "bun test · 31 passed · 0 failed",
+        "run": "run-509"
+      },
+      {
+        "name": "Lint",
+        "state": "success",
+        "duration": "8 s",
+        "detail": "biome check · 0 errors",
+        "run": "run-509"
+      }
+    ],
+    "commits": [
+      "873430b9b35e2034cb6e9d3ea874fca6d283e08f"
+    ],
+    "files": [
+      {
+        "path": "docs/adapters.md",
+        "status": "modified",
+        "additions": 4,
+        "deletions": 0,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -23,3 +23,7 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "```",
+            "old": 23,
+            "new": 23
+          },
+          {
+            "kind": "ctx",
+            "text": "",
+            "old": 24,
+            "new": 24
+          },
+          {
+            "kind": "ctx",
+            "text": "Node requests stream into a Web Request with duplex set to half. Responses stream back without collecting their bodies first. Keep process shutdown in the host application. Client disconnect cancellation and streaming Set-Cookie handling are tracked separately.",
+            "old": 25,
+            "new": 25
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 26
+          },
+          {
+            "kind": "add",
+            "text": "## Shutdown",
+            "new": 27
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 28
+          },
+          {
+            "kind": "add",
+            "text": "Call server.close() in a signal handler. Wait for in-flight requests before terminating the process.",
+            "new": 29
+          }
+        ]
+      }
+    ],
+    "fixes": [
+      44
+    ],
+    "labels": [
+      "docs"
+    ]
+  },
+  {
+    "n": 36,
+    "title": "Filter route inspection by method",
+    "state": "draft",
+    "kind": "pull",
+    "author": "dev-ahn",
+    "base": "main",
+    "head": "dev-ahn/route-inspection",
+    "opened": "2026-10-17T18:00:00.000Z",
+    "updated": "2026-10-17T19:15:00.000Z",
+    "body": "Allow inspect(\"GET\") to return only GET routes. The return type and no-argument behavior stay the same.\n\nFixes #43. Draft: the public API test is still missing.",
+    "reviewers": [
+      "maya"
+    ],
+    "reviews": [],
+    "reviewComments": [],
+    "comments": [],
+    "checks": [
+      {
+        "name": "Typecheck",
+        "state": "success",
+        "duration": "12 s",
+        "detail": "tsc --noEmit · no errors"
+      },
+      {
+        "name": "Unit tests",
+        "state": "success",
+        "duration": "34 s",
+        "detail": "bun test · 31 passed · 0 failed"
+      },
+      {
+        "name": "Lint",
+        "state": "success",
+        "duration": "8 s",
+        "detail": "biome check · 0 errors"
+      }
+    ],
+    "commits": [
+      "228d798c980f6f758ddb7f86c50320eff94a1a69"
+    ],
+    "files": [
+      {
+        "path": "src/router.ts",
+        "status": "modified",
+        "additions": 2,
+        "deletions": 2,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -86,8 +86,8 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "  }",
+            "old": 86,
+            "new": 86
+          },
+          {
+            "kind": "ctx",
+            "text": "",
+            "old": 87,
+            "new": 87
+          },
+          {
+            "kind": "ctx",
+            "text": "  /** Return public route metadata without exposing handlers. */",
+            "old": 88,
+            "new": 88
+          },
+          {
+            "kind": "del",
+            "text": "  inspect(): RouteInfo[] {",
+            "old": 89
+          },
+          {
+            "kind": "del",
+            "text": "    return this.routes.map(({ method, path }) => ({ method, path }))",
+            "old": 90
+          },
+          {
+            "kind": "add",
+            "text": "  inspect(method?: string): RouteInfo[] {",
+            "new": 89
+          },
+          {
+            "kind": "add",
+            "text": "    return this.routes.filter(route => !method || route.method === method).map(({ method, path }) => ({ method, path }))",
+            "new": 90
+          },
+          {
+            "kind": "ctx",
+            "text": "  }",
+            "old": 91,
+            "new": 91
+          },
+          {
+            "kind": "ctx",
+            "text": "",
+            "old": 92,
+            "new": 92
+          },
+          {
+            "kind": "ctx",
+            "text": "  private add(method: string, path: string, handler: Handler): this {",
+            "old": 93,
+            "new": 93
+          }
+        ]
+      }
+    ],
+    "fixes": [
+      43
+    ],
+    "labels": [
+      "enhancement"
+    ]
+  },
+  {
+    "n": 30,
+    "title": "Preserve headers in HEAD responses",
+    "state": "merged",
+    "kind": "pull",
+    "author": "smithers-agent",
+    "agent": {
+      "run": "run-505",
+      "flow": "implement-issue",
+      "harness": "Codex · gpt-6.1-sol",
+      "for": "maya"
+    },
+    "base": "main",
+    "head": "smithers/head-headers",
+    "opened": "2026-10-16T19:27:36.000Z",
+    "updated": "2026-10-16T19:57:36.000Z",
+    "merged": {
+      "by": "maya",
+      "date": "2026-10-16T19:57:36.000Z",
+      "sha": "7a2ed3ab03339943de21f7acb59acbebc034e328"
+    },
+    "body": "Preserve headers in HEAD responses.\n\nThe change includes a regression test and preserves the Web Request/Response boundary shared by Bun and Node.\n\nVerified with `bun test` and `bun run check`.",
+    "reviewers": [
+      "maya"
+    ],
+    "reviews": [
+      {
+        "author": "maya",
+        "date": "2026-10-16T19:54:36.000Z",
+        "state": "approved",
+        "body": "Checked the diff and the regression."
+      }
+    ],
+    "reviewComments": [],
+    "comments": [
+      {
+        "author": "smithers-agent",
+        "date": "2026-10-16T19:47:36.000Z",
+        "body": "Checks passed. Your review is next.",
+        "agent": {
+          "run": "run-505",
+          "flow": "implement-issue",
+          "harness": "Codex · gpt-6.1-sol",
+          "for": "maya"
+        }
+      }
+    ],
+    "checks": [
+      {
+        "name": "Typecheck",
+        "state": "success",
+        "duration": "12 s",
+        "detail": "tsc --noEmit · no errors",
+        "run": "run-505"
+      },
+      {
+        "name": "Unit tests",
+        "state": "success",
+        "duration": "34 s",
+        "detail": "bun test · 31 passed · 0 failed",
+        "run": "run-505"
+      },
+      {
+        "name": "Lint",
+        "state": "success",
+        "duration": "8 s",
+        "detail": "biome check · 0 errors",
+        "run": "run-505"
+      }
+    ],
+    "commits": [
+      "7a2ed3ab03339943de21f7acb59acbebc034e328"
+    ],
+    "files": [
+      {
+        "path": "src/router.ts",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 1,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -154,7 +154,7 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "      // HEAD runs the same middleware and handler before dropping the body.",
+            "old": 154,
+            "new": 154
+          },
+          {
+            "kind": "ctx",
+            "text": "      const response = await this.dispatch(request, terminal)",
+            "old": 155,
+            "new": 155
+          },
+          {
+            "kind": "ctx",
+            "text": "      return method === \"HEAD\"",
+            "old": 156,
+            "new": 156
+          },
+          {
+            "kind": "del",
+            "text": "        ? new Response(null, { status: response.status })",
+            "old": 157
+          },
+          {
+            "kind": "add",
+            "text": "        ? new Response(null, { status: response.status, headers: response.headers })",
+            "new": 157
+          },
+          {
+            "kind": "ctx",
+            "text": "        : response",
+            "old": 158,
+            "new": 158
+          },
+          {
+            "kind": "ctx",
+            "text": "    } catch (error) {",
+            "old": 159,
+            "new": 159
+          },
+          {
+            "kind": "ctx",
+            "text": "      if (this.options.onError) return this.options.onError(error, request)",
+            "old": 160,
+            "new": 160
+          }
+        ]
+      }
+    ],
+    "fixes": [],
+    "labels": [
+      "bug"
+    ]
+  },
+  {
+    "n": 32,
+    "title": "Return 400 for malformed path parameters",
+    "state": "merged",
+    "kind": "pull",
+    "author": "smithers-agent",
+    "agent": {
+      "run": "run-507",
+      "flow": "implement-issue",
+      "harness": "Codex · gpt-6.1-sol",
+      "for": "maya"
+    },
+    "base": "main",
+    "head": "smithers/malformed-params",
+    "opened": "2026-10-15T20:25:12.000Z",
+    "updated": "2026-10-15T20:55:12.000Z",
+    "merged": {
+      "by": "maya",
+      "date": "2026-10-15T20:55:12.000Z",
+      "sha": "0d96451d52dbbc3567593b74fa12638d7b7de262"
+    },
+    "body": "Return 400 for malformed path parameters.\n\nFixes #31.\n\nThe change includes a regression test and preserves the Web Request/Response boundary shared by Bun and Node.\n\nVerified with `bun test` and `bun run check`.",
+    "reviewers": [
+      "maya"
+    ],
+    "reviews": [
+      {
+        "author": "maya",
+        "date": "2026-10-15T20:52:12.000Z",
+        "state": "approved",
+        "body": "The client error is safe, the bad-escape regression passes, and valid params still decode."
+      }
+    ],
+    "reviewComments": [
+      {
+        "path": "src/router.ts",
+        "line": 19,
+        "author": "maya",
+        "date": "2026-10-15T20:47:12.000Z",
+        "body": "Use a stable message here; do not return the raw URIError.",
+        "resolved": true
+      }
+    ],
+    "comments": [
+      {
+        "author": "smithers-agent",
+        "date": "2026-10-15T20:45:12.000Z",
+        "body": "Checks passed. Your review is next.",
+        "agent": {
+          "run": "run-507",
+          "flow": "implement-issue",
+          "harness": "Codex · gpt-6.1-sol",
+          "for": "maya"
+        }
+      }
+    ],
+    "checks": [
+      {
+        "name": "Typecheck",
+        "state": "success",
+        "duration": "12 s",
+        "detail": "tsc --noEmit · no errors",
+        "run": "run-507"
+      },
+      {
+        "name": "Unit tests",
+        "state": "success",
+        "duration": "34 s",
+        "detail": "bun test · 31 passed · 0 failed",
+        "run": "run-507"
+      },
+      {
+        "name": "Lint",
+        "state": "success",
+        "duration": "8 s",
+        "detail": "biome check · 0 errors",
+        "run": "run-507"
+      }
+    ],
+    "commits": [
+      "0d96451d52dbbc3567593b74fa12638d7b7de262"
+    ],
+    "files": [
+      {
+        "path": "src/router.ts",
+        "status": "modified",
+        "additions": 5,
+        "deletions": 1,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -13,7 +13,11 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "const split = (path: string): string[] => path.split(\"/\").filter(part => part !== \"\")",
+            "old": 13,
+            "new": 13
+          },
+          {
+            "kind": "ctx",
+            "text": "",
+            "old": 14,
+            "new": 14
+          },
+          {
+            "kind": "ctx",
+            "text": "function decodeSegment(segment: string): string {",
+            "old": 15,
+            "new": 15
+          },
+          {
+            "kind": "del",
+            "text": "  return decodeURIComponent(segment)",
+            "old": 16
+          },
+          {
+            "kind": "add",
+            "text": "  try {",
+            "new": 16
+          },
+          {
+            "kind": "add",
+            "text": "    return decodeURIComponent(segment)",
+            "new": 17
+          },
+          {
+            "kind": "add",
+            "text": "  } catch {",
+            "new": 18
+          },
+          {
+            "kind": "add",
+            "text": "    throw new HttpError(400, \"Invalid percent encoding in path\")",
+            "new": 19
+          },
+          {
+            "kind": "add",
+            "text": "  }",
+            "new": 20
+          },
+          {
+            "kind": "ctx",
+            "text": "}",
+            "old": 17,
+            "new": 21
+          },
+          {
+            "kind": "ctx",
+            "text": "",
+            "old": 18,
+            "new": 22
+          },
+          {
+            "kind": "ctx",
+            "text": "/** Match the path shape first, then decode named segments.",
+            "old": 19,
+            "new": 23
+          }
+        ]
+      },
+      {
+        "path": "test/router.test.ts",
+        "status": "modified",
+        "additions": 5,
+        "deletions": 0,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -30,6 +30,11 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "  expect(await response.text()).toBe(\"\")",
+            "old": 30,
+            "new": 30
+          },
+          {
+            "kind": "ctx",
+            "text": "})",
+            "old": 31,
+            "new": 31
+          },
+          {
+            "kind": "ctx",
+            "text": "",
+            "old": 32,
+            "new": 32
+          },
+          {
+            "kind": "add",
+            "text": "test(\"malformed path encoding is a client error\", async () => {",
+            "new": 33
+          },
+          {
+            "kind": "add",
+            "text": "  const app = new Router().get(\"/users/:id\", () => new Response(\"ok\"))",
+            "new": 34
+          },
+          {
+            "kind": "add",
+            "text": "  expect((await app.handle(\"GET\", \"/users/%ZZ\")).status).toBe(400)",
+            "new": 35
+          },
+          {
+            "kind": "add",
+            "text": "})",
+            "new": 36
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 37
+          },
+          {
+            "kind": "ctx",
+            "text": "test(\"middleware wraps the handler in registration order\", async () => {",
+            "old": 33,
+            "new": 38
+          },
+          {
+            "kind": "ctx",
+            "text": "  const calls: string[] = []",
+            "old": 34,
+            "new": 39
+          },
+          {
+            "kind": "ctx",
+            "text": "  const app = new Router().use(async (_, next) => {",
+            "old": 35,
+            "new": 40
+          }
+        ]
+      }
+    ],
+    "fixes": [
+      31
+    ],
+    "labels": [
+      "bug"
+    ]
+  },
+  {
+    "n": 28,
+    "title": "Bound JSON request bodies while streaming",
+    "state": "merged",
+    "kind": "landing",
+    "author": "smithers-agent",
+    "agent": {
+      "run": "run-504",
+      "flow": "implement-issue",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    },
+    "base": "main",
+    "head": "smithers/body-limit",
+    "opened": "2026-10-10T02:10:48.000Z",
+    "updated": "2026-10-10T02:40:48.000Z",
+    "merged": {
+      "by": "maya",
+      "date": "2026-10-10T02:40:48.000Z",
+      "sha": "add79458e71099fc31f5fbdca035bd407fb8f079"
+    },
+    "body": "Bound JSON request bodies while streaming.\n\nFixes #15.\n\nThe change includes a regression test and preserves the Web Request/Response boundary shared by Bun and Node.\n\nVerified with `bun test` and `bun run check`.",
+    "reviewers": [
+      "maya"
+    ],
+    "reviews": [
+      {
+        "author": "smithers-agent",
+        "date": "2026-10-10T02:35:48.000Z",
+        "state": "commented",
+        "body": "The streamed-byte limit holds without content-length, and the reader is cancelled above the limit. The malformed JSON regression still returns 400. Ready for a person to review.",
+        "agent": {
+          "run": "run-496",
+          "flow": "review-change",
+          "harness": "Claude Code · claude-opus-5-5",
+          "for": "maya"
+        }
+      },
+      {
+        "author": "maya",
+        "date": "2026-10-10T02:37:48.000Z",
+        "state": "approved",
+        "body": "Checked the diff and the regression."
+      }
+    ],
+    "reviewComments": [],
+    "comments": [
+      {
+        "author": "smithers-agent",
+        "date": "2026-10-10T02:30:48.000Z",
+        "body": "Checks passed. Your review is next.",
+        "agent": {
+          "run": "run-504",
+          "flow": "implement-issue",
+          "harness": "Claude Code · claude-opus-5-5",
+          "for": "maya"
+        }
+      }
+    ],
+    "checks": [
+      {
+        "name": "Typecheck",
+        "state": "success",
+        "duration": "12 s",
+        "detail": "tsc --noEmit · no errors",
+        "run": "run-504"
+      },
+      {
+        "name": "Unit tests",
+        "state": "success",
+        "duration": "34 s",
+        "detail": "bun test · 31 passed · 0 failed",
+        "run": "run-504"
+      },
+      {
+        "name": "Lint",
+        "state": "success",
+        "duration": "8 s",
+        "detail": "biome check · 0 errors",
+        "run": "run-504"
+      }
+    ],
+    "commits": [
+      "add79458e71099fc31f5fbdca035bd407fb8f079"
+    ],
+    "files": [
+      {
+        "path": "src/middleware/body.ts",
+        "status": "modified",
+        "additions": 4,
+        "deletions": 0,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -17,6 +17,10 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "        const { done, value } = await reader.read()",
+            "old": 17,
+            "new": 17
+          },
+          {
+            "kind": "ctx",
+            "text": "        if (done) break",
+            "old": 18,
+            "new": 18
+          },
+          {
+            "kind": "ctx",
+            "text": "        size += value.byteLength",
+            "old": 19,
+            "new": 19
+          },
+          {
+            "kind": "add",
+            "text": "        if (size > maxBytes) {",
+            "new": 20
+          },
+          {
+            "kind": "add",
+            "text": "          await reader.cancel()",
+            "new": 21
+          },
+          {
+            "kind": "add",
+            "text": "          throw new HttpError(413, \"Body too large\")",
+            "new": 22
+          },
+          {
+            "kind": "add",
+            "text": "        }",
+            "new": 23
+          },
+          {
+            "kind": "ctx",
+            "text": "        chunks.push(value)",
+            "old": 20,
+            "new": 24
+          },
+          {
+            "kind": "ctx",
+            "text": "      }",
+            "old": 21,
+            "new": 25
+          },
+          {
+            "kind": "ctx",
+            "text": "    } finally {",
+            "old": 22,
+            "new": 26
+          }
+        ]
+      }
+    ],
+    "fixes": [
+      15
+    ],
+    "labels": [
+      "bug"
+    ]
+  },
+  {
+    "n": 26,
+    "title": "Document middleware order and safe logging",
+    "state": "merged",
+    "kind": "pull",
+    "author": "smithers-agent",
+    "agent": {
+      "run": "run-503",
+      "flow": "docs-sync",
+      "harness": "Codex · gpt-6.1-sol",
+      "for": "maya"
+    },
+    "base": "main",
+    "head": "smithers/middleware-docs",
+    "opened": "2026-10-08T04:06:00.000Z",
+    "updated": "2026-10-08T04:36:00.000Z",
+    "merged": {
+      "by": "maya",
+      "date": "2026-10-08T04:36:00.000Z",
+      "sha": "21251d9b9eac689352c88840d0180212370791ce"
+    },
+    "body": "Document middleware order and safe logging.\n\nFixes #13.\n\nThe change includes a regression test and preserves the Web Request/Response boundary shared by Bun and Node.\n\nVerified with `bun test` and `bun run check`.",
+    "reviewers": [
+      "maya"
+    ],
+    "reviews": [
+      {
+        "author": "maya",
+        "date": "2026-10-08T04:33:00.000Z",
+        "state": "approved",
+        "body": "Checked the diff and the regression."
+      }
+    ],
+    "reviewComments": [],
+    "comments": [
+      {
+        "author": "smithers-agent",
+        "date": "2026-10-08T04:26:00.000Z",
+        "body": "Checks passed. Your review is next.",
+        "agent": {
+          "run": "run-503",
+          "flow": "docs-sync",
+          "harness": "Codex · gpt-6.1-sol",
+          "for": "maya"
+        }
+      }
+    ],
+    "checks": [
+      {
+        "name": "Typecheck",
+        "state": "success",
+        "duration": "12 s",
+        "detail": "tsc --noEmit · no errors",
+        "run": "run-503"
+      },
+      {
+        "name": "Unit tests",
+        "state": "success",
+        "duration": "34 s",
+        "detail": "bun test · 31 passed · 0 failed",
+        "run": "run-503"
+      },
+      {
+        "name": "Lint",
+        "state": "success",
+        "duration": "8 s",
+        "detail": "biome check · 0 errors",
+        "run": "run-503"
+      }
+    ],
+    "commits": [
+      "21251d9b9eac689352c88840d0180212370791ce"
+    ],
+    "files": [
+      {
+        "path": "docs/middleware.md",
+        "status": "modified",
+        "additions": 15,
+        "deletions": 1,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -1,3 +1,17 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "# Middleware",
+            "old": 1,
+            "new": 1
+          },
+          {
+            "kind": "ctx",
+            "text": "",
+            "old": 2,
+            "new": 2
+          },
+          {
+            "kind": "del",
+            "text": "Call app.use() to add middleware.",
+            "old": 3
+          },
+          {
+            "kind": "add",
+            "text": "Middleware runs in registration order, wrapping the route handler. Call `next()` once to continue, or return a Response to finish early. Calling next twice is an error.",
+            "new": 3
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 4
+          },
+          {
+            "kind": "add",
+            "text": "```ts",
+            "new": 5
+          },
+          {
+            "kind": "add",
+            "text": "import { Router, cors, logger, jsonBody, body } from \"tinyhttp\"",
+            "new": 6
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 7
+          },
+          {
+            "kind": "add",
+            "text": "const app = new Router()",
+            "new": 8
+          },
+          {
+            "kind": "add",
+            "text": "app.use(logger(record => console.info(record)))",
+            "new": 9
+          },
+          {
+            "kind": "add",
+            "text": "app.use(cors({ origin: [\"https://app.example.test\"] }))",
+            "new": 10
+          },
+          {
+            "kind": "add",
+            "text": "app.use(jsonBody(64 * 1024))",
+            "new": 11
+          },
+          {
+            "kind": "add",
+            "text": "app.post(\"/items\", request => Response.json(body(request), { status: 201 }))",
+            "new": 12
+          },
+          {
+            "kind": "add",
+            "text": "```",
+            "new": 13
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 14
+          },
+          {
+            "kind": "add",
+            "text": "Put the logger first to include middleware time. Put CORS before authentication so preflight requests can complete. Limit JSON bytes before accepting the parsed body. The body helper returns unknown unless you supply a type; validate untrusted input before using it.",
+            "new": 15
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 16
+          },
+          {
+            "kind": "add",
+            "text": "Use explicit allowed origins with credentials. Browsers reject wildcard origins when credentials are enabled. The current CORS helper warns about this combination; stricter configuration validation is proposed in #33.",
+            "new": 17
+          }
+        ]
+      }
+    ],
+    "fixes": [
+      13
+    ],
+    "labels": [
+      "docs"
+    ]
+  },
+  {
+    "n": 9,
+    "title": "Parse plus as space in query values",
+    "state": "merged",
+    "kind": "pull",
+    "author": "smithers-agent",
+    "agent": {
+      "run": "run-500",
+      "flow": "implement-issue",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    },
+    "base": "main",
+    "head": "maya/query-plus",
+    "opened": "2026-09-29T12:44:24.000Z",
+    "updated": "2026-09-29T13:14:24.000Z",
+    "merged": {
+      "by": "maya",
+      "date": "2026-09-29T13:14:24.000Z",
+      "sha": "b52d0e73884c8fec77cb691d79c944f3bb240068"
+    },
+    "body": "Parse plus as space in query values.\n\nFixes #4.\n\nThe change includes a regression test and preserves the Web Request/Response boundary shared by Bun and Node.\n\nVerified with `bun test` and `bun run check`.",
+    "reviewers": [
+      "maya"
+    ],
+    "reviews": [
+      {
+        "author": "maya",
+        "date": "2026-09-29T13:11:24.000Z",
+        "state": "approved",
+        "body": "Checked the diff and the regression."
+      }
+    ],
+    "reviewComments": [],
+    "comments": [
+      {
+        "author": "smithers-agent",
+        "date": "2026-09-29T13:04:24.000Z",
+        "body": "Checks passed. Your review is next.",
+        "agent": {
+          "run": "run-500",
+          "flow": "implement-issue",
+          "harness": "Claude Code · claude-opus-5-5",
+          "for": "maya"
+        }
+      }
+    ],
+    "checks": [
+      {
+        "name": "Typecheck",
+        "state": "success",
+        "duration": "12 s",
+        "detail": "tsc --noEmit · no errors",
+        "run": "run-500"
+      },
+      {
+        "name": "Unit tests",
+        "state": "success",
+        "duration": "34 s",
+        "detail": "bun test · 31 passed · 0 failed",
+        "run": "run-500"
+      },
+      {
+        "name": "Lint",
+        "state": "success",
+        "duration": "8 s",
+        "detail": "biome check · 0 errors",
+        "run": "run-500"
+      }
+    ],
+    "commits": [
+      "b52d0e73884c8fec77cb691d79c944f3bb240068"
+    ],
+    "files": [
+      {
+        "path": "src/query.ts",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 1,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -1,7 +1,7 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "import type { Query } from \"./types.ts\"",
+            "old": 1,
+            "new": 1
+          },
+          {
+            "kind": "ctx",
+            "text": "",
+            "old": 2,
+            "new": 2
+          },
+          {
+            "kind": "ctx",
+            "text": "/** Decode form-style query components, including + as a space. */",
+            "old": 3,
+            "new": 3
+          },
+          {
+            "kind": "del",
+            "text": "const decode = (value: string): string => decodeURIComponent(value)",
+            "old": 4
+          },
+          {
+            "kind": "add",
+            "text": "const decode = (value: string): string => decodeURIComponent(value.replace(/\\+/g, \" \"))",
+            "new": 4
+          },
+          {
+            "kind": "ctx",
+            "text": "",
+            "old": 5,
+            "new": 5
+          },
+          {
+            "kind": "ctx",
+            "text": "/** Parse a query string. Repeated keys keep their last value. */",
+            "old": 6,
+            "new": 6
+          },
+          {
+            "kind": "ctx",
+            "text": "export function parseQuery(input: string): Query {",
+            "old": 7,
+            "new": 7
+          }
+        ]
+      }
+    ],
+    "fixes": [
+      4
+    ],
+    "labels": [
+      "bug"
+    ]
+  },
+  {
+    "n": 24,
+    "title": "Stream Web Responses through the Node adapter",
+    "state": "merged",
+    "kind": "pull",
+    "author": "smithers-agent",
+    "agent": {
+      "run": "run-499",
+      "flow": "implement-issue",
+      "harness": "Codex · gpt-6.1-sol",
+      "for": "maya"
+    },
+    "base": "main",
+    "head": "smithers/node-streams",
+    "opened": "2026-09-23T18:30:00.000Z",
+    "updated": "2026-09-23T19:00:00.000Z",
+    "merged": {
+      "by": "cora",
+      "date": "2026-09-23T19:00:00.000Z",
+      "sha": "7b91372170bdd8507e09c9a9cccb4eee425bcce4"
+    },
+    "body": "Stream Web Responses through the Node adapter.\n\nFixes #6.\n\nThe change includes a regression test and preserves the Web Request/Response boundary shared by Bun and Node.\n\nVerified with `bun test` and `bun run check`.",
+    "reviewers": [
+      "cora"
+    ],
+    "reviews": [
+      {
+        "author": "cora",
+        "date": "2026-09-23T18:57:00.000Z",
+        "state": "approved",
+        "body": "Checked the diff and the regression."
+      }
+    ],
+    "reviewComments": [],
+    "comments": [
+      {
+        "author": "smithers-agent",
+        "date": "2026-09-23T18:50:00.000Z",
+        "body": "Checks passed. Your review is next.",
+        "agent": {
+          "run": "run-499",
+          "flow": "implement-issue",
+          "harness": "Codex · gpt-6.1-sol",
+          "for": "maya"
+        }
+      }
+    ],
+    "checks": [
+      {
+        "name": "Typecheck",
+        "state": "success",
+        "duration": "12 s",
+        "detail": "tsc --noEmit · no errors",
+        "run": "run-499"
+      },
+      {
+        "name": "Unit tests",
+        "state": "success",
+        "duration": "34 s",
+        "detail": "bun test · 31 passed · 0 failed",
+        "run": "run-499"
+      },
+      {
+        "name": "Lint",
+        "state": "success",
+        "duration": "8 s",
+        "detail": "biome check · 0 errors",
+        "run": "run-499"
+      }
+    ],
+    "commits": [
+      "7b91372170bdd8507e09c9a9cccb4eee425bcce4"
+    ],
+    "files": [
+      {
+        "path": "src/adapters/node.ts",
+        "status": "modified",
+        "additions": 3,
+        "deletions": 1,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -23,7 +23,9 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "  outgoing.statusCode = response.status",
+            "old": 23,
+            "new": 23
+          },
+          {
+            "kind": "ctx",
+            "text": "  response.headers.forEach((value, key) => outgoing.setHeader(key, value))",
+            "old": 24,
+            "new": 24
+          },
+          {
+            "kind": "ctx",
+            "text": "  if (!response.body) { outgoing.end(); return }",
+            "old": 25,
+            "new": 25
+          },
+          {
+            "kind": "del",
+            "text": "  outgoing.end(Buffer.from(await response.arrayBuffer()))",
+            "old": 26
+          },
+          {
+            "kind": "add",
+            "text": "  const body = Readable.fromWeb(response.body as unknown as import(\"node:stream/web\").ReadableStream)",
+            "new": 26
+          },
+          {
+            "kind": "add",
+            "text": "  body.pipe(outgoing)",
+            "new": 27
+          },
+          {
+            "kind": "add",
+            "text": "  await finished(outgoing)",
+            "new": 28
+          },
+          {
+            "kind": "ctx",
+            "text": "}",
+            "old": 27,
+            "new": 29
+          },
+          {
+            "kind": "ctx",
+            "text": "",
+            "old": 28,
+            "new": 30
+          },
+          {
+            "kind": "ctx",
+            "text": "/** Return an unbound server so the caller controls its port and shutdown. */",
+            "old": 29,
+            "new": 31
+          }
+        ]
+      }
+    ],
+    "fixes": [
+      6
+    ],
+    "labels": [
+      "bug"
+    ]
+  },
+  {
+    "n": 22,
+    "title": "Replace route matching with a radix tree",
+    "state": "closed",
+    "kind": "pull",
+    "author": "dev-ahn",
+    "base": "main",
+    "head": "archive/radix-router",
+    "opened": "2026-09-11T21:00:00.000Z",
+    "updated": "2026-09-17T21:00:00.000Z",
+    "body": "An experiment with a radix tree for route lookup. Closed without merging: no reproducible benchmark showed a benefit for this router size. Follow-up measurements are tracked in #42.",
+    "reviewers": [
+      "maya"
+    ],
+    "reviews": [
+      {
+        "author": "maya",
+        "date": "2026-09-17T21:00:00.000Z",
+        "state": "commented",
+        "body": "Keep the current matcher until the benchmark demonstrates a real improvement."
+      }
+    ],
+    "reviewComments": [],
+    "comments": [],
+    "checks": [
+      {
+        "name": "Typecheck",
+        "state": "success",
+        "duration": "12 s",
+        "detail": "tsc --noEmit · no errors"
+      },
+      {
+        "name": "Unit tests",
+        "state": "success",
+        "duration": "34 s",
+        "detail": "bun test · 31 passed · 0 failed"
+      },
+      {
+        "name": "Lint",
+        "state": "success",
+        "duration": "8 s",
+        "detail": "biome check · 0 errors"
+      }
+    ],
+    "commits": [
+      "a0dfbd349614952823c7cfd521b352efad0fd758"
+    ],
+    "files": [
+      {
+        "path": "src/route-index.ts",
+        "status": "added",
+        "additions": 17,
+        "deletions": 0,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -0,0 +1,17 @@"
+          },
+          {
+            "kind": "add",
+            "text": "/** Candidate index for a route lookup experiment; never merged. */",
+            "new": 1
+          },
+          {
+            "kind": "add",
+            "text": "export class RouteIndex<T extends { method: string; segments: string[] }> {",
+            "new": 2
+          },
+          {
+            "kind": "add",
+            "text": "  private byMethod = new Map<string, T[]>()",
+            "new": 3
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 4
+          },
+          {
+            "kind": "add",
+            "text": "  add(route: T): void {",
+            "new": 5
+          },
+          {
+            "kind": "add",
+            "text": "    const routes = this.byMethod.get(route.method) ?? []",
+            "new": 6
+          },
+          {
+            "kind": "add",
+            "text": "    routes.push(route)",
+            "new": 7
+          },
+          {
+            "kind": "add",
+            "text": "    this.byMethod.set(route.method, routes)",
+            "new": 8
+          },
+          {
+            "kind": "add",
+            "text": "  }",
+            "new": 9
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 10
+          },
+          {
+            "kind": "add",
+            "text": "  candidates(method: string, parts: string[]): T[] {",
+            "new": 11
+          },
+          {
+            "kind": "add",
+            "text": "    return (this.byMethod.get(method) ?? []).filter(route =>",
+            "new": 12
+          },
+          {
+            "kind": "add",
+            "text": "      route.segments.length === parts.length &&",
+            "new": 13
+          },
+          {
+            "kind": "add",
+            "text": "      route.segments.every((segment, i) => segment.startsWith(\":\") || segment === parts[i])",
+            "new": 14
+          },
+          {
+            "kind": "add",
+            "text": "    )",
+            "new": 15
+          },
+          {
+            "kind": "add",
+            "text": "  }",
+            "new": 16
+          },
+          {
+            "kind": "add",
+            "text": "}",
+            "new": 17
+          }
+        ]
+      }
+    ],
+    "fixes": [],
+    "labels": [
+      "perf"
+    ]
+  },
+  {
+    "n": 7,
+    "title": "Prefer static routes over named params",
+    "state": "merged",
+    "kind": "pull",
+    "author": "maya",
+    "base": "main",
+    "head": "smithers/static-precedence",
+    "opened": "2026-09-10T07:56:24.000Z",
+    "updated": "2026-09-10T08:26:24.000Z",
+    "merged": {
+      "by": "maya",
+      "date": "2026-09-10T08:26:24.000Z",
+      "sha": "348c26c818202c7ac3d26e04bda367f5cad831b5"
+    },
+    "body": "Prefer static routes over named params.\n\nFixes #8.\n\nThe change includes a regression test and preserves the Web Request/Response boundary shared by Bun and Node.\n\nVerified with `bun test` and `bun run check`.",
+    "reviewers": [
+      "maya"
+    ],
+    "reviews": [
+      {
+        "author": "maya",
+        "date": "2026-09-10T08:23:24.000Z",
+        "state": "approved",
+        "body": "Checked the diff and the regression."
+      }
+    ],
+    "reviewComments": [],
+    "comments": [],
+    "checks": [
+      {
+        "name": "Typecheck",
+        "state": "success",
+        "duration": "12 s",
+        "detail": "tsc --noEmit · no errors"
+      },
+      {
+        "name": "Unit tests",
+        "state": "success",
+        "duration": "34 s",
+        "detail": "bun test · 31 passed · 0 failed"
+      },
+      {
+        "name": "Lint",
+        "state": "success",
+        "duration": "8 s",
+        "detail": "biome check · 0 errors"
+      }
+    ],
+    "commits": [
+      "348c26c818202c7ac3d26e04bda367f5cad831b5"
+    ],
+    "files": [
+      {
+        "path": "src/router.ts",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 0,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -100,6 +100,7 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "    // Stable sorting keeps registration order when two routes have equal scores.",
+            "old": 100,
+            "new": 100
+          },
+          {
+            "kind": "ctx",
+            "text": "    const score = segments.filter(part => !part.startsWith(\":\")).length",
+            "old": 101,
+            "new": 101
+          },
+          {
+            "kind": "ctx",
+            "text": "    this.routes.push({ method, path, segments, handler, score })",
+            "old": 102,
+            "new": 102
+          },
+          {
+            "kind": "add",
+            "text": "    this.routes.sort((a, b) => b.score - a.score)",
+            "new": 103
+          },
+          {
+            "kind": "ctx",
+            "text": "    return this",
+            "old": 103,
+            "new": 104
+          },
+          {
+            "kind": "ctx",
+            "text": "  }",
+            "old": 104,
+            "new": 105
+          },
+          {
+            "kind": "ctx",
+            "text": "",
+            "old": 105,
+            "new": 106
+          }
+        ]
+      }
+    ],
+    "fixes": [
+      8
+    ],
+    "labels": [
+      "bug"
+    ]
+  },
+  {
+    "n": 9001,
+    "title": "Add a review example",
+    "state": "open",
+    "kind": "pull",
+    "author": "smithers-agent",
+    "agent": {
+      "run": "run-review-example",
+      "flow": "implement-issue",
+      "harness": "Codex · gpt-6.1-sol",
+      "for": "maya"
+    },
+    "base": "main",
+    "head": "mock/review-example",
+    "opened": "2026-10-17T20:59:00Z",
+    "updated": "2026-10-17T20:59:00Z",
+    "body": "Mock scenario: a one-line documentation change with passed checks, awaiting maya’s review.",
+    "reviewers": [
+      "maya"
+    ],
+    "reviews": [],
+    "reviewComments": [],
+    "comments": [],
+    "checks": [
+      {
+        "name": "Example content",
+        "state": "success",
+        "duration": "1 s",
+        "detail": "Mock scenario: the example contains one nonempty line.",
+        "run": "run-review-example"
+      }
+    ],
+    "commits": [
+      "9e7ac478b1928f9600cdbf1260322041e94562a2"
+    ],
+    "files": [
+      {
+        "path": "review-example.md",
+        "status": "added",
+        "additions": 1,
+        "deletions": 0,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -0,0 +1 @@"
+          },
+          {
+            "kind": "add",
+            "text": "A small example for human review.",
+            "new": 1
+          }
+        ]
+      }
+    ],
+    "fixes": [],
+    "labels": []
+  }
+]

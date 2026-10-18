@@ -1,0 +1,513 @@
+package microsandbox
+
+import (
+	"bytes"
+	"context"
+	"crypto"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/binary"
+	"encoding/json"
+	"encoding/pem"
+	"fmt"
+	"io/fs"
+	"net/http"
+	"os"
+	"os/exec"
+	"path"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/smithersai/smithers/packages/backend/internal/githubfake"
+	workspaceapi "github.com/smithersai/smithers/packages/backend/workspace"
+)
+
+// gitSourceFiles reads files at a commit of a local Git checkout: the same
+// data the product repository reader serves.
+type gitSourceFiles struct{ dir string }
+
+func (g gitSourceFiles) ResolveSourceRevision(ctx context.Context, _ string, revision string) (string, error) {
+	output, err := exec.CommandContext(ctx, "git", "-C", g.dir, "rev-parse", "--verify", revision+"^{commit}").Output()
+	return strings.TrimSpace(string(output)), err
+}
+
+func (g gitSourceFiles) ReadSourceFile(ctx context.Context, source workspaceapi.WorkspaceSource, name string) ([]byte, error) {
+	if name == "requirements*.txt" {
+		listing, err := exec.CommandContext(ctx, "git", "-C", g.dir, "ls-tree", "-r", "--name-only", source.Revision).Output()
+		if err != nil {
+			return nil, err
+		}
+		matches := map[string]string{}
+		for _, file := range strings.Split(strings.TrimSpace(string(listing)), "\n") {
+			matched, _ := path.Match(name, file)
+			if !matched || path.Base(file) != file {
+				continue
+			}
+			contents, err := g.ReadSourceFile(ctx, source, file)
+			if err != nil {
+				return nil, err
+			}
+			matches[file] = string(contents)
+		}
+		return json.Marshal(matches)
+	}
+	var stdout, stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, "git", "-C", g.dir, "show", source.Revision+":"+name)
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		if strings.Contains(stderr.String(), "does not exist") || strings.Contains(stderr.String(), "exists on disk, but not in") {
+			return nil, fs.ErrNotExist
+		}
+		return nil, fmt.Errorf("git show %s: %v: %s", name, err, stderr.String())
+	}
+	return stdout.Bytes(), nil
+}
+
+func repositoryRoot(t *testing.T) (string, string) {
+	t.Helper()
+	root, err := filepath.Abs("../../..")
+	require.NoError(t, err)
+	revision, err := exec.Command("git", "-C", root, "rev-parse", "HEAD").Output()
+	require.NoError(t, err)
+	return root, strings.TrimSpace(string(revision))
+}
+
+// layerRuntime keeps its state under SMITHERS_MICROVM_LAYER_ROOT so built
+// layers are reused between runs; the directory's owner label scopes cleanup.
+func layerRuntime(t *testing.T) *Runtime {
+	t.Helper()
+	binary := os.Getenv("SMITHERS_MICROSANDBOX_BIN")
+	root := os.Getenv("SMITHERS_MICROVM_LAYER_ROOT")
+	if binary == "" || root == "" {
+		t.Skip("SMITHERS_MICROSANDBOX_BIN and SMITHERS_MICROVM_LAYER_ROOT are required for layer builds")
+	}
+	runtime, err := New(context.Background(), Config{Binary: binary, Root: root, CPUs: 4, MemoryMiB: 8192, DiskMiB: 32768, MaxRunningVMs: 3,
+		Environments: &EnvironmentConfig{PrepareCPUs: 4, PrepareMemoryMiB: 8192, PrepareDiskMiB: 32768, LayerBudgetBytes: 48 << 30, MinFreeBytes: 30 << 30}})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = runtime.Close() })
+	return runtime
+}
+
+func TestRealMicroVMEnvironmentLayers(t *testing.T) {
+	runtime := layerRuntime(t)
+	repo, revision := repositoryRoot(t)
+	runtime.BindSourceFiles(gitSourceFiles{dir: repo})
+	ctx := operation("layers")
+	started := time.Now()
+	layer, err := runtime.ResolveWorkspaceLayer(ctx, workspaceapi.WorkspaceSpec{ID: "layers", Source: &workspaceapi.WorkspaceSource{Repository: "smithersai/smithers", Revision: revision}})
+	require.NoError(t, err)
+	t.Logf("resolved %s (key %s) in %s; link %v", layer.Snapshot, layer.Key[:12], time.Since(started).Round(time.Millisecond), layer.Link)
+	records, err := runtime.environments.records()
+	require.NoError(t, err)
+	for _, record := range records {
+		t.Logf("layer %s kind=%s build=%.0fs inventory=%v", record.Name, record.Kind, record.BuildSecs, record.Inventory)
+	}
+}
+
+// The retried check keeps its old source revision. Only main's reviewed
+// machine recipe may change the image it boots; branch recipe edits cannot.
+func TestRealMicroVMMainImagePackageRetry(t *testing.T) {
+	runtime := detectedFixtureRuntime(t)
+	repo := t.TempDir()
+	git := func(args ...string) string {
+		t.Helper()
+		output, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput()
+		require.NoError(t, err, string(output))
+		return strings.TrimSpace(string(output))
+	}
+	git("init", "-b", "main")
+	git("config", "user.name", "Recipe fixture")
+	git("config", "user.email", "recipe@example.test")
+	require.NoError(t, os.MkdirAll(filepath.Join(repo, ".smithers"), 0700))
+	writeRecipe := func(contents string) {
+		t.Helper()
+		require.NoError(t, os.WriteFile(filepath.Join(repo, machineJSONPath), []byte(contents), 0600))
+		git("add", machineJSONPath)
+		git("commit", "-m", "Change machine recipe")
+	}
+	writeRecipe(`{"packages":["jq"]}`)
+	sourceRevision := git("rev-parse", "HEAD")
+	gitRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(gitRoot, "fixtures"), 0700))
+	bare := filepath.Join(gitRoot, "fixtures/image-package.git")
+	git("clone", "--bare", repo, bare)
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	fake, err := githubfake.New(githubfake.Config{GitRoot: gitRoot, AppID: 42, OwnerLogin: "fixtures", OwnerKind: "user",
+		PrivateKeyPEM: string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})),
+		Installations: []githubfake.Installation{{ID: 91, Repositories: []githubfake.Repository{{ID: 1, FullName: "fixtures/image-package"}}}}})
+	require.NoError(t, err)
+	t.Cleanup(fake.Close)
+	post := func(path, token, body string, status int, into any) {
+		t.Helper()
+		request, err := http.NewRequest(http.MethodPost, fake.URL+path, strings.NewReader(body))
+		require.NoError(t, err)
+		request.Header.Set("Content-Type", "application/json")
+		if token != "" {
+			request.Header.Set("Authorization", "Bearer "+token)
+		}
+		response, err := fake.Client().Do(request)
+		require.NoError(t, err)
+		defer response.Body.Close()
+		require.Equal(t, status, response.StatusCode)
+		require.NoError(t, json.NewDecoder(response.Body).Decode(into))
+	}
+	claims, err := json.Marshal(map[string]any{"iss": "42", "iat": time.Now().Add(-time.Minute).Unix(), "exp": time.Now().Add(5 * time.Minute).Unix()})
+	require.NoError(t, err)
+	signing := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"RS256","typ":"JWT"}`)) + "." + base64.RawURLEncoding.EncodeToString(claims)
+	hash := sha256.Sum256([]byte(signing))
+	signature, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, hash[:])
+	require.NoError(t, err)
+	appToken := signing + "." + base64.RawURLEncoding.EncodeToString(signature)
+	var access struct{ Token string }
+	post("/app/installations/91/access_tokens", appToken, `{}`, 201, &access)
+	runtime.BindSourceFiles(gitSourceFiles{dir: bare})
+	ctx, cancel := context.WithTimeout(operation("image-package-retry"), 15*time.Minute)
+	defer cancel()
+	spec := workspaceapi.WorkspaceSpec{ID: "before-image-package", Source: &workspaceapi.WorkspaceSource{Repository: "fixtures/image-package", Revision: sourceRevision}}
+	before, err := runtime.ResolveWorkspaceLayer(ctx, spec)
+	require.NoError(t, err)
+	t.Logf("initial main recipe built: %s", before.Key)
+	_, err = runtime.CreateWorkspace(ctx, spec)
+	require.NoError(t, err)
+	command := workspaceapi.Command{Args: []string{"/bin/sh", "-c", "figlet ok"}}
+	result, err := runtime.ExecuteCommand(ctx, spec.ID, command)
+	var failure *RecipeError
+	require.ErrorAs(t, err, &failure)
+	require.Equal(t, "user", failure.Class)
+	require.Equal(t, &MissingTool{Name: "figlet", File: machineJSONPath}, failure.MissingTool)
+	require.Equal(t, 127, result.ExitCode)
+	t.Logf("guest failed with %s: %s", failure.Class, failure.Message)
+	require.NoError(t, runtime.DeleteWorkspace(ctx, spec.ID))
+
+	git("checkout", "-b", "smithers/add-figlet")
+	writeRecipe(`{"packages":["jq","figlet"]}`)
+	require.Equal(t, machineJSONPath, git("diff", "--name-only", sourceRevision, "HEAD"))
+	require.Equal(t, `{"packages":["jq","figlet"]}`, git("show", "HEAD:"+machineJSONPath))
+	git("push", bare, "HEAD:refs/heads/smithers/add-figlet")
+	var pull githubfake.Pull
+	post("/repos/fixtures/image-package/pulls", access.Token, `{"title":"Add figlet to the machine image","head":"smithers/add-figlet","base":"main"}`, 201, &pull)
+	var merged struct {
+		Merged bool
+		SHA    string
+	}
+	// This external-fixture door models the person's GitHub merge. The
+	// product runtime never holds or uses a credential to merge it.
+	post("/_fake/merge", "", fmt.Sprintf(`{"repo":"fixtures/image-package","number":%d}`, pull.Number), 200, &merged)
+	require.True(t, merged.Merged)
+	require.NotEqual(t, sourceRevision, merged.SHA)
+	t.Logf("person merged recipe-only PR %d at %s", pull.Number, merged.SHA)
+	// The install prepares main before it admits branches. Never ask a
+	// branch's old revision to perform privileged image preparation.
+	_, err = runtime.ResolveWorkspaceLayer(ctx, workspaceapi.WorkspaceSpec{ID: "main-image-package", Source: &workspaceapi.WorkspaceSource{Repository: spec.Source.Repository, Revision: "main"}})
+	require.NoError(t, err)
+	spec.ID = "after-image-package"
+	after, err := runtime.ResolveWorkspaceLayer(ctx, spec)
+	require.NoError(t, err)
+	require.NotEqual(t, before.Key, after.Key)
+	require.NotEqual(t, before.Snapshot, after.Snapshot)
+	_, err = runtime.CreateWorkspace(ctx, spec)
+	require.NoError(t, err)
+	result, err = runtime.ExecuteCommand(ctx, spec.ID, command)
+	require.NoError(t, err)
+	require.Equal(t, 0, result.ExitCode, result.Stderr)
+	require.NotEmpty(t, result.Stdout)
+	require.NoError(t, runtime.DeleteWorkspace(ctx, spec.ID))
+	t.Logf("old source %s; person-merged recipe %s (PR %d); image keys %s -> %s; retried figlet exit %d", sourceRevision, merged.SHA, pull.Number, before.Key, after.Key, result.ExitCode)
+}
+
+// A workspace boots from the dependency layer, receives the source, links
+// dependencies offline, and runs a package's real test suite in the VM.
+func TestRealMicroVMWorkspaceFromLayers(t *testing.T) {
+	runtime := layerRuntime(t)
+	repo, revision := repositoryRoot(t)
+	runtime.BindSourceFiles(gitSourceFiles{dir: repo})
+	ctx := operation("layered-workspace")
+	id := "layered-" + newExecID()[1:9]
+	started := time.Now()
+	workspace, err := runtime.CreateWorkspace(ctx, workspaceapi.WorkspaceSpec{ID: id, Source: &workspaceapi.WorkspaceSource{Repository: "smithersai/smithers", Revision: revision}})
+	require.NoError(t, err)
+	t.Logf("warm create from layers: %s", time.Since(started).Round(time.Millisecond))
+	defer func() { require.NoError(t, runtime.DeleteWorkspace(operation("delete"), id)) }()
+	require.Equal(t, workspaceapi.WorkspaceRunning, workspace.State)
+
+	archive, err := exec.Command("git", "-C", repo, "archive", "--format=tar", revision).Output()
+	require.NoError(t, err)
+	started = time.Now()
+	require.NoError(t, writeGuestFixture(runtime, ctx, id, ".seed.tar", archive, 0o600))
+	result, err := runtime.ExecuteCommand(ctx, id, workspaceapi.Command{Args: []string{"sh", "-c", "tar -xf .seed.tar && rm .seed.tar"}})
+	require.NoError(t, err)
+	require.Equal(t, 0, result.ExitCode, result.Stderr)
+	t.Logf("seed %d MiB source: %s", len(archive)>>20, time.Since(started).Round(time.Millisecond))
+
+	started = time.Now()
+	require.NoError(t, runtime.LinkWorkspaceEnvironment(ctx, id))
+	t.Logf("offline link: %s", time.Since(started).Round(time.Millisecond))
+
+	started = time.Now()
+	result, err = runtime.ExecuteCommand(ctx, id, workspaceapi.Command{Args: []string{"sh", "-c",
+		"cd packages/smithers/flows/canonical && pnpm exec vitest run --coverage.enabled=false 2>&1 | grep -E 'Test Files|Tests '"}, Environment: map[string]string{"NO_COLOR": "1"}})
+	require.NoError(t, err)
+	t.Logf("canonical tests (%s):\n%s", time.Since(started).Round(time.Millisecond), result.Stdout)
+	require.Equal(t, 0, result.ExitCode)
+	require.Regexp(t, `Tests\s+[0-9]+ passed`, result.Stdout)
+
+	// eslint and dprint from the workspace, offline: dprint's plugins come
+	// from the dependency layer's cache.
+	started = time.Now()
+	result, err = runtime.ExecuteCommand(ctx, id, workspaceapi.Command{Directory: "packages/smithers/flows/canonical", Args: []string{"pnpm", "run", "lint"}})
+	require.NoError(t, err)
+	require.Equal(t, 0, result.ExitCode, result.Stdout+result.Stderr)
+	t.Logf("canonical lint (eslint + dprint check, %s)", time.Since(started).Round(time.Millisecond))
+
+	if evidence := os.Getenv("SMITHERS_MICROVM_SCREENSHOT"); evidence != "" {
+		screenshotApp(t, runtime, id, evidence)
+	}
+}
+
+// screenshotApp builds the app's SPA, serves it with its browser test host and
+// captures it with Playwright's Chromium, all inside the VM, offline.
+func screenshotApp(t *testing.T, runtime *Runtime, id, evidence string) {
+	ctx := operation("screenshot")
+	started := time.Now()
+	result, err := runtime.ExecuteCommand(ctx, id, workspaceapi.Command{Directory: "apps/app", Args: []string{"sh", "-c",
+		"node scripts/ensure-devkit.mjs && pnpm exec vite build --configLoader runner 2>&1 | tail -3"}})
+	require.NoError(t, err)
+	require.Equal(t, 0, result.ExitCode, result.Stdout+result.Stderr)
+	t.Logf("devkit + vite build (%s): %s", time.Since(started).Round(time.Millisecond), strings.TrimSpace(result.Stdout))
+	_, err = runtime.StartService(ctx, id, workspaceapi.ServiceSpec{Name: "app", ReadyAddress: "127.0.0.1:47311", ReadyTimeout: 2 * time.Minute,
+		Command: workspaceapi.Command{Directory: "apps/app", Args: []string{"bun", "e2e/playwright/webserver.ts"},
+			Environment: map[string]string{"SMITHERS_SKIP_SPA_BUILD": "1", "SMITHERS_LOCAL_PORT": "47311", "SMITHERS_CHAT_STUB": "1"}}})
+	require.NoError(t, err)
+	script := `const { chromium } = require("playwright");
+(async () => {
+  const browser = await chromium.launch();
+  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  await page.goto("http://127.0.0.1:47311/", { waitUntil: "networkidle" });
+  await page.waitForTimeout(1500);
+  await page.screenshot({ path: "/workspace/.acceptance/app.png" });
+  console.log(JSON.stringify({ title: await page.title(), browser: browser.version() }));
+  await browser.close();
+})().catch((error) => { console.error(error); process.exit(1); });`
+	require.NoError(t, writeGuestFixture(runtime, ctx, id, "apps/app/.acceptance-screenshot.cjs", []byte(script), 0o644))
+	started = time.Now()
+	result, err = runtime.ExecuteCommand(ctx, id, workspaceapi.Command{Directory: "apps/app", Args: []string{"sh", "-c",
+		"mkdir -p /workspace/.acceptance && node .acceptance-screenshot.cjs"}})
+	require.NoError(t, err)
+	require.Equal(t, 0, result.ExitCode, result.Stdout+result.Stderr)
+	t.Logf("screenshot (%s): %s", time.Since(started).Round(time.Millisecond), strings.TrimSpace(result.Stdout))
+	png, err := runtime.ReadFile(ctx, id, ".acceptance/app.png")
+	require.NoError(t, err)
+	require.True(t, bytes.HasPrefix(png, []byte("\x89PNG\r\n\x1a\n")), "not a PNG")
+	width, height := binary.BigEndian.Uint32(png[16:20]), binary.BigEndian.Uint32(png[20:24])
+	require.Equal(t, uint32(1280), width)
+	require.Equal(t, uint32(800), height)
+	require.NoError(t, os.WriteFile(evidence, png, 0o644))
+	t.Logf("screenshot %dx%d, %d bytes → %s", width, height, len(png), evidence)
+	require.NoError(t, runtime.StopService(ctx, id, "app"))
+}
+
+// Garbage collection keeps referenced layers and the newest per family, and
+// evicts least recently used layers until the owner's budget is met. The
+// evidence is the host's free space, not an index row.
+func TestRealMicroVMLayerGarbageCollection(t *testing.T) {
+	binary, root := os.Getenv("SMITHERS_MICROSANDBOX_BIN"), os.Getenv("SMITHERS_MICROVM_LAYER_ROOT")
+	if binary == "" || root == "" || os.Getenv("SMITHERS_MICROVM_GC_TEST") != "1" {
+		t.Skip("SMITHERS_MICROVM_GC_TEST=1 with a layer root runs layer eviction")
+	}
+	runtime, err := New(context.Background(), Config{Binary: binary, Root: root, CPUs: 4, MemoryMiB: 8192, DiskMiB: 32768, MaxRunningVMs: 3,
+		Environments: &EnvironmentConfig{PrepareCPUs: 4, PrepareMemoryMiB: 8192, PrepareDiskMiB: 32768, KeepPerFamily: 1, LayerBudgetBytes: 12 << 30, MinFreeBytes: 10 << 30}})
+	require.NoError(t, err)
+	defer runtime.Close()
+	before, err := runtime.environments.records()
+	require.NoError(t, err)
+	report, err := runtime.CollectLayers(context.Background())
+	require.NoError(t, err)
+	after, err := runtime.environments.records()
+	require.NoError(t, err)
+	t.Logf("layers %d → %d; removed %v", len(before), len(after), report.Removed)
+	t.Logf("owner layer bytes (allocated, clone-inclusive) %.1f GiB → %.1f GiB; host free %.1f GiB → %.1f GiB",
+		float64(report.LayerBytesBefore)/(1<<30), float64(report.LayerBytesAfter)/(1<<30),
+		float64(report.FreeBytesBefore)/(1<<30), float64(report.FreeBytesAfter)/(1<<30))
+	require.LessOrEqual(t, report.LayerBytesAfter, int64(12<<30))
+	names, err := runtime.cli.listSnapshots(context.Background())
+	require.NoError(t, err)
+	for _, removed := range report.Removed {
+		for _, snapshot := range names {
+			require.NotEqual(t, removed, *snapshot.Name, "removed layer still indexed")
+		}
+	}
+}
+
+// diskFixtureSources exercises the real on-disk SourceFiles boundary without
+// using Git or inventing a target index. Each fixture is immutable for this test.
+type diskFixtureSources struct{ root, revision string }
+
+func (s diskFixtureSources) ResolveSourceRevision(_ context.Context, _ string, _ string) (string, error) {
+	return s.revision, nil
+}
+func (s diskFixtureSources) ReadSourceFile(_ context.Context, source workspaceapi.WorkspaceSource, name string) ([]byte, error) {
+	if source.Revision != s.revision {
+		return nil, fmt.Errorf("fixture revision mismatch: %s", source.Revision)
+	}
+	if filepath.IsAbs(name) || filepath.Clean(name) != name || strings.Contains(name, "..") {
+		return nil, fmt.Errorf("invalid fixture path %q", name)
+	}
+	return os.ReadFile(filepath.Join(s.root, name))
+}
+
+func detectedFixtureRuntime(t *testing.T) *Runtime {
+	t.Helper()
+	binary, layerRoot := os.Getenv("SMITHERS_MICROSANDBOX_BIN"), os.Getenv("SMITHERS_MICROVM_LAYER_ROOT")
+	if binary == "" || layerRoot == "" {
+		if os.Getenv("SMITHERS_REQUIRE_MICROVM_TESTS") == "1" {
+			t.Fatal("SMITHERS_MICROSANDBOX_BIN and SMITHERS_MICROVM_LAYER_ROOT required")
+		}
+		t.Skip("real detected layer fixtures require a qualified Microsandbox and a private layer root")
+	}
+	// Every VM and snapshot in this lane gets its own name and installation
+	// owner. Capacity checks never authorize cleaning someone else's resources.
+	root := filepath.Join(layerRoot, "detected-"+newExecID()[1:9])
+	runtime, err := New(t.Context(), Config{Binary: binary, Root: root, CPUs: 1, MemoryMiB: 1024, DiskMiB: 4096, MaxRunningVMs: 1,
+		Environments: &EnvironmentConfig{PrepareCPUs: 1, PrepareMemoryMiB: 1024, PrepareDiskMiB: 4096, MinFreeBytes: 8 << 30, LayerBudgetBytes: 8 << 30}})
+	require.NoError(t, err)
+	t.Cleanup(func() { sweepOwner(t, runtime) })
+	free, err := runtime.freeBytes()
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, free, int64(8<<30), "stop this lane below the 8 GiB disk floor")
+	return runtime
+}
+
+func TestRealMicroVMDetectedRepositoryLayers(t *testing.T) {
+	lifecycle := func(hook string) string {
+		return "node -e \"const fs=require('fs');if(process.getuid()===0)throw Error('root lifecycle hook');fs.appendFileSync('/var/cache/smithers/lifecycle.jsonl',JSON.stringify({hook:'" + hook + "',uid:process.getuid()})+'\\n')\""
+	}
+	manifest, err := json.Marshal(map[string]any{
+		"name": "detected-layer-fixture", "version": "1.0.0", "packageManager": "pnpm@9.15.9",
+		"dependencies": map[string]string{"is-number": "7.0.0"},
+		"scripts":      map[string]string{"test": "node --test test.cjs", "postinstall": lifecycle("postinstall"), "prepare": lifecycle("prepare")},
+	})
+	require.NoError(t, err)
+	fixtures := []struct {
+		name  string
+		files map[string]string
+		argv  []string
+		want  string
+	}{
+		{name: "pnpm", files: map[string]string{
+			".node-version":  "22.14.0\n",
+			"package.json":   string(manifest),
+			"pnpm-lock.yaml": "lockfileVersion: '9.0'\nsettings:\n  autoInstallPeers: true\n  excludeLinksFromLockfile: false\nimporters:\n  .:\n    dependencies:\n      is-number:\n        specifier: 7.0.0\n        version: 7.0.0\npackages:\n  is-number@7.0.0:\n    resolution: {integrity: sha512-41Cifkg6e8TylSpdtTpeLVMqvSBEVzTttHvERD741+pnZ8ANv0004MRL43QKPDlK9cGvNp6NZWZUBlbGXYxxng==}\n    engines: {node: '>=0.12.0'}\nsnapshots:\n  is-number@7.0.0: {}\n",
+			"test.cjs":       fmt.Sprintf(`const test=require('node:test');const assert=require('node:assert/strict');const fs=require('fs');const isNumber=require('is-number');test('real cached dependency and unprivileged lifecycle',()=>{assert.equal(isNumber(42),true);assert.equal(isNumber('hello'),false);const hooks=fs.readFileSync('/var/cache/smithers/lifecycle.jsonl','utf8').trim().split('\n').map(JSON.parse);assert.deepEqual(hooks.map(x=>x.hook),['postinstall','prepare']);for(const hook of hooks){assert.equal(hook.uid,%d);assert.notEqual(hook.uid,0)}});`, guestUID),
+		}, argv: []string{"pnpm", "test"}, want: "pass 1"},
+		{name: "go", files: map[string]string{
+			"go.mod":          "module example.com/detected\n\ngo 1.26.8\n\nrequire github.com/google/uuid v1.6.0\n",
+			"go.sum":          "github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=\ngithub.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=\n",
+			"fixture_test.go": "package detected\nimport (\"testing\";\"github.com/google/uuid\")\nfunc TestCachedModule(t *testing.T){got:=uuid.MustParse(\"123e4567-e89b-12d3-a456-426614174000\");if got.String()!=\"123e4567-e89b-12d3-a456-426614174000\"{t.Fatal(got)}}\n",
+		}, argv: []string{"go", "test", "./..."}, want: "ok"},
+	}
+	for _, fixture := range fixtures {
+		t.Run(fixture.name, func(t *testing.T) {
+			runtime := detectedFixtureRuntime(t)
+			repo := t.TempDir()
+			for name, content := range fixture.files {
+				require.NoError(t, os.WriteFile(filepath.Join(repo, name), []byte(content), 0o644))
+			}
+			_, err := os.Stat(filepath.Join(repo, targetIndexPath))
+			require.ErrorIs(t, err, fs.ErrNotExist)
+			reader := diskFixtureSources{root: repo, revision: digest(fixture.name)[:40]}
+			runtime.BindSourceFiles(reader)
+			ctx := operation("detected-" + fixture.name)
+			id := "fixture-" + fixture.name
+			layer, err := runtime.ResolveWorkspaceLayer(ctx, workspaceapi.WorkspaceSpec{ID: id, Source: &workspaceapi.WorkspaceSource{Repository: "fixtures/" + fixture.name, Revision: "main"}})
+			require.NoError(t, err)
+			require.True(t, strings.HasPrefix(layer.Snapshot, "smthrs-dp-"))
+			t.Logf("built and verified detected %s layer %s", fixture.name, layer.Snapshot)
+			workspace, err := runtime.CreateWorkspace(ctx, workspaceapi.WorkspaceSpec{ID: id, Source: &workspaceapi.WorkspaceSource{Repository: "fixtures/" + fixture.name, Revision: "main"}})
+			require.NoError(t, err)
+			require.Equal(t, workspaceapi.WorkspaceRunning, workspace.State)
+			for name := range fixture.files {
+				data, err := reader.ReadSourceFile(t.Context(), workspaceapi.WorkspaceSource{Revision: reader.revision}, name)
+				require.NoError(t, err)
+				require.NoError(t, writeGuestFixture(runtime, ctx, id, name, data, 0o644))
+			}
+			if fixture.name == "pnpm" {
+				result, err := runtime.ExecuteCommand(ctx, id, workspaceapi.Command{Args: []string{"/bin/sh", "-ec", "test ! -e /var/cache/smithers/lifecycle.jsonl"}})
+				require.NoError(t, err)
+				require.Equal(t, 0, result.ExitCode, "dependency preparation must never bake lifecycle effects")
+			}
+			require.NoError(t, runtime.LinkWorkspaceEnvironment(ctx, id))
+			result, err := runtime.ExecuteCommand(ctx, id, workspaceapi.Command{Args: fixture.argv})
+			require.NoError(t, err)
+			require.Equal(t, 0, result.ExitCode, result.Stdout+result.Stderr)
+			require.Contains(t, result.Stdout, fixture.want)
+			t.Logf("fresh offline VM %s: %s", strings.Join(fixture.argv, " "), strings.TrimSpace(result.Stdout))
+			network, err := runtime.ExecuteCommand(ctx, id, workspaceapi.Command{Args: []string{"curl", "-fsS", "--max-time", "3", "https://registry.npmjs.org"}})
+			require.NoError(t, err)
+			require.NotEqual(t, 0, network.ExitCode, "workspace must be offline")
+			require.NoError(t, runtime.DeleteWorkspace(operation("delete-detected"), id))
+		})
+	}
+}
+
+// Security receipt for M-29 / #3439. Real VM builds use the reviewed main
+// toolchain row; the revision-aware repository fixture supplies hostile branch bytes.
+func TestRealMicroVMSecurityIndex(t *testing.T) {
+	runtime := detectedFixtureRuntime(t)
+	raw, err := os.ReadFile("../../../.smithers/target-index.json")
+	require.NoError(t, err)
+	rows := indexRows(t, string(raw))
+	var mainRows []indexTarget
+	for _, row := range rows {
+		if row.Rule == "Environment.Toolchain" {
+			mainRows = append(mainRows, row)
+		}
+	}
+	require.Len(t, mainRows, 1)
+	mainBytes, err := json.Marshal(mainRows)
+	require.NoError(t, err)
+	attacker := toolchainRow()
+	attacker["destinations"] = []string{"attacker.example"}
+	for _, pin := range attacker["toolchain"].(map[string]any)["downloads"].(map[string]any) {
+		p := pin.(map[string]string)
+		p["url"] = "https://attacker.example/root"
+		p["sha256"] = strings.Repeat("f", 64)
+		p["destination"] = "/usr/bin"
+	}
+	branchBytes, err := json.Marshal([]any{attacker})
+	require.NoError(t, err)
+	reader := &revisionLayerReader{files: map[string]string{targetIndexPath: string(mainBytes)}, branchFiles: map[string]string{targetIndexPath: string(branchBytes)}, reads: map[string][]string{}}
+	runtime.BindSourceFiles(reader)
+	ctx := operation("security-index")
+	source := &workspaceapi.WorkspaceSource{Repository: "fixtures/security-index", Revision: "branch"}
+	layer, err := runtime.ResolveWorkspaceLayer(ctx, workspaceapi.WorkspaceSpec{Source: source})
+	require.NoError(t, err)
+	require.Equal(t, []string{strings.Repeat("b", 40)}, reader.reads[targetIndexPath])
+	records, err := runtime.environments.records()
+	require.NoError(t, err)
+	found := false
+	for _, record := range records {
+		if record.Name == layer.Snapshot {
+			found = true
+			require.Equal(t, fmt.Sprint(guestUID), record.Inventory["toolchain-uid"])
+			require.NotContains(t, string(record.Recipe), "attacker.example")
+			t.Logf("prepared toolchain inventory uid=%s; main index read=%v; branch URL absent", record.Inventory["toolchain-uid"], reader.reads[targetIndexPath])
+		}
+	}
+	require.True(t, found)
+	id := "security-index"
+	_, err = runtime.CreateWorkspace(ctx, workspaceapi.WorkspaceSpec{ID: id, Source: source})
+	require.NoError(t, err)
+	defer func() { require.NoError(t, runtime.DeleteWorkspace(operation("delete-security-index"), id)) }()
+	result, err := runtime.ExecuteCommand(ctx, id, workspaceapi.Command{Args: []string{"/bin/sh", "-ec", fmt.Sprintf(`test "$(id -u)" = %d; find %s -type f ! -uid %d -print > /var/tmp/wrong-owner; test ! -s /var/tmp/wrong-owner; printf 'uid='; id -u; stat -c 'owner=%%u %%n' %s/node/bin/node; node --version`, guestUID, toolchainRoot, guestUID, toolchainRoot)}})
+	require.NoError(t, err)
+	require.Equal(t, 0, result.ExitCode, result.Stdout+result.Stderr)
+	t.Logf("ownership and execution receipt:\n%s", result.Stdout)
+}

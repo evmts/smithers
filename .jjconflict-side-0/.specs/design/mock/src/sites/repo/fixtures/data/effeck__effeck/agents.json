@@ -1,0 +1,26 @@
+[
+  {
+    "id": "claude",
+    "name": "Smithers",
+    "harness": "claude-code",
+    "model": "claude-opus-5-5",
+    "connection": "claude",
+    "instructions": "Read real sources. Preserve inferred success, error and requirement types. Prepare reviews for maya; people decide and land.",
+    "flows": [
+      "implement-issue",
+      "docs-sync"
+    ]
+  },
+  {
+    "id": "codex",
+    "name": "Smithers",
+    "harness": "codex",
+    "model": "gpt-6.1-sol",
+    "connection": "codex",
+    "instructions": "Retain compiler and dependency identities. Separate expected-output checks from model-output scoring. Keep conversion off until 16 of 20 model outputs compile, including the hero. Never execute converter submissions.",
+    "flows": [
+      "convert-golden",
+      "release"
+    ]
+  }
+]

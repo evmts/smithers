@@ -1,0 +1,187 @@
+/**
+ * TanStack DB's SQLite persistence as an Effect service.
+ *
+ * A persisted collection keeps its rows, and a synced collection its resume
+ * state, in a SQLite database that outlives the program: OPFS in a browser
+ * tab, a file in Node. `layer` opens the database and builds TanStack DB's
+ * persistence over it; collections made with `Collection.persisted`, or
+ * `Collection.make` with `persist`, then restore their rows from it.
+ *
+ * The host supplies everything platform-specific as arguments, so this
+ * module imports and runs anywhere Effect does: `open` opens the database
+ * (`openBrowserWASQLiteOPFSDatabase` in a tab), `make` builds the persistence
+ * over it (`createBrowserWASQLitePersistence`), and `coordinator` shares one
+ * database between a browser's tabs (`BrowserCollectionCoordinator`).
+ *
+ * When the database can't open (`open` throws or rejects), collections keep
+ * their rows in memory: the layer logs `persistence unavailable` and counts
+ * it, and never fails.
+ *
+ * @since 0.2.0
+ */
+
+import type {
+  PersistedCollectionCoordinator,
+  PersistedCollectionPersistence
+} from "@tanstack/db-sqlite-persistence-core"
+import * as Context from "effect/Context"
+import * as Data from "effect/Data"
+import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
+import * as Metric from "effect/Metric"
+import * as Option from "effect/Option"
+
+/**
+ * The database could not be opened: no OPFS, no Web Worker, storage refused,
+ * or SQLite failed to open the file. `cause` is what the host reported.
+ *
+ * @category errors
+ * @since 0.2.0
+ */
+export class PersistenceUnavailable extends Data.TaggedError("PersistenceUnavailable")<{ readonly cause: unknown }> {}
+
+/**
+ * An open database: whatever `open` returns and `make` builds on. `close`, when
+ * present, runs as the layer closes.
+ *
+ * @category models
+ * @since 0.2.0
+ */
+export interface Database {
+  readonly close?: () => Promise<void> | void
+}
+
+/**
+ * A coordinator shared by the program's collections; `dispose`, when present,
+ * runs as the layer closes, before the database closes.
+ *
+ * @category models
+ * @since 0.2.0
+ */
+export interface Coordinator extends PersistedCollectionCoordinator {
+  readonly dispose?: () => void
+}
+
+/**
+ * How `layer` opens the database and builds the persistence.
+ *
+ * @category models
+ * @since 0.2.0
+ */
+export interface Options<D extends Database> {
+  /** Opens the database: `openBrowserWASQLiteOPFSDatabase` in a tab, a file in Node. A rejection means unavailable. */
+  readonly open: () => Promise<D> | D
+  /** TanStack DB's persistence over the open database, sharing `coordinator` when there is one. */
+  readonly make: (
+    database: D,
+    coordinator: PersistedCollectionCoordinator | undefined
+  ) => PersistedCollectionPersistence
+  /** Makes the coordinator that shares the database between tabs: `BrowserCollectionCoordinator`. */
+  readonly coordinator?: () => Coordinator
+}
+
+/**
+ * The persistence collections are made with.
+ *
+ * @category models
+ * @since 0.2.0
+ */
+export interface Service {
+  /** TanStack DB's persistence, or none when the database couldn't open and rows stay in memory. */
+  readonly persistence: Option.Option<PersistedCollectionPersistence>
+}
+
+/**
+ * The persistence persisted collections are made with.
+ *
+ * @category services
+ * @since 0.2.0
+ */
+export class Persistence extends Context.Service<Persistence, Service>()("@smthrs/effect-tanstack-db/Persistence") {}
+
+/**
+ * Times the database couldn't open, so collections kept their rows in memory.
+ *
+ * @category metrics
+ * @since 0.2.0
+ */
+export const unavailable = Metric.counter("persistence_unavailable", {
+  description: "Times the SQLite database for persisted collections couldn't open, so rows stayed in memory",
+  incremental: true
+})
+
+/**
+ * Writes to a persisted collection the device couldn't store, so they rolled
+ * back, by `collection` and `operation` (`insert`, `update` or `delete`).
+ *
+ * @category metrics
+ * @since 0.2.0
+ */
+export const writeFailures = Metric.counter("persistence_write_failures", {
+  description: "Writes to a persisted collection the device couldn't store, so they rolled back",
+  incremental: true
+})
+
+/**
+ * Milliseconds from a persisted collection's creation to its rows being
+ * restored from the database, by `collection`.
+ *
+ * @category metrics
+ * @since 0.2.0
+ */
+export const restoreMs = Metric.histogram("persistence_restore_ms", {
+  description: "Milliseconds from creating a persisted collection to its rows restored from SQLite",
+  boundaries: Metric.exponentialBoundaries({ start: 5, factor: 2, count: 12 })
+})
+
+/**
+ * Opens the database and builds TanStack DB's persistence over it. When the
+ * layer closes, the coordinator is disposed, then the database closed. When
+ * `open` fails, collections keep their rows in memory: the layer logs
+ * `persistence unavailable` with the error's tag, counts `unavailable`, and
+ * succeeds.
+ *
+ * @category layers
+ * @since 0.2.0
+ */
+export const layer = <D extends Database>(options: Options<D>): Layer.Layer<Persistence> =>
+  Layer.effect(
+    Persistence,
+    Effect.gen(function*() {
+      const opened = yield* Effect.option(
+        Effect.tryPromise({
+          try: async () => options.open(),
+          catch: (cause) => new PersistenceUnavailable({ cause })
+        }).pipe(
+          Effect.tapError((error) =>
+            Effect.all([
+              Metric.update(unavailable, 1),
+              Effect.logWarning("persistence unavailable").pipe(Effect.annotateLogs({ error: error._tag }))
+            ])
+          )
+        )
+      )
+      if (Option.isNone(opened)) return Persistence.of({ persistence: Option.none() })
+      const database = opened.value
+      yield* Effect.addFinalizer(() =>
+        Effect.tryPromise(async () => {
+          await database.close?.()
+        }).pipe(Effect.ignore)
+      )
+      const coordinator = options.coordinator?.()
+      if (coordinator?.dispose) yield* Effect.addFinalizer(() => Effect.sync(() => coordinator.dispose!()))
+      return Persistence.of({ persistence: Option.some(options.make(database, coordinator)) })
+    })
+  )
+
+/**
+ * No database: persisted collections keep their rows in memory. For a program
+ * or test that persists nothing.
+ *
+ * @category layers
+ * @since 0.2.0
+ */
+export const memory: Layer.Layer<Persistence> = Layer.succeed(
+  Persistence,
+  Persistence.of({ persistence: Option.none() })
+)

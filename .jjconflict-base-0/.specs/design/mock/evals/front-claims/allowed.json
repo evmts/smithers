@@ -1,0 +1,12 @@
+[
+  {"phrase":"Powered by Smithers","contextIncludes":"assert(!/","reason":"effeck test file shown in code view asserts the phrase is absent"},
+  {"phrase":"reviewed, tested changes","contextIncludes":"promises","reason":"issue body quoting the installation page's old claim"},
+  {"phrase":"Reviewed the diff, ran the regression","contextIncludes":"2026-10-15T20:55:12","reason":"maya's own issue comment; the commenter is the subject"},
+  {"phrase":"reviewed SHA-256","contextIncludes":"linux/arm64 artifact and","reason":"a checksum a person verified, in toolchain source shown in the code view"},
+  {"phrase":"a reviewed, person-landed","contextIncludes":"fresh project from `flow start` to","reason":"docs sentence where the person lands the change"},
+  {"phrase":"issue to reviewed change","contextIncludes":"first step of the","reason":"plan text naming the launch path, where a person reviews"},
+  {"phrase":"record the reviewed #3906","contextIncludes":"**api:**","reason":"changelog line about declarations reviewed in PRs #3906 and #3935"},
+  {"phrase":"checks passed. Reviewed.","contextIncludes":"Regression and package","reason":"a person's approved pull-request review body"},
+  {"phrase":"Reviewed by","contextIncludes":"reviewers.length ?","reason":"repo/ label in front of the list of people who reviewed"},
+  {"phrase":"reviewed","contextIncludes":"\"requested changes\" : \"reviewed\"","reason":"repo/ timeline event rendered after the reviewing person's name (GitHub's 'cora reviewed')"}
+]

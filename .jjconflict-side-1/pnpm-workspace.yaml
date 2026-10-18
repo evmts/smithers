@@ -1,0 +1,77 @@
+# Membership is declared one directory level at a time, under a named parent,
+# never with `packages/**` or a bare `packages/*/*`. Packages nest: a granular
+# package lives inside the product package it belongs to, so the hierarchy is
+# visible in the tree and a reviewer reads the relationship instead of
+# inferring it. Nesting changes directories only — every npm name, version,
+# dist-tag, and the published set are exactly what they were when the tree was
+# flat. The tree splits into apps and packages, never by language: a Rust crate
+# is a package like any other and lives under `packages/` beside the package
+# that consumes it, so there is no top-level `crates/` (Will, 2026-10-16).
+#
+# The shape below is what makes that safe. A built package writes a generated
+# `dist/cjs/package.json`, which sits TWO levels below its package directory,
+# so any pattern with two wildcards in a row (`packages/*/*`, `packages/**`)
+# would enrol build output as a workspace member. One wildcard under a named
+# parent cannot: nothing one level inside a package directory carries a
+# manifest except another package. Adding a parent means adding its line here
+# and the identical line to `workspaces` in the root `package.json`.
+packages:
+  - "packages/*"
+  - "packages/backend/modelhost/recommend-eval"
+  - "packages/smithers/*"
+  - "packages/smithers/agent/*"
+  - "packages/smithers/agent/harness/benchmarks/*"
+  - "packages/smithers/build/*"
+  - "packages/smithers/flows/*"
+  - "packages/smithers/ui/*"
+  - ".smithers/flows"
+  - ".smithers/flows/coding"
+  - ".smithers/flows/review/seeded-bugs"
+  - "apps/*"
+  - "evals/*"
+
+allowBuilds:
+  "@journeyapps/wa-sqlite": false
+  core-js: false
+  dprint: false
+  es5-ext: false
+  esbuild: false
+  msgpackr-extract: false
+  playwright: false
+  sharp: false
+  unrs-resolver: false
+  vue-demi: false
+  workerd: false
+
+linkWorkspacePackages: true
+verifyDepsBeforeRun: false
+
+# Keep transitive prerelease adapters on the same tested Effect family.
+overrides:
+  "effect": "4.0.5"
+  "@effect/opentelemetry": "4.0.5"
+  "@effect/platform-bun": "4.0.5"
+  "@effect/platform-node": "4.0.5"
+  "@effect/platform-node-shared": "4.0.5"
+  "@effect/sql-d1": "4.0.5"
+  "@effect/sql-sqlite-bun": "4.0.5"
+  "@effect/sql-sqlite-do": "4.0.5"
+  "@effect/sql-sqlite-node": "4.0.5"
+  "@effect/vitest": "4.0.5"
+
+# Cloudflare releases published on 2026-10-19: apps/mvp pins wrangler 4.151.2
+# and @cloudflare/workers-types 5.20261019.1, and wrangler brings in workerd
+# and miniflare. pnpm 11 refuses a version younger than 24 hours, and the
+# 7-day dependency rule refuses one younger than 7 days. Will approved these
+# same-day versions for the MVP on 2026-10-19. Delete each entry once its
+# version is 7 days old (2026-10-26) or apps/mvp stops depending on it.
+minimumReleaseAgeExclude:
+  - '@cloudflare/workerd-darwin-64@1.20261019.1'
+  - '@cloudflare/workerd-darwin-arm64@1.20261019.1'
+  - '@cloudflare/workerd-linux-64@1.20261019.1'
+  - '@cloudflare/workerd-linux-arm64@1.20261019.1'
+  - '@cloudflare/workerd-windows-64@1.20261019.1'
+  - '@cloudflare/workers-types@5.20261019.1'
+  - miniflare@5.20261019.0-beta
+  - workerd@1.20261019.1
+  - wrangler@4.151.2

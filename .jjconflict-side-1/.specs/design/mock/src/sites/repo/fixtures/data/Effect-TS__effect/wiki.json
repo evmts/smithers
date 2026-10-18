@@ -1,0 +1,54 @@
+[
+  {
+    "slug": "architecture",
+    "title": "Architecture",
+    "body": "# Architecture\n\n`effect` supplies the runtime and shared services. Platform, SQL, AI and Atom packages build on those contracts. Workspace dependencies keep source changes visible across packages.\n\nThe SQL client owns transaction composition; drivers own connection and command-result behavior. See [Package layout](wiki:package-layout).",
+    "updated": "2026-10-18T04:20:00Z",
+    "author": "maya",
+    "revision": 2,
+    "provenance": {
+      "source": "person"
+    },
+    "proposals": [
+      {
+        "run": "run-4801",
+        "date": "2026-10-18T02:20:00Z",
+        "summary": "Document PostgreSQL aborted COMMIT handling and shared-driver cleanup.",
+        "diff": "+ Drivers inspect COMMIT outcomes; failed SQLite commits require rollback before connection reuse."
+      }
+    ]
+  },
+  {
+    "slug": "release-process",
+    "title": "Release process",
+    "body": "# Release process\n\nThe 31 public packages share one Changesets fixed group. Pending entries live directly in `.changeset/`; `.changeset/pre/` is historical. The current prerelease tag is `rc`.\n\nPreview using pinned Changesets tooling, review the complete group, then prepare a version PR. A person merges it. The Release workflow publishes and then dispatches website publication. A dispatch receipt does not prove deployment.",
+    "updated": "2026-10-17T04:20:00Z",
+    "author": "cora",
+    "revision": 3,
+    "provenance": {
+      "source": "person"
+    }
+  },
+  {
+    "slug": "package-layout",
+    "title": "Package layout",
+    "body": "# Package layout\n\nCore: `packages/effect`. Integrations: `packages/ai`, `packages/atom`, `packages/platform`, `packages/sql`. Build and documentation tools: `packages/tools`. `packages/opentelemetry` and `packages/vitest` are standalone.\n\nThere are 38 packages: 31 public and seven private. Package ownership is proposed Smithers configuration, separate from access permissions. See [Contributing](wiki:contributing).",
+    "updated": "2026-10-16T04:20:00Z",
+    "author": "maya",
+    "revision": 4,
+    "provenance": {
+      "source": "person"
+    }
+  },
+  {
+    "slug": "contributing",
+    "title": "Contributing",
+    "body": "# Contributing\n\nOpen an issue with the affected package, runtime and reproduction. cora or maya accepts the issue and makes a TODO. Changes include a focused regression and run the applicable runtime projects.\n\nShared configuration expands validation. An agent opens a PR; a person reviews and merges it. Runtime exclusions remain visible in the matrix.",
+    "updated": "2026-10-15T04:20:00Z",
+    "author": "cora",
+    "revision": 5,
+    "provenance": {
+      "source": "person"
+    }
+  }
+]

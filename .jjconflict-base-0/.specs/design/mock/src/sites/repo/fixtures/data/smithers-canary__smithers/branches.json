@@ -1,0 +1,77 @@
+[
+  {
+    "name": "main",
+    "head": "3588460545591ad7470c82095cb84434ced94aba",
+    "author": "lander",
+    "updated": "2026-10-18T04:18:39Z",
+    "ahead": 0,
+    "behind": 0,
+    "isDefault": true,
+    "protected": true
+  },
+  {
+    "name": "queue/signal-receipts",
+    "head": "3588460545591ad7470c82095cb84434ced94aba",
+    "author": "smithers-agent",
+    "updated": "2026-10-18T04:55:00Z",
+    "ahead": 0,
+    "behind": 0,
+    "run": "run-land-landing"
+  },
+  {
+    "name": "queue/flow-plan-diagnostics",
+    "head": "3588460545591ad7470c82095cb84434ced94aba",
+    "author": "smithers-agent",
+    "updated": "2026-10-18T04:55:00Z",
+    "ahead": 0,
+    "behind": 0,
+    "run": "run-land-queued"
+  },
+  {
+    "name": "queue/formatter-check",
+    "head": "3588460545591ad7470c82095cb84434ced94aba",
+    "author": "smithers-agent",
+    "updated": "2026-10-18T04:55:00Z",
+    "ahead": 0,
+    "behind": 0,
+    "run": "run-land-lint-refused"
+  },
+  {
+    "name": "finish-spec-gh04",
+    "head": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "author": "maya",
+    "updated": "2026-10-05T19:10:00Z",
+    "ahead": 0,
+    "behind": 99,
+    "pull": 3723
+  },
+  {
+    "name": "codex/issue-1668-latest-release",
+    "head": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "author": "maya",
+    "updated": "2026-09-24T21:05:25Z",
+    "ahead": 0,
+    "behind": 99,
+    "pull": 1672
+  },
+  {
+    "name": "issue-1646-first-click",
+    "head": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "author": "maya",
+    "updated": "2026-09-24T20:40:04Z",
+    "ahead": 0,
+    "behind": 99,
+    "pull": 1670
+  },
+  {
+    "name": "mock/review-example",
+    "head": "b2d9a112a0f119620e002c06cabe9ffbaa978e62",
+    "author": "smithers-agent",
+    "updated": "2026-10-18T04:59:00Z",
+    "ahead": 1,
+    "behind": 0,
+    "protected": false,
+    "pull": 9001,
+    "run": "run-review-example"
+  }
+]

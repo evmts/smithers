@@ -1,0 +1,252 @@
+package services
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"github.com/jackc/pgx/v5"
+	"strings"
+	"time"
+
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/jobs"
+)
+
+const agentMessageDispatchOperation = "agent-run-dispatch"
+
+// AppendMessageAndDispatch commits the user message and its execution request
+// together. No workflow, runtime, or provider call occurs on this boundary.
+func (s *AgentService) AppendMessageAndDispatch(ctx context.Context, input DispatchAgentRunInput, parts []db.CreateAgentPartParams) (AgentMessageResponse, error) {
+	if s == nil || s.q == nil || s.messageJobs == nil || s.appendTxManager == nil {
+		return AgentMessageResponse{}, pkgerrors.New(pkgerrors.CodeServiceUnavailable, "Message dispatch unavailable")
+	}
+	s.touchAgentWorkspaceActivity(ctx, input.SessionID)
+	return s.appendMessageWithTx(ctx, input.SessionID, "user", parts, &input)
+}
+
+// The append transaction already holds the session row lock. Repeated sends
+// serialize here, including the interval before a worker creates its run.
+func (s *AgentService) validateMessageDispatch(ctx context.Context, tx agentAppendTx, input DispatchAgentRunInput) error {
+	productTx, ok := tx.(*pgxAgentAppendTx)
+	if !ok {
+		return pkgerrors.Internal("message admission requires a PostgreSQL transaction")
+	}
+	session, err := productTx.q.GetAgentSession(ctx, input.SessionID)
+	if err != nil {
+		return err
+	}
+	if session.RepositoryID != input.RepositoryID || session.UserID != input.UserID {
+		return pkgerrors.Forbidden("chat does not belong to this repository and user")
+	}
+	var pending bool
+	err = productTx.tx.QueryRow(ctx, `SELECT EXISTS (
+ SELECT 1 FROM product_job_requests WHERE tenant_id=$1 AND principal_id=$2
+ AND operation=$3 AND payload->>'SessionID'=$4
+ AND state NOT IN ('completed','failed','cancelled')) OR EXISTS (
+ SELECT 1 FROM workflow_runs WHERE id=$5 AND status IN ('queued','running'))`,
+		fmt.Sprintf("repository:%d", input.RepositoryID), fmt.Sprintf("user:%d", input.UserID),
+		agentMessageDispatchOperation, input.SessionID, session.WorkflowRunID).Scan(&pending)
+	if err != nil {
+		return err
+	}
+	if pending {
+		return pkgerrors.Conflict("chat already has pending execution")
+	}
+	return nil
+}
+
+func (s *AgentService) admitMessageDispatch(ctx context.Context, tx agentAppendTx, input DispatchAgentRunInput, messageID int64) error {
+	productTx, ok := tx.(*pgxAgentAppendTx)
+	if !ok {
+		return pkgerrors.Internal("message admission requires a PostgreSQL transaction")
+	}
+	input.TriggerMessageID = messageID
+	payload, err := json.Marshal(input)
+	if err != nil {
+		return err
+	}
+	_, err = s.messageJobs.AdmitInTx(ctx, productTx.tx, jobs.Admission{
+		Scope:     repositoryJobFlowScope(input.RepositoryID, input.UserID),
+		Operation: agentMessageDispatchOperation, RequestID: fmt.Sprintf("agent-message:%d", messageID),
+		Payload: payload, EffectPolicy: jobs.EffectUnsafe,
+	})
+	return err
+}
+
+// RunMessageDispatchWorker is independent of Flow composition: it must also
+// settle accepted messages when a runtime is unavailable. Unsafe-effect fencing
+// recovers unstarted claims but never replays an ambiguous provisioning call.
+func (s *AgentService) RunMessageDispatchWorker(ctx context.Context, config jobs.WorkerConfig) error {
+	if s == nil || s.messageJobs == nil {
+		return errors.New("message dispatch store unavailable")
+	}
+	config.Operations = []string{agentMessageDispatchOperation}
+	return s.messageJobs.RunWorker(ctx, config, s.handleMessageDispatch)
+}
+
+func (s *AgentService) handleMessageDispatch(ctx context.Context, lease *jobs.Lease) error {
+	claim := lease.Claim()
+	var input DispatchAgentRunInput
+	if err := json.Unmarshal(claim.Payload, &input); err != nil {
+		return settleMessageDispatch(ctx, func(receiptCtx context.Context) error {
+			return lease.Fail(receiptCtx, json.RawMessage(`{"code":"invalid_message_dispatch"}`))
+		})
+	}
+	fail := func(code string) error {
+		receipt, _ := json.Marshal(map[string]any{"code": code, "messageId": input.TriggerMessageID})
+		return settleMessageDispatch(ctx, func(receiptCtx context.Context) error { return lease.Fail(receiptCtx, receipt) })
+	}
+	if claim.Operation != agentMessageDispatchOperation || claim.Scope != repositoryJobFlowScope(input.RepositoryID, input.UserID) || claim.RequestID != fmt.Sprintf("agent-message:%d", input.TriggerMessageID) {
+		return fail("invalid_message_dispatch")
+	}
+	// Recheck the saved authority and ownership immediately before dispatch;
+	// the request may have waited through permission or account changes.
+	q := db.New(s.messagePool)
+	session, err := q.GetAgentSession(ctx, input.SessionID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return errors.New("message dispatch authority unavailable")
+	}
+	if err != nil || session.RepositoryID != input.RepositoryID || session.UserID != input.UserID || session.Status != "active" {
+		return fail("chat_unavailable")
+	}
+	// From here the session is the active one this turn belongs to: every
+	// refusal also ends that turn with its typed reason, so no session waits
+	// 'active' for a run that will never exist (QA b-4vf5ge, PM d-azsvyx).
+	refuse := func(code string, failure agentSessionFailure) error {
+		s.endUndispatchedTurn(ctx, session, failure)
+		return fail(code)
+	}
+	actor, err := q.GetUserByIDNotDeleted(ctx, input.UserID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return errors.New("message dispatch authority unavailable")
+	}
+	if err != nil || !actor.IsActive || actor.ProhibitLogin {
+		return refuse("dispatch_permission_denied", agentSessionDispatchNotPermitted)
+	}
+	repo, err := q.GetRepoByID(ctx, input.RepositoryID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return errors.New("message dispatch authority unavailable")
+	}
+	if err != nil || repo.IsArchived {
+		return refuse("repository_unavailable", agentSessionRepositoryGone)
+	}
+	allowed, err := canWriteRepo(ctx, q, repo, input.UserID)
+	if err != nil {
+		return errors.New("message dispatch authority unavailable")
+	}
+	if !allowed {
+		return refuse("dispatch_permission_denied", agentSessionDispatchNotPermitted)
+	}
+	namedRepo, err := q.GetRepoByOwnerAndLowerName(ctx, db.GetRepoByOwnerAndLowerNameParams{Owner: strings.ToLower(input.RepoOwner), LowerName: strings.ToLower(input.RepoName)})
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return errors.New("message dispatch authority unavailable")
+	}
+	if err != nil || namedRepo.ID != input.RepositoryID {
+		return refuse("repository_changed", agentSessionRepositoryGone)
+	}
+	var messageExists bool
+	if err := s.messagePool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM agent_messages WHERE id=$1 AND session_id=$2 AND role='user')`, input.TriggerMessageID, input.SessionID).Scan(&messageExists); err != nil {
+		return errors.New("message dispatch authority unavailable")
+	}
+	if !messageExists {
+		return refuse("message_unavailable", agentSessionNeverStarted)
+	}
+	// Honor shutdown, requested cancellation, and lost leases during dispatch.
+	// Receipt writes below have a separate bounded context.
+	dispatchCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	started := false
+	result, err := s.dispatchAgentRun(dispatchCtx, input, func(effectCtx context.Context) error {
+		if err := lease.StartExternal(effectCtx, json.RawMessage(`{"phase":"dispatching"}`)); err != nil {
+			return err
+		}
+		started = true
+		return nil
+	})
+	if err != nil {
+		middleware.LoggerWithAgentSession(ctx, input.SessionID).Error("durable message dispatch failed", "message_id", input.TriggerMessageID, "error", err)
+		if started {
+			// Cleanup is best effort; a failed or interrupted dispatch is not
+			// evidence that every provider/database effect was undone.
+			return errors.New("message dispatch outcome uncertain")
+		}
+		if ctx.Err() != nil {
+			return errors.New("message dispatch interrupted before execution")
+		}
+		if reason := agentDispatchWaitingReason(err); reason != "" {
+			// The job stays retryable on purpose: this turn is waiting, not
+			// dead. Record the wait where the session shows things, or waiting
+			// and wedged look identical to its owner (#3888).
+			if _, recordErr := q.RecordAgentSessionWaitingReason(ctx, input.SessionID, reason); recordErr != nil {
+				middleware.LoggerWithAgentSession(ctx, input.SessionID).Warn("record agent session wait failed", "error", recordErr)
+			}
+			return errors.New("message dispatch waiting for capacity")
+		}
+		var apiErr *pkgerrors.APIError
+		if errors.As(err, &apiErr) && apiErr.Code == pkgerrors.CodeHostedCodingNotOpen {
+			// refuseUnlistedCodingUser has already failed the session with
+			// this reason; the guarded end below then changes nothing.
+			return refuse(string(pkgerrors.CodeHostedCodingNotOpen), agentSessionHostedCodingNotOpen)
+		}
+		return refuse("dispatch_failed", agentSessionFailureForError(err))
+	}
+	// DispatchAgentRunResult also contains a plaintext token: never serialize it.
+	receipt, _ := json.Marshal(map[string]any{"messageId": input.TriggerMessageID, "workflowRunId": result.WorkflowRunID, "workflowTaskId": result.WorkflowTaskID, "operationId": result.OperationID})
+	return settleMessageDispatch(ctx, func(receiptCtx context.Context) error { return lease.Complete(receiptCtx, receipt) })
+}
+
+// endUndispatchedTurn fails a session whose turn its dispatch refused before
+// any run existed, with the typed reason and final reply the session read and
+// the card show. It changes the session only while it is still active and
+// still has the run it had when the dispatch read it: a run that attached
+// since (another turn, or this dispatch's own cleanup) owns the session and
+// ends it itself. The status, reason and reply commit together through
+// failAgentSession (8e d-sbxese). A failure here is logged and swallowed: the
+// message's failure receipt is still written.
+func (s *AgentService) endUndispatchedTurn(ctx context.Context, session db.AgentSession, failure agentSessionFailure) {
+	if s.dispatchQ == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	ended, err := s.failAgentSession(ctx, func(ctx context.Context, w db.AgentSessionEnds) (db.AgentSession, error) {
+		return w.EndUndispatchedAgentSession(ctx, session.ID, session.WorkflowRunID)
+	}, failingWith(failure))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return
+	}
+	if err != nil {
+		middleware.LoggerWithAgentSession(ctx, session.ID).Error("end undispatched agent turn", "reason_code", failure.Code, "error", err)
+		return
+	}
+	s.notifyAgentSessionStatus(ctx, ended)
+}
+
+// Receipt settlement must survive a shutdown between dispatch and persistence.
+// The jobs store still enforces the claim token and lease on this detached ctx.
+func settleMessageDispatch(ctx context.Context, settle func(context.Context) error) error {
+	receiptCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	return settle(receiptCtx)
+}
+
+// agentSessionWaitingForSandboxMessage is what a parked turn says while the
+// account has no free sandbox for it. Like the pool-full sentence it names the
+// cause and promises nothing ran; unlike a failure it does not ask for a retry,
+// because the dispatch already retries itself.
+const agentSessionWaitingForSandboxMessage = "Waiting for a free sandbox: every sandbox this account may run at once is in use. Nothing has run yet; this turn starts when one frees up."
+
+// agentDispatchWaitingReason is the sentence a parked dispatch records, or ""
+// when the refusal is not a wait. Only the quota refusal parks a dispatch: it
+// is the one error the worker answers with a retryable outcome instead of a
+// terminal receipt.
+func agentDispatchWaitingReason(err error) string {
+	var apiErr *pkgerrors.APIError
+	if errors.As(err, &apiErr) && apiErr.Code == pkgerrors.CodeQuotaExceeded {
+		return agentSessionWaitingForSandboxMessage
+	}
+	return ""
+}

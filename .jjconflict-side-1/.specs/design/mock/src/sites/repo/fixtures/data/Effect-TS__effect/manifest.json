@@ -1,0 +1,954 @@
+{
+  "MOCK_NOW": "2026-10-18T05:00:00Z",
+  "checkout": "a read-only checkout of Effect-TS/effect-smol; set EFFECT_SOURCE to its path to audit",
+  "sourceFiles": [
+    {
+      "path": ".changeset/concrete-schema-brand-identifiers.md",
+      "source": "checkout",
+      "sha256": "a66ef92ba93c25e9d09d5adeebbfe0d0a149343b3bf90a1d6be228a49a2a7f43",
+      "fixtureSha256": "a66ef92ba93c25e9d09d5adeebbfe0d0a149343b3bf90a1d6be228a49a2a7f43",
+      "treatment": "complete"
+    },
+    {
+      "path": ".changeset/config.json",
+      "source": "checkout",
+      "sha256": "e2b10dfaf7230328e0f6bfbaf0ad27a1a7ea75ed866c810fccc46d7f13adf30a",
+      "fixtureSha256": "e2b10dfaf7230328e0f6bfbaf0ad27a1a7ea75ed866c810fccc46d7f13adf30a",
+      "treatment": "complete"
+    },
+    {
+      "path": ".changeset/pre.json",
+      "source": "checkout",
+      "sha256": "ce7d528738e7a965ae2e85590910de97a33775c6d8656e77f7aeaa0a99647db5",
+      "fixtureSha256": "ce7d528738e7a965ae2e85590910de97a33775c6d8656e77f7aeaa0a99647db5",
+      "treatment": "complete"
+    },
+    {
+      "path": ".changeset/workflow-reset-retry.md",
+      "source": "checkout",
+      "sha256": "1709195d03db14ed3a82190ab8ee5d70d4c2f2bf0262e1029e8d27f48e78f607",
+      "fixtureSha256": "1709195d03db14ed3a82190ab8ee5d70d4c2f2bf0262e1029e8d27f48e78f607",
+      "treatment": "complete"
+    },
+    {
+      "path": ".github/actions/setup/action.yaml",
+      "source": "checkout",
+      "sha256": "4e35645a0f18f62655f4bc991e6e26ee02e0d37502c87abe2786ad4c6f573c87",
+      "fixtureSha256": "4e35645a0f18f62655f4bc991e6e26ee02e0d37502c87abe2786ad4c6f573c87",
+      "treatment": "complete"
+    },
+    {
+      "path": ".github/workflows/check.yml",
+      "source": "checkout",
+      "sha256": "4c517d9b74d600c10da85fc722e3e6e57ed99fbc37d977bb7857cc11696a282e",
+      "fixtureSha256": "4c517d9b74d600c10da85fc722e3e6e57ed99fbc37d977bb7857cc11696a282e",
+      "treatment": "complete"
+    },
+    {
+      "path": ".github/workflows/release.yml",
+      "source": "checkout",
+      "sha256": "9cefed28b4341f2e0dc4d78b0dbfff60a40b998b9025367f5ed07f5e483fddc0",
+      "fixtureSha256": "9cefed28b4341f2e0dc4d78b0dbfff60a40b998b9025367f5ed07f5e483fddc0",
+      "treatment": "complete"
+    },
+    {
+      "path": "AGENTS.md",
+      "source": "checkout",
+      "sha256": "cb52fe0b982216b35c402013f5ed055de8414193a604a90554975179e46b464f",
+      "fixtureSha256": "cb52fe0b982216b35c402013f5ed055de8414193a604a90554975179e46b464f",
+      "treatment": "complete"
+    },
+    {
+      "path": "LICENSE",
+      "source": "checkout",
+      "sha256": "774c3bc5924ad8ae6c5a75f1c53db13feb238ade15989625c513d07b60dedf30",
+      "fixtureSha256": "774c3bc5924ad8ae6c5a75f1c53db13feb238ade15989625c513d07b60dedf30",
+      "treatment": "complete"
+    },
+    {
+      "path": "README.md",
+      "source": "checkout",
+      "sha256": "dc1cdf1c8794f013d8f26d3d2e8280a4c6cfb3c407bbb20e664f6a135db437eb",
+      "fixtureSha256": "dc1cdf1c8794f013d8f26d3d2e8280a4c6cfb3c407bbb20e664f6a135db437eb",
+      "treatment": "complete"
+    },
+    {
+      "path": "ai-docs/README.md",
+      "source": "checkout",
+      "sha256": "167cbe07a5ad81e2837e081b8c77a0650c51a19ae9d13889fee7f8c50db36796",
+      "fixtureSha256": "167cbe07a5ad81e2837e081b8c77a0650c51a19ae9d13889fee7f8c50db36796",
+      "treatment": "complete"
+    },
+    {
+      "path": "ai-docs/src/01_effect/02_schema/10_schema-basics.ts",
+      "source": "checkout",
+      "sha256": "7305ce8662f19bed81d4b28698ae5d8401da093a948adc94a36e8aaec4cdb1a7",
+      "fixtureSha256": "7305ce8662f19bed81d4b28698ae5d8401da093a948adc94a36e8aaec4cdb1a7",
+      "treatment": "complete"
+    },
+    {
+      "path": "ai-docs/src/01_effect/02_schema/index.md",
+      "source": "checkout",
+      "sha256": "f7be0513129684f71e8823d74d488b5e60fd916cbd8d02c20651c6b3e0a97aeb",
+      "fixtureSha256": "f7be0513129684f71e8823d74d488b5e60fd916cbd8d02c20651c6b3e0a97aeb",
+      "treatment": "complete"
+    },
+    {
+      "path": "deno.json",
+      "source": "checkout",
+      "sha256": "478ec99fc12f359249ae769d9335dd911fc432a1520de4d31b2eda5917f75492",
+      "fixtureSha256": "478ec99fc12f359249ae769d9335dd911fc432a1520de4d31b2eda5917f75492",
+      "treatment": "complete"
+    },
+    {
+      "path": "package.json",
+      "source": "checkout",
+      "sha256": "ff2766a18fa9e7017ab1c411a47e32f77e531479b2d76d40a5d813803e5aea31",
+      "fixtureSha256": "ff2766a18fa9e7017ab1c411a47e32f77e531479b2d76d40a5d813803e5aea31",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/ai/anthropic/README.md",
+      "source": "checkout",
+      "sha256": "81539c6bcb5e1edb5b1bdaee97311bd7801d2a57db6cfdfefed1fdabfa56f67c",
+      "fixtureSha256": "81539c6bcb5e1edb5b1bdaee97311bd7801d2a57db6cfdfefed1fdabfa56f67c",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/ai/anthropic/package.json",
+      "source": "checkout",
+      "sha256": "b3628fedef8a10f361bc7b3be16799df04a1a47cb8edd1eda1da80e0fa067464",
+      "fixtureSha256": "b3628fedef8a10f361bc7b3be16799df04a1a47cb8edd1eda1da80e0fa067464",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/ai/openai-compat/README.md",
+      "source": "checkout",
+      "sha256": "68c9b5acaf71e9649f1f65899122a5eac6da787d05ffa7c69cf3a7aa1410c5e3",
+      "fixtureSha256": "68c9b5acaf71e9649f1f65899122a5eac6da787d05ffa7c69cf3a7aa1410c5e3",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/ai/openai-compat/package.json",
+      "source": "checkout",
+      "sha256": "443b8d89eb38270fe69ba3ff7b73c125ac0981e43e93881ec902b83c95688d5a",
+      "fixtureSha256": "443b8d89eb38270fe69ba3ff7b73c125ac0981e43e93881ec902b83c95688d5a",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/ai/openai/README.md",
+      "source": "checkout",
+      "sha256": "47ccb249249311bf9089364c36e549005c12a2be6f5e0c9a9971f9705575212f",
+      "fixtureSha256": "47ccb249249311bf9089364c36e549005c12a2be6f5e0c9a9971f9705575212f",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/ai/openai/package.json",
+      "source": "checkout",
+      "sha256": "074921e99bcbf4c6e35bf46e6eb1758dad35c4dce4e2e884653303f0c7e3c89c",
+      "fixtureSha256": "074921e99bcbf4c6e35bf46e6eb1758dad35c4dce4e2e884653303f0c7e3c89c",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/ai/openai/src/OpenAiLanguageModel.ts",
+      "source": "checkout",
+      "sha256": "b653cca9294049a28879d120c050a97b0f9eab952ac2ded511b4eea7701ffba5",
+      "fixtureSha256": "b653cca9294049a28879d120c050a97b0f9eab952ac2ded511b4eea7701ffba5",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/ai/openrouter/README.md",
+      "source": "checkout",
+      "sha256": "2abfe47e0ca0d2eb253dc7c659a5f8e68df9a8af520bfb07f1f5733193cd4a67",
+      "fixtureSha256": "2abfe47e0ca0d2eb253dc7c659a5f8e68df9a8af520bfb07f1f5733193cd4a67",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/ai/openrouter/package.json",
+      "source": "checkout",
+      "sha256": "dd0eb11825c991ee60633724a6cd30882bf7986c849f75f8a8e44d8776bffc32",
+      "fixtureSha256": "dd0eb11825c991ee60633724a6cd30882bf7986c849f75f8a8e44d8776bffc32",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/ai/typesafe/README.md",
+      "source": "checkout",
+      "sha256": "140c7e0009f4ce39241b910b3b6f1c917d0f16f0aeaa2b33aab632f176ae3d1e",
+      "fixtureSha256": "140c7e0009f4ce39241b910b3b6f1c917d0f16f0aeaa2b33aab632f176ae3d1e",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/ai/typesafe/package.json",
+      "source": "checkout",
+      "sha256": "2ba14bb2e5fde24dc2753a541c658937e8ef597d71bdc67fdd8fcc5cff635671",
+      "fixtureSha256": "2ba14bb2e5fde24dc2753a541c658937e8ef597d71bdc67fdd8fcc5cff635671",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/atom/react/README.md",
+      "source": "checkout",
+      "sha256": "7bd2ead3491f2623251cb6740548ededfef230e5853a23dcc539740896b53098",
+      "fixtureSha256": "7bd2ead3491f2623251cb6740548ededfef230e5853a23dcc539740896b53098",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/atom/react/package.json",
+      "source": "checkout",
+      "sha256": "1e1b23fefae945e69b143e3a2c730cbddda0bf536bfb002c20628ae14b49c1a1",
+      "fixtureSha256": "1e1b23fefae945e69b143e3a2c730cbddda0bf536bfb002c20628ae14b49c1a1",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/atom/react/src/Hooks.ts",
+      "source": "checkout",
+      "sha256": "f566dd39e9fc7f20da975ca0d19f96fef6ee9238741ffe04ca21fc045a9bfba1",
+      "fixtureSha256": "f566dd39e9fc7f20da975ca0d19f96fef6ee9238741ffe04ca21fc045a9bfba1",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/atom/solid/README.md",
+      "source": "checkout",
+      "sha256": "4c109bc7041a10be80b79b2e7ac41250ef5e00dae7040c1445b973961cd1d1a5",
+      "fixtureSha256": "4c109bc7041a10be80b79b2e7ac41250ef5e00dae7040c1445b973961cd1d1a5",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/atom/solid/package.json",
+      "source": "checkout",
+      "sha256": "2a9eb3744920312c61dca9cb4c11f11929256bfd31956dd5bbb5cf0a6fe95fae",
+      "fixtureSha256": "2a9eb3744920312c61dca9cb4c11f11929256bfd31956dd5bbb5cf0a6fe95fae",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/atom/vue/README.md",
+      "source": "checkout",
+      "sha256": "a8f7628e019fc14ab0e1edc374f7706114b4f6c06b418a967ab295a3c1bacf9b",
+      "fixtureSha256": "a8f7628e019fc14ab0e1edc374f7706114b4f6c06b418a967ab295a3c1bacf9b",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/atom/vue/package.json",
+      "source": "checkout",
+      "sha256": "9e5cc99abb3a59613d70098b39a70ee1022f1877f0fb5568f61f73d472578bc8",
+      "fixtureSha256": "9e5cc99abb3a59613d70098b39a70ee1022f1877f0fb5568f61f73d472578bc8",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/effect/README.md",
+      "source": "checkout",
+      "sha256": "f113e0714de8122e4558339c905f53306b09d5d5eabf43dc98343f770bde1359",
+      "fixtureSha256": "f113e0714de8122e4558339c905f53306b09d5d5eabf43dc98343f770bde1359",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/effect/package.json",
+      "source": "checkout",
+      "sha256": "59bc72b571573731411e49afe4f806c2da62d31efd9a93368a2f2771c518b618",
+      "fixtureSha256": "59bc72b571573731411e49afe4f806c2da62d31efd9a93368a2f2771c518b618",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/effect/src/Effect.ts",
+      "source": "checkout",
+      "sha256": "e3912ff630c990a3f8766b7b3f09ae3ff4c71573280b13dc332d14f88b9a4f7b",
+      "fixtureSha256": "c9649a286c2ad716d3562d7146595662288dd48f1d6acb606189ce5376643c36",
+      "treatment": "contributor identities removed"
+    },
+    {
+      "path": "packages/effect/src/Schema.ts",
+      "source": "checkout",
+      "sha256": "5e4386285cb5df9e55c7ea290bf9cbfa77d902725f0a1bd58c85a110ba7db0b0",
+      "fixtureSha256": "d3cfa964e1f7ef995482712dbc48e1397fefcfc020254b91522e4558eb0d3887",
+      "treatment": "first 600 lines"
+    },
+    {
+      "path": "packages/effect/src/sql/SqlClient.ts",
+      "source": "checkout",
+      "sha256": "6bef86bdc4e5d1782e74c10ecb77e803c5ff34ce9774bd33227bbde09017173b",
+      "fixtureSha256": "6bef86bdc4e5d1782e74c10ecb77e803c5ff34ce9774bd33227bbde09017173b",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/effect/src/workflow/Workflow.ts",
+      "source": "checkout",
+      "sha256": "2b1effefc9b62f84ed9db20c56531c8e2650bf1977e53244ddf843c4cc8d514f",
+      "fixtureSha256": "2b1effefc9b62f84ed9db20c56531c8e2650bf1977e53244ddf843c4cc8d514f",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/opentelemetry/README.md",
+      "source": "checkout",
+      "sha256": "0a89d8514b0477f8dd31072c8fb84eb510ccf66c042e3bee048a9e1745084341",
+      "fixtureSha256": "0a89d8514b0477f8dd31072c8fb84eb510ccf66c042e3bee048a9e1745084341",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/opentelemetry/package.json",
+      "source": "checkout",
+      "sha256": "23c2d0c445c60574fdd3e25f9156b76207ef6b79774d6a300acdd496659967ea",
+      "fixtureSha256": "23c2d0c445c60574fdd3e25f9156b76207ef6b79774d6a300acdd496659967ea",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/platform/browser/README.md",
+      "source": "checkout",
+      "sha256": "283bd1e0b91b4c211936b13a26d4e517b455d0af97ef8f32bf77c6a86c63ca39",
+      "fixtureSha256": "283bd1e0b91b4c211936b13a26d4e517b455d0af97ef8f32bf77c6a86c63ca39",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/platform/browser/package.json",
+      "source": "checkout",
+      "sha256": "9b303621cf11e2d22d9074ce2420bae7fd046c3003ba3e09ba9762e1f3baf287",
+      "fixtureSha256": "9b303621cf11e2d22d9074ce2420bae7fd046c3003ba3e09ba9762e1f3baf287",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/platform/bun/README.md",
+      "source": "checkout",
+      "sha256": "ac79a3235d65b67995ed0e0e73da100742f07d45af8f344179a4a131202d38ce",
+      "fixtureSha256": "ac79a3235d65b67995ed0e0e73da100742f07d45af8f344179a4a131202d38ce",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/platform/bun/package.json",
+      "source": "checkout",
+      "sha256": "cfba85eceaf37e8bad20726e45c665c85c9261e5fb985c602257dfadf2bf34e2",
+      "fixtureSha256": "cfba85eceaf37e8bad20726e45c665c85c9261e5fb985c602257dfadf2bf34e2",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/platform/deno/README.md",
+      "source": "checkout",
+      "sha256": "48a716899fe66d3245ae75d3949f633eed0c8e39ecc6e85c0c521cae34862c9c",
+      "fixtureSha256": "48a716899fe66d3245ae75d3949f633eed0c8e39ecc6e85c0c521cae34862c9c",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/platform/deno/package.json",
+      "source": "checkout",
+      "sha256": "ddb167511c90334b319d9af3dd378924a329fcb1793f7885670724ff940bdf44",
+      "fixtureSha256": "ddb167511c90334b319d9af3dd378924a329fcb1793f7885670724ff940bdf44",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/platform/node-shared/README.md",
+      "source": "checkout",
+      "sha256": "f5cc87a3d21705637d4d046478b26aafecbf296ed7fdb6fbeaea7adb2e62d153",
+      "fixtureSha256": "f5cc87a3d21705637d4d046478b26aafecbf296ed7fdb6fbeaea7adb2e62d153",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/platform/node-shared/package.json",
+      "source": "checkout",
+      "sha256": "afbd42b26eee4e3da01a406d6f2c5d9666802f74724f8c94e9341301b27c8a05",
+      "fixtureSha256": "afbd42b26eee4e3da01a406d6f2c5d9666802f74724f8c94e9341301b27c8a05",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/platform/node/README.md",
+      "source": "checkout",
+      "sha256": "b59a79ae1aab0f413e29693228b23866bfaf378a47e640633ad5183d255febca",
+      "fixtureSha256": "b59a79ae1aab0f413e29693228b23866bfaf378a47e640633ad5183d255febca",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/platform/node/package.json",
+      "source": "checkout",
+      "sha256": "1eb70ec1617e6b23763202cf31a5b3a0e82686ea64cb40b04999f5f30df2ea92",
+      "fixtureSha256": "1eb70ec1617e6b23763202cf31a5b3a0e82686ea64cb40b04999f5f30df2ea92",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/platform/node/src/NodeHttpServer.ts",
+      "source": "checkout",
+      "sha256": "0f7c558f0d13d6e7b20d9d9d54f36403477c8c6447e732c12f1f888587d6ece8",
+      "fixtureSha256": "0f7c558f0d13d6e7b20d9d9d54f36403477c8c6447e732c12f1f888587d6ece8",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/sql/clickhouse/README.md",
+      "source": "checkout",
+      "sha256": "d33a3201afe09e868cc577be67f38cad61be3fdb2449f355ff1cc95582574b96",
+      "fixtureSha256": "d33a3201afe09e868cc577be67f38cad61be3fdb2449f355ff1cc95582574b96",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/sql/clickhouse/package.json",
+      "source": "checkout",
+      "sha256": "a102703f8b1ddacef5755142688285a5c41f411dc18e6a5ea6461b807afcfb78",
+      "fixtureSha256": "a102703f8b1ddacef5755142688285a5c41f411dc18e6a5ea6461b807afcfb78",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/sql/d1/README.md",
+      "source": "checkout",
+      "sha256": "df831f91c11f33cfe97549a4992739705311411eafb1f4c599e9e488a0f8a802",
+      "fixtureSha256": "df831f91c11f33cfe97549a4992739705311411eafb1f4c599e9e488a0f8a802",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/sql/d1/package.json",
+      "source": "checkout",
+      "sha256": "8e59482ae94f1d42c504aa988fbef80aa973779c32145d1e273480a1774b7634",
+      "fixtureSha256": "8e59482ae94f1d42c504aa988fbef80aa973779c32145d1e273480a1774b7634",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/sql/libsql/README.md",
+      "source": "checkout",
+      "sha256": "ba1754beb07eb6ce8b5e4ac822a5af0ecd9ef824c550b3e9b82f44ffe59fe1e7",
+      "fixtureSha256": "ba1754beb07eb6ce8b5e4ac822a5af0ecd9ef824c550b3e9b82f44ffe59fe1e7",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/sql/libsql/package.json",
+      "source": "checkout",
+      "sha256": "d40c97ebef3d4732f15d339b53fcaf47424ca3ef28b0649d402d87773e6fadbc",
+      "fixtureSha256": "d40c97ebef3d4732f15d339b53fcaf47424ca3ef28b0649d402d87773e6fadbc",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/sql/mssql/README.md",
+      "source": "checkout",
+      "sha256": "233865c71281a197c4e46eaca4508e373c944ace3da4a2613145fdbdc46aaca1",
+      "fixtureSha256": "233865c71281a197c4e46eaca4508e373c944ace3da4a2613145fdbdc46aaca1",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/sql/mssql/package.json",
+      "source": "checkout",
+      "sha256": "b0fae1729e04350c415cb3e2052d6cf5ef452b70c5b9e66926a3f73aa7f22801",
+      "fixtureSha256": "b0fae1729e04350c415cb3e2052d6cf5ef452b70c5b9e66926a3f73aa7f22801",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/sql/mysql2/README.md",
+      "source": "checkout",
+      "sha256": "60eef7bf88798cae068f3b376bf474a636f886fcfa86dd9c6d477ed36ab6b3d2",
+      "fixtureSha256": "60eef7bf88798cae068f3b376bf474a636f886fcfa86dd9c6d477ed36ab6b3d2",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/sql/mysql2/package.json",
+      "source": "checkout",
+      "sha256": "30b85b7015e277c72ca59ba30b04166bf4be99cb9b9602d29c0fa279f7744899",
+      "fixtureSha256": "30b85b7015e277c72ca59ba30b04166bf4be99cb9b9602d29c0fa279f7744899",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/sql/pg/README.md",
+      "source": "checkout",
+      "sha256": "1021a1d03768ba88b4b4d0b2fb299e581797d7b3f915ec1481d82e615509c2bf",
+      "fixtureSha256": "1021a1d03768ba88b4b4d0b2fb299e581797d7b3f915ec1481d82e615509c2bf",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/sql/pg/package.json",
+      "source": "checkout",
+      "sha256": "b8d59967e31bfe0a30aec5bff7b01b2f363c8961296e88f257cb25d2db2f11cc",
+      "fixtureSha256": "b8d59967e31bfe0a30aec5bff7b01b2f363c8961296e88f257cb25d2db2f11cc",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/sql/pg/src/PgClient.ts",
+      "source": "checkout",
+      "sha256": "fa085dcceeddebdf1e9ab8610316587075184c17c8ebb2b4110014e1ae03fd32",
+      "fixtureSha256": "fa085dcceeddebdf1e9ab8610316587075184c17c8ebb2b4110014e1ae03fd32",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/sql/pg/src/PgConnection.ts",
+      "source": "checkout",
+      "sha256": "677f961cbf3fea0105ad3abe854445c2a3b55727ad176f0ee4705a5c698b97fc",
+      "fixtureSha256": "677f961cbf3fea0105ad3abe854445c2a3b55727ad176f0ee4705a5c698b97fc",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/sql/pg/src/PgTypes.ts",
+      "source": "checkout",
+      "sha256": "879d950d17d2f3a81f01aca6cf1328b7cf3b626d26facef9aa542126ef1aa1fc",
+      "fixtureSha256": "879d950d17d2f3a81f01aca6cf1328b7cf3b626d26facef9aa542126ef1aa1fc",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/sql/pg/test/Client.integration.test.ts",
+      "source": "checkout",
+      "sha256": "1d317002c81f7a0c474f4f5ad987d9adb55e113be1c9138f4b4ad9dc926a86bf",
+      "fixtureSha256": "1d317002c81f7a0c474f4f5ad987d9adb55e113be1c9138f4b4ad9dc926a86bf",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/sql/pglite/README.md",
+      "source": "checkout",
+      "sha256": "71fd8f73f716c6e982b86c54cc483bad29abb7cb6fe24fbc1b99692ac7357e1a",
+      "fixtureSha256": "71fd8f73f716c6e982b86c54cc483bad29abb7cb6fe24fbc1b99692ac7357e1a",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/sql/pglite/package.json",
+      "source": "checkout",
+      "sha256": "736b1342196d2c468316ecaf3147bfa31d9722ff4674b66586f9fbfb70ae78f0",
+      "fixtureSha256": "736b1342196d2c468316ecaf3147bfa31d9722ff4674b66586f9fbfb70ae78f0",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/sql/sqlite-bun/README.md",
+      "source": "checkout",
+      "sha256": "18e37b5d2d43cb9efc2368a7924997f3d68a6e037467ec084b4effb86a5df90b",
+      "fixtureSha256": "18e37b5d2d43cb9efc2368a7924997f3d68a6e037467ec084b4effb86a5df90b",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/sql/sqlite-bun/package.json",
+      "source": "checkout",
+      "sha256": "0f5bd29509066c19d57d325f270b84d5b29d644f9d9712356992de98e509bcf6",
+      "fixtureSha256": "0f5bd29509066c19d57d325f270b84d5b29d644f9d9712356992de98e509bcf6",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/sql/sqlite-bun/src/SqliteClient.ts",
+      "source": "checkout",
+      "sha256": "9cb4296be8fc6489f58a97950eee7846cb85ec8be5e5cd327b318fb11fa22853",
+      "fixtureSha256": "9cb4296be8fc6489f58a97950eee7846cb85ec8be5e5cd327b318fb11fa22853",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/sql/sqlite-bun/test/Client.test.ts",
+      "source": "checkout",
+      "sha256": "d0d108b4f4fda46d9a28e69a3ec0324c2c805dde9b167d3d02312bbccab864e7",
+      "fixtureSha256": "d0d108b4f4fda46d9a28e69a3ec0324c2c805dde9b167d3d02312bbccab864e7",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/sql/sqlite-do/README.md",
+      "source": "checkout",
+      "sha256": "299a48a962212d089c10982a026b541af7e266da2c7724aee58fce2702347023",
+      "fixtureSha256": "299a48a962212d089c10982a026b541af7e266da2c7724aee58fce2702347023",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/sql/sqlite-do/package.json",
+      "source": "checkout",
+      "sha256": "bfebaba7c12b7896fc8aabaad5ec0c0f97818a8bdd4e48186cbb5576b8c0638f",
+      "fixtureSha256": "bfebaba7c12b7896fc8aabaad5ec0c0f97818a8bdd4e48186cbb5576b8c0638f",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/sql/sqlite-node/README.md",
+      "source": "checkout",
+      "sha256": "c7c37a6830e119cff29e1d8630275d513edab789988b37ca4c5a3a21d7038775",
+      "fixtureSha256": "c7c37a6830e119cff29e1d8630275d513edab789988b37ca4c5a3a21d7038775",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/sql/sqlite-node/package.json",
+      "source": "checkout",
+      "sha256": "943d54d3bab5378e68639e5544df04c5879ed8a19b25a17e851a841fd0d1b84e",
+      "fixtureSha256": "943d54d3bab5378e68639e5544df04c5879ed8a19b25a17e851a841fd0d1b84e",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/sql/sqlite-react-native/README.md",
+      "source": "checkout",
+      "sha256": "b90eea1c47fbdb60a141fc4210a3cf4df6b7146734ddd6d5eaef98c636f65615",
+      "fixtureSha256": "b90eea1c47fbdb60a141fc4210a3cf4df6b7146734ddd6d5eaef98c636f65615",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/sql/sqlite-react-native/package.json",
+      "source": "checkout",
+      "sha256": "18a02edb5e64aafb73db1139322f1d900d9c08cf5cc67773b7dd8d2ac6d2e1de",
+      "fixtureSha256": "18a02edb5e64aafb73db1139322f1d900d9c08cf5cc67773b7dd8d2ac6d2e1de",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/sql/sqlite-wasm/README.md",
+      "source": "checkout",
+      "sha256": "6d69c9c6a6c2aac66a27b199ebb53c2f78b98664207ed5104423e5077f687f5f",
+      "fixtureSha256": "6d69c9c6a6c2aac66a27b199ebb53c2f78b98664207ed5104423e5077f687f5f",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/sql/sqlite-wasm/package.json",
+      "source": "checkout",
+      "sha256": "5bfcc7127ae4f23cf561dc167c1f479360d8ac9d2ebaae0d172bb2f74613c3a4",
+      "fixtureSha256": "5bfcc7127ae4f23cf561dc167c1f479360d8ac9d2ebaae0d172bb2f74613c3a4",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/tools/ai-codegen/package.json",
+      "source": "checkout",
+      "sha256": "9a5aaee9f5bc929a220714c3de4fa24ed2a64cb2048cac0052f9e0904cac0b86",
+      "fixtureSha256": "9a5aaee9f5bc929a220714c3de4fa24ed2a64cb2048cac0052f9e0904cac0b86",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/tools/ai-docgen/package.json",
+      "source": "checkout",
+      "sha256": "5e3ffddaa45507695921415cc63e7996fdaf1a6e88fd379a917aa91b73017d17",
+      "fixtureSha256": "5e3ffddaa45507695921415cc63e7996fdaf1a6e88fd379a917aa91b73017d17",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/tools/api-diff/README.md",
+      "source": "checkout",
+      "sha256": "ccc91646232545f9e924215c119be95dc54198a88b5373f163cba57f21d024d4",
+      "fixtureSha256": "ccc91646232545f9e924215c119be95dc54198a88b5373f163cba57f21d024d4",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/tools/api-diff/package.json",
+      "source": "checkout",
+      "sha256": "a9bbf3500858a583f7aa444572e8b50e637c37730e1a45eba26efd69260e9c67",
+      "fixtureSha256": "a9bbf3500858a583f7aa444572e8b50e637c37730e1a45eba26efd69260e9c67",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/tools/bundle/README.md",
+      "source": "checkout",
+      "sha256": "4cb4c919747b1d98062306454666203efce3f36b8604ce8193e993aad12ec948",
+      "fixtureSha256": "4cb4c919747b1d98062306454666203efce3f36b8604ce8193e993aad12ec948",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/tools/bundle/package.json",
+      "source": "checkout",
+      "sha256": "5a0f294a91499a3903e6c390a87721784497d9fdfd44cc548e2f7f7d51465b76",
+      "fixtureSha256": "5a0f294a91499a3903e6c390a87721784497d9fdfd44cc548e2f7f7d51465b76",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/tools/docgen/README.md",
+      "source": "checkout",
+      "sha256": "1c475c83181cdfaefa67d2e71f4c0828638ebc5ad37d5d3b4acfc334872f82f3",
+      "fixtureSha256": "56e72fa76992450b00d35d0d614bede8caf99cf6b7aaab7501f04740f9695fe3",
+      "treatment": "contributor identities removed"
+    },
+    {
+      "path": "packages/tools/docgen/package.json",
+      "source": "checkout",
+      "sha256": "22531c2187838d4408fb9e1cb16d7f7327e00be2a935741702c8236536bf13de",
+      "fixtureSha256": "22531c2187838d4408fb9e1cb16d7f7327e00be2a935741702c8236536bf13de",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/tools/docgen/src/CLI.ts",
+      "source": "checkout",
+      "sha256": "8a9344fbb794592c83758e0b32703c230455f76cc0f8f5e2060b51e380ed49eb",
+      "fixtureSha256": "8a9344fbb794592c83758e0b32703c230455f76cc0f8f5e2060b51e380ed49eb",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/tools/doctest/README.md",
+      "source": "checkout",
+      "sha256": "fe06a812a3b48cd1bdba281640cd7827116ecd3f12cc3a4793f53af3354e696c",
+      "fixtureSha256": "fe06a812a3b48cd1bdba281640cd7827116ecd3f12cc3a4793f53af3354e696c",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/tools/doctest/package.json",
+      "source": "checkout",
+      "sha256": "da7617633979c71c681df82be291dab84ae2d58cd1765732abc762ef1c9dd149",
+      "fixtureSha256": "da7617633979c71c681df82be291dab84ae2d58cd1765732abc762ef1c9dd149",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/tools/jsdocs/package.json",
+      "source": "checkout",
+      "sha256": "8b74ed75b28cc3206ec870a86b1e3680aedecca1ff94f5c475bc1eb1714fcee6",
+      "fixtureSha256": "8b74ed75b28cc3206ec870a86b1e3680aedecca1ff94f5c475bc1eb1714fcee6",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/tools/openapi-generator/README.md",
+      "source": "checkout",
+      "sha256": "21fd795f263a6520e5668e6634337d5939c0ef19cbedf4977a290ccdb5056a1c",
+      "fixtureSha256": "21fd795f263a6520e5668e6634337d5939c0ef19cbedf4977a290ccdb5056a1c",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/tools/openapi-generator/package.json",
+      "source": "checkout",
+      "sha256": "ac131dfd32360c3d1a5db8ba7024a48cf49cb44340b5dbf1f3f5accabe4f2923",
+      "fixtureSha256": "ac131dfd32360c3d1a5db8ba7024a48cf49cb44340b5dbf1f3f5accabe4f2923",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/tools/oxc/package.json",
+      "source": "checkout",
+      "sha256": "5d3a8e64a2cbf79f23b82bf400906ae84014856cbf31cac9c3cb01fad5fab412",
+      "fixtureSha256": "5d3a8e64a2cbf79f23b82bf400906ae84014856cbf31cac9c3cb01fad5fab412",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/tools/utils/package.json",
+      "source": "checkout",
+      "sha256": "0aca5f4caa4f120a4f5ac3f34ad3ac6d0719277900d7abef7fd3614b252ac902",
+      "fixtureSha256": "0aca5f4caa4f120a4f5ac3f34ad3ac6d0719277900d7abef7fd3614b252ac902",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/vitest/README.md",
+      "source": "checkout",
+      "sha256": "8bf4577b7549cacb7ed3ab63824014e1d1de0a0e6eb4d4e8ad6de597f580970e",
+      "fixtureSha256": "8bf4577b7549cacb7ed3ab63824014e1d1de0a0e6eb4d4e8ad6de597f580970e",
+      "treatment": "complete"
+    },
+    {
+      "path": "packages/vitest/package.json",
+      "source": "checkout",
+      "sha256": "8069cef8ec6062216d99198ad7366074159550e3672127ec13a7d9dd4f7852dc",
+      "fixtureSha256": "8069cef8ec6062216d99198ad7366074159550e3672127ec13a7d9dd4f7852dc",
+      "treatment": "complete"
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "source": "checkout",
+      "sha256": "750d2cc079d64f96a0e12d53621bd913baaee151a97d92daf62317161ed74ea2",
+      "fixtureSha256": "46797e4c66a3b58aeb183ec5d88a4373481f16bc349abf56d764522b611f3007",
+      "treatment": "contributor identities removed"
+    },
+    {
+      "path": "pnpm-workspace.yaml",
+      "source": "checkout",
+      "sha256": "afaed1ceccba52d0ff3becb74a10d3cfbde053747b6bac0d997ca400ce24dbc7",
+      "fixtureSha256": "afaed1ceccba52d0ff3becb74a10d3cfbde053747b6bac0d997ca400ce24dbc7",
+      "treatment": "complete"
+    },
+    {
+      "path": "vitest.config.ts",
+      "source": "checkout",
+      "sha256": "7174573aacc37be309feb869e82b97d1163cb678deb1a0dcc5ee0f21b6fdc6fb",
+      "fixtureSha256": "7174573aacc37be309feb869e82b97d1163cb678deb1a0dcc5ee0f21b6fdc6fb",
+      "treatment": "complete"
+    },
+    {
+      "path": "vitest.docs.ts",
+      "source": "checkout",
+      "sha256": "083b2d075e7e7e0b23bf59df6a528639eb45d9b9b96630863d5114315b216d25",
+      "fixtureSha256": "083b2d075e7e7e0b23bf59df6a528639eb45d9b9b96630863d5114315b216d25",
+      "treatment": "complete"
+    },
+    {
+      "path": ".smithers/flows/affected/flow.ts",
+      "source": "scenario",
+      "fixtureSha256": "38ddb1223c097a847db826cca0dc4c2452b410613ca0fd93ab6883ddf92e6f5c",
+      "treatment": "proposed repository flow; not executable checkout evidence"
+    },
+    {
+      "path": ".smithers/flows/implement-issue/flow.ts",
+      "source": "scenario",
+      "fixtureSha256": "06ec9d136399a1bbcf6e9ce19325b7ea035e4f7bd34b7cd4cb1a85fdd962e786",
+      "treatment": "proposed repository flow; not executable checkout evidence"
+    },
+    {
+      "path": ".smithers/flows/docs-generate/flow.ts",
+      "source": "scenario",
+      "fixtureSha256": "9a6b8c2abb4d469391150db6b729d0e9085ab819c1aeb9021a5f9d9158b15896",
+      "treatment": "proposed repository flow; not executable checkout evidence"
+    },
+    {
+      "path": ".smithers/flows/release-plan/flow.ts",
+      "source": "scenario",
+      "fixtureSha256": "aa3741ae65299e758ccfdd9c5e3fd9cd8c806c5819244b709323821b6e41de8e",
+      "treatment": "proposed repository flow; not executable checkout evidence"
+    },
+    {
+      "path": ".smithers/flows/triage/flow.ts",
+      "source": "scenario",
+      "fixtureSha256": "3af1efc2dcae55514c0bbb031000f5bb0a34ebe671827d96a39014985118cce0",
+      "treatment": "proposed repository flow; not executable checkout evidence"
+    },
+    {
+      "path": ".envrc",
+      "source": "https://github.com/Effect-TS/effect-smol/blob/main/.envrc",
+      "sha256": "1d26c74fd25a4c3dbb09e029fc609588da499fd4af2a41c88f6316c7f8c54cf1",
+      "fixtureSha256": "1d26c74fd25a4c3dbb09e029fc609588da499fd4af2a41c88f6316c7f8c54cf1",
+      "treatment": "complete; upstream 1 line / 10 bytes matches fixture tree"
+    }
+  ],
+  "releaseSources": [
+    {
+      "path": "packages/ai/anthropic/CHANGELOG.md",
+      "sha256": "36e1f87ed95ae3f2309a11e7b0dc15bbda6491a027eddcc7565f402abe099c7a",
+      "treatment": "Complete sanitized rc.115 through rc.118 sections where present; full historical blob omitted."
+    },
+    {
+      "path": "packages/ai/openai/CHANGELOG.md",
+      "sha256": "7ad26e7291194edb39803aeae01a7632a4bc53022d5fe32813334b6993cd62f1",
+      "treatment": "Complete sanitized rc.115 through rc.118 sections where present; full historical blob omitted."
+    },
+    {
+      "path": "packages/ai/openai-compat/CHANGELOG.md",
+      "sha256": "1a157e3655c588d6fffe84274c3fd295e4e8359626fc7a1cfed0553999aa57c4",
+      "treatment": "Complete sanitized rc.115 through rc.118 sections where present; full historical blob omitted."
+    },
+    {
+      "path": "packages/ai/openrouter/CHANGELOG.md",
+      "sha256": "a7d5b9e146142a550843118ce1e82c7d81697cfa2c99fef9e73e79dc89435a39",
+      "treatment": "Complete sanitized rc.115 through rc.118 sections where present; full historical blob omitted."
+    },
+    {
+      "path": "packages/ai/typesafe/CHANGELOG.md",
+      "sha256": "62248a234f7d66a9bcf6853ccce278110c4670e05d5946b87b3604ab574e3819",
+      "treatment": "Complete sanitized rc.115 through rc.118 sections where present; full historical blob omitted."
+    },
+    {
+      "path": "packages/atom/react/CHANGELOG.md",
+      "sha256": "c87fc43a5e9d11b94f9e19d2f73594af688d77ac9b110745fd6ae123692c6722",
+      "treatment": "Complete sanitized rc.115 through rc.118 sections where present; full historical blob omitted."
+    },
+    {
+      "path": "packages/atom/solid/CHANGELOG.md",
+      "sha256": "5169a0084c397297056c46f7a78ca1290560229b644c18ce220134dc454c3443",
+      "treatment": "Complete sanitized rc.115 through rc.118 sections where present; full historical blob omitted."
+    },
+    {
+      "path": "packages/atom/vue/CHANGELOG.md",
+      "sha256": "6972aa2ec19d1a1a2dc0ce061dbbb1883a58924e82478652a6b6688ec111b54c",
+      "treatment": "Complete sanitized rc.115 through rc.118 sections where present; full historical blob omitted."
+    },
+    {
+      "path": "packages/effect/CHANGELOG.md",
+      "sha256": "0b40f226e4f4099ed222380925c9bbdb928b05d0936cf1d4810e0c87e137072a",
+      "treatment": "Complete sanitized rc.115 through rc.118 sections where present; full historical blob omitted."
+    },
+    {
+      "path": "packages/opentelemetry/CHANGELOG.md",
+      "sha256": "063826224610f3a1b123aacdc6ebc032eb8550f26c193ad43d1f96d4be8e6cb0",
+      "treatment": "Complete sanitized rc.115 through rc.118 sections where present; full historical blob omitted."
+    },
+    {
+      "path": "packages/platform/browser/CHANGELOG.md",
+      "sha256": "c3107673fe5a9110c332ae1dc7299e1561ae7afd4d5c6e5887f18f729c5df85e",
+      "treatment": "Complete sanitized rc.115 through rc.118 sections where present; full historical blob omitted."
+    },
+    {
+      "path": "packages/platform/bun/CHANGELOG.md",
+      "sha256": "ecf3973fb06792cdecfe71da541356411b5c70a74695e23260b0cc2b6ddf839d",
+      "treatment": "Complete sanitized rc.115 through rc.118 sections where present; full historical blob omitted."
+    },
+    {
+      "path": "packages/platform/deno/CHANGELOG.md",
+      "sha256": "0156de7cf4c96bfe247c776209f6fcc074518258841287525e24e4efed04ef33",
+      "treatment": "Complete sanitized rc.115 through rc.118 sections where present; full historical blob omitted."
+    },
+    {
+      "path": "packages/platform/node/CHANGELOG.md",
+      "sha256": "12c181eff774ca103905748387f12caf498fe03e3eb351a7cc995a9d776ff26f",
+      "treatment": "Complete sanitized rc.115 through rc.118 sections where present; full historical blob omitted."
+    },
+    {
+      "path": "packages/platform/node-shared/CHANGELOG.md",
+      "sha256": "6ad5236aee9964cf3aef492afc84ba62f8383592f383fe2284c19c443ccbe918",
+      "treatment": "Complete sanitized rc.115 through rc.118 sections where present; full historical blob omitted."
+    },
+    {
+      "path": "packages/sql/clickhouse/CHANGELOG.md",
+      "sha256": "8f1015aa3349447863d7bf6999977e51f6c8981c25cfdd7b1d2fff9e52fc96a3",
+      "treatment": "Complete sanitized rc.115 through rc.118 sections where present; full historical blob omitted."
+    },
+    {
+      "path": "packages/sql/d1/CHANGELOG.md",
+      "sha256": "117e2d05cd1d403fcc1cd6b8c2ab5adacb95acc1092dec61d2f1662453fda279",
+      "treatment": "Complete sanitized rc.115 through rc.118 sections where present; full historical blob omitted."
+    },
+    {
+      "path": "packages/sql/libsql/CHANGELOG.md",
+      "sha256": "3fcc4c0090b716f553cef3cce20af4a63142ce01cb922f7fade13be33bfc1c61",
+      "treatment": "Complete sanitized rc.115 through rc.118 sections where present; full historical blob omitted."
+    },
+    {
+      "path": "packages/sql/mssql/CHANGELOG.md",
+      "sha256": "d4e7fcfcad64ee64cdff18adea31ba6e1d15a557dd289a31713b83c43c4d82ea",
+      "treatment": "Complete sanitized rc.115 through rc.118 sections where present; full historical blob omitted."
+    },
+    {
+      "path": "packages/sql/mysql2/CHANGELOG.md",
+      "sha256": "1baec351b1a7c11469e1aee6c0af2991e9737b5ae74515a016d91b1842a7376b",
+      "treatment": "Complete sanitized rc.115 through rc.118 sections where present; full historical blob omitted."
+    },
+    {
+      "path": "packages/sql/pg/CHANGELOG.md",
+      "sha256": "950eb115221683060ddc45d1aa255d5ad01d9344fe2a39df95fa500300e4923c",
+      "treatment": "Complete sanitized rc.115 through rc.118 sections where present; full historical blob omitted."
+    },
+    {
+      "path": "packages/sql/pglite/CHANGELOG.md",
+      "sha256": "fc90c8f92fce8287ec6f4e8de2db981bdba9bf1bb5ea76a847872c91ca657e00",
+      "treatment": "Complete sanitized rc.115 through rc.118 sections where present; full historical blob omitted."
+    },
+    {
+      "path": "packages/sql/sqlite-bun/CHANGELOG.md",
+      "sha256": "d16b01277cc81e1866b6373ed4669630aa464ef75f783ae0576ff14e6c27512d",
+      "treatment": "Complete sanitized rc.115 through rc.118 sections where present; full historical blob omitted."
+    },
+    {
+      "path": "packages/sql/sqlite-do/CHANGELOG.md",
+      "sha256": "90c14c4cf4c0c97dc7b5b274b9c39acc2995cf1101e3c52f0d614e2e1fd0d1bd",
+      "treatment": "Complete sanitized rc.115 through rc.118 sections where present; full historical blob omitted."
+    },
+    {
+      "path": "packages/sql/sqlite-node/CHANGELOG.md",
+      "sha256": "9dc71cb6053ef5d296f749401c81d844d27dac7aa0815163b599c8ab0d7ba206",
+      "treatment": "Complete sanitized rc.115 through rc.118 sections where present; full historical blob omitted."
+    },
+    {
+      "path": "packages/sql/sqlite-react-native/CHANGELOG.md",
+      "sha256": "4e3fb0e23c65d202f04f9d54cc603cae7c69fd001ed21284dd8892ab5e6bf172",
+      "treatment": "Complete sanitized rc.115 through rc.118 sections where present; full historical blob omitted."
+    },
+    {
+      "path": "packages/sql/sqlite-wasm/CHANGELOG.md",
+      "sha256": "1542cb8e890e63884c163f0437c1420afa92b4d2fcc7ca301cce470ece27e478",
+      "treatment": "Complete sanitized rc.115 through rc.118 sections where present; full historical blob omitted."
+    },
+    {
+      "path": "packages/tools/docgen/CHANGELOG.md",
+      "sha256": "794f83a362101814a3697a84064b765619c552b69cbbaf7932125b5bca50e8e4",
+      "treatment": "Complete sanitized rc.115 through rc.118 sections where present; full historical blob omitted."
+    },
+    {
+      "path": "packages/tools/doctest/CHANGELOG.md",
+      "sha256": "c87ddae1b5084c75524e0a33af2c316069c53a3c28cb30cb953ff1c6a7b10ebc",
+      "treatment": "Complete sanitized rc.115 through rc.118 sections where present; full historical blob omitted."
+    },
+    {
+      "path": "packages/tools/openapi-generator/CHANGELOG.md",
+      "sha256": "83da42614851d40bc7b626482cb0056eff8908f6adb5fcf8a537acb8800f9c4f",
+      "treatment": "Complete sanitized rc.115 through rc.118 sections where present; full historical blob omitted."
+    },
+    {
+      "path": "packages/vitest/CHANGELOG.md",
+      "sha256": "41611eb26e02d210d537a90daa0507bb4e9c74d83f96c4a27cf16ea3b7f0a6ce",
+      "treatment": "Complete sanitized rc.115 through rc.118 sections where present; full historical blob omitted."
+    }
+  ],
+  "scenarioFields": [
+    "people",
+    "commits",
+    "branches",
+    "tags",
+    "issues",
+    "pulls",
+    "stack",
+    "runs",
+    "approvals",
+    "flows",
+    "agents",
+    "wiki",
+    "settings",
+    "ask",
+    "relations"
+  ],
+  "notes": [
+    "All authors, conversations, timestamps, runtime outcomes, publication and sync receipts are explicit scenarios. Technical source and release notes come from the checkout.",
+    "The .smithers flow sources are proposed fixture configuration; no upstream CODEOWNERS or .smithers directory exists.",
+    "The current checkout moved effect/unstable/* to effect/*; the PostgreSQL scenario uses packages/effect/src/sql/SqlClient.ts.",
+    "Full historical changelog blobs total over 5 MB and are omitted to respect the 2.5 MB fixture limit; four complete sanitized rc sections per public package are in package-releases.json.",
+    "Generated installation/build files and .changeset/pre history listings are excluded; the complete core source and PostgreSQL source/test trees are included.",
+    "Schema.ts is the only truncated code blob (600 source lines and an explicit trailing comment).",
+    "Release-plan exact next versions are null until pinned Changesets preview executes; no next version was inferred."
+  ]
+}

@@ -1,0 +1,224 @@
+[
+  {
+    "path": "README.md",
+    "start": 1,
+    "end": 69,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "LICENSE",
+    "start": 1,
+    "end": 22,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "package.json",
+    "start": 1,
+    "end": 121,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "PACKAGE.ts",
+    "start": 1,
+    "end": 1447,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": ".smithers/home.json",
+    "start": 1,
+    "end": 55,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": ".smithers/flows/issue-triage/flow.mdx",
+    "start": 1,
+    "end": 55,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": ".smithers/flows/land/flow.ts",
+    "start": 1,
+    "end": 103,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": ".smithers/flows/docs-sync/flow.ts",
+    "start": 1,
+    "end": 93,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": ".smithers/flows/release/flow.ts",
+    "start": 1,
+    "end": 129,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/smithers/docs/README.md",
+    "start": 1,
+    "end": 165,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/smithers/docs/installation.md",
+    "start": 1,
+    "end": 191,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/smithers/docs/quickstart.md",
+    "start": 1,
+    "end": 290,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/smithers/docs/troubleshooting.md",
+    "start": 1,
+    "end": 292,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/smithers/docs/concepts/project-and-state.md",
+    "start": 1,
+    "end": 153,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/smithers/docs/concepts/command-surface.md",
+    "start": 1,
+    "end": 160,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/smithers/src/IssueTodoDraft.ts",
+    "start": 1,
+    "end": 89,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/smithers/src/Catalog.ts",
+    "start": 1,
+    "end": 42,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/smithers/src/CatalogRequest.ts",
+    "start": 1,
+    "end": 121,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/smithers/src/Version.ts",
+    "start": 1,
+    "end": 28,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "apps/app/src/mainview/RovingKeyDown.ts",
+    "start": 1,
+    "end": 59,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "apps/app/src/mainview/AppRoot.tsx",
+    "start": 1,
+    "end": 79,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "apps/app/src/mainview/FailureNotice.tsx",
+    "start": 1,
+    "end": 83,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "apps/app/src/mainview/StartupBoundary.tsx",
+    "start": 1,
+    "end": 49,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/smithers/package.json",
+    "start": 1,
+    "end": 916,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/smithers/flows/docs/quickstart.md",
+    "start": 1,
+    "end": 248,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": ".smithers/flows/review/seeded-bugs/review-seeded-bugs.eval.ts",
+    "start": 1,
+    "end": 52,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "evals/authoring/validate.ts",
+    "start": 1,
+    "end": 220,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/backend/modelhost/recommend-eval/recommend.eval.ts",
+    "start": 1,
+    "end": 36,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/smithers/agent/regression/agent.eval.ts",
+    "start": 1,
+    "end": 697,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/smithers/src/evaluation/EvalCli.ts",
+    "start": 1,
+    "end": 178,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": ".smithers/flows/review/seeded-bugs/SCORECARD.md",
+    "start": 1,
+    "end": 106,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": ".dockerignore",
+    "start": 1,
+    "end": 49,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": ".smithers/flows/review/seeded-bugs/baseline.json",
+    "start": 1,
+    "end": 231,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "evals/authoring/data/pilot-sft.jsonl",
+    "start": 1,
+    "end": 11,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/backend/modelhost/recommend-eval/fixtures/sample.jsonl",
+    "start": 1,
+    "end": 17,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/smithers/agent/regression/baseline.json",
+    "start": 1,
+    "end": 2,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/smithers/agent/evals/docs/guides/author-a-suite.md",
+    "start": 1,
+    "end": 116,
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  }
+]

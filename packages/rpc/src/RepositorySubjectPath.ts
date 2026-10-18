@@ -39,6 +39,8 @@
  * @category models
  */
 export type RepositorySubject =
+  | { readonly kind: "docs"; readonly path?: string }
+  | { readonly kind: "evals"; readonly suite: string; readonly case?: string }
   | { readonly kind: "commits"; readonly location?: string }
   | { readonly kind: "commit"; readonly sha: string }
   | { readonly kind: "branches" }
@@ -250,6 +252,20 @@ export const resolveRefLocation = (
  */
 export const parseRepositorySubject = (segments: ReadonlyArray<string>): RepositorySubject | undefined => {
   const [head, ...below] = segments
+  if (head === "docs") {
+    if (below.length === 0) return { kind: "docs" }
+    const path = repositoryLocation(below)
+    if (path === undefined) return undefined
+    try {
+      if (below.some((part) => [".", ".."].includes(decodeURIComponent(part)))) return undefined
+    } catch {
+      return undefined
+    }
+    return { kind: "docs", path }
+  }
+  if (head === "evals" && below.length === 1 && repositoryLocation(below) !== undefined) {
+    return { kind: "evals", suite: below[0]! }
+  }
   if (head === "commits") {
     if (below.length === 0) return { kind: "commits" }
     const location = repositoryLocation(below)
@@ -316,6 +332,13 @@ export const splitRepositoryPath = (
   if (rest.length === 0) return { owner, name }
   const parsed = parseRepositorySubject(rest)
   const subject = parsed?.kind === "search" ? { ...parsed, q: new URLSearchParams(search).get("q") ?? "" } : parsed
+  if (subject?.kind === "evals") {
+    const id = new URLSearchParams(search).get("case")
+    if (id !== null) {
+      if (repositoryLocation([id]) === undefined || id.includes("/")) return undefined
+      return { owner, name, subject: { ...subject, case: id } }
+    }
+  }
   return subject === undefined ? undefined : { owner, name, subject }
 }
 
@@ -326,6 +349,12 @@ export const splitRepositoryPath = (
  */
 export const formatRepositorySubject = (subject: RepositorySubject): string => {
   switch (subject.kind) {
+    case "docs":
+      return `docs${subject.path === undefined ? "" : `/${subject.path}`}`
+    case "evals":
+      return `evals/${subject.suite}${
+        subject.case === undefined ? "" : `?${new URLSearchParams({ case: subject.case })}`
+      }`
     case "pull":
       return `pull/${subject.number}${subject.tab === "conversation" ? "" : `/${subject.tab}`}`
     case "issue":

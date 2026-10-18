@@ -1,0 +1,4527 @@
+[
+  {
+    "path": ".dockerignore",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 780
+  },
+  {
+    "path": ".editorconfig",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 683
+  },
+  {
+    "path": ".git-blame-ignore-revs",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 800
+  },
+  {
+    "path": ".gitattributes",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 916
+  },
+  {
+    "path": ".gitignore",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7228
+  },
+  {
+    "path": ".node-version",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7
+  },
+  {
+    "path": ".npmrc",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 390
+  },
+  {
+    "path": ".pnpmfile.mjs",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1156
+  },
+  {
+    "path": ".smithers",
+    "kind": "dir",
+    "sha": "037d43ef5a2fc0481d6116ccdea27feffba5e4e4"
+  },
+  {
+    "path": ".smithers/FACTORY.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5949
+  },
+  {
+    "path": ".smithers/WORKSPACE.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4449
+  },
+  {
+    "path": ".smithers/coding-project.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 19832
+  },
+  {
+    "path": ".smithers/cross-package-globs.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3
+  },
+  {
+    "path": ".smithers/environment.nix",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 15222
+  },
+  {
+    "path": ".smithers/factory.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 55416
+  },
+  {
+    "path": ".smithers/flows",
+    "kind": "dir",
+    "sha": "037d43ef5a2fc0481d6116ccdea27feffba5e4e4"
+  },
+  {
+    "path": ".smithers/flows/PACKAGE.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 74558
+  },
+  {
+    "path": ".smithers/flows/README.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4228
+  },
+  {
+    "path": ".smithers/flows/RELEASE.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 12036
+  },
+  {
+    "path": ".smithers/flows/docs-sync",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": ".smithers/flows/docs-sync/flow.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2737
+  },
+  {
+    "path": ".smithers/flows/dprint.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 899
+  },
+  {
+    "path": ".smithers/flows/eslint.config.js",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2939
+  },
+  {
+    "path": ".smithers/flows/issue-triage",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": ".smithers/flows/issue-triage/flow.mdx",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2415
+  },
+  {
+    "path": ".smithers/flows/land",
+    "kind": "dir",
+    "sha": "acee35be8bf2eedbff4080042fd48b9f907563f6"
+  },
+  {
+    "path": ".smithers/flows/land/flow.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3472
+  },
+  {
+    "path": ".smithers/flows/pack.test.mjs",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 46334
+  },
+  {
+    "path": ".smithers/flows/package.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1969
+  },
+  {
+    "path": ".smithers/flows/release",
+    "kind": "dir",
+    "sha": "037d43ef5a2fc0481d6116ccdea27feffba5e4e4"
+  },
+  {
+    "path": ".smithers/flows/release/flow.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4803
+  },
+  {
+    "path": ".smithers/flows/review",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": ".smithers/flows/tsconfig.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 674
+  },
+  {
+    "path": ".smithers/home.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1038
+  },
+  {
+    "path": ".smithers/target-index.json",
+    "kind": "file",
+    "sha": "36b672172b8f16bfffce15eb10fab751dbb29913",
+    "size": 4620332
+  },
+  {
+    "path": ".smithers/wiki",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": ".smithers/wiki/README.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 17576
+  },
+  {
+    "path": "AGENTS.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 19353
+  },
+  {
+    "path": "CHANGELOG.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2904205
+  },
+  {
+    "path": "CONTRIBUTING.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 33612
+  },
+  {
+    "path": "Cargo.lock",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 69885
+  },
+  {
+    "path": "Cargo.toml",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1105
+  },
+  {
+    "path": "LAND.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1953
+  },
+  {
+    "path": "LICENSE",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1105
+  },
+  {
+    "path": "PACKAGE.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 72673
+  },
+  {
+    "path": "PRERELEASE.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 36533
+  },
+  {
+    "path": "README.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3419
+  },
+  {
+    "path": "RELEASE_SUPPORT.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 12553
+  },
+  {
+    "path": "REVIEW.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3824
+  },
+  {
+    "path": "SECURITY.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 561
+  },
+  {
+    "path": "SUPPORT.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2372
+  },
+  {
+    "path": "THIRD_PARTY_NOTICES.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4078
+  },
+  {
+    "path": "apps",
+    "kind": "dir",
+    "sha": "065cdd316d8af0fb2b881a596e0e02ed7d6da0b1"
+  },
+  {
+    "path": "apps/app",
+    "kind": "dir",
+    "sha": "065cdd316d8af0fb2b881a596e0e02ed7d6da0b1"
+  },
+  {
+    "path": "apps/app/.gitignore",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1612
+  },
+  {
+    "path": "apps/app/AGENTS.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 11726
+  },
+  {
+    "path": "apps/app/PACKAGE.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 33339
+  },
+  {
+    "path": "apps/app/README.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3231
+  },
+  {
+    "path": "apps/app/bunfig.toml",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 108
+  },
+  {
+    "path": "apps/app/docs",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "apps/app/docs/HEALTH.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 8309
+  },
+  {
+    "path": "apps/app/docs/LOCAL-APP.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 32904
+  },
+  {
+    "path": "apps/app/docs/LOCAL-BACKEND-RETIREMENT.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 14693
+  },
+  {
+    "path": "apps/app/docs/MODELS.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1047
+  },
+  {
+    "path": "apps/app/docs/PROOF.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2750
+  },
+  {
+    "path": "apps/app/docs/UI-COVERAGE-GAPS.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 59172
+  },
+  {
+    "path": "apps/app/docs/WORKBENCH-UX.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 37898
+  },
+  {
+    "path": "apps/app/docs/command-intents.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 9985
+  },
+  {
+    "path": "apps/app/docs/http-turn-recovery.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2134
+  },
+  {
+    "path": "apps/app/docs/persistence.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 56680
+  },
+  {
+    "path": "apps/app/docs/state-architecture.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 26949
+  },
+  {
+    "path": "apps/app/docs/state-events.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 28327
+  },
+  {
+    "path": "apps/app/e2e",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "apps/app/e2e/README.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 12511
+  },
+  {
+    "path": "apps/app/icon.iconset",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "apps/app/icon.iconset/icon_128x128.png",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1832
+  },
+  {
+    "path": "apps/app/icon.iconset/icon_128x128@2x.png",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3600
+  },
+  {
+    "path": "apps/app/icon.iconset/icon_16x16.png",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 388
+  },
+  {
+    "path": "apps/app/icon.iconset/icon_16x16@2x.png",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 586
+  },
+  {
+    "path": "apps/app/icon.iconset/icon_256x256.png",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3600
+  },
+  {
+    "path": "apps/app/icon.iconset/icon_256x256@2x.png",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7513
+  },
+  {
+    "path": "apps/app/icon.iconset/icon_32x32.png",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 586
+  },
+  {
+    "path": "apps/app/icon.iconset/icon_32x32@2x.png",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1114
+  },
+  {
+    "path": "apps/app/icon.iconset/icon_512x512.png",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7513
+  },
+  {
+    "path": "apps/app/icon.iconset/icon_512x512@2x.png",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 16259
+  },
+  {
+    "path": "apps/app/licenses",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "apps/app/licenses/git-COPYING",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 18765
+  },
+  {
+    "path": "apps/app/licenses/jj-LICENSE",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 11358
+  },
+  {
+    "path": "apps/app/package.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3695
+  },
+  {
+    "path": "apps/app/playwright.config.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1969
+  },
+  {
+    "path": "apps/app/playwright.graph.config.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1759
+  },
+  {
+    "path": "apps/app/playwright.install.config.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 508
+  },
+  {
+    "path": "apps/app/playwright.local.config.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 624
+  },
+  {
+    "path": "apps/app/playwright.proof.config.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1026
+  },
+  {
+    "path": "apps/app/playwright.real.config.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 6887
+  },
+  {
+    "path": "apps/app/playwright.showcase.config.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1239
+  },
+  {
+    "path": "apps/app/playwright.site.config.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 904
+  },
+  {
+    "path": "apps/app/postcss.config.js",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 91
+  },
+  {
+    "path": "apps/app/proof",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "apps/app/proof/page.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2610
+  },
+  {
+    "path": "apps/app/proof/proof-page.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 16136
+  },
+  {
+    "path": "apps/app/proof/proof-page.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 42012
+  },
+  {
+    "path": "apps/app/scripts",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "apps/app/scripts/README.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 10245
+  },
+  {
+    "path": "apps/app/scripts/RequiresMacOS.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 637
+  },
+  {
+    "path": "apps/app/scripts/browser-test-host.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2301
+  },
+  {
+    "path": "apps/app/scripts/build-native.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 6110
+  },
+  {
+    "path": "apps/app/scripts/build-native.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 20157
+  },
+  {
+    "path": "apps/app/scripts/build-stamp.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1198
+  },
+  {
+    "path": "apps/app/scripts/build-stamp.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3652
+  },
+  {
+    "path": "apps/app/scripts/bundle-cli.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7927
+  },
+  {
+    "path": "apps/app/scripts/bundle-cli.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1719
+  },
+  {
+    "path": "apps/app/scripts/bundle-microsandbox.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3035
+  },
+  {
+    "path": "apps/app/scripts/bundle-postgres.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 13603
+  },
+  {
+    "path": "apps/app/scripts/canary-browser.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 8052
+  },
+  {
+    "path": "apps/app/scripts/canary-browser.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 9631
+  },
+  {
+    "path": "apps/app/scripts/canary-seam-probe.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3218
+  },
+  {
+    "path": "apps/app/scripts/canary-seam-probe.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3748
+  },
+  {
+    "path": "apps/app/scripts/catalog-allowlist.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2786
+  },
+  {
+    "path": "apps/app/scripts/catalog-host.mts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1080
+  },
+  {
+    "path": "apps/app/scripts/catalog-mvp.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 10238
+  },
+  {
+    "path": "apps/app/scripts/catalog-policy.mts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3294
+  },
+  {
+    "path": "apps/app/scripts/check-real-e2e.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5465
+  },
+  {
+    "path": "apps/app/scripts/chunk-graph.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1213
+  },
+  {
+    "path": "apps/app/scripts/debug-api-inventory.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1712
+  },
+  {
+    "path": "apps/app/scripts/deterministic-tar.py",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1641
+  },
+  {
+    "path": "apps/app/scripts/dev-backend-proxy.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 980
+  },
+  {
+    "path": "apps/app/scripts/dev-backend-proxy.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 787
+  },
+  {
+    "path": "apps/app/scripts/durable-write-doors.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 9000
+  },
+  {
+    "path": "apps/app/scripts/flow-graph-e2e-gateway.mts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 16343
+  },
+  {
+    "path": "apps/app/scripts/flow-graph-e2e-host.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7236
+  },
+  {
+    "path": "apps/app/scripts/flow-graph-fixture-source.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3847
+  },
+  {
+    "path": "apps/app/scripts/flow-graph-fixture-source.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4138
+  },
+  {
+    "path": "apps/app/scripts/flow-graph-record-journal.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5275
+  },
+  {
+    "path": "apps/app/scripts/flow-host-manifest.mts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2917
+  },
+  {
+    "path": "apps/app/scripts/flow-host-manifest.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2430
+  },
+  {
+    "path": "apps/app/scripts/gateway-run-proof.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 17185
+  },
+  {
+    "path": "apps/app/scripts/gatewayFrames.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 11067
+  },
+  {
+    "path": "apps/app/scripts/gatewayFrames.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7935
+  },
+  {
+    "path": "apps/app/scripts/headless-page.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 12576
+  },
+  {
+    "path": "apps/app/scripts/headless-page.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 13299
+  },
+  {
+    "path": "apps/app/scripts/jj-pin.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1291
+  },
+  {
+    "path": "apps/app/scripts/jj-pin.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1232
+  },
+  {
+    "path": "apps/app/scripts/junit-report-dir.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4358
+  },
+  {
+    "path": "apps/app/scripts/junit-report-dir.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2270
+  },
+  {
+    "path": "apps/app/scripts/launch-checklist.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4372
+  },
+  {
+    "path": "apps/app/scripts/launch-mint-session.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4792
+  },
+  {
+    "path": "apps/app/scripts/launch-mint-session.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4689
+  },
+  {
+    "path": "apps/app/scripts/launch-seam-probe.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4870
+  },
+  {
+    "path": "apps/app/scripts/linux-arm64.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1825
+  },
+  {
+    "path": "apps/app/scripts/linux-arm64.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1094
+  },
+  {
+    "path": "apps/app/scripts/live-signed-in-check.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5318
+  },
+  {
+    "path": "apps/app/scripts/live-store-reset.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2773
+  },
+  {
+    "path": "apps/app/scripts/live-workflow-check.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 18302
+  },
+  {
+    "path": "apps/app/scripts/openapi-chunk.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 834
+  },
+  {
+    "path": "apps/app/scripts/production-preflight.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1591
+  },
+  {
+    "path": "apps/app/scripts/production-preflight.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1061
+  },
+  {
+    "path": "apps/app/scripts/proof-install.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 8896
+  },
+  {
+    "path": "apps/app/scripts/proof-install.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 6792
+  },
+  {
+    "path": "apps/app/scripts/render-favicon.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 826
+  },
+  {
+    "path": "apps/app/scripts/render-favicon.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4724
+  },
+  {
+    "path": "apps/app/scripts/require-toolchain.mjs",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 503
+  },
+  {
+    "path": "apps/app/scripts/run-install-e2e.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3291
+  },
+  {
+    "path": "apps/app/scripts/run-journey-j2.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1009
+  },
+  {
+    "path": "apps/app/scripts/run-local-no-github.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7825
+  },
+  {
+    "path": "apps/app/scripts/run-local-no-github.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 12912
+  },
+  {
+    "path": "apps/app/scripts/run-mode-matrix.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 11195
+  },
+  {
+    "path": "apps/app/scripts/run-packaged-mode-matrix.fakes.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3032
+  },
+  {
+    "path": "apps/app/scripts/run-packaged-mode-matrix.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5357
+  },
+  {
+    "path": "apps/app/scripts/run-packaged-mode-matrix.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7232
+  },
+  {
+    "path": "apps/app/scripts/run-pr-e2e.mjs",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 8345
+  },
+  {
+    "path": "apps/app/scripts/run-pr-e2e.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 11778
+  },
+  {
+    "path": "apps/app/scripts/run-real-e2e.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7155
+  },
+  {
+    "path": "apps/app/scripts/run-view-stories.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 367
+  },
+  {
+    "path": "apps/app/scripts/server-bundle-archive.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2559
+  },
+  {
+    "path": "apps/app/scripts/server-bundle-archive.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2046
+  },
+  {
+    "path": "apps/app/scripts/server-bundle-manifest.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 6572
+  },
+  {
+    "path": "apps/app/scripts/server-bundle-manifest.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 6334
+  },
+  {
+    "path": "apps/app/scripts/server-bundle.integration.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 29437
+  },
+  {
+    "path": "apps/app/scripts/showcase.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3642
+  },
+  {
+    "path": "apps/app/scripts/showcase.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 6672
+  },
+  {
+    "path": "apps/app/scripts/system-linkage.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1129
+  },
+  {
+    "path": "apps/app/scripts/test-child-supervisor.mjs",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 6865
+  },
+  {
+    "path": "apps/app/scripts/test-child.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5621
+  },
+  {
+    "path": "apps/app/scripts/test-child.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5182
+  },
+  {
+    "path": "apps/app/scripts/unit-proof-selection.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2405
+  },
+  {
+    "path": "apps/app/scripts/validate-git-bundle.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 852
+  },
+  {
+    "path": "apps/app/scripts/validate-git-bundle.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1850
+  },
+  {
+    "path": "apps/app/scripts/verify-journey-evidence.mjs",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 920
+  },
+  {
+    "path": "apps/app/scripts/view-stories-tier.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 613
+  },
+  {
+    "path": "apps/app/scripts/wiki-decision-campaign.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2161
+  },
+  {
+    "path": "apps/app/scripts/wiki-decision-campaign.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3953
+  },
+  {
+    "path": "apps/app/scripts/workerRelay.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 16104
+  },
+  {
+    "path": "apps/app/scripts/workerRelay.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4625
+  },
+  {
+    "path": "apps/app/src",
+    "kind": "dir",
+    "sha": "065cdd316d8af0fb2b881a596e0e02ed7d6da0b1"
+  },
+  {
+    "path": "apps/app/src/mainview",
+    "kind": "dir",
+    "sha": "065cdd316d8af0fb2b881a596e0e02ed7d6da0b1"
+  },
+  {
+    "path": "apps/app/src/mainview/AppRoot.tsx",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3483
+  },
+  {
+    "path": "apps/app/src/mainview/FailureNotice.tsx",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3740
+  },
+  {
+    "path": "apps/app/src/mainview/RovingKeyDown.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2466
+  },
+  {
+    "path": "apps/app/src/mainview/StartupBoundary.tsx",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1648
+  },
+  {
+    "path": "apps/app/tailwind.config.js",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 582
+  },
+  {
+    "path": "apps/app/tsconfig.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 767
+  },
+  {
+    "path": "apps/app/vite.config.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3860
+  },
+  {
+    "path": "bun.lock",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 648381
+  },
+  {
+    "path": "catalog.mvp.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 365478
+  },
+  {
+    "path": "docs",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "docs/api",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "docs/api/failure-codes.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 31384
+  },
+  {
+    "path": "docs/api/github-maintainer-comment.vectors.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 9567
+  },
+  {
+    "path": "docs/api/openapi.yaml",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 917181
+  },
+  {
+    "path": "docs/api/openapi_opaque_body_test.go",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 6316
+  },
+  {
+    "path": "docs/api/openapi_test.go",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1293
+  },
+  {
+    "path": "docs/architecture",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "docs/architecture/0001-shared-product.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 11815
+  },
+  {
+    "path": "docs/architecture/0002-mac-install.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 8973
+  },
+  {
+    "path": "docs/architecture/0003-live-code-co-editing.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 16917
+  },
+  {
+    "path": "docs/architecture/0004-machined-wire.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 66854
+  },
+  {
+    "path": "docs/architecture/3871-global-flows.html",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5714
+  },
+  {
+    "path": "docs/architecture/4026-notification-policy.html",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 11942
+  },
+  {
+    "path": "docs/architecture/chat-model-extraction.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5434
+  },
+  {
+    "path": "docs/architecture/flow-runtime-bridge.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5477
+  },
+  {
+    "path": "docs/architecture/self-host-implementation.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7971
+  },
+  {
+    "path": "docs/blog",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "docs/blog/building-burndown-notes.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 14413
+  },
+  {
+    "path": "docs/cloud-workspace.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1124
+  },
+  {
+    "path": "docs/design",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "docs/design/agent-flow-health.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 23480
+  },
+  {
+    "path": "docs/design/chat-run-monitor.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3758
+  },
+  {
+    "path": "docs/design/durable-external-work.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 21771
+  },
+  {
+    "path": "docs/design/shared-workspace-layers.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 16006
+  },
+  {
+    "path": "docs/flow-builder",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "docs/flow-builder/decisions.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 86379
+  },
+  {
+    "path": "docs/flow-builder/design.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 301280
+  },
+  {
+    "path": "docs/flow-builder/engineering.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 180882
+  },
+  {
+    "path": "docs/flow-builder/product.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 6338
+  },
+  {
+    "path": "docs/flow-builder/research.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 245455
+  },
+  {
+    "path": "docs/mvp",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "docs/mvp/DESIGN.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 14873
+  },
+  {
+    "path": "docs/mvp/ENGINEERING.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 65986
+  },
+  {
+    "path": "docs/mvp/PRODUCT.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 11374
+  },
+  {
+    "path": "docs/mvp/REGISTRATION.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7524
+  },
+  {
+    "path": "docs/mvp/retired-chat-integrations.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1740
+  },
+  {
+    "path": "docs/research",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "docs/research/coding-loop-derisk-2026-09-15.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7831
+  },
+  {
+    "path": "docs/security",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "docs/security/2026-09-14-review.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1534
+  },
+  {
+    "path": "eslint.config.js",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1650
+  },
+  {
+    "path": "eslint.invariants.js",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 13574
+  },
+  {
+    "path": "eslint.jsdoc.js",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 6175
+  },
+  {
+    "path": "eslint.jsdoc.test.mjs",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4122
+  },
+  {
+    "path": "eslint.package.js",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3478
+  },
+  {
+    "path": "evals",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "flake.lock",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1108
+  },
+  {
+    "path": "flake.nix",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2938
+  },
+  {
+    "path": "go.mod",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2895
+  },
+  {
+    "path": "go.sum",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 14065
+  },
+  {
+    "path": "package.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4907
+  },
+  {
+    "path": "packages",
+    "kind": "dir",
+    "sha": "3588460545591ad7470c82095cb84434ced94aba"
+  },
+  {
+    "path": "packages/smithers",
+    "kind": "dir",
+    "sha": "3588460545591ad7470c82095cb84434ced94aba"
+  },
+  {
+    "path": "packages/smithers/CHANGELOG.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 18719
+  },
+  {
+    "path": "packages/smithers/ENGINE-JOURNAL-PROJECTION.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 13002
+  },
+  {
+    "path": "packages/smithers/LICENSE",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1105
+  },
+  {
+    "path": "packages/smithers/NATIVE-CONTROL.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 6803
+  },
+  {
+    "path": "packages/smithers/PACKAGE.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 31828
+  },
+  {
+    "path": "packages/smithers/README.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 52919
+  },
+  {
+    "path": "packages/smithers/WORKSPACE-ROUTING.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2243
+  },
+  {
+    "path": "packages/smithers/agent",
+    "kind": "dir",
+    "sha": "f53d5abfd8a4a3192c45dc67a438e623f5146a84"
+  },
+  {
+    "path": "packages/smithers/agent/AGENTS.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1009
+  },
+  {
+    "path": "packages/smithers/agent/CHANGELOG.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 44073
+  },
+  {
+    "path": "packages/smithers/agent/LICENSE",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1105
+  },
+  {
+    "path": "packages/smithers/agent/PACKAGE.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 14757
+  },
+  {
+    "path": "packages/smithers/agent/README.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 37632
+  },
+  {
+    "path": "packages/smithers/agent/dprint.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1042
+  },
+  {
+    "path": "packages/smithers/agent/eslint.config.js",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2507
+  },
+  {
+    "path": "packages/smithers/agent/evals",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/smithers/agent/package.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 13242
+  },
+  {
+    "path": "packages/smithers/agent/regression",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/smithers/agent/tsconfig.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1145
+  },
+  {
+    "path": "packages/smithers/agent/tsconfig.test.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 270
+  },
+  {
+    "path": "packages/smithers/agent/vitest.config.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2301
+  },
+  {
+    "path": "packages/smithers/agent/vitest.faults.config.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1076
+  },
+  {
+    "path": "packages/smithers/bin",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/smithers/bin/dangling-workspace-links.mjs",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3403
+  },
+  {
+    "path": "packages/smithers/bin/smithers.mjs",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2094
+  },
+  {
+    "path": "packages/smithers/build",
+    "kind": "dir",
+    "sha": "7ce5c49675b840f044d333ce7532ea520fff4861"
+  },
+  {
+    "path": "packages/smithers/build/.gitignore",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 293
+  },
+  {
+    "path": "packages/smithers/build/API-REVIEW.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 10166
+  },
+  {
+    "path": "packages/smithers/build/CHANGELOG.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 766
+  },
+  {
+    "path": "packages/smithers/build/DESIGN.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 15414
+  },
+  {
+    "path": "packages/smithers/build/LICENSE",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1105
+  },
+  {
+    "path": "packages/smithers/build/PACKAGE.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 20548
+  },
+  {
+    "path": "packages/smithers/build/README.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 8236
+  },
+  {
+    "path": "packages/smithers/build/WIRING.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7273
+  },
+  {
+    "path": "packages/smithers/build/dprint.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 966
+  },
+  {
+    "path": "packages/smithers/build/eslint.config.js",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5442
+  },
+  {
+    "path": "packages/smithers/build/package.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4011
+  },
+  {
+    "path": "packages/smithers/build/tsconfig.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1145
+  },
+  {
+    "path": "packages/smithers/build/tsconfig.test.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 269
+  },
+  {
+    "path": "packages/smithers/build/vitest.config.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1404
+  },
+  {
+    "path": "packages/smithers/control",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/smithers/control/CHANGELOG.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 11821
+  },
+  {
+    "path": "packages/smithers/control/LICENSE",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1105
+  },
+  {
+    "path": "packages/smithers/control/PACKAGE.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 11735
+  },
+  {
+    "path": "packages/smithers/control/README.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 14804
+  },
+  {
+    "path": "packages/smithers/control/dprint.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 826
+  },
+  {
+    "path": "packages/smithers/control/eslint.config.js",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2267
+  },
+  {
+    "path": "packages/smithers/control/package.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 13279
+  },
+  {
+    "path": "packages/smithers/control/tsconfig.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1145
+  },
+  {
+    "path": "packages/smithers/control/tsconfig.test.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 252
+  },
+  {
+    "path": "packages/smithers/control/vitest.config.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 891
+  },
+  {
+    "path": "packages/smithers/docs",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/smithers/docs/README.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 13420
+  },
+  {
+    "path": "packages/smithers/docs/api.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 103837
+  },
+  {
+    "path": "packages/smithers/docs/concepts",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/smithers/docs/concepts/command-surface.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7681
+  },
+  {
+    "path": "packages/smithers/docs/concepts/project-and-state.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 9891
+  },
+  {
+    "path": "packages/smithers/docs/installation.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7856
+  },
+  {
+    "path": "packages/smithers/docs/migration.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 8795
+  },
+  {
+    "path": "packages/smithers/docs/quickstart.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 10853
+  },
+  {
+    "path": "packages/smithers/docs/troubleshooting.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 12305
+  },
+  {
+    "path": "packages/smithers/dprint.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1034
+  },
+  {
+    "path": "packages/smithers/eslint.config.js",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2516
+  },
+  {
+    "path": "packages/smithers/examples",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/smithers/examples/render-output.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1688
+  },
+  {
+    "path": "packages/smithers/flows",
+    "kind": "dir",
+    "sha": "6e1adc636048cb3399cee86ca7f54c80b08fa3d0"
+  },
+  {
+    "path": "packages/smithers/flows/AGENTS.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2232
+  },
+  {
+    "path": "packages/smithers/flows/CHANGELOG.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2489
+  },
+  {
+    "path": "packages/smithers/flows/LICENSE",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1105
+  },
+  {
+    "path": "packages/smithers/flows/PACKAGE.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 12132
+  },
+  {
+    "path": "packages/smithers/flows/README.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 11677
+  },
+  {
+    "path": "packages/smithers/flows/docs",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/smithers/flows/docs/quickstart.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 9928
+  },
+  {
+    "path": "packages/smithers/flows/dprint.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1255
+  },
+  {
+    "path": "packages/smithers/flows/eslint.config.js",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2267
+  },
+  {
+    "path": "packages/smithers/flows/package.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 6191
+  },
+  {
+    "path": "packages/smithers/flows/tsconfig.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1145
+  },
+  {
+    "path": "packages/smithers/flows/tsconfig.test.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 439
+  },
+  {
+    "path": "packages/smithers/flows/vitest.config.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2494
+  },
+  {
+    "path": "packages/smithers/gateway",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/smithers/gateway/CHANGELOG.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 11230
+  },
+  {
+    "path": "packages/smithers/gateway/LICENSE",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1105
+  },
+  {
+    "path": "packages/smithers/gateway/PACKAGE.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 13588
+  },
+  {
+    "path": "packages/smithers/gateway/README.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 13312
+  },
+  {
+    "path": "packages/smithers/gateway/dprint.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 826
+  },
+  {
+    "path": "packages/smithers/gateway/eslint.config.js",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2267
+  },
+  {
+    "path": "packages/smithers/gateway/package.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 8719
+  },
+  {
+    "path": "packages/smithers/gateway/tsconfig.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1145
+  },
+  {
+    "path": "packages/smithers/gateway/tsconfig.test.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 269
+  },
+  {
+    "path": "packages/smithers/gateway/vitest.config.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 891
+  },
+  {
+    "path": "packages/smithers/mcp",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/smithers/mcp/CHANGELOG.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 6874
+  },
+  {
+    "path": "packages/smithers/mcp/LICENSE",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1105
+  },
+  {
+    "path": "packages/smithers/mcp/PACKAGE.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 9425
+  },
+  {
+    "path": "packages/smithers/mcp/README.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5815
+  },
+  {
+    "path": "packages/smithers/mcp/dprint.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 826
+  },
+  {
+    "path": "packages/smithers/mcp/eslint.config.js",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2298
+  },
+  {
+    "path": "packages/smithers/mcp/package.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4668
+  },
+  {
+    "path": "packages/smithers/mcp/tsconfig.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1145
+  },
+  {
+    "path": "packages/smithers/mcp/tsconfig.test.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 269
+  },
+  {
+    "path": "packages/smithers/mcp/vitest.config.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1043
+  },
+  {
+    "path": "packages/smithers/migrate",
+    "kind": "dir",
+    "sha": "3588460545591ad7470c82095cb84434ced94aba"
+  },
+  {
+    "path": "packages/smithers/migrate/CHANGELOG.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 9705
+  },
+  {
+    "path": "packages/smithers/migrate/LICENSE",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1105
+  },
+  {
+    "path": "packages/smithers/migrate/PACKAGE.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 8193
+  },
+  {
+    "path": "packages/smithers/migrate/README.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 11782
+  },
+  {
+    "path": "packages/smithers/migrate/dprint.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 843
+  },
+  {
+    "path": "packages/smithers/migrate/eslint.config.js",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2373
+  },
+  {
+    "path": "packages/smithers/migrate/package.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 12508
+  },
+  {
+    "path": "packages/smithers/migrate/tsconfig.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1145
+  },
+  {
+    "path": "packages/smithers/migrate/tsconfig.test.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 304
+  },
+  {
+    "path": "packages/smithers/migrate/vitest.config.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2576
+  },
+  {
+    "path": "packages/smithers/notifications",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/smithers/notifications/CHANGELOG.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7626
+  },
+  {
+    "path": "packages/smithers/notifications/LICENSE",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1105
+  },
+  {
+    "path": "packages/smithers/notifications/PACKAGE.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7966
+  },
+  {
+    "path": "packages/smithers/notifications/README.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5182
+  },
+  {
+    "path": "packages/smithers/notifications/dprint.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 826
+  },
+  {
+    "path": "packages/smithers/notifications/eslint.config.js",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2267
+  },
+  {
+    "path": "packages/smithers/notifications/package.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5490
+  },
+  {
+    "path": "packages/smithers/notifications/tsconfig.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1145
+  },
+  {
+    "path": "packages/smithers/notifications/tsconfig.test.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 252
+  },
+  {
+    "path": "packages/smithers/notifications/vitest.config.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 897
+  },
+  {
+    "path": "packages/smithers/package.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 27986
+  },
+  {
+    "path": "packages/smithers/scripts",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/smithers/scripts/build-cli.mjs",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2110
+  },
+  {
+    "path": "packages/smithers/scripts/build-tui-binaries.mjs",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 6375
+  },
+  {
+    "path": "packages/smithers/scripts/build-tui.mjs",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4372
+  },
+  {
+    "path": "packages/smithers/scripts/build.mjs",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 828
+  },
+  {
+    "path": "packages/smithers/scripts/circular.mjs",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 354
+  },
+  {
+    "path": "packages/smithers/scripts/compile-commonjs.mjs",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3413
+  },
+  {
+    "path": "packages/smithers/scripts/compile-commonjs.test.mjs",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3308
+  },
+  {
+    "path": "packages/smithers/scripts/compiled-effect-runtime.mjs",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2428
+  },
+  {
+    "path": "packages/smithers/scripts/fault-reference-host.mjs",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1352
+  },
+  {
+    "path": "packages/smithers/scripts/fault-reference-host.test.mjs",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1049
+  },
+  {
+    "path": "packages/smithers/scripts/host-process-sampler.mjs",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3671
+  },
+  {
+    "path": "packages/smithers/scripts/host-process-sampler.test.mjs",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 13603
+  },
+  {
+    "path": "packages/smithers/scripts/install-cli.mjs",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2076
+  },
+  {
+    "path": "packages/smithers/scripts/install-cli.test.mjs",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5242
+  },
+  {
+    "path": "packages/smithers/scripts/machine-evidence.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 836
+  },
+  {
+    "path": "packages/smithers/scripts/observation-bench.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 9185
+  },
+  {
+    "path": "packages/smithers/scripts/tui-native-editor.mjs",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 453
+  },
+  {
+    "path": "packages/smithers/scripts/tui-native-helper.mjs",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2239
+  },
+  {
+    "path": "packages/smithers/src",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/smithers/src/Agents.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 18339
+  },
+  {
+    "path": "packages/smithers/src/Application.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 13131
+  },
+  {
+    "path": "packages/smithers/src/Audience.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 149
+  },
+  {
+    "path": "packages/smithers/src/BackendCommands.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 527
+  },
+  {
+    "path": "packages/smithers/src/Bug.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5205
+  },
+  {
+    "path": "packages/smithers/src/BunControl.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1566
+  },
+  {
+    "path": "packages/smithers/src/Catalog.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1267
+  },
+  {
+    "path": "packages/smithers/src/CatalogRequest.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4339
+  },
+  {
+    "path": "packages/smithers/src/ClaudeMirror.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 12372
+  },
+  {
+    "path": "packages/smithers/src/Cli.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 27767
+  },
+  {
+    "path": "packages/smithers/src/CliError.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5022
+  },
+  {
+    "path": "packages/smithers/src/CloudSandbox.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 15119
+  },
+  {
+    "path": "packages/smithers/src/CloudSession.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4855
+  },
+  {
+    "path": "packages/smithers/src/Command.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 31643
+  },
+  {
+    "path": "packages/smithers/src/Detached.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 21522
+  },
+  {
+    "path": "packages/smithers/src/DidYouMean.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5279
+  },
+  {
+    "path": "packages/smithers/src/Doctor.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 12273
+  },
+  {
+    "path": "packages/smithers/src/Environment.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7504
+  },
+  {
+    "path": "packages/smithers/src/ExecutionEnvironment.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 13369
+  },
+  {
+    "path": "packages/smithers/src/ExecutorOwnership.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1506
+  },
+  {
+    "path": "packages/smithers/src/Forensics.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 22043
+  },
+  {
+    "path": "packages/smithers/src/Gc.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 10579
+  },
+  {
+    "path": "packages/smithers/src/Init.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 11006
+  },
+  {
+    "path": "packages/smithers/src/IssueTodoDraft.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3569
+  },
+  {
+    "path": "packages/smithers/src/Legacy.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3551
+  },
+  {
+    "path": "packages/smithers/src/NodeControl.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 33247
+  },
+  {
+    "path": "packages/smithers/src/NodeOutput.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 6660
+  },
+  {
+    "path": "packages/smithers/src/Output.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 13624
+  },
+  {
+    "path": "packages/smithers/src/Project.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 14813
+  },
+  {
+    "path": "packages/smithers/src/Providers.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 24213
+  },
+  {
+    "path": "packages/smithers/src/Serve.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7858
+  },
+  {
+    "path": "packages/smithers/src/Suggest.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 17118
+  },
+  {
+    "path": "packages/smithers/src/Ui.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 18139
+  },
+  {
+    "path": "packages/smithers/src/Unsupported.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 16153
+  },
+  {
+    "path": "packages/smithers/src/Update.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4944
+  },
+  {
+    "path": "packages/smithers/src/Verb.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 8301
+  },
+  {
+    "path": "packages/smithers/src/Version.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 883
+  },
+  {
+    "path": "packages/smithers/src/bin.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2662
+  },
+  {
+    "path": "packages/smithers/src/evaluation",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/smithers/src/guest-bin.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 892
+  },
+  {
+    "path": "packages/smithers/src/index.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4196
+  },
+  {
+    "path": "packages/smithers/test",
+    "kind": "dir",
+    "sha": "3588460545591ad7470c82095cb84434ced94aba"
+  },
+  {
+    "path": "packages/smithers/test/Agents.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 14270
+  },
+  {
+    "path": "packages/smithers/test/ApprovalContent.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5701
+  },
+  {
+    "path": "packages/smithers/test/Argv.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 12830
+  },
+  {
+    "path": "packages/smithers/test/AskPolicy.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 630
+  },
+  {
+    "path": "packages/smithers/test/AtomicRootAlias.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 6003
+  },
+  {
+    "path": "packages/smithers/test/AudienceCli.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5363
+  },
+  {
+    "path": "packages/smithers/test/AuthoredRebuild.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3231
+  },
+  {
+    "path": "packages/smithers/test/AuthoredSources.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7091
+  },
+  {
+    "path": "packages/smithers/test/AuthoringFixture.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 8785
+  },
+  {
+    "path": "packages/smithers/test/BackendAuth.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 11187
+  },
+  {
+    "path": "packages/smithers/test/BackendAvailability.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 6890
+  },
+  {
+    "path": "packages/smithers/test/BackendCliRefusal.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4830
+  },
+  {
+    "path": "packages/smithers/test/BackendClientCredentials.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 39330
+  },
+  {
+    "path": "packages/smithers/test/BackendCommands.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 53609
+  },
+  {
+    "path": "packages/smithers/test/BackendCopy.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 8053
+  },
+  {
+    "path": "packages/smithers/test/BackendEdges.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 13463
+  },
+  {
+    "path": "packages/smithers/test/BackendEgress.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 8288
+  },
+  {
+    "path": "packages/smithers/test/BackendHistory.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 30634
+  },
+  {
+    "path": "packages/smithers/test/BackendInput.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7973
+  },
+  {
+    "path": "packages/smithers/test/BackendIssueViews.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4190
+  },
+  {
+    "path": "packages/smithers/test/BackendLocal.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2077
+  },
+  {
+    "path": "packages/smithers/test/BackendManagedTerminalCredentials.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3564
+  },
+  {
+    "path": "packages/smithers/test/BackendMutations.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 27154
+  },
+  {
+    "path": "packages/smithers/test/BackendPagination.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5395
+  },
+  {
+    "path": "packages/smithers/test/BackendProcess.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 6354
+  },
+  {
+    "path": "packages/smithers/test/BackendRefusal.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 11953
+  },
+  {
+    "path": "packages/smithers/test/BackendSession.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 14002
+  },
+  {
+    "path": "packages/smithers/test/BackendSse.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4487
+  },
+  {
+    "path": "packages/smithers/test/BackendStack.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 13196
+  },
+  {
+    "path": "packages/smithers/test/BackendStartup.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 6093
+  },
+  {
+    "path": "packages/smithers/test/BackendTodos.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 8555
+  },
+  {
+    "path": "packages/smithers/test/BackendTransport.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7654
+  },
+  {
+    "path": "packages/smithers/test/BackendVerbosity.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5813
+  },
+  {
+    "path": "packages/smithers/test/BackendWorkspace.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 27791
+  },
+  {
+    "path": "packages/smithers/test/BackendWorkspaceChildren.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 6331
+  },
+  {
+    "path": "packages/smithers/test/BackendWorkspaceShell.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7800
+  },
+  {
+    "path": "packages/smithers/test/Bin.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 106982
+  },
+  {
+    "path": "packages/smithers/test/BinStartupFailure.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3846
+  },
+  {
+    "path": "packages/smithers/test/BinTeardown.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 16137
+  },
+  {
+    "path": "packages/smithers/test/BoundedEvents.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2851
+  },
+  {
+    "path": "packages/smithers/test/BranchSshCli.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2891
+  },
+  {
+    "path": "packages/smithers/test/BridgedEngineRun.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 45344
+  },
+  {
+    "path": "packages/smithers/test/Bug.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 10595
+  },
+  {
+    "path": "packages/smithers/test/BunControl.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4713
+  },
+  {
+    "path": "packages/smithers/test/CanonicalParsing.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1287
+  },
+  {
+    "path": "packages/smithers/test/CanonicalSpellings.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 10149
+  },
+  {
+    "path": "packages/smithers/test/CatalogCli.fixture.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 13378
+  },
+  {
+    "path": "packages/smithers/test/CatalogCli.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 37101
+  },
+  {
+    "path": "packages/smithers/test/CatalogMount.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 9428
+  },
+  {
+    "path": "packages/smithers/test/CatalogOutput.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3799
+  },
+  {
+    "path": "packages/smithers/test/ChecklistEvidence.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 14095
+  },
+  {
+    "path": "packages/smithers/test/ClaudeCode.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 21108
+  },
+  {
+    "path": "packages/smithers/test/ClaudeCodeHost.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 8569
+  },
+  {
+    "path": "packages/smithers/test/ClaudeMirror.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 12122
+  },
+  {
+    "path": "packages/smithers/test/CliError.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1996
+  },
+  {
+    "path": "packages/smithers/test/CliTestLanes.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4342
+  },
+  {
+    "path": "packages/smithers/test/CloudSandbox.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 36107
+  },
+  {
+    "path": "packages/smithers/test/CloudSandboxCommand.integration.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 13358
+  },
+  {
+    "path": "packages/smithers/test/CloudSandboxImport.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1024
+  },
+  {
+    "path": "packages/smithers/test/CloudSandboxWork.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 9881
+  },
+  {
+    "path": "packages/smithers/test/CloudSession.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 9317
+  },
+  {
+    "path": "packages/smithers/test/CodeDriftLiveHost.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 20337
+  },
+  {
+    "path": "packages/smithers/test/CodexLogin.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 35123
+  },
+  {
+    "path": "packages/smithers/test/CodexMcpRegistration.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7164
+  },
+  {
+    "path": "packages/smithers/test/CodexSeat.integration.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3528
+  },
+  {
+    "path": "packages/smithers/test/CodexSeat.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 19016
+  },
+  {
+    "path": "packages/smithers/test/Command.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3476
+  },
+  {
+    "path": "packages/smithers/test/CommandFlagParity.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3702
+  },
+  {
+    "path": "packages/smithers/test/CommandGlobals.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4072
+  },
+  {
+    "path": "packages/smithers/test/CommandHandlers.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 61970
+  },
+  {
+    "path": "packages/smithers/test/CommandProjections.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 15466
+  },
+  {
+    "path": "packages/smithers/test/CommandVerbs.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 24447
+  },
+  {
+    "path": "packages/smithers/test/CompositionContract.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 9375
+  },
+  {
+    "path": "packages/smithers/test/ControlAffinity.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5346
+  },
+  {
+    "path": "packages/smithers/test/ControlAffinityAncestry.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 21758
+  },
+  {
+    "path": "packages/smithers/test/ControlBridge.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 38459
+  },
+  {
+    "path": "packages/smithers/test/ControlFileSystem.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1139
+  },
+  {
+    "path": "packages/smithers/test/ControlSurface.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 29861
+  },
+  {
+    "path": "packages/smithers/test/CrossProcessCancel.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5332
+  },
+  {
+    "path": "packages/smithers/test/DanglingWorkspaceLinks.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3954
+  },
+  {
+    "path": "packages/smithers/test/DatabaseLocation.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1010
+  },
+  {
+    "path": "packages/smithers/test/DelegatedLogin.integration.test.ts",
+    "kind": "file",
+    "sha": "556158785a180b836beb45d880fb2b7453406c2c",
+    "size": 18808
+  },
+  {
+    "path": "packages/smithers/test/Detached.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 27489
+  },
+  {
+    "path": "packages/smithers/test/DetachedChildAfterRoot.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 8564
+  },
+  {
+    "path": "packages/smithers/test/DetachedCommand.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5523
+  },
+  {
+    "path": "packages/smithers/test/DetachedHandleKill.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3357
+  },
+  {
+    "path": "packages/smithers/test/DetachedHostResume.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 8605
+  },
+  {
+    "path": "packages/smithers/test/DidYouMean.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 10091
+  },
+  {
+    "path": "packages/smithers/test/DiscoveryProjection.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1404
+  },
+  {
+    "path": "packages/smithers/test/Doctor.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 17353
+  },
+  {
+    "path": "packages/smithers/test/DoctorFromRegistry.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 8515
+  },
+  {
+    "path": "packages/smithers/test/DurabilityFaultEvidence.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 6087
+  },
+  {
+    "path": "packages/smithers/test/EndToEnd.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 17798
+  },
+  {
+    "path": "packages/smithers/test/EngineJournalProjection.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 31866
+  },
+  {
+    "path": "packages/smithers/test/EngineJournalSupervisor.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 26176
+  },
+  {
+    "path": "packages/smithers/test/EngineJournalSupervisorNodeEvents.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 10353
+  },
+  {
+    "path": "packages/smithers/test/EnvelopeBudget.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 16566
+  },
+  {
+    "path": "packages/smithers/test/Environment.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5942
+  },
+  {
+    "path": "packages/smithers/test/EnvironmentCli.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 11563
+  },
+  {
+    "path": "packages/smithers/test/EvaluationBehavior.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 22177
+  },
+  {
+    "path": "packages/smithers/test/EvaluationCancellation.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4026
+  },
+  {
+    "path": "packages/smithers/test/EvaluationCli.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 10810
+  },
+  {
+    "path": "packages/smithers/test/EvaluationPublication.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7031
+  },
+  {
+    "path": "packages/smithers/test/EvaluationScoreStore.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7810
+  },
+  {
+    "path": "packages/smithers/test/Examples.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 995
+  },
+  {
+    "path": "packages/smithers/test/ExecutionEnvironment.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 22968
+  },
+  {
+    "path": "packages/smithers/test/ExecutionEnvironmentSsh.integration.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 12313
+  },
+  {
+    "path": "packages/smithers/test/ExecutionIdentity.property.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5845
+  },
+  {
+    "path": "packages/smithers/test/ExecutionTarget.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3580
+  },
+  {
+    "path": "packages/smithers/test/Failure.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 11108
+  },
+  {
+    "path": "packages/smithers/test/FaultTiers.test.ts",
+    "kind": "file",
+    "sha": "3588460545591ad7470c82095cb84434ced94aba",
+    "size": 8187
+  },
+  {
+    "path": "packages/smithers/test/FeaturedFlows.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 6867
+  },
+  {
+    "path": "packages/smithers/test/FileFlowInputCli.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7969
+  },
+  {
+    "path": "packages/smithers/test/FlowAuthoringRun.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7067
+  },
+  {
+    "path": "packages/smithers/test/FlowCatalogRefresh.test.ts",
+    "kind": "file",
+    "sha": "3588460545591ad7470c82095cb84434ced94aba",
+    "size": 29853
+  },
+  {
+    "path": "packages/smithers/test/FlowDurations.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 6052
+  },
+  {
+    "path": "packages/smithers/test/FlowGraphRun.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 35041
+  },
+  {
+    "path": "packages/smithers/test/Forensics.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 45955
+  },
+  {
+    "path": "packages/smithers/test/GatewayHistory.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7082
+  },
+  {
+    "path": "packages/smithers/test/Gc.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 21279
+  },
+  {
+    "path": "packages/smithers/test/GenerateBehavior.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 19009
+  },
+  {
+    "path": "packages/smithers/test/Golden.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4803
+  },
+  {
+    "path": "packages/smithers/test/HealthHost.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 9879
+  },
+  {
+    "path": "packages/smithers/test/HistoryCommands.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 32945
+  },
+  {
+    "path": "packages/smithers/test/HistoryForkChild.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 9438
+  },
+  {
+    "path": "packages/smithers/test/HistoryForkResumeCli.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7672
+  },
+  {
+    "path": "packages/smithers/test/HistoryPostgres.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5054
+  },
+  {
+    "path": "packages/smithers/test/HistoryProjection.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3068
+  },
+  {
+    "path": "packages/smithers/test/HistoryVerify.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 18125
+  },
+  {
+    "path": "packages/smithers/test/HistoryVerifyDispatch.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4895
+  },
+  {
+    "path": "packages/smithers/test/HostEvaluator.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 26762
+  },
+  {
+    "path": "packages/smithers/test/HostLanguageServers.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 11143
+  },
+  {
+    "path": "packages/smithers/test/HostMaintenance.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2504
+  },
+  {
+    "path": "packages/smithers/test/HostMaintenanceAdapter.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3434
+  },
+  {
+    "path": "packages/smithers/test/HostService.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 23696
+  },
+  {
+    "path": "packages/smithers/test/HostTiming.integration.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 20575
+  },
+  {
+    "path": "packages/smithers/test/Init.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 19972
+  },
+  {
+    "path": "packages/smithers/test/InitCli.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3946
+  },
+  {
+    "path": "packages/smithers/test/InitPrompt.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2314
+  },
+  {
+    "path": "packages/smithers/test/IntegrationControlRestart.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2564
+  },
+  {
+    "path": "packages/smithers/test/LayerGuard.type.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2657
+  },
+  {
+    "path": "packages/smithers/test/Legacy.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4295
+  },
+  {
+    "path": "packages/smithers/test/LegacyOperatorCommands.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 10939
+  },
+  {
+    "path": "packages/smithers/test/LocalRoot.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1815
+  },
+  {
+    "path": "packages/smithers/test/LogsPresentation.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1704
+  },
+  {
+    "path": "packages/smithers/test/McpDocs.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2460
+  },
+  {
+    "path": "packages/smithers/test/McpHttpConfig.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 9763
+  },
+  {
+    "path": "packages/smithers/test/McpModeCli.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 8064
+  },
+  {
+    "path": "packages/smithers/test/MigrateDocument.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 780
+  },
+  {
+    "path": "packages/smithers/test/MigrationScripts.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 6920
+  },
+  {
+    "path": "packages/smithers/test/ModuleAdmission.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 8156
+  },
+  {
+    "path": "packages/smithers/test/ModuleBudgetPark.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 11932
+  },
+  {
+    "path": "packages/smithers/test/ModuleCapabilityCeilingCli.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 6702
+  },
+  {
+    "path": "packages/smithers/test/ModuleHumanWaitBudget.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 9202
+  },
+  {
+    "path": "packages/smithers/test/ModuleLayerAgent.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4326
+  },
+  {
+    "path": "packages/smithers/test/ModuleLayerBudget.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4814
+  },
+  {
+    "path": "packages/smithers/test/ModuleLayerCli.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4300
+  },
+  {
+    "path": "packages/smithers/test/ModuleLayerIsolation.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5290
+  },
+  {
+    "path": "packages/smithers/test/ModuleNames.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 892
+  },
+  {
+    "path": "packages/smithers/test/ModuleRoundAuthority.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 11561
+  },
+  {
+    "path": "packages/smithers/test/ModuleSnapshotAuthority.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 9127
+  },
+  {
+    "path": "packages/smithers/test/ModuleSourceSnapshotCli.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 13530
+  },
+  {
+    "path": "packages/smithers/test/ModuleToolServices.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7767
+  },
+  {
+    "path": "packages/smithers/test/NativeBodyCli.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4563
+  },
+  {
+    "path": "packages/smithers/test/NativeCancellationCli.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 10345
+  },
+  {
+    "path": "packages/smithers/test/NativeCancelledModuleCleanup.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7638
+  },
+  {
+    "path": "packages/smithers/test/NativeControlAgentTerminal.integration.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7444
+  },
+  {
+    "path": "packages/smithers/test/NativeControlConfinement.integration.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 23457
+  },
+  {
+    "path": "packages/smithers/test/NativeControlExternalPeerRecovery.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1644
+  },
+  {
+    "path": "packages/smithers/test/NativeControlJudged.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 15315
+  },
+  {
+    "path": "packages/smithers/test/NativeControlKeyedReleaseRecovery.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 12281
+  },
+  {
+    "path": "packages/smithers/test/NativeControlMultiRoot.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5496
+  },
+  {
+    "path": "packages/smithers/test/NativeControlPeerRecovery.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 8869
+  },
+  {
+    "path": "packages/smithers/test/NativeControlPinnedSource.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 6039
+  },
+  {
+    "path": "packages/smithers/test/NativeControlPlan.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 25927
+  },
+  {
+    "path": "packages/smithers/test/NativeControlPortable.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3324
+  },
+  {
+    "path": "packages/smithers/test/NativeControlSupervisorMemory.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 17465
+  },
+  {
+    "path": "packages/smithers/test/NativeEquipment.accountRecovery.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2102
+  },
+  {
+    "path": "packages/smithers/test/NativeEquipment.accounts.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 11701
+  },
+  {
+    "path": "packages/smithers/test/NativeExecutionRead.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 19319
+  },
+  {
+    "path": "packages/smithers/test/NativeHealth.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3720
+  },
+  {
+    "path": "packages/smithers/test/NativeIrreversibleRetry.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4744
+  },
+  {
+    "path": "packages/smithers/test/NativeRunActivityCancellation.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 12024
+  },
+  {
+    "path": "packages/smithers/test/NativeSandbox.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 12690
+  },
+  {
+    "path": "packages/smithers/test/NativeToolServices.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3951
+  },
+  {
+    "path": "packages/smithers/test/NestedApprovalsInbox.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7811
+  },
+  {
+    "path": "packages/smithers/test/NestedHumanWaitAcrossDatabases.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 21507
+  },
+  {
+    "path": "packages/smithers/test/NodeApprovalAuthority.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4262
+  },
+  {
+    "path": "packages/smithers/test/NodeComposition.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 46006
+  },
+  {
+    "path": "packages/smithers/test/NodeCompositionHttp2.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 9427
+  },
+  {
+    "path": "packages/smithers/test/NodeEngine.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 8570
+  },
+  {
+    "path": "packages/smithers/test/NodeExecutor.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 15837
+  },
+  {
+    "path": "packages/smithers/test/NodeExecutorContainment.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 6527
+  },
+  {
+    "path": "packages/smithers/test/NodeExecutorReclaim.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 8405
+  },
+  {
+    "path": "packages/smithers/test/NodeExecutorWorkspace.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5173
+  },
+  {
+    "path": "packages/smithers/test/NodeHttp2Recovery.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5813
+  },
+  {
+    "path": "packages/smithers/test/NodeModuleExecutor.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 10401
+  },
+  {
+    "path": "packages/smithers/test/NodeOutput.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 8432
+  },
+  {
+    "path": "packages/smithers/test/NodeProxyTransport.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7685
+  },
+  {
+    "path": "packages/smithers/test/NodeRegistry.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4022
+  },
+  {
+    "path": "packages/smithers/test/NodeWebSocket.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3157
+  },
+  {
+    "path": "packages/smithers/test/NodeWorkspaceObservation.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 12459
+  },
+  {
+    "path": "packages/smithers/test/ObserveMode.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 18206
+  },
+  {
+    "path": "packages/smithers/test/OneCli.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 32320
+  },
+  {
+    "path": "packages/smithers/test/Open.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 9009
+  },
+  {
+    "path": "packages/smithers/test/OperatorCredentials.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5858
+  },
+  {
+    "path": "packages/smithers/test/OperatorIntegrations.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 14007
+  },
+  {
+    "path": "packages/smithers/test/OperatorMemory.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 14905
+  },
+  {
+    "path": "packages/smithers/test/OperatorMemoryRestart.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2785
+  },
+  {
+    "path": "packages/smithers/test/OperatorStore.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3117
+  },
+  {
+    "path": "packages/smithers/test/OperatorTriggerPlans.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 16825
+  },
+  {
+    "path": "packages/smithers/test/OperatorTriggers.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4049
+  },
+  {
+    "path": "packages/smithers/test/OtlpExport.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 6503
+  },
+  {
+    "path": "packages/smithers/test/PackageFiles.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1627
+  },
+  {
+    "path": "packages/smithers/test/Positionals.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3136
+  },
+  {
+    "path": "packages/smithers/test/Presentation.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 21223
+  },
+  {
+    "path": "packages/smithers/test/ProcessBootstrap.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7353
+  },
+  {
+    "path": "packages/smithers/test/ProductApi.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 15888
+  },
+  {
+    "path": "packages/smithers/test/Project.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 14499
+  },
+  {
+    "path": "packages/smithers/test/Providers.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 21535
+  },
+  {
+    "path": "packages/smithers/test/RawErrorSites.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4542
+  },
+  {
+    "path": "packages/smithers/test/Readme.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 8575
+  },
+  {
+    "path": "packages/smithers/test/RegistryRefreshPlanning.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4089
+  },
+  {
+    "path": "packages/smithers/test/RegistryWorkspace.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 6190
+  },
+  {
+    "path": "packages/smithers/test/ReleasedChildResume.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 47165
+  },
+  {
+    "path": "packages/smithers/test/Rendering.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 12075
+  },
+  {
+    "path": "packages/smithers/test/RoleProfile.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5480
+  },
+  {
+    "path": "packages/smithers/test/RunActivity.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 26327
+  },
+  {
+    "path": "packages/smithers/test/RunObservabilityCli.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 8802
+  },
+  {
+    "path": "packages/smithers/test/RunProgress.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 18879
+  },
+  {
+    "path": "packages/smithers/test/RunTiming.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 58716
+  },
+  {
+    "path": "packages/smithers/test/RunTimingCommand.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 10474
+  },
+  {
+    "path": "packages/smithers/test/RunTimingStore.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7845
+  },
+  {
+    "path": "packages/smithers/test/ScriptTheCli.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3219
+  },
+  {
+    "path": "packages/smithers/test/SealedContainerFiles.integration.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 9136
+  },
+  {
+    "path": "packages/smithers/test/SeatCatalog.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7489
+  },
+  {
+    "path": "packages/smithers/test/SeatResolution.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 39915
+  },
+  {
+    "path": "packages/smithers/test/Serve.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 16742
+  },
+  {
+    "path": "packages/smithers/test/Settlement.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7415
+  },
+  {
+    "path": "packages/smithers/test/SharedControlEffects.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4949
+  },
+  {
+    "path": "packages/smithers/test/SharedHelpers.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1928
+  },
+  {
+    "path": "packages/smithers/test/SkillsInstall.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3742
+  },
+  {
+    "path": "packages/smithers/test/SkillsPaths.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1965
+  },
+  {
+    "path": "packages/smithers/test/SourceRevision.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5672
+  },
+  {
+    "path": "packages/smithers/test/StoreCopy.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 11616
+  },
+  {
+    "path": "packages/smithers/test/SubscriptionHost.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4964
+  },
+  {
+    "path": "packages/smithers/test/SubscriptionJudgeCalibration.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7851
+  },
+  {
+    "path": "packages/smithers/test/Suggest.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 21667
+  },
+  {
+    "path": "packages/smithers/test/SuggestCli.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 8101
+  },
+  {
+    "path": "packages/smithers/test/SuggestDefaults.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 13226
+  },
+  {
+    "path": "packages/smithers/test/SuggestSurface.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 15027
+  },
+  {
+    "path": "packages/smithers/test/SupervisorMemory.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 19741
+  },
+  {
+    "path": "packages/smithers/test/SupervisorMemoryCeiling.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 10279
+  },
+  {
+    "path": "packages/smithers/test/TargetApprovalDockerPush.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 8008
+  },
+  {
+    "path": "packages/smithers/test/TargetApprovals.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 6814
+  },
+  {
+    "path": "packages/smithers/test/TargetApprovalsRemote.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 6213
+  },
+  {
+    "path": "packages/smithers/test/Telemetry.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 21921
+  },
+  {
+    "path": "packages/smithers/test/TerminalStatusOrdering.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 20703
+  },
+  {
+    "path": "packages/smithers/test/TokenCommands.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 6900
+  },
+  {
+    "path": "packages/smithers/test/Tui.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 9791
+  },
+  {
+    "path": "packages/smithers/test/TuiRuntimes.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 3924
+  },
+  {
+    "path": "packages/smithers/test/TwoProcessClaim.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 6188
+  },
+  {
+    "path": "packages/smithers/test/Ui.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 17216
+  },
+  {
+    "path": "packages/smithers/test/UnifiedArguments.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1976
+  },
+  {
+    "path": "packages/smithers/test/UnifiedCli.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 9598
+  },
+  {
+    "path": "packages/smithers/test/UnifiedControlCommands.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 53918
+  },
+  {
+    "path": "packages/smithers/test/UnifiedEntry.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 10422
+  },
+  {
+    "path": "packages/smithers/test/UnifiedHistoryDispatch.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 9949
+  },
+  {
+    "path": "packages/smithers/test/UnifiedMcp.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 13321
+  },
+  {
+    "path": "packages/smithers/test/UnifiedRootCommands.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 20935
+  },
+  {
+    "path": "packages/smithers/test/Unsupported.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 10815
+  },
+  {
+    "path": "packages/smithers/test/Update.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5707
+  },
+  {
+    "path": "packages/smithers/test/Verb.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 11177
+  },
+  {
+    "path": "packages/smithers/test/Version.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 655
+  },
+  {
+    "path": "packages/smithers/test/WorkspaceRecovery.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 6509
+  },
+  {
+    "path": "packages/smithers/test/WorkspaceResourcesRefusal.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2608
+  },
+  {
+    "path": "packages/smithers/test/WorkspaceRouting.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7346
+  },
+  {
+    "path": "packages/smithers/test/WorkspaceSshPrefix.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 2914
+  },
+  {
+    "path": "packages/smithers/test/host-backup.fault.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1513
+  },
+  {
+    "path": "packages/smithers/test/host-service.integration.test.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 16451
+  },
+  {
+    "path": "packages/smithers/test/setup.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 230
+  },
+  {
+    "path": "packages/smithers/tsconfig.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1176
+  },
+  {
+    "path": "packages/smithers/tsconfig.test.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 361
+  },
+  {
+    "path": "packages/smithers/ui",
+    "kind": "dir",
+    "sha": "28986e29bafb0ce6e9eb2a672cef9e26a82bebbe"
+  },
+  {
+    "path": "packages/smithers/ui/CHANGELOG.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 8624
+  },
+  {
+    "path": "packages/smithers/ui/PACKAGE.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 12357
+  },
+  {
+    "path": "packages/smithers/ui/README.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 7285
+  },
+  {
+    "path": "packages/smithers/ui/bunfig.toml",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 487
+  },
+  {
+    "path": "packages/smithers/ui/package.json",
+    "kind": "file",
+    "sha": "28986e29bafb0ce6e9eb2a672cef9e26a82bebbe",
+    "size": 6117
+  },
+  {
+    "path": "packages/smithers/ui/shadcn-provenance.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 36022
+  },
+  {
+    "path": "packages/smithers/ui/tsconfig.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 641
+  },
+  {
+    "path": "packages/smithers/vitest.config.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4347
+  },
+  {
+    "path": "packages/smithers/vitest.faults-long.config.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 859
+  },
+  {
+    "path": "packages/smithers/vitest.faults.config.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1343
+  },
+  {
+    "path": "pnpm-lock.yaml",
+    "kind": "file",
+    "sha": "28986e29bafb0ce6e9eb2a672cef9e26a82bebbe",
+    "size": 880359
+  },
+  {
+    "path": "pnpm-workspace.yaml",
+    "kind": "file",
+    "sha": "28986e29bafb0ce6e9eb2a672cef9e26a82bebbe",
+    "size": 2326
+  },
+  {
+    "path": "rust-toolchain.toml",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1309
+  },
+  {
+    "path": "tsconfig.base.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 669
+  },
+  {
+    "path": "tsconfig.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 670
+  },
+  {
+    "path": ".smithers/flows/review/seeded-bugs",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": ".smithers/flows/review/seeded-bugs/review-seeded-bugs.eval.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1827
+  },
+  {
+    "path": "evals/authoring",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "evals/authoring/validate.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 9325
+  },
+  {
+    "path": "packages/backend",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/backend/modelhost",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/backend/modelhost/recommend-eval",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/backend/modelhost/recommend-eval/recommend.eval.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 1173
+  },
+  {
+    "path": "packages/smithers/agent/regression/agent.eval.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 27719
+  },
+  {
+    "path": "packages/smithers/src/evaluation/EvalCli.ts",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 8541
+  },
+  {
+    "path": ".smithers/flows/review/seeded-bugs/SCORECARD.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 4754
+  },
+  {
+    "path": ".smithers/flows/review/seeded-bugs/baseline.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5024
+  },
+  {
+    "path": "evals/authoring/data",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "evals/authoring/data/pilot-sft.jsonl",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 62450
+  },
+  {
+    "path": "packages/backend/modelhost/recommend-eval/fixtures",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/backend/modelhost/recommend-eval/fixtures/sample.jsonl",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5161
+  },
+  {
+    "path": "packages/smithers/agent/regression/baseline.json",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 10599
+  },
+  {
+    "path": "packages/smithers/agent/evals/docs",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/smithers/agent/evals/docs/guides",
+    "kind": "dir",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6"
+  },
+  {
+    "path": "packages/smithers/agent/evals/docs/guides/author-a-suite.md",
+    "kind": "file",
+    "sha": "e142eb9ef50a876e56c7ac23c5f181b0d9539fe6",
+    "size": 5669
+  }
+]

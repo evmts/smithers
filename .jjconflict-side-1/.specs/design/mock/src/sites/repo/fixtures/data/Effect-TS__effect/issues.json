@@ -1,0 +1,756 @@
+[
+  {
+    "n": 42,
+    "title": "PostgreSQL transaction succeeds after a caught statement error",
+    "state": "open",
+    "author": "dev-ahn",
+    "assignees": [
+      "cora"
+    ],
+    "labels": [
+      "bug",
+      "sql"
+    ],
+    "opened": "2026-10-15T04:20:00Z",
+    "updated": "2026-10-18T03:20:00Z",
+    "body": "A PostgreSQL statement error can be caught inside `withTransaction`. PostgreSQL then responds to `COMMIT` with `ROLLBACK`, but the effect reports success.\n\n```ts\nyield* sql.withTransaction(\n  sql`SELECT missing_column FROM example`.pipe(Effect.catch(() => Effect.void))\n)\n```\n\nExpected: the transaction fails and the next query can borrow a clean connection.",
+    "comments": [
+      {
+        "author": "cora",
+        "date": "2026-10-15T22:20:00Z",
+        "body": "Confirmed with a caught PostgreSQL statement error. I made a TODO for the driver and shared transaction contract."
+      },
+      {
+        "author": "smithers-agent",
+        "date": "2026-10-18T02:20:00Z",
+        "body": "The PR checks the PostgreSQL command tag and adds a driver commit hook. The shared SQL change also reaches the Bun SQLite tests.",
+        "agent": {
+          "run": "run-4801",
+          "flow": "implement-issue",
+          "harness": "Codex · gpt-6.1-sol",
+          "for": "cora"
+        }
+      },
+      {
+        "author": "maya",
+        "date": "2026-10-18T03:20:00Z",
+        "body": "The PostgreSQL regression is covered. Fix the Bun rollback failure before I can merge."
+      }
+    ],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "cora",
+        "date": "2026-10-15T16:20:00Z",
+        "label": "bug"
+      },
+      {
+        "kind": "assigned",
+        "actor": "cora",
+        "date": "2026-10-15T22:20:00Z",
+        "assignee": "cora"
+      },
+      {
+        "kind": "todo",
+        "actor": "cora",
+        "date": "2026-10-15T22:20:00Z",
+        "run": "run-4801"
+      },
+      {
+        "kind": "run",
+        "actor": "smithers-agent",
+        "date": "2026-10-18T01:20:00Z",
+        "run": "run-4801",
+        "state": "succeeded"
+      },
+      {
+        "kind": "referenced",
+        "actor": "cora",
+        "date": "2026-10-18T02:20:00Z",
+        "pull": 101,
+        "sha": "399df09b4bf4102f7e5be8feceffa9e5a33c8a8b"
+      },
+      {
+        "kind": "run",
+        "actor": "cora",
+        "date": "2026-10-18T02:20:00Z",
+        "run": "run-4802",
+        "state": "failed"
+      }
+    ],
+    "pulls": [
+      101
+    ],
+    "todo": "todo-42",
+    "receipt": {
+      "reported": {
+        "by": "dev-ahn",
+        "date": "2026-10-15T04:20:00Z"
+      },
+      "accepted": {
+        "by": "cora",
+        "date": "2026-10-15T22:20:00Z"
+      },
+      "working": {
+        "run": "run-4801",
+        "date": "2026-10-18T01:20:00Z"
+      },
+      "review": {
+        "pull": 101,
+        "date": "2026-10-18T02:20:00Z"
+      }
+    }
+  },
+  {
+    "n": 43,
+    "title": "AtomRegistry drops updates from a stale dependency",
+    "state": "open",
+    "author": "cora",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "bug"
+    ],
+    "opened": "2026-10-14T02:20:00Z",
+    "updated": "2026-10-18T02:20:00Z",
+    "body": "A derived atom can keep an old value after its dependency rebuilds. Reproduce with one mounted reader, invalidate the source, then rebuild it before the reader flushes.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "cora",
+        "date": "2026-10-14T14:20:00Z",
+        "label": "bug"
+      }
+    ],
+    "pulls": [
+      102
+    ],
+    "todo": "todo-43"
+  },
+  {
+    "n": 44,
+    "title": "Bun SQLite connection remains in a transaction after failed COMMIT",
+    "state": "open",
+    "author": "cora",
+    "assignees": [
+      "cora"
+    ],
+    "labels": [
+      "bug",
+      "sql",
+      "runtime"
+    ],
+    "opened": "2026-10-13T13:20:00Z",
+    "updated": "2026-10-18T01:20:00Z",
+    "body": "A deferred foreign-key violation fails COMMIT. The next transaction on the same in-memory connection fails with `cannot start a transaction within a transaction`. Roll back without reopening the database.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "cora",
+        "date": "2026-10-14T01:20:00Z",
+        "label": "bug"
+      }
+    ],
+    "pulls": [
+      103
+    ],
+    "todo": "todo-44"
+  },
+  {
+    "n": 45,
+    "title": "awaitAllChildren cannot be interrupted while a child waits",
+    "state": "closed",
+    "author": "dev-ahn",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "bug"
+    ],
+    "opened": "2026-10-13T00:20:00Z",
+    "updated": "2026-10-18T00:20:00Z",
+    "body": "Interrupt a parent while `Effect.awaitAllChildren` waits for a never-ending child. The parent must release its scope and complete interruption.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "cora",
+        "date": "2026-10-13T12:20:00Z",
+        "label": "bug"
+      },
+      {
+        "kind": "closed",
+        "actor": "maya",
+        "date": "2026-10-18T00:20:00Z",
+        "reason": "completed",
+        "pull": 104
+      }
+    ],
+    "pulls": [
+      104
+    ],
+    "todo": "todo-45"
+  },
+  {
+    "n": 46,
+    "title": "Move SQL imports to the current module exports",
+    "state": "open",
+    "author": "cora",
+    "assignees": [
+      "cora"
+    ],
+    "labels": [
+      "enhancement",
+      "sql"
+    ],
+    "opened": "2026-10-11T09:20:00Z",
+    "updated": "2026-10-17T23:20:00Z",
+    "body": "Update imports to the current `effect/sql` export paths and check the public package entrypoints together.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "cora",
+        "date": "2026-10-11T21:20:00Z",
+        "label": "enhancement"
+      }
+    ],
+    "pulls": [
+      105
+    ],
+    "todo": "todo-46"
+  },
+  {
+    "n": 47,
+    "title": "Scope close skips later finalizers after a synchronous throw",
+    "state": "open",
+    "author": "cora",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "bug"
+    ],
+    "opened": "2026-10-09T05:20:00Z",
+    "updated": "2026-10-17T22:20:00Z",
+    "body": "Register three finalizers; make the middle callback throw synchronously. The remaining finalizer must still run.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "cora",
+        "date": "2026-10-09T17:20:00Z",
+        "label": "bug"
+      }
+    ],
+    "pulls": [
+      106
+    ],
+    "todo": "todo-47"
+  },
+  {
+    "n": 48,
+    "title": "Queue taker can miss an offer during registration",
+    "state": "closed",
+    "author": "dev-ahn",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "bug"
+    ],
+    "opened": "2026-10-05T23:20:00Z",
+    "updated": "2026-10-17T21:20:00Z",
+    "body": "Stress a queue with a yielding producer and one waiting taker. Retain the operation ordering when the producer is interrupted.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "cora",
+        "date": "2026-10-06T11:20:00Z",
+        "label": "bug"
+      },
+      {
+        "kind": "closed",
+        "actor": "maya",
+        "date": "2026-10-17T21:20:00Z",
+        "reason": "completed",
+        "pull": 107
+      }
+    ],
+    "pulls": [
+      107
+    ],
+    "receipt": {
+      "reported": {
+        "by": "dev-ahn",
+        "date": "2026-10-05T23:20:00Z"
+      },
+      "working": {
+        "run": "run-4812",
+        "date": "2026-10-08T22:20:00Z"
+      },
+      "review": {
+        "pull": 107,
+        "date": "2026-10-08T22:20:00Z"
+      },
+      "landed": {
+        "sha": "ea2466ebdff386990eb7fcc4a56be720dd58bda0",
+        "date": "2026-10-08T23:20:00Z"
+      },
+      "accepted": {
+        "by": "maya",
+        "date": "2026-10-06T11:20:00Z"
+      }
+    }
+  },
+  {
+    "n": 49,
+    "title": "Document Unicode string constraints",
+    "state": "open",
+    "author": "cora",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "documentation",
+      "schema"
+    ],
+    "opened": "2026-10-02T04:20:00Z",
+    "updated": "2026-10-17T20:20:00Z",
+    "body": "Document code-point length constraints and the matching JSON Schema export for astral characters.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "cora",
+        "date": "2026-10-02T16:20:00Z",
+        "label": "documentation"
+      }
+    ],
+    "pulls": [
+      108
+    ]
+  },
+  {
+    "n": 50,
+    "title": "Layer memo waiters hang after the initial build is interrupted",
+    "state": "closed",
+    "author": "cora",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "bug"
+    ],
+    "opened": "2026-09-27T07:20:00Z",
+    "updated": "2026-10-17T19:20:00Z",
+    "body": "Interrupt the first layer build while a second consumer waits. Both consumers must observe the interrupted exit and release resources.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "cora",
+        "date": "2026-09-27T19:20:00Z",
+        "label": "bug"
+      },
+      {
+        "kind": "closed",
+        "actor": "maya",
+        "date": "2026-10-17T19:20:00Z",
+        "reason": "completed",
+        "pull": 109
+      }
+    ],
+    "pulls": [
+      109
+    ]
+  },
+  {
+    "n": 51,
+    "title": "MCP tool parameter failures omit later invalid fields",
+    "state": "open",
+    "author": "dev-ahn",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "bug"
+    ],
+    "opened": "2026-09-22T10:20:00Z",
+    "updated": "2026-10-17T18:20:00Z",
+    "body": "Validate an object with two invalid fields and one unknown key. Return every declared parameter failure in one response.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "cora",
+        "date": "2026-09-22T22:20:00Z",
+        "label": "bug"
+      }
+    ],
+    "pulls": [
+      110
+    ]
+  },
+  {
+    "n": 52,
+    "title": "Preview the pending rc changesets",
+    "state": "open",
+    "author": "cora",
+    "assignees": [
+      "maya"
+    ],
+    "labels": [
+      "release",
+      "schema"
+    ],
+    "opened": "2026-10-10T04:20:00Z",
+    "updated": "2026-10-17T17:20:00Z",
+    "body": "Preview the two root changesets: concrete Schema brand identifiers and workflow reset retries. Keep the full public fixed group in the plan.",
+    "comments": [
+      {
+        "author": "cora",
+        "date": "2026-10-18T02:20:00Z",
+        "body": "Only the two root changesets are pending. The `.changeset/pre/` directory contains prerelease history."
+      }
+    ],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "cora",
+        "date": "2026-10-11T04:20:00Z",
+        "label": "release"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 53,
+    "title": "Generate sql-pg API docs from the current source",
+    "state": "open",
+    "author": "cora",
+    "assignees": [
+      "cora"
+    ],
+    "labels": [
+      "documentation",
+      "sql"
+    ],
+    "opened": "2026-10-10T04:20:00Z",
+    "updated": "2026-10-17T16:20:00Z",
+    "body": "Refresh the PostgreSQL client API preview and retain links to the exact source revision.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "cora",
+        "date": "2026-10-11T04:20:00Z",
+        "label": "documentation"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 54,
+    "title": "Node static file responses ignore explicit content type",
+    "state": "open",
+    "author": "dev-ahn",
+    "assignees": [],
+    "labels": [
+      "bug"
+    ],
+    "opened": "2026-10-09T04:20:00Z",
+    "updated": "2026-10-17T15:20:00Z",
+    "body": "Serve a file with a custom content type through the Node HTTP platform. Explicit response headers must win.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "cora",
+        "date": "2026-10-10T04:20:00Z",
+        "label": "bug"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 55,
+    "title": "OpenAI web search call can omit its action",
+    "state": "open",
+    "author": "cora",
+    "assignees": [],
+    "labels": [
+      "bug"
+    ],
+    "opened": "2026-10-09T04:20:00Z",
+    "updated": "2026-10-17T14:20:00Z",
+    "body": "Preserve an incomplete web-search call as a failed tool result when the provider omits the action.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "cora",
+        "date": "2026-10-10T04:20:00Z",
+        "label": "bug"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 56,
+    "title": "Deno SQL project exclusions need a visible reason",
+    "state": "open",
+    "author": "cora",
+    "assignees": [],
+    "labels": [
+      "documentation",
+      "runtime"
+    ],
+    "opened": "2026-10-08T04:20:00Z",
+    "updated": "2026-10-17T13:20:00Z",
+    "body": "Show why the D1 project is excluded on Deno and keep the Miniflare file exclusion separate from a failed test.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "cora",
+        "date": "2026-10-09T04:20:00Z",
+        "label": "documentation"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 57,
+    "title": "Atom React suspense reader retains a replaced build",
+    "state": "open",
+    "author": "dev-ahn",
+    "assignees": [],
+    "labels": [
+      "bug"
+    ],
+    "opened": "2026-10-08T04:20:00Z",
+    "updated": "2026-10-17T12:20:00Z",
+    "body": "Switch the atom while its first build is suspended. The reader must release the superseded build.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "cora",
+        "date": "2026-10-09T04:20:00Z",
+        "label": "bug"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 58,
+    "title": "Workspace lockfile changes should expand affected checks",
+    "state": "open",
+    "author": "cora",
+    "assignees": [],
+    "labels": [
+      "enhancement"
+    ],
+    "opened": "2026-10-07T04:20:00Z",
+    "updated": "2026-10-17T11:20:00Z",
+    "body": "A root lockfile change can affect every package. Expand validation to all mapped projects and shared checks.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "cora",
+        "date": "2026-10-08T04:20:00Z",
+        "label": "enhancement"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 59,
+    "title": "Private tools should stay out of the publish plan",
+    "state": "open",
+    "author": "cora",
+    "assignees": [],
+    "labels": [
+      "bug",
+      "release"
+    ],
+    "opened": "2026-10-07T04:20:00Z",
+    "updated": "2026-10-17T10:20:00Z",
+    "body": "Keep private workspaces in affected validation while excluding them from published release entries.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "cora",
+        "date": "2026-10-08T04:20:00Z",
+        "label": "bug"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 60,
+    "title": "OpenTelemetry exporter leaves retry response bodies unread",
+    "state": "closed",
+    "author": "dev-ahn",
+    "assignees": [],
+    "labels": [
+      "bug"
+    ],
+    "opened": "2026-10-06T04:20:00Z",
+    "updated": "2026-10-17T09:20:00Z",
+    "body": "Drain the response body before retrying an OTLP export so connections can be reused.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "cora",
+        "date": "2026-10-07T04:20:00Z",
+        "label": "bug"
+      },
+      {
+        "kind": "closed",
+        "actor": "maya",
+        "date": "2026-10-17T09:20:00Z",
+        "reason": "completed"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 61,
+    "title": "PGlite nested transactions retain completed savepoints",
+    "state": "closed",
+    "author": "cora",
+    "assignees": [],
+    "labels": [
+      "bug",
+      "sql"
+    ],
+    "opened": "2026-10-06T04:20:00Z",
+    "updated": "2026-10-17T08:20:00Z",
+    "body": "Release a savepoint after nested success or successful rollback; preserve the outer transaction.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "cora",
+        "date": "2026-10-07T04:20:00Z",
+        "label": "bug"
+      },
+      {
+        "kind": "closed",
+        "actor": "maya",
+        "date": "2026-10-17T08:20:00Z",
+        "reason": "completed"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 62,
+    "title": "MySQL integration projects compete for containers",
+    "state": "open",
+    "author": "cora",
+    "assignees": [],
+    "labels": [
+      "bug",
+      "runtime"
+    ],
+    "opened": "2026-10-05T04:20:00Z",
+    "updated": "2026-10-17T07:20:00Z",
+    "body": "Run the container-heavy MySQL project after other integration projects and disable file parallelism for it.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "cora",
+        "date": "2026-10-06T04:20:00Z",
+        "label": "bug"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 63,
+    "title": "Document platform-node-shared peer dependencies",
+    "state": "open",
+    "author": "dev-ahn",
+    "assignees": [],
+    "labels": [
+      "documentation"
+    ],
+    "opened": "2026-10-05T04:20:00Z",
+    "updated": "2026-10-17T06:20:00Z",
+    "body": "Explain the shared Node/Bun layers without implying that development dependencies are published dependencies.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "cora",
+        "date": "2026-10-06T04:20:00Z",
+        "label": "documentation"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 64,
+    "title": "Schema JSON exports count UTF-16 units as code points",
+    "state": "closed",
+    "author": "cora",
+    "assignees": [],
+    "labels": [
+      "bug",
+      "schema"
+    ],
+    "opened": "2026-10-04T04:20:00Z",
+    "updated": "2026-10-17T05:20:00Z",
+    "body": "A string containing one astral character must satisfy a one-code-point constraint after JSON Schema export.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "cora",
+        "date": "2026-10-05T04:20:00Z",
+        "label": "bug"
+      },
+      {
+        "kind": "closed",
+        "actor": "maya",
+        "date": "2026-10-17T05:20:00Z",
+        "reason": "completed"
+      }
+    ],
+    "pulls": []
+  },
+  {
+    "n": 65,
+    "title": "Workflow reset retry acknowledges before the run resumes",
+    "state": "open",
+    "author": "cora",
+    "assignees": [],
+    "labels": [
+      "bug"
+    ],
+    "opened": "2026-10-04T04:20:00Z",
+    "updated": "2026-10-17T04:20:00Z",
+    "body": "Retry failed workflow resets. A deferred completion acknowledgment must wait until the reset run resumes.",
+    "comments": [],
+    "events": [
+      {
+        "kind": "labeled",
+        "actor": "cora",
+        "date": "2026-10-05T04:20:00Z",
+        "label": "bug"
+      }
+    ],
+    "pulls": []
+  }
+]

@@ -1,0 +1,309 @@
+// RepoApi's real handler (worker/RepoApi.ts) for the repository tests, on a test file's own schema of the compose
+// Postgres and Electric (`pnpm db:up`, db/TestDatabase.ts). Code Storage and GitHub are the scripted providers
+// (worker/test/codeStorage.ts). A clone RepoApi starts records its intent on its execution's Durable Object storage,
+// in memory, as ChatApi's starter does, and runs on the Node host (worker/test/flowHost.ts) in this process, as the
+// Durable Object runs it. Every log line, span and metric the handler and the flow record is kept.
+import { ImmutableCache } from "@smthrs/artifacts"
+import type { CodeStorage } from "@smthrs/effect-code-storage"
+import { type Flow, FlowRuntime } from "@smthrs/flow"
+import { Logger as StructuredLogger } from "@smthrs/observability"
+import {
+  ConfigProvider,
+  Context,
+  Duration,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Logger,
+  Metric,
+  Option,
+  Scope,
+  Tracer,
+} from "effect"
+import { FetchHttpClient, HttpEffect } from "effect/http"
+import { SqlClient } from "effect/sql"
+import { onTestFinished } from "vitest"
+import * as TestDatabase from "../../db/TestDatabase.ts"
+import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
+import { repoId, REPOSITORIES_TABLE } from "../../src/features/repo/contract.ts"
+import * as Actor from "../Actor.ts"
+import * as ExecutionHost from "../ExecutionHost.ts"
+import { FlowStarter, StartConflict } from "../Flows.ts"
+import * as RepoClone from "../flows/RepoClone.ts"
+import * as RepoApi from "../RepoApi.ts"
+import * as RepoReads from "../RepoReads.ts"
+import * as Repos from "../Repos.ts"
+import type { RepoUpstream } from "../RepoUpstream.ts"
+import { fixture, type GitHubRepository, type Scripted, scripted as makeScripted } from "./codeStorage.ts"
+import { build, type Engine } from "./flowHost.ts"
+import { signedIn, type testFile } from "./harness.ts"
+
+type Runtime = ReturnType<typeof testFile>
+
+/** The person a harness signs every request in as, unless told otherwise. */
+export const member: Actor.Actor = { subject: { kind: "person", id: "octocat" }, role: "member" }
+
+/** Empties the repository tables and resumes imports, for a test that starts from nothing. */
+export const resetRepos = (runtime: Runtime) =>
+  runtime.runPromise(
+    Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      Effect.andThen(
+        sql`TRUNCATE repositories, code_storage_usage`,
+        sql`UPDATE repo_imports SET paused = false`,
+      )),
+  )
+
+type StructuredLog = ReturnType<typeof StructuredLogger.formatStructured.log>
+
+/** A Durable Object's storage in memory, as far as starting an execution reads and writes it. */
+const objectStorage = (): ExecutionHost.Storage => {
+  const values = new Map<string, unknown>()
+  return {
+    get: <A>(key: string) => Effect.sync(() => values.get(key) as A | undefined),
+    put: (key, value) => Effect.sync(() => void values.set(key, value)),
+    delete: (key) => Effect.sync(() => values.delete(key)),
+    setAlarm: () => Effect.void,
+    deleteAlarm: () => Effect.void,
+  }
+}
+
+export interface RepoHarnessOptions {
+  /** Who is signed in on every request: `member` unless set; `null` is signed out. */
+  readonly actor?: Actor.Actor | null
+  /** Sessions in place of `actor`, such as ones that can't be read. */
+  readonly sessions?: Layer.Layer<Actor.Sessions>
+  /** RepoApi's and the flow's configuration, in place of the environment. */
+  readonly config?: Record<string, string>
+  /** The scripted Code Storage and GitHub: a fresh one unless set. */
+  readonly scripted?: Scripted
+  /** GitHub in place of the scripted one: the real `RepoUpstream` in the live tests. */
+  readonly upstream?: RepoUpstream["Service"]
+  /** A Code Storage client in place of the scripted one, or `"none"` for a deployment without an organization. */
+  readonly codeStorage?: CodeStorage.Client | "none"
+  /** The database RepoApi and the flow reach: the file's schema unless set. */
+  readonly database?: Layer.Layer<SqlClient.SqlClient, unknown>
+  /** Where clones start: each execution's Durable Object storage in memory, then the Node host, unless set. */
+  readonly starter?: FlowStarter["Service"]
+  /** The clone's deadline from its request: 10 minutes unless set. */
+  readonly deadline?: Duration.Input
+}
+
+/**
+ * RepoApi on the file's schema, with clones running on the Node host in this process. The harness closes when its
+ * test finishes: running clones are interrupted and the engine's schema dropped.
+ */
+export const repoHarness = async (runtime: Runtime, options: RepoHarnessOptions = {}) => {
+  const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+  const database = options.database ?? scratch.database
+  const scripted = options.scripted ?? makeScripted()
+  const codeStorage = options.codeStorage ?? scripted.client
+  const spans: Array<Tracer.NativeSpan> = []
+  const tracer = Tracer.make({
+    span(spanOptions) {
+      const span = new Tracer.NativeSpan(spanOptions)
+      spans.push(span)
+      return span
+    },
+  })
+  const logs: Array<StructuredLog> = []
+  const logger = Logger.make((logOptions) => void logs.push(StructuredLogger.formatStructured.log(logOptions)))
+  const registry: Metric.MetricRegistry = new Map()
+  const provider = ConfigProvider.fromUnknown({ ELECTRIC_URL: LOCAL_ELECTRIC_URL, ...options.config })
+  const observed = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    effect.pipe(
+      Effect.provideService(Tracer.Tracer, tracer),
+      Effect.provideService(Logger.CurrentLoggers, new Set([logger])),
+      Effect.provideService(Metric.MetricRegistry, registry),
+      Effect.provideService(ConfigProvider.ConfigProvider, provider),
+    )
+
+  const scope = await Effect.runPromise(Scope.make())
+  const fibers = new Map<string, Fiber.Fiber<unknown, unknown>>()
+  onTestFinished(async () => {
+    await Effect.runPromise(Fiber.interruptAll([...fibers.values()]))
+    await Effect.runPromise(Scope.close(scope, Exit.void))
+  })
+
+  const budgets = await Effect.runPromise(observed(Repos.budgets))
+  // The Node host's engine, built when the first clone starts, with few connections: a test file builds many.
+  let engine: { readonly context: Context.Context<FlowRuntime.FlowRuntime>; readonly engine: Engine } | undefined
+  const engineFor = (client: CodeStorage.Client) =>
+    Effect.gen(function* () {
+      if (engine !== undefined) return engine
+      const built = yield* build(
+        RepoClone.registration({
+          database,
+          codeStorage: client,
+          upstream: options.upstream ?? scripted.upstream,
+          budgets,
+          deadline: Duration.fromInputUnsafe(options.deadline ?? "10 minutes"),
+        }),
+        { maxConnections: 3 },
+      ).pipe(Effect.provideService(Scope.Scope, scope), Effect.orDie)
+      engine = built
+      return built
+    })
+  // Each execution's Durable Object storage, by execution id. Like a deployed object's, it outlives a reset of the
+  // database: `resetRepos` empties the tables and leaves these.
+  const objects = new Map<string, ExecutionHost.Storage>()
+  const starter = options.starter ?? FlowStarter.of({
+    start: (flow: Flow.Any, start: { readonly executionId: string; readonly payload: unknown }) =>
+      Effect.gen(function* () {
+        if (codeStorage === "none") return
+        // As ChatApi's starter: the same intent again changes nothing; another payload under the id is a conflict.
+        let object = objects.get(start.executionId)
+        if (object === undefined) objects.set(start.executionId, object = objectStorage())
+        const intent = yield* Effect.orDie(
+          ExecutionHost.intent(flow, { executionId: start.executionId, payload: start.payload as never }),
+        )
+        yield* ExecutionHost.recordStart(object, intent).pipe(
+          Effect.catchTag("@smthrs/platform-cloudflare/IntentConflict", () => Effect.fail(new StartConflict())),
+        )
+        if (fibers.has(start.executionId)) return
+        const flows = Context.get((yield* engineFor(codeStorage)).context, FlowRuntime.FlowRuntime)
+        const run = flows.execute(flow as never, { executionId: start.executionId, payload: start.payload as never })
+        fibers.set(start.executionId, Effect.runFork(observed(run as Effect.Effect<unknown, unknown>)))
+      }),
+  })
+
+  const cache = await Effect.runPromise(
+    Layer.buildWithScope(ImmutableCache.layerMemory(), scope),
+  )
+  const repo = await runtime.runPromise(
+    observed(RepoApi.make(database, { codeStorage: codeStorage === "none" ? Option.none() : Option.some(codeStorage) })),
+  )
+  // Electric, as RepoApi calls it: the table in this file's schema.
+  const electric: typeof globalThis.fetch = (input, init) => {
+    const upstream = new URL(input instanceof Request ? input.url : String(input))
+    if (upstream.searchParams.get("table") === REPOSITORIES_TABLE) {
+      upstream.searchParams.set("table", `${scratch.name}.${REPOSITORIES_TABLE}`)
+    }
+    return globalThis.fetch(upstream, init)
+  }
+  const handler = HttpEffect.toWebHandler(
+    observed(
+      repo.fetch.pipe(
+        Effect.provide(
+          options.sessions ?? (options.actor === null ? Actor.signedOut : signedIn(options.actor ?? member)),
+        ),
+        Effect.provideService(FlowStarter, starter),
+        Effect.provideContext(cache),
+        Effect.provide(FetchHttpClient.layer),
+        Effect.provideService(FetchHttpClient.Fetch, electric),
+      ),
+    ),
+  )
+  const origin = "http://repos.test"
+  const fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    const request = input instanceof Request ? input : new Request(new URL(String(input), origin), init)
+    return handler(request)
+  }) as typeof globalThis.fetch
+  const line = (message: string) => logs.filter((log) => log.message === message)
+
+  return {
+    origin,
+    /** RepoApi as the browser reaches it: a full URL or a path on `origin`. */
+    fetch,
+    scripted,
+    /** Asks for a clone of `owner/name`. */
+    clone: (owner: string, name: string) =>
+      fetch("/api/repos", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ owner, name }),
+      }),
+    /** Waits for every clone started so far to end. */
+    settled: async () => {
+      for (const fiber of fibers.values()) await Effect.runPromise(Effect.exit(Fiber.join(fiber)))
+    },
+    /** The clone executions started, by execution id. */
+    started: () => [...fibers.keys()],
+    /** Publishes `owner/name` on the scripted GitHub, clones it to the end, and answers its id and head commit. */
+    seed: async (owner: string, name: string, repository: GitHubRepository = fixture()) => {
+      scripted.publish(owner, name, repository)
+      const answer = await (await fetch("/api/repos", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ owner, name }),
+      })).json()
+      for (const fiber of fibers.values()) await Effect.runPromise(Effect.exit(Fiber.join(fiber)))
+      return { id: repoId(owner, name), headSha: repository.commit.sha, answer }
+    },
+    /** The reads RepoApi answers with, for the agent's flows on this host, over this harness's cache. */
+    reader: () =>
+      Option.match(repo.reads, {
+        onNone: () => {
+          throw new Error("this harness has no Code Storage")
+        },
+        onSome: (reads) =>
+          RepoReads.reader(reads as never, Layer.succeedContext(cache)),
+      }),
+    count: (metric: Metric.Metric<number, Metric.CounterState<number>>, attributes: Record<string, string> = {}) =>
+      Effect.runSync(
+        Metric.value(Metric.withAttributes(metric, attributes)).pipe(Effect.provideService(Metric.MetricRegistry, registry)),
+      ).count,
+    gauge: (metric: Metric.Metric<number, Metric.GaugeState<number>>) =>
+      Effect.runSync(Metric.value(metric).pipe(Effect.provideService(Metric.MetricRegistry, registry))).value,
+    snapshot: () => Effect.runSync(Metric.snapshot.pipe(Effect.provideService(Metric.MetricRegistry, registry))),
+    line,
+    /** The one line logged with this message. */
+    only: (message: string) => {
+      const lines = line(message)
+      if (lines.length !== 1) throw new Error(`expected one ${message} line, got ${lines.length}`)
+      return lines[0]!
+    },
+    span: (name: string) => spans.filter((span) => span.name === name),
+    spans,
+    logs,
+    /** A clone execution's status in the engine. */
+    status: (executionId: string) =>
+      engine === undefined ? Promise.resolve(undefined) : Effect.runPromise(engine.engine.status(executionId)),
+  }
+}
+
+export type RepoHarness = Awaited<ReturnType<typeof repoHarness>>
+
+/** A `repositories` row as Postgres holds it. */
+export const repositoryRow = (runtime: Runtime, id: string) =>
+  runtime.runPromise(
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      const [row] = yield* sql<{
+        readonly id: string
+        readonly owner: string
+        readonly name: string
+        readonly status: string
+        readonly failure: string | null
+        readonly capacity: string | null
+        readonly storedBytes: string | null
+        readonly retryAt: Date | null
+        readonly defaultBranch: string | null
+        readonly headSha: string | null
+        readonly headMessage: string | null
+        readonly headAuthor: string | null
+        readonly attempt: number
+        readonly cloneId: string
+        readonly settledAt: Date | null
+      }>`
+        SELECT id, owner, name, status, failure, capacity, stored_bytes::text AS "storedBytes", retry_at AS "retryAt",
+          default_branch AS "defaultBranch", head_sha AS "headSha", head_message AS "headMessage",
+          head_author AS "headAuthor", attempt, clone_id::text AS "cloneId", settled_at AS "settledAt"
+        FROM repositories WHERE id = ${id}`
+      return row
+    }),
+  )
+
+/** This month's `code_storage_usage` row, if any. */
+export const usageRow = (runtime: Runtime) =>
+  runtime.runPromise(
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      const [row] = yield* sql<{ readonly read: string; readonly imported: string; readonly alerted: number }>`
+        SELECT bytes_read::text AS read, bytes_imported::text AS imported, alerted_pct AS alerted
+        FROM code_storage_usage WHERE month = (date_trunc('month', now() AT TIME ZONE 'UTC'))::date`
+      return row === undefined
+        ? undefined
+        : { read: Number(row.read), imported: Number(row.imported), alerted: row.alerted }
+    }),
+  )

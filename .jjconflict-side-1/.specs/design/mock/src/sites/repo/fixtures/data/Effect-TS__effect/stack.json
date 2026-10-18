@@ -1,0 +1,77 @@
+[
+  {
+    "id": "todo-42",
+    "order": 1,
+    "title": "PostgreSQL transaction succeeds after a caught statement error",
+    "state": "failed",
+    "owner": "cora",
+    "issue": 42,
+    "pull": 101,
+    "run": "run-4801",
+    "updated": "2026-10-18T03:20:00Z",
+    "failure": "Required Bun checks failed; maya requested rollback cleanup."
+  },
+  {
+    "id": "todo-43",
+    "order": 2,
+    "title": "AtomRegistry drops updates from a stale dependency",
+    "state": "working",
+    "owner": "maya",
+    "issue": 43,
+    "pull": 102,
+    "run": "run-4805",
+    "updated": "2026-10-18T02:20:00Z"
+  },
+  {
+    "id": "todo-44",
+    "order": 3,
+    "title": "Bun SQLite connection remains in a transaction after failed COMMIT",
+    "state": "ready",
+    "owner": "cora",
+    "issue": 44,
+    "pull": 103,
+    "run": "run-4809",
+    "updated": "2026-10-18T01:20:00Z"
+  },
+  {
+    "id": "todo-45",
+    "order": 4,
+    "title": "awaitAllChildren cannot be interrupted while a child waits",
+    "state": "merged",
+    "owner": "maya",
+    "issue": 45,
+    "pull": 104,
+    "run": "run-4806",
+    "updated": "2026-10-18T00:20:00Z"
+  },
+  {
+    "id": "todo-46",
+    "order": 5,
+    "title": "Move SQL imports to the current module exports",
+    "state": "needs-answer",
+    "owner": "cora",
+    "issue": 46,
+    "pull": 105,
+    "run": "run-4810",
+    "updated": "2026-10-17T23:20:00Z",
+    "question": {
+      "text": "Include all public module export paths in this change?",
+      "options": [
+        "Include exports",
+        "Keep SQL only"
+      ]
+    }
+  },
+  {
+    "id": "todo-47",
+    "order": 6,
+    "title": "Scope close skips later finalizers after a synchronous throw",
+    "state": "failed",
+    "owner": "maya",
+    "issue": 47,
+    "pull": 106,
+    "run": "run-4811",
+    "updated": "2026-10-17T22:20:00Z",
+    "failure": "maya denied the expanded sandbox write scope."
+  }
+]

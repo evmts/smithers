@@ -1,0 +1,440 @@
+[
+  {
+    "path": "README.md",
+    "start": 1,
+    "end": 220,
+    "sha": "903ba881c757cc9ce9b3a1215ac5258c6de4a405"
+  },
+  {
+    "path": "LICENSE",
+    "start": 1,
+    "end": 27,
+    "sha": "a9f06f10550753a34c3d46e505dc9b6c68e60292"
+  },
+  {
+    "path": ".smithers/home.json",
+    "start": 1,
+    "end": 16,
+    "sha": "9b300d0f8c2f69903a1eab760446301745f705d2"
+  },
+  {
+    "path": "packages/create-vibelang/package.json",
+    "start": 1,
+    "end": 14,
+    "sha": "c9dbbb4d94efc5561832d76d132a1caab02f9441"
+  },
+  {
+    "path": ".smithers/flows/convert/check-heldout.mjs",
+    "start": 1,
+    "end": 133,
+    "sha": "e814e5d1f01e679d6ff11d55f8776a5442829d68"
+  },
+  {
+    "path": "docs/user/src/001-onboarding.md",
+    "start": 1,
+    "end": 113,
+    "sha": "141a95d91496b3e664f06327f10558016991a42b"
+  },
+  {
+    "path": "docs/user/src/getting-started/002-why-effect.md",
+    "start": 1,
+    "end": 71,
+    "sha": "687cebf9e584109df62287b323deb8db9b5c6514"
+  },
+  {
+    "path": "docs/user/src/getting-started/004-installation.md",
+    "start": 1,
+    "end": 199,
+    "sha": "9b8009838e036ca98865306c2ef24251ac0f26e3"
+  },
+  {
+    "path": "docs/user/src/error-management/014-expected-errors.md",
+    "start": 1,
+    "end": 191,
+    "sha": "16b9bf09dd6a125a420d28397d953c68b8933b9e"
+  },
+  {
+    "path": "docs/user/src/error-management/015-unexpected-errors.md",
+    "start": 1,
+    "end": 105,
+    "sha": "92291e9dc70585def463ad308d277947fdecd666"
+  },
+  {
+    "path": "docs/user/src/setup/vibelang-cli.md",
+    "start": 1,
+    "end": 101,
+    "sha": "6198101d57ce492084f3cd1d57e7f80dc2e4f472"
+  },
+  {
+    "path": "templates/app/src/greeting.vibe",
+    "start": 1,
+    "end": 7,
+    "sha": "a9f06f10550753a34c3d46e505dc9b6c68e60292"
+  },
+  {
+    "path": "templates/app/src/main.vibe",
+    "start": 1,
+    "end": 21,
+    "sha": "687cebf9e584109df62287b323deb8db9b5c6514"
+  },
+  {
+    "path": "templates/app/src/greeting.test.vibe",
+    "start": 1,
+    "end": 16,
+    "sha": "a9f06f10550753a34c3d46e505dc9b6c68e60292"
+  },
+  {
+    "path": "examples/file-tree/src/main.vibe",
+    "start": 1,
+    "end": 39,
+    "sha": "a9f06f10550753a34c3d46e505dc9b6c68e60292"
+  },
+  {
+    "path": "typescript/vibelang/lsp-fixture/src/old-await.vibe",
+    "start": 1,
+    "end": 16,
+    "sha": "a9f06f10550753a34c3d46e505dc9b6c68e60292"
+  },
+  {
+    "path": "typescript/vibelang/lsp-fixture/src/hatch-outside.vibe",
+    "start": 1,
+    "end": 10,
+    "sha": "4a4aca77add2ff969f18db1fc5cabc392cfa0eb1"
+  },
+  {
+    "path": "packages/ts-mapper/prelude.d.ts",
+    "start": 1,
+    "end": 3351,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": "typescript/tsc/internal/vibelangmapper/lambdas.go",
+    "start": 1,
+    "end": 417,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": "typescript/tsc/internal/vibelangmapper/plan.go",
+    "start": 1,
+    "end": 458,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": "packages/converter-worker/compile.mjs",
+    "start": 1,
+    "end": 145,
+    "sha": "ecff34c8f29950b07957184fde4eb1427965cf7c"
+  },
+  {
+    "path": "scripts/release/repack.mjs",
+    "start": 1,
+    "end": 81,
+    "sha": "458a6ea2f8f5e5dd0fcbc29be9cf71f8458bffa9"
+  },
+  {
+    "path": "docs/tools/check-landing.ts",
+    "start": 1,
+    "end": 85,
+    "sha": "c13a02cec95070e965b1b408ada43ef866ae51c6"
+  },
+  {
+    "path": "docs/tools/render-hovers.ts",
+    "start": 1,
+    "end": 125,
+    "sha": "a7798b9a5dc79faa842c5f693f23fcf2f4e7ab3f"
+  },
+  {
+    "path": "scripts/deploy-docs.sh",
+    "start": 1,
+    "end": 108,
+    "sha": "597d7986c10b0774705a915602966a3a1c17042c"
+  },
+  {
+    "path": "packages/converter-worker/deploy/image.json",
+    "start": 1,
+    "end": 31,
+    "sha": "5992d9cad8ed03b118263c5f82038529eff7534c"
+  },
+  {
+    "path": "docs/tools/check-snippets.ts",
+    "start": 1,
+    "end": 320,
+    "sha": "597d7986c10b0774705a915602966a3a1c17042c"
+  },
+  {
+    "path": "scripts/release/rehearse.sh",
+    "start": 1,
+    "end": 89,
+    "sha": "458a6ea2f8f5e5dd0fcbc29be9cf71f8458bffa9"
+  },
+  {
+    "path": ".smithers/instructions/app.md",
+    "start": 1,
+    "end": 118,
+    "sha": "903ba881c757cc9ce9b3a1215ac5258c6de4a405"
+  },
+  {
+    "path": "typescript/tsc/internal/astnav/vibelang.go",
+    "start": 1,
+    "end": 78,
+    "sha": "8fadacb51dc15e706bf033af8878f8f4e9a2047d"
+  },
+  {
+    "path": ".smithers/flows/convert/score.mjs",
+    "start": 1,
+    "end": 43,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/build-prompt.mjs",
+    "start": 1,
+    "end": 58,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": "examples/users/src/main.vibe",
+    "start": 1,
+    "end": 52,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/01-hero-batch-lookup/expected.vibe",
+    "start": 1,
+    "end": 19,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/01-hero-batch-lookup/input.ts",
+    "start": 1,
+    "end": 25,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/02-typed-error-fallback/expected.vibe",
+    "start": 1,
+    "end": 13,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/02-typed-error-fallback/input.ts",
+    "start": 1,
+    "end": 13,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/03-service-and-layer/expected.vibe",
+    "start": 1,
+    "end": 14,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/03-service-and-layer/input.ts",
+    "start": 1,
+    "end": 14,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/04-layer-with-setup/expected.vibe",
+    "start": 1,
+    "end": 12,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/04-layer-with-setup/input.ts",
+    "start": 1,
+    "end": 12,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/05-retry-recurs/expected.vibe",
+    "start": 1,
+    "end": 8,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/05-retry-recurs/input.ts",
+    "start": 1,
+    "end": 8,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/06-timeout-fallback/expected.vibe",
+    "start": 1,
+    "end": 9,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/06-timeout-fallback/input.ts",
+    "start": 1,
+    "end": 9,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/07-foreach-concurrency/expected.vibe",
+    "start": 1,
+    "end": 8,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/07-foreach-concurrency/input.ts",
+    "start": 1,
+    "end": 6,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/08-all-concurrent/expected.vibe",
+    "start": 1,
+    "end": 13,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/08-all-concurrent/input.ts",
+    "start": 1,
+    "end": 9,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/09-schema-struct/expected.vibe",
+    "start": 1,
+    "end": 6,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/09-schema-struct/input.ts",
+    "start": 1,
+    "end": 9,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/10-option-methods/expected.vibe",
+    "start": 1,
+    "end": 4,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/10-option-methods/input.ts",
+    "start": 1,
+    "end": 10,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/11-ref-counter/expected.vibe",
+    "start": 1,
+    "end": 7,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/11-ref-counter/input.ts",
+    "start": 1,
+    "end": 9,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/12-console-and-log/expected.vibe",
+    "start": 1,
+    "end": 6,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/12-console-and-log/input.ts",
+    "start": 1,
+    "end": 8,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/13-fork-join/expected.vibe",
+    "start": 1,
+    "end": 11,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/13-fork-join/input.ts",
+    "start": 1,
+    "end": 10,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/14-race/expected.vibe",
+    "start": 1,
+    "end": 14,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/14-race/input.ts",
+    "start": 1,
+    "end": 7,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/15-ensuring-finally/expected.vibe",
+    "start": 1,
+    "end": 8,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/15-ensuring-finally/input.ts",
+    "start": 1,
+    "end": 6,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/16-config/expected.vibe",
+    "start": 1,
+    "end": 4,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/16-config/input.ts",
+    "start": 1,
+    "end": 7,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/17-stream-methods/expected.vibe",
+    "start": 1,
+    "end": 4,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/17-stream-methods/input.ts",
+    "start": 1,
+    "end": 9,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/18-catch-all/expected.vibe",
+    "start": 1,
+    "end": 12,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/18-catch-all/input.ts",
+    "start": 1,
+    "end": 11,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/19-sync-and-try/expected.vibe",
+    "start": 1,
+    "end": 10,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/19-sync-and-try/input.ts",
+    "start": 1,
+    "end": 9,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/20-schedule-repeat/expected.vibe",
+    "start": 1,
+    "end": 4,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  },
+  {
+    "path": ".smithers/flows/convert/golden/20-schedule-repeat/input.ts",
+    "start": 1,
+    "end": 4,
+    "sha": "8eb9c4ae1e461549ba57e4f158ecec20526a7a93"
+  }
+]

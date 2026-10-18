@@ -1,0 +1,75 @@
+import type { ElectricCollection } from "@smthrs/effect-electric"
+import { type Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
+import { Effect, Option } from "effect"
+import { blobKey, readmeOf, treeKey } from "./paths"
+import type { BlobRow, CloneRow, TreeRow, ViewRow } from "./rows"
+import type { Repository } from "./schema"
+
+// What every frontend reads. The live queries follow the routed view's one row, so React renders them with
+// `useLiveQuery` and a TUI reads their `rows` streams; the reads below answer for any repository and commit. None waits
+// for the network: they read only what the device has.
+
+type Rows<A extends object> = Collection.Collection<A, string>
+
+/** The view, with its repository as Postgres has it and this tab's clone request for it, when there are. */
+export const viewQuery = (
+  view: Rows<ViewRow>,
+  repositories: ElectricCollection.ElectricCollection<Repository>,
+  clones: Rows<CloneRow>,
+) =>
+  LiveQuery.make((q) =>
+    q
+      .from({ view: view.tanstack })
+      .leftJoin({ repository: repositories.tanstack }, ({ view, repository }) => Query.eq(view.repoId, repository.id))
+      .leftJoin({ clone: clones.tanstack }, ({ view, clone }) => Query.eq(view.repoId, clone.id))
+      .findOne(),
+  )
+
+/** The view, with the file list at its commit when this tab has loaded or is loading it. */
+export const treeQuery = (view: Rows<ViewRow>, trees: Rows<TreeRow>) =>
+  LiveQuery.make((q) =>
+    q
+      .from({ view: view.tanstack })
+      .leftJoin({ tree: trees.tanstack }, ({ view, tree }) => Query.eq(view.treeKey, tree.key))
+      .findOne(),
+  )
+
+/** The view, with the file it shows. */
+export const fileQuery = (view: Rows<ViewRow>, blobs: Rows<BlobRow>) =>
+  LiveQuery.make((q) =>
+    q
+      .from({ view: view.tanstack })
+      .leftJoin({ file: blobs.tanstack }, ({ view, file }) => Query.eq(view.fileKey, file.key))
+      .findOne(),
+  )
+
+/** The view, with the README of the directory it shows. */
+export const readmeQuery = (view: Rows<ViewRow>, blobs: Rows<BlobRow>) =>
+  LiveQuery.make((q) =>
+    q
+      .from({ view: view.tanstack })
+      .leftJoin({ readme: blobs.tanstack }, ({ view, readme }) => Query.eq(view.readmeKey, readme.key))
+      .findOne(),
+  )
+
+/**
+ * Reads of any repository on this device (decision 0006 §2): its row, its file list at a commit, a file there, and a
+ * directory's README there. Each is `None` until the device has it.
+ */
+export const reads = (store: {
+  readonly repositories: ElectricCollection.ElectricCollection<Repository>
+  readonly trees: Rows<TreeRow>
+  readonly blobs: Rows<BlobRow>
+}) => {
+  const tree = (id: string, sha: string) => store.trees.get(treeKey(id, sha))
+  return {
+    repository: (id: string) => store.repositories.get(id),
+    tree,
+    file: (id: string, sha: string, path: string) => store.blobs.get(blobKey(id, sha, path)),
+    readme: (id: string, sha: string, dir: string) =>
+      Effect.flatMap(tree(id, sha), (found) => {
+        const path = Option.isSome(found) && found.value.state === "ready" ? readmeOf(found.value.paths, dir) : undefined
+        return path === undefined ? Effect.succeedNone : store.blobs.get(blobKey(id, sha, path))
+      }),
+  }
+}

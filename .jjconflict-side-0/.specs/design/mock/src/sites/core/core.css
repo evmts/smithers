@@ -1,0 +1,32 @@
+/* MOCK: the site mocks' frame. Product pages restore normal page scrolling the app shell's base.css turns off. */
+html, body { overflow: visible; height: auto; background: var(--bg); color: var(--text); }
+#root { height: auto; min-height: 100vh; min-height: 100dvh; display: block; }
+:focus-visible { outline: 2px solid var(--ring-border); outline-offset: 2px; }
+
+.core-404 { max-width: 640px; margin: 15vh auto; padding: 0 16px; }
+.core-404 h1 { font-size: var(--fs-6); font-weight: 600; margin: 0 0 8px; word-break: break-word; }
+.core-404 p { color: var(--text-muted); margin: 0 0 8px; }
+.core-404 a { color: var(--brand); }
+
+.core-mockbar { position: fixed; left: 12px; bottom: 12px; z-index: 1000; font: 12px/1.4 var(--font-ui); color: var(--text); }
+.core-mockbar-toggle { display: flex; align-items: center; gap: 8px; max-width: min(360px, calc(100vw - 24px)); padding: 4px 10px 4px 4px; border: 1px dashed var(--border-strong); border-radius: 999px; background: var(--surface-glass-strong); backdrop-filter: blur(8px); cursor: pointer; color: var(--text-muted); }
+.core-mockbar-tag { padding: 2px 8px; border-radius: 999px; background: var(--text); color: var(--bg); font-weight: 600; letter-spacing: 0.02em; }
+.core-mockbar-url { font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.core-mockbar-panel { position: absolute; left: 0; bottom: 40px; width: min(320px, calc(100vw - 24px)); padding: 12px; display: grid; gap: 8px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow-3); }
+.core-mockbar-panel label { display: grid; grid-template-columns: 120px 1fr; align-items: center; gap: 8px; }
+.core-mockbar-panel label span { color: var(--text-muted); }
+.core-mockbar-panel select { font: inherit; padding: 4px 6px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); color: var(--text); }
+.core-mockbar-links { display: flex; justify-content: space-between; padding-top: 4px; border-top: 1px solid var(--border); }
+.core-mockbar-links button { font: inherit; border: 0; background: none; color: var(--text-muted); cursor: pointer; padding: 0; }
+.core-mockbar-links a { color: var(--brand); }
+
+.core-screens { max-width: 960px; margin: 0 auto; padding: 32px 16px 96px; }
+.core-screens h1 { font-size: var(--fs-6); font-weight: 600; margin: 0 0 4px; }
+.core-screens > p { color: var(--text-muted); margin: 0 0 24px; }
+.core-screens h2 { font-size: var(--fs-3); font-weight: 600; margin: 24px 0 8px; display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; }
+.core-screens code { font: 12px var(--font-mono); color: var(--text-faint); overflow-wrap: anywhere; }
+.core-screens ul { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.core-screens li { display: flex; justify-content: space-between; gap: 16px; padding: 8px 12px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+.core-screens li:first-child { border-top: 0; }
+.core-screens li a { color: var(--brand); text-decoration: none; }
+.core-screens li a:hover { text-decoration: underline; }

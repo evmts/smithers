@@ -1,0 +1,128 @@
+import { CAPACITY_COPY, FAILURE_COPY, SIGN_IN_TO_CLONE } from "./contract"
+import type { BlobRow, CloneRow, TreeRow } from "./rows"
+import type { Repository } from "./schema"
+
+// What the view shows, from the rows the queries read (decision 0006 §2): pure functions, so a component only renders
+// their result and a TUI can show the same.
+
+/** A file list as `RepoView` takes it. */
+export type TreeProps =
+  | { readonly state: "loading" }
+  | { readonly state: "ready"; readonly paths: ReadonlyArray<string>; readonly truncated: boolean }
+  | { readonly state: "failed"; readonly message: string }
+
+/** A file as `RepoView` takes it. */
+export type FileProps =
+  | { readonly state: "loading" }
+  | { readonly state: "text"; readonly contents: string; readonly size: number }
+  | { readonly state: "binary" | "too-large"; readonly size: number }
+  | { readonly state: "failed"; readonly message: string }
+
+/** A file list row as the view shows it; no row yet is loading. */
+export const treeProps = (row: TreeRow | undefined): TreeProps => {
+  if (row === undefined || row.state === "loading") return { state: "loading" }
+  if (row.state === "failed") return { state: "failed", message: row.message ?? "" }
+  return { state: "ready", paths: row.paths, truncated: row.truncated }
+}
+
+/** A file row as the view shows it; no row yet is loading. */
+export const fileProps = (row: BlobRow | undefined): FileProps => {
+  if (row === undefined || row.state === "loading") return { state: "loading" }
+  if (row.state === "failed") return { state: "failed", message: row.message ?? "" }
+  if (row.state === "text") return { state: "text", contents: row.contents ?? "", size: row.size ?? 0 }
+  return { state: row.state, size: row.size ?? 0 }
+}
+
+/**
+ * What the repository's header shows besides its name:
+ * - `clone`: the Clone button; `sign_in`: the sign-in link in its place;
+ * - `cloning`: one spinner, from Clone pressed until the clone settles;
+ * - `refused`: why the clone failed or was refused, and Try again;
+ * - `ready`: nothing.
+ */
+export type Header =
+  | { readonly kind: "clone" | "cloning" | "ready" }
+  | { readonly kind: "sign_in"; readonly text: string }
+  | { readonly kind: "refused"; readonly text: string }
+
+/** Bytes in the largest whole unit, one decimal past KB: `512 B`, `1.2 MB`. */
+export const formatBytes = (bytes: number): string => {
+  const units = ["B", "KB", "MB", "GB", "TB"]
+  let value = bytes
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit++
+  }
+  return unit === 0 ? `${value} B` : `${value.toFixed(1)} ${units[unit]}`
+}
+
+/** A timestamp as Postgres prints it (`2026-10-20 15:40:00+00`), or ISO, in epoch milliseconds. */
+export const parseTimestamp = (value: string): number =>
+  Date.parse(value.replace(" ", "T").replace(/([+-]\d\d)$/, "$1:00"))
+
+/** A refused clone's reason, with its size or the time GitHub gives the size again. */
+export const capacityText = (repository: Repository): string => {
+  const reason = repository.capacity ?? "paused"
+  if (reason === "too_large" && repository.storedBytes !== null) {
+    return `${CAPACITY_COPY.too_large} · ${formatBytes(repository.storedBytes)}`
+  }
+  if (reason === "size_unknown" && repository.retryAt !== null) {
+    const at = new Date(parseTimestamp(repository.retryAt))
+    return `${CAPACITY_COPY.size_unknown} ${at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+  }
+  return CAPACITY_COPY[reason]
+}
+
+/**
+ * The header for `repository` as Postgres has it, this tab's own clone request, and whether someone is signed in
+ * (`null` when sign-in hasn't said). This tab's request wins until Electric delivers what it did.
+ */
+export const headerOf = (
+  repository: Repository | undefined,
+  clone: CloneRow | undefined,
+  signedIn: boolean | null,
+): Header => {
+  if (clone !== undefined) {
+    switch (clone.status) {
+      case "requesting":
+        return { kind: "cloning" }
+      case "sign_in":
+        return { kind: "sign_in", text: SIGN_IN_TO_CLONE }
+      case "limit":
+        return { kind: "refused", text: CAPACITY_COPY.paused }
+      case "failed":
+        return { kind: "refused", text: FAILURE_COPY.unavailable }
+    }
+  }
+  if (repository === undefined) return signedIn === false ? { kind: "sign_in", text: SIGN_IN_TO_CLONE } : { kind: "clone" }
+  switch (repository.status) {
+    case "cloning":
+      return { kind: "cloning" }
+    case "ready":
+      return { kind: "ready" }
+    case "failed":
+      return { kind: "refused", text: FAILURE_COPY[repository.failure ?? "unavailable"] }
+    case "capacity":
+      return { kind: "refused", text: capacityText(repository) }
+  }
+}
+
+/** The head commit's row: its message's first line, its author, its short SHA and when it was made. */
+export interface Commit {
+  readonly message: string
+  readonly author: string
+  readonly shortSha: string
+  readonly at: number
+}
+
+/** The head commit of a ready repository; `undefined` before Settle wrote it. */
+export const commitOf = (repository: Repository | undefined): Commit | undefined => {
+  if (repository?.headSha == null || repository.headAt === null) return undefined
+  return {
+    message: (repository.headMessage ?? "").split("\n", 1)[0]!,
+    author: repository.headAuthor ?? "",
+    shortSha: repository.headSha.slice(0, 7),
+    at: parseTimestamp(repository.headAt),
+  }
+}

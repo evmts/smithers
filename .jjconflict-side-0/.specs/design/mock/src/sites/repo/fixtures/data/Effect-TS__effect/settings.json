@@ -1,0 +1,81 @@
+{
+  "members": [
+    {
+      "login": "maya",
+      "role": "owner",
+      "added": "2026-09-20T04:20:00Z"
+    },
+    {
+      "login": "cora",
+      "role": "member",
+      "added": "2026-09-21T04:20:00Z"
+    }
+  ],
+  "invites": [],
+  "secrets": [
+    {
+      "name": "CHANGESET_GITHUB_TOKEN",
+      "updated": "2026-10-13T04:20:00Z",
+      "usedBy": [
+        "release-plan"
+      ]
+    },
+    {
+      "name": "WEBSITE_DISPATCH_TOKEN",
+      "updated": "2026-10-13T04:20:00Z",
+      "usedBy": [
+        "release-plan"
+      ]
+    }
+  ],
+  "models": [
+    {
+      "provider": "claude",
+      "state": "connected",
+      "account": "maya",
+      "plan": "Subscription",
+      "connected": "2026-09-28T04:20:00Z"
+    },
+    {
+      "provider": "codex",
+      "state": "connected",
+      "account": "cora",
+      "plan": "Subscription",
+      "connected": "2026-09-28T04:20:00Z"
+    }
+  ],
+  "environment": [
+    {
+      "name": "Effect runtimes",
+      "image": "node:24-bookworm",
+      "updated": "2026-10-16T04:20:00Z",
+      "size": "4 CPU · 8 GB",
+      "isDefault": true
+    }
+  ],
+  "sandboxes": {
+    "egress": "allowlist",
+    "allow": [
+      "registry.npmjs.org",
+      "jsr.io",
+      "deno.land",
+      "github.com"
+    ],
+    "services": [
+      "postgres:alpine",
+      "redis:alpine"
+    ],
+    "maxRunning": 3,
+    "idleSuspendMinutes": 30
+  },
+  "webhooks": [],
+  "sync": {
+    "github": {
+      "state": "ok",
+      "lastSync": "2026-10-18T04:08:00Z",
+      "app": "Smithers",
+      "detail": "Scenario sync receipt; not a live GitHub observation."
+    }
+  },
+  "reporting": "signed-in"
+}

@@ -1,0 +1,148 @@
+// The Node host for the worker tests: the durable flow engine the Node and Bun hosts compose (`Runtime.layer` from
+// `@smthrs/flows`), over `@smthrs/platform-node`'s host services and the compose Postgres (`pnpm db:up`), in an engine
+// schema of the test's own. A flow that runs here and on the Cloudflare Durable Object (worker/Executions.ts) is
+// host-agnostic (sdk.host-agnostic-flows in docs/rules.md).
+import * as Pg from "@effect/sql-pg"
+import { PostgresDatabase } from "@smthrs/database"
+import { type Flow, FlowRuntime } from "@smthrs/flow"
+import { EngineStore, RunStore, Runtime } from "@smthrs/flows"
+import { NodeHost } from "@smthrs/platform-node"
+import { Context, Effect, type Exit, Layer, Redacted, type Schema } from "effect"
+import { SqlClient } from "effect/sql"
+import * as TestDatabase from "../../db/TestDatabase.ts"
+
+/** Where a Node-host runtime keeps its engine: a fresh schema of the compose Postgres, dropped with the runtime. */
+export interface Engine {
+  /** The engine's schema, `flows_<random>`. */
+  readonly schema: string
+  /** A run's status in the engine's run table (`running`, `completed`, `failed`, ...), or `undefined` if unknown. */
+  readonly status: (executionId: string) => Effect.Effect<string | undefined>
+}
+
+/** What the runtime is for: the engine's owner, as the Node and Bun hosts name it. */
+export interface HostOptions {
+  /** The host id the engine fences its writes with; `node-test` unless set. */
+  readonly hostId?: string
+  /**
+   * An engine schema an earlier runtime made, to resume its runs: this runtime neither creates it nor drops it. A
+   * fresh schema, dropped with the runtime, unless set.
+   */
+  readonly schema?: string
+  /**
+   * How the engine judges an earlier owner of a run alive: by its lease unless set. A check that tells this host's
+   * incarnations apart, such as the browser's `BrowserRuntime.isAlive`, also gives each runtime an incarnation number of
+   * its own rather than the process id, as the browser host does, so two runtimes in one test process differ.
+   */
+  readonly isAlive?: RunStore.Ownership.LivenessCheck
+  /**
+   * The most connections the engine opens to the compose Postgres: 4 unless set. The suite's files build engines in
+   * parallel, and together with Electric's they must fit Postgres' limit of 100 (the pool's own default is 10).
+   */
+  readonly maxConnections?: number
+}
+
+/** A client for the compose Postgres itself, outside any engine schema, for the scope that builds it. */
+const admin = Layer.unwrap(
+  Effect.map(
+    TestDatabase.serverUrl,
+    (url) => Pg.PgClient.layer({ url: Redacted.make(url.toString()), maxConnections: 1 }),
+  ),
+)
+
+/**
+ * Builds the Node-host runtime in the caller's scope: a fresh engine schema on the compose Postgres (created by the
+ * engine's own migrations, dropped when the scope closes), with `registration` registered. Provides the engine's
+ * `FlowRuntime` and everything `registration` provides, and returns the `Engine`. Fails with
+ * `TestDatabase.Unusable`, naming `pnpm db:up`, when nothing answers at the compose Postgres.
+ */
+export const build = <ROut, RE, RR>(registration: Layer.Layer<ROut, RE, RR>, options: HostOptions = {}) =>
+  Effect.gen(function* () {
+    const server = yield* TestDatabase.serverUrl
+    const schema = options.schema ?? `flows_${crypto.randomUUID().replaceAll("-", "")}`
+    const adminContext = yield* Layer.build(admin)
+    const sql = Context.get(adminContext, SqlClient.SqlClient)
+    // Registered first, so it runs last: the runtime's connections close before the schema goes.
+    if (options.schema === undefined) {
+      yield* Effect.addFinalizer(() => Effect.orDie(sql`DROP SCHEMA IF EXISTS ${sql(schema)} CASCADE`))
+    }
+    const runtime = Runtime.layer(
+      {
+        owner: { hostId: options.hostId ?? "node-test" },
+        isAlive: options.isAlive ?? RunStore.Ownership.leaseLiveness(),
+      },
+      EngineStore.StepBoundary.layerUnsupported,
+      EngineStore.WorkspaceSandbox.layerUnsupported,
+      registration,
+    ).pipe(
+      Layer.provide(
+        options.isAlive === undefined ? EngineStore.OwnerIdentity.layer : EngineStore.OwnerIdentity.layerWithoutPid,
+      ),
+      Layer.provide(NodeHost.layer),
+      Layer.provide(NodeHost.NodeCrypto.layer),
+      Layer.provide(
+        PostgresDatabase.layer({
+          url: server.toString(),
+          driver: Pg,
+          schema,
+          postgres: { maxConnections: options.maxConnections ?? 4 },
+        }),
+      ),
+    )
+    const context = yield* Layer.build(runtime)
+    const engine: Engine = {
+      schema,
+      status: (executionId) =>
+        Effect.orDie(sql<{ readonly status: string }>`
+          SELECT status FROM ${sql(schema)}.flows_runs WHERE run_id = ${executionId}`).pipe(
+          Effect.map((rows) => rows[0]?.status),
+        ),
+    }
+    return { context, engine }
+  }).pipe(Effect.mapError(TestDatabase.explain("Postgres", "localhost:54321")))
+
+/** What `runFlow` returns: the flow's exit, its execution id and its status in the engine afterwards. */
+export interface Ran<A, E> {
+  readonly exit: Exit.Exit<A, E | FlowRuntime.FlowCycleDetected>
+  readonly executionId: string
+  readonly status: string | undefined
+}
+
+/**
+ * Runs `flow` with `payload` to its end on the Node host: builds the runtime with `registration` (`build`), executes
+ * the flow as `executionId` (a fresh UUID unless set), then closes the runtime and drops its schema. Resolves with the
+ * flow's `Exit` (its success, or its typed failure), never rejects for a flow failure; rejects only when the host
+ * itself can't be built, for example `TestDatabase.Unusable` when the compose Postgres is down.
+ */
+export const runFlow = <
+  Name extends string,
+  Payload extends Flow.AnyStructSchema,
+  Success extends Schema.Top,
+  Error extends Schema.Top,
+  Requires,
+  ROut,
+  RE,
+  RR,
+>(
+  flow: Flow.Flow<Name, Payload, Success, Error, Requires>,
+  payload: Payload["Type"],
+  registration: Layer.Layer<ROut, RE, RR>,
+  options: HostOptions & { readonly executionId?: string } = {},
+): Promise<Ran<Success["Type"], Error["Type"]>> =>
+  Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { context, engine } = yield* build(registration, options)
+        const executionId = options.executionId ?? crypto.randomUUID()
+        const flows = Context.get(context, FlowRuntime.FlowRuntime)
+        const exit = yield* Effect.exit(
+          flows.execute(flow, { executionId, payload }) as Effect.Effect<
+            Success["Type"],
+            Error["Type"] | FlowRuntime.FlowCycleDetected
+          >,
+        )
+        return { exit, executionId, status: yield* engine.status(executionId) }
+      }),
+      // What `registration` requires beyond the engine's own services (`FlowRuntime` and the rest) can't be named
+      // generically here; a registration that needs anything else fails to build, loudly.
+    ) as Effect.Effect<Ran<Success["Type"], Error["Type"]>, unknown>,
+  )

@@ -1,0 +1,30 @@
+[
+  {
+    "login": "maya",
+    "name": "maya",
+    "kind": "human",
+    "role": "owner",
+    "initials": "M"
+  },
+  {
+    "login": "cora",
+    "name": "cora",
+    "kind": "human",
+    "role": "member",
+    "initials": "C"
+  },
+  {
+    "login": "dev-ahn",
+    "name": "dev-ahn",
+    "kind": "human",
+    "role": "contributor",
+    "initials": "D"
+  },
+  {
+    "login": "smithers-agent",
+    "name": "smithers-agent",
+    "kind": "agent",
+    "role": "agent",
+    "initials": "S"
+  }
+]

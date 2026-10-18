@@ -1,0 +1,347 @@
+/**
+ * The app's own SQLite database, shared by every tab of an origin.
+ *
+ * The engine's leader, the one dedicated worker that holds the engine's Web
+ * Lock, already holds the origin's OPFS pool and the wa-sqlite build
+ * (`BrowserRuntime.layerHost`). It opens a second file there, {@link filename},
+ * on a connection of its own, and runs each tab's statements on it. A tab's
+ * {@link SharedSqlite} sends `execute` to the leader over a
+ * `BroadcastChannel`, whichever tab's worker leads, so an app loads one
+ * SQLite build and keeps one OPFS pool, never a second store with its own
+ * worker. TanStack DB's browser persistence takes {@link open}'s
+ * {@link Database} as its injected `{ execute, close }`.
+ *
+ * - A tab runs one statement at a time, in the order it asks.
+ * - A transaction a tab opens is the tab's alone until a statement ends it:
+ *   another tab's statement waits, so it never runs inside it or reads what
+ *   it has not committed.
+ * - When a tab ends with a transaction open, the leader rolls it back.
+ * - When the leader ends, the next worker takes the lock and serves the same
+ *   file. A statement it never answered is sent again. A transaction open on
+ *   the old leader ended with it, so the tab runs that transaction's
+ *   statements again on the new one, in order, and carries on if each returns
+ *   the rows it returned before; a handover is invisible to the caller, as
+ *   TanStack DB's persistence needs. If any returns other rows, the tab rolls
+ *   the transaction back and the statement fails with a `ConnectionError`. A
+ *   statement that committed the transaction just as the old leader ended is
+ *   answered as committed, never run twice.
+ *
+ * @since 1.0.0
+ */
+
+import * as Context from "effect/Context"
+import * as Deferred from "effect/Deferred"
+import * as Duration from "effect/Duration"
+import * as Effect from "effect/Effect"
+import * as Equal from "effect/Equal"
+import * as Exit from "effect/Exit"
+import * as Layer from "effect/Layer"
+import * as Option from "effect/Option"
+import * as Scope from "effect/Scope"
+import * as Semaphore from "effect/Semaphore"
+import { ConnectionError, SqlError } from "effect/sql/SqlError"
+import * as Stream from "effect/Stream"
+import * as SqlProtocol from "./internal/SqlProtocol.ts"
+import * as Statements from "./internal/Statements.ts"
+import { TabChannel } from "./TabChannel.ts"
+import * as TabChannelLayer from "./TabChannel.ts"
+import { WebLock } from "./WebLock.ts"
+import * as WebLockLayer from "./WebLock.ts"
+
+/**
+ * The app database's file, beside the engine's `engine.db` in the leader's
+ * OPFS pool.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export const filename = "app.db"
+
+/**
+ * Database operations.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Service {
+  /**
+   * Runs every statement in `sql`, binding `params` to each, and returns the
+   * rows they produce as objects keyed by column name. A statement SQLite
+   * refuses fails with its `SqlError`.
+   */
+  readonly execute: (sql: string, params?: ReadonlyArray<unknown>) => Effect.Effect<ReadonlyArray<unknown>, SqlError>
+}
+
+/**
+ * Service tag for the app's shared database.
+ *
+ * @category services
+ * @since 1.0.0
+ */
+export class SharedSqlite extends Context.Service<SharedSqlite, Service>()(
+  "@smthrs/platform-browser/SharedSqlite"
+) {}
+
+/**
+ * Which engine's leader serves the database.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Options {
+  /** The engine's name: the one its worker passes to `BrowserRuntime.run`. */
+  readonly name: string
+}
+
+type Reply = Extract<SqlProtocol.Message, { readonly _tag: "Executed" | "Failed" }>
+
+/** A statement of a tab's open transaction, and the rows it returned. */
+interface Ran {
+  readonly sql: string
+  readonly params: ReadonlyArray<unknown>
+  readonly rows: ReadonlyArray<unknown>
+}
+
+/** A tab's open transaction: the leader holding it, the request that opened it, and what it ran. */
+interface Transaction {
+  readonly leader: string
+  readonly opened: number
+  readonly ran: Array<Ran>
+}
+
+/** What a leader answers a statement of a transaction that ended with an earlier leader. */
+const lost = "@smthrs/platform-browser/TransactionLost"
+
+/** The `SqlError` a refused statement fails with. */
+const refused = (reply: Extract<Reply, { readonly _tag: "Failed" }>): SqlError =>
+  reply.error === lost ?
+    new SqlError({
+      reason: new ConnectionError({
+        cause: reply.error,
+        message: "The transaction ended with the leader that held it",
+        operation: "execute"
+      })
+    })
+    : Statements.failed(
+      { name: reply.error, code: reply.code, message: reply.message },
+      "Failed to execute statement",
+      "execute"
+    )
+
+/**
+ * Builds the service: opens the database's channel and holds this tab's
+ * lock, both until the scope closes.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const make = (options: Options): Effect.Effect<Service, never, TabChannel | WebLock | Scope.Scope> =>
+  Effect.gen(function*() {
+    const client = crypto.randomUUID()
+    // Held while this tab lives: when it ends, the leader can take it, and
+    // rolls back any transaction this tab left open.
+    yield* (yield* WebLock).hold(SqlProtocol.clientLock(options.name, client))
+    const port = yield* (yield* TabChannel).open(SqlProtocol.channel(options.name))
+    const inbox = yield* port.subscribe
+    const turn = yield* Semaphore.make(1)
+    let pending:
+      | { readonly message: unknown; readonly id: number; readonly reply: Deferred.Deferred<Reply> }
+      | undefined
+    let next = 0
+    // This tab's open transaction, if one is open: the leader holding it, the request that opened it, and every
+    // statement it ran with the rows it returned, so a new leader can run it again.
+    let transaction: Transaction | null = null
+
+    yield* Stream.fromSubscription(inbox).pipe(
+      Stream.runForEach((input) =>
+        Effect.suspend(() => {
+          const message = SqlProtocol.decode(input)
+          if (message?._tag === "Ready") return pending === undefined ? Effect.void : port.post(pending.message)
+          if (
+            (message?._tag === "Executed" || message?._tag === "Failed") && message.client === client &&
+            message.id === pending?.id
+          ) {
+            return Deferred.succeed(pending.reply, message)
+          }
+          return Effect.void
+        })
+      ),
+      Effect.forkScoped
+    )
+
+    // Sends one statement and waits for its answer, from whichever leader serves it.
+    const send = (sql: string, params: ReadonlyArray<unknown>) =>
+      Effect.gen(function*() {
+        const id = next++
+        const reply = yield* Deferred.make<Reply>()
+        const message = SqlProtocol.encode({
+          _tag: "Execute",
+          client,
+          id,
+          sql,
+          params,
+          transaction: transaction?.leader ?? null,
+          ...(transaction === null ? {} : { opened: transaction.opened })
+        })
+        pending = { message, id, reply }
+        const answer = yield* port.post(message).pipe(
+          Effect.andThen(Deferred.await(reply)),
+          Effect.ensuring(Effect.sync(() => {
+            pending = undefined
+          }))
+        )
+        return { id, answer }
+      })
+
+    // Runs one statement. When the leader holding this tab's transaction ended before answering it, the transaction
+    // runs again on the leader now serving, then the statement.
+    const run = (sql: string, params: ReadonlyArray<unknown>): Effect.Effect<ReadonlyArray<unknown>, SqlError> =>
+      Effect.gen(function*() {
+        const { answer, id } = yield* send(sql, params)
+        if (answer._tag === "Executed") {
+          if (!answer.open) transaction = null
+          else if (transaction === null) transaction = { leader: answer.leader, opened: id, ran: [] }
+          transaction?.ran.push({ sql, params, rows: answer.rows })
+          return answer.rows
+        }
+        if (answer.error !== lost) return yield* refused(answer)
+        // Only a statement sent in a transaction is lost.
+        const { ran } = transaction!
+        transaction = null
+        return (yield* replay(ran)) ? yield* run(sql, params) : yield* refused(answer)
+      })
+
+    // Runs a lost transaction's statements again, in order. The transaction stands only if each returns the rows it
+    // returned before, so everything the caller decided on them still holds; otherwise it is rolled back.
+    const replay = (ran: ReadonlyArray<Ran>) =>
+      Effect.gen(function*() {
+        for (const statement of ran) {
+          const rows = yield* Effect.option(run(statement.sql, statement.params))
+          if (Option.isNone(rows) || transaction === null || !Equal.equals(rows.value, statement.rows)) {
+            // Outside a transaction SQLite refuses it, which is as good.
+            yield* Effect.ignore(run("ROLLBACK", []))
+            return false
+          }
+        }
+        return true
+      })
+
+    const execute: Service["execute"] = (sql, params = []) => turn.withPermits(1)(run(sql, params))
+
+    return SharedSqlite.of({ execute })
+  })
+
+/**
+ * Provides the tab's {@link SharedSqlite} over the browser's own
+ * `BroadcastChannel` and Web Locks.
+ *
+ * @category layers
+ * @since 1.0.0
+ */
+export const layer = (options: Options): Layer.Layer<SharedSqlite> =>
+  Layer.effect(SharedSqlite, make(options)).pipe(
+    Layer.provide(Layer.mergeAll(TabChannelLayer.layer, WebLockLayer.layer))
+  )
+
+/**
+ * The database as a `Promise` API, the `{ execute, close }` shape TanStack
+ * DB's browser persistence (`createBrowserWASQLitePersistence`) takes.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Database {
+  /**
+   * Runs `sql` with `params`. A statement SQLite refuses rejects with a
+   * {@link SqliteError} carrying SQLite's own message and code, as wa-sqlite's
+   * own API does.
+   */
+  readonly execute: <Row = unknown>(sql: string, params?: ReadonlyArray<unknown>) => Promise<ReadonlyArray<Row>>
+  /** Closes the channel and releases this tab's lock. */
+  readonly close: () => Promise<void>
+}
+
+/**
+ * A statement {@link Database.execute} could not run, shaped as wa-sqlite's
+ * `SQLiteError`: `message` is SQLite's own, such as
+ * `duplicate column name: replay_json`, which TanStack DB's persistence reads
+ * to tell a column it already added, and `code` is SQLite's result code. When
+ * SQLite never saw the statement, as when no leader holds the transaction it
+ * belongs to, `message` is the `SqlError`'s and `code` is absent. `cause` is the
+ * `SqlError` the {@link SharedSqlite} service failed with.
+ *
+ * @category errors
+ * @since 1.0.0
+ */
+export class SqliteError extends Error {
+  override readonly name = "SQLiteError"
+  readonly code: number | undefined
+  constructor(error: SqlError) {
+    const sqlite = error.reason.cause as { readonly code?: unknown; readonly message?: unknown } | undefined
+    super(typeof sqlite?.message === "string" ? sqlite.message : error.message, { cause: error })
+    this.code = typeof sqlite?.code === "number" ? sqlite.code : undefined
+  }
+}
+
+/**
+ * What {@link open} waits for.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface OpenOptions extends Options {
+  /**
+   * How long to wait for a leader to answer the first statement, default 30
+   * seconds. A tab whose own engine worker starts with it waits at most that
+   * worker's start: loading the build and opening the pool.
+   */
+  readonly within?: Duration.Input
+}
+
+/**
+ * Opens the shared database for a `Promise` API such as TanStack DB's
+ * persistence, and resolves once a leader answers, so a caller can fall back
+ * to memory when none does. It rejects with a `SqlError` when no leader
+ * answers within `within`.
+ *
+ * ```ts
+ * const persistence = createBrowserWASQLitePersistence({
+ *   database: await SharedSqlite.open({ name: "smithers" })
+ * })
+ * ```
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const open = (options: OpenOptions): Promise<Database> =>
+  Effect.runPromise(Effect.gen(function*() {
+    const scope = yield* Scope.make()
+    const close = Scope.close(scope, Exit.void)
+    const service = yield* make(options).pipe(
+      Scope.provide(scope),
+      Effect.provide(Layer.mergeAll(TabChannelLayer.layer, WebLockLayer.layer))
+    )
+    yield* service.execute("SELECT 1").pipe(
+      Effect.timeoutOrElse({
+        duration: Duration.fromInputUnsafe(options.within ?? "30 seconds"),
+        orElse: () =>
+          Effect.fail(
+            new SqlError({
+              reason: new ConnectionError({
+                cause: "no leader",
+                message: "No engine leader answered",
+                operation: "connect"
+              })
+            })
+          )
+      }),
+      Effect.tapError(() => close)
+    )
+    return {
+      execute: <Row>(sql: string, params?: ReadonlyArray<unknown>) =>
+        Effect.runPromise(
+          service.execute(sql, params).pipe(Effect.mapError((error) => new SqliteError(error)))
+        ) as Promise<ReadonlyArray<Row>>,
+      close: () => Effect.runPromise(close)
+    }
+  }))

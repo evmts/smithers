@@ -1,0 +1,55 @@
+{
+  "blocks": [
+    {
+      "type": "prompt",
+      "title": "Ask about Smithers",
+      "placeholder": "Ask Smithers…"
+    },
+    {
+      "type": "links",
+      "links": [
+        {
+          "label": "Install Smithers",
+          "url": "https://smithers.sh/"
+        },
+        {
+          "label": "Docs",
+          "url": "https://smithers.sh/docs/"
+        },
+        {
+          "label": "Report a bug",
+          "url": "https://smithers.sh/bug"
+        }
+      ]
+    },
+    {
+      "type": "markdown",
+      "path": "docs/fixed-by-agents.md",
+      "title": "Fixed by agents"
+    },
+    {
+      "type": "app",
+      "flow": "issue.implement",
+      "title": "Fix an issue",
+      "picture": "issue"
+    },
+    {
+      "type": "app",
+      "flow": "prs.triage",
+      "title": "Review a PR",
+      "picture": "review"
+    },
+    {
+      "type": "app",
+      "flow": "wiki.ask",
+      "title": "Ask the codebase",
+      "picture": "wiki"
+    },
+    {
+      "type": "app",
+      "flow": "triggers.register",
+      "title": "Run it every night",
+      "picture": "schedule"
+    }
+  ]
+}

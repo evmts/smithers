@@ -1,0 +1,38 @@
+[
+  {
+    "slug": "getting-started",
+    "title": "Getting started",
+    "section": "Start",
+    "body": "# Getting started\n\nA tinyhttp route takes a request context and returns a Web Response. Use Bun 1.2 or Node 22 with TypeScript support.\n\n```sh\nbun add tinyhttp\n```\n\n```ts\nimport { Router } from \"tinyhttp\"\nimport { serve } from \"tinyhttp/bun\"\n\nconst app = new Router()\napp.get(\"/users/:id\", req => Response.json({ id: req.params.id }))\nconst server = serve(app, { port: 3000 })\nconsole.info(server.url)\n```\n\nFor tests, call `await app.handle(\"GET\", \"/users/42?verbose=1\")` without opening a port. A missing path returns 404; a known path with another method returns 405 and an Allow header.\n\nSee [Routing](./routing.md) for matching rules and [Adapters](./adapters.md) for Node."
+  },
+  {
+    "slug": "routing",
+    "title": "Routing",
+    "section": "Guide",
+    "body": "# Routing\n\nRegister GET, POST, PUT, PATCH, and DELETE routes with their corresponding methods. Every registration returns the router.\n\n```ts\nconst app = new Router()\n  .get(\"/users/me\", () => Response.json({ id: \"me\" }))\n  .get(\"/users/:id\", req => Response.json({ id: req.params.id }))\n  .delete(\"/users/:id\", () => new Response(null, { status: 204 }))\n```\n\nStatic segments take precedence over named parameters. Routes with equal specificity keep registration order. Parameters decode percent escapes after matching; malformed escapes return 400. A parameter cannot be empty or appear twice in a route.\n\nA GET handler answers HEAD too, retaining status and headers but discarding the body. An explicit HEAD route may be registered through a custom adapter in a future version; the current public methods do not include head().\n\nBy default trailing slashes are ignored. Pass `{ strictSlash: true }` to distinguish them. Query values are strings, repeated keys use the last value, and plus signs decode as spaces. Empty values are tracked in [issue #11](https://github.com/maya/tinyhttp/issues/11)."
+  },
+  {
+    "slug": "middleware",
+    "title": "Middleware",
+    "section": "Guide",
+    "body": "# Middleware\n\nMiddleware runs in registration order, wrapping the route handler. Call `next()` once to continue, or return a Response to finish early. Calling next twice is an error.\n\n```ts\nimport { Router, cors, logger, jsonBody, body } from \"tinyhttp\"\n\nconst app = new Router()\napp.use(logger(record => console.info(record)))\napp.use(cors({ origin: [\"https://app.example.test\"] }))\napp.use(jsonBody(64 * 1024))\napp.post(\"/items\", request => Response.json(body(request), { status: 201 }))\n```\n\nPut the logger first to include middleware time. Put CORS before authentication so preflight requests can complete. Limit JSON bytes before accepting the parsed body. The body helper returns unknown unless you supply a type; validate untrusted input before using it.\n\nUse explicit allowed origins with credentials. Browsers reject wildcard origins when credentials are enabled. The current CORS helper warns about this combination; stricter configuration validation is proposed in #33."
+  },
+  {
+    "slug": "adapters",
+    "title": "Adapters",
+    "section": "Reference",
+    "body": "# Adapters\n\nThe router accepts a Web Request and returns a Web Response. Adapters translate that boundary for the server runtime.\n\n## Bun\n\n```ts\nimport { Router } from \"tinyhttp\"\nimport { serve } from \"tinyhttp/bun\"\nconst server = serve(new Router().get(\"/\", () => new Response(\"ok\")), { port: 3000 })\nawait server.stop(true)\n```\n\nThe Bun helper binds to 127.0.0.1 by default. Choose port 0 in integration tests to avoid collisions.\n\n## Node\n\n```ts\nimport { Router } from \"tinyhttp\"\nimport { createNodeServer } from \"tinyhttp/node\"\nconst server = createNodeServer(new Router().get(\"/\", () => new Response(\"ok\")))\nserver.listen(3000, \"127.0.0.1\")\n```\n\nNode requests stream into a Web Request with duplex set to half. Responses stream back without collecting their bodies first. Keep process shutdown in the host application. Client disconnect cancellation and streaming Set-Cookie handling are tracked separately."
+  },
+  {
+    "slug": "errors",
+    "title": "Errors",
+    "section": "Reference",
+    "body": "# Errors\n\nThrow an HttpError for an expected client failure. Its status and message become the response. Unexpected errors return a generic 500 without leaking the original message.\n\n```ts\nimport { Router, HttpError } from \"tinyhttp\"\n\nconst app = new Router()\napp.get(\"/users/:id\", request => {\n  if (!/^\\d+$/.test(request.params.id ?? \"\")) throw new HttpError(400, \"Use a numeric user id\")\n  return Response.json({ id: request.params.id })\n})\n```\n\nSupply onError in RouterOptions to integrate your own reporting. Never serialize unknown errors to a public response. Invalid path encoding and malformed query encoding return 400. An oversized JSON body returns 413, and malformed JSON returns 400.\n\nThe default response body is `{ \"error\": \"message\" }`. The logger records path and status without query strings or body values."
+  },
+  {
+    "slug": "recipes",
+    "title": "Recipes",
+    "section": "Examples",
+    "body": "# Recipes\n\n## Request timing\n\n```ts\napp.use(async (_request, next) => {\n  const start = performance.now()\n  const response = await next()\n  const headers = new Headers(response.headers)\n  headers.set(\"server-timing\", `app;dur=${performance.now() - start}`)\n  return new Response(response.body, { status: response.status, headers })\n})\n```\n\n## A health check\n\n```ts\napp.get(\"/health\", () => Response.json({ status: \"ok\" }))\n```\n\n## JSON input\n\n```ts\napp.use(jsonBody(16 * 1024))\napp.post(\"/echo\", request => Response.json(body(request)))\n```\n\nThe examples directory contains a Bun hello server and a Node users API. Keep authorization, schema validation, and storage in your application; tinyhttp handles request routing."
+  }
+]

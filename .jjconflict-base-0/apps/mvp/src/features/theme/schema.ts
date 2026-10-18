@@ -1,0 +1,14 @@
+import { Schema } from "effect"
+import { THEME_MODES } from "./contract"
+
+// The theme's rows: one preference, this device's, kept on the device and never synced.
+
+/** A theme mode. */
+export const Mode = Schema.Literals(THEME_MODES)
+
+/** The id of the theme's row in `preferences`. */
+export const THEME = "theme"
+
+/** This device's theme: the one row of the `preferences` collection today. */
+export const Preference = Schema.Struct({ id: Schema.Literal(THEME), mode: Mode })
+export type Preference = typeof Preference.Type

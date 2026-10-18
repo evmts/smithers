@@ -1,0 +1,4357 @@
+[
+  {
+    "n": 101,
+    "title": "Hover on an Effeck form crashes the language server",
+    "state": "merged",
+    "kind": "landing",
+    "author": "smithers-agent",
+    "agent": {
+      "run": "run-8fadacb5",
+      "flow": "implement-issue",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    },
+    "base": "main",
+    "head": "fix/hover-forms",
+    "opened": "2026-10-18T02:41:48Z",
+    "updated": "2026-10-18T02:51:48Z",
+    "body": "Fixes #31.\n\nHover over the provide or catch word in an Effeck file. The language server stops answering.\n\nExpected: a hover describing the form, followed by the declaration documentation.\n\nReproduce with the service example in the welcome guide.\n\nmaya reviewed the regression and landed this source patch.",
+    "reviewers": [
+      "maya"
+    ],
+    "reviews": [
+      {
+        "author": "maya",
+        "date": "2026-10-18T02:48:48Z",
+        "state": "approved",
+        "body": "Checked the regression and generated types."
+      }
+    ],
+    "reviewComments": [
+      {
+        "path": "typescript/tsc/internal/astnav/effeck.go",
+        "line": 36,
+        "author": "maya",
+        "date": "2026-10-18T02:48:48Z",
+        "body": "Keep the source-token walk independent of child order. The concurrent binding and items need their own parameter types.",
+        "resolved": true
+      }
+    ],
+    "comments": [],
+    "checks": [
+      {
+        "name": "Source checks",
+        "state": "success",
+        "duration": "2m",
+        "detail": "Synthesized execution of this source change’s checks.",
+        "run": "run-8fadacb5"
+      }
+    ],
+    "commits": [
+      "8fadacb51dc15e706bf033af8878f8f4e9a2047d"
+    ],
+    "files": [
+      {
+        "path": "typescript/tsc/internal/astnav/effeck.go",
+        "status": "added",
+        "additions": 77,
+        "deletions": 0,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -0,0 +1,77 @@"
+          },
+          {
+            "kind": "add",
+            "text": "package astnav",
+            "new": 1
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 2
+          },
+          {
+            "kind": "add",
+            "text": "import (",
+            "new": 3
+          },
+          {
+            "kind": "add",
+            "text": "\t\"github.com/microsoft/TypeScript/tsc/internal/ast\"",
+            "new": 4
+          },
+          {
+            "kind": "add",
+            "text": "\t\"github.com/microsoft/TypeScript/tsc/internal/scanner\"",
+            "new": 5
+          },
+          {
+            "kind": "add",
+            "text": "\t\"github.com/microsoft/TypeScript/tsc/internal/tspath\"",
+            "new": 6
+          },
+          {
+            "kind": "add",
+            "text": ")",
+            "new": 7
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 8
+          },
+          {
+            "kind": "add",
+            "text": "// Effeck (.effeck) forms parse into the TypeScript nodes they abbreviate",
+            "new": 9
+          },
+          {
+            "kind": "add",
+            "text": "// (parser/effeck.go), and the nodes a form synthesizes carry",
+            "new": 10
+          },
+          {
+            "kind": "add",
+            "text": "// NodeFlagsReparsed, so this package's walk skips them. Two things then leave",
+            "new": 11
+          },
+          {
+            "kind": "add",
+            "text": "// a source token where getTokenAtPosition expects only trivia between a node's",
+            "new": 12
+          },
+          {
+            "kind": "add",
+            "text": "// children:",
+            "new": 13
+          },
+          {
+            "kind": "add",
+            "text": "//",
+            "new": 14
+          },
+          {
+            "kind": "add",
+            "text": "//   - The word that names a form, such as error, match, when, join, or the all",
+            "new": 15
+          },
+          {
+            "kind": "add",
+            "text": "//     of await.all, is an identifier with no node of its own.",
+            "new": 16
+          },
+          {
+            "kind": "add",
+            "text": "//   - A desugared node can hold source children out of source order, or",
+            "new": 17
+          },
+          {
+            "kind": "add",
+            "text": "//     outside its own range, so a binary search by position misses them:",
+            "new": 18
+          },
+          {
+            "kind": "add",
+            "text": "//     for concurrent(8) (const id of ids) passes ids before 8, and its body",
+            "new": 19
+          },
+          {
+            "kind": "add",
+            "text": "//     function starts after the binding id.",
+            "new": 20
+          },
+          {
+            "kind": "add",
+            "text": "//",
+            "new": 21
+          },
+          {
+            "kind": "add",
+            "text": "// TypeScript code has neither, so outside .effeck files an identifier in",
+            "new": 22
+          },
+          {
+            "kind": "add",
+            "text": "// trivia still panics, as upstream.",
+            "new": 23
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 24
+          },
+          {
+            "kind": "add",
+            "text": "func isEffeckSourceFile(sourceFile *ast.SourceFile) bool {",
+            "new": 25
+          },
+          {
+            "kind": "add",
+            "text": "\treturn tspath.FileExtensionIs(string(sourceFile.FileName()), tspath.ExtensionEffeck)",
+            "new": 26
+          },
+          {
+            "kind": "add",
+            "text": "}",
+            "new": 27
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 28
+          },
+          {
+            "kind": "add",
+            "text": "// effeckSourceToken returns the source node that is exactly the token at",
+            "new": 29
+          },
+          {
+            "kind": "add",
+            "text": "// [start, end), found below current or else below its nearest ancestor that",
+            "new": 30
+          },
+          {
+            "kind": "add",
+            "text": "// holds it, or nil. A desugared node can range over a sibling's source child,",
+            "new": 31
+          },
+          {
+            "kind": "add",
+            "text": "// as the body function of for concurrent ranges over its items, so the walk",
+            "new": 32
+          },
+          {
+            "kind": "add",
+            "text": "// can stop below the node that holds the token. It visits every child in",
+            "new": 33
+          },
+          {
+            "kind": "add",
+            "text": "// order rather than searching by position, and never descends into a",
+            "new": 34
+          },
+          {
+            "kind": "add",
+            "text": "// synthesized node, so the node it returns has only source nodes above it.",
+            "new": 35
+          },
+          {
+            "kind": "add",
+            "text": "func effeckSourceToken(sourceFile *ast.SourceFile, current *ast.Node, start int, end int) *ast.Node {",
+            "new": 36
+          },
+          {
+            "kind": "add",
+            "text": "\tvar found *ast.Node",
+            "new": 37
+          },
+          {
+            "kind": "add",
+            "text": "\tvar visit ast.Visitor",
+            "new": 38
+          },
+          {
+            "kind": "add",
+            "text": "\tvisit = func(node *ast.Node) bool {",
+            "new": 39
+          },
+          {
+            "kind": "add",
+            "text": "\t\tif node.Flags&ast.NodeFlagsReparsed != 0 || node.End() < end ||",
+            "new": 40
+          },
+          {
+            "kind": "add",
+            "text": "\t\t\tscanner.GetTokenPosOfNode(node, sourceFile, false /*includeJSDoc*/) > start {",
+            "new": 41
+          },
+          {
+            "kind": "add",
+            "text": "\t\t\treturn false",
+            "new": 42
+          },
+          {
+            "kind": "add",
+            "text": "\t\t}",
+            "new": 43
+          },
+          {
+            "kind": "add",
+            "text": "\t\tif node.End() == end && scanner.GetTokenPosOfNode(node, sourceFile, false /*includeJSDoc*/) == start && ast.IsTokenKind(node.Kind) {",
+            "new": 44
+          },
+          {
+            "kind": "add",
+            "text": "\t\t\tfound = node",
+            "new": 45
+          },
+          {
+            "kind": "add",
+            "text": "\t\t\treturn true",
+            "new": 46
+          },
+          {
+            "kind": "add",
+            "text": "\t\t}",
+            "new": 47
+          },
+          {
+            "kind": "add",
+            "text": "\t\treturn node.ForEachChild(visit)",
+            "new": 48
+          },
+          {
+            "kind": "add",
+            "text": "\t}",
+            "new": 49
+          },
+          {
+            "kind": "add",
+            "text": "\tfor scope := current; scope != nil && found == nil; scope = scope.Parent {",
+            "new": 50
+          },
+          {
+            "kind": "add",
+            "text": "\t\tscope.ForEachChild(visit)",
+            "new": 51
+          },
+          {
+            "kind": "add",
+            "text": "\t}",
+            "new": 52
+          },
+          {
+            "kind": "add",
+            "text": "\treturn found",
+            "new": 53
+          },
+          {
+            "kind": "add",
+            "text": "}",
+            "new": 54
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 55
+          },
+          {
+            "kind": "add",
+            "text": "// effeckWordNode returns the node that stands for the word of an Effeck form",
+            "new": 56
+          },
+          {
+            "kind": "add",
+            "text": "// at the scanner's current token, where no source node covers it. The word",
+            "new": 57
+          },
+          {
+            "kind": "add",
+            "text": "// of a declaration that parses into a class, error, service, control, or the",
+            "new": 58
+          },
+          {
+            "kind": "add",
+            "text": "// older layer, is that class's class keyword, and the word of one that parses",
+            "new": 59
+          },
+          {
+            "kind": "add",
+            "text": "// into a const, schema or layer, is its const keyword, so the language",
+            "new": 60
+          },
+          {
+            "kind": "add",
+            "text": "// service treats each as TypeScript treats those keywords: rename and go to",
+            "new": 61
+          },
+          {
+            "kind": "add",
+            "text": "// definition move to the declared name. Any other word stands for the form",
+            "new": 62
+          },
+          {
+            "kind": "add",
+            "text": "// itself, the node that contains it, which hovers describe.",
+            "new": 63
+          },
+          {
+            "kind": "add",
+            "text": "func effeckWordNode(sourceFile *ast.SourceFile, current *ast.Node, s *scanner.Scanner, fullStart int, end int, flags ast.TokenFlags) *ast.Node {",
+            "new": 64
+          },
+          {
+            "kind": "add",
+            "text": "\tswitch s.TokenValue() {",
+            "new": 65
+          },
+          {
+            "kind": "add",
+            "text": "\tcase \"error\", \"service\", \"control\", \"layer\", \"schema\":",
+            "new": 66
+          },
+          {
+            "kind": "add",
+            "text": "\t\tif ast.IsClassDeclaration(current) {",
+            "new": 67
+          },
+          {
+            "kind": "add",
+            "text": "\t\t\treturn sourceFile.GetOrCreateToken(ast.KindClassKeyword, fullStart, end, current, flags)",
+            "new": 68
+          },
+          {
+            "kind": "add",
+            "text": "\t\t}",
+            "new": 69
+          },
+          {
+            "kind": "add",
+            "text": "\t\tif ast.IsVariableStatement(current) {",
+            "new": 70
+          },
+          {
+            "kind": "add",
+            "text": "\t\t\tif list := current.AsVariableStatement().DeclarationList; list != nil && list.Flags&ast.NodeFlagsReparsed == 0 {",
+            "new": 71
+          },
+          {
+            "kind": "add",
+            "text": "\t\t\t\treturn sourceFile.GetOrCreateToken(ast.KindConstKeyword, fullStart, end, list, flags)",
+            "new": 72
+          },
+          {
+            "kind": "add",
+            "text": "\t\t\t}",
+            "new": 73
+          },
+          {
+            "kind": "add",
+            "text": "\t\t}",
+            "new": 74
+          },
+          {
+            "kind": "add",
+            "text": "\t}",
+            "new": 75
+          },
+          {
+            "kind": "add",
+            "text": "\treturn current",
+            "new": 76
+          },
+          {
+            "kind": "add",
+            "text": "}",
+            "new": 77
+          }
+        ]
+      }
+    ],
+    "fixes": [
+      31
+    ],
+    "labels": [
+      "bug",
+      "compiler",
+      "accepted",
+      "fixed-by-agents"
+    ],
+    "merged": {
+      "by": "maya",
+      "date": "2026-10-18T02:51:48Z",
+      "sha": "8fadacb51dc15e706bf033af8878f8f4e9a2047d"
+    }
+  },
+  {
+    "n": 102,
+    "title": "Keep golden cases out of the converter prompt",
+    "state": "draft",
+    "kind": "landing",
+    "author": "smithers-agent",
+    "agent": {
+      "run": "run-followup-102",
+      "flow": "convert-golden",
+      "harness": "Codex · gpt-6.1-sol",
+      "for": "maya"
+    },
+    "base": "main",
+    "head": "converter/heldout-gate",
+    "opened": "2026-10-18T04:15:00Z",
+    "updated": "2026-10-18T04:57:00Z",
+    "body": "Fixes #32.\n\nThe prompt builder reads the cases used to score conversion. Use ten separate example pairs and reject normalized copies of held-out input or output, including copies inside larger blocks.\n\nThis follow-up review shows the related source patch. The follow-up branch has no landed commit yet.",
+    "reviewers": [
+      "maya"
+    ],
+    "reviews": [],
+    "reviewComments": [],
+    "comments": [],
+    "checks": [
+      {
+        "name": "Regression checks",
+        "state": "pending",
+        "detail": "Waiting for the next stage.",
+        "run": "run-followup-102"
+      }
+    ],
+    "commits": [],
+    "files": [
+      {
+        "path": ".smithers/flows/convert/build-prompt.mjs",
+        "status": "modified",
+        "additions": 8,
+        "deletions": 11,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -1,10 +1,11 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "// Writes prompt.md, the convert flow's system prompt: rules, the cheat sheet from",
+            "old": 1,
+            "new": 1
+          },
+          {
+            "kind": "del",
+            "text": "// .smithers/instructions/app.md, and every golden case as an example. Generated, never hand-edited.",
+            "old": 2
+          },
+          {
+            "kind": "add",
+            "text": "// .smithers/instructions/app.md, and the separate examples/ pairs. Generated, never hand-edited.",
+            "new": 2
+          },
+          {
+            "kind": "ctx",
+            "text": "//   node .smithers/flows/convert/build-prompt.mjs           write prompt.md",
+            "old": 3,
+            "new": 3
+          },
+          {
+            "kind": "ctx",
+            "text": "//   node .smithers/flows/convert/build-prompt.mjs --check   exit 1 if prompt.md is stale",
+            "old": 4,
+            "new": 4
+          },
+          {
+            "kind": "del",
+            "text": "import { readdirSync, readFileSync, writeFileSync } from \"node:fs\"",
+            "old": 5
+          },
+          {
+            "kind": "add",
+            "text": "import { readFileSync, writeFileSync } from \"node:fs\"",
+            "new": 5
+          },
+          {
+            "kind": "ctx",
+            "text": "import { join } from \"node:path\"",
+            "old": 6,
+            "new": 6
+          },
+          {
+            "kind": "ctx",
+            "text": "import { fileURLToPath } from \"node:url\"",
+            "old": 7,
+            "new": 7
+          },
+          {
+            "kind": "add",
+            "text": "import { casesIn } from \"./cases.mjs\"",
+            "new": 8
+          },
+          {
+            "kind": "ctx",
+            "text": "",
+            "old": 8,
+            "new": 9
+          },
+          {
+            "kind": "ctx",
+            "text": "const here = fileURLToPath(new URL(\".\", import.meta.url))",
+            "old": 9,
+            "new": 10
+          },
+          {
+            "kind": "ctx",
+            "text": "const root = join(here, \"../../..\")",
+            "old": 10,
+            "new": 11
+          },
+          {
+            "kind": "hunk",
+            "text": "@@ -16,17 +17,13 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "  return app.slice(start, end).trim()",
+            "old": 16,
+            "new": 17
+          },
+          {
+            "kind": "ctx",
+            "text": "}",
+            "old": 17,
+            "new": 18
+          },
+          {
+            "kind": "ctx",
+            "text": "",
+            "old": 18,
+            "new": 19
+          },
+          {
+            "kind": "del",
+            "text": "export function goldenCases(dir = join(here, \"golden\")) {",
+            "old": 19
+          },
+          {
+            "kind": "del",
+            "text": "  return readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort().map((name) => ({",
+            "old": 20
+          },
+          {
+            "kind": "del",
+            "text": "    name,",
+            "old": 21
+          },
+          {
+            "kind": "del",
+            "text": "    input: readFileSync(join(dir, name, \"input.ts\"), \"utf8\").trimEnd(),",
+            "old": 22
+          },
+          {
+            "kind": "del",
+            "text": "    expected: readFileSync(join(dir, name, \"expected.effeck\"), \"utf8\").trimEnd()",
+            "old": 23
+          },
+          {
+            "kind": "del",
+            "text": "  }))",
+            "old": 24
+          },
+          {
+            "kind": "add",
+            "text": "export function exampleCases(dir = join(here, \"examples\")) {",
+            "new": 20
+          },
+          {
+            "kind": "add",
+            "text": "  return casesIn(dir)",
+            "new": 21
+          },
+          {
+            "kind": "ctx",
+            "text": "}",
+            "old": 25,
+            "new": 22
+          },
+          {
+            "kind": "ctx",
+            "text": "",
+            "old": 26,
+            "new": 23
+          },
+          {
+            "kind": "ctx",
+            "text": "export function buildPrompt() {",
+            "old": 27,
+            "new": 24
+          },
+          {
+            "kind": "del",
+            "text": "  const examples = goldenCases().map((c) => `### ${c.name}\\n\\nInput:\\n\\n\\`\\`\\`ts\\n${c.input}\\n\\`\\`\\`\\n\\nOutput:\\n\\n\\`\\`\\`ts\\n${c.expected}\\n\\`\\`\\``)",
+            "old": 28
+          },
+          {
+            "kind": "del",
+            "text": "  return `<!-- Generated by build-prompt.mjs from instructions/app.md and golden/. Do not edit. -->",
+            "old": 29
+          },
+          {
+            "kind": "add",
+            "text": "  const examples = exampleCases().map((c) => `### ${c.name}\\n\\nInput:\\n\\n\\`\\`\\`ts\\n${c.input}\\n\\`\\`\\`\\n\\nOutput:\\n\\n\\`\\`\\`ts\\n${c.expected}\\n\\`\\`\\``)",
+            "new": 25
+          },
+          {
+            "kind": "add",
+            "text": "  return `<!-- Generated by build-prompt.mjs from instructions/app.md and examples/. Do not edit. -->",
+            "new": 26
+          },
+          {
+            "kind": "ctx",
+            "text": "# Convert Effect TypeScript to Effeck",
+            "old": 30,
+            "new": 27
+          },
+          {
+            "kind": "ctx",
+            "text": "",
+            "old": 31,
+            "new": 28
+          },
+          {
+            "kind": "ctx",
+            "text": "You convert one Effect 4 TypeScript file into the equivalent Effeck file.",
+            "old": 32,
+            "new": 29
+          },
+          {
+            "kind": "hunk",
+            "text": "@@ -55,6 +52,6 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "    console.log(\"prompt.md is up to date\")",
+            "old": 55,
+            "new": 52
+          },
+          {
+            "kind": "ctx",
+            "text": "  } else {",
+            "old": 56,
+            "new": 53
+          },
+          {
+            "kind": "ctx",
+            "text": "    writeFileSync(target, next)",
+            "old": 57,
+            "new": 54
+          },
+          {
+            "kind": "del",
+            "text": "    console.log(`wrote prompt.md (${Buffer.byteLength(next)} bytes, ${goldenCases().length} examples)`)",
+            "old": 58
+          },
+          {
+            "kind": "add",
+            "text": "    console.log(`wrote prompt.md (${Buffer.byteLength(next)} bytes, ${exampleCases().length} examples)`)",
+            "new": 55
+          },
+          {
+            "kind": "ctx",
+            "text": "  }",
+            "old": 59,
+            "new": 56
+          },
+          {
+            "kind": "ctx",
+            "text": "}",
+            "old": 60,
+            "new": 57
+          }
+        ]
+      }
+    ],
+    "fixes": [
+      32
+    ],
+    "labels": [
+      "converter",
+      "accepted"
+    ]
+  },
+  {
+    "n": 103,
+    "title": "Show inferred types inside docs code blocks",
+    "state": "open",
+    "kind": "landing",
+    "author": "smithers-agent",
+    "agent": {
+      "run": "run-doc-hovers-live",
+      "flow": "docs-sync",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    },
+    "base": "main",
+    "head": "docs/hover-types",
+    "opened": "2026-10-18T04:15:00Z",
+    "updated": "2026-10-18T04:57:00Z",
+    "body": "Fixes #33.\n\nUncommitted proposal on docs/hover-types for maya. The file preview is available; commit history and check evidence are unavailable.",
+    "reviewers": [
+      "maya"
+    ],
+    "reviews": [],
+    "reviewComments": [],
+    "comments": [],
+    "checks": [],
+    "commits": [],
+    "files": [
+      {
+        "path": "docs/tools/render-hovers.ts",
+        "status": "added",
+        "additions": 94,
+        "deletions": 0,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -0,0 +1,94 @@"
+          },
+          {
+            "kind": "add",
+            "text": "import { existsSync, readFileSync } from \"node:fs\"",
+            "new": 1
+          },
+          {
+            "kind": "add",
+            "text": "import { resolve } from \"node:path\"",
+            "new": 2
+          },
+          {
+            "kind": "add",
+            "text": "import { Marked, type Tokens } from \"marked\"",
+            "new": 3
+          },
+          {
+            "kind": "add",
+            "text": "import type { ErrorNode, HoverNode, PageHovers } from \"./hovers\"",
+            "new": 4
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 5
+          },
+          {
+            "kind": "add",
+            "text": "const escape = (text: string) => text.replace(/&/g, \"&amp;\").replace(/</g, \"&lt;\").replace(/>/g, \"&gt;\").replace(/\"/g, \"&quot;\").replace(/'/g, \"&#39;\")",
+            "new": 6
+          },
+          {
+            "kind": "add",
+            "text": "const markdown = new Marked({ renderer: {",
+            "new": 7
+          },
+          {
+            "kind": "add",
+            "text": "  html: ({ text }) => escape(text),",
+            "new": 8
+          },
+          {
+            "kind": "add",
+            "text": "  // Documentation links often name declarations outside the published site.",
+            "new": 9
+          },
+          {
+            "kind": "add",
+            "text": "  link(this: any, token: Tokens.Link) { return this.parser.parseInline(token.tokens) },",
+            "new": 10
+          },
+          {
+            "kind": "add",
+            "text": "  image: ({ text }) => escape(text)",
+            "new": 11
+          },
+          {
+            "kind": "add",
+            "text": "} })",
+            "new": 12
+          },
+          {
+            "kind": "add",
+            "text": "const shortDocs = (docs: string) => {",
+            "new": 13
+          },
+          {
+            "kind": "add",
+            "text": "  const summary = docs.trim().split(/\\n\\s*\\n/).slice(0, 2).join(\"\\n\\n\")",
+            "new": 14
+          },
+          {
+            "kind": "add",
+            "text": "  const short = summary.length > 600 ? summary.slice(0, 599) + \"…\" : summary",
+            "new": 15
+          },
+          {
+            "kind": "add",
+            "text": "  return short.split(/\\n\\s*\\n/).filter(Boolean).map(p => `<span class=\"docs-paragraph\">${markdown.parseInline(p)}</span>`).join(\"\")",
+            "new": 16
+          },
+          {
+            "kind": "add",
+            "text": "}",
+            "new": 17
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 18
+          },
+          {
+            "kind": "add",
+            "text": "/** Offsets are UTF-16, as in the LSP cache. Invalid/stale ranges never eat code. */",
+            "new": 19
+          },
+          {
+            "kind": "add",
+            "text": "export function renderHovers(code: string, nodes: (HoverNode | ErrorNode)[], highlight: (text: string) => string = escape): string {",
+            "new": 20
+          },
+          {
+            "kind": "add",
+            "text": "  const valid = nodes.filter(n => Number.isInteger(n.start) && Number.isInteger(n.length) && n.start >= 0 && n.start <= code.length && n.length >= 0)",
+            "new": 21
+          },
+          {
+            "kind": "add",
+            "text": "  const errors = valid.filter((n): n is ErrorNode => n.type === \"error\")",
+            "new": 22
+          },
+          {
+            "kind": "add",
+            "text": "  const hovers = valid.filter((n): n is HoverNode => n.type === \"hover\" && n.length > 0 && n.start + n.length <= code.length && code.slice(n.start, n.start + n.length) === n.target)",
+            "new": 23
+          },
+          {
+            "kind": "add",
+            "text": "    .sort((a, b) => a.start - b.start || b.length - a.length)",
+            "new": 24
+          },
+          {
+            "kind": "add",
+            "text": "  const part = (start: number, end: number) => {",
+            "new": 25
+          },
+          {
+            "kind": "add",
+            "text": "    const cuts = [...new Set([start, end, ...errors.flatMap(n => [n.start, n.start + n.length]).filter(p => p > start && p < end)])].sort((a, b) => a - b)",
+            "new": 26
+          },
+          {
+            "kind": "add",
+            "text": "    return cuts.slice(0, -1).map((from, i) => {",
+            "new": 27
+          },
+          {
+            "kind": "add",
+            "text": "      const to = cuts[i + 1]",
+            "new": 28
+          },
+          {
+            "kind": "add",
+            "text": "      const active = errors.filter(n => n.start < to && n.start + n.length > from)",
+            "new": 29
+          },
+          {
+            "kind": "add",
+            "text": "      const text = highlight(code.slice(from, to))",
+            "new": 30
+          },
+          {
+            "kind": "add",
+            "text": "      return active.length ? `<span class=\"docs-error\" title=\"${escape(active.map(n => `${n.code}: ${n.text}`).join(\"\\n\"))}\">${text}</span>` : text",
+            "new": 31
+          },
+          {
+            "kind": "add",
+            "text": "    }).join(\"\")",
+            "new": 32
+          },
+          {
+            "kind": "add",
+            "text": "  }",
+            "new": 33
+          },
+          {
+            "kind": "add",
+            "text": "  let out = \"\", cursor = 0",
+            "new": 34
+          },
+          {
+            "kind": "add",
+            "text": "  for (const node of hovers) {",
+            "new": 35
+          },
+          {
+            "kind": "add",
+            "text": "    if (node.start < cursor) continue",
+            "new": 36
+          },
+          {
+            "kind": "add",
+            "text": "    const end = node.start + node.length",
+            "new": 37
+          },
+          {
+            "kind": "add",
+            "text": "    out += part(cursor, node.start)",
+            "new": 38
+          },
+          {
+            "kind": "add",
+            "text": "    out += `<span class=\"docs-hover\" tabindex=\"0\">${part(node.start, end)}<span class=\"docs-popup\" role=\"tooltip\"><span class=\"docs-type\">${escape(node.text)}</span>${node.docs ? `<span class=\"docs-docs\">${shortDocs(node.docs)}</span>` : \"\"}</span></span>`",
+            "new": 39
+          },
+          {
+            "kind": "add",
+            "text": "    cursor = end",
+            "new": 40
+          },
+          {
+            "kind": "add",
+            "text": "  }",
+            "new": 41
+          },
+          {
+            "kind": "add",
+            "text": "  out += part(cursor, code.length)",
+            "new": 42
+          },
+          {
+            "kind": "add",
+            "text": "  for (const node of errors.filter(n => n.start === code.length)) {",
+            "new": 43
+          },
+          {
+            "kind": "add",
+            "text": "    out += `<span class=\"docs-error docs-error-end\" title=\"${escape(`${node.code}: ${node.text}`)}\" aria-label=\"${escape(`${node.code}: ${node.text}`)}\"></span>`",
+            "new": 44
+          },
+          {
+            "kind": "add",
+            "text": "  }",
+            "new": 45
+          },
+          {
+            "kind": "add",
+            "text": "  return out",
+            "new": 46
+          },
+          {
+            "kind": "add",
+            "text": "}",
+            "new": 47
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 48
+          },
+          {
+            "kind": "add",
+            "text": "// Fixed positioning escapes pre's overflow-x scrollport. A viewport-sized panel",
+            "new": 49
+          },
+          {
+            "kind": "add",
+            "text": "// also keeps long compiler signatures readable on narrow screens, in both themes.",
+            "new": 50
+          },
+          {
+            "kind": "add",
+            "text": "export const hoverCss = process.env.EFFECK_DOCS_HOVERS === \"1\" ? `",
+            "new": 51
+          },
+          {
+            "kind": "add",
+            "text": ".docs-hover { cursor: help; text-decoration: underline dotted var(--muted); text-underline-offset: 3px; }",
+            "new": 52
+          },
+          {
+            "kind": "add",
+            "text": ".docs-hover:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }",
+            "new": 53
+          },
+          {
+            "kind": "add",
+            "text": ".docs-popup {",
+            "new": 54
+          },
+          {
+            "kind": "add",
+            "text": "  display: none; position: fixed; z-index: 10; left: 50%; bottom: 16px; transform: translateX(-50%);",
+            "new": 55
+          },
+          {
+            "kind": "add",
+            "text": "  width: max-content; max-width: min(60ch, calc(100vw - 32px)); max-height: 45vh; overflow: auto;",
+            "new": 56
+          },
+          {
+            "kind": "add",
+            "text": "  padding: 12px 16px; border: 1px solid var(--rule); border-radius: 8px;",
+            "new": 57
+          },
+          {
+            "kind": "add",
+            "text": "  background: var(--panel); color: var(--fg); box-shadow: 0 4px 20px color-mix(in srgb, var(--fg) 20%, transparent);",
+            "new": 58
+          },
+          {
+            "kind": "add",
+            "text": "  font: 14px/1.5 -apple-system, BlinkMacSystemFont, \"Segoe UI\", Helvetica, Arial, sans-serif;",
+            "new": 59
+          },
+          {
+            "kind": "add",
+            "text": "  white-space: normal; overflow-wrap: anywhere; text-decoration: none; cursor: auto;",
+            "new": 60
+          },
+          {
+            "kind": "add",
+            "text": "}",
+            "new": 61
+          },
+          {
+            "kind": "add",
+            "text": ".docs-hover:hover > .docs-popup, .docs-hover:focus-within > .docs-popup { display: block; }",
+            "new": 62
+          },
+          {
+            "kind": "add",
+            "text": ".docs-type { display: block; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }",
+            "new": 63
+          },
+          {
+            "kind": "add",
+            "text": ".docs-docs { display: block; margin-top: 8px; border-top: 1px solid var(--rule); padding-top: 8px; }",
+            "new": 64
+          },
+          {
+            "kind": "add",
+            "text": ".docs-paragraph { display: block; margin: 4px 0; }",
+            "new": 65
+          },
+          {
+            "kind": "add",
+            "text": "pre.code .docs-popup code { white-space: normal; font-size: 13px; }",
+            "new": 66
+          },
+          {
+            "kind": "add",
+            "text": ".docs-error { text-decoration: underline wavy var(--accent); text-underline-offset: 3px; }",
+            "new": 67
+          },
+          {
+            "kind": "add",
+            "text": ".docs-error-end { display: inline-block; width: .6ch; border-bottom: 2px solid var(--accent); }",
+            "new": 68
+          },
+          {
+            "kind": "add",
+            "text": "` : \"\"",
+            "new": 69
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 70
+          },
+          {
+            "kind": "add",
+            "text": "/** One opt-in renderer swap per page; an absent cache leaves Marked untouched. */",
+            "new": 71
+          },
+          {
+            "kind": "add",
+            "text": "export function useHoverRenderer(marked: Marked, source: string, highlight: (text: string, lang: string) => string): void {",
+            "new": 72
+          },
+          {
+            "kind": "add",
+            "text": "  if (process.env.EFFECK_DOCS_HOVERS !== \"1\" || source.startsWith(\"spec/\")) return",
+            "new": 73
+          },
+          {
+            "kind": "add",
+            "text": "  const file = resolve(import.meta.dir, \"../../.cache/docs-hovers\", \"src\", source.replace(/\\.md$/, \".json\"))",
+            "new": 74
+          },
+          {
+            "kind": "add",
+            "text": "  if (!existsSync(file)) return",
+            "new": 75
+          },
+          {
+            "kind": "add",
+            "text": "  const page: PageHovers = JSON.parse(readFileSync(file, \"utf8\"))",
+            "new": 76
+          },
+          {
+            "kind": "add",
+            "text": "  const blocks = new Map<string, typeof page.blocks>()",
+            "new": 77
+          },
+          {
+            "kind": "add",
+            "text": "  const normalized = (code: string) => code.replace(/\\n+$/, \"\")",
+            "new": 78
+          },
+          {
+            "kind": "add",
+            "text": "  for (const block of page.blocks) {",
+            "new": 79
+          },
+          {
+            "kind": "add",
+            "text": "    const key = normalized(block.code)",
+            "new": 80
+          },
+          {
+            "kind": "add",
+            "text": "    blocks.set(key, [...blocks.get(key) ?? [], block])",
+            "new": 81
+          },
+          {
+            "kind": "add",
+            "text": "  }",
+            "new": 82
+          },
+          {
+            "kind": "add",
+            "text": "  const originalCode = marked.defaults.renderer!.code",
+            "new": 83
+          },
+          {
+            "kind": "add",
+            "text": "  marked.use({ renderer: { code(token: Tokens.Code) {",
+            "new": 84
+          },
+          {
+            "kind": "add",
+            "text": "    const [lang, role] = (token.lang ?? \"\").split(/\\s+/)",
+            "new": 85
+          },
+          {
+            "kind": "add",
+            "text": "    if (![\"effeck\", \"ts\"].includes(lang) || role === \"effect\") return false",
+            "new": 86
+          },
+          {
+            "kind": "add",
+            "text": "    const block = blocks.get(normalized(token.text))?.shift()",
+            "new": 87
+          },
+          {
+            "kind": "add",
+            "text": "    if (!block?.nodes.length) return false",
+            "new": 88
+          },
+          {
+            "kind": "add",
+            "text": "    // Keep the existing caption, figure and pre markup byte for byte.",
+            "new": 89
+          },
+          {
+            "kind": "add",
+            "text": "    const renderer = marked.defaults.renderer!",
+            "new": 90
+          },
+          {
+            "kind": "add",
+            "text": "    const original = originalCode.call(renderer, token) as string",
+            "new": 91
+          },
+          {
+            "kind": "add",
+            "text": "    return original.replace(/<code>[\\s\\S]*<\\/code>/, () => `<code>${renderHovers(token.text, block.nodes, text => highlight(text, lang))}</code>`)",
+            "new": 92
+          },
+          {
+            "kind": "add",
+            "text": "  } } })",
+            "new": 93
+          },
+          {
+            "kind": "add",
+            "text": "}",
+            "new": 94
+          }
+        ]
+      }
+    ],
+    "fixes": [
+      33
+    ],
+    "labels": [
+      "docs",
+      "accepted"
+    ]
+  },
+  {
+    "n": 104,
+    "title": "Repack skipped platform optional dependencies",
+    "state": "open",
+    "kind": "landing",
+    "author": "smithers-agent",
+    "agent": {
+      "run": "run-release-review",
+      "flow": "release",
+      "harness": "Codex · gpt-6.1-sol",
+      "for": "maya"
+    },
+    "base": "main",
+    "head": "release/optional-packages",
+    "opened": "2026-10-18T04:15:00Z",
+    "updated": "2026-10-18T04:57:00Z",
+    "body": "Fixes #34.\n\nA clean npm ci after scaffolding can install a lockfile without the platform compiler. Repack the tarball, check payloads and permissions, then install from the generated lockfile.\n\nThis follow-up review shows the related source patch. The follow-up branch has no landed commit yet.",
+    "reviewers": [
+      "maya"
+    ],
+    "reviews": [],
+    "reviewComments": [],
+    "comments": [],
+    "checks": [
+      {
+        "name": "Regression checks",
+        "state": "pending",
+        "detail": "Waiting for the next stage.",
+        "run": "run-release-review"
+      }
+    ],
+    "commits": [],
+    "files": [
+      {
+        "path": "scripts/release/repack.mjs",
+        "status": "added",
+        "additions": 80,
+        "deletions": 0,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -0,0 +1,80 @@"
+          },
+          {
+            "kind": "add",
+            "text": "#!/usr/bin/env node",
+            "new": 1
+          },
+          {
+            "kind": "add",
+            "text": "// Repack only effeck's existing tarball when EFFECK_SKIP leaves platforms out.",
+            "new": 2
+          },
+          {
+            "kind": "add",
+            "text": "// No build or staging tree is used. All payloads except package.json must stay",
+            "new": 3
+          },
+          {
+            "kind": "add",
+            "text": "// byte-identical, including the launcher and the packaged editor extension.",
+            "new": 4
+          },
+          {
+            "kind": "add",
+            "text": "//",
+            "new": 5
+          },
+          {
+            "kind": "add",
+            "text": "//   EFFECK_SKIP=win32 node scripts/release/repack.mjs [tarball-directory]",
+            "new": 6
+          },
+          {
+            "kind": "add",
+            "text": "import { deepStrictEqual } from \"node:assert/strict\"",
+            "new": 7
+          },
+          {
+            "kind": "add",
+            "text": "import { execFileSync } from \"node:child_process\"",
+            "new": 8
+          },
+          {
+            "kind": "add",
+            "text": "import { createHash } from \"node:crypto\"",
+            "new": 9
+          },
+          {
+            "kind": "add",
+            "text": "import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, renameSync, rmSync, writeFileSync } from \"node:fs\"",
+            "new": 10
+          },
+          {
+            "kind": "add",
+            "text": "import { tmpdir } from \"node:os\"",
+            "new": 11
+          },
+          {
+            "kind": "add",
+            "text": "import { join, resolve } from \"node:path\"",
+            "new": 12
+          },
+          {
+            "kind": "add",
+            "text": "import { fileURLToPath } from \"node:url\"",
+            "new": 13
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 14
+          },
+          {
+            "kind": "add",
+            "text": "function payload(dir) {",
+            "new": 15
+          },
+          {
+            "kind": "add",
+            "text": "  return readdirSync(dir, { recursive: true }).sort().flatMap((path) => {",
+            "new": 16
+          },
+          {
+            "kind": "add",
+            "text": "    const file = join(dir, path)",
+            "new": 17
+          },
+          {
+            "kind": "add",
+            "text": "    const stat = lstatSync(file)",
+            "new": 18
+          },
+          {
+            "kind": "add",
+            "text": "    if (stat.isDirectory()) return []",
+            "new": 19
+          },
+          {
+            "kind": "add",
+            "text": "    return [{ path, mode: stat.mode & 0o777, content: stat.isSymbolicLink() ? readlinkSync(file) : readFileSync(file) }]",
+            "new": 20
+          },
+          {
+            "kind": "add",
+            "text": "  })",
+            "new": 21
+          },
+          {
+            "kind": "add",
+            "text": "}",
+            "new": 22
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 23
+          },
+          {
+            "kind": "add",
+            "text": "export function repack(tarballs, skip = process.env.EFFECK_SKIP ?? \"\") {",
+            "new": 24
+          },
+          {
+            "kind": "add",
+            "text": "  tarballs = resolve(tarballs)",
+            "new": 25
+          },
+          {
+            "kind": "add",
+            "text": "  const manifestPath = join(tarballs, \"manifest.json\")",
+            "new": 26
+          },
+          {
+            "kind": "add",
+            "text": "  const manifest = JSON.parse(readFileSync(manifestPath, \"utf8\"))",
+            "new": 27
+          },
+          {
+            "kind": "add",
+            "text": "  const entry = manifest.packages.find((pkg) => pkg.name === \"effeck\")",
+            "new": 28
+          },
+          {
+            "kind": "add",
+            "text": "  if (!entry) throw new Error(\"repack: manifest.json has no effeck package\")",
+            "new": 29
+          },
+          {
+            "kind": "add",
+            "text": "  const tarball = join(tarballs, entry.file)",
+            "new": 30
+          },
+          {
+            "kind": "add",
+            "text": "  const scratch = mkdtempSync(join(tmpdir(), \"effeck-repack-\"))",
+            "new": 31
+          },
+          {
+            "kind": "add",
+            "text": "  try {",
+            "new": 32
+          },
+          {
+            "kind": "add",
+            "text": "    execFileSync(\"tar\", [\"-xzf\", tarball, \"-C\", scratch])",
+            "new": 33
+          },
+          {
+            "kind": "add",
+            "text": "    const dir = join(scratch, \"package\")",
+            "new": 34
+          },
+          {
+            "kind": "add",
+            "text": "    const packagePath = join(dir, \"package.json\")",
+            "new": 35
+          },
+          {
+            "kind": "add",
+            "text": "    const pkg = JSON.parse(readFileSync(packagePath, \"utf8\"))",
+            "new": 36
+          },
+          {
+            "kind": "add",
+            "text": "    if (pkg.name !== \"effeck\" || pkg.version !== manifest.version || pkg.version !== entry.version) {",
+            "new": 37
+          },
+          {
+            "kind": "add",
+            "text": "      throw new Error(`repack: expected effeck@${manifest.version}, got ${pkg.name}@${pkg.version}`)",
+            "new": 38
+          },
+          {
+            "kind": "add",
+            "text": "    }",
+            "new": 39
+          },
+          {
+            "kind": "add",
+            "text": "    const patterns = skip.split(/[,\\s]+/).filter(Boolean)",
+            "new": 40
+          },
+          {
+            "kind": "add",
+            "text": "    const removed = Object.keys(pkg.optionalDependencies ?? {}).filter((name) => patterns.some((pattern) => name.includes(pattern)))",
+            "new": 41
+          },
+          {
+            "kind": "add",
+            "text": "    for (const name of removed) delete pkg.optionalDependencies[name]",
+            "new": 42
+          },
+          {
+            "kind": "add",
+            "text": "    if (removed.length) {",
+            "new": 43
+          },
+          {
+            "kind": "add",
+            "text": "      writeFileSync(packagePath, JSON.stringify(pkg, null, 2) + \"\\n\")",
+            "new": 44
+          },
+          {
+            "kind": "add",
+            "text": "      const expected = payload(dir)",
+            "new": 45
+          },
+          {
+            "kind": "add",
+            "text": "      const packedDir = join(scratch, \"packed\")",
+            "new": 46
+          },
+          {
+            "kind": "add",
+            "text": "      mkdirSync(packedDir)",
+            "new": 47
+          },
+          {
+            "kind": "add",
+            "text": "      const [packed] = JSON.parse(execFileSync(\"npm\", [\"pack\", dir, \"--pack-destination\", packedDir, \"--ignore-scripts\", \"--json\", \"--silent\"], { encoding: \"utf8\" }))",
+            "new": 48
+          },
+          {
+            "kind": "add",
+            "text": "      if (packed.name !== pkg.name || packed.version !== pkg.version || packed.filename !== entry.file) {",
+            "new": 49
+          },
+          {
+            "kind": "add",
+            "text": "        throw new Error(\"repack: npm pack changed the package identity\")",
+            "new": 50
+          },
+          {
+            "kind": "add",
+            "text": "      }",
+            "new": 51
+          },
+          {
+            "kind": "add",
+            "text": "      const repacked = join(packedDir, packed.filename)",
+            "new": 52
+          },
+          {
+            "kind": "add",
+            "text": "      const check = join(scratch, \"check\")",
+            "new": 53
+          },
+          {
+            "kind": "add",
+            "text": "      mkdirSync(check)",
+            "new": 54
+          },
+          {
+            "kind": "add",
+            "text": "      execFileSync(\"tar\", [\"-xzf\", repacked, \"-C\", check])",
+            "new": 55
+          },
+          {
+            "kind": "add",
+            "text": "      deepStrictEqual(payload(join(check, \"package\")), expected, \"repack: npm pack changed package files or permissions\")",
+            "new": 56
+          },
+          {
+            "kind": "add",
+            "text": "      const sha256 = createHash(\"sha256\").update(readFileSync(repacked)).digest(\"hex\")",
+            "new": 57
+          },
+          {
+            "kind": "add",
+            "text": "      Object.assign(entry, { size: packed.size, unpackedSize: packed.unpackedSize, files: packed.files.length, sha256 })",
+            "new": 58
+          },
+          {
+            "kind": "add",
+            "text": "      // Move the verified tarball into place only after packing and validation.",
+            "new": 59
+          },
+          {
+            "kind": "add",
+            "text": "      // Copy through the destination filesystem so TMPDIR can be another mount.",
+            "new": 60
+          },
+          {
+            "kind": "add",
+            "text": "      const next = `${tarball}.repack`",
+            "new": 61
+          },
+          {
+            "kind": "add",
+            "text": "      try {",
+            "new": 62
+          },
+          {
+            "kind": "add",
+            "text": "        writeFileSync(next, readFileSync(repacked))",
+            "new": 63
+          },
+          {
+            "kind": "add",
+            "text": "        renameSync(next, tarball)",
+            "new": 64
+          },
+          {
+            "kind": "add",
+            "text": "      } finally {",
+            "new": 65
+          },
+          {
+            "kind": "add",
+            "text": "        rmSync(next, { force: true })",
+            "new": 66
+          },
+          {
+            "kind": "add",
+            "text": "      }",
+            "new": 67
+          },
+          {
+            "kind": "add",
+            "text": "      writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + \"\\n\")",
+            "new": 68
+          },
+          {
+            "kind": "add",
+            "text": "      console.log(`repack: removed ${removed.join(\", \")} from effeck@${pkg.version}`)",
+            "new": 69
+          },
+          {
+            "kind": "add",
+            "text": "    }",
+            "new": 70
+          },
+          {
+            "kind": "add",
+            "text": "    console.log(`repack: effeck@${pkg.version} optionalDependencies: ${JSON.stringify(pkg.optionalDependencies ?? {})}`)",
+            "new": 71
+          },
+          {
+            "kind": "add",
+            "text": "    console.log(`repack: ${entry.file} sha256 ${createHash(\"sha256\").update(readFileSync(tarball)).digest(\"hex\")}`)",
+            "new": 72
+          },
+          {
+            "kind": "add",
+            "text": "  } finally {",
+            "new": 73
+          },
+          {
+            "kind": "add",
+            "text": "    rmSync(scratch, { recursive: true, force: true })",
+            "new": 74
+          },
+          {
+            "kind": "add",
+            "text": "  }",
+            "new": 75
+          },
+          {
+            "kind": "add",
+            "text": "}",
+            "new": 76
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 77
+          },
+          {
+            "kind": "add",
+            "text": "if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {",
+            "new": 78
+          },
+          {
+            "kind": "add",
+            "text": "  repack(process.argv[2] ?? fileURLToPath(new URL(\"../../dist-npm/tarballs/\", import.meta.url)))",
+            "new": 79
+          },
+          {
+            "kind": "add",
+            "text": "}",
+            "new": 80
+          }
+        ]
+      }
+    ],
+    "fixes": [
+      34
+    ],
+    "labels": [
+      "bug",
+      "release",
+      "accepted"
+    ]
+  },
+  {
+    "n": 105,
+    "title": "Do not deploy docs that fail on the released compiler",
+    "state": "merged",
+    "kind": "landing",
+    "author": "smithers-agent",
+    "agent": {
+      "run": "run-597d7986",
+      "flow": "release",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    },
+    "base": "main",
+    "head": "docs/release-snippets",
+    "opened": "2026-10-18T03:58:01Z",
+    "updated": "2026-10-18T04:08:01Z",
+    "body": "Fixes #37.\n\nCompile guide snippets with compiler and runtime release tarballs. The checkout compiler can accept syntax users cannot install.\n\nmaya reviewed the regression and landed this source patch.",
+    "reviewers": [
+      "maya"
+    ],
+    "reviews": [
+      {
+        "author": "maya",
+        "date": "2026-10-18T04:05:01Z",
+        "state": "approved",
+        "body": "Checked the regression and generated types."
+      }
+    ],
+    "reviewComments": [],
+    "comments": [],
+    "checks": [
+      {
+        "name": "Source checks",
+        "state": "success",
+        "duration": "2m",
+        "detail": "Synthesized execution of this source change’s checks.",
+        "run": "run-597d7986"
+      }
+    ],
+    "commits": [
+      "597d7986c10b0774705a915602966a3a1c17042c"
+    ],
+    "files": [
+      {
+        "path": "scripts/deploy-docs.sh",
+        "status": "modified",
+        "additions": 35,
+        "deletions": 0,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -27,6 +27,41 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "done",
+            "old": 27,
+            "new": 27
+          },
+          {
+            "kind": "ctx",
+            "text": "bun \"$root/docs/tools/render-user.ts\"",
+            "old": 28,
+            "new": 28
+          },
+          {
+            "kind": "ctx",
+            "text": "",
+            "old": 29,
+            "new": 29
+          },
+          {
+            "kind": "add",
+            "text": "# Until 0.0.2 ships, every docs example must compile with the release that",
+            "new": 30
+          },
+          {
+            "kind": "add",
+            "text": "# `npm create effeck@latest` installs: the 0.0.1 native compiler and runtime",
+            "new": 31
+          },
+          {
+            "kind": "add",
+            "text": "# from the release tarballs, not this checkout's build.",
+            "new": 32
+          },
+          {
+            "kind": "add",
+            "text": "# EFFECK_SKIP_RELEASE_SNIPPETS=1 skips the check, and needs",
+            "new": 33
+          },
+          {
+            "kind": "add",
+            "text": "# EFFECK_SKIP_RELEASE_SNIPPETS_REASON, which is printed.",
+            "new": 34
+          },
+          {
+            "kind": "add",
+            "text": "release=${EFFECK_RELEASE_VERSION:-0.0.1}",
+            "new": 35
+          },
+          {
+            "kind": "add",
+            "text": "tarballs=${EFFECK_RELEASE_TARBALLS:-$root/dist-npm/tarballs}",
+            "new": 36
+          },
+          {
+            "kind": "add",
+            "text": "if [ \"${EFFECK_SKIP_RELEASE_SNIPPETS:-}\" = 1 ]; then",
+            "new": 37
+          },
+          {
+            "kind": "add",
+            "text": "\techo \"deploy-docs: skipping the $release release snippet check: ${EFFECK_SKIP_RELEASE_SNIPPETS_REASON:?deploy-docs: set EFFECK_SKIP_RELEASE_SNIPPETS_REASON to say why}\"",
+            "new": 38
+          },
+          {
+            "kind": "add",
+            "text": "else",
+            "new": 39
+          },
+          {
+            "kind": "add",
+            "text": "\tcase \"$(uname -s)-$(uname -m)\" in",
+            "new": 40
+          },
+          {
+            "kind": "add",
+            "text": "\t\tDarwin-arm64) platform=darwin-arm64 ;;",
+            "new": 41
+          },
+          {
+            "kind": "add",
+            "text": "\t\tDarwin-x86_64) platform=darwin-x64 ;;",
+            "new": 42
+          },
+          {
+            "kind": "add",
+            "text": "\t\tLinux-aarch64 | Linux-arm64) platform=linux-arm64 ;;",
+            "new": 43
+          },
+          {
+            "kind": "add",
+            "text": "\t\tLinux-x86_64) platform=linux-x64 ;;",
+            "new": 44
+          },
+          {
+            "kind": "add",
+            "text": "\t\t*) echo \"deploy-docs: no $release release compiler for $(uname -s)-$(uname -m)\" >&2; exit 1 ;;",
+            "new": 45
+          },
+          {
+            "kind": "add",
+            "text": "\tesac",
+            "new": 46
+          },
+          {
+            "kind": "add",
+            "text": "\trelease_dir=$(mktemp -d \"${TMPDIR:-/tmp}/effeck-release.XXXXXX\")",
+            "new": 47
+          },
+          {
+            "kind": "add",
+            "text": "\ttrap 'rm -rf \"$release_dir\"' EXIT",
+            "new": 48
+          },
+          {
+            "kind": "add",
+            "text": "\tfor name in \"effeck-$platform\" effeck-runtime; do",
+            "new": 49
+          },
+          {
+            "kind": "add",
+            "text": "\t\tmkdir -p \"$release_dir/$name\"",
+            "new": 50
+          },
+          {
+            "kind": "add",
+            "text": "\t\ttar xzf \"$tarballs/$name-$release.tgz\" -C \"$release_dir/$name\" 2>/dev/null ||",
+            "new": 51
+          },
+          {
+            "kind": "add",
+            "text": "\t\t\t{ echo \"deploy-docs: missing $tarballs/$name-$release.tgz; set EFFECK_RELEASE_TARBALLS\" >&2; exit 1; }",
+            "new": 52
+          },
+          {
+            "kind": "add",
+            "text": "\tdone",
+            "new": 53
+          },
+          {
+            "kind": "add",
+            "text": "\t# As an npm install puts effect beside effeck-runtime, give the extracted runtime",
+            "new": 54
+          },
+          {
+            "kind": "add",
+            "text": "\t# the repository's pinned effect, so its declarations resolve their imports.",
+            "new": 55
+          },
+          {
+            "kind": "add",
+            "text": "\tmkdir -p \"$release_dir/effeck-runtime/package/node_modules\"",
+            "new": 56
+          },
+          {
+            "kind": "add",
+            "text": "\tln -s \"$(cd \"$root/packages/runtime/node_modules/effect\" && pwd -P)\" \"$release_dir/effeck-runtime/package/node_modules/effect\"",
+            "new": 57
+          },
+          {
+            "kind": "add",
+            "text": "\techo \"deploy-docs: compiling every docs example with effeck $release ($platform) and effeck-runtime $release\"",
+            "new": 58
+          },
+          {
+            "kind": "add",
+            "text": "\tEFFECK_BINARY=\"$release_dir/effeck-$platform/package/bin/effeck\" EFFECK_RUNTIME_DIR=\"$release_dir/effeck-runtime/package\" \\",
+            "new": 59
+          },
+          {
+            "kind": "add",
+            "text": "\t\tbun \"$root/docs/tools/check-snippets.ts\" > \"$release_dir/snippets.log\" ||",
+            "new": 60
+          },
+          {
+            "kind": "add",
+            "text": "\t\t{ tail -40 \"$release_dir/snippets.log\" >&2; echo \"deploy-docs: a docs example does not compile with the $release release\" >&2; exit 1; }",
+            "new": 61
+          },
+          {
+            "kind": "add",
+            "text": "\ttail -1 \"$release_dir/snippets.log\"",
+            "new": 62
+          },
+          {
+            "kind": "add",
+            "text": "fi",
+            "new": 63
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 64
+          },
+          {
+            "kind": "ctx",
+            "text": "rm -rf \"$site\"",
+            "old": 30,
+            "new": 65
+          },
+          {
+            "kind": "ctx",
+            "text": "mkdir -p \"$site\"",
+            "old": 31,
+            "new": 66
+          },
+          {
+            "kind": "ctx",
+            "text": "cp -R \"$root/docs/user/site/.\" \"$site/\"",
+            "old": 32,
+            "new": 67
+          }
+        ]
+      }
+    ],
+    "fixes": [
+      37
+    ],
+    "labels": [
+      "docs",
+      "fixed-by-agents"
+    ],
+    "merged": {
+      "by": "maya",
+      "date": "2026-10-18T04:08:01Z",
+      "sha": "597d7986c10b0774705a915602966a3a1c17042c"
+    }
+  },
+  {
+    "n": 106,
+    "title": "Keep the landing page behind an explicit build flag",
+    "state": "merged",
+    "kind": "landing",
+    "author": "smithers-agent",
+    "agent": {
+      "run": "run-c13a02ce",
+      "flow": "docs-sync",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    },
+    "base": "main",
+    "head": "docs/landing-opt-in",
+    "opened": "2026-10-18T04:11:51Z",
+    "updated": "2026-10-18T04:21:51Z",
+    "body": "Fixes #38.\n\nPlain docs deployments must keep onboarding at the site root. Only EFFECK_LANDING=1 should build the draft landing page.\n\nmaya reviewed the regression and landed this source patch.",
+    "reviewers": [
+      "maya"
+    ],
+    "reviews": [
+      {
+        "author": "maya",
+        "date": "2026-10-18T04:18:51Z",
+        "state": "approved",
+        "body": "Checked the regression and generated types."
+      }
+    ],
+    "reviewComments": [],
+    "comments": [],
+    "checks": [
+      {
+        "name": "Source checks",
+        "state": "success",
+        "duration": "2m",
+        "detail": "Synthesized execution of this source change’s checks.",
+        "run": "run-c13a02ce"
+      }
+    ],
+    "commits": [
+      "c13a02cec95070e965b1b408ada43ef866ae51c6"
+    ],
+    "files": [
+      {
+        "path": "docs/tools/check-landing.ts",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 1,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -1,4 +1,4 @@"
+          },
+          {
+            "kind": "del",
+            "text": "// bun docs/tools/check-landing.ts [--online]",
+            "old": 1
+          },
+          {
+            "kind": "add",
+            "text": "// EFFECK_LANDING=1 bun docs/tools/render-user.ts, then bun docs/tools/check-landing.ts [--online]",
+            "new": 1
+          },
+          {
+            "kind": "ctx",
+            "text": "// Checks the assembled Monday landing without making any first-load requests.",
+            "old": 2,
+            "new": 2
+          },
+          {
+            "kind": "ctx",
+            "text": "// --online also checks the external navigation destination, without credentials.",
+            "old": 3,
+            "new": 3
+          },
+          {
+            "kind": "ctx",
+            "text": "import { existsSync, readFileSync } from \"node:fs\"",
+            "old": 4,
+            "new": 4
+          }
+        ]
+      }
+    ],
+    "fixes": [
+      38
+    ],
+    "labels": [
+      "docs"
+    ],
+    "merged": {
+      "by": "maya",
+      "date": "2026-10-18T04:21:51Z",
+      "sha": "c13a02cec95070e965b1b408ada43ef866ae51c6"
+    }
+  },
+  {
+    "n": 107,
+    "title": "Check using, interruption regions and finally exits in the mapper",
+    "state": "open",
+    "kind": "landing",
+    "author": "smithers-agent",
+    "agent": {
+      "run": "run-followup-107",
+      "flow": "implement-issue",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    },
+    "base": "main",
+    "head": "mapper/region-completions",
+    "opened": "2026-10-18T04:15:00Z",
+    "updated": "2026-10-18T04:57:00Z",
+    "body": "Fixes #40.\n\nProject using through acquisition so the enclosing block removes Scope. Preserve try Exit values in finally (exit) and completion records through interruption regions.\n\nThis follow-up review shows the related source patch. The follow-up branch has no landed commit yet.",
+    "reviewers": [
+      "maya"
+    ],
+    "reviews": [],
+    "reviewComments": [],
+    "comments": [],
+    "checks": [
+      {
+        "name": "Regression checks",
+        "state": "pending",
+        "detail": "Follow-up checks are running.",
+        "run": "run-followup-107"
+      }
+    ],
+    "commits": [],
+    "files": [
+      {
+        "path": "packages/ts-mapper/prelude.d.ts",
+        "status": "modified",
+        "additions": 11,
+        "deletions": 0,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -62,6 +62,17 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "// The runtime's region helpers (D13, D15, D132, D173): regions, handle",
+            "old": 62,
+            "new": 62
+          },
+          {
+            "kind": "ctx",
+            "text": "// statements, and provide blocks lower onto these.",
+            "old": 63,
+            "new": 63
+          },
+          {
+            "kind": "ctx",
+            "text": "export { $catch, $finally, $tailResume, $tailResumeWith, $provideService } from \"effeck-runtime\"",
+            "old": 64,
+            "new": 64
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 65
+          },
+          {
+            "kind": "add",
+            "text": "/**",
+            "new": 66
+          },
+          {
+            "kind": "add",
+            "text": " * `using x = acquire()` in an Effect body (D47, D94, D14): the block's Scope",
+            "new": 67
+          },
+          {
+            "kind": "add",
+            "text": " * holds an acquisition, which removes Scope from the acquisition's R; any",
+            "new": 68
+          },
+          {
+            "kind": "add",
+            "text": " * other value is a Disposable the block releases.",
+            "new": 69
+          },
+          {
+            "kind": "add",
+            "text": " */",
+            "new": 70
+          },
+          {
+            "kind": "add",
+            "text": "export declare function $acquire<A, E, R>(acquisition: EffectModule.Effect<A, E, R>): EffectModule.Effect<A, E, Exclude<R, ScopeModule.Scope>>",
+            "new": 71
+          },
+          {
+            "kind": "add",
+            "text": "export declare function $acquire<T>(value: T): EffectModule.Effect<T, never, never>",
+            "new": 72
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 73
+          },
+          {
+            "kind": "add",
+            "text": "// finally (exit) { ... } (D178), and the interruption blocks (D179, D180).",
+            "new": 74
+          },
+          {
+            "kind": "add",
+            "text": "export { $finallyExit, uninterruptible, restore, interruptible } from \"effeck-runtime\"",
+            "new": 75
+          },
+          {
+            "kind": "ctx",
+            "text": "",
+            "old": 65,
+            "new": 76
+          },
+          {
+            "kind": "ctx",
+            "text": "// The pattern matching helpers the parser writes for match and is (D206-D225).",
+            "old": 66,
+            "new": 77
+          },
+          {
+            "kind": "ctx",
+            "text": "export { $is, $extract, $rest, $noMatch, $patternError } from \"effeck-runtime\"",
+            "old": 67,
+            "new": 78
+          }
+        ]
+      },
+      {
+        "path": "typescript/tsc/internal/effeckmapper/plan.go",
+        "status": "modified",
+        "additions": 6,
+        "deletions": 1,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -59,6 +59,9 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "\teditRecord",
+            "old": 59,
+            "new": 59
+          },
+          {
+            "kind": "ctx",
+            "text": "\t// editDispatch acts on a region's completion record after it runs.",
+            "old": 60,
+            "new": 60
+          },
+          {
+            "kind": "ctx",
+            "text": "\teditDispatch",
+            "old": 61,
+            "new": 61
+          },
+          {
+            "kind": "add",
+            "text": "\t// editUsing acquires a using declaration's value in the block's Scope",
+            "new": 62
+          },
+          {
+            "kind": "add",
+            "text": "\t// (D47, D94): its initializer, passed by name.",
+            "new": 63
+          },
+          {
+            "kind": "add",
+            "text": "\teditUsing",
+            "new": 64
+          },
+          {
+            "kind": "ctx",
+            "text": ")",
+            "old": 62,
+            "new": 65
+          },
+          {
+            "kind": "ctx",
+            "text": "",
+            "old": 63,
+            "new": 66
+          },
+          {
+            "kind": "ctx",
+            "text": "// part says which part of a kind an edit is.",
+            "old": 64,
+            "new": 67
+          },
+          {
+            "kind": "hunk",
+            "text": "@@ -174,6 +177,8 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "\t\ttext = pick(e.part, helperRef(\"$use\")+\"(\", \"\", \")\")",
+            "old": 174,
+            "new": 177
+          },
+          {
+            "kind": "ctx",
+            "text": "\tcase editValueCall:",
+            "old": 175,
+            "new": 178
+          },
+          {
+            "kind": "ctx",
+            "text": "\t\ttext = pick(e.part, helperRef(\"$value\")+\"(\", \"\", \")\")",
+            "old": 176,
+            "new": 179
+          },
+          {
+            "kind": "add",
+            "text": "\tcase editUsing:",
+            "new": 180
+          },
+          {
+            "kind": "add",
+            "text": "\t\ttext = pick(e.part, \"(yield* \"+helperRef(\"$acquire\")+\"(\", \"\", \"))\")",
+            "new": 181
+          },
+          {
+            "kind": "ctx",
+            "text": "\t}",
+            "old": 177,
+            "new": 182
+          },
+          {
+            "kind": "ctx",
+            "text": "\treturn r.resolve(text), true",
+            "old": 178,
+            "new": 183
+          },
+          {
+            "kind": "ctx",
+            "text": "}",
+            "old": 179,
+            "new": 184
+          },
+          {
+            "kind": "hunk",
+            "text": "@@ -197,7 +202,7 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "// String names k, as reports and the executable rendering's errors do.",
+            "old": 197,
+            "new": 202
+          },
+          {
+            "kind": "ctx",
+            "text": "func (k editKind) String() string {",
+            "old": 198,
+            "new": 203
+          },
+          {
+            "kind": "ctx",
+            "text": "\treturn [...]string{\"syntax\", \"witness\", \"run\", \"effect body\", \"contract\", \"program\", \"fail\", \"service call\",",
+            "old": 199,
+            "new": 204
+          },
+          {
+            "kind": "del",
+            "text": "\t\t\"value call\", \"region\", \"record\", \"dispatch\"}[k]",
+            "old": 200
+          },
+          {
+            "kind": "add",
+            "text": "\t\t\"value call\", \"region\", \"record\", \"dispatch\", \"using\"}[k]",
+            "new": 205
+          },
+          {
+            "kind": "ctx",
+            "text": "}",
+            "old": 201,
+            "new": 206
+          },
+          {
+            "kind": "ctx",
+            "text": "",
+            "old": 202,
+            "new": 207
+          },
+          {
+            "kind": "ctx",
+            "text": "// executable is the executable rendering, a placeholder: it leaves out",
+            "old": 203,
+            "new": 208
+          }
+        ]
+      }
+    ],
+    "fixes": [
+      40
+    ],
+    "labels": [
+      "mapper",
+      "accepted"
+    ]
+  },
+  {
+    "n": 108,
+    "title": "Resolve lambda and by-name forms through the forms table",
+    "state": "draft",
+    "kind": "landing",
+    "author": "smithers-agent",
+    "agent": {
+      "run": "run-followup-108",
+      "flow": "implement-issue",
+      "harness": "Claude Code · claude-opus-5-5",
+      "for": "maya"
+    },
+    "base": "main",
+    "head": "mapper/lambda-forms",
+    "opened": "2026-10-18T04:15:00Z",
+    "updated": "2026-10-18T04:57:00Z",
+    "body": "Fixes #35.\n\nUse the syntax-only resolver for lambda, method, block parameter and by-name argument lowering. Report EK9100 when a form requires a choice. Keep the fork’s literal types and error unions.\n\nThis follow-up review shows the related source patch. The follow-up branch has no landed commit yet.",
+    "reviewers": [
+      "maya"
+    ],
+    "reviews": [],
+    "reviewComments": [],
+    "comments": [],
+    "checks": [
+      {
+        "name": "Regression checks",
+        "state": "pending",
+        "detail": "Follow-up checks are running.",
+        "run": "run-followup-108"
+      }
+    ],
+    "commits": [],
+    "files": [
+      {
+        "path": "packages/ts-mapper/prelude.d.ts",
+        "status": "modified",
+        "additions": 33,
+        "deletions": 3,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -70,6 +70,9 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": " */",
+            "old": 70,
+            "new": 70
+          },
+          {
+            "kind": "ctx",
+            "text": "export declare function $acquire<A, E, R>(acquisition: EffectModule.Effect<A, E, R>): EffectModule.Effect<A, E, Exclude<R, ScopeModule.Scope>>",
+            "old": 71,
+            "new": 71
+          },
+          {
+            "kind": "ctx",
+            "text": "export declare function $acquire<T>(value: T): EffectModule.Effect<T, never, never>",
+            "old": 72,
+            "new": 72
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 73
+          },
+          {
+            "kind": "add",
+            "text": "/** A fork in a block (D19, D96): the block's Scope owns the fiber, so Scope leaves R. */",
+            "new": 74
+          },
+          {
+            "kind": "add",
+            "text": "export declare function $scoped<A, E, R>(fork: EffectModule.Effect<A, E, R>): EffectModule.Effect<A, E, Exclude<R, ScopeModule.Scope>>",
+            "new": 75
+          },
+          {
+            "kind": "ctx",
+            "text": "",
+            "old": 73,
+            "new": 76
+          },
+          {
+            "kind": "ctx",
+            "text": "// finally (exit) { ... } (D178), and the interruption blocks (D179, D180).",
+            "old": 74,
+            "new": 77
+          },
+          {
+            "kind": "ctx",
+            "text": "export { $finallyExit, uninterruptible, restore, interruptible } from \"effeck-runtime\"",
+            "old": 75,
+            "new": 78
+          },
+          {
+            "kind": "hunk",
+            "text": "@@ -111,10 +114,24 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": "/** The completion is the jump kind. */",
+            "old": 111,
+            "new": 114
+          },
+          {
+            "kind": "ctx",
+            "text": "export declare function $jumped<T, const K extends string>(completion: T, kind: K): completion is Extract<T, $Jump<K>>",
+            "old": 112,
+            "new": 115
+          },
+          {
+            "kind": "ctx",
+            "text": "",
+            "old": 113,
+            "new": 116
+          },
+          {
+            "kind": "add",
+            "text": "type AnyEffect = EffectModule.Effect<any, any, any>",
+            "new": 117
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 118
+          },
+          {
+            "kind": "add",
+            "text": "/**",
+            "new": 119
+          },
+          {
+            "kind": "add",
+            "text": " * The E and R of what a generator yields, member by member: a union of the",
+            "new": 120
+          },
+          {
+            "kind": "add",
+            "text": " * yielded Effects' channels without subtype reduction, as the fork joins",
+            "new": 121
+          },
+          {
+            "kind": "add",
+            "text": " * them. (Effect.gen's own [Eff] extends [Effect<…, infer E, …>] merges the",
+            "new": 122
+          },
+          {
+            "kind": "add",
+            "text": " * candidates with subtype reduction, so an error that structurally extends",
+            "new": 123
+          },
+          {
+            "kind": "add",
+            "text": " * another, such as a TaggedError with a name field, would vanish from E.)",
+            "new": 124
+          },
+          {
+            "kind": "add",
+            "text": " */",
+            "new": 125
+          },
+          {
+            "kind": "add",
+            "text": "type YieldE<Eff> = Eff extends EffectModule.Effect<infer _A, infer E, infer _R> ? E : never",
+            "new": 126
+          },
+          {
+            "kind": "add",
+            "text": "type YieldR<Eff> = Eff extends EffectModule.Effect<infer _A, infer _E, infer R> ? R : never",
+            "new": 127
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 128
+          },
+          {
+            "kind": "ctx",
+            "text": "/** A function body: `function f() { body }` projects to `function f() { return $gen(function* () { body }) }`. */",
+            "old": 114,
+            "new": 129
+          },
+          {
+            "kind": "del",
+            "text": "export declare const $gen: typeof EffectModule.gen",
+            "old": 115
+          },
+          {
+            "kind": "del",
+            "text": "",
+            "old": 116
+          },
+          {
+            "kind": "del",
+            "text": "type AnyEffect = EffectModule.Effect<any, any, any>",
+            "old": 117
+          },
+          {
+            "kind": "add",
+            "text": "export declare function $gen<Eff extends AnyEffect, AEff>(f: () => Generator<Eff, AEff, never>): EffectModule.Effect<AEff, YieldE<Eff>, YieldR<Eff>>",
+            "new": 130
+          },
+          {
+            "kind": "add",
+            "text": "export declare function $gen<Self, Eff extends AnyEffect, AEff>(",
+            "new": 131
+          },
+          {
+            "kind": "add",
+            "text": "  options: { readonly self: Self },",
+            "new": 132
+          },
+          {
+            "kind": "add",
+            "text": "  f: (this: Self) => Generator<Eff, AEff, never>",
+            "new": 133
+          },
+          {
+            "kind": "add",
+            "text": "): EffectModule.Effect<AEff, YieldE<Eff>, YieldR<Eff>>",
+            "new": 134
+          },
+          {
+            "kind": "ctx",
+            "text": "",
+            "old": 118,
+            "new": 135
+          },
+          {
+            "kind": "ctx",
+            "text": "/**",
+            "old": 119,
+            "new": 136
+          },
+          {
+            "kind": "ctx",
+            "text": " * Effect subtypes that a call gives as data, not runs (D24): a Config, an",
+            "old": 120,
+            "new": 137
+          },
+          {
+            "kind": "hunk",
+            "text": "@@ -146,6 +163,19 @@"
+          },
+          {
+            "kind": "ctx",
+            "text": ">",
+            "old": 146,
+            "new": 163
+          },
+          {
+            "kind": "ctx",
+            "text": "export declare function $run<T>(value: T): EffectModule.Effect<T, never, never>",
+            "old": 147,
+            "new": 164
+          },
+          {
+            "kind": "ctx",
+            "text": "",
+            "old": 148,
+            "new": 165
+          },
+          {
+            "kind": "add",
+            "text": "/**",
+            "new": 166
+          },
+          {
+            "kind": "add",
+            "text": " * L1's dual form: a parameterless lambda that is both a program and a",
+            "new": 167
+          },
+          {
+            "kind": "add",
+            "text": " * function that returns it, `() => body` at a position that accepts either.",
+            "new": 168
+          },
+          {
+            "kind": "add",
+            "text": " */",
+            "new": 169
+          },
+          {
+            "kind": "add",
+            "text": "export declare function $dual<A, E, R>(program: EffectModule.Effect<A, E, R>): EffectModule.Effect<A, E, R> & (() => EffectModule.Effect<A, E, R>)",
+            "new": 170
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 171
+          },
+          {
+            "kind": "add",
+            "text": "/**",
+            "new": 172
+          },
+          {
+            "kind": "add",
+            "text": " * A function value at a position that takes a program (D7): the function",
+            "new": 173
+          },
+          {
+            "kind": "add",
+            "text": " * runs as its program, `Effect.suspend(f)`. Any other value is itself.",
+            "new": 174
+          },
+          {
+            "kind": "add",
+            "text": " */",
+            "new": 175
+          },
+          {
+            "kind": "add",
+            "text": "export declare function $asProgram<A, E, R>(f: () => EffectModule.Effect<A, E, R>): EffectModule.Effect<A, E, R>",
+            "new": 176
+          },
+          {
+            "kind": "add",
+            "text": "export declare function $asProgram<T>(value: T): T",
+            "new": 177
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 178
+          },
+          {
+            "kind": "ctx",
+            "text": "/** `throw x` in an Effect body projects to `return yield* $fail(x)`. */",
+            "old": 149,
+            "new": 179
+          },
+          {
+            "kind": "ctx",
+            "text": "export declare const $fail: typeof EffectModule.fail",
+            "old": 150,
+            "new": 180
+          },
+          {
+            "kind": "ctx",
+            "text": "",
+            "old": 151,
+            "new": 181
+          }
+        ]
+      },
+      {
+        "path": "typescript/tsc/internal/effeckmapper/lambdas.go",
+        "status": "added",
+        "additions": 304,
+        "deletions": 0,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -0,0 +1,304 @@"
+          },
+          {
+            "kind": "add",
+            "text": "package effeckmapper",
+            "new": 1
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 2
+          },
+          {
+            "kind": "add",
+            "text": "import (",
+            "new": 3
+          },
+          {
+            "kind": "add",
+            "text": "\t\"github.com/microsoft/TypeScript/tsc/internal/ast\"",
+            "new": 4
+          },
+          {
+            "kind": "add",
+            "text": ")",
+            "new": 5
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 6
+          },
+          {
+            "kind": "add",
+            "text": "// Forms (rule 3: form resolution, L1). A lambda, a block param, and an",
+            "new": 7
+          },
+          {
+            "kind": "add",
+            "text": "// argument a callee takes by name each take the form the forms resolver",
+            "new": 8
+          },
+          {
+            "kind": "add",
+            "text": "// decides from the file's syntax and the generated forms table",
+            "new": 9
+          },
+          {
+            "kind": "add",
+            "text": "// (forms_resolve.go):",
+            "new": 10
+          },
+          {
+            "kind": "add",
+            "text": "//",
+            "new": 11
+          },
+          {
+            "kind": "add",
+            "text": "//\tplain             (x) => body                  as written",
+            "new": 12
+          },
+          {
+            "kind": "add",
+            "text": "//\tEffect function   (x) => body                  (x) => $gen(function* () { return body })",
+            "new": 13
+          },
+          {
+            "kind": "add",
+            "text": "//\tprogram           () => body                   $gen(function* () { return body })",
+            "new": 14
+          },
+          {
+            "kind": "add",
+            "text": "//\tdual              () => body                   $dual($gen(function* () { return body }))",
+            "new": 15
+          },
+          {
+            "kind": "add",
+            "text": "//",
+            "new": 16
+          },
+          {
+            "kind": "add",
+            "text": "// The dual is a parameterless lambda that is both a program and a function",
+            "new": 17
+          },
+          {
+            "kind": "add",
+            "text": "// that returns it; the prelude types it Effect<A, E, R> & (() => Effect<A, E, R>).",
+            "new": 18
+          },
+          {
+            "kind": "add",
+            "text": "// Where the rules cannot decide (Decision.Choice), the projector reports",
+            "new": 19
+          },
+          {
+            "kind": "add",
+            "text": "// EK9100 with the resolver's message and lowers the default's guess.",
+            "new": 20
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 21
+          },
+          {
+            "kind": "add",
+            "text": "// isLambda reports whether node is a lambda the forms decide: an arrow",
+            "new": 22
+          },
+          {
+            "kind": "add",
+            "text": "// function or a function expression written in the source, or a method of",
+            "new": 23
+          },
+          {
+            "kind": "add",
+            "text": "// an object literal, with a body, neither async nor a generator.",
+            "new": 24
+          },
+          {
+            "kind": "add",
+            "text": "func isLambda(node *ast.Node) bool {",
+            "new": 25
+          },
+          {
+            "kind": "add",
+            "text": "\tswitch node.Kind {",
+            "new": 26
+          },
+          {
+            "kind": "add",
+            "text": "\tcase ast.KindArrowFunction:",
+            "new": 27
+          },
+          {
+            "kind": "add",
+            "text": "\t\tarrow := node.AsArrowFunction()",
+            "new": 28
+          },
+          {
+            "kind": "add",
+            "text": "\t\tif arrow.EqualsGreaterThanToken == nil || arrow.EqualsGreaterThanToken.Flags&ast.NodeFlagsReparsed != 0 {",
+            "new": 29
+          },
+          {
+            "kind": "add",
+            "text": "\t\t\treturn false",
+            "new": 30
+          },
+          {
+            "kind": "add",
+            "text": "\t\t}",
+            "new": 31
+          },
+          {
+            "kind": "add",
+            "text": "\tcase ast.KindFunctionExpression:",
+            "new": 32
+          },
+          {
+            "kind": "add",
+            "text": "\t\tif node.AsFunctionExpression().AsteriskToken != nil {",
+            "new": 33
+          },
+          {
+            "kind": "add",
+            "text": "\t\t\treturn false",
+            "new": 34
+          },
+          {
+            "kind": "add",
+            "text": "\t\t}",
+            "new": 35
+          },
+          {
+            "kind": "add",
+            "text": "\tcase ast.KindMethodDeclaration:",
+            "new": 36
+          },
+          {
+            "kind": "add",
+            "text": "\t\tif node.Parent == nil || node.Parent.Kind != ast.KindObjectLiteralExpression || node.AsMethodDeclaration().AsteriskToken != nil {",
+            "new": 37
+          },
+          {
+            "kind": "add",
+            "text": "\t\t\treturn false",
+            "new": 38
+          },
+          {
+            "kind": "add",
+            "text": "\t\t}",
+            "new": 39
+          },
+          {
+            "kind": "add",
+            "text": "\tdefault:",
+            "new": 40
+          },
+          {
+            "kind": "add",
+            "text": "\t\treturn false",
+            "new": 41
+          },
+          {
+            "kind": "add",
+            "text": "\t}",
+            "new": 42
+          },
+          {
+            "kind": "add",
+            "text": "\treturn node.Body() != nil && node.Flags&ast.NodeFlagsReparsed == 0 && !ast.HasSyntacticModifier(node, ast.ModifierFlagsAsync)",
+            "new": 43
+          },
+          {
+            "kind": "add",
+            "text": "}",
+            "new": 44
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 45
+          },
+          {
+            "kind": "add",
+            "text": "// lambda lowers fn, a lambda, to the form the resolver decides for it.",
+            "new": 46
+          },
+          {
+            "kind": "add",
+            "text": "func (p *projector) lambda(fn *ast.Node, e env) {",
+            "new": 47
+          },
+          {
+            "kind": "add",
+            "text": "\td := p.forms.Lambda(fn)",
+            "new": 48
+          },
+          {
+            "kind": "add",
+            "text": "\tp.choice(d, fn)",
+            "new": 49
+          },
+          {
+            "kind": "add",
+            "text": "\tform := d.Form",
+            "new": 50
+          },
+          {
+            "kind": "add",
+            "text": "\tif form == FormProgram && len(fn.Parameters()) > 0 {",
+            "new": 51
+          },
+          {
+            "kind": "add",
+            "text": "\t\t// A program takes no arguments; one written with parameters is an",
+            "new": 52
+          },
+          {
+            "kind": "add",
+            "text": "\t\t// Effect function, which TypeScript then reports at the position.",
+            "new": 53
+          },
+          {
+            "kind": "add",
+            "text": "\t\tform = FormEffectFn",
+            "new": 54
+          },
+          {
+            "kind": "add",
+            "text": "\t}",
+            "new": 55
+          },
+          {
+            "kind": "add",
+            "text": "\tif fn.Kind == ast.KindMethodDeclaration && (form == FormProgram || form == FormDual) {",
+            "new": 56
+          },
+          {
+            "kind": "add",
+            "text": "\t\tform = FormEffectFn",
+            "new": 57
+          },
+          {
+            "kind": "add",
+            "text": "\t}",
+            "new": 58
+          },
+          {
+            "kind": "add",
+            "text": "\tif form == FormDual && d.Call == nil {",
+            "new": 59
+          },
+          {
+            "kind": "add",
+            "text": "\t\t// A dual no call takes is a function value, as the fork types it:",
+            "new": 60
+          },
+          {
+            "kind": "add",
+            "text": "\t\t// returned or bound, it reads as () => Effect<A, E, R>.",
+            "new": 61
+          },
+          {
+            "kind": "add",
+            "text": "\t\tform = FormEffectFn",
+            "new": 62
+          },
+          {
+            "kind": "add",
+            "text": "\t}",
+            "new": 63
+          },
+          {
+            "kind": "add",
+            "text": "\tswitch form {",
+            "new": 64
+          },
+          {
+            "kind": "add",
+            "text": "\tcase FormEffectFn:",
+            "new": 65
+          },
+          {
+            "kind": "add",
+            "text": "\t\tp.effectLambda(fn)",
+            "new": 66
+          },
+          {
+            "kind": "add",
+            "text": "\tcase FormProgram, FormDual:",
+            "new": 67
+          },
+          {
+            "kind": "add",
+            "text": "\t\tp.programLambda(fn, form == FormDual)",
+            "new": 68
+          },
+          {
+            "kind": "add",
+            "text": "\tdefault:",
+            "new": 69
+          },
+          {
+            "kind": "add",
+            "text": "\t\tp.visitChildren(fn, env{})",
+            "new": 70
+          },
+          {
+            "kind": "add",
+            "text": "\t}",
+            "new": 71
+          },
+          {
+            "kind": "add",
+            "text": "}",
+            "new": 72
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 73
+          },
+          {
+            "kind": "add",
+            "text": "// choice reports EK9100 at d's node when the rules leave the form to the",
+            "new": 74
+          },
+          {
+            "kind": "add",
+            "text": "// user (Decision.Choice), with the resolver's message.",
+            "new": 75
+          },
+          {
+            "kind": "add",
+            "text": "func (p *projector) choice(d Decision, at *ast.Node) {",
+            "new": 76
+          },
+          {
+            "kind": "add",
+            "text": "\tif d.Choice == nil {",
+            "new": 77
+          },
+          {
+            "kind": "add",
+            "text": "\t\treturn",
+            "new": 78
+          },
+          {
+            "kind": "add",
+            "text": "\t}",
+            "new": 79
+          },
+          {
+            "kind": "add",
+            "text": "\tif d.Node != nil {",
+            "new": 80
+          },
+          {
+            "kind": "add",
+            "text": "\t\tat = d.Node",
+            "new": 81
+          },
+          {
+            "kind": "add",
+            "text": "\t}",
+            "new": 82
+          },
+          {
+            "kind": "add",
+            "text": "\tstart := p.tokenStart(at)",
+            "new": 83
+          },
+          {
+            "kind": "add",
+            "text": "\tp.diagnostics = append(p.diagnostics, Diagnostic{",
+            "new": 84
+          },
+          {
+            "kind": "add",
+            "text": "\t\tStart:   start,",
+            "new": 85
+          },
+          {
+            "kind": "add",
+            "text": "\t\tLength:  max(at.End()-start, 0),",
+            "new": 86
+          },
+          {
+            "kind": "add",
+            "text": "\t\tCode:    CodeFormChoice,",
+            "new": 87
+          },
+          {
+            "kind": "add",
+            "text": "\t\tMessage: d.Choice.Message(),",
+            "new": 88
+          },
+          {
+            "kind": "add",
+            "text": "\t})",
+            "new": 89
+          },
+          {
+            "kind": "add",
+            "text": "}",
+            "new": 90
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 91
+          },
+          {
+            "kind": "add",
+            "text": "// effectLambda lowers fn in the Effect function form. A block body becomes",
+            "new": 92
+          },
+          {
+            "kind": "add",
+            "text": "// its generator, as a function declaration's does; an expression body is",
+            "new": 93
+          },
+          {
+            "kind": "add",
+            "text": "// the value the generator returns.",
+            "new": 94
+          },
+          {
+            "kind": "add",
+            "text": "func (p *projector) effectLambda(fn *ast.Node) {",
+            "new": 95
+          },
+          {
+            "kind": "add",
+            "text": "\tbody := fn.Body()",
+            "new": 96
+          },
+          {
+            "kind": "add",
+            "text": "\tif body.Kind == ast.KindBlock {",
+            "new": 97
+          },
+          {
+            "kind": "add",
+            "text": "\t\tp.functionLike(fn, body)",
+            "new": 98
+          },
+          {
+            "kind": "add",
+            "text": "\t\treturn",
+            "new": 99
+          },
+          {
+            "kind": "add",
+            "text": "\t}",
+            "new": 100
+          },
+          {
+            "kind": "add",
+            "text": "\t// (x) => expr   (x) => $gen(function* () { return expr })",
+            "new": 101
+          },
+          {
+            "kind": "add",
+            "text": "\tfn.ForEachChild(func(child *ast.Node) bool {",
+            "new": 102
+          },
+          {
+            "kind": "add",
+            "text": "\t\tif child != body {",
+            "new": 103
+          },
+          {
+            "kind": "add",
+            "text": "\t\t\tp.visit(child, env{})",
+            "new": 104
+          },
+          {
+            "kind": "add",
+            "text": "\t\t}",
+            "new": 105
+          },
+          {
+            "kind": "add",
+            "text": "\t\treturn false",
+            "new": 106
+          },
+          {
+            "kind": "add",
+            "text": "\t})",
+            "new": 107
+          },
+          {
+            "kind": "add",
+            "text": "\tif kind := contractOf(fn.Type()); kind == contractInfer {",
+            "new": 108
+          },
+          {
+            "kind": "add",
+            "text": "\t\tp.unprojected(fn.Type())",
+            "new": 109
+          },
+          {
+            "kind": "add",
+            "text": "\t}",
+            "new": 110
+          },
+          {
+            "kind": "add",
+            "text": "\targ := \"expr\"",
+            "new": 111
+          },
+          {
+            "kind": "add",
+            "text": "\tif usesThis(body) {",
+            "new": 112
+          },
+          {
+            "kind": "add",
+            "text": "\t\targ = \"expr self\"",
+            "new": 113
+          },
+          {
+            "kind": "add",
+            "text": "\t}",
+            "new": 114
+          },
+          {
+            "kind": "add",
+            "text": "\tstart := p.tokenStart(body)",
+            "new": 115
+          },
+          {
+            "kind": "add",
+            "text": "\tp.plan.mark(editEffectBody, partOpen, start, start, arg)",
+            "new": 116
+          },
+          {
+            "kind": "add",
+            "text": "\tp.visit(body, expressionEnv())",
+            "new": 117
+          },
+          {
+            "kind": "add",
+            "text": "\tp.plan.mark(editEffectBody, partClose, body.End(), body.End(), arg)",
+            "new": 118
+          },
+          {
+            "kind": "add",
+            "text": "}",
+            "new": 119
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 120
+          },
+          {
+            "kind": "add",
+            "text": "// expressionEnv returns the env of a generator whose body is one",
+            "new": 121
+          },
+          {
+            "kind": "add",
+            "text": "// expression, a lambda's: no block holds its code, so a fork there keeps",
+            "new": 122
+          },
+          {
+            "kind": "add",
+            "text": "// Scope in R (D19).",
+            "new": 123
+          },
+          {
+            "kind": "add",
+            "text": "func expressionEnv() env {",
+            "new": 124
+          },
+          {
+            "kind": "add",
+            "text": "\te := newEffectEnv()",
+            "new": 125
+          },
+          {
+            "kind": "add",
+            "text": "\te.frame.expression = true",
+            "new": 126
+          },
+          {
+            "kind": "add",
+            "text": "\treturn e",
+            "new": 127
+          },
+          {
+            "kind": "add",
+            "text": "}",
+            "new": 128
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 129
+          },
+          {
+            "kind": "add",
+            "text": "// programLambda lowers fn, a lambda without parameters, in the program",
+            "new": 130
+          },
+          {
+            "kind": "add",
+            "text": "// form: the lambda becomes its generator, an Effect value; with dual, an",
+            "new": 131
+          },
+          {
+            "kind": "add",
+            "text": "// Effect value that is also a function returning it.",
+            "new": 132
+          },
+          {
+            "kind": "add",
+            "text": "func (p *projector) programLambda(fn *ast.Node, dual bool) {",
+            "new": 133
+          },
+          {
+            "kind": "add",
+            "text": "\tbody := fn.Body()",
+            "new": 134
+          },
+          {
+            "kind": "add",
+            "text": "\tstart := p.tokenStart(fn)",
+            "new": 135
+          },
+          {
+            "kind": "add",
+            "text": "\tbodyStart := p.tokenStart(body)",
+            "new": 136
+          },
+          {
+            "kind": "add",
+            "text": "\targ := \"\"",
+            "new": 137
+          },
+          {
+            "kind": "add",
+            "text": "\tif body.Kind != ast.KindBlock {",
+            "new": 138
+          },
+          {
+            "kind": "add",
+            "text": "\t\targ = \"expr\"",
+            "new": 139
+          },
+          {
+            "kind": "add",
+            "text": "\t}",
+            "new": 140
+          },
+          {
+            "kind": "add",
+            "text": "\tif usesThis(body) {",
+            "new": 141
+          },
+          {
+            "kind": "add",
+            "text": "\t\targ += \" self\"",
+            "new": 142
+          },
+          {
+            "kind": "add",
+            "text": "\t}",
+            "new": 143
+          },
+          {
+            "kind": "add",
+            "text": "\tif dual {",
+            "new": 144
+          },
+          {
+            "kind": "add",
+            "text": "\t\tp.plan.mark(editDual, partOpen, start, start, \"\")",
+            "new": 145
+          },
+          {
+            "kind": "add",
+            "text": "\t}",
+            "new": 146
+          },
+          {
+            "kind": "add",
+            "text": "\tp.plan.mark(editProgram, partOpen, start, bodyStart, arg)",
+            "new": 147
+          },
+          {
+            "kind": "add",
+            "text": "\tif body.Kind == ast.KindBlock {",
+            "new": 148
+          },
+          {
+            "kind": "add",
+            "text": "\t\tp.visitList(body.Statements(), newEffectEnv())",
+            "new": 149
+          },
+          {
+            "kind": "add",
+            "text": "\t} else {",
+            "new": 150
+          },
+          {
+            "kind": "add",
+            "text": "\t\tp.visit(body, expressionEnv())",
+            "new": 151
+          },
+          {
+            "kind": "add",
+            "text": "\t}",
+            "new": 152
+          },
+          {
+            "kind": "add",
+            "text": "\tp.plan.mark(editProgram, partClose, fn.End(), fn.End(), arg)",
+            "new": 153
+          },
+          {
+            "kind": "add",
+            "text": "\tif dual {",
+            "new": 154
+          },
+          {
+            "kind": "add",
+            "text": "\t\tp.plan.mark(editDual, partClose, fn.End(), fn.End(), \"\")",
+            "new": 155
+          },
+          {
+            "kind": "add",
+            "text": "\t}",
+            "new": 156
+          },
+          {
+            "kind": "add",
+            "text": "}",
+            "new": 157
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 158
+          },
+          {
+            "kind": "add",
+            "text": "// byNameArgument lowers argument, an argument of a call in an Effect body,",
+            "new": 159
+          },
+          {
+            "kind": "add",
+            "text": "// to a program when its callee takes it by name (D147): the expression runs",
+            "new": 160
+          },
+          {
+            "kind": "add",
+            "text": "// when the callee runs the program, not where the call stands.",
+            "new": 161
+          },
+          {
+            "kind": "add",
+            "text": "func (p *projector) byNameArgument(argument *ast.Node, e env) bool {",
+            "new": 162
+          },
+          {
+            "kind": "add",
+            "text": "\tif isLambda(argument) || argument.Flags&ast.NodeFlagsReparsed != 0 {",
+            "new": 163
+          },
+          {
+            "kind": "add",
+            "text": "\t\treturn false",
+            "new": 164
+          },
+          {
+            "kind": "add",
+            "text": "\t}",
+            "new": 165
+          },
+          {
+            "kind": "add",
+            "text": "\td := p.forms.Argument(argument)",
+            "new": 166
+          },
+          {
+            "kind": "add",
+            "text": "\tif !d.ByName {",
+            "new": 167
+          },
+          {
+            "kind": "add",
+            "text": "\t\treturn p.programValue(argument, d, e)",
+            "new": 168
+          },
+          {
+            "kind": "add",
+            "text": "\t}",
+            "new": 169
+          },
+          {
+            "kind": "add",
+            "text": "\targ := \"expr\"",
+            "new": 170
+          },
+          {
+            "kind": "add",
+            "text": "\tif usesThis(argument) {",
+            "new": 171
+          },
+          {
+            "kind": "add",
+            "text": "\t\targ = \"expr self\"",
+            "new": 172
+          },
+          {
+            "kind": "add",
+            "text": "\t}",
+            "new": 173
+          },
+          {
+            "kind": "add",
+            "text": "\tstart := p.tokenStart(argument)",
+            "new": 174
+          },
+          {
+            "kind": "add",
+            "text": "\tp.plan.mark(editProgram, partOpen, start, start, arg)",
+            "new": 175
+          },
+          {
+            "kind": "add",
+            "text": "\tp.visit(argument, expressionEnv())",
+            "new": 176
+          },
+          {
+            "kind": "add",
+            "text": "\tp.plan.mark(editProgram, partClose, argument.End(), argument.End(), arg)",
+            "new": 177
+          },
+          {
+            "kind": "add",
+            "text": "\treturn true",
+            "new": 178
+          },
+          {
+            "kind": "add",
+            "text": "}",
+            "new": 179
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 180
+          },
+          {
+            "kind": "add",
+            "text": "// programValue lowers argument, a name or a member at a position that takes",
+            "new": 181
+          },
+          {
+            "kind": "add",
+            "text": "// a program, to $asProgram(argument): a function value there runs as its",
+            "new": 182
+          },
+          {
+            "kind": "add",
+            "text": "// program (D7), and any other value is itself.",
+            "new": 183
+          },
+          {
+            "kind": "add",
+            "text": "func (p *projector) programValue(argument *ast.Node, d Decision, e env) bool {",
+            "new": 184
+          },
+          {
+            "kind": "add",
+            "text": "\tif d.Class&ClassProgram == 0 || d.Class&(ClassEffectFn|ClassPlainFn) != 0 {",
+            "new": 185
+          },
+          {
+            "kind": "add",
+            "text": "\t\treturn false",
+            "new": 186
+          },
+          {
+            "kind": "add",
+            "text": "\t}",
+            "new": 187
+          },
+          {
+            "kind": "add",
+            "text": "\tswitch argument.Kind {",
+            "new": 188
+          },
+          {
+            "kind": "add",
+            "text": "\tcase ast.KindIdentifier, ast.KindPropertyAccessExpression:",
+            "new": 189
+          },
+          {
+            "kind": "add",
+            "text": "\tdefault:",
+            "new": 190
+          },
+          {
+            "kind": "add",
+            "text": "\t\treturn false",
+            "new": 191
+          },
+          {
+            "kind": "add",
+            "text": "\t}",
+            "new": 192
+          },
+          {
+            "kind": "add",
+            "text": "\tstart := p.tokenStart(argument)",
+            "new": 193
+          },
+          {
+            "kind": "add",
+            "text": "\tp.plan.mark(editProgramValue, partOpen, start, start, \"\")",
+            "new": 194
+          },
+          {
+            "kind": "add",
+            "text": "\tp.visit(argument, e)",
+            "new": 195
+          },
+          {
+            "kind": "add",
+            "text": "\tp.plan.mark(editProgramValue, partClose, argument.End(), argument.End(), \"\")",
+            "new": 196
+          },
+          {
+            "kind": "add",
+            "text": "\treturn true",
+            "new": 197
+          },
+          {
+            "kind": "add",
+            "text": "}",
+            "new": 198
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 199
+          },
+          {
+            "kind": "add",
+            "text": "// blockArgument returns call's block param, the arrow the parser writes for",
+            "new": 200
+          },
+          {
+            "kind": "add",
+            "text": "// `f(args) { block }` (D188), or nil.",
+            "new": 201
+          },
+          {
+            "kind": "add",
+            "text": "func blockArgument(call *ast.Node) *ast.Node {",
+            "new": 202
+          },
+          {
+            "kind": "add",
+            "text": "\targuments := call.Arguments()",
+            "new": 203
+          },
+          {
+            "kind": "add",
+            "text": "\tif len(arguments) == 0 {",
+            "new": 204
+          },
+          {
+            "kind": "add",
+            "text": "\t\treturn nil",
+            "new": 205
+          },
+          {
+            "kind": "add",
+            "text": "\t}",
+            "new": 206
+          },
+          {
+            "kind": "add",
+            "text": "\tlast := arguments[len(arguments)-1]",
+            "new": 207
+          },
+          {
+            "kind": "add",
+            "text": "\tif last.Kind != ast.KindArrowFunction || last.Body() == nil || last.Body().Kind != ast.KindBlock {",
+            "new": 208
+          },
+          {
+            "kind": "add",
+            "text": "\t\treturn nil",
+            "new": 209
+          },
+          {
+            "kind": "add",
+            "text": "\t}",
+            "new": 210
+          },
+          {
+            "kind": "add",
+            "text": "\tarrow := last.AsArrowFunction().EqualsGreaterThanToken",
+            "new": 211
+          },
+          {
+            "kind": "add",
+            "text": "\tif arrow == nil || arrow.Flags&ast.NodeFlagsReparsed == 0 || len(last.Parameters()) != 0 {",
+            "new": 212
+          },
+          {
+            "kind": "add",
+            "text": "\t\treturn nil",
+            "new": 213
+          },
+          {
+            "kind": "add",
+            "text": "\t}",
+            "new": 214
+          },
+          {
+            "kind": "add",
+            "text": "\treturn last",
+            "new": 215
+          },
+          {
+            "kind": "add",
+            "text": "}",
+            "new": 216
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 217
+          },
+          {
+            "kind": "add",
+            "text": "// blockCall lowers call, `f(args) { block }`, with its block where the",
+            "new": 218
+          },
+          {
+            "kind": "add",
+            "text": "// resolver places it (D188): appended, `f(args, block)`, or applied to the",
+            "new": 219
+          },
+          {
+            "kind": "add",
+            "text": "// call, `f(args)(block)`, which is also where a data-first dual's block",
+            "new": 220
+          },
+          {
+            "kind": "add",
+            "text": "// goes, since `f(block, args)` and `f(args)(block)` are one call of a dual.",
+            "new": 221
+          },
+          {
+            "kind": "add",
+            "text": "// The block takes the form the resolver decides, a program when it moves.",
+            "new": 222
+          },
+          {
+            "kind": "add",
+            "text": "func (p *projector) blockCall(call *ast.Node, block *ast.Node, e env) {",
+            "new": 223
+          },
+          {
+            "kind": "add",
+            "text": "\td := p.forms.Block(call)",
+            "new": 224
+          },
+          {
+            "kind": "add",
+            "text": "\tp.choice(d, block)",
+            "new": 225
+          },
+          {
+            "kind": "add",
+            "text": "\targuments := call.Arguments()",
+            "new": 226
+          },
+          {
+            "kind": "add",
+            "text": "\twritten := arguments[:len(arguments)-1]",
+            "new": 227
+          },
+          {
+            "kind": "add",
+            "text": "\tbody := block.Body()",
+            "new": 228
+          },
+          {
+            "kind": "add",
+            "text": "\tbrace := p.tokenStart(body)",
+            "new": 229
+          },
+          {
+            "kind": "add",
+            "text": "\tclosing := body.End() - 1",
+            "new": 230
+          },
+          {
+            "kind": "add",
+            "text": "\tif brace >= len(p.text) || p.text[brace] != '{' || p.text[closing] != '}' {",
+            "new": 231
+          },
+          {
+            "kind": "add",
+            "text": "\t\tp.unprojected(block)",
+            "new": 232
+          },
+          {
+            "kind": "add",
+            "text": "\t\treturn",
+            "new": 233
+          },
+          {
+            "kind": "add",
+            "text": "\t}",
+            "new": 234
+          },
+          {
+            "kind": "add",
+            "text": "\t// The source's own ) before the block, or -1 for `f { block }`.",
+            "new": 235
+          },
+          {
+            "kind": "add",
+            "text": "\tparen := -1",
+            "new": 236
+          },
+          {
+            "kind": "add",
+            "text": "\tfor i := brace - 1; i >= 0; i-- {",
+            "new": 237
+          },
+          {
+            "kind": "add",
+            "text": "\t\tif c := p.text[i]; c == ' ' || c == '\\t' {",
+            "new": 238
+          },
+          {
+            "kind": "add",
+            "text": "\t\t\tcontinue",
+            "new": 239
+          },
+          {
+            "kind": "add",
+            "text": "\t\t} else if c == ')' {",
+            "new": 240
+          },
+          {
+            "kind": "add",
+            "text": "\t\t\tparen = i",
+            "new": 241
+          },
+          {
+            "kind": "add",
+            "text": "\t\t}",
+            "new": 242
+          },
+          {
+            "kind": "add",
+            "text": "\t\tbreak",
+            "new": 243
+          },
+          {
+            "kind": "add",
+            "text": "\t}",
+            "new": 244
+          },
+          {
+            "kind": "add",
+            "text": "\tfor _, argument := range written {",
+            "new": 245
+          },
+          {
+            "kind": "add",
+            "text": "\t\tif !e.effect || !p.byNameArgument(argument, e) {",
+            "new": 246
+          },
+          {
+            "kind": "add",
+            "text": "\t\t\tp.visit(argument, e)",
+            "new": 247
+          },
+          {
+            "kind": "add",
+            "text": "\t\t}",
+            "new": 248
+          },
+          {
+            "kind": "add",
+            "text": "\t}",
+            "new": 249
+          },
+          {
+            "kind": "add",
+            "text": "\tvar open string",
+            "new": 250
+          },
+          {
+            "kind": "add",
+            "text": "\tswitch {",
+            "new": 251
+          },
+          {
+            "kind": "add",
+            "text": "\tcase paren < 0:",
+            "new": 252
+          },
+          {
+            "kind": "add",
+            "text": "\t\topen = \"(\"",
+            "new": 253
+          },
+          {
+            "kind": "add",
+            "text": "\tcase d.Placement == BlockAppended && len(written) > 0:",
+            "new": 254
+          },
+          {
+            "kind": "add",
+            "text": "\t\topen = \", \"",
+            "new": 255
+          },
+          {
+            "kind": "add",
+            "text": "\tcase d.Placement == BlockAppended:",
+            "new": 256
+          },
+          {
+            "kind": "add",
+            "text": "\t\topen = \"\"",
+            "new": 257
+          },
+          {
+            "kind": "add",
+            "text": "\tdefault:",
+            "new": 258
+          },
+          {
+            "kind": "add",
+            "text": "\t\topen = \")(\"",
+            "new": 259
+          },
+          {
+            "kind": "add",
+            "text": "\t}",
+            "new": 260
+          },
+          {
+            "kind": "add",
+            "text": "\tfrom := brace",
+            "new": 261
+          },
+          {
+            "kind": "add",
+            "text": "\tif paren >= 0 {",
+            "new": 262
+          },
+          {
+            "kind": "add",
+            "text": "\t\tfrom = paren",
+            "new": 263
+          },
+          {
+            "kind": "add",
+            "text": "\t}",
+            "new": 264
+          },
+          {
+            "kind": "add",
+            "text": "\tp.plan.replace(from, brace, open)",
+            "new": 265
+          },
+          {
+            "kind": "add",
+            "text": "\tform := d.Form",
+            "new": 266
+          },
+          {
+            "kind": "add",
+            "text": "\tswitch form {",
+            "new": 267
+          },
+          {
+            "kind": "add",
+            "text": "\tcase FormEffectFn:",
+            "new": 268
+          },
+          {
+            "kind": "add",
+            "text": "\t\tp.plan.mark(editEffectBody, partOpen, brace, brace, \"block \"+selfArg(body))",
+            "new": 269
+          },
+          {
+            "kind": "add",
+            "text": "\t\tp.visitList(body.Statements(), newEffectEnv())",
+            "new": 270
+          },
+          {
+            "kind": "add",
+            "text": "\t\tp.plan.mark(editEffectBody, partClose, block.End(), block.End(), \"block\")",
+            "new": 271
+          },
+          {
+            "kind": "add",
+            "text": "\tcase FormProgram, FormDual:",
+            "new": 272
+          },
+          {
+            "kind": "add",
+            "text": "\t\tif form == FormDual {",
+            "new": 273
+          },
+          {
+            "kind": "add",
+            "text": "\t\t\tp.plan.mark(editDual, partOpen, brace, brace, \"\")",
+            "new": 274
+          },
+          {
+            "kind": "add",
+            "text": "\t\t}",
+            "new": 275
+          },
+          {
+            "kind": "add",
+            "text": "\t\tp.plan.mark(editProgram, partOpen, brace, brace, selfArg(body))",
+            "new": 276
+          },
+          {
+            "kind": "add",
+            "text": "\t\tp.visitList(body.Statements(), newEffectEnv())",
+            "new": 277
+          },
+          {
+            "kind": "add",
+            "text": "\t\tp.plan.mark(editProgram, partClose, block.End(), block.End(), \"\")",
+            "new": 278
+          },
+          {
+            "kind": "add",
+            "text": "\t\tif form == FormDual {",
+            "new": 279
+          },
+          {
+            "kind": "add",
+            "text": "\t\t\tp.plan.mark(editDual, partClose, block.End(), block.End(), \"\")",
+            "new": 280
+          },
+          {
+            "kind": "add",
+            "text": "\t\t}",
+            "new": 281
+          },
+          {
+            "kind": "add",
+            "text": "\tdefault:",
+            "new": 282
+          },
+          {
+            "kind": "add",
+            "text": "\t\tp.plan.insert(brace, \"() => \")",
+            "new": 283
+          },
+          {
+            "kind": "add",
+            "text": "\t\tp.visitList(body.Statements(), env{})",
+            "new": 284
+          },
+          {
+            "kind": "add",
+            "text": "\t}",
+            "new": 285
+          },
+          {
+            "kind": "add",
+            "text": "\tp.plan.insert(block.End(), \")\")",
+            "new": 286
+          },
+          {
+            "kind": "add",
+            "text": "}",
+            "new": 287
+          },
+          {
+            "kind": "add",
+            "text": "",
+            "new": 288
+          },
+          {
+            "kind": "add",
+            "text": "// callArguments walks call's arguments: a block param where the resolver",
+            "new": 289
+          },
+          {
+            "kind": "add",
+            "text": "// places it, and, in an Effect body, an argument its callee takes by name",
+            "new": 290
+          },
+          {
+            "kind": "add",
+            "text": "// as a program. It reports whether it lowered a block param, which closes",
+            "new": 291
+          },
+          {
+            "kind": "add",
+            "text": "// the call itself.",
+            "new": 292
+          },
+          {
+            "kind": "add",
+            "text": "func (p *projector) callArguments(call *ast.Node, e env) bool {",
+            "new": 293
+          },
+          {
+            "kind": "add",
+            "text": "\tif block := blockArgument(call); block != nil {",
+            "new": 294
+          },
+          {
+            "kind": "add",
+            "text": "\t\tp.blockCall(call, block, e)",
+            "new": 295
+          },
+          {
+            "kind": "add",
+            "text": "\t\treturn true",
+            "new": 296
+          },
+          {
+            "kind": "add",
+            "text": "\t}",
+            "new": 297
+          },
+          {
+            "kind": "add",
+            "text": "\tfor _, argument := range call.Arguments() {",
+            "new": 298
+          },
+          {
+            "kind": "add",
+            "text": "\t\tif !e.effect || !p.byNameArgument(argument, e) {",
+            "new": 299
+          },
+          {
+            "kind": "add",
+            "text": "\t\t\tp.visit(argument, e)",
+            "new": 300
+          },
+          {
+            "kind": "add",
+            "text": "\t\t}",
+            "new": 301
+          },
+          {
+            "kind": "add",
+            "text": "\t}",
+            "new": 302
+          },
+          {
+            "kind": "add",
+            "text": "\treturn false",
+            "new": 303
+          },
+          {
+            "kind": "add",
+            "text": "}",
+            "new": 304
+          }
+        ]
+      }
+    ],
+    "fixes": [
+      35
+    ],
+    "labels": [
+      "mapper",
+      "accepted"
+    ]
+  },
+  {
+    "n": 9001,
+    "title": "Add a review example",
+    "state": "open",
+    "kind": "landing",
+    "author": "smithers-agent",
+    "agent": {
+      "run": "run-review-example",
+      "flow": "implement-issue",
+      "harness": "Codex · gpt-6.1-sol",
+      "for": "maya"
+    },
+    "base": "main",
+    "head": "mock/review-example",
+    "opened": "2026-10-18T04:59:00Z",
+    "updated": "2026-10-18T04:59:00Z",
+    "body": "Mock scenario: a one-line documentation change with passed checks, awaiting maya’s review.",
+    "reviewers": [
+      "maya"
+    ],
+    "reviews": [],
+    "reviewComments": [],
+    "comments": [],
+    "checks": [
+      {
+        "name": "Example content",
+        "state": "success",
+        "duration": "1 s",
+        "detail": "Mock scenario: the example contains one nonempty line.",
+        "run": "run-review-example"
+      }
+    ],
+    "commits": [
+      "f2a9585cf2e375d2d5982da42a589cdc5c219479"
+    ],
+    "files": [
+      {
+        "path": "review-example.md",
+        "status": "added",
+        "additions": 1,
+        "deletions": 0,
+        "lines": [
+          {
+            "kind": "hunk",
+            "text": "@@ -0,0 +1 @@"
+          },
+          {
+            "kind": "add",
+            "text": "A small example for human review.",
+            "new": 1
+          }
+        ]
+      }
+    ],
+    "fixes": [],
+    "labels": []
+  }
+]

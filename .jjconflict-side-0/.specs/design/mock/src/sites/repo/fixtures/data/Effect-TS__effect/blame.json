@@ -1,0 +1,74 @@
+[
+  {
+    "path": "packages/sql/pg/src/PgClient.ts",
+    "start": 1,
+    "end": 80,
+    "sha": "f8efc263cf8333810de828b68810846070848e48"
+  },
+  {
+    "path": "packages/sql/pg/src/PgClient.ts",
+    "start": 81,
+    "end": 240,
+    "sha": "f8efc263cf8333810de828b68810846070848e48"
+  },
+  {
+    "path": "packages/sql/pg/src/PgClient.ts",
+    "start": 241,
+    "end": 468,
+    "sha": "f8efc263cf8333810de828b68810846070848e48"
+  },
+  {
+    "path": "packages/effect/src/sql/SqlClient.ts",
+    "start": 1,
+    "end": 80,
+    "sha": "6bedb2254a0072eb3fa23826573da32c7790d31d"
+  },
+  {
+    "path": "packages/effect/src/sql/SqlClient.ts",
+    "start": 81,
+    "end": 240,
+    "sha": "399df09b4bf4102f7e5be8feceffa9e5a33c8a8b"
+  },
+  {
+    "path": "packages/effect/src/sql/SqlClient.ts",
+    "start": 241,
+    "end": 521,
+    "sha": "399df09b4bf4102f7e5be8feceffa9e5a33c8a8b"
+  },
+  {
+    "path": "packages/effect/src/Schema.ts",
+    "start": 1,
+    "end": 80,
+    "sha": "6efa8e3ed922949e5f6c7b7e21df5c89175f0089"
+  },
+  {
+    "path": "packages/effect/src/Schema.ts",
+    "start": 81,
+    "end": 240,
+    "sha": "5233025269b3a0697b5af3c36bb2cedd0bdeab27"
+  },
+  {
+    "path": "packages/effect/src/Schema.ts",
+    "start": 241,
+    "end": 602,
+    "sha": "8029bf27825c324af71956b7db404efb93b894c5"
+  },
+  {
+    "path": "packages/platform/node/src/NodeHttpServer.ts",
+    "start": 1,
+    "end": 80,
+    "sha": "7c71ca51d3bdc7885bd3832bf3040e9596fa1766"
+  },
+  {
+    "path": "packages/platform/node/src/NodeHttpServer.ts",
+    "start": 81,
+    "end": 240,
+    "sha": "7c71ca51d3bdc7885bd3832bf3040e9596fa1766"
+  },
+  {
+    "path": "packages/platform/node/src/NodeHttpServer.ts",
+    "start": 241,
+    "end": 679,
+    "sha": "7c71ca51d3bdc7885bd3832bf3040e9596fa1766"
+  }
+]

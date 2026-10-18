@@ -1,0 +1,314 @@
+import appendixA from "./fixtures/AppendixA.json"
+const SURFACE_FLOWS: readonly string[] = appendixA.map(row => row.name).filter(name => name !== "review")
+/*
+ * The repository's own flows as slash leaves (Factory design session
+ * 2026-09-07 §4; owner rule: flows are slash commands, and the featured ones
+ * are the repository's to declare in .smithers/FACTORY.ts).
+ *
+ * Live defect this pins: the homepage of smithersai/smithers said "Try
+ * first /review" while typing /review answered "There is no /review flow",
+ * because the projection's flows were never leaves of the registry. The current
+ * /review host door is protected (#3612); a repository cannot replace it. Every
+ * expectation below runs the real controller over a stub of the public
+ * contents route that serves `.smithers/factory.json`; nothing here names a
+ * flow the app declares itself.
+ */
+import type { StorageApi } from "@tanstack/db"
+import { describe, expect, setDefaultTimeout, test } from "bun:test"
+
+import type { AgentPort } from "../runtime/AgentPort"
+import { createAppController } from "../state/AppController"
+import type { AppServices } from "../state/AppController"
+import { createAppStore } from "../state/AppStore"
+import type { AppStore } from "../state/AppStore"
+import { executeAgentToolCall } from "./agentTools"
+import { visibleItems } from "./Commands"
+import { namespaceOf, parseSubmit } from "./registry"
+import { readRepositoryHome } from "../state/seams/RepositoryFlowsSeam"
+import { loadBox, signupProfileFetch } from "../state/TestFixtures"
+
+setDefaultTimeout(30_000)
+
+const memoryStorage = (): StorageApi => {
+  const data = new Map<string, string>()
+  return {
+    getItem: (key) => data.get(key) ?? null,
+    setItem: (key, value) => void data.set(key, value),
+    removeItem: (key) => void data.delete(key)
+  }
+}
+
+const unavailableAgent: AgentPort = {
+  available: false,
+  startTurn: async () => ({ status: "error", message: "unavailable" }),
+  cancelTurn: async () => {},
+  subscribe: () => () => {}
+}
+
+
+const json = (status: number, body: unknown): Response =>
+  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
+
+interface Seen {
+  readonly path: string
+  readonly method: string
+  readonly body: unknown
+}
+
+/** The sign-in's signup-profile read answers as the backend does for a new account; every other request is seen. */
+const backend = (routes: Record<string, Response>, seen: Array<Seen> = []): AppServices => ({
+  fetchImpl: signupProfileFetch(async (input, init) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+    const absolute = new URL(url, "https://app.test")
+    const path = absolute.pathname + absolute.search
+    seen.push({ path, method: init?.method ?? "GET", body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined })
+    const answer = routes[path]
+    return answer === undefined ? json(404, { status: "error", message: `no stub for ${path}` }) : answer.clone()
+  }).fetchImpl
+})
+
+const settled = async (ticks = 3): Promise<void> => {
+  for (let tick = 0; tick < ticks; tick += 1) await new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+const identity = async (store: AppStore, state: "signed-in" | "signed-out"): Promise<void> => {
+  store.dispatch({
+    type: "identity.session.loaded",
+    actor: "system",
+    state,
+    login: state === "signed-in" ? "will" : null,
+    admin: false,
+    scopesPlain: null
+  })
+  await settled()
+}
+
+const REPO = "will/flows"
+const projectionPath = (repo: string): string => `/api/repos/${repo}/contents/.smithers/factory.json`
+const PROJECTION = projectionPath(REPO)
+
+test("repository homepage read decodes blocks and makes failures visible", async () => {
+  const baseUrl = "https://app.test"
+  const http = async () => json(200, { kind: "blocks", blocks: [{ type: "markdown", path: "README.md", markdown: "# Hello" }] })
+  expect(await readRepositoryHome({ baseUrl, http }, REPO)).toEqual({ kind: "blocks", blocks: [{ type: "markdown", path: "README.md", markdown: "# Hello" }] })
+  expect(await readRepositoryHome({ baseUrl, http: async () => json(200, { kind: "blocks", blocks: [{ type: "markdown", path: "../secret", markdown: "x" }] }) }, REPO))
+    .toEqual({ kind: "error", message: "Homepage is invalid" })
+  // A block kind this build does not know is left out; the rest of the homepage still renders.
+  expect(await readRepositoryHome({ baseUrl, http: async () => json(200, { kind: "blocks", blocks: [{ type: "future" }, { type: "stack" }, { type: "text", text: "Hi" }] }) }, REPO))
+    .toEqual({ kind: "blocks", blocks: [{ type: "stack" }, { type: "text", text: "Hi" }] })
+  expect(await readRepositoryHome({ baseUrl, http: async () => json(404, {}) }, REPO)).toEqual({ kind: "none" })
+  expect(await readRepositoryHome({ baseUrl, http: async () => json(503, {}) }, REPO))
+    .toEqual({ kind: "error", message: "Homepage unavailable" })
+})
+
+/** The mirror's contents document for a committed projection: base64, as the route serves it. */
+const projectionDocument = (projection: unknown): Response =>
+  json(200, {
+    path: ".smithers/factory.json",
+    encoding: "base64",
+    content: btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify(projection))))
+  })
+
+const row = (
+  id: string,
+  extra: { summary?: string | null; featured?: boolean; modelInvocable?: boolean; description?: string } = {}
+) => ({
+  id,
+  description: extra.description ?? `Runs ${id}.\nA second line the leaf never shows.`,
+  summary: extra.summary === undefined ? `${id} summary.` : extra.summary,
+  featured: extra.featured ?? false,
+  kind: "mdx",
+  path: `flows/${id}/flow.mdx`,
+  capabilities: [],
+  model: null,
+  modelInvocable: extra.modelInvocable ?? true
+})
+
+/*
+ * The fixture's catalog order is deliberately not featured-first (lint lands
+ * after release-notes), one summary is null, one id carries a `/`, one row is
+ * not for a model, and one id (`chat`) is a flow the app declares itself.
+ */
+const CATALOG = {
+  summary: "How will/flows develops itself.",
+  flows: [
+    row("audit", { summary: "Review the change.", featured: true }),
+    row("release-notes"),
+    row("lint", { summary: null, featured: true }),
+    row("create-flow/clarify", { modelInvocable: false }),
+    row("chat", { summary: "A projection row that collides with the app's own chat flow." })
+  ],
+  on: []
+}
+
+const ready = async (services: AppServices, state: "signed-in" | "signed-out" = "signed-in") => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const controller = createAppController(store, unavailableAgent, services)
+  await identity(store, state)
+  store.dispatch({
+    type: "repositories.loaded",
+    actor: "system",
+    repositories: [{ id: REPO, org: "will", ownerKind: "user", name: "flows", head: null }]
+  })
+  await loadBox(store, REPO)
+  await settled(6)
+  return { store, controller }
+}
+
+/** A leaf runs through flow.run; the app's own `review` (entries/prs.ts) is not one. */
+const isLeaf = (controller: Awaited<ReturnType<typeof ready>>["controller"], name: string): boolean =>
+  controller.commands.find(name)?.metadata.args === "[owner/repo] [JSON object]"
+
+const repositoryLeaves = (controller: Awaited<ReturnType<typeof ready>>["controller"]): Array<string> =>
+  visibleItems(controller.commands)
+    .map((command) => command.name)
+    .filter((name) => namespaceOf(name) === undefined && !SURFACE_FLOWS.includes(name) && isLeaf(controller, name))
+
+const treeNames = (rows: ReturnType<Awaited<ReturnType<typeof ready>>["controller"]["slashTree"]>): Array<string> =>
+  rows.map((entry) => (entry.kind === "flow" ? entry.flow.name : entry.kind === "namespace" ? `${entry.namespace.id}/` : `note:${entry.text}`))
+
+describe("the repository's flows are slash leaves", () => {
+  test("every projection row is a leaf, featured first, with the projection's summary; a `/` in an id is a namespace dot; a declared name keeps its flow", async () => {
+    const { controller } = await ready(backend({ [PROJECTION]: projectionDocument(CATALOG) }))
+    expect(repositoryLeaves(controller)).toEqual(["audit", "lint", "release-notes"])
+    expect(controller.commands.find("audit")?.metadata.summary).toBe("Review the change.")
+    expect(controller.commands.find("audit")?.metadata.workflow).toBe("audit")
+    // A null summary falls back to the description's first line, never the whole description.
+    expect(controller.commands.find("lint")?.metadata.summary).toBe("Runs lint.")
+    // `create-flow/clarify` lists under the synthesized create-flow namespace.
+    expect(controller.commands.find("create-flow.clarify")).toBeDefined()
+    expect(treeNames(controller.slashTree("create-flow."))).toEqual(["create-flow.clarify"])
+    // The app's own `chat` flow is untouched by a projection row of the same name.
+    expect(controller.commands.find("chat")?.metadata.summary).not.toContain("collides")
+    expect(controller.commands.all().filter((command) => command.name === "chat")).toHaveLength(1)
+  })
+
+  test("a bare / lists the repository's leaves after the surfaces and before the namespace rows", async () => {
+    const { controller } = await ready(backend({ [PROJECTION]: projectionDocument(CATALOG) }))
+    const names = treeNames(controller.slashTree(""))
+    const firstNamespace = names.findIndex((name) => name.endsWith("/"))
+    expect(firstNamespace).toBeGreaterThan(0)
+    for (const leaf of ["audit", "lint", "release-notes"]) {
+      const at = names.indexOf(leaf)
+      expect(at).toBeGreaterThan(-1)
+      expect(at).toBeLessThan(firstNamespace)
+    }
+    expect(names.indexOf("audit")).toBeLessThan(names.indexOf("lint"))
+    expect(names.indexOf("lint")).toBeLessThan(names.indexOf("release-notes"))
+    for (const surface of SURFACE_FLOWS.filter(name => names.includes(name) && !name.includes("."))) expect(names).toContain(surface)
+  })
+
+  test("a projection cannot replace the host's protected review door", async () => {
+    const seen: Array<Seen> = []
+    const { controller } = await ready(backend({ [PROJECTION]: projectionDocument({ flows: [row("review")], on: [] }) }, seen))
+    expect(controller.commands.find("review")?.metadata.args).toBe("<number> [owner/repo]")
+    expect(isLeaf(controller, "review")).toBe(false)
+    expect(parseSubmit("/review 17", controller.commands.all())).toEqual({ kind: "command", name: "review", args: "17" })
+    seen.length = 0
+    // #3612 (42a4fa17b0), T-FLW-13: the protected door requests host admission,
+    // even when the repository projection declares a same-named working-copy leaf.
+    expect(await controller.commands.run("review", `17 ${REPO}`)).toEqual({ status: "executed", value: "Requested" })
+    await settled(6)
+    expect(seen).toEqual([{ path: "/api/reviews", method: "POST", body: { number: 17, repo: REPO, conversation: "main" } }])
+    expect(await controller.commands.executeForAgent({ name: "commands", arguments: JSON.stringify({ action: "execute", name: "review", args: `17 ${REPO}` }) })).toBe("failed: this command runs on the conversation host")
+    expect(seen).toHaveLength(1)
+  })
+
+  test("/audit dispatches exactly what /flow.run audit does: the same doors, the same wire, this repository as the target", async () => {
+    const seen: Array<Seen> = []
+    const { store, controller } = await ready(backend({ [PROJECTION]: projectionDocument(CATALOG) }, seen))
+    const walked = (): Array<Seen> => seen.filter((call) => call.path !== PROJECTION && call.path !== `/api/repos/${REPO}/home` && !(call.method === "GET" && call.path.split("?")[0] === "/api/repository-setup/state"))
+    const viaLeaf = await controller.commands.run("audit")
+    const leafCalls = walked()
+    seen.length = 0
+    const viaRun = await controller.commands.run("flow.run", `audit ${REPO}`)
+    const runCalls = walked()
+    expect(leafCalls.length).toBeGreaterThan(0)
+    expect(leafCalls.map((call) => call.path)).toContain("/api/workflow/provision")
+    expect(leafCalls).toEqual(runCalls)
+    expect(viaLeaf).toEqual(viaRun)
+    // A trailing owner/repo retargets the leaf exactly as flow.run's does.
+    seen.length = 0
+    await loadBox(store, "will/other", "0b0c0d0e-0000-4000-8000-000000000002")
+    await controller.commands.run("audit", "will/other")
+    const provision = walked().find((call) => call.path === "/api/workflow/provision")
+    expect(provision?.body).toMatchObject({ repo: "will/other" })
+  })
+
+  test("search.flows and the palette's / mode find the leaf", async () => {
+    const { controller } = await ready(backend({ [PROJECTION]: projectionDocument(CATALOG) }))
+    const outcome = await controller.commands.run("search.flows", "audit")
+    expect(outcome.status).toBe("executed")
+    if (outcome.status !== "executed") return
+    const value = JSON.parse(outcome.value ?? "{}") as { items: Array<{ ref: string; subtitle?: string }> }
+    expect(value.items.map((item) => item.ref)).toContain("audit")
+    expect(value.items.find((item) => item.ref === "audit")?.subtitle).toBe("Review the change.")
+    expect(controller.searchPalette("/aud")).toMatchObject({ flow: "search.flows" })
+    expect(treeNames(controller.slashTree("aud"))).toContain("audit")
+  })
+
+  test("the leaf is an agent tool door like every listed flow; a row the repository keeps from models is the human's alone", async () => {
+    const { controller } = await ready(backend({ [PROJECTION]: projectionDocument(CATALOG) }))
+    const disclosed = controller.commands.disclosed().map((descriptor) => descriptor.name)
+    expect(disclosed).toContain("audit")
+    expect(disclosed).toContain("lint")
+    expect(disclosed).not.toContain("create-flow.clarify")
+    const refused = await executeAgentToolCall(controller.commands, {
+      name: "commands",
+      arguments: JSON.stringify({ action: "execute", name: "create-flow.clarify" })
+    })
+    expect(refused).toContain("will/flows declares create-flow/clarify is not for a model to start")
+    const listed = await executeAgentToolCall(controller.commands, { name: "commands", arguments: JSON.stringify({ action: "list" }) })
+    expect(listed).toContain("audit")
+  })
+
+  test("signed out, /audit renders flow.run's sign-in door, never the no-such-flow refusal", async () => {
+    const { store, controller } = await ready(backend({ [PROJECTION]: projectionDocument(CATALOG) }), "signed-out")
+    // The leaf is offered when the user names it outright, so Enter on the menu is the deferral, not an app flow.
+    const listed = treeNames(controller.slashTree("audit"))
+    expect(listed).toEqual([])
+    controller.send("/audit")
+    await settled()
+    expect(store.session().pendingCommand).toMatchObject({ name: "audit", requirement: "signed-in" })
+    const toasts = [...store.collections.toasts.values()]
+    expect(toasts).toEqual([])
+    expect([...store.collections.messages.values()].filter(message => message.action?.flow === "sign-in")).toHaveLength(1)
+    const outcome = await controller.commands.run("flow.run", "audit")
+    expect(outcome.status).not.toBe("unknown-command")
+  })
+
+  test("without a projection there are no leaves, and /review remains the host's protected door", async () => {
+    const { controller } = await ready(backend({}))
+    expect(repositoryLeaves(controller)).toEqual([])
+    expect(controller.commands.find("review")?.metadata.args).toBe("<number> [owner/repo]")
+    expect(isLeaf(controller, "review")).toBe(false)
+  })
+
+  test("the leaves follow the target repository: they appear when its projection lands and go with it", async () => {
+    const other = "will/other"
+    const { store, controller } = await ready(
+      backend({ [PROJECTION]: projectionDocument(CATALOG), [projectionPath(other)]: projectionDocument({ flows: [row("triage")], on: [] }) })
+    )
+    expect(repositoryLeaves(controller)).toEqual(["audit", "lint", "release-notes"])
+    store.dispatch({
+      type: "repositories.loaded",
+      actor: "system",
+      repositories: [
+        { id: REPO, org: "will", ownerKind: "user", name: "flows", head: null },
+        { id: other, org: "will", ownerKind: "user", name: "other", head: null }
+      ]
+    })
+    await settled(6)
+    // Two repositories and no selection: no target, so no repository leaves at all.
+    expect(repositoryLeaves(controller)).toEqual([])
+    store.dispatch({ type: "repo.selected", actor: "user", id: other })
+    await settled(6)
+    expect(repositoryLeaves(controller)).toEqual(["triage"])
+    expect(isLeaf(controller, "audit")).toBe(false)
+    store.dispatch({ type: "repo.selected", actor: "user", id: REPO })
+    await settled(6)
+    expect(repositoryLeaves(controller)).toEqual(["audit", "lint", "release-notes"])
+  })
+
+
+})

@@ -1,0 +1,92 @@
+[
+  {
+    "id": "todo-11",
+    "order": 1,
+    "title": "Keep empty query values",
+    "state": "working",
+    "owner": "maya",
+    "issue": 11,
+    "pull": 12,
+    "run": "run-512",
+    "updated": "2026-10-17T20:59:00.000Z"
+  },
+  {
+    "id": "todo-33",
+    "order": 2,
+    "title": "Require explicit CORS origins with credentials",
+    "state": "needs-answer",
+    "owner": "maya",
+    "issue": 33,
+    "pull": 34,
+    "run": "run-511",
+    "question": {
+      "text": "When credentials is true and origin is *, should middleware construction throw or should credentials be disabled?",
+      "options": [
+        "Throw a configuration error",
+        "Disable credentials and warn"
+      ]
+    },
+    "updated": "2026-10-17T20:36:00.000Z"
+  },
+  {
+    "id": "todo-44",
+    "order": 3,
+    "title": "Document adapter shutdown",
+    "state": "ready",
+    "owner": "cora",
+    "issue": 44,
+    "pull": 35,
+    "run": "run-509",
+    "updated": "2026-10-17T20:00:00.000Z"
+  },
+  {
+    "id": "todo-38",
+    "order": 4,
+    "title": "Cancel streams when Node clients disconnect",
+    "state": "queued",
+    "owner": "cora",
+    "issue": 38,
+    "updated": "2026-10-16T21:00:00.000Z"
+  },
+  {
+    "id": "todo-42",
+    "order": 5,
+    "title": "Measure lookup time for 500 routes",
+    "state": "queued",
+    "owner": "maya",
+    "issue": 42,
+    "updated": "2026-10-15T21:00:00.000Z"
+  },
+  {
+    "id": "todo-45",
+    "order": 6,
+    "title": "Draft the next release notes",
+    "state": "failed",
+    "owner": "maya",
+    "issue": 45,
+    "run": "run-510",
+    "failure": "Tag v0.4.3 does not exist. Create it or select v0.4.2, then retry.",
+    "updated": "2026-10-17T19:40:00.000Z"
+  },
+  {
+    "id": "todo-31",
+    "order": 7,
+    "title": "Return 400 for malformed route params",
+    "state": "merged",
+    "owner": "maya",
+    "issue": 31,
+    "pull": 32,
+    "run": "run-507",
+    "updated": "2026-10-15T20:55:12.000Z"
+  },
+  {
+    "id": "review-example",
+    "order": 8,
+    "title": "Add a review example",
+    "state": "ready",
+    "owner": "maya",
+    "pull": 9001,
+    "run": "run-review-example",
+    "updated": "2026-10-17T20:59:00Z"
+  }
+]

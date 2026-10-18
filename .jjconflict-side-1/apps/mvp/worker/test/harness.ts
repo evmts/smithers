@@ -1,0 +1,251 @@
+// ChatApi's real handler for the worker tests, on a test file's own schema of the compose Postgres (`pnpm db:up`,
+// db/TestDatabase.ts). The model is the only stand-in: a scripted `Model` through HostModel. The remote door starts
+// flows through a `FlowStarter` that records each start, unless a test sets one. Every log line, span and metric the
+// handler records is kept for the test.
+import type { Flow } from "@smthrs/flow"
+import { Model, type ModelEvent, type ModelRequest } from "@smthrs/model"
+import { HostModel } from "@smthrs/model-host"
+import { Logger as StructuredLogger } from "@smthrs/observability"
+import {
+  Cause,
+  ConfigProvider,
+  Effect,
+  Exit,
+  Layer,
+  Logger,
+  ManagedRuntime,
+  Metric,
+  Stream,
+  Tracer,
+} from "effect"
+import { FetchHttpClient, HttpEffect } from "effect/http"
+import { SqlClient } from "effect/sql"
+import { afterAll, beforeAll, beforeEach } from "vitest"
+import * as TestDatabase from "../../db/TestDatabase.ts"
+import * as Actor from "../Actor.ts"
+import * as Chat from "../Chat.ts"
+import * as Flows from "../Flows.ts"
+
+/**
+ * The test file's one runtime, on a schema of its own: built before the first test, so a missing Postgres fails the
+ * file once with `pnpm db:up` in its message, emptied before each test, and dropped after the last.
+ */
+export const testFile = (prefix: string) => {
+  const runtime = ManagedRuntime.make(TestDatabase.layer(prefix))
+  beforeAll(() => runtime.runPromise(Effect.void))
+  beforeEach(() =>
+    runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`TRUNCATE messages RESTART IDENTITY`))
+  )
+  afterAll(() => runtime.dispose())
+  return runtime
+}
+
+type Runtime = ReturnType<typeof testFile>
+
+export const uuid = () => crypto.randomUUID()
+
+/** What the model streams for a request. */
+type Script = (request: ModelRequest.ModelRequest) => Stream.Stream<ModelEvent.ModelEvent, Model.ModelFailure>
+export const delta = (text: string): ModelEvent.ModelEvent => ({ type: "text-delta", id: "t", text })
+export const usage: ModelEvent.ModelEvent = { type: "usage", inputTokens: 12, outputTokens: 34 }
+export const stop: ModelEvent.ModelEvent = { type: "settle", stopReason: "stop" }
+/** A model that answers with these pieces of text, then reports usage and stops. */
+export const answers = (...pieces: ReadonlyArray<string>): Script => () =>
+  Stream.make(...pieces.map(delta), usage, stop)
+/** The text of a request's messages, in order. */
+export const contents = (request: ModelRequest.ModelRequest) =>
+  request.messages.map((message) => message.content.map((part) => ("text" in part ? part.text : "")).join(""))
+
+// The record ChatApi's JSON logger writes (Logger.layerStructuredJson in @smthrs/observability), span ids included.
+type StructuredLog = ReturnType<typeof StructuredLogger.formatStructured.log>
+
+interface HarnessOptions {
+  /** ChatApi's configuration, in place of the environment. */
+  readonly config?: Record<string, string>
+  /** The database ChatApi connects to: the file's schema unless set. */
+  readonly database?: Layer.Layer<SqlClient.SqlClient, unknown>
+  /** Where the remote door starts a flow: one that records each start in `starts` unless set. */
+  readonly starter?: Flows.FlowStarter["Service"]
+  /** The flows the remote door may start: the registry's remote flows unless set. */
+  readonly remoteFlows?: ReadonlyArray<Flow.Any>
+  /** The fetch ChatApi calls Electric with: the global one unless set. */
+  readonly fetch?: typeof globalThis.fetch
+  /** Who is signed in on every request: nobody unless set, as in production before sign-in is configured. */
+  readonly actor?: Actor.Actor
+  /** Sessions in place of `actor`: sign-in's own, reading the session cookie (worker/test/signIn.ts). */
+  readonly sessions?: Layer.Layer<Actor.Sessions>
+  /** The default model's id: `test-model` unless set. */
+  readonly modelId?: string
+}
+
+/** ChatApi's routes on the file's schema and a scripted model, recording every log line, span and metric. */
+export const harness = async (runtime: Runtime, script: Script, options: HarnessOptions = {}) => {
+  const scratch = await runtime.runPromise(Effect.gen(function* () {
+    return yield* TestDatabase.Scratch
+  }))
+  const database = options.database ?? scratch.database
+  const spans: Array<Tracer.NativeSpan> = []
+  const tracer = Tracer.make({
+    span(spanOptions) {
+      const span = new Tracer.NativeSpan(spanOptions)
+      spans.push(span)
+      return span
+    },
+  })
+  const logs: Array<StructuredLog> = []
+  const logger = Logger.make((logOptions) => {
+    logs.push(StructuredLogger.formatStructured.log(logOptions))
+  })
+  const registry: Metric.MetricRegistry = new Map()
+  const requests: Array<ModelRequest.ModelRequest> = []
+  const starts: Array<{ readonly flow: string; readonly executionId: string; readonly payload: unknown }> = []
+  const model = Model.make({
+    stream: (request) => {
+      requests.push(request)
+      return script(request)
+    },
+  })
+  const observed = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    effect.pipe(
+      Effect.provideService(Tracer.Tracer, tracer),
+      Effect.provideService(Logger.CurrentLoggers, new Set([logger])),
+      Effect.provideService(Metric.MetricRegistry, registry),
+      Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(options.config ?? {})),
+    )
+  const hostModel = Layer.succeed(
+    HostModel,
+    HostModel.of({
+      modelId: options.modelId ?? "test-model",
+      model,
+      // ChatApi calls the model only through the endpoint, which streams `model`; nothing prepares a request.
+      route: { prepare: () => Effect.die(new Error("the scripted model has no route")) },
+    }),
+  )
+  const chat = await runtime.runPromise(
+    observed(Chat.make(database, options.remoteFlows).pipe(Effect.provide(hostModel))),
+  )
+  const starter = options.starter ?? Flows.FlowStarter.of({
+    start: (flow, { executionId, payload }) =>
+      Effect.sync(() => void starts.push({ flow: flow._tag, executionId, payload })),
+  })
+  const handler = HttpEffect.toWebHandler(
+    observed(
+      chat.fetch.pipe(
+        Effect.provideService(Flows.FlowStarter, starter),
+        Effect.provide(
+          options.sessions ?? (options.actor === undefined ? Actor.signedOut : signedIn(options.actor)),
+        ),
+        Effect.provide(FetchHttpClient.layer),
+        Effect.provideService(FetchHttpClient.Fetch, options.fetch ?? globalThis.fetch),
+      ),
+    ),
+  )
+  const line = (message: string) => logs.filter((log) => log.message === message)
+  return {
+    fetch: (path: string, init?: RequestInit) => handler(new Request(`http://chat.test${path}`, init)),
+    ask: (body: unknown, headers: Record<string, string> = {}) =>
+      handler(
+        new Request("http://chat.test/api/questions", {
+          method: "POST",
+          headers: { "content-type": "application/json", ...headers },
+          body: typeof body === "string" ? body : JSON.stringify(body),
+        }),
+      ),
+    /** The flows the remote door started through the default `FlowStarter`, in order. */
+    starts,
+    count: (metric: Metric.Metric<number, Metric.CounterState<number>>, attributes: Record<string, string>) =>
+      runtime.runSync(
+        Metric.value(Metric.withAttributes(metric, attributes)).pipe(
+          Effect.provideService(Metric.MetricRegistry, registry),
+        ),
+      ).count,
+    snapshot: () => runtime.runSync(Metric.snapshot.pipe(Effect.provideService(Metric.MetricRegistry, registry))),
+    line,
+    /** The one line logged with this message. */
+    only: (message: string) => {
+      const lines = line(message)
+      if (lines.length !== 1) throw new Error(`expected one ${message} line, got ${lines.length}`)
+      return lines[0]!
+    },
+    span: (name: string) => spans.filter((span) => span.name === name),
+    spans,
+    logs,
+    requests,
+  }
+}
+
+type Harness = Awaited<ReturnType<typeof harness>>
+
+/** Sessions where every request is `actor`: how a test, or local development, provides who is signed in. */
+export const signedIn = (actor: Actor.Actor) =>
+  Layer.succeed(Actor.Sessions, Actor.Sessions.of({ resolve: Effect.succeedSome(actor) }))
+
+/**
+ * Everything a harness recorded that an exporter sends, as one string to search: log lines, span attributes, events
+ * and failures (an exporter sends a span's failure as its status message and an exception event), and metric
+ * attributes.
+ */
+export const recorded = (h: Pick<Harness, "logs" | "spans" | "snapshot">) =>
+  JSON.stringify(
+    {
+      logs: h.logs,
+      spans: h.spans.map((span) => ({
+        attributes: [...span.attributes],
+        events: span.events,
+        failure: span.status._tag === "Ended" && Exit.isFailure(span.status.exit)
+          ? Cause.pretty(span.status.exit.cause)
+          : null,
+      })),
+      metrics: h.snapshot().map((metric) => metric.attributes),
+    },
+    (_, value) => (typeof value === "bigint" ? String(value) : value),
+  )
+
+interface Row {
+  readonly id: string
+  readonly role: string
+  readonly text: string
+  readonly status: string
+  readonly failure: string | null
+  readonly questionId: string | null
+  readonly modelId: string | null
+  readonly stopReason: string | null
+  readonly inputTokens: number | null
+  readonly outputTokens: number | null
+  readonly position: number
+  readonly xmin: number
+}
+
+/** A message as Postgres holds it. */
+export const row = (runtime: Runtime, id: string) =>
+  runtime.runPromise(
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      const [found] = yield* sql<Row>`
+        SELECT id, role, text, status, failure, question_id AS "questionId", model_id AS "modelId",
+          stop_reason AS "stopReason", input_tokens AS "inputTokens", output_tokens AS "outputTokens",
+          position::int AS position, xmin::text::int AS xmin
+        FROM messages WHERE id = ${id}`
+      return found!
+    }),
+  )
+
+export const rowCount = (runtime: Runtime) =>
+  runtime.runPromise(
+    Effect.map(
+      Effect.flatMap(
+        SqlClient.SqlClient,
+        (sql) => sql<{ readonly n: number }>`SELECT count(*)::int AS n FROM messages`,
+      ),
+      ([result]) => result!.n,
+    ),
+  )
+
+/** Polls until `check` holds, for up to `withinMs` (two seconds unless set): a condition, never a fixed wait. */
+export const eventually = async (check: () => boolean | Promise<boolean>, withinMs = 2_000) => {
+  for (let attempt = 0; attempt < withinMs / 20; attempt++) {
+    if (await check()) return
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+  throw new Error("condition never held")
+}

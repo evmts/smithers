@@ -1,0 +1,389 @@
+[
+  {
+    "name": "implement-issue",
+    "file": ".smithers/flows/implement-issue.tsx",
+    "description": "Implement an accepted issue",
+    "inputs": [
+      {
+        "name": "issue",
+        "type": "number",
+        "required": true,
+        "description": "Repository issue number"
+      }
+    ],
+    "triggers": [
+      {
+        "kind": "issue-label",
+        "spec": "accepted",
+        "enabled": true
+      },
+      {
+        "kind": "manual",
+        "spec": "implement-issue",
+        "enabled": true
+      }
+    ],
+    "roles": [
+      {
+        "role": "implementer",
+        "agent": "implementer"
+      }
+    ],
+    "graph": {
+      "nodes": [
+        {
+          "id": "stage-1",
+          "label": "Understand",
+          "kind": "step"
+        },
+        {
+          "id": "stage-2",
+          "label": "Reproduce",
+          "kind": "agent"
+        },
+        {
+          "id": "stage-3",
+          "label": "Implement",
+          "kind": "agent"
+        },
+        {
+          "id": "stage-4",
+          "label": "Verify",
+          "kind": "check"
+        },
+        {
+          "id": "stage-5",
+          "label": "Open pull request",
+          "kind": "agent"
+        }
+      ],
+      "edges": [
+        [
+          "stage-1",
+          "stage-2"
+        ],
+        [
+          "stage-2",
+          "stage-3"
+        ],
+        [
+          "stage-3",
+          "stage-4"
+        ],
+        [
+          "stage-4",
+          "stage-5"
+        ]
+      ]
+    },
+    "runs": [
+      "run-512",
+      "run-511",
+      "run-508",
+      "run-505",
+      "run-507",
+      "run-504",
+      "run-502",
+      "run-501",
+      "run-500",
+      "run-499",
+      "run-498",
+      "run-497",
+      "run-review-example"
+    ]
+  },
+  {
+    "name": "review-change",
+    "file": ".smithers/flows/review-change.tsx",
+    "description": "Review a proposed change",
+    "inputs": [
+      {
+        "name": "pull",
+        "type": "number",
+        "required": true,
+        "description": "Pull request number"
+      }
+    ],
+    "triggers": [
+      {
+        "kind": "pull",
+        "spec": "opened, synchronize",
+        "enabled": true
+      },
+      {
+        "kind": "manual",
+        "spec": "review-change",
+        "enabled": true
+      }
+    ],
+    "roles": [
+      {
+        "role": "reviewer",
+        "agent": "reviewer"
+      }
+    ],
+    "graph": {
+      "nodes": [
+        {
+          "id": "stage-1",
+          "label": "Read diff",
+          "kind": "step"
+        },
+        {
+          "id": "stage-2",
+          "label": "Inspect callers",
+          "kind": "agent"
+        },
+        {
+          "id": "stage-3",
+          "label": "Run checks",
+          "kind": "check"
+        },
+        {
+          "id": "stage-4",
+          "label": "Write review",
+          "kind": "agent"
+        }
+      ],
+      "edges": [
+        [
+          "stage-1",
+          "stage-2"
+        ],
+        [
+          "stage-2",
+          "stage-3"
+        ],
+        [
+          "stage-3",
+          "stage-4"
+        ]
+      ]
+    },
+    "runs": [
+      "run-496"
+    ]
+  },
+  {
+    "name": "triage",
+    "file": ".smithers/flows/triage.tsx",
+    "description": "Reproduce and classify incoming reports",
+    "inputs": [
+      {
+        "name": "issue",
+        "type": "number",
+        "required": true,
+        "description": "Repository issue number"
+      }
+    ],
+    "triggers": [
+      {
+        "kind": "schedule",
+        "spec": "0 9 * * 1-5",
+        "enabled": true
+      },
+      {
+        "kind": "manual",
+        "spec": "triage",
+        "enabled": true
+      }
+    ],
+    "roles": [
+      {
+        "role": "triager",
+        "agent": "triager"
+      }
+    ],
+    "graph": {
+      "nodes": [
+        {
+          "id": "stage-1",
+          "label": "Read report",
+          "kind": "step"
+        },
+        {
+          "id": "stage-2",
+          "label": "Reproduce",
+          "kind": "agent"
+        },
+        {
+          "id": "stage-3",
+          "label": "Classify",
+          "kind": "agent"
+        },
+        {
+          "id": "stage-4",
+          "label": "Propose label",
+          "kind": "agent"
+        }
+      ],
+      "edges": [
+        [
+          "stage-1",
+          "stage-2"
+        ],
+        [
+          "stage-2",
+          "stage-3"
+        ],
+        [
+          "stage-3",
+          "stage-4"
+        ]
+      ]
+    },
+    "runs": [
+      "run-506"
+    ]
+  },
+  {
+    "name": "release-notes",
+    "file": ".smithers/flows/release-notes.tsx",
+    "description": "Draft notes from merged changes",
+    "inputs": [
+      {
+        "name": "tag",
+        "type": "string",
+        "required": true,
+        "description": "Existing release tag"
+      }
+    ],
+    "triggers": [
+      {
+        "kind": "manual",
+        "spec": "release-notes",
+        "enabled": true
+      }
+    ],
+    "roles": [
+      {
+        "role": "writer",
+        "agent": "writer"
+      }
+    ],
+    "graph": {
+      "nodes": [
+        {
+          "id": "stage-1",
+          "label": "Collect changes",
+          "kind": "step"
+        },
+        {
+          "id": "stage-2",
+          "label": "Group notes",
+          "kind": "agent"
+        },
+        {
+          "id": "stage-3",
+          "label": "Check links",
+          "kind": "check"
+        },
+        {
+          "id": "stage-4",
+          "label": "Ask owner",
+          "kind": "approval"
+        }
+      ],
+      "edges": [
+        [
+          "stage-1",
+          "stage-2"
+        ],
+        [
+          "stage-2",
+          "stage-3"
+        ],
+        [
+          "stage-3",
+          "stage-4"
+        ]
+      ]
+    },
+    "runs": [
+      "run-510",
+      "run-495"
+    ]
+  },
+  {
+    "name": "docs-sync",
+    "file": ".smithers/flows/docs-sync.tsx",
+    "description": "Refresh documentation after API changes",
+    "inputs": [
+      {
+        "name": "ref",
+        "type": "string",
+        "required": true,
+        "description": "Source revision to document"
+      }
+    ],
+    "triggers": [
+      {
+        "kind": "push",
+        "spec": "main",
+        "enabled": true
+      },
+      {
+        "kind": "manual",
+        "spec": "docs-sync",
+        "enabled": true
+      }
+    ],
+    "roles": [
+      {
+        "role": "writer",
+        "agent": "writer"
+      }
+    ],
+    "graph": {
+      "nodes": [
+        {
+          "id": "stage-1",
+          "label": "Read changes",
+          "kind": "step"
+        },
+        {
+          "id": "stage-2",
+          "label": "Find pages",
+          "kind": "agent"
+        },
+        {
+          "id": "stage-3",
+          "label": "Draft updates",
+          "kind": "agent"
+        },
+        {
+          "id": "stage-4",
+          "label": "Verify examples",
+          "kind": "check"
+        },
+        {
+          "id": "stage-5",
+          "label": "Open pull request",
+          "kind": "agent"
+        }
+      ],
+      "edges": [
+        [
+          "stage-1",
+          "stage-2"
+        ],
+        [
+          "stage-2",
+          "stage-3"
+        ],
+        [
+          "stage-3",
+          "stage-4"
+        ],
+        [
+          "stage-4",
+          "stage-5"
+        ]
+      ]
+    },
+    "runs": [
+      "run-509",
+      "run-503"
+    ]
+  }
+]

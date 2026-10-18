@@ -1,0 +1,70 @@
+[
+  {
+    "view": "",
+    "context": "Effect-TS/effect · main · All packages",
+    "question": "Which packages are affected by the PostgreSQL fix?",
+    "answer": "The PR changes `@effect/sql-pg` and the shared `effect/sql` client. Its required Bun check also exercises `@effect/sql-sqlite-bun`.",
+    "cards": [
+      {
+        "kind": "pull",
+        "ref": "101"
+      },
+      {
+        "kind": "run",
+        "ref": "run-4802"
+      }
+    ]
+  },
+  {
+    "view": "issues/:n",
+    "context": "Effect-TS/effect · issue #42 · @effect/sql-pg",
+    "question": "/issue.implement 42",
+    "answer": "Open the TODO form with `@effect/sql-pg`, `effect`, cora and maya already selected.",
+    "cards": [
+      {
+        "kind": "issue",
+        "ref": "42"
+      },
+      {
+        "kind": "run",
+        "ref": "run-4801"
+      }
+    ]
+  },
+  {
+    "view": "pull/:n",
+    "context": "Effect-TS/effect · PR #101",
+    "question": "Why is this blocked?",
+    "answer": "maya requested SQLite rollback cleanup. The Bun check failed when the connection was reused after a failed COMMIT.",
+    "cards": [
+      {
+        "kind": "run",
+        "ref": "run-4802"
+      }
+    ]
+  },
+  {
+    "view": "runs/:id/matrix",
+    "context": "Effect-TS/effect · run-4802 · All packages",
+    "question": "Open the failing test",
+    "answer": "The failure is in `packages/sql/sqlite-bun/test/Client.test.ts:83`. The Node and Deno placeholder results do not exercise Bun SQLite.",
+    "cards": [
+      {
+        "kind": "file",
+        "ref": "packages/sql/sqlite-bun/test/Client.test.ts"
+      }
+    ]
+  },
+  {
+    "view": "flows/version-packages",
+    "context": "Effect-TS/effect · two pending changesets · rc",
+    "question": "/release.preview",
+    "answer": "The preview uses both root changesets and all 31 public fixed-group members. maya has an approval request before exact versions are computed.",
+    "cards": [
+      {
+        "kind": "run",
+        "ref": "run-4803"
+      }
+    ]
+  }
+]

@@ -1,0 +1,55 @@
+# Local Postgres and Electric for `pnpm dev`. Production runs both as managed services; see docs/infrastructure.md.
+name: smithers-mvp
+services:
+  postgres:
+    image: postgres:17.11-alpine
+    environment:
+      POSTGRES_USER: smithers
+      POSTGRES_PASSWORD: smithers
+      POSTGRES_DB: smithers
+    # Electric reads Postgres' logical replication stream.
+    # max_connections 300: several agents' parallel suites share this database (100 ran out).
+    command: ["postgres", "-c", "wal_level=logical", "-c", "max_connections=300"]
+    ports: ["54321:5432"]
+    volumes: ["postgres:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smithers -d smithers"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+  electric:
+    image: electricsql/electric:1.8.1
+    environment:
+      DATABASE_URL: postgresql://smithers:smithers@postgres:5432/smithers?sslmode=disable
+      # Local only: production sets ELECTRIC_SECRET, and only ChatApi holds it.
+      ELECTRIC_INSECURE: "true"
+    ports: ["30001:3000"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+  # Transaction pooling as Hyperdrive does it: each transaction may run on a different server connection, which is
+  # RESET when the transaction ends, so a session SET is lost. @smthrs/database proves PostgresDatabase against it.
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.25.2-p0@sha256:7d7a27d9e90985cab5cf42256f5c13a3120baa4b055b69df37beb272b89b2340
+    environment:
+      DATABASE_URL: postgres://smithers:smithers@postgres:5432/smithers
+      POOL_MODE: transaction
+      SERVER_RESET_QUERY: RESET ALL
+      SERVER_RESET_QUERY_ALWAYS: "1"
+      AUTH_TYPE: scram-sha-256
+      # Hyperdrive keeps named prepared statements across transactions; PgBouncer does with this set.
+      MAX_PREPARED_STATEMENTS: "200"
+      # Few server connections for many clients, so consecutive transactions of one client change connections.
+      DEFAULT_POOL_SIZE: "4"
+      MAX_CLIENT_CONN: "500"
+    ports: ["54322:5432"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U smithers -d smithers"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+volumes:
+  postgres: {}

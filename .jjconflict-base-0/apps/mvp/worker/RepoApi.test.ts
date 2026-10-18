@@ -1,0 +1,524 @@
+// RepoApi (worker/RepoApi.ts, docs/features/repo.md#repoapi) through its real handler, over this file's schema of the
+// compose Postgres and Electric (`pnpm db:up`), with the scripted Code Storage and GitHub (worker/test/codeStorage.ts).
+// Clones run on the Node host in this process (worker/test/repos.ts). Unhappy paths arm a fault on the scripted
+// provider, or give RepoApi a faulty service; nothing intercepts a request.
+import { Action } from "@smthrs/flow"
+import { Cause, Effect, Exit, Layer, Redacted } from "effect"
+import { SqlClient } from "effect/sql"
+import { beforeAll, beforeEach, describe, expect, test } from "vitest"
+import * as Database from "../db/Database.ts"
+import * as TestDatabase from "../db/TestDatabase.ts"
+import { LOCAL_ELECTRIC_URL } from "../src/features/chat/contract.ts"
+import { blobRoute, cloneExecutionId, treeRoute } from "../src/features/repo/contract.ts"
+import * as RepoFlows from "../src/features/repo/flows.ts"
+import * as Actor from "./Actor.ts"
+import { FlowStarter, StartConflict, StartUnavailable } from "./Flows.ts"
+import * as RepoMetrics from "./RepoMetrics.ts"
+import * as Repos from "./Repos.ts"
+import { fixture, scripted } from "./test/codeStorage.ts"
+import { runFlow } from "./test/flowHost.ts"
+import { recorded, testFile } from "./test/harness.ts"
+import { repoHarness, repositoryRow, resetRepos, usageRow } from "./test/repos.ts"
+
+const runtime = testFile("repo_api")
+
+beforeAll(async () => {
+  const health = `${LOCAL_ELECTRIC_URL}/v1/health`
+  const response = await fetch(health).catch((error: unknown) => {
+    throw TestDatabase.explain("Electric", new URL(health).host)(error)
+  })
+  if (!response.ok) throw new Error(`Electric answered ${response.status} to ${health}`)
+})
+
+beforeEach(() => resetRepos(runtime))
+
+const sql = (statement: string) =>
+  runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (client) => Effect.orDie(client.unsafe(statement))))
+
+describe("POST /api/repos", () => {
+  test("clones a public repository: 202 with the txid, cloning at once, then ready with its head", async () => {
+    const h = await repoHarness(runtime)
+    h.scripted.publish("octocat", "Spoon-Knife")
+    const response = await h.clone("octocat", "Spoon-Knife")
+    expect(response.status).toBe(202)
+    expect(response.headers.get("cache-control")).toBe("no-store")
+    const body = await response.json()
+    expect(body).toEqual({ txid: expect.any(Number), id: "github/octocat/spoon-knife", attempt: 1 })
+    await h.settled()
+    const row = await repositoryRow(runtime, "github/octocat/spoon-knife")
+    // The execution is named by the attempt's own id, a UUID, never the attempt counter.
+    expect(row!.cloneId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+    const executionId = cloneExecutionId("github/octocat/spoon-knife", row!.cloneId)
+    expect(h.started()).toEqual([executionId])
+    expect(row).toMatchObject({
+      owner: "octocat",
+      name: "Spoon-Knife",
+      status: "ready",
+      failure: null,
+      capacity: null,
+      storedBytes: String(640 * 1024),
+      defaultBranch: "main",
+      headSha: fixture().commit.sha,
+      headMessage: "Add the fixture",
+      headAuthor: "Mona",
+      attempt: 1,
+    })
+    expect(row!.settledAt).toBeInstanceOf(Date)
+    expect(await h.status(executionId)).toBe("completed")
+    expect(h.scripted.calls.filter((call) => call.startsWith("createRepo"))).toEqual([
+      "createRepo:github/octocat/spoon-knife",
+    ])
+    expect(h.count(RepoMetrics.cloneRequests, { outcome: "started" })).toBe(1)
+    expect(h.count(RepoMetrics.clones, { outcome: "ready", reason: "none" })).toBe(1)
+    expect(h.only("repo.clone.request").annotations).toMatchObject({
+      id: "github/octocat/spoon-knife",
+      attempt: 1,
+      cloneId: row!.cloneId,
+      outcome: "started",
+      status: 202,
+    })
+    expect(h.line("repo.clone.step").map((log) => log.annotations.step)).toEqual(["inspect", "import", "pull", "await_sync"])
+    expect(h.only("repo.clone.settle").annotations).toMatchObject({
+      id: "github/octocat/spoon-knife",
+      cloneId: row!.cloneId,
+      status: "ready",
+      settled: true,
+      reason: "none",
+    })
+    expect((await usageRow(runtime))?.imported).toBe(640 * 1024)
+  })
+
+  test("a second request starts nothing: 200 with the row's status", async () => {
+    const h = await repoHarness(runtime)
+    await h.seed("octocat", "Spoon-Knife")
+    const again = await h.clone("OctoCat", "spoon-knife")
+    expect(again.status).toBe(200)
+    expect(await again.json()).toEqual({ txid: null, id: "github/octocat/spoon-knife", status: "ready" })
+    expect(h.started()).toHaveLength(1)
+    expect(h.count(RepoMetrics.cloneRequests, { outcome: "existing" })).toBe(1)
+  })
+
+  test("a request while the clone runs starts the same execution again, which changes nothing", async () => {
+    const starts: Array<string> = []
+    const h = await repoHarness(runtime, {
+      starter: FlowStarter.of({ start: (_flow, start) => Effect.sync(() => void starts.push(start.executionId)) }),
+    })
+    expect((await h.clone("octocat", "Spoon-Knife")).status).toBe(202)
+    const again = await h.clone("octocat", "Spoon-Knife")
+    expect(again.status).toBe(200)
+    expect(await again.json()).toMatchObject({ status: "cloning" })
+    const { cloneId } = (await repositoryRow(runtime, "github/octocat/spoon-knife"))!
+    expect(starts).toEqual([
+      cloneExecutionId("github/octocat/spoon-knife", cloneId),
+      cloneExecutionId("github/octocat/spoon-knife", cloneId),
+    ])
+  })
+
+  test("Try again on a failed clone starts attempt 2, under an id of its own", async () => {
+    const h = await repoHarness(runtime)
+    // GitHub doesn't have it yet: not_found.
+    expect((await h.clone("octocat", "Spoon-Knife")).status).toBe(202)
+    await h.settled()
+    const failed = await repositoryRow(runtime, "github/octocat/spoon-knife")
+    expect(failed).toMatchObject({ status: "failed", failure: "not_found" })
+    h.scripted.publish("octocat", "Spoon-Knife")
+    const retried = await h.clone("octocat", "Spoon-Knife")
+    expect(retried.status).toBe(202)
+    expect(await retried.json()).toMatchObject({ attempt: 2 })
+    await h.settled()
+    const ready = await repositoryRow(runtime, "github/octocat/spoon-knife")
+    expect(ready).toMatchObject({ status: "ready", failure: null, attempt: 2 })
+    expect(ready!.cloneId).not.toBe(failed!.cloneId)
+    expect(h.started()).toEqual([
+      cloneExecutionId("github/octocat/spoon-knife", failed!.cloneId),
+      cloneExecutionId("github/octocat/spoon-knife", ready!.cloneId),
+    ])
+  })
+
+  test("after a database reset that kept the Durable Objects, attempt 1 again starts cleanly and settles", async () => {
+    const h = await repoHarness(runtime)
+    h.scripted.publish("octocat", "Spoon-Knife")
+    expect((await h.clone("octocat", "Spoon-Knife")).status).toBe(202)
+    await h.settled()
+    const before = await repositoryRow(runtime, "github/octocat/spoon-knife")
+    // The database is reset: the row is gone and the attempt counter restarts. The first clone's Durable Object keeps
+    // its intent, whose payload (its own requestedAt) differs from any new attempt's.
+    await resetRepos(runtime)
+    const again = await h.clone("octocat", "Spoon-Knife")
+    expect(again.status).toBe(202)
+    expect(await again.json()).toMatchObject({ attempt: 1 })
+    await h.settled()
+    const after = await repositoryRow(runtime, "github/octocat/spoon-knife")
+    expect(after).toMatchObject({ status: "ready", attempt: 1, headSha: fixture().commit.sha })
+    expect(after!.cloneId).not.toBe(before!.cloneId)
+    const executions = [before!, after!].map((row) => cloneExecutionId("github/octocat/spoon-knife", row.cloneId))
+    expect(h.started()).toEqual(executions)
+    expect(await h.status(executions[1]!)).toBe("completed")
+    expect(h.count(RepoMetrics.cloneRequests, { outcome: "started" })).toBe(2)
+  })
+
+  test("a start another payload holds settles that attempt failed, never leaving it cloning", async () => {
+    // Attempt ids never repeat, so a conflict is a bug; the starter here answers one to every start after the first.
+    let conflicts = false
+    const h = await repoHarness(runtime, {
+      starter: FlowStarter.of({ start: () => (conflicts ? Effect.fail(new StartConflict()) : Effect.void) }),
+    })
+    // A new clone's start conflicts.
+    conflicts = true
+    const fresh = await h.clone("octocat", "Spoon-Knife")
+    expect(fresh.status).toBe(503)
+    expect(await fresh.json()).toEqual({ code: "unavailable" })
+    expect(await repositoryRow(runtime, "github/octocat/spoon-knife")).toMatchObject({
+      status: "failed",
+      failure: "unavailable",
+      attempt: 1,
+    })
+    expect(h.only("repo.clone.request").annotations).toMatchObject({
+      outcome: "conflict",
+      status: 503,
+      errorCode: "conflict",
+    })
+    expect(h.only("repo.clone.request").level).toBe("ERROR")
+    expect(h.count(RepoMetrics.cloneRequests, { outcome: "conflict" })).toBe(1)
+    // Try again starts attempt 2; while it runs, a request that starts it again conflicts and settles it too.
+    conflicts = false
+    expect((await h.clone("octocat", "Spoon-Knife")).status).toBe(202)
+    conflicts = true
+    const running = await h.clone("octocat", "Spoon-Knife")
+    expect(running.status).toBe(503)
+    expect(await repositoryRow(runtime, "github/octocat/spoon-knife")).toMatchObject({
+      status: "failed",
+      failure: "unavailable",
+      attempt: 2,
+    })
+    expect(h.count(RepoMetrics.cloneRequests, { outcome: "conflict" })).toBe(2)
+  })
+
+  test("signed out: 401 authentication, and nothing is written", async () => {
+    const h = await repoHarness(runtime, { actor: null })
+    const response = await h.clone("octocat", "Spoon-Knife")
+    expect(response.status).toBe(401)
+    expect(await response.json()).toEqual({ code: "authentication" })
+    expect(await repositoryRow(runtime, "github/octocat/spoon-knife")).toBeUndefined()
+    expect(h.count(RepoMetrics.cloneRequests, { outcome: "authentication" })).toBe(1)
+  })
+
+  test("refuses what it can't take: method, body, names, size, and a deployment without Code Storage", async () => {
+    const h = await repoHarness(runtime)
+    const get = await h.fetch("/api/repos")
+    expect(get.status).toBe(405)
+    expect(get.headers.get("allow")).toBe("POST")
+    const post = (body: string, headers: Record<string, string> = {}) =>
+      h.fetch("/api/repos", { method: "POST", headers: { "content-type": "application/json", ...headers }, body })
+    for (const body of ["{", "[]", JSON.stringify({ owner: "octocat" }), JSON.stringify({ owner: "-x", name: "y" })]) {
+      expect((await post(body)).status).toBe(400)
+    }
+    for (const [owner, name] of [["app", "x"], ["API", "x"], ["assets", "x"], ["octocat", ".."], ["octocat", "a/b"]]) {
+      const response = await h.clone(owner!, name!)
+      expect(response.status).toBe(400)
+      expect(await response.json()).toEqual({ code: "invalid" })
+    }
+    expect((await post("x".repeat(2048))).status).toBe(413)
+    const raw = await h.fetch("/api/repos", { method: "POST", body: new Uint8Array([0x7b, 0xff, 0xfe, 0x7d]) })
+    expect(raw.status).toBe(400)
+    const none = await repoHarness(runtime, { codeStorage: "none" })
+    const unconfigured = await none.clone("octocat", "Spoon-Knife")
+    expect(unconfigured.status).toBe(503)
+    expect(await unconfigured.json()).toEqual({ code: "not_configured" })
+  })
+
+  test("sessions that can't be read: 503 unavailable, neither signed in nor out", async () => {
+    const h = await repoHarness(runtime, {
+      sessions: Layer.succeed(Actor.Sessions, Actor.Sessions.of({ resolve: Effect.fail(new Actor.SessionsUnavailable()) })),
+    })
+    const response = await h.clone("octocat", "Spoon-Knife")
+    expect(response.status).toBe(503)
+    expect(await response.json()).toEqual({ code: "unavailable" })
+  })
+
+  test("past REPO_MAX_REPOSITORIES: 429 repository_limit", async () => {
+    const h = await repoHarness(runtime, { config: { REPO_MAX_REPOSITORIES: "1" } })
+    await h.seed("octocat", "Spoon-Knife")
+    const response = await h.clone("octocat", "Hello-World")
+    expect(response.status).toBe(429)
+    expect(await response.json()).toEqual({ code: "repository_limit" })
+    expect(await repositoryRow(runtime, "github/octocat/hello-world")).toBeUndefined()
+  })
+
+  test("Postgres unreachable, or the start refused: 503 unavailable, logged by code", async () => {
+    const down = Database.layer(Effect.succeed(Redacted.make("postgresql://smithers:smithers@127.0.0.1:1/smithers")))
+    const h = await repoHarness(runtime, { database: down })
+    const response = await h.clone("octocat", "Spoon-Knife")
+    expect(response.status).toBe(503)
+    expect(await response.json()).toEqual({ code: "unavailable" })
+    expect(h.only("repo.clone.request").annotations).toMatchObject({ status: 503, errorCode: expect.stringMatching(/^sql:/) })
+    const refused = await repoHarness(runtime, {
+      starter: FlowStarter.of({ start: () => Effect.fail(new StartUnavailable({ errorCode: "do" })) }),
+    })
+    const unstarted = await refused.clone("octocat", "Spoon-Knife")
+    expect(unstarted.status).toBe(503)
+    // The row says cloning, so the next request starts it again.
+    expect(await repositoryRow(runtime, "github/octocat/spoon-knife")).toMatchObject({ status: "cloning" })
+  })
+})
+
+describe("reads", () => {
+  test("a tree lists every file at a commit, cached forever: the second read costs Code Storage nothing", async () => {
+    const h = await repoHarness(runtime)
+    const { headSha } = await h.seed("octocat", "Spoon-Knife")
+    const first = await h.fetch(treeRoute("octocat", "Spoon-Knife", headSha))
+    expect(first.status).toBe(200)
+    expect(first.headers.get("cache-control")).toBe("public, max-age=31536000, immutable")
+    expect(first.headers.get("content-type")).toContain("application/json")
+    expect(await first.json()).toEqual({
+      paths: ["README.md", "big.txt", "docs/guide.md", "logo.png", "src/index.ts"],
+      truncated: false,
+    })
+    const second = await h.fetch(treeRoute("octocat", "Spoon-Knife", headSha))
+    expect(second.status).toBe(200)
+    expect(h.scripted.calls.filter((call) => call.startsWith("listFiles"))).toHaveLength(1)
+    expect(h.count(RepoMetrics.reads, { kind: "tree", status: "200" })).toBe(2)
+    expect(h.line("repo.tree")[0]!.annotations).toMatchObject({ repoId: "github/octocat/spoon-knife", sha: headSha })
+    expect((await usageRow(runtime))!.read).toBeGreaterThan(0)
+  })
+
+  test("a tree reads page by page, and stops at REPO_TREE_MAX_PATHS saying it is truncated", async () => {
+    const files = Object.fromEntries(Array.from({ length: 7 }, (_, index) => [`f${index}.txt`, "x"]))
+    const all = Array.from({ length: 7 }, (_, index) => `f${index}.txt`)
+    const paged = scripted({ pageSize: 2 })
+    const h = await repoHarness(runtime, { scripted: paged })
+    const { headSha } = await h.seed("octocat", "Many", fixture({ files }))
+    expect(await (await h.fetch(treeRoute("octocat", "Many", headSha))).json()).toEqual({ paths: all, truncated: false })
+    expect(paged.calls.filter((call) => call.startsWith("listFiles"))).toHaveLength(4)
+    const bounded = await repoHarness(runtime, { scripted: paged, config: { REPO_TREE_MAX_PATHS: "3" } })
+    const stopped = bounded.fetch(`${treeRoute("octocat", "Many", headSha)}`)
+    // A cache of its own: the bounded listing is read again, two pages, and cut at three paths.
+    expect(await (await stopped).json()).toEqual({ paths: all.slice(0, 3), truncated: true })
+    const exact = await repoHarness(runtime, { scripted: scripted(), config: { REPO_TREE_MAX_PATHS: "3" } })
+    const few = await exact.seed("octocat", "Few", fixture({ files: { "a.txt": "a", "b.txt": "b", "c.txt": "c" } }))
+    expect(await (await exact.fetch(treeRoute("octocat", "Few", few.headSha))).json()).toEqual({
+      paths: ["a.txt", "b.txt", "c.txt"],
+      truncated: false,
+    })
+  })
+
+  test("Code Storage's quirks: a file with no blob id, one too large with no declared size, a client that dies", async () => {
+    const source = await repoHarness(runtime)
+    const { headSha } = await source.seed("octocat", "Spoon-Knife")
+    const client = source.scripted.client
+    const quirky = await repoHarness(runtime, {
+      scripted: source.scripted,
+      codeStorage: {
+        ...client,
+        readFile: (repo, read) =>
+          read.path === "README.md"
+            ? Effect.map(client.readFile(repo, read), (file) => ({ bytes: file.bytes, blobSha: undefined }))
+            : read.path === "big.txt"
+            ? Effect.fail(source.scripted.error("readFile", "too_large", 200))
+            : Effect.die(new Error("boom")),
+      },
+    })
+    const readme = await quirky.fetch(blobRoute("octocat", "Spoon-Knife", headSha, "README.md"))
+    expect(readme.status).toBe(200)
+    expect(readme.headers.get("x-blob-sha")).toBeNull()
+    const big = await quirky.fetch(blobRoute("octocat", "Spoon-Knife", headSha, "big.txt"))
+    expect(big.status).toBe(413)
+    expect(await big.json()).toEqual({ code: "too_large" })
+    const reader = await Effect.runPromise(Effect.service(RepoFlows.RepoReader).pipe(Effect.provide(quirky.reader())))
+    expect(await Effect.runPromise(reader.read("octocat", "Spoon-Knife", headSha, "big.txt"))).toEqual({
+      state: "too-large",
+      size: 512 * 1024 + 1,
+    })
+    const died = await quirky.fetch(blobRoute("octocat", "Spoon-Knife", headSha, "src/index.ts"))
+    expect(died.status).toBe(503)
+    expect(quirky.line("repo.blob").at(-1)!.annotations).toMatchObject({ status: 503, errorCode: "unknown" })
+  })
+
+  test("a file: its bytes and blob id; a binary as bytes; one over 512 KiB is 413 with its size", async () => {
+    const h = await repoHarness(runtime)
+    const { headSha } = await h.seed("octocat", "Spoon-Knife")
+    const readme = await h.fetch(blobRoute("octocat", "Spoon-Knife", headSha, "README.md"))
+    expect(readme.status).toBe(200)
+    expect(readme.headers.get("x-blob-sha")).toMatch(/^[0-9a-f]{40}$/)
+    expect(readme.headers.get("content-type")).toBe("application/octet-stream")
+    expect(await readme.text()).toContain("# Fixture")
+    const nested = await h.fetch(blobRoute("octocat", "Spoon-Knife", headSha, "docs/guide.md"))
+    expect(await nested.text()).toContain("# Guide")
+    const logo = await h.fetch(blobRoute("octocat", "Spoon-Knife", headSha, "logo.png"))
+    expect(new Uint8Array(await logo.arrayBuffer())[1]).toBe(0x50)
+    const big = await h.fetch(blobRoute("octocat", "Spoon-Knife", headSha, "big.txt"))
+    expect(big.status).toBe(413)
+    expect(await big.json()).toEqual({ code: "too_large", size: 600 * 1024 })
+    expect(h.count(RepoMetrics.reads, { kind: "blob", status: "413" })).toBe(1)
+    const missing = await h.fetch(blobRoute("octocat", "Spoon-Knife", headSha, "nope.md"))
+    expect(missing.status).toBe(404)
+    expect(await missing.json()).toEqual({ code: "not_found" })
+  })
+
+  test("refuses bad input: a method, a SHA, a path, a name, a route", async () => {
+    const h = await repoHarness(runtime)
+    const sha = "a".repeat(40)
+    expect((await h.fetch(treeRoute("octocat", "x", sha), { method: "DELETE" })).status).toBe(405)
+    expect((await h.fetch(treeRoute("octocat", "x", "main"))).status).toBe(400)
+    expect((await h.fetch(`/api/repos/octocat/x/blob/${sha}/a%2F..%2Fb`)).status).toBe(400)
+    expect((await h.fetch(`/api/repos/octocat/x/blob/${sha}/${"a/".repeat(70)}b`)).status).toBe(400)
+    expect((await h.fetch(`/api/repos/octocat/x/blob/${sha}`)).status).toBe(400)
+    expect((await h.fetch(treeRoute("app", "x", sha))).status).toBe(404)
+    expect((await h.fetch(`/api/repos/octocat/x/tree/${sha}/extra`)).status).toBe(404)
+    expect((await h.fetch(`/api/repos/octocat/x/commits/${sha}`)).status).toBe(404)
+    expect((await h.fetch(`/api/repos/octocat/%E0%A4%A/tree/${sha}`)).status).toBe(404)
+    expect((await h.fetch("/api/elsewhere")).status).toBe(404)
+    const none = await repoHarness(runtime, { codeStorage: "none" })
+    expect((await none.fetch(treeRoute("octocat", "x", sha))).status).toBe(503)
+  })
+
+  test("Code Storage busy: 503 with its Retry-After, never cached; the next read answers", async () => {
+    const h = await repoHarness(runtime)
+    const { headSha } = await h.seed("octocat", "Spoon-Knife")
+    h.scripted.fail("readFile", h.scripted.error("readFile", "repository_thawing", 409, { retryAfterMillis: 2_500 }))
+    const busy = await h.fetch(blobRoute("octocat", "Spoon-Knife", headSha, "README.md"))
+    expect(busy.status).toBe(503)
+    expect(busy.headers.get("retry-after")).toBe("3")
+    expect(await busy.json()).toEqual({ code: "unavailable" })
+    h.scripted.fail("listFiles", h.scripted.error("listFiles", "internal_error", 500))
+    const failed = await h.fetch(treeRoute("octocat", "Spoon-Knife", headSha))
+    expect(failed.status).toBe(503)
+    expect(failed.headers.get("retry-after")).toBeNull()
+    expect((await h.fetch(blobRoute("octocat", "Spoon-Knife", headSha, "README.md"))).status).toBe(200)
+  })
+
+  test("this month's reads spent: a miss is 503 capacity, a cached answer still serves", async () => {
+    const h = await repoHarness(runtime, { config: { REPO_MAX_READ_GB_PER_MONTH: "0.000001" } })
+    const { headSha } = await h.seed("octocat", "Spoon-Knife")
+    expect((await h.fetch(blobRoute("octocat", "Spoon-Knife", headSha, "README.md"))).status).toBe(200)
+    await sql(`UPDATE code_storage_usage SET bytes_read = 1000000`)
+    expect((await h.fetch(blobRoute("octocat", "Spoon-Knife", headSha, "README.md"))).status).toBe(200)
+    const miss = await h.fetch(blobRoute("octocat", "Spoon-Knife", headSha, "docs/guide.md"))
+    expect(miss.status).toBe(503)
+    expect(await miss.json()).toEqual({ code: "capacity" })
+  })
+
+  test("a read budget Postgres can't check is 503 unavailable; a meter it can't write is logged and the read answers", async () => {
+    const down = Database.layer(Effect.succeed(Redacted.make("postgresql://smithers:smithers@127.0.0.1:1/smithers")))
+    const source = await repoHarness(runtime)
+    const { headSha } = await source.seed("octocat", "Spoon-Knife")
+    const h = await repoHarness(runtime, { database: down, scripted: source.scripted })
+    const response = await h.fetch(blobRoute("octocat", "Spoon-Knife", headSha, "README.md"))
+    expect(response.status).toBe(503)
+    expect(h.only("repo.blob").annotations).toMatchObject({ status: 503, errorCode: "unavailable" })
+    // A database that answers the budget check and is gone for the meter: every second connection fails.
+    const { database } = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+    let opened = 0
+    const flaky = Layer.unwrap(Effect.sync(() => (++opened % 2 === 1 ? database : down)))
+    const metered = await repoHarness(runtime, { database: flaky, scripted: source.scripted })
+    const answered = await metered.fetch(blobRoute("octocat", "Spoon-Knife", headSha, "docs/guide.md"))
+    expect(answered.status).toBe(200)
+    expect(metered.only("repo.meter").annotations).toMatchObject({ errorCode: expect.stringMatching(/^sql:/) })
+  })
+
+  test("telemetry carries ids, statuses and sizes, never file contents, commit messages or Code Storage's text", async () => {
+    const h = await repoHarness(runtime)
+    const secret = "SENTINEL-c0ffee"
+    const { headSha } = await h.seed("octocat", "Spoon-Knife", fixture({
+      files: { "README.md": `# ${secret}` },
+      commit: { sha: fixture().commit.sha, message: secret, author: secret, date: "2026-10-19T12:00:00Z" },
+    }))
+    await h.fetch(blobRoute("octocat", "Spoon-Knife", headSha, "README.md"))
+    await h.fetch(treeRoute("octocat", "Spoon-Knife", headSha))
+    expect(h.line("repo.blob")).toHaveLength(1)
+    expect(recorded(h)).not.toContain(secret)
+  })
+})
+
+describe("the agent's reads on the server", () => {
+  test("repo/tree and repo/read run on the Node host over RepoApi's own reads and cache", async () => {
+    const h = await repoHarness(runtime)
+    const { headSha } = await h.seed("octocat", "Spoon-Knife")
+    const registration = RepoFlows.registration.pipe(
+      Layer.provide(h.reader()),
+      Layer.provideMerge(Action.layerImplementations),
+    )
+    const tree = await runFlow(RepoFlows.RepoTree, { repo: "octocat/Spoon-Knife", revision: headSha }, registration)
+    expect(tree.exit).toEqual(Exit.succeed({
+      paths: ["README.md", "big.txt", "docs/guide.md", "logo.png", "src/index.ts"],
+      truncated: false,
+    }))
+    const read = (path: string) =>
+      runFlow(RepoFlows.RepoRead, { repo: "octocat/Spoon-Knife", revision: headSha, path }, registration)
+    expect((await read("src/index.ts")).exit).toEqual(Exit.succeed({
+      state: "text",
+      contents: "export const one = 1\nexport const two = 2\nexport const three = 3\n",
+      size: 65,
+    }))
+    expect((await read("logo.png")).exit).toEqual(Exit.succeed({ state: "binary", size: 12 }))
+    expect((await read("big.txt")).exit).toEqual(Exit.succeed({ state: "too-large", size: 600 * 1024 }))
+    const missing = await read("nope.md")
+    expect(Exit.isFailure(missing.exit) && Cause.squash(missing.exit.cause)).toBeInstanceOf(RepoFlows.RepoNotFound)
+    // One Code Storage read of the tree serves the GET route and the flow alike.
+    await h.fetch(treeRoute("octocat", "Spoon-Knife", headSha))
+    expect(h.scripted.calls.filter((call) => call.startsWith("listFiles"))).toHaveLength(1)
+  })
+
+  test("a reader's failures are the flows' declared ones: paused reads and a busy Code Storage", async () => {
+    const h = await repoHarness(runtime, { config: { REPO_MAX_READ_GB_PER_MONTH: "0.000001" } })
+    const { headSha } = await h.seed("octocat", "Spoon-Knife")
+    const reader = await Effect.runPromise(Effect.service(RepoFlows.RepoReader).pipe(Effect.provide(h.reader())))
+    h.scripted.fail("readFile", h.scripted.error("readFile", "rate_limited", 429, { retryAfterMillis: 700 }))
+    const busy = await Effect.runPromiseExit(reader.read("octocat", "Spoon-Knife", headSha, "README.md"))
+    expect(Exit.isFailure(busy) && Cause.squash(busy.cause)).toEqual(new RepoFlows.RepoReadUnavailable({ retryAfterMillis: 700 }))
+    h.scripted.fail("listFiles", h.scripted.error("listFiles", "internal_error", 500))
+    const failed = await Effect.runPromiseExit(reader.tree("octocat", "Spoon-Knife", headSha))
+    expect(Exit.isFailure(failed) && Cause.squash(failed.cause)).toEqual(new RepoFlows.RepoReadUnavailable({}))
+    await sql(`UPDATE code_storage_usage SET bytes_read = 1000000`)
+    const paused = await Effect.runPromiseExit(reader.read("octocat", "Spoon-Knife", headSha, "docs/guide.md"))
+    expect(Exit.isFailure(paused) && Cause.squash(paused.cause)).toBeInstanceOf(RepoFlows.RepoReadsPaused)
+    const none = await repoHarness(runtime, { codeStorage: "none" })
+    expect(() => none.reader()).toThrow("no Code Storage")
+  })
+})
+
+describe("spend", () => {
+  test("a read that crosses a threshold of REPO_BUDGET_USD alerts once a month, and the gauges follow", async () => {
+    // $0.000001 a month: the 640 KiB the clone stores is worth about 0.0024 cents, past every threshold.
+    const h = await repoHarness(runtime, { config: { REPO_BUDGET_USD: "0.000001" } })
+    const { headSha } = await h.seed("octocat", "Spoon-Knife")
+    expect(h.only("repo.spend.alert").annotations).toMatchObject({ pct: 100 })
+    expect(h.count(RepoMetrics.spendAlerts, { pct: "100" })).toBe(1)
+    expect(h.gauge(RepoMetrics.storedBytes)).toBe(640 * 1024)
+    expect(h.gauge(RepoMetrics.spendEstimate)).toBeGreaterThanOrEqual(0)
+    await h.fetch(blobRoute("octocat", "Spoon-Knife", headSha, "README.md"))
+    expect(h.line("repo.spend.alert")).toHaveLength(1)
+    expect((await usageRow(runtime))!.alerted).toBe(100)
+  })
+
+  test("each threshold alerts on its own as the month's spend grows", async () => {
+    // $1 a month; each step below adds stored bytes worth a fixed share of it.
+    const budgets = { maxRepositories: 100, maxStoredBytes: 1e12, maxReadBytes: 1e12, maxRepositoryBytes: 1e12, budgetUsd: 1 }
+    const alerts: Array<number | null> = []
+    const store = (id: string, gb: number) =>
+      sql(`INSERT INTO repositories (id, owner, name, status, stored_bytes) VALUES ('${id}', 'a', '${id}', 'cloning', ${Math.round(gb * 1e9)})`)
+    const meter = async () => alerts.push((await runtime.runPromise(Repos.meterRead(0, budgets))).alert)
+    await meter()
+    await store("github/a/half", 0.14) // $0.504
+    await meter()
+    await meter()
+    await store("github/a/more", 0.09) // $0.828
+    await meter()
+    await store("github/a/all", 0.06) // $1.044
+    await meter()
+    expect(alerts).toEqual([null, 50, null, 80, 100])
+  })
+})
+
+describe("GET /api/shapes/repositories", () => {
+  test("serves Electric's repositories, whole, with no subset requests", async () => {
+    const h = await repoHarness(runtime, { actor: null })
+    await sql(`INSERT INTO repositories (id, owner, name, status) VALUES ('github/a/b', 'a', 'b', 'cloning')`)
+    const response = await h.fetch("/api/shapes/repositories?offset=-1&table=messages&where=true")
+    expect(response.status).toBe(200)
+    expect(response.headers.get("electric-handle")).toEqual(expect.any(String))
+    // A subset request's parameters are dropped, so it reads the whole shape too.
+    const subset = await h.fetch("/api/shapes/repositories?offset=-1&subset__limit=1&subset__where=id")
+    expect(subset.status).toBe(200)
+  })
+})

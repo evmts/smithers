@@ -1,0 +1,86 @@
+[
+  {
+    "view": "",
+    "context": "smithers-canary/smithers · main · public repository",
+    "question": "How do I install Smithers?",
+    "answer": "Use Node.js 26.4.0 or later, then run:\n\n```sh\nnpm install -g smthrs@next\nsmthrs --version\nsmthrs doctor\n```\n\n`next` carries the 1.0 release candidates; `latest` remains 0.35.0. [Installation](smithers.sh/smithers-canary/smithers/blob/main/packages/smithers/docs/installation.md?L=8)",
+    "cards": [
+      {
+        "kind": "file",
+        "ref": "packages/smithers/docs/installation.md"
+      }
+    ]
+  },
+  {
+    "view": "docs/quickstart",
+    "context": "CLI quickstart · flow authoring",
+    "question": "What is a flow?",
+    "answer": "A flow is a named program beside your code. `.smithers/flows/hello/flow.ts` exports `Flow.make(\"hello\", { ... })`; its body plans actions and declares the input, result and capabilities. Smithers keeps its runs, approvals and events as durable state.\n\n[Quickstart](smithers.sh/smithers-canary/smithers/blob/main/packages/smithers/docs/quickstart.md?L=54) · [Project and state](smithers.sh/smithers-canary/smithers/blob/main/packages/smithers/docs/concepts/project-and-state.md?L=36)",
+    "cards": [
+      {
+        "kind": "file",
+        "ref": "packages/smithers/docs/quickstart.md"
+      },
+      {
+        "kind": "flow",
+        "ref": "docs-sync"
+      }
+    ]
+  },
+  {
+    "view": "stack",
+    "context": "Landing queue · person lands · automated checks",
+    "question": "How does landing work here?",
+    "answer": "The Stack is the landing queue. The check agent prepares test and gate evidence. The named landing person reviews it and chooses whether to land. A failed check refuses the landing. maya answers human approval requests.\n\nThe real `land` flow runs `commit.mjs`; pushing requires test commands or a no-test reason, and the required migration and drift gates still run. [land/flow.ts](smithers.sh/smithers-canary/smithers/blob/main/.smithers/flows/land/flow.ts?L=1)",
+    "cards": [
+      {
+        "kind": "flow",
+        "ref": "land"
+      },
+      {
+        "kind": "run",
+        "ref": "run-land-lint-refused"
+      }
+    ]
+  },
+  {
+    "view": "runs/:id",
+    "context": "Durable execution · stages and approvals",
+    "question": "Why is the release waiting?",
+    "answer": "rc.13 is the next cut. Its preparation is waiting for maya. The release flow asks before writing preparation and again before publishing verified tarballs. [release/flow.ts](smithers.sh/smithers-canary/smithers/blob/main/.smithers/flows/release/flow.ts?L=71)",
+    "cards": [
+      {
+        "kind": "run",
+        "ref": "run-release-rc13"
+      },
+      {
+        "kind": "flow",
+        "ref": "release"
+      }
+    ]
+  },
+  {
+    "view": "docs/:slug",
+    "context": "Smithers CLI documentation",
+    "question": "Where does Smithers keep a run?",
+    "answer": "Flow sources live in `.smithers/flows/`. `.flows/control.db` keeps runs, plans, approvals and the journal; `.flows/engine.db` keeps executions, attempts and wake state. [Project and state](smithers.sh/smithers-canary/smithers/blob/main/packages/smithers/docs/concepts/project-and-state.md?L=34)",
+    "cards": [
+      {
+        "kind": "file",
+        "ref": "packages/smithers/docs/concepts/project-and-state.md"
+      }
+    ]
+  },
+  {
+    "view": "evals",
+    "context": "Fixed suites · recorded snapshots",
+    "question": "Which eval needs attention?",
+    "answer": "The [SWE-bench fixture wave](smithers.sh/smithers-canary/smithers/evals/swebench) records 1/5 resolved versus the 5/5 Codex comparison. It is an imported snapshot, not a repository file or current result. Authoring is inconclusive because no execution receipt is supplied.",
+    "cards": [
+      {
+        "kind": "run",
+        "ref": "run-eval-snapshot-swebench"
+      }
+    ]
+  }
+]

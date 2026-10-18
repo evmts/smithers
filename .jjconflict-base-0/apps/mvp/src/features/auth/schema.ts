@@ -1,0 +1,40 @@
+import { Schema } from "effect"
+import { ROLES } from "./contract"
+
+// Sign-in's row on the tab and ChatApi's answer, as the Effect Schemas they are checked with. Constants the browser
+// shares with ChatApi live in contract.ts.
+
+/** What `GET /api/auth/session` answers (contract.ts `SessionState`), checked as it arrives. */
+export const SessionState = Schema.Union([
+  Schema.Struct({ signedIn: Schema.Literal(false), available: Schema.Boolean }),
+  Schema.Struct({ signedIn: Schema.Literal(true), login: Schema.String, role: Schema.NullOr(Schema.Literals(ROLES)) }),
+])
+
+/**
+ * This tab's view of who is signed in, one row:
+ * - `status`: `loading` until ChatApi answers, then `signed_in` or `signed_out`; `unreachable` when it couldn't ask;
+ * - `login` and `role` when signed in; `available` whether this deployment can sign anyone in;
+ * - `signingOut` while a sign-out is on its way;
+ * - `restored` once the device's last confirmed session (`Confirmed`) has been read.
+ */
+export const Session = Schema.Struct({
+  id: Schema.Literal("session"),
+  status: Schema.Literals(["loading", "signed_in", "signed_out", "unreachable"]),
+  login: Schema.NullOr(Schema.String),
+  role: Schema.NullOr(Schema.Literals(ROLES)),
+  available: Schema.Boolean,
+  signingOut: Schema.Boolean,
+  restored: Schema.Boolean,
+})
+export type Session = typeof Session.Type
+
+/**
+ * The last session ChatApi confirmed signed in on this device, kept on the device so a reload offline still knows who
+ * asks: at most one row, deleted when ChatApi says signed out and wiped with the device at sign-out.
+ */
+export const Confirmed = Schema.Struct({
+  id: Schema.Literal("session"),
+  login: Schema.String,
+  role: Schema.NullOr(Schema.Literals(ROLES)),
+})
+export type Confirmed = typeof Confirmed.Type

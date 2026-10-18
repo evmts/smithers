@@ -1,0 +1,6107 @@
+{
+  "root": [
+    {
+      "path": ".agents",
+      "kind": "dir"
+    },
+    {
+      "path": ".changeset",
+      "kind": "dir"
+    },
+    {
+      "path": ".data",
+      "kind": "dir"
+    },
+    {
+      "path": ".github",
+      "kind": "dir"
+    },
+    {
+      "path": ".vscode",
+      "kind": "dir"
+    },
+    {
+      "path": "ai-docs",
+      "kind": "dir"
+    },
+    {
+      "path": "dist",
+      "kind": "dir"
+    },
+    {
+      "path": "migration",
+      "kind": "dir"
+    },
+    {
+      "path": "packages",
+      "kind": "dir"
+    },
+    {
+      "path": "patches",
+      "kind": "dir"
+    },
+    {
+      "path": "scratchpad",
+      "kind": "dir"
+    },
+    {
+      "path": "scripts",
+      "kind": "dir"
+    },
+    {
+      "path": ".envrc",
+      "kind": "file",
+      "size": 10
+    },
+    {
+      "path": ".gitignore",
+      "kind": "file",
+      "size": 493
+    },
+    {
+      "path": ".oxlintrc.json",
+      "kind": "file",
+      "size": 933
+    },
+    {
+      "path": "AGENTS.md",
+      "kind": "file",
+      "size": 2825
+    },
+    {
+      "path": "deno.json",
+      "kind": "file",
+      "size": 909
+    },
+    {
+      "path": "dprint.json",
+      "kind": "file",
+      "size": 1004
+    },
+    {
+      "path": "flake.lock",
+      "kind": "file",
+      "size": 569
+    },
+    {
+      "path": "flake.nix",
+      "kind": "file",
+      "size": 554
+    },
+    {
+      "path": "jsdocs.config.json",
+      "kind": "file",
+      "size": 441
+    },
+    {
+      "path": "LICENSE",
+      "kind": "file",
+      "size": 1083
+    },
+    {
+      "path": "LLMS.md",
+      "kind": "file",
+      "size": 17955
+    },
+    {
+      "path": "MIGRATION.md",
+      "kind": "file",
+      "size": 3737
+    },
+    {
+      "path": "package.json",
+      "kind": "file",
+      "size": 3512
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "kind": "file",
+      "size": 408595
+    },
+    {
+      "path": "pnpm-workspace.yaml",
+      "kind": "file",
+      "size": 865
+    },
+    {
+      "path": "README.md",
+      "kind": "file",
+      "size": 8457
+    },
+    {
+      "path": "tsconfig.base.json",
+      "kind": "file",
+      "size": 1999
+    },
+    {
+      "path": "tsconfig.json",
+      "kind": "file",
+      "size": 177
+    },
+    {
+      "path": "tsconfig.packages.json",
+      "kind": "file",
+      "size": 1688
+    },
+    {
+      "path": "tsconfig.tests.json",
+      "kind": "file",
+      "size": 6798
+    },
+    {
+      "path": "tstyche.json",
+      "kind": "file",
+      "size": 191
+    },
+    {
+      "path": "vitest.config.ts",
+      "kind": "file",
+      "size": 7283
+    },
+    {
+      "path": "vitest.docs.ts",
+      "kind": "file",
+      "size": 377
+    },
+    {
+      "path": "vitest.setup.ts",
+      "kind": "file",
+      "size": 139
+    }
+  ],
+  "packages/effect": [
+    {
+      "path": "packages/effect/benchmark",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/benchmark/http",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/benchmark/httpapi",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/benchmark/net",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/benchmark/rpc",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/benchmark/schema",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/benchmark/stream",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/benchmark/Pool.ts",
+      "kind": "file",
+      "size": 2375
+    },
+    {
+      "path": "packages/effect/dist",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/dist/ai",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/dist/cli",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/dist/cluster",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/dist/devtools",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/dist/encoding",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/dist/eventlog",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/dist/http",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/dist/http-api",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/dist/internal",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/dist/net",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/dist/observability",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/dist/persistence",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/dist/process",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/dist/reactivity",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/dist/rpc",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/dist/schema",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/dist/socket",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/dist/sql",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/dist/testing",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/dist/workers",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/dist/workflow",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/dist/Arbitrary.d.ts",
+      "kind": "file",
+      "size": 20365
+    },
+    {
+      "path": "packages/effect/dist/Arbitrary.d.ts.map",
+      "kind": "file",
+      "size": 7328
+    },
+    {
+      "path": "packages/effect/dist/Arbitrary.js",
+      "kind": "file",
+      "size": 11331
+    },
+    {
+      "path": "packages/effect/dist/Arbitrary.js.map",
+      "kind": "file",
+      "size": 2907
+    },
+    {
+      "path": "packages/effect/dist/Array.d.ts",
+      "kind": "file",
+      "size": 120973
+    },
+    {
+      "path": "packages/effect/dist/Array.d.ts.map",
+      "kind": "file",
+      "size": 52608
+    },
+    {
+      "path": "packages/effect/dist/Array.js",
+      "kind": "file",
+      "size": 110711
+    },
+    {
+      "path": "packages/effect/dist/Array.js.map",
+      "kind": "file",
+      "size": 40704
+    },
+    {
+      "path": "packages/effect/dist/BigDecimal.d.ts",
+      "kind": "file",
+      "size": 38519
+    },
+    {
+      "path": "packages/effect/dist/BigDecimal.d.ts.map",
+      "kind": "file",
+      "size": 7715
+    },
+    {
+      "path": "packages/effect/dist/BigDecimal.js",
+      "kind": "file",
+      "size": 46406
+    },
+    {
+      "path": "packages/effect/dist/BigDecimal.js.map",
+      "kind": "file",
+      "size": 22374
+    },
+    {
+      "path": "packages/effect/dist/BigInt.d.ts",
+      "kind": "file",
+      "size": 22575
+    },
+    {
+      "path": "packages/effect/dist/BigInt.d.ts.map",
+      "kind": "file",
+      "size": 5443
+    },
+    {
+      "path": "packages/effect/dist/BigInt.js",
+      "kind": "file",
+      "size": 22592
+    },
+    {
+      "path": "packages/effect/dist/BigInt.js.map",
+      "kind": "file",
+      "size": 6559
+    },
+    {
+      "path": "packages/effect/dist/Boolean.d.ts",
+      "kind": "file",
+      "size": 10642
+    },
+    {
+      "path": "packages/effect/dist/Boolean.d.ts.map",
+      "kind": "file",
+      "size": 2906
+    },
+    {
+      "path": "packages/effect/dist/Boolean.js",
+      "kind": "file",
+      "size": 10134
+    },
+    {
+      "path": "packages/effect/dist/Boolean.js.map",
+      "kind": "file",
+      "size": 2821
+    },
+    {
+      "path": "packages/effect/dist/Brand.d.ts",
+      "kind": "file",
+      "size": 8406
+    },
+    {
+      "path": "packages/effect/dist/Brand.d.ts.map",
+      "kind": "file",
+      "size": 3843
+    },
+    {
+      "path": "packages/effect/dist/Brand.js",
+      "kind": "file",
+      "size": 4682
+    },
+    {
+      "path": "packages/effect/dist/Brand.js.map",
+      "kind": "file",
+      "size": 2051
+    },
+    {
+      "path": "packages/effect/dist/ByteSize.d.ts",
+      "kind": "file",
+      "size": 12690
+    },
+    {
+      "path": "packages/effect/dist/ByteSize.d.ts.map",
+      "kind": "file",
+      "size": 7623
+    },
+    {
+      "path": "packages/effect/dist/ByteSize.js",
+      "kind": "file",
+      "size": 15105
+    },
+    {
+      "path": "packages/effect/dist/ByteSize.js.map",
+      "kind": "file",
+      "size": 12617
+    },
+    {
+      "path": "packages/effect/dist/Cache.d.ts",
+      "kind": "file",
+      "size": 33609
+    },
+    {
+      "path": "packages/effect/dist/Cache.d.ts.map",
+      "kind": "file",
+      "size": 7902
+    },
+    {
+      "path": "packages/effect/dist/Cache.js",
+      "kind": "file",
+      "size": 36238
+    },
+    {
+      "path": "packages/effect/dist/Cache.js.map",
+      "kind": "file",
+      "size": 13032
+    },
+    {
+      "path": "packages/effect/dist/Cause.d.ts",
+      "kind": "file",
+      "size": 50426
+    },
+    {
+      "path": "packages/effect/dist/Cause.d.ts.map",
+      "kind": "file",
+      "size": 11449
+    },
+    {
+      "path": "packages/effect/dist/Cause.js",
+      "kind": "file",
+      "size": 35478
+    },
+    {
+      "path": "packages/effect/dist/Cause.js.map",
+      "kind": "file",
+      "size": 5230
+    },
+    {
+      "path": "packages/effect/dist/Channel.d.ts",
+      "kind": "file",
+      "size": 183197
+    },
+    {
+      "path": "packages/effect/dist/Channel.d.ts.map",
+      "kind": "file",
+      "size": 119912
+    },
+    {
+      "path": "packages/effect/dist/Channel.js",
+      "kind": "file",
+      "size": 147549
+    },
+    {
+      "path": "packages/effect/dist/Channel.js.map",
+      "kind": "file",
+      "size": 79689
+    },
+    {
+      "path": "packages/effect/dist/ChannelSchema.d.ts",
+      "kind": "file",
+      "size": 7805
+    },
+    {
+      "path": "packages/effect/dist/ChannelSchema.d.ts.map",
+      "kind": "file",
+      "size": 4595
+    },
+    {
+      "path": "packages/effect/dist/ChannelSchema.js",
+      "kind": "file",
+      "size": 4784
+    },
+    {
+      "path": "packages/effect/dist/ChannelSchema.js.map",
+      "kind": "file",
+      "size": 1517
+    },
+    {
+      "path": "packages/effect/dist/Chunk.d.ts",
+      "kind": "file",
+      "size": 67608
+    },
+    {
+      "path": "packages/effect/dist/Chunk.d.ts.map",
+      "kind": "file",
+      "size": 27289
+    },
+    {
+      "path": "packages/effect/dist/Chunk.js",
+      "kind": "file",
+      "size": 66331
+    },
+    {
+      "path": "packages/effect/dist/Chunk.js.map",
+      "kind": "file",
+      "size": 27820
+    },
+    {
+      "path": "packages/effect/dist/Clock.d.ts",
+      "kind": "file",
+      "size": 10533
+    },
+    {
+      "path": "packages/effect/dist/Clock.d.ts.map",
+      "kind": "file",
+      "size": 1401
+    },
+    {
+      "path": "packages/effect/dist/Clock.js",
+      "kind": "file",
+      "size": 5752
+    },
+    {
+      "path": "packages/effect/dist/Clock.js.map",
+      "kind": "file",
+      "size": 623
+    },
+    {
+      "path": "packages/effect/dist/Combiner.d.ts",
+      "kind": "file",
+      "size": 7586
+    },
+    {
+      "path": "packages/effect/dist/Combiner.d.ts.map",
+      "kind": "file",
+      "size": 1349
+    },
+    {
+      "path": "packages/effect/dist/Combiner.js",
+      "kind": "file",
+      "size": 6145
+    },
+    {
+      "path": "packages/effect/dist/Combiner.js.map",
+      "kind": "file",
+      "size": 1507
+    },
+    {
+      "path": "packages/effect/dist/Config.d.ts",
+      "kind": "file",
+      "size": 35704
+    },
+    {
+      "path": "packages/effect/dist/Config.d.ts.map",
+      "kind": "file",
+      "size": 8213
+    },
+    {
+      "path": "packages/effect/dist/Config.js",
+      "kind": "file",
+      "size": 38518
+    },
+    {
+      "path": "packages/effect/dist/Config.js.map",
+      "kind": "file",
+      "size": 15598
+    },
+    {
+      "path": "packages/effect/dist/ConfigProvider.d.ts",
+      "kind": "file",
+      "size": 31250
+    },
+    {
+      "path": "packages/effect/dist/ConfigProvider.d.ts.map",
+      "kind": "file",
+      "size": 5066
+    },
+    {
+      "path": "packages/effect/dist/ConfigProvider.js",
+      "kind": "file",
+      "size": 34105
+    },
+    {
+      "path": "packages/effect/dist/ConfigProvider.js.map",
+      "kind": "file",
+      "size": 13204
+    },
+    {
+      "path": "packages/effect/dist/Console.d.ts",
+      "kind": "file",
+      "size": 24067
+    },
+    {
+      "path": "packages/effect/dist/Console.d.ts.map",
+      "kind": "file",
+      "size": 4895
+    },
+    {
+      "path": "packages/effect/dist/Console.js",
+      "kind": "file",
+      "size": 23317
+    },
+    {
+      "path": "packages/effect/dist/Console.js.map",
+      "kind": "file",
+      "size": 5806
+    },
+    {
+      "path": "packages/effect/dist/Context.d.ts",
+      "kind": "file",
+      "size": 30520
+    },
+    {
+      "path": "packages/effect/dist/Context.d.ts.map",
+      "kind": "file",
+      "size": 10492
+    },
+    {
+      "path": "packages/effect/dist/Context.js",
+      "kind": "file",
+      "size": 24545
+    },
+    {
+      "path": "packages/effect/dist/Context.js.map",
+      "kind": "file",
+      "size": 11429
+    },
+    {
+      "path": "packages/effect/dist/Cron.d.ts",
+      "kind": "file",
+      "size": 18924
+    },
+    {
+      "path": "packages/effect/dist/Cron.d.ts.map",
+      "kind": "file",
+      "size": 4630
+    },
+    {
+      "path": "packages/effect/dist/Cron.js",
+      "kind": "file",
+      "size": 37751
+    },
+    {
+      "path": "packages/effect/dist/Cron.js.map",
+      "kind": "file",
+      "size": 27960
+    },
+    {
+      "path": "packages/effect/dist/Crypto.d.ts",
+      "kind": "file",
+      "size": 7153
+    },
+    {
+      "path": "packages/effect/dist/Crypto.d.ts.map",
+      "kind": "file",
+      "size": 2081
+    },
+    {
+      "path": "packages/effect/dist/Crypto.js",
+      "kind": "file",
+      "size": 5184
+    },
+    {
+      "path": "packages/effect/dist/Crypto.js.map",
+      "kind": "file",
+      "size": 3862
+    },
+    {
+      "path": "packages/effect/dist/Data.d.ts",
+      "kind": "file",
+      "size": 21372
+    },
+    {
+      "path": "packages/effect/dist/Data.d.ts.map",
+      "kind": "file",
+      "size": 9031
+    },
+    {
+      "path": "packages/effect/dist/Data.js",
+      "kind": "file",
+      "size": 7404
+    },
+    {
+      "path": "packages/effect/dist/Data.js.map",
+      "kind": "file",
+      "size": 1676
+    },
+    {
+      "path": "packages/effect/dist/DateTime.d.ts",
+      "kind": "file",
+      "size": 78181
+    },
+    {
+      "path": "packages/effect/dist/DateTime.d.ts.map",
+      "kind": "file",
+      "size": 22570
+    },
+    {
+      "path": "packages/effect/dist/DateTime.js",
+      "kind": "file",
+      "size": 60507
+    },
+    {
+      "path": "packages/effect/dist/DateTime.js.map",
+      "kind": "file",
+      "size": 8936
+    },
+    {
+      "path": "packages/effect/dist/Deferred.d.ts",
+      "kind": "file",
+      "size": 25190
+    },
+    {
+      "path": "packages/effect/dist/Deferred.d.ts.map",
+      "kind": "file",
+      "size": 7335
+    },
+    {
+      "path": "packages/effect/dist/Deferred.js",
+      "kind": "file",
+      "size": 22821
+    },
+    {
+      "path": "packages/effect/dist/Deferred.js.map",
+      "kind": "file",
+      "size": 5620
+    },
+    {
+      "path": "packages/effect/dist/Differ.d.ts",
+      "kind": "file",
+      "size": 1016
+    },
+    {
+      "path": "packages/effect/dist/Differ.d.ts.map",
+      "kind": "file",
+      "size": 467
+    },
+    {
+      "path": "packages/effect/dist/Differ.js",
+      "kind": "file",
+      "size": 321
+    },
+    {
+      "path": "packages/effect/dist/Differ.js.map",
+      "kind": "file",
+      "size": 119
+    },
+    {
+      "path": "packages/effect/dist/Duration.d.ts",
+      "kind": "file",
+      "size": 32040
+    },
+    {
+      "path": "packages/effect/dist/Duration.d.ts.map",
+      "kind": "file",
+      "size": 9209
+    },
+    {
+      "path": "packages/effect/dist/Duration.js",
+      "kind": "file",
+      "size": 42629
+    },
+    {
+      "path": "packages/effect/dist/Duration.js.map",
+      "kind": "file",
+      "size": 25319
+    },
+    {
+      "path": "packages/effect/dist/Effect.d.ts",
+      "kind": "file",
+      "size": 423621
+    },
+    {
+      "path": "packages/effect/dist/Effect.d.ts.map",
+      "kind": "file",
+      "size": 316821
+    },
+    {
+      "path": "packages/effect/dist/Effect.js",
+      "kind": "file",
+      "size": 258858
+    },
+    {
+      "path": "packages/effect/dist/Effect.js.map",
+      "kind": "file",
+      "size": 30342
+    },
+    {
+      "path": "packages/effect/dist/Effectable.d.ts",
+      "kind": "file",
+      "size": 3943
+    },
+    {
+      "path": "packages/effect/dist/Effectable.d.ts.map",
+      "kind": "file",
+      "size": 1738
+    },
+    {
+      "path": "packages/effect/dist/Effectable.js",
+      "kind": "file",
+      "size": 3110
+    },
+    {
+      "path": "packages/effect/dist/Effectable.js.map",
+      "kind": "file",
+      "size": 964
+    },
+    {
+      "path": "packages/effect/dist/Equal.d.ts",
+      "kind": "file",
+      "size": 10571
+    },
+    {
+      "path": "packages/effect/dist/Equal.d.ts.map",
+      "kind": "file",
+      "size": 1434
+    },
+    {
+      "path": "packages/effect/dist/Equal.js",
+      "kind": "file",
+      "size": 11588
+    },
+    {
+      "path": "packages/effect/dist/Equal.js.map",
+      "kind": "file",
+      "size": 7715
+    },
+    {
+      "path": "packages/effect/dist/Equivalence.d.ts",
+      "kind": "file",
+      "size": 22533
+    },
+    {
+      "path": "packages/effect/dist/Equivalence.d.ts.map",
+      "kind": "file",
+      "size": 3249
+    },
+    {
+      "path": "packages/effect/dist/Equivalence.js",
+      "kind": "file",
+      "size": 21684
+    },
+    {
+      "path": "packages/effect/dist/Equivalence.js.map",
+      "kind": "file",
+      "size": 4277
+    },
+    {
+      "path": "packages/effect/dist/ErrorReporter.d.ts",
+      "kind": "file",
+      "size": 15339
+    },
+    {
+      "path": "packages/effect/dist/ErrorReporter.d.ts.map",
+      "kind": "file",
+      "size": 3059
+    },
+    {
+      "path": "packages/effect/dist/ErrorReporter.js",
+      "kind": "file",
+      "size": 11813
+    },
+    {
+      "path": "packages/effect/dist/ErrorReporter.js.map",
+      "kind": "file",
+      "size": 3445
+    },
+    {
+      "path": "packages/effect/dist/ExecutionPlan.d.ts",
+      "kind": "file",
+      "size": 11784
+    },
+    {
+      "path": "packages/effect/dist/ExecutionPlan.d.ts.map",
+      "kind": "file",
+      "size": 6491
+    },
+    {
+      "path": "packages/effect/dist/ExecutionPlan.js",
+      "kind": "file",
+      "size": 4168
+    },
+    {
+      "path": "packages/effect/dist/ExecutionPlan.js.map",
+      "kind": "file",
+      "size": 2513
+    },
+    {
+      "path": "packages/effect/dist/Exit.d.ts",
+      "kind": "file",
+      "size": 27684
+    },
+    {
+      "path": "packages/effect/dist/Exit.d.ts.map",
+      "kind": "file",
+      "size": 7488
+    },
+    {
+      "path": "packages/effect/dist/Exit.js",
+      "kind": "file",
+      "size": 21931
+    },
+    {
+      "path": "packages/effect/dist/Exit.js.map",
+      "kind": "file",
+      "size": 2688
+    },
+    {
+      "path": "packages/effect/dist/Fiber.d.ts",
+      "kind": "file",
+      "size": 17970
+    },
+    {
+      "path": "packages/effect/dist/Fiber.d.ts.map",
+      "kind": "file",
+      "size": 5391
+    },
+    {
+      "path": "packages/effect/dist/Fiber.js",
+      "kind": "file",
+      "size": 11083
+    },
+    {
+      "path": "packages/effect/dist/Fiber.js.map",
+      "kind": "file",
+      "size": 1346
+    },
+    {
+      "path": "packages/effect/dist/FiberHandle.d.ts",
+      "kind": "file",
+      "size": 18580
+    },
+    {
+      "path": "packages/effect/dist/FiberHandle.d.ts.map",
+      "kind": "file",
+      "size": 6905
+    },
+    {
+      "path": "packages/effect/dist/FiberHandle.js",
+      "kind": "file",
+      "size": 19175
+    },
+    {
+      "path": "packages/effect/dist/FiberHandle.js.map",
+      "kind": "file",
+      "size": 7914
+    },
+    {
+      "path": "packages/effect/dist/FiberMap.d.ts",
+      "kind": "file",
+      "size": 23702
+    },
+    {
+      "path": "packages/effect/dist/FiberMap.d.ts.map",
+      "kind": "file",
+      "size": 9028
+    },
+    {
+      "path": "packages/effect/dist/FiberMap.js",
+      "kind": "file",
+      "size": 24469
+    },
+    {
+      "path": "packages/effect/dist/FiberMap.js.map",
+      "kind": "file",
+      "size": 9704
+    },
+    {
+      "path": "packages/effect/dist/FiberSet.d.ts",
+      "kind": "file",
+      "size": 15428
+    },
+    {
+      "path": "packages/effect/dist/FiberSet.d.ts.map",
+      "kind": "file",
+      "size": 5946
+    },
+    {
+      "path": "packages/effect/dist/FiberSet.js",
+      "kind": "file",
+      "size": 15936
+    },
+    {
+      "path": "packages/effect/dist/FiberSet.js.map",
+      "kind": "file",
+      "size": 7027
+    },
+    {
+      "path": "packages/effect/dist/FileSystem.d.ts",
+      "kind": "file",
+      "size": 27345
+    },
+    {
+      "path": "packages/effect/dist/FileSystem.d.ts.map",
+      "kind": "file",
+      "size": 10117
+    },
+    {
+      "path": "packages/effect/dist/FileSystem.js",
+      "kind": "file",
+      "size": 13105
+    },
+    {
+      "path": "packages/effect/dist/FileSystem.js.map",
+      "kind": "file",
+      "size": 7401
+    },
+    {
+      "path": "packages/effect/dist/Filter.d.ts",
+      "kind": "file",
+      "size": 22405
+    },
+    {
+      "path": "packages/effect/dist/Filter.d.ts.map",
+      "kind": "file",
+      "size": 10018
+    },
+    {
+      "path": "packages/effect/dist/Filter.js",
+      "kind": "file",
+      "size": 17762
+    },
+    {
+      "path": "packages/effect/dist/Filter.js.map",
+      "kind": "file",
+      "size": 6955
+    },
+    {
+      "path": "packages/effect/dist/Formatter.d.ts",
+      "kind": "file",
+      "size": 5843
+    },
+    {
+      "path": "packages/effect/dist/Formatter.d.ts.map",
+      "kind": "file",
+      "size": 948
+    },
+    {
+      "path": "packages/effect/dist/Formatter.js",
+      "kind": "file",
+      "size": 10076
+    },
+    {
+      "path": "packages/effect/dist/Formatter.js.map",
+      "kind": "file",
+      "size": 6406
+    },
+    {
+      "path": "packages/effect/dist/Function.d.ts",
+      "kind": "file",
+      "size": 25986
+    },
+    {
+      "path": "packages/effect/dist/Function.d.ts.map",
+      "kind": "file",
+      "size": 21320
+    },
+    {
+      "path": "packages/effect/dist/Function.js",
+      "kind": "file",
+      "size": 15827
+    },
+    {
+      "path": "packages/effect/dist/Function.js.map",
+      "kind": "file",
+      "size": 5933
+    },
+    {
+      "path": "packages/effect/dist/Graph.d.ts",
+      "kind": "file",
+      "size": 135461
+    },
+    {
+      "path": "packages/effect/dist/Graph.d.ts.map",
+      "kind": "file",
+      "size": 42583
+    },
+    {
+      "path": "packages/effect/dist/Graph.js",
+      "kind": "file",
+      "size": 220882
+    },
+    {
+      "path": "packages/effect/dist/Graph.js.map",
+      "kind": "file",
+      "size": 152199
+    },
+    {
+      "path": "packages/effect/dist/Hash.d.ts",
+      "kind": "file",
+      "size": 9840
+    },
+    {
+      "path": "packages/effect/dist/Hash.d.ts.map",
+      "kind": "file",
+      "size": 1353
+    },
+    {
+      "path": "packages/effect/dist/Hash.js",
+      "kind": "file",
+      "size": 13569
+    },
+    {
+      "path": "packages/effect/dist/Hash.js.map",
+      "kind": "file",
+      "size": 6085
+    },
+    {
+      "path": "packages/effect/dist/HashMap.d.ts",
+      "kind": "file",
+      "size": 35082
+    },
+    {
+      "path": "packages/effect/dist/HashMap.d.ts.map",
+      "kind": "file",
+      "size": 13824
+    },
+    {
+      "path": "packages/effect/dist/HashMap.js",
+      "kind": "file",
+      "size": 23876
+    },
+    {
+      "path": "packages/effect/dist/HashMap.js.map",
+      "kind": "file",
+      "size": 3442
+    },
+    {
+      "path": "packages/effect/dist/HashRing.d.ts",
+      "kind": "file",
+      "size": 6626
+    },
+    {
+      "path": "packages/effect/dist/HashRing.d.ts.map",
+      "kind": "file",
+      "size": 2768
+    },
+    {
+      "path": "packages/effect/dist/HashRing.js",
+      "kind": "file",
+      "size": 11328
+    },
+    {
+      "path": "packages/effect/dist/HashRing.js.map",
+      "kind": "file",
+      "size": 9541
+    },
+    {
+      "path": "packages/effect/dist/HashSet.d.ts",
+      "kind": "file",
+      "size": 14030
+    },
+    {
+      "path": "packages/effect/dist/HashSet.d.ts.map",
+      "kind": "file",
+      "size": 5624
+    },
+    {
+      "path": "packages/effect/dist/HashSet.js",
+      "kind": "file",
+      "size": 9772
+    },
+    {
+      "path": "packages/effect/dist/HashSet.js.map",
+      "kind": "file",
+      "size": 2081
+    },
+    {
+      "path": "packages/effect/dist/HKT.d.ts",
+      "kind": "file",
+      "size": 6490
+    },
+    {
+      "path": "packages/effect/dist/HKT.d.ts.map",
+      "kind": "file",
+      "size": 1315
+    },
+    {
+      "path": "packages/effect/dist/HKT.js",
+      "kind": "file",
+      "size": 42
+    },
+    {
+      "path": "packages/effect/dist/HKT.js.map",
+      "kind": "file",
+      "size": 98
+    },
+    {
+      "path": "packages/effect/dist/index.d.ts",
+      "kind": "file",
+      "size": 9604
+    },
+    {
+      "path": "packages/effect/dist/index.d.ts.map",
+      "kind": "file",
+      "size": 6865
+    },
+    {
+      "path": "packages/effect/dist/index.js",
+      "kind": "file",
+      "size": 9660
+    },
+    {
+      "path": "packages/effect/dist/index.js.map",
+      "kind": "file",
+      "size": 6876
+    },
+    {
+      "path": "packages/effect/dist/Inspectable.d.ts",
+      "kind": "file",
+      "size": 7616
+    },
+    {
+      "path": "packages/effect/dist/Inspectable.d.ts.map",
+      "kind": "file",
+      "size": 913
+    },
+    {
+      "path": "packages/effect/dist/Inspectable.js",
+      "kind": "file",
+      "size": 6485
+    },
+    {
+      "path": "packages/effect/dist/Inspectable.js.map",
+      "kind": "file",
+      "size": 1893
+    },
+    {
+      "path": "packages/effect/dist/Iterable.d.ts",
+      "kind": "file",
+      "size": 57213
+    },
+    {
+      "path": "packages/effect/dist/Iterable.d.ts.map",
+      "kind": "file",
+      "size": 17350
+    },
+    {
+      "path": "packages/effect/dist/Iterable.js",
+      "kind": "file",
+      "size": 66810
+    },
+    {
+      "path": "packages/effect/dist/Iterable.js.map",
+      "kind": "file",
+      "size": 23787
+    },
+    {
+      "path": "packages/effect/dist/JsonPatch.d.ts",
+      "kind": "file",
+      "size": 6794
+    },
+    {
+      "path": "packages/effect/dist/JsonPatch.d.ts.map",
+      "kind": "file",
+      "size": 1127
+    },
+    {
+      "path": "packages/effect/dist/JsonPatch.js",
+      "kind": "file",
+      "size": 9560
+    },
+    {
+      "path": "packages/effect/dist/JsonPatch.js.map",
+      "kind": "file",
+      "size": 7096
+    },
+    {
+      "path": "packages/effect/dist/JsonPointer.d.ts",
+      "kind": "file",
+      "size": 4608
+    },
+    {
+      "path": "packages/effect/dist/JsonPointer.d.ts.map",
+      "kind": "file",
+      "size": 695
+    },
+    {
+      "path": "packages/effect/dist/JsonPointer.js",
+      "kind": "file",
+      "size": 5370
+    },
+    {
+      "path": "packages/effect/dist/JsonPointer.js.map",
+      "kind": "file",
+      "size": 1799
+    },
+    {
+      "path": "packages/effect/dist/JsonSchema.d.ts",
+      "kind": "file",
+      "size": 17900
+    },
+    {
+      "path": "packages/effect/dist/JsonSchema.d.ts.map",
+      "kind": "file",
+      "size": 2343
+    },
+    {
+      "path": "packages/effect/dist/JsonSchema.js",
+      "kind": "file",
+      "size": 50499
+    },
+    {
+      "path": "packages/effect/dist/JsonSchema.js.map",
+      "kind": "file",
+      "size": 35680
+    },
+    {
+      "path": "packages/effect/dist/Latch.d.ts",
+      "kind": "file",
+      "size": 10634
+    },
+    {
+      "path": "packages/effect/dist/Latch.d.ts.map",
+      "kind": "file",
+      "size": 2264
+    },
+    {
+      "path": "packages/effect/dist/Latch.js",
+      "kind": "file",
+      "size": 6971
+    },
+    {
+      "path": "packages/effect/dist/Latch.js.map",
+      "kind": "file",
+      "size": 1486
+    },
+    {
+      "path": "packages/effect/dist/Layer.d.ts",
+      "kind": "file",
+      "size": 74187
+    },
+    {
+      "path": "packages/effect/dist/Layer.d.ts.map",
+      "kind": "file",
+      "size": 24768
+    },
+    {
+      "path": "packages/effect/dist/Layer.js",
+      "kind": "file",
+      "size": 67770
+    },
+    {
+      "path": "packages/effect/dist/Layer.js.map",
+      "kind": "file",
+      "size": 18927
+    },
+    {
+      "path": "packages/effect/dist/LayerMap.d.ts",
+      "kind": "file",
+      "size": 14649
+    },
+    {
+      "path": "packages/effect/dist/LayerMap.d.ts.map",
+      "kind": "file",
+      "size": 7203
+    },
+    {
+      "path": "packages/effect/dist/LayerMap.js",
+      "kind": "file",
+      "size": 7464
+    },
+    {
+      "path": "packages/effect/dist/LayerMap.js.map",
+      "kind": "file",
+      "size": 3800
+    },
+    {
+      "path": "packages/effect/dist/LayerRef.d.ts",
+      "kind": "file",
+      "size": 8994
+    },
+    {
+      "path": "packages/effect/dist/LayerRef.d.ts.map",
+      "kind": "file",
+      "size": 3716
+    },
+    {
+      "path": "packages/effect/dist/LayerRef.js",
+      "kind": "file",
+      "size": 5857
+    },
+    {
+      "path": "packages/effect/dist/LayerRef.js.map",
+      "kind": "file",
+      "size": 3209
+    },
+    {
+      "path": "packages/effect/dist/Logger.d.ts",
+      "kind": "file",
+      "size": 28760
+    },
+    {
+      "path": "packages/effect/dist/Logger.d.ts.map",
+      "kind": "file",
+      "size": 6698
+    },
+    {
+      "path": "packages/effect/dist/Logger.js",
+      "kind": "file",
+      "size": 29496
+    },
+    {
+      "path": "packages/effect/dist/Logger.js.map",
+      "kind": "file",
+      "size": 9301
+    },
+    {
+      "path": "packages/effect/dist/LogLevel.d.ts",
+      "kind": "file",
+      "size": 11199
+    },
+    {
+      "path": "packages/effect/dist/LogLevel.d.ts.map",
+      "kind": "file",
+      "size": 1817
+    },
+    {
+      "path": "packages/effect/dist/LogLevel.js",
+      "kind": "file",
+      "size": 8275
+    },
+    {
+      "path": "packages/effect/dist/LogLevel.js.map",
+      "kind": "file",
+      "size": 1435
+    },
+    {
+      "path": "packages/effect/dist/ManagedRuntime.d.ts",
+      "kind": "file",
+      "size": 8596
+    },
+    {
+      "path": "packages/effect/dist/ManagedRuntime.d.ts.map",
+      "kind": "file",
+      "size": 3295
+    },
+    {
+      "path": "packages/effect/dist/ManagedRuntime.js",
+      "kind": "file",
+      "size": 6366
+    },
+    {
+      "path": "packages/effect/dist/ManagedRuntime.js.map",
+      "kind": "file",
+      "size": 4257
+    },
+    {
+      "path": "packages/effect/dist/Match.d.ts",
+      "kind": "file",
+      "size": 79656
+    },
+    {
+      "path": "packages/effect/dist/Match.d.ts.map",
+      "kind": "file",
+      "size": 29734
+    },
+    {
+      "path": "packages/effect/dist/Match.js",
+      "kind": "file",
+      "size": 44707
+    },
+    {
+      "path": "packages/effect/dist/Match.js.map",
+      "kind": "file",
+      "size": 4175
+    },
+    {
+      "path": "packages/effect/dist/Metric.d.ts",
+      "kind": "file",
+      "size": 103225
+    },
+    {
+      "path": "packages/effect/dist/Metric.d.ts.map",
+      "kind": "file",
+      "size": 13266
+    },
+    {
+      "path": "packages/effect/dist/Metric.js",
+      "kind": "file",
+      "size": 61939
+    },
+    {
+      "path": "packages/effect/dist/Metric.js.map",
+      "kind": "file",
+      "size": 24313
+    },
+    {
+      "path": "packages/effect/dist/MutableHashMap.d.ts",
+      "kind": "file",
+      "size": 17213
+    },
+    {
+      "path": "packages/effect/dist/MutableHashMap.d.ts.map",
+      "kind": "file",
+      "size": 4911
+    },
+    {
+      "path": "packages/effect/dist/MutableHashMap.js",
+      "kind": "file",
+      "size": 18484
+    },
+    {
+      "path": "packages/effect/dist/MutableHashMap.js.map",
+      "kind": "file",
+      "size": 8642
+    },
+    {
+      "path": "packages/effect/dist/MutableHashSet.d.ts",
+      "kind": "file",
+      "size": 9636
+    },
+    {
+      "path": "packages/effect/dist/MutableHashSet.d.ts.map",
+      "kind": "file",
+      "size": 2143
+    },
+    {
+      "path": "packages/effect/dist/MutableHashSet.js",
+      "kind": "file",
+      "size": 9295
+    },
+    {
+      "path": "packages/effect/dist/MutableHashSet.js.map",
+      "kind": "file",
+      "size": 2782
+    },
+    {
+      "path": "packages/effect/dist/MutableList.d.ts",
+      "kind": "file",
+      "size": 14541
+    },
+    {
+      "path": "packages/effect/dist/MutableList.d.ts.map",
+      "kind": "file",
+      "size": 2705
+    },
+    {
+      "path": "packages/effect/dist/MutableList.js",
+      "kind": "file",
+      "size": 16936
+    },
+    {
+      "path": "packages/effect/dist/MutableList.js.map",
+      "kind": "file",
+      "size": 8681
+    },
+    {
+      "path": "packages/effect/dist/MutableRef.d.ts",
+      "kind": "file",
+      "size": 21986
+    },
+    {
+      "path": "packages/effect/dist/MutableRef.d.ts.map",
+      "kind": "file",
+      "size": 3688
+    },
+    {
+      "path": "packages/effect/dist/MutableRef.js",
+      "kind": "file",
+      "size": 21093
+    },
+    {
+      "path": "packages/effect/dist/MutableRef.js.map",
+      "kind": "file",
+      "size": 3868
+    },
+    {
+      "path": "packages/effect/dist/Newtype.d.ts",
+      "kind": "file",
+      "size": 9304
+    },
+    {
+      "path": "packages/effect/dist/Newtype.d.ts.map",
+      "kind": "file",
+      "size": 2164
+    },
+    {
+      "path": "packages/effect/dist/Newtype.js",
+      "kind": "file",
+      "size": 5421
+    },
+    {
+      "path": "packages/effect/dist/Newtype.js.map",
+      "kind": "file",
+      "size": 754
+    },
+    {
+      "path": "packages/effect/dist/NonEmptyIterable.d.ts",
+      "kind": "file",
+      "size": 2637
+    },
+    {
+      "path": "packages/effect/dist/NonEmptyIterable.d.ts.map",
+      "kind": "file",
+      "size": 544
+    },
+    {
+      "path": "packages/effect/dist/NonEmptyIterable.js",
+      "kind": "file",
+      "size": 1553
+    },
+    {
+      "path": "packages/effect/dist/NonEmptyIterable.js.map",
+      "kind": "file",
+      "size": 491
+    },
+    {
+      "path": "packages/effect/dist/Number.d.ts",
+      "kind": "file",
+      "size": 18125
+    },
+    {
+      "path": "packages/effect/dist/Number.d.ts.map",
+      "kind": "file",
+      "size": 4791
+    },
+    {
+      "path": "packages/effect/dist/Number.js",
+      "kind": "file",
+      "size": 19117
+    },
+    {
+      "path": "packages/effect/dist/Number.js.map",
+      "kind": "file",
+      "size": 7217
+    },
+    {
+      "path": "packages/effect/dist/Optic.d.ts",
+      "kind": "file",
+      "size": 37786
+    },
+    {
+      "path": "packages/effect/dist/Optic.d.ts.map",
+      "kind": "file",
+      "size": 12761
+    },
+    {
+      "path": "packages/effect/dist/Optic.js",
+      "kind": "file",
+      "size": 27327
+    },
+    {
+      "path": "packages/effect/dist/Optic.js.map",
+      "kind": "file",
+      "size": 18354
+    },
+    {
+      "path": "packages/effect/dist/Option.d.ts",
+      "kind": "file",
+      "size": 64591
+    },
+    {
+      "path": "packages/effect/dist/Option.d.ts.map",
+      "kind": "file",
+      "size": 21792
+    },
+    {
+      "path": "packages/effect/dist/Option.js",
+      "kind": "file",
+      "size": 56892
+    },
+    {
+      "path": "packages/effect/dist/Option.js.map",
+      "kind": "file",
+      "size": 14592
+    },
+    {
+      "path": "packages/effect/dist/Order.d.ts",
+      "kind": "file",
+      "size": 24916
+    },
+    {
+      "path": "packages/effect/dist/Order.d.ts.map",
+      "kind": "file",
+      "size": 5215
+    },
+    {
+      "path": "packages/effect/dist/Order.js",
+      "kind": "file",
+      "size": 24586
+    },
+    {
+      "path": "packages/effect/dist/Order.js.map",
+      "kind": "file",
+      "size": 6558
+    },
+    {
+      "path": "packages/effect/dist/Ordering.d.ts",
+      "kind": "file",
+      "size": 4493
+    },
+    {
+      "path": "packages/effect/dist/Ordering.d.ts.map",
+      "kind": "file",
+      "size": 1129
+    },
+    {
+      "path": "packages/effect/dist/Ordering.js",
+      "kind": "file",
+      "size": 3014
+    },
+    {
+      "path": "packages/effect/dist/Ordering.js.map",
+      "kind": "file",
+      "size": 1101
+    },
+    {
+      "path": "packages/effect/dist/PartitionedSemaphore.d.ts",
+      "kind": "file",
+      "size": 10774
+    },
+    {
+      "path": "packages/effect/dist/PartitionedSemaphore.d.ts.map",
+      "kind": "file",
+      "size": 4419
+    },
+    {
+      "path": "packages/effect/dist/PartitionedSemaphore.js",
+      "kind": "file",
+      "size": 13665
+    },
+    {
+      "path": "packages/effect/dist/PartitionedSemaphore.js.map",
+      "kind": "file",
+      "size": 7538
+    },
+    {
+      "path": "packages/effect/dist/Path.d.ts",
+      "kind": "file",
+      "size": 8917
+    },
+    {
+      "path": "packages/effect/dist/Path.d.ts.map",
+      "kind": "file",
+      "size": 2058
+    },
+    {
+      "path": "packages/effect/dist/Path.js",
+      "kind": "file",
+      "size": 24526
+    },
+    {
+      "path": "packages/effect/dist/Path.js.map",
+      "kind": "file",
+      "size": 18166
+    },
+    {
+      "path": "packages/effect/dist/Pipeable.d.ts",
+      "kind": "file",
+      "size": 11357
+    },
+    {
+      "path": "packages/effect/dist/Pipeable.d.ts.map",
+      "kind": "file",
+      "size": 16857
+    },
+    {
+      "path": "packages/effect/dist/Pipeable.js",
+      "kind": "file",
+      "size": 4090
+    },
+    {
+      "path": "packages/effect/dist/Pipeable.js.map",
+      "kind": "file",
+      "size": 2736
+    },
+    {
+      "path": "packages/effect/dist/PlatformError.d.ts",
+      "kind": "file",
+      "size": 7420
+    },
+    {
+      "path": "packages/effect/dist/PlatformError.d.ts.map",
+      "kind": "file",
+      "size": 1954
+    },
+    {
+      "path": "packages/effect/dist/PlatformError.js",
+      "kind": "file",
+      "size": 5790
+    },
+    {
+      "path": "packages/effect/dist/PlatformError.js.map",
+      "kind": "file",
+      "size": 1702
+    },
+    {
+      "path": "packages/effect/dist/Pool.d.ts",
+      "kind": "file",
+      "size": 13308
+    },
+    {
+      "path": "packages/effect/dist/Pool.d.ts.map",
+      "kind": "file",
+      "size": 5799
+    },
+    {
+      "path": "packages/effect/dist/Pool.js",
+      "kind": "file",
+      "size": 27668
+    },
+    {
+      "path": "packages/effect/dist/Pool.js.map",
+      "kind": "file",
+      "size": 24384
+    },
+    {
+      "path": "packages/effect/dist/Predicate.d.ts",
+      "kind": "file",
+      "size": 42344
+    },
+    {
+      "path": "packages/effect/dist/Predicate.d.ts.map",
+      "kind": "file",
+      "size": 12075
+    },
+    {
+      "path": "packages/effect/dist/Predicate.js",
+      "kind": "file",
+      "size": 32604
+    },
+    {
+      "path": "packages/effect/dist/Predicate.js.map",
+      "kind": "file",
+      "size": 7782
+    },
+    {
+      "path": "packages/effect/dist/PrimaryKey.d.ts",
+      "kind": "file",
+      "size": 3418
+    },
+    {
+      "path": "packages/effect/dist/PrimaryKey.d.ts.map",
+      "kind": "file",
+      "size": 465
+    },
+    {
+      "path": "packages/effect/dist/PrimaryKey.js",
+      "kind": "file",
+      "size": 2539
+    },
+    {
+      "path": "packages/effect/dist/PrimaryKey.js.map",
+      "kind": "file",
+      "size": 488
+    },
+    {
+      "path": "packages/effect/dist/PubSub.d.ts",
+      "kind": "file",
+      "size": 46185
+    },
+    {
+      "path": "packages/effect/dist/PubSub.d.ts.map",
+      "kind": "file",
+      "size": 12831
+    },
+    {
+      "path": "packages/effect/dist/PubSub.js",
+      "kind": "file",
+      "size": 76865
+    },
+    {
+      "path": "packages/effect/dist/PubSub.js.map",
+      "kind": "file",
+      "size": 49404
+    },
+    {
+      "path": "packages/effect/dist/Pull.d.ts",
+      "kind": "file",
+      "size": 11559
+    },
+    {
+      "path": "packages/effect/dist/Pull.d.ts.map",
+      "kind": "file",
+      "size": 4914
+    },
+    {
+      "path": "packages/effect/dist/Pull.js",
+      "kind": "file",
+      "size": 7839
+    },
+    {
+      "path": "packages/effect/dist/Pull.js.map",
+      "kind": "file",
+      "size": 2897
+    },
+    {
+      "path": "packages/effect/dist/Queue.d.ts",
+      "kind": "file",
+      "size": 48856
+    },
+    {
+      "path": "packages/effect/dist/Queue.d.ts.map",
+      "kind": "file",
+      "size": 11870
+    },
+    {
+      "path": "packages/effect/dist/Queue.js",
+      "kind": "file",
+      "size": 52700
+    },
+    {
+      "path": "packages/effect/dist/Queue.js.map",
+      "kind": "file",
+      "size": 20993
+    },
+    {
+      "path": "packages/effect/dist/Random.d.ts",
+      "kind": "file",
+      "size": 7883
+    },
+    {
+      "path": "packages/effect/dist/Random.d.ts.map",
+      "kind": "file",
+      "size": 2105
+    },
+    {
+      "path": "packages/effect/dist/Random.js",
+      "kind": "file",
+      "size": 16734
+    },
+    {
+      "path": "packages/effect/dist/Random.js.map",
+      "kind": "file",
+      "size": 11161
+    },
+    {
+      "path": "packages/effect/dist/RcMap.d.ts",
+      "kind": "file",
+      "size": 15653
+    },
+    {
+      "path": "packages/effect/dist/RcMap.d.ts.map",
+      "kind": "file",
+      "size": 5404
+    },
+    {
+      "path": "packages/effect/dist/RcMap.js",
+      "kind": "file",
+      "size": 16529
+    },
+    {
+      "path": "packages/effect/dist/RcMap.js.map",
+      "kind": "file",
+      "size": 9614
+    },
+    {
+      "path": "packages/effect/dist/RcRef.d.ts",
+      "kind": "file",
+      "size": 7475
+    },
+    {
+      "path": "packages/effect/dist/RcRef.d.ts.map",
+      "kind": "file",
+      "size": 1609
+    },
+    {
+      "path": "packages/effect/dist/RcRef.js",
+      "kind": "file",
+      "size": 3387
+    },
+    {
+      "path": "packages/effect/dist/RcRef.js.map",
+      "kind": "file",
+      "size": 466
+    },
+    {
+      "path": "packages/effect/dist/Record.d.ts",
+      "kind": "file",
+      "size": 35529
+    },
+    {
+      "path": "packages/effect/dist/Record.d.ts.map",
+      "kind": "file",
+      "size": 19080
+    },
+    {
+      "path": "packages/effect/dist/Record.js",
+      "kind": "file",
+      "size": 27648
+    },
+    {
+      "path": "packages/effect/dist/Record.js.map",
+      "kind": "file",
+      "size": 12974
+    },
+    {
+      "path": "packages/effect/dist/Redactable.d.ts",
+      "kind": "file",
+      "size": 4742
+    },
+    {
+      "path": "packages/effect/dist/Redactable.d.ts.map",
+      "kind": "file",
+      "size": 725
+    },
+    {
+      "path": "packages/effect/dist/Redactable.js",
+      "kind": "file",
+      "size": 3657
+    },
+    {
+      "path": "packages/effect/dist/Redactable.js.map",
+      "kind": "file",
+      "size": 1033
+    },
+    {
+      "path": "packages/effect/dist/Redacted.d.ts",
+      "kind": "file",
+      "size": 7923
+    },
+    {
+      "path": "packages/effect/dist/Redacted.d.ts.map",
+      "kind": "file",
+      "size": 1615
+    },
+    {
+      "path": "packages/effect/dist/Redacted.js",
+      "kind": "file",
+      "size": 5505
+    },
+    {
+      "path": "packages/effect/dist/Redacted.js.map",
+      "kind": "file",
+      "size": 2008
+    },
+    {
+      "path": "packages/effect/dist/Reducer.d.ts",
+      "kind": "file",
+      "size": 4663
+    },
+    {
+      "path": "packages/effect/dist/Reducer.d.ts.map",
+      "kind": "file",
+      "size": 830
+    },
+    {
+      "path": "packages/effect/dist/Reducer.js",
+      "kind": "file",
+      "size": 3050
+    },
+    {
+      "path": "packages/effect/dist/Reducer.js.map",
+      "kind": "file",
+      "size": 714
+    },
+    {
+      "path": "packages/effect/dist/Ref.d.ts",
+      "kind": "file",
+      "size": 19065
+    },
+    {
+      "path": "packages/effect/dist/Ref.d.ts.map",
+      "kind": "file",
+      "size": 4856
+    },
+    {
+      "path": "packages/effect/dist/Ref.js",
+      "kind": "file",
+      "size": 17031
+    },
+    {
+      "path": "packages/effect/dist/Ref.js.map",
+      "kind": "file",
+      "size": 4698
+    },
+    {
+      "path": "packages/effect/dist/References.d.ts",
+      "kind": "file",
+      "size": 19968
+    },
+    {
+      "path": "packages/effect/dist/References.d.ts.map",
+      "kind": "file",
+      "size": 2485
+    },
+    {
+      "path": "packages/effect/dist/References.js",
+      "kind": "file",
+      "size": 18370
+    },
+    {
+      "path": "packages/effect/dist/References.js.map",
+      "kind": "file",
+      "size": 1860
+    },
+    {
+      "path": "packages/effect/dist/RegExp.d.ts",
+      "kind": "file",
+      "size": 1506
+    },
+    {
+      "path": "packages/effect/dist/RegExp.d.ts.map",
+      "kind": "file",
+      "size": 342
+    },
+    {
+      "path": "packages/effect/dist/RegExp.js",
+      "kind": "file",
+      "size": 2057
+    },
+    {
+      "path": "packages/effect/dist/RegExp.js.map",
+      "kind": "file",
+      "size": 452
+    },
+    {
+      "path": "packages/effect/dist/Request.d.ts",
+      "kind": "file",
+      "size": 16737
+    },
+    {
+      "path": "packages/effect/dist/Request.d.ts.map",
+      "kind": "file",
+      "size": 7029
+    },
+    {
+      "path": "packages/effect/dist/Request.js",
+      "kind": "file",
+      "size": 9439
+    },
+    {
+      "path": "packages/effect/dist/Request.js.map",
+      "kind": "file",
+      "size": 2906
+    },
+    {
+      "path": "packages/effect/dist/RequestResolver.d.ts",
+      "kind": "file",
+      "size": 32072
+    },
+    {
+      "path": "packages/effect/dist/RequestResolver.d.ts.map",
+      "kind": "file",
+      "size": 11267
+    },
+    {
+      "path": "packages/effect/dist/RequestResolver.js",
+      "kind": "file",
+      "size": 31834
+    },
+    {
+      "path": "packages/effect/dist/RequestResolver.js.map",
+      "kind": "file",
+      "size": 13208
+    },
+    {
+      "path": "packages/effect/dist/Resource.d.ts",
+      "kind": "file",
+      "size": 4043
+    },
+    {
+      "path": "packages/effect/dist/Resource.d.ts.map",
+      "kind": "file",
+      "size": 1748
+    },
+    {
+      "path": "packages/effect/dist/Resource.js",
+      "kind": "file",
+      "size": 4025
+    },
+    {
+      "path": "packages/effect/dist/Resource.js.map",
+      "kind": "file",
+      "size": 1958
+    },
+    {
+      "path": "packages/effect/dist/Result.d.ts",
+      "kind": "file",
+      "size": 48115
+    },
+    {
+      "path": "packages/effect/dist/Result.d.ts.map",
+      "kind": "file",
+      "size": 18590
+    },
+    {
+      "path": "packages/effect/dist/Result.js",
+      "kind": "file",
+      "size": 38897
+    },
+    {
+      "path": "packages/effect/dist/Result.js.map",
+      "kind": "file",
+      "size": 9101
+    },
+    {
+      "path": "packages/effect/dist/Runtime.d.ts",
+      "kind": "file",
+      "size": 10296
+    },
+    {
+      "path": "packages/effect/dist/Runtime.d.ts.map",
+      "kind": "file",
+      "size": 1852
+    },
+    {
+      "path": "packages/effect/dist/Runtime.js",
+      "kind": "file",
+      "size": 9619
+    },
+    {
+      "path": "packages/effect/dist/Runtime.js.map",
+      "kind": "file",
+      "size": 2539
+    },
+    {
+      "path": "packages/effect/dist/Schedule.d.ts",
+      "kind": "file",
+      "size": 34692
+    },
+    {
+      "path": "packages/effect/dist/Schedule.d.ts.map",
+      "kind": "file",
+      "size": 13892
+    },
+    {
+      "path": "packages/effect/dist/Schedule.js",
+      "kind": "file",
+      "size": 34340
+    },
+    {
+      "path": "packages/effect/dist/Schedule.js.map",
+      "kind": "file",
+      "size": 17867
+    },
+    {
+      "path": "packages/effect/dist/Scheduler.d.ts",
+      "kind": "file",
+      "size": 5876
+    },
+    {
+      "path": "packages/effect/dist/Scheduler.d.ts.map",
+      "kind": "file",
+      "size": 1559
+    },
+    {
+      "path": "packages/effect/dist/Scheduler.js",
+      "kind": "file",
+      "size": 6985
+    },
+    {
+      "path": "packages/effect/dist/Scheduler.js.map",
+      "kind": "file",
+      "size": 4034
+    },
+    {
+      "path": "packages/effect/dist/Schema.d.ts",
+      "kind": "file",
+      "size": 384246
+    },
+    {
+      "path": "packages/effect/dist/Schema.d.ts.map",
+      "kind": "file",
+      "size": 151025
+    },
+    {
+      "path": "packages/effect/dist/Schema.js",
+      "kind": "file",
+      "size": 306852
+    },
+    {
+      "path": "packages/effect/dist/Schema.js.map",
+      "kind": "file",
+      "size": 148876
+    },
+    {
+      "path": "packages/effect/dist/SchemaAST.d.ts",
+      "kind": "file",
+      "size": 68135
+    },
+    {
+      "path": "packages/effect/dist/SchemaAST.d.ts.map",
+      "kind": "file",
+      "size": 29602
+    },
+    {
+      "path": "packages/effect/dist/SchemaAST.js",
+      "kind": "file",
+      "size": 111208
+    },
+    {
+      "path": "packages/effect/dist/SchemaAST.js.map",
+      "kind": "file",
+      "size": 93997
+    },
+    {
+      "path": "packages/effect/dist/SchemaGetter.d.ts",
+      "kind": "file",
+      "size": 53813
+    },
+    {
+      "path": "packages/effect/dist/SchemaGetter.d.ts.map",
+      "kind": "file",
+      "size": 11644
+    },
+    {
+      "path": "packages/effect/dist/SchemaGetter.js",
+      "kind": "file",
+      "size": 57156
+    },
+    {
+      "path": "packages/effect/dist/SchemaGetter.js.map",
+      "kind": "file",
+      "size": 19241
+    },
+    {
+      "path": "packages/effect/dist/SchemaIssue.d.ts",
+      "kind": "file",
+      "size": 25920
+    },
+    {
+      "path": "packages/effect/dist/SchemaIssue.d.ts.map",
+      "kind": "file",
+      "size": 6424
+    },
+    {
+      "path": "packages/effect/dist/SchemaIssue.js",
+      "kind": "file",
+      "size": 22668
+    },
+    {
+      "path": "packages/effect/dist/SchemaIssue.js.map",
+      "kind": "file",
+      "size": 12078
+    },
+    {
+      "path": "packages/effect/dist/SchemaParser.d.ts",
+      "kind": "file",
+      "size": 29723
+    },
+    {
+      "path": "packages/effect/dist/SchemaParser.d.ts.map",
+      "kind": "file",
+      "size": 9114
+    },
+    {
+      "path": "packages/effect/dist/SchemaParser.js",
+      "kind": "file",
+      "size": 35445
+    },
+    {
+      "path": "packages/effect/dist/SchemaParser.js.map",
+      "kind": "file",
+      "size": 13877
+    },
+    {
+      "path": "packages/effect/dist/SchemaRepresentation.d.ts",
+      "kind": "file",
+      "size": 69036
+    },
+    {
+      "path": "packages/effect/dist/SchemaRepresentation.d.ts.map",
+      "kind": "file",
+      "size": 19967
+    },
+    {
+      "path": "packages/effect/dist/SchemaRepresentation.js",
+      "kind": "file",
+      "size": 66974
+    },
+    {
+      "path": "packages/effect/dist/SchemaRepresentation.js.map",
+      "kind": "file",
+      "size": 29882
+    },
+    {
+      "path": "packages/effect/dist/SchemaTransformation.d.ts",
+      "kind": "file",
+      "size": 51554
+    },
+    {
+      "path": "packages/effect/dist/SchemaTransformation.d.ts.map",
+      "kind": "file",
+      "size": 10471
+    },
+    {
+      "path": "packages/effect/dist/SchemaTransformation.js",
+      "kind": "file",
+      "size": 50166
+    },
+    {
+      "path": "packages/effect/dist/SchemaTransformation.js.map",
+      "kind": "file",
+      "size": 15589
+    },
+    {
+      "path": "packages/effect/dist/Scope.d.ts",
+      "kind": "file",
+      "size": 16632
+    },
+    {
+      "path": "packages/effect/dist/Scope.d.ts.map",
+      "kind": "file",
+      "size": 3728
+    },
+    {
+      "path": "packages/effect/dist/Scope.js",
+      "kind": "file",
+      "size": 11092
+    },
+    {
+      "path": "packages/effect/dist/Scope.js.map",
+      "kind": "file",
+      "size": 1247
+    },
+    {
+      "path": "packages/effect/dist/ScopedCache.d.ts",
+      "kind": "file",
+      "size": 15335
+    },
+    {
+      "path": "packages/effect/dist/ScopedCache.d.ts.map",
+      "kind": "file",
+      "size": 7768
+    },
+    {
+      "path": "packages/effect/dist/ScopedCache.js",
+      "kind": "file",
+      "size": 22363
+    },
+    {
+      "path": "packages/effect/dist/ScopedCache.js.map",
+      "kind": "file",
+      "size": 17341
+    },
+    {
+      "path": "packages/effect/dist/ScopedRef.d.ts",
+      "kind": "file",
+      "size": 4643
+    },
+    {
+      "path": "packages/effect/dist/ScopedRef.d.ts.map",
+      "kind": "file",
+      "size": 1765
+    },
+    {
+      "path": "packages/effect/dist/ScopedRef.js",
+      "kind": "file",
+      "size": 5007
+    },
+    {
+      "path": "packages/effect/dist/ScopedRef.js.map",
+      "kind": "file",
+      "size": 3006
+    },
+    {
+      "path": "packages/effect/dist/Semaphore.d.ts",
+      "kind": "file",
+      "size": 14697
+    },
+    {
+      "path": "packages/effect/dist/Semaphore.d.ts.map",
+      "kind": "file",
+      "size": 4207
+    },
+    {
+      "path": "packages/effect/dist/Semaphore.js",
+      "kind": "file",
+      "size": 11577
+    },
+    {
+      "path": "packages/effect/dist/Semaphore.js.map",
+      "kind": "file",
+      "size": 5515
+    },
+    {
+      "path": "packages/effect/dist/Sink.d.ts",
+      "kind": "file",
+      "size": 45659
+    },
+    {
+      "path": "packages/effect/dist/Sink.d.ts.map",
+      "kind": "file",
+      "size": 34346
+    },
+    {
+      "path": "packages/effect/dist/Sink.js",
+      "kind": "file",
+      "size": 42903
+    },
+    {
+      "path": "packages/effect/dist/Sink.js.map",
+      "kind": "file",
+      "size": 28402
+    },
+    {
+      "path": "packages/effect/dist/StandardSchema.d.ts",
+      "kind": "file",
+      "size": 6247
+    },
+    {
+      "path": "packages/effect/dist/StandardSchema.d.ts.map",
+      "kind": "file",
+      "size": 3771
+    },
+    {
+      "path": "packages/effect/dist/StandardSchema.js",
+      "kind": "file",
+      "size": 227
+    },
+    {
+      "path": "packages/effect/dist/StandardSchema.js.map",
+      "kind": "file",
+      "size": 134
+    },
+    {
+      "path": "packages/effect/dist/Stdio.d.ts",
+      "kind": "file",
+      "size": 4434
+    },
+    {
+      "path": "packages/effect/dist/Stdio.d.ts.map",
+      "kind": "file",
+      "size": 1588
+    },
+    {
+      "path": "packages/effect/dist/Stdio.js",
+      "kind": "file",
+      "size": 3007
+    },
+    {
+      "path": "packages/effect/dist/Stdio.js.map",
+      "kind": "file",
+      "size": 1029
+    },
+    {
+      "path": "packages/effect/dist/Stream.d.ts",
+      "kind": "file",
+      "size": 251209
+    },
+    {
+      "path": "packages/effect/dist/Stream.d.ts.map",
+      "kind": "file",
+      "size": 146431
+    },
+    {
+      "path": "packages/effect/dist/Stream.js",
+      "kind": "file",
+      "size": 243731
+    },
+    {
+      "path": "packages/effect/dist/Stream.js.map",
+      "kind": "file",
+      "size": 113469
+    },
+    {
+      "path": "packages/effect/dist/String.d.ts",
+      "kind": "file",
+      "size": 33378
+    },
+    {
+      "path": "packages/effect/dist/String.d.ts.map",
+      "kind": "file",
+      "size": 8961
+    },
+    {
+      "path": "packages/effect/dist/String.js",
+      "kind": "file",
+      "size": 34491
+    },
+    {
+      "path": "packages/effect/dist/String.js.map",
+      "kind": "file",
+      "size": 14425
+    },
+    {
+      "path": "packages/effect/dist/Struct.d.ts",
+      "kind": "file",
+      "size": 25725
+    },
+    {
+      "path": "packages/effect/dist/Struct.d.ts.map",
+      "kind": "file",
+      "size": 9186
+    },
+    {
+      "path": "packages/effect/dist/Struct.js",
+      "kind": "file",
+      "size": 19555
+    },
+    {
+      "path": "packages/effect/dist/Struct.js.map",
+      "kind": "file",
+      "size": 6142
+    },
+    {
+      "path": "packages/effect/dist/SubscriptionRef.d.ts",
+      "kind": "file",
+      "size": 24326
+    },
+    {
+      "path": "packages/effect/dist/SubscriptionRef.d.ts.map",
+      "kind": "file",
+      "size": 10121
+    },
+    {
+      "path": "packages/effect/dist/SubscriptionRef.js",
+      "kind": "file",
+      "size": 23707
+    },
+    {
+      "path": "packages/effect/dist/SubscriptionRef.js.map",
+      "kind": "file",
+      "size": 9090
+    },
+    {
+      "path": "packages/effect/dist/Symbol.d.ts",
+      "kind": "file",
+      "size": 778
+    },
+    {
+      "path": "packages/effect/dist/Symbol.d.ts.map",
+      "kind": "file",
+      "size": 220
+    },
+    {
+      "path": "packages/effect/dist/Symbol.js",
+      "kind": "file",
+      "size": 805
+    },
+    {
+      "path": "packages/effect/dist/Symbol.js.map",
+      "kind": "file",
+      "size": 236
+    },
+    {
+      "path": "packages/effect/dist/SynchronizedRef.d.ts",
+      "kind": "file",
+      "size": 17753
+    },
+    {
+      "path": "packages/effect/dist/SynchronizedRef.d.ts.map",
+      "kind": "file",
+      "size": 9361
+    },
+    {
+      "path": "packages/effect/dist/SynchronizedRef.js",
+      "kind": "file",
+      "size": 16728
+    },
+    {
+      "path": "packages/effect/dist/SynchronizedRef.js.map",
+      "kind": "file",
+      "size": 7521
+    },
+    {
+      "path": "packages/effect/dist/Take.d.ts",
+      "kind": "file",
+      "size": 1454
+    },
+    {
+      "path": "packages/effect/dist/Take.d.ts.map",
+      "kind": "file",
+      "size": 605
+    },
+    {
+      "path": "packages/effect/dist/Take.js",
+      "kind": "file",
+      "size": 656
+    },
+    {
+      "path": "packages/effect/dist/Take.js.map",
+      "kind": "file",
+      "size": 488
+    },
+    {
+      "path": "packages/effect/dist/Terminal.d.ts",
+      "kind": "file",
+      "size": 5477
+    },
+    {
+      "path": "packages/effect/dist/Terminal.d.ts.map",
+      "kind": "file",
+      "size": 1874
+    },
+    {
+      "path": "packages/effect/dist/Terminal.js",
+      "kind": "file",
+      "size": 2423
+    },
+    {
+      "path": "packages/effect/dist/Terminal.js.map",
+      "kind": "file",
+      "size": 859
+    },
+    {
+      "path": "packages/effect/dist/Tracer.d.ts",
+      "kind": "file",
+      "size": 20142
+    },
+    {
+      "path": "packages/effect/dist/Tracer.d.ts.map",
+      "kind": "file",
+      "size": 6349
+    },
+    {
+      "path": "packages/effect/dist/Tracer.js",
+      "kind": "file",
+      "size": 9869
+    },
+    {
+      "path": "packages/effect/dist/Tracer.js.map",
+      "kind": "file",
+      "size": 3344
+    },
+    {
+      "path": "packages/effect/dist/Trie.d.ts",
+      "kind": "file",
+      "size": 21167
+    },
+    {
+      "path": "packages/effect/dist/Trie.d.ts.map",
+      "kind": "file",
+      "size": 8426
+    },
+    {
+      "path": "packages/effect/dist/Trie.js",
+      "kind": "file",
+      "size": 16347
+    },
+    {
+      "path": "packages/effect/dist/Trie.js.map",
+      "kind": "file",
+      "size": 2565
+    },
+    {
+      "path": "packages/effect/dist/Tuple.d.ts",
+      "kind": "file",
+      "size": 18684
+    },
+    {
+      "path": "packages/effect/dist/Tuple.d.ts.map",
+      "kind": "file",
+      "size": 8135
+    },
+    {
+      "path": "packages/effect/dist/Tuple.js",
+      "kind": "file",
+      "size": 15641
+    },
+    {
+      "path": "packages/effect/dist/Tuple.js.map",
+      "kind": "file",
+      "size": 4180
+    },
+    {
+      "path": "packages/effect/dist/TxChunk.d.ts",
+      "kind": "file",
+      "size": 22631
+    },
+    {
+      "path": "packages/effect/dist/TxChunk.d.ts.map",
+      "kind": "file",
+      "size": 6959
+    },
+    {
+      "path": "packages/effect/dist/TxChunk.js",
+      "kind": "file",
+      "size": 20383
+    },
+    {
+      "path": "packages/effect/dist/TxChunk.js.map",
+      "kind": "file",
+      "size": 5644
+    },
+    {
+      "path": "packages/effect/dist/TxDeferred.d.ts",
+      "kind": "file",
+      "size": 8142
+    },
+    {
+      "path": "packages/effect/dist/TxDeferred.d.ts.map",
+      "kind": "file",
+      "size": 2481
+    },
+    {
+      "path": "packages/effect/dist/TxDeferred.js",
+      "kind": "file",
+      "size": 7345
+    },
+    {
+      "path": "packages/effect/dist/TxDeferred.js.map",
+      "kind": "file",
+      "size": 2705
+    },
+    {
+      "path": "packages/effect/dist/TxHashMap.d.ts",
+      "kind": "file",
+      "size": 55198
+    },
+    {
+      "path": "packages/effect/dist/TxHashMap.d.ts.map",
+      "kind": "file",
+      "size": 14853
+    },
+    {
+      "path": "packages/effect/dist/TxHashMap.js",
+      "kind": "file",
+      "size": 49241
+    },
+    {
+      "path": "packages/effect/dist/TxHashMap.js.map",
+      "kind": "file",
+      "size": 13403
+    },
+    {
+      "path": "packages/effect/dist/TxHashSet.d.ts",
+      "kind": "file",
+      "size": 23073
+    },
+    {
+      "path": "packages/effect/dist/TxHashSet.d.ts.map",
+      "kind": "file",
+      "size": 6999
+    },
+    {
+      "path": "packages/effect/dist/TxHashSet.js",
+      "kind": "file",
+      "size": 20719
+    },
+    {
+      "path": "packages/effect/dist/TxHashSet.js.map",
+      "kind": "file",
+      "size": 8151
+    },
+    {
+      "path": "packages/effect/dist/TxPriorityQueue.d.ts",
+      "kind": "file",
+      "size": 13509
+    },
+    {
+      "path": "packages/effect/dist/TxPriorityQueue.d.ts.map",
+      "kind": "file",
+      "size": 4348
+    },
+    {
+      "path": "packages/effect/dist/TxPriorityQueue.js",
+      "kind": "file",
+      "size": 13910
+    },
+    {
+      "path": "packages/effect/dist/TxPriorityQueue.js.map",
+      "kind": "file",
+      "size": 7348
+    },
+    {
+      "path": "packages/effect/dist/TxPubSub.d.ts",
+      "kind": "file",
+      "size": 16274
+    },
+    {
+      "path": "packages/effect/dist/TxPubSub.d.ts.map",
+      "kind": "file",
+      "size": 3943
+    },
+    {
+      "path": "packages/effect/dist/TxPubSub.js",
+      "kind": "file",
+      "size": 19638
+    },
+    {
+      "path": "packages/effect/dist/TxPubSub.js.map",
+      "kind": "file",
+      "size": 8096
+    },
+    {
+      "path": "packages/effect/dist/TxQueue.d.ts",
+      "kind": "file",
+      "size": 34642
+    },
+    {
+      "path": "packages/effect/dist/TxQueue.d.ts.map",
+      "kind": "file",
+      "size": 8492
+    },
+    {
+      "path": "packages/effect/dist/TxQueue.js",
+      "kind": "file",
+      "size": 38313
+    },
+    {
+      "path": "packages/effect/dist/TxQueue.js.map",
+      "kind": "file",
+      "size": 18673
+    },
+    {
+      "path": "packages/effect/dist/TxReentrantLock.d.ts",
+      "kind": "file",
+      "size": 12818
+    },
+    {
+      "path": "packages/effect/dist/TxReentrantLock.d.ts.map",
+      "kind": "file",
+      "size": 3541
+    },
+    {
+      "path": "packages/effect/dist/TxReentrantLock.js",
+      "kind": "file",
+      "size": 17330
+    },
+    {
+      "path": "packages/effect/dist/TxReentrantLock.js.map",
+      "kind": "file",
+      "size": 8958
+    },
+    {
+      "path": "packages/effect/dist/TxRef.d.ts",
+      "kind": "file",
+      "size": 6909
+    },
+    {
+      "path": "packages/effect/dist/TxRef.d.ts.map",
+      "kind": "file",
+      "size": 2026
+    },
+    {
+      "path": "packages/effect/dist/TxRef.js",
+      "kind": "file",
+      "size": 5933
+    },
+    {
+      "path": "packages/effect/dist/TxRef.js.map",
+      "kind": "file",
+      "size": 2245
+    },
+    {
+      "path": "packages/effect/dist/TxSemaphore.d.ts",
+      "kind": "file",
+      "size": 18945
+    },
+    {
+      "path": "packages/effect/dist/TxSemaphore.d.ts.map",
+      "kind": "file",
+      "size": 3327
+    },
+    {
+      "path": "packages/effect/dist/TxSemaphore.js",
+      "kind": "file",
+      "size": 19194
+    },
+    {
+      "path": "packages/effect/dist/TxSemaphore.js.map",
+      "kind": "file",
+      "size": 5850
+    },
+    {
+      "path": "packages/effect/dist/TxSubscriptionRef.d.ts",
+      "kind": "file",
+      "size": 12859
+    },
+    {
+      "path": "packages/effect/dist/TxSubscriptionRef.d.ts.map",
+      "kind": "file",
+      "size": 3690
+    },
+    {
+      "path": "packages/effect/dist/TxSubscriptionRef.js",
+      "kind": "file",
+      "size": 12663
+    },
+    {
+      "path": "packages/effect/dist/TxSubscriptionRef.js.map",
+      "kind": "file",
+      "size": 4309
+    },
+    {
+      "path": "packages/effect/dist/Types.d.ts",
+      "kind": "file",
+      "size": 31629
+    },
+    {
+      "path": "packages/effect/dist/Types.d.ts.map",
+      "kind": "file",
+      "size": 7812
+    },
+    {
+      "path": "packages/effect/dist/Types.js",
+      "kind": "file",
+      "size": 421
+    },
+    {
+      "path": "packages/effect/dist/Types.js.map",
+      "kind": "file",
+      "size": 119
+    },
+    {
+      "path": "packages/effect/dist/UndefinedOr.d.ts",
+      "kind": "file",
+      "size": 6437
+    },
+    {
+      "path": "packages/effect/dist/UndefinedOr.d.ts.map",
+      "kind": "file",
+      "size": 2102
+    },
+    {
+      "path": "packages/effect/dist/UndefinedOr.js",
+      "kind": "file",
+      "size": 6760
+    },
+    {
+      "path": "packages/effect/dist/UndefinedOr.js.map",
+      "kind": "file",
+      "size": 2299
+    },
+    {
+      "path": "packages/effect/dist/Unify.d.ts",
+      "kind": "file",
+      "size": 8539
+    },
+    {
+      "path": "packages/effect/dist/Unify.d.ts.map",
+      "kind": "file",
+      "size": 4272
+    },
+    {
+      "path": "packages/effect/dist/Unify.js",
+      "kind": "file",
+      "size": 1937
+    },
+    {
+      "path": "packages/effect/dist/Unify.js.map",
+      "kind": "file",
+      "size": 254
+    },
+    {
+      "path": "packages/effect/dist/Utils.d.ts",
+      "kind": "file",
+      "size": 5107
+    },
+    {
+      "path": "packages/effect/dist/Utils.d.ts.map",
+      "kind": "file",
+      "size": 2145
+    },
+    {
+      "path": "packages/effect/dist/Utils.js",
+      "kind": "file",
+      "size": 2612
+    },
+    {
+      "path": "packages/effect/dist/Utils.js.map",
+      "kind": "file",
+      "size": 1286
+    },
+    {
+      "path": "packages/effect/runtimeperf",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/runtimeperf/suites",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/runtimeperf/test",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/runtimeperf/compare.mts",
+      "kind": "file",
+      "size": 8507
+    },
+    {
+      "path": "packages/effect/runtimeperf/config.json",
+      "kind": "file",
+      "size": 108559
+    },
+    {
+      "path": "packages/effect/runtimeperf/materialize.mts",
+      "kind": "file",
+      "size": 635
+    },
+    {
+      "path": "packages/effect/runtimeperf/README.md",
+      "kind": "file",
+      "size": 8044
+    },
+    {
+      "path": "packages/effect/runtimeperf/run.mts",
+      "kind": "file",
+      "size": 4980
+    },
+    {
+      "path": "packages/effect/runtimeperf/stats.mts",
+      "kind": "file",
+      "size": 4043
+    },
+    {
+      "path": "packages/effect/runtimeperf/utils.mts",
+      "kind": "file",
+      "size": 9389
+    },
+    {
+      "path": "packages/effect/runtimeperf/worker.mts",
+      "kind": "file",
+      "size": 4967
+    },
+    {
+      "path": "packages/effect/runtimeperf/worktree-diff.mts",
+      "kind": "file",
+      "size": 881
+    },
+    {
+      "path": "packages/effect/src",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/src/ai",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/src/cli",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/src/cluster",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/src/devtools",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/src/encoding",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/src/eventlog",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/src/http",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/src/http-api",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/src/internal",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/src/net",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/src/observability",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/src/persistence",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/src/process",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/src/reactivity",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/src/rpc",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/src/schema",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/src/socket",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/src/sql",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/src/testing",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/src/workers",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/src/workflow",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/src/Arbitrary.ts",
+      "kind": "file",
+      "size": 21985
+    },
+    {
+      "path": "packages/effect/src/Array.ts",
+      "kind": "file",
+      "size": 144403
+    },
+    {
+      "path": "packages/effect/src/BigDecimal.ts",
+      "kind": "file",
+      "size": 51683
+    },
+    {
+      "path": "packages/effect/src/BigInt.ts",
+      "kind": "file",
+      "size": 24661
+    },
+    {
+      "path": "packages/effect/src/Boolean.ts",
+      "kind": "file",
+      "size": 11447
+    },
+    {
+      "path": "packages/effect/src/Brand.ts",
+      "kind": "file",
+      "size": 9664
+    },
+    {
+      "path": "packages/effect/src/ByteSize.ts",
+      "kind": "file",
+      "size": 20659
+    },
+    {
+      "path": "packages/effect/src/Cache.ts",
+      "kind": "file",
+      "size": 43340
+    },
+    {
+      "path": "packages/effect/src/Cause.ts",
+      "kind": "file",
+      "size": 51011
+    },
+    {
+      "path": "packages/effect/src/Channel.ts",
+      "kind": "file",
+      "size": 279964
+    },
+    {
+      "path": "packages/effect/src/ChannelSchema.ts",
+      "kind": "file",
+      "size": 9347
+    },
+    {
+      "path": "packages/effect/src/Chunk.ts",
+      "kind": "file",
+      "size": 83627
+    },
+    {
+      "path": "packages/effect/src/Clock.ts",
+      "kind": "file",
+      "size": 10420
+    },
+    {
+      "path": "packages/effect/src/Combiner.ts",
+      "kind": "file",
+      "size": 7898
+    },
+    {
+      "path": "packages/effect/src/Config.ts",
+      "kind": "file",
+      "size": 48031
+    },
+    {
+      "path": "packages/effect/src/ConfigProvider.ts",
+      "kind": "file",
+      "size": 41865
+    },
+    {
+      "path": "packages/effect/src/Console.ts",
+      "kind": "file",
+      "size": 26615
+    },
+    {
+      "path": "packages/effect/src/Context.ts",
+      "kind": "file",
+      "size": 39122
+    },
+    {
+      "path": "packages/effect/src/Cron.ts",
+      "kind": "file",
+      "size": 40020
+    },
+    {
+      "path": "packages/effect/src/Crypto.ts",
+      "kind": "file",
+      "size": 9707
+    },
+    {
+      "path": "packages/effect/src/Data.ts",
+      "kind": "file",
+      "size": 22771
+    },
+    {
+      "path": "packages/effect/src/DateTime.ts",
+      "kind": "file",
+      "size": 81470
+    },
+    {
+      "path": "packages/effect/src/Deferred.ts",
+      "kind": "file",
+      "size": 28566
+    },
+    {
+      "path": "packages/effect/src/Differ.ts",
+      "kind": "file",
+      "size": 969
+    },
+    {
+      "path": "packages/effect/src/Duration.ts",
+      "kind": "file",
+      "size": 49059
+    },
+    {
+      "path": "packages/effect/src/Effect.ts",
+      "kind": "file",
+      "size": 463236
+    },
+    {
+      "path": "packages/effect/src/Effectable.ts",
+      "kind": "file",
+      "size": 4475
+    },
+    {
+      "path": "packages/effect/src/Equal.ts",
+      "kind": "file",
+      "size": 16301
+    },
+    {
+      "path": "packages/effect/src/Equivalence.ts",
+      "kind": "file",
+      "size": 24732
+    },
+    {
+      "path": "packages/effect/src/ErrorReporter.ts",
+      "kind": "file",
+      "size": 17388
+    },
+    {
+      "path": "packages/effect/src/ExecutionPlan.ts",
+      "kind": "file",
+      "size": 13565
+    },
+    {
+      "path": "packages/effect/src/Exit.ts",
+      "kind": "file",
+      "size": 28074
+    },
+    {
+      "path": "packages/effect/src/Fiber.ts",
+      "kind": "file",
+      "size": 18178
+    },
+    {
+      "path": "packages/effect/src/FiberHandle.ts",
+      "kind": "file",
+      "size": 25864
+    },
+    {
+      "path": "packages/effect/src/FiberMap.ts",
+      "kind": "file",
+      "size": 32145
+    },
+    {
+      "path": "packages/effect/src/FiberSet.ts",
+      "kind": "file",
+      "size": 21436
+    },
+    {
+      "path": "packages/effect/src/FileSystem.ts",
+      "kind": "file",
+      "size": 32887
+    },
+    {
+      "path": "packages/effect/src/Filter.ts",
+      "kind": "file",
+      "size": 27448
+    },
+    {
+      "path": "packages/effect/src/Formatter.ts",
+      "kind": "file",
+      "size": 10752
+    },
+    {
+      "path": "packages/effect/src/Function.ts",
+      "kind": "file",
+      "size": 29920
+    },
+    {
+      "path": "packages/effect/src/Graph.ts",
+      "kind": "file",
+      "size": 265865
+    },
+    {
+      "path": "packages/effect/src/Hash.ts",
+      "kind": "file",
+      "size": 13995
+    },
+    {
+      "path": "packages/effect/src/HashMap.ts",
+      "kind": "file",
+      "size": 35161
+    },
+    {
+      "path": "packages/effect/src/HashRing.ts",
+      "kind": "file",
+      "size": 13380
+    },
+    {
+      "path": "packages/effect/src/HashSet.ts",
+      "kind": "file",
+      "size": 16034
+    },
+    {
+      "path": "packages/effect/src/HKT.ts",
+      "kind": "file",
+      "size": 6437
+    },
+    {
+      "path": "packages/effect/src/index.ts",
+      "kind": "file",
+      "size": 9670
+    },
+    {
+      "path": "packages/effect/src/Inspectable.ts",
+      "kind": "file",
+      "size": 8840
+    },
+    {
+      "path": "packages/effect/src/Iterable.ts",
+      "kind": "file",
+      "size": 72943
+    },
+    {
+      "path": "packages/effect/src/JsonPatch.ts",
+      "kind": "file",
+      "size": 13204
+    },
+    {
+      "path": "packages/effect/src/JsonPointer.ts",
+      "kind": "file",
+      "size": 5414
+    },
+    {
+      "path": "packages/effect/src/JsonSchema.ts",
+      "kind": "file",
+      "size": 54433
+    },
+    {
+      "path": "packages/effect/src/Latch.ts",
+      "kind": "file",
+      "size": 10871
+    },
+    {
+      "path": "packages/effect/src/Layer.ts",
+      "kind": "file",
+      "size": 90430
+    },
+    {
+      "path": "packages/effect/src/LayerMap.ts",
+      "kind": "file",
+      "size": 17333
+    },
+    {
+      "path": "packages/effect/src/LayerRef.ts",
+      "kind": "file",
+      "size": 11325
+    },
+    {
+      "path": "packages/effect/src/Logger.ts",
+      "kind": "file",
+      "size": 35497
+    },
+    {
+      "path": "packages/effect/src/LogLevel.ts",
+      "kind": "file",
+      "size": 11586
+    },
+    {
+      "path": "packages/effect/src/ManagedRuntime.ts",
+      "kind": "file",
+      "size": 12625
+    },
+    {
+      "path": "packages/effect/src/Match.ts",
+      "kind": "file",
+      "size": 81160
+    },
+    {
+      "path": "packages/effect/src/Metric.ts",
+      "kind": "file",
+      "size": 124646
+    },
+    {
+      "path": "packages/effect/src/MutableHashMap.ts",
+      "kind": "file",
+      "size": 23012
+    },
+    {
+      "path": "packages/effect/src/MutableHashSet.ts",
+      "kind": "file",
+      "size": 11636
+    },
+    {
+      "path": "packages/effect/src/MutableList.ts",
+      "kind": "file",
+      "size": 19615
+    },
+    {
+      "path": "packages/effect/src/MutableRef.ts",
+      "kind": "file",
+      "size": 24265
+    },
+    {
+      "path": "packages/effect/src/Newtype.ts",
+      "kind": "file",
+      "size": 9252
+    },
+    {
+      "path": "packages/effect/src/NonEmptyIterable.ts",
+      "kind": "file",
+      "size": 2864
+    },
+    {
+      "path": "packages/effect/src/Number.ts",
+      "kind": "file",
+      "size": 21037
+    },
+    {
+      "path": "packages/effect/src/Optic.ts",
+      "kind": "file",
+      "size": 52517
+    },
+    {
+      "path": "packages/effect/src/Option.ts",
+      "kind": "file",
+      "size": 71219
+    },
+    {
+      "path": "packages/effect/src/Order.ts",
+      "kind": "file",
+      "size": 27820
+    },
+    {
+      "path": "packages/effect/src/Ordering.ts",
+      "kind": "file",
+      "size": 5038
+    },
+    {
+      "path": "packages/effect/src/PartitionedSemaphore.ts",
+      "kind": "file",
+      "size": 16850
+    },
+    {
+      "path": "packages/effect/src/Path.ts",
+      "kind": "file",
+      "size": 25635
+    },
+    {
+      "path": "packages/effect/src/Pipeable.ts",
+      "kind": "file",
+      "size": 14204
+    },
+    {
+      "path": "packages/effect/src/PlatformError.ts",
+      "kind": "file",
+      "size": 7349
+    },
+    {
+      "path": "packages/effect/src/Pool.ts",
+      "kind": "file",
+      "size": 36643
+    },
+    {
+      "path": "packages/effect/src/Predicate.ts",
+      "kind": "file",
+      "size": 45409
+    },
+    {
+      "path": "packages/effect/src/PrimaryKey.ts",
+      "kind": "file",
+      "size": 3440
+    },
+    {
+      "path": "packages/effect/src/PubSub.ts",
+      "kind": "file",
+      "size": 88318
+    },
+    {
+      "path": "packages/effect/src/Pull.ts",
+      "kind": "file",
+      "size": 13713
+    },
+    {
+      "path": "packages/effect/src/Queue.ts",
+      "kind": "file",
+      "size": 62616
+    },
+    {
+      "path": "packages/effect/src/Random.ts",
+      "kind": "file",
+      "size": 17414
+    },
+    {
+      "path": "packages/effect/src/RcMap.ts",
+      "kind": "file",
+      "size": 22922
+    },
+    {
+      "path": "packages/effect/src/RcRef.ts",
+      "kind": "file",
+      "size": 7455
+    },
+    {
+      "path": "packages/effect/src/Record.ts",
+      "kind": "file",
+      "size": 45030
+    },
+    {
+      "path": "packages/effect/src/Redactable.ts",
+      "kind": "file",
+      "size": 5214
+    },
+    {
+      "path": "packages/effect/src/Redacted.ts",
+      "kind": "file",
+      "size": 8821
+    },
+    {
+      "path": "packages/effect/src/Reducer.ts",
+      "kind": "file",
+      "size": 4923
+    },
+    {
+      "path": "packages/effect/src/Ref.ts",
+      "kind": "file",
+      "size": 21175
+    },
+    {
+      "path": "packages/effect/src/References.ts",
+      "kind": "file",
+      "size": 20570
+    },
+    {
+      "path": "packages/effect/src/RegExp.ts",
+      "kind": "file",
+      "size": 2075
+    },
+    {
+      "path": "packages/effect/src/Request.ts",
+      "kind": "file",
+      "size": 18500
+    },
+    {
+      "path": "packages/effect/src/RequestResolver.ts",
+      "kind": "file",
+      "size": 43787
+    },
+    {
+      "path": "packages/effect/src/Resource.ts",
+      "kind": "file",
+      "size": 5540
+    },
+    {
+      "path": "packages/effect/src/Result.ts",
+      "kind": "file",
+      "size": 52937
+    },
+    {
+      "path": "packages/effect/src/Runtime.ts",
+      "kind": "file",
+      "size": 12413
+    },
+    {
+      "path": "packages/effect/src/Schedule.ts",
+      "kind": "file",
+      "size": 48534
+    },
+    {
+      "path": "packages/effect/src/Scheduler.ts",
+      "kind": "file",
+      "size": 8456
+    },
+    {
+      "path": "packages/effect/src/Schema.ts",
+      "kind": "file",
+      "size": 513194
+    },
+    {
+      "path": "packages/effect/src/SchemaAST.ts",
+      "kind": "file",
+      "size": 152394
+    },
+    {
+      "path": "packages/effect/src/SchemaGetter.ts",
+      "kind": "file",
+      "size": 68598
+    },
+    {
+      "path": "packages/effect/src/SchemaIssue.ts",
+      "kind": "file",
+      "size": 40537
+    },
+    {
+      "path": "packages/effect/src/SchemaParser.ts",
+      "kind": "file",
+      "size": 42524
+    },
+    {
+      "path": "packages/effect/src/SchemaRepresentation.ts",
+      "kind": "file",
+      "size": 92023
+    },
+    {
+      "path": "packages/effect/src/SchemaTransformation.ts",
+      "kind": "file",
+      "size": 63324
+    },
+    {
+      "path": "packages/effect/src/Scope.ts",
+      "kind": "file",
+      "size": 16593
+    },
+    {
+      "path": "packages/effect/src/ScopedCache.ts",
+      "kind": "file",
+      "size": 29683
+    },
+    {
+      "path": "packages/effect/src/ScopedRef.ts",
+      "kind": "file",
+      "size": 6675
+    },
+    {
+      "path": "packages/effect/src/Semaphore.ts",
+      "kind": "file",
+      "size": 18605
+    },
+    {
+      "path": "packages/effect/src/Sink.ts",
+      "kind": "file",
+      "size": 65224
+    },
+    {
+      "path": "packages/effect/src/StandardSchema.ts",
+      "kind": "file",
+      "size": 7640
+    },
+    {
+      "path": "packages/effect/src/Stdio.ts",
+      "kind": "file",
+      "size": 4686
+    },
+    {
+      "path": "packages/effect/src/Stream.ts",
+      "kind": "file",
+      "size": 353971
+    },
+    {
+      "path": "packages/effect/src/String.ts",
+      "kind": "file",
+      "size": 40679
+    },
+    {
+      "path": "packages/effect/src/Struct.ts",
+      "kind": "file",
+      "size": 29444
+    },
+    {
+      "path": "packages/effect/src/SubscriptionRef.ts",
+      "kind": "file",
+      "size": 29856
+    },
+    {
+      "path": "packages/effect/src/Symbol.ts",
+      "kind": "file",
+      "size": 800
+    },
+    {
+      "path": "packages/effect/src/SynchronizedRef.ts",
+      "kind": "file",
+      "size": 22851
+    },
+    {
+      "path": "packages/effect/src/Take.ts",
+      "kind": "file",
+      "size": 1616
+    },
+    {
+      "path": "packages/effect/src/Terminal.ts",
+      "kind": "file",
+      "size": 5342
+    },
+    {
+      "path": "packages/effect/src/Tracer.ts",
+      "kind": "file",
+      "size": 21355
+    },
+    {
+      "path": "packages/effect/src/Trie.ts",
+      "kind": "file",
+      "size": 21216
+    },
+    {
+      "path": "packages/effect/src/Tuple.ts",
+      "kind": "file",
+      "size": 21058
+    },
+    {
+      "path": "packages/effect/src/TxChunk.ts",
+      "kind": "file",
+      "size": 25445
+    },
+    {
+      "path": "packages/effect/src/TxDeferred.ts",
+      "kind": "file",
+      "size": 9708
+    },
+    {
+      "path": "packages/effect/src/TxHashMap.ts",
+      "kind": "file",
+      "size": 63445
+    },
+    {
+      "path": "packages/effect/src/TxHashSet.ts",
+      "kind": "file",
+      "size": 29522
+    },
+    {
+      "path": "packages/effect/src/TxPriorityQueue.ts",
+      "kind": "file",
+      "size": 17675
+    },
+    {
+      "path": "packages/effect/src/TxPubSub.ts",
+      "kind": "file",
+      "size": 22520
+    },
+    {
+      "path": "packages/effect/src/TxQueue.ts",
+      "kind": "file",
+      "size": 47804
+    },
+    {
+      "path": "packages/effect/src/TxReentrantLock.ts",
+      "kind": "file",
+      "size": 20300
+    },
+    {
+      "path": "packages/effect/src/TxRef.ts",
+      "kind": "file",
+      "size": 8034
+    },
+    {
+      "path": "packages/effect/src/TxSemaphore.ts",
+      "kind": "file",
+      "size": 22229
+    },
+    {
+      "path": "packages/effect/src/TxSubscriptionRef.ts",
+      "kind": "file",
+      "size": 16079
+    },
+    {
+      "path": "packages/effect/src/Types.ts",
+      "kind": "file",
+      "size": 31415
+    },
+    {
+      "path": "packages/effect/src/UndefinedOr.ts",
+      "kind": "file",
+      "size": 7616
+    },
+    {
+      "path": "packages/effect/src/Unify.ts",
+      "kind": "file",
+      "size": 8801
+    },
+    {
+      "path": "packages/effect/src/Utils.ts",
+      "kind": "file",
+      "size": 6178
+    },
+    {
+      "path": "packages/effect/test",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/test/ai",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/test/arbitrary",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/test/cli",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/test/cluster",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/test/devtools",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/test/encoding",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/test/eventlog",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/test/fixtures",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/test/http",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/test/httpapi",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/test/internal",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/test/net",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/test/observability",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/test/persistence",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/test/process",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/test/reactivity",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/test/rpc",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/test/schema",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/test/socket",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/test/sql",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/test/testing",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/test/utils",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/test/workers",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/test/workflow",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/test/Array.test.ts",
+      "kind": "file",
+      "size": 60851
+    },
+    {
+      "path": "packages/effect/test/ArrayNaNIndex.test.ts",
+      "kind": "file",
+      "size": 1230
+    },
+    {
+      "path": "packages/effect/test/AtomRef.test.ts",
+      "kind": "file",
+      "size": 637
+    },
+    {
+      "path": "packages/effect/test/BigDecimal.test.ts",
+      "kind": "file",
+      "size": 30987
+    },
+    {
+      "path": "packages/effect/test/BigInt.test.ts",
+      "kind": "file",
+      "size": 4372
+    },
+    {
+      "path": "packages/effect/test/Boolean.test.ts",
+      "kind": "file",
+      "size": 9836
+    },
+    {
+      "path": "packages/effect/test/Brand.test.ts",
+      "kind": "file",
+      "size": 4771
+    },
+    {
+      "path": "packages/effect/test/ByteSize.test.ts",
+      "kind": "file",
+      "size": 7113
+    },
+    {
+      "path": "packages/effect/test/Cache.test.ts",
+      "kind": "file",
+      "size": 63622
+    },
+    {
+      "path": "packages/effect/test/Cause.test.ts",
+      "kind": "file",
+      "size": 31802
+    },
+    {
+      "path": "packages/effect/test/CauseMapAnnotations.test.ts",
+      "kind": "file",
+      "size": 528
+    },
+    {
+      "path": "packages/effect/test/Channel.test.ts",
+      "kind": "file",
+      "size": 24862
+    },
+    {
+      "path": "packages/effect/test/Chunk.test.ts",
+      "kind": "file",
+      "size": 35011
+    },
+    {
+      "path": "packages/effect/test/Clock.test.ts",
+      "kind": "file",
+      "size": 1531
+    },
+    {
+      "path": "packages/effect/test/Combiner.test.ts",
+      "kind": "file",
+      "size": 1012
+    },
+    {
+      "path": "packages/effect/test/Config.test.ts",
+      "kind": "file",
+      "size": 102318
+    },
+    {
+      "path": "packages/effect/test/ConfigProvider.test.ts",
+      "kind": "file",
+      "size": 45744
+    },
+    {
+      "path": "packages/effect/test/Context.test.ts",
+      "kind": "file",
+      "size": 9258
+    },
+    {
+      "path": "packages/effect/test/Cron.test.ts",
+      "kind": "file",
+      "size": 31145
+    },
+    {
+      "path": "packages/effect/test/Crypto.test.ts",
+      "kind": "file",
+      "size": 5795
+    },
+    {
+      "path": "packages/effect/test/Data.test.ts",
+      "kind": "file",
+      "size": 8621
+    },
+    {
+      "path": "packages/effect/test/DateTime.test.ts",
+      "kind": "file",
+      "size": 36499
+    },
+    {
+      "path": "packages/effect/test/Deferred.test.ts",
+      "kind": "file",
+      "size": 9991
+    },
+    {
+      "path": "packages/effect/test/Duration.test.ts",
+      "kind": "file",
+      "size": 33548
+    },
+    {
+      "path": "packages/effect/test/Effect.test.ts",
+      "kind": "file",
+      "size": 154366
+    },
+    {
+      "path": "packages/effect/test/Effectable.test.ts",
+      "kind": "file",
+      "size": 3398
+    },
+    {
+      "path": "packages/effect/test/EffectEager.test.ts",
+      "kind": "file",
+      "size": 23998
+    },
+    {
+      "path": "packages/effect/test/EffectKeepAlive.test.ts",
+      "kind": "file",
+      "size": 2367
+    },
+    {
+      "path": "packages/effect/test/Equal.test.ts",
+      "kind": "file",
+      "size": 52248
+    },
+    {
+      "path": "packages/effect/test/Equivalence.test.ts",
+      "kind": "file",
+      "size": 6102
+    },
+    {
+      "path": "packages/effect/test/ExecutionPlan.test.ts",
+      "kind": "file",
+      "size": 22158
+    },
+    {
+      "path": "packages/effect/test/Exit.test.ts",
+      "kind": "file",
+      "size": 574
+    },
+    {
+      "path": "packages/effect/test/Fiber.test.ts",
+      "kind": "file",
+      "size": 8041
+    },
+    {
+      "path": "packages/effect/test/FiberHandle.test.ts",
+      "kind": "file",
+      "size": 8233
+    },
+    {
+      "path": "packages/effect/test/FiberMap.test.ts",
+      "kind": "file",
+      "size": 9434
+    },
+    {
+      "path": "packages/effect/test/FiberSet.test.ts",
+      "kind": "file",
+      "size": 4573
+    },
+    {
+      "path": "packages/effect/test/FiberSetRuntimePropagation.test.ts",
+      "kind": "file",
+      "size": 620
+    },
+    {
+      "path": "packages/effect/test/FileSystem.test-utils.ts",
+      "kind": "file",
+      "size": 20598
+    },
+    {
+      "path": "packages/effect/test/Formatter.test.ts",
+      "kind": "file",
+      "size": 27549
+    },
+    {
+      "path": "packages/effect/test/Function.test.ts",
+      "kind": "file",
+      "size": 9866
+    },
+    {
+      "path": "packages/effect/test/Graph.test.ts",
+      "kind": "file",
+      "size": 109423
+    },
+    {
+      "path": "packages/effect/test/Hash.test.ts",
+      "kind": "file",
+      "size": 9877
+    },
+    {
+      "path": "packages/effect/test/HashMap.test.ts",
+      "kind": "file",
+      "size": 25037
+    },
+    {
+      "path": "packages/effect/test/HashRing.test.ts",
+      "kind": "file",
+      "size": 2212
+    },
+    {
+      "path": "packages/effect/test/HashSet.test.ts",
+      "kind": "file",
+      "size": 10367
+    },
+    {
+      "path": "packages/effect/test/HttpClient.test.ts",
+      "kind": "file",
+      "size": 6634
+    },
+    {
+      "path": "packages/effect/test/Iterable.test.ts",
+      "kind": "file",
+      "size": 20223
+    },
+    {
+      "path": "packages/effect/test/JsonPatch.test.ts",
+      "kind": "file",
+      "size": 32990
+    },
+    {
+      "path": "packages/effect/test/JsonPointer.test.ts",
+      "kind": "file",
+      "size": 14656
+    },
+    {
+      "path": "packages/effect/test/JsonSchema.test.ts",
+      "kind": "file",
+      "size": 91203
+    },
+    {
+      "path": "packages/effect/test/Latch.test.ts",
+      "kind": "file",
+      "size": 7094
+    },
+    {
+      "path": "packages/effect/test/Layer.test.ts",
+      "kind": "file",
+      "size": 28584
+    },
+    {
+      "path": "packages/effect/test/LayerMap.test.ts",
+      "kind": "file",
+      "size": 7325
+    },
+    {
+      "path": "packages/effect/test/LayerRef.test.ts",
+      "kind": "file",
+      "size": 4896
+    },
+    {
+      "path": "packages/effect/test/Logger.test.ts",
+      "kind": "file",
+      "size": 8327
+    },
+    {
+      "path": "packages/effect/test/LogLevel.test.ts",
+      "kind": "file",
+      "size": 1021
+    },
+    {
+      "path": "packages/effect/test/ManagedRuntime.test.ts",
+      "kind": "file",
+      "size": 5679
+    },
+    {
+      "path": "packages/effect/test/Match.test.ts",
+      "kind": "file",
+      "size": 2605
+    },
+    {
+      "path": "packages/effect/test/Metric.test.ts",
+      "kind": "file",
+      "size": 42137
+    },
+    {
+      "path": "packages/effect/test/Migrator.test.ts",
+      "kind": "file",
+      "size": 4820
+    },
+    {
+      "path": "packages/effect/test/MutableHashMap.test.ts",
+      "kind": "file",
+      "size": 6683
+    },
+    {
+      "path": "packages/effect/test/MutableHashSet.test.ts",
+      "kind": "file",
+      "size": 431
+    },
+    {
+      "path": "packages/effect/test/MutableList.test.ts",
+      "kind": "file",
+      "size": 7569
+    },
+    {
+      "path": "packages/effect/test/Newtype.test.ts",
+      "kind": "file",
+      "size": 2774
+    },
+    {
+      "path": "packages/effect/test/Number.test.ts",
+      "kind": "file",
+      "size": 16892
+    },
+    {
+      "path": "packages/effect/test/Optic.test.ts",
+      "kind": "file",
+      "size": 27797
+    },
+    {
+      "path": "packages/effect/test/Option.test.ts",
+      "kind": "file",
+      "size": 18739
+    },
+    {
+      "path": "packages/effect/test/Order.test.ts",
+      "kind": "file",
+      "size": 5028
+    },
+    {
+      "path": "packages/effect/test/Ordering.test.ts",
+      "kind": "file",
+      "size": 1299
+    },
+    {
+      "path": "packages/effect/test/PartitionedSemaphore.test.ts",
+      "kind": "file",
+      "size": 8678
+    },
+    {
+      "path": "packages/effect/test/Pathfinding.test.ts",
+      "kind": "file",
+      "size": 12877
+    },
+    {
+      "path": "packages/effect/test/Pool.test.ts",
+      "kind": "file",
+      "size": 40850
+    },
+    {
+      "path": "packages/effect/test/Predicate.test.ts",
+      "kind": "file",
+      "size": 18261
+    },
+    {
+      "path": "packages/effect/test/PubSub.test.ts",
+      "kind": "file",
+      "size": 37853
+    },
+    {
+      "path": "packages/effect/test/Pull.test.ts",
+      "kind": "file",
+      "size": 1716
+    },
+    {
+      "path": "packages/effect/test/Queue.test.ts",
+      "kind": "file",
+      "size": 32402
+    },
+    {
+      "path": "packages/effect/test/Random.test.ts",
+      "kind": "file",
+      "size": 10659
+    },
+    {
+      "path": "packages/effect/test/RcMap.test.ts",
+      "kind": "file",
+      "size": 21954
+    },
+    {
+      "path": "packages/effect/test/RcRef.test.ts",
+      "kind": "file",
+      "size": 14231
+    },
+    {
+      "path": "packages/effect/test/Record.test.ts",
+      "kind": "file",
+      "size": 14133
+    },
+    {
+      "path": "packages/effect/test/Redacted.test.ts",
+      "kind": "file",
+      "size": 2362
+    },
+    {
+      "path": "packages/effect/test/Reducer.test.ts",
+      "kind": "file",
+      "size": 368
+    },
+    {
+      "path": "packages/effect/test/Ref.test.ts",
+      "kind": "file",
+      "size": 6715
+    },
+    {
+      "path": "packages/effect/test/Request.test.ts",
+      "kind": "file",
+      "size": 28421
+    },
+    {
+      "path": "packages/effect/test/Resource.test.ts",
+      "kind": "file",
+      "size": 2306
+    },
+    {
+      "path": "packages/effect/test/Result.test.ts",
+      "kind": "file",
+      "size": 18998
+    },
+    {
+      "path": "packages/effect/test/Schedule.test.ts",
+      "kind": "file",
+      "size": 22897
+    },
+    {
+      "path": "packages/effect/test/Scheduler.test.ts",
+      "kind": "file",
+      "size": 4752
+    },
+    {
+      "path": "packages/effect/test/Scope.test.ts",
+      "kind": "file",
+      "size": 8078
+    },
+    {
+      "path": "packages/effect/test/ScopedCache.test.ts",
+      "kind": "file",
+      "size": 101786
+    },
+    {
+      "path": "packages/effect/test/ScopedRef.test.ts",
+      "kind": "file",
+      "size": 6278
+    },
+    {
+      "path": "packages/effect/test/Semaphore.test.ts",
+      "kind": "file",
+      "size": 19994
+    },
+    {
+      "path": "packages/effect/test/Sink.test.ts",
+      "kind": "file",
+      "size": 12354
+    },
+    {
+      "path": "packages/effect/test/StackCapture.test.ts",
+      "kind": "file",
+      "size": 1826
+    },
+    {
+      "path": "packages/effect/test/StackTraceLimit.test.ts",
+      "kind": "file",
+      "size": 2186
+    },
+    {
+      "path": "packages/effect/test/Stdio.test.ts",
+      "kind": "file",
+      "size": 825
+    },
+    {
+      "path": "packages/effect/test/Stream.test.ts",
+      "kind": "file",
+      "size": 197480
+    },
+    {
+      "path": "packages/effect/test/String.test.ts",
+      "kind": "file",
+      "size": 21289
+    },
+    {
+      "path": "packages/effect/test/Struct.test.ts",
+      "kind": "file",
+      "size": 8349
+    },
+    {
+      "path": "packages/effect/test/SubscriptionRef.test.ts",
+      "kind": "file",
+      "size": 3988
+    },
+    {
+      "path": "packages/effect/test/Symbol.test.ts",
+      "kind": "file",
+      "size": 1722
+    },
+    {
+      "path": "packages/effect/test/SynchronizedRef.modifySomeEffect.test.ts",
+      "kind": "file",
+      "size": 986
+    },
+    {
+      "path": "packages/effect/test/SynchronizedRef.test.ts",
+      "kind": "file",
+      "size": 4389
+    },
+    {
+      "path": "packages/effect/test/TestClock.test.ts",
+      "kind": "file",
+      "size": 5734
+    },
+    {
+      "path": "packages/effect/test/Tracer.test.ts",
+      "kind": "file",
+      "size": 19112
+    },
+    {
+      "path": "packages/effect/test/Trie.test.ts",
+      "kind": "file",
+      "size": 16878
+    },
+    {
+      "path": "packages/effect/test/Tuple.test.ts",
+      "kind": "file",
+      "size": 5198
+    },
+    {
+      "path": "packages/effect/test/TxChunk.test.ts",
+      "kind": "file",
+      "size": 12008
+    },
+    {
+      "path": "packages/effect/test/TxDeferred.test.ts",
+      "kind": "file",
+      "size": 7645
+    },
+    {
+      "path": "packages/effect/test/TxHashMap.test.ts",
+      "kind": "file",
+      "size": 37593
+    },
+    {
+      "path": "packages/effect/test/TxHashSet.test.ts",
+      "kind": "file",
+      "size": 17783
+    },
+    {
+      "path": "packages/effect/test/TxPriorityQueue.test.ts",
+      "kind": "file",
+      "size": 9449
+    },
+    {
+      "path": "packages/effect/test/TxPubSub.test.ts",
+      "kind": "file",
+      "size": 15967
+    },
+    {
+      "path": "packages/effect/test/TxQueue.test.ts",
+      "kind": "file",
+      "size": 49807
+    },
+    {
+      "path": "packages/effect/test/TxReentrantLock.test.ts",
+      "kind": "file",
+      "size": 16230
+    },
+    {
+      "path": "packages/effect/test/TxSemaphore.test.ts",
+      "kind": "file",
+      "size": 10268
+    },
+    {
+      "path": "packages/effect/test/TxSubscriptionRef.test.ts",
+      "kind": "file",
+      "size": 7550
+    },
+    {
+      "path": "packages/effect/test/UndefinedOr.test.ts",
+      "kind": "file",
+      "size": 2277
+    },
+    {
+      "path": "packages/effect/typeperf",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/typeperf/compare",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/typeperf/suites",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/typeperf/compare.mjs",
+      "kind": "file",
+      "size": 13380
+    },
+    {
+      "path": "packages/effect/typeperf/config.json",
+      "kind": "file",
+      "size": 5077
+    },
+    {
+      "path": "packages/effect/typeperf/README.md",
+      "kind": "file",
+      "size": 6448
+    },
+    {
+      "path": "packages/effect/typeperf/run.mjs",
+      "kind": "file",
+      "size": 7580
+    },
+    {
+      "path": "packages/effect/typetest",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/typetest/ai",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/typetest/arbitrary",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/typetest/cli",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/typetest/cluster",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/typetest/encoding",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/typetest/http",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/typetest/httpapi",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/typetest/net",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/typetest/reactivity",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/typetest/rpc",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/typetest/schema",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/typetest/socket",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/typetest/sql",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/typetest/workflow",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/effect/typetest/AiError.tst.ts",
+      "kind": "file",
+      "size": 1390
+    },
+    {
+      "path": "packages/effect/typetest/Array.tst.ts",
+      "kind": "file",
+      "size": 49658
+    },
+    {
+      "path": "packages/effect/typetest/Brand.tst.ts",
+      "kind": "file",
+      "size": 1938
+    },
+    {
+      "path": "packages/effect/typetest/ByteSize.tst.ts",
+      "kind": "file",
+      "size": 4895
+    },
+    {
+      "path": "packages/effect/typetest/Channel.tst.ts",
+      "kind": "file",
+      "size": 4936
+    },
+    {
+      "path": "packages/effect/typetest/ChannelSchema.tst.ts",
+      "kind": "file",
+      "size": 810
+    },
+    {
+      "path": "packages/effect/typetest/Clock.tst.ts",
+      "kind": "file",
+      "size": 459
+    },
+    {
+      "path": "packages/effect/typetest/Config.tst.ts",
+      "kind": "file",
+      "size": 1813
+    },
+    {
+      "path": "packages/effect/typetest/ConfigProvider.tst.ts",
+      "kind": "file",
+      "size": 785
+    },
+    {
+      "path": "packages/effect/typetest/Context.tst.ts",
+      "kind": "file",
+      "size": 846
+    },
+    {
+      "path": "packages/effect/typetest/Data.tst.ts",
+      "kind": "file",
+      "size": 4236
+    },
+    {
+      "path": "packages/effect/typetest/Effect.tst.ts",
+      "kind": "file",
+      "size": 50121
+    },
+    {
+      "path": "packages/effect/typetest/Effectable.tst.ts",
+      "kind": "file",
+      "size": 2301
+    },
+    {
+      "path": "packages/effect/typetest/Equivalence.tst.ts",
+      "kind": "file",
+      "size": 735
+    },
+    {
+      "path": "packages/effect/typetest/Fiber.tst.ts",
+      "kind": "file",
+      "size": 389
+    },
+    {
+      "path": "packages/effect/typetest/FileSystem.tst.ts",
+      "kind": "file",
+      "size": 975
+    },
+    {
+      "path": "packages/effect/typetest/Function.tst.ts",
+      "kind": "file",
+      "size": 1131
+    },
+    {
+      "path": "packages/effect/typetest/Graph.tst.ts",
+      "kind": "file",
+      "size": 15301
+    },
+    {
+      "path": "packages/effect/typetest/Iterable.tst.ts",
+      "kind": "file",
+      "size": 1914
+    },
+    {
+      "path": "packages/effect/typetest/Layer.tst.ts",
+      "kind": "file",
+      "size": 844
+    },
+    {
+      "path": "packages/effect/typetest/Match.tst.ts",
+      "kind": "file",
+      "size": 11628
+    },
+    {
+      "path": "packages/effect/typetest/MigratedSubpaths.tst.ts",
+      "kind": "file",
+      "size": 1049
+    },
+    {
+      "path": "packages/effect/typetest/Newtype.tst.ts",
+      "kind": "file",
+      "size": 2598
+    },
+    {
+      "path": "packages/effect/typetest/Optic.tst.ts",
+      "kind": "file",
+      "size": 10284
+    },
+    {
+      "path": "packages/effect/typetest/Option.tst.ts",
+      "kind": "file",
+      "size": 2898
+    },
+    {
+      "path": "packages/effect/typetest/Order.tst.ts",
+      "kind": "file",
+      "size": 564
+    },
+    {
+      "path": "packages/effect/typetest/Predicate.tst.ts",
+      "kind": "file",
+      "size": 8516
+    },
+    {
+      "path": "packages/effect/typetest/Queue.tst.ts",
+      "kind": "file",
+      "size": 389
+    },
+    {
+      "path": "packages/effect/typetest/Random.tst.ts",
+      "kind": "file",
+      "size": 834
+    },
+    {
+      "path": "packages/effect/typetest/Record.tst.ts",
+      "kind": "file",
+      "size": 4172
+    },
+    {
+      "path": "packages/effect/typetest/Result.tst.ts",
+      "kind": "file",
+      "size": 11967
+    },
+    {
+      "path": "packages/effect/typetest/Schedule.tst.ts",
+      "kind": "file",
+      "size": 3722
+    },
+    {
+      "path": "packages/effect/typetest/Scope.tst.ts",
+      "kind": "file",
+      "size": 962
+    },
+    {
+      "path": "packages/effect/typetest/Sink.tst.ts",
+      "kind": "file",
+      "size": 478
+    },
+    {
+      "path": "packages/effect/typetest/Stream.tst.ts",
+      "kind": "file",
+      "size": 10396
+    },
+    {
+      "path": "packages/effect/typetest/Struct.tst.ts",
+      "kind": "file",
+      "size": 15775
+    },
+    {
+      "path": "packages/effect/typetest/SynchronizedRef.tst.ts",
+      "kind": "file",
+      "size": 1374
+    },
+    {
+      "path": "packages/effect/typetest/TestSchema.tst.ts",
+      "kind": "file",
+      "size": 818
+    },
+    {
+      "path": "packages/effect/typetest/Tuple.tst.ts",
+      "kind": "file",
+      "size": 5731
+    },
+    {
+      "path": "packages/effect/typetest/Types.tst.ts",
+      "kind": "file",
+      "size": 16473
+    },
+    {
+      "path": "packages/effect/typetest/VariantSchema.tst.ts",
+      "kind": "file",
+      "size": 3733
+    },
+    {
+      "path": "packages/effect/ARBITRARY.md",
+      "kind": "file",
+      "size": 62925
+    },
+    {
+      "path": "packages/effect/CHANGELOG.md",
+      "kind": "file",
+      "size": 537524
+    },
+    {
+      "path": "packages/effect/CONFIG.md",
+      "kind": "file",
+      "size": 29005
+    },
+    {
+      "path": "packages/effect/HTTPAPI.md",
+      "kind": "file",
+      "size": 111337
+    },
+    {
+      "path": "packages/effect/LICENSE",
+      "kind": "file",
+      "size": 1083
+    },
+    {
+      "path": "packages/effect/MCP.md",
+      "kind": "file",
+      "size": 12591
+    },
+    {
+      "path": "packages/effect/OPTIC.md",
+      "kind": "file",
+      "size": 14701
+    },
+    {
+      "path": "packages/effect/package.json",
+      "kind": "file",
+      "size": 3745
+    },
+    {
+      "path": "packages/effect/README.md",
+      "kind": "file",
+      "size": 2599
+    },
+    {
+      "path": "packages/effect/SCHEMA.md",
+      "kind": "file",
+      "size": 232496
+    },
+    {
+      "path": "packages/effect/tsconfig.json",
+      "kind": "file",
+      "size": 170
+    },
+    {
+      "path": "packages/effect/tsconfig.tsbuildinfo",
+      "kind": "file",
+      "size": 286597
+    }
+  ],
+  "packages/platform/node": [
+    {
+      "path": "packages/platform/node/dist",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/platform/node/dist/index.d.ts",
+      "kind": "file",
+      "size": 1943
+    },
+    {
+      "path": "packages/platform/node/dist/index.d.ts.map",
+      "kind": "file",
+      "size": 1301
+    },
+    {
+      "path": "packages/platform/node/dist/index.js",
+      "kind": "file",
+      "size": 2009
+    },
+    {
+      "path": "packages/platform/node/dist/index.js.map",
+      "kind": "file",
+      "size": 1312
+    },
+    {
+      "path": "packages/platform/node/dist/NodeChildProcessSpawner.d.ts",
+      "kind": "file",
+      "size": 202
+    },
+    {
+      "path": "packages/platform/node/dist/NodeChildProcessSpawner.d.ts.map",
+      "kind": "file",
+      "size": 174
+    },
+    {
+      "path": "packages/platform/node/dist/NodeChildProcessSpawner.js",
+      "kind": "file",
+      "size": 200
+    },
+    {
+      "path": "packages/platform/node/dist/NodeChildProcessSpawner.js.map",
+      "kind": "file",
+      "size": 172
+    },
+    {
+      "path": "packages/platform/node/dist/NodeClusterHttp.d.ts",
+      "kind": "file",
+      "size": 2833
+    },
+    {
+      "path": "packages/platform/node/dist/NodeClusterHttp.d.ts.map",
+      "kind": "file",
+      "size": 2151
+    },
+    {
+      "path": "packages/platform/node/dist/NodeClusterHttp.js",
+      "kind": "file",
+      "size": 4568
+    },
+    {
+      "path": "packages/platform/node/dist/NodeClusterHttp.js.map",
+      "kind": "file",
+      "size": 3368
+    },
+    {
+      "path": "packages/platform/node/dist/NodeClusterSocket.d.ts",
+      "kind": "file",
+      "size": 3609
+    },
+    {
+      "path": "packages/platform/node/dist/NodeClusterSocket.d.ts.map",
+      "kind": "file",
+      "size": 2114
+    },
+    {
+      "path": "packages/platform/node/dist/NodeClusterSocket.js",
+      "kind": "file",
+      "size": 4830
+    },
+    {
+      "path": "packages/platform/node/dist/NodeClusterSocket.js.map",
+      "kind": "file",
+      "size": 3491
+    },
+    {
+      "path": "packages/platform/node/dist/NodeCrypto.d.ts",
+      "kind": "file",
+      "size": 299
+    },
+    {
+      "path": "packages/platform/node/dist/NodeCrypto.d.ts.map",
+      "kind": "file",
+      "size": 280
+    },
+    {
+      "path": "packages/platform/node/dist/NodeCrypto.js",
+      "kind": "file",
+      "size": 851
+    },
+    {
+      "path": "packages/platform/node/dist/NodeCrypto.js.map",
+      "kind": "file",
+      "size": 235
+    },
+    {
+      "path": "packages/platform/node/dist/NodeFileSystem.d.ts",
+      "kind": "file",
+      "size": 310
+    },
+    {
+      "path": "packages/platform/node/dist/NodeFileSystem.d.ts.map",
+      "kind": "file",
+      "size": 285
+    },
+    {
+      "path": "packages/platform/node/dist/NodeFileSystem.js",
+      "kind": "file",
+      "size": 699
+    },
+    {
+      "path": "packages/platform/node/dist/NodeFileSystem.js.map",
+      "kind": "file",
+      "size": 240
+    },
+    {
+      "path": "packages/platform/node/dist/NodeHttpClient.d.ts",
+      "kind": "file",
+      "size": 5495
+    },
+    {
+      "path": "packages/platform/node/dist/NodeHttpClient.d.ts.map",
+      "kind": "file",
+      "size": 1868
+    },
+    {
+      "path": "packages/platform/node/dist/NodeHttpClient.js",
+      "kind": "file",
+      "size": 17448
+    },
+    {
+      "path": "packages/platform/node/dist/NodeHttpClient.js.map",
+      "kind": "file",
+      "size": 14528
+    },
+    {
+      "path": "packages/platform/node/dist/NodeHttpIncomingMessage.d.ts",
+      "kind": "file",
+      "size": 2550
+    },
+    {
+      "path": "packages/platform/node/dist/NodeHttpIncomingMessage.d.ts.map",
+      "kind": "file",
+      "size": 1559
+    },
+    {
+      "path": "packages/platform/node/dist/NodeHttpIncomingMessage.js",
+      "kind": "file",
+      "size": 3616
+    },
+    {
+      "path": "packages/platform/node/dist/NodeHttpIncomingMessage.js.map",
+      "kind": "file",
+      "size": 2799
+    },
+    {
+      "path": "packages/platform/node/dist/NodeHttpPlatform.d.ts",
+      "kind": "file",
+      "size": 1711
+    },
+    {
+      "path": "packages/platform/node/dist/NodeHttpPlatform.d.ts.map",
+      "kind": "file",
+      "size": 495
+    },
+    {
+      "path": "packages/platform/node/dist/NodeHttpPlatform.js",
+      "kind": "file",
+      "size": 4591
+    },
+    {
+      "path": "packages/platform/node/dist/NodeHttpPlatform.js.map",
+      "kind": "file",
+      "size": 3746
+    },
+    {
+      "path": "packages/platform/node/dist/NodeHttpServer.d.ts",
+      "kind": "file",
+      "size": 6241
+    },
+    {
+      "path": "packages/platform/node/dist/NodeHttpServer.d.ts.map",
+      "kind": "file",
+      "size": 3661
+    },
+    {
+      "path": "packages/platform/node/dist/NodeHttpServer.js",
+      "kind": "file",
+      "size": 18536
+    },
+    {
+      "path": "packages/platform/node/dist/NodeHttpServer.js.map",
+      "kind": "file",
+      "size": 16141
+    },
+    {
+      "path": "packages/platform/node/dist/NodeHttpServerRequest.d.ts",
+      "kind": "file",
+      "size": 1037
+    },
+    {
+      "path": "packages/platform/node/dist/NodeHttpServerRequest.d.ts.map",
+      "kind": "file",
+      "size": 395
+    },
+    {
+      "path": "packages/platform/node/dist/NodeHttpServerRequest.js",
+      "kind": "file",
+      "size": 598
+    },
+    {
+      "path": "packages/platform/node/dist/NodeHttpServerRequest.js.map",
+      "kind": "file",
+      "size": 436
+    },
+    {
+      "path": "packages/platform/node/dist/NodeMultipart.d.ts",
+      "kind": "file",
+      "size": 1913
+    },
+    {
+      "path": "packages/platform/node/dist/NodeMultipart.d.ts.map",
+      "kind": "file",
+      "size": 860
+    },
+    {
+      "path": "packages/platform/node/dist/NodeMultipart.js",
+      "kind": "file",
+      "size": 4975
+    },
+    {
+      "path": "packages/platform/node/dist/NodeMultipart.js.map",
+      "kind": "file",
+      "size": 4030
+    },
+    {
+      "path": "packages/platform/node/dist/NodeMultipartParser.d.ts",
+      "kind": "file",
+      "size": 2995
+    },
+    {
+      "path": "packages/platform/node/dist/NodeMultipartParser.d.ts.map",
+      "kind": "file",
+      "size": 2750
+    },
+    {
+      "path": "packages/platform/node/dist/NodeMultipartParser.js",
+      "kind": "file",
+      "size": 2998
+    },
+    {
+      "path": "packages/platform/node/dist/NodeMultipartParser.js.map",
+      "kind": "file",
+      "size": 2812
+    },
+    {
+      "path": "packages/platform/node/dist/NodePath.d.ts",
+      "kind": "file",
+      "size": 727
+    },
+    {
+      "path": "packages/platform/node/dist/NodePath.d.ts.map",
+      "kind": "file",
+      "size": 426
+    },
+    {
+      "path": "packages/platform/node/dist/NodePath.js",
+      "kind": "file",
+      "size": 999
+    },
+    {
+      "path": "packages/platform/node/dist/NodePath.js.map",
+      "kind": "file",
+      "size": 363
+    },
+    {
+      "path": "packages/platform/node/dist/NodeRedis.d.ts",
+      "kind": "file",
+      "size": 3182
+    },
+    {
+      "path": "packages/platform/node/dist/NodeRedis.d.ts.map",
+      "kind": "file",
+      "size": 1040
+    },
+    {
+      "path": "packages/platform/node/dist/NodeRedis.js",
+      "kind": "file",
+      "size": 7168
+    },
+    {
+      "path": "packages/platform/node/dist/NodeRedis.js.map",
+      "kind": "file",
+      "size": 4882
+    },
+    {
+      "path": "packages/platform/node/dist/NodeRuntime.d.ts",
+      "kind": "file",
+      "size": 1424
+    },
+    {
+      "path": "packages/platform/node/dist/NodeRuntime.d.ts.map",
+      "kind": "file",
+      "size": 728
+    },
+    {
+      "path": "packages/platform/node/dist/NodeRuntime.js",
+      "kind": "file",
+      "size": 1369
+    },
+    {
+      "path": "packages/platform/node/dist/NodeRuntime.js.map",
+      "kind": "file",
+      "size": 253
+    },
+    {
+      "path": "packages/platform/node/dist/NodeServices.d.ts",
+      "kind": "file",
+      "size": 1259
+    },
+    {
+      "path": "packages/platform/node/dist/NodeServices.d.ts.map",
+      "kind": "file",
+      "size": 634
+    },
+    {
+      "path": "packages/platform/node/dist/NodeServices.js",
+      "kind": "file",
+      "size": 745
+    },
+    {
+      "path": "packages/platform/node/dist/NodeServices.js.map",
+      "kind": "file",
+      "size": 602
+    },
+    {
+      "path": "packages/platform/node/dist/NodeSink.d.ts",
+      "kind": "file",
+      "size": 141
+    },
+    {
+      "path": "packages/platform/node/dist/NodeSink.d.ts.map",
+      "kind": "file",
+      "size": 153
+    },
+    {
+      "path": "packages/platform/node/dist/NodeSink.js",
+      "kind": "file",
+      "size": 139
+    },
+    {
+      "path": "packages/platform/node/dist/NodeSink.js.map",
+      "kind": "file",
+      "size": 151
+    },
+    {
+      "path": "packages/platform/node/dist/NodeSocket.d.ts",
+      "kind": "file",
+      "size": 1332
+    },
+    {
+      "path": "packages/platform/node/dist/NodeSocket.d.ts.map",
+      "kind": "file",
+      "size": 880
+    },
+    {
+      "path": "packages/platform/node/dist/NodeSocket.js",
+      "kind": "file",
+      "size": 2049
+    },
+    {
+      "path": "packages/platform/node/dist/NodeSocket.js.map",
+      "kind": "file",
+      "size": 1185
+    },
+    {
+      "path": "packages/platform/node/dist/NodeSocketServer.d.ts",
+      "kind": "file",
+      "size": 157
+    },
+    {
+      "path": "packages/platform/node/dist/NodeSocketServer.d.ts.map",
+      "kind": "file",
+      "size": 169
+    },
+    {
+      "path": "packages/platform/node/dist/NodeSocketServer.js",
+      "kind": "file",
+      "size": 155
+    },
+    {
+      "path": "packages/platform/node/dist/NodeSocketServer.js.map",
+      "kind": "file",
+      "size": 167
+    },
+    {
+      "path": "packages/platform/node/dist/NodeStdio.d.ts",
+      "kind": "file",
+      "size": 332
+    },
+    {
+      "path": "packages/platform/node/dist/NodeStdio.d.ts.map",
+      "kind": "file",
+      "size": 274
+    },
+    {
+      "path": "packages/platform/node/dist/NodeStdio.js",
+      "kind": "file",
+      "size": 674
+    },
+    {
+      "path": "packages/platform/node/dist/NodeStdio.js.map",
+      "kind": "file",
+      "size": 231
+    },
+    {
+      "path": "packages/platform/node/dist/NodeStream.d.ts",
+      "kind": "file",
+      "size": 145
+    },
+    {
+      "path": "packages/platform/node/dist/NodeStream.d.ts.map",
+      "kind": "file",
+      "size": 157
+    },
+    {
+      "path": "packages/platform/node/dist/NodeStream.js",
+      "kind": "file",
+      "size": 143
+    },
+    {
+      "path": "packages/platform/node/dist/NodeStream.js.map",
+      "kind": "file",
+      "size": 155
+    },
+    {
+      "path": "packages/platform/node/dist/NodeTerminal.d.ts",
+      "kind": "file",
+      "size": 747
+    },
+    {
+      "path": "packages/platform/node/dist/NodeTerminal.d.ts.map",
+      "kind": "file",
+      "size": 521
+    },
+    {
+      "path": "packages/platform/node/dist/NodeTerminal.js",
+      "kind": "file",
+      "size": 863
+    },
+    {
+      "path": "packages/platform/node/dist/NodeTerminal.js.map",
+      "kind": "file",
+      "size": 303
+    },
+    {
+      "path": "packages/platform/node/dist/NodeWorker.d.ts",
+      "kind": "file",
+      "size": 925
+    },
+    {
+      "path": "packages/platform/node/dist/NodeWorker.d.ts.map",
+      "kind": "file",
+      "size": 533
+    },
+    {
+      "path": "packages/platform/node/dist/NodeWorker.js",
+      "kind": "file",
+      "size": 3437
+    },
+    {
+      "path": "packages/platform/node/dist/NodeWorker.js.map",
+      "kind": "file",
+      "size": 2642
+    },
+    {
+      "path": "packages/platform/node/dist/NodeWorkerRunner.d.ts",
+      "kind": "file",
+      "size": 482
+    },
+    {
+      "path": "packages/platform/node/dist/NodeWorkerRunner.d.ts.map",
+      "kind": "file",
+      "size": 290
+    },
+    {
+      "path": "packages/platform/node/dist/NodeWorkerRunner.js",
+      "kind": "file",
+      "size": 5080
+    },
+    {
+      "path": "packages/platform/node/dist/NodeWorkerRunner.js.map",
+      "kind": "file",
+      "size": 3819
+    },
+    {
+      "path": "packages/platform/node/dist/Undici.d.ts",
+      "kind": "file",
+      "size": 947
+    },
+    {
+      "path": "packages/platform/node/dist/Undici.d.ts.map",
+      "kind": "file",
+      "size": 215
+    },
+    {
+      "path": "packages/platform/node/dist/Undici.js",
+      "kind": "file",
+      "size": 945
+    },
+    {
+      "path": "packages/platform/node/dist/Undici.js.map",
+      "kind": "file",
+      "size": 223
+    },
+    {
+      "path": "packages/platform/node/src",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/platform/node/src/index.ts",
+      "kind": "file",
+      "size": 1977
+    },
+    {
+      "path": "packages/platform/node/src/NodeChildProcessSpawner.ts",
+      "kind": "file",
+      "size": 148
+    },
+    {
+      "path": "packages/platform/node/src/NodeClusterHttp.ts",
+      "kind": "file",
+      "size": 6411
+    },
+    {
+      "path": "packages/platform/node/src/NodeClusterSocket.ts",
+      "kind": "file",
+      "size": 6523
+    },
+    {
+      "path": "packages/platform/node/src/NodeCrypto.ts",
+      "kind": "file",
+      "size": 928
+    },
+    {
+      "path": "packages/platform/node/src/NodeFileSystem.ts",
+      "kind": "file",
+      "size": 776
+    },
+    {
+      "path": "packages/platform/node/src/NodeHttpClient.ts",
+      "kind": "file",
+      "size": 19373
+    },
+    {
+      "path": "packages/platform/node/src/NodeHttpIncomingMessage.ts",
+      "kind": "file",
+      "size": 4089
+    },
+    {
+      "path": "packages/platform/node/src/NodeHttpPlatform.ts",
+      "kind": "file",
+      "size": 4511
+    },
+    {
+      "path": "packages/platform/node/src/NodeHttpServer.ts",
+      "kind": "file",
+      "size": 22339
+    },
+    {
+      "path": "packages/platform/node/src/NodeHttpServerRequest.ts",
+      "kind": "file",
+      "size": 1081
+    },
+    {
+      "path": "packages/platform/node/src/NodeMultipart.ts",
+      "kind": "file",
+      "size": 5752
+    },
+    {
+      "path": "packages/platform/node/src/NodeMultipartParser.ts",
+      "kind": "file",
+      "size": 4825
+    },
+    {
+      "path": "packages/platform/node/src/NodePath.ts",
+      "kind": "file",
+      "size": 1102
+    },
+    {
+      "path": "packages/platform/node/src/NodeRedis.ts",
+      "kind": "file",
+      "size": 7430
+    },
+    {
+      "path": "packages/platform/node/src/NodeRuntime.ts",
+      "kind": "file",
+      "size": 1789
+    },
+    {
+      "path": "packages/platform/node/src/NodeServices.ts",
+      "kind": "file",
+      "size": 1701
+    },
+    {
+      "path": "packages/platform/node/src/NodeSink.ts",
+      "kind": "file",
+      "size": 103
+    },
+    {
+      "path": "packages/platform/node/src/NodeSocket.ts",
+      "kind": "file",
+      "size": 2499
+    },
+    {
+      "path": "packages/platform/node/src/NodeSocketServer.ts",
+      "kind": "file",
+      "size": 111
+    },
+    {
+      "path": "packages/platform/node/src/NodeStdio.ts",
+      "kind": "file",
+      "size": 741
+    },
+    {
+      "path": "packages/platform/node/src/NodeStream.ts",
+      "kind": "file",
+      "size": 105
+    },
+    {
+      "path": "packages/platform/node/src/NodeTerminal.ts",
+      "kind": "file",
+      "size": 1106
+    },
+    {
+      "path": "packages/platform/node/src/NodeWorker.ts",
+      "kind": "file",
+      "size": 3752
+    },
+    {
+      "path": "packages/platform/node/src/NodeWorkerRunner.ts",
+      "kind": "file",
+      "size": 4954
+    },
+    {
+      "path": "packages/platform/node/src/Undici.ts",
+      "kind": "file",
+      "size": 910
+    },
+    {
+      "path": "packages/platform/node/test",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/platform/node/test/__snapshots__",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/platform/node/test/cluster",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/platform/node/test/cluster-integration",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/platform/node/test/fixtures",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/platform/node/test/HttpApi.test.ts",
+      "kind": "file",
+      "size": 61190
+    },
+    {
+      "path": "packages/platform/node/test/HttpStaticServer.test.ts",
+      "kind": "file",
+      "size": 13201
+    },
+    {
+      "path": "packages/platform/node/test/HttpStaticServerConditional.test.ts",
+      "kind": "file",
+      "size": 9834
+    },
+    {
+      "path": "packages/platform/node/test/KeyValueStore.test.ts",
+      "kind": "file",
+      "size": 2060
+    },
+    {
+      "path": "packages/platform/node/test/MultipartParser.test.ts",
+      "kind": "file",
+      "size": 29362
+    },
+    {
+      "path": "packages/platform/node/test/NodeCrypto.test.ts",
+      "kind": "file",
+      "size": 2522
+    },
+    {
+      "path": "packages/platform/node/test/NodeHttpClient.test.ts",
+      "kind": "file",
+      "size": 9751
+    },
+    {
+      "path": "packages/platform/node/test/NodeHttpCompression.test.ts",
+      "kind": "file",
+      "size": 12155
+    },
+    {
+      "path": "packages/platform/node/test/NodeHttpPlatform.test.ts",
+      "kind": "file",
+      "size": 6089
+    },
+    {
+      "path": "packages/platform/node/test/NodeHttpServer.test.ts",
+      "kind": "file",
+      "size": 42538
+    },
+    {
+      "path": "packages/platform/node/test/NodeRedis.integration.test.ts",
+      "kind": "file",
+      "size": 11746
+    },
+    {
+      "path": "packages/platform/node/test/NodeSocket.test.ts",
+      "kind": "file",
+      "size": 30879
+    },
+    {
+      "path": "packages/platform/node/test/NodeWorkerRunner.test.ts",
+      "kind": "file",
+      "size": 1265
+    },
+    {
+      "path": "packages/platform/node/test/OpenApi.test.ts",
+      "kind": "file",
+      "size": 48933
+    },
+    {
+      "path": "packages/platform/node/test/RpcServer.test.ts",
+      "kind": "file",
+      "size": 12077
+    },
+    {
+      "path": "packages/platform/node/CHANGELOG.md",
+      "kind": "file",
+      "size": 179750
+    },
+    {
+      "path": "packages/platform/node/LICENSE",
+      "kind": "file",
+      "size": 1083
+    },
+    {
+      "path": "packages/platform/node/package.json",
+      "kind": "file",
+      "size": 2001
+    },
+    {
+      "path": "packages/platform/node/README.md",
+      "kind": "file",
+      "size": 392
+    },
+    {
+      "path": "packages/platform/node/tsconfig.json",
+      "kind": "file",
+      "size": 261
+    },
+    {
+      "path": "packages/platform/node/tsconfig.tsbuildinfo",
+      "kind": "file",
+      "size": 260683
+    }
+  ],
+  "packages/sql/pg": [
+    {
+      "path": "packages/sql/pg/benchmark",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/sql/pg/benchmark/PgClient.ts",
+      "kind": "file",
+      "size": 4810
+    },
+    {
+      "path": "packages/sql/pg/benchmark/PgCodec.ts",
+      "kind": "file",
+      "size": 14877
+    },
+    {
+      "path": "packages/sql/pg/benchmark/README.md",
+      "kind": "file",
+      "size": 5572
+    },
+    {
+      "path": "packages/sql/pg/dist",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/sql/pg/dist/internal",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/sql/pg/dist/index.d.ts",
+      "kind": "file",
+      "size": 534
+    },
+    {
+      "path": "packages/sql/pg/dist/index.d.ts.map",
+      "kind": "file",
+      "size": 448
+    },
+    {
+      "path": "packages/sql/pg/dist/index.js",
+      "kind": "file",
+      "size": 590
+    },
+    {
+      "path": "packages/sql/pg/dist/index.js.map",
+      "kind": "file",
+      "size": 459
+    },
+    {
+      "path": "packages/sql/pg/dist/PgAuth.d.ts",
+      "kind": "file",
+      "size": 2471
+    },
+    {
+      "path": "packages/sql/pg/dist/PgAuth.d.ts.map",
+      "kind": "file",
+      "size": 1375
+    },
+    {
+      "path": "packages/sql/pg/dist/PgAuth.js",
+      "kind": "file",
+      "size": 8343
+    },
+    {
+      "path": "packages/sql/pg/dist/PgAuth.js.map",
+      "kind": "file",
+      "size": 6742
+    },
+    {
+      "path": "packages/sql/pg/dist/PgClient.d.ts",
+      "kind": "file",
+      "size": 7661
+    },
+    {
+      "path": "packages/sql/pg/dist/PgClient.d.ts.map",
+      "kind": "file",
+      "size": 4443
+    },
+    {
+      "path": "packages/sql/pg/dist/PgClient.js",
+      "kind": "file",
+      "size": 8457
+    },
+    {
+      "path": "packages/sql/pg/dist/PgClient.js.map",
+      "kind": "file",
+      "size": 7862
+    },
+    {
+      "path": "packages/sql/pg/dist/PgConnection.d.ts",
+      "kind": "file",
+      "size": 8413
+    },
+    {
+      "path": "packages/sql/pg/dist/PgConnection.d.ts.map",
+      "kind": "file",
+      "size": 3675
+    },
+    {
+      "path": "packages/sql/pg/dist/PgConnection.js",
+      "kind": "file",
+      "size": 76796
+    },
+    {
+      "path": "packages/sql/pg/dist/PgConnection.js.map",
+      "kind": "file",
+      "size": 68391
+    },
+    {
+      "path": "packages/sql/pg/dist/PgMigrator.d.ts",
+      "kind": "file",
+      "size": 1878
+    },
+    {
+      "path": "packages/sql/pg/dist/PgMigrator.d.ts.map",
+      "kind": "file",
+      "size": 1111
+    },
+    {
+      "path": "packages/sql/pg/dist/PgMigrator.js",
+      "kind": "file",
+      "size": 3563
+    },
+    {
+      "path": "packages/sql/pg/dist/PgMigrator.js.map",
+      "kind": "file",
+      "size": 2993
+    },
+    {
+      "path": "packages/sql/pg/dist/PgPool.d.ts",
+      "kind": "file",
+      "size": 3754
+    },
+    {
+      "path": "packages/sql/pg/dist/PgPool.d.ts.map",
+      "kind": "file",
+      "size": 1610
+    },
+    {
+      "path": "packages/sql/pg/dist/PgPool.js",
+      "kind": "file",
+      "size": 5280
+    },
+    {
+      "path": "packages/sql/pg/dist/PgPool.js.map",
+      "kind": "file",
+      "size": 4334
+    },
+    {
+      "path": "packages/sql/pg/dist/PgProtocol.d.ts",
+      "kind": "file",
+      "size": 20965
+    },
+    {
+      "path": "packages/sql/pg/dist/PgProtocol.d.ts.map",
+      "kind": "file",
+      "size": 11016
+    },
+    {
+      "path": "packages/sql/pg/dist/PgProtocol.js",
+      "kind": "file",
+      "size": 37498
+    },
+    {
+      "path": "packages/sql/pg/dist/PgProtocol.js.map",
+      "kind": "file",
+      "size": 33819
+    },
+    {
+      "path": "packages/sql/pg/dist/PgTypes.d.ts",
+      "kind": "file",
+      "size": 12281
+    },
+    {
+      "path": "packages/sql/pg/dist/PgTypes.d.ts.map",
+      "kind": "file",
+      "size": 5737
+    },
+    {
+      "path": "packages/sql/pg/dist/PgTypes.js",
+      "kind": "file",
+      "size": 60942
+    },
+    {
+      "path": "packages/sql/pg/dist/PgTypes.js.map",
+      "kind": "file",
+      "size": 61496
+    },
+    {
+      "path": "packages/sql/pg/src",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/sql/pg/src/internal",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/sql/pg/src/index.ts",
+      "kind": "file",
+      "size": 558
+    },
+    {
+      "path": "packages/sql/pg/src/PgAuth.ts",
+      "kind": "file",
+      "size": 9770
+    },
+    {
+      "path": "packages/sql/pg/src/PgClient.ts",
+      "kind": "file",
+      "size": 15694
+    },
+    {
+      "path": "packages/sql/pg/src/PgConnection.ts",
+      "kind": "file",
+      "size": 88195
+    },
+    {
+      "path": "packages/sql/pg/src/PgMigrator.ts",
+      "kind": "file",
+      "size": 4037
+    },
+    {
+      "path": "packages/sql/pg/src/PgPool.ts",
+      "kind": "file",
+      "size": 8221
+    },
+    {
+      "path": "packages/sql/pg/src/PgProtocol.ts",
+      "kind": "file",
+      "size": 51246
+    },
+    {
+      "path": "packages/sql/pg/src/PgTypes.ts",
+      "kind": "file",
+      "size": 64658
+    },
+    {
+      "path": "packages/sql/pg/test",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/sql/pg/test/fixtures",
+      "kind": "dir"
+    },
+    {
+      "path": "packages/sql/pg/test/Client.integration.test.ts",
+      "kind": "file",
+      "size": 25710
+    },
+    {
+      "path": "packages/sql/pg/test/KeyValueStore.integration.test.ts",
+      "kind": "file",
+      "size": 504
+    },
+    {
+      "path": "packages/sql/pg/test/Persistence.integration.test.ts",
+      "kind": "file",
+      "size": 10653
+    },
+    {
+      "path": "packages/sql/pg/test/PgAuth.test.ts",
+      "kind": "file",
+      "size": 7067
+    },
+    {
+      "path": "packages/sql/pg/test/PgConnection.in-process.test.ts",
+      "kind": "file",
+      "size": 35045
+    },
+    {
+      "path": "packages/sql/pg/test/PgConnection.integration.test.ts",
+      "kind": "file",
+      "size": 19243
+    },
+    {
+      "path": "packages/sql/pg/test/PgConnection.test.ts",
+      "kind": "file",
+      "size": 3456
+    },
+    {
+      "path": "packages/sql/pg/test/PgMigrator.test.ts",
+      "kind": "file",
+      "size": 3268
+    },
+    {
+      "path": "packages/sql/pg/test/PgPool.in-process.test.ts",
+      "kind": "file",
+      "size": 3062
+    },
+    {
+      "path": "packages/sql/pg/test/PgPool.integration.test.ts",
+      "kind": "file",
+      "size": 28618
+    },
+    {
+      "path": "packages/sql/pg/test/PgProtocol.test.ts",
+      "kind": "file",
+      "size": 30935
+    },
+    {
+      "path": "packages/sql/pg/test/PgTypes.test.ts",
+      "kind": "file",
+      "size": 49401
+    },
+    {
+      "path": "packages/sql/pg/test/SqlErrorClassification.test.ts",
+      "kind": "file",
+      "size": 2115
+    },
+    {
+      "path": "packages/sql/pg/test/SqlEventLogServerUnencrypted.integration.test.ts",
+      "kind": "file",
+      "size": 249
+    },
+    {
+      "path": "packages/sql/pg/test/StartupParameters.integration.test.ts",
+      "kind": "file",
+      "size": 1720
+    },
+    {
+      "path": "packages/sql/pg/test/TransactionAcquire.test.ts",
+      "kind": "file",
+      "size": 1390
+    },
+    {
+      "path": "packages/sql/pg/test/utils.ts",
+      "kind": "file",
+      "size": 2554
+    },
+    {
+      "path": "packages/sql/pg/CHANGELOG.md",
+      "kind": "file",
+      "size": 306757
+    },
+    {
+      "path": "packages/sql/pg/LICENSE",
+      "kind": "file",
+      "size": 1081
+    },
+    {
+      "path": "packages/sql/pg/package.json",
+      "kind": "file",
+      "size": 1757
+    },
+    {
+      "path": "packages/sql/pg/README.md",
+      "kind": "file",
+      "size": 5136
+    },
+    {
+      "path": "packages/sql/pg/tsconfig.json",
+      "kind": "file",
+      "size": 273
+    },
+    {
+      "path": "packages/sql/pg/tsconfig.tsbuildinfo",
+      "kind": "file",
+      "size": 123115
+    }
+  ]
+}

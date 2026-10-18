@@ -1,0 +1,119 @@
+// The browser's telemetry contract (docs/observability.md#relayed-browser-records): every record the tab and its
+// engine worker export, by name, and every attribute those records carry, merged from each feature's contract. ChatApi's
+// relay (worker/Chat.ts) keeps exactly these and drops the rest, and the engine worker exports only these spans
+// (src/flows/engine.ts), so the browser and the Worker share one list; src/telemetry.test.ts fails when they drift.
+// Nothing here imports a library, so every side can.
+import { AGENT_TELEMETRY } from "./features/agent/contract"
+import { AUTH_TELEMETRY } from "./features/auth/contract"
+import { CHAT_TELEMETRY } from "./features/chat/contract"
+import { REPO_TELEMETRY } from "./features/repo/contract"
+import { THEME_TELEMETRY } from "./features/theme/contract"
+import { FLOWS_TELEMETRY } from "./flows/contract"
+
+/** Records by name (log messages, span names, metric names) and the fields a relayed line keeps. */
+export interface Telemetry {
+  readonly records: ReadonlyArray<string>
+  readonly fields: ReadonlyArray<string>
+}
+
+/** The tab's `service.name` on every record it exports. */
+export const WEB_SERVICE = "smithers-mvp-web"
+
+/** The engine worker's `service.name` on every record it exports. */
+export const ENGINE_SERVICE = "smithers-mvp-engine"
+
+/**
+ * The app's own records: boot and the page (src/boot.ts, src/page.ts), the HTTP client every feature reaches ChatApi
+ * and Electric through (Effect's `HttpClient` names a client span by its method), and the exporter's own losses
+ * (`@smthrs/observability`). A log line's failure keeps its type, never its message.
+ */
+export const APP_TELEMETRY = {
+  records: [
+    "chat ready",
+    "chat couldn't restore",
+    "persistent storage requested",
+    "page error",
+    "unhandled rejection",
+    "page reloaded",
+    "smithers_web_boot_ms",
+    "smithers_web_storage_persisted",
+    "smithers_web_page_reloads",
+    "GET",
+    "POST",
+    "flows_observability_otlp_dropped",
+  ],
+  fields: [
+    "feature",
+    "granted",
+    "name",
+    "source",
+    "http.request.method",
+    "http.response.status_code",
+    "url.full",
+    "url.path",
+    "url.query",
+    "url.scheme",
+    "server.address",
+    "server.port",
+    "error.type",
+    "exception.type",
+  ],
+} as const
+
+/** The fields `OtlpRelay.serve` adds to every relayed line: the signal, the service, ids, timing and a metric's value. */
+export const RELAY_FIELDS = [
+  "otlp.signal",
+  "service.name",
+  "otlp.severity",
+  "trace_id",
+  "span_id",
+  "otlp.parent_span_id",
+  "otlp.duration_ms",
+  "otlp.metric_type",
+  "otlp.unit",
+  "otlp.value",
+  "otlp.count",
+  "otlp.sum",
+] as const
+
+/**
+ * What the browser records and the server never gets:
+ * - `spans`: one span per request a tab sends the leader, each poll for a result included, so hundreds per answer, on
+ *   both sides: the tab's `browser.engine.request` and the leader's `browser.runtime.request`. Their counts
+ *   (`smithers_browser_engine_requests`, `smithers_browser_runtime_requests`) and the leader's line for a request that
+ *   failed are relayed. An exporter given {@link EXPORTED_SPANS} doesn't send them, and the relay drops the tab's;
+ * - `fields`: a failure's message (`exception.message`, `exception.stacktrace`, `otlp.status_message`) can quote what
+ *   someone wrote, so a failure is relayed by its type alone; and `effect.fiberId`, Effect's number for the fiber that
+ *   logged, means nothing outside the tab.
+ */
+export const WITHHELD = {
+  spans: ["browser.engine.request", "browser.runtime.request"],
+  fields: ["exception.message", "exception.stacktrace", "otlp.status_message", "effect.fiberId"],
+} as const
+
+const features: ReadonlyArray<Telemetry> = [
+  APP_TELEMETRY,
+  CHAT_TELEMETRY,
+  AUTH_TELEMETRY,
+  FLOWS_TELEMETRY,
+  AGENT_TELEMETRY,
+  THEME_TELEMETRY,
+  REPO_TELEMETRY,
+]
+
+/**
+ * Everything the relay keeps: every feature's records, and its fields beside the relay's own. `worker/Chat.ts` relays
+ * with it as `allow`; the engine worker exports only its records' spans.
+ */
+export const BROWSER_TELEMETRY: Telemetry = {
+  records: [...new Set(features.flatMap((feature) => feature.records))],
+  fields: [...new Set([...RELAY_FIELDS, ...features.flatMap((feature) => feature.fields)])],
+}
+
+/**
+ * The span names an exporter sends: every record the relay keeps but the {@link WITHHELD} spans. A log line or metric
+ * of the same name is still sent; only spans are left out. The engine worker's exporter takes it as `spans`.
+ */
+export const EXPORTED_SPANS: ReadonlyArray<string> = BROWSER_TELEMETRY.records.filter(
+  (name) => !(WITHHELD.spans as ReadonlyArray<string>).includes(name),
+)

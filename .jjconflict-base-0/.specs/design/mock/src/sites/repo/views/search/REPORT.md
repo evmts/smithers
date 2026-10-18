@@ -1,0 +1,20 @@
+- Files in `views/search/`: `Search.tsx`, `search-data.ts`, `search.css`, `routes.tsx`, `check.ts`, `check.mjs`, `REPORT.md`.
+- Files in `views/releases/`: `Releases.tsx`, `release-data.ts`, `releases.css`, `routes.tsx`.
+- Files in `views/docs/`: `Docs.tsx`, `document.ts`, `docs.css`, `routes.tsx`.
+- Route: `smithers.sh/:owner/:repo/search`.
+- Route: `smithers.sh/:owner/:repo/releases/tag/:tag`.
+- Route: `smithers.sh/:owner/:repo/releases`.
+- Route: `smithers.sh/:owner/:repo/docs`.
+- Route: `smithers.sh/:owner/:repo/docs/*`.
+- Search screens: `search-empty-query`, `search-code`, `search-issues`, `search-runs`, `search-commits`, `search-pulls`, `search-wiki`, `search-docs`, `search-no-results`, `search-symbol`, `search-references`, `search-loading`, `search-error`, `search-empty`, `search-signed-out`, `search-reader`.
+- Release screens: `releases-tag-latest`, `releases-tag-older`, `releases-tag-not-found`, `releases-tag-loading`, `releases-tag-error`, `releases-list`, `releases-empty`, `releases-loading`, `releases-error`, `releases-draft`, `releases-draft-denied`, `releases-draft-signed-out`, `releases-signed-out`, `releases-reader`.
+- Docs screens: `docs-first-page`, `docs-loading`, `docs-error`, `docs-empty`, `docs-signed-out`, `docs-reader`, `docs-phone`, `docs-routing`, `docs-not-found`, `docs-outline`, `docs-anchor`.
+- States: every view has ready/loading/error/empty/signed-out/reader; release drafts have sign-in and permission walls; release tags and docs have not-found states.
+- Search reads all seven fixture subjects; symbol definitions and every reference line link to blobs. Ask receives the search or page context.
+- Release publication updates local state, persists per repository, navigates to the new release, and shows a toast. Notes include only landed pulls in the tag interval.
+- Docs use grouped navigation, copyable code, unique heading anchors, an outline, previous/next, source links, and Ask; phone navigation follows the content.
+- Verification: `node build.mjs --site=default` succeeds; `node src/sites/repo/views/search/check.mjs` passes 286 assertions across four repositories and all 41 screens.
+- TypeScript: no `src/sites/repo` diagnostics. Full tsc reports existing dependency/type errors in `packages/smithers/ui`.
+- Browser/crawl/screenshots remain with the orchestrator, as requested; no browser was launched.
+- Fixture change needed: release assets lack archive byte sizes. Current asset labels show fixture source byte sizes, explicitly marked “source.” Add archive metadata to the Release contract/data for exact compressed sizes.
+- Shared Markdown lacks heading anchors and fenced-code copy controls; local Docs blocks supply them. No shared files were edited.

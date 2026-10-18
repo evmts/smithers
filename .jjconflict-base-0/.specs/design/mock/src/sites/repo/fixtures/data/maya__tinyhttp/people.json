@@ -1,0 +1,30 @@
+[
+  {
+    "login": "maya",
+    "name": "Maya Okafor",
+    "kind": "human",
+    "role": "owner",
+    "initials": "M"
+  },
+  {
+    "login": "cora",
+    "name": "Cora Lind",
+    "kind": "human",
+    "role": "member",
+    "initials": "C"
+  },
+  {
+    "login": "dev-ahn",
+    "name": "Dev Ahn",
+    "kind": "human",
+    "role": "contributor",
+    "initials": "D"
+  },
+  {
+    "login": "smithers-agent",
+    "name": "Smithers",
+    "kind": "agent",
+    "role": "agent",
+    "initials": "S"
+  }
+]

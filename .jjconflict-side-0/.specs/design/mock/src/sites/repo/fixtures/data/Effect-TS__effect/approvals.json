@@ -1,0 +1,51 @@
+[
+  {
+    "id": "approval-release",
+    "run": "run-4803",
+    "title": "Preview the next rc version plan",
+    "question": "Allow the pinned Changesets CLI to compute exact versions in an isolated sandbox?",
+    "askedOf": "maya",
+    "asked": "2026-10-18T03:20:00Z",
+    "options": [
+      "Preview",
+      "Cancel"
+    ],
+    "state": "waiting"
+  },
+  {
+    "id": "approval-docs",
+    "run": "run-4804",
+    "title": "Accept sql-pg docs preview",
+    "question": "Accept the source-linked package API preview?",
+    "askedOf": "cora",
+    "asked": "2026-10-17T23:20:00Z",
+    "options": [
+      "Accept",
+      "Keep draft"
+    ],
+    "state": "approved",
+    "decided": {
+      "by": "cora",
+      "date": "2026-10-17T23:32:00Z",
+      "option": "Accept"
+    }
+  },
+  {
+    "id": "approval-scope",
+    "run": "run-4811",
+    "title": "Expand sandbox writes",
+    "question": "Allow edits outside the queued change scope?",
+    "askedOf": "maya",
+    "asked": "2026-10-12T04:20:00Z",
+    "options": [
+      "Allow",
+      "Deny"
+    ],
+    "state": "denied",
+    "decided": {
+      "by": "maya",
+      "date": "2026-10-12T04:23:00Z",
+      "option": "Deny"
+    }
+  }
+]
