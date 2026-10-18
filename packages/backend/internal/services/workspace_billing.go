@@ -2,7 +2,9 @@ package services
 
 import (
 	"context"
+	"errors"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/smithersai/smithers/packages/backend/internal/billingstore"
@@ -25,11 +27,50 @@ func (s *WorkspaceService) workspaceBillingContext(ctx context.Context, userID, 
 	if err != nil {
 		return nil, sandbox.BillingOwner{}, err
 	}
-	owner, err := billingstore.RepositorySandboxOwner(repo)
+	owner, err := s.repositorySandboxPayer(ctx, repo)
 	if err != nil {
 		return nil, owner, err
 	}
 	return sandbox.WithBillingOwner(ctx, owner), owner, nil
+}
+
+func (s *WorkspaceService) repositorySandboxPayer(ctx context.Context, repo db.Repository) (sandbox.BillingOwner, error) {
+	return RepositorySandboxPayer(ctx, repo, s.billing, s.q)
+}
+
+// RepositorySandboxPayer is who pays for a machine on repo. Until organizations
+// have plans of their own (mvp.md M-09), a machine on an organization's
+// repository without a paid plan bills the machine service user that runs it:
+// the free organization plan cannot carry a factory's lanes (plue#839).
+// billing is read when it reports OwnerHasPaidPlan and machines when it
+// reports GetBranchMachineOwner; without either, or without the service user,
+// the organization keeps paying.
+func RepositorySandboxPayer(ctx context.Context, repo db.Repository, billing, machines any) (sandbox.BillingOwner, error) {
+	owner, err := billingstore.RepositorySandboxOwner(repo)
+	if err != nil || owner.Type != BillingOwnerTypeOrg {
+		return owner, err
+	}
+	plans, ok := billing.(interface {
+		OwnerHasPaidPlan(context.Context, string, int64) (bool, error)
+	})
+	if !ok {
+		return owner, nil
+	}
+	if paid, err := plans.OwnerHasPaidPlan(ctx, owner.Type, owner.ID); err != nil || paid {
+		return owner, err
+	}
+	store, ok := machines.(branchMachineOwnerStore)
+	if !ok {
+		return owner, nil
+	}
+	id, err := store.GetBranchMachineOwner(ctx)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return owner, nil
+	}
+	if err != nil {
+		return owner, err
+	}
+	return sandbox.BillingOwner{Type: BillingOwnerTypeUser, ID: id}, nil
 }
 
 func (s *WorkspaceService) sandboxIdleTimeout(ctx context.Context, userID, repositoryID int64) (int32, error) {

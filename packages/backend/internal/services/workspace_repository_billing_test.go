@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/runtimeports"
 	"github.com/smithersai/smithers/packages/backend/sandbox"
 	"github.com/smithersai/smithers/packages/backend/testkit/postgresfixture"
 	workspaceapi "github.com/smithersai/smithers/packages/backend/workspace"
@@ -81,4 +82,94 @@ func TestBranchMachineRepositoryEgressBilling(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, row.IdleTimeoutSecs, resumed.IdleTimeoutSecs, "resume keeps the repository's plan")
 	}
+}
+
+// plue#839: until organizations have plans of their own (mvp.md M-09), a
+// machine on a free organization's repository bills the machine service user
+// that runs it. The free organization plan (1 GiB of egress and 4 hours a
+// day, one sandbox at a time) cannot carry a factory's lanes, and its
+// exhausted egress refused every guest clone with a proxy 429.
+func TestFreeOrganizationRepositoryMachineBillsTheMachineServiceUser(t *testing.T) {
+	pool, _ := postgresfixture.NewProductDatabase(t)
+	ctx := t.Context()
+	q := db.New(pool)
+	var service, actor, org, orgRepo int64
+	require.NoError(t, pool.QueryRow(ctx, `SELECT id FROM users WHERE lower_username='smithers-machines'`).Scan(&service))
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO users(username,lower_username) VALUES ('lane-actor','lane-actor') RETURNING id`).Scan(&actor))
+	// Distinct ids, so a payer of the wrong type cannot pass by number.
+	_, err := pool.Exec(ctx, `INSERT INTO organizations(name,lower_name) VALUES ('placeholder-839','placeholder-839')`)
+	require.NoError(t, err)
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO organizations(name,lower_name) VALUES ('free-lanes','free-lanes') RETURNING id`).Scan(&org))
+	require.NotEqual(t, service, org)
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO repositories(org_id,name,lower_name) VALUES ($1,'lanes','lanes') RETURNING id`, org).Scan(&orgRepo))
+	billing := NewBillingService(q, nil, BillingServiceConfig{})
+	require.NoError(t, billing.GrantPlan(ctx, PlanGrant{OwnerType: BillingOwnerTypeUser, OwnerID: service, PlanKey: BillingPlanMax, Key: "machines-839", ExpiresAt: time.Now().Add(time.Hour), Actor: "test", Reason: "plue#839"}))
+	svc := NewWorkspaceService(q, WithWorkspaceTransactions(pool), WithBranchMachineProviders(branchMachineTestProviders()), WithWorkspaceBillingPolicy(billing))
+
+	row, err := svc.createWorkspaceRow(ctx, db.CreateWorkspaceParams{UserID: actor, RepositoryID: orgRepo, TargetBookmark: "mythical", Kind: "container", Status: "starting"})
+	require.NoError(t, err)
+	require.Equal(t, service, row.UserID, "a branch machine is the machine service's")
+	policy, err := svc.workspaceEgressProxy(ctx, orgRepo, row.ID)
+	require.NoError(t, err)
+	require.NotNil(t, policy.Quota)
+	assert.Equal(t, sandbox.EgressQuota{BillingUserID: service, DailyBytes: 100 << 30}, *policy.Quota, "the service user's max egress, not the free organization's 1 GiB")
+
+	runtimeCtx, err := svc.workspaceRuntimeContext(ctx, row, actor, "billing-839")
+	require.NoError(t, err)
+	assert.Equal(t, sandbox.BillingOwner{Type: "user", ID: service}, sandbox.BillingOwnerFromContext(runtimeCtx, 0))
+	entitlement, err := billing.SandboxEntitlement(runtimeCtx, service)
+	require.NoError(t, err)
+	assert.Equal(t, BillingPlanMax, entitlement.PlanKey)
+	assert.EqualValues(t, 1, entitlement.ConcurrentInUse, "the payer counts the machine it pays for")
+	_, err = pool.Exec(ctx, `UPDATE workspaces SET vm_id='lane-vm',status='running' WHERE id=$1`, row.ID)
+	require.NoError(t, err)
+	require.NoError(t, billing.AuthorizeCountedSandboxResume(runtimeCtx, service, row.ID, "lane-vm"), "the payer resumes the machine it pays for")
+	require.NoError(t, svc.enforceWorkspaceQuota(ctx, actor, orgRepo), "the free organization's one-sandbox plan does not gate its machines")
+
+	// Once the organization has a plan of its own, it pays again.
+	var account int64
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO billing_accounts(owner_type,owner_id,stripe_customer_id) VALUES ('org',$1,'cus_org_839') RETURNING id`, org).Scan(&account))
+	_, err = pool.Exec(ctx, `INSERT INTO billing_subscriptions(billing_account_id,stripe_subscription_id,plan_key,billing_interval,status,quantity) VALUES ($1,'sub_org_839','team','monthly','active',1)`, account)
+	require.NoError(t, err)
+	policy, err = svc.workspaceEgressProxy(ctx, orgRepo, row.ID)
+	require.NoError(t, err)
+	assert.Equal(t, sandbox.EgressQuota{BillingUserID: org, BillingOwnerType: "org", DailyBytes: 100 << 30}, *policy.Quota)
+}
+
+// plue#839: a CI task guest carries its repository payer's egress quota. The
+// controller refuses a grant to any quota-less guest but the golden bake, and
+// the worker turned that refusal into a 429 at the guest's first clone.
+func TestCIGuestVMRequestCarriesTheRepositoryPayersEgressQuota(t *testing.T) {
+	pool, _ := postgresfixture.NewProductDatabase(t)
+	ctx := t.Context()
+	q := db.New(pool)
+	var service, owner, userRepo, org, orgRepo int64
+	require.NoError(t, pool.QueryRow(ctx, `SELECT id FROM users WHERE lower_username='smithers-machines'`).Scan(&service))
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO users(username,lower_username) VALUES ('ci-owner','ci-owner') RETURNING id`).Scan(&owner))
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO repositories(user_id,name,lower_name) VALUES ($1,'ci','ci') RETURNING id`, owner).Scan(&userRepo))
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO organizations(name,lower_name) VALUES ('free-ci','free-ci') RETURNING id`).Scan(&org))
+	require.NoError(t, pool.QueryRow(ctx, `INSERT INTO repositories(org_id,name,lower_name) VALUES ($1,'ci','ci') RETURNING id`, org).Scan(&orgRepo))
+	billing := NewBillingService(q, nil, BillingServiceConfig{})
+	require.NoError(t, billing.GrantPlan(ctx, PlanGrant{OwnerType: BillingOwnerTypeUser, OwnerID: service, PlanKey: BillingPlanMax, Key: "machines-839", ExpiresAt: time.Now().Add(time.Hour), Actor: "test", Reason: "plue#839"}))
+	images := NewSandboxEnvironmentImageService(&fakeEnvironmentImageQuerier{rows: []runtimeports.SandboxEnvironmentImage{
+		{ID: "base-vm", Kind: "vm", ClosureHash: "b", Image: "reg/nixos-guest:base-b", Status: "ready"},
+	}})
+	svc := NewWorkspaceService(q, WithWorkspaceBillingPolicy(billing), WithWorkspaceEnvironmentImages(images))
+
+	for _, tc := range []struct {
+		repo  int64
+		quota sandbox.EgressQuota
+	}{
+		{userRepo, sandbox.EgressQuota{BillingUserID: owner, DailyBytes: 1 << 30}},
+		{orgRepo, sandbox.EgressQuota{BillingUserID: service, DailyBytes: 100 << 30}},
+	} {
+		req, err := svc.CIGuestVMRequest(ctx, tc.repo, nil)
+		require.NoError(t, err)
+		require.NotNil(t, req.EgressProxy)
+		require.NotNil(t, req.EgressProxy.Quota, "a CI guest without a quota is refused every egress grant")
+		assert.Equal(t, tc.quota, *req.EgressProxy.Quota)
+	}
+	bake := svc.GoldenBakeVMRequest()
+	require.NotNil(t, bake.EgressProxy)
+	assert.Nil(t, bake.EgressProxy.Quota, "the repository-agnostic golden bake bills no repository")
 }

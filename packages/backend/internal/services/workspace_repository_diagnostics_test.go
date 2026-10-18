@@ -234,3 +234,31 @@ func TestWorkspaceRepositoryStepOutcomeRendersOnlyFiniteLabels(t *testing.T) {
 	require.Equal(t, workspaceCorrelationToken("ws-advertisement-render"), args[1])
 	require.NotEqual(t, "ws-advertisement-render", args[1])
 }
+
+// plue#839: the per-sandbox egress proxy answers CONNECT with 429 once the
+// payer's daily egress is spent, and Git reports it as status 128. That is an
+// exhausted quota, not an advertisement that could not be verified, and it is
+// not retried: the quota resets at 00:00 UTC.
+func TestWorkspaceRepositoryAdvertisementReportsAnExhaustedEgressQuota(t *testing.T) {
+	records := captureReconcilerLogs(t)
+	runtime := &fetchRetryRuntime{results: []workspaceapi.CommandResult{
+		advertisementRefusal("CONNECT tunnel failed, response 429"),
+	}}
+	svc := &WorkspaceService{runtime: runtime}
+	row := sampleDBWorkspace("ws-egress-quota")
+
+	_, err := svc.runtimeRepositorySourceEmpty(context.Background(), row, row.UserID,
+		"https://smithers.example/alice/demo.git", map[string]string{"GIT_CONFIG_COUNT": "1"})
+	var api *pkgerrors.APIError
+	require.ErrorAs(t, err, &api)
+	require.Equal(t, pkgerrors.CodeQuotaExceeded, api.Code)
+	require.Equal(t, workspaceEgressQuotaExhaustedMessage, api.Message)
+	cause, ok := api.Cause().(workspaceRepositoryStepOutcome)
+	require.True(t, ok)
+	require.Equal(t, workspaceRepositoryExitEgressQuota, cause.exitClass)
+	require.Len(t, runtime.commands, 1, "an exhausted quota is not retried")
+	logged := warnings(records, "workspace repository step could not be verified")
+	require.Len(t, logged, 1)
+	require.Equal(t, "egress_quota_exhausted", logged[0].attrs["exit_class"])
+	require.NotContains(t, logged[0].text, "sk-live-c0ffee")
+}

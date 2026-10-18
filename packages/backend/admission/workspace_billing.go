@@ -34,24 +34,34 @@ func (r *WorkspaceBillingResolver) Resolve(ctx context.Context, workspaceID stri
 	if !grant.Valid() {
 		return sandbox.BillingOwner{}, errors.New("invalid workspace billing owner")
 	}
-	var owner db.GetWorkspaceBillingOwnerRow
+	service := grant.Type == "user" && grant.ID == r.serviceOwner
 	id, err := uuid.Parse(workspaceID)
-	if err == nil {
-		owner, err = r.queries.GetWorkspaceBillingOwner(ctx, id.String())
-	} else {
-		err = pgx.ErrNoRows
+	if err != nil {
+		// A trusted standalone placement keeps its explicit account, and a CI
+		// task guest, named by its task number, its repository payer. A
+		// placement that names nothing never falls back to the machine service.
+		if service && workspaceID == "" {
+			return sandbox.BillingOwner{}, errors.New("workspace billing owner unavailable")
+		}
+		return grant, nil
 	}
-
+	owner, err := r.queries.GetWorkspaceBillingOwner(ctx, id.String())
 	if errors.Is(err, pgx.ErrNoRows) {
-		// Trusted standalone placements retain their explicit account. The machine
-		// service identity is never a fallback payer.
-		if grant.Type == "user" && grant.ID == r.serviceOwner {
+		// The machine service identity is never a fallback payer for a
+		// workspace that is gone.
+		if service {
 			return sandbox.BillingOwner{}, errors.New("workspace billing owner unavailable")
 		}
 		return grant, nil
 	}
 	if err != nil {
 		return sandbox.BillingOwner{}, err
+	}
+	// Until organizations have plans (mvp.md M-09), the product grants a free
+	// organization's machines to the machine service user (plue#839); the
+	// grant it wrote at create time stands.
+	if owner.OrgID.Valid {
+		return grant, nil
 	}
 	return billingstore.RepositorySandboxOwner(db.Repository{UserID: owner.UserID, OrgID: owner.OrgID})
 }
