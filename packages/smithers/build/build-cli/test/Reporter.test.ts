@@ -126,6 +126,28 @@ describe("audience-aware progress", () => {
     }
   })
 
+  it("keeps the last 40 diagnostic lines after progress and warning limits", () => {
+    const term = terminal(false)
+    const reporter = Reporter.silent(term)
+    for (let index = 0; index < 20; index++) reporter.warn("warning")
+    const tail = Array.from({ length: 40 }, (_, index) => `error ${index}: ${"detail ".repeat(30)}`)
+    reporter.targetFinished(
+      report(
+        "//:bundle",
+        "failed",
+        1000,
+        ["command failed (exit 1): compiler", ...Array.from({ length: 100 }, () => "Downloading crates"), ...tail].join(
+          "\n"
+        )
+      )
+    )
+    expect(term.text()).toContain("//:bundle  failed")
+    for (const line of tail) expect(term.text()).toContain(line)
+    reporter.targetFinished(report("//:other", "failed", 1, "another cause"))
+    expect(term.text()).toContain("//:other  failed")
+    expect(term.text()).toContain("another cause")
+  })
+
   it("honors human silence and bounds repeated diagnostics", () => {
     const term = terminal(true)
     const reporter = Reporter.make({

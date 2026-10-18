@@ -267,7 +267,11 @@ export const silent = (terminal: Terminal): Reporter => {
     begin: noop,
     targetStarted: noop,
     targetFinished: (report) => {
-      if (report.status === "failed") diagnostic(plainLine(report))
+      if (report.status !== "failed") return
+      // Exec already bounds captured stream tails. Keep the failure outside
+      // the warning budget and preserve both streams instead of clipping the cause.
+      const clean = Ansi.strip(plainLine(report)).replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "")
+      terminal.write(`${clean}\n`)
     },
     toolOutput: noop,
     note: noop,

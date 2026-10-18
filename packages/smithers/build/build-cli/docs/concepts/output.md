@@ -18,6 +18,10 @@ unchanged; prefer `--silent` across groups. `--verbose` opts agents into plain
 progress. MCP always stays machine-clean. See the
 [verified harness registry](../reference/agent-detection.md).
 
+Quiet output still prints every failed target on standard error, with its captured
+command diagnostic, including the stdout and stderr tails. Repeated warning limits do not
+suppress failures. Use `--verbose` to stream tool output while a command runs.
+
 The CLI writes to two streams and never mixes them.
 
 **Standard output belongs to the structured envelope.** incur prints the

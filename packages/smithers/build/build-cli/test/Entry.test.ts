@@ -127,6 +127,34 @@ describe("Entry.main", () => {
     expect(fake.stderr.text()).not.toContain("\u001b[")
   })
 
+  it("prints a failed command's stderr tail in agent mode", async () => {
+    const root = await fixture()
+    const errors = Array.from({ length: 40 }, (_, index) => `linker error ${index}: ${"missing symbol ".repeat(10)}`)
+    await write(
+      root,
+      "fail.cjs",
+      `process.stderr.write(${
+        JSON.stringify(["Downloading crates".repeat(100), ...errors].join("\n"))
+      }); process.stdout.write(${JSON.stringify("progress\n".repeat(50))}); process.exit(1)`
+    )
+    await write(
+      root,
+      "PACKAGE.ts",
+      `import { Smithers as S } from "@smthrs/targets"
+const bad = S.Shell.Test({ shell: ${JSON.stringify(`"${process.execPath}" fail.cjs`)}, data: [S.file("fail.cjs")] })
+export const Package = S.Package({ targets: { bad } })`
+    )
+    const fake = host(["test", "//:bad", "--workspace", root, "--no-cache"], {
+      ...process.env,
+      SMITHERS_AUDIENCE: "agent"
+    })
+    await Entry.main(fake.value)
+    expect(fake.codes).toEqual([1])
+    expect(fake.stdout.text()).toContain("targets_failed")
+    expect(fake.stderr.text()).toContain("//:bad  failed")
+    for (const line of errors) expect(fake.stderr.text()).toContain(line.trimEnd())
+  })
+
   it("anchors relative PATH entries to the launch directory before planning", async () => {
     // `pnpm exec` prepends `./node_modules/.bin`; a trailing `:` adds an empty entry.
     const root = await fixture()
