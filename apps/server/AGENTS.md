@@ -45,5 +45,10 @@
   Preserve request bodies, cookies, response status, redirects and streaming;
   remove caller-supplied proxy identity headers. Never add a second forwarder
   or Worker-side product state.
+- The same forwarder carries git's smart HTTP (`GET /<owner>/<repo>.git/info/refs?service=git-upload-pack|git-receive-pack`,
+  `POST /<owner>/<repo>.git/git-upload-pack|git-receive-pack`) so
+  `git clone https://smithers.sh/<owner>/<repo>.git` works. Git authenticates
+  with Basic auth, so these requests drop `Cookie`, and they wait for headers
+  up to `GIT_UPSTREAM_TIMEOUT_MS` (`src/Http.ts`), not the API's 20 seconds.
 - This package is the UI gateway. Changes to sandbox execution or frontend
   framework code belong to their owning packages.

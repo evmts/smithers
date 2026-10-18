@@ -1,7 +1,9 @@
 # Deploying `smithers-mvp-web` as the shared edge
 
 The entrypoint is `src/edge.ts`: static site assets plus an unchanged `/api/*`
-forward to the shared backend at `SMITHERS_BACKEND_ORIGIN`. Authentication,
+forward to the shared backend at `SMITHERS_BACKEND_ORIGIN`. The same forward
+carries git's smart HTTP at `/<owner>/<repo>.git/` (`info/refs`,
+`git-upload-pack`, `git-receive-pack`) without the browser cookie. Authentication,
 bootstrap, chat, model credentials, recommendations, billing, jobs and streaming
 all belong to that backend. The edge does not hold active product authority.
 
