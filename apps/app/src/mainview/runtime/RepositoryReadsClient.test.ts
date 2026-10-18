@@ -13,3 +13,14 @@ test("one commit decodes files and forwards cancellation", async () => {
  const client = { request: async (path: string, init: RequestInit) => { expect(path).toBe(`/api/repos/alice/demo/commits/${commit.sha}`); expect(init.signal).toBe(signal); return { ...commit, files: [] } } } as unknown as ApplicationClient
  expect((await getRepositoryCommit(client, "alice", "demo", commit.sha, signal)).files).toEqual([])
 })
+
+test("repository code search keeps the repository scope and cursor in the request", async () => {
+ const { searchRepositoryCode } = await import("./RepositoryReadsClient.ts")
+ const client = { request: async (path: string) => { expect(path).toBe("/api/repos/alice/demo/search/code?q=hello+world&cursor=2&limit=2"); return { items: [], total_count: 0, page: 2, per_page: 2 } } } as unknown as ApplicationClient
+ expect((await searchRepositoryCode(client, "alice", "demo", "hello world", { cursor: "2", limit: 2 })).items).toEqual([])
+})
+test("repository issue search validates its result", async () => {
+ const { searchRepositoryIssues } = await import("./RepositoryReadsClient.ts")
+ const client = { request: async (path: string) => { expect(path).toBe("/api/repos/alice/demo/search/issues?q=bug"); return { items: [], total_count: 0, page: 1, per_page: 30 } } } as unknown as ApplicationClient
+ expect((await searchRepositoryIssues(client, "alice", "demo", "bug")).total_count).toBe(0)
+})
