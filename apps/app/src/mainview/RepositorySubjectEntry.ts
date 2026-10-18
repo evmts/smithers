@@ -1,3 +1,4 @@
+import { codeReadKey, setCodeRead } from "./repository/RepositoryCodeRead"
 import type { RefLocation, RepositorySubject } from "@smthrs/rpc/RepositorySubjectPath"
 import { isCommitRevision, resolveRefLocation } from "@smthrs/rpc/RepositorySubjectPath"
 import { flowArgs } from "./flows/FlowArgs"
@@ -236,6 +237,8 @@ const openRequestedFile = async (
   owner: string | null | undefined,
   options: SubjectEntryOptions
 ): Promise<string | void> => {
+  const readKey = codeReadKey(repo, subject.kind, subject.location)
+  setCodeRead(readKey, "loading")
   const target = selectedRepoId(controller.store, repo)
   const inventory = await authoritativeRefs(controller, target)
   if (!admitted(controller.store, repo, options.requestId, owner)) return
@@ -245,6 +248,7 @@ const openRequestedFile = async (
   }
   if (located === undefined) {
     const notice = unresolvedNotice(controller.store, target, subject, inventory)
+    setCodeRead(readKey, "failed", notice.text)
     await say(notice.text, notice.action)
     return
   }
@@ -252,6 +256,7 @@ const openRequestedFile = async (
     // `/blob/<ref>` with nothing below it names a revision and no file at all.
     // Which revision it is, is said the way the URL named it: a commit id is
     // not a branch, and calling it one would be this page's own invention.
+    setCodeRead(readKey, "failed", "No file path")
     const revision = isCommitRevision(located.ref) ? `commit ${located.ref}` : `branch ${located.ref}`
     await say(`This URL names the ${revision} of ${target} and no file in it.`, {
       flow: "files", label: `Browse ${located.ref}`, args: flowArgs("files", { operation: "repository", path: "", repo: target, ref: located.ref })
@@ -260,6 +265,10 @@ const openRequestedFile = async (
   }
   const { name, args } = fileSubjectCommand(target, subject.kind, located)
   const outcome = await controller.runCommandForResult(name, args)
+  if (admitted(controller.store, repo, options.requestId, owner)) {
+    const error = outcome.status === "failed" ? outcome.error : outcome.status === "unavailable" ? outcome.reason : undefined
+    setCodeRead(readKey, error === undefined ? "ready" : "failed", error)
+  }
   return outcome.status === "failed" ? outcome.error : outcome.status === "unavailable" ? outcome.reason : undefined
 }
 
