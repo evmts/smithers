@@ -29,8 +29,12 @@ test("cross-origin, protocol-relative, data and blob URLs are refused", () => {
 test("the home page resolves every fetched chunk and stylesheet through sameOriginUrl", async () => {
   const { readFileSync } = await import("node:fs")
   const source = readFileSync(new URL("../src/pages/index.astro", import.meta.url), "utf8")
-  const body = source.slice(source.indexOf("const importApp"), source.indexOf("let app: Promise<AppMount>"))
+  // The launcher loader is resume(); the app document, its stylesheets and both chunks are the five fetched URLs.
+  const start = source.indexOf("async function resume()")
+  const end = source.indexOf("void resume()")
+  assert.ok(start > 0 && end > start, "index.astro still defines resume() and calls it")
+  const body = source.slice(start, end)
   assert.match(source, /import \{ sameOriginUrl \} from "\.\.\/lib\/sameOriginUrl"/)
   assert.doesNotMatch(body, /new URL\(/)
-  assert.equal(body.match(/sameOriginUrl\(/g)?.length, 4)
+  assert.equal(body.match(/sameOriginUrl\(/g)?.length, 5)
 })
