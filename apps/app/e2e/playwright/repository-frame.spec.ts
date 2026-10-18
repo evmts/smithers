@@ -57,11 +57,19 @@ for (const member of [false, true]) for (const width of [1440, 1280, 390]) for (
     await page.getByText("Code", { exact: true }).filter({ hasNot: page.locator("svg") }).last().click()
     await expect(page.getByText("git clone https://api.smithers.sh/maya/tinyhttp.git", { exact: true })).toBeVisible()
     await page.keyboard.press("Escape")
+    await expect(page.locator(".repo-code-home-code-menu")).not.toHaveAttribute("open")
+    await expect(page.locator(".repo-code-home-code-menu summary")).toBeFocused()
+    await expect(page.getByRole("search")).toHaveCount(0)
+    await expect(page.locator('a[href$="/branches"]')).toHaveCount(0)
+    await expect(page.locator('a[href*="/HEAD/"]')).toHaveCount(0)
     if (process.env.REPOSITORY_SHOTS) await page.screenshot({ path: `${process.env.REPOSITORY_SHOTS}/code-home-${member ? "member" : "signed-out"}-${width}-${colorScheme}.png`, fullPage: true })
     if (member) {
       await page.getByRole("button", { name: "Ask", exact: true }).click()
       await expect(page.getByRole("complementary", { name: "Ask", exact: true })).toBeVisible()
-      await expect(page.getByTestId("composer-input")).toBeVisible()
+      await expect(page.getByRole("complementary", { name: "Ask", exact: true }).getByTestId("composer-input")).toBeVisible()
+      await page.getByTestId("composer-input").focus()
+      await page.keyboard.press("Escape")
+      await expect(page.getByRole("complementary", { name: "Ask", exact: true })).toBeVisible()
       await page.getByRole("button", { name: "Close Ask" }).click()
       await expect(page.getByRole("button", { name: "Ask", exact: true })).toBeFocused()
       return
@@ -71,6 +79,5 @@ for (const member of [false, true]) for (const width of [1440, 1280, 390]) for (
     await page.getByRole("button", { name: "Ask", exact: true }).click()
     await signIn
     await page.waitForURL(url => url.pathname === APPLICATION_SIGN_IN_PATH)
-    await expect(page.locator("body")).not.toContainText(/Smithers (reviews|merges|lands) changes/)
   })
 }

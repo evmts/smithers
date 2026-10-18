@@ -1,0 +1,67 @@
+paths:
+  /api/commands/select:
+    post:
+      summary: POST /api/commands/select
+      operationId: post_api_commands_select
+      tags:
+        - Commands
+      parameters: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnyJSON'
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnyJSON'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/commands/debug-api:
+    x-composition: install
+    get:
+      summary: Authorize the Debug API card
+      description: Person-only admission for the installed Debug API card. Performs no API operation.
+      operationId: get_api_commands_debug_api
+      tags:
+        - Commands
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      responses:
+        '204':
+          description: Authorized
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                enum: [no-store]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'

@@ -1,0 +1,47 @@
+{
+  "capturedAt": "2026-10-18T02:48:28.680Z",
+  "repo": "smithersai/smithers",
+  "note": "Recorded public GitHub response projection; issue body and identity fields omitted.",
+  "issue": {
+    "number": 2797,
+    "node_id": "I_kwDOQ0TAIc8AAAABT19N0A",
+    "html_url": "https://github.com/smithersai/smithers/issues/2797",
+    "created_at": "2026-09-29T07:07:32Z",
+    "closed_at": "2026-09-29T19:38:37Z",
+    "state_reason": "completed",
+    "comments": 2
+  },
+  "node": {
+    "id": "I_kwDOQ0TAIc8AAAABT19N0A",
+    "number": 2797,
+    "comments": {
+      "nodes": [
+        {
+          "createdAt": "2026-09-29T19:17:22Z"
+        }
+      ]
+    },
+    "timelineItems": {
+      "pageInfo": {
+        "hasNextPage": false,
+        "endCursor": "Y3Vyc29yOnYyOpPPAAABoO6tHjABqzMyMTA4ODg3ODY4"
+      },
+      "nodes": [
+        {
+          "__typename": "CrossReferencedEvent",
+          "source": {}
+        },
+        {
+          "__typename": "ReferencedEvent",
+          "commit": {
+            "oid": "52edf5126f1f959429c228da4a7f54ed8f643095"
+          }
+        },
+        {
+          "__typename": "ClosedEvent",
+          "createdAt": "2026-09-29T19:38:38Z"
+        }
+      ]
+    }
+  }
+}
