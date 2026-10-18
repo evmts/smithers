@@ -11,7 +11,7 @@ import { createHash } from "node:crypto"
 import { integrity } from "./publish-release.mjs"
 import { execFileSync, spawn } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs"
-import { access, cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises"
+import { access, chmod, cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, join, relative, resolve, sep } from "node:path"
 
@@ -243,7 +243,17 @@ export const publicationManifest = (manifest) => {
   return {
     ...manifest,
     exports,
-    publishConfig: publishedConfig
+    publishConfig: {
+      ...publishedConfig,
+      // pnpm otherwise writes regular files as 0644 even after chmod.
+      ...(manifest.name === "@smthrs/platform-node" ? {
+        executableFiles: [...new Set([
+          ...(publishedConfig.executableFiles ?? []),
+          ...nativeHelperFiles.filter(([platform]) => !platform.startsWith("win32"))
+            .map(([platform, filename]) => `bin/${platform}/${filename}`)
+        ])]
+      } : {})
+    }
   }
 }
 
@@ -492,6 +502,14 @@ export const stagePackage = async (packageRoot, stagedPackage, manifest, nativeH
       const destination = join(stagedPackage, "bin", platform)
       await mkdir(destination, { recursive: true })
       await cp(source, join(destination, filename))
+    }
+  }
+  // Artifact downloads and source copies can lose executable bits. Normalize
+  // the publication tree, including helpers already present without an overlay.
+  if (manifest.name === "@smthrs/platform-node") {
+    for (const [platform, filename] of nativeHelperFiles) {
+      const binary = join(stagedPackage, "bin", platform, filename)
+      if (!platform.startsWith("win32") && existsSync(binary)) await chmod(binary, 0o755)
     }
   }
   await writeFile(join(stagedPackage, "package.json"), `${JSON.stringify(publicationManifest(manifest), null, 2)}\n`)
