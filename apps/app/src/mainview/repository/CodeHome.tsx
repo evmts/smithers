@@ -41,7 +41,7 @@ export function CodeHome({ repo, branch, branches, headCommit, changes = [], onB
   const blockOrder = { text: 0, prompt: 1, links: 2, stack: 3, markdown: 4, app: 5, flows: 6, view: 7 }
   const declaredHome = home?.kind === "blocks" ? { ...home, blocks: home.blocks
     .filter(block => block.type !== "markdown" || !/readme/i.test(block.path))
-    .sort((left, right) => blockOrder[left.type] - blockOrder[right.type]) } : undefined
+    .sort((left, right) => blockOrder[left.type] - blockOrder[right.type]) } : home?.kind === "error" ? home : undefined
   return <div className="repo-code-home-layout"><div className="repo-code-home-main">
     <RepositoryHomeView repo={repo} home={declaredHome} treeCopyId={treeCopyId} onRunCommand={(flow, args) => { if (flow === "chat.open" && openAsk) openAsk(); else onRunCommand(flow, args) }}/>
     <div className="repo-code-home-toolbar">
@@ -64,7 +64,6 @@ export function CodeHome({ repo, branch, branches, headCommit, changes = [], onB
       </div>}
       {!treeAvailable ? <div className="repo-frame-state" role="alert"><h2>Couldn't load repository files.</h2></div> : tree === undefined || tree.state === "loading" ? <div className="repo-frame-state" role="status">Loading…</div> : tree.state === "failed" ? <div className="repo-frame-state" role="alert">{tree.error}</div> : tree.entries.length === 0 ? <div className="repo-frame-state"><h2>This repository is empty.</h2></div> : <div role="table" aria-label="Repository files"><div className="repo-ui-sr" role="row"><span role="columnheader">Name</span></div>{tree.entries.map(entry => <div className="repo-code-home-file-row" role="row" key={entry.name}><span role="cell">{ref ? <a href={`${base}/${entry.kind === "dir" ? "tree" : "blob"}/${ref}/${encodeURIComponent(entry.name)}`}>{entry.kind === "dir" ? <Folder size={16}/> : <FileText size={16}/>} {entry.name}</a> : <>{entry.kind === "dir" ? <Folder size={16}/> : <FileText size={16}/>} {entry.name}</>}</span></div>)}</div>}
     </section>
-    {home?.kind === "error" && <p role="alert">{home.message}</p>}
     {readme !== undefined && <section className="repo-ui-box" aria-label="README"><div className="repo-ui-box-header">README.md</div><div className="repo-code-home-readme"><RepositoryMarkdown content={readme}/></div></section>}
   </div></div>
 }
