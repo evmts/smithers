@@ -542,7 +542,11 @@ const makeWithEngineJj = (
         const record = observation(input)
         return Effect.flatMap(FlowRuntime.FlowInstance, (parent) =>
           Effect.flatMap(planProvenance(parent, record), (provenance) =>
-            journal.emitDurable(
+            Effect.gen(function*() {
+              if (record._tag === "PlanRecorded") {
+                console.error("PLAN_COMPARE", JSON.stringify({ rebuilt: NodeJournal.entry({runId: parent.executionId, sourceId: options.journalSource, ...provenance, root: declarationRoot}, record) }))
+              }
+              return yield* journal.emitDurable(
               NodeJournal.entry({
                 runId: parent.executionId,
                 sourceId: options.journalSource,
@@ -566,7 +570,7 @@ const makeWithEngineJj = (
                   : Effect.die(error)
               ),
               Effect.asVoid
-            )))
+            )})))
       },
       actionReplayKey: Effect.fnUntraced(function*(derive) {
         const instance = yield* FlowRuntime.FlowInstance
