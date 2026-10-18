@@ -12,7 +12,7 @@
 .repo-frame-search { display: flex; align-items: center; gap: 7px; border: 1px solid var(--border); border-radius: var(--r-2); background: var(--surface); width: 260px; min-width: 0; padding: 5px 10px; }
 .repo-frame-search > svg { color: var(--text-muted); flex: 0 0 auto; }
 .repo-frame-search > kbd { display: grid; place-items: center; width: 18px; height: 20px; flex: 0 0 auto; border: 1px solid var(--border); border-radius: var(--r-1); }
-.repo-frame-search input { min-width: 0; width: 100%; border: 0; outline: 0; background: transparent; color: var(--text); font-size: var(--fs-2); }
+.repo-frame-search input { min-width: 0; width: 100%; border: 0; outline: none; background: transparent; color: var(--text); font-size: var(--fs-2); }
 .repo-frame-search:focus-within { outline: 2px solid var(--brand); outline-offset: 2px; }
 .repo-frame-search input:focus-visible { outline: none; }
 .repo-frame-search input::placeholder { color: var(--text-faint); }
@@ -39,7 +39,7 @@
 .repo-frame-github { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-1); color: var(--text-muted); white-space: nowrap; }
 .repo-frame-sync-separator { margin-right: 3px; color: var(--text-faint); }
 .repo-frame-ask-button { flex: 0 0 auto; min-width: 88px; gap: 12px; }
-.repo-frame-content { padding: 28px 32px 80px; max-width: 1500px; margin: 0 auto; min-width: 0; outline: 0; }
+.repo-frame-content { padding: 28px 32px 80px; max-width: 1500px; margin: 0 auto; min-width: 0; outline: none; }
 .repo-frame-state { padding: 64px 24px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; border: 1px solid var(--border); border-radius: var(--r-3); background: var(--surface); }
 .repo-frame-state h2 { font-size: var(--fs-4); font-weight: 500; }
 .repo-frame-state p { font-size: var(--fs-2); color: var(--text-muted); }
@@ -73,8 +73,8 @@
 .repo-frame-ask-card-row > span:nth-child(2) { flex: 1; }
 .repo-frame-composer { position: relative; margin: 0 16px 16px; padding: 10px 12px 8px; border: 1px solid var(--border-strong); border-radius: var(--r-3); background: var(--bg); flex: 0 0 auto; }
 .repo-frame-composer:focus-within { border-color: var(--brand); }
-.repo-frame-composer textarea { resize: none; width: 100%; color: var(--text); background: transparent; border: 0; outline: 0; font-size: var(--fs-2); line-height: 1.6; min-height: 66px; }
-.repo-frame-composer textarea:focus-visible { outline: 0; }
+.repo-frame-composer textarea { resize: none; width: 100%; color: var(--text); background: transparent; border: 0; outline: none; font-size: var(--fs-2); line-height: 1.6; min-height: 66px; }
+.repo-frame-composer textarea:focus-visible { outline: none; }
 .repo-frame-composer textarea::placeholder { color: var(--text-muted); }
 .repo-frame-composer-foot { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
 .repo-frame-composer-foot > span { font-size: 10px; }

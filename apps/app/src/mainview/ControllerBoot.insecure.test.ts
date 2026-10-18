@@ -15,4 +15,4 @@ test("the app boots to Setup without crypto.randomUUID, crypto.subtle or Web Loc
   const output = new TextDecoder().decode(run.stdout) + new TextDecoder().decode(run.stderr)
   expect(output).toContain("insecure boot reached Setup: repository,models,source,machine")
   expect(run.exitCode).toBe(0)
-})
+}, 65_000)

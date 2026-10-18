@@ -759,10 +759,10 @@ function AppContent() {
   const repository = repositoryRows.find(row => row.id.toLowerCase() === bootRepository.toLowerCase())
   const rootRoute = window.location.pathname.replace(/\/$/, "") === `/${bootRepository}`
   if (!rootRoute && !codeRoute) return chat()
-  return <RepoFrame repo={bootRepository} publicRepo={repository?.catalog === true}
+  return <RepoFrame onRunCommand={controller.runCommand} repo={bootRepository} publicRepo={repository?.catalog === true}
     login={identity?.state === "signed-in" ? identity.login ?? undefined : undefined}
-    onAsk={() => controller.runCommand("chat.open")} onSignIn={() => controller.runCommand("sign-in")} ask={(visible: boolean) => chat(visible)}>
-    {codeRoute ? <RepositoryCodeView repo={bootRepository} cards={cardRows} refs={codeRefs} commits={codeBranches?.commits}
+    ask={(visible: boolean) => chat(visible)}>
+    {codeRoute ? <RepositoryCodeView onRunCommand={controller.runCommand} repo={bootRepository} cards={cardRows} refs={codeRefs} commits={codeBranches?.commits}
       admitted={bootEntry?.phase === "ready"} requestId={bootEntry?.requestId} error={bootUnavailable ? bootEntry?.error : undefined} onAsk={text => controller.changeDraft(text)} /> : <CodeHome repo={bootRepository} branch={repository?.head?.bookmark}
       branches={codeBranchRows.find(row => row.id.toLowerCase() === bootRepository.toLowerCase())}
       onBranchesOpen={() => { void controller.repositoryBranches.load(bootRepository) }}

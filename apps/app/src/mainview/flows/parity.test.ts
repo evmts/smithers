@@ -1359,6 +1359,9 @@ describe("launch-law parity: every affordance is a command", () => {
       "../cards/ApprovalCard.tsx": 2,
       "../cards/CodingVibeCard.tsx": 1,
       "../cards/RepositoryChoiceCard.tsx": 2,
+      "../repository/CodeHome.tsx": 1,
+      "../repository/RepoFrame.tsx": 3,
+      "../repository/RepositoryCodeView.tsx": 6,
       "../cards/RepositoryHomeView.tsx": 5,
       "../cards/RepositoryLauncher.tsx": 8, // 1140892a: the lead links' onLeadAction
       "../cards/RepositoryOpenForm.tsx": 1, // 88068440: the Open box's submit, moved out of the launcher

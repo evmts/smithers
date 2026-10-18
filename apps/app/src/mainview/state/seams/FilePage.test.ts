@@ -11,3 +11,14 @@ test("page read keeps the full file and requests the selected ref", async () => 
  expect(page.content).toBe(content)
  expect(requested).toBe("https://example.test/api/repos/a/b/contents/src/x.ts?ref=feature%2Fx")
 })
+
+
+test("rejected reads retain a typed failure and never fetch invalid paths", async () => {
+ let calls = 0
+ const ctx = { baseUrl: "", http: async () => { calls++; return new Response(null, { status: 403 }) } }
+ await expect(readFilePage(ctx, "owner/repo", "../private")).rejects.toMatchObject({ _tag: "RepositoryFileReadFailed" })
+ expect(calls).toBe(0)
+ for (const status of [403, 404, 500]) {
+  await expect(readFilePage({ ...ctx, http: async () => new Response(null, { status }) }, "owner/repo", "src/file.ts")).rejects.toMatchObject({ _tag: "RepositoryFileReadFailed", status })
+ }
+})
