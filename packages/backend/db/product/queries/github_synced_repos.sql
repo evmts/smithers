@@ -111,17 +111,19 @@ WHERE id = sqlc.arg(id)
 RETURNING *;
 
 -- name: ListDueGitHubSyncedRepos :many
--- Reconciliation backstop candidates, oldest staleness first. Due-ness (the
--- adaptive clamp, failure backoff, webhook-heartbeat stretch) is computed by
--- the reconciler in Go; this returns the stalest eligible rows. Within never-
--- synced rows, untouched candidates precede retried candidates for fairness.
+-- Reconciliation candidates: never synced, visibility unknown, then stale.
+-- Within never-synced rows, untouched candidates precede expired retries.
+-- The reconciler applies adaptive cadence only once visibility is known.
 SELECT *
 FROM github_synced_repos
 WHERE sync_metadata
   AND sync_state NOT IN ('disabled', 'failed')
   AND (syncing_since IS NULL OR syncing_since < NOW() - INTERVAL '5 minutes')
   AND (next_reconcile_at IS NULL OR next_reconcile_at <= NOW())
-ORDER BY last_synced_at ASC NULLS FIRST, next_reconcile_at ASC NULLS FIRST, id
+ORDER BY CASE WHEN last_synced_at IS NULL THEN 0
+              WHEN github_private IS NULL THEN 1
+              ELSE 2 END,
+         last_synced_at ASC NULLS FIRST, next_reconcile_at ASC NULLS FIRST, id
 LIMIT sqlc.arg(row_limit)::int;
 
 -- name: ListGitHubSyncedRepos :many

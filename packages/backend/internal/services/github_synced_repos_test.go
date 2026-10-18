@@ -231,6 +231,9 @@ func (f *fakeSyncedRepoStore) ListDueGitHubSyncedRepos(_ context.Context, rowLim
 		if a.LastSyncedAt.Valid != b.LastSyncedAt.Valid {
 			return !a.LastSyncedAt.Valid
 		}
+		if a.LastSyncedAt.Valid && a.GithubPrivate.Valid != b.GithubPrivate.Valid {
+			return !a.GithubPrivate.Valid
+		}
 		if a.LastSyncedAt.Valid && !a.LastSyncedAt.Time.Equal(b.LastSyncedAt.Time) {
 			return a.LastSyncedAt.Time.Before(b.LastSyncedAt.Time)
 		}

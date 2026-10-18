@@ -211,3 +211,71 @@ func TestSyncedRepos_UntouchedNeverSyncedRowsPrecedeExpiredRetries(t *testing.T)
 	require.Equal(t, row.ID, due[0].ID, "expired low-id retries cannot monopolize the next batch")
 	require.Less(t, due[1].ID, due[2].ID, "equal retry deadlines retain oldest-first ordering")
 }
+
+func TestSyncedRepos_FreshUnknownVisibilityReconciles(t *testing.T) {
+	for _, binding := range []string{"bound", "discover"} {
+		t.Run(binding, func(t *testing.T) {
+			pool := newProductTestPool(t)
+			ctx := t.Context()
+			q := db.New(pool)
+			minter, upstream := newScopedTokenMinter(t)
+			reads := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/repos/acme/app" {
+					reads++
+					fmt.Fprint(w, `{"id":100,"private":false}`)
+					return
+				}
+				upstream.Handler().ServeHTTP(w, r)
+			}))
+			defer server.Close()
+			t.Setenv(envGitHubAppAPIBaseURL, server.URL)
+			installation := pgtype.Int8{Int64: 91, Valid: binding == "bound"}
+			row, err := q.EnrollGitHubSyncedRepo(ctx, db.EnrollGitHubSyncedRepoParams{OwnerLogin: "acme", RepoName: "app", InstallationID: installation, GithubRepositoryID: pgtype.Int8{Int64: 100, Valid: true}, SyncMetadata: true, EnrolledVia: "import"})
+			require.NoError(t, err)
+			require.NoError(t, q.MarkGitHubSyncedRepoSynced(ctx, row.ID))
+			service := NewGitHubSyncedRepoService(q)
+			client := NewGitHubUserReposService(q, nil)
+			service.SetFetcherFactory(client.SyncedRepoInstallationFetcherFactory(minter))
+			service.SetInstallationResolver(func(context.Context, db.GithubSyncedRepo) (int64, int64, error) { return 91, 100, nil })
+			// An explicit retry deadline still wins over unknown visibility.
+			require.NoError(t, q.DeferGitHubSyncedRepoSync(ctx, db.DeferGitHubSyncedRepoSyncParams{ID: row.ID, NextReconcileAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true}}))
+			service.reconcileOnce(ctx)
+			require.Zero(t, reads)
+			_, err = pool.Exec(ctx, `UPDATE github_synced_repos SET next_reconcile_at=NULL WHERE id=$1`, row.ID)
+			require.NoError(t, err)
+			service.reconcileOnce(ctx)
+			got, err := q.GetGitHubSyncedRepo(ctx, db.GetGitHubSyncedRepoParams{OwnerLogin: "acme", RepoName: "app"})
+			require.NoError(t, err)
+			require.True(t, got.GithubPrivate.Valid, "a fresh sync must not defer unknown visibility")
+			require.False(t, got.GithubPrivate.Bool)
+			require.EqualValues(t, 1, reads)
+			service.reconcileOnce(ctx)
+			require.EqualValues(t, 1, reads, "known fresh visibility must respect normal cadence")
+		})
+	}
+}
+
+func TestSyncedRepos_VisibilityUnknownPrecedesStaleWithinBatch(t *testing.T) {
+	pool := newProductTestPool(t)
+	ctx := t.Context()
+	q := db.New(pool)
+	enroll := func(name string) db.GithubSyncedRepo {
+		row, err := q.EnrollGitHubSyncedRepo(ctx, db.EnrollGitHubSyncedRepoParams{OwnerLogin: "octo", RepoName: name, InstallationID: pgtype.Int8{Int64: 42, Valid: true}, SyncMetadata: true, EnrolledVia: "import"})
+		require.NoError(t, err)
+		return row
+	}
+	for i := 0; i < 25; i++ {
+		row := enroll(fmt.Sprintf("stale-%d", i))
+		_, err := pool.Exec(ctx, `UPDATE github_synced_repos SET last_synced_at=NOW()-INTERVAL '1 day',github_private=false WHERE id=$1`, row.ID)
+		require.NoError(t, err)
+	}
+	unknown := enroll("unknown")
+	require.NoError(t, q.MarkGitHubSyncedRepoSynced(ctx, unknown.ID))
+	untouched := enroll("untouched")
+	due, err := q.ListDueGitHubSyncedRepos(ctx, 20)
+	require.NoError(t, err)
+	require.Len(t, due, 20)
+	require.Equal(t, untouched.ID, due[0].ID)
+	require.Equal(t, unknown.ID, due[1].ID, "fresh unknown visibility must precede stale rows")
+}

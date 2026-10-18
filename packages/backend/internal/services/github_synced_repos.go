@@ -1405,7 +1405,7 @@ func (s *GitHubSyncedRepoService) reconcileInterval(row db.GithubSyncedRepo) tim
 }
 
 func (s *GitHubSyncedRepoService) reconcileDue(row db.GithubSyncedRepo) bool {
-	if !row.LastSyncedAt.Valid {
+	if !row.LastSyncedAt.Valid || !row.GithubPrivate.Valid {
 		return true
 	}
 	return s.now().Sub(row.LastSyncedAt.Time) >= s.reconcileInterval(row)
