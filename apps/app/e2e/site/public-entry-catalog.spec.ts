@@ -1,11 +1,12 @@
 import { expect, test } from "@playwright/test"
 import { signedOutVisitor } from "../playwright/identity"
+import { landingCopy } from "../../../site/src/data/landingCopy"
 
 // 88068440 replaces the old Get started link with the static install action.
 test("the static landing keeps sign-in and an explicit app entry retains catalog retry", async ({ page, context }, testInfo) => {
   await signedOutVisitor(page)
   await page.goto("/")
-  await expect(page.locator(".landing-command")).toContainText("npm i -g smthrs@next")
+  await expect(page.locator(".landing-command")).toContainText(landingCopy.commands.npx)
   await expect(page.getByRole("link", { name: "Sign in", exact: true }))
     .toHaveAttribute("href", "/api/auth/github?return_to=%2F%3Fsigned-in%3Dgithub")
   await expect(page.getByTestId("composer-input")).toHaveCount(0)
