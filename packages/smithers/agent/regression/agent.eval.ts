@@ -132,6 +132,15 @@ const failed = (
 
 const review = (approved: boolean, issues: ReadonlyArray<string>): unknown => ({ approved, issues })
 
+// #4284: one provider response, four fences, with no observation between them.
+// The scripted provider supplies the outside fences; these delimit the batch.
+const speculativeInspectionPark = [
+  "var memory = await ctx.call(\"probe\", { note: \"memory\" }); var bash = await ctx.call(\"probe\", { note: \"bash\" }); console.log(memory, bash)",
+  "console.log(memory, bash)",
+  "var ls = await ctx.call(\"probe\", { note: \"ls\" }); console.log(ls)",
+  "ctx.park(\"waiting-input\", \"The execution environment is not returning results from cells\")"
+].join("\n```\n\n```cell\n")
+
 const scenarios: Readonly<Record<string, Scenario>> = {
   "structured-output-decode": {
     summary: "A well-formed answer decodes into the action's declared output schema in one model call.",
@@ -281,6 +290,49 @@ const scenarios: Readonly<Record<string, Scenario>> = {
   // own unit suite, and `CellTurn.test.ts` pins that the shapes which used to
   // fire it are now told nothing. When the control gets its own measured wave,
   // the case comes back with it.
+
+  "speculative-inspection-park-recovers-once": {
+    summary:
+      "A first-response four-fence inspection park gets one turn to consume its unseen prints without an approval channel.",
+    run: () => {
+      const recorder = Subject.makeRecorder()
+      return Subject.runAgent({
+        recorder,
+        respond: (prompt, index) =>
+          index === 0
+            ? speculativeInspectionPark
+            : prompt.includes("What your cell printed:\n{\"read\":true} {\"read\":true}") &&
+                prompt.includes("Your park was not delivered because no one can answer; continue from the output.")
+            ? "ctx.done(\"continued from captured inspections\")"
+            : "ctx.done(\"missing inspection output\")",
+        maxFrames: 4,
+        flows: [Subject.probeSource(recorder)]
+      })
+    },
+    expected: answered("continued from captured inspections", 2, ["probe:memory", "probe:bash", "probe:ls"])
+  },
+
+  "second-speculative-inspection-park-fails": {
+    summary: "A repeated speculative inspection park still fails approval_unavailable after its one recovery.",
+    run: () => {
+      const recorder = Subject.makeRecorder()
+      return Subject.runAgent({
+        recorder,
+        expectedFailureCode: "approval_unavailable",
+        respond: () => speculativeInspectionPark,
+        maxFrames: 4,
+        flows: [Subject.probeSource(recorder)]
+      })
+    },
+    expected: failed("/harness/HarnessError", 2, [
+      "probe:memory",
+      "probe:bash",
+      "probe:ls",
+      "probe:memory",
+      "probe:bash",
+      "probe:ls"
+    ])
+  },
 
   "park-without-a-human-is-answered": {
     summary:

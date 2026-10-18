@@ -841,6 +841,110 @@ describe("CellTurn discipline interaction", () => {
 describe("CellTurn park without a human", () => {
   const parking = (message: string) => emits(`ctx.park("waiting-input", ${JSON.stringify(message)})`)
 
+  // The first response in #4284 batched three inspections and an unconditional
+  // diagnosis before the model had observed any of their output.
+  const inspectionFlows = ["memory/recall", "bash", "ls"].map((name) =>
+    descriptor(name, { capabilities: ["fs:read:**"] })
+  )
+  const inspectionsThenPark = prose(
+    [
+      "var memory = await ctx.call(\"memory/recall\", {}); var bash = await ctx.call(\"bash\", { command: \"pwd\" }); console.log(memory, bash)",
+      "console.log(memory, bash)",
+      "var ls = await ctx.call(\"ls\", { path: \".\" }); console.log(ls)",
+      "ctx.park(\"waiting-input\", \"The execution environment is not returning results from cells\")"
+    ].map((cell) => "```cell\n" + cell + "\n```").join("\n\n")
+  )
+  const reads = ["memory", "bash", "ls"].map((name) => ({
+    _tag: "Success" as const,
+    value: { entries: [name + "-receipt"] }
+  }))
+
+  it("recovers one speculative multi-block park with the captured inspection output", async () => {
+    const { events, failure, model, engine } = await run({
+      script: [inspectionsThenPark, emits("ctx.done(\"continued from output\")")],
+      flows: inspectionFlows,
+      calls: reads
+    })
+    expect(failure).toBeUndefined()
+    expect(model.recorder.requests).toHaveLength(2)
+    expect(engine.recorder.calls).toHaveLength(3)
+    const printed = of(events, "cell-printed")[0]!.text
+    expect(observationsOf(model, 1)).toContain(printsObservation(printed))
+    for (const name of ["memory", "bash", "ls"]) expect(printed).toContain(name + "-receipt")
+    expect(messagesOf(model, 1)).toContain(
+      "Your park was not delivered because no one can answer; continue from the output."
+    )
+    expect(resolvedText(events)).toBe("continued from output")
+  })
+
+  it("honors the same inspection park when an approval channel exists", async () => {
+    const { failure, model } = await run({
+      state: state({ approvalChannel: true }),
+      script: [inspectionsThenPark],
+      flows: inspectionFlows,
+      calls: reads
+    })
+    expect(failure).toMatchObject({ code: "suspended" })
+    expect(model.recorder.requests).toHaveLength(1)
+  })
+
+  it("fails a second speculative park even with fresh output", async () => {
+    const { failure, model } = await run({
+      script: [inspectionsThenPark, emits("console.log(\"intervening frame\")"), inspectionsThenPark],
+      flows: inspectionFlows,
+      calls: [...reads, ...reads]
+    })
+    expect(failure).toMatchObject({ code: "approval_unavailable" })
+    expect(model.recorder.requests).toHaveLength(3)
+  })
+
+  it.each([
+    "console.log(\"fresh print\"); ctx.park(\"waiting-input\", \"no output?\")",
+    "var result = await ctx.call(\"fs/list\", {}); ctx.park(\"waiting-input\", \"no result?\")"
+  ])("recovers unobserved evidence without requiring both a call and a print: %s", async (cell) => {
+    const { failure, model } = await run({
+      script: [emits(cell), emits("ctx.done(\"recovered\")")],
+      calls: [{ _tag: "Success", value: ["receipt"] }]
+    })
+    expect(failure).toBeUndefined()
+    expect(model.recorder.requests).toHaveLength(2)
+    expect(observationsOf(model, 1)).toContain("Your park was not delivered")
+    if (cell.startsWith("var")) {
+      expect(observationsOf(model, 1)).toContain(printsObservation(""))
+      expect(messagesOf(model, 1)).toContain("result (array, 1 items)")
+    }
+  })
+
+  it.each(["waiting-event", "waiting-quota"])("does not recover a %s park", async (reason) => {
+    const { failure, model } = await run({
+      script: [emits(`console.log("fresh"); ctx.park("${reason}", "wait")`)]
+    })
+    expect(failure).toMatchObject({ code: "approval_unavailable" })
+    expect(model.recorder.requests).toHaveLength(1)
+  })
+
+  it("does not recover without another frame available", async () => {
+    const { failure, model } = await run({
+      state: state({ maxFrames: 1 }),
+      script: [inspectionsThenPark],
+      flows: inspectionFlows,
+      calls: reads
+    })
+    expect(failure).toMatchObject({ code: "approval_unavailable" })
+    expect(model.recorder.requests).toHaveLength(1)
+  })
+
+  it("does not let recovery bypass the read-only cap", async () => {
+    const { failure, model } = await run({
+      state: state({ readOnlyCap: 1 }),
+      script: [emits("console.log(\"first\")"), inspectionsThenPark],
+      flows: inspectionFlows,
+      calls: reads
+    })
+    expect(failure).toMatchObject({ code: "read_only_cap" })
+    expect(model.recorder.requests).toHaveLength(2)
+  })
+
   it.each([0, 1, 3])("fails visibly before answering its own park with frame budget %s", async (maxFrames) => {
     const { events, failure, model } = await run({
       state: state({ maxFrames }),
