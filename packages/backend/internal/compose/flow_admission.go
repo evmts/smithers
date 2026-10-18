@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -28,6 +29,8 @@ type admittedFlowLauncher struct {
 	flowhost.RetirementStopper
 	queries *db.Queries
 	policy  admission.Policy
+	// servicePayerOrgs: billing.service_payer_org_ids (plue#839).
+	servicePayerOrgs []int64
 }
 
 // Preserve the runtime boundary through both admission and box preparation.
@@ -49,13 +52,13 @@ func (l *boxHostLauncher) Isolation() workspaceapi.IsolationLevel {
 	return launcherIsolation(l.Launcher)
 }
 
-func newAdmittedFlowLauncher(launcher flowhost.Launcher, queries *db.Queries, policy admission.Policy) (*admittedFlowLauncher, error) {
+func newAdmittedFlowLauncher(launcher flowhost.Launcher, queries *db.Queries, policy admission.Policy, servicePayerOrgs []int64) (*admittedFlowLauncher, error) {
 	source, sourceOK := launcher.(flowhost.SourceResolver)
 	stopper, stopOK := launcher.(flowhost.RetirementStopper)
 	if queries == nil || policy == nil || !sourceOK || !stopOK {
 		return nil, errors.New("Flow launch requires admission, workspace queries, source and retirement authority")
 	}
-	return &admittedFlowLauncher{Launcher: launcher, SourceResolver: source, RetirementStopper: stopper, queries: queries, policy: policy}, nil
+	return &admittedFlowLauncher{Launcher: launcher, SourceResolver: source, RetirementStopper: stopper, queries: queries, policy: policy, servicePayerOrgs: slices.Clone(servicePayerOrgs)}, nil
 }
 
 func (l *admittedFlowLauncher) ConfigureFlowHost(ctx context.Context, launch flowhost.HostLaunch) (flowhost.HostLaunch, error) {
@@ -86,16 +89,17 @@ func (l *admittedFlowLauncher) StartFlowHost(ctx context.Context, launch flowhos
 	}
 	// The machine service owns a branch machine; its repository's payer is
 	// admitted, and the payer's exact-VM check names this machine (#3756,
-	// plue#839).
+	// plue#839). The service payer covers only the listed organizations.
 	repo, err := l.queries.GetRepoByID(ctx, workspace.RepositoryID)
 	if err != nil {
 		return flowhost.Connection{}, err
 	}
-	payer, err := services.RepositorySandboxPayer(ctx, repo, l.policy, l.queries)
+	payer, err := services.RepositorySandboxPayer(ctx, repo, l.policy, l.queries, l.servicePayerOrgs)
 	if err != nil {
 		return flowhost.Connection{}, err
 	}
-	if err := l.policy.AuthorizeCountedSandboxResume(sandbox.WithBillingOwner(ctx, payer), payer.ID, workspace.ID, workspace.VmID); err != nil {
+	payerCtx := sandbox.WithServicePayerOrgs(sandbox.WithBillingOwner(ctx, payer), l.servicePayerOrgs)
+	if err := l.policy.AuthorizeCountedSandboxResume(payerCtx, payer.ID, workspace.ID, workspace.VmID); err != nil {
 		return flowhost.Connection{}, err
 	}
 	return l.Launcher.StartFlowHost(ctx, launch)
@@ -277,6 +281,8 @@ type flowHostConfiguration struct {
 	targets flowHostEnvironment
 	queries *db.Queries
 	policy  admission.Policy
+	// servicePayerOrgs: billing.service_payer_org_ids (plue#839).
+	servicePayerOrgs []int64
 	// The install's coding seat, coding project and per-host seat pin
 	// (boxHostLauncher); nil keeps the catalog's.
 	codingModel    func(context.Context) (string, error)
@@ -293,7 +299,7 @@ func (c flowHostConfiguration) launcher(base flowhost.Launcher) (*admittedFlowLa
 	}
 	box := newBoxHostLauncher(hosts, c.boxes, c.targets)
 	box.codingModel, box.codingProject, box.pinCodingModel = c.codingModel, c.codingProject, c.pinCodingModel
-	return newAdmittedFlowLauncher(box, c.queries, c.policy)
+	return newAdmittedFlowLauncher(box, c.queries, c.policy, c.servicePayerOrgs)
 }
 
 // landingFlowHostKinds are the flow host kinds that publish their box's

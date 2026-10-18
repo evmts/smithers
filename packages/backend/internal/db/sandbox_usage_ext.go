@@ -37,7 +37,8 @@ WHERE a.user_id = $1 AND a.status = 'active'
 }
 
 // These parameters remain the public standalone-user resume contract. Trusted
-// repository attribution in ctx selects its payer without changing VM identity.
+// repository attribution in ctx selects its payer without changing VM identity,
+// and the organizations the machine service pays for (plue#839).
 type CountOtherActiveSandboxesForWorkspaceResumeParams struct {
 	UserID      int64  `json:"user_id"`
 	WorkspaceID string `json:"workspace_id"`
@@ -47,5 +48,5 @@ type CountOtherActiveSandboxesForWorkspaceResumeRow = CountOtherActiveSandboxesF
 
 func (q *Queries) CountOtherActiveSandboxesForWorkspaceResume(ctx context.Context, arg CountOtherActiveSandboxesForWorkspaceResumeParams) (CountOtherActiveSandboxesForWorkspaceResumeRow, error) {
 	owner := sandbox.BillingOwnerFromContext(ctx, arg.UserID)
-	return q.CountOtherActiveSandboxesForWorkspaceResumeRaw(ctx, CountOtherActiveSandboxesForWorkspaceResumeRawParams{UserID: owner.ID, OwnerType: owner.Type, WorkspaceID: arg.WorkspaceID, VmID: arg.VmID})
+	return q.CountOtherActiveSandboxesForWorkspaceResumeRaw(ctx, CountOtherActiveSandboxesForWorkspaceResumeRawParams{UserID: owner.ID, OwnerType: owner.Type, WorkspaceID: arg.WorkspaceID, VmID: arg.VmID, ServicePayerOrgIds: sandbox.ServicePayerOrgsFromContext(ctx)})
 }

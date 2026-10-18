@@ -732,6 +732,10 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	if options.InstallBranchMachines || options.RehearsalDaemon != "" {
 		billingPolicy = installMachineAdmissionPolicy{Policy: billingPolicy, start: services.NewMachineAdmissionPolicy(billingPolicy)}
 	}
+	if len(cfg.Billing.ServicePayerOrgIDs) > 0 {
+		// plue#839: these organizations' machines bill the machine service user.
+		slog.Info("machine service payer covers organizations", "org_ids", cfg.Billing.ServicePayerOrgIDs)
+	}
 	// Every attributed push is capped at, and recorded in, its owner's
 	// storage quota (smithersai/plue#593).
 	repoHostClient.SetPushMeter(services.NewGitStorageMeter(billingPolicy, queries))
@@ -1210,6 +1214,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		services.WithWorkspaceTransactions(pool),
 		services.WithTransactionalWorkspaceCleanup(options.CleanupClock),
 		services.WithWorkspaceBillingPolicy(billingPolicy),
+		services.WithWorkspaceServicePayerOrgs(cfg.Billing.ServicePayerOrgIDs),
 		services.WithWorkspaceAuditService(auditService),
 		services.WithWorkspaceSandboxClient(sandboxClient),
 		services.WithWorkspaceEgressAllowDomains(egressPolicyService),
@@ -2742,6 +2747,9 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		launchWorker(func() {
 			services.RunRuntimeMetricsCollector(workerCtx, queries, smithersMetrics, services.RuntimeMetricsInterval)
 		})
+		if duty := servicePayerUsageDuty(workerCtx, cfg, billingPolicy, queries, smithersMetrics); duty != nil {
+			launchWorker(duty)
+		}
 		if config.IsSingleOwner(cfg.Auth) || cfg.FeatureFlags.SubscriptionConnections {
 			launchWorker(func() { providerConnectionRefreshWorker.Start(workerCtx) })
 		}

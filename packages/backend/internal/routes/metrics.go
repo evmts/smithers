@@ -514,6 +514,16 @@ func (m *SmithersMetrics) AddSandboxHoursMeteringError() {
 	m.Sandbox.HoursMeteringErrorsTotal.Inc()
 }
 
+// SetSandboxPayerUsageRatio publishes a payer's use of one plan resource
+// (services.ServicePayerUsageObserver). payer and resource are closed source
+// constants.
+func (m *SmithersMetrics) SetSandboxPayerUsageRatio(payer, resource string, ratio float64) {
+	if m == nil || m.Sandbox == nil {
+		return
+	}
+	m.Sandbox.PayerUsageRatio.WithLabelValues(payer, resource).Set(ratio)
+}
+
 // ObserveSandboxVMSuspend records Microsandbox suspend/resume latency.
 func (m *SmithersMetrics) ObserveSandboxVMSuspend(seconds float64) {
 	if m == nil {
