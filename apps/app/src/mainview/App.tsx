@@ -1,3 +1,5 @@
+import { RepoFrame } from "./repository/RepoFrame"
+import { CodeHome } from "./repository/CodeHome"
 import { rememberComposerFocus, restoreComposerFocus } from "./runtime/ComposerFocus"
 import { useSharedConversation } from "./state/useSharedConversation"
 import { useTodoRole } from "./cards/TodoCard"
@@ -126,6 +128,7 @@ function AppContent() {
   const fileCards = useFileCardRows(collections.cards)
   const { data: identityRows } = useLiveQuery(collections.identitySessions)
   const { data: connectorRows } = useLiveQuery(collections.connectors)
+  const { data: repoTreeRows } = useLiveQuery(collections.repoTree)
   const { data: repositoryRows } = useLiveQuery(collections.repositories)
   const { data: repositoryFlowRows } = useLiveQuery(collections.repositoryFlows)
   /* The GitHub App's coverage of the URL's repository, when the entry read it. */
@@ -514,7 +517,7 @@ function AppContent() {
     </div>
   )
 
-  return (
+  const chat = (
     // data-flows is the live registry manifest (visible AND hidden names):
     // under commands-are-the-app the registry is not secret — the agent tool
     // lists it to the model — and the launch checklist verifies every
@@ -670,11 +673,11 @@ function AppContent() {
             {loginScreen && <MessageScrollerItem messageId="login" style={{ contentVisibility: "visible" }}>
               <LoginScreen onRunCommand={controller.runCommand} />
             </MessageScrollerItem>}
-            {repositoryHome !== undefined && !missingRepositoryScope && <MessageScrollerItem messageId={REPOSITORY_HOME_ENTRY_ID} style={{ contentVisibility: "visible" }}>
+            {bootRepository === null && repositoryHome !== undefined && !missingRepositoryScope && <MessageScrollerItem messageId={REPOSITORY_HOME_ENTRY_ID} style={{ contentVisibility: "visible" }}>
               <RepositoryHomeView repo={bootRepository!} home={repositoryHome} treeCopyId={homeTreeCopy}
                 onRunCommand={(flow, args) => controller.runCommand(flow, args)} />
             </MessageScrollerItem>}
-            {!earlier && !repositoryNotice && home && <MessageScrollerItem messageId={HOME_ENTRY_ID}>{homeCard}</MessageScrollerItem>}
+            {bootRepository === null && !earlier && !repositoryNotice && home && <MessageScrollerItem messageId={HOME_ENTRY_ID}>{homeCard}</MessageScrollerItem>}
             {!loginScreen && !repositoryNotice && <BranchNavigation saving={savingNavigation} onView={setBranchNavigationView} />}
             {!earlier && controller.sharedConversation && <SharedConversation source={controller.sharedConversation} localCardIds={new Set(visibleEntries.flatMap(entry => entry.kind === "card" ? [entry.card.id] : []))} localEntries={visibleEntries.map(entry => ({ id: entryId(entry), content: renderEntry(entry) }))} />}
             {!earlier && !controller.sharedConversation && visibleEntries.map(renderEntry)}
@@ -747,6 +750,18 @@ function AppContent() {
       <WikiDeleteDialog />
     </div>
   )
+  if (bootRepository === null || bootEntry?.phase !== "ready") return chat
+  const repository = repositoryRows.find(row => row.id.toLowerCase() === bootRepository.toLowerCase())
+  const rootRoute = window.location.pathname.replace(/\/$/, "") === `/${bootRepository}`
+  if (!rootRoute) return chat
+  return <RepoFrame repo={bootRepository} publicRepo={repository?.catalog === true}
+    login={identity?.state === "signed-in" ? identity.login ?? undefined : undefined}
+    member={identity?.state === "signed-in" && repository !== undefined && repository.catalog !== true}
+    onAsk={() => controller.runCommand("chat.open")} onSignIn={() => controller.runCommand("sign-in")} ask={chat}>
+    {<CodeHome repo={bootRepository} branch={repository?.head?.bookmark}
+      tree={repoTreeRows.find(row => row.copyId === homeTreeCopy && row.path === "")}
+      home={repositoryHome} summary={repository?.summary}/>}
+  </RepoFrame>
 }
 
 function App() {
