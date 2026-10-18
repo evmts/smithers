@@ -109,7 +109,9 @@ export const startHost = async (options: HostOptions = {}) => {
         const run = value.runs.find(run => run.journey === input.journey && run.mode === input.mode && run.revision === input.revision)
         const step = run?.steps[input.step]
         if (!step || input.assertions.some(index => !step.assertions[index])) return reply("Receipt changed; reload", 409)
-        const label = { ...input, by, at: new Date().toISOString() }
+        const disputed = input.assertions.map(index => ({ index, ...step.assertions[index] }))
+        const note = [input.note, ...disputed.map(assertion => `Assertion ${assertion.index + 1}: ${JSON.stringify(assertion)}`)].filter(Boolean).join("\n")
+        const label = { ...input, assertions: [], ...(note ? { note } : {}), by, at: new Date().toISOString() }
         const write = writes.then(() => appendFile(resolve(labelsDirectory, "journey.jsonl"), JSON.stringify(label) + "\n", { mode: 0o600 }))
         writes = write.catch(() => {})
         try { await write } catch { return reply("Label write failed", 500) }

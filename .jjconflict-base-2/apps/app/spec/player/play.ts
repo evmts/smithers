@@ -1,6 +1,7 @@
 import type { Journey } from "../journey"
 import type { RunResult } from "../results"
 import { checkpoint } from "./checkpoint"
+import { thumbs } from "./thumbs"
 
 export interface PlayerData {
   readonly journeys: Journey[]
@@ -47,7 +48,7 @@ export const play = (app: HTMLElement, data: PlayerData, definition: Journey) =>
   const mock = button("Mock", () => { pause(); mode = "mock"; walk = false; show() })
   const live = button("Live", () => { pause(); mode = "live"; walk = false; show() })
   const walking = button("Walk", () => { pause(); walk = !walk; show() })
-  const world = element("div"); world.className = "bar"; world.setAttribute("aria-label", "World")
+  const world = element("div"); world.id = "world"; world.className = "bar"; world.setAttribute("aria-label", "World")
   for (const [name, choices] of Object.entries({ as: ["out", "member"], data: ["full", "empty"], net: ["ok", "slow", "error"] })) {
     const label = element("label", name + " "); const select = element("select"); select.setAttribute("aria-label", name)
     for (const choice of choices) { const option = element("option", choice); option.value = choice; select.append(option) }
@@ -87,7 +88,8 @@ export const play = (app: HTMLElement, data: PlayerData, definition: Journey) =>
       } else layout.append(checklist, element("p", "Live unavailable"))
       stage.append(layout); return
     }
-    const run = runFor(); const receipt = run?.steps[index]
+    const variantChanged = mode === "mock" && Object.entries(variants).some(([key, value]) => value !== (definition.world.variant?.[key] ?? ({ as: "out", data: "full", net: "ok" } as Record<string, string>)[key]))
+    const run = variantChanged ? undefined : runFor(); const receipt = run?.steps[index]
     if (mode === "live") {
       if (receipt) {
         const image = element("img"); image.alt = `${step.caption} · Live`; image.src = `/__spec/capture?id=${encodeURIComponent(`${definition.id}:live:${index}`)}`
@@ -107,6 +109,7 @@ export const play = (app: HTMLElement, data: PlayerData, definition: Journey) =>
       details.append(summary, element("pre", `Expected ${JSON.stringify(assertion.expected)}\nActual ${JSON.stringify(assertion.actual)}${assertion.reason ? "\n" + assertion.reason : ""}`)); chip.append(details); chips.append(chip)
     }
     if (!receipt) chips.append(element("span", "No receipt"))
+    else if (run) thumbs(labels, chips, run, index, data.counts, status)
   }
   window.addEventListener("keydown", event => {
     if (event.ctrlKey || event.metaKey || event.altKey || (event.target as HTMLElement).closest("input,textarea,select,button,a,[contenteditable=true],summary")) return
