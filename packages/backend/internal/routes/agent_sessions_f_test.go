@@ -29,7 +29,7 @@ func TestAgentSessions_F_GuardBranches(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/repos/alice/demo/agent/sessions", nil)
 		rec := httptest.NewRecorder()
 		h.ListSessions(rec, req)
-		require.Equal(t, http.StatusUnauthorized, rec.Code)
+		require.Equal(t, http.StatusNotFound, rec.Code)
 	})
 
 	t.Run("ListSessions requires repo context", func(t *testing.T) {
@@ -54,7 +54,7 @@ func TestAgentSessions_F_GuardBranches(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/repos/alice/demo/agent/sessions/sess-1", nil)
 		rec := httptest.NewRecorder()
 		h.GetSession(rec, req)
-		require.Equal(t, http.StatusUnauthorized, rec.Code)
+		require.Equal(t, http.StatusNotFound, rec.Code)
 	})
 
 	t.Run("GetSession requires repo context", func(t *testing.T) {

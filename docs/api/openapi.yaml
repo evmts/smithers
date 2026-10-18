@@ -9476,7 +9476,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AnyJSON'
+                $ref: '#/components/schemas/AgentSessionRead'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -21911,7 +21911,10 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          description: Forbidden; hosted agent credentials return agent_credential_refused
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
         '404':
           $ref: '#/components/responses/NotFound'
         '422':
@@ -22450,6 +22453,68 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/repos/{owner}/{repo}/agent/sessions/{session_id}/landing:
+    post:
+      summary: Open a person's pull request from a coding turn
+      operationId: post_api_repos_owner_repo_agent_sessions_session_id_landing
+      tags:
+        - Repositories
+      description: Uses the recorded turn head. Never merges or changes main. Agent credentials and guests are refused.
+      parameters:
+        - {name: owner, in: path, required: true, schema: {type: string}}
+        - {name: repo, in: path, required: true, schema: {type: string}}
+        - {name: session_id, in: path, required: true, schema: {type: string}}
+      security:
+        - tokenAuth: []
+        - bearerAuth: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                reply_id: {type: integer, format: int64, minimum: 1}
+      responses:
+        '201':
+          description: Pull request opened
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionLanding'
+        '401':
+          description: sign_in_required
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '403':
+          description: guest_refused, push_permission_required, or agent_credential_refused
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '404':
+          description: session_not_found (missing or not owned by the caller)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '409':
+          description: head_receipt_mismatch or already_landed (details contains the existing SessionLanding)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '422':
+          description: no_coding_result or no_turn_head
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '429':
           $ref: '#/components/responses/RateLimited'
         '500':
@@ -26782,6 +26847,54 @@ components:
       scheme: bearer
       description: Shared first-party Worker secret from auth.worker_exchange_token / SMITHERS_AUTH_WORKER_EXCHANGE_TOKEN.
   schemas:
+    SessionLanding:
+      type: object
+      required: [landing_number, branch, pull_number, pull_url, head_commit, tested, passed]
+      properties:
+        landing_number: {type: integer, format: int64}
+        branch: {type: string}
+        pull_number: {type: integer, format: int64}
+        pull_url: {type: string, format: uri}
+        head_commit: {type: string, pattern: '^[0-9a-f]{40}$'}
+        tested: {type: boolean}
+        passed: {type: boolean, description: False for zero tests even when the command exits zero.}
+    AgentSessionRead:
+      type: object
+      required: [id, repository_id, user_id, title, status, message_count, created_at, updated_at, metadata, workspace, run, reason_code, reason, retryable]
+      properties:
+        id: {type: string}
+        repository_id: {type: integer, format: int64}
+        user_id: {type: integer, format: int64}
+        title: {type: string}
+        status: {type: string}
+        message_count: {type: integer, format: int64}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        metadata: {$ref: '#/components/schemas/AnyJSON'}
+        workspace_id: {type: string}
+        workspace:
+          oneOf:
+            - type: 'null'
+            - type: object
+              required: [id, name, status]
+              properties:
+                id: {type: string}
+                name: {type: string}
+                status: {type: string}
+        run:
+          oneOf:
+            - type: 'null'
+            - type: object
+              required: [id, status, model, started_at, finished_at]
+              properties:
+                id: {type: integer, format: int64}
+                status: {type: string}
+                model: {type: [string, 'null']}
+                started_at: {type: [string, 'null'], format: date-time}
+                finished_at: {type: [string, 'null'], format: date-time}
+        reason_code: {type: [string, 'null']}
+        reason: {type: [string, 'null']}
+        retryable: {type: boolean}
     AppBootstrap:
       type: object
       required:

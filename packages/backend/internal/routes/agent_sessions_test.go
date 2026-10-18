@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
@@ -175,7 +176,7 @@ func TestAgentSessionHandler_GetSession_VerifiesRepoScope(t *testing.T) {
 				return nil
 			},
 			getSessionFn: func(_ context.Context, sessionID string) (services.AgentSessionResponse, error) {
-				return services.AgentSessionResponse{ID: sessionID, Status: "active"}, nil
+				return services.AgentSessionResponse{ID: sessionID, UserID: 7, Status: "active"}, nil
 			},
 		},
 	}
@@ -677,6 +678,7 @@ func TestAgentSessionHandler_GetSession_IncludesMessageCount(t *testing.T) {
 			getSessionFn: func(_ context.Context, sessionID string) (services.AgentSessionResponse, error) {
 				return services.AgentSessionResponse{
 					ID:           sessionID,
+					UserID:       7,
 					Status:       "completed",
 					MessageCount: 15,
 				}, nil
@@ -725,7 +727,7 @@ func TestAgentSessionHandler_DeleteThenGet_Returns404(t *testing.T) {
 			return nil
 		},
 		getSessionFn: func(_ context.Context, id string) (services.AgentSessionResponse, error) {
-			return services.AgentSessionResponse{ID: id, Status: "active"}, nil
+			return services.AgentSessionResponse{ID: id, UserID: 7, Status: "active"}, nil
 		},
 	}
 	handler := &AgentSessionHandler{Service: svc}
@@ -886,4 +888,43 @@ func TestAgentSessionHandler_PostMessage_ConflictWhenSessionHasActiveRun(t *test
 	require.Equal(t, http.StatusConflict, rec.Code)
 	assert.False(t, appendCalled)
 	assert.True(t, admissionCalled)
+}
+
+func TestAgentSessionReadOwnerBoundary(t *testing.T) {
+	for _, owner := range []int64{7, 8} {
+		handler := &AgentSessionHandler{Service: &mockAgentSessionRouteService{getSessionFn: func(context.Context, string) (services.AgentSessionResponse, error) {
+			return services.AgentSessionResponse{ID: "session", UserID: owner}, nil
+		}}}
+		req := withRepoCtx(withAuth(withRouteParams(httptest.NewRequest("GET", "/", nil), map[string]string{"id": "session"}), 7, "alice"), 101, "alice", "demo")
+		rec := httptest.NewRecorder()
+		handler.GetSession(rec, req)
+		if owner == 7 {
+			require.Equal(t, 200, rec.Code)
+		} else {
+			require.Equal(t, 404, rec.Code)
+		}
+	}
+}
+
+func TestAgentSessionPublicMessageRejectsCodingResultProducer(t *testing.T) {
+	h := &AgentSessionHandler{Service: &mockAgentSessionRouteService{appendMessageFn: func(context.Context, string, string, []db.CreateAgentPartParams) (services.AgentMessageResponse, error) {
+		t.Fatal("untrusted receipt persisted")
+		return services.AgentMessageResponse{}, nil
+	}}}
+	req := httptest.NewRequest("POST", "/", strings.NewReader(`{"role":"assistant","parts":[{"type":"coding_result","content":{"producer":"smithers-server","head_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}]}`))
+	req = withRepoCtx(withAuth(withRouteParams(req, map[string]string{"id": "session"}), 7, "alice"), 101, "alice", "demo")
+	rec := httptest.NewRecorder()
+	h.PostMessage(rec, req)
+	require.Equal(t, 400, rec.Code)
+}
+
+func TestAgentSessionReadGuestRefused(t *testing.T) {
+	h := &AgentSessionHandler{Service: &mockAgentSessionRouteService{}}
+	for _, handle := range []func(http.ResponseWriter, *http.Request){h.GetSession, h.ListSessions} {
+		req := withRepoCtx(withAuth(withRouteParams(httptest.NewRequest("GET", "/", nil), map[string]string{"id": "session"}), 7, "guest"), 101, "alice", "demo")
+		middleware.UserFromContext(req.Context()).UserType = "guest"
+		rec := httptest.NewRecorder()
+		handle(rec, req)
+		require.Equal(t, 404, rec.Code)
+	}
 }

@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"net/http"
 	"strings"
 
@@ -259,6 +260,13 @@ func (a *AuthInfo) IsRunCredential() bool {
 // user). It takes no person's decision and holds no administrator's power.
 func (a *AuthInfo) IsAgent() bool {
 	return a.IsRunCredential() || a != nil && a.User != nil && IsAgentAccount(a.User.UserType)
+}
+
+// IsAgentCredential is the session-publication classifier, shared by every
+// PR-publication boundary. System-issued tokens act for their owner, never as
+// the person making a publication decision.
+func IsAgentCredential(ctx context.Context, actor *db.User) bool {
+	return AgentTokenFromContext(ctx) != "" || AuthInfoFromContext(ctx).IsAgent() || actor != nil && IsAgentAccount(actor.UserType)
 }
 
 // RequirePerson refuses a run credential on a decision only a person may
