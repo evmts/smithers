@@ -45,3 +45,12 @@ test("a late page from another ref cannot replace the current history", async ()
   expect(host.textContent).toContain("Current branch")
   expect(host.textContent).not.toContain("Stale branch")
 })
+test("leaving an unresolved history page aborts its read", async () => {
+  let signal: AbortSignal | null | undefined
+  const reads = createHistoryReads(async (_path, init) => { signal = init?.signal; return new Promise(() => {}) })
+  const host = document.createElement("div"), root = createRoot(host)
+  await act(async () => root.render(<CommitsView repo="ada/widgets" reads={reads} reference="old"/>))
+  expect(signal?.aborted).toBe(false)
+  await act(async () => root.unmount())
+  expect(signal?.aborted).toBe(true)
+})

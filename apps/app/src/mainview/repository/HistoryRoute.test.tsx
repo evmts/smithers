@@ -16,3 +16,12 @@ test("commits deep link resolves the longest authoritative ref and navigates a r
   await act(async () => host.querySelector<HTMLAnchorElement>("a")!.dispatchEvent(Object.assign(new Event("click", { bubbles: true, cancelable: true }), { button: 0 })))
   expect(repositoryRouter().getSnapshot()?.subject).toEqual({ kind: "commit", sha })
 })
+test("commit deep link renders the exact immutable commit", async () => {
+  const sha = "a".repeat(40)
+  window.location.href = `https://smithers.sh/ada/widgets/commit/${sha}`
+  const reads = createHistoryReads(async () => ({ sha, short_sha: "aaaaaaa", title: "Deep linked commit", body: "", author: "Ada", authored_at: "2026-10-18T12:00:00Z", committed_at: "2026-10-18T12:00:00Z", parents: [], files: [] }))
+  const host = document.createElement("div"), root = createRoot(host)
+  await act(async () => root.render(<HistoryRoute reads={reads}/>))
+  expect(host.textContent).toContain("Deep linked commit")
+  expect(host.querySelector("a")?.getAttribute("href")).toBe(`/ada/widgets/tree/${sha}`)
+})

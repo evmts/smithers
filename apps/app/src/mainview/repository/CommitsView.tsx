@@ -12,7 +12,7 @@ export function CommitsView({ repo, reads, reference, path, cursor, onPage, refs
   onPage?: (cursor: string) => void; refs?: readonly string[]
 }) {
   const result = useHistoryRead(reads, JSON.stringify([repo, "commits", reference, path, cursor]),
-    () => reads.commits(repo, reference, path, cursor))
+    signal => reads.commits(repo, reference, path, cursor, signal))
   const groups = new Map<string, NonNullable<typeof result.value>["items"]>()
   for (const item of result.value?.items ?? []) {
     const day = item.committed_at.slice(0, 10)

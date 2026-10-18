@@ -3,14 +3,16 @@ import { resolveRefLocation } from "@smthrs/rpc/RepositorySubjectPath"
 import { getSnapshot, subscribe } from "../RepositoryRouter"
 import { loadRuntimeApplicationClient } from "../runtime/ApplicationTransport"
 import { createHistoryReads, useHistoryRead, type HistoryReads } from "./HistoryReads"
+import { CommitView } from "./CommitView"
 import { CommitsView, ReadState } from "./CommitsView"
 
-export const isHistorySubject = (subject?: { kind: string }) => subject?.kind === "commits"
+export const isHistorySubject = (subject?: { kind: string }) => subject?.kind === "commits" || subject?.kind === "commit"
 
 export const runtimeHistoryReads = createHistoryReads(async (path, init) => (await loadRuntimeApplicationClient()).request(path, init))
 /** Content-slot adapter for SP-1; uses the boot router's subject subscription. */
 export function HistoryRoute({ reads = runtimeHistoryReads, defaultBranch, refs = [] }: { reads?: HistoryReads; defaultBranch?: string; refs?: readonly string[] }) {
   const target = useSyncExternalStore(subscribe, getSnapshot, () => null)
+  if (target?.subject?.kind === "commit") return <CommitView repo={target.repo} sha={target.subject.sha} reads={reads}/>
   if (!target || target.subject?.kind !== "commits") return null
   return <CommitsRoute repo={target.repo} location={target.subject.location} reads={reads} defaultBranch={defaultBranch} refs={refs}/>
 }

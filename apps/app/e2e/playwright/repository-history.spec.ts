@@ -29,3 +29,32 @@ for (const width of [1440, 1280, 390]) for (const theme of ["light", "dark"] as 
     await expect(content).toContainText("No commits found.")
   })
 }
+for (const width of [1440, 1280, 390]) for (const theme of ["light", "dark"] as const) {
+  test(`commit ${width} ${theme}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
+    await page.emulateMedia({ colorScheme: theme })
+    await signedOutVisitor(page)
+    await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [{ name: "ada/widgets" }] } }))
+    await page.route("**/api/repos/ada/widgets", route => route.fulfill({ json: { is_public: true, default_bookmark: "main" } }))
+    await page.route("**/api/repos/ada/widgets/commits/*", route => route.fulfill({ json: { ...commit, parents: ["b".repeat(40)], files: [{ path: "src/router.ts", status: "modified", additions: 3, deletions: 2 }] } }))
+    await page.goto(`/ada/widgets/commit/${sha}`)
+    const content = page.locator("#repo-content")
+    await expect(content.getByRole("heading", { name: commit.title, exact: true })).toBeVisible()
+    await expect(content).toContainText(commit.body)
+    await expect(content).toContainText("Ada")
+    await expect(content.getByRole("heading", { name: "1 changed file" })).toBeVisible()
+    await expect(content.getByRole("link", { name: "bbbbbbb", exact: true })).toHaveAttribute("href", `/ada/widgets/commit/${"b".repeat(40)}`)
+    await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await page.screenshot({ path: `${process.env.HOME}/smithers-lanes/out/pl-p2-history/shots/history-commit-human-${width}-${theme}.png` })
+    const controls = content.locator("a,button")
+    await controls.first().focus()
+    for (let i = 0; i < await controls.count(); i++) { await expect(controls.nth(i)).toBeFocused(); await page.keyboard.press("Tab") }
+    await page.evaluate(() => { (window as unknown as { historyProof: boolean }).historyProof = true })
+    await content.getByRole("link", { name: "bbbbbbb", exact: true }).press("Enter")
+    await expect(page).toHaveURL(new RegExp(`/commit/${"b".repeat(40)}$`))
+    expect(await page.evaluate(() => (window as unknown as { historyProof: boolean }).historyProof)).toBe(true)
+    await page.reload()
+    await expect(content.getByRole("heading", { name: commit.title, exact: true })).toBeVisible()
+  })
+}
