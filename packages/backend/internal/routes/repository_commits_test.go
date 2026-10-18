@@ -70,6 +70,22 @@ func TestRepositoryCommitRoutes(t *testing.T) {
 	for _, path := range []string{"/commits?ref=" + tip + "&limit=0", "/commits?ref=" + tip + "&cursor=bad"} {
 		require.Equal(t, 400, get(path).Code)
 	}
+
+	movedTree := writeNotesObject(t, dir, "tree", append([]byte("100644 moved.txt\x00"), blob...))
+	moved := writeNotesObject(t, dir, "commit", []byte(fmt.Sprintf("tree %x\nparent %x\nauthor Ada <ada@example.invalid> 1711398855 +0000\ncommitter Ada <ada@example.invalid> 1711398855 +0000\n\nRename\n", movedTree, second)))
+	renamed := get("/commits/" + hex.EncodeToString(moved))
+	require.Equal(t, 200, renamed.Code, renamed.Body.String())
+	require.NoError(t, json.Unmarshal(renamed.Body.Bytes(), &detail))
+	require.Len(t, detail.Files, 1)
+	require.Equal(t, "renamed", detail.Files[0].Status)
+	require.Equal(t, "moved.txt", detail.Files[0].Path)
+	emptyTree := writeNotesObject(t, dir, "tree", nil)
+	deleted := writeNotesObject(t, dir, "commit", []byte(fmt.Sprintf("tree %x\nparent %x\nauthor Ada <ada@example.invalid> 1711398856 +0000\ncommitter Ada <ada@example.invalid> 1711398856 +0000\n\nDelete\n", emptyTree, moved)))
+	history := get("/commits?ref=" + hex.EncodeToString(deleted) + "&path=moved.txt")
+	require.Equal(t, 200, history.Code, history.Body.String())
+	require.NoError(t, json.Unmarshal(history.Body.Bytes(), &page))
+	require.Len(t, page.Items, 3)
+	require.Equal(t, "Initial", page.Items[2].Title)
 	q.repository.IsPublic = false
 	require.Equal(t, 403, get("/commits?ref="+tip).Code)
 	require.Equal(t, 403, get("/commits/"+tip).Code)
