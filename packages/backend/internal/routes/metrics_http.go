@@ -1,6 +1,10 @@
 package routes
 
-import "github.com/prometheus/client_golang/prometheus"
+import (
+	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/smithersai/smithers/packages/backend/internal/database"
+)
 
 // HTTPMetrics holds Prometheus metrics for HTTP request handling, SSE connections,
 // database query instrumentation, git-over-HTTP operations, and client-reported errors.
@@ -63,13 +67,18 @@ type HTTPMetrics struct {
 	// process admits at once, derived from its database pool's real size.
 	WorkspaceProvisionClaimBudget prometheus.Gauge
 
-	// CorePoolDutyConnectionsHeld tracks how many core-pool connections each
-	// serving background duty is holding right now.
-	CorePoolDutyConnectionsHeld *prometheus.GaugeVec
+	// CorePoolDutyHolds publishes how many core-pool connections each serving
+	// background duty is holding right now, and for how long the oldest.
+	CorePoolDutyHolds *database.CorePoolDutyHolds
 
 	// CorePoolDutyStallsTotal counts the core-pool bounds that refused, by
 	// duty and by the stage the bound belongs to.
 	CorePoolDutyStallsTotal *prometheus.CounterVec
+
+	// AdvisoryLockWaitsTotal counts session advisory lock waits by duty and
+	// how they ended; AdvisoryLockWaitSeconds is how long each one took.
+	AdvisoryLockWaitsTotal  *prometheus.CounterVec
+	AdvisoryLockWaitSeconds *prometheus.HistogramVec
 }
 
 // NewHTTPMetrics creates a new HTTPMetrics instance and registers all metrics
@@ -203,19 +212,31 @@ func NewHTTPMetrics(reg prometheus.Registerer) *HTTPMetrics {
 			Name: "smithers_workspace_provision_claim_budget",
 			Help: "Concurrent workspace provisioning claims this process admits, derived from its database pool size.",
 		}),
-		CorePoolDutyConnectionsHeld: prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: "smithers_core_pool_duty_connections_held",
-				Help: "Core-pool database connections held right now by each serving background duty.",
-			},
-			[]string{"duty"},
-		),
+		CorePoolDutyHolds: database.NewCorePoolDutyHolds(),
 		CorePoolDutyStallsTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "smithers_core_pool_duty_stalls_total",
 				Help: "Total core-pool acquire or hold bounds that refused, labeled by background duty and stage.",
 			},
 			[]string{"duty", "stage"},
+		),
+		// A blocking advisory lock wait held a connection and a snapshot for as
+		// long as another replica kept the lock, and recorded nothing (plue#839).
+		// Every wait now ends at a written bound, and these say how.
+		AdvisoryLockWaitsTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "smithers_db_advisory_lock_waits_total",
+				Help: "Session advisory lock waits, labeled by background duty and outcome (acquired, busy, no_connection, cancelled, failed).",
+			},
+			[]string{"duty", "outcome"},
+		),
+		AdvisoryLockWaitSeconds: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    "smithers_db_advisory_lock_wait_seconds",
+				Help:    "How long each session advisory lock wait took, whatever its outcome, by background duty.",
+				Buckets: []float64{0.005, 0.025, 0.1, 0.5, 1, 2.5, 5, 15, 60, 300, 600},
+			},
+			[]string{"duty"},
 		),
 	}
 
@@ -240,8 +261,10 @@ func NewHTTPMetrics(reg prometheus.Registerer) *HTTPMetrics {
 			m.AuthOperationsTotal,
 			m.WorkspaceLifecycleTotal,
 			m.WorkspaceProvisionClaimBudget,
-			m.CorePoolDutyConnectionsHeld,
+			m.CorePoolDutyHolds,
 			m.CorePoolDutyStallsTotal,
+			m.AdvisoryLockWaitsTotal,
+			m.AdvisoryLockWaitSeconds,
 		)
 	}
 

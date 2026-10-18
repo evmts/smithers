@@ -277,6 +277,7 @@ type corePoolDutyRecorder struct {
 	held   map[string]float64
 	peak   map[string]float64
 	stalls map[string]map[string]int
+	waits  map[string]map[string]int
 }
 
 func newCorePoolDutyRecorder() *corePoolDutyRecorder {
@@ -284,6 +285,7 @@ func newCorePoolDutyRecorder() *corePoolDutyRecorder {
 		held:   map[string]float64{},
 		peak:   map[string]float64{},
 		stalls: map[string]map[string]int{},
+		waits:  map[string]map[string]int{},
 	}
 }
 
@@ -293,13 +295,41 @@ func (r *corePoolDutyRecorder) SetWorkspaceProvisionClaimBudget(claims float64) 
 	r.budget = claims
 }
 
-func (r *corePoolDutyRecorder) AddCorePoolDutyHeld(duty string, delta float64) {
+func (r *corePoolDutyRecorder) BeginCorePoolDutyHold(duty string) (end func()) {
+	r.addHeld(duty, 1)
+	return func() { r.addHeld(duty, -1) }
+}
+
+func (r *corePoolDutyRecorder) addHeld(duty string, delta float64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.held[duty] += delta
 	if r.held[duty] > r.peak[duty] {
 		r.peak[duty] = r.held[duty]
 	}
+}
+
+func (r *corePoolDutyRecorder) ObserveAdvisoryLockWait(duty, outcome string, _ float64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.waits[duty] == nil {
+		r.waits[duty] = map[string]int{}
+	}
+	r.waits[duty][outcome]++
+}
+
+// waitCount is how many advisory lock waits by duty ended with outcome.
+func (r *corePoolDutyRecorder) waitCount(duty, outcome string) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.waits[duty][outcome]
+}
+
+// heldByName is heldNow for a duty named outside this package (flowhost's).
+func (r *corePoolDutyRecorder) heldByName(duty string) float64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.held[duty]
 }
 
 func (r *corePoolDutyRecorder) ObserveCorePoolDutyStall(duty, stage string) {

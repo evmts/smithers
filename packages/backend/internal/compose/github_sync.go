@@ -75,10 +75,10 @@ func composeGitHubInstallAuthority(synced *services.GitHubSyncedRepoService, cre
 }
 
 // Pull, reset and merge dispatch share a repository operation lock.
-func composeGitHubMainReset(pool *pgxpool.Pool, stack *services.MythicalService, main *services.GitHubMainPullService, topology topology) {
+func composeGitHubMainReset(pool *pgxpool.Pool, stack *services.MythicalService, main *services.GitHubMainPullService, topology topology, duties services.CorePoolDutyObserver) {
 	if topology.hosted() {
 		return
 	}
-	journal := &services.GitHubMainResetJournal{Pool: pool, Stack: stack}
+	journal := &services.GitHubMainResetJournal{Pool: pool, Stack: stack, Duties: duties}
 	main.SetMainSerialization(journal)
 }

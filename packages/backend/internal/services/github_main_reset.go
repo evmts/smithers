@@ -207,36 +207,44 @@ func (s *GitHubMainPullService) RecoverMainResets(ctx context.Context) error {
 		if intent.RepositoryID <= 0 || intent.ID == "" || intent.Old == intent.New || !repositorySourceSHA.MatchString(intent.Old) || !repositorySourceSHA.MatchString(intent.New) {
 			return githubSyncUnavailable()
 		}
-		err := s.mainSerialization.WithRepository(ctx, intent.RepositoryID, func(fence GitHubMainFence) error {
-			if fence == nil {
-				return githubSyncUnavailable()
-			}
-			repository, err := s.store.GetRepoByID(ctx, intent.RepositoryID)
-			if err != nil {
-				return err
-			}
-			owner, err := repositoryOwnerName(ctx, s.store, repository)
-			if err != nil {
-				return err
-			}
-			branch := repository.DefaultBookmark
-			if branch == "" {
-				branch = "main"
-			}
-			tip, err := s.bookmarkCommit(ctx, owner, repository.Name, branch)
-			if err != nil {
-				return err
-			}
-			if tip == intent.New {
-				return fence.Settle(ctx, intent)
-			}
-			return fence.LeaveOpen(ctx, intent)
-		})
-		if err != nil {
+		if err := s.recoverMainReset(ctx, intent); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// recoverMainReset runs one recovery under the same bound as a pull, so it
+// cannot hold the repository's operation lock, or a nested connection under
+// it, for longer than any other operation on that repository (plue#839).
+func (s *GitHubMainPullService) recoverMainReset(parent context.Context, intent GitHubMainResetIntent) error {
+	ctx, cancel := context.WithTimeout(parent, gitHubMainPullTimeout)
+	defer cancel()
+	return s.mainSerialization.WithRepository(ctx, intent.RepositoryID, func(fence GitHubMainFence) error {
+		if fence == nil {
+			return githubSyncUnavailable()
+		}
+		repository, err := s.store.GetRepoByID(ctx, intent.RepositoryID)
+		if err != nil {
+			return err
+		}
+		owner, err := repositoryOwnerName(ctx, s.store, repository)
+		if err != nil {
+			return err
+		}
+		branch := repository.DefaultBookmark
+		if branch == "" {
+			branch = "main"
+		}
+		tip, err := s.bookmarkCommit(ctx, owner, repository.Name, branch)
+		if err != nil {
+			return err
+		}
+		if tip == intent.New {
+			return fence.Settle(ctx, intent)
+		}
+		return fence.LeaveOpen(ctx, intent)
+	})
 }
 
 func (g cliGitHubMainPullGit) Reset(ctx context.Context, dir, mirrorURL, old, new, ref string) error {

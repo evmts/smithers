@@ -79,6 +79,8 @@ type Resolver struct {
 	catalogs                    map[string]Catalog
 	activeRuns                  ActiveRuns
 	journals                    Journals
+	// leaseHoldBudget is bindingLeaseHoldBudget; a test shortens it.
+	leaseHoldBudget time.Duration
 }
 
 func New(config Config) (*Resolver, error) {
@@ -100,7 +102,8 @@ func New(config Config) (*Resolver, error) {
 		return nil, errors.New("flow host resolver requires at least one catalog")
 	}
 	return &Resolver{store: config.Store, targets: config.Targets, launcher: config.Launcher, catalogs: catalogs,
-		activeRuns: config.ActiveRuns, journals: config.Journals, allowTrustedProcessForTests: config.AllowTrustedProcessForTests}, nil
+		activeRuns: config.ActiveRuns, journals: config.Journals, allowTrustedProcessForTests: config.AllowTrustedProcessForTests,
+		leaseHoldBudget: bindingLeaseHoldBudget}, nil
 }
 
 func validateCatalog(catalog Catalog) (Catalog, error) {
@@ -239,6 +242,11 @@ func (resolver *Resolver) resolve(ctx context.Context, target flowruntime.Target
 	if !ok {
 		return nil, failure{code: "runtime_catalog_unavailable"}
 	}
+	// Everything from the lease's acquire to its close runs under one written
+	// bound: the lock wait and every nested acquire made while the lease holds
+	// its connection. See bindingLeaseHoldBudget.
+	ctx, endHold := context.WithTimeoutCause(ctx, resolver.leaseHoldBudget, errBindingLeaseHoldBudget)
+	defer endHold()
 	acquire := resolver.store.Acquire
 	if existingOnly {
 		store, ok := resolver.store.(ExistingBindingStore)

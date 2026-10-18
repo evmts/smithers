@@ -21,6 +21,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/flowhost"
 	"github.com/smithersai/smithers/packages/backend/flowruntime"
 	"github.com/smithersai/smithers/packages/backend/internal/config"
+	"github.com/smithersai/smithers/packages/backend/internal/database"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/jobs"
@@ -36,6 +37,19 @@ type flowComposition struct {
 	bindings   *flowhost.Store
 	stopper    flowhost.RetirementStopper
 	archive    *runArchive
+	journals   *flowhost.PostgresJournals
+}
+
+// observeCorePoolDuties publishes the binding lease, capture, retirement and
+// journal locks' holds and waits beside the product's other core-pool duties.
+func (flow *flowComposition) observeCorePoolDuties(observer database.CorePoolDutyObserver) {
+	if flow == nil {
+		return
+	}
+	flow.bindings.ObserveCorePoolDuties(observer)
+	if flow.journals != nil {
+		flow.journals.ObserveCorePoolDuties(observer)
+	}
 }
 
 func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Pool, codec flowhost.SecretCodec, agents *services.AgentService, repositoryJobs *services.RepositoryJobService, policy admission.Policy, mythical *services.MythicalService, boxes boxHostPreparer, invoked *services.InvokedFlowService, presence ...*branchPresence) (*flowComposition, error) {
@@ -184,6 +198,7 @@ func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Po
 			flowruntime.Identity{RuntimeArtifactDigest: host.RuntimeArtifactDigest, SourceRevision: host.SourceRevision})
 	})
 	var journals flowhost.Journals
+	var postgresJournals *flowhost.PostgresJournals
 	if address := strings.TrimSpace(cfg.Sandbox.FlowJournalPostgresURL); address != "" {
 		postgres, err := flowhost.NewPostgresJournals(context.Background(), pool, address, flowhost.JournalKey(cfg.Webhook.SecretEncryptionKey))
 		if err != nil {
@@ -194,7 +209,7 @@ func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Po
 			return nil, errors.New("Flow journals need the workspace service to drop deleted workspaces' journals")
 		}
 		owner.SetFlowJournals(postgres)
-		journals = postgres
+		journals, postgresJournals = postgres, postgres
 	}
 	// Both resolvers share this configuration. They differ only in the targets
 	// they authorize and the runtime under their launcher.
@@ -355,7 +370,7 @@ func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Po
 		return services.FlowHostMachineInitialized(ctx, db.New(pool), runtime, current)
 	})
 
-	return &flowComposition{pool: pool, review: review, jobs: store, dispatcher: dispatcher, bindings: bindings, stopper: stopper, archive: archive}, nil
+	return &flowComposition{pool: pool, review: review, jobs: store, dispatcher: dispatcher, bindings: bindings, stopper: stopper, archive: archive, journals: postgresJournals}, nil
 }
 
 // initializationAuthorityChanged reports whether the authority a host was

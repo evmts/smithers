@@ -5,11 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/smithersai/smithers/packages/backend/internal/database"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 )
 
@@ -31,7 +32,14 @@ type GitHubMainStackContracts interface {
 type GitHubMainResetJournal struct {
 	Pool  *pgxpool.Pool
 	Stack GitHubMainStackContracts
+	// Duties, when set, publishes the operation lock's waits and holds.
+	Duties CorePoolDutyObserver
 }
+
+// gitHubMainOperationLockWait bounds how long a pull, reset or recovery waits
+// for another replica's operation on the same repository. A holder's own run
+// is bounded by gitHubMainPullTimeout, so a waiter outlasts any healthy one.
+const gitHubMainOperationLockWait = gitHubMainPullTimeout
 
 var errMainResetIntentMissing = errors.New("reset intent already retired")
 
@@ -52,29 +60,19 @@ func (j *GitHubMainResetJournal) WithRepository(ctx context.Context, repository 
 	if err := j.ready(ctx); err != nil {
 		return err
 	}
-	conn, err := j.Pool.Acquire(ctx)
+	// Session lock survives the intent transaction's commit and the ref transfer.
+	// Namespacing avoids the stack worker's nested placement/factory locks. A
+	// waiter holds no connection and no snapshot (plue#839), and the key is the
+	// transaction-scoped lock's below, so both still exclude each other.
+	lock, err := database.AcquireSessionLock(ctx, j.Pool, database.SessionLockRequest{
+		Duty: string(corePoolDutyGitHubMainOperation), Key: "github_main_operation:" + fmt.Sprint(repository),
+		Wait: gitHubMainOperationLockWait, Observer: j.Duties,
+	})
 	if err != nil {
 		return err
 	}
-	// Session lock survives the intent transaction's commit and the ref transfer.
-	// Namespacing avoids the stack worker's nested placement/factory locks.
-	if _, err = conn.Exec(ctx, `SELECT pg_advisory_lock(hashtextextended('github_main_operation:' || $1::text,0))`, fmt.Sprint(repository)); err != nil {
-		// A cancelled lock acquisition can have acquired just before cancellation.
-		// Never return a possibly locked connection to the pool.
-		_ = conn.Hijack().Close(context.Background())
-		return err
-	}
-	defer func() {
-		release, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		var unlocked bool
-		if err := conn.QueryRow(release, `SELECT pg_advisory_unlock(hashtextextended('github_main_operation:' || $1::text,0))`, fmt.Sprint(repository)).Scan(&unlocked); err != nil || !unlocked {
-			_ = conn.Hijack().Close(release)
-		} else {
-			conn.Release()
-		}
-	}()
-	return run(&githubMainJournalFence{j, conn, repository})
+	defer func() { _ = lock.Release() }()
+	return run(&githubMainJournalFence{j, lock.Conn(), repository})
 }
 
 func (j *GitHubMainResetJournal) Pending(ctx context.Context) ([]GitHubMainResetIntent, error) {

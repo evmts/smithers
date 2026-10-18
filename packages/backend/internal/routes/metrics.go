@@ -654,13 +654,23 @@ func (m *SmithersMetrics) SetWorkspaceProvisionClaimBudget(claims float64) {
 	m.HTTP.WorkspaceProvisionClaimBudget.Set(claims)
 }
 
-// AddCorePoolDutyHeld moves the core-pool connections one serving background
-// duty is holding. duty is a closed source constant.
-func (m *SmithersMetrics) AddCorePoolDutyHeld(duty string, delta float64) {
+// BeginCorePoolDutyHold records one core-pool connection a serving background
+// duty holds until the returned end runs. duty is a closed source constant.
+func (m *SmithersMetrics) BeginCorePoolDutyHold(duty string) (end func()) {
+	if m == nil {
+		return func() {}
+	}
+	return m.HTTP.CorePoolDutyHolds.Begin(duty)
+}
+
+// ObserveAdvisoryLockWait records how one session advisory lock wait ended and
+// how long it took. duty and outcome are closed source constants.
+func (m *SmithersMetrics) ObserveAdvisoryLockWait(duty, outcome string, seconds float64) {
 	if m == nil {
 		return
 	}
-	m.HTTP.CorePoolDutyConnectionsHeld.WithLabelValues(duty).Add(delta)
+	m.HTTP.AdvisoryLockWaitsTotal.WithLabelValues(duty, outcome).Inc()
+	m.HTTP.AdvisoryLockWaitSeconds.WithLabelValues(duty).Observe(seconds)
 }
 
 // ObserveCorePoolDutyStall records a core-pool bound that refused. duty and

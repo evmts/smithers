@@ -4,8 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/smithersai/smithers/packages/backend/internal/database"
 )
 
 // RetirementStopper stops the exact managed service identified by the durable
@@ -49,18 +53,48 @@ func (store *Store) PrepareWorkspaceCapture(ctx context.Context, workspace strin
 	return nil
 }
 
-func (store *Store) prepareHostCapture(ctx context.Context, workspace, id, catalog string, stopper RetirementStopper, active ActiveRuns) error {
-	connection, err := store.pool.Acquire(ctx)
+// bindingMaintenanceHoldBudget bounds one capture or retirement from its lock
+// to its last write. Under the binding lock it reads pinned runs through the
+// same pool and asks the runtime to stop the host, so without a bound a full
+// pool or a stuck runtime would keep the connection and the lock (plue#839).
+const bindingMaintenanceHoldBudget = 2 * time.Minute
+
+// errBindingMaintenanceHoldBudget is the cause of a capture or retirement that
+// ran past bindingMaintenanceHoldBudget.
+var errBindingMaintenanceHoldBudget = errors.New("flow host capture or retirement exceeded its hold budget")
+
+// holdBindingForMaintenance takes a binding's owner lock for a capture or a
+// retirement. It never waits out a host start: a lock held past
+// existingLockWait is ErrHostBusy, and the caller's next pass retries. The
+// returned context bounds the work under the lock; end releases both.
+func (store *Store) holdBindingForMaintenance(parent context.Context, duty, workspace, catalog string) (context.Context, *lease, func(), error) {
+	ctx, cancel := context.WithTimeoutCause(parent, bindingMaintenanceHoldBudget, errBindingMaintenanceHoldBudget)
+	lock, err := store.lockBinding(ctx, duty, bindingLockKey(Authority{WorkspaceID: workspace}, Catalog{Key: catalog}), existingLockWait)
+	if err != nil {
+		cancel()
+		if errors.Is(err, ErrHostBusy) {
+			return nil, nil, nil, fmt.Errorf("flow host %s: %w", strings.TrimPrefix(duty, "flowhost_"), ErrHostBusy)
+		}
+		return nil, nil, nil, err
+	}
+	held := &lease{store: store, lock: lock, connection: lock.Conn()}
+	end := func() {
+		if errors.Is(context.Cause(ctx), errBindingMaintenanceHoldBudget) && store.duties != nil {
+			store.duties.ObserveCorePoolDutyStall(duty, database.CorePoolStageLockedWork)
+		}
+		_ = held.Close()
+		cancel()
+	}
+	return ctx, held, end, nil
+}
+
+func (store *Store) prepareHostCapture(parent context.Context, workspace, id, catalog string, stopper RetirementStopper, active ActiveRuns) error {
+	ctx, held, end, err := store.holdBindingForMaintenance(parent, dutyCapture, workspace, catalog)
 	if err != nil {
 		return err
 	}
-	key := bindingLockKey(Authority{WorkspaceID: workspace}, Catalog{Key: catalog})
-	if _, err := connection.Exec(ctx, `SELECT pg_advisory_lock(hashtextextended($1,0))`, key); err != nil {
-		closeLockedConnection(connection)
-		return err
-	}
-	held := &lease{store: store, connection: connection, lockKey: key}
-	defer held.Close()
+	defer end()
+	connection := held.connection
 	binding, _, _, err := scanBinding(connection.QueryRow(ctx, bindingSelect+` WHERE id=$1 AND state<>'retired'`, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
@@ -130,18 +164,13 @@ func (store *Store) ReconcileRetired(ctx context.Context, stopper RetirementStop
 	return errors.Join(failures...)
 }
 
-func (store *Store) retireOne(ctx context.Context, stopper RetirementStopper, id, workspace, catalog string) error {
-	connection, err := store.pool.Acquire(ctx)
+func (store *Store) retireOne(parent context.Context, stopper RetirementStopper, id, workspace, catalog string) error {
+	ctx, held, end, err := store.holdBindingForMaintenance(parent, dutyRetire, workspace, catalog)
 	if err != nil {
 		return err
 	}
-	key := bindingLockKey(Authority{WorkspaceID: workspace}, Catalog{Key: catalog})
-	if _, err = connection.Exec(ctx, `SELECT pg_advisory_lock(hashtextextended($1,0))`, key); err != nil {
-		closeLockedConnection(connection)
-		return err
-	}
-	held := &lease{store: store, connection: connection, lockKey: key}
-	defer held.Close()
+	defer end()
+	connection := held.connection
 	binding, _, _, err := scanBinding(connection.QueryRow(ctx, bindingSelect+` WHERE id=$1 AND state='retired'`, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil

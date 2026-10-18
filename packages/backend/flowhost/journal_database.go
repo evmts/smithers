@@ -14,10 +14,13 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/smithersai/smithers/packages/backend/internal/database"
 )
 
 // JournalDatabase is the PostgreSQL database a flow host keeps its control
@@ -133,7 +136,8 @@ type PostgresJournals struct {
 	address *url.URL
 	key     []byte
 	// tag marks each journal role this backend provisions (#3172).
-	tag string
+	tag    string
+	duties database.CorePoolDutyObserver
 }
 
 // NewPostgresJournals keeps journals on pool's server. address is how a flow
@@ -339,23 +343,29 @@ func (journals *PostgresJournals) Provision(ctx context.Context, workspaceID str
 	return journal, nil
 }
 
+// journalLockWait bounds how long a journal operation waits for another
+// replica's operation on the same workspace's journal. Each holds the lock
+// only for a few catalog statements.
+const journalLockWait = time.Minute
+
+// ObserveCorePoolDuties publishes the journal lock's waits and holds.
+func (journals *PostgresJournals) ObserveCorePoolDuties(observer database.CorePoolDutyObserver) {
+	journals.duties = observer
+}
+
 // lockJournal holds the per-workspace advisory lock Provision and Drop share,
-// on a connection of its own, until the returned release runs.
+// on a connection of its own, until the returned release runs. Provision runs
+// under a binding lease's connection, so this is a SECOND acquire on the same
+// pool: the wait for another holder is bounded and holds no connection, and
+// the caller's context (the lease's hold budget) bounds the rest (plue#839).
 func (journals *PostgresJournals) lockJournal(ctx context.Context, name string) (*pgxpool.Conn, func(), error) {
-	conn, err := journals.pool.Acquire(ctx)
+	lock, err := database.AcquireSessionLock(ctx, journals.pool, database.SessionLockRequest{
+		Duty: dutyJournal, Key: name, Seed: 2099, Wait: journalLockWait, Observer: journals.duties,
+	})
 	if err != nil {
 		return nil, nil, err
 	}
-	if _, err = conn.Exec(ctx, `SELECT pg_advisory_lock(hashtextextended($1, 2099))`, name); err != nil {
-		conn.Release()
-		return nil, nil, err
-	}
-	return conn, func() {
-		if _, unlock := conn.Exec(context.WithoutCancel(ctx), `SELECT pg_advisory_unlock(hashtextextended($1, 2099))`, name); unlock != nil {
-			conn.Conn().Close(context.WithoutCancel(ctx)) // closing the session releases the lock
-		}
-		conn.Release()
-	}, nil
+	return lock.Conn(), func() { _ = lock.Release() }, nil
 }
 
 // Drop removes a deleted workspace's journal database, ending any session

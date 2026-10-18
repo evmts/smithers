@@ -1416,7 +1416,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		mythicalService.SetInstallParallel(installCapacity)
 	}
 	composeGitHubTodoPolling(mythicalService, gitHubMainPullService, gitHubSyncedRepoService, options.topology)
-	composeGitHubMainReset(pool, mythicalService, gitHubMainPullService, options.topology)
+	composeGitHubMainReset(pool, mythicalService, gitHubMainPullService, options.topology, smithersMetrics)
 	gitHubSyncedRepoService.SetIssueEventsEvery(options.GitHubIssueEventsEvery)
 	if installSync {
 		composeGitHubInstallAuthority(gitHubSyncedRepoService, gitHubAppCredentials, os.Geteuid() != 0)
@@ -1736,6 +1736,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	if err != nil {
 		return err
 	}
+	flow.observeCorePoolDuties(smithersMetrics)
 	homeBackground := &services.HomeBackground{Pool: pool, Invoker: invokedFlowService, Billing: billingPolicy, Machine: options.Workspace}
 	mythicalService.SetHomeBackground(homeBackground)
 	var workspaceCommandWorker *criticalWorker

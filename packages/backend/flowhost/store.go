@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/smithersai/smithers/packages/backend/flowruntime"
+	"github.com/smithersai/smithers/packages/backend/internal/database"
 )
 
 type Store struct {
@@ -25,6 +26,57 @@ type Store struct {
 	newCredential        func() (string, error)
 	protectedBranchHost  func(context.Context, string) error
 	workspaceInitialized func(context.Context, Authority) error
+	duties               database.CorePoolDutyObserver
+}
+
+// The closed set of core-pool duties this package holds a connection for,
+// as smithers_core_pool_duty_* and smithers_db_advisory_lock_* label them.
+const (
+	// flowhost_binding_lease: a resolve holding a binding's owner lock
+	// through inspection, start and the identity probe.
+	dutyBindingLease = "flowhost_binding_lease"
+	// flowhost_capture: stopping a settled host before its branch sleeps.
+	dutyCapture = "flowhost_capture"
+	// flowhost_retire: stopping and deleting a retired binding's host.
+	dutyRetire = "flowhost_retire"
+	// flowhost_journal: provisioning, fencing or dropping a journal database.
+	dutyJournal = "flowhost_journal"
+)
+
+// errBindingLeaseHoldBudget is the cause of a resolve that held a binding
+// lease past bindingLeaseHoldBudget.
+var errBindingLeaseHoldBudget = errors.New("flow host binding lease exceeded its hold budget")
+
+// bindingLeaseHoldBudget bounds one resolve from its lease acquire to its
+// close (plue#839). The lease holds a core-pool connection and the binding's
+// owner lock while journal provisioning, the pinned-run check and the
+// launcher's own reads acquire from the same pool. On 2026-10-17 two such
+// leases ran on the process context and held their connections for 25 hours.
+// The budget is twice the longest caller bound a healthy start runs under
+// (flowdispatch's five-minute background start).
+const bindingLeaseHoldBudget = 10 * time.Minute
+
+// bindingLeaseLockWait bounds how long a start waits for another caller's
+// start of the same binding. A holder lets go within bindingLeaseHoldBudget,
+// so a waiter outlasts any healthy holder; it holds no connection meanwhile.
+const bindingLeaseLockWait = bindingLeaseHoldBudget
+
+// ObserveCorePoolDuties publishes this store's lease, capture and retirement
+// holds and lock waits.
+func (store *Store) ObserveCorePoolDuties(observer database.CorePoolDutyObserver) {
+	store.duties = observer
+}
+
+// lockBinding takes a binding's owner lock on a connection of its own, waiting
+// at most wait for another holder. A lock held past wait is ErrHostBusy.
+func (store *Store) lockBinding(ctx context.Context, duty, key string, wait time.Duration) (*database.SessionLock, error) {
+	lock, err := database.AcquireSessionLock(ctx, store.pool, database.SessionLockRequest{
+		Duty: duty, Key: key, Wait: wait, Observer: store.duties,
+	})
+	if errors.Is(err, database.ErrSessionLockBusy) {
+		return nil, ErrHostBusy
+	}
+	return lock, err
 }
 
 func NewStore(pool *pgxpool.Pool, codec SecretCodec) (*Store, error) {
@@ -74,8 +126,11 @@ func generateCredential() (string, error) {
 
 type lease struct {
 	store      *Store
+	lock       *database.SessionLock
 	connection *pgxpool.Conn
-	lockKey    string
+	// held is the context the lease was taken under; its cause says whether
+	// the lease's hold budget, rather than a caller, ended it.
+	held       context.Context
 	binding    Binding
 	credential string
 	closed     bool
@@ -158,23 +213,18 @@ func (store *Store) acquire(ctx context.Context, authority Authority, catalog Ca
 		}
 	}
 
-	connection, err := store.pool.Acquire(ctx)
+	// A read never waits out another caller's host start, which holds this
+	// lock for as long as the host takes to become ready (#2198). A start
+	// waits for one, holding no connection while it does (plue#839).
+	wait := bindingLeaseLockWait
+	if existingOnly {
+		wait = existingLockWait
+	}
+	lock, err := store.lockBinding(ctx, dutyBindingLease, bindingLockKey(authority, validated), wait)
 	if err != nil {
 		return nil, err
 	}
-	lockKey := bindingLockKey(authority, validated)
-	if existingOnly {
-		// A read never waits out another caller's host start, which holds
-		// this lock for as long as the host takes to become ready (#2198).
-		if err := tryAdvisoryLock(ctx, connection, lockKey); err != nil {
-			closeLockedConnection(connection)
-			return nil, err
-		}
-	} else if _, err := connection.Exec(ctx, `SELECT pg_advisory_lock(hashtextextended($1, 0))`, lockKey); err != nil {
-		closeLockedConnection(connection)
-		return nil, err
-	}
-	result := &lease{store: store, connection: connection, lockKey: lockKey}
+	result := &lease{store: store, lock: lock, connection: lock.Conn(), held: ctx}
 	if err := result.loadOrCreate(ctx, authority, validated, existingOnly); err != nil {
 		_ = result.Close()
 		return nil, err
@@ -527,21 +577,17 @@ func (value *lease) MarkDeferred(ctx context.Context, code string) error {
 	return nil
 }
 
+// Close gives the owner lock and the connection back. An unconfirmed unlock
+// closes the session instead (database.SessionLock.Release).
 func (value *lease) Close() error {
 	if value == nil || value.closed {
 		return nil
 	}
 	value.closed = true
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	_, err := value.connection.Exec(ctx, `SELECT pg_advisory_unlock(hashtextextended($1, 0))`, value.lockKey)
-	if err != nil {
-		// Returning a session with an unknown advisory-lock state poisons the
-		// pool. Closing the physical connection releases every session lock.
-		closeLockedConnection(value.connection)
-	} else {
-		value.connection.Release()
+	if value.held != nil && errors.Is(context.Cause(value.held), errBindingLeaseHoldBudget) && value.store.duties != nil {
+		value.store.duties.ObserveCorePoolDutyStall(dutyBindingLease, database.CorePoolStageLockedWork)
 	}
+	err := value.lock.Release()
 	value.connection = nil
 	return err
 }
@@ -549,38 +595,10 @@ func (value *lease) Close() error {
 var _ BindingStore = (*Store)(nil)
 var _ BindingLease = (*lease)(nil)
 
-// A cancelled lock query may have acquired the lock before its reply was lost.
-// Never return an ambiguous session lock to the connection pool.
-func closeLockedConnection(connection *pgxpool.Conn) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	_ = connection.Hijack().Close(ctx)
-}
-
-// existingLockWait bounds how long a read waits for the owner lock. Ordinary
-// holders (an identity probe, a checkpoint) release it well within it.
+// existingLockWait bounds how long a read, a capture or a retirement waits for
+// the owner lock. Ordinary holders (an identity probe, a checkpoint) release
+// it well within it; a host start does not, and is answered ErrHostBusy.
 const existingLockWait = 2 * time.Second
-
-func tryAdvisoryLock(ctx context.Context, connection *pgxpool.Conn, lockKey string) error {
-	deadline := time.Now().Add(existingLockWait)
-	for {
-		var locked bool
-		if err := connection.QueryRow(ctx, `SELECT pg_try_advisory_lock(hashtextextended($1, 0))`, lockKey).Scan(&locked); err != nil {
-			return err
-		}
-		if locked {
-			return nil
-		}
-		if time.Now().After(deadline) {
-			return ErrHostBusy
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(50 * time.Millisecond):
-		}
-	}
-}
 
 // BindProtectedBranchHost composes the installed native admission provider.
 func (s *Store) BindProtectedBranchHost(admit func(context.Context, string) error) {

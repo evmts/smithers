@@ -3,9 +3,12 @@ package services
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/smithersai/smithers/packages/backend/internal/database"
 )
 
 // THE CORE-POOL INVARIANT every serving background duty has to satisfy, and
@@ -94,11 +97,15 @@ const (
 	// public_mirror_seed: one mirror's seed pass, holding its core-pool
 	// connection and the mirror's SESSION-level advisory lock while the
 	// service-account, organization, repository, source and pull reads it
-	// makes acquire from the same pool. It is worker-only, every replica runs
-	// it, and the lock it takes is the blocking pg_advisory_lock rather than a
-	// try: two replicas seeding one mirror means one holder and one waiter,
-	// each holding a core-pool connection.
+	// makes acquire from the same pool. It is worker-only and every replica
+	// runs it. The lock is a single try (database.AcquireSessionLock): of two
+	// replicas seeding one mirror, one seeds and the other skips the pass
+	// holding nothing.
 	corePoolDutyPublicMirrorSeed corePoolDuty = "public_mirror_seed"
+	// github_main_operation: an install's GitHub main pull, reset or reset
+	// recovery, holding the repository's operation lock on its own connection
+	// while the operation reads and writes through the same pool.
+	corePoolDutyGitHubMainOperation corePoolDuty = "github_main_operation"
 )
 
 // corePoolStage is the closed set of places a bound can refuse. A stage names
@@ -112,7 +119,7 @@ const (
 	// locked_work: the duty held its election connection and its work did not
 	// finish inside the written hold budget. The connection and its advisory
 	// lock are released; the next tick re-drives.
-	corePoolStageLockedWork corePoolStage = "locked_work"
+	corePoolStageLockedWork corePoolStage = database.CorePoolStageLockedWork
 	// list_backlog: the reconciler's listing read. Nothing was held, and a
 	// stall here means the loop never reached a single row.
 	corePoolStageListBacklog corePoolStage = "list_backlog"
@@ -151,13 +158,13 @@ const (
 	// admitted and this one aged out waiting for a slot. Distinct from
 	// pool_headroom: the gate was full, not the pool.
 	corePoolStageAwaitClaimSlot corePoolStage = "await_claim_slot"
-	// session_lock: a SESSION-level advisory lock a duty waits for on the
-	// connection it already holds. Distinct from claim_lock, which is a
-	// transaction-scoped lock inside a transaction, and distinct from
-	// acquire_connection, which is the pool: a refusal here means another
-	// session holds the lock, so the duty held a connection while waiting for
-	// a holder that owes it nothing. It asks the pool for nothing, so it is
-	// never an exhausted pool.
+	// session_lock: the statement that takes or releases a SESSION-level
+	// advisory lock failed or did not finish inside the duty's bound.
+	// Distinct from claim_lock, which is a transaction-scoped lock inside a
+	// transaction, and distinct from acquire_connection, which is the pool.
+	// Another session holding the lock is not a stall: the waiter holds
+	// nothing, and smithers_db_advisory_lock_waits_total{outcome="busy"}
+	// counts it.
 	corePoolStageSessionLock corePoolStage = "session_lock"
 )
 
@@ -170,26 +177,19 @@ const (
 //
 // Both labels come from the closed corePoolDuty and corePoolStage sets above.
 // No identifier, error text, SQL, credential or customer value reaches either.
-type CorePoolDutyObserver interface {
-	AddCorePoolDutyHeld(duty string, delta float64)
-	ObserveCorePoolDutyStall(duty string, stage string)
-}
+// It is database.CorePoolDutyObserver, so a duty outside this package (the
+// flowhost binding lease and capture) reports into the same series.
+type CorePoolDutyObserver = database.CorePoolDutyObserver
 
 // corePoolDutyHold reports a duty holding a core-pool connection for as long
-// as the returned release is uncalled. It is the gauge's only writer.
+// as the returned release is uncalled. Calling release again does nothing.
 func corePoolDutyHold(observer CorePoolDutyObserver, duty corePoolDuty) (release func()) {
 	if observer == nil {
 		return func() {}
 	}
-	observer.AddCorePoolDutyHeld(string(duty), 1)
-	var released bool
-	return func() {
-		if released {
-			return
-		}
-		released = true
-		observer.AddCorePoolDutyHeld(string(duty), -1)
-	}
+	var once sync.Once
+	end := observer.BeginCorePoolDutyHold(string(duty))
+	return func() { once.Do(end) }
 }
 
 // corePoolDutyStall records a bound that refused, by duty and stage.

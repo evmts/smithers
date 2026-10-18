@@ -12,6 +12,7 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
 
+	"github.com/smithersai/smithers/packages/backend/internal/database"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/revocation"
 	"github.com/smithersai/smithers/packages/backend/internal/sse"
@@ -25,25 +26,23 @@ import (
 // revocation.NewBus before any topology branch and with no condition on
 // whether the process serves HTTP, and each holds one pooled connection from
 // Start to Stop. The third is the public mirror seeder, which compose starts
-// under topology.workers(): each pass takes a connection, then the mirror's
-// SESSION-level advisory lock on it with the BLOCKING pg_advisory_lock, and
-// then makes its service-account, organization, repository, source and pull
-// reads through the same pool while both are held.
+// under topology.workers(): each pass tries the mirror's SESSION-level
+// advisory lock once (database.AcquireSessionLock), and the pass that wins
+// makes its service-account, organization, repository, source and pull reads
+// through the same pool while it holds the lock and its connection.
 //
 // WHAT THESE CASES PROVE, and only this:
 //
 //   - the residents' own cost, measured, and the margin it leaves a claim;
-//   - a seed pass that cannot win the lock refuses finitely, names the wait it
-//     refused, and gives its connection back, after which a real claim
-//     converges with the foreign lock STILL held and both residents still
-//     resident — automatic progress, nothing released by hand;
+//   - a seed pass that cannot win the lock skips at once holding nothing, so
+//     a real claim converges with the foreign lock STILL held and both
+//     residents still resident — automatic progress, nothing released by hand;
 //   - a seed pass that WINS the lock and then cannot get its nested read
 //     refuses finitely too, releases the lock and the connection, and never
-//     calls an exhausted pool the cause of a lock or query wait;
-//   - a pass whose unlock is not confirmed discards that session instead of
-//     returning it to the pool. The fault seam fires after the real
-//     pg_advisory_unlock has already succeeded, so this is the discard branch
-//     proved, NOT an observed unreleased advisory lock.
+//     calls an exhausted pool the cause of a lock or query wait.
+//
+// The unlock that is not confirmed, and so closes its session, is proved with
+// a real fault in internal/database/session_lock_pg_test.go.
 //
 // WHAT THEY DO NOT PROVE. Replicas have DISTINCT pools, so the foreign session
 // here is deliberately OUTSIDE the pool under test and these cases make no
@@ -323,13 +322,16 @@ func grantedAdvisoryHolders(t *testing.T, observer *corePoolObserver, key string
 	return holders
 }
 
-// TestTheMirrorSeedRefusesAForeignSessionLockAndTheBacklogThenConverges is the
-// automatic-progress case: the only holder that lets go is the seed itself, and
-// it does so because of its own written bound.
+// TestTheMirrorSeedSkipsAForeignSessionLockAndTheBacklogConverges is the
+// automatic-progress case. Before plue#839 the losing pass waited in the
+// blocking pg_advisory_lock holding a core-pool connection, which with the
+// residents left a claim one connection short until its hold budget ran out.
+// Now it skips at once, holding nothing, and the claim converges on the next
+// pass with the other replica's lock never released.
 //
 // The foreign session is deliberately NOT in this pool, because a replica has
 // its own pool; it models the other replica's holder and it is never released.
-func TestTheMirrorSeedRefusesAForeignSessionLockAndTheBacklogThenConverges(t *testing.T) {
+func TestTheMirrorSeedSkipsAForeignSessionLockAndTheBacklogConverges(t *testing.T) {
 	pool, observer := shippedCorePool(t)
 	listed := realRetainedGuestStopRow(t, pool, "corepool-mirror-seed")
 	guest := &interruptedReleaseGuest{state: workspaceapi.WorkspaceRunning, disk: "retained-working-copy"}
@@ -347,81 +349,36 @@ func TestTheMirrorSeedRefusesAForeignSessionLockAndTheBacklogThenConverges(t *te
 	require.NoError(t, err, "the other replica never took the mirror's session lock")
 	require.Equal(t, 1, grantedAdvisoryHolders(t, observer, lock))
 
-	seeder, pulls := realMirrorSeeder(t, pool, mirror, recorder, 4*time.Second)
+	// A hold budget far longer than this test, so no deadline is the mechanism.
+	seeder, pulls := realMirrorSeeder(t, pool, mirror, recorder, time.Hour)
 
 	// NO caller deadline: Start's context is the process's.
-	seeded := make(chan error, 1)
-	go func() { seeded <- seeder.Seed(context.Background()); close(seeded) }()
-	t.Cleanup(func() {
-		select {
-		case <-seeded:
-		case <-time.After(corePoolObserveBound):
-			t.Error("the seed pass never returned, so it is still holding a pooled connection")
-		}
-	})
-
-	require.Eventually(t, func() bool { return recorder.heldNow(corePoolDutyPublicMirrorSeed) == 1 },
-		corePoolObserveBound, 5*time.Millisecond,
-		"the waiting seed pass is not published as holding the connection it holds")
-	require.Eventually(t, func() bool { return pool.Stat().AcquiredConns() == 3 }, corePoolObserveBound, 5*time.Millisecond,
-		"the residents plus the waiting seed are not holding three of four")
-	headroom, measured := corePoolHeadroom(pool)
-	require.True(t, measured)
-	require.Less(t, headroom, workspaceProvisionConnectionsPerClaim,
-		"the waiting seed did not take the pool below one claim, so this case proves nothing")
-
-	// The loop lists rows and admission declines to half-claim one.
-	done := make(chan error, 1)
-	go func() { done <- svc.ReconcileWorkspaceProvisioning(context.Background()) }()
-	select {
-	case err := <-done:
-		require.NoError(t, err, "a refused claim is not a tick-level failure")
-	case <-time.After(4 * workspaceProvisionAcquireTimeout):
-		t.Fatal("the reconcile pass never returned while the seed waited")
-	}
-	require.Equal(t, 1, recorder.stallCount(corePoolDutyWorkspaceProvisionClaim, corePoolStagePoolHeadroom))
-	require.Equal(t, workspaceapi.WorkspaceRunning, guest.state, "a refused claim stopped a guest anyway")
-	require.Zero(t, recorder.stallCount(corePoolDutyWorkspaceProvisionBacklog, corePoolStageListBacklog),
-		"the listing refused too, so the loop reached no row and this is a different failure")
-
-	// The bound refuses and names the wait. A session lock wait asks the pool
-	// for nothing, so it is never an exhausted pool.
-	select {
-	case seedErr := <-seeded:
-		require.Error(t, seedErr, "the seed pass reported success without winning the mirror's lock")
-	case <-time.After(corePoolObserveBound):
-		t.Fatal("the seed pass never returned, so it still holds a connection waiting for a foreign lock")
-	}
-	require.Equal(t, 1, recorder.stallCount(corePoolDutyPublicMirrorSeed, corePoolStageSessionLock),
-		"the refusal did not name the session lock it was waiting for")
-	require.Zero(t, recorder.stallCount(corePoolDutyPublicMirrorSeed, corePoolStageAcquireConnection),
-		"a lock wait that asked the pool for nothing was published as an acquire")
-	require.Zero(t, recorder.stallCount(corePoolDutyPublicMirrorSeed, corePoolStageLockedWork),
-		"a pass that never won the lock was published as locked work that could not finish")
-	require.Zero(t, recorder.heldNow(corePoolDutyPublicMirrorSeed), "the refused pass kept its held gauge")
+	began := time.Now()
+	require.NoError(t, seeder.Seed(context.Background()),
+		"losing the mirror's lock to another replica is a skipped pass, not a failure")
+	require.Less(t, time.Since(began), time.Second, "the losing pass waited for the other replica")
+	require.Equal(t, 1, recorder.waitCount(string(corePoolDutyPublicMirrorSeed), database.AdvisoryLockBusy),
+		"the skipped pass is not counted as a busy lock")
+	require.Zero(t, recorder.peakHeld(corePoolDutyPublicMirrorSeed), "the skipped pass held a connection")
+	require.Zero(t, recorder.stallCount(corePoolDutyPublicMirrorSeed, corePoolStageSessionLock),
+		"another session holding the lock was published as a stall")
 	require.Empty(t, pulls.requested, "a pass that never won the lock requested a GitHub pull")
+	require.Equal(t, int32(residentCorePoolConnections), pool.Stat().AcquiredConns(),
+		"the skipped pass left a connection behind")
+	require.Zero(t, observer.advisoryLockWaiters(t), "the skipped pass left a session waiting on the lock")
 
 	// Automatic progress. The other replica still holds the mirror's lock and
 	// both residents still hold theirs.
-	require.Eventually(t, func() bool {
-		room, ok := corePoolHeadroom(pool)
-		return ok && room >= workspaceProvisionConnectionsPerClaim
-	}, corePoolObserveBound, 10*time.Millisecond, "the refused seed never gave its connection back")
-	require.Equal(t, int32(residentCorePoolConnections), pool.Stat().AcquiredConns(),
-		"the residents are no longer the only holders, so the next pass is not a clean measurement")
-	require.Equal(t, 1, grantedAdvisoryHolders(t, observer, lock),
-		"the other replica's session lock was released, so convergence was not automatic")
-
-	done = make(chan error, 1)
+	done := make(chan error, 1)
 	go func() { done <- svc.ReconcileWorkspaceProvisioning(context.Background()) }()
 	select {
 	case err := <-done:
 		require.NoError(t, err)
 	case <-time.After(4 * workspaceProvisionAcquireTimeout):
-		t.Fatal("the pass after the seed refused never returned")
+		t.Fatal("the pass after the seed skipped never returned")
 	}
 	require.Equal(t, workspaceapi.WorkspaceStopped, guest.state,
-		"the backlog did not move after the only holder that could refuse did")
+		"the backlog did not move beside a foreign mirror lock")
 	require.Equal(t, int32(1), runtime.stops.Load())
 	door, _ := retainedGuestStopPending(listed)
 	after, err := db.New(pool).GetWorkspace(context.Background(), listed.ID)
@@ -431,8 +388,8 @@ func TestTheMirrorSeedRefusesAForeignSessionLockAndTheBacklogThenConverges(t *te
 	require.Equal(t, listed.VmID, after.VmID)
 	require.Equal(t, listed.ProvisioningGeneration, after.ProvisioningGeneration,
 		"the generation fence moved under a claim that only recorded a stop")
-	require.Equal(t, 1, recorder.stallCount(corePoolDutyWorkspaceProvisionClaim, corePoolStagePoolHeadroom),
-		"the converging pass refused as well")
+	require.Zero(t, recorder.stallCount(corePoolDutyWorkspaceProvisionClaim, corePoolStagePoolHeadroom),
+		"the claim refused for headroom beside a pass that held nothing")
 	require.Equal(t, 1, grantedAdvisoryHolders(t, observer, lock),
 		"the mirror's foreign lock did not survive the pass that converged beside it")
 }
@@ -491,43 +448,4 @@ func TestTheMirrorSeedHolderRefusesItsNestedReadAndReleasesTheSessionLock(t *tes
 		"the refused pass kept the mirror's session lock, so every other replica stays blocked")
 	require.Eventually(t, func() bool { return pool.Stat().AcquiredConns() == residentCorePoolConnections+1 },
 		corePoolObserveBound, 10*time.Millisecond, "the refused pass never gave its connection back")
-}
-
-// TestAnUnconfirmedMirrorUnlockNeverReturnsItsSessionToThePool is the fault
-// case Root required: pg_advisory_unlock not confirming means this session may
-// still hold the lock, and returning it to the pool would hand the next caller
-// a connection that blocks every other replica's seed.
-//
-// PROOF LIMIT, stated plainly. withPublicMirrorSeedUnlockFault fires after the
-// real unlock statement has already run and succeeded against real PostgreSQL,
-// so the lock below is genuinely released and this case never observes a lock
-// that leaked. What it proves is the branch the fault selects: on an
-// unconfirmed unlock the pass CLOSES the checked-out connection rather than
-// releasing it back to the pool. The zero-holders assertion is the control
-// that the fixture left nothing behind, not evidence of a recovered leak.
-func TestAnUnconfirmedMirrorUnlockNeverReturnsItsSessionToThePool(t *testing.T) {
-	pool, observer := shippedCorePool(t)
-	recorder := newCorePoolDutyRecorder()
-	mirror := "faultowner/faultrepo"
-	lock := mirrorSessionLockKey(mirror)
-
-	// Success first, so the fault below is the only difference: the pass is
-	// refused on its nested read either way.
-	holdOnePooledConnection(t, pool)
-	holdOnePooledConnection(t, pool)
-	holdOnePooledConnection(t, pool)
-	healthy, _ := realMirrorSeeder(t, pool, mirror, recorder, 2*time.Second)
-	require.Error(t, healthy.Seed(context.Background()))
-	require.Zero(t, grantedAdvisoryHolders(t, observer, lock), "a confirmed unlock left the lock held")
-	returned := pool.Stat().TotalConns()
-
-	// Now the same pass with an unconfirmed unlock.
-	faulted, _ := realMirrorSeeder(t, pool, mirror, recorder, 2*time.Second,
-		withPublicMirrorSeedUnlockFault(func() error { return context.DeadlineExceeded }))
-	require.Error(t, faulted.Seed(context.Background()))
-	require.Eventually(t, func() bool { return grantedAdvisoryHolders(t, observer, lock) == 0 },
-		corePoolObserveBound, 10*time.Millisecond,
-		"an unconfirmed unlock left a live pooled session holding the mirror's lock")
-	require.Less(t, pool.Stat().TotalConns(), returned,
-		"the unconfirmed session was returned to the pool instead of being closed")
 }

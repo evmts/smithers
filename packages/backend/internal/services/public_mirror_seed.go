@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/smithersai/smithers/packages/backend/internal/database"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/githubrepo"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
@@ -34,42 +35,34 @@ import (
 // the end of its locked work, and it exists because this pass is a core-pool
 // duty that holds a connection across work which acquires from the SAME pool.
 //
-// WHAT THIS PASS DOES. seed() takes a core-pool connection, then a
-// SESSION-level advisory lock on that connection with the blocking
-// pg_advisory_lock, and then makes every service-account, organization,
-// repository, source and pull call through s.queries / s.orgs / s.repos — the
-// same pool — while both are held. Every one of those steps used to run on the
-// caller's context, and the caller is Start(ctx), whose ctx is the process's.
+// WHAT THIS PASS DOES. seed() takes the mirror's SESSION-level advisory lock
+// on a core-pool connection (database.AcquireSessionLock) and then makes every
+// service-account, organization, repository, source and pull call through
+// s.queries / s.orgs / s.repos, the same pool, while both are held.
 //
-// THE HAZARD, as demonstrated. Both waits were unbounded, so neither was slow
-// rather than absorbing: a pass can park in pg_advisory_lock while holding a
-// core-pool connection, for as long as whoever holds that lock keeps it; and a
-// pass that WINS the lock then needs a SECOND connection from the same pool
-// for its own reads, which on a full pool it waits for without limit while
-// still holding the first connection and the lock. Nothing refuses, so nothing
-// is recorded, and the five-minute tick in Start never comes round again
-// because Seed has not returned. Both halves are arranged and measured against
-// real PostgreSQL at MaxConns 4 in core_pool_resident_closure_pg_test.go.
+// ONE WINNER, NO WAITER (plue#839). Every replica seeds on start and every five
+// minutes. The lock is a single try: the replica that wins seeds, and every
+// other replica skips the pass without holding a connection, a lock or a
+// snapshot. On 2026-10-17 the blocking pg_advisory_lock made the losing
+// replica hold a core-pool connection, and a snapshot that pinned the server's
+// xmin, for as long as the winner kept the lock, and the winner was itself
+// parked in a nested read on a full pool.
 //
-// WHAT IS NOT CLAIMED. Replicas have DISTINCT pools, so nothing here presents
-// a holder in one process and a waiter in another as two connections of one
-// pool, and no production connection's owner is identified by this file. The
-// per-pass hazard above is what was demonstrated; the live core-pool failure
-// is not closed by it.
+// THE WINNER'S HAZARD remains: having won, it needs a SECOND connection from
+// the same pool for its reads, and on a full pool that wait used to be
+// unbounded while it held the first connection and the lock. This budget ends
+// it: a pass that cannot finish gives the lock and the connection back, and
+// the next tick re-drives. Seeding is idempotent by construction (it creates
+// only what is missing), so a refused or skipped pass loses nothing. The
+// budget is longer than the GitHub pull request the last step makes and far
+// shorter than the interval.
 //
-// With the bound, a pass that cannot win the lock or cannot get its nested
-// read gives the connection and the lock back and the next tick re-drives:
-// seeding is idempotent by construction (it creates only what is missing), so
-// a refused pass loses nothing. The budget is longer than the GitHub pull
-// request the last step makes and far shorter than the interval.
-//
-// It bounds the pass, NOT the cleanup after it. The unlock and the connection
-// teardown run detached, under their own corePoolRollbackBound, so the worst
-// case a caller should expect is this budget PLUS that release budget.
+// It bounds the pass, NOT the unlock after it, which SessionLock.Release runs
+// detached under its own short bound.
 const publicMirrorSeedHoldBudget = 2 * time.Minute
 
 // publicMirrorUnlockOperation is the static name of the one statement the
-// cleanup below runs. It is a constant in this file, not rendered SQL and not
+// unlock runs. It is a constant in this file, not rendered SQL and not
 // derived from anything a connection carried.
 const publicMirrorUnlockOperation = "pg_advisory_unlock"
 
@@ -83,10 +76,8 @@ const (
 	// unlock_returned_false: the statement answered, and the answer was that
 	// this session did not hold the lock it tried to release.
 	publicMirrorUnlockReturnedFalse publicMirrorUnlockReason = "unlock_returned_false"
-	// unlock_failed: the statement did not come back with an answer at all —
-	// it errored, or it did not complete inside the release budget. This
-	// reason does not say which, and does not say why: whether the lock is
-	// still held is simply unknown.
+	// unlock_failed: the statement did not come back with an answer at all.
+	// Whether the lock is still held is unknown.
 	publicMirrorUnlockFailed publicMirrorUnlockReason = "unlock_failed"
 )
 
@@ -147,10 +138,7 @@ type PublicMirrorSeeder struct {
 	interval time.Duration
 	hold     time.Duration
 	duty     CorePoolDutyObserver
-	// unlockFault is a test-only fault seam; see
-	// withPublicMirrorSeedUnlockFault.
-	unlockFault func() error
-	logger      *slog.Logger
+	logger   *slog.Logger
 }
 
 // PublicMirrorSeederOption configures a seeder.
@@ -168,19 +156,6 @@ func WithPublicMirrorSeedCorePoolObserver(observer CorePoolDutyObserver) PublicM
 // observe a refusal.
 func withPublicMirrorSeedHoldBudget(hold time.Duration) PublicMirrorSeederOption {
 	return func(s *PublicMirrorSeeder) { s.hold = hold }
-}
-
-// withPublicMirrorSeedUnlockFault makes the unlock report itself unconfirmed,
-// so a regression can prove what this pass does with a connection whose lock
-// state it cannot confirm. Production leaves it nil.
-//
-// ITS PROOF LIMIT, stated where the seam is. The fault fires AFTER the real
-// pg_advisory_unlock has already run and succeeded, so the lock is in fact
-// released and the test is not observing a stuck advisory lock. What it does
-// establish is the branch that matters: a pass that cannot confirm its unlock
-// discards the session instead of returning it to the pool.
-func withPublicMirrorSeedUnlockFault(fault func() error) PublicMirrorSeederOption {
-	return func(s *PublicMirrorSeeder) { s.unlockFault = fault }
 }
 
 func NewPublicMirrorSeeder(pool *pgxpool.Pool, orgs *OrgService, repos *RepoService, pulls publicMirrorPulls, mirrors []PublicMirror, opts ...PublicMirrorSeederOption) *PublicMirrorSeeder {
@@ -237,84 +212,49 @@ func (s *PublicMirrorSeeder) Seed(ctx context.Context) error {
 
 func (s *PublicMirrorSeeder) seed(ctx context.Context, mirror PublicMirror) (err error) {
 	// Everything from the acquire below to the unlock runs under one written
-	// bound: the lock wait and every nested acquire this pass makes while
+	// bound: the lock attempt and every nested acquire this pass makes while
 	// holding the connection AND the session lock. See
 	// publicMirrorSeedHoldBudget.
 	held, endHold := context.WithTimeout(ctx, s.hold)
 	defer endHold()
 
-	// Every replica seeds on start. One session lock per mirror keeps two of
-	// them from creating the same organization or repository.
-	conn, err := s.pool.Acquire(held)
+	lock, err := database.AcquireSessionLock(held, s.pool, database.SessionLockRequest{
+		Duty: string(corePoolDutyPublicMirrorSeed), Key: "smithers.public_mirror:" + strings.ToLower(mirror.String()),
+		Observer: s.duty,
+	})
+	if errors.Is(err, database.ErrSessionLockBusy) {
+		// Another replica is seeding this mirror right now. This one holds
+		// nothing and the next tick checks again.
+		return nil
+	}
 	if err != nil {
-		// Nothing is held yet: this is the pool refusing to start the pass.
 		if held.Err() != nil && ctx.Err() == nil {
-			corePoolDutyStall(s.duty, corePoolDutyPublicMirrorSeed, corePoolStageAcquireConnection)
+			stage := corePoolStageSessionLock
+			if errors.Is(err, database.ErrSessionLockNoConnection) {
+				stage = corePoolStageAcquireConnection
+			}
+			corePoolDutyStall(s.duty, corePoolDutyPublicMirrorSeed, stage)
 		}
 		return err
 	}
-	// The duty holds this connection until it actually leaves, so the gauge is
-	// registered FIRST and therefore decremented LAST: defers unwind last in,
-	// first out, and decrementing before the connection goes back would
-	// publish a release the pool has not seen.
-	releaseHeld := corePoolDutyHold(s.duty, corePoolDutyPublicMirrorSeed)
-	defer func() { releaseHeld() }()
-
-	lock := "smithers.public_mirror:" + strings.ToLower(mirror.String())
-	if _, lockErr := conn.Exec(held, `SELECT pg_advisory_lock(hashtextextended($1, 0))`, lock); lockErr != nil {
-		// A cancelled lock acquisition can have acquired just before the
-		// cancellation, so this connection may be holding the lock: closing it
-		// is the only way to be sure the next caller does not inherit the
-		// block. Same reasoning and same shape as GitHubMainResetJournal.
-		release, cancel := corePoolRelease(ctx)
-		_ = conn.Hijack().Close(release)
-		cancel()
-		// This wait asked the pool for nothing: another session holds the
-		// mirror's lock, and this pass held a connection while waiting for a
-		// holder that owes it nothing. It is never an exhausted pool.
-		if held.Err() != nil && ctx.Err() == nil {
-			corePoolDutyStall(s.duty, corePoolDutyPublicMirrorSeed, corePoolStageSessionLock)
-		}
-		return lockErr
-	}
 	defer func() {
-		// The session lock outlives the bound above it, so the unlock runs
-		// detached and finite under its OWN budget: a cancelled caller must
-		// still unlock, and an unlock that cannot finish must not become the
-		// next hold. This is why a pass costs at most the hold budget plus the
-		// release budget, and not the hold budget alone.
-		//
-		// AN UNCONFIRMED UNLOCK IS A DIRTY CONNECTION. pg_advisory_unlock
-		// returning false, or not answering at all, means this session may
-		// still hold the mirror's lock; returning it to the pool would hand
-		// the next caller a connection that blocks every other replica's
-		// seed. Close it instead and let the pool build a clean one.
-		release, cancel := corePoolRelease(ctx)
-		defer cancel()
-		var unlocked bool
-		unlockErr := conn.QueryRow(release, `SELECT pg_advisory_unlock(hashtextextended($1, 0))`, lock).Scan(&unlocked)
-		if unlockErr == nil && s.unlockFault != nil {
-			unlockErr = s.unlockFault()
-		}
-		if unlockErr != nil || !unlocked {
-			// Finite fields only. The duty, the stage, the statement and which
-			// of the two closed reasons happened is the whole diagnostic; the
-			// mirror is a repository identifier and the driver error is
-			// arbitrary prose, so neither is emitted.
-			reason := publicMirrorUnlockReturnedFalse
-			if unlockErr != nil {
-				reason = publicMirrorUnlockFailed
-			}
-			s.logger.ErrorContext(ctx, "public_mirror.session_lock_unconfirmed",
-				"duty", string(corePoolDutyPublicMirrorSeed),
-				"stage", string(corePoolStageSessionLock),
-				"operation", publicMirrorUnlockOperation,
-				"reason", string(reason),
-				"unlocked", unlocked)
-			_ = conn.Hijack().Close(release)
+		// AN UNCONFIRMED UNLOCK IS A DIRTY CONNECTION, so Release closed it
+		// instead of handing every other replica's next seed a blocked lock.
+		releaseErr := lock.Release()
+		if releaseErr == nil {
 			return
 		}
-		conn.Release()
+		// Finite fields only. The mirror is a repository identifier and the
+		// driver error is arbitrary prose, so neither is emitted.
+		reason := publicMirrorUnlockFailed
+		if errors.Is(releaseErr, database.ErrSessionUnlockReturnedFalse) {
+			reason = publicMirrorUnlockReturnedFalse
+		}
+		s.logger.ErrorContext(ctx, "public_mirror.session_lock_unconfirmed",
+			"duty", string(corePoolDutyPublicMirrorSeed),
+			"stage", string(corePoolStageSessionLock),
+			"operation", publicMirrorUnlockOperation,
+			"reason", string(reason))
 	}()
 	// Whatever the locked work returns, say whether this bound is why.
 	defer func() {
