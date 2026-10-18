@@ -281,8 +281,8 @@ const makeWithEngineJj = (
       forkOrigins.set(instance, origins)
       return origins
     })
-    // A copied plan keeps the lineage of its original observation. Reuse that
-    // metadata while the journal still compares every byte of its plan content.
+    // A resumed or copied plan keeps its original source revision, even when
+    // coding changes the workspace. The journal still compares all plan content.
     const planProvenance = Effect.fnUntraced(function*(
       instance: FlowRuntime.FlowInstance["Service"],
       record: FlowRuntime.NodeRecord
@@ -291,7 +291,6 @@ const makeWithEngineJj = (
       const current = { lineageId: root, sourceRevision: sourceRevision() }
       if (record._tag !== "PlanRecorded") return current
       const origins = yield* keyOrigins(instance)
-      if (origins.length === 0) return current
       const sourceId = `${options.journalSource}/${record.sourceId}`
       let after: JournalEvent.Seq | undefined
       while (true) {
@@ -304,7 +303,9 @@ const makeWithEngineJj = (
         const inherited = page.entries.find((entry) => entry.sourceId === sourceId && entry.sourceSeq === 0)
         if (inherited !== undefined) {
           const { lineageId } = Schema.decodeUnknownSync(Schema.Struct({ lineageId: Schema.String }))(inherited.meta)
-          if (!origins.some((origin) => FlowEngine.Lineage.root(origin) === lineageId)) return current
+          if (
+            lineageId !== root && !origins.some((origin) => FlowEngine.Lineage.root(origin) === lineageId)
+          ) return current
           const payload = Schema.decodeUnknownSync(
             Schema.Struct({ graph: Schema.Struct({ sourceRevision: Schema.optional(Schema.String) }) })
           )(inherited.payload)
