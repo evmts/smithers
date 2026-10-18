@@ -10,7 +10,7 @@
  *   the site      / and /docs/ answer 200, /nope answers 404 (the build's 404
  *                 page, not a SPA shell), /llms.txt and /sitemap-index.xml exist
  *   the app       the catalog repository page answers 200 with the isolation
- *                 headers OPFS needs, the /_astro chunk that page loads answers
+ *                 headers OPFS needs, the /__smithers chunk that page loads answers
  *                 200 with the embedder and resource policies the OPFS module
  *                 worker script needs, a frame path answers 200 (a reload
  *                 inside the app), and the Worker, not the assets layer,
@@ -168,25 +168,25 @@ const expectAppDocument = (path: string, observed: Observed): SiteCheck => {
 
 /** The first script chunk the app document loads from the build's hashed-asset directory. */
 export const appChunkPath = (document: string): string | undefined =>
-  /<script[^>]*\ssrc="(\/_astro\/[^"]+\.js)"/.exec(document)?.[1]
+  /<script[^>]*\ssrc="(\/__smithers\/[^"]+\.js)"/.exec(document)?.[1]
 
-export const APP_CHUNK_EXPECTATION = "200 + COEP require-corp + CORP same-origin (a /_astro chunk, as the OPFS worker script)"
+export const APP_CHUNK_EXPECTATION = "200 + COEP require-corp + CORP same-origin (a /__smithers chunk, as the OPFS worker script)"
 
 /*
  * The app document is cross-origin isolated, and its OPFS SQLite persistence
- * starts a dedicated module worker from a chunk under /_astro. The browser
+ * starts a dedicated module worker from a chunk under /__smithers. The browser
  * refuses a worker script whose response carries no embedder policy at least
  * as strict as its owner's (net::ERR_BLOCKED_BY_RESPONSE), and the app falls
  * back to localStorage without failing. The worker chunk is named only inside
  * another chunk, so the probe grades the first chunk the document itself
- * loads: apps/site/public/_headers gives every /_astro path the same headers,
+ * loads: apps/site/public/_headers gives every /__smithers path the same headers,
  * so one chunk stands for all of them, the worker script included.
  */
 const expectAppChunk = async (fetch: Fetcher, origin: string, documentPath: string, document: Observed): Promise<SiteCheck> => {
   const path = document.body === undefined ? undefined : appChunkPath(document.body)
   if (path === undefined) {
-    const got = document.body === undefined ? "the fetcher read no document body" : "no /_astro script in the app document"
-    return check(`${documentPath} -> /_astro chunk`, APP_CHUNK_EXPECTATION, false, got)
+    const got = document.body === undefined ? "the fetcher read no document body" : "no /__smithers script in the app document"
+    return check(`${documentPath} -> /__smithers chunk`, APP_CHUNK_EXPECTATION, false, got)
   }
   const observed = await fetch(`${origin}${path}`)
   const coep = header(observed, "cross-origin-embedder-policy")

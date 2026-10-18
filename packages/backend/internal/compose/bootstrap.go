@@ -37,6 +37,7 @@ type appBootstrap struct {
 }
 
 type bootstrapFeatures struct {
+	sites            bool
 	install          bool
 	debugAPI         bool
 	role             topology
@@ -76,6 +77,9 @@ func newAppBootstrap(features bootstrapFeatures) appBootstrap {
 	}
 	if features.debugAPI && features.identity && !features.role.hosted() {
 		result.Capabilities = append(result.Capabilities, "debug.api")
+	}
+	if features.sites {
+		result.Capabilities = append(result.Capabilities, "sites")
 	}
 	if features.identity {
 		result.Capabilities = append(result.Capabilities, "identity")
@@ -154,7 +158,17 @@ func withAppBootstrap(next http.Handler, bootstrap appBootstrap, corsOptions cor
 // every other route. The app and its API share one origin, so no answer
 // carries a CORS allow header.
 func withInstallBootstrap(next http.Handler, bootstrap appBootstrap, origins func() []string) http.Handler {
-	return serveBootstrap(next, middleware.EffectiveOrigin(origins)(bootstrapDocument(bootstrap)))
+	document := bootstrapDocument(bootstrap)
+	return serveBootstrap(next, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		selected := origins()
+		// The outer repositorySiteHTTP wrapper obtained this binding from the
+		// product directory. Never persist site origins in control-plane settings
+		// or derive admission from identity headers supplied by the caller.
+		if site, ok := middleware.RepositorySiteFromContext(r.Context()); ok {
+			selected = append(append([]string(nil), selected...), "https://"+site.Host)
+		}
+		middleware.EffectiveOrigin(middleware.FixedOrigins(selected...))(document).ServeHTTP(w, r)
+	}))
 }
 
 func serveBootstrap(next, document http.Handler) http.Handler {
@@ -179,6 +193,16 @@ func bootstrapDocument(bootstrap appBootstrap) http.Handler {
 		if r.Method == http.MethodHead {
 			return
 		}
-		_ = json.NewEncoder(w).Encode(bootstrap)
+		projected := bootstrap
+		if _, site := middleware.RepositorySiteFromContext(r.Context()); site {
+			projected.Capabilities = nil
+			for _, capability := range bootstrap.Capabilities {
+				switch capability {
+				case "identity", "sites", "github":
+					projected.Capabilities = append(projected.Capabilities, capability)
+				}
+			}
+		}
+		_ = json.NewEncoder(w).Encode(projected)
 	})
 }

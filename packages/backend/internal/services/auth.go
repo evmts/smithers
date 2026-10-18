@@ -23,6 +23,7 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/identity"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	smitherscrypto "github.com/smithersai/smithers/packages/backend/internal/pkg/crypto"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
@@ -152,6 +153,8 @@ type oauthAccountTokenHealQuerier interface {
 }
 
 type AuthService struct {
+	// HostSessionAdmission is the composition's existing roster boundary.
+	HostSessionAdmission identity.MemberAuthorizer
 	// TerminalSubject is the install manager's exact live/startup owner binding.
 	TerminalSubject func(int64, int64, string, string) bool
 	// TerminalCatalogReady is installed only by the S2 contract composition.
@@ -1201,6 +1204,12 @@ func (s *AuthService) createSession(ctx context.Context, user db.User) (string, 
 		session, err := s.InstallSetup.ClaimOwner(ctx, user, rawSessionKey, s.now().Add(s.sessionDuration()))
 		return rawSessionKey, session, err
 	}
+	return s.persistAdmittedSession(ctx, user, rawSessionKey)
+}
+
+// persistAdmittedSession is the one digest-at-rest session writer. Callers must
+// finish their existing identity admission before reaching it.
+func (s *AuthService) persistAdmittedSession(ctx context.Context, user db.User, rawSessionKey string) (string, db.AuthSession, error) {
 	session, err := s.queries.CreateAuthSession(ctx, db.CreateAuthSessionParams{
 		SessionKey: sessionStorageKey(rawSessionKey),
 		UserID:     user.ID,
@@ -1852,4 +1861,33 @@ func randomUUID() string {
 		hex.EncodeToString(buf[6:8]) + "-" +
 		hex.EncodeToString(buf[8:10]) + "-" +
 		hex.EncodeToString(buf[10:16])
+}
+
+// MintHostSession exchanges an already admitted central browser identity for a
+// new host-only session. It neither creates accounts nor claims an install owner.
+func (s *AuthService) MintHostSession(ctx context.Context, userID int64, host string, repositoryID int64, bindingToken string) (string, time.Time, error) {
+	user, err := s.queries.GetUserByID(ctx, userID)
+	if err != nil || !user.IsActive {
+		return "", time.Time{}, pkgerrors.Unauthorized("Sign in again")
+	}
+	if s.HostSessionAdmission != nil {
+		if denied := s.HostSessionAdmission.AuthorizeMember(identity.WithMemberRoute(ctx), userID); denied != nil {
+			return "", time.Time{}, denied
+		}
+	}
+	writer, ok := s.queries.(interface {
+		UpsertInstallSetting(context.Context, db.UpsertInstallSettingParams) error
+	})
+	if !ok || host == "" || repositoryID <= 0 {
+		return "", time.Time{}, pkgerrors.Internal("session audience storage unavailable")
+	}
+	key, session, err := s.persistAdmittedSession(ctx, user, middleware.RepositorySiteSessionPrefix+s.generateSession())
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	audience, _ := json.Marshal(middleware.RepositorySiteSession{BindingToken: bindingToken, Host: host, RepositoryID: repositoryID, UserID: userID, Expires: session.ExpiresAt})
+	if err = writer.UpsertInstallSetting(ctx, db.UpsertInstallSettingParams{Key: middleware.RepositorySiteSessionKey(key), Value: audience}); err != nil {
+		return "", time.Time{}, pkgerrors.Internal("session audience storage unavailable")
+	}
+	return key, session.ExpiresAt, nil
 }
