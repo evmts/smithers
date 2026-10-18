@@ -92,7 +92,7 @@ func (h *AuthHandler) PostAdminCLIConsent(w http.ResponseWriter, r *http.Request
 		writeRouteError(w, r, pkgerrors.Internal("admin CLI login unavailable"))
 		return
 	}
-	result, err := svc.ApproveAdminCLILogin(r.Context(), r.PostForm.Get("state"), oauthStateVerifierFromRequest(r), r.PostForm.Get("csrf_token"), r.RemoteAddr)
+	result, err := svc.ApproveAdminCLILogin(r.Context(), r.PostForm.Get("state"), oauthStateVerifierFromRequest(r, h.cookieSecure(r)), r.PostForm.Get("csrf_token"), r.RemoteAddr)
 	if err != nil {
 		writeRouteError(w, r, err)
 		return

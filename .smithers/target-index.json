@@ -43967,6 +43967,52 @@
     }
   },
   {
+    "label": "//apps/server:oauthDocs",
+    "package": "apps/server",
+    "name": "oauthDocs",
+    "rule": "Docs.Check",
+    "kinds": [
+      "lint",
+      "docs"
+    ],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "apps/server/docs/oauth-cookie-isolation.stamp.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/server/docs/oauth-cookie-isolation.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/backend/internal/routes/auth.go"
+      },
+      {
+        "kind": "file",
+        "path": "packages/backend/internal/routes/auth_return.go"
+      },
+      {
+        "kind": "file",
+        "path": "packages/backend/internal/routes/auth_cookie_names.go"
+      },
+      {
+        "kind": "file",
+        "path": "packages/backend/internal/routes/auth_cookie_workerd_test.go"
+      },
+      {
+        "kind": "file",
+        "path": "apps/server/scripts/cutover/host-cookie-workerd.mjs"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "apps/server/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//apps/server:security",
     "package": "apps/server",
     "name": "security",

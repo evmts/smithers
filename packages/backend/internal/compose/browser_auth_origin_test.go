@@ -112,9 +112,9 @@ func TestRouterBrowserAuthOriginAcrossTLSProxy(t *testing.T) {
 	for _, cookie := range onBrowserOrigin.Cookies() {
 		require.Empty(t, cookie.Domain, "OAuth cookies must stay on the callback host")
 		switch cookie.Name {
-		case "smithers_oauth_state":
+		case "__Host-smithers_oauth_state":
 			state = cookie
-		case "smithers_return_to":
+		case "__Host-smithers_return_to":
 			returnTo = cookie
 		}
 	}

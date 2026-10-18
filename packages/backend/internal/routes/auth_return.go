@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-const browserReturnCookieName = "smithers_return_to"
+const browserReturnCookieName = "__Host-smithers_return_to"
 
 // The API's public origin also serves Git and runtime clients and can differ
 // from the browser callback origin. Session cookies belong to the latter.
@@ -46,13 +46,13 @@ func browserReturnCookie(value string, secure bool, maxAge int) *http.Cookie {
 	if maxAge < 0 {
 		expires = time.Unix(0, 0).UTC()
 	}
-	return &http.Cookie{Name: browserReturnCookieName, Value: value, Path: "/", HttpOnly: true,
+	return &http.Cookie{Name: isolatedAuthCookieName(browserReturnCookieName, secure), Value: value, Path: "/", HttpOnly: true,
 		Secure: secure, SameSite: http.SameSiteLaxMode, MaxAge: maxAge, Expires: expires}
 }
 
 func setBrowserReturnCookie(w http.ResponseWriter, r *http.Request, target, verifier string, secure bool) {
 	if target == "" {
-		if _, err := r.Cookie(browserReturnCookieName); err == nil {
+		if _, err := r.Cookie(isolatedAuthCookieName(browserReturnCookieName, secure)); err == nil {
 			http.SetCookie(w, browserReturnCookie("", secure, -1))
 		}
 		return
@@ -64,13 +64,13 @@ func setBrowserReturnCookie(w http.ResponseWriter, r *http.Request, target, veri
 // Consumed even on a failed callback. A retained cookie from an abandoned flow
 // cannot redirect a later login because it is bound to that flow's verifier.
 func consumeBrowserReturnCookie(w http.ResponseWriter, r *http.Request, secure bool) string {
-	cookie, err := r.Cookie(browserReturnCookieName)
+	cookie, err := r.Cookie(isolatedAuthCookieName(browserReturnCookieName, secure))
 	if err != nil {
 		return ""
 	}
 	http.SetCookie(w, browserReturnCookie("", secure, -1))
 	bound, encoded, ok := strings.Cut(cookie.Value, ".")
-	verifier := oauthStateVerifierFromRequest(r)
+	verifier := oauthStateVerifierFromRequest(r, secure)
 	if !ok || verifier == "" || subtle.ConstantTimeCompare([]byte(bound), []byte(verifier)) != 1 {
 		return ""
 	}

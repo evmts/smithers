@@ -62,12 +62,12 @@ func TestGitHubBrowserReturnRoundtrip(t *testing.T) {
 			require.Equal(t, http.StatusFound, result.Code)
 			require.Equal(t, tc.want, result.Header().Get("Location"))
 			if tc.target != "" {
-				cookie := cookieByName(start.Result().Cookies(), "smithers_return_to")
+				cookie := cookieByName(start.Result().Cookies(), browserReturnCookieName)
 				require.NotNil(t, cookie)
 				require.True(t, cookie.HttpOnly)
 				require.True(t, cookie.Secure)
 				require.Equal(t, http.SameSiteLaxMode, cookie.SameSite)
-				cleared := cookieByName(result.Result().Cookies(), "smithers_return_to")
+				cleared := cookieByName(result.Result().Cookies(), browserReturnCookieName)
 				require.NotNil(t, cleared)
 				require.Equal(t, -1, cleared.MaxAge)
 			}
@@ -98,11 +98,11 @@ func TestGitHubBrowserCallbackRejectsTamperedReturn(t *testing.T) {
 			}}
 			r := httptest.NewRequest("GET", "/api/auth/github/callback?code=code&state=opaque", nil)
 			r.AddCookie(&http.Cookie{Name: oauthStateCookieName, Value: "verifier"})
-			r.AddCookie(&http.Cookie{Name: "smithers_return_to", Value: "verifier." + base64.RawURLEncoding.EncodeToString([]byte(target))})
+			r.AddCookie(&http.Cookie{Name: browserReturnCookieName, Value: "verifier." + base64.RawURLEncoding.EncodeToString([]byte(target))})
 			result := httptest.NewRecorder()
 			h.GetGitHubOAuthCallback(result, r)
 			require.Equal(t, "https://app.example/", result.Header().Get("Location"))
-			require.Equal(t, -1, cookieByName(result.Result().Cookies(), "smithers_return_to").MaxAge)
+			require.Equal(t, -1, cookieByName(result.Result().Cookies(), browserReturnCookieName).MaxAge)
 		})
 	}
 }

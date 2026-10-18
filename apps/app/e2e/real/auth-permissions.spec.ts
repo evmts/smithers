@@ -158,7 +158,8 @@ test("an unsafe absolute OAuth return destination is discarded before GitHub", s
   })
   expect(new URL(page.url()).hostname).toBe("github.com")
   expect(requestedOrigins).not.toContain(unsafeOrigin)
-  const returnCookies = (await context.cookies(productOrigin)).filter((cookie) => cookie.name === "smithers_return_to")
+  const returnCookies = (await context.cookies(productOrigin))
+    .filter((cookie) => ["__Host-smithers_return_to", "smithers_local_return_to", "smithers_return_to"].includes(cookie.name))
   expect(returnCookies).toEqual([])
 
   await page.goto(new URL(APP_PATH, baseURL).toString(), { waitUntil: "domcontentloaded" })

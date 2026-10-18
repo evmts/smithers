@@ -84,7 +84,7 @@ func TestServerRouter_AdminCLIConsentForm(t *testing.T) {
 	}{{"state=state&csrf_token=csrf&decision=approve", "verifier", 302}, {"state=state&decision=approve", "verifier", 403}, {"state=state&csrf_token=csrf&decision=approve", "", 403}, {"state=state", "verifier", 400}} {
 		req := httptest.NewRequest("POST", "/api/auth/github/cli/consent", strings.NewReader(tc.form))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		req.AddCookie(&http.Cookie{Name: "smithers_oauth_state", Value: tc.verifier})
+		req.AddCookie(&http.Cookie{Name: "__Host-smithers_oauth_state", Value: tc.verifier})
 		// A pre-existing browser session must not interfere with verifier-based
 		// consent or force the HTML form through JSON-only API middleware.
 		req.AddCookie(&http.Cookie{Name: "__Host-smithers_session", Value: "old-browser-session"})
