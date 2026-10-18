@@ -4,7 +4,8 @@
  * The install is reached at whatever origin the team uses, and a teammate's laptop opens it over plain HTTP on the
  * LAN. There the browser has no crypto.randomUUID, no crypto.subtle and no service worker. On 2026-10-05 one
  * crypto.randomUUID() call in AppStore left the page blank at http://williams-mac-mini.local:4000. Random ids come
- * from runtime/RandomUuid.ts and digests from `digestSync` (@smthrs/crypto); this test fails by file and line on any
+ * from runtime/RandomUuid.ts, digests from `digestSync` (@smthrs/crypto), and SubtleCrypto (e.g. Ed25519) only through
+ * runtime/SecureSubtle.ts, which returns null outside a secure context; this test fails by file and line on any
  * new direct use in the app or the shared UI library. Comments and strings may name the APIs.
  */
 import { describe, expect, test } from "bun:test"
@@ -24,7 +25,7 @@ const BANNED: ReadonlyMap<string, { readonly receiver: RegExp; readonly use: str
 const shipped = (path: string) => /\.[cm]?tsx?$/.test(path) && !/\.(test|spec|fixture|test-support)\.[cm]?tsx?$/.test(path) && !path.endsWith(".d.ts")
 
 const secureContextViolations = (file: string, source: string): string[] => {
-  if (file.endsWith("/internal/copyToClipboard.ts")) return []
+  if (file.endsWith("/internal/copyToClipboard.ts") || file.endsWith("/runtime/SecureSubtle.ts")) return []
   const tree = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, file.endsWith("x") ? ts.ScriptKind.TSX : ts.ScriptKind.TS)
   const found: string[] = []
   const visit = (node: ts.Node): void => {
